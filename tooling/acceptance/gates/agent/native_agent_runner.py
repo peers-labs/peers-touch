@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Native Tauri Agent acceptance runner.
 
-The stream-resilience journey consumes the provisioned One-profile runtime,
-injects a real transport fault between Desktop and Station, and writes all
-evidence through the external Acceptance Evidence Store.
+Each journey consumes the provisioned One-profile runtime and writes evidence
+through the external Acceptance Evidence Store. Stream resilience additionally
+injects a real transport fault between Desktop and Station.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -32,20 +33,27 @@ from selenium.webdriver.chrome.options import Options as ChromeOptions
 from tooling.acceptance.core import (
     ArtifactRef,
     ArtifactSession,
-    CredentialRef,
     EvidenceStore,
     current_artifact_ref,
     load_json_artifact,
     load_runtime_manifest,
+    require_runtime_service,
 )
 from tooling.acceptance.core.harness import call_async_harness
 from tooling.acceptance.core.provisioner import load_env_file
+from tooling.acceptance.gates.agent.foundation_direct_adapter import (
+    DirectRuntimeProbeInput,
+)
+from tooling.acceptance.gates.agent.foundation_group_one_probe import (
+    assert_group_one_capture,
+)
 from tooling.acceptance.gates.agent.tcp_fault_proxy import TcpFaultProxy
 
 
 GATE_BY_JOURNEY = {
     "turn": "agent-native-turn-e2e",
     "stream-resilience": "agent-stream-resilience-e2e",
+    "attachment": "agent-attachment-e2e",
 }
 APPROVED_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 WAIT_TICK = threading.Event()
@@ -120,9 +128,12 @@ class AgentNativeJourney:
         )
         self.client = clients[0]
         require(isinstance(self.client, dict), "runtime client entry must be an object")
-        station = self.runtime_manifest.get("station")
-        require(isinstance(station, dict), "runtime Station attestation is required")
-        self.station_url = str(station.get("url") or "").rstrip("/")
+        station = require_runtime_service(
+            self.runtime_manifest,
+            "station",
+            "station",
+        )
+        self.station_url = str(station.get("endpoint") or "").rstrip("/")
         require(bool(self.station_url), "runtime Station URL is required")
 
         self.evidence_store = EvidenceStore.from_environment(
@@ -148,13 +159,10 @@ class AgentNativeJourney:
         self.email = account_ref.removeprefix("station-account:")
         credential_refs = actor_manifest.get("credentialRefs")
         require(
-            isinstance(credential_refs, list) and len(credential_refs) == 1,
-            "actor manifest requires one credential reference",
+            isinstance(credential_refs, list)
+            and "profile:CHAT_NATIVE_DEMO_PASSWORD" in credential_refs,
+            "actor manifest requires the approved profile credential reference",
         )
-        self.password = CredentialRef(
-            id="agent-actor-password",
-            source_ref=str(credential_refs[0]),
-        ).resolve()
 
         active_profile = (
             REPO_ROOT
@@ -172,11 +180,19 @@ class AgentNativeJourney:
             self.profile_env.get("PT_DEV_PROFILE") == APPROVED_PROFILE,
             "active profile identity changed after provisioning",
         )
+        self.password = self.profile_env.get(
+            "CHAT_NATIVE_DEMO_PASSWORD",
+            "",
+        )
+        require(
+            bool(self.password),
+            "One profile is missing CHAT_NATIVE_DEMO_PASSWORD",
+        )
         self.provider_id = self.profile_env.get("PT_AGENT_PROVIDER_ID", "").strip()
-        self.provider_key = CredentialRef(
-            id="agent-provider-api-key",
-            source_ref="env:PT_AGENT_PROVIDER_API_KEY",
-        ).resolve()
+        self.provider_key = self.profile_env.get(
+            "PT_AGENT_PROVIDER_API_KEY",
+            "",
+        )
         self.model_id = self.profile_env.get(
             "PT_AGENT_DEFAULT_MODEL_ID",
             "",
@@ -190,6 +206,10 @@ class AgentNativeJourney:
         require(
             bool(self.provider_base_url),
             "One profile is missing PT_AGENT_PROVIDER_BASE_URL",
+        )
+        require(
+            bool(self.provider_key),
+            "One profile is missing PT_AGENT_PROVIDER_API_KEY",
         )
 
         self.gateway_port = int(self.client.get("gateway_port") or 0)
@@ -207,11 +227,13 @@ class AgentNativeJourney:
         self.proxy = TcpFaultProxy.from_url(self.station_url)
         self.process: subprocess.Popen[str] | None = None
         self.log_handle: Any = None
+        self.desktop_log_bytes = b""
         self.driver: Any = None
         self.steps: list[dict[str, Any]] = []
         self.assertions: list[dict[str, Any]] = []
         self.station_readback: dict[str, Any] = {}
         self.dom_evidence: dict[str, Any] = {}
+        self.journey_evidence: dict[str, Any] = {}
         self.cleanup_evidence: dict[str, Any] = {"status": "not-run"}
 
     def step(self, name: str, operation: Callable[[], Any]) -> Any:
@@ -727,6 +749,128 @@ class AgentNativeJourney:
             ]
         )
 
+    def run_attachment(self) -> None:
+        self.step("login", self.login)
+        self.step("navigate_and_configure", self.navigate_and_configure)
+        locale = self.step(
+            "set_locale",
+            lambda: self.harness(
+                "setFoundationLocale",
+                {"locale": "en"},
+                timeout=30,
+            ),
+        )
+        require(
+            isinstance(locale, Mapping) and locale.get("locale") == "en",
+            "Attachment journey locale did not converge",
+        )
+        sample_id = f"attachment-{self.runtime_manifest.get('runId', '')}"
+        required_roles = (
+            "runtimeAttestation",
+            "receiver-dom",
+            "station-readback",
+            "runtime-events",
+            "measurement-report",
+            "side-effect-count",
+            "replay",
+            "cleanup",
+        )
+        captures: dict[str, dict[str, Any]] = {}
+        for cell, step_name in (
+            ("AS-F05", "attachment_admission"),
+            ("BASE-ATTACHMENT_REJECTED", "attachment_rejection_surface"),
+        ):
+            capture = self.step(
+                step_name,
+                lambda cell=cell: self.harness(
+                    "foundationDirectProbe",
+                    {
+                        "platform": "desktop_app",
+                        "locale": "en",
+                        "cell": cell,
+                        "sampleId": f"{sample_id}-{cell.lower()}",
+                    },
+                    timeout=300,
+                ),
+            )
+            require(
+                isinstance(capture, Mapping),
+                f"Attachment journey returned invalid {cell} evidence",
+            )
+            assert_group_one_capture(
+                DirectRuntimeProbeInput(
+                    platform="desktop_app",
+                    locale="en",
+                    cell=cell,
+                    sample_id=f"{sample_id}-{cell.lower()}",
+                ),
+                capture,
+            )
+            assertions = capture.get("assertions")
+            require(
+                isinstance(assertions, Mapping)
+                and bool(assertions)
+                and all(value is True for value in assertions.values()),
+                f"Attachment journey did not satisfy every {cell} assertion",
+            )
+            missing_roles = sorted(
+                role for role in required_roles
+                if not isinstance(capture.get(role), Mapping)
+            )
+            require(
+                not missing_roles,
+                f"Attachment journey {cell} is missing evidence roles: "
+                + ", ".join(missing_roles),
+            )
+            receiver_dom = capture["receiver-dom"]
+            station_readback = capture["station-readback"]
+            runtime_events = capture["runtime-events"]
+            replay = capture["replay"]
+            product_cleanup = capture["cleanup"]
+            require(
+                receiver_dom.get("visible") is True,
+                f"Attachment journey {cell} receiver evidence is not visible",
+            )
+            require(
+                station_readback.get("entityKind") in {
+                    "agent-conversation-readback",
+                    "agent-attachment-pre-admission",
+                }
+                and bool(station_readback.get("stateHash")),
+                f"Attachment journey {cell} Station readback is incomplete",
+            )
+            require(
+                int(runtime_events.get("sequence") or 0) > 0,
+                f"Attachment journey {cell} runtime event is missing",
+            )
+            require(
+                replay.get("equal") is True,
+                f"Attachment journey {cell} replay readback diverged",
+            )
+            require(
+                product_cleanup.get("status") == "clean",
+                f"Attachment journey {cell} product cleanup was not clean",
+            )
+            assertion_prefix = cell.lower().replace("_", "-")
+            self.assertions.extend(
+                {
+                    "id": f"{assertion_prefix}.{assertion_id}",
+                    "status": "pass",
+                }
+                for assertion_id in sorted(assertions)
+            )
+            captures[cell] = dict(capture)
+
+        self.dom_evidence = {
+            cell: capture["receiver-dom"]
+            for cell, capture in captures.items()
+        }
+        self.station_readback = {
+            cell: capture["station-readback"]
+            for cell, capture in captures.items()
+        }
+        self.journey_evidence = captures
+
     def best_effort_logout(self) -> None:
         if self.driver is None:
             return
@@ -760,7 +904,12 @@ class AgentNativeJourney:
             self.log_handle.flush()
             self.log_handle.close()
             self.log_handle = None
-        shutil.rmtree(self.storage_root, ignore_errors=True)
+        if self.desktop_log.is_file():
+            try:
+                self.desktop_log_bytes = self.desktop_log.read_bytes()
+            except OSError as error:
+                failures.append(f"desktop-log: {error}")
+        shutil.rmtree(self.run_root, ignore_errors=True)
         ports = {
             "gateway": not port_open(self.gateway_port),
             "renderer": not port_open(self.renderer_port),
@@ -769,12 +918,12 @@ class AgentNativeJourney:
         }
         if not all(ports.values()):
             failures.append(f"ports still listening: {ports}")
-        if self.storage_root.exists():
-            failures.append(f"storage remains: {self.storage_root}")
+        if self.run_root.exists():
+            failures.append(f"run storage remains: {self.run_root}")
         self.cleanup_evidence = {
             "status": "passed" if not failures else "failed",
             "portsReleased": ports,
-            "storageReleased": not self.storage_root.exists(),
+            "storageReleased": not self.run_root.exists(),
             "failures": failures,
         }
         return self.cleanup_evidence
@@ -803,6 +952,8 @@ def run_journey(journey_name: str) -> int:
             runner.step("fault_proxy_health", runner.verify_proxy_health)
             if journey_name == "stream-resilience":
                 runner.run_stream_resilience()
+            elif journey_name == "attachment":
+                runner.run_attachment()
             else:
                 runner.run_turn()
             status = "passed"
@@ -823,6 +974,7 @@ def run_journey(journey_name: str) -> int:
                     else f"cleanup failed: {cleanup_failure}"
                 )
 
+        attachment_journey = journey_name == "attachment"
         report = {
             "artifactKind": "agent-native-journey-report",
             "gateId": gate_id,
@@ -830,16 +982,33 @@ def run_journey(journey_name: str) -> int:
             "status": status,
             "completionStatus": "DONE" if status == "passed" else "FAILED",
             "proofStatus": "PROVEN" if status == "passed" else "UNPROVEN",
-            "phase": "Residual Product Closure",
-            "bom": ["R6"],
-            "spec": [
-                "tooling/acceptance/features/agent-stream-resilience.yaml",
-                "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
-            ],
+            "phase": "F3 Context And Resource Intelligence"
+            if attachment_journey
+            else "Residual Product Closure",
+            "bom": ["C08"] if attachment_journey else ["R6"],
+            "spec": (
+                [
+                    "tooling/acceptance/features/agent-attachment-reference.yaml",
+                    "docs/architecture/agent/execution-plans/"
+                    "20260817-modern-chat-agent-v2-execution.md",
+                ]
+                if attachment_journey
+                else [
+                    "tooling/acceptance/features/agent-stream-resilience.yaml",
+                    "docs/architecture/agent/execution-plans/"
+                    "20260816-lobehub-parity-full-landing.md",
+                ]
+            ),
             "gate": (
-                "R6 requires visible reconnecting state, monotonic cursor replay "
-                "equal to Station readback, identity-boundary teardown, and "
-                "resource cleanup."
+                "C08 requires opaque authorized refs, admission before provider "
+                "execution, persisted attribution, visible attachment projection, "
+                "authorized download, and cleanup."
+                if attachment_journey
+                else (
+                    "R6 requires visible reconnecting state, monotonic cursor "
+                    "replay equal to Station readback, identity-boundary teardown, "
+                    "and resource cleanup."
+                )
             ),
             "sampleEmissionAllowed": status == "passed",
             "startedAt": started_at,
@@ -855,6 +1024,9 @@ def run_journey(journey_name: str) -> int:
                 runner.station_readback if runner is not None else {}
             ),
             "receiverDom": runner.dom_evidence if runner is not None else {},
+            "journeyEvidence": (
+                runner.journey_evidence if runner is not None else {}
+            ),
             "cleanup": cleanup,
             "error": failure,
         }
@@ -903,10 +1075,20 @@ def run_journey(journey_name: str) -> int:
             },
             role="cleanup",
         )
-        if runner is not None and runner.desktop_log.is_file():
+        if attachment_journey:
+            artifacts.write_json(
+                "evidence/attachment.json",
+                {
+                    "artifactKind": "agent-attachment-evidence",
+                    **evidence_metadata,
+                    "evidence": report["journeyEvidence"],
+                },
+                role="attachment-evidence",
+            )
+        if runner is not None and runner.desktop_log_bytes:
             artifacts.write_bytes(
                 "logs/desktop.log",
-                runner.desktop_log.read_bytes(),
+                runner.desktop_log_bytes,
                 media_type="text/plain",
             )
         artifacts.complete(

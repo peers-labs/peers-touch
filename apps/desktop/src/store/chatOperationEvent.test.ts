@@ -1,4 +1,6 @@
+import { create } from '@bufbuild/protobuf';
 import { describe, expect, it, vi } from 'vitest';
+import { CapabilityReadinessSnapshotSchema } from '../gen/proto/domain/agent/capability_pb';
 import { agentService } from '../services/agent-service';
 import type {
   Agent,
@@ -15,6 +17,7 @@ import {
   useChatStore,
 } from './chat';
 import { useAgentStore } from './agent';
+import { useAgentCapabilityStore } from './agentCapabilities';
 import { isTerminalEvent, reduceStreamEvent } from './streaming';
 
 function operation(): ChatOperation {
@@ -45,7 +48,7 @@ describe('Agent turn event identity projection', () => {
     expect(useChatStore.getState().composerFocusNonce).toBe(0);
   });
 
-  it('forwards an explicit client idempotency key to the turn command', () => {
+  it('forwards the Station-selected capability session to the turn command', () => {
     const previousAgentState = useAgentStore.getState();
     const streamSpy = vi.spyOn(agentService, 'streamTurn').mockImplementation(
       () => {
@@ -68,6 +71,15 @@ describe('Agent turn event identity projection', () => {
         model: 'model-1',
       } as Agent],
     });
+    useAgentCapabilityStore.setState({
+      readinessByAgentId: {
+        'agent-1': create(CapabilityReadinessSnapshotSchema, {
+          snapshotId: 'snapshot-1',
+          agentId: 'agent-1',
+          selectedClientSessionId: 'session-desktop',
+        }),
+      },
+    });
 
     try {
       expect(useChatStore.getState().sendMessage(
@@ -78,9 +90,12 @@ describe('Agent turn event identity projection', () => {
       expect(streamSpy).toHaveBeenCalledTimes(1);
       expect(streamSpy.mock.calls[0]?.[0].client_idempotency_key)
         .toBe('request-1');
+      expect(streamSpy.mock.calls[0]?.[0].client_capability_session_id)
+        .toBe('session-desktop');
     } finally {
       streamSpy.mockRestore();
       useChatStore.getState().reset();
+      useAgentCapabilityStore.getState().reset();
       useAgentStore.setState(previousAgentState);
     }
   });

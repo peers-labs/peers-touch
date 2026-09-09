@@ -79,6 +79,25 @@ class AgentV2OldPathsTest(unittest.TestCase):
         ):
             self.assertEqual(entries[entry_id]["matches"], 0)
 
+    def test_c08_agent_attachment_paths_are_portable(self) -> None:
+        completed = self.run_script("--closure", "C08")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        report = json.loads(completed.stdout)
+        self.assertEqual(report["unresolvedCount"], 0)
+        entries = {entry["id"]: entry for entry in report["entries"]}
+        self.assertEqual(
+            entries["agent-legacy-social-chat-attachment-contract"]["matches"],
+            0,
+        )
+        self.assertEqual(
+            entries["agent-local-path-attachment-identity"]["matches"],
+            0,
+        )
+        self.assertGreater(
+            entries["social-chat-encrypted-attachment-contract"]["matches"],
+            0,
+        )
+
     def test_unknown_closure_fails_closed(self) -> None:
         completed = self.run_script("--closure", "C99")
         self.assertEqual(completed.returncode, 1)
