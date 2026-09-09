@@ -243,7 +243,7 @@ Parallel policy:
 | W0 Contract/Evidence/Gates | complete | Owner EXECUTE approval received; W0 verification and completion audit PASS |
 | F1 Agent/Conversation Authority | complete | W0 complete |
 | F2 Runtime/Stream/Capability/Portability | implementation checks complete: Q4 C06 and Q5/Q6 C10 source closures pass; product proof remains pending G-F | F1 |
-| F3 Context/Resource Intelligence | C04 core and C08 product source complete; native TauriDriver/argv ownership correction implemented and locally verified; clean-source `agent-attachment-e2e` rerun pending, so C08 product proof remains unproven | F2 |
+| F3 Context/Resource Intelligence | C04 core and C08 product source complete; native TauriDriver/argv ownership correction is committed and live-verified through startup; the isolated client now requires its approved pre-login Station binding before the next clean-source `agent-attachment-e2e` rerun, so C08 product proof remains unproven | F2 |
 | F4 Tool Policy/Observability | G1-A through G1-F and pre-W1 G1-XR diagnostic complete through AS-F03; post-W8a G-F pending | F2 + accepted D19A/D19B/D19C |
 | W1 Capability Authority | implementation checks complete; product proof UNPROVEN until W9 Gate | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
 | W2 Home Projection | pending | G-F complete 419-cell Foundation Gate |
@@ -1038,6 +1038,36 @@ and zero local-path leakage.
   builds and its embedded-WebDriver smoke passes with all owned ports released.
   C08 remains `UNPROVEN` until the committed clean checkpoint runs
   `agent-attachment-e2e`.
+
+**C08 isolated Station-binding correction (2026-09-09)**:
+
+- Exact-source run
+  `20260909T072305805409Z-6230500327ed8578c9b42ef713c5adcf` at
+  `7d797c04ea7290fee70c58c341dcc774c83a2766` started the canonical
+  TauriDriver runtime in 1028 ms and proved the fault proxy in 93 ms, then
+  failed at login with `active Station identity is unavailable`. Cleanup
+  released the Gateway, renderer, WebDriver, fault-proxy ports, and run
+  storage.
+- The isolated client storage starts with a fresh Station registry.
+  `PEERS_STATION_URL` supplies a discovery seed but does not select an active
+  Station or persist its probed peer identity. The business Gate called
+  `loginWithPassword` before the existing production `configureStation`
+  Harness operation, so the Access Gate correctly failed closed.
+- The Owner approved the bounded business-injection correction: call
+  `configureStation` through the Agent Harness after proxy health and before
+  login, require the selected URL, online status, and peer identity to
+  converge, and retain the fault-proxy route. Direct registry-file mutation,
+  Gateway shortcuts, retries, timeout inflation, and weaker assertions remain
+  forbidden.
+- The implementation and pre-commit verification pass 365 Agent Gate tests,
+  151 Provisioner/runtime tests, 65 Acceptance runner tests, planner,
+  validator, responsibility-boundary, gap-detector, coverage, and quality
+  suites, Desktop check, Station Agent tests, changed-path planning, and
+  `git diff --check`. The changed-path plan selects both C08 and the shared R6
+  journey because they consume the same native business runner.
+- This correction changes neither the C08 Feature/Capability contract nor its
+  evidence roles. C08 remains `UNPROVEN` until the new clean checkpoint is
+  deployed through `make station` and `agent-attachment-e2e` passes.
 
 ### F4 — Tool Policy And Observability Baseline
 

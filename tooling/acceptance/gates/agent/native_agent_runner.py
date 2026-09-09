@@ -359,6 +359,23 @@ class AgentNativeJourney:
             "buildCommit": payload.get("build_commit"),
         }
 
+    def configure_station(self) -> dict[str, Any]:
+        result = self.harness(
+            "configureStation",
+            {"stationUrl": self.proxy.url},
+            timeout=60,
+        )
+        expected_url = self.proxy.url.rstrip("/")
+        require(
+            isinstance(result, Mapping)
+            and result.get("configured") is True
+            and str(result.get("activeUrl") or "").rstrip("/") == expected_url
+            and result.get("online") is True
+            and result.get("peerIdAvailable") is True,
+            f"Agent Station binding did not converge: {result}",
+        )
+        return dict(result)
+
     def navigate_and_configure(self) -> None:
         self.harness("navigateToAgent", timeout=60)
         configured = self.harness(
@@ -916,6 +933,7 @@ def run_journey(journey_name: str) -> int:
             runner = AgentNativeJourney(journey_name)
             runner.step("start_native_runtime", runner.start)
             runner.step("fault_proxy_health", runner.verify_proxy_health)
+            runner.step("configure_active_station", runner.configure_station)
             if journey_name == "stream-resilience":
                 runner.run_stream_resilience()
             elif journey_name == "attachment":
