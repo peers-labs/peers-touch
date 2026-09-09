@@ -304,8 +304,29 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
 
     def test_runner_waits_for_harness(self) -> None:
         self.assertIn("__PT_ACCEPTANCE__", self.source)
-        self.assertIn("Agent acceptance harness", self.source)
-        self.assertIn("wait_until(", self.source)
+        runtime_started = self.source.index(
+            "self.driver = self.tauri_driver.start()"
+        )
+        renderer_ready = self.source.index(
+            "self.tauri_driver.wait_for_ready()",
+            runtime_started,
+        )
+        harness_ready = self.source.index(
+            "self.tauri_driver.wait_for_acceptance_harness()",
+            renderer_ready,
+        )
+        agent_namespace = self.source.index(
+            "window.__PT_ACCEPTANCE__?.agent",
+            harness_ready,
+        )
+
+        self.assertLess(runtime_started, renderer_ready)
+        self.assertLess(renderer_ready, harness_ready)
+        self.assertLess(harness_ready, agent_namespace)
+        self.assertNotIn(
+            "self.driver.set_script_timeout(DEFAULT_TIMEOUT)",
+            self.source,
+        )
 
     def test_runner_has_step_telemetry(self) -> None:
         self.assertIn("def step(", self.source)

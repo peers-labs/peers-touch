@@ -314,16 +314,15 @@ class AgentNativeJourney:
             log_path=self.desktop_log,
         )
         self.driver = self.tauri_driver.start()
-        self.driver.set_script_timeout(DEFAULT_TIMEOUT)
-        wait_until(
-            lambda: bool(
+        self.tauri_driver.wait_for_ready()
+        self.tauri_driver.wait_for_acceptance_harness()
+        require(
+            bool(
                 self.driver.execute_script(
-                    "return Boolean(document.querySelector('#root')"
-                    " && window.__PT_ACCEPTANCE__?.agent)"
+                    "return Boolean(window.__PT_ACCEPTANCE__?.agent)"
                 )
             ),
-            "Agent acceptance harness",
-            DEFAULT_TIMEOUT,
+            "Agent acceptance Harness namespace is unavailable",
         )
 
     def login(self) -> dict[str, Any]:
