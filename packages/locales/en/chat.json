@@ -200,6 +200,7 @@
   "chat.message.action.translate": "Translate",
   "chat.message.action.thread": "Open Thread",
   "chat.message.action.turnDetails": "Turn details",
+  "chat.message.toolCall.openPanel": "Open tool details",
   "chat.message.action.export": "Export as Markdown",
   "chat.message.action.forward": "Forward",
   "chat.messageForward.title": "Forward to agent",
