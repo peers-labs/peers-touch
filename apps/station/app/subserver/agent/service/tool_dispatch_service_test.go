@@ -1651,6 +1651,96 @@ func TestToolDispatchServiceSubmitDeniedDecisionReturnsTypedOutcome(t *testing.T
 	}
 }
 
+func TestToolDispatchServiceRejectsUnavailableClientExecutorBeforeClaim(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	proposal := fixture.authorizedProposal(
+		t,
+		"executor-unavailable",
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+	)
+	decisions, err := fixture.service.ProposeAuthorizedBatch(context.Background(), proposal)
+	if err != nil {
+		t.Fatalf("propose manual client tool: %v", err)
+	}
+	revokedAt := fixture.now
+	if err := fixture.db.Model(&persistence.ClientCapabilityLease{}).
+		Where("session_id = ?", fixture.session.GetCapabilitySessionId()).
+		Updates(map[string]interface{}{
+			"revoked_at":    revokedAt,
+			"revoke_reason": int32(model.ClientCapabilityLeaseRevokeReason_CLIENT_CAPABILITY_LEASE_REVOKE_REASON_WORKER_SHUTDOWN),
+			"updated_at":    revokedAt,
+		}).Error; err != nil {
+		t.Fatalf("revoke client executor lease: %v", err)
+	}
+
+	request := &model.SubmitToolApprovalDecisionRequest{
+		ApprovalId:       decisions[0].ApprovalID,
+		ToolCallId:       proposal.Calls[0].ToolCallID,
+		DecisionId:       "decision-executor-unavailable-1",
+		ExpectedRevision: decisions[0].DecisionRevision,
+		Approved:         true,
+		IdempotencyKey:   "decision-executor-unavailable-command-1",
+	}
+	request.PayloadHash = decisionPayloadHash(request)
+
+	first, err := fixture.service.SubmitDecision(context.Background(), fixture.actorID, request)
+	if err != nil {
+		t.Fatalf("submit unavailable executor decision: %v", err)
+	}
+	outcome := first.GetOutcomeError()
+	if first.GetAccepted() ||
+		first.GetErrorCode() != model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE ||
+		outcome == nil {
+		t.Fatalf("unexpected executor unavailable acknowledgement: %+v", first)
+	}
+	if outcome.GetErrorType() != string(errcode.AgentClientExecutorUnavailable) ||
+		outcome.GetLocaleKey() != errcode.AgentClientExecutorUnavailableLocaleKey ||
+		!outcome.GetRetryable() ||
+		!outcome.GetTerminal() ||
+		len(outcome.GetDetails()) != 2 ||
+		outcome.GetDetails()["target_device_id"] != fixture.deviceID ||
+		outcome.GetDetails()["capability_id"] != proposal.Calls[0].CapabilityID {
+		t.Fatalf("unexpected executor unavailable outcome: %+v", outcome)
+	}
+
+	replayed, err := fixture.service.SubmitDecision(context.Background(), fixture.actorID, request)
+	if err != nil {
+		t.Fatalf("replay unavailable executor decision: %v", err)
+	}
+	if !proto.Equal(first, replayed) {
+		t.Fatalf("executor unavailable replay differs: first=%+v replayed=%+v", first, replayed)
+	}
+
+	var call persistence.ToolCall
+	if err := fixture.db.Where("tool_call_id = ?", request.GetToolCallId()).First(&call).Error; err != nil {
+		t.Fatalf("load waiting tool call: %v", err)
+	}
+	if call.Status != persistence.ToolCallStatusWaitingApproval ||
+		call.DecisionID != "" ||
+		call.DecisionRevision != decisions[0].DecisionRevision ||
+		call.ExecutionClaimID != "" ||
+		call.ExecutionAttemptCount != 0 ||
+		call.ResultID != "" ||
+		call.ErrorCode != "" {
+		t.Fatalf("unavailable executor mutated ToolCall authority: %+v", call)
+	}
+	for name, modelValue := range map[string]interface{}{
+		"dispatch":     &persistence.ToolDispatchOutbox{},
+		"result":       &persistence.ToolResult{},
+		"continuation": &persistence.ToolContinuation{},
+	} {
+		var count int64
+		if err := fixture.db.Model(modelValue).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("unavailable executor created %d %s rows", count, name)
+		}
+	}
+}
+
 func TestToolDispatchServiceSubmitExpiredDecisionReturnsTypedOutcome(t *testing.T) {
 	fixture := newToolDispatchFixture(t)
 	proposal := fixture.authorizedProposal(
