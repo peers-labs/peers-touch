@@ -49,7 +49,7 @@ pub async fn oauth_cancel(
 pub async fn oauth_logout_purge(
     coordinator: State<'_, OAuthCoordinator>,
     storage: State<'_, SecureStorage>,
-    input: OAuthScopeIntent,
+    input: Option<OAuthScopeIntent>,
 ) -> MobileResult<OAuthPurgeProjection> {
     coordinator.logout_purge(&storage, input).await
 }

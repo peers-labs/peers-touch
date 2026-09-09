@@ -5,7 +5,7 @@ use super::{
 };
 use crate::model::chat::{
     conversation_event, ConversationStateMarker, CryptoEndpoint, DeviceConsumptionReceipt,
-    DeviceQueueItem, MemberRole, PreparedEndpointPayloadKind,
+    DurableDeviceInboxItem, MemberRole, PreparedEndpointPayloadKind,
 };
 use prost::Message;
 use std::sync::Arc;
@@ -32,7 +32,7 @@ impl ConversationStateProcessor {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -143,7 +143,7 @@ impl ConversationStateProcessor {
 }
 
 impl ClaimedItemConsumer for ConversationStateProcessor {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }
@@ -154,7 +154,7 @@ mod tests {
     use super::*;
     use crate::model::chat::{
         ConversationCreatedFact, ConversationEvent, ConversationKind, DeviceEventDelivery,
-        DeviceQueuePayloadType,
+        DeviceInboxPayloadType,
     };
     use sha2::{Digest, Sha256};
 
@@ -220,14 +220,17 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        let item = DeviceQueueItem {
+        let item = DurableDeviceInboxItem {
             item_id: "item-created-1".to_string(),
-            recipient: Some(endpoint.clone()),
+            recipient: Some(crate::messaging::actor_device_ref(
+                &endpoint.ptid,
+                &endpoint.device_id,
+            )),
             lane_sequence: 1,
             event_id: marker.event_id,
             conversation_id: marker.conversation_id,
             idempotency_key: "event:created:direct-1".to_string(),
-            payload_type: DeviceQueuePayloadType::ConversationEvent as i32,
+            payload_type: i32::from(DeviceInboxPayloadType::ConversationEvent),
             opaque_payload: opaque_payload.clone(),
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
             ..Default::default()

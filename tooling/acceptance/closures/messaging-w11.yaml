@@ -15,6 +15,7 @@ deliverables:
     verify:
       type: path-absent
       paths:
+        - apps/station/app/subserver/messaging
         - apps/desktop/src/runtimes/cryptoRuntime.ts
         - apps/desktop/src/runtimes/imRuntime.ts
         - apps/mobile/src-tauri/src/domain/crypto/sender_keys.rs
@@ -97,12 +98,29 @@ deliverables:
     verify:
       type: http-route-absent
       description: >
-        Station /friend-chat/* routes were deleted when messaging moved to
-        /messaging/* and /conversation/*. Desktop must not call dead endpoints.
+        Station /friend-chat/* routes were deleted when Chat moved to canonical
+        resource-owned routes. Desktop must not call dead endpoints.
       route_prefixes:
         - "/friend-chat/"
       search_dirs:
         - apps/desktop/src-tauri/src
+      skip_dirs:
+        - target
+        - gen
+      exempt_files: []
+
+  - id: conversation-is-sole-public-chat-owner
+    verify:
+      type: http-route-absent
+      description: >
+        Conversation is the sole public Chat owner. Desktop and Mobile may retain
+        internal messaging modules, while Station calls use canonical
+        resource-owned routes.
+      route_prefixes:
+        - '"/messaging/'
+      search_dirs:
+        - apps/desktop/src-tauri/src
+        - apps/mobile/src-tauri/src
       skip_dirs:
         - target
         - gen

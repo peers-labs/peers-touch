@@ -5,12 +5,13 @@ package peers_touch.model.chat.v1;
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
 
 import "domain/chat/envelope.proto";
+import "domain/chat/queue.proto";
 
 // ============================================================================
 // Envelope Subserver API Messages
 //
 // Service-layer request/response types for the envelope HTTP API.
-// Domain types (StationEnvelope, DeviceInboxItem) are defined in envelope.proto.
+// Domain types (StationEnvelope, DurableDeviceInboxItem) are defined in envelope.proto.
 // ============================================================================
 
 message SubmitEnvelopeRequest {
@@ -34,7 +35,7 @@ message ResumeEnvelopesRequest {
 }
 
 message ResumeEnvelopesResponse {
-  repeated DeviceInboxItem items = 1;
+  repeated DurableDeviceInboxItem items = 1;
 }
 
 message FederationDeliverEnvelopeRequest {

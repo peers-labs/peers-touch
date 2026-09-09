@@ -2,6 +2,9 @@ syntax = "proto3";
 
 package peers_touch.model.key_exchange.v1;
 
+import "domain/actor/actor.proto";
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model;model";
 
 // X3DH key bundle upload — base64-encoded public keys.
@@ -72,4 +75,126 @@ message OpkCountRequest {
 
 message OpkCountResponse {
   int64 count = 1;
+}
+
+message DirectOneTimePreKey {
+  int32 key_id = 1;
+  string public_key = 2;
+}
+
+message DirectKeyBundle {
+  peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+  string identity_key_public = 2;
+  int32 signed_pre_key_id = 3;
+  string signed_pre_key_public = 4;
+  string signed_pre_key_signature = 5;
+  repeated DirectOneTimePreKey one_time_pre_keys = 6;
+  int64 published_at_unix_ms = 7;
+  repeated uint32 supported_wire_versions = 8;
+}
+
+message UploadDirectKeyBundleRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+  string identity_key_public = 2;
+  int32 signed_pre_key_id = 3;
+  string signed_pre_key_public = 4;
+  string signed_pre_key_signature = 5;
+  repeated DirectOneTimePreKey one_time_pre_keys = 6;
+  repeated uint32 supported_wire_versions = 7;
+}
+
+message UploadDirectKeyBundleResponse {}
+
+message FetchDirectKeyBundlesRequest {
+  peers_touch.model.actor.v1.ActorRef actor = 1;
+  string target_device_id = 2;
+  string home_station_peer_id = 3;
+}
+
+message FetchDirectKeyBundlesResponse {
+  repeated DirectKeyBundle bundles = 1;
+}
+
+message ReplenishDirectOneTimePreKeysRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+  repeated DirectOneTimePreKey one_time_pre_keys = 2;
+}
+
+message ReplenishDirectOneTimePreKeysResponse {}
+
+message CountDirectOneTimePreKeysRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+}
+
+message CountDirectOneTimePreKeysResponse {
+  int64 count = 1;
+}
+
+message MlsKeyPackageReservation {
+  peers_touch.model.actor.v1.ActorDeviceRef target = 1;
+  string package_id = 2;
+  bytes key_package = 3;
+  bytes key_package_sha256 = 4;
+}
+
+message UploadMlsKeyPackageRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+  bytes key_package = 2;
+}
+
+message UploadMlsKeyPackageResponse {
+  string package_id = 1;
+  bytes key_package_sha256 = 2;
+}
+
+message FetchMlsKeyPackageRequest {
+  peers_touch.model.actor.v1.ActorRef actor = 1;
+  string home_station_peer_id = 2;
+}
+
+message FetchMlsKeyPackageResponse {
+  MlsKeyPackageReservation reservation = 1;
+  bool available = 2;
+  string home_station_peer_id = 3;
+}
+
+message CountMlsKeyPackagesRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+}
+
+message CountMlsKeyPackagesResponse {
+  int64 count = 1;
+}
+
+message ClaimMlsKeyPackageRequest {
+  string authority_plan_id = 1;
+  string authority_station_peer_id = 2;
+  peers_touch.model.actor.v1.ActorDeviceRef target = 3;
+  google.protobuf.Timestamp plan_expires_at = 4;
+}
+
+message ClaimMlsKeyPackageResponse {
+  MlsKeyPackageReservation reservation = 1;
+  string home_station_peer_id = 2;
+  bool irreversibly_consumed = 3;
+}
+
+enum DirectKeyExchangePayloadKind {
+  DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_UNSPECIFIED = 0;
+  DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_PREKEY_BUNDLE = 1;
+  DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_INITIAL_MESSAGE = 2;
+  DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_RATCHET_KEY_UPDATE = 3;
+}
+
+message SendDirectKeyExchangeRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef recipient = 1;
+  string recipient_home_station_peer_id = 2;
+  string session_id = 3;
+  DirectKeyExchangePayloadKind kind = 4;
+  bytes opaque_key_material = 5;
+  string conversation_id = 6;
+}
+
+message SendDirectKeyExchangeResponse {
+  string envelope_id = 1;
 }

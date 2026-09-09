@@ -55,4 +55,3 @@ export type ActorSignRequest = Message<"peers_touch.model.actor.v1.ActorSignRequ
  */
 export const ActorSignRequestSchema: GenMessage<ActorSignRequest> = /*@__PURE__*/
   messageDesc(file_domain_actor_actor_signup, 0);
-

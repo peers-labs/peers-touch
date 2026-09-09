@@ -196,27 +196,30 @@ class RemoteGitSourceLease:
         self.host = host.strip()
         self.user = user.strip()
         self.deploy_path = deploy_path.strip()
-        from tooling.acceptance.transports.ssh import SshTarget, SshTransport
-
-        self.transport = SshTransport(
-            SshTarget(
-                host=self.host,
-                user=self.user,
-                port=port,
-                known_hosts_file=known_hosts_file,
-            )
-        )
+        self.port = port
+        self.known_hosts_file = known_hosts_file.strip()
         self.acquire_timeout = acquire_timeout
         self._process: subprocess.Popen[str] | None = None
         if not self.host or not self.user or not self.deploy_path:
             raise ValueError(
                 "remote source lease requires host, user, and deploy path"
             )
+        # Keep Core importable when an isolated Fixture imports SSH first.
+        from ..transports.ssh import SshTarget, SshTransport
+
+        self._transport = SshTransport(
+            SshTarget(
+                host=self.host,
+                user=self.user,
+                port=self.port,
+                known_hosts_file=self.known_hosts_file,
+            )
+        )
 
     def _command(self) -> list[str]:
         return [
-            *self.transport.command_prefix(),
-            self.transport.target.destination,
+            *self._transport.command_prefix(),
+            self._transport.target.destination,
             _remote_git_source_lease_script(
                 self.deploy_path,
                 self.owner,

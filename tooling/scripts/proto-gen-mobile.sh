@@ -118,10 +118,10 @@ generate_web_ts() {
     while IFS= read -r -d '' generated_file; do
         relative_path=${generated_file#$WEB_TS_STAGE/}
         destination="$WEB_TS_OUT/$relative_path"
+        perl -0pi -e 's/\n*\z/\n/' "$generated_file"
         if [ -f "$destination" ] && cmp -s "$generated_file" "$destination"; then
             continue
         fi
-        perl -0pi -e 's/\n*\z/\n/' "$generated_file"
         mkdir -p "$(dirname "$destination")"
         cp "$generated_file" "$destination"
     done < <(find "$WEB_TS_STAGE" -type f -name '*_pb.ts' -print0)

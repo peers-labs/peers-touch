@@ -9,10 +9,10 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from tooling.acceptance.fixtures.chat_native_reset import profile_three_environment
+from tooling.acceptance.fixtures.chat_native_reset import acceptance_station_environment
 
 
-CREATE_DIRECT_PATH = "/messaging/conversation/direct"
+CREATE_DIRECT_PATH = "/conversation/direct"
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -147,7 +147,7 @@ class ProfileThreeContactMessageFaultProxy:
     """Forward to Profile Three, inject 500 for armed createDirect calls."""
 
     def __init__(self, station_url: str) -> None:
-        profile_three_environment(station_url)
+        acceptance_station_environment(station_url)
         self._server = _ProxyServer(station_url)
         self._thread = threading.Thread(
             target=self._server.serve_forever,

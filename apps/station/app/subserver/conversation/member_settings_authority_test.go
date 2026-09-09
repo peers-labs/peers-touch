@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	msgdomain "github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
-	msginf "github.com/peers-labs/peers-touch/station/app/subserver/messaging/infrastructure"
+	enginedomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/engine/domain"
+	engineinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/engine/infrastructure"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"gorm.io/driver/sqlite"
@@ -26,7 +26,7 @@ func newSettingsAuthorityTestServer(
 	if err != nil {
 		t.Fatal(err)
 	}
-	authority := msginf.NewAuthorityRepository(db)
+	authority := engineinfra.NewAuthorityRepository(db)
 	if err := authority.AutoMigrate(); err != nil {
 		t.Fatal(err)
 	}
@@ -35,9 +35,9 @@ func newSettingsAuthorityTestServer(
 	}
 	if _, err := authority.CreateConversation(
 		context.Background(),
-		&msgdomain.AuthorityConversation{
+		&enginedomain.AuthorityConversation{
 			ConversationID:  "group-1",
-			Kind:            msgdomain.AuthorityConversationKindGroup,
+			Kind:            enginedomain.AuthorityConversationKindGroup,
 			OwnerPTID:       "ptid:alice",
 			CurrentSequence: 1,
 			MembershipEpoch: 1,
@@ -57,8 +57,8 @@ func newSettingsAuthorityTestServer(
 		t.Fatal(err)
 	}
 	return &subServer{
-		messagingAuthority: authority,
-		memberSettings:     newMemberSettingsStore(db),
+		conversationAuthority: authority,
+		memberSettings:        newMemberSettingsStore(db),
 	}
 }
 
@@ -69,7 +69,7 @@ func TestSettingsMembershipUsesMessagingAuthority(t *testing.T) {
 		&coreauth.Subject{ID: "ptid:alice"},
 	)
 
-	conversation, err := subserver.requireActiveMessagingMembership(
+	conversation, err := subserver.requireActiveConversationMembership(
 		ctx,
 		"group-1",
 	)
@@ -77,7 +77,7 @@ func TestSettingsMembershipUsesMessagingAuthority(t *testing.T) {
 		t.Fatalf("canonical messaging member should be allowed: %v", err)
 	}
 	if conversation.ConversationID != "group-1" ||
-		conversation.Kind != msgdomain.AuthorityConversationKindGroup {
+		conversation.Kind != enginedomain.AuthorityConversationKindGroup {
 		t.Fatalf("unexpected authority conversation: %+v", conversation)
 	}
 }
@@ -99,7 +99,7 @@ func TestSettingsMembershipRejectsMissingOrInactiveAuthority(t *testing.T) {
 				&coreauth.Subject{ID: test.subjectID},
 			)
 
-			_, err := subserver.requireActiveMessagingMembership(ctx, "group-1")
+			_, err := subserver.requireActiveConversationMembership(ctx, "group-1")
 			handlerErr, ok := err.(*server.HandlerError)
 			if !ok || handlerErr.Code != http.StatusForbidden {
 				t.Fatalf("expected HTTP 403, got %v", err)

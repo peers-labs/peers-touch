@@ -98,6 +98,13 @@ Rules:
   `WORKTREE_IDENTITY_UNAVAILABLE`. This is an explicit baseline migration, not
   resume recapture.
 - `stage`, `current_step`, and `blocked` must agree with the plan/tracking state.
+- `blocked=false` while any source-defined Ready Queue action, active
+  diagnostic, admissible root-cause fix, or mechanical plan amendment remains.
+- `blocked=true` requires the execution skill's fixed-point exhaustion proof:
+  the Ready Queue is empty, every remaining item is parked behind a hard
+  governance or unavailable external-resource boundary, and the repeated
+  blocker lifecycle threshold is satisfied.
+- One parked action never makes the whole tracked work blocked.
 - Completed work remains addressable with `stage: complete` until explicitly archived.
 
 ## Required Chat Projection
@@ -187,8 +194,10 @@ branch, workspace, expected HEAD, or worktree-set mismatch stops with
    Listed but backend-unaddressable entries are stale metadata and cannot be
    reported as active lanes.
 5. Compare those facts with `active_work`.
-6. Reconcile stale fields before reporting or executing.
-7. Mark absent proof `UNPROVEN`; do not infer success.
+6. Reconcile stale fields and recompute the source-owned Ready/Parked frontier
+   before reporting or executing.
+7. Keep `blocked=false` when any legal action remains; mark absent proof
+   `UNPROVEN` without converting one blocked action into a Goal-level block.
 8. Derive ETA only from remaining critical-path units and observed throughput;
    otherwise write `unknown`.
 
@@ -245,6 +254,8 @@ Never:
 - use an Anchor to overwrite or conceal a stale active Goal objective; route it
   to `pt-trae-goal-orchestrator` as `GOAL_REPLACEMENT_REQUIRED`;
 - copy an Anchor across worktrees without verification;
+- set `blocked=true` without an empty Ready Queue and exhaustion proof;
+- report one parked action as if the entire Goal cannot progress;
 - claim completion from summaries or missing evidence;
 - persist absolute user-home paths, transient command logs, or secrets;
 - use an Anchor to bypass product, architecture, plan, or review gates.

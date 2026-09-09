@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package peers_touch.model.social.v1;
 
+import "domain/actor/actor.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
@@ -100,4 +101,143 @@ message Following {
   // in post.proto for the contract.
   string federated_handle = 6 [json_name = "federated_handle"];
   string home_station_domain = 7 [json_name = "home_station_domain"];
+}
+
+enum FriendRequestAction {
+  FRIEND_REQUEST_ACTION_UNSPECIFIED = 0;
+  FRIEND_REQUEST_ACTION_SEND = 1;
+  FRIEND_REQUEST_ACTION_ACCEPT = 2;
+  FRIEND_REQUEST_ACTION_REJECT = 3;
+}
+
+enum FriendRequestState {
+  FRIEND_REQUEST_STATE_UNSPECIFIED = 0;
+  FRIEND_REQUEST_STATE_PENDING = 1;
+  FRIEND_REQUEST_STATE_ACCEPTED = 2;
+  FRIEND_REQUEST_STATE_REJECTED = 3;
+  FRIEND_REQUEST_STATE_EXPIRED = 4;
+}
+
+message SocialFriendRequest {
+  string request_id = 1;
+  peers_touch.model.actor.v1.ActorRef sender = 2;
+  peers_touch.model.actor.v1.ActorRef receiver = 3;
+  string message = 4;
+  FriendRequestState state = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp responded_at = 7;
+  string sender_display_name = 8;
+  string sender_avatar = 9;
+  string receiver_display_name = 10;
+  string receiver_avatar = 11;
+}
+
+message SendSocialFriendRequestRequest {
+  peers_touch.model.actor.v1.ActorRef receiver = 1;
+  string message = 2;
+}
+
+message SendSocialFriendRequestResponse {
+  SocialFriendRequest request = 1;
+}
+
+message AcceptSocialFriendRequestRequest {
+  string request_id = 1;
+}
+
+message AcceptSocialFriendRequestResponse {
+  SocialFriendRequest request = 1;
+}
+
+message RejectSocialFriendRequestRequest {
+  string request_id = 1;
+}
+
+message RejectSocialFriendRequestResponse {
+  SocialFriendRequest request = 1;
+}
+
+message ListSocialFriendRequestsRequest {
+  FriendRequestState state = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message ListSocialFriendRequestsResponse {
+  repeated SocialFriendRequest requests = 1;
+  int32 total = 2;
+}
+
+message FriendRequestCommandBody {
+  uint32 format_version = 1;
+  string command_id = 2;
+  string request_id = 3;
+  FriendRequestAction action = 4;
+  peers_touch.model.actor.v1.ActorRef sender = 5;
+  peers_touch.model.actor.v1.ActorRef receiver = 6;
+  string sender_home_station_peer_id = 7;
+  string receiver_home_station_peer_id = 8;
+  string message = 9;
+  FriendRequestState observed_request_state = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp expires_at = 12;
+  peers_touch.model.actor.v1.ActorDeviceRef authorizing_device = 13;
+}
+
+message FriendRequestCommandSigningInput {
+  FriendRequestCommandBody body = 1;
+  string signing_key_id = 2;
+}
+
+message FriendRequestCommand {
+  FriendRequestCommandBody body = 1;
+  string signing_key_id = 2;
+  bytes actor_device_signature = 3;
+}
+
+message FriendRequestEvent {
+  string event_id = 1;
+  string request_id = 2;
+  string command_id = 3;
+  string authority_station_peer_id = 4;
+  FriendRequestState state = 5;
+  peers_touch.model.actor.v1.ActorRef sender = 6;
+  peers_touch.model.actor.v1.ActorRef receiver = 7;
+  string sender_home_station_peer_id = 8;
+  string receiver_home_station_peer_id = 9;
+  int64 sequence = 10;
+  google.protobuf.Timestamp committed_at = 11;
+  bytes previous_hash = 12;
+  bytes event_hash = 13;
+}
+
+enum FriendRequestCommandResultKind {
+  FRIEND_REQUEST_COMMAND_RESULT_KIND_UNSPECIFIED = 0;
+  FRIEND_REQUEST_COMMAND_RESULT_KIND_COMMITTED = 1;
+  FRIEND_REQUEST_COMMAND_RESULT_KIND_DUPLICATE = 2;
+  FRIEND_REQUEST_COMMAND_RESULT_KIND_REJECTED = 3;
+  FRIEND_REQUEST_COMMAND_RESULT_KIND_CONFLICT = 4;
+}
+
+enum FriendRequestCommandErrorCode {
+  FRIEND_REQUEST_COMMAND_ERROR_CODE_UNSPECIFIED = 0;
+  FRIEND_REQUEST_COMMAND_ERROR_CODE_INVALID = 1;
+  FRIEND_REQUEST_COMMAND_ERROR_CODE_UNAUTHORIZED = 2;
+  FRIEND_REQUEST_COMMAND_ERROR_CODE_BLOCKED = 3;
+  FRIEND_REQUEST_COMMAND_ERROR_CODE_NOT_FOUND = 4;
+  FRIEND_REQUEST_COMMAND_ERROR_CODE_ALREADY_FRIENDS = 5;
+  FRIEND_REQUEST_COMMAND_ERROR_CODE_STATE_CONFLICT = 6;
+  FRIEND_REQUEST_COMMAND_ERROR_CODE_IDEMPOTENCY_CONFLICT = 7;
+  FRIEND_REQUEST_COMMAND_ERROR_CODE_EXPIRED = 8;
+  FRIEND_REQUEST_COMMAND_ERROR_CODE_RETRY_LATER = 9;
+}
+
+message FriendRequestCommandResult {
+  string command_id = 1;
+  string request_id = 2;
+  bytes command_payload_sha256 = 3;
+  FriendRequestCommandResultKind kind = 4;
+  FriendRequestEvent event = 5;
+  FriendRequestCommandErrorCode error_code = 6;
+  bool retryable = 7;
 }

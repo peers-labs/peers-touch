@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-07-01 | **Updated**: 2026-07-02
+> **Created**: 2026-07-01 | **Updated**: 2026-09-09
 > **Owner**: Client Platform Team
 > **Module**: `docs/client/common/ui-identity/`
 
@@ -429,19 +429,24 @@ Desktop and Mobile share the same alive/lifetime contract (§5), but they realiz
 
 ```text
 MobileShell (NavigationShell)
+  MobileNavigationStore (descriptor-backed primary route + detail stack)
   mobile-content (active tab only)
-    ChatPage | MomentsPage | ContactsPage | SettingsPage   // switch by useState<TabId>
+    ChatPage | MomentsPage | ContactsPage | SettingsPage
       OverlayHost (action sheet, modals)
   mobile-tabbar (NavigationShell)
-  RuntimeProjection: useSocialRuntime + social/group stores
+  RuntimeProjection: Mobile runtime registry + social/group stores
 ```
 
 Layer mapping:
 
-- `MobileShell` plays the `NavigationShell` role and selects the active tab with `useState<TabId>`.
+- `MobileShell` plays the `NavigationShell` role and renders the active
+  descriptor from `MobileNavigationStore`.
 - There is **no `PageHost` keep-alive layer**. `renderPage` returns only the active tab; inactive tabs are unmounted.
-- Conversation list ↔ thread inside the chat tab is a store-driven swap (`activeSessionUlid` / `activeGroupUlid`), not a route stack. Back action clears the active conversation in the store.
-- `RuntimeProjection` is owned by feature runtimes (`useSocialRuntime`, `social`/`group` stores), so projection truth stays fresh even while a tab tree is unmounted.
+- Conversation list ↔ thread inside the chat tab is a descriptor-owned detail
+  route. Social/Group selection fields may guide projection readback, but they
+  do not decide whether the detail tree is visible.
+- `RuntimeProjection` is owned by the Mobile runtime registry and feature
+  stores, so projection truth stays fresh even while a tab tree is unmounted.
 
 ### 14.2 Mobile Alive Rules
 

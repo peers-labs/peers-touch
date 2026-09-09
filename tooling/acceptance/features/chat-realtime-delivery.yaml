@@ -3,7 +3,7 @@
   "status": "active",
   "product_area": "chat",
   "owners": [
-    "apps/station/app/subserver/messaging/**",
+    "apps/station/app/subserver/conversation/engine/**",
     "apps/station/app/subserver/envelope/**",
     "apps/desktop/src-tauri/src/messaging/**",
     "apps/desktop/src/runtimes/imRuntime.ts",
@@ -16,13 +16,13 @@
   ],
   "visible_surfaces": [
     {"type": "desktop-runtime", "route": "imRuntime"},
-    {"type": "api", "route": "/messaging/queue/claim"},
-    {"type": "api", "route": "/messaging/queue/ack"}
+    {"type": "api", "route": "/device/inbox/claim"},
+    {"type": "api", "route": "/device/inbox/ack"}
   ],
   "required_gates": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"],
   "acceptance": {
     "service": [
-      "messaging queue and envelope contracts compile and package tests pass",
+      "Conversation delivery and envelope contracts compile and package tests pass",
       "Desktop lifecycle and projection clients compile with messaging service contracts"
     ],
     "visible": [

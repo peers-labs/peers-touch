@@ -1,7 +1,7 @@
 import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { Conversation, ConversationMember } from '../gen/proto/domain/chat/conversation_pb';
 import { ConversationKind, ConversationStatus, MemberRole, MemberStatus } from '../gen/proto/domain/chat/conversation_pb';
-import type { Timestamp } from '@bufbuild/protobuf/wkt';
+import { timestampDate, type Timestamp } from '@bufbuild/protobuf/wkt';
 
 export interface FriendRequestData {
   id: string;
@@ -55,14 +55,16 @@ export function friendRequestProfileDids(
 
 export function normalizeFriendRequestData(raw: unknown): FriendRequestData {
   const record = recordFromUnknown(raw);
+  const sender = recordFromUnknown(record.sender);
+  const receiver = recordFromUnknown(record.receiver);
   return {
-    id: stringValue(record.id, record.Id),
-    senderPtid: stringValue(record.senderPtid),
-    receiverPtid: stringValue(record.receiverPtid),
-    status: numberValue(record.status),
+    id: stringValue(record.requestId, record.request_id, record.id, record.Id),
+    senderPtid: stringValue(sender.ptid, record.senderPtid),
+    receiverPtid: stringValue(receiver.ptid, record.receiverPtid),
+    status: numberValue(record.state ?? record.status),
     message: stringValue(record.message),
-    createdAt: stringValue(record.createdAt, record.created_at),
-    respondedAt: stringValue(record.respondedAt, record.responded_at),
+    createdAt: timestampString(record.createdAt ?? record.created_at),
+    respondedAt: timestampString(record.respondedAt ?? record.responded_at),
     senderDisplayName: stringValue(record.senderDisplayName, record.sender_display_name),
     senderAvatar: stringValue(record.senderAvatar, record.sender_avatar),
     receiverDisplayName: stringValue(record.receiverDisplayName, record.receiver_display_name),
@@ -138,6 +140,12 @@ function normalizeTimestamp(value: unknown): Timestamp | undefined {
     }
   }
   return undefined;
+}
+
+function timestampString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  const timestamp = normalizeTimestamp(value);
+  return timestamp ? timestampDate(timestamp).toISOString() : '';
 }
 
 export function normalizeConversation(raw: unknown): Conversation {

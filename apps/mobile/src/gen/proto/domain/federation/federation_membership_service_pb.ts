@@ -134,4 +134,3 @@ export type AcceptInviteResponse = Message<"peers_touch.model.federation.v1.Acce
  */
 export const AcceptInviteResponseSchema: GenMessage<AcceptInviteResponse> = /*@__PURE__*/
   messageDesc(file_domain_federation_federation_membership_service, 3);
-

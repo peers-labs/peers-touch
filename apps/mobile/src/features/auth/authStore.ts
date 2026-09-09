@@ -2,7 +2,6 @@ import { create } from 'zustand';
 
 import {
   clearAuthSession,
-  restoreAuthSession,
   type AccessDecision,
   type MobileAuthSession,
 } from './authSession';
@@ -14,11 +13,12 @@ interface AuthState {
   loading: boolean;
   error: string | null;
   restored: boolean;
-  restoreSession: () => Promise<MobileAuthSession | null>;
   setSession: (session: MobileAuthSession | null) => void;
   setAccessDecision: (decision: AccessDecision | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  setRestored: (restored: boolean) => void;
+  hideSessionProjection: () => void;
   clearSession: () => Promise<void>;
 }
 
@@ -29,25 +29,31 @@ export const useAuthStore = create<AuthState>((set) => ({
   error: null,
   restored: false,
 
-  restoreSession: async () => {
-    try {
-      const session = await restoreAuthSession();
-      set({ session, restored: true, error: null });
-      return session;
-    } catch (error) {
-      set({ session: null, restored: true, error: errorMessage(error) });
-      return null;
-    }
-  },
-
   setSession: (session) => set({ session }),
   setAccessDecision: (accessDecision) => set({ accessDecision }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
+  setRestored: (restored) => set({ restored }),
+  hideSessionProjection: () => set({
+    session: null,
+    accessDecision: null,
+    loading: false,
+    error: null,
+  }),
 
   clearSession: async () => {
-    await clearAuthSession();
-    set({ session: null, accessDecision: null, error: null });
+    set({
+      session: null,
+      accessDecision: null,
+      loading: false,
+      error: null,
+    });
+    try {
+      await clearAuthSession();
+    } catch (error) {
+      set({ error: errorMessage(error) });
+      throw error;
+    }
   },
 }));
 

@@ -1,17 +1,50 @@
 package conversation
 
-import "testing"
+import (
+	"testing"
+
+	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"google.golang.org/protobuf/proto"
+)
 
 func TestExtractDkxSendOpIncludesDirectConversation(t *testing.T) {
-	op := extractDkxSendOp([]byte(`{
+	operation := extractDkxSendOp([]byte(`{
 		"recipient_ptid": "peer-b",
 		"session_id": "direct-conversation"
 	}`))
 
-	if op.TargetPtid != "peer-b" {
-		t.Fatalf("target ptid = %q, want peer-b", op.TargetPtid)
+	if operation.TargetPtid != "peer-b" {
+		t.Fatalf("target ptid = %q, want peer-b", operation.TargetPtid)
 	}
-	if op.ConversationID != "direct-conversation" {
-		t.Fatalf("conversation id = %q, want direct-conversation", op.ConversationID)
+	if operation.ConversationID != "direct-conversation" {
+		t.Fatalf("conversation id = %q, want direct-conversation", operation.ConversationID)
+	}
+}
+
+func TestCreateDirectGateExtractorReadsProtobufRequest(t *testing.T) {
+	body, err := proto.Marshal(&chat.CreateMessagingDirectConversationRequest{
+		PeerPtid: "ptid:bob",
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	operation := extractCreateDirectOp(body)
+	if operation.TargetPtid != "ptid:bob" {
+		t.Fatalf("unexpected target PTID %q", operation.TargetPtid)
+	}
+}
+
+func TestSubmitCommandGateExtractorReadsProtobufRequest(t *testing.T) {
+	body, err := proto.Marshal(&chat.SubmitMessagingCommandRequest{
+		Command: &chat.ChatCommand{ConversationId: "conversation-1"},
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	operation := extractSubmitCommandOp(body)
+	if operation.ConversationID != "conversation-1" {
+		t.Fatalf("unexpected conversation ID %q", operation.ConversationID)
 	}
 }

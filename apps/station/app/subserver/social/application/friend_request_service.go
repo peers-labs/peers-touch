@@ -8,7 +8,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
-	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -57,7 +57,7 @@ func NewFriendRequestService(
 	}
 }
 
-func (s *FriendRequestService) SendFriendRequest(ctx context.Context, senderPTID, receiverPTID, message string) (*chat.FriendRequest, error) {
+func (s *FriendRequestService) SendFriendRequest(ctx context.Context, senderPTID, receiverPTID, message string) (*model.SocialFriendRequest, error) {
 	if senderPTID == receiverPTID {
 		return nil, ErrFriendRequestSelf
 	}
@@ -98,7 +98,7 @@ func (s *FriendRequestService) SendFriendRequest(ctx context.Context, senderPTID
 	return domainToProtoFriendRequest(fr), nil
 }
 
-func (s *FriendRequestService) AcceptFriendRequest(ctx context.Context, actorPTID, requestID string) (*chat.FriendRequest, error) {
+func (s *FriendRequestService) AcceptFriendRequest(ctx context.Context, actorPTID, requestID string) (*model.SocialFriendRequest, error) {
 	existing, err := s.repo.GetFriendRequest(ctx, requestID)
 	if err != nil {
 		return nil, ErrFriendRequestNotFound
@@ -138,7 +138,7 @@ func (s *FriendRequestService) AcceptFriendRequest(ctx context.Context, actorPTI
 	return domainToProtoFriendRequest(*fr), nil
 }
 
-func (s *FriendRequestService) RejectFriendRequest(ctx context.Context, actorPTID, requestID string) (*chat.FriendRequest, error) {
+func (s *FriendRequestService) RejectFriendRequest(ctx context.Context, actorPTID, requestID string) (*model.SocialFriendRequest, error) {
 	existing, err := s.repo.GetFriendRequest(ctx, requestID)
 	if err != nil {
 		return nil, ErrFriendRequestNotFound
@@ -154,7 +154,7 @@ func (s *FriendRequestService) RejectFriendRequest(ctx context.Context, actorPTI
 	return domainToProtoFriendRequest(*fr), nil
 }
 
-func (s *FriendRequestService) ListFriendRequests(ctx context.Context, actorPTID string, status int32, limit, offset int) ([]*chat.FriendRequest, int, error) {
+func (s *FriendRequestService) ListFriendRequests(ctx context.Context, actorPTID string, status int32, limit, offset int) ([]*model.SocialFriendRequest, int, error) {
 	requests, total, err := s.repo.ListFriendRequests(ctx, actorPTID, status, limit, offset)
 	if err != nil {
 		return nil, 0, err
@@ -163,7 +163,7 @@ func (s *FriendRequestService) ListFriendRequests(ctx context.Context, actorPTID
 	actorPTIDs := collectActorPTIDs(requests)
 	profiles := resolveProfiles(ctx, actorPTIDs)
 
-	out := make([]*chat.FriendRequest, 0, len(requests))
+	out := make([]*model.SocialFriendRequest, 0, len(requests))
 	for _, r := range requests {
 		fr := domainToProtoFriendRequest(r)
 		enrichFriendRequest(fr, profiles)
@@ -172,15 +172,23 @@ func (s *FriendRequestService) ListFriendRequests(ctx context.Context, actorPTID
 	return out, total, nil
 }
 
-func domainToProtoFriendRequest(fr domain.FriendRequest) *chat.FriendRequest {
-	return &chat.FriendRequest{
-		Id:           fr.ID,
-		SenderPtid:   fr.SenderPtid,
-		ReceiverPtid: fr.ReceiverPtid,
-		Message:      fr.Message,
-		Status:       chat.FriendRequestStatus(fr.Status),
-		CreatedAt:    timestamppb.New(fr.CreatedAt),
+func domainToProtoFriendRequest(fr domain.FriendRequest) *model.SocialFriendRequest {
+	request := &model.SocialFriendRequest{
+		RequestId: fr.ID,
+		Sender: &actor.ActorRef{
+			Ptid: fr.SenderPtid,
+		},
+		Receiver: &actor.ActorRef{
+			Ptid: fr.ReceiverPtid,
+		},
+		Message:   fr.Message,
+		State:     model.FriendRequestState(fr.Status),
+		CreatedAt: timestamppb.New(fr.CreatedAt),
 	}
+	if !fr.UpdatedAt.IsZero() {
+		request.RespondedAt = timestamppb.New(fr.UpdatedAt)
+	}
+	return request
 }
 
 func collectActorPTIDs(requests []domain.FriendRequest) []string {
@@ -225,14 +233,14 @@ func resolveProfiles(ctx context.Context, ptids []string) map[string]actorProfil
 	return out
 }
 
-func enrichFriendRequest(fr *chat.FriendRequest, profiles map[string]actorProfile) {
-	if p, ok := profiles[fr.SenderPtid]; ok {
-		fr.SenderPtid = p.Ptid
+func enrichFriendRequest(fr *model.SocialFriendRequest, profiles map[string]actorProfile) {
+	if p, ok := profiles[fr.GetSender().GetPtid()]; ok {
+		fr.Sender.Ptid = p.Ptid
 		fr.SenderDisplayName = p.Name
 		fr.SenderAvatar = p.Avatar
 	}
-	if p, ok := profiles[fr.ReceiverPtid]; ok {
-		fr.ReceiverPtid = p.Ptid
+	if p, ok := profiles[fr.GetReceiver().GetPtid()]; ok {
+		fr.Receiver.Ptid = p.Ptid
 		fr.ReceiverDisplayName = p.Name
 		fr.ReceiverAvatar = p.Avatar
 	}

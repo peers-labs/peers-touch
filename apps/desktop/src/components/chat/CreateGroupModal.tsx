@@ -189,6 +189,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
         });
         return;
       }
+      useSocialChatStore.getState().setGroupSecurityState(conversationId, 'ready');
       setActiveTab('group');
       selectGroup(conversationId);
       toast.success({

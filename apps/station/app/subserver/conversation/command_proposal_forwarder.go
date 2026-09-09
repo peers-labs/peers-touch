@@ -109,7 +109,7 @@ func (f *HTTPConversationCommandProposalForwarder) Forward(
 		return nil, err
 	}
 	endpoint := strings.TrimRight(authority.StationURL, "/") +
-		"/conversation/federation/command-proposal"
+		"/federation/conversation/command-proposal"
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,

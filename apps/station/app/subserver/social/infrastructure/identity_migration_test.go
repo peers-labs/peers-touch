@@ -31,7 +31,7 @@ func TestMigrateIdentitySchemaPreservesFriendData(t *testing.T) {
 		 VALUES (73, 'ptid:alice', 'ptid:bob', 1)`,
 	)
 
-	if err := migrateSocialIdentityColumns(rds); err != nil {
+	if err := MigrateIdentitySchema(rds); err != nil {
 		t.Fatalf("migrate social identity schema: %v", err)
 	}
 

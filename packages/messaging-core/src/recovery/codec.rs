@@ -4,9 +4,10 @@ use super::types::{
     MESSAGING_RECOVERY_FORMAT_VERSION,
 };
 use crate::codec::private_content::validate_attachment_plaintext_metadata;
-use crate::proto::chat::{
-    AttachmentPlaintextMetadata, RecoveryArchiveManifest, RecoveryArchiveSection,
-    RecoveryArchiveSectionKind,
+use crate::proto::actor_ref_from_ptid;
+use crate::proto::chat::AttachmentPlaintextMetadata;
+use crate::proto::recovery::{
+    OpaqueRecoveryArchiveManifest, OpaqueRecoveryArchiveSection, OpaqueRecoveryArchiveSectionKind,
 };
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -78,7 +79,7 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
         &key,
         archive,
         revision_id,
-        RecoveryArchiveSectionKind::ActorIdentity,
+        OpaqueRecoveryArchiveSectionKind::ActorIdentity,
         &ActorIdentitySection {
             seed: archive.actor_identity_seed,
             profile_version: archive.actor_profile_version,
@@ -89,7 +90,7 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
         &key,
         archive,
         revision_id,
-        RecoveryArchiveSectionKind::MessageHistory,
+        OpaqueRecoveryArchiveSectionKind::MessageHistory,
         &MessageHistorySection {
             conversations: archive.conversations.clone(),
             messages: archive.messages.clone(),
@@ -100,7 +101,7 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
         &key,
         archive,
         revision_id,
-        RecoveryArchiveSectionKind::AttachmentMetadata,
+        OpaqueRecoveryArchiveSectionKind::AttachmentMetadata,
         &AttachmentSection {
             attachments: archive.attachments.clone(),
         },
@@ -110,7 +111,7 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
         &key,
         archive,
         revision_id,
-        RecoveryArchiveSectionKind::Trust,
+        OpaqueRecoveryArchiveSectionKind::Trust,
         &TrustSection {
             trust: archive.trust.clone(),
         },
@@ -118,9 +119,9 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
     )?);
     key.zeroize();
 
-    let mut manifest = RecoveryArchiveManifest {
+    let mut manifest = OpaqueRecoveryArchiveManifest {
         format_version: MESSAGING_RECOVERY_FORMAT_VERSION,
-        ptid: archive.ptid.clone(),
+        actor: Some(actor_ref_from_ptid(&archive.ptid)),
         revision_id: revision_id.to_string(),
         sections,
         archive_sha256: Vec::new(),
@@ -163,10 +164,15 @@ pub fn decode_recovery_revision<K: RecoveryKdf>(
     }
     let envelope: RecoveryRevisionEnvelope<K::Params> =
         serde_json::from_slice(encoded).map_err(|_| "messaging recovery envelope invalid")?;
-    let manifest = RecoveryArchiveManifest::decode(envelope.manifest.as_slice())
+    let manifest = OpaqueRecoveryArchiveManifest::decode(envelope.manifest.as_slice())
         .map_err(|_| "messaging recovery manifest invalid")?;
+    let manifest_ptid = manifest
+        .actor
+        .as_ref()
+        .map(|actor| actor.ptid.as_str())
+        .filter(|ptid| !ptid.trim().is_empty());
     if manifest.format_version != MESSAGING_RECOVERY_FORMAT_VERSION
-        || manifest.ptid != expected_ptid
+        || manifest_ptid != Some(expected_ptid)
         || manifest.revision_id != expected_revision_id
         || manifest.archive_sha256.len() != 32
         || manifest_hash(&manifest) != manifest.archive_sha256
@@ -174,20 +180,29 @@ pub fn decode_recovery_revision<K: RecoveryKdf>(
         return Err("messaging recovery manifest binding is invalid".to_string());
     }
     let mut key = kdf_provider.derive_key(recovery_phrase.as_bytes(), &envelope.kdf)?;
-    let identity: ActorIdentitySection =
-        decrypt_required_section(&key, &manifest, RecoveryArchiveSectionKind::ActorIdentity)?;
-    let history: MessageHistorySection =
-        decrypt_required_section(&key, &manifest, RecoveryArchiveSectionKind::MessageHistory)?;
+    let identity: ActorIdentitySection = decrypt_required_section(
+        &key,
+        &manifest,
+        OpaqueRecoveryArchiveSectionKind::ActorIdentity,
+    )?;
+    let history: MessageHistorySection = decrypt_required_section(
+        &key,
+        &manifest,
+        OpaqueRecoveryArchiveSectionKind::MessageHistory,
+    )?;
     let attachments: AttachmentSection = decrypt_required_section(
         &key,
         &manifest,
-        RecoveryArchiveSectionKind::AttachmentMetadata,
+        OpaqueRecoveryArchiveSectionKind::AttachmentMetadata,
     )?;
     let trust: TrustSection =
-        decrypt_required_section(&key, &manifest, RecoveryArchiveSectionKind::Trust)?;
+        decrypt_required_section(&key, &manifest, OpaqueRecoveryArchiveSectionKind::Trust)?;
     key.zeroize();
     let archive = MessagingRecoveryArchive {
-        ptid: manifest.ptid,
+        ptid: manifest
+            .actor
+            .ok_or_else(|| "messaging recovery manifest actor is missing".to_string())?
+            .ptid,
         actor_identity_seed: identity.seed,
         actor_profile_version: identity.profile_version,
         conversations: history.conversations,
@@ -267,10 +282,10 @@ fn encrypt_section<T: Serialize>(
     key: &[u8; 32],
     archive: &MessagingRecoveryArchive,
     revision_id: &str,
-    kind: RecoveryArchiveSectionKind,
+    kind: OpaqueRecoveryArchiveSectionKind,
     value: &T,
     record_count: u64,
-) -> Result<RecoveryArchiveSection, String> {
+) -> Result<OpaqueRecoveryArchiveSection, String> {
     let plaintext = serde_json::to_vec(value).map_err(|error| error.to_string())?;
     let mut nonce = [0_u8; BACKUP_NONCE_BYTES];
     OsRng.fill_bytes(&mut nonce);
@@ -286,7 +301,7 @@ fn encrypt_section<T: Serialize>(
         .map_err(|_| "recovery section encryption failed")?;
     let mut sealed = nonce.to_vec();
     sealed.extend_from_slice(&ciphertext);
-    Ok(RecoveryArchiveSection {
+    Ok(OpaqueRecoveryArchiveSection {
         kind: kind as i32,
         ciphertext_sha256: Sha256::digest(&sealed).to_vec(),
         ciphertext: sealed,
@@ -296,13 +311,15 @@ fn encrypt_section<T: Serialize>(
 
 fn decrypt_required_section<T: DeserializeOwned>(
     key: &[u8; 32],
-    manifest: &RecoveryArchiveManifest,
-    kind: RecoveryArchiveSectionKind,
+    manifest: &OpaqueRecoveryArchiveManifest,
+    kind: OpaqueRecoveryArchiveSectionKind,
 ) -> Result<T, String> {
     let matches = manifest
         .sections
         .iter()
-        .filter(|section| section.kind == kind as i32)
+        .filter(|section| {
+            OpaqueRecoveryArchiveSectionKind::try_from(section.kind).ok() == Some(kind)
+        })
         .collect::<Vec<_>>();
     if matches.len() != 1 {
         return Err("messaging recovery section set is invalid".to_string());
@@ -321,14 +338,22 @@ fn decrypt_required_section<T: DeserializeOwned>(
             Nonce::from_slice(nonce),
             Payload {
                 msg: ciphertext,
-                aad: &section_aad(&manifest.ptid, &manifest.revision_id, kind),
+                aad: &section_aad(
+                    &manifest
+                        .actor
+                        .as_ref()
+                        .ok_or_else(|| "messaging recovery manifest actor is missing".to_string())?
+                        .ptid,
+                    &manifest.revision_id,
+                    kind,
+                ),
             },
         )
         .map_err(|_| "messaging recovery phrase or section integrity invalid")?;
     serde_json::from_slice(&plaintext).map_err(|_| "messaging recovery section invalid".to_string())
 }
 
-fn section_aad(ptid: &str, revision_id: &str, kind: RecoveryArchiveSectionKind) -> Vec<u8> {
+fn section_aad(ptid: &str, revision_id: &str, kind: OpaqueRecoveryArchiveSectionKind) -> Vec<u8> {
     format!(
         "peers-touch:messaging-recovery:{}:{}:{}:{}",
         MESSAGING_RECOVERY_FORMAT_VERSION, ptid, revision_id, kind as i32
@@ -336,7 +361,7 @@ fn section_aad(ptid: &str, revision_id: &str, kind: RecoveryArchiveSectionKind) 
     .into_bytes()
 }
 
-fn manifest_hash(manifest: &RecoveryArchiveManifest) -> Vec<u8> {
+fn manifest_hash(manifest: &OpaqueRecoveryArchiveManifest) -> Vec<u8> {
     let mut input = manifest.clone();
     input.archive_sha256.clear();
     Sha256::digest(input.encode_to_vec()).to_vec()
@@ -346,7 +371,6 @@ fn manifest_hash(manifest: &RecoveryArchiveManifest) -> Vec<u8> {
 mod tests {
     use super::*;
     use crate::codec::private_content::test_attachment_metadata;
-    use prost::Message as _;
 
     struct TestKdf;
 

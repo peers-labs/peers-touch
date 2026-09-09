@@ -11,10 +11,10 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from tooling.acceptance.fixtures.chat_native_reset import profile_three_environment
+from tooling.acceptance.fixtures.chat_native_reset import acceptance_station_environment
 
 
-SUBMIT_PATH = "/messaging/command/submit"
+SUBMIT_PATH = "/conversation/command"
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -200,7 +200,7 @@ class ProfileThreeSubmitFaultProxy:
     """Forward to Profile Three and drop armed command-submit connections."""
 
     def __init__(self, station_url: str) -> None:
-        profile_three_environment(station_url)
+        acceptance_station_environment(station_url)
         self._server = _ProxyServer(station_url)
         self._thread = threading.Thread(
             target=self._server.serve_forever,

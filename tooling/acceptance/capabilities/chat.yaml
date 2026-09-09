@@ -6,10 +6,9 @@
       "domain": "chat",
       "direction": "acceptance_validates_product",
       "features": ["chat-service-contract"],
-      "required_gates": ["proto-build", "station-messaging-unit", "messaging-platform-contract"],
+      "required_gates": ["proto-build", "station-api-ownership", "station-messaging-unit", "messaging-platform-contract"],
       "synthetic_paths": [
         "model/domain/chat/*.proto",
-        "apps/station/app/subserver/messaging/**",
         "apps/station/app/subserver/conversation/**",
         "apps/station/app/subserver/envelope/**"
       ],
@@ -21,17 +20,18 @@
           "per-device messaging queue"
         ],
         "surfaces": [
-          "/messaging/conversation/direct",
-          "/messaging/conversation/list",
-          "/messaging/command/submit",
-          "/messaging/queue/claim",
-          "/messaging/queue/ack"
+          "/conversation/direct",
+          "/conversation/list",
+          "/conversation/command",
+          "/device/inbox/claim",
+          "/device/inbox/ack"
         ],
-        "proven_by": ["proto-build", "station-messaging-unit", "messaging-platform-contract"],
+        "proven_by": ["proto-build", "station-api-ownership", "station-messaging-unit", "messaging-platform-contract"],
         "proven_scope": [
           "Chat proto contracts regenerate derived code",
-          "Messaging, conversation, and envelope package tests pass",
-          "Static contract checks preserve one messaging owner and one client crypto lifecycle"
+          "Station governed routes match the capability ownership registry",
+          "Conversation and envelope package tests pass",
+          "Static contract checks preserve canonical resource routes and one client crypto lifecycle"
         ],
         "unproven_scope": [
           "PostgreSQL-backed multi-node chat persistence recovery",
@@ -46,7 +46,7 @@
       "features": ["chat-realtime-delivery"],
       "required_gates": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"],
       "synthetic_paths": [
-        "apps/station/app/subserver/messaging/**",
+        "apps/station/app/subserver/conversation/**",
         "apps/station/app/subserver/envelope/**",
         "apps/desktop/src-tauri/src/messaging/**",
         "apps/desktop/src/runtimes/imRuntime.ts"
@@ -59,12 +59,12 @@
         ],
         "surfaces": [
           "Desktop imRuntime",
-          "/messaging/queue/claim",
-          "/messaging/queue/ack"
+          "/device/inbox/claim",
+          "/device/inbox/ack"
         ],
         "proven_by": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"],
         "proven_scope": [
-          "Station messaging queue and envelope packages compile and pass tests",
+          "Station Conversation delivery and envelope packages compile and pass tests",
           "Desktop messaging lifecycle and chat projection compile together"
         ],
         "unproven_scope": [
@@ -122,13 +122,13 @@
         "apps/desktop/src-tauri/src/messaging/direct.rs",
         "apps/desktop/src-tauri/src/messaging/receipt.rs",
         "apps/desktop/src/store/socialChat.ts",
-        "apps/station/app/subserver/messaging/application/receipt_service.go"
+        "apps/station/app/subserver/conversation/engine/application/receipt_service.go"
       ],
       "evidence": {
         "truth_sources": [
           "Desktop Rust messaging receive transaction",
           "Desktop durable receipt outbox",
-          "Station Messaging per-device receipt queue",
+          "Station Conversation per-device receipt queue",
           "Desktop Rust delivery receipt processor",
           "Desktop social chat receipt projection"
         ],
@@ -208,14 +208,14 @@
       ],
       "synthetic_paths": [
         "model/domain/chat/command.proto",
-        "apps/station/app/subserver/messaging/application/authority_service.go",
+        "apps/station/app/subserver/conversation/engine/application/authority_service.go",
         "apps/desktop/src-tauri/src/messaging/public_event.rs",
         "apps/desktop/src/store/socialChat.ts",
         "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
       ],
       "evidence": {
         "truth_sources": [
-          "Station Messaging conversation authority events",
+          "Station Conversation authority events",
           "Station actor read cursor",
           "per-device ordered messaging queue",
           "Device Messaging Engine SQLCipher interaction projection"
@@ -250,7 +250,7 @@
         "chat-native-typing-e2e"
       ],
       "synthetic_paths": [
-        "apps/station/app/subserver/messaging/application/typing_service.go",
+        "apps/station/app/subserver/conversation/engine/application/typing_service.go",
         "apps/desktop/src/components/chat/ChatMessageArea.tsx",
         "apps/desktop/src/store/socialChat.ts"
       ],

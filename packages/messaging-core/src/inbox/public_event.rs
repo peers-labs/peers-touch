@@ -4,7 +4,7 @@ use crate::contracts::{
     ReceiveCommitResult,
 };
 use crate::proto::chat::{
-    conversation_event, DeviceConsumptionReceipt, DeviceQueueItem, DeviceQueuePayloadType,
+    conversation_event, DeviceConsumptionReceipt, DeviceInboxPayloadType, DurableDeviceInboxItem,
     MessageEditedFact, MessagePinCommittedFact, MessageRetractedFact, MessagingContentKind,
     PreparedEndpointPayloadKind, PublicEventMarker, ReactionCommittedFact,
 };
@@ -36,7 +36,7 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -54,9 +54,9 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
         {
             return Ok(());
         }
-        if DeviceQueuePayloadType::try_from(item.payload_type)
+        if DeviceInboxPayloadType::try_from(item.payload_type)
             .map_err(|_| "messaging public-event queue payload type is invalid".to_string())?
-            != DeviceQueuePayloadType::ConversationEvent
+            != DeviceInboxPayloadType::ConversationEvent
         {
             return Err(
                 "messaging public-event processor received wrong queue payload type".to_string(),
@@ -119,7 +119,7 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
 
     fn process_message_committed(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         event: &crate::proto::chat::ConversationEvent,
         message: &crate::proto::chat::MessageCommittedFact,
         delivery: &crate::proto::chat::DeviceEventDelivery,
@@ -168,7 +168,7 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
 
     fn process_message_edited(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         event: &crate::proto::chat::ConversationEvent,
         fact: &MessageEditedFact,
         consumer_epoch: u64,
@@ -194,7 +194,7 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
 
     fn process_message_retracted(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         event: &crate::proto::chat::ConversationEvent,
         fact: &MessageRetractedFact,
         consumer_epoch: u64,
@@ -216,7 +216,7 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
 
     fn process_reaction(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         event: &crate::proto::chat::ConversationEvent,
         fact: &ReactionCommittedFact,
         consumer_epoch: u64,
@@ -249,7 +249,7 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
 
     fn process_pin(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         event: &crate::proto::chat::ConversationEvent,
         fact: &MessagePinCommittedFact,
         consumer_epoch: u64,
@@ -281,7 +281,7 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
 
     fn commit_interaction(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         event: &crate::proto::chat::ConversationEvent,
         consumer_epoch: u64,
         message_id: &str,
@@ -315,7 +315,7 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
 
     fn build_receipt(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         event: &crate::proto::chat::ConversationEvent,
         now: i64,
     ) -> DeviceConsumptionReceipt {
@@ -339,7 +339,7 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
 }
 
 impl<R: MessagingRepository> ClaimedItemConsumer for PublicEventProcessor<R> {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }

@@ -352,12 +352,12 @@ def audit_runtime_artifacts(
     run_dir: Path,
     secret_values: tuple[str, ...],
 ) -> list[str]:
-    from tooling.acceptance.core.redaction import redact_artifact_bytes
+    from tooling.acceptance.core.redaction import (
+        redact_artifact_bytes,
+        redact_text_with_values,
+    )
 
     leaked_paths: list[str] = []
-    credential_values = tuple(
-        value for value in secret_values if len(value) >= 4
-    )
     for path in list(run_dir.rglob("*")):
         relative = path.relative_to(run_dir)
         if (
@@ -376,7 +376,10 @@ def audit_runtime_artifacts(
         if has_symlink:
             leaked_paths.append(relative_path)
             continue
-        if any(value in relative_path for value in credential_values):
+        if (
+            redact_text_with_values(relative_path, secret_values)
+            != relative_path
+        ):
             leaked_paths.append(relative_path)
             continue
         try:
@@ -396,13 +399,13 @@ def finalize_runtime_log(
     output_text: str,
     secret_values: tuple[str, ...],
 ) -> tuple[Any, list[str], list[str]]:
-    redacted_output = redact_runtime_text(output_text, secret_values)
-    log_path = f"logs/{gate_id}.log"
-    leaked_paths = audit_runtime_artifacts(
-        gate_run.run_dir,
-        secret_values,
+    reject_unresolved_secret_artifacts(
+        gate_run,
+        audit_runtime_artifacts(gate_run.run_dir, secret_values),
     )
+    redacted_output = redact_runtime_text(output_text, secret_values)
     redacted_paths: list[str] = []
+    log_path = f"logs/{gate_id}.log"
     log_ref = gate_run.write_bytes(
         log_path,
         redacted_output.encode("utf-8"),
@@ -411,6 +414,11 @@ def finalize_runtime_log(
     )
     if redacted_output != output_text:
         redacted_paths.append(log_path)
+    leaked_paths = audit_runtime_artifacts(
+        gate_run.run_dir,
+        secret_values,
+    )
+    reject_unresolved_secret_artifacts(gate_run, leaked_paths)
     return (
         log_ref,
         sorted(set(redacted_paths)),
@@ -421,11 +429,10 @@ def finalize_runtime_log(
 def reject_unresolved_secret_artifacts(
     gate_run: Any,
     leaked_paths: list[str],
-    redacted_paths: list[str],
 ) -> list[str]:
     from tooling.acceptance.core import EvidenceConflict
 
-    unresolved = sorted(set(leaked_paths) - set(redacted_paths))
+    unresolved = sorted(set(leaked_paths))
     if not unresolved:
         return []
     gate_run.discard()
@@ -1238,6 +1245,8 @@ def finalize_gate_result(
     secret_values: tuple[str, ...] = (),
     candidate_mode: bool = False,
 ) -> dict[str, Any]:
+    from tooling.acceptance.core import canonical_secret_scan
+
     redacted_result, result_leaked = redact_runtime_value(
         result,
         secret_values,
@@ -1257,39 +1266,26 @@ def finalize_gate_result(
         if leaked
     ]
     secret_scan = result.get("secretScan")
-    existing_scan_failed = (
-        isinstance(secret_scan, dict)
-        and secret_scan.get("status") != "passed"
-    )
-    existing_scanned_high_entropy = (
-        secret_scan.get("scannedHighEntropyValues")
-        if isinstance(secret_scan, dict)
-        else 0
-    )
-    if (
-        isinstance(existing_scanned_high_entropy, bool)
-        or not isinstance(existing_scanned_high_entropy, int)
-        or existing_scanned_high_entropy < 0
-    ):
-        existing_scan_failed = True
-        existing_scanned_high_entropy = 0
-    existing_scanned_credentials = (
-        secret_scan.get("scannedCredentialValues")
-        if isinstance(secret_scan, dict)
-        else 0
-    )
-    if (
-        isinstance(existing_scanned_credentials, bool)
-        or not isinstance(existing_scanned_credentials, int)
-        or existing_scanned_credentials < 0
-    ):
-        existing_scan_failed = True
-        existing_scanned_credentials = 0
-    redacted_artifacts = (
-        list(secret_scan.get("redactedArtifacts") or ())
-        if isinstance(secret_scan, dict)
-        else []
-    )
+    if secret_scan is None:
+        canonical_scan = {
+            "status": "passed",
+            "scannedHighEntropyValues": 0,
+            "scannedCredentialValues": 0,
+            "redactedArtifacts": [],
+        }
+    else:
+        canonical_scan = canonical_secret_scan(
+            secret_scan,
+            secret_values,
+        )
+    existing_scan_failed = canonical_scan["status"] != "passed"
+    existing_scanned_high_entropy = canonical_scan[
+        "scannedHighEntropyValues"
+    ]
+    existing_scanned_credentials = canonical_scan[
+        "scannedCredentialValues"
+    ]
+    redacted_artifacts = list(canonical_scan["redactedArtifacts"])
     redacted_result["secretScan"] = {
         "status": (
             "failed"
@@ -1471,8 +1467,8 @@ def build_run_report(
     plan_path: Any,
     results: list[dict[str, Any]],
     *,
+    source: Mapping[str, str] | None = None,
     candidate_mode: bool = False,
-    source: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     results = [
         standardize_result(
@@ -1541,6 +1537,8 @@ def build_run_report(
         ),
         "results": results,
     }
+    if source is not None:
+        report["source"] = dict(source)
     source_phases = aggregate_source_values(results, "sourcePhase")
     source_bom = aggregate_source_values(results, "sourceBom")
     source_spec = aggregate_source_values(results, "sourceSpec")
@@ -1727,10 +1725,7 @@ def main() -> int:
                 aggregate_source,
                 gate_source,
             )
-            gate_run = store.begin_run(
-                gate_id,
-                source=gate_source,
-            )
+            gate_run = store.begin_run(gate_id, source=gate_source)
             active_gate_run = gate_run
             gate_env = gate_run.subprocess_environment(os.environ.copy())
             gate_env[AGGREGATE_SOURCE_ENV] = json.dumps(
@@ -2197,6 +2192,17 @@ def main() -> int:
                     gate_process_cleanup_error=gate_process_cleanup_error,
                 )
 
+            source_drift_after = source_identity_drift(
+                aggregate_source,
+                source_identity(REPO_ROOT),
+            )
+            if source_drift_after is not None:
+                source_drift = source_drift or source_drift_after
+                output_text += (
+                    "\nAcceptance source drifted during aggregate execution; "
+                    "the Gate cannot contribute exact-source proof.\n"
+                )
+
             (
                 log_ref,
                 redacted_artifacts,
@@ -2210,15 +2216,6 @@ def main() -> int:
             redacted_artifacts = sorted(
                 set(redacted_artifacts) | set(gate_run.redacted_artifacts)
             )
-            try:
-                unresolved_leaks = reject_unresolved_secret_artifacts(
-                    gate_run,
-                    leaked_artifacts,
-                    redacted_artifacts,
-                )
-            except EvidenceConflict:
-                active_gate_run = None
-                raise
             duration = round(time.time() - started, 3)
             if result is None:
                 status = (
@@ -2226,8 +2223,6 @@ def main() -> int:
                     if exit_code == 0 and cleanup_status != "failed"
                     else "failed"
                 )
-                if unresolved_leaks:
-                    status = "failed"
                 result = {
                     "id": gate_id,
                     "command": command,
@@ -2241,7 +2236,7 @@ def main() -> int:
                     "timedOut": timed_out,
                     "cleanupStatus": cleanup_status,
                     "secretScan": {
-                        "status": "failed" if unresolved_leaks else "passed",
+                        "status": "passed",
                         "scannedHighEntropyValues": len(
                             tuple(
                                 value
@@ -2285,16 +2280,6 @@ def main() -> int:
                     result["sourcePhase"] = "Ephemeral Gate Launch Cleanup"
                     result["launchContextCleanup"] = launch_context_cleanup
 
-            source_drift_after = source_identity_drift(
-                aggregate_source,
-                source_identity(REPO_ROOT),
-            )
-            if source_drift_after is not None:
-                source_drift = source_drift or source_drift_after
-                output_text += (
-                    "\nAcceptance source drifted during aggregate execution; "
-                    "the Gate cannot contribute exact-source proof.\n"
-                )
             if source_drift is not None:
                 result["sourceDrift"] = source_drift
                 result["status"] = "failed"

@@ -2,13 +2,22 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-08-08 | **Updated**: 2026-08-17
+> **Created**: 2026-08-08 | **Updated**: 2026-09-06
 > **Owner**: Messaging Platform Team
 > **Module**: `model/domain/chat/`, `apps/station/`, `apps/desktop/`, `apps/mobile/`
+>
+> **Accepted MP-D30 correction**: this document previously used “Station Messaging
+> Platform” for both Conversation authority and device delivery. The accepted target
+> now separates those planes: `/conversation/*` owns Chat business APIs and one
+> DDD authority, while the internal Device Messaging Engine remains a client runtime. See
+> [`../api-ownership/design.md`](../api-ownership/design.md).
 
 ---
 
 ## 1. 核心原则
+
+Conversation is the sole Chat business authority. Every public route, authority
+table, and client caller must resolve through its declared resource owner.
 
 | ID | 原则 |
 |---|---|
@@ -59,7 +68,7 @@ Evidence ledger：
 | Desktop 与 Mobile 分别维护协议实现会形成第二套 crypto/queue/recovery state machine | inference | 两个独立 Tauri crate 当前没有共享 Messaging Rust dependency | high |
 | 一个 portable Rust core 加平台 adapters 让双端执行同一协议与 transaction semantics | accepted_decision | `MP-D16` | accepted |
 
-Proposed boundary：
+Accepted client boundary：
 
 ```text
                     model/domain/chat/*.proto
@@ -154,7 +163,7 @@ flowchart TB
         PB["model/domain/chat/*.proto<br/>endpoint · command · event · queue<br/>receipt · recovery · attachment"]
     end
 
-    subgraph ST["Station Messaging Platform"]
+    subgraph ST["Station Resource Owners"]
         AU["Conversation Authority<br/>membership · sequence · hash · idempotency"]
         DD["Device / key directory"]
         Q["Ordered device queues<br/>lease · fencing · retry · ACK"]
@@ -187,13 +196,14 @@ flowchart TB
     LEG["Legacy envelope / imRuntime<br/>forbidden second owner"] -. "must not own messaging" .-> PR
 ```
 
-当前 Direct `DELIVERED` 的 canonical hot path 是：
+以下是 consolidation 前已验证、并作为 MP-D30 hard-cut 输入保留的 Direct
+`DELIVERED` hot path：
 
 ```text
 Bob ordered queue item
   -> Rust decrypt + atomic SQLCipher receive commit
   -> durable MessageReceipt outbox
-  -> POST /messaging/receipt/delivery
+  -> POST /conversation/delivery/receipt
   -> Station DEVICE_RECEIPT fan-out
   -> Alice Rust receipt processor atomic commit
   -> messaging:projection-changed
@@ -205,7 +215,7 @@ Bob ordered queue item
 
 | 能力区域 | 当前状态 | Canonical owner/path | 当前证明边界 |
 |---|---|---|---|
-| Desktop Direct send/receive + E2EE | `PROVEN` | Rust Device Messaging Engine + Station Messaging Authority | Native 双客户端双向 exact plaintext |
+| Desktop Direct send/receive + E2EE | `PROVEN` | Rust Device Messaging Engine + pre-consolidation Station authority implementation | Native 双客户端双向 exact plaintext |
 | Direct `DELIVERED` | `PROVEN` | durable receipt outbox + `DEVICE_RECEIPT` + atomic receipt processor | Alice/Bob 双向 native row 前向推进 |
 | Ordered queue、dedup、post-commit ACK | `PROVEN` for Direct slice | Station Device Queue + Rust SQLCipher transaction | Direct Gate bundle；不外推到全部 payload class |
 | Group MLS 与 membership transition | `PROVEN` on Desktop | OpenMLS + Station authority plans | W07: add/remove/rejoin/restart/crash recovery Native evidence |
@@ -240,11 +250,11 @@ Bob ordered queue item
 └───────────────┬───────────────────────┬────────────┘
                 │ HTTPS commands        │ SSE/push wake
 ┌───────────────▼───────────────────────▼────────────┐
-│ Station Messaging Platform                         │
+│ Station resource owners                            │
 │                                                    │
-│ Conversation Authority │ Device Queue Service      │
-│ Federation Transport   │ Device/Key Directory      │
-│ Backup Repository      │ Object Metadata           │
+│ Conversation DDD       │ Device Inbox              │
+│ Federation Transport   │ Actor/Key Directory       │
+│ Recovery Repository    │ Conversation Attachments  │
 └───────────────┬────────────────────────────────────┘
                 │ signed durable federation frames
                 ▼
@@ -325,7 +335,7 @@ device lanes。网络失败不改变 authority event identity。
 endpoint manifest：
 
 ```text
-FederatedEndpointManifest
+ActorEndpointManifest
   = actor + home_station + directory_version
   + active endpoints + public material hashes
   + issued/expiry + Home Station signature
@@ -336,7 +346,8 @@ Authority plan绑定manifest及endpoint routes。Authority commit将delivery按H
 
 ```text
 local endpoints  -> local device queues
-remote endpoints -> per-Home-Station FederatedDeviceQueueBatch
+remote endpoints -> per-Home-Station FederatedDomainFrame
+                 -> CONVERSATION_DEVICE_DELIVERY payload
                  -> durable federation outbox
 ```
 
@@ -384,7 +395,7 @@ message DeviceEventDelivery {
   bytes delivery_commitment = 6;
 }
 
-message DeviceQueueItem {
+message DurableDeviceInboxItem {
   string item_id = 1;
   int64 lane_sequence = 3;
   string idempotency_key = 4;
@@ -617,7 +628,7 @@ SSE/push wake
 - Typing pulse 只接受 authenticated active conversation member，绑定
   `(conversation_id, sender endpoint, pulse generation, expires_at)`。
 - Direct 与 Group fan-out 使用独立 ephemeral delivery path；不得写
-  `DeviceQueueItem`、authority event、recovery archive 或 message projection。
+  `DurableDeviceInboxItem`、authority event、recovery archive 或 message projection。
 - Sender pulse bounded/throttled；receiver 按 sender + conversation 幂等刷新 TTL。
 - stop、session switch、disconnect 或 TTL expiry 都投影为 idle。丢失 stop pulse
   只能造成 bounded 短暂显示，不能形成 durable phantom state。
@@ -787,12 +798,12 @@ Architecture gate 除 MP-G13/MP-G14 外还必须证明：
 Control metadata 使用 protobuf；chunk body 使用 bounded `application/octet-stream`：
 
 ```text
-POST /messaging/attachments/uploads:begin
-GET  /messaging/attachments/uploads/{upload_id}
-PUT  /messaging/attachments/uploads/{upload_id}/chunks/{chunk_index}
-POST /messaging/attachments/uploads/{upload_id}:complete
-POST /messaging/attachments/uploads/{upload_id}:cancel
-GET  /messaging/attachments/objects/{object_id}
+POST /conversation/attachments/uploads:begin
+GET  /conversation/attachments/uploads/{upload_id}
+PUT  /conversation/attachments/uploads/{upload_id}/chunks/{chunk_index}
+POST /conversation/attachments/uploads/{upload_id}:complete
+POST /conversation/attachments/uploads/{upload_id}:cancel
+GET  /conversation/attachments/objects/{object_id}
 ```
 
 Chunk PUT headers 绑定 `Content-Range`、`Digest: sha-256`、upload generation 和

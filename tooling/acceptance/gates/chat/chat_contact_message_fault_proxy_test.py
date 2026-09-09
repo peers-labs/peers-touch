@@ -89,7 +89,7 @@ class ContactMessageFaultProxyTest(unittest.TestCase):
     def test_other_posts_forwarded_when_armed(self) -> None:
         self.proxy.state.arm()
         request = urllib.request.Request(
-            f"{self.proxy_url}/messaging/conversation/list",
+            f"{self.proxy_url}/conversation/list",
             data=b"",
             method="GET",
         )

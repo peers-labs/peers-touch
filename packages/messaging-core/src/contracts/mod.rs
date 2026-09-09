@@ -11,6 +11,24 @@ pub struct CryptoEndpoint {
     pub device_id: DeviceId,
 }
 
+impl CryptoEndpoint {
+    pub fn new(ptid: impl Into<String>, device_id: impl Into<String>) -> Result<Self, String> {
+        let endpoint = Self {
+            ptid: ptid.into(),
+            device_id: device_id.into(),
+        };
+        endpoint.validate()?;
+        Ok(endpoint)
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.ptid.trim().is_empty() || self.device_id.trim().is_empty() {
+            return Err("crypto endpoint requires PTID and device ID".to_string());
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct EngineConfig {
     pub endpoint: CryptoEndpoint,
@@ -41,6 +59,36 @@ pub struct ConversationProjection {
     pub mls_epoch: i64,
     pub active: bool,
     pub updated_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandStatusProjection {
+    pub command_id: String,
+    pub conversation_id: String,
+    pub state: String,
+    pub last_error_code: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationMessageProjection {
+    pub event_id: Option<String>,
+    pub event_sequence: Option<i64>,
+    pub message_id: String,
+    pub sender_ptid: String,
+    pub sender_device_id: String,
+    pub plaintext: String,
+    pub attachments: Vec<crate::proto::chat::AttachmentPlaintextMetadata>,
+    pub state: String,
+    pub timestamp_unix_ms: i64,
+    pub reply_to_message_id: Option<String>,
+    pub thread_root_message_id: Option<String>,
+    pub edited_text: Option<String>,
+    pub edited_at_unix_ms: Option<i64>,
+    pub retracted: bool,
+    pub reactions: Vec<(String, String, i64)>,
+    pub pinned_by_ptid: Option<String>,
+    pub pinned_at_unix_ms: Option<i64>,
+    pub read_by_ptids: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -149,6 +197,137 @@ pub struct InteractionReceiveCommit<'a> {
     pub mls_session_state: Option<&'a [u8]>,
     pub membership_epoch: i64,
     pub mls_epoch: i64,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MlsConversationMemberProjection {
+    pub ptid: String,
+    pub role: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MlsConversationProjection {
+    pub conversation_id: String,
+    pub authority_station_id: String,
+    pub kind: i32,
+    pub name: String,
+    pub owner_ptid: String,
+    pub members: Vec<MlsConversationMemberProjection>,
+    pub membership_epoch: i64,
+    pub mls_epoch: i64,
+    pub active: bool,
+    pub updated_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MlsMessageProjection {
+    pub conversation_id: String,
+    pub event_id: String,
+    pub event_sequence: i64,
+    pub message_id: String,
+    pub sender_ptid: String,
+    pub sender_device_id: String,
+    pub plaintext: String,
+    pub attachments: Vec<crate::proto::chat::AttachmentPlaintextMetadata>,
+    pub committed_at_unix_ms: i64,
+    pub reply_to_message_id: Option<String>,
+    pub thread_root_message_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingMlsTransitionState {
+    pub transition_id: String,
+    pub command_id: String,
+    pub state: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingMlsKeyPackage {
+    pub package_id: String,
+    pub data: Vec<u8>,
+}
+
+pub struct MlsApplicationReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub session_state: &'a [u8],
+    pub membership_epoch: i64,
+    pub mls_epoch: i64,
+    pub projection: &'a MlsMessageProjection,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
+pub struct MlsTransitionReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub event_sequence: i64,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub transition_id: &'a str,
+    pub transition_kind: i32,
+    pub session_state: &'a [u8],
+    pub provider_pool_state: Option<&'a [u8]>,
+    pub from_membership_epoch: i64,
+    pub to_membership_epoch: i64,
+    pub from_mls_epoch: i64,
+    pub to_mls_epoch: i64,
+    pub join_projection: Option<&'a MlsConversationProjection>,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
+pub struct MlsSenderTransitionReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub command_id: &'a str,
+    pub transition_id: &'a str,
+    pub event_sequence: i64,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub session_state: &'a [u8],
+    pub membership_epoch: i64,
+    pub mls_epoch: i64,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
+pub struct MlsRetirementReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub event_sequence: i64,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub transition_id: &'a str,
+    pub endpoint_ptid: &'a str,
+    pub endpoint_device_id: &'a str,
+    pub membership_epoch: i64,
+    pub mls_epoch: i64,
+    pub projection: &'a MlsConversationProjection,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,

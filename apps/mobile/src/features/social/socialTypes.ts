@@ -55,6 +55,8 @@ export interface FriendChatSession {
 
 export interface FriendChatMessage {
   ulid: string;
+  eventSequence?: number;
+  messagingState?: string;
   sessionUlid: string;
   senderPtid: string;
   receiverPtid: string;
@@ -89,6 +91,7 @@ export interface FriendMessageAttachment {
   ciphertextSha256B64?: string;
   plaintextSize?: number;
   ciphertextSize?: number;
+  availabilityState?: 'remote' | 'local';
 }
 
 export interface SocialNotification {

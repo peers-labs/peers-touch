@@ -23,54 +23,60 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 
+	conversationengine "github.com/peers-labs/peers-touch/station/app/subserver/conversation/engine"
+	enginedomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/engine/domain"
+	engineinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/engine/infrastructure"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/follower"
 	envpkg "github.com/peers-labs/peers-touch/station/app/subserver/envelope"
 	envinf "github.com/peers-labs/peers-touch/station/app/subserver/envelope/infrastructure"
 	fedinf "github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
-	msgdomain "github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
-	msginf "github.com/peers-labs/peers-touch/station/app/subserver/messaging/infrastructure"
 
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	modeldb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 )
 
-type messagingAuthorityReader interface {
+type conversationAuthorityReader interface {
 	GetConversation(
 		ctx context.Context,
 		conversationID string,
-	) (*msgdomain.AuthorityConversation, error)
+	) (*enginedomain.AuthorityConversation, error)
 	GetMember(
 		ctx context.Context,
 		conversationID string,
 		ptid string,
-	) (*msgdomain.AuthorityMember, error)
+	) (*enginedomain.AuthorityMember, error)
+	ListConversationsForActor(
+		ctx context.Context,
+		ptid string,
+	) ([]enginedomain.AuthorityConversationView, error)
 }
 
 type subServer struct {
-	status               server.Status
-	jwtWrapper           server.Wrapper
-	proposalWrapper      server.Wrapper
-	leaveIntentWrapper   server.Wrapper
-	syncWrapper          server.Wrapper
-	repo                 Repository
-	service              Service
-	proposalService      *ConversationCommandProposalService
-	proposalForwarder    ConversationCommandProposalForwarder
-	proposalStore        *commandProposalStore
-	proposalWorkerCancel context.CancelFunc
-	leaveService         *MlsLeaveIntentService
-	leaveIntentForwarder MlsLeaveIntentForwarder
-	kpStore              *KeyPackageStore
-	memberSettings       *memberSettingsStore
-	messagingAuthority   messagingAuthorityReader
-	deviceStore          *touchactor.DeviceStore
-	envelopeService      envpkg.Service
-	localStationID       string
-	fedKpFetcher         *FederatedKeyPackageFetcher
-	gateEval             *ConversationGateEvaluator
-	relQuerier           social_gate.RelationshipQuerier
-	db                   *gorm.DB
+	status                server.Status
+	jwtWrapper            server.Wrapper
+	proposalWrapper       server.Wrapper
+	leaveIntentWrapper    server.Wrapper
+	syncWrapper           server.Wrapper
+	repo                  Repository
+	service               Service
+	proposalService       *ConversationCommandProposalService
+	proposalForwarder     ConversationCommandProposalForwarder
+	proposalStore         *commandProposalStore
+	proposalWorkerCancel  context.CancelFunc
+	leaveService          *MlsLeaveIntentService
+	leaveIntentForwarder  MlsLeaveIntentForwarder
+	kpStore               *KeyPackageStore
+	memberSettings        *memberSettingsStore
+	conversationAuthority conversationAuthorityReader
+	deviceStore           *touchactor.DeviceStore
+	envelopeService       envpkg.Service
+	localStationID        string
+	fedKpFetcher          *FederatedKeyPackageFetcher
+	gateEval              *ConversationGateEvaluator
+	relQuerier            social_gate.RelationshipQuerier
+	db                    *gorm.DB
+	engine                server.Subserver
 }
 
 func NewConversationSubServer(opts ...option.Option) server.Subserver {
@@ -127,7 +133,8 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		return err
 	}
 	s.memberSettings = memberSettings
-	s.messagingAuthority = msginf.NewAuthorityRepository(rds)
+	authorityRepository := engineinfra.NewAuthorityRepository(rds)
+	s.conversationAuthority = authorityRepository
 	s.kpStore = NewKeyPackageStore(rds)
 	if err := s.kpStore.AutoMigrate(); err != nil {
 		return err
@@ -196,15 +203,36 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	s.fedKpFetcher = NewFederatedKeyPackageFetcher(authfed.Singleton())
 
 	// Social gate: compose policy evaluator from repository-backed adapters.
-	relAdapter := NewConversationRelationshipAdapter(repo, rds)
-	roleAdapter := NewConversationGroupRoleAdapter(repo)
+	relAdapter := NewConversationRelationshipAdapter(rds, authorityRepository)
+	roleAdapter := NewConversationGroupRoleAdapter(authorityRepository)
 	s.gateEval = NewConversationGateEvaluator(relAdapter, roleAdapter, nil)
 	s.relQuerier = relAdapter
+	s.engine = conversationengine.New(conversationengine.Dependencies{
+		CreateDirectPolicy: social_gate.NewGateWrapper(
+			s.gateEval,
+			"create_direct",
+			extractCreateDirectOp,
+		),
+		SubmitCommandPolicy: social_gate.NewGateWrapper(
+			s.gateEval,
+			"send_message",
+			extractSubmitCommandOp,
+		),
+		ListFollowerConversations: s.listFollowerConversationViews,
+	})
+	if err := s.engine.Init(ctx, opts...); err != nil {
+		s.status = server.StatusError
+		return fmt.Errorf("initialize conversation engine: %w", err)
+	}
 
 	return nil
 }
 
 func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
+	if err := s.engine.Start(ctx, opts...); err != nil {
+		s.status = server.StatusError
+		return fmt.Errorf("start conversation engine: %w", err)
+	}
 	workerCtx, cancel := context.WithCancel(context.Background())
 	s.proposalWorkerCancel = cancel
 	go s.runCommandProposalWorker(workerCtx)
@@ -219,6 +247,12 @@ func (s *subServer) Stop(ctx context.Context) error {
 		s.proposalWorkerCancel = nil
 	}
 	registerSignalAuthorizer(nil)
+	if s.engine != nil {
+		if err := s.engine.Stop(ctx); err != nil {
+			s.status = server.StatusError
+			return fmt.Errorf("stop conversation engine: %w", err)
+		}
+	}
 	s.status = server.StatusStopped
 	return nil
 }
@@ -229,6 +263,42 @@ func (s *subServer) Address() server.SubserverAddress {
 	return server.SubserverAddress{}
 }
 func (s *subServer) Status() server.Status { return s.status }
+
+func (s *subServer) listFollowerConversationViews(
+	ctx context.Context,
+	ptid string,
+) ([]*chat.MessagingConversationView, error) {
+	followerService := follower.NewService(s.db)
+	conversations, err := followerService.ListConversationsForActor(ctx, ptid)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]*chat.MessagingConversationView, 0, len(conversations))
+	for _, conversation := range conversations {
+		members, err := followerService.ListMembers(ctx, conversation.ConversationId)
+		if err != nil {
+			return nil, err
+		}
+		memberPTIDs := make([]string, 0, len(members))
+		for _, member := range members {
+			if member.MemberStatus == chat.MemberStatus_MEMBER_STATUS_ACTIVE {
+				memberPTIDs = append(memberPTIDs, member.Ptid)
+			}
+		}
+		views = append(views, &chat.MessagingConversationView{
+			ConversationId:     conversation.ConversationId,
+			Kind:               conversation.Kind,
+			Name:               conversation.Name,
+			OwnerPtid:          conversation.OwnerPtid,
+			MemberPtids:        memberPTIDs,
+			MembershipEpoch:    conversation.MembershipEpoch,
+			MlsEpoch:           conversation.MlsEpoch,
+			Active:             conversation.Status == chat.ConversationStatus_CONVERSATION_STATUS_ACTIVE,
+			AuthorityStationId: conversation.AuthorityStationPeerId,
+		})
+	}
+	return views, nil
+}
 
 func (s *subServer) requireActiveMembership(ctx context.Context, conversationID string) error {
 	subject := coreauth.GetSubject(ctx)
@@ -253,19 +323,19 @@ func (s *subServer) requireActiveMembership(ctx context.Context, conversationID 
 	return server.Forbidden("active conversation membership required")
 }
 
-func (s *subServer) requireActiveMessagingMembership(
+func (s *subServer) requireActiveConversationMembership(
 	ctx context.Context,
 	conversationID string,
-) (*msgdomain.AuthorityConversation, error) {
+) (*enginedomain.AuthorityConversation, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if s.messagingAuthority == nil {
-		return nil, server.InternalError("messaging authority repository unavailable")
+	if s.conversationAuthority == nil {
+		return nil, server.InternalError("conversation authority repository unavailable")
 	}
-	conversation, err := s.messagingAuthority.GetConversation(ctx, conversationID)
-	if errors.Is(err, msgdomain.ErrNotFound) {
+	conversation, err := s.conversationAuthority.GetConversation(ctx, conversationID)
+	if errors.Is(err, enginedomain.ErrNotFound) {
 		return nil, server.Forbidden("active conversation membership required")
 	}
 	if err != nil {
@@ -277,12 +347,12 @@ func (s *subServer) requireActiveMessagingMembership(
 	if conversation == nil || !conversation.Active {
 		return nil, server.Forbidden("active conversation membership required")
 	}
-	member, err := s.messagingAuthority.GetMember(
+	member, err := s.conversationAuthority.GetMember(
 		ctx,
 		conversationID,
 		subject.ID,
 	)
-	if errors.Is(err, msgdomain.ErrNotFound) {
+	if errors.Is(err, enginedomain.ErrNotFound) {
 		return nil, server.Forbidden("active conversation membership required")
 	}
 	if err != nil {
@@ -317,20 +387,14 @@ func (s *subServer) Handlers() []server.Handler {
 	deviceIDWrapper := serverwrapper.DeviceID()
 
 	// Social gate wrappers — applied AFTER jwtWrapper (auth must come first).
-	createDirectGate := social_gate.NewGateWrapper(s.gateEval, "create_direct", extractCreateDirectOp)
-	submitCmdGate := social_gate.NewGateWrapper(s.gateEval, "send_message", extractSubmitCommandOp)
 	fetchKpGate := social_gate.NewGateWrapper(s.gateEval, "fetch_key_package", extractFetchKeyPackageOp)
 	dkxSendGate := social_gate.NewGateWrapper(s.gateEval, "dkx_send", extractDkxSendOp)
 
-	return []server.Handler{
+	handlers := []server.Handler{
 		server.NewTypedHandler("conv-identity", "/conversation/identity", server.GET,
 			s.handleGetConversationIdentity, logID, s.jwtWrapper),
-		server.NewTypedHandler("conv-create-direct", "/conversation/direct", server.POST,
-			s.handleCreateDirect, logID, createDirectGate, s.jwtWrapper),
 		server.NewTypedHandler("conv-create-group", "/conversation/group", server.POST,
 			s.handleCreateGroup, logID, deviceIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("conv-submit-cmd", "/conversation/command", server.POST,
-			s.handleSubmitCommand, logID, deviceIDWrapper, submitCmdGate, s.jwtWrapper),
 		server.NewTypedHandler(
 			"conv-submit-command-proposal",
 			"/conversation/command-proposal",
@@ -342,7 +406,7 @@ func (s *subServer) Handlers() []server.Handler {
 		),
 		server.NewTypedHandler(
 			"conv-federated-command-proposal",
-			"/conversation/federation/command-proposal",
+			"/federation/conversation/command-proposal",
 			server.POST,
 			s.handleFederatedConversationCommandProposal,
 			logID,
@@ -377,7 +441,7 @@ func (s *subServer) Handlers() []server.Handler {
 		),
 		server.NewTypedHandler(
 			"conv-federated-submit-mls-leave-intent",
-			"/conversation/federation/mls/leave-intent",
+			"/federation/conversation/mls/leave-intent",
 			server.POST,
 			s.handleFederatedSubmitMlsLeaveIntent,
 			logID,
@@ -385,7 +449,7 @@ func (s *subServer) Handlers() []server.Handler {
 		),
 		server.NewTypedHandler(
 			"conv-federated-list-mls-leave-intents",
-			"/conversation/federation/mls/leave-intents",
+			"/federation/conversation/mls/leave-intents",
 			server.POST,
 			s.handleFederatedListMlsLeaveIntents,
 			logID,
@@ -393,20 +457,16 @@ func (s *subServer) Handlers() []server.Handler {
 		),
 		server.NewTypedHandler(
 			"conv-authority-event-sync",
-			"/conversation/federation/events/sync",
+			"/federation/conversation/events/sync",
 			server.POST,
 			s.handleSyncAuthorityEvents,
 			logID,
 			s.syncWrapper,
 		),
-		server.NewTypedHandler("conv-receipt", "/conversation/receipt", server.POST,
-			s.handleSubmitReceipt, logID, deviceIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("conv-get", "/conversation/get", server.GET,
 			s.handleGetConversation, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-public-head", "/conversation/public-head", server.GET,
 			s.handleGetConversationPublicHead, logID, s.jwtWrapper),
-		server.NewTypedHandler("conv-list", "/conversation/list", server.GET,
-			s.handleListConversations, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-members", "/conversation/members", server.GET,
 			s.handleGetMembers, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-events", "/conversation/events", server.GET,
@@ -421,21 +481,23 @@ func (s *subServer) Handlers() []server.Handler {
 			s.handleGetMemberSettings, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-member-settings-put", "/conversation/member/settings", server.PUT,
 			s.handleUpdateMemberSettings, logID, s.jwtWrapper),
-		server.NewTypedHandler("kp-upload", "/keypackage/upload", server.POST,
+		server.NewTypedHandler("kp-upload", "/key-exchange/mls/key-package/upload", server.POST,
 			s.handleUploadKeyPackage, logID, deviceIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("kp-fetch", "/keypackage/fetch", server.POST,
+		server.NewTypedHandler("kp-fetch", "/key-exchange/mls/key-package/fetch", server.POST,
 			s.handleFetchKeyPackage, logID, fetchKpGate, s.jwtWrapper),
-		server.NewTypedHandler("kp-count", "/keypackage/count", server.GET,
+		server.NewTypedHandler("kp-count", "/key-exchange/mls/key-package/count", server.GET,
 			s.handleCountKeyPackages, logID, s.jwtWrapper),
-		server.NewTypedHandler("device-register", "/device/register", server.POST,
-			s.handleDeviceRegister, logID, deviceIDWrapper, s.jwtWrapper),
 		server.NewTypedHandler("device-list", "/device/list", server.GET,
 			s.handleDeviceList, logID, s.jwtWrapper),
 		server.NewTypedHandler("device-revoke", "/device/revoke", server.POST,
 			s.handleDeviceRevoke, logID, deviceIDWrapper, s.jwtWrapper),
-		server.NewTypedHandler("dkx-send", "/dkx/send", server.POST,
+		server.NewTypedHandler("dkx-send", "/key-exchange/dkx/send", server.POST,
 			s.handleDkxSend, logID, deviceIDWrapper, dkxSendGate, s.jwtWrapper),
 	}
+	if s.engine == nil {
+		return handlers
+	}
+	return append(handlers, s.engine.Handlers()...)
 }
 
 func (s *subServer) handleGetConversationIdentity(

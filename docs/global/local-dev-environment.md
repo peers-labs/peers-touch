@@ -7,6 +7,12 @@
 
 ---
 
+Station API ownership remains unchanged in every profile: Conversation is the
+sole Chat business entry point under `/conversation/*`; Device, Inbox,
+Recovery, Key Exchange, and Federation expose `/device/*`,
+`/device/inbox/*`, `/recovery/*`, `/key-exchange/*`, and peer-only
+`/federation/*`. Local topology never enables a Station Messaging facade.
+
 ## 1. Document Scope
 
 This document defines:
@@ -245,10 +251,10 @@ postgresql://peers:peers123@localhost:15432/peers_touch_<profile_name>
 SELECT ptid, created_at FROM actor_identity_keys;
 
 -- Check active conversations
-SELECT conversation_id, kind, current_sequence FROM messaging_conversations;
+SELECT conversation_id, kind, current_seq FROM conversations;
 
 -- Check enrolled devices per conversation
-SELECT conversation_id, ptid, device_id, active FROM messaging_conversation_member_devices;
+SELECT conversation_id, ptid, device_id, active FROM conversation_member_devices;
 
 -- Check message queue
 SELECT id, conversation_id, created_at FROM device_queue_lanes ORDER BY created_at DESC LIMIT 10;

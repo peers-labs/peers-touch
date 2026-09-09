@@ -1,44 +1,56 @@
 import { create } from 'zustand';
-import {
-  clearChatE2eeProjectionStatus,
-  setChatE2eeProjectionStatus,
-  type ChatE2eeProjection,
-} from '@peers-touch/client-chat-core';
 
 import type { MobileAuthSession } from '../auth/authSession';
 import { mobileAuthScopeKey } from '../auth/mobileAuthIdentity';
 import { SocialApiError, readableErrorMessage } from '../social/socialTypes';
-import type { ChatEncryptedMessagePayload, Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
-import type { ChatAttachmentInput } from '../social/socialApi';
-import { createGroupApiClient, type CreateGroupInput, type GroupApiClient, type GroupSettings, type UpdateGroupInput, type UpdateGroupMemberInput, type UpdateGroupSettingsInput } from './groupApi';
-import { normalizeGroup, normalizeGroupMember, normalizeGroupMessage } from './groupNormalizers';
+import type { Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import {
-  applyGroupDecryptedContentToList,
-  applyGroupMutationToList,
-  mergeGroupMessages,
+  messagingCreateGroup,
+  messagingListConversations,
+  messagingListMessages,
+  messagingSendMessage,
+  messagingSubmitEdit,
+  messagingSubmitMetadataInteraction,
+  messagingSubmitReadCursor,
+  type MessagingAttachmentStageProjection,
+  type MessagingSubmitCommandResult,
+} from '../../services/mobileCommands';
+import {
+  createGroupGateway,
+  unwrapOutcome,
+  type GroupGateway,
+  type GroupGatewaySettings as GroupSettings,
+  type GroupGatewayCreateInput as CreateGroupInput,
+  type GroupGatewayUpdateInput as UpdateGroupInput,
+  type GroupGatewayUpdateMemberInput as UpdateGroupMemberInput,
+  type GroupGatewayUpdateSettingsInput as UpdateGroupSettingsInput,
+} from '../../services/gateways';
+import { normalizeGroup, normalizeGroupMember } from './groupNormalizers';
+import {
   projectGroupConversations,
   type GroupConversation,
 } from './groupProjection';
+import {
+  groupFromMessaging,
+  groupMessageFromMessaging,
+} from '../chat/messagingProjectionAdapters';
+
+export type { GroupSettings, CreateGroupInput, UpdateGroupInput, UpdateGroupMemberInput, UpdateGroupSettingsInput };
 
 export interface GroupState {
   sessionKey: string | null;
-  api: GroupApiClient | null;
+  authSession: MobileAuthSession | null;
+  gateway: GroupGateway | null;
   groups: Group[];
   members: Record<string, GroupMember[]>;
   messages: Record<string, GroupMessage[]>;
   settings: Record<string, GroupSettings>;
   unreadCounts: Record<string, number>;
-  e2eeErrors: Record<string, string>;
-  e2eeProjection: ChatE2eeProjection;
-  encryptionReady: Record<string, boolean>;
   sendingGroups: Record<string, boolean>;
   activeGroupUlid: string | null;
   loading: boolean;
   error: SocialApiError | null;
   lastReconcileAt: number | null;
-  encryptedSender: ((groupUlid: string, plaintext: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<boolean>) | null;
-  encryptedEditor: ((groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>) | null;
-  encryptionPreparer: ((groupUlid: string) => Promise<boolean>) | null;
   bindSession: (session: MobileAuthSession | null) => void;
   reconcile: () => Promise<void>;
   reconcileActiveGroupMessages: () => Promise<void>;
@@ -58,48 +70,32 @@ export interface GroupState {
   updateMember: (groupUlid: string, actorPtid: string, input: UpdateGroupMemberInput) => Promise<void>;
   transferOwnership: (groupUlid: string, nextOwnerPtid: string) => Promise<void>;
   dissolveGroup: (groupUlid: string) => Promise<void>;
-  ingestRealtimeMessage: (groupUlid: string, message: GroupMessage) => Promise<void>;
-  applyMessageMutation: (
-    groupUlid: string,
-    messageUlid: string,
-    kind: 'RECALL' | 'EDIT' | 'DELETE',
-    payload: { newContent?: string; newCiphertext?: Uint8Array; mutatedTsUnixMs?: number },
-  ) => void;
-  applyDecryptedMessage: (groupUlid: string, messageUlid: string, plaintext: string | ChatEncryptedMessagePayload) => void;
-  setEncryptionReady: (groupUlid: string, ready: boolean) => void;
   setGroupSending: (groupUlid: string, sending: boolean) => void;
-  sendEncryptedMessage: (groupUlid: string, plaintext: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<boolean>;
-  editEncryptedMessage: (groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>;
+  sendMessage: (
+    groupUlid: string,
+    plaintext: string,
+    attachments?: MessagingAttachmentStageProjection[],
+  ) => Promise<MessagingSubmitCommandResult>;
+  editMessage: (groupUlid: string, messageUlid: string, plaintext: string) => Promise<void>;
   recallMessage: (groupUlid: string, messageUlid: string) => Promise<void>;
-  deleteMessage: (groupUlid: string, messageUlid: string) => Promise<void>;
-  bindEncryptedSender: (sender: ((groupUlid: string, plaintext: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<boolean>) | null) => void;
-  bindEncryptedEditor: (editor: ((groupUlid: string, messageUlid: string, plaintext: string) => Promise<boolean>) | null) => void;
-  bindEncryptionPreparer: (preparer: ((groupUlid: string) => Promise<boolean>) | null) => void;
-  setE2eeError: (messageUlid: string, error: string | null) => void;
   markRead: (groupUlid: string, upToUlid?: string) => Promise<void>;
   clearError: () => void;
 }
 
 export const useGroupStore = create<GroupState>((set, get) => ({
   sessionKey: null,
-  api: null,
+  authSession: null,
+  gateway: null,
   groups: [],
   members: {},
   messages: {},
   settings: {},
   unreadCounts: {},
-  e2eeErrors: {},
-  e2eeProjection: {},
-  encryptionReady: {},
   sendingGroups: {},
   activeGroupUlid: null,
   loading: false,
   error: null,
   lastReconcileAt: null,
-  encryptedSender: null,
-  encryptedEditor: null,
-  encryptionPreparer: null,
-
   bindSession: (session) => {
     if (!session) {
       set(emptyGroupState());
@@ -110,7 +106,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     set({
       ...emptyGroupState(),
       sessionKey,
-      api: createGroupApiClient(session),
+      authSession: session,
+      gateway: createGroupGateway(session),
     });
   },
 
@@ -132,16 +129,21 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const groupUlid = get().activeGroupUlid;
     if (!groupUlid) return;
     await Promise.allSettled([get().loadMessages(groupUlid), get().loadMembers(groupUlid), get().loadSettings(groupUlid)]);
-    void get().encryptionPreparer?.(groupUlid);
   },
 
   refreshGroups: async () => {
-    const api = requireApi(get());
-    const payload = await api.listGroups();
-    const groups = (payload.groups ?? []).map(normalizeGroup);
+    const state = get();
+    const gw = requireGateway(state);
+    const existing = new Map(state.groups.map((group) => [group.ulid, group]));
+    const groups = (await messagingListConversations(messagingAccount(state)))
+      .filter((conversation) => conversation.active && conversation.kind === 2)
+      .map((conversation) => groupFromMessaging(
+        conversation,
+        existing.get(conversation.conversationId),
+      ));
     set({ groups });
     const entries = await Promise.allSettled(groups.map(async (group) => {
-      const settings = await api.getMySettings(group.ulid);
+      const settings = unwrapOutcome(await gw.getMySettings(group.ulid));
       return [group.ulid, settings] as const;
     }));
     set((state) => {
@@ -154,16 +156,41 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   createGroup: async (input) => {
-    const api = requireApi(get());
+    const state = get();
     try {
-      const payload = await api.createGroup(input);
-      if (payload.group) {
-        const group = normalizeGroup(payload.group);
-        set((state) => ({ groups: mergeGroups(state.groups, group) }));
-        return group.ulid;
+      const conversationId = globalThis.crypto.randomUUID();
+      const created = await messagingCreateGroup({
+        ...messagingAccount(state),
+        conversationId,
+        name: input.name,
+        memberPtids: input.initialMemberPtids,
+      });
+      if (created.state === 'failed') {
+        throw new SocialApiError({
+          method: 'INVOKE',
+          path: 'messaging_create_group',
+          message: 'mobile.group.operationCreateFailed',
+        });
       }
-      await get().refreshGroups();
-      return null;
+      if (created.state === 'projected') {
+        await get().refreshGroups();
+      } else {
+        const actorPtid = state.authSession?.actorRef.ptid ?? '';
+        const group = groupFromMessaging({
+          conversationId: created.conversationId,
+          authorityStationId: state.authSession?.stationPeerId ?? '',
+          kind: 2,
+          name: input.name,
+          ownerPtid: actorPtid,
+          memberPtids: [...new Set([actorPtid, ...input.initialMemberPtids])].filter(Boolean),
+          membershipEpoch: 0,
+          mlsEpoch: 0,
+          active: true,
+          updatedAtUnixMs: Date.now(),
+        });
+        set((current) => ({ groups: mergeGroups(current.groups, group) }));
+      }
+      return created.conversationId;
     } catch (error) {
       set({ error: normalizeError(error) });
       throw error;
@@ -171,9 +198,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   updateGroup: async (groupUlid, input) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      const payload = await api.updateGroup(groupUlid, input);
+      const payload = unwrapOutcome(await gw.updateGroup(groupUlid, input));
       if (payload.group) {
         const group = normalizeGroup(payload.group);
         set((state) => ({ groups: mergeGroups(state.groups, group) }));
@@ -187,34 +214,58 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   refreshUnreadCounts: async () => {
-    const api = requireApi(get());
-    const groups = get().groups.slice();
+    const state = get();
+    const account = messagingAccount(state);
+    const groups = state.groups.slice();
     const entries = await Promise.all(groups.map(async (group) => {
-      const payload = await api.unreadCount(group.ulid);
-      return [group.ulid, Number(payload.unreadCount ?? payload.unread_count ?? 0)] as const;
+      const projections = await messagingListMessages({
+        ...account,
+        conversationId: group.ulid,
+      });
+      const unreadCount = projections.filter((message) =>
+        message.senderPtid !== account.actorPtid
+        && !message.readByPtids.includes(account.actorPtid)
+        && !message.retracted,
+      ).length;
+      return [
+        group.ulid,
+        unreadCount,
+        projections.map((message) => groupMessageFromMessaging(group.ulid, message)),
+      ] as const;
     }));
-    const unreadCounts = Object.fromEntries(entries);
+    const unreadCounts = Object.fromEntries(entries.map(([groupUlid, unreadCount]) => [groupUlid, unreadCount]));
     const activeGroupUlid = get().activeGroupUlid;
-    set({ unreadCounts: activeGroupUlid ? { ...unreadCounts, [activeGroupUlid]: 0 } : unreadCounts });
+    set((current) => ({
+      messages: {
+        ...current.messages,
+        ...Object.fromEntries(entries.map(([groupUlid, , messages]) => [groupUlid, messages])),
+      },
+      unreadCounts: activeGroupUlid ? { ...unreadCounts, [activeGroupUlid]: 0 } : unreadCounts,
+    }));
   },
 
   selectGroup: async (groupUlid) => {
     set({ activeGroupUlid: groupUlid });
     if (!groupUlid) return;
     await Promise.allSettled([get().loadMessages(groupUlid), get().loadMembers(groupUlid), get().loadSettings(groupUlid)]);
-    void get().encryptionPreparer?.(groupUlid);
   },
 
   loadMessages: async (groupUlid) => {
-    const api = requireApi(get());
+    const state = get();
     try {
-      const payload = await api.listMessages(groupUlid);
-      const messages = (payload.messages ?? []).map(normalizeGroupMessage);
+      const messages = (
+        await messagingListMessages({
+          ...messagingAccount(state),
+          conversationId: groupUlid,
+        })
+      ).map((message) => groupMessageFromMessaging(groupUlid, message));
       set((state) => ({
         messages: { ...state.messages, [groupUlid]: messages },
       }));
       const lastReadUlid = messages.at(-1)?.ulid;
-      if (lastReadUlid) await get().markRead(groupUlid, lastReadUlid);
+      if (lastReadUlid && get().activeGroupUlid === groupUlid) {
+        await get().markRead(groupUlid, lastReadUlid);
+      }
     } catch (error) {
       set({ error: normalizeError(error) });
       throw error;
@@ -222,11 +273,11 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   loadMembers: async (groupUlid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      const payload = await api.listMembers(groupUlid);
+      const result = unwrapOutcome(await gw.listMembers(groupUlid));
       set((state) => ({
-        members: { ...state.members, [groupUlid]: (payload.members ?? []).map(normalizeGroupMember) },
+        members: { ...state.members, [groupUlid]: result.members.map(normalizeGroupMember) },
       }));
     } catch (error) {
       set({ error: normalizeError(error) });
@@ -235,9 +286,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   loadSettings: async (groupUlid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      const settings = await api.getMySettings(groupUlid);
+      const settings = unwrapOutcome(await gw.getMySettings(groupUlid));
       set((state) => ({
         settings: { ...state.settings, [groupUlid]: settings },
       }));
@@ -248,9 +299,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   updateMySettings: async (groupUlid, input) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      await api.updateMySettings(groupUlid, input);
+      unwrapOutcome(await gw.updateMySettings(groupUlid, input));
       await get().loadSettings(groupUlid);
     } catch (error) {
       set({ error: normalizeError(error) });
@@ -259,9 +310,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   updateMyNickname: async (groupUlid, nickname) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      const payload = await api.updateMyNickname(groupUlid, nickname);
+      const payload = unwrapOutcome(await gw.updateMyNickname(groupUlid, nickname));
       if (payload.member) {
         const member = normalizeGroupMember(payload.member);
         set((state) => ({
@@ -281,9 +332,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   inviteMembers: async (groupUlid, inviteePtids) => {
     if (!inviteePtids.length) return;
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      await api.inviteMembers(groupUlid, inviteePtids);
+      unwrapOutcome(await gw.inviteMembers(groupUlid, inviteePtids));
       await get().loadMembers(groupUlid);
       await get().refreshGroups();
     } catch (error) {
@@ -293,9 +344,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   leaveGroup: async (groupUlid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      await api.leaveGroup(groupUlid);
+      unwrapOutcome(await gw.leaveGroup(groupUlid));
       set((state) => removeGroupFromState(state, groupUlid));
     } catch (error) {
       set({ error: normalizeError(error) });
@@ -304,9 +355,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   removeMember: async (groupUlid, actorPtid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      await api.removeMember(groupUlid, actorPtid);
+      unwrapOutcome(await gw.removeMember(groupUlid, actorPtid));
       await get().loadMembers(groupUlid);
       await get().refreshGroups();
     } catch (error) {
@@ -316,9 +367,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   updateMember: async (groupUlid, actorPtid, input) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      const payload = await api.updateMember(groupUlid, actorPtid, input);
+      const payload = unwrapOutcome(await gw.updateMember(groupUlid, actorPtid, input));
       if (payload.member) {
         const member = normalizeGroupMember(payload.member);
         set((state) => ({
@@ -337,9 +388,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   transferOwnership: async (groupUlid, nextOwnerPtid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      const payload = await api.transferOwnership(groupUlid, nextOwnerPtid);
+      const payload = unwrapOutcome(await gw.transferOwnership(groupUlid, nextOwnerPtid));
       if (payload.group) {
         const group = normalizeGroup(payload.group);
         set((state) => ({ groups: mergeGroups(state.groups, group) }));
@@ -354,9 +405,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   dissolveGroup: async (groupUlid) => {
-    const api = requireApi(get());
+    const gw = requireGateway(get());
     try {
-      await api.dissolveGroup(groupUlid);
+      unwrapOutcome(await gw.dissolveGroup(groupUlid));
       set((state) => removeGroupFromState(state, groupUlid));
     } catch (error) {
       set({ error: normalizeError(error) });
@@ -364,121 +415,85 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
-  ingestRealtimeMessage: async (groupUlid, message) => {
-    const normalized = normalizeGroupMessage(message);
-    set((state) => ({
-      messages: {
-        ...state.messages,
-        [groupUlid]: mergeGroupMessages(state.messages[groupUlid] ?? [], normalized),
-      },
-    }));
-    if (get().activeGroupUlid === groupUlid) {
-      await get().markRead(groupUlid, normalized.ulid).catch((error) => set({ error: normalizeError(error) }));
-    }
-    await get().refreshGroups().catch((error) => set({ error: normalizeError(error) }));
-  },
-
-  applyMessageMutation: (groupUlid, messageUlid, kind, payload) =>
-    set((state) => {
-      const next = applyGroupMutationToList(state.messages[groupUlid], messageUlid, { kind, ...payload });
-      return next ? { messages: { ...state.messages, [groupUlid]: next } } : state;
-    }),
-
-  applyDecryptedMessage: (groupUlid, messageUlid, plaintext) =>
-    set((state) => {
-      const next = applyGroupDecryptedContentToList(state.messages[groupUlid], messageUlid, plaintext);
-      if (!next) return state;
-      const { [messageUlid]: _removed, ...e2eeErrors } = state.e2eeErrors;
-      return {
-        e2eeErrors,
-        messages: { ...state.messages, [groupUlid]: next },
-      };
-    }),
-
-  setEncryptionReady: (groupUlid, ready) =>
-    set((state) => ({
-      e2eeProjection: setChatE2eeProjectionStatus(
-        state.e2eeProjection,
-        groupUlid,
-        ready ? 'ready' : 'blocked',
-      ),
-      encryptionReady: { ...state.encryptionReady, [groupUlid]: ready },
-    })),
-
   setGroupSending: (groupUlid, sending) =>
     set((state) => {
       const { [groupUlid]: _removed, ...rest } = state.sendingGroups;
       return { sendingGroups: sending ? { ...rest, [groupUlid]: true } : rest };
     }),
 
-  sendEncryptedMessage: async (groupUlid, plaintext, attachments, messageType) => {
-    const sender = get().encryptedSender;
-    if (!sender) return false;
+  sendMessage: async (groupUlid, plaintext, attachments) => {
+    const state = get();
     set((state) => ({
       sendingGroups: { ...state.sendingGroups, [groupUlid]: true },
     }));
     try {
-      return await sender(groupUlid, plaintext, attachments, messageType);
+      const outcome = await messagingSendMessage({
+        ...messagingAccount(state),
+        conversationId: groupUlid,
+        plaintext: plaintext.trim(),
+        attachmentStageIds: attachments?.map((attachment) => attachment.stageId),
+      });
+      await get().loadMessages(groupUlid);
+      return outcome;
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
     } finally {
       get().setGroupSending(groupUlid, false);
     }
   },
 
-  editEncryptedMessage: async (groupUlid, messageUlid, plaintext) => {
-    const editor = get().encryptedEditor;
-    if (!editor) return false;
+  editMessage: async (groupUlid, messageUlid, plaintext) => {
+    const state = get();
     set((state) => ({
       sendingGroups: { ...state.sendingGroups, [groupUlid]: true },
     }));
     try {
-      return await editor(groupUlid, messageUlid, plaintext);
+      await messagingSubmitEdit({
+        ...messagingAccount(state),
+        conversationId: groupUlid,
+        messageId: messageUlid,
+        plaintext: plaintext.trim(),
+      });
+    } catch (error) {
+      set({ error: normalizeError(error) });
+      throw error;
     } finally {
       get().setGroupSending(groupUlid, false);
     }
   },
 
   recallMessage: async (groupUlid, messageUlid) => {
-    const api = requireApi(get());
+    const state = get();
     try {
-      await api.recallMessage(groupUlid, messageUlid);
-      get().applyMessageMutation(groupUlid, messageUlid, 'RECALL', { mutatedTsUnixMs: Date.now() });
+      await messagingSubmitMetadataInteraction({
+        ...messagingAccount(state),
+        conversationId: groupUlid,
+        messageId: messageUlid,
+        interaction: { kind: 'retract' },
+      });
     } catch (error) {
       set({ error: normalizeError(error) });
       throw error;
     }
   },
-
-  deleteMessage: async (groupUlid, messageUlid) => {
-    const api = requireApi(get());
-    try {
-      await api.deleteMessage(groupUlid, messageUlid);
-      get().applyMessageMutation(groupUlid, messageUlid, 'DELETE', { mutatedTsUnixMs: Date.now() });
-    } catch (error) {
-      set({ error: normalizeError(error) });
-      throw error;
-    }
-  },
-
-  bindEncryptedSender: (sender) => set({ encryptedSender: sender }),
-
-  bindEncryptedEditor: (editor) => set({ encryptedEditor: editor }),
-
-  bindEncryptionPreparer: (preparer) => set({ encryptionPreparer: preparer }),
-
-  setE2eeError: (messageUlid, error) =>
-    set((state) => {
-      const { [messageUlid]: _removed, ...rest } = state.e2eeErrors;
-      return {
-        e2eeProjection: error
-          ? setChatE2eeProjectionStatus(state.e2eeProjection, messageUlid, 'error', { error })
-          : clearChatE2eeProjectionStatus(state.e2eeProjection, messageUlid),
-        e2eeErrors: error ? { ...rest, [messageUlid]: error } : rest,
-      };
-    }),
 
   markRead: async (groupUlid, upToUlid) => {
-    const api = requireApi(get());
-    await api.markRead(groupUlid, upToUlid);
+    const state = get();
+    const messages = state.messages[groupUlid] ?? [];
+    const target = upToUlid
+      ? messages.find((message) => message.ulid === upToUlid)
+      : messages.at(-1);
+    const eventSequence = target
+      ? Number((target as GroupMessage & { eventSequence?: number }).eventSequence ?? 0)
+      : 0;
+    if (eventSequence > 0) {
+      await messagingSubmitReadCursor({
+        ...messagingAccount(state),
+        conversationId: groupUlid,
+        lastReadSequence: eventSequence,
+      });
+    }
     set((state) => ({ unreadCounts: { ...state.unreadCounts, [groupUlid]: 0 } }));
   },
 
@@ -496,23 +511,18 @@ export function selectGroupConversations(state: GroupState): GroupConversation[]
 function emptyGroupState() {
   return {
     sessionKey: null,
-    api: null,
+    authSession: null,
+    gateway: null,
     groups: [],
     members: {},
     messages: {},
     settings: {},
     unreadCounts: {},
-    e2eeErrors: {},
-    e2eeProjection: {},
-    encryptionReady: {},
     sendingGroups: {},
     activeGroupUlid: null,
     loading: false,
     error: null,
     lastReconcileAt: null,
-    encryptedSender: null,
-    encryptedEditor: null,
-    encryptionPreparer: null,
   };
 }
 
@@ -535,23 +545,37 @@ function removeGroupFromState(state: GroupState, groupUlid: string) {
   const { [groupUlid]: _messages, ...messages } = state.messages;
   const { [groupUlid]: _settings, ...settings } = state.settings;
   const { [groupUlid]: _unread, ...unreadCounts } = state.unreadCounts;
-  const { [groupUlid]: _ready, ...encryptionReady } = state.encryptionReady;
   return {
     groups: state.groups.filter((group) => group.ulid !== groupUlid),
     members,
     messages,
     settings,
     unreadCounts,
-    encryptionReady,
     activeGroupUlid: state.activeGroupUlid === groupUlid ? null : state.activeGroupUlid,
   };
 }
 
-function requireApi(state: GroupState): GroupApiClient {
-  if (!state.api) {
-    throw new SocialApiError({ method: 'GET', path: '/group-chat', message: 'group api is not bound' });
+function messagingAccount(state: GroupState) {
+  const session = state.authSession;
+  const actorPtid = session?.actorRef.ptid.trim();
+  if (!session || !actorPtid) {
+    throw new SocialApiError({
+      method: 'INVOKE',
+      path: 'messaging',
+      message: 'mobile.social.notAuthenticated',
+    });
   }
-  return state.api;
+  return {
+    stationPeerId: session.stationPeerId,
+    actorPtid,
+  };
+}
+
+function requireGateway(state: GroupState): GroupGateway {
+  if (!state.gateway) {
+    throw new SocialApiError({ method: 'GET', path: '/group-chat', message: 'group gateway is not bound' });
+  }
+  return state.gateway;
 }
 
 function normalizeError(error: unknown): SocialApiError {

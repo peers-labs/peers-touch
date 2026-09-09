@@ -7,6 +7,10 @@
 
 ---
 
+Conversation is the sole Chat entry point through `/conversation/*`. Device,
+Inbox, Recovery, Key Exchange, and Federation capabilities are exposed by their
+resource owners; Device Messaging Engine remains the Desktop/Mobile runtime name.
+
 ## 1. Product Thesis
 
 目标用户是需要在 Desktop 和 Mobile 上进行长期、可靠、安全通信的个人与群组。

@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { AppProviders } from './app/AppProviders';
+import {
+  getMobileLifecycleKernel,
+  useLifecycleKernel,
+} from './app/lifecycle';
 import { useMobileI18n } from './app/mobileI18n';
 import { MobileShell } from './components/MobileShell';
+import { RecoveryOverlayHost } from './components/recovery';
 import {
-  startStationAccessAttempt,
   submitStationLoginGate,
   submitStationInviteCodeGate,
   isAccessGranted,
@@ -16,8 +20,17 @@ import {
 } from './features/auth/authSession';
 import { AccessGateHost } from './features/auth/AccessGateHost';
 import { useAuthStore } from './features/auth/authStore';
-import { probeStation, verifyStationIdentity } from './features/station/stationConnection';
+import { probeStation, verifyStationIdentity, type StationIdentityResult } from './features/station/stationConnection';
 import { StationLaunchScreen } from './features/station/StationLaunchScreen';
+import {
+  logoutAuthRuntimeSession,
+  startStationAccessAttemptWithRecovery,
+} from './runtimes/authRuntime';
+import {
+  getRecoveryProjection,
+  type DeviceLocalFlagState,
+  type SessionMismatchState,
+} from './runtimes/recoveryProjection';
 import {
   activateStationEntry,
   activeStationEntry,
@@ -35,11 +48,23 @@ import {
 } from './features/station/stationRegistry';
 import { purgeLegacyMobileIdentityStorage } from './storage/mobileClientStorage';
 
-type LaunchState = 'station-selection' | 'access-gate-chain' | 'shell';
-
+/**
+ * MobileAppRoot — root renderer for the lifecycle-owned launch-state machine.
+ *
+ * The lifecycle kernel (via AppProviders) manages runtime bootstrap/teardown.
+ * This component renders the pre-shell launch flow and dispatches transition
+ * intents to the kernel.
+ *
+ * Lifecycle coordination:
+ * - The kernel bootstraps all runtimes before this component mounts.
+ * - Launch state transitions are driven by station and auth outcomes.
+ * - The shell only renders when lifecyclePhase is ACTIVE.
+ */
 function MobileAppRoot() {
   const { t } = useMobileI18n();
-  const [launchState, setLaunchState] = useState<LaunchState>('station-selection');
+  const lifecycle = useLifecycleKernel();
+
+  const launchState = lifecycle.launchState;
   const [stationRegistry, setStationRegistry] = useState<StoredStationRegistry>(() => emptyStationRegistry());
   const [stationError, setStationError] = useState<string | null>(null);
   const [stationChecking, setStationChecking] = useState(false);
@@ -49,9 +74,8 @@ function MobileAppRoot() {
   const authSession = useAuthStore((state) => state.session);
   const authError = useAuthStore((state) => state.error);
   const authLoading = useAuthStore((state) => state.loading);
+  const authRestored = useAuthStore((state) => state.restored);
   const accessDecision = useAuthStore((state) => state.accessDecision);
-  const restoreSession = useAuthStore((state) => state.restoreSession);
-  const clearSession = useAuthStore((state) => state.clearSession);
   const setAuthSession = useAuthStore((state) => state.setSession);
   const setAuthError = useAuthStore((state) => state.setError);
   const setAuthLoading = useAuthStore((state) => state.setLoading);
@@ -60,43 +84,54 @@ function MobileAppRoot() {
   const stationUrlsKey = stationRegistry.entries.map((entry) => entry.url).join('\n');
   const activeStation = activeStationEntry(stationRegistry);
 
+  // The lifecycle-owned auth descriptor restores and revalidates credentials.
+  // React only loads the device-local Station projection for rendering.
   useEffect(() => {
+    if (lifecycle.phase !== 'ACTIVE') return;
+
     let mounted = true;
     purgeLegacyMobileIdentityStorage();
 
-    Promise.all([
-      loadStationRegistry().catch(() => emptyStationRegistry()),
-      restoreSession().catch(() => {
-        if (mounted) setAuthSession(null);
-        return null;
-      }),
-    ])
-      .then(([registry, session]) => {
+    loadStationRegistry()
+      .catch(() => emptyStationRegistry())
+      .then((registry) => {
         if (!mounted) return;
         replaceStationRegistry(registry);
-        const selectedStation = activeStationEntry(registry);
-        if (session && selectedStation?.stationPeerId === session.stationPeerId) {
-          void startAccessGateChainFor(selectedStation, session);
+        const kernel = getMobileLifecycleKernel();
+        if (kernel.getState().launchState === 'app-boot') {
+          kernel.transitionLaunchState('station-selection');
         }
       });
 
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [lifecycle.generation, lifecycle.phase]);
 
+  // --- Auto-start access gate chain when session matches station ---
   useEffect(() => {
-    if (!authSession || !activeStation || authSession.stationPeerId === activeStation.stationPeerId) return;
-
-    clearSession().catch(() => setAuthSession(null));
-  }, [activeStation, authSession, clearSession, setAuthSession]);
-
-  useEffect(() => {
-    if (!authSession || !activeStation || authSession.stationPeerId !== activeStation.stationPeerId) return;
+    if (!authRestored) return;
+    if (!activeStation) return;
     if (launchState !== 'station-selection') return;
+    if (accessDecision) {
+      if (
+        authSession?.stationPeerId === activeStation.stationPeerId
+        && isAccessGranted(accessDecision)
+      ) {
+        enterShell();
+      } else {
+        getMobileLifecycleKernel().transitionLaunchState('access-gate-chain');
+      }
+      return;
+    }
+    if (
+      !authSession
+      || authSession.stationPeerId !== activeStation.stationPeerId
+    ) return;
     void startAccessGateChain(authSession);
-  }, [activeStation, authSession, launchState]);
+  }, [accessDecision, activeStation, authRestored, authSession, launchState]);
 
+  // --- Auto-probe station URLs ---
   useEffect(() => {
     if (launchState !== 'station-selection') return;
 
@@ -106,6 +141,7 @@ function MobileAppRoot() {
     }
   }, [launchState, stationUrlsKey]);
 
+  // --- Load remembered accounts when active station changes ---
   useEffect(() => {
     if (!activeStation) {
       setRememberedAccounts([]);
@@ -133,6 +169,28 @@ function MobileAppRoot() {
   async function commitStationRegistry(registry: StoredStationRegistry) {
     replaceStationRegistry(registry);
     await persistStationRegistry(registry);
+  }
+
+  async function commitStationScope(registry: StoredStationRegistry) {
+    const currentStationPeerId =
+      stationRegistryRef.current.activeStationPeerId;
+    if (
+      !currentStationPeerId
+      || currentStationPeerId === registry.activeStationPeerId
+    ) {
+      await commitStationRegistry(registry);
+      return;
+    }
+
+    await getMobileLifecycleKernel().transitionScope(
+      'station-replace',
+      async () => {
+        await logoutAuthRuntimeSession();
+        await persistStationRegistry(registry);
+        replaceStationRegistry(registry);
+      },
+    );
+    showStationSelection();
   }
 
   function autoProbeStation(url: string) {
@@ -185,7 +243,7 @@ function MobileAppRoot() {
       setRememberedAccounts(await loadRememberedLoginAccounts(session.stationPeerId).catch(() => []));
       setAuthSession(session);
       setAccessDecision(decision);
-      if (isAccessGranted(decision)) setLaunchState('shell');
+      if (isAccessGranted(decision)) enterShell();
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
       setAuthError(t(msg) !== msg ? t(msg) : (msg || t('mobile.auth.loginFailed')));
@@ -195,14 +253,73 @@ function MobileAppRoot() {
   }
 
   async function logout() {
-    await clearSession();
-    setAccessDecision(null);
+    const kernel = getMobileLifecycleKernel();
+    await kernel.transitionScope('logout', logoutAuthRuntimeSession);
     const selectedStation = activeStationEntry(stationRegistryRef.current);
     if (!selectedStation) {
-      setLaunchState('station-selection');
+      showStationSelection();
       return;
     }
     await startAccessGateChainFor(selectedStation, null);
+  }
+
+  async function leaveCurrentStationForSelection() {
+    await getMobileLifecycleKernel().transitionScope(
+      'station-replace',
+      logoutAuthRuntimeSession,
+    );
+    setAccessDecision(null);
+    showStationSelection();
+  }
+
+  async function retryDeviceLocalRecovery(state: DeviceLocalFlagState) {
+    if (state.reason === 'session-expired') {
+      await getMobileLifecycleKernel().transitionScope(
+        'revocation',
+        logoutAuthRuntimeSession,
+      );
+      const selectedStation = activeStationEntry(stationRegistryRef.current);
+      if (!selectedStation) {
+        showStationSelection();
+        return;
+      }
+      await startAccessGateChainFor(selectedStation, null);
+      getRecoveryProjection().clearDeviceLocalFlag(state.reason);
+      return;
+    }
+
+    const selectedStation = activeStationEntry(stationRegistryRef.current);
+    if (!selectedStation) {
+      throw new Error('mobile.auth.activeStationRequired');
+    }
+    const probe = await probeStation(selectedStation.url);
+    if (!probe.online) {
+      throw new Error('mobile.launch.stationUnavailable');
+    }
+    const verified = await verifyStationIdentity(selectedStation.url);
+    requireMatchingStationIdentity(selectedStation, verified.stationPeerId);
+    await getMobileLifecycleKernel().restartRuntimeGraph('app-resume');
+    getRecoveryProjection().clearDeviceLocalFlag(state.reason);
+  }
+
+  async function reAuthenticateSessionMismatch(
+    state: SessionMismatchState,
+  ) {
+    const selectedStation = activeStationEntry(stationRegistryRef.current);
+    if (
+      !selectedStation
+      || selectedStation.stationPeerId !== state.expectedStationPeerId
+    ) {
+      throw new Error('mobile.launch.stationIdentityMismatch');
+    }
+    const verified = await verifyStationIdentity(selectedStation.url);
+    requireMatchingStationIdentity(selectedStation, verified.stationPeerId);
+    await getMobileLifecycleKernel().transitionScope(
+      'revocation',
+      logoutAuthRuntimeSession,
+    );
+    await startAccessGateChainFor(selectedStation, null);
+    getRecoveryProjection().clearSessionMismatch();
   }
 
   async function submitInviteCode(code: string) {
@@ -224,7 +341,7 @@ function MobileAppRoot() {
         inviteCode: code,
       });
       setAccessDecision(decision);
-      if (isAccessGranted(decision)) setLaunchState('shell');
+      if (isAccessGranted(decision)) enterShell();
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
       setAuthError(t(msg) !== msg ? t(msg) : (msg || t('mobile.auth.inviteCodeRejected')));
@@ -240,59 +357,85 @@ function MobileAppRoot() {
   }
 
   async function startAccessGateChainFor(station: MobileStationEntry, session?: MobileAuthSession | null) {
+    getMobileLifecycleKernel().transitionLaunchState('station-handshake');
     setAuthLoading(true);
     setAuthError(null);
+    let observedStationPeerId: string | null = null;
     try {
       const verified = await verifyStationIdentity(station.url);
+      observedStationPeerId = verified.stationPeerId;
       requireMatchingStationIdentity(station, verified.stationPeerId);
-      const decision = await startStationAccessAttempt(
+      getRecoveryProjection().clearSessionMismatch();
+      const decision = await startStationAccessAttemptWithRecovery(
         station.stationPeerId,
         station.url,
-        session?.sessionId,
+        session,
       );
       setAccessDecision(decision);
       if (isAccessGranted(decision)) {
-        setLaunchState('shell');
+        enterShell();
         return;
       }
-      setLaunchState('access-gate-chain');
+      getMobileLifecycleKernel().transitionLaunchState('access-gate-chain');
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
-      if (session && isRevokedSessionError(msg)) {
-        await clearSession();
-        setAuthSession(null);
-        setAccessDecision(null);
-        try {
-          const decision = await startStationAccessAttempt(station.stationPeerId, station.url);
-          setAccessDecision(decision);
-          setLaunchState(isAccessGranted(decision) ? 'shell' : 'access-gate-chain');
-          return;
-        } catch (retryError) {
-          const retryMsg = retryError instanceof Error ? retryError.message : '';
-          setStationError(t(retryMsg) !== retryMsg ? t(retryMsg) : (retryMsg || t('mobile.launch.stationUnavailable')));
-          setLaunchState('station-selection');
-          return;
-        }
+      if (
+        msg === 'mobile.launch.stationIdentityMismatch'
+        && observedStationPeerId
+      ) {
+        getRecoveryProjection().reportSessionMismatch(
+          station.stationPeerId,
+          observedStationPeerId,
+        );
       }
       setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
-      setLaunchState('station-selection');
+      showStationSelection();
     } finally {
       setAuthLoading(false);
     }
   }
 
-  if (launchState === 'shell') {
+  function enterShell() {
+    const kernel = getMobileLifecycleKernel();
+    kernel.transitionLaunchState('runtime-critical');
+    kernel.transitionLaunchState('shell');
+  }
+
+  function showStationSelection() {
+    const kernel = getMobileLifecycleKernel();
+    if (kernel.getState().launchState === 'shell') {
+      kernel.transitionLaunchState('station-change');
+    }
+    kernel.transitionLaunchState('station-selection');
+  }
+
+  // --- Render based on launch state ---
+
+  function renderWithRecovery(content: ReactNode) {
     return (
+      <>
+        {content}
+        <RecoveryOverlayHost
+          onReAuthenticate={reAuthenticateSessionMismatch}
+          onSwitchStation={leaveCurrentStationForSelection}
+          onRetryDeviceLocal={retryDeviceLocalRecovery}
+        />
+      </>
+    );
+  }
+
+  if (launchState === 'shell') {
+    return renderWithRecovery(
       <MobileShell
         stationRegistry={stationRegistry}
-        onChangeStation={() => setLaunchState('station-selection')}
+        onChangeStation={showStationSelection}
         onLogout={logout}
-      />
+      />,
     );
   }
 
   if (launchState === 'access-gate-chain') {
-    return (
+    return renderWithRecovery(
       <AccessGateHost
         decision={accessDecision}
         stationLabel={activeStation?.label || t('mobile.launch.station')}
@@ -302,15 +445,15 @@ function MobileAppRoot() {
         rememberedAccounts={rememberedAccounts}
         onBack={() => {
           setAccessDecision(null);
-          setLaunchState('station-selection');
+          showStationSelection();
         }}
         onLogin={login}
         onInviteCode={submitInviteCode}
-      />
+      />,
     );
   }
 
-  return (
+  return renderWithRecovery(
     <StationLaunchScreen
       registry={stationRegistry}
       error={stationError}
@@ -337,6 +480,7 @@ function MobileAppRoot() {
             stationRegistryRef.current,
             { stationPeerId: identity.stationPeerId, url: normalizedUrl },
             { checkedAt: probe.checkedAt, label: probe.label, online: probe.online },
+            identity.identityVerified,
           );
           if (!next.ok) {
             setStationError(t(next.error));
@@ -344,7 +488,7 @@ function MobileAppRoot() {
           }
           autoVerifiedStationUrls.current.add(normalizedUrl);
           setStationError(null);
-          await commitStationRegistry(next.registry);
+          await commitStationScope(next.registry);
           return true;
         } catch (error) {
           const msg = error instanceof Error ? error.message : '';
@@ -354,15 +498,15 @@ function MobileAppRoot() {
           setStationChecking(false);
         }
       }}
-      onSelectStation={(stationPeerId) => {
+      onSelectStation={async (stationPeerId) => {
         setStationError(null);
         const next = activateStationEntry(stationRegistryRef.current, stationPeerId);
-        void commitStationRegistry(next);
+        await commitStationScope(next);
       }}
-      onRemoveStation={(stationPeerId) => {
+      onRemoveStation={async (stationPeerId) => {
         setStationError(null);
         const next = removeStationEntry(stationRegistryRef.current, stationPeerId);
-        if (next !== stationRegistryRef.current) void commitStationRegistry(next);
+        if (next !== stationRegistryRef.current) await commitStationScope(next);
       }}
       onContinue={async () => {
         const selectedStation = activeStationEntry(stationRegistryRef.current);
@@ -377,7 +521,9 @@ function MobileAppRoot() {
             return;
           }
           const identity = await verifyStationIdentity(selectedStation.url);
-          requireMatchingStationIdentity(selectedStation, identity.stationPeerId);
+          if (identity.identityVerified) {
+            requireMatchingStationIdentity(selectedStation, identity.stationPeerId);
+          }
           const next = activateStationEntry(stationRegistryRef.current, selectedStation.stationPeerId, {
             checkedAt: probe.checkedAt,
             label: probe.label,
@@ -397,7 +543,7 @@ function MobileAppRoot() {
           setStationChecking(false);
         }
       }}
-    />
+    />,
   );
 }
 
@@ -407,8 +553,4 @@ export function App() {
       <MobileAppRoot />
     </AppProviders>
   );
-}
-
-function isRevokedSessionError(message: string): boolean {
-  return /session\s+(invalid|revoked|expired)|invalid\s+session|revoked/i.test(message);
 }

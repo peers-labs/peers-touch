@@ -94,61 +94,6 @@ func (EnvelopePayloadType) EnumDescriptor() ([]byte, []int) {
 	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{0}
 }
 
-type InboxItemStatus int32
-
-const (
-	InboxItemStatus_INBOX_ITEM_STATUS_UNSPECIFIED InboxItemStatus = 0
-	InboxItemStatus_INBOX_ITEM_STATUS_PENDING     InboxItemStatus = 1
-	InboxItemStatus_INBOX_ITEM_STATUS_DELIVERED   InboxItemStatus = 2
-	InboxItemStatus_INBOX_ITEM_STATUS_ACKED       InboxItemStatus = 3
-	InboxItemStatus_INBOX_ITEM_STATUS_DEAD_LETTER InboxItemStatus = 4
-)
-
-// Enum value maps for InboxItemStatus.
-var (
-	InboxItemStatus_name = map[int32]string{
-		0: "INBOX_ITEM_STATUS_UNSPECIFIED",
-		1: "INBOX_ITEM_STATUS_PENDING",
-		2: "INBOX_ITEM_STATUS_DELIVERED",
-		3: "INBOX_ITEM_STATUS_ACKED",
-		4: "INBOX_ITEM_STATUS_DEAD_LETTER",
-	}
-	InboxItemStatus_value = map[string]int32{
-		"INBOX_ITEM_STATUS_UNSPECIFIED": 0,
-		"INBOX_ITEM_STATUS_PENDING":     1,
-		"INBOX_ITEM_STATUS_DELIVERED":   2,
-		"INBOX_ITEM_STATUS_ACKED":       3,
-		"INBOX_ITEM_STATUS_DEAD_LETTER": 4,
-	}
-)
-
-func (x InboxItemStatus) Enum() *InboxItemStatus {
-	p := new(InboxItemStatus)
-	*p = x
-	return p
-}
-
-func (x InboxItemStatus) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (InboxItemStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_chat_envelope_proto_enumTypes[1].Descriptor()
-}
-
-func (InboxItemStatus) Type() protoreflect.EnumType {
-	return &file_domain_chat_envelope_proto_enumTypes[1]
-}
-
-func (x InboxItemStatus) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use InboxItemStatus.Descriptor instead.
-func (InboxItemStatus) EnumDescriptor() ([]byte, []int) {
-	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{1}
-}
-
 type OutboxItemStatus int32
 
 const (
@@ -188,11 +133,11 @@ func (x OutboxItemStatus) String() string {
 }
 
 func (OutboxItemStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_chat_envelope_proto_enumTypes[2].Descriptor()
+	return file_domain_chat_envelope_proto_enumTypes[1].Descriptor()
 }
 
 func (OutboxItemStatus) Type() protoreflect.EnumType {
-	return &file_domain_chat_envelope_proto_enumTypes[2]
+	return &file_domain_chat_envelope_proto_enumTypes[1]
 }
 
 func (x OutboxItemStatus) Number() protoreflect.EnumNumber {
@@ -201,7 +146,7 @@ func (x OutboxItemStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use OutboxItemStatus.Descriptor instead.
 func (OutboxItemStatus) EnumDescriptor() ([]byte, []int) {
-	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{2}
+	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{1}
 }
 
 type MlsTransitionDeliveryKind int32
@@ -237,11 +182,11 @@ func (x MlsTransitionDeliveryKind) String() string {
 }
 
 func (MlsTransitionDeliveryKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_chat_envelope_proto_enumTypes[3].Descriptor()
+	return file_domain_chat_envelope_proto_enumTypes[2].Descriptor()
 }
 
 func (MlsTransitionDeliveryKind) Type() protoreflect.EnumType {
-	return &file_domain_chat_envelope_proto_enumTypes[3]
+	return &file_domain_chat_envelope_proto_enumTypes[2]
 }
 
 func (x MlsTransitionDeliveryKind) Number() protoreflect.EnumNumber {
@@ -250,7 +195,7 @@ func (x MlsTransitionDeliveryKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MlsTransitionDeliveryKind.Descriptor instead.
 func (MlsTransitionDeliveryKind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{3}
+	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{2}
 }
 
 type DirectKeyExchangeKind int32
@@ -289,11 +234,11 @@ func (x DirectKeyExchangeKind) String() string {
 }
 
 func (DirectKeyExchangeKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_chat_envelope_proto_enumTypes[4].Descriptor()
+	return file_domain_chat_envelope_proto_enumTypes[3].Descriptor()
 }
 
 func (DirectKeyExchangeKind) Type() protoreflect.EnumType {
-	return &file_domain_chat_envelope_proto_enumTypes[4]
+	return &file_domain_chat_envelope_proto_enumTypes[3]
 }
 
 func (x DirectKeyExchangeKind) Number() protoreflect.EnumNumber {
@@ -302,7 +247,7 @@ func (x DirectKeyExchangeKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DirectKeyExchangeKind.Descriptor instead.
 func (DirectKeyExchangeKind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{4}
+	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{3}
 }
 
 // StationEnvelope is the wire unit for all chat signaling between Stations
@@ -558,115 +503,6 @@ func (x *StationEnvelope) GetAuthorityEpoch() int64 {
 	return 0
 }
 
-// Per-device durable inbox entry. Station persists these until ACK'd.
-type DeviceInboxItem struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	InboxItemId       string                 `protobuf:"bytes,1,opt,name=inbox_item_id,json=inboxItemId,proto3" json:"inbox_item_id,omitempty"`
-	RecipientPtid     string                 `protobuf:"bytes,2,opt,name=recipient_ptid,json=recipientPtid,proto3" json:"recipient_ptid,omitempty"`
-	RecipientDeviceId string                 `protobuf:"bytes,3,opt,name=recipient_device_id,json=recipientDeviceId,proto3" json:"recipient_device_id,omitempty"`
-	Envelope          *StationEnvelope       `protobuf:"bytes,4,opt,name=envelope,proto3" json:"envelope,omitempty"`
-	Status            InboxItemStatus        `protobuf:"varint,5,opt,name=status,proto3,enum=peers_touch.model.chat.v1.InboxItemStatus" json:"status,omitempty"`
-	DeliveryAttempts  int32                  `protobuf:"varint,6,opt,name=delivery_attempts,json=deliveryAttempts,proto3" json:"delivery_attempts,omitempty"`
-	FirstQueuedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=first_queued_at,json=firstQueuedAt,proto3" json:"first_queued_at,omitempty"`
-	LastAttemptAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=last_attempt_at,json=lastAttemptAt,proto3" json:"last_attempt_at,omitempty"`
-	DeliveredAt       *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=delivered_at,json=deliveredAt,proto3" json:"delivered_at,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
-}
-
-func (x *DeviceInboxItem) Reset() {
-	*x = DeviceInboxItem{}
-	mi := &file_domain_chat_envelope_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeviceInboxItem) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeviceInboxItem) ProtoMessage() {}
-
-func (x *DeviceInboxItem) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_envelope_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeviceInboxItem.ProtoReflect.Descriptor instead.
-func (*DeviceInboxItem) Descriptor() ([]byte, []int) {
-	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *DeviceInboxItem) GetInboxItemId() string {
-	if x != nil {
-		return x.InboxItemId
-	}
-	return ""
-}
-
-func (x *DeviceInboxItem) GetRecipientPtid() string {
-	if x != nil {
-		return x.RecipientPtid
-	}
-	return ""
-}
-
-func (x *DeviceInboxItem) GetRecipientDeviceId() string {
-	if x != nil {
-		return x.RecipientDeviceId
-	}
-	return ""
-}
-
-func (x *DeviceInboxItem) GetEnvelope() *StationEnvelope {
-	if x != nil {
-		return x.Envelope
-	}
-	return nil
-}
-
-func (x *DeviceInboxItem) GetStatus() InboxItemStatus {
-	if x != nil {
-		return x.Status
-	}
-	return InboxItemStatus_INBOX_ITEM_STATUS_UNSPECIFIED
-}
-
-func (x *DeviceInboxItem) GetDeliveryAttempts() int32 {
-	if x != nil {
-		return x.DeliveryAttempts
-	}
-	return 0
-}
-
-func (x *DeviceInboxItem) GetFirstQueuedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.FirstQueuedAt
-	}
-	return nil
-}
-
-func (x *DeviceInboxItem) GetLastAttemptAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.LastAttemptAt
-	}
-	return nil
-}
-
-func (x *DeviceInboxItem) GetDeliveredAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.DeliveredAt
-	}
-	return nil
-}
-
 // Per-Station durable outbox entry for cross-Station federation delivery.
 type OutboxItem struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
@@ -685,7 +521,7 @@ type OutboxItem struct {
 
 func (x *OutboxItem) Reset() {
 	*x = OutboxItem{}
-	mi := &file_domain_chat_envelope_proto_msgTypes[2]
+	mi := &file_domain_chat_envelope_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -697,7 +533,7 @@ func (x *OutboxItem) String() string {
 func (*OutboxItem) ProtoMessage() {}
 
 func (x *OutboxItem) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_envelope_proto_msgTypes[2]
+	mi := &file_domain_chat_envelope_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -710,7 +546,7 @@ func (x *OutboxItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OutboxItem.ProtoReflect.Descriptor instead.
 func (*OutboxItem) Descriptor() ([]byte, []int) {
-	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{2}
+	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *OutboxItem) GetOutboxItemId() string {
@@ -797,7 +633,7 @@ type MlsTransitionDeliveryPayload struct {
 
 func (x *MlsTransitionDeliveryPayload) Reset() {
 	*x = MlsTransitionDeliveryPayload{}
-	mi := &file_domain_chat_envelope_proto_msgTypes[3]
+	mi := &file_domain_chat_envelope_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -809,7 +645,7 @@ func (x *MlsTransitionDeliveryPayload) String() string {
 func (*MlsTransitionDeliveryPayload) ProtoMessage() {}
 
 func (x *MlsTransitionDeliveryPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_envelope_proto_msgTypes[3]
+	mi := &file_domain_chat_envelope_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -822,7 +658,7 @@ func (x *MlsTransitionDeliveryPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MlsTransitionDeliveryPayload.ProtoReflect.Descriptor instead.
 func (*MlsTransitionDeliveryPayload) Descriptor() ([]byte, []int) {
-	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{3}
+	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *MlsTransitionDeliveryPayload) GetConversationId() string {
@@ -908,7 +744,7 @@ type DirectKeyExchangePayload struct {
 
 func (x *DirectKeyExchangePayload) Reset() {
 	*x = DirectKeyExchangePayload{}
-	mi := &file_domain_chat_envelope_proto_msgTypes[4]
+	mi := &file_domain_chat_envelope_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -920,7 +756,7 @@ func (x *DirectKeyExchangePayload) String() string {
 func (*DirectKeyExchangePayload) ProtoMessage() {}
 
 func (x *DirectKeyExchangePayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_envelope_proto_msgTypes[4]
+	mi := &file_domain_chat_envelope_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -933,7 +769,7 @@ func (x *DirectKeyExchangePayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectKeyExchangePayload.ProtoReflect.Descriptor instead.
 func (*DirectKeyExchangePayload) Descriptor() ([]byte, []int) {
-	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{4}
+	return file_domain_chat_envelope_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *DirectKeyExchangePayload) GetSessionId() string {
@@ -993,17 +829,7 @@ const file_domain_chat_envelope_proto_rawDesc = "" +
 	"\x0epayload_sha256\x18\x17 \x01(\fR\rpayloadSha256\x129\n" +
 	"\x19authority_station_peer_id\x18\x18 \x01(\tR\x16authorityStationPeerId\x12#\n" +
 	"\rfederation_id\x18\x19 \x01(\tR\ffederationId\x12'\n" +
-	"\x0fauthority_epoch\x18\x1a \x01(\x03R\x0eauthorityEpoch\"\x8c\x04\n" +
-	"\x0fDeviceInboxItem\x12\"\n" +
-	"\rinbox_item_id\x18\x01 \x01(\tR\vinboxItemId\x12%\n" +
-	"\x0erecipient_ptid\x18\x02 \x01(\tR\rrecipientPtid\x12.\n" +
-	"\x13recipient_device_id\x18\x03 \x01(\tR\x11recipientDeviceId\x12F\n" +
-	"\benvelope\x18\x04 \x01(\v2*.peers_touch.model.chat.v1.StationEnvelopeR\benvelope\x12B\n" +
-	"\x06status\x18\x05 \x01(\x0e2*.peers_touch.model.chat.v1.InboxItemStatusR\x06status\x12+\n" +
-	"\x11delivery_attempts\x18\x06 \x01(\x05R\x10deliveryAttempts\x12B\n" +
-	"\x0ffirst_queued_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\rfirstQueuedAt\x12B\n" +
-	"\x0flast_attempt_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\rlastAttemptAt\x12=\n" +
-	"\fdelivered_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\vdeliveredAt\"\xf7\x03\n" +
+	"\x0fauthority_epoch\x18\x1a \x01(\x03R\x0eauthorityEpoch\"\xf7\x03\n" +
 	"\n" +
 	"OutboxItem\x12$\n" +
 	"\x0eoutbox_item_id\x18\x01 \x01(\tR\foutboxItemId\x123\n" +
@@ -1043,13 +869,7 @@ const file_domain_chat_envelope_proto_rawDesc = "" +
 	"\x1dENVELOPE_PAYLOAD_TYPE_RECEIPT\x10\x04\x12 \n" +
 	"\x1cENVELOPE_PAYLOAD_TYPE_TYPING\x10\x05\x12(\n" +
 	"$ENVELOPE_PAYLOAD_TYPE_CALL_SIGNALING\x10\x06\x125\n" +
-	"1ENVELOPE_PAYLOAD_TYPE_CONVERSATION_COMMAND_RESULT\x10\a*\xb4\x01\n" +
-	"\x0fInboxItemStatus\x12!\n" +
-	"\x1dINBOX_ITEM_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
-	"\x19INBOX_ITEM_STATUS_PENDING\x10\x01\x12\x1f\n" +
-	"\x1bINBOX_ITEM_STATUS_DELIVERED\x10\x02\x12\x1b\n" +
-	"\x17INBOX_ITEM_STATUS_ACKED\x10\x03\x12!\n" +
-	"\x1dINBOX_ITEM_STATUS_DEAD_LETTER\x10\x04*\xbe\x01\n" +
+	"1ENVELOPE_PAYLOAD_TYPE_CONVERSATION_COMMAND_RESULT\x10\a*\xbe\x01\n" +
 	"\x10OutboxItemStatus\x12\"\n" +
 	"\x1eOUTBOX_ITEM_STATUS_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aOUTBOX_ITEM_STATUS_PENDING\x10\x01\x12 \n" +
@@ -1078,42 +898,35 @@ func file_domain_chat_envelope_proto_rawDescGZIP() []byte {
 	return file_domain_chat_envelope_proto_rawDescData
 }
 
-var file_domain_chat_envelope_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_domain_chat_envelope_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_domain_chat_envelope_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_domain_chat_envelope_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_domain_chat_envelope_proto_goTypes = []any{
 	(EnvelopePayloadType)(0),             // 0: peers_touch.model.chat.v1.EnvelopePayloadType
-	(InboxItemStatus)(0),                 // 1: peers_touch.model.chat.v1.InboxItemStatus
-	(OutboxItemStatus)(0),                // 2: peers_touch.model.chat.v1.OutboxItemStatus
-	(MlsTransitionDeliveryKind)(0),       // 3: peers_touch.model.chat.v1.MlsTransitionDeliveryKind
-	(DirectKeyExchangeKind)(0),           // 4: peers_touch.model.chat.v1.DirectKeyExchangeKind
-	(*StationEnvelope)(nil),              // 5: peers_touch.model.chat.v1.StationEnvelope
-	(*DeviceInboxItem)(nil),              // 6: peers_touch.model.chat.v1.DeviceInboxItem
-	(*OutboxItem)(nil),                   // 7: peers_touch.model.chat.v1.OutboxItem
-	(*MlsTransitionDeliveryPayload)(nil), // 8: peers_touch.model.chat.v1.MlsTransitionDeliveryPayload
-	(*DirectKeyExchangePayload)(nil),     // 9: peers_touch.model.chat.v1.DirectKeyExchangePayload
-	(*timestamppb.Timestamp)(nil),        // 10: google.protobuf.Timestamp
+	(OutboxItemStatus)(0),                // 1: peers_touch.model.chat.v1.OutboxItemStatus
+	(MlsTransitionDeliveryKind)(0),       // 2: peers_touch.model.chat.v1.MlsTransitionDeliveryKind
+	(DirectKeyExchangeKind)(0),           // 3: peers_touch.model.chat.v1.DirectKeyExchangeKind
+	(*StationEnvelope)(nil),              // 4: peers_touch.model.chat.v1.StationEnvelope
+	(*OutboxItem)(nil),                   // 5: peers_touch.model.chat.v1.OutboxItem
+	(*MlsTransitionDeliveryPayload)(nil), // 6: peers_touch.model.chat.v1.MlsTransitionDeliveryPayload
+	(*DirectKeyExchangePayload)(nil),     // 7: peers_touch.model.chat.v1.DirectKeyExchangePayload
+	(*timestamppb.Timestamp)(nil),        // 8: google.protobuf.Timestamp
 }
 var file_domain_chat_envelope_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.chat.v1.StationEnvelope.payload_type:type_name -> peers_touch.model.chat.v1.EnvelopePayloadType
-	10, // 1: peers_touch.model.chat.v1.StationEnvelope.issued_at:type_name -> google.protobuf.Timestamp
-	10, // 2: peers_touch.model.chat.v1.StationEnvelope.expires_at:type_name -> google.protobuf.Timestamp
-	5,  // 3: peers_touch.model.chat.v1.DeviceInboxItem.envelope:type_name -> peers_touch.model.chat.v1.StationEnvelope
-	1,  // 4: peers_touch.model.chat.v1.DeviceInboxItem.status:type_name -> peers_touch.model.chat.v1.InboxItemStatus
-	10, // 5: peers_touch.model.chat.v1.DeviceInboxItem.first_queued_at:type_name -> google.protobuf.Timestamp
-	10, // 6: peers_touch.model.chat.v1.DeviceInboxItem.last_attempt_at:type_name -> google.protobuf.Timestamp
-	10, // 7: peers_touch.model.chat.v1.DeviceInboxItem.delivered_at:type_name -> google.protobuf.Timestamp
-	5,  // 8: peers_touch.model.chat.v1.OutboxItem.envelope:type_name -> peers_touch.model.chat.v1.StationEnvelope
-	2,  // 9: peers_touch.model.chat.v1.OutboxItem.status:type_name -> peers_touch.model.chat.v1.OutboxItemStatus
-	10, // 10: peers_touch.model.chat.v1.OutboxItem.first_queued_at:type_name -> google.protobuf.Timestamp
-	10, // 11: peers_touch.model.chat.v1.OutboxItem.next_retry_at:type_name -> google.protobuf.Timestamp
-	10, // 12: peers_touch.model.chat.v1.OutboxItem.delivered_at:type_name -> google.protobuf.Timestamp
-	3,  // 13: peers_touch.model.chat.v1.MlsTransitionDeliveryPayload.kind:type_name -> peers_touch.model.chat.v1.MlsTransitionDeliveryKind
-	4,  // 14: peers_touch.model.chat.v1.DirectKeyExchangePayload.kind:type_name -> peers_touch.model.chat.v1.DirectKeyExchangeKind
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	8,  // 1: peers_touch.model.chat.v1.StationEnvelope.issued_at:type_name -> google.protobuf.Timestamp
+	8,  // 2: peers_touch.model.chat.v1.StationEnvelope.expires_at:type_name -> google.protobuf.Timestamp
+	4,  // 3: peers_touch.model.chat.v1.OutboxItem.envelope:type_name -> peers_touch.model.chat.v1.StationEnvelope
+	1,  // 4: peers_touch.model.chat.v1.OutboxItem.status:type_name -> peers_touch.model.chat.v1.OutboxItemStatus
+	8,  // 5: peers_touch.model.chat.v1.OutboxItem.first_queued_at:type_name -> google.protobuf.Timestamp
+	8,  // 6: peers_touch.model.chat.v1.OutboxItem.next_retry_at:type_name -> google.protobuf.Timestamp
+	8,  // 7: peers_touch.model.chat.v1.OutboxItem.delivered_at:type_name -> google.protobuf.Timestamp
+	2,  // 8: peers_touch.model.chat.v1.MlsTransitionDeliveryPayload.kind:type_name -> peers_touch.model.chat.v1.MlsTransitionDeliveryKind
+	3,  // 9: peers_touch.model.chat.v1.DirectKeyExchangePayload.kind:type_name -> peers_touch.model.chat.v1.DirectKeyExchangeKind
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_envelope_proto_init() }
@@ -1126,8 +939,8 @@ func file_domain_chat_envelope_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_envelope_proto_rawDesc), len(file_domain_chat_envelope_proto_rawDesc)),
-			NumEnums:      5,
-			NumMessages:   5,
+			NumEnums:      4,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

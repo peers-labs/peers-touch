@@ -40,24 +40,15 @@ def source_proto_digest(root: Path) -> str:
             "ls-files",
             "-z",
             "--",
-            "model/domain",
-            "apps/desktop/src/gen/proto",
-            "apps/station",
+            ":(glob)model/domain/**/*.proto",
+            ":(glob)apps/desktop/src/gen/proto/**/*.ts",
+            ":(glob)apps/station/**/*.pb.go",
         ],
         cwd=root,
         capture_output=True,
         check=True,
     ).stdout.split(b"\0")
-    paths = [
-        root / raw_path.decode()
-        for raw_path in tracked
-        if raw_path
-        and (
-            raw_path.endswith(b".proto")
-            or raw_path.endswith(b".ts")
-            or raw_path.endswith(b".pb.go")
-        )
-    ]
+    paths = [root / path.decode() for path in tracked if path]
     digest = hashlib.sha256()
     for path in sorted(paths, key=lambda item: item.relative_to(root).as_posix()):
         relative = path.relative_to(root).as_posix().encode()
@@ -98,7 +89,11 @@ def source_workspace_digest(root: Path) -> str:
         capture_output=True,
         check=True,
     ).stdout.split(b"\0")
-    paths = sorted(path for path in untracked if path)
+    paths = sorted(
+        path
+        for path in untracked
+        if path and path.decode() != _GENERATED_COVERAGE_REPORT
+    )
     if not diff and not paths:
         return "clean"
 

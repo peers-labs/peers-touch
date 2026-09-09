@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-08-29
+> **Created**: 2026-08-27 | **Updated**: 2026-09-09
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`
 
@@ -25,7 +25,8 @@
 | Tauri v2 Mobile is the mainline | verified_fact | `docs/client/mobile/base.md`, `apps/mobile/src-tauri/` | high | none |
 | Station selection/access gates and signed peer-ID handshake are implemented | verified_fact | `features/auth/`, `features/station/`, `station.rs`, W1 evidence | high | physical native OAuth evidence |
 | Friend/group projection runtimes exist | verified_fact | `features/social/`, `features/group/` | high | lifecycle/performance evidence |
-| Runtime registry is descriptive only | verified_fact | `runtimeRegistry.ts` contains status metadata, not lifecycle methods | high | executable kernel absent |
+| Runtime registry is executable and lifecycle-owned | verified_fact | `app/lifecycle/MobileLifecycleKernel.ts`, `runtimes/runtimeRegistry.ts`, `mobile-simulator-runtime-lifecycle-e2e` | high | Station-bound and physical lifecycle proof |
+| Navigation route identity is descriptor-owned | verified_fact | `app/navigation/navigationStore.ts`, `components/MobileShell.tsx`, focused navigation tests | high | remaining contact/moment/setting detail routes and native no-leak proof |
 | Moments currently supports publish only | verified_fact | `MomentsPage.tsx` has no feed/reaction/comment projection | high | read-side runtime |
 | Rust-owned OAuth coordinator and Station attempt/finalizer are implemented | verified_fact | `src-tauri/src/runtime/oauth/`, `apps/station/app/subserver/oauth/` | high | W2-E2 physical proof contracts and evidence |
 | Mobile-facing auth/OAuth contracts use PTID-bearing `ActorRef`; legacy bridge numeric fields are reserved | verified_fact | `auth.proto`, `oauth.proto`, `mobile_oauth.proto`, W1 evidence | high | keep hard-cut scans green |

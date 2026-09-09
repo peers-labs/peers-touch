@@ -3,13 +3,18 @@ package application
 import (
 	"testing"
 
-	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
+	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 func TestEnrichFriendRequestReplacesInternalIDsWithPTIDs(t *testing.T) {
-	request := &chat.FriendRequest{
-		SenderPtid:   "ptid:v1:actor:peers:p:alice",
-		ReceiverPtid: "ptid:v1:actor:peers:p:bob",
+	request := &model.SocialFriendRequest{
+		Sender: &actor.ActorRef{
+			Ptid: "ptid:v1:actor:peers:p:alice",
+		},
+		Receiver: &actor.ActorRef{
+			Ptid: "ptid:v1:actor:peers:p:bob",
+		},
 	}
 	enrichFriendRequest(request, map[string]actorProfile{
 		"ptid:v1:actor:peers:p:alice": {
@@ -22,10 +27,10 @@ func TestEnrichFriendRequestReplacesInternalIDsWithPTIDs(t *testing.T) {
 		},
 	})
 
-	if request.SenderPtid != "ptid:v1:actor:peers:p:alice" {
-		t.Fatalf("sender identity leaked internal actor id: %q", request.SenderPtid)
+	if request.GetSender().GetPtid() != "ptid:v1:actor:peers:p:alice" {
+		t.Fatalf("sender identity leaked internal actor id: %q", request.GetSender().GetPtid())
 	}
-	if request.ReceiverPtid != "ptid:v1:actor:peers:p:bob" {
-		t.Fatalf("receiver identity leaked internal actor id: %q", request.ReceiverPtid)
+	if request.GetReceiver().GetPtid() != "ptid:v1:actor:peers:p:bob" {
+		t.Fatalf("receiver identity leaked internal actor id: %q", request.GetReceiver().GetPtid())
 	}
 }

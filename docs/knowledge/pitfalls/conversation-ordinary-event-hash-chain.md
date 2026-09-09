@@ -5,7 +5,7 @@ status: active
 owns:
   - apps/station/app/subserver/conversation/service_impl.go
   - apps/station/app/subserver/conversation/service_test.go
-  - apps/desktop/src-tauri/src/interface/tauri_commands/mls.rs
+  - apps/desktop/src-tauri/src/messaging/
 referenced-by: []
 related:
   - ../../architecture/federated-im/design.md

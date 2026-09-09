@@ -12,7 +12,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
-	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
@@ -820,15 +819,16 @@ func audienceFromLegacyVisibility(v model.PostVisibility) *model.Audience {
 
 // --- Friend Request handlers -------------------------------------------------
 
-func (s *subServer) handleSendFriendRequest(ctx context.Context, req *chat.SendFriendRequestRequest) (*chat.SendFriendRequestResponse, error) {
+func (s *subServer) handleSendFriendRequest(ctx context.Context, req *model.SendSocialFriendRequestRequest) (*model.SendSocialFriendRequestResponse, error) {
 	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.ReceiverPtid == "" {
-		return nil, server.BadRequest("receiver_ptid is required")
+	receiverPTID := req.GetReceiver().GetPtid()
+	if receiverPTID == "" {
+		return nil, server.BadRequest("receiver.ptid is required")
 	}
-	fr, err := s.friendRequestSvc.SendFriendRequest(ctx, actorPTID, req.ReceiverPtid, req.Message)
+	fr, err := s.friendRequestSvc.SendFriendRequest(ctx, actorPTID, receiverPTID, req.Message)
 	if err != nil {
 		switch err {
 		case application.ErrFriendRequestSelf:
@@ -841,10 +841,10 @@ func (s *subServer) handleSendFriendRequest(ctx context.Context, req *chat.SendF
 			return nil, server.InternalErrorWithCause("failed to send friend request", err)
 		}
 	}
-	return &chat.SendFriendRequestResponse{Request: fr}, nil
+	return &model.SendSocialFriendRequestResponse{Request: fr}, nil
 }
 
-func (s *subServer) handleAcceptFriendRequest(ctx context.Context, req *chat.AcceptFriendRequestRequest) (*chat.AcceptFriendRequestResponse, error) {
+func (s *subServer) handleAcceptFriendRequest(ctx context.Context, req *model.AcceptSocialFriendRequestRequest) (*model.AcceptSocialFriendRequestResponse, error) {
 	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
@@ -865,10 +865,10 @@ func (s *subServer) handleAcceptFriendRequest(ctx context.Context, req *chat.Acc
 			return nil, server.InternalErrorWithCause("failed to accept friend request", err)
 		}
 	}
-	return &chat.AcceptFriendRequestResponse{Request: fr}, nil
+	return &model.AcceptSocialFriendRequestResponse{Request: fr}, nil
 }
 
-func (s *subServer) handleRejectFriendRequest(ctx context.Context, req *chat.RejectFriendRequestRequest) (*chat.RejectFriendRequestResponse, error) {
+func (s *subServer) handleRejectFriendRequest(ctx context.Context, req *model.RejectSocialFriendRequestRequest) (*model.RejectSocialFriendRequestResponse, error) {
 	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
@@ -887,10 +887,10 @@ func (s *subServer) handleRejectFriendRequest(ctx context.Context, req *chat.Rej
 			return nil, server.InternalErrorWithCause("failed to reject friend request", err)
 		}
 	}
-	return &chat.RejectFriendRequestResponse{Request: fr}, nil
+	return &model.RejectSocialFriendRequestResponse{Request: fr}, nil
 }
 
-func (s *subServer) handleListFriendRequests(ctx context.Context, req *chat.ListFriendRequestsRequest) (*chat.ListFriendRequestsResponse, error) {
+func (s *subServer) handleListFriendRequests(ctx context.Context, req *model.ListSocialFriendRequestsRequest) (*model.ListSocialFriendRequestsResponse, error) {
 	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
@@ -899,5 +899,5 @@ func (s *subServer) handleListFriendRequests(ctx context.Context, req *chat.List
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to list friend requests", err)
 	}
-	return &chat.ListFriendRequestsResponse{Requests: requests, Total: int32(total)}, nil
+	return &model.ListSocialFriendRequestsResponse{Requests: requests, Total: int32(total)}, nil
 }

@@ -4,15 +4,17 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { DeviceInboxItem, StationEnvelope } from "./envelope_pb";
+import type { StationEnvelope } from "./envelope_pb";
 import { file_domain_chat_envelope } from "./envelope_pb";
+import type { DurableDeviceInboxItem } from "./queue_pb";
+import { file_domain_chat_queue } from "./queue_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file domain/chat/envelope_api.proto.
  */
 export const file_domain_chat_envelope_api: GenFile = /*@__PURE__*/
-  fileDesc("Ch5kb21haW4vY2hhdC9lbnZlbG9wZV9hcGkucHJvdG8SGXBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEiVQoVU3VibWl0RW52ZWxvcGVSZXF1ZXN0EjwKCGVudmVsb3BlGAEgASgLMioucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5TdGF0aW9uRW52ZWxvcGUiLQoWU3VibWl0RW52ZWxvcGVSZXNwb25zZRITCgtlbnZlbG9wZV9pZBgBIAEoCSI+ChJBY2tFbnZlbG9wZVJlcXVlc3QSEQoJZGV2aWNlX2lkGAEgASgJEhUKDWluYm94X2l0ZW1faWQYAiABKAkiFQoTQWNrRW52ZWxvcGVSZXNwb25zZSJBChZSZXN1bWVFbnZlbG9wZXNSZXF1ZXN0EhEKCWRldmljZV9pZBgBIAEoCRIUCgxhZnRlcl9jdXJzb3IYAiABKAkiVAoXUmVzdW1lRW52ZWxvcGVzUmVzcG9uc2USOQoFaXRlbXMYASADKAsyKi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkRldmljZUluYm94SXRlbSJgCiBGZWRlcmF0aW9uRGVsaXZlckVudmVsb3BlUmVxdWVzdBI8CghlbnZlbG9wZRgBIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuU3RhdGlvbkVudmVsb3BlIiMKIUZlZGVyYXRpb25EZWxpdmVyRW52ZWxvcGVSZXNwb25zZUJHWkVnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9jaGF0O2NoYXRiBnByb3RvMw", [file_domain_chat_envelope]);
+  fileDesc("Ch5kb21haW4vY2hhdC9lbnZlbG9wZV9hcGkucHJvdG8SGXBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEiVQoVU3VibWl0RW52ZWxvcGVSZXF1ZXN0EjwKCGVudmVsb3BlGAEgASgLMioucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5TdGF0aW9uRW52ZWxvcGUiLQoWU3VibWl0RW52ZWxvcGVSZXNwb25zZRITCgtlbnZlbG9wZV9pZBgBIAEoCSI+ChJBY2tFbnZlbG9wZVJlcXVlc3QSEQoJZGV2aWNlX2lkGAEgASgJEhUKDWluYm94X2l0ZW1faWQYAiABKAkiFQoTQWNrRW52ZWxvcGVSZXNwb25zZSJBChZSZXN1bWVFbnZlbG9wZXNSZXF1ZXN0EhEKCWRldmljZV9pZBgBIAEoCRIUCgxhZnRlcl9jdXJzb3IYAiABKAkiWwoXUmVzdW1lRW52ZWxvcGVzUmVzcG9uc2USQAoFaXRlbXMYASADKAsyMS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkR1cmFibGVEZXZpY2VJbmJveEl0ZW0iYAogRmVkZXJhdGlvbkRlbGl2ZXJFbnZlbG9wZVJlcXVlc3QSPAoIZW52ZWxvcGUYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlN0YXRpb25FbnZlbG9wZSIjCiFGZWRlcmF0aW9uRGVsaXZlckVudmVsb3BlUmVzcG9uc2VCR1pFZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvY2hhdDtjaGF0YgZwcm90bzM", [file_domain_chat_envelope, file_domain_chat_queue]);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SubmitEnvelopeRequest
@@ -110,9 +112,9 @@ export const ResumeEnvelopesRequestSchema: GenMessage<ResumeEnvelopesRequest> = 
  */
 export type ResumeEnvelopesResponse = Message<"peers_touch.model.chat.v1.ResumeEnvelopesResponse"> & {
   /**
-   * @generated from field: repeated peers_touch.model.chat.v1.DeviceInboxItem items = 1;
+   * @generated from field: repeated peers_touch.model.chat.v1.DurableDeviceInboxItem items = 1;
    */
-  items: DeviceInboxItem[];
+  items: DurableDeviceInboxItem[];
 };
 
 /**

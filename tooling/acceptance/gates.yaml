@@ -190,12 +190,19 @@
       "tier": "ci-cheap",
       "description": "Run Station Dashboard web TypeScript checks."
     },
+    "station-api-ownership": {
+      "command": "go run ./apps/station/app/cmd/station_api_ownership --root . --registry docs/architecture/api-ownership/station-api-capabilities.yaml",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Parse Station handler registrations with Go AST and fail closed on API ownership, canonical route, owner root, superseded proto, and forbidden truth-store violations."
+    },
     "station-messaging-unit": {
-      "command": "go test ./apps/station/app/subserver/messaging/... ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/envelope/...",
+      "command": "go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/envelope/...",
       "timeout_seconds": 600,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Run Station messaging, conversation, and envelope package tests."
+      "description": "Run Station Conversation and envelope package tests."
     },
     "messaging-platform-contract": {
       "command": "python3 -m unittest tooling.acceptance.gates.chat.messaging_platform_contract_test",
@@ -1029,6 +1036,53 @@
       "tier": "env-evidence",
       "description": "Prove iOS Simulator and Android emulator launch, native callback routing, restart, and fail-closed behavior without claiming physical-device MS-AG03 or provider success."
     },
+    "mobile-simulator-runtime-lifecycle-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_lifecycle_e2e",
+      "timeout_seconds": 2400,
+      "environment": "mobile-simulator",
+      "provisioner": "mobile-simulator",
+      "tier": "env-evidence",
+      "description": "Prove the Mobile runtime graph start, suspend, resume, restart, monotonic generation, visible-app survival, and cleanup on pinned iOS Simulator and Android Emulator cells without claiming Station/session or physical OS lifecycle behavior."
+    },
+    "mobile-simulator-station-lifecycle-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.mobile.simulator_station_lifecycle_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.simulator.appium-session"
+      ],
+      "timeout_seconds": 2400,
+      "environment": "mobile-station-lifecycle-simulator",
+      "provisioner": "mobile-station-lifecycle-simulator",
+      "tier": "env-evidence",
+      "description": "Prove valid-session restore, same-device-type takeover and revocation recovery, ten Station switches, logout, generation fencing, old-scope absence, source binding, and cleanup on pinned simulator cells."
+    },
+    "mobile-ios-simulator-layout-accessibility-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_layout_accessibility_e2e",
+      "timeout_seconds": 2400,
+      "environment": "mobile-ios-layout-simulator",
+      "provisioner": "mobile-ios-layout-simulator",
+      "tier": "env-evidence",
+      "description": "Prove the W9-B compact and large iOS Simulator launch-surface layout, keyboard avoidance, localization, accessible naming, orientation, and cleanup without substituting for Android or physical-device proof."
+    },
+    "mobile-simulator-social-convergence-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario social-convergence",
+      "timeout_seconds": 2400,
+      "environment": "mobile-social-simulator",
+      "provisioner": "mobile-social-simulator",
+      "tier": "env-evidence",
+      "description": "Exercise two-actor/two-Station Mobile Messaging convergence on simulator cells and emit partial evidence without claiming full MS-AG06."
+    },
+    "mobile-simulator-chat-contacts-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario chat-contacts",
+      "timeout_seconds": 2400,
+      "environment": "mobile-social-simulator",
+      "provisioner": "mobile-social-simulator",
+      "tier": "env-evidence",
+      "description": "Exercise contact, Direct, Group, interaction, attachment, search, receipt, and restart readback on simulator cells without claiming physical proof."
+    },
     "mobile-native-access-e2e": {
       "argv": [
         "python3",
@@ -1054,12 +1108,21 @@
       }
     },
     "mobile-native-lifecycle-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario lifecycle",
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.mobile.native_e2e",
+        "--scenario",
+        "lifecycle"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.native.appium-session"
+      ],
       "timeout_seconds": 1800,
       "environment": "mobile-native",
       "provisioner": "mobile-native",
       "tier": "env-evidence",
-      "description": "Prove Mobile launch, resume, revocation, Station change, logout, generation fencing, and teardown."
+      "description": "Exercise source-bound Mobile runtime-graph suspend, resume, restart, generation fencing, and visible-app survival on one physical iOS and Android client without requiring access/OAuth resources."
     },
     "mobile-native-recovery-e2e": {
       "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario recovery",
@@ -1110,12 +1173,21 @@
       "description": "Prove account and device settings ownership, persistence, conflict, and readback."
     },
     "mobile-native-platform-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.mobile.native_e2e --scenario platform",
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.mobile.native_e2e",
+        "--scenario",
+        "platform"
+      ],
+      "ephemeralCapabilities": [
+        "mobile.native.appium-session"
+      ],
       "timeout_seconds": 2400,
       "environment": "mobile-native",
       "provisioner": "mobile-native",
       "tier": "env-evidence",
-      "description": "Prove iOS and Android accessibility, localization, performance, permission, and cleanup contracts."
+      "description": "Exercise source-bound iOS and Android physical accessibility capture, production permission/network ports, and diagnostic timing without requiring access/OAuth resources."
     },
     "mobile-domain-validation": {
       "command": "python3 tooling/scripts/acceptance-validate.py --domain mobile --require-proven",

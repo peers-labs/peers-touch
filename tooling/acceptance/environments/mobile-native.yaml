@@ -8,6 +8,177 @@
     "commit_required": true,
     "workspace_digest_required": true
   },
+  "scenarios": {
+    "access": {
+      "gate_id": "mobile-native-access-e2e",
+      "clients": [
+        "alice-ios",
+        "bob-ios",
+        "alice-android",
+        "bob-android"
+      ],
+      "services": ["station-primary", "station-secondary", "relay"],
+      "credentials": [
+        "github-disposable-account",
+        "google-disposable-account"
+      ],
+      "fixtures": ["mobile-native-actors"],
+      "provider_accounts": ["github", "google"],
+      "browser_sessions": [
+        "alice-ios",
+        "bob-ios",
+        "alice-android",
+        "bob-android"
+      ],
+      "harness_actions": [
+        "station.add",
+        "station.replace",
+        "access.submit",
+        "oauth.start",
+        "oauth.status",
+        "oauth.cancel",
+        "lifecycle.restart",
+        "projection.read",
+        "messaging.createDirect",
+        "messaging.createGroup",
+        "messaging.attachment.stage",
+        "messaging.attachment.open",
+        "messaging.send",
+        "messaging.interact",
+        "messaging.read",
+        "messaging.typing",
+        "messaging.reconcile",
+        "messaging.command.read",
+        "messaging.search",
+        "messaging.projection.read",
+        "social.request.send",
+        "social.request.accept",
+        "social.reconcile",
+        "social.projection.read",
+        "cleanup"
+      ],
+      "parent_harness_actions": [
+        "build.identity",
+        "oauth.replayHandle",
+        "oauth.negativeCallback"
+      ],
+      "ephemeral_capabilities": [
+        "mobile.native.appium-session",
+        "mobile.native.provider-authorization",
+        "mobile.native.station-fixture"
+      ],
+      "appium_operations": [
+        "start",
+        "stop",
+        "wait_ready",
+        "is_alive",
+        "contexts",
+        "switch_context",
+        "harness_inventory",
+        "harness_action",
+        "harness_negative_callback",
+        "refresh_webview",
+        "find_element",
+        "click",
+        "capture_page_source",
+        "capture_screenshot",
+        "verify_build_identity"
+      ],
+      "require_exact_device_count": true,
+      "cleanup_resources": [
+        "processes",
+        "appium-sessions",
+        "ports",
+        "storage",
+        "sessions",
+        "fixture-data",
+        "physical-device-leases",
+        "provider-account-leases",
+        "provider-browser-session-leases",
+        "correlation-channel",
+        "profile-leases",
+        "deployment-leases"
+      ]
+    },
+    "lifecycle": {
+      "gate_id": "mobile-native-lifecycle-e2e",
+      "clients": ["alice-ios", "alice-android"],
+      "services": [],
+      "credentials": [],
+      "fixtures": [],
+      "provider_accounts": [],
+      "browser_sessions": [],
+      "harness_actions": [
+        "lifecycle.snapshot",
+        "lifecycle.restart"
+      ],
+      "parent_harness_actions": ["build.identity"],
+      "ephemeral_capabilities": ["mobile.native.appium-session"],
+      "appium_operations": [
+        "start",
+        "stop",
+        "wait_ready",
+        "is_alive",
+        "contexts",
+        "switch_context",
+        "harness_inventory",
+        "harness_action",
+        "background_app",
+        "capture_page_source",
+        "capture_screenshot",
+        "verify_build_identity"
+      ],
+      "require_exact_device_count": false,
+      "cleanup_resources": [
+        "appium-sessions",
+        "ports",
+        "storage",
+        "physical-device-leases",
+        "correlation-channel",
+        "profile-leases"
+      ]
+    },
+    "platform": {
+      "gate_id": "mobile-native-platform-e2e",
+      "clients": ["alice-ios", "alice-android"],
+      "services": [],
+      "credentials": [],
+      "fixtures": [],
+      "provider_accounts": [],
+      "browser_sessions": [],
+      "harness_actions": [
+        "lifecycle.snapshot",
+        "platform.permission.check",
+        "platform.permission.request",
+        "platform.permission.checkAll",
+        "platform.network.read"
+      ],
+      "parent_harness_actions": ["build.identity"],
+      "ephemeral_capabilities": ["mobile.native.appium-session"],
+      "appium_operations": [
+        "start",
+        "stop",
+        "wait_ready",
+        "is_alive",
+        "contexts",
+        "switch_context",
+        "harness_inventory",
+        "harness_action",
+        "capture_page_source",
+        "capture_screenshot",
+        "verify_build_identity"
+      ],
+      "require_exact_device_count": false,
+      "cleanup_resources": [
+        "appium-sessions",
+        "ports",
+        "storage",
+        "physical-device-leases",
+        "correlation-channel",
+        "profile-leases"
+      ]
+    }
+  },
   "build": {
     "environment": {
       "VITE_ACCEPTANCE_HARNESS": "1"
@@ -235,6 +406,22 @@
       "oauth.cancel",
       "lifecycle.restart",
       "projection.read",
+      "messaging.createDirect",
+      "messaging.createGroup",
+      "messaging.attachment.stage",
+      "messaging.attachment.open",
+      "messaging.send",
+      "messaging.interact",
+      "messaging.read",
+      "messaging.typing",
+      "messaging.reconcile",
+      "messaging.command.read",
+      "messaging.search",
+      "messaging.projection.read",
+      "social.request.send",
+      "social.request.accept",
+      "social.reconcile",
+      "social.projection.read",
       "cleanup"
     ],
     "parent_only_actions": [

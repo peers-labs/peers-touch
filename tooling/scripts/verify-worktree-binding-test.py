@@ -321,6 +321,46 @@ class WorktreeBindingContractTests(unittest.TestCase):
                 self.assertIn("git worktree add", content)
                 self.assertIn("explicit", content)
 
+    def test_goal_orchestration_drains_ready_work_before_blocking(self) -> None:
+        queue_contracts = (
+            "tooling/skills/pt-trae-goal-orchestrator/SKILL.md",
+            "tooling/skills/pt-trae-goal-orchestrator/GOAL_TEMPLATE.md",
+            "tooling/skills/pt-trae-goal-orchestrator/REVIEW_RUBRIC.md",
+        )
+        for relative in queue_contracts:
+            with self.subTest(path=relative):
+                content = (REPO_ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("Ready Queue", content)
+                self.assertIn("Parked Queue", content)
+                self.assertIn("exhaustion proof", content)
+
+        execution_contracts = {
+            "AGENTS.md": (
+                "Action blocked",
+                "Goal blocked",
+                "repeated-blocker",
+            ),
+            "tooling/skills/pt-god-view/SKILL.md": (
+                "Block only after exhaustion",
+                "ready frontier",
+            ),
+            "tooling/skills/pt-execution-plan-guardian/SKILL.md": (
+                "Goal-level blocked",
+                "Ready Queue",
+                "Parked Queue",
+            ),
+            "tooling/skills/pt-context-anchor/SKILL.md": (
+                "blocked=false",
+                "blocked=true",
+                "exhaustion proof",
+            ),
+        }
+        for relative, required in execution_contracts.items():
+            with self.subTest(path=relative):
+                content = (REPO_ROOT / relative).read_text(encoding="utf-8")
+                for marker in required:
+                    self.assertIn(marker, content)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

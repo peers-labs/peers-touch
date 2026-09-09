@@ -7,6 +7,12 @@
 
 ---
 
+Conversation is the sole Chat entry point at `/conversation/*`. Device, Inbox,
+Recovery, Key Exchange, and Federation resources are exposed only by their
+owners. `messaging_*` Station schemas and request names retained below describe
+pre-consolidation implementation evidence unless explicitly identified as
+Device Messaging Engine local state.
+
 ## 1. Canonical Identifiers
 
 | Identifier | Scope |
@@ -38,24 +44,31 @@ Identity invariant：
 
 ## 2. Protocol Families
 
-目标 contract root：
+CA-W1 target contract roots:
 
 ```text
-model/domain/chat/
-├── endpoint.proto
-├── command.proto
-├── event.proto
-├── queue.proto
-├── federation.proto
-├── direct_crypto.proto
-├── group_mls.proto
-├── device.proto
-├── receipt.proto
-├── recovery.proto
-└── attachment.proto
+model/domain/
+├── actor/actor.proto                 # Actor Device identity and endpoint manifests
+├── chat/
+│   ├── attachment.proto
+│   ├── command.proto
+│   ├── conversation.proto
+│   ├── conversation_api.proto
+│   ├── direct_crypto.proto
+│   ├── endpoint.proto
+│   ├── event.proto
+│   ├── group_mls.proto
+│   ├── queue.proto
+│   └── receipt.proto
+├── federation/delivery.proto        # domain-neutral durable delivery
+├── key_exchange/key_exchange.proto  # Direct and MLS public material
+├── recovery/recovery.proto          # opaque encrypted revisions
+└── social/relationship.proto        # Friend Request command/event/result
 ```
 
 Proto 定义跨端语义；Go、Rust、TypeScript 和 Mobile bindings 必须从同一 source 生成。
+The older Chat-owned device, recovery, and Federation request families remain
+superseded input to the CA-W5 atomic cut and are not target ownership.
 
 ### 2.1 Authority Event And Device Delivery
 
@@ -259,7 +272,7 @@ federation_inbox(
 )
 ```
 
-`FederatedEndpointManifest`是routing snapshot，不是crypto identity。manifest必须由
+`ActorEndpointManifest`是routing snapshot，不是crypto identity。manifest必须由
 actor Home Station签名并绑定monotonic `directory_version`、active endpoints、public
 bundle/KeyPackage hashes和expiry。Authority plan引用manifest hash；过期或version回退
 不得用于新command。
@@ -322,12 +335,12 @@ device 不可通过重放旧 certificate 复活。
 > **Status**: accepted by `MP-D17`
 
 ```text
-PrepareMessagingSendRequest {
+PrepareConversationCommandRequest {
   conversation_id
   sender: (ptid, device_id)
 }
 
-PrepareMessagingSendResponse {
+PrepareConversationCommandResponse {
   conversation_kind
   authority_sequence
   authority_hash

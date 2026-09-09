@@ -145,10 +145,14 @@ pub mod agent {
 }
 
 pub mod key_exchange {
+    pub use messaging_core::proto::key_exchange::*;
+}
+
+pub mod recovery {
     pub mod v1 {
         include!(concat!(
             env!("OUT_DIR"),
-            "/peers_touch.model.key_exchange.v1.rs"
+            "/peers_touch.model.recovery.v1.rs"
         ));
     }
     pub use v1::*;

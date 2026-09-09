@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-09
-covered_docs_hash: 39924c7255ee4c27295069d8c7f57d34441b92e65f9a6eb5b8d04cc84d555b90
+covered_docs_hash: 7302856467be4229ff52e129db97fd2d63def579bf3cf3d2f2bd1b466a6a6a5d
 
 covered_docs:
   - AGENTS.md
@@ -147,3 +147,12 @@ already-authorized execution. These changes update review behavior directly,
 so `pt-github-review/SKILL.md` was updated; no new golden fixture is required
 because `review/skill-check.sh` enforces the canonical Skill, Goal template,
 Goal rubric, and Anchor markers directly.
+
+Goal execution now uses an adaptive Ready/Parked queue and requires fixed-point
+exhaustion before a tracked Goal can be marked blocked. This changes execution
+orchestration, not PR review severity or evidence semantics, so the existing
+review skill and fixtures remain sufficient.
+
+The Mobile Acceptance coverage update adds lifecycle and native-platform
+surfaces while preserving the existing rule that unrun physical or destructive
+Gates remain explicitly `UNPROVEN`.

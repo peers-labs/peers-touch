@@ -122,7 +122,7 @@ func (f *HTTPMlsLeaveIntentForwarder) Submit(
 		ctx,
 		route,
 		intent.IntentId,
-		"/conversation/federation/mls/leave-intent",
+		"/federation/conversation/mls/leave-intent",
 		request,
 		response,
 	); err != nil {
@@ -146,7 +146,7 @@ func (f *HTTPMlsLeaveIntentForwarder) ListPending(
 		ctx,
 		route,
 		"",
-		"/conversation/federation/mls/leave-intents",
+		"/federation/conversation/mls/leave-intents",
 		request,
 		response,
 	); err != nil {

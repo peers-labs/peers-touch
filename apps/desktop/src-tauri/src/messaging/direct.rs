@@ -9,8 +9,8 @@ use crate::domain::crypto::{
     X25519KeyPair, X3dhReceiverInput,
 };
 use crate::model::chat::{
-    conversation_event, CryptoEndpoint, DeviceConsumptionReceipt, DeviceQueueItem,
-    DeviceQueuePayloadType, DirectCiphertextAad, DirectDeviceCiphertext, DirectSessionInit,
+    conversation_event, CryptoEndpoint, DeviceConsumptionReceipt, DeviceInboxPayloadType,
+    DirectCiphertextAad, DirectDeviceCiphertext, DirectSessionInit, DurableDeviceInboxItem,
     MessageReceipt, MessagingContentKind, PreparedEndpointPayloadKind, ReceiptType,
 };
 use prost::Message;
@@ -59,7 +59,7 @@ impl DirectMessageProcessor {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -77,9 +77,9 @@ impl DirectMessageProcessor {
         {
             return Ok(());
         }
-        if DeviceQueuePayloadType::try_from(item.payload_type)
+        if DeviceInboxPayloadType::try_from(item.payload_type)
             .map_err(|_| "messaging Direct queue payload type is invalid".to_string())?
-            != DeviceQueuePayloadType::ConversationEvent
+            != DeviceInboxPayloadType::ConversationEvent
         {
             return Err("messaging Direct processor received wrong queue payload type".to_string());
         }
@@ -392,7 +392,7 @@ impl DirectMessageProcessor {
 }
 
 impl ClaimedItemConsumer for DirectMessageProcessor {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }
@@ -624,14 +624,17 @@ mod tests {
             sender_actor_identity_public_key: vec![9; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        let item = DeviceQueueItem {
+        let item = DurableDeviceInboxItem {
             item_id: "item-1".to_string(),
-            recipient: Some(recipient_proto),
+            recipient: Some(crate::messaging::actor_device_ref(
+                &recipient_proto.ptid,
+                &recipient_proto.device_id,
+            )),
             lane_sequence: 1,
             event_id: "event-1".to_string(),
             conversation_id: "conversation-1".to_string(),
             idempotency_key: "event:event-1".to_string(),
-            payload_type: DeviceQueuePayloadType::ConversationEvent as i32,
+            payload_type: i32::from(DeviceInboxPayloadType::ConversationEvent),
             opaque_payload: opaque_payload.clone(),
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
             ..Default::default()
