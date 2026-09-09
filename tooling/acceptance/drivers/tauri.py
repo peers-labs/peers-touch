@@ -78,6 +78,7 @@ class TauriDriver(DomDriver):
         profile: Optional[str] = None,
         storage_root: Optional[str] = None,
         environment: Optional[Mapping[str, str]] = None,
+        log_path: Optional[str | Path] = None,
     ):
         self.app_binary = app_binary or find_app_binary()
         self.port = port
@@ -91,7 +92,11 @@ class TauriDriver(DomDriver):
         self._process: Optional[subprocess.Popen] = None
         self._driver: Optional[WebDriver] = None
         self._log_file = None
-        self.log_path: Optional[Path] = None
+        self.log_path = (
+            Path(log_path).expanduser()
+            if log_path is not None
+            else None
+        )
 
     @property
     def driver(self) -> WebDriver:
@@ -245,12 +250,16 @@ class TauriDriver(DomDriver):
         env["PT_PROFILE"] = self.profile
         env["PEERS_STORAGE_ROOT"] = self.storage_root
         env.update(self.environment)
-        self._log_file = tempfile.NamedTemporaryFile(
-            prefix=f"peers-touch-webdriver-{self.port}-",
-            suffix=".log",
-            delete=False,
-        )
-        self.log_path = Path(self._log_file.name)
+        if self.log_path is None:
+            self._log_file = tempfile.NamedTemporaryFile(
+                prefix=f"peers-touch-webdriver-{self.port}-",
+                suffix=".log",
+                delete=False,
+            )
+            self.log_path = Path(self._log_file.name)
+        else:
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            self._log_file = self.log_path.open("wb")
         self._process = subprocess.Popen(
             [self.app_binary],
             env=env,
