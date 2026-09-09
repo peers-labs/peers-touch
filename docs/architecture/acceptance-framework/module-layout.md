@@ -84,6 +84,7 @@ tooling/acceptance/
 │   ├── home_station.py
 │   ├── native_desktop_macos.py
 │   ├── local_tunnel_supervisor.py # bounded local SSH-forward ownership
+│   ├── remote_source_identity.py  # SSH-backed deployment source identity adapter
 │   ├── native_desktop_linux.py
 │   └── native_desktop_windows.py
 ├── contracts/                      # [D-19 PROPOSED] 业务Evidence contract唯一真源
@@ -182,6 +183,7 @@ tooling/acceptance/
 | `drivers/native/linux_x11.py` | X11 XTest/EWMH adapter |
 | `drivers/native/windows.py` | Win32 SendInput/UI Automation adapter |
 | `transports/ssh.py` | SSH host-key verification、bounded command、run-scoped port forward、cancel 与 teardown |
+| `provisioners/remote_source_identity.py` | 通过 strict-known-host SSH 读取 remote Git commit/workspace/proto identity，并作为显式 provider 注入 Core attestation |
 | `tooling/scripts/deploy/source-sync.sh` | Station/Relay/Desktop 共用的 role-neutral incremental Git source sync |
 | `drivers/chrome.py` | Selenium Chrome/Chromium headless 驱动，支持 CDP command bridge；Dashboard 消费迁移由 WS5 完成 |
 | `drivers/station.py` | Station HTTP API 客户端，封装网关命令、认证、错误处理 |
@@ -221,7 +223,7 @@ core/power_controller.py → core/trust_admission.py + core/finalization_contrac
 core/proof_admission.py → core/evidence_store.py + core/finalization_contracts.py
 core/finalizer_worker.py → core/result_contracts.py + core/finalization_contracts.py
 core/runtime_cell.py → core/result_contracts.py + core/errors.py + core/redaction.py
-core/attestation.py → core/provisioning.py
+core/attestation.py → core/provisioning.py + injected RemoteSourceIdentityProvider
 core/harness.py → core/drivers/base.py
 core/drivers/base.py → core/errors.py
 core/fixtures/base.py → core/errors.py
@@ -231,6 +233,7 @@ transports/ssh.py → core/errors.py
 drivers/chrome.py → core/drivers/base.py
 drivers/station.py → core/drivers/base.py
 provisioners/*.py → core/provisioning.py + core/runtime_cell.py + transports/* + drivers/* + fixtures/*
+provisioners/remote_source_identity.py → core/errors.py + core/provisioner.py + transports/ssh.py
 provisioners/mobile_native.py → contracts/mobile/native_oauth.py
 gates/mobile/*.py → contracts/mobile/native_oauth.py
 finalizers/mobile_native.py → core/finalization_contracts.py + contracts/mobile/native_oauth.py
@@ -242,6 +245,8 @@ fixtures/*.py → core/fixtures/base.py
 
 禁止的依赖方向：
 - core/ 下的任何模块不得导入 gates/、drivers/（具体实现）或 fixtures/
+- `core/attestation.py` 不得导入 `transports/` 或 `provisioners/`；remote
+  deployment source identity 必须由 concrete Provisioner 注入
 - `core/launch_context.py`不得导入具体Provisioner、业务capability、Gate或Fixture
 - `core/finalization_contracts.py`不得import `core/evidence_store.py`或执行I/O；
   `finalizers/*.py`不得transitively获得Evidence Store mutation APIs
