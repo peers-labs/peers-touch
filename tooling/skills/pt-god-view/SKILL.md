@@ -125,6 +125,12 @@ When pt-plan-and-document creates the formal plan: add the active_work row
 | EXECUTE | "What's the next step in the plan?" | `pt-execution-plan-guardian` |
 | DELIVER | "Is this ready to ship?" | `pt-github-commit` + `pt-github-pr` |
 
+For a tracked Goal, `blocked=true` is not accepted as a permanent shortcut.
+On resume, rerun `pt-trae-goal-orchestrator` queue review and
+`pt-execution-plan-guardian` frontier derivation. Clear the tracked blocker when
+accepted sources expose any legal ready, diagnostic, remediation, or mechanical
+plan-amendment action.
+
 ### 3.3 Execution Standards (ALWAYS apply, any work mode)
 
 Regardless of whether it's a tracked project or standalone task, the agent MUST:
@@ -273,7 +279,10 @@ When asked for tracked-work status or resume:
    initial HEAD, expected/verified HEAD, and worktree-set digest in the chat
    projection. A bare `<repo-root>` is invalid; never persist a user-home
    absolute path.
-5. End the response with the exact fenced chat projection required by that skill.
+5. For a status-only request, end the response with the exact fenced chat
+   projection required by that skill. For "continue" or "resume" with one
+   unambiguous tracked item, emit a concise update and dispatch the next legal
+   Ready Queue action without asking for another confirmation.
 
 If no formal plan and matching `active_work` row exist, do not fabricate an
 Anchor. Report the current PRODUCT/DESIGN/PLAN gate in normal prose.
@@ -286,7 +295,7 @@ Anchor. Report the current PRODUCT/DESIGN/PLAN gate in normal prose.
 |-----------|--------|
 | "new task" | Classify → dispatch; add to registry only after a formal plan is created |
 | "close #N" | Set `stage: complete` |
-| "blocked" | Set `blocked: true` + reason |
+| "blocked" | Run queue exhaustion audit; set `blocked: true` only when no legal ready/remediation action remains |
 | "switch to #N" | Change tracked-work focus only after its identity matches the current binding; never switch branch/worktree implicitly |
 
 ---
@@ -320,7 +329,7 @@ When showing status, flag entries with `last_session` >14 days:
 pt-god-view (methodology OS / entry point)
   │
   ├── TRAE GOAL orchestration
-  │     └── pt-trae-goal-orchestrator (stage-owned ready work → bounded TRAE Goal Slice)
+  │     └── pt-trae-goal-orchestrator (stage-owned graph → bounded adaptive Goal queue)
   │
   ├── TRACKED-WORK projection
   │     └── pt-context-anchor (active_work + plan evidence → fenced chat block)
@@ -370,3 +379,7 @@ pt-god-view (methodology OS / entry point)
 6. **Respect gates** — never skip a review boundary.
 7. **Fail closed on identity** — return `WORKTREE_IDENTITY_MISMATCH` for an
    unresolved, mismatched, or drifting binding; never repair it implicitly.
+8. **Block only after exhaustion** — park blocked actions, recompute the full
+   in-scope ready frontier, and continue legal work. A Goal-level block requires
+   an empty ready queue and only hard governance or unavailable external
+   resource boundaries remaining.
