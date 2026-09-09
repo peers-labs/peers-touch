@@ -93,6 +93,9 @@ from tooling.acceptance.provisioners.mobile_native_build import (
     orchestrate_source_bound_build,
     produce_build_attestation,
 )
+from tooling.acceptance.provisioners.remote_source_identity import (
+    resolve_remote_source_identity,
+)
 
 
 EXPECTED_APPIUM_VERSION = "2.19.0"
@@ -5485,6 +5488,9 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                             "PT_STATION_DEPLOY_ENV": deployment_environment,
                         },
                         require_runtime_identity=True,
+                        remote_source_identity_provider=(
+                            resolve_remote_source_identity
+                        ),
                     )
                 else:
                     attestation = produce_service_attestation(
@@ -5497,6 +5503,9 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                         deployment_environment=deployment_environment,
                         producer=producer,
                         require_runtime_identity=True,
+                        remote_source_identity_provider=(
+                            resolve_remote_source_identity
+                        ),
                     )
                 if not attestation.runtime_identity:
                     raise BlockedError(
