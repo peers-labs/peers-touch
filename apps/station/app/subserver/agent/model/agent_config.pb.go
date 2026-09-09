@@ -29,6 +29,7 @@ const (
 	ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT ToolApprovalDecisionErrorCode = 2
 	ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED              ToolApprovalDecisionErrorCode = 3
 	ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND            ToolApprovalDecisionErrorCode = 4
+	ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE ToolApprovalDecisionErrorCode = 5
 )
 
 // Enum value maps for ToolApprovalDecisionErrorCode.
@@ -39,6 +40,7 @@ var (
 		2: "TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT",
 		3: "TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED",
 		4: "TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND",
+		5: "TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE",
 	}
 	ToolApprovalDecisionErrorCode_value = map[string]int32{
 		"TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED":          0,
@@ -46,6 +48,7 @@ var (
 		"TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT": 2,
 		"TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED":              3,
 		"TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND":            4,
+		"TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE": 5,
 	}
 )
 
@@ -513,13 +516,14 @@ const file_domain_agent_agent_config_proto_rawDesc = "" +
 	"\n" +
 	"error_code\x18\t \x01(\x0e29.peers_touch.model.agent.v1.ToolApprovalDecisionErrorCodeR\terrorCode\x12M\n" +
 	"\routcome_error\x18\n" +
-	" \x01(\v2(.peers_touch.model.agent.v1.ErrorPayloadR\foutcomeError*\xa4\x02\n" +
+	" \x01(\v2(.peers_touch.model.agent.v1.ErrorPayloadR\foutcomeError*\xe0\x02\n" +
 	"\x1dToolApprovalDecisionErrorCode\x121\n" +
 	"-TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED\x10\x00\x124\n" +
 	"0TOOL_APPROVAL_DECISION_ERROR_CODE_STALE_REVISION\x10\x01\x12:\n" +
 	"6TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT\x10\x02\x12-\n" +
 	")TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED\x10\x03\x12/\n" +
-	"+TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND\x10\x04BKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
+	"+TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND\x10\x04\x12:\n" +
+	"6TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE\x10\x05BKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
 
 var (
 	file_domain_agent_agent_config_proto_rawDescOnce sync.Once

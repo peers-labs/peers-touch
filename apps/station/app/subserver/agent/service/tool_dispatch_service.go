@@ -925,6 +925,32 @@ func (s *ToolDispatchService) SubmitDecision(
 			}
 			return invalidToolState("tool call is not waiting for approval")
 		}
+		if request.GetApproved() &&
+			call.ExecutionOwner == persistence.ToolOwnerClientCapability {
+			available, err := clientExecutorAvailableTx(tx, &call, now)
+			if err != nil {
+				return err
+			}
+			if !available {
+				response = decisionRejection(
+					request,
+					model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE,
+				)
+				response.OutcomeError = errcode.NewClientExecutorUnavailablePayload(
+					call.TargetDeviceID,
+					call.CapabilityID,
+				)
+				return persistDecisionAcknowledgementTx(
+					tx,
+					actorID,
+					request,
+					response,
+					canonicalHash,
+					call.DecisionRevision,
+					now,
+				)
+			}
+		}
 
 		revision := call.DecisionRevision + 1
 		status := persistence.ToolCallStatusDenied
@@ -2114,6 +2140,39 @@ func (s *ToolDispatchService) dispatchCallTx(
 		call.FencingToken,
 		"",
 	)
+}
+
+func clientExecutorAvailableTx(
+	tx *gorm.DB,
+	call *persistence.ToolCall,
+	now time.Time,
+) (bool, error) {
+	var leaseRow persistence.ClientCapabilityLease
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where(
+			"session_id = ? AND actor_id = ? AND device_id = ? AND revoked_at IS NULL AND expires_at > ?",
+			call.CapabilitySessionID,
+			call.ActorID,
+			call.TargetDeviceID,
+			now,
+		).
+		First(&leaseRow).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, internalToolError("resolve active capability lease", err)
+	}
+	var lease model.ClientCapabilityLease
+	if err := proto.Unmarshal(leaseRow.LeasePayload, &lease); err != nil {
+		return false, internalToolError("decode capability lease", err)
+	}
+	return leaseAllowsCapability(
+		&lease,
+		call.CapabilityID,
+		call.SchemaVersion,
+		len(call.BoundedArguments),
+	), nil
 }
 
 func (s *ToolDispatchService) issueCapabilityRequestTx(
