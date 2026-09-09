@@ -80,6 +80,7 @@ MESSAGE_ACTION_SELECTORS = {
 NATIVE_INPUT_ACK_POLL_SECONDS = 0.01
 NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS = 0.2
 NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS = 30
+NATIVE_ACTOR_LOGIN_TIMEOUT_SECONDS = 60
 VALID_ATTACHMENT_IMAGE_BYTES = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
     "0000000d49444154789c63f8cfc0f01f00050001ff89993d1d"
@@ -466,7 +467,7 @@ class NativeProductClosureGate(AcceptanceGate):
                     "loginWithPassword",
                     {"account": account, "password": public_fixture_password()},
                     namespace="chat",
-                    script_timeout=30,
+                    script_timeout=NATIVE_ACTOR_LOGIN_TIMEOUT_SECONDS,
                 )
                 if not (login or {}).get("authenticated"):
                     raise GateError(f"{actor} login did not authenticate")

@@ -699,6 +699,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         launch_source = ast.get_source_segment(self.source, launch_actor) or ""
         self.assertNotIn("station.auth_logout()", launch_source)
+        self.assertIn(
+            "script_timeout=NATIVE_ACTOR_LOGIN_TIMEOUT_SECONDS",
+            launch_source,
+        )
+        self.assertIn(
+            "NATIVE_ACTOR_LOGIN_TIMEOUT_SECONDS = 60",
+            self.source,
+        )
 
     def test_claimed_actions_cannot_use_store_or_command_bypasses(self) -> None:
         for forbidden in (
