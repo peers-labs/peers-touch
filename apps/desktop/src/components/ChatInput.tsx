@@ -10,7 +10,10 @@ import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
 import { useMentionStore } from '../store/mentions';
 import { AttachmentStage } from './composer/AttachmentStage';
-import { useAgentAttachmentDrafts } from './composer/useAgentAttachmentDrafts';
+import {
+  AGENT_ATTACHMENT_ACCEPT,
+  useAgentAttachmentDrafts,
+} from './composer/useAgentAttachmentDrafts';
 import {
   modelMenuIconStyle,
   modelMenuItemStyle,
@@ -524,7 +527,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         data-pt-agent-attachment-input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept={AGENT_ATTACHMENT_ACCEPT}
         multiple
         style={{ display: 'none' }}
         onChange={handleFilesSelected}
