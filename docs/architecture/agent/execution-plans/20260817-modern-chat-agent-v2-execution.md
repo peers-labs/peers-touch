@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-17 | **Updated**: 2026-09-08
+> **Created**: 2026-08-17 | **Updated**: 2026-09-09
 > **Owner**: Peers-Touch Agent Team
 > **Plan gate**: `OWNER_APPROVED_EXECUTION`
 > **Entry gate**: Owner accepted MCA-D19A/D19B/D19C into the main Goal G1 task on 2026-08-22
@@ -252,7 +252,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | blocked before remote preflight by `ACCEPTANCE_INFRA_REQUIRED`: current remote source attestation uses `StrictHostKeyChecking=no`, which its own provisioning self-test rejects. No Station access occurred. Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | ready to resume after separate AF-001 Infra closure; no product Gate ran during Infra repair, so Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -330,6 +330,12 @@ Checkpoint preflight on 2026-09-09:
 - This is `ACCEPTANCE_INFRA_REQUIRED`, not a business C08/G-F failure. The Goal
   forbids repairing generic Acceptance Infra, so no Station deploy, reset,
   native Gate, or 419-cell run was started.
+
+The separate AF-001 closure repaired all eight generic failures plus two
+aggregate source-binding defects. The final clean-source
+`acceptance-runtime-provisioning-self` and `acceptance-infra-validation` Gates
+pass together. This removes only `ACCEPTANCE_INFRA_REQUIRED`; C08 and G-F remain
+`UNPROVEN`, and the next action is their separately authorized product proof.
 
 The separate
 [Home-first sequencing proposal](./20260908-agent-delivery-recovery.md)
@@ -1000,12 +1006,9 @@ and zero local-path leakage.
   contract/native-static/old-path/provisioner tests pass; Acceptance planner
   self-check and mapping regressions pass. `agent-attachment-e2e` was not run
   because this Goal forbids provisioning and remote execution. Current-source
-  C08 product proof therefore remains `UNPROVEN`. The broader
-  `acceptance-runtime-provisioning-self` aggregate still fails on eight
-  pre-existing non-C08 cases: one local Desktop Gateway fixture contract,
-  Station source/SSH expectation drift, and three launch-context timeout
-  cases. Those failures do not pass silently and prevent an Acceptance Infra
-  readiness claim.
+  C08 product proof therefore remains `UNPROVEN`. AF-001 subsequently closed
+  the eight generic Acceptance Infra failures and two aggregate source-binding
+  defects on a clean source checkpoint without running this product Gate.
 
 ### F4 — Tool Policy And Observability Baseline
 
@@ -7166,8 +7169,8 @@ requirements, and the Owner accepted `MCA-D19A` on 2026-08-22. G1-A then
 verified a missing device-possession boundary and produced `MCA-D19B`, accepted
 into the main Goal G1 task on 2026-08-22. The active gate is
 `OWNER_APPROVED_EXECUTION`; G1-A through G1-F and the pre-W1 G1-XR diagnostic
-closure are complete, G-F is blocked on W1/W3/W6/W8a, and all Product Gates
-remain `UNPROVEN`.
+closure and W8a are complete, the separate AF-001 Infra prerequisite is closed,
+G-F is ready to resume, and all Product Gates remain `UNPROVEN`.
 
 Any later independent review must confirm:
 
