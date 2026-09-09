@@ -1177,6 +1177,22 @@ and zero local-path leakage.
   then failed because `PT_ACCEPTANCE_DISPOSABLE=1` was absent; provisioner
   cleanup passed. The next run must retain instrumentation and supply both
   documented AS-F06 authorization flags.
+- Fully authorized exact-source run
+  `20260909T123426489178Z-740d9c16e979e04dca72740926bc5136`
+  supplied both restart and disposable-environment authorizations. Diagnostics
+  export again succeeded for all 439 calls with no errors or unmatched starts,
+  rejecting that path as the current blocker. The run failed at Browser
+  AS-F06 when Chrome timed out for 30 seconds while receiving a renderer
+  response during the Browser restart path. Business cleanup then failed
+  because the startup rollback had already closed the run-owned fault proxy,
+  after which cleanup attempted to restart the same client and proxy.
+  Provisioner cleanup still released storage, source lease, and profile lease.
+- Debug session `foundation-browser-f06-timeout` now instruments only Browser
+  runtime launch/navigation, restart generations, process/port readiness, and
+  fault-transport closure. No timeout, product assertion, retry, matrix tuple,
+  or cleanup behavior has changed. G-F remains `PARTIAL / UNPROVEN` pending
+  source-bound reproduction and an owner-layer correction justified by that
+  evidence.
 
 ### F4 — Tool Policy And Observability Baseline
 

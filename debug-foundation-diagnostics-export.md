@@ -32,8 +32,19 @@
   unmatched starts.
 - That run advanced beyond Browser AS-F04 and failed at AS-F06 because
   `PT_ACCEPTANCE_DISPOSABLE=1` was not supplied. Provisioner cleanup passed.
+- Fully authorized pre-fix run
+  `20260909T123426489178Z-740d9c16e979e04dca72740926bc5136`
+  emitted another 878 events: 439 starts, 439 successful decodes, zero errors,
+  and zero unmatched starts. Payloads were 2457–4729 bytes and the maximum
+  request duration was 1104 ms.
+- The fully authorized run failed later at Browser AS-F06 with a 30-second
+  Chrome renderer timeout. Its lifecycle cleanup then reported a closed
+  fault-proxy restart. This failure is tracked separately by debug session
+  `foundation-browser-f06-timeout`.
 
 ## Verification Conclusion
-The original diagnostics-export failure did not reproduce. All five hypotheses
-are rejected for this run. Keep instrumentation active while the complete G-F
-matrix reruns with both documented AS-F06 authorizations.
+The original diagnostics-export failure did not reproduce across two complete
+instrumented prefixes: 881/881 calls decoded successfully with no errors or
+unmatched requests. All five hypotheses are rejected. The instrumentation
+remains active until the user confirmation gate, but diagnostics export is not
+the current G-F blocker.
