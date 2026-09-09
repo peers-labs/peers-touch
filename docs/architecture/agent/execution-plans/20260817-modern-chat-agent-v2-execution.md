@@ -243,7 +243,7 @@ Parallel policy:
 | W0 Contract/Evidence/Gates | complete | Owner EXECUTE approval received; W0 verification and completion audit PASS |
 | F1 Agent/Conversation Authority | complete | W0 complete |
 | F2 Runtime/Stream/Capability/Portability | implementation checks complete: Q4 C06 and Q5/Q6 C10 source closures pass; product proof remains pending G-F | F1 |
-| F3 Context/Resource Intelligence | C04 core and C08 product source complete; native TauriDriver/argv ownership correction is committed and live-verified through startup; the isolated client now requires its approved pre-login Station binding before the next clean-source `agent-attachment-e2e` rerun, so C08 product proof remains unproven | F2 |
+| F3 Context/Resource Intelligence | C04 core and C08 product source complete; pre-login Station binding is committed, but the exact-source C08 rerun exposed a business-runner Harness-readiness lifecycle defect before the binding step; C08 product proof remains unproven | F2 |
 | F4 Tool Policy/Observability | G1-A through G1-F and pre-W1 G1-XR diagnostic complete through AS-F03; post-W8a G-F pending | F2 + accepted D19A/D19B/D19C |
 | W1 Capability Authority | implementation checks complete; product proof UNPROVEN until W9 Gate | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
 | W2 Home Projection | pending | G-F complete 419-cell Foundation Gate |
@@ -1068,6 +1068,45 @@ and zero local-path leakage.
 - This correction changes neither the C08 Feature/Capability contract nor its
   evidence roles. C08 remains `UNPROVEN` until the new clean checkpoint is
   deployed through `make station` and `agent-attachment-e2e` passes.
+
+**C08 canonical Harness-readiness blocker (2026-09-09)**:
+
+- Checkpoint `1e25122d04fa445abdf6fd51bf6762375cc2ba22` passes the five
+  selected current-source local Gates. Its exact source was deployed through
+  `make station`, the live Station attested the same clean commit, and the
+  unchanged Acceptance binary
+  `36742445f4225a3bc0cf49a779b437f21a42bf1f7bdf73d67d28d2d94aebfaff`
+  passed embedded-WebDriver smoke.
+- Exact-source C08 run
+  `20260909T075500090291Z-b30653084d7494e9af75a91e8b8a1e2d` reached
+  `FIXTURE_READY` but failed `start_native_runtime` after 121409 ms:
+  `Script execution timed out` while waiting for the Agent Harness. The native
+  process and WebDriver remained alive, the renderer booted to `accountGate`,
+  and all Gateway, renderer, WebDriver, fault-proxy, storage, source-lease, and
+  profile-lease cleanup passed.
+- The native business runner bypasses the canonical
+  `TauriDriver.wait_for_ready()` and `wait_for_acceptance_harness()` sequence,
+  then replaces the Driver's bounded 3-second script timeout with the
+  120-second journey timeout before polling a synchronous script. One wedged
+  WebDriver script therefore consumes the complete startup step instead of
+  remaining a bounded readiness probe.
+- The proposed correction is limited to the Agent business runner: retain the
+  Driver's bounded script timeout, use both canonical readiness methods, then
+  verify the `agent` namespace before Station binding. Add a regression that
+  rejects the long script-timeout override and requires this ordering. Do not
+  increase a timeout, retry the unchanged Gate, modify C08 assertions, or move
+  the fix into generic Infra.
+- The Owner's consolidated Goal authorizes this correction and subsequent
+  source-backed C08/G-F implementation fixes without per-defect pauses. The
+  runner now uses canonical renderer and Harness readiness before checking the
+  Agent namespace, while retaining the Driver's bounded script timeout.
+- Local verification passes 21 focused native-runner tests, all 365 Agent Gate
+  tests, 151 Provisioner/runtime tests, 65 Acceptance runner tests, planner,
+  validator, responsibility-boundary, gap-detector, coverage, and quality
+  suites, Desktop check, Station Agent tests, and `git diff --check`.
+- C08 remains `FAILED / UNPROVEN`; G-F was not run. The correction still
+  requires a clean checkpoint, exact-source deployment, and a new C08 run
+  before any proof claim.
 
 ### F4 — Tool Policy And Observability Baseline
 
