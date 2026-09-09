@@ -1169,6 +1169,14 @@ and zero local-path leakage.
   records only hashed turn identity, duration, encoded response size/counts,
   and the underlying typed error. No business behavior or Gate assertion is
   changed.
+- Instrumented run
+  `20260909T120527631709Z-e3e7eb64ebef15b561608a84a72d4dbe`
+  did not reproduce the diagnostics-export failure. All 442 calls decoded,
+  payloads were 2554–4730 bytes, maximum duration was 972 ms, and there were
+  no auth/decode errors or unmatched starts. The run advanced to AS-F06 and
+  then failed because `PT_ACCEPTANCE_DISPOSABLE=1` was absent; provisioner
+  cleanup passed. The next run must retain instrumentation and supply both
+  documented AS-F06 authorization flags.
 
 ### F4 — Tool Policy And Observability Baseline
 
