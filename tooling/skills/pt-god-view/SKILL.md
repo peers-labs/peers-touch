@@ -268,12 +268,16 @@ When asked for tracked-work status or resume:
    and worktree-set digest through §2.1 without replacing the persisted
    baseline.
 2. Resolve the `active_work` entry and readable formal plan.
-3. Invoke `pt-context-anchor`.
+3. Invoke `pt-context-anchor` to synchronize state. A resume request that also
+   authorizes execution continues into the selected stage; it must not stop
+   merely to print the Anchor.
 4. Record `<worktree-name> (<repo-root>)`, verified branch, `workspaceId`,
    initial HEAD, expected/verified HEAD, and worktree-set digest in the chat
    projection. A bare `<repo-root>` is invalid; never persist a user-home
    absolute path.
-5. End the response with the exact fenced chat projection required by that skill.
+5. Emit the exact fenced chat projection only when the response is a status,
+   blocker, handoff, readiness, or close report. When work continues in the
+   same turn, emit it at the final report rather than as a pre-execution pause.
 
 If no formal plan and matching `active_work` row exist, do not fabricate an
 Anchor. Report the current PRODUCT/DESIGN/PLAN gate in normal prose.

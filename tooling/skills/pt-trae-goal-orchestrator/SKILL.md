@@ -1,6 +1,6 @@
 ---
 name: "pt-trae-goal-orchestrator"
-description: "Selects bounded Goal Slices and builds TRAE focus/persistence envelopes. Invoke for Goal authoring, review, or selecting the next long-running unit."
+description: "Selects bounded Goal Slices, reconciles live agents, and builds conflict-aware TRAE execution envelopes. Invoke for Goal authoring, review, or selecting the next long-running unit."
 stage: "cross-stage"
 requires: ["TRAE runtime", "resolvable project stage and governing sources"]
 produces: ["reviewed TRAE /goal prompt", "bounded Goal Slice", "next-slice handoff"]
@@ -98,7 +98,8 @@ methodology gate.
 Before authoring or reviewing:
 
 1. Verify TRAE runtime, Goal state, existing/background agents, repository,
-   and the fail-closed Worktree Binding below.
+   and the fail-closed Worktree Binding below. Classify listed agents by Goal
+   identity and backend reachability; display presence alone is not ownership.
 2. Ask `pt-god-view` for the current stage and owning skill.
 3. Read that skill's authoritative workflow and artifacts.
 4. For EXECUTE/DELIVER, read `active_work`, its formal plan, task statuses,
@@ -120,6 +121,34 @@ Only an equivalent Goal or background agent with the same identity returns
 duplicate and must not block `AUTHOR`.
 
 If no stage is resolvable, return `GOAL_STAGE_UNRESOLVED`.
+
+### Existing-Agent Reconciliation
+
+Before treating a listed agent as active:
+
+1. Compare its repository/worktree, branch, stage, and source unit with the
+   candidate Goal identity.
+2. Confirm the backend can address it by agent ID or canonical task name.
+3. Treat only a live, addressable, equivalent agent as
+   `GOAL_LIFECYCLE_CONFLICT`.
+4. If an entry is listed but the backend reports it does not exist, record
+   `SUBAGENT_REGISTRY_STALE`, exclude it from active ownership, and continue
+   Goal authoring.
+5. If a fresh spawn is rejected after reconciliation, report
+   `SUBAGENT_RUNTIME_UNAVAILABLE`; do not convert that runtime incident into a
+   durable no-subagent rule.
+
+Goal text MUST NOT contain a blanket prohibition based only on stale agent
+visibility, historical agent count, or a prior runtime incident.
+
+### Goal Replacement
+
+If an active Goal's persisted objective contains a stale Worktree Binding,
+superseded authorization boundary, or invalid blanket execution constraint and
+the runtime cannot edit that objective in place, return
+`GOAL_REPLACEMENT_REQUIRED`. The old Goal must be explicitly closed or
+cancelled before authoring its corrected replacement. Neither `active_work` nor
+a Context Anchor may be used to pretend the stale Goal was repaired.
 
 ## Fail-Closed Worktree Binding
 
@@ -203,6 +232,14 @@ and do not emit `/goal`.
 The owning source decides what work may be parallel. This skill only maps those
 approved independent units onto TRAE subagents.
 
+Every Goal MUST include an explicit `parallel`, `serial`, or `hybrid`
+concurrency decision. Select parallel subagent lanes only after proving frozen
+shared contracts, non-overlapping write sets and generated outputs, isolated
+runtime resources, independent checks, and a deterministic integration order.
+Serialize dependent work, shared-file/generated-artifact changes, database or
+Fixture mutation, deployment, and final product Gates unless the owning source
+defines safe isolation.
+
 Each subagent contract contains:
 
 - first-action Worktree Binding verification and explicit bound `workdir`;
@@ -214,6 +251,12 @@ Each subagent contract contains:
 - verification command;
 - expected return;
 - source-defined hard stops.
+
+Before spawning, reserve each exclusive write set in the Goal. A subagent must
+re-read its owned files immediately before patching, avoid broad formatters and
+generators, never stage or commit, stop if an unexpected writer changes its
+owned paths, and return its exact changed-file list. The integrator owns shared
+files and verifies the combined diff before accepting any lane.
 
 Never give concurrent writers overlapping files or generated artifacts. Keep
 inseparable work serial.
@@ -295,6 +338,11 @@ Never:
 - create a second progress, successor, evidence, or completion source of truth;
 - create a Goal when equivalent Goal/background work already exists;
 - treat a Goal from another worktree as a semantic duplicate;
+- treat a stale, backend-unaddressable agent entry as a live conflict;
+- persist a transient stale-agent or spawn-runtime incident as a blanket
+  `do not spawn subagents` authorization constraint;
+- resume a Goal whose persisted objective requires
+  `GOAL_REPLACEMENT_REQUIRED`;
 - infer the execution target from a skill's resolved or source path;
 - auto-change directories, branches, or worktrees to satisfy a binding;
 - mutate without an explicit bound `workdir`;
