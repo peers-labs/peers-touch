@@ -24,6 +24,7 @@ const (
 	AgentAttachmentRejected        Code = "CONTEXT_ATTACHMENT_REJECTED"
 	AgentToolApprovalDenied        Code = "TOOL_APPROVAL_DENIED"
 	AgentToolApprovalExpired       Code = "TOOL_APPROVAL_EXPIRED"
+	AgentClientExecutorUnavailable Code = "CLIENT_EXECUTOR_UNAVAILABLE"
 	AgentToolBudgetExhausted       Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
 	AgentContextOverflow           Code = "CONTEXT_OVERFLOW"
 	AgentLifecycleCancelled        Code = "LIFECYCLE_CANCELLED"
@@ -45,6 +46,7 @@ const (
 	AgentAttachmentRejectedLocaleKey           = "agent.errors.attachmentRejected"
 	AgentToolApprovalDeniedLocaleKey           = "agent.errors.toolApprovalDenied"
 	AgentToolApprovalExpiredLocaleKey          = "agent.errors.toolApprovalExpired"
+	AgentClientExecutorUnavailableLocaleKey    = "agent.errors.executorUnavailable"
 	AgentToolBudgetExhaustedLocaleKey          = "agent.errors.toolLoopBudgetExhausted"
 	AgentContextOverflowLocaleKey              = "agent.errors.contextOverflow"
 	AgentLifecycleCancelledLocaleKey           = "agent.errors.lifecycleCancelled"
@@ -138,6 +140,20 @@ func NewToolApprovalExpiredPayload(decisionID string, expiresAt time.Time) *mode
 		Details: map[string]string{
 			"decision_id": decisionID,
 			"expires_at":  expiresAt.UTC().Format(time.RFC3339Nano),
+		},
+	}
+}
+
+func NewClientExecutorUnavailablePayload(targetDeviceID, capabilityID string) *model.ErrorPayload {
+	return &model.ErrorPayload{
+		Error:     AgentClientExecutorUnavailableLocaleKey,
+		ErrorType: string(AgentClientExecutorUnavailable),
+		LocaleKey: AgentClientExecutorUnavailableLocaleKey,
+		Retryable: true,
+		Terminal:  true,
+		Details: map[string]string{
+			"target_device_id": targetDeviceID,
+			"capability_id":    capabilityID,
 		},
 	}
 }
