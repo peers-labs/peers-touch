@@ -16,6 +16,8 @@ from tooling.acceptance.gates.mobile.appium import (
 )
 from tooling.acceptance.gates.mobile.native_e2e import (
     CAPABILITY_OPERATIONS,
+    LIFECYCLE_CYCLES,
+    PLATFORM_PERMISSION_KINDS,
     PRODUCTION_OAUTH_PURGE_ACTION,
     PROVIDER_CAPABILITY,
     REQUIRED_ACCESS_VARIANTS,
@@ -97,6 +99,21 @@ def valid_cleanup_result() -> dict[str, Any]:
         },
         "webSessionProjectionCleared": True,
         "stationRegistryCleared": True,
+    }
+
+
+def lifecycle_snapshot(phase: str, generation: int) -> dict[str, Any]:
+    status = "suspended" if phase == "SUSPENDED" else "ready"
+    return {
+        "phase": phase,
+        "launchState": "station-selection",
+        "generation": generation,
+        "bootOrder": ["auth", "command"],
+        "runtimes": [
+            {"id": "auth", "status": status, "errorKey": None},
+            {"id": "command", "status": status, "errorKey": None},
+        ],
+        "errorKey": None,
     }
 
 
@@ -559,6 +576,9 @@ class FinalEvidenceJudgmentTests(unittest.TestCase):
                 self.completed = values
                 events.append("complete")
 
+            def write_json(self, *_args: object, **_kwargs: object) -> None:
+                return None
+
         artifacts = Artifacts()
         gate = MobileNativeGate("access")
         with (
@@ -611,6 +631,9 @@ class FinalEvidenceJudgmentTests(unittest.TestCase):
             def complete(self, **values: object) -> None:
                 self.completed = values
 
+            def write_json(self, *_args: object, **_kwargs: object) -> None:
+                return None
+
         artifacts = Artifacts()
         gate = MobileNativeGate("access")
         with (
@@ -637,6 +660,181 @@ class FinalEvidenceJudgmentTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
         self.assertEqual(artifacts.completed["proof_status"], "UNPROVEN")
+
+    def test_scenario_reports_have_independent_traceability(self) -> None:
+        lifecycle = MobileNativeGate("lifecycle")._result_base("BLOCKED")
+        platform = MobileNativeGate("platform")._result_base("FAIL")
+
+        self.assertEqual(lifecycle["phase"], "W9-C Physical Lifecycle")
+        self.assertEqual(lifecycle["bom"], ["W3", "W7-C", "W7-D"])
+        self.assertEqual(lifecycle["spec"], ["MS-AG02", "MS-AG05"])
+        self.assertEqual(lifecycle["observedScope"], [])
+        self.assertIn(
+            "secure-storage deletion failure",
+            lifecycle["unprovenScope"],
+        )
+        self.assertEqual(platform["phase"], "W7 Native Platform")
+        self.assertEqual(platform["bom"], ["W7-C", "W7-D"])
+        self.assertEqual(
+            platform["spec"],
+            ["MS-AG07", "MS-AG08", "MS-AG11"],
+        )
+        self.assertNotIn("MS-AG03", platform["spec"])
+
+
+class PhysicalScenarioBranchTests(unittest.TestCase):
+    class Ref:
+        def __init__(self, path: str) -> None:
+            self.path = path
+
+        def to_dict(self) -> dict[str, str]:
+            return {"path": self.path}
+
+    class Session:
+        def __init__(self, platform: str) -> None:
+            self.platform = platform
+            self.generation = 3
+            self.calls: list[str] = []
+            self.permissions = {
+                kind: "not_determined"
+                for kind in PLATFORM_PERMISSION_KINDS
+            }
+
+        def call_action(
+            self,
+            action: str,
+            payload: Mapping[str, Any] | None = None,
+        ) -> Any:
+            self.calls.append(action)
+            if action == "lifecycle.snapshot":
+                return lifecycle_snapshot("ACTIVE", self.generation)
+            if action == "lifecycle.suspend":
+                return {"snapshot": lifecycle_snapshot(
+                    "SUSPENDED",
+                    self.generation,
+                )}
+            if action == "lifecycle.resume":
+                self.generation += 1
+                return {"snapshot": lifecycle_snapshot(
+                    "ACTIVE",
+                    self.generation,
+                )}
+            if action == "lifecycle.restart":
+                self.generation += 1
+                return {"requested": True, "scope": "webview"}
+            if action == "platform.permission.checkAll":
+                return [
+                    {
+                        "kind": kind,
+                        "status": self.permissions[kind],
+                        "canRequest": self.permissions[kind]
+                        == "not_determined",
+                    }
+                    for kind in PLATFORM_PERMISSION_KINDS
+                ]
+            if action == "platform.permission.check":
+                return {
+                    "kind": payload["kind"],
+                    "status": self.permissions[payload["kind"]],
+                    "canRequest": self.permissions[payload["kind"]]
+                    == "not_determined",
+                }
+            if action == "platform.permission.request":
+                self.permissions[payload["kind"]] = "granted"
+                return {
+                    "kind": payload["kind"],
+                    "status": "granted",
+                    "wasAlreadyGranted": False,
+                }
+            if action == "platform.network.read":
+                return {
+                    "connected": True,
+                    "networkType": "wifi",
+                    "updatedAtMs": 1,
+                }
+            raise AssertionError(f"unexpected action: {action}")
+
+        def switch_to_native(self) -> None:
+            self.calls.append("native")
+
+        def switch_to_app_webview(self) -> str:
+            self.calls.append("webview")
+            return "WEBVIEW_app"
+
+        def background_app(self, duration_seconds: float) -> None:
+            self.calls.append(f"background:{duration_seconds}")
+            self.generation += 1
+
+        def capture_native_accessibility(self) -> "PhysicalScenarioBranchTests.Ref":
+            return PhysicalScenarioBranchTests.Ref("native-ax.xml")
+
+        def capture_screenshot(
+            self,
+            _capture_id: str,
+        ) -> "PhysicalScenarioBranchTests.Ref":
+            return PhysicalScenarioBranchTests.Ref("screenshot.png")
+
+        def capture_web_dom(
+            self,
+            _capture_id: str,
+        ) -> "PhysicalScenarioBranchTests.Ref":
+            return PhysicalScenarioBranchTests.Ref("web-dom.html")
+
+    def test_lifecycle_branch_runs_twenty_os_background_cycles_per_platform(
+        self,
+    ) -> None:
+        gate = MobileNativeGate("lifecycle")
+        sessions = {
+            "alice-ios": self.Session("ios"),
+            "alice-android": self.Session("android"),
+        }
+        with (
+            patch.object(gate, "_load_manifest", return_value={}),
+            patch.object(
+                gate,
+                "_start_device_scenario_sessions",
+                return_value=sessions,
+            ),
+        ):
+            result = gate._run_lifecycle(object())  # type: ignore[arg-type]
+
+        self.assertEqual(result["phase"], "W9-C Physical Lifecycle")
+        for session in sessions.values():
+            self.assertEqual(
+                session.calls.count("background:1.0"),
+                LIFECYCLE_CYCLES,
+            )
+            self.assertNotIn("lifecycle.suspend", session.calls)
+            self.assertNotIn("lifecycle.resume", session.calls)
+
+    def test_platform_branch_uses_permission_and_network_actions(self) -> None:
+        gate = MobileNativeGate("platform")
+        sessions = {
+            "alice-ios": self.Session("ios"),
+            "alice-android": self.Session("android"),
+        }
+        with (
+            patch.object(gate, "_load_manifest", return_value={}),
+            patch.object(
+                gate,
+                "_start_device_scenario_sessions",
+                return_value=sessions,
+            ),
+        ):
+            result = gate._run_platform(object())  # type: ignore[arg-type]
+
+        self.assertEqual(result["phase"], "W7 Native Platform")
+        for session in sessions.values():
+            self.assertIn("platform.permission.checkAll", session.calls)
+            self.assertEqual(
+                session.calls.count("platform.permission.check"),
+                len(PLATFORM_PERMISSION_KINDS) * 2,
+            )
+            self.assertEqual(
+                session.calls.count("platform.permission.request"),
+                len(PLATFORM_PERMISSION_KINDS),
+            )
+            self.assertIn("platform.network.read", session.calls)
 
 
 class FakeHarnessSession:

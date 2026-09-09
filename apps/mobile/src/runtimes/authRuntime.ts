@@ -1,14 +1,22 @@
 import { useSyncExternalStore } from 'react';
 
 import {
+  isAccessGranted,
   normalizeDecision,
   registerOAuthAccessGrantFinalizer,
+  revokeStationSession,
+  restoreAuthSession,
   startStationAccessAttempt,
   type AccessDecision,
   type MobileAuthSession,
 } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
-import { activeStationEntry, loadStationRegistry } from '../features/station/stationRegistry';
+import { verifyStationIdentity } from '../features/station/stationConnection';
+import {
+  activeStationEntry,
+  loadStationRegistry,
+  requireMatchingStationIdentity,
+} from '../features/station/stationRegistry';
 import {
   oauthCancel,
   oauthProjection,
@@ -23,6 +31,7 @@ import {
   type OAuthScopeInput,
 } from '../services/mobileCommands';
 import { readableErrorMessage } from '../utils/errorMessage';
+import { getRecoveryProjection } from './recoveryProjection';
 
 export type { MobileOAuthProvider, OAuthPublicPhase, OAuthPublicProjection };
 
@@ -49,6 +58,13 @@ export interface AccessRuntimePublicProjection {
   loading: boolean;
   errorKey: string | null;
   restored: boolean;
+}
+
+export interface AuthRuntimeLogoutResult {
+  readonly remoteRevocation:
+    | 'confirmed'
+    | 'unconfirmed'
+    | 'not-required';
 }
 
 interface StartOAuthInput {
@@ -86,7 +102,8 @@ export function readAuthRuntimeSnapshot(): AuthRuntimeSnapshot {
 }
 
 export function readActiveAuthSession(): MobileAuthSession | null {
-  return useAuthStore.getState().session;
+  const state = useAuthStore.getState();
+  return isAccessGranted(state.accessDecision) ? state.session : null;
 }
 
 export function readAccessRuntimeProjection(): AccessRuntimePublicProjection {
@@ -159,6 +176,98 @@ export async function startStationAccessAttemptWithRecovery(
 export async function clearAuthRuntimeSession(): Promise<void> {
   await useAuthStore.getState().clearSession();
   setSnapshot(snapshotFromProjection(emptyProjection()));
+}
+
+export async function logoutAuthRuntimeSession(): Promise<AuthRuntimeLogoutResult> {
+  const session = useAuthStore.getState().session;
+  await cancelOAuth();
+
+  let remoteRevocation: AuthRuntimeLogoutResult['remoteRevocation'] =
+    session ? 'unconfirmed' : 'not-required';
+  try {
+    if (session) {
+      remoteRevocation = await revokeStationSession(session)
+        ? 'confirmed'
+        : 'unconfirmed';
+    }
+  } finally {
+    await clearAuthRuntimeSession();
+  }
+
+  return { remoteRevocation };
+}
+
+export function fenceAuthRuntimeProjection(): void {
+  useAuthStore.getState().hideSessionProjection();
+  setSnapshot(snapshotFromProjection(emptyProjection()));
+}
+
+export async function restoreAndRevalidateAuthRuntime(): Promise<MobileAuthSession | null> {
+  const state = useAuthStore.getState();
+  state.hideSessionProjection();
+  state.setRestored(false);
+  state.setLoading(true);
+
+  try {
+    const station = activeStationEntry(await loadStationRegistry());
+    const restoredSession = await restoreAuthSession();
+
+    if (!station) {
+      if (restoredSession) {
+        await clearAuthRuntimeSession();
+      } else {
+        state.setAccessDecision(null);
+      }
+      return null;
+    }
+
+    const verifiedStation = await verifyStationIdentity(station.url);
+    if (verifiedStation.stationPeerId !== station.stationPeerId) {
+      getRecoveryProjection().reportSessionMismatch(
+        station.stationPeerId,
+        verifiedStation.stationPeerId,
+      );
+    }
+    requireMatchingStationIdentity(station, verifiedStation.stationPeerId);
+    getRecoveryProjection().clearSessionMismatch();
+
+    if (!restoredSession) {
+      await restoreAuthRuntimeProjection();
+      return null;
+    }
+
+    if (restoredSession.stationPeerId !== station.stationPeerId) {
+      await clearAuthRuntimeSession();
+      return null;
+    }
+
+    let invalidSessionCleared = false;
+    const decision = await startAccessAttemptWithInvalidSessionRecovery(
+      restoredSession.sessionId,
+      (sessionId) => startStationAccessAttempt(
+        station.stationPeerId,
+        station.url,
+        sessionId,
+      ),
+      async () => {
+        invalidSessionCleared = true;
+        await clearAuthRuntimeSession();
+      },
+    );
+    applyAccessGateRuntimeResult(
+      decision,
+      invalidSessionCleared ? undefined : restoredSession,
+    );
+    await restoreAuthRuntimeProjection();
+    return invalidSessionCleared ? null : restoredSession;
+  } catch (error) {
+    const message = readableErrorMessage(error);
+    state.setError(message);
+    throw error;
+  } finally {
+    state.setRestored(true);
+    state.setLoading(false);
+  }
 }
 
 async function startAccessAttemptWithInvalidSessionRecovery(
@@ -437,4 +546,5 @@ export const authRuntimeTestContract = {
   sanitizeProjection,
   snapshotFromProjection,
   startAccessAttemptWithInvalidSessionRecovery,
+  revokeStationSession,
 };

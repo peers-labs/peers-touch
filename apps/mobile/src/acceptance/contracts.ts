@@ -1,23 +1,40 @@
 import type {
   AuthRuntimeRecovery,
 } from '../runtimes/authRuntime';
+import type { LifecycleKernelSnapshot } from '../app/lifecycle';
 import type {
   MobileOAuthProvider,
   OAuthPublicPhase,
 } from '../services/mobileCommands';
+import type {
+  NetworkState,
+  PermissionCheckResult,
+  PermissionKind,
+  PermissionRequestResult,
+} from '../runtimes/nativeLifecycleBridge';
 import type { EmbeddedMobileBuildIdentity } from './buildIdentity';
 
 export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'build.identity',
   'station.add',
   'station.replace',
+  'station.select',
   'access.submit',
   'oauth.start',
   'oauth.status',
   'oauth.cancel',
   'oauth.replayHandle',
   'oauth.negativeCallback',
+  'lifecycle.snapshot',
+  'lifecycle.suspend',
+  'lifecycle.resume',
   'lifecycle.restart',
+  'lifecycle.scope.read',
+  'platform.permission.check',
+  'platform.permission.request',
+  'platform.permission.checkAll',
+  'platform.network.read',
+  'session.logout',
   'native.deliverDeepLink',
   'projection.read',
   'messaging.createDirect',
@@ -51,6 +68,10 @@ export interface StationReplaceInput {
   url: string;
 }
 
+export interface StationSelectInput {
+  stationPeerId: string;
+}
+
 export interface PublicStationEntry {
   stationPeerId: string;
   url: string;
@@ -64,6 +85,21 @@ export interface StationMutationOutput {
   verifiedStationPeerId: string;
   canonicalOrigin: string;
   entries: PublicStationEntry[];
+  sessionRevocation?: SessionRevocationProjection;
+}
+
+export interface StationSelectionOutput {
+  activeStationPeerId: string;
+  entries: PublicStationEntry[];
+  sessionRevocation: SessionRevocationProjection;
+}
+
+export interface SessionRevocationProjection {
+  remoteRevocation: 'confirmed' | 'unconfirmed' | 'not-required';
+}
+
+export interface PlatformPermissionInput {
+  kind: PermissionKind;
 }
 
 export type AccessSubmitInput =
@@ -313,6 +349,53 @@ export interface MobilePublicProjection {
 export interface LifecycleRestartOutput {
   requested: true;
   scope: 'webview';
+}
+
+export type PublicLifecycleSnapshot = LifecycleKernelSnapshot;
+
+export interface LifecycleTransitionOutput {
+  snapshot: PublicLifecycleSnapshot;
+}
+
+export interface MobileRuntimeScopeProjection {
+  activeStationPeerId: string | null;
+  activeActorPtid: string | null;
+  social: {
+    stationPeerId: string | null;
+    actorPtid: string | null;
+    sessionCount: number;
+    requestCount: number;
+    messageThreadCount: number;
+  };
+  group: {
+    stationPeerId: string | null;
+    actorPtid: string | null;
+    groupCount: number;
+    messageThreadCount: number;
+  };
+  navigation: {
+    primaryRouteId: string;
+    detailKeys: string[];
+  };
+}
+
+export interface LifecycleScopeReadOutput {
+  generation: number;
+  phase: PublicLifecycleSnapshot['phase'];
+  launchState: PublicLifecycleSnapshot['launchState'];
+  activeStationPeerId: string;
+  activeActorPtid: string | null;
+  runtimeStationPeerId: string | null;
+  social: MobileRuntimeScopeProjection['social'];
+  group: MobileRuntimeScopeProjection['group'];
+  navigation: MobileRuntimeScopeProjection['navigation'];
+}
+
+export interface SessionLogoutOutput {
+  logout: SessionRevocationProjection;
+  decision: PublicAccessDecision;
+  lifecycle: PublicLifecycleSnapshot;
+  runtime: MobileRuntimeScopeProjection;
 }
 
 export interface NativeDeepLinkInput {
@@ -585,6 +668,10 @@ export interface MobileAcceptanceActionContract {
     input: StationReplaceInput;
     output: StationMutationOutput;
   };
+  'station.select': {
+    input: StationSelectInput;
+    output: StationSelectionOutput;
+  };
   'access.submit': {
     input: AccessSubmitInput;
     output: AccessSubmitOutput;
@@ -609,9 +696,45 @@ export interface MobileAcceptanceActionContract {
     input: NegativeOAuthCallbackInput;
     output: NegativeOAuthCallbackOutput;
   };
+  'lifecycle.snapshot': {
+    input: undefined;
+    output: PublicLifecycleSnapshot;
+  };
+  'lifecycle.suspend': {
+    input: undefined;
+    output: LifecycleTransitionOutput;
+  };
+  'lifecycle.resume': {
+    input: undefined;
+    output: LifecycleTransitionOutput;
+  };
   'lifecycle.restart': {
     input: undefined;
     output: LifecycleRestartOutput;
+  };
+  'lifecycle.scope.read': {
+    input: undefined;
+    output: LifecycleScopeReadOutput;
+  };
+  'platform.permission.check': {
+    input: PlatformPermissionInput;
+    output: PermissionCheckResult;
+  };
+  'platform.permission.request': {
+    input: PlatformPermissionInput;
+    output: PermissionRequestResult;
+  };
+  'platform.permission.checkAll': {
+    input: undefined;
+    output: PermissionCheckResult[];
+  };
+  'platform.network.read': {
+    input: undefined;
+    output: NetworkState;
+  };
+  'session.logout': {
+    input: undefined;
+    output: SessionLogoutOutput;
   };
   'native.deliverDeepLink': {
     input: NativeDeepLinkInput;

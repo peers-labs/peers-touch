@@ -8,6 +8,7 @@
 import type {
   LifecycleKernelState,
   LifecyclePhase,
+  MobileLaunchState,
   MobileRuntimeDescriptor,
   RuntimeBootstrapStatus,
   RuntimeEntry,
@@ -19,6 +20,8 @@ import type {
 
 export type LifecycleAction =
   | { type: 'REGISTER_RUNTIMES'; descriptors: readonly MobileRuntimeDescriptor[]; bootOrder: readonly string[] }
+  | { type: 'SET_LAUNCH_STATE'; launchState: MobileLaunchState }
+  | { type: 'SET_GENERATION'; generation: number }
   | { type: 'BEGIN_BOOTSTRAP' }
   | { type: 'RUNTIME_BOOTSTRAPPING'; runtimeId: string }
   | { type: 'RUNTIME_READY'; runtimeId: string }
@@ -26,11 +29,13 @@ export type LifecycleAction =
   | { type: 'BOOTSTRAP_COMPLETE'; results: readonly RuntimeOperationResult[] }
   | { type: 'BEGIN_SUSPEND' }
   | { type: 'RUNTIME_SUSPENDED'; runtimeId: string }
-  | { type: 'SUSPEND_COMPLETE' }
+  | { type: 'RUNTIME_SUSPEND_FAILED'; runtimeId: string; error: string }
+  | { type: 'SUSPEND_COMPLETE'; error?: string }
   | { type: 'BEGIN_RESUME' }
   | { type: 'RUNTIME_RESUMING'; runtimeId: string }
   | { type: 'RUNTIME_RESUMED'; runtimeId: string }
-  | { type: 'RESUME_COMPLETE' }
+  | { type: 'RUNTIME_RESUME_FAILED'; runtimeId: string; error: string }
+  | { type: 'RESUME_COMPLETE'; error?: string }
   | { type: 'BEGIN_TEARDOWN' }
   | { type: 'RUNTIME_TEARING_DOWN'; runtimeId: string }
   | { type: 'RUNTIME_TORN_DOWN'; runtimeId: string }
@@ -39,9 +44,14 @@ export type LifecycleAction =
 
 // --- Initial State ---
 
-export function initialLifecycleState(): LifecycleKernelState {
+export function initialLifecycleState(
+  generation = 0,
+  launchState: MobileLaunchState = 'app-boot',
+): LifecycleKernelState {
   return {
     phase: 'COLD',
+    launchState,
+    generation,
     runtimes: new Map(),
     bootOrder: [],
     error: null,
@@ -55,6 +65,12 @@ export function lifecycleReducer(
   action: LifecycleAction,
 ): LifecycleKernelState {
   switch (action.type) {
+    case 'SET_LAUNCH_STATE':
+      return { ...state, launchState: action.launchState };
+
+    case 'SET_GENERATION':
+      return { ...state, generation: action.generation };
+
     case 'REGISTER_RUNTIMES': {
       const runtimes = new Map<string, RuntimeEntry>();
       for (const descriptor of action.descriptors) {
@@ -99,8 +115,14 @@ export function lifecycleReducer(
     case 'RUNTIME_SUSPENDED':
       return updateRuntimeStatus(state, action.runtimeId, 'suspended');
 
+    case 'RUNTIME_SUSPEND_FAILED':
+      return updateRuntimeEntry(state, action.runtimeId, {
+        status: 'suspended',
+        lastError: action.error,
+      });
+
     case 'SUSPEND_COMPLETE':
-      return { ...state, phase: 'SUSPENDED' };
+      return { ...state, phase: 'SUSPENDED', error: action.error ?? null };
 
     case 'BEGIN_RESUME':
       return { ...state, phase: 'RESUMING' };
@@ -111,8 +133,18 @@ export function lifecycleReducer(
     case 'RUNTIME_RESUMED':
       return updateRuntimeStatus(state, action.runtimeId, 'ready');
 
+    case 'RUNTIME_RESUME_FAILED':
+      return updateRuntimeEntry(state, action.runtimeId, {
+        status: 'suspended',
+        lastError: action.error,
+      });
+
     case 'RESUME_COMPLETE':
-      return { ...state, phase: 'ACTIVE' };
+      return {
+        ...state,
+        phase: action.error ? 'SUSPENDED' : 'ACTIVE',
+        error: action.error ?? null,
+      };
 
     case 'BEGIN_TEARDOWN':
       return { ...state, phase: 'TEARDOWN' };
@@ -127,6 +159,9 @@ export function lifecycleReducer(
       return {
         ...state,
         phase: 'COLD',
+        error: action.result.allSuccessful
+          ? null
+          : 'mobile.lifecycle.teardownIncomplete',
       };
 
     case 'SET_ERROR':
@@ -178,5 +213,30 @@ const VALID_TRANSITIONS: ReadonlyMap<LifecyclePhase, readonly LifecyclePhase[]> 
 
 export function isValidPhaseTransition(from: LifecyclePhase, to: LifecyclePhase): boolean {
   const allowed = VALID_TRANSITIONS.get(from);
+  return allowed !== undefined && allowed.includes(to);
+}
+
+const VALID_LAUNCH_TRANSITIONS: ReadonlyMap<
+  MobileLaunchState,
+  readonly MobileLaunchState[]
+> = new Map([
+  ['app-boot', ['station-selection']],
+  ['station-selection', ['station-handshake', 'runtime-critical']],
+  ['station-handshake', ['station-selection', 'access-gate-chain', 'runtime-critical']],
+  ['access-gate-chain', ['station-selection', 'station-handshake', 'runtime-critical']],
+  ['runtime-critical', ['station-selection', 'access-gate-chain', 'shell']],
+  ['shell', ['station-change', 'logout', 'background']],
+  ['station-change', ['station-selection']],
+  ['logout', ['station-selection', 'station-handshake', 'access-gate-chain']],
+  ['background', ['resume']],
+  ['resume', ['station-selection', 'access-gate-chain', 'runtime-critical', 'shell']],
+]);
+
+export function isValidLaunchStateTransition(
+  from: MobileLaunchState,
+  to: MobileLaunchState,
+): boolean {
+  if (from === to) return true;
+  const allowed = VALID_LAUNCH_TRANSITIONS.get(from);
   return allowed !== undefined && allowed.includes(to);
 }

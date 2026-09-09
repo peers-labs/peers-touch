@@ -3511,6 +3511,63 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
             self.provisioner._native_inputs,
         )
 
+    def test_non_access_provisioning_skips_access_credentials(self) -> None:
+        gate_id = "mobile-native-lifecycle-e2e"
+        spec = load_mobile_native_preflight_spec(gate_id=gate_id)
+        manifest = self.provisioner._manifest
+        assert manifest is not None
+
+        with (
+            patch.object(
+                self.provisioner,
+                "_new_base_manifest",
+                return_value=manifest,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_native."
+                "load_mobile_native_preflight_spec",
+                return_value=spec,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_native."
+                "preflight_mobile_native_inputs",
+                return_value={},
+            ) as preflight,
+            patch.object(
+                self.provisioner,
+                "_provision_device_scenario",
+                return_value=manifest,
+            ) as provision_scenario,
+            patch.object(self.provisioner, "prepare_credentials") as credentials,
+            patch.object(self.provisioner, "_prepare_actor_manifest") as actor,
+            patch.object(self.provisioner, "_prepare_parent_authorities") as oauth,
+        ):
+            result = self.provisioner.provision(gate_id)
+
+        self.assertIs(result, manifest)
+        self.assertEqual(
+            preflight.call_args.kwargs["environment"][
+                "VITE_ACCEPTANCE_HARNESS"
+            ],
+            "1",
+        )
+        provision_scenario.assert_called_once()
+        credentials.assert_not_called()
+        actor.assert_not_called()
+        oauth.assert_not_called()
+
+    def test_non_access_parent_authority_keeps_fenced_device_broker(self) -> None:
+        source = inspect.getsource(
+            MobileNativeProvisioner._prepare_scenario_parent_authorities
+        )
+
+        self.assertIn("MobileResourceLeaseBroker(", source)
+        self.assertIn("acquire_physical_device", source)
+        self.assertIn("MobileResourceLeaseHeartbeatOwner(", source)
+        self.assertNotIn("_prepare_actor_manifest", source)
+        self.assertNotIn("acquire_provider_account", source)
+        self.assertNotIn("acquire_browser_session", source)
+
     def test_cleanup_propagates_one_budget_through_station_actor_reset(
         self,
     ) -> None:
@@ -3647,6 +3704,7 @@ class MobileNativeContractTests(unittest.TestCase):
 
     def test_checked_in_environment_loads_without_reconstruction(self) -> None:
         spec = load_mobile_native_preflight_spec()
+        self.assertEqual(spec.scenario.id, "access")
         self.assertEqual(
             {client.id for client in spec.clients},
             set(EXPECTED_CLIENTS),
@@ -3664,6 +3722,86 @@ class MobileNativeContractTests(unittest.TestCase):
                 spec.parent_harness_actions
             )
         )
+        self.assertEqual(
+            spec.scenario.ephemeral_capabilities,
+            tuple(MOBILE_NATIVE_CAPABILITIES),
+        )
+        self.assertEqual(
+            spec.scenario.credential_ids,
+            (
+                "github-disposable-account",
+                "google-disposable-account",
+            ),
+        )
+
+    def test_lifecycle_and_platform_scenarios_exclude_oauth_resources(
+        self,
+    ) -> None:
+        for gate_id in (
+            "mobile-native-lifecycle-e2e",
+            "mobile-native-platform-e2e",
+        ):
+            with self.subTest(gate_id=gate_id):
+                spec = load_mobile_native_preflight_spec(
+                    self.contract_path,
+                    gate_id=gate_id,
+                )
+                self.assertEqual(len(spec.clients), 2)
+                self.assertEqual(
+                    {client.platform for client in spec.clients},
+                    {"ios", "android"},
+                )
+                self.assertEqual(spec.scenario.service_ids, ())
+                self.assertEqual(spec.scenario.credential_ids, ())
+                self.assertEqual(spec.scenario.fixture_ids, ())
+                self.assertEqual(spec.scenario.provider_accounts, ())
+                self.assertEqual(spec.scenario.browser_sessions, ())
+                self.assertEqual(
+                    spec.scenario.ephemeral_capabilities,
+                    ("mobile.native.appium-session",),
+                )
+                self.assertNotIn(
+                    "mobile.native.provider-authorization",
+                    spec.scenario.ephemeral_capabilities,
+                )
+                self.assertNotIn(
+                    "mobile.native.station-fixture",
+                    spec.scenario.ephemeral_capabilities,
+                )
+                if gate_id == "mobile-native-lifecycle-e2e":
+                    self.assertIn(
+                        "background_app",
+                        spec.scenario.appium_operations,
+                    )
+                else:
+                    self.assertNotIn(
+                        "background_app",
+                        spec.scenario.appium_operations,
+                    )
+                self.assertFalse(
+                    spec.scenario.require_exact_device_count
+                )
+
+    def test_runner_order_filters_credentials_before_resolution(self) -> None:
+        contract = EnvironmentContract.from_yaml(self.contract_path)
+        provisioner = MobileNativeProvisioner(contract)
+        provisioner._evidence_run = SimpleNamespace(
+            gate_id="mobile-native-lifecycle-e2e"
+        )
+
+        credential_refs, credential_values = provisioner.prepare_credentials()
+
+        self.assertEqual(credential_refs, ())
+        self.assertEqual(credential_values, {})
+        self.assertEqual(provisioner.contract.credentials, ())
+        self.assertEqual(provisioner._native_spec.scenario.id, "lifecycle")
+
+    def test_platform_permission_prompt_capabilities_match_each_driver(self) -> None:
+        source = inspect.getsource(_ParentAppiumSession.start)
+
+        self.assertIn('"appium:autoAcceptAlerts"', source)
+        self.assertIn('"appium:autoGrantPermissions"', source)
+        self.assertIn('if self.platform == "ios"', source)
 
     def test_parent_harness_actions_are_exact_and_disjoint(self) -> None:
         for parent_actions in (
@@ -4158,6 +4296,43 @@ class MobileNativeInputPreflightTests(unittest.TestCase):
                     "resource lease authentication key",
                 ):
                     self._preflight()
+
+    def test_non_access_preflight_requires_lease_key_but_not_oauth_secrets(
+        self,
+    ) -> None:
+        for gate_id in (
+            "mobile-native-lifecycle-e2e",
+            "mobile-native-platform-e2e",
+        ):
+            with self.subTest(gate_id=gate_id):
+                scenario_spec = load_mobile_native_preflight_spec(
+                    ENVIRONMENTS_DIR / "mobile-native.yaml",
+                    gate_id=gate_id,
+                )
+                self.spec = dataclasses.replace(
+                    scenario_spec,
+                    chromedriver=self.spec.chromedriver,
+                )
+                self._install_harness_actions()
+                environment = dict(self.environment)
+                environment.pop("MOBILE_ACCEPTANCE_GITHUB_ACCOUNT", None)
+                environment.pop("MOBILE_ACCEPTANCE_GOOGLE_ACCOUNT", None)
+                with patch.dict(
+                    os.environ,
+                    environment,
+                    clear=True,
+                ), patch(
+                    "tooling.acceptance.provisioners.mobile_native."
+                    "_appium_server_version",
+                    return_value="2.19.0",
+                ):
+                    result = self._preflight()
+
+                self.assertEqual(
+                    result["leaseAuthenticationKey"],
+                    bytearray.fromhex("ab" * 32),
+                )
+                self.assertEqual(len(result["physicalDevices"]), 2)
 
     def test_missing_disposable_oauth_credentials_block(self) -> None:
         contract = EnvironmentContract.from_yaml(
