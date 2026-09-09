@@ -12,7 +12,10 @@ import {
   applyAuthRuntimeProjection,
   restoreAuthRuntimeProjection,
 } from './authRuntime';
-import { installNativeLifecycleBridge } from './nativeLifecycleBridge';
+import {
+  installNativeLifecycleBridge,
+  type LifecycleEventPayload,
+} from './nativeLifecycleBridge';
 import { wakeActiveMessagingSession } from './messagingRuntime';
 
 interface NativeRuntimeEventErrorPayload {
@@ -32,9 +35,14 @@ let lifecycleTransition: Promise<void> = Promise.resolve();
 export function installMobileNativeEventBridge(): () => void {
   let disposed = false;
   const unlisteners: UnlistenFn[] = [];
+  let nativeLifecycleCallbacksAvailable = false;
 
-  // W7: Install the lifecycle generation bridge listeners
-  const teardownLifecycleBridge = installNativeLifecycleBridge();
+  const teardownLifecycleBridge = installNativeLifecycleBridge({
+    onLifecycleEvent: handleCanonicalLifecycleEvent,
+    onNativeListenerReady: () => {
+      nativeLifecycleCallbacksAvailable = true;
+    },
+  });
 
   NATIVE_EVENT_NAMES.forEach((eventName) => {
     listen<SocialHostEventPayloadLike>(eventName, (event) => {
@@ -76,6 +84,7 @@ export function installMobileNativeEventBridge(): () => void {
     .catch((error) => reportBridgeError('listen-native-error-event', error));
 
   const onVisibilityChange = () => {
+    if (nativeLifecycleCallbacksAvailable) return;
     if (document.visibilityState === 'visible') {
       dispatchSocialRuntimeExternalEvent({ kind: 'app-resume', reason: 'visibility-visible' });
     }
@@ -85,6 +94,7 @@ export function installMobileNativeEventBridge(): () => void {
     );
   };
   const onFocus = () => {
+    if (nativeLifecycleCallbacksAvailable) return;
     dispatchSocialRuntimeExternalEvent({ kind: 'app-resume', reason: 'window-focus' });
     enqueueLifecycleTransition(true, 'window-focus');
   };
@@ -109,6 +119,22 @@ export function installMobileNativeEventBridge(): () => void {
   };
 }
 
+async function handleCanonicalLifecycleEvent(
+  payload: LifecycleEventPayload,
+): Promise<void> {
+  if (payload.state === 'background') {
+    enqueueLifecycleTransition(false, 'native-background');
+    return;
+  }
+  if (payload.state !== 'foreground') return;
+
+  dispatchSocialRuntimeExternalEvent({
+    kind: 'app-resume',
+    reason: 'native-lifecycle-foreground',
+  });
+  enqueueLifecycleTransition(true, 'native-resume');
+}
+
 function dispatchNativePayload(eventName: string, payload: SocialHostEventPayloadLike | null | undefined) {
   dispatchSocialRuntimeExternalEvent(buildSocialHostEvent(eventName, payload));
   if (eventName === 'mobile:resume') {
@@ -116,17 +142,32 @@ function dispatchNativePayload(eventName: string, payload: SocialHostEventPayloa
   }
 }
 
-function enqueueLifecycleTransition(foreground: boolean, reason: string): void {
+function enqueueLifecycleTransition(
+  foreground: boolean,
+  reason:
+    | 'native-background'
+    | 'native-resume'
+    | 'visibility-change'
+    | 'window-focus',
+): void {
   lifecycleTransition = lifecycleTransition
     .then(async () => {
       const kernel = getMobileLifecycleKernel();
       const phase = kernel.getPhase();
       if (!foreground) {
-        if (phase === 'ACTIVE') await kernel.suspend();
+        if (phase === 'ACTIVE') {
+          await kernel.suspend(
+            reason === 'native-background'
+              ? 'app-background'
+              : 'visibility-change',
+          );
+        }
         return;
       }
       if (phase === 'SUSPENDED') {
-        await kernel.resume();
+        await kernel.resume(
+          reason === 'native-resume' ? 'native-resume' : 'app-resume',
+        );
         return;
       }
       if (phase === 'ACTIVE') {

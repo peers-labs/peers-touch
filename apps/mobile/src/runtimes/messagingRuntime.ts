@@ -2,7 +2,10 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 
 import type { MobileRuntimeDescriptor, RuntimeOperationResult } from '../app/lifecycle/types';
-import type { MobileAuthSession } from '../features/auth/authSession';
+import {
+  isAccessGranted,
+  type MobileAuthSession,
+} from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
 import { useGroupStore } from '../features/group/groupStore';
 import { useSocialStore } from '../features/social/socialStore';
@@ -64,10 +67,12 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
         (event) => enqueueProjectionDelivery(event.payload),
       );
       unsubscribe = useAuthStore.subscribe((state, previous) => {
-        if (sessionKey(state.session) === sessionKey(previous.session)) return;
-        enqueueSessionTransition(state.session);
+        const session = admittedSession(state);
+        const previousSession = admittedSession(previous);
+        if (sessionKey(session) === sessionKey(previousSession)) return;
+        enqueueSessionTransition(session);
       });
-      await synchronizeSession(useAuthStore.getState().session);
+      await synchronizeSession(admittedSession(useAuthStore.getState()));
     },
 
     async suspend(): Promise<void> {
@@ -76,6 +81,7 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
     },
 
     async resume(): Promise<void> {
+      await transition;
       const scope = activeScope;
       if (!scope) return;
       await invoke('messaging_resume', { input: scope });
@@ -111,7 +117,7 @@ export async function wakeActiveMessagingSession(): Promise<void> {
 }
 
 export function reconcileActiveMessagingSession(): Promise<MessagingReconcileResult | null> {
-  const session = useAuthStore.getState().session;
+  const session = admittedSession(useAuthStore.getState());
   if (!session || !activeScope || !activeProfileId || activeGeneration === 0) {
     return Promise.resolve(null);
   }
@@ -212,6 +218,12 @@ function sessionKey(session: MobileAuthSession | null): string {
   return session
     ? `${session.stationPeerId}\u001f${session.actorRef.ptid}\u001f${session.accessToken}`
     : '';
+}
+
+function admittedSession(
+  state: ReturnType<typeof useAuthStore.getState>,
+): MobileAuthSession | null {
+  return isAccessGranted(state.accessDecision) ? state.session : null;
 }
 
 function sameAccount(
