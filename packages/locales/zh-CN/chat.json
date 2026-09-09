@@ -200,6 +200,7 @@
   "chat.message.action.translate": "翻译",
   "chat.message.action.thread": "打开线程",
   "chat.message.action.turnDetails": "回合详情",
+  "chat.message.toolCall.openPanel": "打开工具详情",
   "chat.message.action.export": "导出为 Markdown",
   "chat.message.action.forward": "转发",
   "chat.messageForward.title": "转发给智能体",
