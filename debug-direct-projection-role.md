@@ -522,3 +522,44 @@ ambiguous Federation context.
   `acceptance-runtime-provisioning-self` Agent V2 and launch-context baseline.
   Gap Detector keeps the product claim `UNPROVEN`.
 - The debug session stays `[OPEN]`.
+
+## Iteration: Canonical Read-Cursor Device-Inbox Identity
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| AQ | The Actor Identity correction lets Bob's D-17 command commit and project to both clients. | Confirmed | Exact-source Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` records Bob's reply at authority sequence 3 and Alice's thread reply at sequence 4. |
+| AR | The reaction mutation fails at the authority. | Rejected | station-four commits the reaction as sequence 5 and Alice consumes it. |
+| AS | Bob cannot consume the reaction because an earlier Device Inbox item blocks his lane. | Confirmed | Bob lane 7 is a canonical payload-type-5 `ActorReadCursor` whose event ID equals the payload SHA-256. The client expects a retired `read:` prefix, decodes the cursor as `MessageReceipt`, and never reaches the lane-8 reaction. |
+
+- Source:
+  `2ae0254691d97f16c3c08ef3e8639bdd91a91eac`.
+- Acceptance aggregate:
+  `20260908T175709295124Z-a391b650f3a35af8f68fe2410fa19642`.
+- Product Closure:
+  `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc`.
+- Windows cell:
+  `20260908t175752889322z-745bcb62304f4a9d`.
+- Windows binary SHA-256:
+  `518bf35b8c40b9e56bc01cebc0902b5b1fcf3523cc54cc90901606a7b1c519f0`.
+- Group:
+  `c31757cf-2319-4aca-bdb4-b9c5e18a9d2a`.
+- Passed steps: `alice.launch`, `bob.launch`, `conversation.search.ui`,
+  `group.create.ui`, `transcript.thread.ui`, and `toolbar.geometry.ui`.
+- First failed step: `reaction.ui`; cleanup is `DONE/PROVEN`.
+- The local correction makes portable Messaging Core own one canonical
+  read-cursor/delivery-receipt decoder and makes Desktop use it. It validates
+  payload type, recipient, hash, deterministic protobuf bytes, and event
+  identity before the adapter commits local state. No `read:` compatibility
+  identity is retained.
+- Messaging Core focused tests pass 3/3; the full Core suite passes 110 unit
+  and 2 integration tests; Desktop production Rust compilation passes.
+- Exact-range aggregate
+  `20260909T075246544755Z-757a3a7473c595fc41013d034f28d7a9`
+  passes the four approved Chat Gates, `acceptance-plan-self`, and
+  `acceptance-infra-validation`.
+- `acceptance-runtime-provisioning-self`
+  `20260909T075314187326Z-0e361fd222d9560245f3aad313b5696a`
+  remains `PARTIAL/UNPROVEN` on the pre-existing Agent V2 helper/import and
+  launch-context timeout failures; it is not Chat product evidence.
+- Exact-source deployment and Product Closure rerun remain pending; the debug
+  session stays `[OPEN]`.
