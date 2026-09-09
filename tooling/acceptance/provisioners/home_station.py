@@ -22,6 +22,9 @@ from tooling.acceptance.core.provisioning import (
     RuntimeManifest,
 )
 from tooling.acceptance.fixtures.chat_native_actors import produce_actor_manifest
+from tooling.acceptance.provisioners.remote_source_identity import (
+    resolve_remote_source_identity,
+)
 
 
 GATE_ROLES = {
@@ -608,6 +611,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 service_id="station",
                 station_url=station_url,
                 profile_env=profile_env,
+                remote_source_identity_provider=resolve_remote_source_identity,
             )
             local_proto_digest = source_proto_digest(REPO_ROOT)
             if not commits_match(attestation.live_commit, manifest.source_commit):
