@@ -1,0 +1,94 @@
+{
+  "id": "mobile-ios-layout-simulator",
+  "profile": {
+    "required": false,
+    "identity_match": false
+  },
+  "base_environment": "mobile-simulator",
+  "source_identity": {
+    "commit_required": true,
+    "workspace_digest_required": true
+  },
+  "selectors": {
+    "ios": {
+      "runtime": "iOS 17.4"
+    }
+  },
+  "services": {},
+  "fixtures": [],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "sim-ios-compact",
+      "platform": "ios",
+      "role": "compact-layout",
+      "runtime": "tauri-ios-simulator",
+      "device_name": "iPhone SE (3rd generation)",
+      "viewport_role": "compact",
+      "port_roles": [
+        "wda-local",
+        "mjpeg",
+        "webview"
+      ],
+      "storage_root": "<runtime-home>/acceptance/mobile-ios-layout-simulator/<run-id>/sim-ios-compact"
+    },
+    {
+      "id": "sim-ios-large",
+      "platform": "ios",
+      "role": "large-layout",
+      "runtime": "tauri-ios-simulator",
+      "device_name": "iPhone 15 Pro Max",
+      "viewport_role": "large",
+      "port_roles": [
+        "wda-local",
+        "mjpeg",
+        "webview"
+      ],
+      "storage_root": "<runtime-home>/acceptance/mobile-ios-layout-simulator/<run-id>/sim-ios-large"
+    }
+  ],
+  "harness": {
+    "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
+    "build_flag": "VITE_ACCEPTANCE_HARNESS=1",
+    "required_actions": [
+      "projection.read"
+    ],
+    "policy": "production actions only; direct Store mutation and simulated success are forbidden"
+  },
+  "proof_scope": {
+    "proves": [
+      "iOS Simulator launch-surface compact and large viewport layout",
+      "portrait and landscape bounds",
+      "keyboard avoidance",
+      "English and Chinese localization",
+      "native accessible naming",
+      "deterministic session cleanup"
+    ],
+    "does_not_prove": [
+      "authenticated Shell surfaces",
+      "Android",
+      "physical display behavior",
+      "VoiceOver or TalkBack",
+      "physical-device performance"
+    ]
+  },
+  "cleanup": {
+    "resources": [
+      "appium-process",
+      "app-installations",
+      "ports",
+      "storage",
+      "simulator-boot",
+      "environment-lease"
+    ],
+    "order": [
+      "appium-process",
+      "app-installations",
+      "ports",
+      "storage",
+      "simulator-boot",
+      "environment-lease"
+    ],
+    "deterministic": true
+  }
+}

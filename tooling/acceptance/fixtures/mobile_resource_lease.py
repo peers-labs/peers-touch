@@ -2008,7 +2008,7 @@ def _assert_durable_state_redacted(value: Mapping[str, Any]) -> None:
 
 
 class MobileResourceLeaseBroker:
-    """Atomic run-exclusive lease owner for Mobile physical OAuth proof."""
+    """Atomic run-exclusive lease owner for Mobile physical proof."""
 
     def __init__(
         self,
@@ -2022,6 +2022,7 @@ class MobileResourceLeaseBroker:
         ledger: ResourceLeaseLedger | None = None,
         now: Callable[[], datetime] | None = None,
         artifact_workspace_id: str | None = None,
+        gate_id: str = GATE_ID,
     ) -> None:
         self.run_handle = run_handle
         self.run_id = ""
@@ -2029,12 +2030,13 @@ class MobileResourceLeaseBroker:
         self._physical_identity_key = bytearray()
         self.ledger = ledger
         self._closed = False
+        self.gate_id = gate_id
         try:
             self.run_id = run_handle.run_id
             self._physical_identity_key = bytearray(physical_identity_key)
-            if run_handle.gate_id != GATE_ID:
+            if run_handle.gate_id != self.gate_id:
                 raise MobileResourceLeaseError(
-                    f"resource leases require gate {GATE_ID!r}"
+                    f"resource leases require gate {self.gate_id!r}"
                 )
             if len(physical_identity_key) < 32:
                 raise ValueError(
@@ -2139,7 +2141,7 @@ class MobileResourceLeaseBroker:
                 )
                 _validate_json_artifact_reference(
                     reference,
-                    gate_id=GATE_ID,
+                    gate_id=reference.gate_id,
                     run_id=str(canonical_payload["runId"]),
                     path=artifact_path,
                     value=canonical_payload,
@@ -2279,10 +2281,11 @@ class MobileResourceLeaseBroker:
         ledger_key: str,
         record: _LeaseRecord,
     ) -> ArtifactRef | None:
+        acquisition_gate_id = str(record.acquisition.get("gateId") or "")
         payload = validate_contract_payload(
             record.acquisition,
             expected_run_id=str(record.acquisition.get("runId", "")),
-            expected_gate_id=GATE_ID,
+            expected_gate_id=acquisition_gate_id,
             expected_workspace_id=record.artifact_workspace_id,
         )
         kind, resource_key, artifact_path = _canonical_acquisition_authority(
@@ -2295,7 +2298,7 @@ class MobileResourceLeaseBroker:
         expected_bytes = _canonical_json_bytes(payload, redact=False)
         reference = ArtifactRef(
             workspace_id=record.artifact_workspace_id,
-            gate_id=GATE_ID,
+            gate_id=acquisition_gate_id,
             run_id=str(payload["runId"]),
             path=artifact_path,
             sha256=hashlib.sha256(expected_bytes).hexdigest(),
@@ -3211,7 +3214,7 @@ class MobileResourceLeaseBroker:
                     payload = {
                         "artifactKind": "provider-identity-assertion",
                         "runId": run_id,
-                        "gateId": GATE_ID,
+                        "gateId": self.gate_id,
                         "provider": provider,
                         "accountRef": record.acquisition["accountRef"],
                         "providerSubjectFingerprint": fingerprint,
@@ -3220,11 +3223,19 @@ class MobileResourceLeaseBroker:
                             _utc(observed_at or self._now())
                         ),
                     }
-                    validate_contract_payload(payload, expected_run_id=run_id)
+                    validate_contract_payload(
+                        payload,
+                        expected_run_id=run_id,
+                        expected_gate_id=self.gate_id,
+                    )
                     record.pending_identity_assertion = dict(payload)
                 else:
                     payload = dict(record.pending_identity_assertion)
-                validate_contract_payload(payload, expected_run_id=run_id)
+                validate_contract_payload(
+                    payload,
+                    expected_run_id=run_id,
+                    expected_gate_id=self.gate_id,
+                )
                 if (
                     payload["provider"] != provider
                     or payload["accountRef"] != record.acquisition["accountRef"]
@@ -3249,7 +3260,7 @@ class MobileResourceLeaseBroker:
             )
             _validate_json_artifact_reference(
                 identity_reference,
-                gate_id=GATE_ID,
+                gate_id=self.gate_id,
                 run_id=run_id,
                 path=identity_path,
                 value=payload,
@@ -3688,7 +3699,7 @@ class MobileResourceLeaseBroker:
                     )
                 return _validate_json_artifact_reference(
                     reference,
-                    gate_id=GATE_ID,
+                    gate_id=self.gate_id,
                     run_id=self.run_id,
                     path=self._acquisition_artifact_path(record),
                     value=record.acquisition,
@@ -3710,7 +3721,7 @@ class MobileResourceLeaseBroker:
             "holderRunId": self.run_id,
             "fenceToken": self._next_fence(resource_key),
             "runId": self.run_id,
-            "gateId": GATE_ID,
+            "gateId": self.gate_id,
         }
 
     def _next_fence(self, resource_key: str) -> int:
@@ -3764,7 +3775,11 @@ class MobileResourceLeaseBroker:
                 f"resource {resource_key!r} is {state} and unavailable"
             )
         if validate_payload:
-            validate_contract_payload(payload, expected_run_id=self.run_id)
+            validate_contract_payload(
+                payload,
+                expected_run_id=self.run_id,
+                expected_gate_id=self.gate_id,
+            )
         record = _LeaseRecord(
             kind=kind,
             acquisition=dict(payload),
@@ -3800,7 +3815,11 @@ class MobileResourceLeaseBroker:
         artifact_path: str,
     ) -> dict[str, Any]:
         payload = record.acquisition
-        validate_contract_payload(payload, expected_run_id=self.run_id)
+        validate_contract_payload(
+            payload,
+            expected_run_id=self.run_id,
+            expected_gate_id=self.gate_id,
+        )
         try:
             reference = self.run_handle.write_json(
                 artifact_path,
@@ -3810,7 +3829,7 @@ class MobileResourceLeaseBroker:
             )
             _validate_json_artifact_reference(
                 reference,
-                gate_id=GATE_ID,
+                gate_id=self.gate_id,
                 run_id=self.run_id,
                 path=artifact_path,
                 value=payload,
@@ -4222,13 +4241,14 @@ class MobileResourceLeaseBroker:
             )
         acquisition = record.acquisition
         run_id = str(acquisition["runId"])
+        acquisition_gate_id = str(acquisition["gateId"])
         writer = self._writer_for(record)
         if record.pending_outcome is None:
             final_state = "QUARANTINED" if failure_code else "RELEASED"
             payload: dict[str, Any] = {
                 "artifactKind": "mobile-lease-outcome",
                 "runId": run_id,
-                "gateId": GATE_ID,
+                "gateId": acquisition_gate_id,
                 "leaseId": acquisition["leaseId"],
                 "leaseKind": record.kind,
                 "resourceKey": acquisition["resourceKey"],
@@ -4249,13 +4269,21 @@ class MobileResourceLeaseBroker:
                     "maxObservedConcurrency": record.max_observed_concurrency,
                     "fenceValidated": record.fence_validated,
                 }
-            validate_contract_payload(payload, expected_run_id=run_id)
+            validate_contract_payload(
+                payload,
+                expected_run_id=run_id,
+                expected_gate_id=acquisition_gate_id,
+            )
             record.pending_outcome = dict(payload)
             record.state = "PENDING_TERMINAL_PUBLICATION"
             self.ledger._persist()
         else:
             payload = dict(record.pending_outcome)
-            validate_contract_payload(payload, expected_run_id=run_id)
+            validate_contract_payload(
+                payload,
+                expected_run_id=run_id,
+                expected_gate_id=acquisition_gate_id,
+            )
         outcome_path = (
             f"evidence/mobile/cleanup/leases/{acquisition['leaseId']}.json"
         )
@@ -4269,7 +4297,7 @@ class MobileResourceLeaseBroker:
         )
         _validate_json_artifact_reference(
             outcome_reference,
-            gate_id=GATE_ID,
+            gate_id=acquisition_gate_id,
             run_id=run_id,
             path=outcome_path,
             value=payload,
@@ -4292,7 +4320,7 @@ class MobileResourceLeaseBroker:
         acquisition_run_id = str(record.acquisition["runId"])
         _validate_json_artifact_reference(
             reference,
-            gate_id=GATE_ID,
+            gate_id=reference.gate_id,
             run_id=acquisition_run_id,
             path=self._acquisition_artifact_path(record),
             value=record.acquisition,

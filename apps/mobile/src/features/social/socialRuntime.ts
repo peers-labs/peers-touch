@@ -25,6 +25,7 @@ const PRESENCE_HEARTBEAT_INTERVAL_MS = 30000;
 
 export interface SocialRuntimeController {
   teardown: () => void;
+  drain: () => Promise<void>;
 }
 
 export type SocialRuntimeExternalEventKind = SocialHostEventKind;
@@ -123,10 +124,18 @@ export function startSocialRuntime(
   let cancelled = false;
   let externalReconcileTimer: number | null = null;
   const abortController = new AbortController();
+  const pendingOperations = new Set<Promise<unknown>>();
+  const track = <T,>(operation: () => Promise<T>): Promise<T> => {
+    const pending = operation().finally(() => {
+      pendingOperations.delete(pending);
+    });
+    pendingOperations.add(pending);
+    return pending;
+  };
 
-  store.reconcile();
+  void track(() => store.reconcile());
   const reconcileTimer = window.setInterval(() => {
-    if (!cancelled) store.reconcile();
+    if (!cancelled) void track(() => store.reconcile());
   }, RECONCILE_INTERVAL_MS);
   const typingSweepTimer = window.setInterval(() => {
     store.sweepTypingPeers(Date.now() - TYPING_TTL_MS);
@@ -141,39 +150,68 @@ export function startSocialRuntime(
     onGroupMessage: wakeMessaging,
     onReceipt: wakeMessaging,
     onMutation: wakeMessaging,
-    onTyping: store.applyTypingState,
-    onPresence: store.setPeerOnline,
+    onTyping: (...args) => {
+      if (!cancelled) store.applyTypingState(...args);
+    },
+    onPresence: (...args) => {
+      if (!cancelled) store.setPeerOnline(...args);
+    },
     onGroupMembership: (groupUlid, actorPtid, kind) => {
-      void routeGroupMembershipChange(groupStore, groupUlid, actorPtid, kind);
+      if (!cancelled) {
+        void track(
+          () => routeGroupMembershipChange(
+            groupStore,
+            groupUlid,
+            actorPtid,
+            kind,
+          ),
+        );
+      }
     },
     onSettingsChanged: (conversationKind, containerUlid) => {
+      if (cancelled) return;
       if (conversationKind === 'friend') {
-        void store.loadConversationSettings(containerUlid);
+        void track(() => store.loadConversationSettings(containerUlid));
       } else {
-        void groupStore?.loadSettings(containerUlid);
+        void track(
+          () => groupStore?.loadSettings(containerUlid) ?? Promise.resolve(),
+        );
       }
     },
     onResync: () => {
+      if (cancelled) return;
       wakeMessaging();
-      void store.reconcile();
-      void groupStore?.reconcile();
+      void track(() => store.reconcile());
+      void track(() => groupStore?.reconcile() ?? Promise.resolve());
     },
   };
-  void superviseRealtimeStream(session, abortController.signal, store, groupStore, realtimeHandlers);
+  void track(
+    () => superviseRealtimeStream(
+      session,
+      abortController.signal,
+      store,
+      groupStore,
+      realtimeHandlers,
+    ),
+  );
 
   const runtimeRef: ActiveSocialRuntime = {
     sessionKey: store.sessionKey,
     dispatchExternalEvent: (event) => {
       if (cancelled) return;
 
-      if (event.sessionUlid) void store.loadMessages(event.sessionUlid);
-      if (socialHostEventTargetsNotifications(event)) void store.refreshNotifications();
-      void reconcileActiveThreads(store, groupStore);
+      if (event.sessionUlid) {
+        void track(() => store.loadMessages(event.sessionUlid!));
+      }
+      if (socialHostEventTargetsNotifications(event)) {
+        void track(() => store.refreshNotifications());
+      }
+      void track(() => reconcileActiveThreads(store, groupStore));
 
       if (externalReconcileTimer) return;
       externalReconcileTimer = window.setTimeout(() => {
         externalReconcileTimer = null;
-        if (!cancelled) void store.reconcile();
+        if (!cancelled) void track(() => store.reconcile());
       }, EXTERNAL_RECONCILE_DEBOUNCE_MS);
     },
   };
@@ -189,6 +227,9 @@ export function startSocialRuntime(
       void postPresence(session, '/presence/offline', 'runtime_teardown');
       abortController.abort();
       if (activeRuntime === runtimeRef) activeRuntime = null;
+    },
+    drain: async () => {
+      await Promise.allSettled([...pendingOperations]);
     },
   };
 }

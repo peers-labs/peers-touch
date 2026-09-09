@@ -1,9 +1,11 @@
 /**
  * DeferredCapabilityNotice — features unavailable during bootstrap.
  *
- * Shows which runtimes have not yet completed bootstrap or have
- * failed, causing certain features to be temporarily unavailable.
+ * Reports lifecycle-owned startup/resume degradation without exposing raw
+ * runtime identifiers or internal error strings as user-facing copy.
  */
+
+import { LoaderCircle } from 'lucide-react';
 
 import type { DeferredCapabilityState } from '../../runtimes/recoveryProjection';
 
@@ -14,31 +16,25 @@ interface DeferredCapabilityNoticeProps {
 
 export function DeferredCapabilityNotice({ state, t }: DeferredCapabilityNoticeProps) {
   return (
-    <div
-      className="recovery-bar recovery-deferred-capability"
+    <section
+      className="recovery-notice recovery-deferred-capability"
       role="status"
       aria-label={t('mobile.recovery.deferredCapability.title')}
+      data-runtime-count={state.unavailableRuntimes.length}
     >
-      <span className="recovery-bar__icon" aria-hidden="true">
-        &#x23F3;
+      <span className="recovery-notice__icon" aria-hidden="true">
+        <LoaderCircle size={18} className="recovery-icon--spinning" />
       </span>
-      <div className="recovery-bar__content">
-        <span className="recovery-bar__text">
+      <div className="recovery-notice__content">
+        <strong className="recovery-notice__title">
+          {t('mobile.recovery.deferredCapability.title')}
+        </strong>
+        <span className="recovery-notice__text">
           {t('mobile.recovery.deferredCapability.body', {
             count: state.unavailableRuntimes.length,
           })}
         </span>
-        <ul className="recovery-deferred-list" role="list">
-          {state.unavailableRuntimes.map((entry) => (
-            <li key={entry.runtimeId} className="recovery-deferred-list__item">
-              <span className="recovery-deferred-list__title">{entry.title}</span>
-              <span className="recovery-deferred-list__status">
-                {t(`mobile.recovery.runtimeStatus.${entry.status}`)}
-              </span>
-            </li>
-          ))}
-        </ul>
       </div>
-    </div>
+    </section>
   );
 }

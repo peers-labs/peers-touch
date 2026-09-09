@@ -156,16 +156,31 @@ The difference is platform responsibility:
 
 ## 8. Current Implementation Gap
 
-Current Mobile code is still transitioning toward this lifecycle:
+Current Mobile code now implements the local owner layer of this lifecycle:
 
-- `App.tsx` must model at least `station-selection -> station-handshake -> access-gate-chain -> shell`.
-- Login must be promoted from Settings into an access gate renderer.
-- Invite-only and fixed-user gates must use the shared Station gate protocol, not Mobile-local checks.
+- `MobileLifecycleKernel` owns
+  `app-boot -> station-selection -> station-handshake -> access-gate-chain ->
+  runtime-critical -> shell`; `App.tsx` renders that projection and dispatches
+  transition intents.
+- The descriptor-backed Mobile navigation store owns primary and Chat/Group
+  detail route identity. Social/Group selection fields remain projection
+  readback context and no longer decide detail visibility.
+- Login is rendered by the top-level access gate host instead of Settings;
+  full native gate-chain evidence remains pending.
+- Invite-only and fixed-user gates consume the shared Station gate protocol.
 - Signed peer identity/capability handshake is implemented; physical
   mismatch/replacement evidence remains pending.
-- Pre-session auth/OAuth runtime is implemented. Active session, command
-  admission, sync, and device runtimes are not yet all registered through the
-  target executable graph.
+- Pre-session auth/OAuth restoration and runtime graph ownership are
+  implemented. The Station-bound simulator path now covers restore,
+  same-device takeover, revocation, Station switching, logout, and old-scope
+  isolation through parent-owned Runtime Binding and Fixture operations;
+  destructive current-source proof still requires explicit reset
+  authorization. Command admission and remaining sync/device runtime closure
+  are still pending.
+- The app-level recovery host delegates Station/session actions back to the
+  lifecycle and auth owners. W4 draft/ledger recovery actions and W5
+  overflow/reconcile inputs remain pending and are not replaced by direct
+  projection mutation.
 - Keychain/Keystore and Rust OAuth secure storage pass simulator evidence;
   physical-device cleanup and absence proof remain pending.
 
