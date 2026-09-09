@@ -2276,15 +2276,22 @@ def latest_passed_gates(
         run = {}
     except ValueError as error:
         raise RuntimeError("invalid latest Acceptance run") from error
-    passed = proven_gate_ids(
-        run.get("results", []),
-        label="latest Acceptance results",
+    current_results = os.environ.get("PT_ACCEPTANCE_CURRENT_RESULTS", "")
+    latest_source_matches = (
+        not run or run.get("source") == source_identity(REPO_ROOT)
     )
-    if run and run.get("source") != source_identity(REPO_ROOT):
+    if not latest_source_matches and not current_results:
         raise RuntimeError(
             "latest Acceptance run source does not match current source"
         )
-    current_results = os.environ.get("PT_ACCEPTANCE_CURRENT_RESULTS", "")
+    passed = (
+        proven_gate_ids(
+            run.get("results", []),
+            label="latest Acceptance results",
+        )
+        if latest_source_matches
+        else set()
+    )
     if current_results:
         try:
             current_envelope = loads_strict_json_value(

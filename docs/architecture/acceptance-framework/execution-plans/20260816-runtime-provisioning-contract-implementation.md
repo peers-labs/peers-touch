@@ -1,35 +1,12 @@
 # Runtime Provisioning Contract Implementation Plan
 
-> **Status**: complete — merged in PR #91; product proof remains separately UNPROVEN
+> **Status**: complete — current-source WS2/WS3 maintenance verified
 > **Version**: v1.0
-> **Created**: 2026-08-16 | **Updated**: 2026-08-17
+> **Created**: 2026-08-16 | **Updated**: 2026-09-09
 > **Owner**: Architecture Team
 > **Branch**: design/acceptance-runtime-provisioning-contract
 > **Parent Design**: [../design.md](../design.md)
 > **Approved Decisions**: D-07, D-08, D-09, D-10
-
----
-
-## Context Anchor
-
-| Field | Current value |
-|---|---|
-| Main task | Complete the Runtime Provisioning Contract from EXECUTE through truthful Native proof, independent audit, PR review, and merge. |
-| Plan source | `docs/architecture/acceptance-framework/execution-plans/20260816-runtime-provisioning-contract-implementation.md` |
-| Tracking source | This plan's workstream table, acceptance scenarios, and Final Readiness Gate |
-| Worktree | `<repo-root>` |
-| Branch | `design/acceptance-runtime-provisioning-contract` |
-| Stage | `complete` |
-| Current workstream | Framework delivery closed |
-| Current step | none |
-| Progress | Framework scope merged; WS2/WS6 successful-product cleanup proof remains `UNPROVEN`; WS8 product assertion remains `FAILED/UNPROVEN` and outside framework delivery |
-| Last completed | PR #91 merged the Runtime Provisioning and Evidence Store framework into `master` at `93691c088` |
-| Current action | none; this framework plan is closed under the owner-approved infrastructure/product evidence boundary |
-| Next action | Messaging product work owns Direct Chat DELIVERED repair and subsequent Native proof |
-| Blockers | none for this closed framework plan; product evidence remains explicitly `UNPROVEN` |
-| Decisions required | none |
-| Evidence | PR #91 merged; AS-01 through AS-05 and framework gates passed. `chat-native-two-client-e2e` remains `FAILED/UNPROVEN` at `receipt.delivered`; dependent product Gates remain unrun |
-| Last updated | 2026-08-17 |
 
 ---
 
@@ -405,8 +382,8 @@ Once this gate passes, the framework is ready to be used to validate actual prod
 | Workstream | Status | Completion Date | Commit | Notes |
 |------------|--------|-----------------|--------|-------|
 | WS1: Core Data Model | DONE | 2026-08-16 | `9d05335e1` | Immutable contract/manifest models and schema tests pass. |
-| WS2: Provisioner Runtime | PARTIAL | — | `9d05335e1`, `b274e68c1`, `034bd725b`, `298f656b1` | Shared local/remote leases, structured blocking, and failed-Gate reverse cleanup are live-proven. A successful complete product Gate cleanup remains unproven. |
-| WS3: Attestation & Actors | DONE | 2026-08-17 | `9d05335e1`, `d0af86743`, `1fc55890f`, `d4f082492` | Live/deployed/client commit and proto identity match; workspace is clean; authorized reset produced canonical Alice/Bob PTIDs; both actors logged in through the source-bound Native run. |
+| WS2: Provisioner Runtime | DONE | 2026-09-09 | current checkpoint | Local Desktop Gateway declares its Fixture/credential contract; generated coverage-report changes are excluded from workspace source identity; aggregate reports retain exact source identity. Product cleanup proof remains separately unproven. |
+| WS3: Attestation & Actors | DONE | 2026-09-09 | current checkpoint | Proto identity uses only tracked contract artifacts; remote attestation delegates to strict `SshTransport` and rejects missing/invalid known-hosts configuration before network access. |
 | WS4: Credential Redaction | DONE | 2026-08-17 | `9d05335e1`, `f9bcead42`, `602c730eb`, `d4f082492` | Actor login credential ownership is explicit, runtime canary resolution is live-proven, and the exact high-entropy scan found zero leaked artifacts. |
 | WS5: Registry Behavior Rules | DONE | 2026-08-16 | `9d05335e1` | Receipt owner selects two-client Gate; unrelated messaging and proto paths do not over-select it. |
 | WS6: Runner Integration | PARTIAL | — | `9d05335e1`, `f9bcead42`, `8f88bb038`, `b274e68c1`, `034bd725b`, `7b6938982`, `ba1d799ba`, `d4f082492`, `0e5915aa4`, `907c0fe94` | Provision-before-run, manifest-only input, TauriDriver, cleanup, failed-result traceability, and final live commit guard are live-proven. A successful complete product Gate remains unproven. |
@@ -415,3 +392,32 @@ Once this gate passes, the framework is ready to be used to validate actual prod
 | WS8-B: Shared Profile Lease | DONE | 2026-08-17 | `602c730eb`, `298f656b1`, `907c0fe94` | Local contention, SSH-held remote Git exclusion, process-exit release, 237-second Gate source stability, and cleanup all pass. |
 | WS8-C: Leak Canary | DONE | 2026-08-17 | `602c730eb`, `d4f082492`, `907c0fe94` | Live current-run scan covered one high-entropy generated CredentialRef and found zero leaked artifacts. |
 | WS8: Chat Native Validation | FAILED / UNPROVEN | — | `907c0fe94` | Both actors reached shell/device/bundle readiness; Alice submitted and Bob visibly received/decrypted. Alice never projected `DELIVERED` within 120 seconds. Dependent Native Gates remain unrun and Direct Chat DELIVERED is unproven. |
+
+### 9.1 Current-Source Maintenance Closure — 2026-09-09
+
+Checkpoint `c0d169b6f3bb035de66fb31c566b982a0ae95f6b` reproduced four
+generic WS2/WS3 failures before any Station access:
+
+- `local-desktop-gateway` no longer satisfies its declared Fixture contract;
+- `source_proto_digest` includes non-git-tracked generated artifacts;
+- remote source attestation invokes SSH with `StrictHostKeyChecking=no` and
+  does not fail closed on an invalid known-hosts contract;
+- `source_workspace_digest` treats the generated coverage report as source
+  drift.
+
+This maintenance slice repairs only the generic contracts and synthetic tests.
+It does not modify a business Gate, provision a remote environment, or establish
+Agent product evidence.
+
+Aggregate verification exposed two additional generic lifecycle defects:
+`reports/run.json` omitted the aggregate source identity, and validation rejected
+stale historical evidence before considering the current source-bound aggregate.
+The runner now persists the exact aggregate source, while the validator admits a
+current source-matched result envelope and still rejects stale latest evidence
+when no current envelope exists.
+
+Closure evidence passes five focused provisioning/attestation regressions, the
+149-test combined provisioning/launch-context suite, the complete runner and
+validator suites, `acceptance-runtime-provisioning-self`, and
+`acceptance-infra-validation` on one clean current-source checkpoint. No remote
+Station access or product Gate execution occurred.

@@ -2230,6 +2230,22 @@ class AcceptanceRunTest(unittest.TestCase):
             self.assertEqual(report["proofStatus"], "UNPROVEN")
             self.assertFalse(report["sampleEmissionAllowed"])
 
+    def test_build_run_report_binds_aggregate_source_identity(self) -> None:
+        module = load_module()
+        source = {
+            "commit": "a" * 40,
+            "workspaceDigest": "clean",
+            "canonicalWorktreeHash": "workspace",
+        }
+
+        report = module.build_run_report(
+            "tooling/acceptance/reports/latest-plan.json",
+            [{"id": "synthetic-gate", "status": "passed"}],
+            source=source,
+        )
+
+        self.assertEqual(report["source"], source)
+
     def test_enrich_result_derives_reason_from_source_issue_when_artifact_reason_missing(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:

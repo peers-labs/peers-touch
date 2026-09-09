@@ -160,6 +160,11 @@ class StationAttestationOwnerTests(unittest.TestCase):
         remote_command = command[-1]
         self.assertIn("git status --porcelain | sed", remote_command)
         self.assertIn("\\.bare\\.git\\/", remote_command)
+        self.assertIn("subprocess.check_output", remote_command)
+        self.assertIn("ls-files", remote_command)
+        self.assertIn("model/domain", remote_command)
+        self.assertIn("apps/desktop/src/gen/proto", remote_command)
+        self.assertIn("apps/station", remote_command)
         self.assertNotIn("apps/mobile/ios", remote_command)
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertNotIn("StrictHostKeyChecking=no", command)
