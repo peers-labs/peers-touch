@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package peers_touch.model.recovery.v1;
+
+import "domain/actor/actor.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/recovery/model;model";
+
+enum OpaqueRecoveryArchiveSectionKind {
+  OPAQUE_RECOVERY_ARCHIVE_SECTION_KIND_UNSPECIFIED = 0;
+  OPAQUE_RECOVERY_ARCHIVE_SECTION_KIND_ACTOR_IDENTITY = 1;
+  OPAQUE_RECOVERY_ARCHIVE_SECTION_KIND_MESSAGE_HISTORY = 2;
+  OPAQUE_RECOVERY_ARCHIVE_SECTION_KIND_ATTACHMENT_METADATA = 3;
+  OPAQUE_RECOVERY_ARCHIVE_SECTION_KIND_TRUST = 4;
+}
+
+message OpaqueRecoveryArchiveSection {
+  OpaqueRecoveryArchiveSectionKind kind = 1;
+  bytes ciphertext = 2;
+  bytes ciphertext_sha256 = 3;
+  uint64 record_count = 4;
+}
+
+// Recovery archives contain opaque encrypted state only. Device private keys,
+// prekeys, Direct ratchets, skipped keys, and live MLS state are excluded.
+message OpaqueRecoveryArchiveManifest {
+  uint32 format_version = 1;
+  peers_touch.model.actor.v1.ActorRef actor = 2;
+  string revision_id = 3;
+  repeated OpaqueRecoveryArchiveSection sections = 4;
+  bytes archive_sha256 = 5;
+  google.protobuf.Timestamp created_at = 6;
+  string created_by_device_id = 7;
+}
+
+message StoreRecoveryRevisionRequest {
+  string revision_id = 1;
+  uint32 format_version = 2;
+  // Encrypted deterministic OpaqueRecoveryArchiveManifest bytes. Station
+  // validates only the ciphertext hash and never observes archive sections.
+  bytes encrypted_archive = 3;
+  bytes encrypted_archive_sha256 = 4;
+}
+
+message StoreRecoveryRevisionResponse {
+  string revision_id = 1;
+  google.protobuf.Timestamp created_at = 2;
+}
+
+message ReadLatestRecoveryRevisionRequest {}
+
+message ReadLatestRecoveryRevisionResponse {
+  string revision_id = 1;
+  uint32 format_version = 2;
+  bytes encrypted_archive = 3;
+  bytes encrypted_archive_sha256 = 4;
+  google.protobuf.Timestamp created_at = 5;
+}

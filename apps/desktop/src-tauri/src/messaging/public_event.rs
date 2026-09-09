@@ -4,8 +4,8 @@ use super::{
     PublicEventReceiveCommit, ReceiveCommitResult,
 };
 use crate::model::chat::{
-    conversation_event, CryptoEndpoint, DeviceConsumptionReceipt, DeviceQueueItem,
-    DeviceQueuePayloadType, MessageEditedFact, MessagePinCommittedFact, MessageRetractedFact,
+    conversation_event, CryptoEndpoint, DeviceConsumptionReceipt, DeviceInboxPayloadType,
+    DurableDeviceInboxItem, MessageEditedFact, MessagePinCommittedFact, MessageRetractedFact,
     MessagingContentKind, PreparedEndpointPayloadKind, PublicEventMarker, ReactionCommittedFact,
 };
 use prost::Message;
@@ -33,7 +33,7 @@ impl PublicEventProcessor {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -51,9 +51,9 @@ impl PublicEventProcessor {
         {
             return Ok(());
         }
-        if DeviceQueuePayloadType::try_from(item.payload_type)
+        if DeviceInboxPayloadType::try_from(item.payload_type)
             .map_err(|_| "messaging public-event queue payload type is invalid".to_string())?
-            != DeviceQueuePayloadType::ConversationEvent
+            != DeviceInboxPayloadType::ConversationEvent
         {
             return Err(
                 "messaging public-event processor received wrong queue payload type".to_string(),
@@ -122,7 +122,7 @@ impl PublicEventProcessor {
 
     fn process_message_committed(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         event: &crate::model::chat::ConversationEvent,
         message: &crate::model::chat::MessageCommittedFact,
         delivery: &crate::model::chat::DeviceEventDelivery,
@@ -171,7 +171,7 @@ impl PublicEventProcessor {
 
     fn process_message_edited(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         event: &crate::model::chat::ConversationEvent,
         fact: &MessageEditedFact,
         consumer_epoch: u64,
@@ -197,7 +197,7 @@ impl PublicEventProcessor {
 
     fn process_message_retracted(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         event: &crate::model::chat::ConversationEvent,
         fact: &MessageRetractedFact,
         consumer_epoch: u64,
@@ -220,7 +220,7 @@ impl PublicEventProcessor {
 
     fn process_reaction(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         event: &crate::model::chat::ConversationEvent,
         fact: &ReactionCommittedFact,
         consumer_epoch: u64,
@@ -253,7 +253,7 @@ impl PublicEventProcessor {
 
     fn process_pin(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         event: &crate::model::chat::ConversationEvent,
         fact: &MessagePinCommittedFact,
         consumer_epoch: u64,
@@ -285,7 +285,7 @@ impl PublicEventProcessor {
 
     fn commit_interaction(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         event: &crate::model::chat::ConversationEvent,
         consumer_epoch: u64,
         message_id: &str,
@@ -319,7 +319,7 @@ impl PublicEventProcessor {
 
     fn build_receipt(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         event: &crate::model::chat::ConversationEvent,
         now: i64,
     ) -> DeviceConsumptionReceipt {
@@ -343,7 +343,7 @@ impl PublicEventProcessor {
 }
 
 impl ClaimedItemConsumer for PublicEventProcessor {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }
@@ -420,7 +420,9 @@ mod tests {
         }
     }
 
-    fn queue_item_with_attachments(attachments: Vec<EncryptedObjectDescriptor>) -> DeviceQueueItem {
+    fn queue_item_with_attachments(
+        attachments: Vec<EncryptedObjectDescriptor>,
+    ) -> DurableDeviceInboxItem {
         let endpoint = CryptoEndpoint {
             ptid: "ptid:alice".to_string(),
             device_id: "alice-device".to_string(),
@@ -479,21 +481,24 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: "item-1".to_string(),
-            recipient: Some(endpoint),
+            recipient: Some(crate::messaging::actor_device_ref(
+                &endpoint.ptid,
+                &endpoint.device_id,
+            )),
             lane_sequence: 1,
             event_id: "event-1".to_string(),
             conversation_id: "conversation-1".to_string(),
             idempotency_key: "event:event-1".to_string(),
-            payload_type: DeviceQueuePayloadType::ConversationEvent as i32,
+            payload_type: i32::from(DeviceInboxPayloadType::ConversationEvent),
             opaque_payload: opaque_payload.clone(),
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
             ..Default::default()
         }
     }
 
-    fn queue_item() -> DeviceQueueItem {
+    fn queue_item() -> DurableDeviceInboxItem {
         queue_item_with_attachments(Vec::new())
     }
 

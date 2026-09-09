@@ -129,4 +129,3 @@ export type ActorProfileEnvelope = Message<"peers_touch.model.federation.v1.Acto
  */
 export const ActorProfileEnvelopeSchema: GenMessage<ActorProfileEnvelope> = /*@__PURE__*/
   messageDesc(file_domain_federation_profile, 0);
-

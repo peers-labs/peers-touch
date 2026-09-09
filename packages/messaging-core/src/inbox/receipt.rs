@@ -1,7 +1,8 @@
 use crate::contracts::{ActorReadReceiveCommit, CryptoEndpoint, DeliveryReceiptReceiveCommit};
 use crate::proto::chat::{
-    ActorReadCursor, DeviceQueueItem, DeviceQueuePayloadType, MessageReceipt, ReceiptType,
+    ActorReadCursor, DeviceInboxPayloadType, DurableDeviceInboxItem, MessageReceipt, ReceiptType,
 };
+use crate::proto::crypto_endpoint_from_actor_device_ref;
 use crate::store::MessagingRepository;
 
 use super::ClaimedItemConsumer;
@@ -33,7 +34,7 @@ impl<R: MessagingRepository> DeliveryReceiptProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -51,14 +52,15 @@ impl<R: MessagingRepository> DeliveryReceiptProcessor<R> {
         {
             return Ok(());
         }
-        if DeviceQueuePayloadType::try_from(item.payload_type).ok()
-            != Some(DeviceQueuePayloadType::DeviceReceipt)
+        if DeviceInboxPayloadType::try_from(item.payload_type).ok()
+            != Some(DeviceInboxPayloadType::DeviceReceipt)
         {
             return Err("messaging delivery receipt queue type is invalid".to_string());
         }
         let recipient = item
             .recipient
             .as_ref()
+            .and_then(crypto_endpoint_from_actor_device_ref)
             .ok_or_else(|| "messaging delivery receipt recipient is missing".to_string())?;
         if recipient.ptid != self.endpoint.ptid || recipient.device_id != self.endpoint.device_id {
             return Err("messaging delivery receipt endpoint mismatch".to_string());
@@ -119,7 +121,7 @@ impl<R: MessagingRepository> DeliveryReceiptProcessor<R> {
 }
 
 impl<R: MessagingRepository> ClaimedItemConsumer for DeliveryReceiptProcessor<R> {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }

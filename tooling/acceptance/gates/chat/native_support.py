@@ -31,10 +31,14 @@ from tooling.acceptance.drivers.native import (
 )
 from tooling.acceptance.drivers.station import StationDriver
 from tooling.acceptance.drivers.tauri import TauriDriver, TauriSession
-from tooling.acceptance.fixtures.chat_native_reset import deploy_environment
+from tooling.acceptance.fixtures.chat_native_reset import (
+    active_deployment_environment,
+    active_station_url,
+    run_acceptance_station_sql,
+)
 
 
-DEFAULT_STATION = "http://10.37.94.156:18080"
+DEFAULT_STATION = "http://10.37.94.156:18132"
 DEV_ACCOUNT_PASSWORD = "1"
 ACCOUNTS = {
     "alice": "alice@p.t",
@@ -731,15 +735,6 @@ def sql_literal(value: str) -> str:
 
 
 def station_readback(conversation_id: str, message_id: str) -> dict[str, Any]:
-    environment = deploy_environment("station-three")
-    host = environment.get("PT_DEPLOY_HOST", "").strip()
-    user = environment.get("PT_DEPLOY_USER", "").strip()
-    if not host or not user:
-        raise GateError("station-three deployment host identity is unavailable")
-    container = os.environ.get(
-        "CHAT_ACCEPTANCE_POSTGRES_CONTAINER",
-        "pt-station-a-postgres-1",
-    )
     conversation = sql_literal(conversation_id)
     message = sql_literal(message_id)
     query = f"""
@@ -752,7 +747,7 @@ SELECT json_build_object(
       'messageId', message_id,
       'hashBytes', octet_length(event_hash)
     ) ORDER BY sequence)
-    FROM messaging_events
+    FROM conversation_events
     WHERE conversation_id = {conversation} AND message_id = {message}
   ), '[]'::json),
   'authorityEvents', COALESCE((
@@ -761,7 +756,7 @@ SELECT json_build_object(
       'sequence', sequence,
       'commandId', command_id
     ) ORDER BY sequence)
-    FROM messaging_events
+    FROM conversation_events
     WHERE conversation_id = {conversation}
   ), '[]'::json),
   'queue', COALESCE((
@@ -778,38 +773,47 @@ SELECT json_build_object(
     FROM device_queue_items
     WHERE conversation_id = {conversation}
   ), '[]'::json),
+  'deliveryCommitments', COALESCE((
+    SELECT json_agg(json_build_object(
+      'eventId', event_id,
+      'recipientPtid', recipient_ptid,
+      'recipientDeviceId', recipient_device_id,
+      'eventSequence', event_sequence,
+      'queueItemId', queue_item_id,
+      'commitmentSha256', encode(delivery_commitment_sha256, 'hex')
+    ) ORDER BY event_sequence, recipient_ptid, recipient_device_id)
+    FROM conversation_delivery_commitments
+    WHERE conversation_id = {conversation}
+  ), '[]'::json),
+  'deliveryReceipts', COALESCE((
+    SELECT json_agg(json_build_object(
+      'receiptId', receipt_id,
+      'eventId', event_id,
+      'recipientPtid', recipient_ptid,
+      'recipientDeviceId', recipient_device_id,
+      'eventSequence', event_sequence,
+      'laneSequence', lane_sequence,
+      'commitmentSha256', encode(delivery_commitment_sha256, 'hex')
+    ) ORDER BY event_sequence, recipient_ptid, recipient_device_id)
+    FROM conversation_delivery_receipts
+    WHERE conversation_id = {conversation}
+  ), '[]'::json),
   'readCursors', COALESCE((
     SELECT json_agg(json_build_object(
-      'readerPtid', reader_ptid,
+      'readerPtid', ptid,
       'lastReadSequence', last_read_sequence
-    ) ORDER BY reader_ptid)
-    FROM messaging_read_cursors
+    ) ORDER BY ptid)
+    FROM conversation_read_cursors
     WHERE conversation_id = {conversation}
   ), '[]'::json)
 );
 """
-    remote = (
-        f"docker exec -i {container} sh -lc "
-        "'psql -At -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"'"
+    output = run_acceptance_station_sql(
+        active_station_url(),
+        query,
+        active_deployment_environment(),
     )
-    result = subprocess.run(
-        [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"{user}@{host}",
-            remote,
-        ],
-        input=query,
-        text=True,
-        check=True,
-        capture_output=True,
-    )
-    value = json.loads(result.stdout.strip())
+    value = json.loads(output)
     if not isinstance(value, dict):
         raise GateError("Station interaction readback is invalid")
     return value

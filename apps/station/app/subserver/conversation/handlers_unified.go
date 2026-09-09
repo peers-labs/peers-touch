@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	enginedomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/engine/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
-	msgdomain "github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -161,7 +161,7 @@ func (s *subServer) handleGetMemberSettings(ctx context.Context, req *getMemberS
 	if req.ConversationID == "" {
 		return nil, server.BadRequest("conversation_id is required")
 	}
-	if _, err := s.requireActiveMessagingMembership(
+	if _, err := s.requireActiveConversationMembership(
 		ctx,
 		req.ConversationID,
 	); err != nil {
@@ -182,7 +182,7 @@ func (s *subServer) handleUpdateMemberSettings(ctx context.Context, req *updateM
 	if req.ConversationID == "" {
 		return nil, server.BadRequest("conversation_id is required")
 	}
-	conversation, err := s.requireActiveMessagingMembership(
+	conversation, err := s.requireActiveConversationMembership(
 		ctx,
 		req.ConversationID,
 	)
@@ -254,7 +254,7 @@ func memberSettingsResponseFrom(
 
 func (s *subServer) publishMemberSettingsChanged(
 	ctx context.Context,
-	conversation *msgdomain.AuthorityConversation,
+	conversation *enginedomain.AuthorityConversation,
 	ptid string,
 ) error {
 	bus := events.GetBus()
@@ -269,7 +269,7 @@ func (s *subServer) publishMemberSettingsChanged(
 		return fmt.Errorf("resolve settings conversation: missing authority projection")
 	}
 	kind := realtime.ConversationSettingsChanged_FRIEND
-	if conversation.Kind == msgdomain.AuthorityConversationKindGroup {
+	if conversation.Kind == enginedomain.AuthorityConversationKindGroup {
 		kind = realtime.ConversationSettingsChanged_GROUP
 	}
 	_, err = bus.Publish(fmt.Sprintf("%d", actor.ID), &realtime.StreamEvent{

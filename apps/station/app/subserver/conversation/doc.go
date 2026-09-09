@@ -1,13 +1,16 @@
-// Package conversation implements the unified conversation domain service.
+// Package conversation is the sole Station business authority for Direct and
+// Group Chat.
 //
-// This is the command/query layer for all conversation types (direct and group).
-// It receives ConversationCommands from clients, validates them against membership
-// and authority rules, produces CommittedConversationEvents, and routes them
-// through the envelope service (D-10) for delivery.
+// The domain, application, infrastructure, and interface packages contain the
+// canonical Conversation DDD bounded context. During CA-W2 that context is
+// composed only by tests; the existing production composition remains active
+// until the atomic CA-W5 route, store, and consumer cutover.
 //
-// Per D-10: conversation logic owns the "what" (validate, sequence, commit);
-// the envelope subsystem owns the "how" (durable delivery, retry, federation).
+// Conversation owns validation, sequencing, authority events, membership and
+// MLS epochs, settings, read cursors, and delivery intent creation. Actor
+// identity, presence, object storage, and Federation transport remain separate
+// owners accessed through explicit ports.
 //
-// See docs/architecture/federated-im/decisions.md D-08..D-12.
-// See model/domain/chat/conversation.proto for the data contract.
+// See docs/architecture/api-ownership/design.md and
+// docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md.
 package conversation

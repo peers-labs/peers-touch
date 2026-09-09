@@ -2,11 +2,16 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-08-11 | **Updated**: 2026-08-19
+> **Created**: 2026-08-11 | **Updated**: 2026-09-04
 > **Owner**: Messaging Platform Team
 > Accepted architecture: MP-D16 (2026-08-09)
 > Module layout: `docs/architecture/messaging-platform/module-layout.md`
 > Parent plan: `20260808-messaging-platform.md`
+
+> **Authority note**: this plan remains active only for the internal
+> Desktop/Mobile Device Messaging Engine and portable core. Conversation is the
+> sole Chat entry point; Station API ownership is governed by the approved
+> [`../../api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md`](../../api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md).
 
 ## 1. Objective
 
@@ -51,7 +56,7 @@ Steps:
    - `EngineConfig`, `DrainProgress`, `SendIntent`, `MessageProjection`
 4. Gate: `cargo check -p messaging-core` passes.
 
-### Phase 2: Core Module Extraction — 🔶 IN PROGRESS (2026-08-11)
+### Phase 2: Core Module Extraction — IN PROGRESS
 
 **Deliverable**: All protocol logic moved from `apps/desktop/src-tauri/src/messaging/` into `packages/messaging-core/src/`
 
@@ -74,13 +79,79 @@ Steps:
 - ✅ `crypto/identity` (IdentityKeyPair, X25519KeyPair, DeviceSigningKey — 14 tests)
 - ✅ `crypto/x3dh` (sender + receiver X3DH key agreement — 3 tests)
 - ✅ `crypto/session` (DirectSession, DirectSessionKey, establish_receiver_session — 5 tests)
-- ✅ `ports/mls_crypto` (MlsCrypto trait — OpenMLS stays in adapter)
+- ✅ `ports/mls_crypto` contract
+- ✅ Concrete OpenMLS provider, actor/device signing identity, and
+  `MlsGroupManager` moved from Desktop into `packages/messaging-core/src/mls/`;
+  Desktop imports Core directly and no longer owns those modules
+- ✅ Group genesis and membership-transition preparation/validation moved into
+  Core behind `MlsTransitionRepository`; Desktop retains only Station HTTP
+  preparation transport and SQLCipher persistence
+- ✅ MLS application/transition receive, sender-marker, and retirement
+  processors moved into Core behind `MlsInboundRepository`; all seven original
+  Desktop behavior tests moved with them
+- ✅ KeyPackage generation/publication/retry and provider-pool rollback moved
+  into Core behind `MlsKeyPackageRepository` and `MlsKeyPackageTransport`;
+  Desktop retains only Station HTTP upload and SQLCipher persistence
+- ✅ Group send/edit preparation moved into Core behind
+  `MlsOutboundRepository`, preserving exact command bytes and
+  durable-commit-before-live-state installation
+- ✅ MLS startup restoration moved behind `MlsStartupRepository`; Desktop now
+  restores accepted sessions, pending join providers, and every durable pending
+  transition before constructing the queue consumer
+- ✅ Signed leave-intent construction, deterministic signing, validation, and
+  Station transport moved behind Core and Messaging Engine APIs; delegated
+  `LEAVE` preparation now binds the exact intent, authority epochs, target
+  actor, and removed endpoint set before mutating OpenMLS state
+- ✅ Desktop production leave callers now use
+  `messaging_submit_leave_intent`, `messaging_list_leave_intents`, and
+  `messaging_commit_authorized_leave`; the superseded
+  `mls_submit_leave_intent` and `mls_list_leave_intents` commands,
+  registrations, and gateway routes were deleted
+- ✅ Desktop production and pressure-harness group send/read paths now use
+  `messaging_send_message` and Messaging Engine projections; the frontend raw
+  decrypt/save path and its plaintext decrypt cache were deleted
+- ✅ Terminally rejected and stale MLS commands now atomically remove their
+  durable pending transition, and the Engine discards the exact matching live
+  prepared transition so rejected state cannot be rehydrated after restart
+- ✅ Legacy MLS unit coverage now lives in Core, and the three-Station E2E uses
+  only canonical `messaging_*` commands and Engine projections
+- ✅ The Desktop raw MLS service, Tauri commands, HTTP gateway routes, global
+  signer/manager state, generic browser-side command proposal ledger, and
+  `crypto_mls_*` storage owner are deleted; existing profiles transactionally
+  drop the ten retired tables
+- ✅ Desktop social projection reads typed active members from the Engine and
+  tracks queued group creation by durable command ID until projection
 - ✅ Proto unification complete (Phase 3 prerequisite resolved 2026-08-19):
   - Core owns all chat + common protos; Desktop re-exports via `messaging_core::proto::*`
   - Desktop `build.rs` uses `extern_path` to map proto packages to Core's types
   - Both `cargo check -p messaging-core` and `cargo check` (Desktop) pass
-- ⬜ Remaining: MLS processors stay in Desktop adapter (OpenMLS-specific); engine orchestrator stays in adapter (Tauri-specific)
-- Gate: 30 tests pass, `cargo check` clean on both crates, ~5,485 LOC in Core
+- ✅ The canonical Messaging SQLCipher schema and column-migration manifest now
+  live in `packages/messaging-core/src/store/schema.rs`; Desktop and Mobile
+  execute the same Core-owned migration without aligning their `rusqlite`
+  dependency versions. Legacy Mobile cursor, prekey, and attachment rows are
+  migrated before their temporary tables are removed.
+- ✅ Direct send/edit validation, endpoint resolution, fan-out encryption,
+  exact command construction, and persistence contracts now live behind
+  `DirectOutboundPreparer` and `DirectOutboundRepository` in Core. Desktop and
+  Mobile adapters revalidate the authority head and compare the exact
+  pre-advance ratchet state inside the persistence transaction.
+- ✅ The superseded Desktop raw Direct command/persistence owner is deleted
+  from `interface/tauri_commands/crypto.rs`,
+  `infrastructure/local_chat_store.rs`, Tauri registration, HTTP dispatch, and
+  the frontend service wrapper. Existing profiles apply idempotent table-drop
+  migrations while Messaging Engine storage remains the sole Direct owner.
+  Live three-Station E2E remains `UNPROVEN` until isolated Stations are
+  available.
+- Focused evidence: `cargo test --manifest-path
+  packages/messaging-core/Cargo.toml` passes 104 unit plus 2 integration tests;
+  Desktop `cargo check --lib` and `cargo test --lib` pass with 24 tests,
+  focused Desktop service/source-contract tests pass 35 tests, and the complete
+  Mobile Rust suite passes 66 tests. The three-Station E2E compiles and is
+  skipped without
+  `PT_C6_MLS_E2E`. The Desktop binary remains blocked by unrelated baseline
+  compilation errors, but its diagnostic build reports no error in the
+  Messaging Core cutover paths.
+- Gate: current Core tests and `cargo check` pass on both adapters.
 
 Module mapping:
 | Desktop source | Core destination |
@@ -107,7 +178,7 @@ Steps:
 5. Gate per module: `cargo check -p messaging-core` passes after each module move.
 6. Final gate: `cargo test -p messaging-core` — all unit tests from Desktop migrate to Core.
 
-### Phase 3: Desktop Adapter — 🔶 IN PROGRESS
+### Phase 3: Desktop Adapter — SOURCE COMPLETE; LIVE E2E UNPROVEN
 
 **Deliverable**: `apps/desktop/src-tauri/src/messaging/` shrinks to adapter + lifecycle + commands.
 
@@ -141,18 +212,104 @@ Steps:
 4. Gate: `cargo test` in Desktop passes. Native E2E (Direct + Group + attachment + recovery
    + receipts + interactions + typing) passes.
 
+**Source hard cut**: ✅ COMPLETE (2026-09-04)
+1. Legacy raw MLS commands, gateway routes, frontend service, and local storage
+   owner are deleted.
+2. Generic frontend conversation-command proposal persistence is deleted;
+   Messaging Engine owns durable command/outbox state.
+3. Three-Station E2E and Desktop social projections consume canonical
+   `messaging_*` commands and typed Engine projections.
+4. Focused Core, Desktop library, Desktop service, strict source-contract, and
+   Mobile Rust checks pass. Live three-Station execution remains `UNPROVEN`.
+
 ### Phase 4: Mobile Adapter
 
 **Deliverable**: `apps/mobile/src-tauri/src/messaging/` implements same port traits.
 
+**Progress (2026-09-04)**:
+- ✅ Mobile now links `rusqlite` with `bundled-sqlcipher`.
+- ✅ `MobileMessagingStore` opens a keyed SQLCipher database and implements the
+  queue claim/replay fence, lane checkpoint, atomic conversation projection,
+  authority head, exact-byte command outbox transitions, prekey lookup,
+  integrity check, and atomic-replace preparation portions of
+  `MessagingRepository`.
+- ✅ Direct receive/edit persistence now atomically commits ratchet state,
+  skipped keys, plaintext projection/edit, authority head, receipts,
+  consumption marker, and lane cursor.
+- ✅ Standalone delivery receipts and actor read cursors now use the same
+  claimed-item replay fence and atomic lane-cursor transaction; delivery state
+  advances monotonically and read cursors never regress.
+- ✅ Public sender markers and edit/retract/reaction/pin events now commit
+  projections, authority heads, receipts, command state, consumption markers,
+  and lane cursors atomically.
+- ✅ Mobile implements `MlsOutboundRepository`, `MlsTransitionRepository`,
+  `MlsKeyPackageRepository`, `MlsStartupRepository`, and
+  `MlsInboundRepository`, including restart restoration and join/application/
+  sender-transition/retirement commits.
+- ✅ Twelve focused repository tests cover keyed SQLCipher reopen, atomic
+  projection and Direct/MLS receive, replay, conflicting claimed payloads,
+  authority-chain rollback, exact command-byte/attempt binding, interactions,
+  KeyPackage state, and MLS startup state.
+- ✅ Mobile has one account-scoped runtime registry backed by native secure
+  identity material and per-account SQLCipher keys. Activation restores the MLS
+  signer/session graph and constructs the Core Direct/MLS/public/conversation/
+  receipt consumer graph; cross-account reuse is rejected.
+- ✅ Typed Mobile Tauri commands expose activation, status, conversation
+  projection, reconcile, and deactivation. Reconcile uses authenticated
+  protobuf queue claim/ACK and exact-byte command submission transports.
+- ✅ Core owns metadata-interaction validation and exact `ChatCommand`
+  construction. Desktop and Mobile implement the same repository contract and
+  revalidate the expected authority head inside the SQLCipher transaction.
+- ✅ Group send/edit persistence now applies the same transaction-time
+  authority-head CAS as Direct send/edit, closing the preflight-to-commit race.
+- ✅ Mobile exposes account-scoped typed commands for message/thread/search
+  projections, command status, Direct/Group text send and edit,
+  retract/reaction/pin, read cursor, and ephemeral typing. Durable commands use
+  the Messaging Engine outbox; typing bypasses every durable queue.
+- ✅ Mobile committed-message writes maintain the local SQLCipher FTS projection,
+  and message reads enrich attachments, reactions, pins, and reader PTIDs from
+  the canonical schema.
+- ✅ Desktop and Mobile now execute one Core-owned SQLCipher schema/migration
+  manifest. Mobile migrates its temporary cursor, prekey, and attachment
+  layouts before deleting those tables.
+- ✅ Core owns Direct send/edit validation, ordered endpoint/session resolution,
+  ratchet encryption, exact command construction, and persistence contracts;
+  both adapters enforce authority-head and pre-advance ratchet CAS in the same
+  transaction as command/outbox/projection persistence.
+- ✅ Mobile now supplies root-bound attachment blob storage, authenticated
+  Station transfer, SQLCipher upload/download checkpoints, cache promotion,
+  typed staging/open/cancel commands, and bounded 1 MiB Web-to-Rust staging.
+- ✅ The account-scoped continuous worker now drives attachment transfer,
+  message-draft preparation, command dispatch, queue drain, projection events,
+  source cleanup, retry deadlines, suspend/resume, and stop/join.
+- ✅ Mobile Web Chat/Group message list/send/edit/retract/read/typing and
+  attachment stage/open paths now consume the Device Messaging Engine.
+  Legacy friend/group message routes, browser media crypto, Sender Key
+  runtimes/bridges/ledger/storage, duplicate `messaging_send_text`, and generic
+  Chat command-ledger admission are deleted from active Mobile source.
+- ✅ Deferred attachment sends retain and lock the composer until the
+  count-conserving Engine projection advances; incomplete attachment-only
+  drafts remain outside the message projection.
+- ✅ The current Mobile Rust library suite passes 66 tests. Production Mobile
+  Web build, normal and Acceptance Rust checks, Social wire/runtime boundary
+  gates, scoped diff checks, and active-source old-owner scans pass. Prior
+  verified evidence remains Messaging Core 104 unit plus 2 integration tests
+  and Desktop library 24 tests.
+- Remaining: run Mobile Native two-actor/multi-Station Direct + Group text,
+  attachment, recovery, lifecycle, restart, receipt, typing, and interaction
+  evidence. The superseded Desktop raw Direct command/store owner has been
+  deleted and its legacy tables are removed by an idempotent migration.
+
 Steps:
-1. Create `apps/mobile/src-tauri/src/messaging/adapter.rs` implementing ports.
-2. Wire Mobile's SQLCipher, HTTP transport, keychain, filesystem.
-3. Create `lifecycle.rs` for Mobile background/foreground lifecycle.
-4. Create `commands.rs` exposing Tauri Mobile commands.
-5. Delete Mobile Sender Keys (`apps/mobile/src-tauri/src/domain/` crypto modules).
-6. Gate: `cargo check` on Mobile. Mobile build succeeds.
-7. Gate: Mobile Native E2E — Direct + Group text, attachment, recovery, lifecycle,
+1. ✅ Create `apps/mobile/src-tauri/src/messaging/adapter.rs` implementing ports.
+2. ✅ Wire Mobile's SQLCipher, HTTP transport, keychain, filesystem.
+3. ✅ Create `lifecycle.rs` for Mobile background/foreground lifecycle.
+4. ✅ Create `commands.rs` exposing Tauri Mobile commands.
+5. ✅ Delete Mobile Sender Keys from active Mobile Rust/Web ownership.
+6. ✅ Route Mobile Chat through Messaging Engine command/outbox persistence; the
+   generic Mobile command ledger remains limited to non-messaging domains.
+7. ✅ Gate: `cargo check` on Mobile and Mobile production Web build succeed.
+8. Gate: Mobile Native E2E — Direct + Group text, attachment, recovery, lifecycle,
    background/foreground, restart, receipt, MP-C15 typing and MP-C16 interactions.
 
 ### Phase 5: Verification Closure

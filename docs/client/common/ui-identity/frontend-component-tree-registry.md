@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-07-01 | **Updated**: 2026-08-27
+> **Created**: 2026-07-01 | **Updated**: 2026-09-09
 > **Owner**: Client Platform Team
 > **Module**: `docs/client/common/ui-identity/`
 
@@ -97,19 +97,25 @@ Budget fields are recorded inside `Evidence` until the registry grows explicit c
 
 ## 8. Mobile Surface Registry
 
-Mobile does not use the Desktop `PageHost` keep-alive model. `MobileShell.tsx` drives the four primary tabs with `useState<TabId>` and a `renderPage` switch, so only the active tab tree is mounted. Projection freshness is owned by feature runtimes (`useSocialRuntime`, `social`/`group` stores), which keep store truth fresh even while a tab's page tree is unmounted. See `frontend-component-tree.md §14` for the Mobile platform tree standard.
+Mobile does not use the Desktop `PageHost` keep-alive model.
+`MobileNavigationStore` owns the descriptor-backed primary route and detail
+stack, while `MobileShell.tsx` renders only the active tab tree. Projection
+freshness is owned by the Mobile runtime registry and feature stores, which
+keep store truth fresh while a tab tree is unmounted. See
+`frontend-component-tree.md §14` for the Mobile platform tree standard.
 
 | Feature / Surface | Owner Layer | Alive Category | Trigger | Cache Policy | Runtime / Store Owner | Status | Evidence | Review Owner |
 |-------------------|-------------|----------------|---------|--------------|------------------------|--------|----------|--------------|
-| Mobile primary tab shell | NavigationShell | `on-visit + none` per tab | App ready; tab selected | None — only active tab mounted | Mobile runtime registry projections | needs audit | Audit must verify the `architecture/mobile/module-layout.md` descriptor host with native remount evidence; current `MobileShell.tsx` uses `useState<TabId>` + `renderPage` | Mobile |
-| Mobile chat tab | PageBoundary | `on-visit + none` within active chat tab | Open chat tab | None; draft/scroll recovery externalized | `socialRuntime`, `groupRuntime` projections | needs audit | Current list↔thread identity is store-driven; target descriptor-owned detail route must delete that routing responsibility while preserving draft/scroll state | Mobile / Chat |
+| Mobile primary tab shell | NavigationShell | `on-visit + none` per tab | App ready; tab selected | None — only active tab mounted | Mobile runtime registry projections | needs audit | `MobileNavigationStore` owns the primary descriptor and `MobileShell.tsx` renders only that active tab; native remount cost still needs sampling | Mobile |
+| Mobile chat tab | PageBoundary | `on-visit + none` within active chat tab | Open chat tab | None; draft/scroll recovery externalized | `socialRuntime`, `groupRuntime` projections | needs audit | Descriptor-owned Chat/Group detail routes now control visibility; Social/Group selection remains projection context; native remount and draft/scroll restoration evidence still needs collection | Mobile / Chat |
 | Mobile Moments tab/feed | PageBoundary / SectionBoundary | `on-visit + none` + `virtualized content` | Open Moments tab | Virtual window; composer draft externalized | `momentsRuntime` projection | needs audit | Target feed/detail/composer states require native virtualization, draft recovery, audience/trust, empty/error and rollback evidence | Mobile / Social |
 | Mobile Contacts tab/roster | PageBoundary / SectionBoundary | `on-visit + none` + `virtualized content` | Open Contacts tab | Virtual window; search state optional local cache | `socialRuntime`, `groupRuntime` projections | needs audit | Target request/contact/group surfaces require large-roster, federation-unavailable and request-action recovery evidence | Mobile / Chat |
 | Mobile Me/settings shell | PageBoundary / SectionHost | `on-visit + none` with `lazy section` details | Open Me tab / select setting | Selected-only; explicit form draft cache | `profileRuntime`, `settingsRuntime`, `deviceSettingsRuntime` | needs audit | Audit must verify that only the selected settings detail mounts, including account/device ownership, unsaved draft, permission and destructive-action recovery evidence | Mobile |
-| Mobile descriptor detail routes | NavigationShell / PageBoundary | `on-visit + none` | Open conversation/contact/group/moment/setting | None; owner restores scroll/focus/draft | Owning feature runtime projection | needs audit | Target replaces `activeSessionUlid`/`activeGroupUlid` as route identity; each descriptor must prove back, deep link, tab-bar visibility and no leaked mounted detail | Mobile |
+| Mobile descriptor detail routes | NavigationShell / PageBoundary | `on-visit + none` | Open conversation/contact/group/moment/setting | None; owner restores scroll/focus/draft | Mobile navigation store + owning feature runtime projection | needs audit | Chat/Group route identity, back, tab-bar visibility, and scroll/focus restoration are descriptor-owned in source; needs contact/moment/setting route and native no-leak evidence | Mobile |
 | Mobile OAuth/access recovery | PageBoundary / OverlayHost | `on-visit + none` | Station gate requests credentials | None; attempt state in `authRuntime` | `authRuntime`, `accessRuntime` | needs audit | Prototype covers provider progress; target must add cancel, expiry, replay/mismatch, following-gate, Station identity mismatch and focus restoration evidence | Mobile / Auth |
+| Mobile runtime recovery surfaces | OverlayHost | `on-visit + none` per visible recovery surface | Recovery projection reports an active state | None; app-level host retains only its projection subscription | `recoveryProjection` plus lifecycle/auth/command/ingress action owners | needs audit | The app-level host mounts only active child surfaces and delegates Station/session actions to lifecycle/auth owners; W4 command/draft actions, W5 ingress actions, native focus restoration, and runtime screenshots remain unproven | Mobile |
 | Mobile conversation action sheet | OverlayHost | `on-visit + none` | Tap conversation actions | None | Chat action state | not alive | `ChatActionSheet` returns `null` when `!open`; bottom action sheet, not a right drawer (`ChatPage.tsx`) | Mobile / Chat |
-| Mobile tabbar | NavigationShell | `idle + forever` while in tab mode | App ready | Forever while shown | Social/group unread projection | alive | `MobileShell.tsx` renders `<nav className="mobile-tabbar">`; hidden when `activeTab === 'chat' && (activeSessionUlid \|\| activeGroupUlid)` to give the thread full height | Mobile |
+| Mobile tabbar | NavigationShell | `idle + forever` while in tab mode | App ready | Forever while shown | Mobile navigation descriptor + Social/group unread projection | alive | `MobileShell.tsx` renders `<nav className="mobile-tabbar">`; visibility is derived from the active detail descriptor, not Social/Group store selection | Mobile |
 
 ## 9. Applet Registry
 
