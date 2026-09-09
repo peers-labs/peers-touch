@@ -513,10 +513,13 @@
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate Agent native runner fail-closed evidence, selector bindings, Make launch, and cleanup contracts without launching a live journey."
+      "description": "Validate Agent native runner fail-closed evidence, selector bindings, canonical TauriDriver launch, and cleanup contracts without launching a live journey."
     },
     "agent-native-turn-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py",
+      "argv": [
+        "python3",
+        "tooling/acceptance/gates/agent/native_agent_runner.py"
+      ],
       "timeout_seconds": 1800,
       "environment": "home-station",
       "provisioner": "home-station",
@@ -667,7 +670,12 @@
       "description": "Workspace: CRUD, file management, diff, commit, OSS."
     },
     "agent-stream-resilience-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey stream-resilience",
+      "argv": [
+        "python3",
+        "tooling/acceptance/gates/agent/native_agent_runner.py",
+        "--journey",
+        "stream-resilience"
+      ],
       "timeout_seconds": 1800,
       "environment": "home-station",
       "provisioner": "home-station",
@@ -675,7 +683,12 @@
       "description": "Run the isolated One-profile native R6 journey: active turn, transport fault, visible reconciling, cursor replay without duplicate projection, logout teardown, auth-gate isolation, re-login Station readback, and cleanup."
     },
     "agent-attachment-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey attachment",
+      "argv": [
+        "python3",
+        "tooling/acceptance/gates/agent/native_agent_runner.py",
+        "--journey",
+        "attachment"
+      ],
       "timeout_seconds": 300,
       "environment": "home-station",
       "provisioner": "home-station",
