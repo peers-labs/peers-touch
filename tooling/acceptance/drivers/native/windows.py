@@ -493,6 +493,36 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
         """
         self.post_key(NativeKey.L, modifiers=(NativeModifier.PRIMARY,))
 
+    def reveal_file_chooser_location_to_process(
+        self,
+        process_id: int,
+    ) -> NativeControlSnapshot:
+        process_id = _validated_process_id(process_id)
+        self.activate_process(process_id)
+        self.reveal_file_chooser_location()
+
+        deadline = time.monotonic() + _FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS
+        last_control = self.focused_control(process_id)
+        for _ in range(_FILE_CHOOSER_FOCUS_STEPS):
+            if last_control.kind == "text-field":
+                return last_control
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(
+                min(
+                    _FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS
+                    / _FILE_CHOOSER_FOCUS_STEPS,
+                    remaining,
+                )
+            )
+            last_control = self.focused_control(process_id)
+
+        raise DriverError(
+            "Win32 Native file chooser did not expose its location field: "
+            f"{last_control.to_dict()}"
+        )
+
     def focused_control(self, process_id: int) -> NativeControlSnapshot:
         process_id = _validated_process_id(process_id)
         try:
@@ -624,7 +654,7 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
                 if dialog_visible:
                     event = {
                         "sessionId": "cross-station-direct-open",
-                        "runId": "pre-fix",
+                        "runId": "post-fix",
                         "hypothesisId": "AF-AJ",
                         "location": "windows.py:focused_control",
                         "msg": "[DEBUG] Win32 file-dialog focus hierarchy",

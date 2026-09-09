@@ -4041,3 +4041,54 @@ dependency-ready action is a local checkpoint commit without push, exact-source
 deployment to station-four, station-five, and sixwin, and a Product
 Closure-only rerun. The remaining seven Windows Native Chat Gates and
 PostgreSQL contention remain deferred until Product Closure passes.
+
+### 2026-09-09 Win32 Same-Worker Chooser Observation Checkpoint
+
+The open `cross-station-direct-open` debug session confirmed that the Windows
+file chooser exposes its location field as the focused Win32 `Edit` control
+immediately after `Ctrl+L`. A separately scheduled observation worker instead
+became the foreground `ConsoleWindowClass` and returned no focused HWND.
+Product Closure discarded the targeted reveal worker's immediate control
+snapshot and polled through those focus-stealing workers.
+
+The Acceptance Infra correction keeps process activation, `Ctrl+L`, bounded
+focus observation, and control-snapshot return in one Win32 broker worker.
+`NativeDesktopRuntimeAdapter` now returns the optional targeted reveal
+snapshot, the remote Windows adapter decodes the broker result, and Product
+Closure retains its historical polling path only for platforms whose targeted
+reveal returns no snapshot. Product assertions, chooser behavior, and Chat
+business injection remain unchanged.
+
+Final-source local verification:
+
+- focused Win32 driver, broker, runtime-binding, and Product Closure static
+  cohort: 93 tests passed, 1 skipped;
+- targeted Python compilation and `git diff --check`: PASS;
+- local aggregate
+  `20260909T122735116615Z-704ca9769a2059f981e1d733f5bb94b4`
+  passes `station-messaging-unit`, `messaging-platform-contract`,
+  `desktop-check`, `chat-native-visible-static`, and
+  `acceptance-plan-self`;
+- direct `acceptance-infra-validation`
+  `20260909T122835479164Z-2ac13abe523be95f71db4a8618a37596`
+  is `STRUCTURALLY_VALID`;
+- `acceptance-run-test`, `acceptance-plan-test`,
+  `acceptance-validate-test`, `acceptance-infra-boundary-test`,
+  `acceptance-gap-detect-test`, `acceptance-coverage-report-test`, and
+  `quality-evidence-test` pass 66, 20, 20, 8, 22, 18, and 14 tests;
+- wrapped `acceptance-infra-validation`
+  `20260909T122810392932Z-b8882fcc1ab4ba4f41909d5d390446ff`
+  reproduces the known active-aggregate ordering failure while the direct
+  validator passes;
+- `acceptance-runtime-provisioning-self`
+  `20260909T122905945107Z-a51989fdd8e5f26194e38fd4880c8867`
+  remains `PARTIAL/UNPROVEN` on the pre-existing Agent V2 missing helpers,
+  missing `StationAttestation` test import, blocker-order expectations, and
+  launch-context ephemeral-capability timeouts. Its transient local port
+  collision is excluded after the isolated port-conflict regression passed.
+
+NDR-W9-D and Windows NDR-W10-D remain `PARTIAL/UNPROVEN`. The next
+dependency-ready action is the authorized local checkpoint commit without
+push, exact-source deployment to station-four, station-five, and sixwin, and a
+Product Closure-only post-fix run. The remaining seven Windows Native Chat
+Gates and PostgreSQL contention remain deferred until Product Closure passes.

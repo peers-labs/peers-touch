@@ -699,13 +699,17 @@ class RemoteNativeDesktopAdapter(NativeDesktopAdapter):
     def reveal_file_chooser_location(self) -> None:
         self._execute("reveal_file_chooser_location", {})
 
-    def reveal_file_chooser_location_to_process(self, process_id: int) -> None:
+    def reveal_file_chooser_location_to_process(
+        self,
+        process_id: int,
+    ) -> NativeControlSnapshot | None:
         if self._platform != "win32":
-            super().reveal_file_chooser_location_to_process(process_id)
-            return
-        self._execute(
-            "reveal_file_chooser_location_to_process",
-            {"processId": process_id},
+            return super().reveal_file_chooser_location_to_process(process_id)
+        return self._control_snapshot(
+            self._execute(
+                "reveal_file_chooser_location_to_process",
+                {"processId": process_id},
+            )
         )
 
     @staticmethod

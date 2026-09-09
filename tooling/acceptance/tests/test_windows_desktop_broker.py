@@ -449,14 +449,14 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
             ):
             worker.index('elif operation == "focused_control":')
         ]
-        activation = targeted.index("adapter.activate_process(process_id)")
-        reveal = targeted.index("adapter.reveal_file_chooser_location()")
-        observation = targeted.index(
-            "adapter.focused_control(process_id).to_dict()"
+        reveal = targeted.index(
+            "adapter.reveal_file_chooser_location_to_process("
         )
+        observation = targeted.index(").to_dict()", reveal)
 
-        self.assertLess(activation, reveal)
         self.assertLess(reveal, observation)
+        self.assertNotIn("adapter.activate_process(process_id)", targeted)
+        self.assertNotIn("adapter.focused_control(process_id)", targeted)
 
 
 if __name__ == "__main__":
