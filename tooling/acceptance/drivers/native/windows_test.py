@@ -55,6 +55,29 @@ class Win32NativeDesktopAdapterContractTest(unittest.TestCase):
         self.assertLess(foreground_guard, early_return)
         self.assertLess(early_return, top_level_focus)
 
+    def test_file_chooser_reveal_observes_focus_in_the_same_worker(self) -> None:
+        source = WINDOWS_ADAPTER_PATH.read_text(encoding="utf-8")
+        reveal_start = source.index(
+            "    def reveal_file_chooser_location_to_process("
+        )
+        reveal = source[
+            reveal_start:source.index("    def focused_control(", reveal_start)
+        ]
+
+        activation = reveal.index("self.activate_process(process_id)")
+        input_delivery = reveal.index("self.reveal_file_chooser_location()")
+        observation = reveal.index("self.focused_control(process_id)")
+
+        self.assertLess(activation, input_delivery)
+        self.assertLess(input_delivery, observation)
+        self.assertIn("_FILE_CHOOSER_FOCUS_STEPS", reveal)
+        self.assertIn("_FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS", reveal)
+        self.assertIn('last_control.kind == "text-field"', reveal)
+        self.assertIn(
+            "Win32 Native file chooser did not expose its location field",
+            reveal,
+        )
+
     def test_focus_probe_reads_the_foreground_gui_thread(self) -> None:
         source = WINDOWS_ADAPTER_PATH.read_text(encoding="utf-8")
         helper = source[
