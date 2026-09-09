@@ -1,5 +1,5 @@
 use super::MessagingStore;
-use crate::model::chat::PrepareMessagingSendResponse;
+use crate::model::chat::PrepareConversationCommandResponse;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -8,7 +8,7 @@ pub enum CommandSubmitFailure {
         code: String,
     },
     StaleDeliveryPlan {
-        current_plan: PrepareMessagingSendResponse,
+        current_plan: PrepareConversationCommandResponse,
     },
     StaleAuthorityPlan {
         expired: bool,
@@ -53,7 +53,7 @@ pub enum CommandDispatchProgress {
     },
     StaleDeliveryPlan {
         command_id: String,
-        current_plan: PrepareMessagingSendResponse,
+        current_plan: PrepareConversationCommandResponse,
     },
     StaleAuthorityPlan {
         command_id: String,
@@ -327,7 +327,7 @@ mod tests {
     fn stale_plan_supersedes_old_ciphertext_without_losing_logical_draft() {
         let store = Arc::new(MessagingStore::in_memory().unwrap());
         prepare(&store, "command-stale");
-        let current_plan = PrepareMessagingSendResponse {
+        let current_plan = PrepareConversationCommandResponse {
             conversation_id: "conversation-1".to_string(),
             delivery_plan_sha256: vec![7; 32],
             ..Default::default()

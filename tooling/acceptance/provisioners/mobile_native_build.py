@@ -3904,6 +3904,70 @@ def produce_build_attestation(
     return typed_payload, attestation_reference
 
 
+def produce_scenario_build_attestation(
+    *,
+    run: RunHandle,
+    receipt: SuccessfulBuildReceipt,
+    created_at: str,
+) -> tuple[dict[str, Any], ArtifactRef]:
+    """Project a source-bound build without widening the frozen OAuth schema."""
+
+    if run.gate_id not in {
+        "mobile-native-lifecycle-e2e",
+        "mobile-native-platform-e2e",
+    }:
+        raise MobileNativeBuildError(
+            "scenario build attestation requires a non-access physical Gate"
+        )
+    if not isinstance(receipt, SuccessfulBuildReceipt):
+        raise MobileNativeBuildError(
+            "scenario attestation requires a successful build receipt"
+        )
+    receipt._assert_current_outputs()
+    identity = json.loads(canonical_json_bytes(receipt._build_identity))
+    inspection = receipt._artifact_inspection
+    artifact = receipt._artifact
+    platform = inspection.platform
+    artifact_path = f"runtime/mobile/builds/{platform}.{inspection.kind}"
+    artifact_reference = run.write_bytes(
+        artifact_path,
+        artifact.read_bytes(),
+        media_type="application/octet-stream",
+        role=f"mobile-application-{inspection.kind}",
+    )
+    if f"sha256:{artifact_reference.sha256}" != inspection.sha256:
+        raise MobileNativeBuildError(
+            "persisted scenario artifact digest differs from inspection"
+        )
+    payload = {
+        "artifactKind": "mobile-native-scenario-build-attestation",
+        "runId": run.run_id,
+        "gateId": run.gate_id,
+        "producer": "mobile-native-build",
+        "producerSourceDigest": receipt._producer_source_digest,
+        "toolchainDigest": receipt._toolchain_digest,
+        "buildIsolation": json.loads(
+            canonical_json_bytes(receipt._build_isolation)
+        ),
+        "buildIdentity": identity,
+        "embeddedIdentitySha256": embedded_identity_digest(identity),
+        "artifact": {
+            "kind": inspection.kind,
+            "sha256": inspection.sha256,
+            "sizeBytes": inspection.size_bytes,
+            "artifactRef": artifact_reference.to_dict(),
+        },
+        "signing": json.loads(canonical_json_bytes(inspection.signing)),
+        "createdAt": created_at,
+    }
+    attestation_reference = run.write_json(
+        f"runtime/mobile/builds/{platform}.json",
+        payload,
+    )
+    receipt._assert_current_outputs()
+    return payload, attestation_reference
+
+
 def fresh_install_inputs(
     *,
     client_id: str,

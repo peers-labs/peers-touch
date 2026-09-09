@@ -84,7 +84,7 @@ func (f *HTTPAuthorityEventFetcher) FetchAuthorityEvents(
 		return nil, err
 	}
 	endpoint := strings.TrimRight(membership.StationURL, "/") +
-		"/conversation/federation/events/sync"
+		"/federation/conversation/events/sync"
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,

@@ -39,6 +39,15 @@ It is responsible for:
 - persistence, event semantics, and federation
 - shared APIs consumed by Desktop and Mobile
 
+Chat API ownership is resource-based:
+
+- Conversation is the sole Chat business owner and exposes `/conversation/*`.
+- Actor Device, Conversation Delivery, Recovery, Key Exchange, and Federation
+  expose `/device/*`, `/device/inbox/*`, `/recovery/*`, `/key-exchange/*`, and
+  peer-only `/federation/*`.
+- Internal Messaging Engine code may support delivery and cryptography, but
+  Station does not expose a Messaging business API or facade.
+
 Station is **not** responsible for:
 
 - Desktop local window or device interaction
@@ -76,10 +85,11 @@ Typical active areas in current codebase include:
 
 - `activitypub`
 - `agent`
+- `conversation`
 - `dashboard`
 - `events`
-- `friend_chat`
-- `group_chat`
+- `federation`
+- `key_exchange`
 - `launcher`
 - `oauth`
 - `oss`
@@ -153,7 +163,8 @@ A subserver is the unit that owns:
 Examples in current codebase:
 
 - `agent` for agent-domain execution, memory, growth, review, and scheduler abilities
-- `friend_chat` and `group_chat` for messaging domains
+- `conversation` for Direct and Group Chat business authority
+- resource owners for Device, Inbox, Recovery, Key Exchange, and Federation APIs
 - `events` for event-related capabilities
 - `oauth` and `oss` for integration and storage-related capabilities
 - `social` for social-domain business logic

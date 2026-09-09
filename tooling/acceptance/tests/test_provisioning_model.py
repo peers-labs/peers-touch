@@ -119,17 +119,20 @@ class CredentialRefTests(unittest.TestCase):
     def test_reference_suffix_is_safe_but_reference_secret_is_redacted(self):
         self.assertFalse(is_sensitive_key("credentialRefs"))
         self.assertFalse(is_sensitive_key("credential_reference"))
+        self.assertFalse(is_sensitive_key("errorKey"))
         self.assertTrue(is_sensitive_key("credential_reference_secret"))
         value = redact_value(
             {
                 "accessTokensPresent": False,
                 "credentialRefs": ["env:TEST_PASSWORD"],
                 "credentialReferenceSecret": "must-not-survive",
+                "errorKey": "auth.oauth.invalidCallback",
             }
         )
         self.assertFalse(value["accessTokensPresent"])
         self.assertEqual(value["credentialRefs"], ["env:TEST_PASSWORD"])
         self.assertEqual(value["credentialReferenceSecret"], REDACTED)
+        self.assertEqual(value["errorKey"], "auth.oauth.invalidCallback")
 
 
 class EnvironmentContractTests(unittest.TestCase):

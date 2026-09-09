@@ -85,15 +85,22 @@ type EventHandler[E any] func(ctx Context, event E) error
 每个Handler必须包含以下元数据：
 ```go
 type HandlerMeta struct {
-    Name        string    // Handler唯一标识
-    Path        string    // 路由路径/事件名
-    Method      string    // 请求方法
-    Type        HandlerType // Normal/Stream/Event
-    AuthRequired bool      // 是否需要鉴权
-    Timeout     time.Duration // 超时时间
-    Tags        []string  // 可观测标签
+    Name         string      // Handler唯一标识
+    CapabilityID string      // 语义能力唯一标识
+    DomainOwner  string      // 业务/交付/传输 owner
+    Exposure     Exposure    // Client/Peer/Internal
+    Path         string      // 路由路径/事件名
+    Method       string      // 请求方法
+    Type         HandlerType // Normal/Stream/Event
+    AuthRequired bool        // 是否需要鉴权
+    Timeout      time.Duration // 超时时间
+    Tags         []string    // 可观测标签
 }
 ```
+
+`CapabilityID`、`DomainOwner` 和 `Exposure` 不是可观测标签。它们必须与
+`docs/architecture/api-ownership/station-api-capabilities.yaml` 一致，并参与启动/CI
+校验。两个不同 method/path 不能声明同一个 client-facing capability。
 
 ## 4. 适配层设计
 ### 4.1 适配层职责
@@ -132,6 +139,17 @@ type Registry interface {
 ### 5.2 路由自动生成
 - 注册中心自动生成OpenAPI文档、TS类型定义、RPC客户端代码。
 - 支持自动生成前后端接口契约，消除前后端类型不一致问题。
+
+### 5.3 语义能力所有权校验（proposed）
+
+- 精确 method/path 冲突继续在启动时失败。
+- client-facing `CapabilityID` 重复必须失败，即使 route path 不同。
+- handler package owner 与 registry `DomainOwner` 不一致必须失败。
+- governed prefix 下存在未登记 route 必须失败。
+- registry 声明的 canonical route、proto 或 truth store 缺失必须失败。
+- superseded route/type/store 仍存在必须在 hard-cut Gate 失败。
+
+完整契约与迁移边界见 `docs/architecture/api-ownership/README.md`。
 
 ## 6. 中间件体系
 ### 6.1 统一中间件接口
@@ -192,7 +210,7 @@ const (
 1. 底层框架接收请求 → 2. 适配层转换为统一Context → 3. 执行前置中间件链 → 4. 参数绑定与校验 → 5. 执行业务Handler → 6. 执行后置中间件链 → 7. 序列化响应返回给客户端
 
 ### 8.2 启动/关闭生命周期
-1. 启动时：注册所有Handler → 校验路由冲突 → 启动底层服务
+1. 启动时：注册所有Handler → 校验精确路由和语义 capability ownership → 启动底层服务
 2. 关闭时：优雅停止接收新请求 → 等待正在处理的请求完成 → 清理资源 → 退出进程
 
 ## 9. 验收标准（理想态）
@@ -201,3 +219,5 @@ const (
 - 新增Handler无需手动编写参数校验、错误处理、指标埋点等重复代码
 - 底层框架替换不影响任何业务Handler代码
 - 全链路请求可追踪，错误可定位，性能可观测
+- 每个受治理的 client capability 只有一个公开 route、一个 domain owner 和一个
+  canonical proto family

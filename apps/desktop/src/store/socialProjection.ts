@@ -19,7 +19,7 @@ import {
 import { FriendMessageStatus, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
 import type { CommittedConversationEvent } from '../gen/proto/domain/chat/conversation_pb';
-import type { MlsRecipientStatusResult } from '../services/im-service-contract';
+import type { MessagingConversationProjection } from '../services/im-service-contract';
 
 export interface MessagePreview {
   content: string;
@@ -62,7 +62,7 @@ export type GroupSecurityState =
   | 'error';
 
 export function projectGroupSecurityState(
-  status: MlsRecipientStatusResult['status'],
+  status: NonNullable<MessagingConversationProjection['mlsStatus']>,
 ): Exclude<GroupSecurityState, 'error'> {
   switch (status) {
     case 'active':

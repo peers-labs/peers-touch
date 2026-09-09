@@ -1,14 +1,101 @@
 // @ts-nocheck -- Vitest is supplied by the repository test runner, not the Mobile production bundle.
 
-import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   applyAuthRuntimeProjection,
   authRuntimeTestContract,
+  readActiveAuthSession,
 } from '../../runtimes/authRuntime';
 import { useAuthStore } from './authStore';
 
 describe('station-scoped authRuntime public projection', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('clears an invalid persisted session and retries once without it', async () => {
+    const decision = {
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attemptId: 'fresh-attempt',
+      gates: [],
+    };
+    const startAttempt = vi.fn()
+      .mockRejectedValueOnce(new Error('access session invalid: session not found'))
+      .mockResolvedValueOnce(decision);
+    const clearSession = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      authRuntimeTestContract.startAccessAttemptWithInvalidSessionRecovery(
+        'stale-session',
+        startAttempt,
+        clearSession,
+      ),
+    ).resolves.toBe(decision);
+
+    expect(clearSession).toHaveBeenCalledOnce();
+    expect(startAttempt).toHaveBeenNthCalledWith(1, 'stale-session');
+    expect(startAttempt).toHaveBeenNthCalledWith(2);
+  });
+
+  it('does not retry a non-session access failure', async () => {
+    const startAttempt = vi.fn().mockRejectedValue(
+      new Error('station network unavailable'),
+    );
+    const clearSession = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      authRuntimeTestContract.startAccessAttemptWithInvalidSessionRecovery(
+        'persisted-session',
+        startAttempt,
+        clearSession,
+      ),
+    ).rejects.toThrow('station network unavailable');
+
+    expect(clearSession).not.toHaveBeenCalled();
+    expect(startAttempt).toHaveBeenCalledOnce();
+  });
+
+  it('reports bounded remote session revocation without leaking credentials', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const session = {
+      stationPeerId: 'station-peer',
+      stationUrl: 'https://station.example/',
+      sessionId: 'session-1',
+      accessToken: 'test-token',
+      actorRef: { ptid: 'ptid:alice' },
+      authenticatedAt: 1,
+    };
+
+    await expect(
+      authRuntimeTestContract.revokeStationSession(session),
+    ).resolves.toBe(true);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://station.example/actor/logout',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ session_id: 'session-1' }),
+      }),
+    );
+  });
+
+  it('keeps local logout possible when remote revocation is unavailable', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+
+    await expect(authRuntimeTestContract.revokeStationSession({
+      stationPeerId: 'station-peer',
+      stationUrl: 'https://station.example',
+      sessionId: 'session-1',
+      accessToken: 'test-token',
+      actorRef: { ptid: 'ptid:alice' },
+      authenticatedAt: 1,
+    })).resolves.toBe(false);
+  });
+
   it('preserves the Rust-owned snake_case lifecycle phases', () => {
     const snapshot = authRuntimeTestContract.snapshotFromProjection({
       phase: 'awaiting_provider',
@@ -162,5 +249,52 @@ describe('station-scoped authRuntime public projection', () => {
       .toBe('mobile.auth.oauthState.following-gate');
     expect(authRuntimeTestContract.oauthPhaseMessageKey('credential_delivery'))
       .toBe('mobile.auth.oauthState.exchanging');
+  });
+
+  it('binds auth bootstrap and resume to persisted restore plus Station revalidation', () => {
+    const runtimeSource = readFileSync(
+      new URL('../../runtimes/authRuntime.ts', import.meta.url),
+      'utf8',
+    );
+    const registrySource = readFileSync(
+      new URL('../../runtimes/runtimeRegistry.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(runtimeSource).toMatch(
+      /restoreAndRevalidateAuthRuntime[\s\S]*restoreAuthSession\(\)[\s\S]*verifyStationIdentity\([\s\S]*requireMatchingStationIdentity\([\s\S]*startAccessAttemptWithInvalidSessionRecovery\([\s\S]*restoreAuthRuntimeProjection\(\)/,
+    );
+    expect(registrySource).toMatch(
+      /createAuthRuntimeDescriptor[\s\S]*bootstrap[\s\S]*restoreAndRevalidateAuthRuntime\(\)[\s\S]*resume[\s\S]*restoreAndRevalidateAuthRuntime\(\)/,
+    );
+  });
+
+  it('keeps business runtimes closed until the Station grants access', () => {
+    const session = {
+      stationPeerId: 'station-peer',
+      stationUrl: 'https://station.example',
+      sessionId: 'session-1',
+      accessToken: 'test-token',
+      actorRef: { ptid: 'ptid:alice' },
+      authenticatedAt: 1,
+    };
+    useAuthStore.setState({
+      session,
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    expect(readActiveAuthSession()).toBeNull();
+
+    useAuthStore.setState({
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    expect(readActiveAuthSession()).toBe(session);
   });
 });

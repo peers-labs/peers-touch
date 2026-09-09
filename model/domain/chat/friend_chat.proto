@@ -314,47 +314,6 @@ message GetStatsResponse {
 }
 
 // ============================================================================
-// Friend Request API (uses FriendRequest and FriendRequestStatus from chat.proto)
-// ============================================================================
-
-message SendFriendRequestRequest {
-  string receiver_ptid = 1;
-  string message = 2;
-}
-
-message SendFriendRequestResponse {
-  FriendRequest request = 1;
-}
-
-message AcceptFriendRequestRequest {
-  string request_id = 1;
-}
-
-message AcceptFriendRequestResponse {
-  FriendRequest request = 1;
-  FriendChatSession session = 2;
-}
-
-message RejectFriendRequestRequest {
-  string request_id = 1;
-}
-
-message RejectFriendRequestResponse {
-  FriendRequest request = 1;
-}
-
-message ListFriendRequestsRequest {
-  FriendRequestStatus status = 1;
-  int32 limit = 2;
-  int32 offset = 3;
-}
-
-message ListFriendRequestsResponse {
-  repeated FriendRequest requests = 1;
-  int32 total = 2;
-}
-
-// ============================================================================
 // Friendship Controls
 // ============================================================================
 

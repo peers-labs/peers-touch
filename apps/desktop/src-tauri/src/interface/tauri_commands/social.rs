@@ -952,11 +952,14 @@ pub fn social_friend_request_send(
             None,
         );
     }
-    let req = model::chat::SendFriendRequestRequest {
-        receiver_ptid: input.receiver_ptid,
+    let req = model::social::SendSocialFriendRequestRequest {
+        receiver: Some(model::actor::ActorRef {
+            ptid: input.receiver_ptid,
+            ..Default::default()
+        }),
         message: input.message.unwrap_or_default(),
     };
-    let resp: model::chat::SendFriendRequestResponse =
+    let resp: model::social::SendSocialFriendRequestResponse =
         match post_proto("/api/v1/social/friend-request/send", &token, &req) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "send friend request failed"),
@@ -977,10 +980,10 @@ pub fn social_friend_request_accept(
     if input.request_id.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "request_id is required", None);
     }
-    let req = model::chat::AcceptFriendRequestRequest {
+    let req = model::social::AcceptSocialFriendRequestRequest {
         request_id: input.request_id,
     };
-    let resp: model::chat::AcceptFriendRequestResponse =
+    let resp: model::social::AcceptSocialFriendRequestResponse =
         match post_proto("/api/v1/social/friend-request/accept", &token, &req) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "accept friend request failed"),
@@ -1001,10 +1004,10 @@ pub fn social_friend_request_reject(
     if input.request_id.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "request_id is required", None);
     }
-    let req = model::chat::RejectFriendRequestRequest {
+    let req = model::social::RejectSocialFriendRequestRequest {
         request_id: input.request_id,
     };
-    let resp: model::chat::RejectFriendRequestResponse =
+    let resp: model::social::RejectSocialFriendRequestResponse =
         match post_proto("/api/v1/social/friend-request/reject", &token, &req) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "reject friend request failed"),
@@ -1028,7 +1031,7 @@ pub fn social_friend_request_list(
     }
     query.push(("limit", input.limit.unwrap_or(50).clamp(1, 200).to_string()));
     query.push(("offset", input.offset.unwrap_or(0).to_string()));
-    let resp: model::chat::ListFriendRequestsResponse =
+    let resp: model::social::ListSocialFriendRequestsResponse =
         match get_proto("/api/v1/social/friend-requests", &token, Some(&query)) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "list friend requests failed"),

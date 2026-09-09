@@ -50,6 +50,7 @@ message ConversationUpdatedFact {
   optional string description = 2;
   optional string avatar_object_id = 3;
   optional uint32 disappear_timer_seconds = 4;
+  optional GroupVisibilityV1 visibility = 5;
 }
 
 message ConversationCreatedFact {
@@ -57,6 +58,7 @@ message ConversationCreatedFact {
   string name = 2;
   string owner_ptid = 3;
   repeated string member_ptids = 4;
+  ConversationAuthoritySnapshot post_state = 5;
 }
 
 message MessagingMembershipChangeCommitted {
@@ -70,6 +72,12 @@ message MessagingMembershipChangeCommitted {
 message ConversationAuthorityMember {
   string ptid = 1;
   string role = 2;
+  string home_station_id = 3;
+}
+
+message ConversationAuthorityEndpoint {
+  CryptoEndpoint endpoint = 1;
+  string home_station_id = 2;
 }
 
 // Complete public state after one membership transition. It is embedded in
@@ -83,6 +91,13 @@ message ConversationAuthoritySnapshot {
   repeated CryptoEndpoint active_endpoints = 5;
   int64 membership_epoch = 6;
   int64 mls_epoch = 7;
+  repeated ConversationAuthorityEndpoint active_endpoint_routes = 8;
+  string federation_id = 9;
+  int64 authority_epoch = 10;
+  string description = 11;
+  string avatar_object_id = 12;
+  GroupVisibilityV1 visibility = 13;
+  uint32 disappear_timer_seconds = 14;
 }
 
 message MembershipTransitionCommittedFact {
@@ -121,6 +136,10 @@ message ConversationStateMarker {
   string event_id = 2;
 }
 
+message ConversationDissolvedFact {
+  string dissolved_by_ptid = 1;
+}
+
 // Public authority fact. delivery_commitments are bytewise-sorted SHA-256
 // values and do not expose endpoint identity or endpoint-private ciphertext.
 message ConversationEvent {
@@ -146,6 +165,7 @@ message ConversationEvent {
     ConversationUpdatedFact conversation_updated = 25;
     MembershipTransitionCommittedFact membership_transition_committed = 26;
     ConversationCreatedFact conversation_created = 27;
+    ConversationDissolvedFact conversation_dissolved = 28;
   }
 }
 

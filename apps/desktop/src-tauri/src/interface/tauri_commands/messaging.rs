@@ -1,6 +1,8 @@
 use crate::error::{AppResult, ErrorCode};
 use crate::messaging::CommandDispatchProgress;
-use crate::model::chat::{ConversationKind, MemberStatus, MessagingMembershipAction};
+use crate::model::chat::{
+    ConversationKind, MemberStatus, MessagingMembershipAction, MlsLeaveIntent,
+};
 use crate::state::AppState;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -153,6 +155,48 @@ pub struct MessagingMembershipTransitionInput {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct MessagingSubmitLeaveIntentInput {
+    pub federation_id: String,
+    pub authority_station_peer_id: String,
+    pub authority_epoch: i64,
+    pub home_station_peer_id: String,
+    pub conversation_id: String,
+    pub observed_membership_epoch: i64,
+    pub observed_mls_epoch: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingListLeaveIntentsInput {
+    pub conversation_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingLeaveIntentInput {
+    pub version: u32,
+    pub intent_id: String,
+    pub federation_id: String,
+    pub authority_station_peer_id: String,
+    pub authority_epoch: i64,
+    pub home_station_peer_id: String,
+    pub conversation_id: String,
+    pub actor_ptid: String,
+    pub actor_device_id: String,
+    pub actor_signing_key_id: String,
+    pub observed_membership_epoch: i64,
+    pub observed_mls_epoch: i64,
+    pub created_at_unix_ms: i64,
+    pub expires_at_unix_ms: i64,
+    pub actor_signature: Vec<u8>,
+    pub authority_sequence: i64,
+    pub authority_hash: Vec<u8>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingCommitAuthorizedLeaveInput {
+    pub leave_intent: MessagingLeaveIntentInput,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct MessagingCommandStatusInput {
     pub command_id: String,
 }
@@ -295,6 +339,128 @@ fn active_engine(
             )
         })?;
     Ok((session.account_id, session.jwt, engine))
+}
+
+fn leave_intent_json(intent: &MlsLeaveIntent) -> Value {
+    json!({
+        "version": intent.version,
+        "intent_id": intent.intent_id,
+        "federation_id": intent.federation_id,
+        "authority_station_peer_id": intent.authority_station_peer_id,
+        "authority_epoch": intent.authority_epoch,
+        "home_station_peer_id": intent.home_station_peer_id,
+        "conversation_id": intent.conversation_id,
+        "actor_ptid": intent.actor_ptid,
+        "actor_device_id": intent.actor_device_id,
+        "actor_signing_key_id": intent.actor_signing_key_id,
+        "observed_membership_epoch": intent.observed_membership_epoch,
+        "observed_mls_epoch": intent.observed_mls_epoch,
+        "created_at_unix_ms": intent.created_at_unix_ms,
+        "expires_at_unix_ms": intent.expires_at_unix_ms,
+        "actor_signature": intent.actor_signature,
+        "authority_sequence": intent.authority_sequence,
+        "authority_hash": intent.authority_hash,
+    })
+}
+
+impl From<MessagingLeaveIntentInput> for MlsLeaveIntent {
+    fn from(input: MessagingLeaveIntentInput) -> Self {
+        Self {
+            version: input.version,
+            intent_id: input.intent_id,
+            federation_id: input.federation_id,
+            authority_station_peer_id: input.authority_station_peer_id,
+            authority_epoch: input.authority_epoch,
+            home_station_peer_id: input.home_station_peer_id,
+            conversation_id: input.conversation_id,
+            actor_ptid: input.actor_ptid,
+            actor_device_id: input.actor_device_id,
+            actor_signing_key_id: input.actor_signing_key_id,
+            observed_membership_epoch: input.observed_membership_epoch,
+            observed_mls_epoch: input.observed_mls_epoch,
+            created_at_unix_ms: input.created_at_unix_ms,
+            expires_at_unix_ms: input.expires_at_unix_ms,
+            actor_signature: input.actor_signature,
+            authority_sequence: input.authority_sequence,
+            authority_hash: input.authority_hash,
+        }
+    }
+}
+
+pub(crate) fn messaging_submit_leave_intent_with_engine(
+    input: MessagingSubmitLeaveIntentInput,
+    token: &str,
+    engine: &crate::messaging::MessagingEngine,
+) -> AppResult<Value> {
+    let intent = match engine.submit_mls_leave_intent(
+        token,
+        &messaging_core::mls::leave_intent::MlsLeaveIntentInput {
+            federation_id: input.federation_id,
+            authority_station_peer_id: input.authority_station_peer_id,
+            authority_epoch: input.authority_epoch,
+            home_station_peer_id: input.home_station_peer_id,
+            conversation_id: input.conversation_id,
+            observed_membership_epoch: input.observed_membership_epoch,
+            observed_mls_epoch: input.observed_mls_epoch,
+            authority_sequence: 0,
+            authority_hash: Vec::new(),
+        },
+    ) {
+        Ok(intent) => intent,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    AppResult::success(leave_intent_json(&intent))
+}
+
+pub(crate) fn messaging_list_leave_intents_with_engine(
+    input: MessagingListLeaveIntentsInput,
+    token: &str,
+    engine: &crate::messaging::MessagingEngine,
+) -> AppResult<Value> {
+    match engine.list_mls_leave_intents(token, &input.conversation_id) {
+        Ok(intents) => AppResult::success(json!({
+            "intents": intents.iter().map(leave_intent_json).collect::<Vec<_>>(),
+        })),
+        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    }
+}
+
+pub(crate) fn messaging_commit_authorized_leave_with_engine(
+    input: MessagingCommitAuthorizedLeaveInput,
+    token: &str,
+    engine: &crate::messaging::MessagingEngine,
+) -> AppResult<Value> {
+    let command = match engine.prepare_delegated_leave(token, input.leave_intent.into()) {
+        Ok(command) => command,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let command_id = command.command_id.clone();
+    let progress = engine.dispatch_command_once(
+        token,
+        crate::messaging::now_unix_ms(),
+        crate::messaging::CommandRetryPolicy {
+            initial_delay_ms: 1_000,
+            maximum_delay_ms: 300_000,
+        },
+    );
+    if !matches!(
+        progress,
+        Ok(crate::messaging::CommandDispatchProgress::Submitted { .. })
+            | Ok(crate::messaging::CommandDispatchProgress::Idle)
+    ) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("messaging delegated leave dispatch incomplete: {progress:?}"),
+            None,
+        );
+    }
+    if let Err(error) = engine.drain_once(token, 100) {
+        return AppResult::fail(ErrorCode::InternalError, error, None);
+    }
+    AppResult::success(json!({
+        "command_id": command_id,
+        "state": "pending",
+    }))
 }
 
 #[cfg(feature = "acceptance-webdriver")]
@@ -619,11 +785,10 @@ pub fn messaging_acceptance_interaction_snapshot(
     AppResult::success(snapshot)
 }
 
-#[tauri::command]
-pub fn messaging_create_group(
+pub(crate) fn messaging_create_group_with_engine(
     input: MessagingCreateGroupInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
+    token: &str,
+    engine: &crate::messaging::MessagingEngine,
 ) -> AppResult<Value> {
     if input.conversation_id.trim().is_empty()
         || input.name.trim().is_empty()
@@ -635,12 +800,8 @@ pub fn messaging_create_group(
             None,
         );
     }
-    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
-        Ok(value) => value,
-        Err(error) => return error,
-    };
     let prepared = match engine.create_group_conversation(
-        &token,
+        token,
         &input.conversation_id,
         &input.name,
         &input.member_ptids,
@@ -649,7 +810,7 @@ pub fn messaging_create_group(
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
     let progress = match engine.dispatch_command_once(
-        &token,
+        token,
         crate::messaging::now_unix_ms(),
         crate::messaging::CommandRetryPolicy {
             initial_delay_ms: 1_000,
@@ -667,20 +828,12 @@ pub fn messaging_create_group(
             CommandDispatchProgress::Idle
         }
     };
-    if let Err(error) = engine.drain_once(&token, 100) {
+    if let Err(error) = engine.drain_once(token, 100) {
         tracing::warn!(
             command_id = %prepared.command_id,
             conversation_id = %prepared.conversation_id,
             error = %error,
             "messaging group drain assist failed after durable preparation"
-        );
-    }
-    if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
-        tracing::warn!(
-            command_id = %prepared.command_id,
-            conversation_id = %prepared.conversation_id,
-            error = %error,
-            "messaging group lifecycle wake failed after durable preparation"
         );
     }
     let projection_ready = match engine.conversations() {
@@ -706,10 +859,31 @@ pub fn messaging_create_group(
 }
 
 #[tauri::command]
-pub fn messaging_membership_transition(
-    input: MessagingMembershipTransitionInput,
+pub fn messaging_create_group(
+    input: MessagingCreateGroupInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
+) -> AppResult<Value> {
+    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let result = messaging_create_group_with_engine(input, &token, &engine);
+    if result.ok {
+        if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+            tracing::warn!(
+                error = %error,
+                "messaging group lifecycle wake failed after durable preparation"
+            );
+        }
+    }
+    result
+}
+
+pub(crate) fn messaging_membership_transition_with_engine(
+    input: MessagingMembershipTransitionInput,
+    token: &str,
+    engine: &crate::messaging::MessagingEngine,
 ) -> AppResult<Value> {
     if input.conversation_id.trim().is_empty() || input.target_ptid.trim().is_empty() {
         return AppResult::fail(
@@ -742,18 +916,15 @@ pub fn messaging_membership_transition(
             None,
         );
     }
-    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
-        Ok(value) => value,
-        Err(error) => return error,
-    };
     let command = match engine.prepare_membership_transition(
-        &token,
-        &crate::messaging::MembershipTransitionIntentInput {
+        token,
+        &messaging_core::mls::membership_transition::MembershipTransitionIntentInput {
             conversation_id: input.conversation_id,
             action,
             target_ptid: input.target_ptid,
             target_device_id: input.target_device_id,
             role: input.role,
+            leave_intent: None,
         },
     ) {
         Ok(command) => command,
@@ -761,7 +932,7 @@ pub fn messaging_membership_transition(
     };
     let command_id = command.command_id.clone();
     let progress = engine.dispatch_command_once(
-        &token,
+        token,
         crate::messaging::now_unix_ms(),
         crate::messaging::CommandRetryPolicy {
             initial_delay_ms: 1_000,
@@ -779,16 +950,77 @@ pub fn messaging_membership_transition(
             None,
         );
     }
-    if let Err(error) = engine.drain_once(&token, 100) {
-        return AppResult::fail(ErrorCode::InternalError, error, None);
-    }
-    if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+    if let Err(error) = engine.drain_once(token, 100) {
         return AppResult::fail(ErrorCode::InternalError, error, None);
     }
     AppResult::success(json!({
         "command_id": command_id,
         "state": "pending",
     }))
+}
+
+#[tauri::command]
+pub fn messaging_membership_transition(
+    input: MessagingMembershipTransitionInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let result = messaging_membership_transition_with_engine(input, &token, &engine);
+    if result.ok {
+        if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+            return AppResult::fail(ErrorCode::InternalError, error, None);
+        }
+    }
+    result
+}
+
+#[tauri::command]
+pub fn messaging_submit_leave_intent(
+    input: MessagingSubmitLeaveIntentInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (_, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    messaging_submit_leave_intent_with_engine(input, &token, &engine)
+}
+
+#[tauri::command]
+pub fn messaging_list_leave_intents(
+    input: MessagingListLeaveIntentsInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (_, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    messaging_list_leave_intents_with_engine(input, &token, &engine)
+}
+
+#[tauri::command]
+pub fn messaging_commit_authorized_leave(
+    input: MessagingCommitAuthorizedLeaveInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let result = messaging_commit_authorized_leave_with_engine(input, &token, &engine);
+    if result.ok {
+        if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+            return AppResult::fail(ErrorCode::InternalError, error, None);
+        }
+    }
+    result
 }
 
 #[tauri::command]

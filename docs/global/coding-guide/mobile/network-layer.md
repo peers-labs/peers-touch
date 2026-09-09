@@ -3,6 +3,12 @@
 本文档详细介绍 Peers-Touch Mobile 端（Android / iOS）的网络层架构、核心组件、依赖注入以及错误处理链路。
 两端在设计上保持对齐：统一的 Bearer Token 认证、Station Base URL 管理、Interceptor 拦截模式。
 
+Station API ownership is fixed: Conversation is the sole Chat business entry
+point under `/conversation/*`. Resource owners expose `/device/*`,
+`/device/inbox/*`, `/recovery/*`, `/key-exchange/*`, and peer-only
+`/federation/*`. A client-side Messaging Engine is an internal runtime and does
+not define a Station API family.
+
 ---
 
 ## 目录
@@ -146,14 +152,14 @@ interface StationApi {
     @GET("activitypub/profile")
     suspend fun getProfile(): Response<Map<String, Any>>
 
-    @POST("friend-chat/message/send")
-    suspend fun sendFriendChatMessage(@Body message: Map<String, Any>): Response<Map<String, Any>>
+    @POST("conversation/command")
+    suspend fun submitConversationCommand(@Body command: Map<String, Any>): Response<Map<String, Any>>
 
-    @GET("friend-chat/messages")
-    suspend fun getFriendChatMessages(
-        @Query("session_id") sessionId: String,
+    @GET("conversation/messages")
+    suspend fun getConversationMessages(
+        @Query("conversation_id") conversationId: String,
         @Query("limit") limit: Int? = null,
-        @Query("before") before: String? = null
+        @Query("cursor") cursor: String? = null
     ): Response<List<Map<String, Any>>>
 
     @POST("ai-chat/chat/completions")
@@ -418,10 +424,10 @@ enum StationEndpoint: Sendable {
     case updateProfile
     case verifySession
 
-    case createFriendChatSession
-    case getFriendChatSessions
-    case sendFriendMessage
-    case getFriendMessages(sessionId: String)
+    case createDirectConversation
+    case listConversations
+    case submitConversationCommand
+    case getConversationMessages(conversationId: String)
     // ...
 
     case createAIProvider
@@ -438,7 +444,7 @@ enum StationEndpoint: Sendable {
         switch self {
         case .login:            "/activitypub/login"
         case .getProfile:       "/activitypub/profile"
-        case .getFriendMessages: "/friend-chat/messages"
+        case .getConversationMessages: "/conversation/messages"
         case .getPost(let id):  "/api/v1/social/posts/\(id)"
         case .health:           "/management/health"
         // ...
@@ -448,7 +454,7 @@ enum StationEndpoint: Sendable {
     var method: HTTPMethod {
         switch self {
         case .signUp, .login, .logout, .updateProfile,
-             .createFriendChatSession, .sendFriendMessage,
+             .createDirectConversation, .submitConversationCommand,
              .createAIProvider, .createAISession, .aiCompletions,
              .createPost, .likePost, .followUser, .uploadFile:
             .post
@@ -471,8 +477,8 @@ func getProfile() async throws -> ProfileResponse {
     )
 }
 
-func getFriendMessages(sessionId: String) async throws -> [Message] {
-    let endpoint = StationEndpoint.getFriendMessages(sessionId: sessionId)
+func getConversationMessages(conversationId: String) async throws -> [Message] {
+    let endpoint = StationEndpoint.getConversationMessages(conversationId: conversationId)
     return try await apiClient.request(
         endpoint: endpoint.path,
         method: endpoint.method
