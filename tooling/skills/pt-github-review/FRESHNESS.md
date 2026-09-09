@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-02
-covered_docs_hash: 1ef0db9597856f1b52fd9704f7a8353ed7700c5f2eeab0dd4383d091c0cb6af9
+last_verified_at: 2026-09-09
+covered_docs_hash: f2e2e7ab9645072c104396c041d4920054c2e85e254f93953bf207991c748603
 
 covered_docs:
   - AGENTS.md
@@ -108,3 +108,14 @@ identity without module/package shadowing, and rejection of required-finalizer
 `PROVEN` manifests whose finalization record, identity digests, finalizer ID, or
 published tuple does not match the protected binding. Dedicated planner,
 validator, registry, and coverage regressions own these checks.
+
+## 2026-09-09 Review
+
+Goal execution now uses an adaptive Ready/Parked queue and requires fixed-point
+exhaustion before a tracked Goal can be marked blocked. This changes execution
+orchestration, not PR review severity or evidence semantics, so the existing
+review skill and fixtures remain sufficient.
+
+The Mobile Acceptance coverage update adds lifecycle and native-platform
+surfaces while preserving the existing rule that unrun physical or destructive
+Gates remain explicitly `UNPROVEN`.
