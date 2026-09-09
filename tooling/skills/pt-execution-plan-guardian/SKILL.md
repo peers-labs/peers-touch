@@ -1,6 +1,6 @@
 ---
 name: "pt-execution-plan-guardian"
-description: "Executes approved plans without scope or architecture drift. Invoke for implementation, continuation, merging, or status after a formal plan exists."
+description: "Executes approved plans with explicit concurrency decisions, isolated ownership, reconciliation, and no scope or architecture drift. Invoke for implementation, continuation, merging, or status after a formal plan exists."
 stage: "EXECUTE"
 requires: ["accepted execution plan with status table", "matching active_work entry"]
 produces: ["code changes", "tests", "evidence", "updated plan status", "synchronized active_work state"]
@@ -191,6 +191,46 @@ the user only says "继续" / "continue" without repeating the details:
 4. **No silent scope or design changes.** Surface deviations instead of hiding
    them.
 
+### Mandatory Concurrency Decision
+
+Before implementation, record a `Concurrency Decision` from the plan's
+dependency-ready frontier:
+
+- ready units and their prerequisites;
+- exclusive write sets and shared read-only sources;
+- selected subagent lanes;
+- integrator-owned shared files, generated artifacts, commits, deployment, and
+  final Gates;
+- the source-backed reason for every ready unit kept serial.
+
+Choose `parallel`, `serial`, or `hybrid` from actual coupling. Parallel execution
+is allowed only when all of these are true:
+
+- prerequisites and shared contracts are frozen;
+- exclusive write sets are disjoint, including generated outputs;
+- no lane mutates the same database, Fixture, profile, port set, deployment, or
+  other shared runtime resource;
+- verification can run independently without broad formatters or generators
+  rewriting another lane;
+- the integration order and rollback boundary are explicit.
+
+Serialize work when any of those conditions fails, when one unit produces an
+interface consumed by another, or when the coordination cost is greater than
+the bounded work. "Parallel by default" and "serial by habit" are both invalid;
+the recorded conflict analysis decides.
+
+A listed agent blocks a lane only when it is live, addressable, and equivalent
+under the current Goal identity. An entry that is listed but cannot be
+addressed by ID or canonical task name is stale runtime metadata, not a live
+writer. Record `SUBAGENT_REGISTRY_STALE`, exclude it from active ownership, and
+continue with fresh non-overlapping lanes. Never turn a transient stale entry
+into a persistent Goal-wide `do not spawn subagents` constraint.
+
+If the runtime rejects a fresh spawn after stale-entry reconciliation, report
+`SUBAGENT_RUNTIME_UNAVAILABLE` and recompute the execution mode. Continue
+serially only when the updated decision shows that serial execution remains
+safe and materially useful; otherwise stop at the unavailable runtime.
+
 ## Workflow
 
 ### 0. Validate Stage Preconditions
@@ -270,6 +310,12 @@ independent units and check whether they can run concurrently:
 
 - Fan out independent units to parallel subagents (e.g. per module, per file
   group, per domain, per worktree). Dependent units stay sequential.
+- Apply the `Mandatory Concurrency Decision` above and persist its current
+  lanes in the plan/tracking source before the first implementation edit.
+- Reserve every write path before spawning. Shared contracts, generated
+  artifacts, lockfiles, migration registries, plan/status files, commits, and
+  deployment controls have one integrator owner unless the plan explicitly
+  proves another partition.
 - Every subagent brief MUST inherit the same `Plan Source`, `In Scope` /
   `Out of Scope`, target layer/module, No-Patch rule, canonical root, branch,
   `workspaceId`, initial HEAD, expected HEAD, and worktree-set digest.
@@ -277,6 +323,9 @@ independent units and check whether they can run concurrently:
   the planned architecture in the same worktree instead of inventing a local
   design.
 - Give each subagent its own acceptance/verification command so it self-checks.
+- Subagents must re-read owned files immediately before each patch, never run
+  broad formatters or generators, never stage or commit, stop on an unexpected
+  change inside their write set, and return the exact changed-file list.
 - After subagents return, run a **reconcile pass**: check for conflicting edits,
   duplicated abstractions, and interface mismatches at the seams before
   integrating. Resolve conflicts toward the plan, not toward whichever subagent
@@ -402,6 +451,11 @@ Never:
 - Fan out subagents without giving them the shared plan source and architecture
   constraints, letting each invent its own local design.
 - Skip the reconcile pass and merge conflicting subagent outputs blindly.
+- Choose parallelism from task count alone without dependency, write-set,
+  generated-output, shared-resource, verification, and integration analysis.
+- Continue after `SUBAGENT_REGISTRY_STALE` or
+  `SUBAGENT_RUNTIME_UNAVAILABLE` without recomputing and recording the execution
+  mode.
 
 ## Examples
 

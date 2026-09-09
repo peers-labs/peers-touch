@@ -70,6 +70,27 @@ include this title or explanatory text in the generated Goal.
 <Projection of the owning stage workflow or formal plan DAG. Do not redesign
 dependencies here.>
 
+## Concurrency Decision
+
+- Mode: <parallel | serial | hybrid>
+- Dependency-ready units:
+- Dependency barriers and contract-freeze points:
+- Exclusive write-set owners:
+- Shared files / generated artifacts:
+- Shared runtime resources:
+- Active and queued execution lanes:
+- Critical path:
+- Serial units and concrete reason:
+- Integration order and rollback boundary:
+- Existing-agent reconciliation:
+  - only live, backend-addressable agents with the same Goal identity conflict;
+  - stale, backend-unaddressable entries are recorded as
+    `SUBAGENT_REGISTRY_STALE` and excluded from active ownership;
+  - never persist a blanket no-subagent rule from stale registry metadata.
+- Degraded execution: if a fresh spawn is rejected after reconciliation,
+  report `SUBAGENT_RUNTIME_UNAVAILABLE`, recompute the mode, and continue
+  serially only when that remains safe and materially useful.
+
 ## TRAE Subagent Topology
 
 ### Agent A — <role>
@@ -81,6 +102,7 @@ dependencies here.>
 - Prerequisites:
 - Exclusive write set:
 - Read-only sources:
+- Shared paths the agent must not edit:
 - Forbidden scope:
 - Required verification:
 - Return contract:
@@ -110,6 +132,9 @@ dependencies here.>
 ## Failure And Escalation
 
 - <Project-defined failure state>: <owner and stop behavior>
+- `GOAL_REPLACEMENT_REQUIRED`: close or cancel an active Goal whose persisted
+  binding or execution constraints cannot be corrected in place; do not use an
+  Anchor to mask the stale objective.
 
 ## Slice Completion
 
@@ -121,5 +146,7 @@ dependencies here.>
 
 - Durable source update:
 - `active_work` update, when tracked:
-- Context Anchor, when tracked:
+- Context Anchor, when tracked: include completed delta, ready queue, execution
+  mode and lanes, conflict controls, critical path, and evidence-backed ETA or
+  `unknown`.
 - Next action: rerun Goal Slice selection from the updated source graph.

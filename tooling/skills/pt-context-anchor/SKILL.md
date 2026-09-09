@@ -1,6 +1,6 @@
 ---
 name: "pt-context-anchor"
-description: "Synchronizes verified tracked-work state and emits a copyable chat anchor. Invoke for resume, status, handoff, blockers, stage changes, or session close."
+description: "Synchronizes verified tracked-work state, progress delta, execution topology, conflict controls, critical path, and evidence-backed ETA into a copyable chat anchor. Invoke for resume, status, handoff, blockers, stage changes, or session close."
 stage: "cross-stage"
 requires: ["formal execution plan and active_work entry for tracked work"]
 produces: ["synchronized active_work state", "verified chat Context Anchor"]
@@ -34,6 +34,11 @@ status details, and evidence. They MUST NOT contain a `## Context Anchor`
 section. Chat, todos, and dashboards are projections and never become truth
 sources.
 
+Anchor generation must not pause or replace execution. When the user asks to
+resume work, verify and synchronize the Anchor internally, continue the
+dependency-ready work, and emit the Anchor only in the final status, blocker,
+handoff, readiness, or close response.
+
 If no readable formal plan or matching `active_work` entry exists, do not
 invent an Anchor. Continue through PRODUCT/DESIGN/PLAN using the owning skills;
 `pt-plan-and-document` registers tracked work only after creating the plan.
@@ -51,6 +56,11 @@ Resolve each field from its owner instead of applying one global precedence:
 | Main task and scope | Formal execution plan |
 | Progress, last completed, blocker detail, decisions | Plan status table or linked tracking source |
 | Overall progress ratio | Count of done/total workstreams from the plan status table; must not be guessed |
+| Completed delta | Plan/tracking changes since the previous emitted Anchor |
+| Ready queue and critical path | Formal plan dependency graph and current evidence |
+| Execution mode and lanes | The execution guardian's Concurrency Decision plus live, backend-addressable agent state |
+| Conflict controls | Reserved write sets, shared-file owner, dependency barriers, and reconcile owner from the plan/tracking source |
+| ETA | Remaining critical-path units and observed throughput; use `unknown` when evidence is insufficient |
 | Evidence | Named commands and repository evidence |
 | Chat Anchor | Projection of the sources above |
 
@@ -105,6 +115,11 @@ Every user-facing Context Anchor is one fenced `markdown` block exactly like:
 - **Worktree-set digest**:
 - **Stage / step**:
 - **Overall progress**: <done>/<total> workstreams (<percentage>%)
+- **Completed since previous anchor**:
+- **Ready queue**:
+- **Execution mode / lanes**: <parallel, serial, or hybrid; active and queued lanes>
+- **Conflict controls**: <write-set owners, shared-file owner, barriers, reconcile owner>
+- **Critical path / ETA**: <remaining critical path and evidence-backed range, or `unknown`>
 - **Progress**:
 - **Action and reason**:
 - **Evidence**:
@@ -167,9 +182,15 @@ branch, workspace, expected HEAD, or worktree-set mismatch stops with
 
 1. Read objective and scope from the plan.
 2. Read progress and evidence from its status table or tracking source.
-3. Compare those facts with `active_work`.
-4. Reconcile stale fields before reporting or executing.
-5. Mark absent proof `UNPROVEN`; do not infer success.
+3. Read the plan dependency graph and the current Concurrency Decision.
+4. Reconcile the live agent registry by identity and backend reachability.
+   Listed but backend-unaddressable entries are stale metadata and cannot be
+   reported as active lanes.
+5. Compare those facts with `active_work`.
+6. Reconcile stale fields before reporting or executing.
+7. Mark absent proof `UNPROVEN`; do not infer success.
+8. Derive ETA only from remaining critical-path units and observed throughput;
+   otherwise write `unknown`.
 
 ### 4. Synchronize Meaningful Changes
 
@@ -218,6 +239,11 @@ Never:
 - recapture current Git state as a new baseline during resume or compaction;
 - continue after a worktree or branch mismatch;
 - use chat, todos, or dashboards as durable truth;
+- present an unchanged Anchor as execution progress;
+- report stale or backend-unaddressable agent entries as active execution lanes;
+- invent an ETA without a source-backed critical path and observed throughput;
+- use an Anchor to overwrite or conceal a stale active Goal objective; route it
+  to `pt-trae-goal-orchestrator` as `GOAL_REPLACEMENT_REQUIRED`;
 - copy an Anchor across worktrees without verification;
 - claim completion from summaries or missing evidence;
 - persist absolute user-home paths, transient command logs, or secrets;

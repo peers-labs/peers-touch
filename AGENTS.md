@@ -348,7 +348,7 @@ Current project skills:
 |-------|---------|
 | `pt-dev-workflow` | Drive a complete development task from planning to PR |
 | `pt-god-view` | God view: explicitly invoked to show global work status, route to correct stage skill, manage work lifecycle |
-| `pt-trae-goal-orchestrator` | Select one bounded Goal Slice from stage-owned ready work and build a TRAE-only focus/persistence envelope with parallel ownership, evidence, reconciliation, and next-slice handoff |
+| `pt-trae-goal-orchestrator` | Select one bounded Goal Slice, reconcile live agents by identity/reachability, and build a conflict-aware TRAE execution envelope with evidence and integration ownership |
 | `pt-acceptance-infra-engineering` | Optimize and audit Acceptance Infra while enforcing the responsibility firewall against business Domain injection |
 | `pt-acceptance-engineering` | Deterministically add, complete, upgrade, or audit Acceptance contracts, runtime scenarios, gates, and evidence |
 | `pt-acceptance-gap-detector` | Enforce "No Silent Pass" iron law — detect 25+ bypass patterns (mocks, stale evidence, single-actor, hardcoded creds, downgraded gates) before marking any claim proven |
@@ -356,8 +356,8 @@ Current project skills:
 | `pt-architecture-design-methodology` | Design source-backed architecture boundaries, ownership, contracts, topology, and ADR decisions before execution planning (referenced from §4.3) |
 | `pt-architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
 | `pt-branch-conflict-guardian` | Guide semantic conflict resolution across parallel branches: separate mechanical conflicts from ownership/behavior divergence, escalate unclear intent, and verify integrated behavior |
-| `pt-context-anchor` | Synchronize verified tracked-work state from `active_work` + plan evidence into a fenced chat block; never write an Anchor into execution plans |
-| `pt-execution-plan-guardian` | Keep execution, continuation, merge, and readiness reports tied to plan sources, scope boundaries, gates, and evidence |
+| `pt-context-anchor` | Project verified tracked-work state, completed delta, ready queue, execution topology, conflict controls, critical path, and evidence-backed ETA into chat; never write an Anchor into execution plans |
+| `pt-execution-plan-guardian` | Execute approved plans with explicit concurrency decisions, isolated ownership, reconcile gates, and evidence discipline |
 | `pt-official-applet-development` | Create, scaffold, implement, and validate official applet product units under `apps/applets/` using the applet architecture contract |
 | `pt-desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
 | `pt-read-before-edit` | Consult `docs/knowledge/` invariants / pitfalls / playbooks whose `owns:` covers the path being edited (referenced from §3.5) |
@@ -498,17 +498,32 @@ When a user invokes `pt-god-view` (by saying "继续做" / "接着" / "看看状
 
 1. Resolve and verify the execution worktree binding per §13.5.1.
 2. Read `project_memory.md` → check `active_work` registry.
-3. Open the referenced plan and verify its `Context Anchor` through `pt-context-anchor`.
+3. Open the referenced plan and derive the current chat projection through
+   `pt-context-anchor`; execution plans do not embed an Anchor.
 4. If one entry with `stage != complete`:
-   - Report in one sentence: current plan, stage, step.
-   - Suggest the next action (which skill to invoke).
-   - Wait for user confirmation.
+   - If the user asked only for status, report the current plan, stage, step,
+     ready queue, parallel lanes, critical path, and evidence-backed ETA.
+   - If the user said continue/resume, dispatch immediately to the owning stage
+     skill after verification. Do not pause merely to print an Anchor or ask
+     for confirmation already conveyed by the resume command.
 5. If multiple entries with `stage != complete`:
-   - List all active entries (plan name, stage, branch).
-   - Ask: "Which work do you want to continue?"
-   - Wait for user selection.
+   - Use an explicit work ID, plan, branch, worktree, or supplied Anchor to
+     resolve the target.
+   - Ask which work to continue only when the request remains ambiguous after
+     those identifiers are applied.
 6. If all entries are `complete` or registry is empty → offer to start new task.
 7. Dispatch to the correct stage skill per §13.5.
+
+For EXECUTE work, apply one explicit concurrency decision before source edits.
+Choose parallel, serial, or hybrid execution from actual dependencies,
+write-set overlap, generated outputs, shared runtime resources, verification
+isolation, and integration order. Parallel lanes require reserved exclusive
+write sets; shared contracts, generated artifacts, reconciliation, commits,
+deployments, Fixture mutation, and final product Gates retain one integrator
+owner unless the plan proves stronger isolation. Only live,
+backend-addressable agents with the same Goal identity conflict. Listed but
+backend-unaddressable entries are stale metadata, not a reason to serialize the
+Goal or persist a blanket no-subagent constraint.
 
 **active_work registry schema** (maintained in `project_memory.md`):
 
@@ -543,6 +558,11 @@ Context Anchor rules:
   `workspaceId`, initial HEAD, expected/verified HEAD, and worktree-set digest.
   It never persists a developer or CI user-home absolute path or an ambiguous
   bare `<repo-root>`.
+- The chat projection also records completed delta, dependency-ready queue,
+  execution mode and live backend-addressable lanes, conflict controls,
+  critical path, and an evidence-backed ETA or `unknown`.
+- Resume verification is internal workflow state. It must not interrupt an
+  authorized execution turn merely to emit an Anchor.
 - Tracked-work status, resume, handoff, blocker, readiness, and close responses end with the single fenced chat projection required by `pt-context-anchor`.
 
 ---

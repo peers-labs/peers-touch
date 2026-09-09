@@ -202,6 +202,14 @@ Parallel policy:
 - G-F then runs the unchanged 419-cell
   `agent-v2-kernel-foundation-e2e` Gate and must be fully `PROVEN` before W7 or
   W8b proceeds.
+- Inside G-FE1, use a hybrid topology. Freeze the shared typed-error contract
+  first; then parallelize only Station、Desktop Web、Desktop Rust
+  runtime-control、and Acceptance producer/oracle edits whose reserved write
+  sets and focused checks do not overlap. The integrator alone owns
+  shared/generated artifacts、cross-lane reconciliation、commit、deployment、
+  Fixture mutation、and the final 419-cell Gate. Any newly discovered
+  dependency, shared file, generator, or runtime-resource collision inserts a
+  serial barrier before the affected lanes continue.
 - Inside F4/G1, production authority changes are serial:
   `G1-A contract -> G1-B Station -> G1-C Rust -> G1-D Web -> G1-E cutover
   deletion -> G1-F observability`. Acceptance contract/fixture work may proceed
@@ -243,7 +251,7 @@ Parallel policy:
 | W0 Contract/Evidence/Gates | complete | Owner EXECUTE approval received; W0 verification and completion audit PASS |
 | F1 Agent/Conversation Authority | complete | W0 complete |
 | F2 Runtime/Stream/Capability/Portability | implementation checks complete: Q4 C06 and Q5/Q6 C10 source closures pass; product proof remains pending G-F | F1 |
-| F3 Context/Resource Intelligence | C04 core and C08 product source complete; pre-login Station binding is committed, but the exact-source C08 rerun exposed a business-runner Harness-readiness lifecycle defect before the binding step; C08 product proof remains unproven | F2 |
+| F3 Context/Resource Intelligence | C04 core and C08 product source complete; exact-source C08 run `20260909T091942082203Z-5ecd651bb57a293a45c0032d5b46861d` is `DONE / PROVEN` | F2 |
 | F4 Tool Policy/Observability | G1-A through G1-F and pre-W1 G1-XR diagnostic complete through AS-F03; post-W8a G-F pending | F2 + accepted D19A/D19B/D19C |
 | W1 Capability Authority | implementation checks complete; product proof UNPROVEN until W9 Gate | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
 | W2 Home Projection | pending | G-F complete 419-cell Foundation Gate |
@@ -252,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | ready to resume after separate AF-001 Infra closure; no product Gate ran during Infra repair, so Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress; exact-source run `20260909T141502294542Z-5a3fca9b8d25c0a8f7ac1582a5b320b7` crossed all four AS-F06 tuples and stopped at the planned missing `BASE-EXECUTOR-UNAVAILABLE` direct-runtime vertical; Foundation remains `PARTIAL / UNPROVEN` | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1208,6 +1216,70 @@ and zero local-path leakage.
   `foundation-f06-terminal-race` now instruments the terminal-versus-fault
   boundary and cleanup stages without changing behavior. G-F remains
   `PARTIAL / UNPROVEN`.
+- Exact-source run
+  `20260909T141502294542Z-5a3fca9b8d25c0a8f7ac1582a5b320b7`
+  on `9a3bb6c7919feb36c080df1a1ce082db69855497` crossed all four
+  Browser/Desktop AS-F06 locale tuples. Each tuple requested and acknowledged
+  the transport cut before terminal settlement, and all four scenario
+  cleanups deleted the conversation and cleared the handoff and recovery
+  record. The prior Browser renderer timeout and Native terminal-before-fault
+  race therefore did not reproduce, so neither path justifies a behavior
+  change.
+- The same run advanced to
+  `foundation-browser-direct / browser / direct_model /
+  BASE-EXECUTOR-UNAVAILABLE / en / single / sample-001` and failed closed with
+  `direct-runtime group is not implemented`. Provisioner cleanup completed
+  `DONE / PROVEN / passed`, source identity matched the clean deployed commit,
+  and redaction passed. The dependency-ready G-FE1 closure is the already
+  accepted `CLIENT_EXECUTOR_UNAVAILABLE / agent.errors.executorUnavailable`
+  vertical through the active governed ToolCall path: one rejected client-owned
+  approval attempt, localized `Reconnect executor`, exact Station readback, no
+  execution claim, zero side effect, replay equality, cleanup, and an
+  independent Python oracle. The staged C13 `CapabilityOperation` routes remain
+  inactive until W8b. G-F remains `PARTIAL / UNPROVEN`.
+
+#### G-FE1 Concurrency Decision
+
+- **Mode**: hybrid.
+- **Shared contract freeze — integrator, serial first**:
+  `model/domain/agent/agent_config.proto` and the accepted
+  `CLIENT_EXECUTOR_UNAVAILABLE` payload shape. Generated artifacts remain
+  integrator-owned.
+- **Station lane**:
+  `apps/station/app/subserver/agent/{errcode,service}/**`; reject an unavailable
+  client executor before decision mutation, execution claim, or dispatch, and
+  prove acknowledgement replay plus zero downstream rows.
+- **Desktop Web lane**:
+  `apps/desktop/src/{runtimes,components/messages,services}/**`; retain the
+  Station-owned waiting-approval projection, disable repeated approval while
+  unavailable, and expose the localized `Reconnect executor` action.
+- **Desktop Rust lane**:
+  `apps/desktop/src-tauri/src/{application,interface}/**`; provide
+  Acceptance-gated stop/start control over the real production capability
+  supervisor without synthesizing executor state.
+- **Acceptance lane**:
+  `apps/desktop/src/acceptance/agent/**` and
+  `tooling/acceptance/gates/agent/foundation_*`; coordinate real executor
+  withdrawal/restoration, produce receiver/Station/replay/zero-side-effect
+  facts, and recompute them in the independent Python oracle.
+- **Integrator-only reconcile**: generated Proto output, combined tests,
+  plan/status updates, commit, `make station`, Fixture mutation, and the final
+  exact-source G-F run.
+- **Conflict controls**: reserve the four lane write sets before dispatch;
+  subagents must not edit the shared Proto, generated output, plan/status
+  sources, or Git index; each lane re-reads owned files before patching, stops
+  on unexpected writes, and returns its exact changed-file list; the integrator
+  reviews the combined diff and interface compatibility before verification.
+- **Critical path**: shared contract freeze -> four source lanes -> reconcile
+  and focused checks -> checkpoint/deploy -> 419-cell G-F.
+- **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error
+  families; the direct adapter currently implements 8 and leaves 20
+  fail-closed.
+- **Forecast**: 5-8 working days to batch-close the remaining G-FE1 error
+  families and obtain one exact-source full-Gate result; 4-6 weeks for the
+  unchanged full plan through W9. Confidence is low until the first parallel
+  batch establishes measured throughput, after which the Anchor must replace
+  this range with observed data.
 
 ### F4 — Tool Policy And Observability Baseline
 

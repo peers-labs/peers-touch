@@ -16,26 +16,26 @@
 | Field | Current value |
 |---|---|
 | Main task | 将 Peers-Touch 单 Agent Chat 从源码能力对齐推进到 LobeHub 级产品体验与运行可靠性 |
-| Plan source | `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2.md` |
-| Tracking source | `docs/architecture/agent/modern-chat-agent/`、`docs/architecture/agent/lobehub-parity-mindmap.source.md` |
+| Plan source | `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-execution.md` |
+| Tracking source | this product-level overview、`docs/architecture/agent/modern-chat-agent/`、and `docs/architecture/agent/lobehub-parity-mindmap.source.md` |
 | Worktree | `<repo-root>` |
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | Exact-source checkpoint, C08 product proof, and G-F Foundation proof |
-| Current step | Local checkpoint complete；remote C08/G-F preflight blocked by `ACCEPTANCE_INFRA_REQUIRED` before Station access |
+| Current step | C08 `DONE / PROVEN`；G-F crossed all four AS-F06 tuples and is implementing the planned `BASE-EXECUTOR-UNAVAILABLE` vertical |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | F2 Q5/C10 production Chat session binding、strict Desktop/Browser platform selection、Q6 aggregate checks与C03/C05/C06/C10 zero-old-path proof |
-| Current action | Hand off the generic remote-attestation and provisioning self-validation defects to Acceptance Infra ownership |
-| Next action | After Acceptance Infra passes on the same checkpoint, verify `chat-native-disposable`, deploy exact source, prove C08, then run G-F |
-| Autonomous execution window | Read-only source and Acceptance dependency audits may run in parallel；the integrator remains the sole writer；checkpoint, deploy, C08, and G-F execute serially；stop before downstream workstreams |
-| Overnight slice result | Lane A dry-run safety、F2 Q5/Q6与F3/C08 source/Gate wiring已闭合；W2/W4/W5/W7/W8b只完成read-only frontier inventory；未启动runtime product Gate |
-| Parallel policy | Source and Acceptance prerequisite audits are read-only；all source edits, commits, Expected HEAD refreshes, deployment, Fixture reset, and product Gates have one owner and run serially |
+| Last completed | C08 exact-source attachment journey `DONE / PROVEN`；G-F exact-source run crossed Browser/Desktop AS-F06 recovery tuples with cleanup proven |
+| Current action | Close the accepted G-FE1 typed-error backlog through non-overlapping Station、Desktop、Rust runtime control、and Acceptance lanes |
+| Next action | Reconcile the parallel lanes，run focused checks once，then let the integrator checkpoint、deploy exact source with `make station`、and rerun G-F |
+| Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
+| Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
+| Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | `ACCEPTANCE_INFRA_REQUIRED`: remote source attestation currently uses `StrictHostKeyChecking=no` while its self-test requires strict host verification；the provisioning self-Gate also retains source-digest、local Desktop Gateway Fixture、and launch-context failures。No Station access occurred；C08/G-F and all downstream work remain `UNPROVEN` |
+| Blockers | No external blocker. G-F is source-blocked by the planned but incomplete `BASE-EXECUTOR-UNAVAILABLE` vertical；Foundation and downstream work remain `PARTIAL / UNPROVEN` until the exact-source Gate passes |
 | Decisions required | none |
-| Evidence | F2：Station focused checks PASS；Desktop typecheck与588 Vitest PASS（1个环境用例skip）；Rust `agent_turn` 23 PASS；Mobile Agent contract 15 PASS；C03/C05/C06/C10 scanner为0 unresolved/0 unregistered。C08：Station attachment/context checks PASS；275个scenario/oracle/contract/native-static/old-path/provisioner tests PASS；C04/C08 scanner为0 unresolved/0 unregistered；Acceptance planner映射包含`agent-attachment-e2e`。Registered `acceptance-plan-self`、`desktop-check`与`station-agent-unit` PASS；`acceptance-infra-validation`因current dirty source对应latest evidence过期而FAIL，`acceptance-runtime-provisioning-self`因8个既有非C08用例FAIL。所有environment product Gates NOT RUN，Foundation/G-F与C08 product proof保持`UNPROVEN` |
+| Evidence | C08 run `20260909T091942082203Z-5ecd651bb57a293a45c0032d5b46861d` is `DONE / PROVEN`。G-F run `20260909T141502294542Z-5a3fca9b8d25c0a8f7ac1582a5b320b7` crossed all four AS-F06 tuples，then failed closed at `BASE-EXECUTOR-UNAVAILABLE` with Provisioner cleanup `DONE / PROVEN / passed` |
 | Last updated | 2026-09-09 |
 
 ---

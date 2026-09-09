@@ -110,6 +110,22 @@ Review in this order:
 5. tests, fixtures, and reports that claim coverage;
 6. documentation and PR template claims.
 
+For Goal, execution-skill, or tracked-work workflow changes, additionally
+verify:
+
+- execution mode is justified by dependencies, write sets, generated outputs,
+  shared runtime resources, verification isolation, and integration order;
+- parallel lanes reserve non-overlapping write sets and keep shared files under
+  one integrator;
+- only live, backend-addressable agents with the same Goal identity block new
+  work;
+- stale agent metadata is not converted into a persistent no-subagent rule;
+- Context Anchors report completed delta, ready queue, execution mode and
+  lanes, conflict controls, critical path, and an evidence-backed ETA or
+  `unknown`;
+- resume-time Anchor synchronization does not pause already-authorized
+  execution.
+
 ### 4. Decide
 
 Use the evidence, but decide from code and project contracts:
@@ -303,7 +319,10 @@ supersession, and semantic consistency with the code diff.
 
 Check scripts fail closed, fixtures cover positive and negative cases, workflow
 permissions are minimal, CODEOWNERS are real, and review skill freshness remains
-meaningful.
+meaningful. Goal and execution workflow changes must also preserve explicit
+concurrency decisions, identity-based live-agent conflict detection, reserved
+write sets, integrator-owned reconciliation, and non-blocking Context Anchor
+projection.
 
 ### Acceptance Review
 

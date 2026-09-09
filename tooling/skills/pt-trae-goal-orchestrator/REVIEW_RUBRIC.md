@@ -10,7 +10,9 @@ Score each dimension from 0 to 2.
 | Scope fidelity | Selected work and remainder match the owning workflow or formal plan |
 | Dependency fidelity | The Goal does not invent, remove, or reorder semantic dependencies |
 | Worktree binding | Explicit-root capture, six literal identity values, shell-safe exact verifier command, explicit mutating `workdir`, and recheck points form a fail-closed contract |
-| Worker ownership | Concurrent subagents have non-overlapping writes and focused checks |
+| Concurrency decision | Parallel, serial, or hybrid mode follows explicit dependency, write-set, generated-output, shared-resource, verification, and integration analysis |
+| Worker ownership | Concurrent subagents have reserved non-overlapping writes, forbidden shared paths, focused checks, and exact changed-file returns |
+| Agent reconciliation | Only live, backend-addressable, identity-equivalent agents block; stale entries cannot create a blanket spawn ban |
 | Reconciliation | One integrator verifies interfaces, diffs, and combined behavior |
 | Gate projection | Review, acceptance, evidence, and cleanup are copied from owning sources |
 | Failure routing | Every hard stop routes to the skill that owns the missing decision |
@@ -20,9 +22,9 @@ Score each dimension from 0 to 2.
 
 Interpretation:
 
-- `24-26`: executable.
-- `21-23`: conditionally executable after named corrections.
-- `<21`: reject.
+- `28-30`: executable.
+- `24-27`: conditionally executable after named corrections.
+- `<24`: reject.
 
 ## Mandatory Rejection Conditions
 
@@ -30,6 +32,11 @@ Reject regardless of score when:
 
 - an equivalent Goal or background agent with the same repository/worktree,
   branch, stage, and source unit is already active;
+- a listed but backend-unaddressable agent is treated as a live conflict or
+  converted into a persistent no-subagent constraint;
+- an active Goal has a stale binding or superseded execution constraint that
+  cannot be edited in place and is not rejected with
+  `GOAL_REPLACEMENT_REQUIRED`;
 - no current stage can be resolved;
 - the `Worktree Binding` section is absent or leaves the canonical runtime
   worktree root, branch, `workspaceId`, initial `HEAD`, expected `HEAD`, or
@@ -62,6 +69,9 @@ Reject regardless of score when:
 - an EXECUTE Goal has no approved plan or matching tracked-work state;
 - the Goal changes product, architecture, or plan semantics;
 - concurrent writers overlap;
+- execution mode is chosen from task count or speed preference without explicit
+  dependency, write-set, generated-output, shared-resource, verification, and
+  integration analysis;
 - blocked external work is treated as ready;
 - evidence required by the source is omitted or weakened;
 - the output is not one uninterrupted copyable block.
