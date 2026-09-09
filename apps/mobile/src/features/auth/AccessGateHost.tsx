@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Input, Typography } from 'antd';
-import { ArrowLeft, Code2, Globe2, KeyRound, LockKeyhole, Server, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Code2, Globe2, KeyRound, MessageCircle, Server, ShieldAlert } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import logo from '../../assets/logo.png';
@@ -28,6 +28,8 @@ import {
 
 const { Text, Title } = Typography;
 
+type LoginTab = 'quick' | 'email';
+
 export function AccessGateHost({
   decision,
   stationLabel,
@@ -53,6 +55,7 @@ export function AccessGateHost({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [inviteCode, setInviteCode] = useState('');
+  const [loginTab, setLoginTab] = useState<LoginTab>('quick');
   const oauth = useAuthRuntime();
 
   const ready = Boolean(decision);
@@ -60,9 +63,6 @@ export function AccessGateHost({
   const blockedMessage = accessDecisionMessage(decision);
   const currentGate = decision?.gates.find((gate) => gate.gateId === decision.currentGateId);
 
-  // The Station drives which gate renders. Invite-code is schema-driven; the
-  // login gate keeps its purpose-built credential form. When no gate is named
-  // we default to the login form so the legacy flow is unaffected.
   const showInviteCode = ready && !blocked && isInviteCodeGate(currentGate);
   const showLogin = ready
     && !blocked
@@ -110,14 +110,6 @@ export function AccessGateHost({
     ? t(oauth.errorKey)
     : t(oauthPhaseMessageKey(oauth.phase));
 
-  const headerCopy = !ready
-    ? t('mobile.auth.preparing')
-    : blocked
-      ? (blockedMessage || t('mobile.auth.blockedSubtitle'))
-      : showInviteCode
-        ? (currentGate?.description || t('mobile.auth.inviteCodeSubtitle'))
-        : t('mobile.auth.subtitle');
-
   return (
     <main className="auth-gate-screen">
       <section className="auth-gate-brand">
@@ -126,13 +118,13 @@ export function AccessGateHost({
           <LanguageSwitcher />
         </div>
         <div>
-          <Text className="launch-kicker">{t('mobile.launch.brand')}</Text>
+          <Text className="launch-kicker">{t('mobile.auth.brandKicker')}</Text>
           <Title level={1} className="auth-gate-title">
             {blocked
               ? t('mobile.auth.blockedTitle')
               : showInviteCode
                 ? t('mobile.auth.inviteCodeTitle')
-                : t('mobile.auth.title')}
+                : t('mobile.auth.signInTitle')}
           </Title>
         </div>
       </section>
@@ -150,82 +142,122 @@ export function AccessGateHost({
           </span>
         </div>
 
-        <div className="auth-gate-copy">
-          {blocked ? <ShieldAlert size={18} /> : showInviteCode ? <KeyRound size={18} /> : <LockKeyhole size={18} />}
-          <Text type="secondary">{headerCopy}</Text>
-        </div>
-
-        {showInviteCode ? (
-          <div className="auth-fields">
-            <Input
-              value={inviteCode}
-              placeholder={invitePlaceholder || inviteFieldLabel || t('mobile.auth.inviteCode')}
-              autoCapitalize="characters"
-              autoCorrect="off"
-              onChange={(event) => setInviteCode(event.target.value)}
-              onPressEnter={submitInvite}
-            />
+        {blocked ? (
+          <div className="auth-gate-copy">
+            <ShieldAlert size={18} />
+            <Text type="secondary">{blockedMessage || t('mobile.auth.blockedSubtitle')}</Text>
           </div>
         ) : null}
 
+        {showInviteCode ? (
+          <>
+            <div className="auth-gate-copy">
+              <KeyRound size={18} />
+              <Text type="secondary">{currentGate?.description || t('mobile.auth.inviteCodeSubtitle')}</Text>
+            </div>
+            <div className="auth-fields">
+              <Input
+                value={inviteCode}
+                placeholder={invitePlaceholder || inviteFieldLabel || t('mobile.auth.inviteCode')}
+                autoCapitalize="characters"
+                autoCorrect="off"
+                onChange={(event) => setInviteCode(event.target.value)}
+                onPressEnter={submitInvite}
+              />
+            </div>
+          </>
+        ) : null}
+
         {showLogin ? (
-          <div className="auth-fields">
-            {rememberedAccounts.length > 0 ? (
-              <div className="auth-account-history" aria-label={t('mobile.auth.recentAccounts')}>
-                <Text type="secondary">{t('mobile.auth.recentAccounts')}</Text>
-                <div className="auth-account-list">
-                  {rememberedAccounts.map((account) => (
-                    <button
-                      key={`${account.stationUrl}:${account.email}`}
-                      type="button"
-                      className={`auth-account-chip ${account.email === email ? 'active' : ''}`}
-                      onClick={() => setEmail(account.email)}
-                    >
-                      <span>{account.displayName || account.email}</span>
-                      <small>{account.email}</small>
-                    </button>
-                  ))}
-                </div>
+          <>
+            <div className="auth-tab-row">
+              <button
+                type="button"
+                className={`auth-tab ${loginTab === 'quick' ? 'active' : ''}`}
+                onClick={() => setLoginTab('quick')}
+              >{t('mobile.auth.tabQuickLogin')}</button>
+              <button
+                type="button"
+                className={`auth-tab ${loginTab === 'email' ? 'active' : ''}`}
+                onClick={() => setLoginTab('email')}
+              >{t('mobile.auth.tabEmailLogin')}</button>
+            </div>
+
+            <div className="auth-tab-content">
+              <div className={`auth-tab-panel auth-oauth-panel ${loginTab === 'quick' ? 'active' : ''}`}>
+                <Button
+                  block
+                  size="large"
+                  className="auth-oauth-btn auth-oauth-github"
+                  icon={<Code2 size={18} />}
+                  loading={oauthBusy && oauth.provider === 'github'}
+                  disabled={loading || oauthBusy}
+                  onClick={() => submitOAuth('github')}
+                >
+                  {t('mobile.auth.oauthGithub')}
+                </Button>
+                <Button
+                  block
+                  size="large"
+                  className="auth-oauth-btn auth-oauth-google"
+                  icon={<Globe2 size={18} />}
+                  loading={oauthBusy && oauth.provider === 'google'}
+                  disabled={loading || oauthBusy}
+                  onClick={() => submitOAuth('google')}
+                >
+                  {t('mobile.auth.oauthGoogle')}
+                </Button>
+                <Button
+                  block
+                  size="large"
+                  className="auth-oauth-btn auth-oauth-wechat"
+                  icon={<MessageCircle size={18} />}
+                  disabled
+                >
+                  {t('mobile.auth.oauthWechat')} <span className="auth-oauth-coming-soon">{t('mobile.auth.comingSoon')}</span>
+                </Button>
               </div>
-            ) : null}
-            <Input
-              value={email}
-              placeholder={t('mobile.auth.email')}
-              inputMode="email"
-              autoCapitalize="none"
-              autoCorrect="off"
-              onChange={(event) => setEmail(event.target.value)}
-              onPressEnter={submitLogin}
-            />
-            <Input.Password
-              value={password}
-              placeholder={t('mobile.auth.password')}
-              autoComplete="current-password"
-              onChange={(event) => setPassword(event.target.value)}
-              onPressEnter={submitLogin}
-            />
-            <div className="auth-oauth-divider" role="separator">
-              <span>{t('mobile.auth.oauthOr')}</span>
+
+              <div className={`auth-tab-panel auth-email-panel ${loginTab === 'email' ? 'active' : ''}`}>
+                {rememberedAccounts.length > 0 ? (
+                  <div className="auth-account-history" aria-label={t('mobile.auth.recentAccounts')}>
+                    <Text type="secondary">{t('mobile.auth.recentAccounts')}</Text>
+                    <div className="auth-account-list">
+                      {rememberedAccounts.map((account) => (
+                        <button
+                          key={`${account.stationUrl}:${account.email}`}
+                          type="button"
+                          className={`auth-account-chip ${account.email === email ? 'active' : ''}`}
+                          onClick={() => setEmail(account.email)}
+                        >
+                          <span>{account.displayName || account.email}</span>
+                          <small>{account.email}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <Input
+                  value={email}
+                  placeholder={t('mobile.auth.emailAddress')}
+                  size="large"
+                  inputMode="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  onChange={(event) => setEmail(event.target.value)}
+                  onPressEnter={submitLogin}
+                />
+                <Input.Password
+                  value={password}
+                  placeholder={t('mobile.auth.password')}
+                  size="large"
+                  autoComplete="current-password"
+                  onChange={(event) => setPassword(event.target.value)}
+                  onPressEnter={submitLogin}
+                />
+              </div>
             </div>
-            <div className="auth-oauth-providers" aria-label={t('mobile.auth.oauthProviders')}>
-              <Button
-                icon={<Code2 size={17} />}
-                loading={oauthBusy && oauth.provider === 'github'}
-                disabled={loading || oauthBusy}
-                onClick={() => submitOAuth('github')}
-              >
-                {t('mobile.auth.oauthGithub')}
-              </Button>
-              <Button
-                icon={<Globe2 size={17} />}
-                loading={oauthBusy && oauth.provider === 'google'}
-                disabled={loading || oauthBusy}
-                onClick={() => submitOAuth('google')}
-              >
-                {t('mobile.auth.oauthGoogle')}
-              </Button>
-            </div>
-          </div>
+          </>
         ) : null}
 
         {oauthVisible ? (
@@ -276,9 +308,9 @@ export function AccessGateHost({
               {t('mobile.auth.inviteCodeSubmit')}
             </Button>
           ) : null}
-          {showLogin ? (
+          {showLogin && loginTab === 'email' ? (
             <Button type="primary" loading={loading} disabled={!canLogin || loading} onClick={submitLogin}>
-              {t('mobile.auth.login')}
+              {t('mobile.auth.signIn')}
             </Button>
           ) : null}
         </div>

@@ -729,4 +729,3 @@ export enum NotificationStatus {
  */
 export const NotificationStatusSchema: GenEnum<NotificationStatus> = /*@__PURE__*/
   enumDesc(file_domain_notification_notification, 2);
-

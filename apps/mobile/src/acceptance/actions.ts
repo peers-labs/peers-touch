@@ -1,10 +1,14 @@
 import {
+  isAccessGranted,
   submitStationInviteCodeGate,
   submitStationLoginGate,
+  type AccessDecision,
 } from '../features/auth/authSession';
+import { getMobileLifecycleKernel } from '../app/lifecycle';
 import { verifyStationIdentity } from '../features/station/stationConnection';
 import {
   activeStationEntry,
+  activateStationEntry,
   addStationEntry,
   emptyStationRegistry,
   loadStationRegistry,
@@ -15,13 +19,48 @@ import {
 import {
   applyAccessGateRuntimeResult,
   cancelOAuth,
-  clearAuthRuntimeSession,
+  logoutAuthRuntimeSession,
+  readActiveAuthSession,
   readAccessRuntimeProjection,
   readAuthRuntimeSnapshot,
   refreshOAuthStatus,
   startAccessAttemptForActiveStation,
   startOAuth,
 } from '../runtimes/authRuntime';
+import {
+  readMobileRuntimeScopeProjection,
+} from '../runtimes/runtimeRegistry';
+import {
+  checkAllPermissions,
+  checkPermission,
+  fetchNetworkState,
+  requestPermission,
+  type PermissionKind,
+} from '../runtimes/nativeLifecycleBridge';
+import { reconcileActiveMessagingSession } from '../runtimes/messagingRuntime';
+import {
+  acceptSocialFriendRequest,
+  readSocialRuntimeProjection,
+  reconcileSocialRuntime,
+  sendSocialFriendRequest,
+} from '../features/social/socialRuntime';
+import {
+  messagingCommandStatus,
+  messagingCreateDirect,
+  messagingCreateGroup,
+  messagingListConversations,
+  messagingListMessages,
+  messagingOpenAttachment,
+  messagingSearchMessages,
+  messagingSendMessage,
+  messagingStageAttachment,
+  messagingStatus,
+  messagingSubmitEdit,
+  messagingSubmitMetadataInteraction,
+  messagingSubmitReadCursor,
+  messagingSubmitTyping,
+  type MessagingAccountInput,
+} from '../services/mobileCommands';
 import { readSharedBuildIdentity } from './buildIdentity';
 import type { MobileAcceptanceNamespace } from './contracts';
 import {
@@ -31,6 +70,8 @@ import {
 } from './negativeOAuth';
 import {
   sanitizeAccessDecision,
+  sanitizeMessagingMessages,
+  sanitizeMessagingProjection,
   sanitizeMobileProjection,
   sanitizeOAuthProjection,
   sanitizeStationRegistry,
@@ -44,11 +85,19 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     const verified = await verifyStationIdentity(requestedUrl);
     const current = await loadStationRegistry();
     const next = addVerifiedStation(current, verified);
-    if (
-      current.activeStationPeerId
-      && current.activeStationPeerId !== verified.stationPeerId
-    ) {
-      await cancelAndClearCurrentAuthScope();
+    if (current.activeStationPeerId !== verified.stationPeerId) {
+      const sessionRevocation = await getMobileLifecycleKernel().transitionScope(
+        'station-replace',
+        async () => {
+          const logout = await cancelAndClearCurrentAuthScope();
+          await persistStationRegistry(next);
+          return logout;
+        },
+      );
+      return {
+        ...stationMutationOutput(next, verified),
+        sessionRevocation,
+      };
     }
 
     await persistStationRegistry(next);
@@ -74,9 +123,44 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       currentStationPeerId,
     );
     const next = addVerifiedStation(withoutReplacedStation, verified);
-    await cancelAndClearCurrentAuthScope();
-    await persistStationRegistry(next);
-    return stationMutationOutput(next, verified);
+    const sessionRevocation = await getMobileLifecycleKernel().transitionScope(
+      'station-replace',
+      async () => {
+        const logout = await cancelAndClearCurrentAuthScope();
+        await persistStationRegistry(next);
+        return logout;
+      },
+    );
+    return {
+      ...stationMutationOutput(next, verified),
+      sessionRevocation,
+    };
+  },
+
+  'station.select': async (input) => {
+    const stationPeerId = requireString(
+      input?.stationPeerId,
+      'station.select.stationPeerId',
+    );
+    const current = await loadStationRegistry();
+    if (!current.entries.some((entry) => entry.stationPeerId === stationPeerId)) {
+      throw new Error('acceptance.mobile.stationNotFound');
+    }
+    const next = activateStationEntry(current, stationPeerId);
+    const sessionRevocation = current.activeStationPeerId !== next.activeStationPeerId
+      ? await getMobileLifecycleKernel().transitionScope(
+        'station-replace',
+        async () => {
+          const logout = await logoutAuthRuntimeSession();
+          await persistStationRegistry(next);
+          return logout;
+        },
+      )
+      : { remoteRevocation: 'not-required' as const };
+    return {
+      ...sanitizeStationRegistry(next),
+      sessionRevocation,
+    };
   },
 
   'access.submit': async (input) => {
@@ -84,7 +168,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     const station = requireActiveStation(await loadStationRegistry());
 
     if (input.kind === 'start') {
+      beginAccessGateLaunch();
       const decision = await startAccessAttemptForActiveStation();
+      completeAccessGateLaunch(decision);
       return {
         decision: requirePublicDecision(decision),
         session: readAccessRuntimeProjection().session,
@@ -105,6 +191,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
         password: requireString(input.password, 'access.submit.password'),
       });
       applyAccessGateRuntimeResult(result.decision, result.session);
+      completeAccessGateLaunch(result.decision);
       return {
         decision: requirePublicDecision(result.decision),
         session: {
@@ -169,10 +256,68 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     submitNegativeOAuthCallback(input)
   ),
 
+  'lifecycle.snapshot': async () => (
+    getMobileLifecycleKernel().getSnapshot()
+  ),
+
+  'lifecycle.suspend': async () => ({
+    snapshot: await getMobileLifecycleKernel().suspend('acceptance-suspend'),
+  }),
+
+  'lifecycle.resume': async () => ({
+    snapshot: await getMobileLifecycleKernel().resume('acceptance-resume'),
+  }),
+
   'lifecycle.restart': async () => {
+    await getMobileLifecycleKernel().restartRuntimeGraph('acceptance-restart');
     return {
       requested: true,
       scope: 'webview',
+    };
+  },
+
+  'lifecycle.scope.read': async () => {
+    const stationRegistry = await loadStationRegistry();
+    const lifecycle = getMobileLifecycleKernel().getSnapshot();
+    const runtime = readMobileRuntimeScopeProjection();
+    return {
+      generation: lifecycle.generation,
+      phase: lifecycle.phase,
+      launchState: lifecycle.launchState,
+      activeStationPeerId: stationRegistry.activeStationPeerId,
+      activeActorPtid: runtime.activeActorPtid,
+      runtimeStationPeerId: runtime.activeStationPeerId,
+      social: runtime.social,
+      group: runtime.group,
+      navigation: runtime.navigation,
+    };
+  },
+
+  'platform.permission.check': async (input) => (
+    checkPermission(requirePermissionKind(input?.kind))
+  ),
+
+  'platform.permission.request': async (input) => (
+    requestPermission(requirePermissionKind(input?.kind))
+  ),
+
+  'platform.permission.checkAll': async () => checkAllPermissions(),
+
+  'platform.network.read': async () => fetchNetworkState(),
+
+  'session.logout': async () => {
+    const logout = await getMobileLifecycleKernel().transitionScope(
+      'logout',
+      logoutAuthRuntimeSession,
+    );
+    beginAccessGateLaunch();
+    const decision = await startAccessAttemptForActiveStation();
+    completeAccessGateLaunch(decision);
+    return {
+      logout,
+      decision: requirePublicDecision(decision),
+      lifecycle: getMobileLifecycleKernel().getSnapshot(),
+      runtime: readMobileRuntimeScopeProjection(),
     };
   },
 
@@ -191,14 +336,256 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     oauth: readAuthRuntimeSnapshot(),
   }),
 
-  cleanup: async () => {
-    const station = requireActiveStation(await loadStationRegistry());
-    const oauthPurge = await purgeNativeOAuth({
-      stationOrigin: station.url,
-      stationPeerId: station.stationPeerId,
+  'messaging.createDirect': async (input) => {
+    const account = requireMessagingAccount();
+    return messagingCreateDirect({
+      ...account,
+      peerPtid: requirePtid(input?.peerPtid, 'messaging.createDirect.peerPtid'),
     });
-    await clearAuthRuntimeSession();
-    await persistStationRegistry(emptyStationRegistry());
+  },
+
+  'messaging.createGroup': async (input) => {
+    const account = requireMessagingAccount();
+    return messagingCreateGroup({
+      ...account,
+      conversationId: requireString(
+        input?.conversationId,
+        'messaging.createGroup.conversationId',
+      ),
+      name: requireString(input?.name, 'messaging.createGroup.name'),
+      memberPtids: requirePtidList(
+        input?.memberPtids,
+        'messaging.createGroup.memberPtids',
+      ),
+    });
+  },
+
+  'messaging.attachment.stage': async (input) => {
+    const account = requireMessagingAccount();
+    const filename = requireString(
+      input?.filename,
+      'messaging.attachment.stage.filename',
+    );
+    const mimeType = requireString(
+      input?.mimeType,
+      'messaging.attachment.stage.mimeType',
+    );
+    const expectedSha256 = requireSha256(
+      input?.sha256,
+      'messaging.attachment.stage.sha256',
+    );
+    const bytes = decodeBoundedBase64(
+      input?.bytesBase64,
+      'messaging.attachment.stage.bytesBase64',
+    );
+    const actualSha256 = await sha256Hex(bytes);
+    if (actualSha256 !== expectedSha256) {
+      throw new Error('acceptance.mobile.attachmentDigestMismatch');
+    }
+    const staged = await messagingStageAttachment({
+      ...account,
+      file: new File([bytes.buffer], filename, { type: mimeType }),
+    });
+    return {
+      stageId: staged.stageId,
+      filename: staged.filename,
+      mimeType: staged.mimeType,
+      plaintextSize: staged.plaintextSize,
+      completed: staged.completed,
+    };
+  },
+
+  'messaging.attachment.open': async (input) => {
+    const result = await messagingOpenAttachment({
+      ...requireMessagingAccount(),
+      attachmentId: requireString(
+        input?.attachmentId,
+        'messaging.attachment.open.attachmentId',
+      ),
+    });
+    return result.state === 'ready'
+      ? { state: 'ready', available: true }
+      : {
+        state: 'pending',
+        available: false,
+        nextAttemptAtUnixMs: result.nextAttemptAtUnixMs,
+      };
+  },
+
+  'messaging.send': async (input) => {
+    const conversationId = requireString(
+      input?.conversationId,
+      'messaging.send.conversationId',
+    );
+    const result = await messagingSendMessage({
+      ...requireMessagingAccount(),
+      conversationId,
+      plaintext: input?.plaintext ?? '',
+      replyToMessageId: input?.replyToMessageId,
+      threadRootMessageId: input?.threadRootMessageId,
+      attachmentStageIds: input?.attachmentStageIds,
+    });
+    return { conversationId, ...result };
+  },
+
+  'messaging.interact': async (input) => {
+    const conversationId = requireString(
+      input?.conversationId,
+      'messaging.interact.conversationId',
+    );
+    const messageId = requireString(
+      input?.messageId,
+      'messaging.interact.messageId',
+    );
+    if (input.kind === 'edit') {
+      const result = await messagingSubmitEdit({
+        ...requireMessagingAccount(),
+        conversationId,
+        messageId,
+        plaintext: requireString(
+          input.plaintext,
+          'messaging.interact.plaintext',
+        ),
+      });
+      return { conversationId, ...result };
+    }
+    const interaction = input.kind === 'retract'
+      ? { kind: 'retract' as const }
+      : input.kind === 'reaction'
+        ? {
+          kind: 'reaction' as const,
+          reaction: requireString(
+            input.reaction,
+            'messaging.interact.reaction',
+          ),
+          remove: input.remove,
+        }
+        : { kind: 'pin' as const, remove: input.remove };
+    const result = await messagingSubmitMetadataInteraction({
+      ...requireMessagingAccount(),
+      conversationId,
+      messageId,
+      interaction,
+    });
+    return { conversationId, ...result };
+  },
+
+  'messaging.read': async (input) => {
+    const conversationId = requireString(
+      input?.conversationId,
+      'messaging.read.conversationId',
+    );
+    const lastReadSequence = requirePositiveInteger(
+      input?.lastReadSequence,
+      'messaging.read.lastReadSequence',
+    );
+    const result = await messagingSubmitReadCursor({
+      ...requireMessagingAccount(),
+      conversationId,
+      lastReadSequence,
+    });
+    return { conversationId, lastReadSequence, submitted: result.submitted };
+  },
+
+  'messaging.typing': async (input) => {
+    const conversationId = requireString(
+      input?.conversationId,
+      'messaging.typing.conversationId',
+    );
+    if (typeof input?.isTyping !== 'boolean') {
+      throw new Error('acceptance.mobile.invalidInput:messaging.typing.isTyping');
+    }
+    const result = await messagingSubmitTyping({
+      ...requireMessagingAccount(),
+      conversationId,
+      isTyping: input.isTyping,
+    });
+    return { conversationId, isTyping: input.isTyping, submitted: result.submitted };
+  },
+
+  'messaging.reconcile': async () => reconcileActiveMessagingSession(),
+
+  'messaging.command.read': async (input) => messagingCommandStatus({
+    ...requireMessagingAccount(),
+    commandId: requireString(
+      input?.commandId,
+      'messaging.command.read.commandId',
+    ),
+  }),
+
+  'messaging.search': async (input) => sanitizeMessagingMessages(
+    await messagingSearchMessages({
+      ...requireMessagingAccount(),
+      conversationId: requireString(
+        input?.conversationId,
+        'messaging.search.conversationId',
+      ),
+      query: requireString(input?.query, 'messaging.search.query'),
+      limit: input?.limit === undefined
+        ? undefined
+        : requirePositiveInteger(input.limit, 'messaging.search.limit'),
+    }),
+  ),
+
+  'messaging.projection.read': async (input) => {
+    const account = requireMessagingAccount();
+    const runtime = await messagingStatus();
+    const conversations = await messagingListConversations(account);
+    const requestedConversationId = input?.conversationId?.trim() ?? '';
+    if (
+      requestedConversationId
+      && !conversations.some(
+        (conversation) => conversation.conversationId === requestedConversationId,
+      )
+    ) {
+      throw new Error('acceptance.mobile.messagingConversationNotFound');
+    }
+    const selected = requestedConversationId
+      ? conversations.filter(
+        (conversation) => conversation.conversationId === requestedConversationId,
+      )
+      : conversations;
+    const messages = Object.fromEntries(await Promise.all(selected.map(async (conversation) => [
+      conversation.conversationId,
+      await messagingListMessages({
+        ...account,
+        conversationId: conversation.conversationId,
+      }),
+    ] as const)));
+    return sanitizeMessagingProjection({ runtime, conversations, messages });
+  },
+
+  'social.request.send': async (input) => sendSocialFriendRequest(
+    requirePtid(input?.receiverPtid, 'social.request.send.receiverPtid'),
+    input?.message?.trim() || undefined,
+  ),
+
+  'social.request.accept': async (input) => acceptSocialFriendRequest(
+    requireString(input?.requestId, 'social.request.accept.requestId'),
+  ),
+
+  'social.reconcile': async () => reconcileSocialRuntime(),
+
+  'social.projection.read': async () => readSocialRuntimeProjection(),
+
+  cleanup: async () => {
+    const station = activeStationEntry(await loadStationRegistry());
+    let oauthPurge: Awaited<ReturnType<typeof purgeNativeOAuth>> | null = null;
+    await getMobileLifecycleKernel().transitionScope(
+      'logout',
+      async () => {
+        oauthPurge = await purgeNativeOAuth(station
+          ? {
+            stationOrigin: station.url,
+            stationPeerId: station.stationPeerId,
+          }
+          : undefined);
+        await logoutAuthRuntimeSession();
+        await persistStationRegistry(emptyStationRegistry());
+      },
+      { restart: false },
+    );
+    if (!oauthPurge) throw new Error('acceptance.mobile.oauthPurgeMissing');
     return {
       oauthPurge,
       webSessionProjectionCleared: true,
@@ -250,6 +637,82 @@ function requireString(value: unknown, field: string): string {
   return value.trim();
 }
 
+function requirePtid(value: unknown, field: string): string {
+  const ptid = requireString(value, field);
+  if (!ptid.startsWith('ptid:')) {
+    throw new Error(`acceptance.mobile.invalidInput:${field}`);
+  }
+  return ptid;
+}
+
+function requirePtidList(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`acceptance.mobile.invalidInput:${field}`);
+  }
+  return value.map((item, index) => requirePtid(item, `${field}.${index}`));
+}
+
+function requirePositiveInteger(value: unknown, field: string): number {
+  if (!Number.isSafeInteger(value) || Number(value) <= 0) {
+    throw new Error(`acceptance.mobile.invalidInput:${field}`);
+  }
+  return Number(value);
+}
+
+function requireSha256(value: unknown, field: string): string {
+  const digest = requireString(value, field).toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(digest)) {
+    throw new Error(`acceptance.mobile.invalidInput:${field}`);
+  }
+  return digest;
+}
+
+function requirePermissionKind(value: unknown): PermissionKind {
+  if (
+    value === 'camera'
+    || value === 'microphone'
+    || value === 'storage'
+    || value === 'notifications'
+  ) {
+    return value;
+  }
+  throw new Error('acceptance.mobile.invalidInput:platform.permission.kind');
+}
+
+function decodeBoundedBase64(value: unknown, field: string): Uint8Array<ArrayBuffer> {
+  const encoded = requireString(value, field);
+  if (encoded.length > 1_398_104) {
+    throw new Error(`acceptance.mobile.invalidInput:${field}`);
+  }
+  try {
+    const decoded = globalThis.atob(encoded);
+    const buffer = new ArrayBuffer(decoded.length);
+    const bytes = new Uint8Array(buffer);
+    for (let index = 0; index < decoded.length; index += 1) {
+      bytes[index] = decoded.charCodeAt(index);
+    }
+    return bytes;
+  } catch {
+    throw new Error(`acceptance.mobile.invalidInput:${field}`);
+  }
+}
+
+async function sha256Hex(value: Uint8Array<ArrayBuffer>): Promise<string> {
+  const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', value));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function requireMessagingAccount(): MessagingAccountInput {
+  const session = readActiveAuthSession();
+  if (!session?.stationPeerId || !session.actorRef.ptid) {
+    throw new Error('acceptance.mobile.activeMessagingSessionRequired');
+  }
+  return {
+    stationPeerId: session.stationPeerId,
+    actorPtid: session.actorRef.ptid,
+  };
+}
+
 function requirePublicDecision(
   decision: Parameters<typeof sanitizeAccessDecision>[0],
 ) {
@@ -258,7 +721,29 @@ function requirePublicDecision(
   return sanitized;
 }
 
-async function cancelAndClearCurrentAuthScope(): Promise<void> {
-  await cancelOAuth();
-  await clearAuthRuntimeSession();
+async function cancelAndClearCurrentAuthScope() {
+  return logoutAuthRuntimeSession();
+}
+
+function beginAccessGateLaunch(): void {
+  const kernel = getMobileLifecycleKernel();
+  if (kernel.getSnapshot().launchState === 'station-selection') {
+    kernel.transitionLaunchState('station-handshake');
+  }
+}
+
+function completeAccessGateLaunch(
+  decision: AccessDecision,
+): void {
+  const kernel = getMobileLifecycleKernel();
+  if (isAccessGranted(decision)) {
+    if (kernel.getSnapshot().launchState !== 'runtime-critical') {
+      kernel.transitionLaunchState('runtime-critical');
+    }
+    kernel.transitionLaunchState('shell');
+    return;
+  }
+  if (kernel.getSnapshot().launchState === 'station-handshake') {
+    kernel.transitionLaunchState('access-gate-chain');
+  }
 }

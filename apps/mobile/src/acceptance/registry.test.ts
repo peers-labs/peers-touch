@@ -18,12 +18,23 @@ import {
   sanitizeNegativeOAuthProjection,
   sanitizeOAuthPurgeOutput,
 } from './negativeOAuth';
-import { sanitizeMobileProjection } from './projection';
+import {
+  sanitizeMessagingProjection,
+  sanitizeMobileProjection,
+} from './projection';
 import { createMobileAcceptanceHarness } from './registry';
+import { useAuthStore } from '../features/auth/authStore';
 
 describe('Mobile Acceptance Harness', () => {
   beforeEach(() => {
     invokeMock.mockReset();
+    useAuthStore.setState({
+      session: null,
+      accessDecision: null,
+      loading: false,
+      error: null,
+      restored: false,
+    });
   });
 
   it('registers exactly the environment contract action names', () => {
@@ -32,8 +43,46 @@ describe('Mobile Acceptance Harness', () => {
       [...MOBILE_ACCEPTANCE_ACTION_NAMES].sort(),
     );
     expect(actionNames).toContain('build.identity');
+    expect(actionNames).toContain('station.select');
     expect(actionNames).toContain('oauth.replayHandle');
     expect(actionNames).toContain('oauth.negativeCallback');
+    expect(actionNames).toContain('lifecycle.snapshot');
+    expect(actionNames).toContain('lifecycle.suspend');
+    expect(actionNames).toContain('lifecycle.resume');
+    expect(actionNames).toContain('lifecycle.restart');
+    expect(actionNames).toContain('lifecycle.scope.read');
+    expect(actionNames).toContain('platform.permission.check');
+    expect(actionNames).toContain('platform.permission.request');
+    expect(actionNames).toContain('platform.permission.checkAll');
+    expect(actionNames).toContain('platform.network.read');
+    expect(actionNames).toContain('session.logout');
+    expect(actionNames).toContain('messaging.createDirect');
+    expect(actionNames).toContain('messaging.createGroup');
+    expect(actionNames).toContain('messaging.attachment.stage');
+    expect(actionNames).toContain('messaging.send');
+    expect(actionNames).toContain('messaging.interact');
+    expect(actionNames).toContain('messaging.projection.read');
+    expect(actionNames).toContain('social.request.send');
+    expect(actionNames).toContain('social.request.accept');
+    expect(actionNames).toContain('social.reconcile');
+    expect(actionNames).toContain('social.projection.read');
+  });
+
+  it('exposes a descriptor-free read-only lifecycle snapshot', async () => {
+    const snapshot = await createMobileAcceptanceHarness()[
+      'lifecycle.snapshot'
+    ]();
+
+    expect(snapshot).toMatchObject({
+      phase: 'COLD',
+      launchState: 'app-boot',
+      generation: 0,
+      bootOrder: [],
+      runtimes: [],
+      errorKey: null,
+    });
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.runtimes)).toBe(true);
   });
 
   it('rejects duplicate action registration', () => {
@@ -135,6 +184,246 @@ describe('Mobile Acceptance Harness', () => {
     expect(source).not.toMatch(/\bzustand\b/);
   });
 
+  it('routes bounded lifecycle actions through the lifecycle owner', () => {
+    const source = readFileSync(
+      new URL('./actions.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toMatch(
+      /lifecycle\.snapshot[\s\S]*getMobileLifecycleKernel\(\)\.getSnapshot\(\)/,
+    );
+    expect(source).toMatch(
+      /lifecycle\.suspend[\s\S]*getMobileLifecycleKernel\(\)\.suspend\('acceptance-suspend'\)/,
+    );
+    expect(source).toMatch(
+      /lifecycle\.resume[\s\S]*getMobileLifecycleKernel\(\)\.resume\('acceptance-resume'\)/,
+    );
+    expect(source).toMatch(
+      /lifecycle\.restart[\s\S]*getMobileLifecycleKernel\(\)\.restartRuntimeGraph\('acceptance-restart'\)/,
+    );
+    expect(source).not.toMatch(/window\.location\.reload/);
+  });
+
+  it('routes platform evidence through production Rust commands', async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        kind: 'camera',
+        status: 'not_determined',
+        canRequest: true,
+      })
+      .mockResolvedValueOnce({
+        kind: 'camera',
+        status: 'granted',
+        wasAlreadyGranted: false,
+      })
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({
+        connected: true,
+        networkType: 'wifi',
+        updatedAtMs: 1,
+      });
+
+    const harness = createMobileAcceptanceHarness();
+    await harness['platform.permission.check']({ kind: 'camera' });
+    await harness['platform.permission.request']({ kind: 'camera' });
+    await harness['platform.permission.checkAll']();
+    await harness['platform.network.read']();
+
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      1,
+      'permission_check',
+      { kind: 'camera' },
+    );
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      2,
+      'permission_request',
+      { kind: 'camera' },
+    );
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      3,
+      'permission_check_all',
+      undefined,
+    );
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      4,
+      'network_state',
+      undefined,
+    );
+  });
+
+  it('rejects unknown permission kinds before invoking Rust', async () => {
+    const harness = createMobileAcceptanceHarness();
+
+    await expect(harness['platform.permission.check']({
+      kind: 'location',
+    } as never)).rejects.toThrow(
+      'acceptance.mobile.invalidInput:platform.permission.kind',
+    );
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it('routes Station replacement and logout through the generation fence', () => {
+    const actionsSource = readFileSync(
+      new URL('./actions.ts', import.meta.url),
+      'utf8',
+    );
+    const appSource = readFileSync(
+      new URL('../App.tsx', import.meta.url),
+      'utf8',
+    );
+
+    expect(actionsSource).toMatch(
+      /station\.replace[\s\S]*transitionScope\(\s*'station-replace'[\s\S]*cancelAndClearCurrentAuthScope\(\)/,
+    );
+    expect(actionsSource).toMatch(
+      /station\.select[\s\S]*transitionScope\(\s*'station-replace'[\s\S]*logoutAuthRuntimeSession\(\)/,
+    );
+    expect(appSource).toMatch(
+      /commitStationScope[\s\S]*transitionScope\(\s*'station-replace'[\s\S]*logoutAuthRuntimeSession\(\)/,
+    );
+    expect(appSource).toMatch(
+      /function logout[\s\S]*transitionScope\('logout'[\s\S]*logoutAuthRuntimeSession/,
+    );
+  });
+
+  it('routes lifecycle scope reads through runtime owners', () => {
+    const source = readFileSync(
+      new URL('./actions.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toMatch(
+      /lifecycle\.scope\.read[\s\S]*readMobileRuntimeScopeProjection\(\)/,
+    );
+    expect(source).toMatch(
+      /session\.logout[\s\S]*transitionScope\(\s*'logout'[\s\S]*logoutAuthRuntimeSession/,
+    );
+    expect(source).not.toMatch(/\.(?:getState|setState)\s*\(/);
+  });
+
+  it('routes Messaging actions through the active account-scoped native API', async () => {
+    useAuthStore.setState({
+      session: {
+        stationPeerId: 'station-peer',
+        stationUrl: 'https://station.example',
+        sessionId: 'session-1',
+        accessToken: 'test-token',
+        actorRef: { ptid: 'ptid:alice' },
+        authenticatedAt: 1,
+      },
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    invokeMock.mockResolvedValue({
+      conversationId: 'conversation-1',
+      state: 'projected',
+    });
+
+    const result = await createMobileAcceptanceHarness()[
+      'messaging.createDirect'
+    ]({ peerPtid: 'ptid:bob' });
+
+    expect(result).toEqual({
+      conversationId: 'conversation-1',
+      state: 'projected',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('messaging_create_direct', {
+      input: {
+        stationPeerId: 'station-peer',
+        actorPtid: 'ptid:alice',
+        peerPtid: 'ptid:bob',
+      },
+    });
+  });
+
+  it('keeps business runtime actions closed before final access grant', async () => {
+    useAuthStore.setState({
+      session: {
+        stationPeerId: 'station-peer',
+        stationUrl: 'https://station.example',
+        sessionId: 'session-1',
+        accessToken: 'test-token',
+        actorRef: { ptid: 'ptid:alice' },
+        authenticatedAt: 1,
+      },
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+
+    await expect(createMobileAcceptanceHarness()[
+      'messaging.createDirect'
+    ]({ peerPtid: 'ptid:bob' }))
+      .rejects.toThrow('acceptance.mobile.activeMessagingSessionRequired');
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it('sanitizes messaging projections without local storage references', () => {
+    const projection = sanitizeMessagingProjection({
+      runtime: {
+        active: true,
+        profileId: 'profile-1',
+        stationPeerId: 'station-peer',
+        stationOrigin: 'https://station.example',
+        actorPtid: 'ptid:alice',
+        deviceId: 'device-1',
+        deviceEnrolled: true,
+        laneSequence: 8,
+        consumerEpoch: 2,
+        conversationCount: 1,
+        activationGeneration: 3,
+        workerPhase: 'running',
+      },
+      conversations: [{
+        conversationId: 'conversation-1',
+        authorityStationId: 'station-peer',
+        kind: 1,
+        name: '',
+        ownerPtid: 'ptid:alice',
+        memberPtids: ['ptid:alice', 'ptid:bob'],
+        membershipEpoch: 1,
+        mlsEpoch: 0,
+        active: true,
+        updatedAtUnixMs: 10,
+      }],
+      messages: {
+        'conversation-1': [{
+          messageId: 'message-1',
+          senderPtid: 'ptid:alice',
+          senderDeviceId: 'device-1',
+          plaintext: 'acceptance-message',
+          attachments: [{
+            attachmentId: 'attachment-1',
+            filename: 'proof.txt',
+            mimeType: 'text/plain',
+            plaintextSize: 4,
+            objectId: 'object-1',
+            storageRef: 'private-storage-ref',
+            ciphertextSize: 20,
+            availabilityState: 'local',
+          }],
+          state: 'delivered',
+          timestampUnixMs: 10,
+          retracted: false,
+          reactions: [],
+          readByPtids: ['ptid:bob'],
+        }],
+      },
+    });
+
+    expect(projection.runtime).not.toHaveProperty('stationOrigin');
+    expect(projection.messages['conversation-1'][0]).not.toHaveProperty('senderDeviceId');
+    expect(projection.messages['conversation-1'][0].attachments[0]).not.toHaveProperty('storageRef');
+    expect(projection.messages['conversation-1'][0].attachments[0]).not.toHaveProperty('objectId');
+    expect(projection.messages['conversation-1'][0].plaintext).toBe('acceptance-message');
+  });
+
   it('starts access through the production auth runtime before OAuth', () => {
     const actionsSource = readFileSync(
       new URL('./actions.ts', import.meta.url),
@@ -144,13 +433,24 @@ describe('Mobile Acceptance Harness', () => {
       new URL('../runtimes/authRuntime.ts', import.meta.url),
       'utf8',
     );
+    const appSource = readFileSync(
+      new URL('../App.tsx', import.meta.url),
+      'utf8',
+    );
 
     expect(actionsSource).toMatch(
       /input\.kind === 'start'[\s\S]*startAccessAttemptForActiveStation\(\)/,
     );
     expect(runtimeSource).toMatch(
-      /startAccessAttemptForActiveStation[\s\S]*startStationAccessAttempt\([\s\S]*applyAccessGateRuntimeResult\(decision\)/,
+      /startAccessAttemptForActiveStation[\s\S]*startStationAccessAttemptWithRecovery\([\s\S]*applyAccessGateRuntimeResult\(decision\)/,
     );
+    expect(runtimeSource).toMatch(
+      /startAccessAttemptWithInvalidSessionRecovery[\s\S]*isRevokedSessionError[\s\S]*clearSession\(\)/,
+    );
+    expect(appSource).toMatch(
+      /startAccessGateChainFor[\s\S]*startStationAccessAttemptWithRecovery\(/,
+    );
+    expect(appSource).not.toMatch(/function isRevokedSessionError/);
   });
 
   it('projects negative OAuth results without callback or credential material', () => {
@@ -417,7 +717,7 @@ describe('Mobile Acceptance Harness', () => {
     );
     expect(rustCommandsSource).toMatch(/oauth::oauth_logout_purge/);
     expect(actionsSource).toMatch(
-      /const oauthPurge = await purgeNativeOAuth\([\s\S]*clearAuthRuntimeSession\(\)/,
+      /transitionScope\(\s*'logout'[\s\S]*purgeNativeOAuth\([\s\S]*logoutAuthRuntimeSession\(\)/,
     );
   });
 });

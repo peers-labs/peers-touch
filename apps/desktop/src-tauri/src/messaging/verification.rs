@@ -5,12 +5,13 @@ mod tests {
     use super::*;
     use crate::model::chat::{
         conversation_event, ConversationEvent, CryptoEndpoint, DeviceEventDelivery,
-        DeviceQueueItem, MessageCommittedFact, PreparedEndpointPayloadKind,
+        DeviceInboxPayloadType, DurableDeviceInboxItem, MessageCommittedFact,
+        PreparedEndpointPayloadKind,
     };
     use prost::Message;
     use sha2::{Digest, Sha256};
 
-    fn queue_item() -> DeviceQueueItem {
+    fn queue_item() -> DurableDeviceInboxItem {
         let recipient = CryptoEndpoint {
             ptid: "ptid:alice".to_string(),
             device_id: "alice-device".to_string(),
@@ -57,14 +58,17 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: "item-1".to_string(),
-            recipient: Some(recipient),
+            recipient: Some(crate::messaging::actor_device_ref(
+                &recipient.ptid,
+                &recipient.device_id,
+            )),
             lane_sequence: 1,
             event_id: "event-1".to_string(),
             conversation_id: "conversation-1".to_string(),
             idempotency_key: "event:event-1".to_string(),
-            payload_type: 1,
+            payload_type: i32::from(DeviceInboxPayloadType::ConversationEvent),
             opaque_payload: opaque_payload.clone(),
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
             state: 1,
@@ -73,9 +77,8 @@ mod tests {
             first_queued_at: None,
             next_attempt_at: None,
             expires_at: None,
-            consumed_at: None,
             acked_at: None,
-            last_error_code: String::new(),
+            last_error_code: 0,
         }
     }
 

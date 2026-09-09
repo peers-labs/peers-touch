@@ -30,6 +30,7 @@ class AppiumSession:
         physical_device_lease: ArtifactRef,
         build_attestation: ArtifactRef,
         callback_scheme: str,
+        gate_id: str = GATE_ID,
     ) -> None:
         if platform not in {"ios", "android"}:
             raise DriverError(
@@ -44,18 +45,21 @@ class AppiumSession:
             ArtifactRef,
         ):
             raise DriverError("Appium source inputs must be typed ArtifactRefs")
+        if not gate_id or build_attestation.gate_id != gate_id:
+            raise DriverError("Appium build input targets the wrong Gate")
         if (
             physical_device_lease.workspace_id != build_attestation.workspace_id
             or physical_device_lease.gate_id != build_attestation.gate_id
             or physical_device_lease.run_id != build_attestation.run_id
         ):
             raise DriverError("Appium source ArtifactRefs cross proof runs")
-        if physical_device_lease.gate_id != GATE_ID:
+        if physical_device_lease.gate_id != gate_id:
             raise DriverError("Appium source ArtifactRefs target the wrong Gate")
 
         self.client = client
         self.client_id = client_id
         self.platform = platform
+        self.gate_id = gate_id
         self.physical_device_lease_ref = physical_device_lease
         self.build_attestation_ref = build_attestation
         self._session_ref = ""
@@ -77,12 +81,13 @@ class AppiumSession:
     def start(self) -> "AppiumSession":
         if self._session_ref:
             raise DriverError("Appium session is already started")
+        source_inputs = {
+            "physicalDeviceLease": self.physical_device_lease_ref.to_dict(),
+            "buildAttestation": self.build_attestation_ref.to_dict(),
+        }
         result = self._invoke(
             "start",
-            {
-                "physicalDeviceLease": self.physical_device_lease_ref.to_dict(),
-                "buildAttestation": self.build_attestation_ref.to_dict(),
-            },
+            source_inputs,
             timeout_seconds=180.0,
             include_session=False,
         )
@@ -265,6 +270,21 @@ class AppiumSession:
 
     def refresh_webview(self) -> None:
         self._invoke("refresh_webview", {})
+
+    def background_app(self, duration_seconds: float = 1.0) -> None:
+        duration = _positive_timeout(duration_seconds)
+        if duration > 30:
+            raise DriverError("Appium background duration exceeds 30 seconds")
+        result = self._invoke(
+            "background_app",
+            {"durationSeconds": duration},
+            timeout_seconds=duration + DEFAULT_OPERATION_TIMEOUT_SECONDS,
+        )
+        if (
+            result.get("backgrounded") is not True
+            or result.get("durationSeconds") != duration
+        ):
+            raise DriverError("Appium background response is invalid")
 
     def find_element(self, using: str, value: str) -> str:
         result = self._invoke(

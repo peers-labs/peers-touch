@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.2
-> **Created**: 2026-06-17 | **Updated**: 2026-06-17
+> **Created**: 2026-06-17 | **Updated**: 2026-09-06
 > **Owner**: Architecture Team
 
 ---
@@ -232,6 +232,39 @@ interface FutureExtensionSlots {
 | Feed Renderer | 高密度表达 identity/source/reason/audience | modern Human social UI |
 | Search View | 找人、找远端 actor | actor discovery |
 | Circle View | 发布者私有小范围关系 | audience management |
+
+### 4.1 Accepted Cross-Station Friend Request Boundary
+
+Friend Request is a Social Graph command, not a Chat message and not a client runtime
+protocol. The target flow is:
+
+```text
+Desktop/Mobile
+  -> sender Home Station /api/v1/social/friend-request/send
+  -> Social validates sender and writes command + Federation outbox atomically
+  -> shared Federation transport authenticates, retries, and deduplicates
+  -> receiver Home Station Social authority materializes PENDING
+  -> receiver accepts or rejects through /api/v1/social/*
+  -> Social commits result + return outbox atomically
+  -> both Home Stations converge relationship projections
+  -> accepted relationship permits Social to request canonical Conversation creation
+```
+
+Ownership:
+
+| Concern | Owner | Forbidden owner |
+|---|---|---|
+| Friend Request state and policy | receiver Home Station Social | Client, Conversation, Messaging |
+| Sender outgoing status | sender Home Station Social replica | UI-only optimistic state |
+| Relationship edges | each actor's Home Station Social graph | Federation transport |
+| Durable cross-Station delivery | shared Federation transport | Social-specific or Mobile-specific transport |
+| Direct Conversation | Conversation authority after accepted relationship | Friend Request repository |
+
+Required semantics include exact command replay, hash conflict rejection, bounded retry,
+receiver-owned decision, event-after-commit, and durable result return. Same-Station
+delivery invokes the same Social command receiver through a local adapter.
+
+This boundary is accepted by D-07 and AO-D05 as of 2026-09-06.
 
 ---
 

@@ -2522,7 +2522,7 @@ class NativeProductClosureGate(AcceptanceGate):
             if (
                 len(command_hashes) < 2
                 or len(set(command_hashes)) != 1
-                or int(forwarded_paths.get("/messaging/command/submit") or 0) < 1
+                or int(forwarded_paths.get("/conversation/command") or 0) < 1
             ):
                 raise GateError(
                     "reaction exact retry was not proven through the fault proxy: "

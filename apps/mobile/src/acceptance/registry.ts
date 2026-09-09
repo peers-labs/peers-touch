@@ -34,6 +34,11 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'station.select',
+    mobileAcceptanceActions['station.select'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'access.submit',
     mobileAcceptanceActions['access.submit'],
     registry,
@@ -64,8 +69,53 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'lifecycle.snapshot',
+    mobileAcceptanceActions['lifecycle.snapshot'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'lifecycle.suspend',
+    mobileAcceptanceActions['lifecycle.suspend'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'lifecycle.resume',
+    mobileAcceptanceActions['lifecycle.resume'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'lifecycle.restart',
     mobileAcceptanceActions['lifecycle.restart'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'lifecycle.scope.read',
+    mobileAcceptanceActions['lifecycle.scope.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'platform.permission.check',
+    mobileAcceptanceActions['platform.permission.check'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'platform.permission.request',
+    mobileAcceptanceActions['platform.permission.request'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'platform.permission.checkAll',
+    mobileAcceptanceActions['platform.permission.checkAll'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'platform.network.read',
+    mobileAcceptanceActions['platform.network.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'session.logout',
+    mobileAcceptanceActions['session.logout'],
     registry,
   );
   registerMobileAcceptanceAction(
@@ -76,6 +126,86 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
   registerMobileAcceptanceAction(
     'projection.read',
     mobileAcceptanceActions['projection.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'messaging.createDirect',
+    mobileAcceptanceActions['messaging.createDirect'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'messaging.createGroup',
+    mobileAcceptanceActions['messaging.createGroup'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'messaging.attachment.stage',
+    mobileAcceptanceActions['messaging.attachment.stage'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'messaging.attachment.open',
+    mobileAcceptanceActions['messaging.attachment.open'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'messaging.send',
+    mobileAcceptanceActions['messaging.send'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'messaging.interact',
+    mobileAcceptanceActions['messaging.interact'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'messaging.read',
+    mobileAcceptanceActions['messaging.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'messaging.typing',
+    mobileAcceptanceActions['messaging.typing'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'messaging.reconcile',
+    mobileAcceptanceActions['messaging.reconcile'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'messaging.command.read',
+    mobileAcceptanceActions['messaging.command.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'messaging.search',
+    mobileAcceptanceActions['messaging.search'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'messaging.projection.read',
+    mobileAcceptanceActions['messaging.projection.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'social.request.send',
+    mobileAcceptanceActions['social.request.send'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'social.request.accept',
+    mobileAcceptanceActions['social.request.accept'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'social.reconcile',
+    mobileAcceptanceActions['social.reconcile'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'social.projection.read',
+    mobileAcceptanceActions['social.projection.read'],
     registry,
   );
   registerMobileAcceptanceAction(

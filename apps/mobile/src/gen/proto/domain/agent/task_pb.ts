@@ -388,4 +388,3 @@ export type CompleteAgentSubtaskResponse = Message<"domain.agent.CompleteAgentSu
  */
 export const CompleteAgentSubtaskResponseSchema: GenMessage<CompleteAgentSubtaskResponse> = /*@__PURE__*/
   messageDesc(file_domain_agent_task, 13);
-

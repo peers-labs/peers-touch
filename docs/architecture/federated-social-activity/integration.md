@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.2
-> **Created**: 2026-06-17 | **Updated**: 2026-06-17
+> **Created**: 2026-06-17 | **Updated**: 2026-09-06
 > **Owner**: Architecture Team
 
 ---
@@ -128,3 +128,20 @@ Station block integration boundary:
 - Existing Circle 仍是发布者私有关系分组，不联邦化。
 - Existing Moments runtime 保持投影 owner，后续可重命名但不以页面 fetch 替代。
 - Agent / A2A / Applet 文档仍有效，但不作为当前阶段实现依赖。
+
+## 7. Accepted Friend Request Federation Integration
+
+The D-07 implementation boundary is cross-domain but not cross-owned:
+
+| Layer | Integration | Ownership rule |
+|---|---|---|
+| Model | typed Social Friend Request command/event and typed Federation frame | Social semantics remain separate from Chat payloads |
+| Sender Social | local validation, exact command persistence, outgoing projection, outbox insertion | no direct remote database mutation |
+| Federation | Station authentication, delivery, retry, dedup, bounded admission | no Friend Request policy or relationship mutation |
+| Receiver Social | idempotent materialization, accept/reject, relationship projection, result outbox | receiver Home Station is decision authority |
+| Conversation | create/reuse Direct only after accepted Social relationship | no Friend Request persistence |
+| Desktop/Mobile | call the same `/api/v1/social/*` API and render projection | no platform-specific protocol |
+
+The dependency and deletion contract is owned by
+`docs/architecture/api-ownership/integration.md`. AO-D01 through AO-D06 and D-07
+were accepted on 2026-09-06; implementation follows the linked execution plan.
