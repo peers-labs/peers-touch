@@ -38,6 +38,25 @@
   cleanup locator selection, cleanup action failure, and cleanup result.
 - Desktop typecheck passes. The focused runtime, coordinator, and Agent static
   suites pass 144 tests; `git diff --check` passes.
+- Exact-source Gate run
+  `20260909T141502294542Z-5a3fca9b8d25c0a8f7ac1582a5b320b7`
+  on `9a3bb6c7919feb36c080df1a1ce082db69855497` did not reproduce the
+  terminal-before-fault race. Every tuple requested and acknowledged its fault
+  boundary before terminal settlement:
+  - Browser English: request at 3107 ms, acknowledgement at 3112 ms.
+  - Browser Simplified Chinese: request at 3684 ms, acknowledgement at 3715 ms.
+  - Desktop English: request at 2636 ms, acknowledgement at 2649 ms.
+  - Desktop Simplified Chinese: request at 3829 ms, acknowledgement at 3833 ms.
+- All four AS-F06 scenario cleanups completed with the conversation deleted,
+  handoff cleared, recovery record cleared, and no cleanup error. The run
+  crossed every AS-F06 tuple and later stopped at the independent planned gap
+  `BASE-EXECUTOR-UNAVAILABLE: direct-runtime group is not implemented`.
+- Outer Provisioner cleanup completed `DONE / PROVEN / passed`, source identity
+  matched the clean deployed commit, and evidence redaction passed.
 
 ## Verification Conclusion
-Pending source-bound reproduction with branch-level timing instrumentation. No behavior change is authorized before one hypothesis is confirmed.
+The exact-source run rejected hypotheses A through D as current owner-layer
+defects: no terminal event won before the fault boundary, every cut was
+acknowledged, all recovery records remained available at the boundary, and
+every scenario cleanup completed. No behavior change is justified. Keep the
+instrumentation until explicit debug-session closure confirmation.
