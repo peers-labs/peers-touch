@@ -3,7 +3,7 @@
 > Single authoritative source for all AI coding agents.
 > `docs/.agent/<platform>.md` is the agent entry layer: use it to find the real source documents, hard constraints, and verification commands.
 >
-> Last updated: 2026-08-18
+> Last updated: 2026-09-09
 
 ---
 
@@ -348,7 +348,7 @@ Current project skills:
 |-------|---------|
 | `pt-dev-workflow` | Drive a complete development task from planning to PR |
 | `pt-god-view` | God view: explicitly invoked to show global work status, route to correct stage skill, manage work lifecycle |
-| `pt-trae-goal-orchestrator` | Select one bounded Goal Slice, reconcile live agents by identity/reachability, and build a conflict-aware TRAE execution envelope with evidence and integration ownership |
+| `pt-trae-goal-orchestrator` | Build one bounded, conflict-aware adaptive Goal queue that drains ready work, parks blockers, reconciles live agents, and preserves integration ownership |
 | `pt-acceptance-infra-engineering` | Optimize and audit Acceptance Infra while enforcing the responsibility firewall against business Domain injection |
 | `pt-acceptance-engineering` | Deterministically add, complete, upgrade, or audit Acceptance contracts, runtime scenarios, gates, and evidence |
 | `pt-acceptance-gap-detector` | Enforce "No Silent Pass" iron law — detect 25+ bypass patterns (mocks, stale evidence, single-actor, hardcoded creds, downgraded gates) before marking any claim proven |
@@ -502,10 +502,15 @@ When a user invokes `pt-god-view` (by saying "继续做" / "接着" / "看看状
    `pt-context-anchor`; execution plans do not embed an Anchor.
 4. If one entry with `stage != complete`:
    - If the user asked only for status, report the current plan, stage, step,
-     ready queue, parallel lanes, critical path, and evidence-backed ETA.
+     Ready/Parked queue, execution mode and lanes, critical path, and
+     evidence-backed ETA.
    - If the user said continue/resume, dispatch immediately to the owning stage
      skill after verification. Do not pause merely to print an Anchor or ask
      for confirmation already conveyed by the resume command.
+   - A persisted `blocked: true` row is re-audited; it remains blocked only when
+     fixed-point exhaustion still proves no legal action is ready.
+   - Before dispatch, recompute the adaptive Goal Ready/Parked frontier so a
+     newly ready action is not hidden by stale tracked state.
 5. If multiple entries with `stage != complete`:
    - Use an explicit work ID, plan, branch, worktree, or supplied Anchor to
      resolve the target.
@@ -545,6 +550,14 @@ Goal or persist a blanket no-subagent constraint.
   HEAD fields are identical. Never derive identity from a skill path or copy it
   from another worktree.
 - **Stage transition** → update `stage` + `current_step` in corresponding row.
+- **Action blocked** → record and park the action, recompute the complete
+  source-owned ready frontier, and continue other legal work. Do not set the
+  whole row `blocked: true` while a dependency-ready action, diagnostic,
+  source-backed root-cause fix, or mechanical plan amendment remains.
+- **Goal blocked** → set `blocked: true` only after a fixed-point exhaustion
+  audit proves the ready queue is empty, every remaining action is behind a
+  hard product/architecture/authorization/ownership/resource boundary, and the
+  repeated-blocker lifecycle threshold is satisfied.
 - **Session end** → update `last_session` date.
 - **Branch merged** → if all phases complete, set `stage: complete`; if subsequent phases remain, update `branch` to target branch (e.g. `main`).
 - **User explicitly closes** → set `stage: complete` regardless of plan status.

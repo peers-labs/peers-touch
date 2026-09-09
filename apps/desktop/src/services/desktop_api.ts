@@ -24,11 +24,11 @@ import type {
   SessionRevokedReason,
 } from '../kernel/events/types';
 import {
-  SendFriendRequestResponseSchema,
-  AcceptFriendRequestResponseSchema,
-  RejectFriendRequestResponseSchema,
-  ListFriendRequestsResponseSchema,
-} from '../gen/proto/domain/chat/friend_chat_pb';
+  SendSocialFriendRequestResponseSchema,
+  AcceptSocialFriendRequestResponseSchema,
+  RejectSocialFriendRequestResponseSchema,
+  ListSocialFriendRequestsResponseSchema,
+} from '../gen/proto/domain/social/relationship_pb';
 import {
   CreateGroupResponseSchema,
   GetGroupResponseSchema,
@@ -5839,22 +5839,11 @@ export const api = {
   groupChatGetStats: () =>
     invokeRustProto('group_chat_get_stats', GetGroupStatsResponseSchema),
 
-  // ── Crypto (local E2E; flat Tauri args) ──
-
-  cryptoGenerateIdentity: () =>
-    invokeAppResultStub<{ fingerprint: string; public_key: string }>('crypto_generate_identity'),
-
-  cryptoGetFingerprint: () =>
-    invokeAppResultStub<{ fingerprint: string }>('crypto_get_fingerprint'),
-
   cryptoRatchetTelemetrySnapshot: () =>
     invokeAppResultStub<{
       dr_decrypts: number;
       since_unix_ms: number;
     }>('crypto_ratchet_telemetry_snapshot'),
-
-  cryptoGetKeyBundle: () =>
-    invokeAppResultStub<CryptoKeyBundlePayload>('crypto_get_key_bundle'),
 
   keyExchangeUploadBundle: (bundle: CryptoKeyBundlePayload) =>
     invokeRustDataFromStatus<CryptoKeyBundlePayload, Record<string, unknown>>(
@@ -5892,16 +5881,16 @@ export const api = {
   // ── Friend Request (social domain) ──
 
   socialFriendRequestSend: (receiverPtid: string, message?: string) =>
-    invokeRustProto('social_friend_request_send', SendFriendRequestResponseSchema, { receiver_ptid: receiverPtid, message }),
+    invokeRustProto('social_friend_request_send', SendSocialFriendRequestResponseSchema, { receiver_ptid: receiverPtid, message }),
 
   socialFriendRequestAccept: (requestId: string) =>
-    invokeRustProto('social_friend_request_accept', AcceptFriendRequestResponseSchema, { request_id: requestId }),
+    invokeRustProto('social_friend_request_accept', AcceptSocialFriendRequestResponseSchema, { request_id: requestId }),
 
   socialFriendRequestReject: (requestId: string) =>
-    invokeRustProto('social_friend_request_reject', RejectFriendRequestResponseSchema, { request_id: requestId }),
+    invokeRustProto('social_friend_request_reject', RejectSocialFriendRequestResponseSchema, { request_id: requestId }),
 
   socialFriendRequestList: (status?: number, limit?: number, offset?: number) =>
-    invokeRustProto('social_friend_request_list', ListFriendRequestsResponseSchema, { status, limit, offset }),
+    invokeRustProto('social_friend_request_list', ListSocialFriendRequestsResponseSchema, { status, limit, offset }),
 
   // ── Notification ──
 

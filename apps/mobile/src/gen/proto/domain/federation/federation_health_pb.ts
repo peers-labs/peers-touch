@@ -116,4 +116,3 @@ export type FederationHealthView = Message<"peers_touch.model.federation.v1.Fede
  */
 export const FederationHealthViewSchema: GenMessage<FederationHealthView> = /*@__PURE__*/
   messageDesc(file_domain_federation_federation_health, 0);
-

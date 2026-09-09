@@ -22,55 +22,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type MessagingReceiptKind int32
-
-const (
-	MessagingReceiptKind_MESSAGING_RECEIPT_KIND_UNSPECIFIED     MessagingReceiptKind = 0
-	MessagingReceiptKind_MESSAGING_RECEIPT_KIND_DEVICE_CONSUMED MessagingReceiptKind = 1
-	MessagingReceiptKind_MESSAGING_RECEIPT_KIND_ACTOR_READ      MessagingReceiptKind = 2
-)
-
-// Enum value maps for MessagingReceiptKind.
-var (
-	MessagingReceiptKind_name = map[int32]string{
-		0: "MESSAGING_RECEIPT_KIND_UNSPECIFIED",
-		1: "MESSAGING_RECEIPT_KIND_DEVICE_CONSUMED",
-		2: "MESSAGING_RECEIPT_KIND_ACTOR_READ",
-	}
-	MessagingReceiptKind_value = map[string]int32{
-		"MESSAGING_RECEIPT_KIND_UNSPECIFIED":     0,
-		"MESSAGING_RECEIPT_KIND_DEVICE_CONSUMED": 1,
-		"MESSAGING_RECEIPT_KIND_ACTOR_READ":      2,
-	}
-)
-
-func (x MessagingReceiptKind) Enum() *MessagingReceiptKind {
-	p := new(MessagingReceiptKind)
-	*p = x
-	return p
-}
-
-func (x MessagingReceiptKind) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (MessagingReceiptKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_domain_chat_receipt_proto_enumTypes[0].Descriptor()
-}
-
-func (MessagingReceiptKind) Type() protoreflect.EnumType {
-	return &file_domain_chat_receipt_proto_enumTypes[0]
-}
-
-func (x MessagingReceiptKind) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use MessagingReceiptKind.Descriptor instead.
-func (MessagingReceiptKind) EnumDescriptor() ([]byte, []int) {
-	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{0}
-}
-
 type DeviceConsumptionReceipt struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ReceiptId      string                 `protobuf:"bytes,1,opt,name=receipt_id,json=receiptId,proto3" json:"receipt_id,omitempty"`
@@ -239,102 +190,6 @@ func (x *ActorReadCursor) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
-type SubmitMessagingReceiptRequest struct {
-	state          protoimpl.MessageState    `protogen:"open.v1"`
-	Kind           MessagingReceiptKind      `protobuf:"varint,1,opt,name=kind,proto3,enum=peers_touch.model.chat.v1.MessagingReceiptKind" json:"kind,omitempty"`
-	DeviceConsumed *DeviceConsumptionReceipt `protobuf:"bytes,2,opt,name=device_consumed,json=deviceConsumed,proto3" json:"device_consumed,omitempty"`
-	ActorRead      *ActorReadCursor          `protobuf:"bytes,3,opt,name=actor_read,json=actorRead,proto3" json:"actor_read,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *SubmitMessagingReceiptRequest) Reset() {
-	*x = SubmitMessagingReceiptRequest{}
-	mi := &file_domain_chat_receipt_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SubmitMessagingReceiptRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SubmitMessagingReceiptRequest) ProtoMessage() {}
-
-func (x *SubmitMessagingReceiptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_receipt_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SubmitMessagingReceiptRequest.ProtoReflect.Descriptor instead.
-func (*SubmitMessagingReceiptRequest) Descriptor() ([]byte, []int) {
-	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *SubmitMessagingReceiptRequest) GetKind() MessagingReceiptKind {
-	if x != nil {
-		return x.Kind
-	}
-	return MessagingReceiptKind_MESSAGING_RECEIPT_KIND_UNSPECIFIED
-}
-
-func (x *SubmitMessagingReceiptRequest) GetDeviceConsumed() *DeviceConsumptionReceipt {
-	if x != nil {
-		return x.DeviceConsumed
-	}
-	return nil
-}
-
-func (x *SubmitMessagingReceiptRequest) GetActorRead() *ActorReadCursor {
-	if x != nil {
-		return x.ActorRead
-	}
-	return nil
-}
-
-type SubmitMessagingReceiptResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SubmitMessagingReceiptResponse) Reset() {
-	*x = SubmitMessagingReceiptResponse{}
-	mi := &file_domain_chat_receipt_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SubmitMessagingReceiptResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SubmitMessagingReceiptResponse) ProtoMessage() {}
-
-func (x *SubmitMessagingReceiptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_receipt_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SubmitMessagingReceiptResponse.ProtoReflect.Descriptor instead.
-func (*SubmitMessagingReceiptResponse) Descriptor() ([]byte, []int) {
-	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{3}
-}
-
 type MessageDeliveryAggregate struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId      string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
@@ -352,7 +207,7 @@ type MessageDeliveryAggregate struct {
 
 func (x *MessageDeliveryAggregate) Reset() {
 	*x = MessageDeliveryAggregate{}
-	mi := &file_domain_chat_receipt_proto_msgTypes[4]
+	mi := &file_domain_chat_receipt_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -364,7 +219,7 @@ func (x *MessageDeliveryAggregate) String() string {
 func (*MessageDeliveryAggregate) ProtoMessage() {}
 
 func (x *MessageDeliveryAggregate) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_receipt_proto_msgTypes[4]
+	mi := &file_domain_chat_receipt_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -377,7 +232,7 @@ func (x *MessageDeliveryAggregate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageDeliveryAggregate.ProtoReflect.Descriptor instead.
 func (*MessageDeliveryAggregate) Descriptor() ([]byte, []int) {
-	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{4}
+	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *MessageDeliveryAggregate) GetConversationId() string {
@@ -443,6 +298,182 @@ func (x *MessageDeliveryAggregate) GetRead() bool {
 	return false
 }
 
+type SubmitConversationReadCursorRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Cursor        *ActorReadCursor       `protobuf:"bytes,1,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitConversationReadCursorRequest) Reset() {
+	*x = SubmitConversationReadCursorRequest{}
+	mi := &file_domain_chat_receipt_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitConversationReadCursorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitConversationReadCursorRequest) ProtoMessage() {}
+
+func (x *SubmitConversationReadCursorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_receipt_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitConversationReadCursorRequest.ProtoReflect.Descriptor instead.
+func (*SubmitConversationReadCursorRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SubmitConversationReadCursorRequest) GetCursor() *ActorReadCursor {
+	if x != nil {
+		return x.Cursor
+	}
+	return nil
+}
+
+type SubmitConversationReadCursorResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Cursor        *ActorReadCursor       `protobuf:"bytes,1,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitConversationReadCursorResponse) Reset() {
+	*x = SubmitConversationReadCursorResponse{}
+	mi := &file_domain_chat_receipt_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitConversationReadCursorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitConversationReadCursorResponse) ProtoMessage() {}
+
+func (x *SubmitConversationReadCursorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_receipt_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitConversationReadCursorResponse.ProtoReflect.Descriptor instead.
+func (*SubmitConversationReadCursorResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *SubmitConversationReadCursorResponse) GetCursor() *ActorReadCursor {
+	if x != nil {
+		return x.Cursor
+	}
+	return nil
+}
+
+type SubmitConversationDeliveryReceiptRequest struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Receipt       *DeviceConsumptionReceipt `protobuf:"bytes,1,opt,name=receipt,proto3" json:"receipt,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitConversationDeliveryReceiptRequest) Reset() {
+	*x = SubmitConversationDeliveryReceiptRequest{}
+	mi := &file_domain_chat_receipt_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitConversationDeliveryReceiptRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitConversationDeliveryReceiptRequest) ProtoMessage() {}
+
+func (x *SubmitConversationDeliveryReceiptRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_receipt_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitConversationDeliveryReceiptRequest.ProtoReflect.Descriptor instead.
+func (*SubmitConversationDeliveryReceiptRequest) Descriptor() ([]byte, []int) {
+	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *SubmitConversationDeliveryReceiptRequest) GetReceipt() *DeviceConsumptionReceipt {
+	if x != nil {
+		return x.Receipt
+	}
+	return nil
+}
+
+type SubmitConversationDeliveryReceiptResponse struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Delivery      *MessageDeliveryAggregate `protobuf:"bytes,1,opt,name=delivery,proto3" json:"delivery,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitConversationDeliveryReceiptResponse) Reset() {
+	*x = SubmitConversationDeliveryReceiptResponse{}
+	mi := &file_domain_chat_receipt_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitConversationDeliveryReceiptResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitConversationDeliveryReceiptResponse) ProtoMessage() {}
+
+func (x *SubmitConversationDeliveryReceiptResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_receipt_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitConversationDeliveryReceiptResponse.ProtoReflect.Descriptor instead.
+func (*SubmitConversationDeliveryReceiptResponse) Descriptor() ([]byte, []int) {
+	return file_domain_chat_receipt_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *SubmitConversationDeliveryReceiptResponse) GetDelivery() *MessageDeliveryAggregate {
+	if x != nil {
+		return x.Delivery
+	}
+	return nil
+}
+
 var File_domain_chat_receipt_proto protoreflect.FileDescriptor
 
 const file_domain_chat_receipt_proto_rawDesc = "" +
@@ -465,13 +496,7 @@ const file_domain_chat_receipt_proto_rawDesc = "" +
 	"readerPtid\x12,\n" +
 	"\x12last_read_sequence\x18\x03 \x01(\x03R\x10lastReadSequence\x129\n" +
 	"\n" +
-	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x8d\x02\n" +
-	"\x1dSubmitMessagingReceiptRequest\x12C\n" +
-	"\x04kind\x18\x01 \x01(\x0e2/.peers_touch.model.chat.v1.MessagingReceiptKindR\x04kind\x12\\\n" +
-	"\x0fdevice_consumed\x18\x02 \x01(\v23.peers_touch.model.chat.v1.DeviceConsumptionReceiptR\x0edeviceConsumed\x12I\n" +
-	"\n" +
-	"actor_read\x18\x03 \x01(\v2*.peers_touch.model.chat.v1.ActorReadCursorR\tactorRead\" \n" +
-	"\x1eSubmitMessagingReceiptResponse\"\xfa\x02\n" +
+	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xfa\x02\n" +
 	"\x18MessageDeliveryAggregate\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x19\n" +
 	"\bevent_id\x18\x02 \x01(\tR\aeventId\x12%\n" +
@@ -481,11 +506,15 @@ const file_domain_chat_receipt_proto_rawDesc = "" +
 	"\x14revoked_device_count\x18\x06 \x01(\rR\x12revokedDeviceCount\x12\x1c\n" +
 	"\tdelivered\x18\a \x01(\bR\tdelivered\x12'\n" +
 	"\x0ffully_delivered\x18\b \x01(\bR\x0efullyDelivered\x12\x12\n" +
-	"\x04read\x18\t \x01(\bR\x04read*\x91\x01\n" +
-	"\x14MessagingReceiptKind\x12&\n" +
-	"\"MESSAGING_RECEIPT_KIND_UNSPECIFIED\x10\x00\x12*\n" +
-	"&MESSAGING_RECEIPT_KIND_DEVICE_CONSUMED\x10\x01\x12%\n" +
-	"!MESSAGING_RECEIPT_KIND_ACTOR_READ\x10\x02BGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/chat;chatb\x06proto3"
+	"\x04read\x18\t \x01(\bR\x04read\"i\n" +
+	"#SubmitConversationReadCursorRequest\x12B\n" +
+	"\x06cursor\x18\x01 \x01(\v2*.peers_touch.model.chat.v1.ActorReadCursorR\x06cursor\"j\n" +
+	"$SubmitConversationReadCursorResponse\x12B\n" +
+	"\x06cursor\x18\x01 \x01(\v2*.peers_touch.model.chat.v1.ActorReadCursorR\x06cursor\"y\n" +
+	"(SubmitConversationDeliveryReceiptRequest\x12M\n" +
+	"\areceipt\x18\x01 \x01(\v23.peers_touch.model.chat.v1.DeviceConsumptionReceiptR\areceipt\"|\n" +
+	")SubmitConversationDeliveryReceiptResponse\x12O\n" +
+	"\bdelivery\x18\x01 \x01(\v23.peers_touch.model.chat.v1.MessageDeliveryAggregateR\bdeliveryBGZEgithub.com/peers-labs/peers-touch/station/frame/touch/model/chat;chatb\x06proto3"
 
 var (
 	file_domain_chat_receipt_proto_rawDescOnce sync.Once
@@ -499,30 +528,31 @@ func file_domain_chat_receipt_proto_rawDescGZIP() []byte {
 	return file_domain_chat_receipt_proto_rawDescData
 }
 
-var file_domain_chat_receipt_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_chat_receipt_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_domain_chat_receipt_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_domain_chat_receipt_proto_goTypes = []any{
-	(MessagingReceiptKind)(0),              // 0: peers_touch.model.chat.v1.MessagingReceiptKind
-	(*DeviceConsumptionReceipt)(nil),       // 1: peers_touch.model.chat.v1.DeviceConsumptionReceipt
-	(*ActorReadCursor)(nil),                // 2: peers_touch.model.chat.v1.ActorReadCursor
-	(*SubmitMessagingReceiptRequest)(nil),  // 3: peers_touch.model.chat.v1.SubmitMessagingReceiptRequest
-	(*SubmitMessagingReceiptResponse)(nil), // 4: peers_touch.model.chat.v1.SubmitMessagingReceiptResponse
-	(*MessageDeliveryAggregate)(nil),       // 5: peers_touch.model.chat.v1.MessageDeliveryAggregate
-	(*CryptoEndpoint)(nil),                 // 6: peers_touch.model.chat.v1.CryptoEndpoint
-	(*timestamppb.Timestamp)(nil),          // 7: google.protobuf.Timestamp
+	(*DeviceConsumptionReceipt)(nil),                  // 0: peers_touch.model.chat.v1.DeviceConsumptionReceipt
+	(*ActorReadCursor)(nil),                           // 1: peers_touch.model.chat.v1.ActorReadCursor
+	(*MessageDeliveryAggregate)(nil),                  // 2: peers_touch.model.chat.v1.MessageDeliveryAggregate
+	(*SubmitConversationReadCursorRequest)(nil),       // 3: peers_touch.model.chat.v1.SubmitConversationReadCursorRequest
+	(*SubmitConversationReadCursorResponse)(nil),      // 4: peers_touch.model.chat.v1.SubmitConversationReadCursorResponse
+	(*SubmitConversationDeliveryReceiptRequest)(nil),  // 5: peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptRequest
+	(*SubmitConversationDeliveryReceiptResponse)(nil), // 6: peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptResponse
+	(*CryptoEndpoint)(nil),                            // 7: peers_touch.model.chat.v1.CryptoEndpoint
+	(*timestamppb.Timestamp)(nil),                     // 8: google.protobuf.Timestamp
 }
 var file_domain_chat_receipt_proto_depIdxs = []int32{
-	6, // 0: peers_touch.model.chat.v1.DeviceConsumptionReceipt.consumer:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	7, // 1: peers_touch.model.chat.v1.DeviceConsumptionReceipt.consumed_at:type_name -> google.protobuf.Timestamp
-	7, // 2: peers_touch.model.chat.v1.ActorReadCursor.updated_at:type_name -> google.protobuf.Timestamp
-	0, // 3: peers_touch.model.chat.v1.SubmitMessagingReceiptRequest.kind:type_name -> peers_touch.model.chat.v1.MessagingReceiptKind
-	1, // 4: peers_touch.model.chat.v1.SubmitMessagingReceiptRequest.device_consumed:type_name -> peers_touch.model.chat.v1.DeviceConsumptionReceipt
-	2, // 5: peers_touch.model.chat.v1.SubmitMessagingReceiptRequest.actor_read:type_name -> peers_touch.model.chat.v1.ActorReadCursor
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	7, // 0: peers_touch.model.chat.v1.DeviceConsumptionReceipt.consumer:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	8, // 1: peers_touch.model.chat.v1.DeviceConsumptionReceipt.consumed_at:type_name -> google.protobuf.Timestamp
+	8, // 2: peers_touch.model.chat.v1.ActorReadCursor.updated_at:type_name -> google.protobuf.Timestamp
+	1, // 3: peers_touch.model.chat.v1.SubmitConversationReadCursorRequest.cursor:type_name -> peers_touch.model.chat.v1.ActorReadCursor
+	1, // 4: peers_touch.model.chat.v1.SubmitConversationReadCursorResponse.cursor:type_name -> peers_touch.model.chat.v1.ActorReadCursor
+	0, // 5: peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptRequest.receipt:type_name -> peers_touch.model.chat.v1.DeviceConsumptionReceipt
+	2, // 6: peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptResponse.delivery:type_name -> peers_touch.model.chat.v1.MessageDeliveryAggregate
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_receipt_proto_init() }
@@ -536,14 +566,13 @@ func file_domain_chat_receipt_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_receipt_proto_rawDesc), len(file_domain_chat_receipt_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   5,
+			NumEnums:      0,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_domain_chat_receipt_proto_goTypes,
 		DependencyIndexes: file_domain_chat_receipt_proto_depIdxs,
-		EnumInfos:         file_domain_chat_receipt_proto_enumTypes,
 		MessageInfos:      file_domain_chat_receipt_proto_msgTypes,
 	}.Build()
 	File_domain_chat_receipt_proto = out.File

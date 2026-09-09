@@ -50,7 +50,7 @@ pub fn try_enroll_device_once(
         Ok(None) => Ok(()),
         Ok(Some(device)) => {
             tracing::info!(
-                device_id = %device.endpoint.as_ref().map(|e| e.device_id.as_str()).unwrap_or("?"),
+                device_id = %device.r#ref.as_ref().map(|reference| reference.device_id.as_str()).unwrap_or("?"),
                 signing_key_id = %device.signing_key_id,
                 "device identity enrolled successfully"
             );
@@ -84,7 +84,7 @@ pub fn ensure_device_enrolled(
             }
             Ok(Some(device)) => {
                 tracing::info!(
-                    device_id = %device.endpoint.as_ref().map(|e| e.device_id.as_str()).unwrap_or("?"),
+                    device_id = %device.r#ref.as_ref().map(|reference| reference.device_id.as_str()).unwrap_or("?"),
                     signing_key_id = %device.signing_key_id,
                     "device identity enrolled successfully"
                 );

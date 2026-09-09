@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/chat/envelope.proto.
  */
 export const file_domain_chat_envelope: GenFile = /*@__PURE__*/
-  fileDesc("Chpkb21haW4vY2hhdC9lbnZlbG9wZS5wcm90bxIZcGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MSKYBgoPU3RhdGlvbkVudmVsb3BlEhMKC2VudmVsb3BlX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRITCgtzZW5kZXJfcHRpZBgDIAEoCRIYChBzZW5kZXJfZGV2aWNlX2lkGAQgASgJEiMKG3NlbmRlcl9ob21lX3N0YXRpb25fcGVlcl9pZBgFIAEoCRIWCg5yZWNpcGllbnRfcHRpZBgGIAEoCRIbChNyZWNpcGllbnRfZGV2aWNlX2lkGAcgASgJEiYKHnJlY2lwaWVudF9ob21lX3N0YXRpb25fcGVlcl9pZBgIIAEoCRIXCg9pZGVtcG90ZW5jeV9rZXkYCSABKAkSGAoQbWVtYmVyc2hpcF9lcG9jaBgKIAEoAxJECgxwYXlsb2FkX3R5cGUYCyABKA4yLi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkVudmVsb3BlUGF5bG9hZFR5cGUSFQoNcGF5bG9hZF9ieXRlcxgMIAEoDBIYChBzZW5kZXJfc2lnbmF0dXJlGA0gASgMEh4KFmhvbWVfc3RhdGlvbl9zaWduYXR1cmUYDiABKAwSLQoJaXNzdWVkX2F0GA8gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GBAgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglncm91cF9zZXEYESABKAMSFQoNdHJhbnNpdGlvbl9pZBgSIAEoCRIdChVmcm9tX21lbWJlcnNoaXBfZXBvY2gYEyABKAMSGwoTdG9fbWVtYmVyc2hpcF9lcG9jaBgUIAEoAxIWCg5mcm9tX21sc19lcG9jaBgVIAEoAxIUCgx0b19tbHNfZXBvY2gYFiABKAMSFgoOcGF5bG9hZF9zaGEyNTYYFyABKAwSIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgYIAEoCRIVCg1mZWRlcmF0aW9uX2lkGBkgASgJEhcKD2F1dGhvcml0eV9lcG9jaBgaIAEoAyKOAwoPRGV2aWNlSW5ib3hJdGVtEhUKDWluYm94X2l0ZW1faWQYASABKAkSFgoOcmVjaXBpZW50X3B0aWQYAiABKAkSGwoTcmVjaXBpZW50X2RldmljZV9pZBgDIAEoCRI8CghlbnZlbG9wZRgEIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuU3RhdGlvbkVudmVsb3BlEjoKBnN0YXR1cxgFIAEoDjIqLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuSW5ib3hJdGVtU3RhdHVzEhkKEWRlbGl2ZXJ5X2F0dGVtcHRzGAYgASgFEjMKD2ZpcnN0X3F1ZXVlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoPbGFzdF9hdHRlbXB0X2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxkZWxpdmVyZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIoIDCgpPdXRib3hJdGVtEhYKDm91dGJveF9pdGVtX2lkGAEgASgJEh4KFnRhcmdldF9zdGF0aW9uX3BlZXJfaWQYAiABKAkSPAoIZW52ZWxvcGUYAyABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlN0YXRpb25FbnZlbG9wZRI7CgZzdGF0dXMYBCABKA4yKy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk91dGJveEl0ZW1TdGF0dXMSEwoLcmV0cnlfY291bnQYBSABKAUSMwoPZmlyc3RfcXVldWVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1uZXh0X3JldHJ5X2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxkZWxpdmVyZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCmxhc3RfZXJyb3IYCSABKAkiwQIKHE1sc1RyYW5zaXRpb25EZWxpdmVyeVBheWxvYWQSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEhUKDXRyYW5zaXRpb25faWQYAiABKAkSEQoJZ3JvdXBfc2VxGAMgASgDEh0KFWZyb21fbWVtYmVyc2hpcF9lcG9jaBgEIAEoAxIbChN0b19tZW1iZXJzaGlwX2Vwb2NoGAUgASgDEhYKDmZyb21fbWxzX2Vwb2NoGAYgASgDEhQKDHRvX21sc19lcG9jaBgHIAEoAxJCCgRraW5kGAggASgOMjQucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5NbHNUcmFuc2l0aW9uRGVsaXZlcnlLaW5kEhgKEG9wYXF1ZV9tbHNfYnl0ZXMYCSABKAwSFgoOcGF5bG9hZF9zaGEyNTYYCiABKAwiiwEKGERpcmVjdEtleUV4Y2hhbmdlUGF5bG9hZBISCgpzZXNzaW9uX2lkGAEgASgJEj4KBGtpbmQYAiABKA4yMC5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkRpcmVjdEtleUV4Y2hhbmdlS2luZBIbChNvcGFxdWVfa2V5X21hdGVyaWFsGAMgASgMKu8CChNFbnZlbG9wZVBheWxvYWRUeXBlEiUKIUVOVkVMT1BFX1BBWUxPQURfVFlQRV9VTlNQRUNJRklFRBAAEikKJUVOVkVMT1BFX1BBWUxPQURfVFlQRV9DT01NSVRURURfRVZFTlQQARIxCi1FTlZFTE9QRV9QQVlMT0FEX1RZUEVfTUxTX1RSQU5TSVRJT05fREVMSVZFUlkQAhItCilFTlZFTE9QRV9QQVlMT0FEX1RZUEVfRElSRUNUX0tFWV9FWENIQU5HRRADEiEKHUVOVkVMT1BFX1BBWUxPQURfVFlQRV9SRUNFSVBUEAQSIAocRU5WRUxPUEVfUEFZTE9BRF9UWVBFX1RZUElORxAFEigKJEVOVkVMT1BFX1BBWUxPQURfVFlQRV9DQUxMX1NJR05BTElORxAGEjUKMUVOVkVMT1BFX1BBWUxPQURfVFlQRV9DT05WRVJTQVRJT05fQ09NTUFORF9SRVNVTFQQByq0AQoPSW5ib3hJdGVtU3RhdHVzEiEKHUlOQk9YX0lURU1fU1RBVFVTX1VOU1BFQ0lGSUVEEAASHQoZSU5CT1hfSVRFTV9TVEFUVVNfUEVORElORxABEh8KG0lOQk9YX0lURU1fU1RBVFVTX0RFTElWRVJFRBACEhsKF0lOQk9YX0lURU1fU1RBVFVTX0FDS0VEEAMSIQodSU5CT1hfSVRFTV9TVEFUVVNfREVBRF9MRVRURVIQBCq+AQoQT3V0Ym94SXRlbVN0YXR1cxIiCh5PVVRCT1hfSVRFTV9TVEFUVVNfVU5TUEVDSUZJRUQQABIeChpPVVRCT1hfSVRFTV9TVEFUVVNfUEVORElORxABEiAKHE9VVEJPWF9JVEVNX1NUQVRVU19JTl9GTElHSFQQAhIgChxPVVRCT1hfSVRFTV9TVEFUVVNfREVMSVZFUkVEEAMSIgoeT1VUQk9YX0lURU1fU1RBVFVTX0RFQURfTEVUVEVSEAQqnAEKGU1sc1RyYW5zaXRpb25EZWxpdmVyeUtpbmQSLAooTUxTX1RSQU5TSVRJT05fREVMSVZFUllfS0lORF9VTlNQRUNJRklFRBAAEicKI01MU19UUkFOU0lUSU9OX0RFTElWRVJZX0tJTkRfQ09NTUlUEAESKAokTUxTX1RSQU5TSVRJT05fREVMSVZFUllfS0lORF9XRUxDT01FEAIqzAEKFURpcmVjdEtleUV4Y2hhbmdlS2luZBIoCiRESVJFQ1RfS0VZX0VYQ0hBTkdFX0tJTkRfVU5TUEVDSUZJRUQQABIqCiZESVJFQ1RfS0VZX0VYQ0hBTkdFX0tJTkRfUFJFS0VZX0JVTkRMRRABEiwKKERJUkVDVF9LRVlfRVhDSEFOR0VfS0lORF9JTklUSUFMX01FU1NBR0UQAhIvCitESVJFQ1RfS0VZX0VYQ0hBTkdFX0tJTkRfUkFUQ0hFVF9LRVlfVVBEQVRFEANCR1pFZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvY2hhdDtjaGF0YgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("Chpkb21haW4vY2hhdC9lbnZlbG9wZS5wcm90bxIZcGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MSKYBgoPU3RhdGlvbkVudmVsb3BlEhMKC2VudmVsb3BlX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRITCgtzZW5kZXJfcHRpZBgDIAEoCRIYChBzZW5kZXJfZGV2aWNlX2lkGAQgASgJEiMKG3NlbmRlcl9ob21lX3N0YXRpb25fcGVlcl9pZBgFIAEoCRIWCg5yZWNpcGllbnRfcHRpZBgGIAEoCRIbChNyZWNpcGllbnRfZGV2aWNlX2lkGAcgASgJEiYKHnJlY2lwaWVudF9ob21lX3N0YXRpb25fcGVlcl9pZBgIIAEoCRIXCg9pZGVtcG90ZW5jeV9rZXkYCSABKAkSGAoQbWVtYmVyc2hpcF9lcG9jaBgKIAEoAxJECgxwYXlsb2FkX3R5cGUYCyABKA4yLi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkVudmVsb3BlUGF5bG9hZFR5cGUSFQoNcGF5bG9hZF9ieXRlcxgMIAEoDBIYChBzZW5kZXJfc2lnbmF0dXJlGA0gASgMEh4KFmhvbWVfc3RhdGlvbl9zaWduYXR1cmUYDiABKAwSLQoJaXNzdWVkX2F0GA8gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GBAgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglncm91cF9zZXEYESABKAMSFQoNdHJhbnNpdGlvbl9pZBgSIAEoCRIdChVmcm9tX21lbWJlcnNoaXBfZXBvY2gYEyABKAMSGwoTdG9fbWVtYmVyc2hpcF9lcG9jaBgUIAEoAxIWCg5mcm9tX21sc19lcG9jaBgVIAEoAxIUCgx0b19tbHNfZXBvY2gYFiABKAMSFgoOcGF5bG9hZF9zaGEyNTYYFyABKAwSIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgYIAEoCRIVCg1mZWRlcmF0aW9uX2lkGBkgASgJEhcKD2F1dGhvcml0eV9lcG9jaBgaIAEoAyKCAwoKT3V0Ym94SXRlbRIWCg5vdXRib3hfaXRlbV9pZBgBIAEoCRIeChZ0YXJnZXRfc3RhdGlvbl9wZWVyX2lkGAIgASgJEjwKCGVudmVsb3BlGAMgASgLMioucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5TdGF0aW9uRW52ZWxvcGUSOwoGc3RhdHVzGAQgASgOMisucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5PdXRib3hJdGVtU3RhdHVzEhMKC3JldHJ5X2NvdW50GAUgASgFEjMKD2ZpcnN0X3F1ZXVlZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMQoNbmV4dF9yZXRyeV9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMZGVsaXZlcmVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpsYXN0X2Vycm9yGAkgASgJIsECChxNbHNUcmFuc2l0aW9uRGVsaXZlcnlQYXlsb2FkEhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIVCg10cmFuc2l0aW9uX2lkGAIgASgJEhEKCWdyb3VwX3NlcRgDIAEoAxIdChVmcm9tX21lbWJlcnNoaXBfZXBvY2gYBCABKAMSGwoTdG9fbWVtYmVyc2hpcF9lcG9jaBgFIAEoAxIWCg5mcm9tX21sc19lcG9jaBgGIAEoAxIUCgx0b19tbHNfZXBvY2gYByABKAMSQgoEa2luZBgIIAEoDjI0LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuTWxzVHJhbnNpdGlvbkRlbGl2ZXJ5S2luZBIYChBvcGFxdWVfbWxzX2J5dGVzGAkgASgMEhYKDnBheWxvYWRfc2hhMjU2GAogASgMIosBChhEaXJlY3RLZXlFeGNoYW5nZVBheWxvYWQSEgoKc2Vzc2lvbl9pZBgBIAEoCRI+CgRraW5kGAIgASgOMjAucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5EaXJlY3RLZXlFeGNoYW5nZUtpbmQSGwoTb3BhcXVlX2tleV9tYXRlcmlhbBgDIAEoDCrvAgoTRW52ZWxvcGVQYXlsb2FkVHlwZRIlCiFFTlZFTE9QRV9QQVlMT0FEX1RZUEVfVU5TUEVDSUZJRUQQABIpCiVFTlZFTE9QRV9QQVlMT0FEX1RZUEVfQ09NTUlUVEVEX0VWRU5UEAESMQotRU5WRUxPUEVfUEFZTE9BRF9UWVBFX01MU19UUkFOU0lUSU9OX0RFTElWRVJZEAISLQopRU5WRUxPUEVfUEFZTE9BRF9UWVBFX0RJUkVDVF9LRVlfRVhDSEFOR0UQAxIhCh1FTlZFTE9QRV9QQVlMT0FEX1RZUEVfUkVDRUlQVBAEEiAKHEVOVkVMT1BFX1BBWUxPQURfVFlQRV9UWVBJTkcQBRIoCiRFTlZFTE9QRV9QQVlMT0FEX1RZUEVfQ0FMTF9TSUdOQUxJTkcQBhI1CjFFTlZFTE9QRV9QQVlMT0FEX1RZUEVfQ09OVkVSU0FUSU9OX0NPTU1BTkRfUkVTVUxUEAcqvgEKEE91dGJveEl0ZW1TdGF0dXMSIgoeT1VUQk9YX0lURU1fU1RBVFVTX1VOU1BFQ0lGSUVEEAASHgoaT1VUQk9YX0lURU1fU1RBVFVTX1BFTkRJTkcQARIgChxPVVRCT1hfSVRFTV9TVEFUVVNfSU5fRkxJR0hUEAISIAocT1VUQk9YX0lURU1fU1RBVFVTX0RFTElWRVJFRBADEiIKHk9VVEJPWF9JVEVNX1NUQVRVU19ERUFEX0xFVFRFUhAEKpwBChlNbHNUcmFuc2l0aW9uRGVsaXZlcnlLaW5kEiwKKE1MU19UUkFOU0lUSU9OX0RFTElWRVJZX0tJTkRfVU5TUEVDSUZJRUQQABInCiNNTFNfVFJBTlNJVElPTl9ERUxJVkVSWV9LSU5EX0NPTU1JVBABEigKJE1MU19UUkFOU0lUSU9OX0RFTElWRVJZX0tJTkRfV0VMQ09NRRACKswBChVEaXJlY3RLZXlFeGNoYW5nZUtpbmQSKAokRElSRUNUX0tFWV9FWENIQU5HRV9LSU5EX1VOU1BFQ0lGSUVEEAASKgomRElSRUNUX0tFWV9FWENIQU5HRV9LSU5EX1BSRUtFWV9CVU5ETEUQARIsCihESVJFQ1RfS0VZX0VYQ0hBTkdFX0tJTkRfSU5JVElBTF9NRVNTQUdFEAISLworRElSRUNUX0tFWV9FWENIQU5HRV9LSU5EX1JBVENIRVRfS0VZX1VQREFURRADQkdaRWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL2NoYXQ7Y2hhdGIGcHJvdG8z", [file_google_protobuf_timestamp]);
 
 /**
  * StationEnvelope is the wire unit for all chat signaling between Stations
@@ -173,65 +173,6 @@ export const StationEnvelopeSchema: GenMessage<StationEnvelope> = /*@__PURE__*/
   messageDesc(file_domain_chat_envelope, 0);
 
 /**
- * Per-device durable inbox entry. Station persists these until ACK'd.
- *
- * @generated from message peers_touch.model.chat.v1.DeviceInboxItem
- */
-export type DeviceInboxItem = Message<"peers_touch.model.chat.v1.DeviceInboxItem"> & {
-  /**
-   * @generated from field: string inbox_item_id = 1;
-   */
-  inboxItemId: string;
-
-  /**
-   * @generated from field: string recipient_ptid = 2;
-   */
-  recipientPtid: string;
-
-  /**
-   * @generated from field: string recipient_device_id = 3;
-   */
-  recipientDeviceId: string;
-
-  /**
-   * @generated from field: peers_touch.model.chat.v1.StationEnvelope envelope = 4;
-   */
-  envelope?: StationEnvelope | undefined;
-
-  /**
-   * @generated from field: peers_touch.model.chat.v1.InboxItemStatus status = 5;
-   */
-  status: InboxItemStatus;
-
-  /**
-   * @generated from field: int32 delivery_attempts = 6;
-   */
-  deliveryAttempts: number;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp first_queued_at = 7;
-   */
-  firstQueuedAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp last_attempt_at = 8;
-   */
-  lastAttemptAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp delivered_at = 9;
-   */
-  deliveredAt?: Timestamp | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.DeviceInboxItem.
- * Use `create(DeviceInboxItemSchema)` to create a new message.
- */
-export const DeviceInboxItemSchema: GenMessage<DeviceInboxItem> = /*@__PURE__*/
-  messageDesc(file_domain_chat_envelope, 1);
-
-/**
  * Per-Station durable outbox entry for cross-Station federation delivery.
  *
  * @generated from message peers_touch.model.chat.v1.OutboxItem
@@ -288,7 +229,7 @@ export type OutboxItem = Message<"peers_touch.model.chat.v1.OutboxItem"> & {
  * Use `create(OutboxItemSchema)` to create a new message.
  */
 export const OutboxItemSchema: GenMessage<OutboxItem> = /*@__PURE__*/
-  messageDesc(file_domain_chat_envelope, 2);
+  messageDesc(file_domain_chat_envelope, 1);
 
 /**
  * Opaque MLS Commit/Welcome material carried inside a StationEnvelope with
@@ -354,7 +295,7 @@ export type MlsTransitionDeliveryPayload = Message<"peers_touch.model.chat.v1.Ml
  * Use `create(MlsTransitionDeliveryPayloadSchema)` to create a new message.
  */
 export const MlsTransitionDeliveryPayloadSchema: GenMessage<MlsTransitionDeliveryPayload> = /*@__PURE__*/
-  messageDesc(file_domain_chat_envelope, 3);
+  messageDesc(file_domain_chat_envelope, 2);
 
 /**
  * X3DH initial key exchange material carried inside a StationEnvelope
@@ -384,7 +325,7 @@ export type DirectKeyExchangePayload = Message<"peers_touch.model.chat.v1.Direct
  * Use `create(DirectKeyExchangePayloadSchema)` to create a new message.
  */
 export const DirectKeyExchangePayloadSchema: GenMessage<DirectKeyExchangePayload> = /*@__PURE__*/
-  messageDesc(file_domain_chat_envelope, 4);
+  messageDesc(file_domain_chat_envelope, 3);
 
 /**
  * Typed QoS: each type has different persistence and delivery guarantees.
@@ -454,42 +395,6 @@ export const EnvelopePayloadTypeSchema: GenEnum<EnvelopePayloadType> = /*@__PURE
   enumDesc(file_domain_chat_envelope, 0);
 
 /**
- * @generated from enum peers_touch.model.chat.v1.InboxItemStatus
- */
-export enum InboxItemStatus {
-  /**
-   * @generated from enum value: INBOX_ITEM_STATUS_UNSPECIFIED = 0;
-   */
-  UNSPECIFIED = 0,
-
-  /**
-   * @generated from enum value: INBOX_ITEM_STATUS_PENDING = 1;
-   */
-  PENDING = 1,
-
-  /**
-   * @generated from enum value: INBOX_ITEM_STATUS_DELIVERED = 2;
-   */
-  DELIVERED = 2,
-
-  /**
-   * @generated from enum value: INBOX_ITEM_STATUS_ACKED = 3;
-   */
-  ACKED = 3,
-
-  /**
-   * @generated from enum value: INBOX_ITEM_STATUS_DEAD_LETTER = 4;
-   */
-  DEAD_LETTER = 4,
-}
-
-/**
- * Describes the enum peers_touch.model.chat.v1.InboxItemStatus.
- */
-export const InboxItemStatusSchema: GenEnum<InboxItemStatus> = /*@__PURE__*/
-  enumDesc(file_domain_chat_envelope, 1);
-
-/**
  * @generated from enum peers_touch.model.chat.v1.OutboxItemStatus
  */
 export enum OutboxItemStatus {
@@ -523,7 +428,7 @@ export enum OutboxItemStatus {
  * Describes the enum peers_touch.model.chat.v1.OutboxItemStatus.
  */
 export const OutboxItemStatusSchema: GenEnum<OutboxItemStatus> = /*@__PURE__*/
-  enumDesc(file_domain_chat_envelope, 2);
+  enumDesc(file_domain_chat_envelope, 1);
 
 /**
  * @generated from enum peers_touch.model.chat.v1.MlsTransitionDeliveryKind
@@ -549,7 +454,7 @@ export enum MlsTransitionDeliveryKind {
  * Describes the enum peers_touch.model.chat.v1.MlsTransitionDeliveryKind.
  */
 export const MlsTransitionDeliveryKindSchema: GenEnum<MlsTransitionDeliveryKind> = /*@__PURE__*/
-  enumDesc(file_domain_chat_envelope, 3);
+  enumDesc(file_domain_chat_envelope, 2);
 
 /**
  * @generated from enum peers_touch.model.chat.v1.DirectKeyExchangeKind
@@ -580,5 +485,4 @@ export enum DirectKeyExchangeKind {
  * Describes the enum peers_touch.model.chat.v1.DirectKeyExchangeKind.
  */
 export const DirectKeyExchangeKindSchema: GenEnum<DirectKeyExchangeKind> = /*@__PURE__*/
-  enumDesc(file_domain_chat_envelope, 4);
-
+  enumDesc(file_domain_chat_envelope, 3);

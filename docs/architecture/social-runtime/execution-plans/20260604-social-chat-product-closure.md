@@ -1,6 +1,13 @@
 # Social / Chat Product Closure Plan
 
-> **Status**: active execution plan  
+> **Status: SUPERSEDED / HISTORICAL — DO NOT EXECUTE**
+>
+> Superseded by
+> `docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md`.
+> The routes, ownership assignments, phases, prompts, and checklists below are
+> retained only as historical context. They have no current execution authority
+> and are not alternatives to Conversation and resource-owned APIs.
+>
 > **Version**: v0.1  
 > **Created**: 2026-06-04  
 > **Owner**: Social Runtime / Chat Productization  

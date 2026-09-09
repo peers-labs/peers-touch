@@ -1,6 +1,14 @@
 # Mobile Social Runtime Closure
 
-> Status: active implementation plan
+> **Status: SUPERSEDED / HISTORICAL — DO NOT EXECUTE**
+>
+> Superseded by
+> `docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md`
+> and the active Mobile shell plan. The routes, ownership model, commands,
+> checklists, and remaining-work statements below are preserved only as a
+> historical record. They are not current implementation guidance or an
+> alternative to Conversation and resource-owned APIs.
+>
 > Date: 2026-06-03
 > Scope: `apps/mobile/src/features/social`, `apps/mobile/src/components`, `apps/mobile/src/pages`, Station social/chat/notification APIs
 
