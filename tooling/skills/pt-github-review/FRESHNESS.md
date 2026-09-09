@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-09
-covered_docs_hash: fac9ebadad12925bc7b203c3d07ee87d9734b3f35971dd2649608d0ff7e6f57e
+covered_docs_hash: 39924c7255ee4c27295069d8c7f57d34441b92e65f9a6eb5b8d04cc84d555b90
 
 covered_docs:
   - AGENTS.md
@@ -134,3 +134,16 @@ through bounded `argv` launch, retain the catalog timeout, and remove the old
 Gate-owned `make desktop` process path rather than adding a fallback. Existing
 Driver and launch-context regressions cover the generic lifecycle contract; no
 new review workflow or golden fixture is required.
+
+Execution governance now requires an explicit concurrency decision for every
+implementation slice. Review must reject parallelism without dependency,
+write-set, generated-output, shared-resource, verification, and integration
+analysis; it must also reject unexplained serialization, stale-agent metadata
+promoted to a blanket spawn ban, overlapping write sets, or missing integrator
+reconciliation. Context Anchors now expose completed delta, ready queue,
+execution mode and lanes, conflict controls, critical path, and an
+evidence-backed ETA or `unknown`; resume synchronization must not interrupt
+already-authorized execution. These changes update review behavior directly,
+so `pt-github-review/SKILL.md` was updated; no new golden fixture is required
+because `review/skill-check.sh` enforces the canonical Skill, Goal template,
+Goal rubric, and Anchor markers directly.
