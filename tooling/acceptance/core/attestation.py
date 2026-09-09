@@ -2,15 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shlex
 import subprocess
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
-
-from tooling.acceptance.transports.ssh import SshTarget, SshTransport
 
 from ._paths import REPO_ROOT
 from .errors import BlockedError, ProvisioningError
@@ -24,6 +22,7 @@ from .provisioning import ServiceAttestation, utc_now
 _GENERATED_COVERAGE_REPORT = (
     "docs/architecture/acceptance-framework/coverage-report.md"
 )
+RemoteSourceIdentityProvider = Callable[[str], tuple[str, str, str]]
 
 
 def commits_match(actual: str, expected: str) -> bool:
@@ -167,96 +166,6 @@ def read_service_runtime_identity(service_url: str) -> str:
     return peer_id
 
 
-def _load_env(path: Path) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip("'\"")
-    return values
-
-
-def _remote_source_identity(deploy_environment: str) -> tuple[str, str, str]:
-    environment_path = (
-        REPO_ROOT / ".local" / "deploy" / "envs" / f"{deploy_environment}.env"
-    )
-    if not environment_path.is_file():
-        raise BlockedError(
-            reason=f"Station deployment environment is missing: {environment_path}",
-            resource=f"station-deployment:{deploy_environment}",
-        )
-    environment = _load_env(environment_path)
-    host = environment.get("PT_DEPLOY_HOST", "")
-    user = environment.get("PT_DEPLOY_USER", "")
-    deploy_path = environment.get("PT_DEPLOY_PATH", "")
-    if not host or not user or not deploy_path:
-        raise BlockedError(
-            reason=(
-                f"Station deployment environment {deploy_environment} must define "
-                "PT_DEPLOY_HOST, PT_DEPLOY_USER, and PT_DEPLOY_PATH"
-            ),
-            resource=f"station-deployment:{deploy_environment}",
-        )
-    known_hosts_file = environment.get("PT_DEPLOY_KNOWN_HOSTS_FILE", "")
-    try:
-        if not known_hosts_file:
-            raise ProvisioningError(
-                "SSH known-hosts file is required for remote attestation"
-            )
-        target = SshTarget(
-            host=host,
-            user=user,
-            port=int(environment.get("PT_DEPLOY_SSH_PORT", "22")),
-            known_hosts_file=known_hosts_file,
-        )
-        transport = SshTransport(target, connect_timeout=10)
-    except (ProvisioningError, ValueError) as error:
-        raise BlockedError(
-            reason=f"SSH contract is invalid: {error}",
-            resource=f"station-deployment:{deploy_environment}",
-        ) from error
-
-    digest_script = (
-        "import hashlib,pathlib,subprocess;"
-        "r=pathlib.Path('.').resolve();"
-        "raw=subprocess.check_output(['git','ls-files','-z','--',"
-        "'model/domain','apps/desktop/src/gen/proto','apps/station'],cwd=r);"
-        "p=[r/x.decode() for x in raw.split(b'\\0') if x and "
-        "(x.endswith(b'.proto') or x.endswith(b'.ts') or "
-        "x.endswith(b'.pb.go'))];"
-        "h=hashlib.sha256();"
-        "[(h.update(x.relative_to(r).as_posix().encode()),h.update(b'\\0'),"
-        "h.update(x.read_bytes()),h.update(b'\\0')) for x in "
-        "sorted(p,key=lambda x:x.relative_to(r).as_posix())];"
-        "print(h.hexdigest())"
-    )
-    remote_command = (
-        f"cd \"$HOME\"/{shlex.quote(deploy_path)} && "
-        "printf '%s\\n' \"$(git rev-parse HEAD)\" && "
-        "status=\"$(git status --porcelain | "
-        "sed '/^?? \\.bare\\.git\\/$/d')\" && "
-        "if test -z \"$status\"; then echo clean; else echo dirty; fi && "
-        f"python3 -c {shlex.quote(digest_script)}"
-    )
-    completed = transport.run_argv(
-        ["bash", "-lc", remote_command],
-        timeout=30,
-        check=False,
-    )
-    lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
-    if completed.returncode != 0 or len(lines) < 3:
-        detail = completed.stderr.strip() or completed.stdout.strip() or "no output"
-        raise BlockedError(
-            reason=(
-                f"Cannot attest Station deployment {deploy_environment}: {detail}"
-            ),
-            resource=f"station-deployment:{deploy_environment}",
-        )
-    return lines[-3], lines[-2], lines[-1]
-
-
 def _local_source_identity() -> tuple[str, str, str]:
     commit = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -283,6 +192,7 @@ def produce_station_attestation(
     station_url: str,
     profile_env: dict[str, str],
     require_runtime_identity: bool = False,
+    remote_source_identity_provider: RemoteSourceIdentityProvider | None = None,
 ) -> ServiceAttestation:
     return produce_service_attestation(
         environment_id=environment_id,
@@ -294,6 +204,7 @@ def produce_station_attestation(
         deployment_environment=profile_env.get("PT_STATION_DEPLOY_ENV", ""),
         producer="station-deployment",
         require_runtime_identity=require_runtime_identity,
+        remote_source_identity_provider=remote_source_identity_provider,
     )
 
 
@@ -308,6 +219,7 @@ def produce_service_attestation(
     deployment_environment: str,
     producer: str,
     require_runtime_identity: bool = False,
+    remote_source_identity_provider: RemoteSourceIdentityProvider | None = None,
 ) -> ServiceAttestation:
     del run_id
     version = read_service_version(endpoint)
@@ -339,8 +251,16 @@ def produce_service_attestation(
                 ),
                 resource=f"service-deployment:{service_id}",
             )
-        deployed_commit, workspace_digest, proto_digest = _remote_source_identity(
-            deployment_environment
+        if remote_source_identity_provider is None:
+            raise BlockedError(
+                reason=(
+                    f"Remote service {service_id!r} is missing its deployment "
+                    "source identity provider"
+                ),
+                resource=f"service-deployment:{service_id}",
+            )
+        deployed_commit, workspace_digest, proto_digest = (
+            remote_source_identity_provider(deployment_environment)
         )
     else:
         deployed_commit, workspace_digest, proto_digest = _local_source_identity()
