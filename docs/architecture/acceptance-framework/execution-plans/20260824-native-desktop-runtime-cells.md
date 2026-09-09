@@ -4146,3 +4146,57 @@ No chooser post-fix event exists because the run stopped at `alice.launch`.
 The next dependency-ready action is a local checkpoint commit without push,
 exact-source deployment, and another Product Closure-only run. The remaining
 seven Windows Native Chat Gates and PostgreSQL contention remain deferred.
+
+### 2026-09-09 Exact Chooser HWND Activation Boundary
+
+The cold-login budget checkpoint was deployed exactly to station-four,
+station-five, and sixwin. Product Closure run
+`20260909T134440112983Z-0e5b64bed281266f6ab66e5dff2bfb51`,
+aggregate `20260909T134440013984Z-a9c35a5bf0b33d15341528334584f7b9`,
+Windows cell `20260909t134532834443z-7d55104d739751d7`, and binary
+SHA-256
+`442f291821e9db905466b152cfa3773a764901abd0597741c7ac0ad6c0e301f3`
+prove the 60-second cold-login correction. Alice and Bob launch, and Direct,
+Group, bidirectional transcript/thread, toolbar geometry, reaction, identity,
+and Station attribution all pass.
+
+The first failure remains `settings.background.ui`, but the post-fix collector
+now records the exact Tauri common-dialog topology:
+
+- requested actor PID 9824 owns a visible top-level `#32770` chooser;
+- that chooser has `owner=0`, so the previous owner-handle heuristic incorrectly
+  returned `dialogCount=0`;
+- process activation selected the Tauri main window instead of the chooser;
+- focused control remained the WebView `Chrome_WidgetWin_1`, and `Ctrl+L`
+  therefore never reached the native common dialog.
+
+The owner-layer correction identifies the file chooser by its canonical
+top-level `#32770` class, activates that exact HWND in the same interactive
+worker, sends `Ctrl+L`, and observes the focused control before returning.
+Dialog counting now uses the same class-based truth. No polling workaround,
+product-assertion change, or Chat business change is introduced.
+
+Focused Win32 driver, broker, runtime-binding, and Product Closure static
+verification passes 94 tests with one intentional skip. Targeted Python
+compilation and `git diff --check` also pass. Final dirty-range verification
+passes:
+
+- `station-messaging-unit`
+  `20260909T145654651668Z-294a583277a49bec8bbd4a43d0a1b58a`;
+- `messaging-platform-contract`
+  `20260909T145700907906Z-66fec68f269cadcc593c3b4311109404`;
+- `desktop-check`
+  `20260909T145705231044Z-570790e55df806f6ba73b7a08b119ec7`;
+- `chat-native-visible-static`
+  `20260909T145716957339Z-46c43abf05c0e10b5e63e6e729b700cd`;
+- `acceptance-plan-self`
+  `20260909T145733339117Z-f31bf3711e2b0352255fdac3afa60a1a`;
+- direct `acceptance-infra-validation`
+  `20260909T145755730617Z-be4504f326fdf37aeda73d28e030c631`
+  is `STRUCTURALLY_VALID`.
+
+The run remains `PARTIAL/UNPROVEN`; cleanup is `DONE/PROVEN`. The next
+dependency-ready action is a checkpoint commit without push, exact-source
+deployment, and another Product Closure-only run. The remaining seven Windows
+Native Chat Gates and PostgreSQL contention stay deferred until Product
+Closure passes.
