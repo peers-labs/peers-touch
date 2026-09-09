@@ -725,14 +725,20 @@ class NativeProductClosureGate(AcceptanceGate):
             control = self.native_adapter.focused_control(client.process_id or 0)
             return control if control.kind == "text-field" else None
 
-        self.native_adapter.reveal_file_chooser_location_to_process(
+        revealed_control = self.native_adapter.reveal_file_chooser_location_to_process(
             client.process_id or 0
         )
-        WebDriverWait(
-            client.driver,
-            10,
-            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(go_to_field_ready)
+        if revealed_control is None:
+            WebDriverWait(
+                client.driver,
+                10,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(go_to_field_ready)
+        elif revealed_control.kind != "text-field":
+            raise GateError(
+                "Native file chooser reveal returned an invalid control: "
+                f"{revealed_control.to_dict()}"
+            )
 
         self.native_adapter.post_key_to_process(
             client.process_id or 0,
