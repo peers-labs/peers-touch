@@ -1578,7 +1578,17 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn('control.value == str(selected_path)', self.source)
         self.assertIn(
+            "revealed_control = "
             "self.native_adapter.reveal_file_chooser_location_to_process(",
+            self.source,
+        )
+        self.assertIn("if revealed_control is None:", self.source)
+        self.assertIn(
+            'elif revealed_control.kind != "text-field":',
+            self.source,
+        )
+        self.assertIn(
+            "Native file chooser reveal returned an invalid control",
             self.source,
         )
         self.assertNotIn(
