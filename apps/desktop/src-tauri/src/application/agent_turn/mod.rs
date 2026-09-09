@@ -36,7 +36,7 @@ use std::future::Future;
 use std::io::{BufRead, Read};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::watch;
 
@@ -56,12 +56,13 @@ fn report_native_replay_debug(
     };
     let session_id =
         std::env::var("DEBUG_SESSION_ID").unwrap_or_else(|_| "native-replay-timeout".to_string());
+    let run_id = std::env::var("DEBUG_RUN_ID").unwrap_or_else(|_| "post-fix".to_string());
     tauri::async_runtime::spawn(async move {
         let _ = Client::new()
             .post(url)
             .json(&json!({
                 "sessionId": session_id,
-                "runId": "post-fix",
+                "runId": run_id,
                 "hypothesisId": hypothesis_id,
                 "location": location,
                 "msg": format!("[DEBUG] {message}"),
@@ -689,6 +690,19 @@ pub fn agent_turn_diagnostics_export(
     if turn_id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "turn_id is required", None);
     }
+    // #region debug-point A-E:diagnostics-export-boundary
+    let turn_id_hash = hex::encode(Sha256::digest(turn_id.as_bytes()));
+    let request_started = Instant::now();
+    report_native_replay_debug(
+        "E",
+        "agent_turn/mod.rs:agent_turn_diagnostics_export:entry",
+        "diagnostics export started",
+        json!({
+            "turnIdHash": turn_id_hash,
+            "tokenPresent": !token.trim().is_empty(),
+        }),
+    );
+    // #endregion
     let request = agent::ExportTurnDiagnosticsRequest { turn_id };
     match station_client::request_proto::<_, agent::ExportTurnDiagnosticsResponse>(
         Method::POST,
@@ -697,8 +711,41 @@ pub fn agent_turn_diagnostics_export(
         None,
         Some(&request),
     ) {
-        Ok(response) => AppResult::success(response.encode_to_vec()),
+        Ok(response) => {
+            // #region debug-point A-D:diagnostics-export-success
+            let encoded = response.encode_to_vec();
+            let replay = response.replay.as_ref();
+            report_native_replay_debug(
+                "A-D",
+                "agent_turn/mod.rs:agent_turn_diagnostics_export:success",
+                "diagnostics export decoded",
+                json!({
+                    "turnIdHash": turn_id_hash,
+                    "durationMs": request_started.elapsed().as_millis(),
+                    "encodedBytes": encoded.len(),
+                    "replayPresent": replay.is_some(),
+                    "attemptCount": replay.map(|value| value.attempts.len()).unwrap_or_default(),
+                    "toolCallCount": replay.map(|value| value.tool_calls.len()).unwrap_or_default(),
+                    "messageCount": replay.map(|value| value.messages.len()).unwrap_or_default(),
+                }),
+            );
+            // #endregion
+            AppResult::success(encoded)
+        }
         Err(err) => {
+            // #region debug-point A-E:diagnostics-export-error
+            report_native_replay_debug(
+                "A-E",
+                "agent_turn/mod.rs:agent_turn_diagnostics_export:error",
+                "diagnostics export failed",
+                json!({
+                    "turnIdHash": turn_id_hash,
+                    "durationMs": request_started.elapsed().as_millis(),
+                    "error": err.to_string(),
+                    "errorType": std::any::type_name_of_val(&err),
+                }),
+            );
+            // #endregion
             tracing::error!(command = "agent_turn_diagnostics_export", error = %err);
             err.into_app_result("Failed to export agent turn diagnostics")
         }
