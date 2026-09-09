@@ -596,7 +596,7 @@ matrices. Local/static success cannot replace native receiver proof.
 | CA-W4 Shared Federation and Social | done | Shared Federation supplies authenticated frames, durable outbox/inbox leases, retry/dedup/hash-conflict behavior, typed Conversation and Social receivers, and same-Station loopback. Conversation command conflicts return durable authority results bound to the originating command SHA-256; remote Device Inbox lane sequence remains target-owned. Social enforces receiver-local block/existing-relationship policy, atomically persists command/projection/result-outbox state, binds results to exact outgoing command bytes, rejects retryable result frames before durable resolution, and resolves remote actor keys from PTID plus a pinned Home Station profile/locator chain rather than `ActorRef.acct`; cached remote keys are revalidated against the latest signed active-key profile. The exact CA-W4 race command, focused `go vet`, `gofmt`, `git diff --check`, Go style, and `messaging-platform-contract` run `20260906T204614333077Z-6c52a4241e67fb14b3a0663a346aa7a5` pass. Two independent post-fix reviews report zero P0/P1 findings. Live DHT/Relay two-Station convergence remains `UNPROVEN` until CA-W5 production composition and CA-W6 runtime Acceptance. |
 | CA-W5-P0 Donor reconciliation | done | `peers-social` remained a read-only donor. The unique Conversation query/persistence/HTTP behavior was reconciled semantically into `peers-group-chat`; divergent contracts, generated bindings, and overlapping Desktop/Mobile/Messaging Core code were rejected. The retired 105-file `conversation/engine/` tree is deleted, and the final source contains no duplicate engine owner. |
 | CA-W5 Atomic production hard cut | source checkpoint ready / runtime unproven | AO-D07 is implemented proto-first across Station, Desktop, Mobile, and portable Messaging Core. Canonical Conversation production composition now owns creation, commands, event truth, follower recovery, attachment control/data forwarding, and Device Inbox effects; Key Exchange owns local reservation and exact-replay irreversible remote KeyPackage claims; shared Federation owns authenticated route/relay transport. Retired Envelope, flat Conversation, engine, superseded proto, generated bindings, callers, stores, aliases, and fallbacks are deleted. `proto-build` run `20260907T095814186121Z-b39852f3e6f655416a20f3194dc3699d`, `station-api-ownership` run `20260907T095552389681Z-9035a2fbed82ec5a54b98f5b260fe383`, `station-messaging-unit` run `20260907T095534375916Z-3761b27ef989ec4449bf94b82a4a2523`, `messaging-platform-contract` run `20260907T095650555959Z-0f85322adf5c78105d9ca8f15a4a351b`, `desktop-check` run `20260907T095738644264Z-aa04882b997b2eeb5f7e9b2001600a10`, and `chat-native-visible-static` run `20260907T100757881125Z-070fde35dba471e1da0351dc8d030cb0` pass. Focused Station race/vet, Desktop 540 tests and build, Desktop Rust library check, Mobile full check, Messaging Core 104+2 tests, Go style, and diff checks pass. The Gap Detector correctly keeps product proof `UNPROVEN` until the CA-W6 native receiver gates run. Repository-wide Station tests also contain unrelated pre-existing Frame/vendor failures and live `:18080` tests; they do not establish CA-W6 runtime proof. |
-| CA-W6 Runtime Acceptance | in progress / D-17 Home enqueue runtime-proven; remote Actor identity-key persistence blocked | Windows Product Closure run `20260908T163630929783Z-0d1461f4675bba5041949ca8934c5510` at exact source `24a795726d8371ea06d1f53dfbaec3543c7578cd` proved distinct Station binding, Direct create/reopen, canonical Group genesis, Alice's sequence-2 Group message delivery to Bob, durable follower receipt return, and station-five payload-kind `2` authority-command enqueue. The command frame reached station-four ten times but expired after retryable domain rejection because Actor Identity persisted Bob's verified device signing key and endpoint-directory fence without persisting the verified Actor identity public key required for Conversation delivery sealing. Runtime cleanup is `DONE/PROVEN`; complete Product Closure, Bob outbound authority commit/readback, and PostgreSQL contention remain `UNPROVEN` pending the Actor Identity owner-layer correction. |
+| CA-W6 Runtime Acceptance | in progress / remote authority commit proven; read-cursor queue projection locally corrected | Windows Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` at exact source `2ae0254691d97f16c3c08ef3e8639bdd91a91eac` proves distinct Station binding, Direct create/reopen, canonical Group genesis, Bob's remote authority commit, bidirectional transcript/thread projection, and authority reaction sequence 5. Bob's lane 7 canonical `ActorReadCursor` was rejected because Desktop and portable Messaging Core expected a retired `read:` event prefix instead of the payload SHA-256 identity produced by Conversation. The shared decoder correction and four local Chat Gates pass; cleanup is `DONE/PROVEN`, while complete Product Closure and PostgreSQL contention remain `UNPROVEN` pending checkpoint commit, exact-source deployment, and rerun. |
 | CA-W7 Completion/docs/knowledge audit | pending | — |
 
 ## 14. Risks And Escalation
@@ -1040,3 +1040,53 @@ passes the five selected Chat/structure Gates. The selected
 pre-existing Agent V2 missing-helper failures and launch-context timeouts.
 Gap Detector keeps the overall claim `UNPROVEN`; the next proof boundary
 remains the exact-source Windows Product Closure rerun.
+
+CA-W6 Product Closure rerun
+`20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc`
+at exact source `2ae0254691d97f16c3c08ef3e8639bdd91a91eac`,
+aggregate `20260908T175709295124Z-a391b650f3a35af8f68fe2410fa19642`,
+Windows cell `20260908t175752889322z-745bcb62304f4a9d`, and binary SHA-256
+`518bf35b8c40b9e56bc01cebc0902b5b1fcf3523cc54cc90901606a7b1c519f0`
+prove that the Actor Identity correction lets Bob's remote command commit at
+the authority. Group sequences 3 and 4 project Bob's reply and Alice's thread
+reply. The authority then commits the reaction at sequence 5 and Alice consumes
+it.
+
+The first failure advances to `reaction.ui` because Bob's Device Inbox lane 7
+contains a canonical `ActorReadCursor` using
+`event_id = hex(SHA-256(payload))`, while both Desktop and portable Messaging
+Core still selected read cursors through the retired synthetic `read:` prefix.
+Bob decoded the cursor as `MessageReceipt`, rejected lane 7, and could not
+consume the lane-8 reaction.
+
+The local correction centralizes payload type, endpoint, hash, canonical
+protobuf, and event-identity validation in portable Messaging Core and makes
+Desktop consume that decoder. Focused Core receipt tests pass 3/3, the complete
+Core suite passes 110 unit and 2 integration tests, and Desktop production Rust
+compilation passes. Exact-range aggregate
+`20260909T075246544755Z-757a3a7473c595fc41013d034f28d7a9`
+passes six selected Chat/structure Gates:
+
+- `station-messaging-unit`
+  `20260909T075246659397Z-a2ce8766dbbda0812246bc28a8b86f98`;
+- `messaging-platform-contract`
+  `20260909T075249708681Z-2be8fedb39ddd38ac04966cd10b5cf39`;
+- `desktop-check`
+  `20260909T075253153263Z-758fd57ab269986bef619603abba1cb1`;
+- `chat-native-visible-static`
+  `20260909T075302469923Z-1fb80ee42d9801d41fa530118404339c`;
+- `acceptance-plan-self`
+  `20260909T075312371083Z-2caf1c3a320fddf0f03ab9ff90ee4574`;
+- `acceptance-infra-validation`
+  `20260909T075313033208Z-9e43a12aeeb6bf96dc1ee0b925ce92fc`.
+
+`acceptance-runtime-provisioning-self`
+`20260909T075314187326Z-0e361fd222d9560245f3aad313b5696a`
+remains `PARTIAL/UNPROVEN` on pre-existing Agent V2 helper/import failures and
+launch-context ephemeral-capability timeouts. It is outside the reduced Windows
+IM Chat iteration matrix and is not reported as passed.
+
+CA-W6 remains `PARTIAL/UNPROVEN` pending a local checkpoint commit, exact-source
+deployment to station-four, station-five, and sixwin, and a Product
+Closure-only rerun. Dependent Windows Gates and PostgreSQL contention remain
+deferred.
