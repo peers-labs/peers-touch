@@ -1,4 +1,4 @@
-# TRAE Goal Slice Output Template
+# TRAE Adaptive Goal Slice Output Template
 
 Render the populated template inside one four-backtick `markdown` fence. Do not
 include this title or explanatory text in the generated Goal.
@@ -7,14 +7,15 @@ include this title or explanatory text in the generated Goal.
 
 ## Objective
 
-<One meaningful outcome for this Goal Slice.>
+<One meaningful stage-owned outcome that may require several queued actions.>
 
 ## Goal Slice
 
 - Stage: <PRODUCT | DESIGN | PLAN | EXECUTE | DELIVER>
 - Source unit: <stage checkpoint or formal plan workstream/task IDs>
-- Completion boundary: <what this Goal may complete>
-- Cut point: <where this Goal must stop>
+- Execution horizon: <the broadest same-stage/worktree/owner scope this Goal may drain>
+- Completion boundary: <what this Goal may complete without crossing a stage gate>
+- Hard cut point: <product, architecture, authorization, ownership, worktree, or external-resource boundary>
 
 ## Worktree Binding
 
@@ -54,12 +55,12 @@ include this title or explanatory text in the generated Goal.
 
 ## In Scope
 
-- <selected dependency-ready work>
+- <all source-defined work inside the bounded execution horizon>
 
 ## Out Of Scope And Remainder
 
 - <work retained by the broader stage or plan>
-- <blocked or later work>
+- <different-stage, different-worktree, or different-owner work>
 
 ## Hard Constraints
 
@@ -69,6 +70,60 @@ include this title or explanatory text in the generated Goal.
 
 <Projection of the owning stage workflow or formal plan DAG. Do not redesign
 dependencies here.>
+
+## Adaptive Execution Queue
+
+### Initial Ready Queue
+
+| Action | Source task | Dependencies | Owner/write set | Required evidence |
+|---|---|---|---|---|
+| <action> | <plan/checkpoint ID> | <complete prerequisites> | <owner> | <gate/check> |
+
+### Initial In Progress
+
+- None at Goal creation, or <resumed action with verified owner and state>.
+
+### Initial Parked Queue
+
+| Action | Blocking class | Exact blocking edge | Owner | Unblocking condition |
+|---|---|---|---|---|
+| <action> | <SOFT_EXTERNAL or HARD_GOVERNANCE> | <evidence-backed reason> | <owner> | <observable condition> |
+
+### Completed Baseline
+
+| Action | Source task | Evidence |
+|---|---|---|
+| <completed prerequisite> | <plan/checkpoint ID> | <source-owned evidence> |
+
+### Dynamic Admission Rules
+
+- Admit root-cause fixes, diagnostics, tests, evidence repair, documentation
+  synchronization, and mechanical plan amendments when accepted sources already
+  determine the behavior and the work remains inside this Goal's stage,
+  worktree, ownership, and scope.
+- For tracked work, update the formal plan before admitting a newly discovered
+  deliverable or dependency.
+- Never auto-admit product semantics, architecture/ownership/topology changes,
+  version or schema bumps requiring approval, destructive operations requiring
+  authorization, cross-worktree work, or weaker evidence substitutes.
+
+## Queue Execution Loop
+
+1. Reverify the Worktree Binding before every resumed execution interval.
+2. Select ready actions in dependency order and parallelize only non-overlapping
+   write sets.
+3. When an action blocks, record evidence and classify it as
+   `RECOVERABLE_IMPLEMENTATION`, `MECHANICAL_PLAN_GAP`, `SOFT_EXTERNAL`, or
+   `HARD_GOVERNANCE`.
+4. Enqueue an admissible root-cause or mechanical-plan action; otherwise park
+   the blocked action with its unblocking condition.
+5. Recompute the complete in-scope ready frontier and continue. One parked
+   action never blocks unrelated ready work.
+6. Synchronize plan evidence and `active_work` after meaningful queue
+   transitions.
+7. Mark the whole Goal blocked only after the Ready Queue is empty, no legal
+   diagnostic or remediation remains, every remaining action is hard-blocked,
+   and the repeated-blocker lifecycle threshold is satisfied.
 
 ## TRAE Subagent Topology
 
@@ -109,12 +164,19 @@ dependencies here.>
 
 ## Failure And Escalation
 
-- <Project-defined failure state>: <owner and stop behavior>
+- `RECOVERABLE_IMPLEMENTATION`: <root-cause remediation and retry>
+- `MECHANICAL_PLAN_GAP`: <owning plan amendment and enqueue behavior>
+- `SOFT_EXTERNAL`: <parked action and independent work that continues>
+- `HARD_GOVERNANCE`: <required decision/authorization/owner/resource>
+- Goal-level stop: only after queue exhaustion proof; never on the first
+  blocked action.
 
 ## Slice Completion
 
 - Complete when:
 - Remains unproven:
+- Parked at completion:
+- Exhaustion proof, when blocked:
 - Plan/stage completion effect:
 
 ## Tracking And Handoff
@@ -122,4 +184,5 @@ dependencies here.>
 - Durable source update:
 - `active_work` update, when tracked:
 - Context Anchor, when tracked:
-- Next action: rerun Goal Slice selection from the updated source graph.
+- Next action: continue the Ready Queue; use `NEXT` only after this Goal reaches
+  its completion, stage, or hard-boundary cut.
