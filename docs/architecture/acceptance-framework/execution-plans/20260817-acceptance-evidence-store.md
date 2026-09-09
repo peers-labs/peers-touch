@@ -7,7 +7,7 @@
 > **Branch**: `design/acceptance-runtime-provisioning-contract`
 > **Decision**: D-11
 
-## Context Anchor
+## Historical Completion Snapshot
 
 | Field | Current value |
 |---|---|
