@@ -145,6 +145,25 @@ the prior actor projection remains cleared. Reports, DOM observations, Station
 readback, logs, and cleanup evidence are written only to the external Evidence
 Store.
 
+### Agent Attachment Reference
+
+`agent-attachment-e2e` is the stable native Gate for C08. It uses the same
+One-profile Agent provisioning contract as stream resilience, then dispatches
+the existing AS-F05 admission and `BASE-ATTACHMENT_REJECTED` composer Harness
+journeys through:
+
+```bash
+python3 tooling/acceptance/gates/agent/native_agent_runner.py \
+  --journey attachment
+```
+
+The Gate independently evaluates both fact sets, including the history
+attachment action, composer input/chip, localized rejection, draft
+preservation, and removal. It requires receiver DOM, Station readback, runtime
+event, measurement, side-effect, replay, runtime attestation, and cleanup
+evidence. It uses the canonical `services.station` runtime-manifest entry and
+never treats the Foundation Gate as having run.
+
 ### Agent V2 Foundation Runtime
 
 `agent-v2-kernel-foundation-e2e` consumes the provisioned profile selected by
@@ -156,6 +175,20 @@ expands the reviewed matrix and dispatches the 32 Group 1 tuples by platform,
 locale, and scenario before `foundation_direct_adapter.py` applies its
 fail-closed oracle. Runtime controllers and Harnesses only capture production
 facts; they cannot synthesize assertion outcomes or promote proof status.
+
+The Foundation runner also supports configuration-only validation:
+
+```bash
+python3 tooling/acceptance/gates/agent/foundation_scenario_runner.py --dry-run
+```
+
+This requires `PT_ACCEPTANCE_RUNTIME_MANIFEST` and the matching active profile.
+It checks manifest/profile inputs, Native/Browser client fields, the startup
+timeout, and required provider-field presence without constructing runtimes or
+proxies, contacting Station, allocating evidence, or producing a candidate.
+An existing manifest may be inspected this way, but the result is not live
+preflight, source attestation, or product proof. Actual Gate execution still
+requires fresh provisioning through `acceptance-run.py`.
 
 ## Desktop Performance Acceptance Logic
 
