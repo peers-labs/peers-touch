@@ -861,8 +861,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; contact resilience, Group genesis, Alice-to-Bob Group delivery, follower receipt return, and D-17 Home enqueue `DONE/PROVEN`; W9-D Product Closure remains partial | Exact-source Product Closure run `20260908T163630929783Z-0d1461f4675bba5041949ca8934c5510` at `24a795726d8371ea06d1f53dfbaec3543c7578cd` proves Direct open/reopen, canonical Group genesis, Alice's sequence-2 Group message delivery to Bob, durable follower receipt return, and station-five payload-kind `2` command enqueue. The first failure remains `transcript.thread.ui` while Alice waits for Bob's reply. PostgreSQL proves command `01M2108FGAE1R8DS2VXFKRJ1G3` retried ten times and expired because station-four returned retryable domain rejection without committing sequence 3. The owner-layer cause is the missing verified remote Actor identity public-key persistence needed by Conversation delivery sealing. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings, exact Direct create/reopen, authority Group commit, one-way cross-Station Group delivery, follower receipt return, and durable remote-command enqueue | The next checkpoint makes Actor Identity persist the verified remote Actor identity public key from the signed endpoint manifest before Conversation seals remote-sender deliveries. Bidirectional Group transcript/receipt, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven. |
+| NDR-W9 Windows cell | W9-A/B/C done; Product Closure reaches `reaction.ui`; W9-D remains partial | Exact-source Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` at `2ae0254691d97f16c3c08ef3e8639bdd91a91eac` proves Direct open/reopen, canonical Group genesis, Alice sequence 2, Bob sequence 3, Alice thread-reply sequence 4, toolbar geometry, and authority reaction sequence 5. Bob's Device Inbox lane 7 contains a canonical `ActorReadCursor` whose event identity is the payload SHA-256; the client expected a retired `read:` prefix, rejected the cursor as `MessageReceipt`, and blocked the lane-8 reaction. The shared Messaging Core decoder correction and four local Chat Gates pass, but exact-source deployment and Product Closure rerun remain pending. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings, exact Direct create/reopen, bidirectional Group transcript/thread delivery, follower receipt return, and durable remote-command authority commit | Authority sequence 5 and Alice consumption prove the cross-Station mutation path through reaction commit. Bob's queue remains blocked by the read-cursor discriminator defect, so reaction convergence, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven pending the locally verified client correction. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -3972,3 +3972,72 @@ passes `station-messaging-unit`, `messaging-platform-contract`,
 the pre-existing Agent V2 missing-helper failures and launch-context timeouts.
 Gap Detector therefore keeps the overall claim `UNPROVEN`; no static or unit
 result is promoted to Windows Product Closure proof.
+
+### 2026-09-09 Canonical Read-Cursor Device-Inbox Projection Boundary
+
+The Actor Identity correction at
+`2ae0254691d97f16c3c08ef3e8639bdd91a91eac` was deployed exactly to
+station-four, station-five, and sixwin. Product Closure run
+`20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc`,
+aggregate `20260908T175709295124Z-a391b650f3a35af8f68fe2410fa19642`,
+Windows cell `20260908t175752889322z-745bcb62304f4a9d`, and binary SHA-256
+`518bf35b8c40b9e56bc01cebc0902b5b1fcf3523cc54cc90901606a7b1c519f0`
+advance the first failure to `reaction.ui`; cleanup is `DONE/PROVEN`.
+
+The run proves:
+
+- Alice and Bob launch with distinct Station bindings;
+- Direct search/open, canonical Group creation, transcript/thread projection,
+  and toolbar geometry pass;
+- station-four commits Bob's reply as sequence 3, Alice's thread reply as
+  sequence 4, and the reaction as sequence 5;
+- Alice consumes the reaction; Bob does not because his Device Inbox lane is
+  blocked before the reaction item.
+
+Bob's lane 7 item is payload type 5 with canonical deterministic
+`ActorReadCursor` bytes and `event_id = hex(SHA-256(payload))`, exactly as
+Conversation produces and the Federation receiver validates. Desktop and
+portable Messaging Core still selected read cursors through the retired
+synthetic `read:` prefix. They therefore decoded the cursor as
+`MessageReceipt`, rejected it, and prevented lane 8 from reaching the reaction
+consumer.
+
+The local correction makes portable Messaging Core the single decoder for both
+Desktop and Core adapters. It validates queue type, recipient, payload hash,
+canonical protobuf bytes, and the producer-defined event identity before
+atomically committing either the actor read cursor or delivery receipt. The
+retired `read:` identity is rejected; no compatibility path is retained.
+
+Focused verification passes:
+
+- Messaging Core focused receipt tests: 3 passed;
+- Messaging Core full suite: 110 unit tests and 2 integration tests passed;
+- Desktop Rust production
+  `cargo check --features acceptance-webdriver`;
+- `station-messaging-unit`
+  `20260909T075246659397Z-a2ce8766dbbda0812246bc28a8b86f98`;
+- `messaging-platform-contract`
+  `20260909T075249708681Z-2be8fedb39ddd38ac04966cd10b5cf39`;
+- `desktop-check`
+  `20260909T075253153263Z-758fd57ab269986bef619603abba1cb1`;
+- `chat-native-visible-static`
+  `20260909T075302469923Z-1fb80ee42d9801d41fa530118404339c`;
+- `acceptance-plan-self`
+  `20260909T075312371083Z-2caf1c3a320fddf0f03ab9ff90ee4574`;
+- `acceptance-infra-validation`
+  `20260909T075313033208Z-9e43a12aeeb6bf96dc1ee0b925ce92fc`.
+
+Exact-range aggregate
+`20260909T075246544755Z-757a3a7473c595fc41013d034f28d7a9`
+passes those six Gates. `acceptance-runtime-provisioning-self`
+`20260909T075314187326Z-0e361fd222d9560245f3aad313b5696a`
+remains `PARTIAL/UNPROVEN` on the pre-existing Agent V2 helper/import defects
+and launch-context ephemeral-capability timeouts. These failures do not prove
+or disprove the Chat correction and remain outside the reduced Windows IM Chat
+iteration matrix.
+
+NDR-W9-D and Windows NDR-W10-D remain `PARTIAL/UNPROVEN`. The next
+dependency-ready action is a local checkpoint commit without push, exact-source
+deployment to station-four, station-five, and sixwin, and a Product
+Closure-only rerun. The remaining seven Windows Native Chat Gates and
+PostgreSQL contention remain deferred until Product Closure passes.
