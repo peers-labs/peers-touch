@@ -455,3 +455,21 @@ Closure requires:
 This correction proves only generic Acceptance Infra. C08 remains product
 `UNPROVEN` until `agent-attachment-e2e` executes after the clean checkpoint is
 deployed through `make station`.
+
+### 9.3 Caller-Owned Native Driver Log — 2026-09-09
+
+Exact-source C08 runtime preparation exposed a second ownership mismatch: the
+business Gate launched `make desktop` directly and created runtime logs outside
+the Provisioner-owned cleanup root. When the outer Gate deadline expired, the
+Desktop process tree and credential-bearing storage survived.
+
+WS2 now permits a concrete caller to provide `TauriDriver.log_path`. The Driver
+still owns process and WebDriver lifecycle; the caller owns that log file and
+places it under the run-scoped storage root. This keeps timeout cleanup atomic
+without changing Driver startup deadlines, Gate timeouts, or product evidence
+semantics.
+
+Framework closure requires the configured-log unit regression, launch-context
+process-group regressions, runner/planner/validator tests, boundary checks, and
+the complete clean-source Acceptance Infra aggregate. Agent journey selection,
+assertions, credentials, and product proof remain business-owned injection.
