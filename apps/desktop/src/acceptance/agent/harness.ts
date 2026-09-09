@@ -5919,6 +5919,14 @@ async function runFoundationF06Prepare(input: {
   sampleId: string;
 }): Promise<FoundationF06Handoff> {
   const scenarioStartedAt = new Date().toISOString();
+  const preparationStartedAt = performance.now();
+  // #region debug-point A-D:f06-terminal-race-start
+  void reportFoundationF06TerminalRaceDebug('A-D', 'preparation-started', {
+    platform: input.platform,
+    locale: input.locale,
+    scenarioKey: input.scenarioKey,
+  });
+  // #endregion
   foundationF06Controllers.get(input.scenarioKey)?.abort();
   foundationF06Controllers.delete(input.scenarioKey);
   removeFoundationF06Handoff(input.scenarioKey);
@@ -5949,9 +5957,30 @@ async function runFoundationF06Prepare(input: {
       { restorationMode: 'deferred' },
     );
   } catch (error) {
-    const activeTurnId = useAgentTurnRecoveryStore.getState()
-      .active[conversation.conversation_id]?.turnId ?? '';
+    const activeRecord = useAgentTurnRecoveryStore.getState()
+      .active[conversation.conversation_id];
+    const activeTurnId = activeRecord?.turnId ?? '';
     const authDiagnostic = redactedAuthError(error);
+    const primary = error instanceof Error ? error.message : String(error);
+    // #region debug-point A-D:f06-terminal-race-primary
+    void reportFoundationF06TerminalRaceDebug(
+      'A-D',
+      'preparation-failed-before-cleanup',
+      {
+        platform: input.platform,
+        locale: input.locale,
+        scenarioKey: input.scenarioKey,
+        elapsedMs: Math.round(performance.now() - preparationStartedAt),
+        terminalRace:
+          primary.includes('foundationRecoveryTurnAlreadyTerminal'),
+        activeRecordPresent: activeRecord !== undefined,
+        activePhase: activeRecord?.phase ?? 'MISSING',
+        activeTurnPresent: activeTurnId.length > 0,
+        cleanupLocatorPresent:
+          readFoundationF06CleanupLocators()[input.scenarioKey] !== undefined,
+      },
+    );
+    // #endregion
     try {
       await cleanupFoundationF06Scenario({
         scenarioKey: input.scenarioKey,
@@ -5959,15 +5988,31 @@ async function runFoundationF06Prepare(input: {
         turnId: activeTurnId,
       });
     } catch (cleanupError) {
-      const primary = error instanceof Error ? error.message : String(error);
       const cleanup = cleanupError instanceof Error
         ? cleanupError.message
         : String(cleanupError);
+      // #region debug-point D:f06-terminal-race-cleanup-error
+      void reportFoundationF06TerminalRaceDebug(
+        'D',
+        'preparation-cleanup-failed',
+        {
+          platform: input.platform,
+          locale: input.locale,
+          scenarioKey: input.scenarioKey,
+          terminalRace:
+            primary.includes('foundationRecoveryTurnAlreadyTerminal'),
+          cleanupErrorType:
+            cleanupError instanceof Error
+              ? cleanupError.constructor.name
+              : typeof cleanupError,
+          cleanupTurnPresent: activeTurnId.length > 0,
+        },
+      );
+      // #endregion
       throw new Error(
         `CLEANUP_FAILED:${primary}; auth=${JSON.stringify(authDiagnostic)}; cleanup=${cleanup}`,
       );
     }
-    const primary = error instanceof Error ? error.message : String(error);
     throw new Error(`${primary}; auth=${JSON.stringify(authDiagnostic)}`);
   }
 }
@@ -6033,6 +6078,32 @@ async function prepareFoundationF06Conversation(
         }
       }
       if (classifyAgentTurnTerminalEvent(event) !== null) {
+        const active = useAgentTurnRecoveryStore.getState()
+          .active[conversation.conversation_id];
+        // #region debug-point A-B:f06-terminal-before-cut
+        void reportFoundationF06TerminalRaceDebug(
+          'A-B',
+          'terminal-event-before-fault-boundary',
+          {
+            platform: input.platform,
+            locale: input.locale,
+            scenarioKey: input.scenarioKey,
+            elapsedMs: Date.now() - Date.parse(scenarioStartedAt),
+            eventType: event.event,
+            eventSequence: Number(event.data.seq ?? 0),
+            eventCount: events.length,
+            durableEventCount: events.filter(
+              (candidate) => Number(candidate.data.seq ?? 0) > 0,
+            ).length,
+            textEventCount: events.filter(
+              (candidate) => candidate.event === 'text',
+            ).length,
+            boundaryRequested,
+            activeRecordPresent: active !== undefined,
+            activePhase: active?.phase ?? 'MISSING',
+          },
+        );
+        // #endregion
         failBoundary('agent.acceptance.foundationRecoveryTurnAlreadyTerminal');
         return;
       }
@@ -6119,6 +6190,21 @@ async function prepareFoundationF06Conversation(
       };
       foundationF06PendingHandoffs.set(input.scenarioKey, handoff);
       boundaryRequested = true;
+      // #region debug-point A-C:f06-fault-request
+      void reportFoundationF06TerminalRaceDebug('A-C', 'fault-cut-requested', {
+        platform: input.platform,
+        locale: input.locale,
+        scenarioKey: input.scenarioKey,
+        elapsedMs: Date.now() - Date.parse(scenarioStartedAt),
+        eventCount: events.length,
+        durableEventCount: observedDurableEvents.length,
+        textEventCount: observedDurableEvents.filter(
+          (candidate) => candidate.event === 'text',
+        ).length,
+        requestedCursor,
+        activePhase: active.phase,
+      });
+      // #endregion
       void reportFoundationF06RegistrationDebug(
         'A-E',
         'fault-cut-requested',
@@ -6130,10 +6216,41 @@ async function prepareFoundationF06Conversation(
       );
       void requestFoundationF06TransportCut(input.faultControlUrl)
         .then(async () => {
+          const activeAfterAcknowledgement = useAgentTurnRecoveryStore.getState()
+            .active[conversation.conversation_id];
+          // #region debug-point C:f06-fault-ack
+          void reportFoundationF06TerminalRaceDebug(
+            'C',
+            'fault-cut-acknowledged',
+            {
+              platform: input.platform,
+              locale: input.locale,
+              scenarioKey: input.scenarioKey,
+              elapsedMs: Date.now() - Date.parse(scenarioStartedAt),
+              activeRecordPresent:
+                activeAfterAcknowledgement !== undefined,
+              activePhase:
+                activeAfterAcknowledgement?.phase ?? 'MISSING',
+              activeCursor: activeAfterAcknowledgement?.cursor ?? 0,
+            },
+          );
+          // #endregion
           await waitFor(() => {
             const current = useAgentTurnRecoveryStore.getState()
               .active[conversation.conversation_id];
             if (!current) {
+              // #region debug-point C:f06-terminal-after-ack
+              void reportFoundationF06TerminalRaceDebug(
+                'C',
+                'recovery-record-missing-after-fault-acknowledgement',
+                {
+                  platform: input.platform,
+                  locale: input.locale,
+                  scenarioKey: input.scenarioKey,
+                  elapsedMs: Date.now() - Date.parse(scenarioStartedAt),
+                },
+              );
+              // #endregion
               throw new Error(
                 'agent.acceptance.foundationRecoveryTurnAlreadyTerminal',
               );
@@ -6394,6 +6511,22 @@ async function prepareFoundationF06Conversation(
   const boundary = await Promise.race([
     faultBoundary,
     observed.result.then((result) => {
+      // #region debug-point A-C:f06-result-before-boundary
+      void reportFoundationF06TerminalRaceDebug(
+        'A-C',
+        'turn-result-settled-before-fault-boundary',
+        {
+          platform: input.platform,
+          locale: input.locale,
+          scenarioKey: input.scenarioKey,
+          elapsedMs: Date.now() - Date.parse(scenarioStartedAt),
+          resultOk: result.ok,
+          resultErrorPresent: Boolean(result.error),
+          boundaryRequested,
+          boundarySettled,
+        },
+      );
+      // #endregion
       throw new Error(
         result.error || 'agent.acceptance.foundationRecoveryTurnAlreadyTerminal',
       );
@@ -6858,6 +6991,16 @@ async function cleanupFoundationF06Scenario(input: {
     ?? readFoundationF06Handoff(input.scenarioKey);
   const cleanupLocator =
     readFoundationF06CleanupLocators()[input.scenarioKey];
+  // #region debug-point D:f06-cleanup-start
+  void reportFoundationF06TerminalRaceDebug('D', 'cleanup-started', {
+    scenarioKey: input.scenarioKey,
+    inputConversationPresent: input.conversationId.length > 0,
+    inputTurnPresent: input.turnId.length > 0,
+    handoffPresent: handoff !== undefined && handoff !== null,
+    cleanupLocatorPresent: cleanupLocator !== undefined,
+    cleanupLocatorTurnPresent: Boolean(cleanupLocator?.turnId),
+  });
+  // #endregion
   if (
     handoff
     && (
@@ -6913,14 +7056,42 @@ async function cleanupFoundationF06Scenario(input: {
   }
   let cleanupError: unknown = null;
   let deletionErrorCode = '';
+  let cleanupStage = 'turn-cancel';
   try {
     if (turnId) {
       await api.cancelAgentTurn(turnId);
     }
+    cleanupStage = 'queue-cancel';
     await cancelFoundationQueuedTurns(conversationId);
+    cleanupStage = 'conversation-delete';
     deletionErrorCode = await deleteFoundationConversation(conversationId);
+    // #region debug-point D:f06-cleanup-actions
+    void reportFoundationF06TerminalRaceDebug(
+      'D',
+      'cleanup-actions-completed',
+      {
+        scenarioKey: input.scenarioKey,
+        inputTurnPresent: turnId.length > 0,
+        deletionErrorCodePresent: deletionErrorCode.length > 0,
+      },
+    );
+    // #endregion
   } catch (error) {
     deletionErrorCode = observedErrorCode(error);
+    // #region debug-point D:f06-cleanup-action-failed
+    void reportFoundationF06TerminalRaceDebug(
+      'D',
+      'cleanup-action-failed',
+      {
+        scenarioKey: input.scenarioKey,
+        cleanupStage,
+        errorType: error instanceof Error
+          ? error.constructor.name
+          : typeof error,
+        deletionErrorCode,
+      },
+    );
+    // #endregion
     if (!deletionErrorCode.includes('AGENT_4004')) {
       cleanupError = error;
     }
@@ -6961,6 +7132,17 @@ async function cleanupFoundationF06Scenario(input: {
     useAgentTurnRecoveryStore.getState().active[conversationId] === undefined;
   const cleanupComplete =
     conversationDeleted && handoffCleared && recoveryRecordCleared;
+  // #region debug-point D:f06-cleanup-result
+  void reportFoundationF06TerminalRaceDebug('D', 'cleanup-result-sampled', {
+    scenarioKey: input.scenarioKey,
+    cleanupStage,
+    cleanupErrorPresent: cleanupError !== null,
+    conversationDeleted,
+    handoffCleared,
+    recoveryRecordCleared,
+    cleanupComplete,
+  });
+  // #endregion
   if (cleanupError !== null || !cleanupComplete) {
     const detail = cleanupError instanceof Error
       ? cleanupError.message
@@ -8546,6 +8728,27 @@ function reportFoundationF06RegistrationDebug(
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:AS-F06',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:foundation-f06-terminal-race
+function reportFoundationF06TerminalRaceDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7780/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-f06-terminal-race',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:AS-F06-terminal-race',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),

@@ -35,6 +35,21 @@
   completion/error, startup rollback, and fault-transport closure.
 - Focused runtime/coordinator verification passes 63 tests; Python compilation
   and `git diff --check` pass.
+- Exact-source controlled run
+  `20260909T133755333609Z-65d759fb2ca566804c1947eb43ecb4c9`
+  used cached offline driver resolution and crossed both Browser AS-F06
+  restart generations:
+  - restart 1: Chrome start 4653 ms, navigation 3089 ms, total 39352 ms;
+  - restart 2: Chrome start 4568 ms, navigation 3403 ms, total 41724 ms.
+  Both runs retained live Gateway, renderer, WebDriver, fault proxy, and fault
+  controller state.
+- The Gate advanced into Native AS-F06 and failed at the final Native
+  preparation with `foundationRecoveryTurnAlreadyTerminal`. Provisioner cleanup
+  passed.
 
 ## Verification Conclusion
-Pending source-bound reproduction with operation-level instrumentation. No behavior change is authorized before one hypothesis is confirmed.
+Hypotheses A, B, and C are rejected for the controlled run. Hypothesis D
+correctly explains the secondary cleanup cascade in the original failure, but
+the primary Browser timeout did not reproduce and no Browser behavior change is
+justified. Keep this session open until the user confirmation gate. The current
+G-F blocker is tracked separately by `foundation-f06-terminal-race`.
