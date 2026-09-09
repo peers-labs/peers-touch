@@ -225,6 +225,45 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self.assertIn('"CHAT_NATIVE_DEMO_PASSWORD"', self.source)
         self.assertIn('"PT_AGENT_PROVIDER_API_KEY"', self.source)
 
+    def test_runner_binds_station_through_harness_before_login(self) -> None:
+        configure_method = self.source.index("def configure_station(")
+        configure_call = self.source.index(
+            'self.harness(\n            "configureStation"',
+            configure_method,
+        )
+        active_url_assertion = self.source.index(
+            'result.get("activeUrl")',
+            configure_call,
+        )
+        online_assertion = self.source.index(
+            'result.get("online") is True',
+            active_url_assertion,
+        )
+        peer_id_assertion = self.source.index(
+            'result.get("peerIdAvailable") is True',
+            online_assertion,
+        )
+        proxy_health_step = self.source.index(
+            'runner.step("fault_proxy_health", runner.verify_proxy_health)'
+        )
+        configure_step = self.source.index(
+            'runner.step("configure_active_station", runner.configure_station)'
+        )
+        journey_dispatch = self.source.index(
+            'if journey_name == "stream-resilience":',
+            configure_step,
+        )
+
+        self.assertLess(configure_call, active_url_assertion)
+        self.assertLess(active_url_assertion, online_assertion)
+        self.assertLess(online_assertion, peer_id_assertion)
+        self.assertLess(proxy_health_step, configure_step)
+        self.assertLess(configure_step, journey_dispatch)
+        self.assertIn('{"stationUrl": self.proxy.url}', self.source)
+        self.assertNotIn("stations.json", self.source)
+        self.assertNotIn("stationSetActive", self.source)
+        self.assertNotIn("stationAdd(", self.source)
+
     def test_home_station_provisions_supported_agent_journeys(self) -> None:
         source = HOME_STATION_PROVISIONER.read_text(encoding="utf-8")
         for gate_id in (
