@@ -473,3 +473,51 @@ Framework closure requires the configured-log unit regression, launch-context
 process-group regressions, runner/planner/validator tests, boundary checks, and
 the complete clean-source Acceptance Infra aggregate. Agent journey selection,
 assertions, credentials, and product proof remain business-owned injection.
+
+### 9.4 Runtime Artifact Redaction Idempotence — 2026-09-09
+
+Exact-source C08 execution at
+`88d15ea799c515ddc63b8aa26168a4b723c4e435` reached the product runner after
+the disposable host disk was recovered, but the outer Acceptance runner
+discarded the child run with:
+
+```text
+EvidenceConflict: resolved credentials bypassed the immutable artifact writer:
+logs/desktop.log
+```
+
+The Agent runner stages its Desktop log outside the Evidence Store and writes
+it exactly once through `ArtifactSession.write_bytes`. The generic outer audit
+then applies `redact_artifact_bytes` again. An existing already-redacted Agent
+log reproduces a second-pass mutation while the exact resolved provider
+credential is absent: Rust-like fragments such as
+`api_key: [REDACTED]` and `token: [REDACTED]` gain an additional closing
+bracket. The audit equates that non-idempotent normalization with a credential
+leak and discards the complete run.
+
+This is an Acceptance Infra defect, not Agent business injection. Closure
+requires:
+
+- `redact_artifact_bytes(redact_artifact_bytes(value))` is byte-identical on
+  already-redacted plain-text artifacts;
+- Rust-like identifiers and type syntax cannot grow delimiters across repeated
+  passes;
+- exact resolved credential representations remain removed on the first pass;
+- the outer runtime-artifact audit still rejects direct, unredacted writes;
+- focused redaction/Evidence Store/runner tests and the complete clean-source
+  Acceptance Infra aggregate pass.
+
+The correction treats the canonical `[REDACTED]` sentinel as one complete
+assignment or command-flag value before the generic unquoted-value branch.
+Focused verification passes 27 redaction tests, including Rust-like typed
+fragments and explicit secrets; 57 combined redaction/Evidence Store tests;
+66 Acceptance runner tests; and the planner, validator, responsibility
+boundary, gap-detector, coverage, and quality suites. The retained Agent log
+now has `secondChanged=false`, byte-identical first/second outputs, and no
+resolved provider credential.
+
+The unrelated repository-wide `skill-check` still reports pre-existing
+`pt-github-review` upstream-rule freshness drift; no skill file is changed by
+this closure. C08 and G-F remain `UNPROVEN`. Product Gate execution resumes
+only after this generic correction is committed, the current-source Infra
+Gates pass, and the exact source is redeployed.
