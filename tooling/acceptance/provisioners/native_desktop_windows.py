@@ -1227,6 +1227,8 @@ class NativeDesktopWindowsProvisioner:
                     ),
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     check=False,
                 )
                 if created.returncode != 0:
@@ -1705,6 +1707,8 @@ class NativeDesktopWindowsProvisioner:
             ),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         ).stdout
         if not host_key:
