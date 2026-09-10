@@ -58,12 +58,12 @@ _DEFAULT_DEPLOY_ROOT = REPO_ROOT / ".local" / "deploy" / "envs"
 _DEFAULT_RUNTIME_ROOT = (
     "AppData/Local/PeersTouch/AcceptanceCells/desktop-windows-native"
 )
+_DEFAULT_CARGO_TARGET_ROOT = "pt-cache/desktop-windows-native"
 _BROKER_RELATIVE_PATH = (
     "tooling/acceptance/provisioners/windows_desktop_broker.py"
 )
-_BINARY_RELATIVE_PATH = (
-    "apps/desktop/src-tauri/target/debug/peers-touch-desktop.exe"
-)
+_BINARY_RELATIVE_PATH = "debug/peers-touch-desktop.exe"
+_BUILD_SCRIPT_RELATIVE_PATH = "tooling/scripts/windows-desktop-build.ps1"
 
 
 def _required(values: dict[str, str], key: str, source: Path) -> str:
@@ -200,6 +200,7 @@ class WindowsCellProfile:
     protoc_path: str
     webdriver_port: int
     gateway_port: int
+    cargo_target_root: str = _DEFAULT_CARGO_TARGET_ROOT
     build_timeout_seconds: int = 3600
 
     @classmethod
@@ -282,6 +283,10 @@ class WindowsCellProfile:
                 3230,
                 path,
             ),
+            cargo_target_root=values.get(
+                "PT_ACCEPTANCE_CELL_CARGO_TARGET_ROOT",
+                _DEFAULT_CARGO_TARGET_ROOT,
+            ),
             build_timeout_seconds=_positive_int(
                 values,
                 "PT_ACCEPTANCE_CELL_BUILD_TIMEOUT_SECONDS",
@@ -297,6 +302,11 @@ class WindowsCellProfile:
         if runtime.is_absolute() or ".." in runtime.parts:
             raise ProvisioningError(
                 "Windows runtime-cell runtime root must be relative to remote home"
+            )
+        cargo_target = PureWindowsPath(self.cargo_target_root)
+        if cargo_target.is_absolute() or ".." in cargo_target.parts:
+            raise ProvisioningError(
+                "Windows runtime-cell Cargo target root must be relative to remote home"
             )
         vsdevcmd = PureWindowsPath(self.vsdevcmd_path)
         if not vsdevcmd.is_absolute():
@@ -471,7 +481,10 @@ class NativeDesktopWindowsProvisioner:
                 self.profile.webdriver_port,
                 self.profile.gateway_port,
             )
-            binary_path, binary_sha256 = self._build_binary(remote_source)
+            binary_path, binary_sha256 = self._build_binary(
+                remote_source,
+                remote_home,
+            )
             self._require_interactive_desktop(host)
             acquired = self._broker(
                 broker_path,
@@ -491,6 +504,10 @@ class NativeDesktopWindowsProvisioner:
                     "expiresAtEpoch": int(expires_at.timestamp()),
                     "remoteHome": remote_home,
                     "remoteSource": remote_source,
+                    "cargoTargetRoot": _windows_join(
+                        remote_home,
+                        self.profile.cargo_target_root,
+                    ),
                     "brokerRoot": broker_root,
                     "brokerPath": broker_path,
                     "binaryPath": binary_path,
@@ -1346,40 +1363,56 @@ class NativeDesktopWindowsProvisioner:
             deploy_path=request.deploy_path,
         )
 
-    def _build_binary(self, remote_source: str) -> tuple[str, str]:
-        binary_path = _windows_join(remote_source, _BINARY_RELATIVE_PATH)
-        sdk_root = self.profile.windows_sdk_root.rstrip("/\\")
-        sdk_version = self.profile.windows_sdk_version.rstrip("/\\")
-        command = (
-            f"call {self.profile.vsdevcmd_path} -arch=x64 && "
-            'set "VSLANG=1033" && '
-            f'set "WindowsSdkDir={sdk_root}/" && '
-            f'set "WindowsSDKVersion={sdk_version}/" && '
-            f'set "INCLUDE={sdk_root}/Include/{sdk_version}/ucrt;'
-            f"{sdk_root}/Include/{sdk_version}/shared;"
-            f"{sdk_root}/Include/{sdk_version}/um;"
-            f'{sdk_root}/Include/{sdk_version}/winrt;'
-            f'{sdk_root}/Include/{sdk_version}/cppwinrt" && '
-            f'set "LIB={sdk_root}/Lib/{sdk_version}/ucrt/x64;'
-            f'{sdk_root}/Lib/{sdk_version}/um/x64" && '
-            f'set "PATH={sdk_root}/bin/{sdk_version}/x64;%PATH%" && '
-            f'set "OPENSSL_SRC_PERL={self.profile.perl_path}" && '
-            f'set "PROTOC={self.profile.protoc_path}" && '
-            f"cd /d {remote_source} && "
-            "pnpm install --frozen-lockfile && "
-            'set "VITE_ACCEPTANCE_HARNESS=1" && '
-            "pnpm --dir apps/desktop run build && "
-            "cd apps\\desktop\\src-tauri && "
-            "set TAURI_CONFIG={\"app\":{\"withGlobalTauri\":true}} && "
-            "cargo build --locked --features acceptance-webdriver"
+    def _build_binary(
+        self,
+        remote_source: str,
+        remote_home: str,
+    ) -> tuple[str, str]:
+        cargo_target_root = _windows_join(
+            remote_home,
+            self.profile.cargo_target_root,
+        )
+        binary_path = _windows_join(
+            cargo_target_root,
+            _BINARY_RELATIVE_PATH,
+        )
+        build_script = _windows_join(
+            remote_source,
+            _BUILD_SCRIPT_RELATIVE_PATH,
         )
         completed = self.transport.run_argv(
-            ("cmd.exe", "/d", "/s", "/c", command),
+            (
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                build_script,
+                "-SourceRoot",
+                remote_source,
+                "-CargoTargetRoot",
+                cargo_target_root,
+                "-VsDevCmd",
+                self.profile.vsdevcmd_path,
+                "-WindowsSdkRoot",
+                self.profile.windows_sdk_root.rstrip("/\\"),
+                "-WindowsSdkVersion",
+                self.profile.windows_sdk_version.rstrip("/\\"),
+                "-PerlPath",
+                self.profile.perl_path,
+                "-ProtocPath",
+                self.profile.protoc_path,
+            ),
             timeout=self.profile.build_timeout_seconds,
             check=False,
         )
         if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip()
+            detail = "\n".join(
+                output.strip()
+                for output in (completed.stdout, completed.stderr)
+                if output.strip()
+            )
             raise BlockedError(
                 reason=f"Windows Desktop build failed: {detail[-8000:]}",
                 resource="runtime-cell-binary:desktop-windows-native",

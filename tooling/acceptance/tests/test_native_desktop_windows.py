@@ -38,6 +38,11 @@ WINDOWS_DRIVER_PATH = (
     / "native"
     / "windows.py"
 )
+WINDOWS_BUILD_SCRIPT_PATH = (
+    Path(__file__).parents[2]
+    / "scripts"
+    / "windows-desktop-build.ps1"
+)
 
 
 class _BrokerTransport:
@@ -94,6 +99,7 @@ class WindowsCellProfileTest(unittest.TestCase):
                         "PT_ACCEPTANCE_CELL_DEPLOY_ENV=acceptance-windows",
                         "PT_ACCEPTANCE_CELL_DESKTOP_USER=administrator",
                         "PT_ACCEPTANCE_CELL_RUNTIME_ROOT=AppData/Local/PT/Cells",
+                        "PT_ACCEPTANCE_CELL_CARGO_TARGET_ROOT=pt-cache/windows",
                         "PT_ACCEPTANCE_CELL_VSDEVCMD=C:/BuildTools/VsDevCmd.bat",
                         "PT_ACCEPTANCE_CELL_WINDOWS_SDK_ROOT="
                         "C:/Program Files (x86)/Windows Kits/10",
@@ -114,6 +120,10 @@ class WindowsCellProfileTest(unittest.TestCase):
             )
 
             self.assertEqual(profile.desktop_user, "administrator")
+            self.assertEqual(
+                profile.cargo_target_root,
+                "pt-cache/windows",
+            )
             self.assertEqual(profile.perl_path, "C:/Git/usr/bin/perl.exe")
             self.assertEqual(
                 profile.protoc_path,
@@ -239,13 +249,21 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         self.assertIn("source_lease.acquire()", source)
         self.assertIn("remote_platform=RemotePlatform.WINDOWS", source)
         self.assertIn("config core.longpaths true", source)
-        self.assertIn('set "OPENSSL_SRC_PERL=', source)
-        self.assertIn('set "PROTOC=', source)
-        self.assertIn('set "VITE_ACCEPTANCE_HARNESS=1"', source)
-        self.assertNotIn("set VITE_ACCEPTANCE_HARNESS=1 &&", source)
-        self.assertNotIn('set "PATH={perl_directory}', source)
+        self.assertIn("_BUILD_SCRIPT_RELATIVE_PATH", source)
+        self.assertIn('"powershell.exe"', source)
         self.assertNotIn("class SshTransport", source)
         self.assertNotIn("class SourceSyncRequest", source)
+
+    def test_build_script_preserves_toolchain_environment(self) -> None:
+        source = WINDOWS_BUILD_SCRIPT_PATH.read_text(encoding="utf-8")
+        self.assertIn("VsDevCmd", source)
+        self.assertIn("$sdkInclude + $env:INCLUDE", source)
+        self.assertIn("$sdkLib + $env:LIB", source)
+        self.assertIn("$env:OPENSSL_SRC_PERL = $PerlPath", source)
+        self.assertIn("$env:PROTOC = $ProtocPath", source)
+        self.assertIn("$env:CARGO_TARGET_DIR = $CargoTargetRoot", source)
+        self.assertIn("$env:VITE_ACCEPTANCE_HARNESS = \"1\"", source)
+        self.assertIn("$env:TAURI_CONFIG =", source)
 
     def test_interactive_gate_runs_after_source_and_build_preflight(self) -> None:
         source = WINDOWS_PROVISIONER_PATH.read_text(encoding="utf-8")
