@@ -206,6 +206,44 @@ case "$cmd" in
     echo "[OK] Active profile: $name (worktree: $WORKTREE_ID)"
     echo ""
     print_redacted_env_file "$src" | grep -E '^PT_' | sed 's/^/  /'
+
+    # Post-activation: validate that referenced deploy envs exist and their
+    # target hosts are consistent with the profile's declared URLs.
+    # This catches cross-profile deploy env collisions at activation time
+    # rather than at deploy time.
+    warn_count=0
+    validate_deploy_env_host() {
+      local var_name="$1" url_var="$2" role="$3"
+      local env_name url host deploy_file deploy_host
+      env_name="$(sed -n "s/^${var_name}=//p" "$src" | tail -n 1)"
+      url="$(sed -n "s/^${url_var}=//p" "$src" | tail -n 1)"
+      [[ -n "$env_name" ]] || return 0
+      deploy_file="$DEPLOY_DIR/envs/$env_name.env"
+      if [[ ! -f "$deploy_file" ]]; then
+        echo ""
+        echo "  [WARN] $role: $var_name=$env_name but $deploy_file not found"
+        warn_count=$((warn_count + 1))
+        return 0
+      fi
+      [[ -n "$url" ]] || return 0
+      host="$(echo "$url" | sed -E 's|https?://([^:/]+).*|\1|')"
+      deploy_host="$(sed -n 's/^PT_DEPLOY_HOST=//p' "$deploy_file" | tail -n 1)"
+      if [[ -n "$host" && -n "$deploy_host" && "$host" != "$deploy_host" ]]; then
+        echo ""
+        echo "  [WARN] $role host mismatch!"
+        echo "         Profile ${url_var} host : $host"
+        echo "         Deploy env $env_name host: $deploy_host"
+        echo "         Deploy to '$env_name' would target the wrong machine."
+        echo "         Fix $var_name in the profile or update $deploy_file."
+        warn_count=$((warn_count + 1))
+      fi
+    }
+    validate_deploy_env_host PT_STATION_DEPLOY_ENV PT_STATION_URL Station
+    validate_deploy_env_host PT_RELAY_DEPLOY_ENV PT_RELAY_URL Relay
+    if [[ "$warn_count" -gt 0 ]]; then
+      echo ""
+      echo "  ⚠ $warn_count deploy env issue(s) detected. 'make station' will refuse to deploy until fixed."
+    fi
     ;;
 
   init)
