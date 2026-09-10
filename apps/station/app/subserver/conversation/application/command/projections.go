@@ -422,8 +422,24 @@ func (s *Service) ApplyFollowerEvent(
 	var rejection error
 	err = s.unitOfWork.ExecuteSerialized(
 		ctx,
-		"conversation-follower:"+string(event.ConversationID),
+		conversationGenesisLockKey(event.ConversationID),
 		func(transaction ports.Transaction) error {
+			if _, authorityErr := transaction.Repositories.Authority.LoadForUpdate(
+				ctx,
+				event.ConversationID,
+			); authorityErr == nil {
+				return conversationdomain.NewError(
+					conversationdomain.ErrorCodeCommandConflict,
+					"application.apply_follower_event",
+					"conversation_id",
+					"already exists as a local authority",
+				)
+			} else if !conversationdomain.IsCode(
+				authorityErr,
+				conversationdomain.ErrorCodeNotFound,
+			) {
+				return authorityErr
+			}
 			current, loadErr := transaction.Repositories.Followers.Get(
 				ctx,
 				event.ConversationID,

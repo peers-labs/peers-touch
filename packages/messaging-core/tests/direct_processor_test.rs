@@ -12,13 +12,13 @@ use messaging_core::crypto::identity::X25519KeyPair;
 use messaging_core::crypto::session::{DirectSession, DirectSessionKey};
 use messaging_core::inbox::{ClaimedItemConsumer, DirectMessageProcessor};
 use messaging_core::outbox::CommandOutboxEntry;
+use messaging_core::proto::actor_device_from_chat_endpoint;
 use messaging_core::proto::chat::{
     conversation_event, ConversationEvent, CryptoEndpoint as ProtoCryptoEndpoint,
-    DeviceEventDelivery, DeviceInboxPayloadType, DirectDeviceCiphertext, DurableDeviceInboxItem,
-    DoubleRatchetCiphertext, MessageCommittedFact, MessagingContentKind,
+    DeviceEventDelivery, DeviceInboxPayloadType, DirectDeviceCiphertext, DoubleRatchetCiphertext,
+    DurableDeviceInboxItem, MessageCommittedFact, MessagingContentKind,
     PreparedEndpointPayloadKind,
 };
-use messaging_core::proto::actor::{ActorDeviceRef, ActorRef};
 use messaging_core::store::MessagingRepository;
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -295,7 +295,7 @@ fn direct_processor_decrypts_and_commits_message_via_repository() {
         delivery_commitments: Vec::new(),
         membership_epoch: 1,
         mls_epoch: 0,
-        authority_station_id: "station-1".to_string(),
+        authority_station_peer_id: "station-1".to_string(),
         payload: Some(conversation_event::Payload::MessageCommitted(
             MessageCommittedFact {
                 message_id: "msg-1".to_string(),
@@ -328,13 +328,7 @@ fn direct_processor_decrypts_and_commits_message_via_repository() {
     let opaque_payload = delivery.encode_to_vec();
     let item = DurableDeviceInboxItem {
         item_id: "item-1".to_string(),
-        recipient: Some(ActorDeviceRef {
-            actor: Some(ActorRef {
-                ptid: recipient_proto.ptid,
-                ..Default::default()
-            }),
-            device_id: recipient_proto.device_id,
-        }),
+        recipient: Some(actor_device_from_chat_endpoint(&recipient_proto)),
         lane_sequence: 1,
         event_id: "evt-1".to_string(),
         conversation_id: "conv-1".to_string(),

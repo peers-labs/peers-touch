@@ -16,7 +16,7 @@ export type {
 } from './gatewayTypes';
 
 export { createSocialGateway } from './socialGateway';
-export type { SocialGateway, SocialFriendRequestsResult, SocialSessionsResult } from './socialGateway';
+export type { SocialGateway, SocialFriendRequestsResult } from './socialGateway';
 
 export { createGroupGateway } from './groupGateway';
 export type {

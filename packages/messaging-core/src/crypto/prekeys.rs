@@ -6,8 +6,8 @@ use ed25519_dalek::Signer;
 
 use super::identity::{IdentityKeyPair, X25519KeyPair};
 use crate::contracts::CryptoEndpoint;
+use crate::proto::actor_device_ref;
 use crate::proto::key_exchange::{DirectOneTimePreKey, UploadDirectKeyBundleRequest};
-use crate::proto::actor_device_ref_from_parts;
 
 const INITIAL_ONE_TIME_PREKEY_COUNT: i32 = 20;
 
@@ -99,25 +99,21 @@ fn upload_request(
     let signed_prekey = X25519KeyPair::from_private_bytes(bundle.signed_prekey_private);
     let signed_prekey_public = signed_prekey.public_bytes();
     let signature = actor_identity.signing_key().sign(&signed_prekey_public);
-    let one_time_pre_keys = bundle
-        .one_time_prekeys
-        .iter()
-        .map(|(id, private_key)| DirectOneTimePreKey {
-            key_id: *id,
-            public_key: B64
-                .encode(X25519KeyPair::from_private_bytes(*private_key).public_bytes()),
-        })
-        .collect();
     Ok(UploadDirectKeyBundleRequest {
-        device: Some(actor_device_ref_from_parts(
-            &endpoint.ptid,
-            &endpoint.device_id,
-        )),
+        device: Some(actor_device_ref(&endpoint.ptid, &endpoint.device_id)),
         identity_key_public: B64.encode(actor_identity.verifying_key().to_bytes()),
         signed_pre_key_id: bundle.signed_prekey_id,
         signed_pre_key_public: B64.encode(signed_prekey_public),
         signed_pre_key_signature: B64.encode(signature.to_bytes()),
-        one_time_pre_keys,
+        one_time_pre_keys: bundle
+            .one_time_prekeys
+            .iter()
+            .map(|(key_id, private_key)| DirectOneTimePreKey {
+                key_id: *key_id,
+                public_key: B64
+                    .encode(X25519KeyPair::from_private_bytes(*private_key).public_bytes()),
+            })
+            .collect(),
         supported_wire_versions: vec![1],
     })
 }
@@ -233,8 +229,11 @@ mod tests {
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0], requests[1]);
         assert_eq!(
-            requests[0].device.as_ref().unwrap().device_id,
-            "device-1"
+            requests[0]
+                .device
+                .as_ref()
+                .map(|device| device.device_id.as_str()),
+            Some("device-1")
         );
         assert_eq!(
             requests[0].one_time_pre_keys.len(),

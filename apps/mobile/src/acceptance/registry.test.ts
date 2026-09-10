@@ -320,15 +320,17 @@ describe('Mobile Acceptance Harness', () => {
     });
     invokeMock.mockResolvedValue({
       conversationId: 'conversation-1',
+      commandId: 'command-1',
       state: 'projected',
     });
 
     const result = await createMobileAcceptanceHarness()[
       'messaging.createDirect'
-    ]({ peerPtid: 'ptid:bob' });
+    ]({ peerPtid: 'ptid:bob', federationId: 'federation-1' });
 
     expect(result).toEqual({
       conversationId: 'conversation-1',
+      commandId: 'command-1',
       state: 'projected',
     });
     expect(invokeMock).toHaveBeenCalledWith('messaging_create_direct', {
@@ -336,6 +338,7 @@ describe('Mobile Acceptance Harness', () => {
         stationPeerId: 'station-peer',
         actorPtid: 'ptid:alice',
         peerPtid: 'ptid:bob',
+        federationId: 'federation-1',
       },
     });
   });
@@ -383,6 +386,7 @@ describe('Mobile Acceptance Harness', () => {
       conversations: [{
         conversationId: 'conversation-1',
         authorityStationId: 'station-peer',
+        federationId: 'federation-1',
         kind: 1,
         name: '',
         ownerPtid: 'ptid:alice',

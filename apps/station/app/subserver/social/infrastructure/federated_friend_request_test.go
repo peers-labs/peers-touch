@@ -180,6 +180,9 @@ func TestFederatedFriendRequestCrossStationAcceptConvergesAndCreatesDirectEffect
 	if effect == nil || conversationID != "" {
 		t.Fatalf("pending Direct effect = %+v conversation=%q", effect, conversationID)
 	}
+	if effect.FederationID != "federation:test" {
+		t.Fatalf("pending Direct effect federation ID = %q", effect.FederationID)
+	}
 	port := newTestDirectConversationPort(t, fixture.a.db)
 	worker, err := application.NewFriendRequestDirectEffectService(
 		fixture.a.store,
@@ -213,6 +216,64 @@ func TestFederatedFriendRequestCrossStationAcceptConvergesAndCreatesDirectEffect
 	)
 	if err != nil || effect == nil || conversationID == "" {
 		t.Fatalf("completed Direct effect = %+v conversation=%q err=%v", effect, conversationID, err)
+	}
+}
+
+func TestFederatedFriendRequestListReadsCanonicalProjections(t *testing.T) {
+	fixture := newFederatedFriendRequestFixture(t)
+	command := fixture.command(
+		t,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		"command-list",
+		"request-list",
+		stationA,
+		stationB,
+		fixture.clock.Now(),
+	)
+	if _, err := fixture.a.service.SubmitFriendRequestCommand(
+		context.Background(),
+		command,
+	); err != nil {
+		t.Fatal(err)
+	}
+	fixture.dispatchOnce(t, fixture.a)
+
+	projections, total, err := fixture.b.service.ListFriendRequestProjections(
+		context.Background(),
+		bobPTID,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_PENDING,
+		25,
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(projections) != 1 {
+		t.Fatalf("projection page total=%d items=%d", total, len(projections))
+	}
+	if projections[0].RequestID != "request-list" ||
+		projections[0].FederationID != "federation:test" ||
+		projections[0].Sender.GetPtid() != alicePTID ||
+		projections[0].Receiver.GetPtid() != bobPTID {
+		t.Fatalf("canonical projection = %+v", projections[0])
+	}
+
+	filtered, filteredTotal, err := fixture.b.service.ListFriendRequestProjections(
+		context.Background(),
+		bobPTID,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_ACCEPTED,
+		25,
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filteredTotal != 0 || len(filtered) != 0 {
+		t.Fatalf(
+			"accepted projection page total=%d items=%d",
+			filteredTotal,
+			len(filtered),
+		)
 	}
 }
 
@@ -2063,6 +2124,7 @@ func signedFriendRequestCommand(
 				Actor:    authorizer,
 				DeviceId: authorizer.GetPtid() + ":device",
 			},
+			FederationId: "federation:test",
 		},
 		SigningKeyId: key.keyID,
 	}

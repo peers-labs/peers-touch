@@ -144,6 +144,53 @@ func (r DeviceRoute) Validate(operation string) error {
 	)
 }
 
+type DestructiveReadIdentity struct {
+	RequestID     string
+	Requester     Endpoint
+	RequestSHA256 [sha256.Size]byte
+}
+
+func (i DestructiveReadIdentity) Validate(operation string) error {
+	if err := ValidateRequestID(operation, i.RequestID); err != nil {
+		return err
+	}
+	if err := i.Requester.Validate(operation); err != nil {
+		return err
+	}
+	if i.RequestSHA256 == ([sha256.Size]byte{}) {
+		return NewError(
+			ErrorCodeInvalidArgument,
+			operation,
+			"request_sha256",
+			"must contain a non-zero SHA-256 digest",
+		)
+	}
+
+	return nil
+}
+
+// ValidateRequestID requires a bounded, caller-owned canonical replay key.
+func ValidateRequestID(operation string, requestID string) error {
+	if err := validateBoundedString(
+		operation,
+		"request_id",
+		requestID,
+		MaxSessionIDBytes,
+	); err != nil {
+		return err
+	}
+	if requestID != strings.TrimSpace(requestID) {
+		return NewError(
+			ErrorCodeInvalidArgument,
+			operation,
+			"request_id",
+			"must be canonical without surrounding whitespace",
+		)
+	}
+
+	return nil
+}
+
 type DirectOneTimePreKey struct {
 	KeyID     int32
 	PublicKey []byte
@@ -406,6 +453,8 @@ func (r MLSKeyPackageReservation) Validate(operation string) error {
 
 type MLSKeyPackageClaim struct {
 	AuthenticatedAuthorityStation string
+	RequestID                     string
+	RequestSHA256                 [sha256.Size]byte
 	AuthorityPlanID               string
 	AuthorityStationID            string
 	Target                        Endpoint

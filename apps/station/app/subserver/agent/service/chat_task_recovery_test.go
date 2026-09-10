@@ -35,7 +35,7 @@ func TestRecoverRunningChatTasksSettlesDirectTurnAndSnapshot(t *testing.T) {
 		{name: "conversation", value: &persistence.Conversation{
 			ID:        "conversation-restart",
 			AgentID:   "agent-1",
-			Ptid:      "ptid:person:owner",
+			ActorPTID: "ptid:person:owner",
 			Title:     "Restart",
 			Status:    "active",
 			CreatedAt: now,
@@ -223,7 +223,7 @@ func TestRecoverRunningChatTasksConvergesAlreadyTerminalTurn(t *testing.T) {
 	now := time.Now().UTC()
 	finalResponse := "complete"
 	records := []interface{}{
-		&persistence.Conversation{ID: "conversation-terminal", AgentID: "agent-1", Ptid: "ptid:person:owner", Title: "Terminal", Status: "active", CreatedAt: now, UpdatedAt: now},
+		&persistence.Conversation{ID: "conversation-terminal", AgentID: "agent-1", ActorPTID: "ptid:person:owner", Title: "Terminal", Status: "active", CreatedAt: now, UpdatedAt: now},
 		&persistence.AgentTurn{ID: "turn-terminal", ConversationID: "conversation-terminal", AgentID: "agent-1", Status: string(domain.TurnStatusCompleted), FinalResponse: &finalResponse, TerminalReason: "completed", StartedAt: now, EndedAt: &now},
 		&persistence.TurnAttempt{ID: "attempt-terminal", TurnID: "turn-terminal", AttemptIndex: 1, Status: string(domain.TurnStatusCompleted), StartedAt: now, EndedAt: &now},
 		&persistence.TaskRun{TaskID: "task-terminal", Surface: int32(model.TaskSurface_TASK_SURFACE_CHAT), Status: int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING), OwnerActorPTID: "ptid:person:owner", ConversationID: "conversation-terminal", CreatedAt: now, StartedAt: now, UpdatedAt: now},

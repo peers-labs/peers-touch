@@ -51,6 +51,7 @@ pub enum ConversationKind {
 pub struct ConversationProjection {
     pub conversation_id: ConversationId,
     pub authority_station_id: String,
+    pub federation_id: String,
     pub kind: i32,
     pub name: String,
     pub owner_ptid: Ptid,
@@ -212,6 +213,7 @@ pub struct MlsConversationMemberProjection {
 pub struct MlsConversationProjection {
     pub conversation_id: String,
     pub authority_station_id: String,
+    pub federation_id: String,
     pub kind: i32,
     pub name: String,
     pub owner_ptid: String,
@@ -307,6 +309,7 @@ pub struct MlsSenderTransitionReceiveCommit<'a> {
     pub session_state: &'a [u8],
     pub membership_epoch: i64,
     pub mls_epoch: i64,
+    pub genesis_projection: Option<&'a MlsConversationProjection>,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,

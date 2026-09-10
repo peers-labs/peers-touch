@@ -5,7 +5,7 @@
 > retained as pre-consolidation implementation evidence and Device Messaging
 > Engine history
 > **Version**: v1.5
-> **Created**: 2026-08-08 | **Updated**: 2026-09-04
+> **Created**: 2026-08-08 | **Updated**: 2026-09-06
 > **Owner**: Messaging Platform Team
 
 ---
@@ -37,7 +37,8 @@ terminology remains valid for the internal runtime.
 MP-W10 attachment amendment `PLAN_APPROVED`（Owner approved 2026-08-10）；
 MP-W12 interaction amendment `PLAN_APPROVED`（Goal owner approved 2026-08-16）。
 MP-D28 industry-aligned pending/retry + post-accept retract amendment is accepted
-（Goal owner approved 2026-08-17）。
+（Goal owner approved 2026-08-17）。MP-W14 follower-membership amendment is
+`PLAN_APPROVED`（Owner accepted MP-D29 and continued execution on 2026-09-05）。
 
 ## 2. Scope And Non-Scope
 
@@ -45,7 +46,8 @@ MP-D28 industry-aligned pending/retry + post-accept retract amendment is accepte
 
 - Model proto、Station Messaging Platform、Desktop/Mobile Messaging Engine。
 - Direct、Group MLS、multi-device、recovery、receipts、attachments、search、
-  reply/thread、edit/retract、reaction、pin、typing。
+  reply/thread、edit/retract、reaction、pin、typing，以及Chat跨Station follower
+  membership。
 - durable authority/queue/federation、native acceptance、旧路径删除和文档归并。
 
 非范围：
@@ -88,6 +90,7 @@ MP-D28 industry-aligned pending/retry + post-accept retract amendment is accepte
 | MP-W10 Attachments/search | C13/C14 | A05/A11/A12 | D11/D23-D25 | G13/G14 |
 | MP-W12 Message interactions/typing | C10/C15/C16 | A02-A05/A09/A17/A18 | D09/D12/D26/D27 | G10/G15/G16 |
 | MP-W13 Product truth repair | C01-C03/C10/C13-C16 | A05/A09/A11/A12/A17/A18 | D09/D11/D23-D28 | G13-G16 + `chat-native-product-closure-e2e` |
+| MP-W14 Follower membership projection | C02/C03/C09-C12/C16 | A02-A04/A06/A09/A10 | D02-D05/D09/D18-D21/D29 | G02/G03/G09-G12/G15 + `chat-native-product-closure-e2e` |
 | MP-W11 Cutover/deletion/final audit | all | A01-A18 | D10/D12/D26/D27 | G01-G16 |
 
 ## 5. Dependency DAG
@@ -115,7 +118,16 @@ MP-W01 + MP-W03 + MP-W04 + MP-W12 ───────> MP-W09
 
 MP-W10-E + MP-W12 + Social Runtime Phase 3 ──> MP-W13-A/B/C/D/E
 MP-W13-A/B/C/D/E ────────────────────────────> MP-W13-F
-W02/W05/W06/W07/W08/W09/W10-E/W12/W13 + W11-R ──> MP-W11 final closure
+
+MP-W01 + MP-W02 + MP-W06 + MP-W07
+  └──> MP-W14-A
+        ├──> MP-W14-B
+        └──> MP-W14-C
+              └──> MP-W14-D
+                    └──> MP-W14-E
+
+W02/W05/W06/W07/W08/W09/W10-E/W12/W13/W14 + W11-R
+  └──> MP-W11 final closure
 ```
 
 可并行：
@@ -778,7 +790,15 @@ MP-W13-00 baseline + plan/Anchor
 
 MP-W13-A/B/C/D/E
   └──> MP-W13-F Acceptance truth cutover
-        └──> MP-W11 final closure rerun
+        └──> MP-W14-E follower-membership proof
+              └──> MP-W11 final closure rerun
+
+MP-W01 + MP-W02 + MP-W06 + MP-W07
+  └──> MP-W14-A contracts and persistence
+        ├──> MP-W14-B authority projection
+        └──> MP-W14-C follower ingest and replay
+              └──> MP-W14-D canonical reader and consumer cutover
+                    └──> MP-W14-E two-Station product proof
 ```
 
 `A` through `E` may be investigated in parallel, but shared projection contracts and
@@ -948,6 +968,90 @@ semantics.
 - If a receiver-visible expected behavior is ambiguous, stop with
   `PRODUCT_AMENDMENT_REQUIRED`.
 
+### MP-W14: Authority-Signed Follower Membership Projection
+
+`MP-D29` was accepted by the Owner on 2026-09-05. This workstream closes the
+verified cross-Station Chat gap without making the standalone Federation
+product module part of the delivery scope.
+
+#### Scope
+
+- Chat Authority public events, membership rows, and projection grants.
+- Chat-owned federation frames, outbox/inbox, replay, and bounded gap state.
+- Home Station follower head and membership persistence.
+- Canonical Messaging membership reads and actor-local member settings.
+- Desktop removal of legacy plaintext thread/settings reads for canonical
+  Messaging conversations.
+
+Standalone Federation, Applet, Agent, Mobile, and unrelated Acceptance Infra
+work remains out of scope.
+
+#### Responsibility Closures
+
+| Closure | Responsibility | Dependencies | Deliverables | Required evidence |
+|---|---|---|---|---|
+| `MP-W14-A` Contracts and persistence | Proto and repository truth | W01/W02/W06/W07 + accepted MP-D29 | Typed follower projection/replay contracts; authority membership Home Station route; follower conversation/head/member/event/grant/pending persistence; migrations and repository interfaces | Proto generation, schema tests, repository duplicate/conflict/restart tests |
+| `MP-W14-B` Authority projection | Authority transaction and target grants | W14-A | Pre/post Home Station target selection; one Station-addressed projection outbox per target; immutable per-event grants; event/projection/device/receipt atomic commit | Authority UOW tests for create, ordinary event, add/remove, zero-device, rollback and duplicate |
+| `MP-W14-C` Follower ingest and replay | Verified target projection | W14-A/W14-B | Signature/source/target/hash validation; pinned authority; ordered apply; bounded gap buffer; fork/read-only states; signed grant-scoped replay; inbox/head/membership atomic commit | Ingest and replay tests for missing base, gap, duplicate, fork, expiry, quota, wrong key/target/nonce and source loss |
+| `MP-W14-D` Canonical authorization cutover | Membership reader and Chat consumers | W14-C/W13-D | Authority/follower repository selection; typed Messaging member-settings API; Device Engine thread summary/count; deletion of legacy Conversation membership and thread/settings authorization for Messaging IDs | Local/remote authorization tests, removed-member denial, tree-wide zero-reference scan |
+| `MP-W14-E` Product proof | Windows cross-Station IM Chat | W14-D/W13-F | Bob Home Station follower projection; Alice/Bob bidirectional Group send; settings/thread/toolbar path without 403; exact source/binding/runtime/cleanup evidence | Targeted Windows Product Closure, remaining approved Windows Native Chat Gates, Gap Detector |
+
+#### Atomic Cutover
+
+```text
+typed contracts and repositories
+  -> authority projection plus grants
+  -> follower ingest/replay
+  -> canonical membership reader
+  -> settings/thread consumers
+  -> delete legacy authorization/read paths
+  -> exact-source Windows proof
+```
+
+No queue-history inference, client membership assertion, mutable membership
+snapshot, legacy Conversation fallback, or endpoint-payload parsing may remain
+after `MP-W14-D`.
+
+#### Acceptance Scenarios
+
+##### MP-W14-AS01: Remote group creation and reply
+
+- **Precondition**: Alice is bound to station-four and Bob to station-five.
+- **Action**: Alice creates a Group, sends a message, then Bob replies.
+- **Expected**: station-five has verified active follower membership before
+  acknowledging the projection; both native clients render exact plaintext.
+- **Failure variant**: missing or invalid projection keeps Bob read-only and
+  returns a typed authorization failure without accepting the command.
+- **Evidence**: Station rows/frame receipts plus Windows DOM transcript.
+- **Status**: implementation and local contract coverage pass; two-Station
+  Native proof remains pending in `MP-W14-E`.
+
+##### MP-W14-AS02: Removal revokes Home Station authorization
+
+- **Precondition**: Bob is an active remote member, including the zero-device
+  case.
+- **Action**: Authority commits Bob's removal and delivers the terminal
+  projection.
+- **Expected**: station-five marks Bob inactive before ACK; future settings and
+  commands are rejected.
+- **Failure variant**: an old queue item or receipt cannot restore membership.
+- **Evidence**: projection/head/member rows, ACK ordering, typed denial.
+- **Status**: local removal/ACK ordering and removed-member denial regressions
+  pass; two-Station Native proof remains pending in `MP-W14-E`.
+
+##### MP-W14-AS03: Gap, duplicate, and restart convergence
+
+- **Precondition**: follower head exists on station-five.
+- **Action**: deliver a duplicate, then a future event with a missing
+  predecessor, restart, and replay the authorized event range.
+- **Expected**: duplicate is a no-op; gap remains unauthorized until signed
+  replay closes it; restart converges to one head and one membership set.
+- **Failure variant**: fork, wrong target/key/nonce, stale page, grant mismatch,
+  quota overflow, or source loss enters the defined fail-closed state.
+- **Evidence**: repository state-machine tests and two-Station replay trace.
+- **Status**: local duplicate/gap/fork/pagination/restart/replay regressions
+  pass; the two-Station replay trace remains pending in `MP-W14-E`.
+
 ### MP-W11: Atomic Cutover And Completion Audit
 
 交付物：
@@ -997,7 +1101,80 @@ Closure enforcement (deterministic):
 | MP-W10-E | completed for `desktop-linux-native` | W05/W10-D | Exact-source Product Closure proves Native picker preview, send outcome handling, attachment-only draft retention, receiver rendering, count conservation, restart, and cleanup on Linux. Other Desktop runtime cells and Mobile remain `UNPROVEN`. |
 | MP-W12 | correction implemented for `desktop-linux-native`; exact-source revalidation pending | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | The Typing Gate now exercises revoked-device submission rejection and receiver non-observation; focused tests pass. macOS, Windows, and Mobile parity remain `UNPROVEN`. |
 | MP-W13 | independent-review corrections implemented; macOS, Windows, and Mobile `UNPROVEN` | W10-E/W12 + Social Runtime Phase 3 | Fail-closed Desktop logout and Native lifecycle cleanup corrections pass focused and full local verification. A clean exact-source Linux aggregate remains required. |
-| MP-W11 | pending clean exact-source revalidation | W02-W10/W12/W13 | W11 now binds immutable Station/live identity and the parent aggregate containing canonical 18 Gates plus retained `proto-build`; both W11 scans and Completion Audit run in the same closure plan. |
+| MP-W14 | A-D implemented, committed, and locally verified; E partial | W01/W02/W06/W07/W13 + accepted MP-D29 | Commit `f04e0dfd68513ab8d249a5cfe0ed93645d189536` passes the approved local Chat matrix. Windows run `20260905T114725741869Z-8894cc822a6bd05b8f187403b0c557e3` proves active follower membership and typed settings but exposes one remaining remote-authority prepare defect; full two-Station product proof remains `UNPROVEN`. |
+| MP-W11 | pending clean exact-source revalidation | W02-W10/W12-W14 | W11 remains the historical full-platform closure and now waits for MP-W14. Its existing scans and Completion Audit are not part of the reduced Windows iteration matrix. |
+
+### 2026-09-05 MP-W14 A-D Local Implementation Closure
+
+`MP-W14-A` through `MP-W14-D` are implemented in commit
+`f04e0dfd68513ab8d249a5cfe0ed93645d189536`. The final local Chat aggregate
+`20260905T045308233830Z-d8262898db418a6fcfd179ce939fe8f8` passed conditional
+`proto-build` plus `station-messaging-unit`, `messaging-platform-contract`,
+`desktop-check`, and `chat-native-visible-static`.
+
+Focused follower tests cover paginated replay remaining fail-closed, durable
+revocation before final-removal ACK, benign live/replay head races, zero
+follower state from device-first delivery, independent authority trust before
+an initial device checkpoint, and atomic exact-next public-event plus opaque
+device-row commit. Messaging Core passes 30 tests; Desktop routed-member,
+thread-count, settings, genesis, and membership-transition tests pass. Desktop
+and Mobile Chat TypeScript generated contracts are identical.
+
+The old Conversation thread-count and member-settings proto, routes, commands,
+service/repository methods, and persistence owner have zero live references.
+Source scans also find no client-controlled membership `home_station_id`, no
+production parsing of `DeviceEventDelivery.endpoint_payload`, no new
+chat-owned presence path, and no new debug statements. `MP-W14-E` remains
+partial after the runtime checkpoint below.
+
+### 2026-09-05 MP-W14-E Windows Runtime Checkpoint
+
+After restoring the dedicated Relay/DHT environments and replacing stale Relay
+mount tokens, exact-source Windows Product Closure run
+`20260905T114725741869Z-8894cc822a6bd05b8f187403b0c557e3` at
+`f04e0dfd68513ab8d249a5cfe0ed93645d189536` crossed Direct create/reopen and
+materialized station-five follower membership for group
+`ffebb1c2-e3e0-4ec8-b181-7ebee91ca088`:
+
+- follower state is `ACTIVE` at authority sequence 3;
+- Alice and Bob are active members;
+- three follower receipts are applied and no pending event remains;
+- Bob's typed member-settings reads and group typing authorization succeed.
+
+The Gate still failed at `transcript.thread.ui` because Bob's outbound reply
+remained `not_queued:draft`. station-five forwarded
+`/messaging/command/prepare` to station-four, whose federated prepare handler
+returned `messaging: record not found`. Both
+`AuthorityPrepareHandler.PrepareAuthenticated` and
+`AuthorityService.PrepareSend` still validate a remote sender endpoint through
+station-four's local device directory. This contradicts MP-D19's accepted
+signed endpoint-manifest route and is an implementation gap, not a new
+architecture decision.
+
+The next correction must validate the federated sender Home Station and active
+endpoint against the verified endpoint manifest, preserve local-device
+authorization for local callers, add manifest-only remote-sender regressions,
+and rerun the four local Chat Gates before exact-source deployment. The
+remaining Windows Native matrix is dependency-blocked until Product Closure
+passes. Runtime cleanup for the failed run is `DONE/PROVEN`.
+
+The approved correction now implements that manifest boundary locally:
+
+- `AuthorityService.PrepareFederatedSend` binds the verified sender manifest
+  Home Station to the authenticated federation source;
+- sender authorization requires the endpoint to exist in the signed active
+  endpoint set;
+- the authority-local `actor_devices` sender check is no longer used for send
+  preparation;
+- local send preparation still resolves a fresh signed local manifest and
+  therefore retains device revocation enforcement;
+- a real repository-backed regression proves remote Bob can prepare without a
+  local authority device row, while wrong-Home-Station and inactive-endpoint
+  attempts fail closed.
+
+Focused tests and the four-Gate local Chat cohort pass in aggregate
+`20260905T125516816692Z-a1fe8cb980506bd4e86592a5e451136e`. Exact-source
+deployment and post-fix Windows Product Closure remain pending.
 
 The 2026-08-27 persistent Linux Desktop handoff exposed four additional MP-W13-F
 gaps: the installed runtime did not preserve the runtime-cell keyring boundary,
@@ -1917,7 +2094,7 @@ browser/API-only/screenshot-only evidence 替代。
 
 ## 10. Final Claim Rule
 
-只有 MP-W00 至 MP-W13 全部完成、MP-G01 至 MP-G16 及
+只有 MP-W00 至 MP-W14 全部完成、MP-G01 至 MP-G16 及
 `chat-native-product-closure-e2e` 全部通过、old-path scans 为零、independent review
 与 completion audit 通过后，才允许声明：
 

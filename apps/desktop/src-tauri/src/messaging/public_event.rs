@@ -385,6 +385,7 @@ mod tests {
         AttachmentPlaintextMetadata, AttachmentTransferState, ConversationEvent,
         DeviceEventDelivery, EncryptedObjectDescriptor, MessageCommittedFact, MessagingContentKind,
     };
+    use messaging_core::proto::actor_device_from_chat_endpoint;
     use sha2::{Digest, Sha256};
 
     fn now() -> i64 {
@@ -450,7 +451,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 1,
             mls_epoch: 0,
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MessageCommitted(
                 MessageCommittedFact {
                     message_id: "message-1".to_string(),
@@ -483,15 +484,12 @@ mod tests {
         let opaque_payload = delivery.encode_to_vec();
         DurableDeviceInboxItem {
             item_id: "item-1".to_string(),
-            recipient: Some(crate::messaging::actor_device_ref(
-                &endpoint.ptid,
-                &endpoint.device_id,
-            )),
+            recipient: Some(actor_device_from_chat_endpoint(&endpoint)),
             lane_sequence: 1,
             event_id: "event-1".to_string(),
             conversation_id: "conversation-1".to_string(),
             idempotency_key: "event:event-1".to_string(),
-            payload_type: i32::from(DeviceInboxPayloadType::ConversationEvent),
+            payload_type: DeviceInboxPayloadType::ConversationEvent as i32,
             opaque_payload: opaque_payload.clone(),
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
             ..Default::default()
@@ -512,6 +510,8 @@ mod tests {
         store
             .persist_direct_send(&DirectSendCommit {
                 command_bytes: b"exact command bytes",
+                expected_authority_sequence: 0,
+                expected_authority_hash: &[],
                 advanced_sessions: &[direct_session()],
                 session_inits: &[],
                 projection: PendingSenderProjection {

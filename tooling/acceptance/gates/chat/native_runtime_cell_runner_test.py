@@ -14,6 +14,7 @@ from tooling.acceptance.gates.chat import desktop_gateway_e2e
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
     cleanup_preserving_primary_failure,
+    is_native_tauri_url,
     is_station_authorization_rejection,
 )
 from tooling.acceptance.gates.chat.native_multi_device_runner import (
@@ -75,6 +76,22 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             )
         )
 
+    def test_native_tauri_origin_accepts_platform_owned_origins_only(
+        self,
+    ) -> None:
+        self.assertTrue(is_native_tauri_url("tauri://localhost"))
+        self.assertTrue(
+            is_native_tauri_url("http://tauri.localhost/chat#direct")
+        )
+        for url in (
+            "http://localhost:3210",
+            "https://tauri.localhost",
+            "http://tauri.localhost:3210",
+            "http://user@tauri.localhost",
+        ):
+            with self.subTest(url=url):
+                self.assertFalse(is_native_tauri_url(url))
+
     def test_selected_runtime_fails_closed_and_uses_binding(self) -> None:
         support = (
             ROOT / "tooling/acceptance/gates/chat/native_support.py"
@@ -114,11 +131,9 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 start = source.index("    def start_client(")
                 injected = source.index("    def start_injected_client(", start)
                 dispatch = source[start:injected]
-                self.assertIn("if self.runtime_binding is not None:", dispatch)
-                self.assertLess(
-                    dispatch.index("self.start_injected_client(actor)"),
-                    dispatch.index("start_authenticated_client("),
-                )
+                self.assertIn("self.start_injected_client(actor)", dispatch)
+                self.assertNotIn("start_authenticated_client(", dispatch)
+                self.assertNotIn("if self.runtime_binding is not None:", dispatch)
 
     def test_native_restart_preserves_and_restores_session(self) -> None:
         contracts = {
@@ -187,6 +202,35 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self.assertIn("engine.endpoint().device_id.as_str()", endpoint_source)
         self.assertIn("engine.endpoint().ptid != actor_ptid", endpoint_source)
 
+    def test_native_acceptance_commands_are_registered_with_tauri(self) -> None:
+        main = (
+            ROOT / "apps/desktop/src-tauri/src/main.rs"
+        ).read_text(encoding="utf-8")
+        for command in (
+            "auth::acceptance_logout_window_session",
+            "messaging_commands::messaging_acceptance_current_endpoint",
+            "messaging_commands::messaging_acceptance_interaction_snapshot",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(command, main)
+
+    def test_acceptance_window_is_positioned_before_it_is_shown(self) -> None:
+        main = (
+            ROOT / "apps/desktop/src-tauri/src/main.rs"
+        ).read_text(encoding="utf-8")
+        start = main.index("fn configure_acceptance_window(")
+        end = main.index(
+            "\n#[cfg(all(test, feature = \"acceptance-webdriver\"))]",
+            start,
+        )
+        function = main[start:end]
+        resize = function.rindex(".set_size(")
+        direct_position = function.rindex("position_acceptance_window(")
+        show = function.rindex(".show()")
+
+        self.assertLess(resize, direct_position)
+        self.assertLess(direct_position, show)
+
     def test_initial_authentication_never_logs_out(self) -> None:
         runner_functions = {
             "contact_message_resilience_runner.py": "start_client",
@@ -195,7 +239,6 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             "native_multi_device_runner.py": "start_injected_client",
             "native_product_closure_runner.py": "launch_actor",
             "native_recovery_runner.py": "start_injected_client",
-            "native_support.py": "start_authenticated_client",
             "native_two_client_runner.py": "start_client",
             "native_typing_runner.py": "start_injected_client",
         }
@@ -205,6 +248,10 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 source = self.function_source(path, function_name)
                 self.assertIn("loginWithPassword", source)
                 self.assertNotIn("station.auth_logout()", source)
+        support = (
+            ROOT / "tooling/acceptance/gates/chat/native_support.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("def start_authenticated_client(", support)
 
     def test_native_cleanup_uses_window_owned_lifecycle(self) -> None:
         cleanup_functions = {

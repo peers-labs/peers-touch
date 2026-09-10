@@ -1,0 +1,565 @@
+# Debug Session: direct-projection-role
+- **Status**: [OPEN]
+- **Issue**: Windows Product Closure commits and later lists the Alice/Bob Direct conversation, but the initiating Desktop UI remains in the failed intent state because `messaging_create_direct` returns an error.
+- **Debug Server**: http://10.4.43.34:7777/event
+- **Log File**: `.dbg/trae-debug-log-direct-projection-role.ndjson`
+
+## Reproduction Steps
+1. Deploy exact source to disposable station-four, station-five, and sixwin.
+2. Run `chat-native-product-closure-e2e` in `desktop-windows-native`.
+3. Alice searches for Bob and opens the exact friend result.
+4. Observe the failed intent pane while the Direct conversation later appears in the local projection.
+
+## Hypotheses & Verification
+| ID | Hypothesis | Likelihood | Effort | Evidence |
+|----|------------|------------|--------|----------|
+| A | Direct creation commits, then the Tauri command fails because inbox validation requires a Group-style owner role. | High | Low | **Confirmed**: pre-fix log line 1028 reports `messaging conversation owner role is not projected`; later lines report `direct:1`. |
+| B | Station emits an invalid Direct role set. | Low | Low | **Rejected**: the Conversation aggregate canonically assigns `member` to both Direct participants. |
+| C | Station bootstrap invents an owner role for Direct and conflicts with the canonical inbox projection. | High | Low | **Confirmed**: bootstrap maps `owner_ptid` to `OWNER` without checking conversation kind. |
+| D | UI ignores a successful command/projection after an earlier failure. | Medium | Low | **Confirmed as consequence**: failed intent remains visible with one durable Direct session row and no active pane. |
+
+## Log Evidence
+- Pre-fix Acceptance run: `20260907T153750428899Z-90da421fea631aa9b0f51ae3b958df1f`.
+- Exact source: `a008a1c3282c3cbdc5c2bb36dc7c3286f92b452a`.
+- Binary SHA-256: `3925e2d5bb831937f8668261fd9a6bb5255a2b6747686e54fbf690aab635d54f`.
+- First failed step: `conversation.search.ui`.
+- Runtime log sequence: Conversation projection count becomes one; queue drain repeatedly rejects `messaging conversation owner role is not projected`; UI remains `data-chat-conversation-intent-state="failed"`.
+- Cleanup: `DONE/PROVEN`.
+- Debug log lines 1-4 bind the runtime failure, canonical Station roles, bootstrap role synthesis, and failed UI intent.
+- The focused Desktop binary unit-test target is independently blocked by pre-existing `application::auth::service` test-only import/type errors; this does not alter the runtime evidence.
+
+## Verification Conclusion
+Root cause confirmed: Desktop applies Group owner-role invariants to canonical
+Direct projections. The fix must make Direct validation require two sorted
+`MEMBER` participants with the deterministic owner metadata present, while
+retaining exact `OWNER` enforcement for Group. Station bootstrap must project
+the same kind-specific roles instead of inventing Direct ownership.
+
+## Fix
+- Desktop inbox validation now applies kind-specific Direct and Group role
+  invariants.
+- Station bootstrap projects Direct participants as `MEMBER` and reserves
+  `OWNER` synthesis for Group.
+- The Direct creation regression fixture now matches the canonical Station
+  event.
+
+## Post-Fix Evidence
+- `cargo check --features acceptance-webdriver`: PASS.
+- `station-messaging-unit`: `20260907T162201940480Z-ef80f18031688cbc36e95116b914a62e`.
+- `messaging-platform-contract`: `20260907T162220659277Z-75ade6a5e23284b518a19e8793f7a97e`.
+- `desktop-check`: `20260907T162250297926Z-b0986d285384583575acedb4b90a8302`.
+- `chat-native-visible-static`: `20260907T162311315463Z-728ed72316862d015983e93b23cd90aa`.
+- Exact-source Windows Product Closure
+  `20260907T162910781782Z-6bab8cef6910f9f82faeae965d0eb0fc`
+  proves first-open success, repeated deterministic reopen, and one active pane.
+- Product Closure next failed at `group.create.ui`; cleanup remained
+  `DONE/PROVEN`.
+
+## Iteration: Group Create Gate
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| E | The runner clicks submit before React commits contact selection and enables the button. | Confirmed | The runner has no post-selection wait; Station received no `/conversation/group/prepare`; no Group row exists. |
+| F | Product `handleFinish` rejects actor or Federation input. | Rejected | No frontend `createGroup failed` or validation feedback was emitted. |
+| G | Group prepare reached Station and failed. | Rejected | Station request logs contain no `/conversation/group/prepare` for the failed interval. |
+| H | Authority committed a Group but the clients failed to project it. | Rejected | station-four contains only the proven Direct; station-five contains no Conversation row. |
+
+## Group Gate Fix
+- The runner now waits for Bob's contact control to expose
+  `aria-pressed="true"` and for the submit control to become enabled before
+  issuing the native submit click.
+- A bounded timeout captures the Alice DOM, screenshot, modal count, pane
+  states, and submit state without weakening the Group product assertion.
+- The focused synchronization test passes.
+- Fresh local Gate runs pass:
+  - `station-messaging-unit`:
+    `20260907T171455773732Z-45ff86e160d98743abc4293f4bab99fd`;
+  - `messaging-platform-contract`:
+    `20260907T171455773750Z-ac295bc48df5b5c147413cd6c3a6d9d9`;
+  - `desktop-check`:
+    `20260907T171455773766Z-7a236d1a2c3514b2da8b0e80290de1cd`;
+  - `chat-native-visible-static`:
+    `20260907T171455773563Z-97c990c064491a98b727cfe253fbcdcf`.
+- Exact-source Windows post-fix verification remains pending; the debug session
+  stays `[OPEN]`.
+
+## Iteration: Group Federation Projection
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| I | The selected Direct peer loses its Federation ID in the Desktop local Conversation projection, so Group creation returns from the pre-command guard. | Confirmed | Windows run `20260907T172733115184Z-0c931661f30e78bb940a7a75796c0cd1` delivered native click events after committed selection, but emitted no Group command. Station's Direct row retains `fed_chat_7341c15a026c42dd6d56`; the Desktop projection contract and SQLite schema contain no Federation field. |
+| J | Contact selection is lost before `handleFinish`. | Rejected | Timeout DOM preserves Bob with `aria-pressed="true"` and the submit control enabled. |
+| K | The authenticated actor disappears before submission. | Rejected | The same DOM still renders Alice's authenticated Chat surface and runtime logs continue successful auth validation. |
+| L | Native input does not deliver the submit click. | Rejected | The native click helper observed the enabled target and completed its `mousedown`, `mouseup`, and `click` acknowledgements before the timeout. |
+
+The next fix belongs to the Desktop Device Messaging Engine projection:
+preserve canonical `federation_id` from Conversation authority events and
+Station bootstrap through local persistence, recovery, Rust/TypeScript
+projection, and `socialChat`. The modal must continue to reject missing or
+ambiguous Federation context.
+
+## Federation Projection Fix
+- Exact-source Windows run
+  `20260907T172733115184Z-0c931661f30e78bb940a7a75796c0cd1`
+  at `8c26787fbf024a2bf948827295f94e847417df36`, binary SHA-256
+  `54c28b1f3566124f4cd650ca8558c2273c0c2ee01e0c792a30d691e1d3fd2df2`,
+  proves committed Group selection and enabled-submit state before the native
+  click.
+- The submit click produced no `/conversation/group/prepare`, left the modal
+  open, and retained the enabled submit control. Station's Direct row retains
+  Federation `fed_chat_7341c15a026c42dd6d56`.
+- Desktop's local Conversation projection had no `federation_id` column or
+  Rust/TypeScript field. `CreateGroupModal` therefore rejected the selected
+  contact in its pre-command Federation guard.
+- The correction carries the authority-owned Federation ID through the shared
+  schema migration, creation/MLS projections, recovery, Desktop Rust JSON,
+  TypeScript service contract, `socialChat`, Mobile persistence/commands, and
+  Mobile lifecycle repair from canonical `/conversation/list` protobuf data.
+  Existing v2 recovery archives without the field remain decodable; Desktop and
+  Mobile repair empty legacy values from Station without inventing scope.
+- Local verification passes:
+  - Messaging Core: `106+2`;
+  - Desktop tests: `540` passed, one explicitly skipped;
+  - messaging platform contract: `19`;
+  - Desktop TypeScript check;
+  - Desktop production build;
+  - Desktop Rust `cargo check --features acceptance-webdriver`;
+  - Mobile Rust: `69` tests;
+  - full `pnpm mobile:check`;
+  - legacy recovery archive compatibility and pre-column SQLite migration;
+  - `station-messaging-unit`:
+    `20260908T012913836503Z-0950132dc5eb697bbbbfa3b9024bacc5`;
+  - `messaging-platform-contract`:
+    `20260908T012928729229Z-3fbe961ea4cc6aa0a2ccdc6b78643a99`;
+  - `desktop-check`:
+    `20260908T012952353971Z-4fde3c43ff57faf818e946e6a790f4c1`;
+  - `chat-native-visible-static`:
+    `20260908T013008012282Z-5044574d070da418cd2e02a6f843fdbc`;
+  - `mobile-contract-static`:
+    `20260908T013026599038Z-b494469b036bebe0b789cb7439da32d2`.
+- Exact-source Windows verification of this projection correction is pending;
+  the debug session stays `[OPEN]`.
+
+## Iteration: Group Signed Endpoint Routes
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| M | Group submission reaches Station after Federation projection repair. | Confirmed | Exact-source Windows run `20260908T013805491929Z-5d8f7a0c6d64aec300b72900a1ecd09c` calls `POST /conversation/group/prepare`; Desktop records `station returned 400`. |
+| N | Group preparation incorrectly requires remote Bob in the authority Station's local Actor Device table. | Confirmed | Station request `131caa21-a783-43e4-a7ef-161743ad84b1` returns 400 after the local identity query resolves only Alice. `PrepareGroup` called `resolveActorRoutes`, and KeyPackage reservation called `activeRoute`, both backed only by local `actor_devices`. |
+| O | The existing MP-D19 signed endpoint-manifest path can supply canonical Alice/Bob routes without a Bob shadow row. | Confirmed locally | `TestConversationDDDGroupGenesisUsesVerifiedRemoteRoutes` creates the Group with Bob routed to station-five and asserts zero local Bob device rows. |
+
+- Runtime source: `4ff3f78fb4c6a437aa6b1ed645dabab57ca9b57e`.
+- Windows binary SHA-256:
+  `b144db724cc552c9c1c3fb7676670524e605a83629f737ae42c50c32ef3d0b54`.
+- Source/runtime identity, Direct create/reopen, native input, and cleanup pass.
+- First failed step: `group.create.ui`, caused by Station HTTP 400 during
+  `POST /conversation/group/prepare`.
+- The local correction:
+  - resolves one signed endpoint-manifest snapshot before Group preparation;
+  - passes server-derived canonical routes into the application service;
+  - binds KeyPackage reservation to verified Home Station routes;
+  - returns the same manifest snapshot used by the authority plan;
+  - binds the complete signed manifest set and stable directory state into the
+    persisted authority plan;
+  - revalidates fresh signed routes and stable directory state before Group
+    commit;
+  - resolves exact receipt replay before plan loading or remote manifest
+    lookup;
+  - derives Group name and members only from the persisted plan;
+  - keeps client-provided routing data non-authoritative.
+- Verification passes:
+  - full Conversation and Key Exchange tests;
+  - Conversation and Key Exchange race tests;
+  - focused Conversation and Key Exchange `go vet`;
+  - Go style, formatting, and diff checks;
+  - local aggregate
+    `20260908T032102443647Z-880042c6a33915570b610c7a94d90718`;
+  - `station-messaging-unit`
+    `20260908T032102660098Z-e50d904fe0d9cf71f21637d628504b76`;
+  - `messaging-platform-contract`
+    `20260908T032105462748Z-fe0e66b26c2c04814cfbff0d47eeb9a1`;
+  - `desktop-check`
+    `20260908T032108283088Z-58efca7e594a079767761275bff4ee83`;
+  - `chat-native-visible-static`
+    `20260908T032117217481Z-8905e613c33b030e18e8075e6daf24ca`;
+  - conditional `station-api-ownership`
+    `20260908T031556440970Z-1defc692da62374b13b9c5e23f453da2`;
+  - independent final seam review: no P0/P1 findings.
+- Exact-range plan:
+  `20260908T031725199224Z-b69de6f2a0fd623271448cdfd5f91dd2`.
+- Gap Detector
+  `20260908T032208866291Z-5c6df6dd6c62ef049d94c8a0f8ef78ac`
+  remains `UNPROVEN` for the pending native Gate and the unrelated
+  Acceptance provisioning self-suite.
+- Exact-source Windows verification remains pending; the debug session stays
+  `[OPEN]`.
+
+## Iteration: Group Genesis Command Route
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| P | The signed endpoint-route correction allows Group preparation to complete. | Confirmed | Exact-source Windows run `20260908T033256775430Z-34b2f520c4d47ab9351c6a41bb592255` records `POST /conversation/group/prepare` with HTTP 200. |
+| Q | Desktop Rust submits the prepared Group genesis command through the ordinary command route. | Confirmed | The next Station request is `POST /conversation/command` with HTTP 200; the response carries a typed rejection rather than a committed Group event. |
+| R | Group authority committed and only the Desktop projection failed. | Rejected | PostgreSQL has no Group Conversation row or Group command receipt; the authority plan remains `prepared`. |
+| S | The canonical Group creation route is unavailable or ambiguous. | Rejected | The accepted capability registry, AO-D07, generated proto, and Station handler all bind `CreateGroupConversationRequest` to `POST /conversation/group`. |
+
+- Runtime source: `018491a013277a1bea1d5ba50d7fd3a3aaa75203`.
+- Windows binary SHA-256:
+  `9db85704bdbdec5432df9798e056c9c1fdd27d89fc2c1aa8426e28a82a2f4092`.
+- First failed step: `group.create.ui`; cleanup is `DONE/PROVEN`.
+- The local correction:
+  - identifies only prepared epoch-zero Group genesis commands;
+  - submits those commands as `CreateGroupConversationRequest` to
+    `/conversation/group`;
+  - leaves all ordinary commands and established membership transitions on
+    `/conversation/command`;
+  - rejects non-canonical durable command bytes;
+  - verifies the returned Group Conversation and committed event against the
+    submitted command.
+- Current-source verification:
+  - Desktop Rust `cargo check --features acceptance-webdriver`: pass;
+  - focused Rust route/byte/response tests are present but the binary test
+    target remains blocked before execution by unrelated pre-existing Auth
+    test-only compile failures;
+  - `station-messaging-unit`:
+    `20260908T042714357902Z-41049387fc52c3b2069a50a526823961`;
+  - `messaging-platform-contract`:
+    `20260908T042729704170Z-b4257c7aa7feab8cbe4756c06fb40bba`;
+  - `desktop-check`:
+    `20260908T042825752431Z-c33f841bdfa01c864ae452a23e9380a2`;
+  - `chat-native-visible-static`:
+    `20260908T043359375556Z-e0344ecc986d45b8d6e14ad93e08a96b`;
+  - `station-api-ownership`:
+    `20260908T043433761115Z-7a2529c303868bb510bbd7875d883735`.
+- Exact-source Windows verification of this route correction is pending; the
+  debug session stays `[OPEN]`.
+
+## Iteration: Group Genesis Sender Delivery
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| T | The Desktop route correction reaches canonical Group creation. | Confirmed | Exact-source run `20260908T044521277951Z-0fc6d8073736d98fc571117a45f01feb` records `POST /conversation/group` after successful preparation. |
+| U | Genesis delivery mapping wrongly requires an MLS Welcome for the creator. | Confirmed | The focused pre-fix mapper regression returns `welcome_payloads: does not cover every added endpoint`; the genesis plan contains both Alice and Bob in `AddedEndpoints`, while the client correctly emits a Welcome only for Bob. |
+| V | The Group committed and only projection failed. | Rejected | `/conversation/group` returns 400 before commit and Alice continues to list one Direct and zero Group conversations. |
+
+- Runtime source: `1824138a83d25dba08a2e2a823c1778b3cf34a90`.
+- Windows binary SHA-256:
+  `82d73b98ffe9b67b4bdad9534f67f27271d98fe6ae258a83d690f26df119f19b`.
+- First failed step: `group.create.ui`; cleanup is `DONE/PROVEN`.
+- The mapper correction keeps removed-sender retirement first, then emits the
+  sender public marker before mapping other added endpoints to MLS Welcomes.
+- Verification passes:
+  - focused mapper regression;
+  - Conversation HTTP race suite;
+  - `station-messaging-unit`
+    `20260908T052618517119Z-b203407dfe9b05dddad0cfdbb2064d79`;
+  - `messaging-platform-contract`
+    `20260908T052623369202Z-85f4abb691348b450fca24be6175af29`;
+  - `desktop-check`
+    `20260908T052632311323Z-5db7cb388d6e8b8a1337e3192a2edd97`;
+  - `chat-native-visible-static`
+    `20260908T052640959588Z-3cec8093c01a13cdcf05b27cfd062b57`;
+  - `station-api-ownership`
+    `20260908T052652251946Z-cadf5f3daa35394f3e41015d0fd4b10e`.
+- Exact-source Windows verification of this mapper correction is pending; the
+  debug session stays `[OPEN]`.
+
+## Iteration: Group Genesis Public Event
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| W | The mapper correction allows canonical Group creation to commit. | Confirmed | Exact-source run `20260908T053425400659Z-254d5079f8451a6c7bf7e9b08c3daab7` records successful `/conversation/group/prepare` and `/conversation/group` requests at source `0261490b07a8c278fbc8fdfa3f4c3775ddfaebd5`. |
+| X | Alice's local Group remains absent because authority creation still fails. | Rejected | The authority Group commits; the first client error is `messaging public-event payload type is unsupported`. |
+| Y | The creator's committed public marker is not accepted by the Device Messaging Engine public-event projection path. | Confirmed | Alice's runtime log records the unsupported payload during the immediate drain assist and every later lifecycle drain while the local list remains one Direct and zero Group conversations. |
+
+- Windows binary SHA-256:
+  `8c9ff3cca2cc02eff7a869cc06b9deb92e4ba4a2db173ccd046943afac32179b`.
+- First failed step: `group.create.ui`, with
+  `timed out waiting for Alice active MLS group`.
+- Cleanup is `DONE/PROVEN`.
+- The first dependency-ready correction is in the owning
+  Desktop/Messaging Core public-event projection path.
+- station-five's authority-local delivery commitment rejection for Bob's
+  consumption receipt is recorded as a secondary boundary and does not replace
+  the earlier Alice projection failure.
+- The debug session stays `[OPEN]`.
+
+## Group Genesis Client Consumption Fix
+
+- Portable dispatch now routes `PUBLIC_EVENT + ConversationCreatedFact` to the
+  MLS sender processor.
+- The sender processor validates the creator marker, exact pending transition,
+  canonical Group creation snapshot, and accepted OpenMLS endpoint set.
+- Genesis `MLS_WELCOME` processing accepts the same creation fact only when its
+  zero-to-one epochs, snapshot, recipient, payload commitment, and exact
+  OpenMLS leaves match.
+- Desktop and Mobile commit Group projection, member roles, MLS state,
+  authority head, lane cursor, consumption marker, receipt, sender command,
+  and pending-transition removal atomically.
+- Local verification:
+  - Messaging Core `107/107`;
+  - Mobile messaging adapter `23/23`;
+  - Desktop Rust production check and `pnpm mobile:check`;
+  - `station-messaging-unit`
+    `20260908T072215775592Z-46a8b065433b8339394218452ac84b25`;
+  - `messaging-platform-contract`
+    `20260908T072227303408Z-2aab2223b11cc5235715ea91cca5f39e`;
+  - `desktop-check`
+    `20260908T072300032308Z-bc2185c1bb191c6c9d5026d6da99278e`;
+  - `chat-native-visible-static`
+    `20260908T072343200814Z-8b5f20ed55b295c11643f1a16ff05e2a`;
+  - `mobile-contract-static`
+    `20260908T071348358555Z-938144a9c225a336cf59fcab73a40a19`;
+  - `station-api-ownership`
+    `20260908T071331641490Z-5b73d412392c16df2b7a0e9b3abbedb5`.
+- Exact-source Windows verification remains pending; the debug session stays
+  `[OPEN]`.
+
+## Iteration: Ordinary Command Signed Routes
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| Z | The Group-genesis client correction projects ready MLS state for both Alice and Bob. | Confirmed | Exact-source Product Closure run `20260908T074818880888Z-3d7030abcb60e950e59e442cf9d38d7b` passes `group.create.ui` at source `d84b1abcfa7bbe7ca0d990344c43f9e4a26f13f9`. |
+| AA | Alice's first Group message fails because the Conversation aggregate or epochs are invalid. | Rejected | station-four PostgreSQL contains the active Group, sequence 1, membership epoch 1, MLS epoch 1, and active Alice/Bob members with their correct Home Stations. |
+| AB | Ordinary command preparation drops remote Bob by consulting authority-local Actor Device truth. | Confirmed | station-four contains only Alice in `actor_devices`; `PrepareCommand` calls `resolveActorRoutes` through the local identity directory for every active member, then returns HTTP 400. Submission repeats the same lookup. |
+| AC | The accepted MP-D19 endpoint-manifest path can provide the complete command route snapshot without a remote shadow row. | Confirmed by existing owner path | Group prepare/create already resolve signed manifests outside the UOW, pass canonical `VerifiedRoutes`, and revalidate the locked actor set. |
+
+- Acceptance aggregate:
+  `20260908T074818777617Z-26a15dea2864b482b8b953c6dc1480f5`.
+- Windows cell:
+  `20260908t074856709879z-2bbd5496ad908ba4`.
+- Windows binary SHA-256:
+  `a1b26bc35ab9a867c4804f49beec15cbc4574f919ccb92e22bc12dc271f4057a`.
+- Passed steps: `alice.launch`, `bob.launch`, `conversation.search.ui`, and
+  `group.create.ui`.
+- First failed step: `transcript.thread.ui`, with Alice timing out on visible
+  message `w13-root-60670` and reporting
+  `messaging_send_outcome:not_queued:draft`.
+- Cleanup is `DONE/PROVEN`.
+- The correction belongs to Station Conversation. It must resolve fresh signed
+  manifests before ordinary prepare/submit, pass verified routes into the
+  application service, validate the exact locked actor set, preserve local
+  `IsActive` authorization, and bind federated senders to the authenticated
+  Home Station.
+- The client and protobuf contracts remain unchanged. Remote Actor shadow rows,
+  fallback reads, and a Station Messaging facade remain forbidden.
+- station-five's authority-local receipt commitment rejection remains a
+  secondary boundary.
+- The debug session stays `[OPEN]`.
+
+## Ordinary Command Signed-Route Fix
+
+- Production resolves the authority actor set before manifest lookup and passes
+  fresh signed endpoint routes into ordinary prepare and submit.
+- The application service revalidates the exact actor and Home Station set
+  under the locked aggregate.
+- Local senders still require an active local Actor Identity device.
+- Federated senders must match the authenticated source Home Station and active
+  Federation membership; no authority-local remote device row is required.
+- The same verified snapshot binds required endpoints, deliveries, submission,
+  and stale-plan response construction.
+- Focused regression proves the original Alice-local/Bob-remote shape with zero
+  Bob rows in authority-local `actor_devices`, plus wrong Home Station,
+  inactive local sender, and route-set drift rejection.
+- Full Conversation tests, race tests, `go vet`, Go style, formatting, and diff
+  checks pass. Independent seam review reports no P0/P1 finding.
+- Local Chat Gates:
+  - `station-messaging-unit`
+    `20260908T091503099805Z-e1d8eee5933fb55f354fc918f1e20720`;
+  - `messaging-platform-contract`
+    `20260908T091503099800Z-d4e451d77a221db6d4fa71bf34b08550`;
+  - `desktop-check`
+    `20260908T091503099826Z-0bd166c2e358268379cac7a134cbb282`;
+  - `chat-native-visible-static`
+    `20260908T091503099784Z-c43a202d98b5367637c3a4dee447480f`;
+  - `station-api-ownership`
+    `20260908T091547372258Z-8496e2900a1a6143827ccd0c3b451d23`.
+- Exact-range plan
+  `20260908T091939464338Z-58716024fc475e2b749e6389ed882355`
+  covers all 12 changed paths. Local aggregate
+  `20260908T092006472536Z-e2486e313e0f415be0402be559347726`
+  passes the four approved Chat Gates plus `station-api-ownership`.
+- Gap Detector remains `UNPROVEN` for deferred native/runtime and
+  Acceptance-self gates; no local result is treated as Product Closure proof.
+- Exact-source Windows Product Closure remains pending; the debug session stays
+  `[OPEN]`.
+
+## Iteration: Follower Delivery Receipt Return
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| AD | The MP-D19 signed-route correction lets Alice commit and deliver the first Group message to Bob. | Confirmed | Exact-source Product Closure run `20260908T095837802631Z-15c4c028e3e73cdfb50b88abc1af3ce6` records station-four authority sequence 2 and Bob's matching station-five device consumption. |
+| AE | Bob's reply reaches station-four but fails during sender projection. | Rejected | station-four has no Bob command receipt or post-sequence-2 event, and station-five has no outgoing Conversation authority-command frame. |
+| AF | station-five incorrectly applies an authority-local receipt commitment lookup to Bob's remotely sourced queue item. | Confirmed | Repeated `/conversation/delivery/receipt` submissions fail with `delivery_receipt_recorder.record: consumer: does not identify an expected authority delivery endpoint`. |
+| AG | The accepted Conversation/Federation architecture already defines the missing ownership path. | Confirmed by source | The public route remains `/conversation/delivery/receipt`; Conversation Delivery owns endpoint receipts; `DeliveryReceipt.SourceStation` and authority remote-receipt validation already exist; shared Federation owns durable cross-Station transport. |
+
+- Source:
+  `fbb4fb6b03a3bd65937f775414e4e4420b147df2`.
+- Acceptance aggregate:
+  `20260908T095837681852Z-2d30fd9817f778dab0df62adbefd12f4`.
+- Windows cell:
+  `20260908t095915889424z-7c0e3ce0ff8427d2`.
+- Windows binary SHA-256:
+  `e02c47fe5299cbdb13a28a2823c2659179e145d2726501b159284a274eab9647`.
+- Passed steps: `alice.launch`, `bob.launch`, `conversation.search.ui`,
+  `group.create.ui`, and Alice-to-Bob Group message delivery.
+- First failed step: `transcript.thread.ui`, with Alice timing out on
+  `w13-bob-60680`.
+- Cleanup is `DONE/PROVEN`.
+- The next correction must durably forward the exact Bob consumption receipt
+  from station-five to station-four, derive `SourceStation` from the
+  authenticated frame, preserve exact replay/conflict semantics, and let the
+  authority emit the existing `DEVICE_RECEIPT` aggregate to Alice.
+- No `/messaging/*` route, client-supplied authority route, fallback, duplicate
+  receipt store, or authority-local remote Actor row is permitted.
+- The debug session stays `[OPEN]`.
+
+## Follower Delivery Receipt Fix
+
+- Added one typed shared-Federation payload for the existing
+  `DeviceConsumptionReceipt`; `/conversation/delivery/receipt` remains the only
+  client route.
+- A follower validates and records the exact local consumed queue tuple, then
+  returns success only after the exact frame is in the durable Federation
+  outbox.
+- The authority derives the source Home Station from the authenticated frame,
+  pins it to the active Conversation member and follower authority, and reuses
+  the authority commitment/receipt ledger.
+- Receipt persistence and sender-facing local Device Inbox or remote Federation
+  delivery effects commit atomically.
+- Originator routes come from the immutable authority delivery commitments, so
+  a remote sender needs no authority-local Actor device row.
+- Exact replay is duplicate-safe; changed bytes conflict; same-event
+  multi-device receipts do not collide; replay repairs missing durable fan-out;
+  frame lifetime starts at Station admission rather than client consumption.
+- The realtime-only receipt publication path was removed.
+- Desktop lifecycle inspection proves outgoing receipt failure does not
+  short-circuit draft preparation or command dispatch; Bob's missing command
+  remains a separate runtime assertion for the next Product Closure run.
+- Local Gate aggregate:
+  `20260908T124713594514Z-380dca42bae140052b4e9df2105b3f13`.
+- Exact-source Windows Product Closure remains pending; the debug session stays
+  `[OPEN]`.
+
+## Iteration: D-17 Remote Ordinary Command Submission
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| AH | The follower receipt correction lets Bob proceed to ordinary command dispatch. | Confirmed | Exact-source Product Closure run `20260908T141700178703Z-805b1dd1bba78e3a4ba40f54c7004c6f` reaches Bob's Group reply after the receipt path completes. |
+| AI | Bob's command reaches station-four and fails during authority execution. | Rejected | station-four has no Bob command receipt or sequence-3 event. |
+| AJ | station-five durably forwards Bob's command through shared Federation. | Rejected | station-five has no payload-kind 2 authority-command outbox row. |
+| AK | Desktop lost the actor-device-signed D-17 path during the Conversation hard cut. | Confirmed | The active `StationCommandTransport` submits raw `ChatCommand` bytes regardless of whether the active Station is the authority. |
+
+- Source:
+  `af5bb3b5699f7c5dce2b7aabd992dc97e8101f29`.
+- Acceptance aggregate:
+  `20260908T141700065759Z-30dc11b8077b16c4cfcb0303887969b7`.
+- Windows cell:
+  `20260908t141743996690z-c977333e1f36eb29`.
+- Windows binary SHA-256:
+  `df1ecb7445d4a7e05e9ab14bdd8b84010788596cea764d7df0b71ed8398de5d9`.
+- Group:
+  `c1fff411-8a86-4460-9bb8-c7a26aa1e1ab`.
+- First failed step: `transcript.thread.ui`, with Alice timing out on
+  `w13-bob-9393`.
+- Cleanup is `DONE/PROVEN`.
+- The local correction restores deterministic signed proposals for remote
+  authority commands, Home exact replay before Federation sequence allocation,
+  active follower-head admission, and Desktop `COMMAND_RESULT` consumption.
+- Ambiguous transport outcomes remain retryable; accepted authority results
+  repair local command state; terminal membership results clear durable and
+  in-memory pending MLS state; expired or terminal Home outbox rows cannot be
+  reported as newly accepted.
+- Local aggregate
+  `20260908T162840127741Z-61da456f1bdd0c6896f197a978a846e7`
+  passes the four approved Chat Gates.
+- Exact-source Windows Product Closure remains pending; the debug session stays
+  `[OPEN]`.
+
+## Iteration: Verified Remote Actor Identity-Key Persistence
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| AL | The restored D-17 path creates a durable Bob authority-command frame on station-five. | Confirmed | Exact-source Product Closure run `20260908T163630929783Z-0d1461f4675bba5041949ca8934c5510` created payload-kind `2` frame `conversation-frame:d5628d7f17067462b0cb77b912b95c0839de2a9030e311d1b4bd1f05195362a1` for command `01M2108FGAE1R8DS2VXFKRJ1G3`. |
+| AM | The frame does not reach station-four. | Rejected | station-four received ten `POST /federation/delivery` attempts and returned protobuf HTTP 200 responses. |
+| AN | The authority accepts or terminally rejects Bob's command. | Rejected | The frame remained retryable for ten attempts and expired; station-four has no matching inbox row, command receipt, or sequence-3 event. |
+| AO | Bob's proposal uses a stale or unknown device signing key. | Rejected | The proposal binds device `01M20ZHP8FP9M5EBVRF6CHRH1N` and signing key `c744895f1da52a044a6800e31e4de868257f82caebbe45f70e19c548fc814f52`; Bob's signed remote profile exposes the exact same active key. |
+| AP | Actor Identity fails to persist the verified remote Actor identity public key required by Conversation delivery sealing. | Confirmed | station-four repeatedly fetched Bob's verified profile and endpoint manifest and persisted the endpoint-directory fence, but `actor_identity_keys` remained empty. `persistTransition` requires `ActorIdentityPublicKey` for the remote sender and returns retryable `CONVERSATION_ACTOR_KEY_UNAVAILABLE`. |
+
+- Source:
+  `24a795726d8371ea06d1f53dfbaec3543c7578cd`.
+- Acceptance aggregate:
+  `20260908T163630823708Z-9e1bf206bf014bdce567f569d6048951`.
+- Product Closure:
+  `20260908T163630929783Z-0d1461f4675bba5041949ca8934c5510`.
+- Windows cell:
+  `20260908t163713792019z-31b44cbadca0a230`.
+- Windows binary SHA-256:
+  `b48586fd55b0a0a8ff2eda4272f45965a21a966cfbfa3c8259fe2f2f36ff9f61`.
+- Group:
+  `027b3fbc-f245-4180-9468-c25403eb6615`.
+- Passed steps: `alice.launch`, `bob.launch`, `conversation.search.ui`, and
+  `group.create.ui`.
+- First failed step: `transcript.thread.ui`, with Alice timing out on
+  `w13-bob-27180`.
+- station-four authority remains at sequence 2. station-five's exact command
+  frame retried ten times and expired at its signed five-minute boundary.
+- Cleanup is `DONE/PROVEN`.
+- The correction belongs to Actor Identity. Acceptance of a verified signed
+  endpoint manifest must atomically establish or advance the remote Actor
+  identity continuity key and the endpoint-directory fence. Conversation
+  continues to consume this projection through its narrow identity port.
+- Exact replay with unchanged key material is allowed. Stale profile versions
+  and changed Actor identity keys fail closed. No proposal-supplied key,
+  Conversation-owned key copy, compatibility fallback, or new wire contract is
+  permitted.
+- The Actor Identity correction is locally implemented. Manifest acceptance
+  now persists the identity continuity key and endpoint-directory fence in one
+  transaction. Focused Actor Identity/Conversation tests, race tests, vet, Go
+  style, formatting, and the approved local Chat aggregate
+  `20260908T174540700796Z-0955f1301c2d2776f14dff2f6afb00cf`
+  pass. A separate production-adapter regression proves Conversation delivery
+  sealing reads the accepted remote identity key.
+- An earlier local aggregate was invalidated by intentional source changes
+  during execution and is excluded from proof.
+- Final exact-range aggregate
+  `20260908T175007415039Z-47f0bb3265dbf33d04c30b46f648f209`
+  passes all selected Chat/structure Gates except the unrelated pre-existing
+  `acceptance-runtime-provisioning-self` Agent V2 and launch-context baseline.
+  Gap Detector keeps the product claim `UNPROVEN`.
+- The debug session stays `[OPEN]`.
+
+## Iteration: Canonical Read-Cursor Device-Inbox Identity
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| AQ | The Actor Identity correction lets Bob's D-17 command commit and project to both clients. | Confirmed | Exact-source Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` records Bob's reply at authority sequence 3 and Alice's thread reply at sequence 4. |
+| AR | The reaction mutation fails at the authority. | Rejected | station-four commits the reaction as sequence 5 and Alice consumes it. |
+| AS | Bob cannot consume the reaction because an earlier Device Inbox item blocks his lane. | Confirmed | Bob lane 7 is a canonical payload-type-5 `ActorReadCursor` whose event ID equals the payload SHA-256. The client expects a retired `read:` prefix, decodes the cursor as `MessageReceipt`, and never reaches the lane-8 reaction. |
+
+- Source:
+  `2ae0254691d97f16c3c08ef3e8639bdd91a91eac`.
+- Acceptance aggregate:
+  `20260908T175709295124Z-a391b650f3a35af8f68fe2410fa19642`.
+- Product Closure:
+  `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc`.
+- Windows cell:
+  `20260908t175752889322z-745bcb62304f4a9d`.
+- Windows binary SHA-256:
+  `518bf35b8c40b9e56bc01cebc0902b5b1fcf3523cc54cc90901606a7b1c519f0`.
+- Group:
+  `c31757cf-2319-4aca-bdb4-b9c5e18a9d2a`.
+- Passed steps: `alice.launch`, `bob.launch`, `conversation.search.ui`,
+  `group.create.ui`, `transcript.thread.ui`, and `toolbar.geometry.ui`.
+- First failed step: `reaction.ui`; cleanup is `DONE/PROVEN`.
+- The local correction makes portable Messaging Core own one canonical
+  read-cursor/delivery-receipt decoder and makes Desktop use it. It validates
+  payload type, recipient, hash, deterministic protobuf bytes, and event
+  identity before the adapter commits local state. No `read:` compatibility
+  identity is retained.
+- Messaging Core focused tests pass 3/3; the full Core suite passes 110 unit
+  and 2 integration tests; Desktop production Rust compilation passes.
+- Exact-range aggregate
+  `20260909T075246544755Z-757a3a7473c595fc41013d034f28d7a9`
+  passes the four approved Chat Gates, `acceptance-plan-self`, and
+  `acceptance-infra-validation`.
+- `acceptance-runtime-provisioning-self`
+  `20260909T075314187326Z-0e361fd222d9560245f3aad313b5696a`
+  remains `PARTIAL/UNPROVEN` on the pre-existing Agent V2 helper/import and
+  launch-context timeout failures; it is not Chat product evidence.
+- Exact-source deployment and Product Closure rerun remain pending; the debug
+  session stays `[OPEN]`.

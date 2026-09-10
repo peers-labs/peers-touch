@@ -40,7 +40,7 @@ func seedAdmissionConversation(t *testing.T, db *gorm.DB) {
 	if err := db.Create(&persistence.Conversation{
 		ID:         "conversation-1",
 		AgentID:    "agent-1",
-		Ptid:       "ptid:actor-1",
+		ActorPTID:  "ptid:actor-1",
 		Title:      "Queue",
 		ProviderID: "provider-1",
 		Status:     "active",

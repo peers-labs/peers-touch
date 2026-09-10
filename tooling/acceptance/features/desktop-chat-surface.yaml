@@ -7,7 +7,7 @@
     "apps/desktop/src/pages/SocialChatPage.descriptor.tsx",
     "apps/desktop/src/components/chat/**",
     "apps/desktop/src/store/socialChat.ts",
-    "apps/desktop/src/runtimes/imRuntime.ts",
+    "apps/desktop/src/runtimes/socialRuntime.ts",
     "apps/desktop/src/services/im-service.ts"
   ],
   "truth_sources": [
@@ -19,18 +19,25 @@
     {"type": "desktop", "route": "chat session list"},
     {"type": "desktop", "route": "chat message area"}
   ],
-  "required_gates": ["desktop-check"],
+  "required_gates": [
+    "desktop-check",
+    "chat-contact-message-resilience-e2e"
+  ],
   "acceptance": {
     "service": [
       "Desktop chat store and services type-check against generated API contracts"
     ],
     "visible": [
       "SocialChatPage and chat components remain compile-safe",
-      "Session list and message area contracts remain connected to the chat store"
+      "Session list and message area contracts remain connected to the chat store",
+      "selecting Message for a friend without an existing conversation immediately opens a peer-bound conversation intent pane",
+      "Direct creation failure remains inline and retryable inside that peer-bound pane until Station projects the authoritative conversation"
     ]
   },
   "negative": [
     "Desktop type-check must not be reported as DOM-level UI E2E",
-    "page-local refresh must not replace runtime projection freshness contracts"
+    "page-local refresh must not replace runtime projection freshness contracts",
+    "switching only to the Chat tab or showing only a toast must not satisfy failed Direct-open recovery",
+    "client-local conversation intent must not be reported as committed Station conversation truth"
   ]
 }

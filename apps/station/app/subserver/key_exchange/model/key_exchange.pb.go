@@ -75,564 +75,6 @@ func (DirectKeyExchangePayloadKind) EnumDescriptor() ([]byte, []int) {
 	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{0}
 }
 
-// X3DH key bundle upload — base64-encoded public keys.
-type UploadKeyBundleRequest struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	IkPub   string                 `protobuf:"bytes,1,opt,name=ik_pub,json=ikPub,proto3" json:"ik_pub,omitempty"`
-	SpkId   int32                  `protobuf:"varint,2,opt,name=spk_id,json=spkId,proto3" json:"spk_id,omitempty"`
-	SpkPub  string                 `protobuf:"bytes,3,opt,name=spk_pub,json=spkPub,proto3" json:"spk_pub,omitempty"`
-	SpkSig  string                 `protobuf:"bytes,4,opt,name=spk_sig,json=spkSig,proto3" json:"spk_sig,omitempty"`
-	OpkIds  []int32                `protobuf:"varint,5,rep,packed,name=opk_ids,json=opkIds,proto3" json:"opk_ids,omitempty"`
-	OpkPubs []string               `protobuf:"bytes,6,rep,name=opk_pubs,json=opkPubs,proto3" json:"opk_pubs,omitempty"`
-	// Opaque per-install identifier. Empty => server stores as "legacy".
-	DeviceId string `protobuf:"bytes,7,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	// Supported encrypted payload wire versions. [0] = legacy chain-only,
-	// [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
-	// for backward compatibility.
-	SupportedVersions []uint32 `protobuf:"varint,8,rep,packed,name=supported_versions,json=supportedVersions,proto3" json:"supported_versions,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
-}
-
-func (x *UploadKeyBundleRequest) Reset() {
-	*x = UploadKeyBundleRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UploadKeyBundleRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UploadKeyBundleRequest) ProtoMessage() {}
-
-func (x *UploadKeyBundleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UploadKeyBundleRequest.ProtoReflect.Descriptor instead.
-func (*UploadKeyBundleRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *UploadKeyBundleRequest) GetIkPub() string {
-	if x != nil {
-		return x.IkPub
-	}
-	return ""
-}
-
-func (x *UploadKeyBundleRequest) GetSpkId() int32 {
-	if x != nil {
-		return x.SpkId
-	}
-	return 0
-}
-
-func (x *UploadKeyBundleRequest) GetSpkPub() string {
-	if x != nil {
-		return x.SpkPub
-	}
-	return ""
-}
-
-func (x *UploadKeyBundleRequest) GetSpkSig() string {
-	if x != nil {
-		return x.SpkSig
-	}
-	return ""
-}
-
-func (x *UploadKeyBundleRequest) GetOpkIds() []int32 {
-	if x != nil {
-		return x.OpkIds
-	}
-	return nil
-}
-
-func (x *UploadKeyBundleRequest) GetOpkPubs() []string {
-	if x != nil {
-		return x.OpkPubs
-	}
-	return nil
-}
-
-func (x *UploadKeyBundleRequest) GetDeviceId() string {
-	if x != nil {
-		return x.DeviceId
-	}
-	return ""
-}
-
-func (x *UploadKeyBundleRequest) GetSupportedVersions() []uint32 {
-	if x != nil {
-		return x.SupportedVersions
-	}
-	return nil
-}
-
-type UploadKeyBundleResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UploadKeyBundleResponse) Reset() {
-	*x = UploadKeyBundleResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UploadKeyBundleResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UploadKeyBundleResponse) ProtoMessage() {}
-
-func (x *UploadKeyBundleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UploadKeyBundleResponse.ProtoReflect.Descriptor instead.
-func (*UploadKeyBundleResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{1}
-}
-
-// One logical device publish for a PTID (may share the PTID across installs).
-type KeyBundle struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Ptid  string                 `protobuf:"bytes,1,opt,name=ptid,proto3" json:"ptid,omitempty"`
-	// Stable per-install id from the publisher; empty string means legacy row
-	// (server key "legacy" is mapped to "").
-	DeviceId string `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	IkPub    string `protobuf:"bytes,3,opt,name=ik_pub,json=ikPub,proto3" json:"ik_pub,omitempty"` // Ed25519 public, base64
-	SpkPub   string `protobuf:"bytes,4,opt,name=spk_pub,json=spkPub,proto3" json:"spk_pub,omitempty"`
-	SpkSig   string `protobuf:"bytes,5,opt,name=spk_sig,json=spkSig,proto3" json:"spk_sig,omitempty"`
-	// One-time prekey pubs consumed for this fetch (base64), newest policy via server.
-	Opks              []string `protobuf:"bytes,6,rep,name=opks,proto3" json:"opks,omitempty"`
-	PublishedAtUnixMs int64    `protobuf:"varint,7,opt,name=published_at_unix_ms,json=publishedAtUnixMs,proto3" json:"published_at_unix_ms,omitempty"` // server stamp (identity upsert time)
-	SupportedVersions []uint32 `protobuf:"varint,8,rep,packed,name=supported_versions,json=supportedVersions,proto3" json:"supported_versions,omitempty"`
-	SpkId             int32    `protobuf:"varint,9,opt,name=spk_id,json=spkId,proto3" json:"spk_id,omitempty"`
-	OpkIds            []int32  `protobuf:"varint,10,rep,packed,name=opk_ids,json=opkIds,proto3" json:"opk_ids,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
-}
-
-func (x *KeyBundle) Reset() {
-	*x = KeyBundle{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *KeyBundle) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*KeyBundle) ProtoMessage() {}
-
-func (x *KeyBundle) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use KeyBundle.ProtoReflect.Descriptor instead.
-func (*KeyBundle) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *KeyBundle) GetPtid() string {
-	if x != nil {
-		return x.Ptid
-	}
-	return ""
-}
-
-func (x *KeyBundle) GetDeviceId() string {
-	if x != nil {
-		return x.DeviceId
-	}
-	return ""
-}
-
-func (x *KeyBundle) GetIkPub() string {
-	if x != nil {
-		return x.IkPub
-	}
-	return ""
-}
-
-func (x *KeyBundle) GetSpkPub() string {
-	if x != nil {
-		return x.SpkPub
-	}
-	return ""
-}
-
-func (x *KeyBundle) GetSpkSig() string {
-	if x != nil {
-		return x.SpkSig
-	}
-	return ""
-}
-
-func (x *KeyBundle) GetOpks() []string {
-	if x != nil {
-		return x.Opks
-	}
-	return nil
-}
-
-func (x *KeyBundle) GetPublishedAtUnixMs() int64 {
-	if x != nil {
-		return x.PublishedAtUnixMs
-	}
-	return 0
-}
-
-func (x *KeyBundle) GetSupportedVersions() []uint32 {
-	if x != nil {
-		return x.SupportedVersions
-	}
-	return nil
-}
-
-func (x *KeyBundle) GetSpkId() int32 {
-	if x != nil {
-		return x.SpkId
-	}
-	return 0
-}
-
-func (x *KeyBundle) GetOpkIds() []int32 {
-	if x != nil {
-		return x.OpkIds
-	}
-	return nil
-}
-
-// Fetch another actor's key bundles by PTID.
-type FetchKeyBundleRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Ptid  string                 `protobuf:"bytes,1,opt,name=ptid,proto3" json:"ptid,omitempty"`
-	// When empty, return all bundles for the PTID. When set, only that device_id
-	// (after server-side normalization matching upload).
-	DeviceId string `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	// Optional Station peer id for federated lookup. When present and different
-	// from the local Station, the serving Station relay-forwards the request to
-	// the actor's home Station under a peer-JWT protected fetch route.
-	HomeStationPeerId string `protobuf:"bytes,3,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
-}
-
-func (x *FetchKeyBundleRequest) Reset() {
-	*x = FetchKeyBundleRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *FetchKeyBundleRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FetchKeyBundleRequest) ProtoMessage() {}
-
-func (x *FetchKeyBundleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FetchKeyBundleRequest.ProtoReflect.Descriptor instead.
-func (*FetchKeyBundleRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *FetchKeyBundleRequest) GetPtid() string {
-	if x != nil {
-		return x.Ptid
-	}
-	return ""
-}
-
-func (x *FetchKeyBundleRequest) GetDeviceId() string {
-	if x != nil {
-		return x.DeviceId
-	}
-	return ""
-}
-
-func (x *FetchKeyBundleRequest) GetHomeStationPeerId() string {
-	if x != nil {
-		return x.HomeStationPeerId
-	}
-	return ""
-}
-
-type FetchKeyBundleResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Bundles       []*KeyBundle           `protobuf:"bytes,1,rep,name=bundles,proto3" json:"bundles,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *FetchKeyBundleResponse) Reset() {
-	*x = FetchKeyBundleResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *FetchKeyBundleResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FetchKeyBundleResponse) ProtoMessage() {}
-
-func (x *FetchKeyBundleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FetchKeyBundleResponse.ProtoReflect.Descriptor instead.
-func (*FetchKeyBundleResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *FetchKeyBundleResponse) GetBundles() []*KeyBundle {
-	if x != nil {
-		return x.Bundles
-	}
-	return nil
-}
-
-// Replenish one-time prekeys.
-type ReplenishOpksRequest struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	OpkIds  []int32                `protobuf:"varint,1,rep,packed,name=opk_ids,json=opkIds,proto3" json:"opk_ids,omitempty"`
-	OpkPubs []string               `protobuf:"bytes,2,rep,name=opk_pubs,json=opkPubs,proto3" json:"opk_pubs,omitempty"`
-	// Targets the same device row as uploads; empty => legacy.
-	DeviceId      string `protobuf:"bytes,3,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ReplenishOpksRequest) Reset() {
-	*x = ReplenishOpksRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ReplenishOpksRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ReplenishOpksRequest) ProtoMessage() {}
-
-func (x *ReplenishOpksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ReplenishOpksRequest.ProtoReflect.Descriptor instead.
-func (*ReplenishOpksRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *ReplenishOpksRequest) GetOpkIds() []int32 {
-	if x != nil {
-		return x.OpkIds
-	}
-	return nil
-}
-
-func (x *ReplenishOpksRequest) GetOpkPubs() []string {
-	if x != nil {
-		return x.OpkPubs
-	}
-	return nil
-}
-
-func (x *ReplenishOpksRequest) GetDeviceId() string {
-	if x != nil {
-		return x.DeviceId
-	}
-	return ""
-}
-
-type ReplenishOpksResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ReplenishOpksResponse) Reset() {
-	*x = ReplenishOpksResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ReplenishOpksResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ReplenishOpksResponse) ProtoMessage() {}
-
-func (x *ReplenishOpksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ReplenishOpksResponse.ProtoReflect.Descriptor instead.
-func (*ReplenishOpksResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{6}
-}
-
-// Count remaining one-time prekeys.
-type OpkCountRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DeviceId      string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"` // empty => legacy bucket for this PTID.
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *OpkCountRequest) Reset() {
-	*x = OpkCountRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *OpkCountRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*OpkCountRequest) ProtoMessage() {}
-
-func (x *OpkCountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use OpkCountRequest.ProtoReflect.Descriptor instead.
-func (*OpkCountRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *OpkCountRequest) GetDeviceId() string {
-	if x != nil {
-		return x.DeviceId
-	}
-	return ""
-}
-
-type OpkCountResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Count         int64                  `protobuf:"varint,1,opt,name=count,proto3" json:"count,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *OpkCountResponse) Reset() {
-	*x = OpkCountResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *OpkCountResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*OpkCountResponse) ProtoMessage() {}
-
-func (x *OpkCountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use OpkCountResponse.ProtoReflect.Descriptor instead.
-func (*OpkCountResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *OpkCountResponse) GetCount() int64 {
-	if x != nil {
-		return x.Count
-	}
-	return 0
-}
-
 type DirectOneTimePreKey struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	KeyId         int32                  `protobuf:"varint,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
@@ -643,7 +85,7 @@ type DirectOneTimePreKey struct {
 
 func (x *DirectOneTimePreKey) Reset() {
 	*x = DirectOneTimePreKey{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[9]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -655,7 +97,7 @@ func (x *DirectOneTimePreKey) String() string {
 func (*DirectOneTimePreKey) ProtoMessage() {}
 
 func (x *DirectOneTimePreKey) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[9]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -668,7 +110,7 @@ func (x *DirectOneTimePreKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectOneTimePreKey.ProtoReflect.Descriptor instead.
 func (*DirectOneTimePreKey) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{9}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *DirectOneTimePreKey) GetKeyId() int32 {
@@ -701,7 +143,7 @@ type DirectKeyBundle struct {
 
 func (x *DirectKeyBundle) Reset() {
 	*x = DirectKeyBundle{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[10]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -713,7 +155,7 @@ func (x *DirectKeyBundle) String() string {
 func (*DirectKeyBundle) ProtoMessage() {}
 
 func (x *DirectKeyBundle) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[10]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -726,7 +168,7 @@ func (x *DirectKeyBundle) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectKeyBundle.ProtoReflect.Descriptor instead.
 func (*DirectKeyBundle) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{10}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *DirectKeyBundle) GetDevice() *model.ActorDeviceRef {
@@ -800,7 +242,7 @@ type UploadDirectKeyBundleRequest struct {
 
 func (x *UploadDirectKeyBundleRequest) Reset() {
 	*x = UploadDirectKeyBundleRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[11]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -812,7 +254,7 @@ func (x *UploadDirectKeyBundleRequest) String() string {
 func (*UploadDirectKeyBundleRequest) ProtoMessage() {}
 
 func (x *UploadDirectKeyBundleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[11]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -825,7 +267,7 @@ func (x *UploadDirectKeyBundleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadDirectKeyBundleRequest.ProtoReflect.Descriptor instead.
 func (*UploadDirectKeyBundleRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{11}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *UploadDirectKeyBundleRequest) GetDevice() *model.ActorDeviceRef {
@@ -885,7 +327,7 @@ type UploadDirectKeyBundleResponse struct {
 
 func (x *UploadDirectKeyBundleResponse) Reset() {
 	*x = UploadDirectKeyBundleResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[12]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -897,7 +339,7 @@ func (x *UploadDirectKeyBundleResponse) String() string {
 func (*UploadDirectKeyBundleResponse) ProtoMessage() {}
 
 func (x *UploadDirectKeyBundleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[12]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -910,7 +352,7 @@ func (x *UploadDirectKeyBundleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadDirectKeyBundleResponse.ProtoReflect.Descriptor instead.
 func (*UploadDirectKeyBundleResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{12}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{3}
 }
 
 type FetchDirectKeyBundlesRequest struct {
@@ -918,13 +360,15 @@ type FetchDirectKeyBundlesRequest struct {
 	Actor             *model.ActorRef        `protobuf:"bytes,1,opt,name=actor,proto3" json:"actor,omitempty"`
 	TargetDeviceId    string                 `protobuf:"bytes,2,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
 	HomeStationPeerId string                 `protobuf:"bytes,3,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
+	RequestId         string                 `protobuf:"bytes,4,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Requester         *model.ActorDeviceRef  `protobuf:"bytes,5,opt,name=requester,proto3" json:"requester,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
 
 func (x *FetchDirectKeyBundlesRequest) Reset() {
 	*x = FetchDirectKeyBundlesRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[13]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -936,7 +380,7 @@ func (x *FetchDirectKeyBundlesRequest) String() string {
 func (*FetchDirectKeyBundlesRequest) ProtoMessage() {}
 
 func (x *FetchDirectKeyBundlesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[13]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -949,7 +393,7 @@ func (x *FetchDirectKeyBundlesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchDirectKeyBundlesRequest.ProtoReflect.Descriptor instead.
 func (*FetchDirectKeyBundlesRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{13}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *FetchDirectKeyBundlesRequest) GetActor() *model.ActorRef {
@@ -973,6 +417,20 @@ func (x *FetchDirectKeyBundlesRequest) GetHomeStationPeerId() string {
 	return ""
 }
 
+func (x *FetchDirectKeyBundlesRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *FetchDirectKeyBundlesRequest) GetRequester() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Requester
+	}
+	return nil
+}
+
 type FetchDirectKeyBundlesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Bundles       []*DirectKeyBundle     `protobuf:"bytes,1,rep,name=bundles,proto3" json:"bundles,omitempty"`
@@ -982,7 +440,7 @@ type FetchDirectKeyBundlesResponse struct {
 
 func (x *FetchDirectKeyBundlesResponse) Reset() {
 	*x = FetchDirectKeyBundlesResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[14]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -994,7 +452,7 @@ func (x *FetchDirectKeyBundlesResponse) String() string {
 func (*FetchDirectKeyBundlesResponse) ProtoMessage() {}
 
 func (x *FetchDirectKeyBundlesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[14]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1007,12 +465,108 @@ func (x *FetchDirectKeyBundlesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchDirectKeyBundlesResponse.ProtoReflect.Descriptor instead.
 func (*FetchDirectKeyBundlesResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{14}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *FetchDirectKeyBundlesResponse) GetBundles() []*DirectKeyBundle {
 	if x != nil {
 		return x.Bundles
+	}
+	return nil
+}
+
+type FetchFederatedDirectKeyBundlesRequest struct {
+	state                   protoimpl.MessageState        `protogen:"open.v1"`
+	Request                 *FetchDirectKeyBundlesRequest `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	SourceHomeStationPeerId string                        `protobuf:"bytes,2,opt,name=source_home_station_peer_id,json=sourceHomeStationPeerId,proto3" json:"source_home_station_peer_id,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *FetchFederatedDirectKeyBundlesRequest) Reset() {
+	*x = FetchFederatedDirectKeyBundlesRequest{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchFederatedDirectKeyBundlesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchFederatedDirectKeyBundlesRequest) ProtoMessage() {}
+
+func (x *FetchFederatedDirectKeyBundlesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchFederatedDirectKeyBundlesRequest.ProtoReflect.Descriptor instead.
+func (*FetchFederatedDirectKeyBundlesRequest) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *FetchFederatedDirectKeyBundlesRequest) GetRequest() *FetchDirectKeyBundlesRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *FetchFederatedDirectKeyBundlesRequest) GetSourceHomeStationPeerId() string {
+	if x != nil {
+		return x.SourceHomeStationPeerId
+	}
+	return ""
+}
+
+type FetchFederatedDirectKeyBundlesResponse struct {
+	state         protoimpl.MessageState         `protogen:"open.v1"`
+	Response      *FetchDirectKeyBundlesResponse `protobuf:"bytes,1,opt,name=response,proto3" json:"response,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FetchFederatedDirectKeyBundlesResponse) Reset() {
+	*x = FetchFederatedDirectKeyBundlesResponse{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchFederatedDirectKeyBundlesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchFederatedDirectKeyBundlesResponse) ProtoMessage() {}
+
+func (x *FetchFederatedDirectKeyBundlesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchFederatedDirectKeyBundlesResponse.ProtoReflect.Descriptor instead.
+func (*FetchFederatedDirectKeyBundlesResponse) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *FetchFederatedDirectKeyBundlesResponse) GetResponse() *FetchDirectKeyBundlesResponse {
+	if x != nil {
+		return x.Response
 	}
 	return nil
 }
@@ -1027,7 +581,7 @@ type ReplenishDirectOneTimePreKeysRequest struct {
 
 func (x *ReplenishDirectOneTimePreKeysRequest) Reset() {
 	*x = ReplenishDirectOneTimePreKeysRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[15]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1039,7 +593,7 @@ func (x *ReplenishDirectOneTimePreKeysRequest) String() string {
 func (*ReplenishDirectOneTimePreKeysRequest) ProtoMessage() {}
 
 func (x *ReplenishDirectOneTimePreKeysRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[15]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1052,7 +606,7 @@ func (x *ReplenishDirectOneTimePreKeysRequest) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ReplenishDirectOneTimePreKeysRequest.ProtoReflect.Descriptor instead.
 func (*ReplenishDirectOneTimePreKeysRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{15}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ReplenishDirectOneTimePreKeysRequest) GetDevice() *model.ActorDeviceRef {
@@ -1077,7 +631,7 @@ type ReplenishDirectOneTimePreKeysResponse struct {
 
 func (x *ReplenishDirectOneTimePreKeysResponse) Reset() {
 	*x = ReplenishDirectOneTimePreKeysResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[16]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1089,7 +643,7 @@ func (x *ReplenishDirectOneTimePreKeysResponse) String() string {
 func (*ReplenishDirectOneTimePreKeysResponse) ProtoMessage() {}
 
 func (x *ReplenishDirectOneTimePreKeysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[16]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1102,7 +656,7 @@ func (x *ReplenishDirectOneTimePreKeysResponse) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use ReplenishDirectOneTimePreKeysResponse.ProtoReflect.Descriptor instead.
 func (*ReplenishDirectOneTimePreKeysResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{16}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{9}
 }
 
 type CountDirectOneTimePreKeysRequest struct {
@@ -1114,7 +668,7 @@ type CountDirectOneTimePreKeysRequest struct {
 
 func (x *CountDirectOneTimePreKeysRequest) Reset() {
 	*x = CountDirectOneTimePreKeysRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[17]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1126,7 +680,7 @@ func (x *CountDirectOneTimePreKeysRequest) String() string {
 func (*CountDirectOneTimePreKeysRequest) ProtoMessage() {}
 
 func (x *CountDirectOneTimePreKeysRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[17]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1139,7 +693,7 @@ func (x *CountDirectOneTimePreKeysRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CountDirectOneTimePreKeysRequest.ProtoReflect.Descriptor instead.
 func (*CountDirectOneTimePreKeysRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{17}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CountDirectOneTimePreKeysRequest) GetDevice() *model.ActorDeviceRef {
@@ -1158,7 +712,7 @@ type CountDirectOneTimePreKeysResponse struct {
 
 func (x *CountDirectOneTimePreKeysResponse) Reset() {
 	*x = CountDirectOneTimePreKeysResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[18]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1170,7 +724,7 @@ func (x *CountDirectOneTimePreKeysResponse) String() string {
 func (*CountDirectOneTimePreKeysResponse) ProtoMessage() {}
 
 func (x *CountDirectOneTimePreKeysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[18]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1183,7 +737,7 @@ func (x *CountDirectOneTimePreKeysResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use CountDirectOneTimePreKeysResponse.ProtoReflect.Descriptor instead.
 func (*CountDirectOneTimePreKeysResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{18}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CountDirectOneTimePreKeysResponse) GetCount() int64 {
@@ -1205,7 +759,7 @@ type MlsKeyPackageReservation struct {
 
 func (x *MlsKeyPackageReservation) Reset() {
 	*x = MlsKeyPackageReservation{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[19]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1217,7 +771,7 @@ func (x *MlsKeyPackageReservation) String() string {
 func (*MlsKeyPackageReservation) ProtoMessage() {}
 
 func (x *MlsKeyPackageReservation) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[19]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1230,7 +784,7 @@ func (x *MlsKeyPackageReservation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MlsKeyPackageReservation.ProtoReflect.Descriptor instead.
 func (*MlsKeyPackageReservation) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{19}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *MlsKeyPackageReservation) GetTarget() *model.ActorDeviceRef {
@@ -1271,7 +825,7 @@ type UploadMlsKeyPackageRequest struct {
 
 func (x *UploadMlsKeyPackageRequest) Reset() {
 	*x = UploadMlsKeyPackageRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[20]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1283,7 +837,7 @@ func (x *UploadMlsKeyPackageRequest) String() string {
 func (*UploadMlsKeyPackageRequest) ProtoMessage() {}
 
 func (x *UploadMlsKeyPackageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[20]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1296,7 +850,7 @@ func (x *UploadMlsKeyPackageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadMlsKeyPackageRequest.ProtoReflect.Descriptor instead.
 func (*UploadMlsKeyPackageRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{20}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *UploadMlsKeyPackageRequest) GetDevice() *model.ActorDeviceRef {
@@ -1323,7 +877,7 @@ type UploadMlsKeyPackageResponse struct {
 
 func (x *UploadMlsKeyPackageResponse) Reset() {
 	*x = UploadMlsKeyPackageResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[21]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1335,7 +889,7 @@ func (x *UploadMlsKeyPackageResponse) String() string {
 func (*UploadMlsKeyPackageResponse) ProtoMessage() {}
 
 func (x *UploadMlsKeyPackageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[21]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1348,7 +902,7 @@ func (x *UploadMlsKeyPackageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadMlsKeyPackageResponse.ProtoReflect.Descriptor instead.
 func (*UploadMlsKeyPackageResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{21}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UploadMlsKeyPackageResponse) GetPackageId() string {
@@ -1369,13 +923,15 @@ type FetchMlsKeyPackageRequest struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Actor             *model.ActorRef        `protobuf:"bytes,1,opt,name=actor,proto3" json:"actor,omitempty"`
 	HomeStationPeerId string                 `protobuf:"bytes,2,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
+	RequestId         string                 `protobuf:"bytes,3,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Requester         *model.ActorDeviceRef  `protobuf:"bytes,4,opt,name=requester,proto3" json:"requester,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
 
 func (x *FetchMlsKeyPackageRequest) Reset() {
 	*x = FetchMlsKeyPackageRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[22]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1387,7 +943,7 @@ func (x *FetchMlsKeyPackageRequest) String() string {
 func (*FetchMlsKeyPackageRequest) ProtoMessage() {}
 
 func (x *FetchMlsKeyPackageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[22]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1400,7 +956,7 @@ func (x *FetchMlsKeyPackageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchMlsKeyPackageRequest.ProtoReflect.Descriptor instead.
 func (*FetchMlsKeyPackageRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{22}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *FetchMlsKeyPackageRequest) GetActor() *model.ActorRef {
@@ -1417,6 +973,20 @@ func (x *FetchMlsKeyPackageRequest) GetHomeStationPeerId() string {
 	return ""
 }
 
+func (x *FetchMlsKeyPackageRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *FetchMlsKeyPackageRequest) GetRequester() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Requester
+	}
+	return nil
+}
+
 type FetchMlsKeyPackageResponse struct {
 	state             protoimpl.MessageState    `protogen:"open.v1"`
 	Reservation       *MlsKeyPackageReservation `protobuf:"bytes,1,opt,name=reservation,proto3" json:"reservation,omitempty"`
@@ -1428,7 +998,7 @@ type FetchMlsKeyPackageResponse struct {
 
 func (x *FetchMlsKeyPackageResponse) Reset() {
 	*x = FetchMlsKeyPackageResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[23]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1440,7 +1010,7 @@ func (x *FetchMlsKeyPackageResponse) String() string {
 func (*FetchMlsKeyPackageResponse) ProtoMessage() {}
 
 func (x *FetchMlsKeyPackageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[23]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1453,7 +1023,7 @@ func (x *FetchMlsKeyPackageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchMlsKeyPackageResponse.ProtoReflect.Descriptor instead.
 func (*FetchMlsKeyPackageResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{23}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *FetchMlsKeyPackageResponse) GetReservation() *MlsKeyPackageReservation {
@@ -1477,6 +1047,102 @@ func (x *FetchMlsKeyPackageResponse) GetHomeStationPeerId() string {
 	return ""
 }
 
+type FetchFederatedMlsKeyPackageRequest struct {
+	state                   protoimpl.MessageState     `protogen:"open.v1"`
+	Request                 *FetchMlsKeyPackageRequest `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	SourceHomeStationPeerId string                     `protobuf:"bytes,2,opt,name=source_home_station_peer_id,json=sourceHomeStationPeerId,proto3" json:"source_home_station_peer_id,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *FetchFederatedMlsKeyPackageRequest) Reset() {
+	*x = FetchFederatedMlsKeyPackageRequest{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchFederatedMlsKeyPackageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchFederatedMlsKeyPackageRequest) ProtoMessage() {}
+
+func (x *FetchFederatedMlsKeyPackageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchFederatedMlsKeyPackageRequest.ProtoReflect.Descriptor instead.
+func (*FetchFederatedMlsKeyPackageRequest) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *FetchFederatedMlsKeyPackageRequest) GetRequest() *FetchMlsKeyPackageRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *FetchFederatedMlsKeyPackageRequest) GetSourceHomeStationPeerId() string {
+	if x != nil {
+		return x.SourceHomeStationPeerId
+	}
+	return ""
+}
+
+type FetchFederatedMlsKeyPackageResponse struct {
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	Response      *FetchMlsKeyPackageResponse `protobuf:"bytes,1,opt,name=response,proto3" json:"response,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FetchFederatedMlsKeyPackageResponse) Reset() {
+	*x = FetchFederatedMlsKeyPackageResponse{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FetchFederatedMlsKeyPackageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FetchFederatedMlsKeyPackageResponse) ProtoMessage() {}
+
+func (x *FetchFederatedMlsKeyPackageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FetchFederatedMlsKeyPackageResponse.ProtoReflect.Descriptor instead.
+func (*FetchFederatedMlsKeyPackageResponse) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *FetchFederatedMlsKeyPackageResponse) GetResponse() *FetchMlsKeyPackageResponse {
+	if x != nil {
+		return x.Response
+	}
+	return nil
+}
+
 type CountMlsKeyPackagesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Device        *model.ActorDeviceRef  `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
@@ -1486,7 +1152,7 @@ type CountMlsKeyPackagesRequest struct {
 
 func (x *CountMlsKeyPackagesRequest) Reset() {
 	*x = CountMlsKeyPackagesRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[24]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1498,7 +1164,7 @@ func (x *CountMlsKeyPackagesRequest) String() string {
 func (*CountMlsKeyPackagesRequest) ProtoMessage() {}
 
 func (x *CountMlsKeyPackagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[24]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1511,7 +1177,7 @@ func (x *CountMlsKeyPackagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CountMlsKeyPackagesRequest.ProtoReflect.Descriptor instead.
 func (*CountMlsKeyPackagesRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{24}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *CountMlsKeyPackagesRequest) GetDevice() *model.ActorDeviceRef {
@@ -1530,7 +1196,7 @@ type CountMlsKeyPackagesResponse struct {
 
 func (x *CountMlsKeyPackagesResponse) Reset() {
 	*x = CountMlsKeyPackagesResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[25]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1542,7 +1208,7 @@ func (x *CountMlsKeyPackagesResponse) String() string {
 func (*CountMlsKeyPackagesResponse) ProtoMessage() {}
 
 func (x *CountMlsKeyPackagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[25]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1555,7 +1221,7 @@ func (x *CountMlsKeyPackagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CountMlsKeyPackagesResponse.ProtoReflect.Descriptor instead.
 func (*CountMlsKeyPackagesResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{25}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *CountMlsKeyPackagesResponse) GetCount() int64 {
@@ -1571,13 +1237,14 @@ type ClaimMlsKeyPackageRequest struct {
 	AuthorityStationPeerId string                 `protobuf:"bytes,2,opt,name=authority_station_peer_id,json=authorityStationPeerId,proto3" json:"authority_station_peer_id,omitempty"`
 	Target                 *model.ActorDeviceRef  `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
 	PlanExpiresAt          *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=plan_expires_at,json=planExpiresAt,proto3" json:"plan_expires_at,omitempty"`
+	RequestId              string                 `protobuf:"bytes,5,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
 
 func (x *ClaimMlsKeyPackageRequest) Reset() {
 	*x = ClaimMlsKeyPackageRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[26]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1589,7 +1256,7 @@ func (x *ClaimMlsKeyPackageRequest) String() string {
 func (*ClaimMlsKeyPackageRequest) ProtoMessage() {}
 
 func (x *ClaimMlsKeyPackageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[26]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1602,7 +1269,7 @@ func (x *ClaimMlsKeyPackageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimMlsKeyPackageRequest.ProtoReflect.Descriptor instead.
 func (*ClaimMlsKeyPackageRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{26}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ClaimMlsKeyPackageRequest) GetAuthorityPlanId() string {
@@ -1633,6 +1300,13 @@ func (x *ClaimMlsKeyPackageRequest) GetPlanExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *ClaimMlsKeyPackageRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
 type ClaimMlsKeyPackageResponse struct {
 	state                protoimpl.MessageState    `protogen:"open.v1"`
 	Reservation          *MlsKeyPackageReservation `protobuf:"bytes,1,opt,name=reservation,proto3" json:"reservation,omitempty"`
@@ -1644,7 +1318,7 @@ type ClaimMlsKeyPackageResponse struct {
 
 func (x *ClaimMlsKeyPackageResponse) Reset() {
 	*x = ClaimMlsKeyPackageResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[27]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1656,7 +1330,7 @@ func (x *ClaimMlsKeyPackageResponse) String() string {
 func (*ClaimMlsKeyPackageResponse) ProtoMessage() {}
 
 func (x *ClaimMlsKeyPackageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[27]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1669,7 +1343,7 @@ func (x *ClaimMlsKeyPackageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimMlsKeyPackageResponse.ProtoReflect.Descriptor instead.
 func (*ClaimMlsKeyPackageResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{27}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ClaimMlsKeyPackageResponse) GetReservation() *MlsKeyPackageReservation {
@@ -1707,7 +1381,7 @@ type SendDirectKeyExchangeRequest struct {
 
 func (x *SendDirectKeyExchangeRequest) Reset() {
 	*x = SendDirectKeyExchangeRequest{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[28]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1719,7 +1393,7 @@ func (x *SendDirectKeyExchangeRequest) String() string {
 func (*SendDirectKeyExchangeRequest) ProtoMessage() {}
 
 func (x *SendDirectKeyExchangeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[28]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1732,7 +1406,7 @@ func (x *SendDirectKeyExchangeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendDirectKeyExchangeRequest.ProtoReflect.Descriptor instead.
 func (*SendDirectKeyExchangeRequest) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{28}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SendDirectKeyExchangeRequest) GetRecipient() *model.ActorDeviceRef {
@@ -1786,7 +1460,7 @@ type SendDirectKeyExchangeResponse struct {
 
 func (x *SendDirectKeyExchangeResponse) Reset() {
 	*x = SendDirectKeyExchangeResponse{}
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[29]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1798,7 +1472,7 @@ func (x *SendDirectKeyExchangeResponse) String() string {
 func (*SendDirectKeyExchangeResponse) ProtoMessage() {}
 
 func (x *SendDirectKeyExchangeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[29]
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1811,7 +1485,7 @@ func (x *SendDirectKeyExchangeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendDirectKeyExchangeResponse.ProtoReflect.Descriptor instead.
 func (*SendDirectKeyExchangeResponse) Descriptor() ([]byte, []int) {
-	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{29}
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *SendDirectKeyExchangeResponse) GetEnvelopeId() string {
@@ -1821,48 +1495,120 @@ func (x *SendDirectKeyExchangeResponse) GetEnvelopeId() string {
 	return ""
 }
 
+// Canonical Device Inbox payload for one endpoint-targeted Direct key exchange.
+type DirectKeyExchangeDelivery struct {
+	state                      protoimpl.MessageState       `protogen:"open.v1"`
+	EnvelopeId                 string                       `protobuf:"bytes,1,opt,name=envelope_id,json=envelopeId,proto3" json:"envelope_id,omitempty"`
+	Sender                     *model.ActorDeviceRef        `protobuf:"bytes,2,opt,name=sender,proto3" json:"sender,omitempty"`
+	Recipient                  *model.ActorDeviceRef        `protobuf:"bytes,3,opt,name=recipient,proto3" json:"recipient,omitempty"`
+	RecipientHomeStationPeerId string                       `protobuf:"bytes,4,opt,name=recipient_home_station_peer_id,json=recipientHomeStationPeerId,proto3" json:"recipient_home_station_peer_id,omitempty"`
+	SessionId                  string                       `protobuf:"bytes,5,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Kind                       DirectKeyExchangePayloadKind `protobuf:"varint,6,opt,name=kind,proto3,enum=peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind" json:"kind,omitempty"`
+	OpaqueKeyMaterial          []byte                       `protobuf:"bytes,7,opt,name=opaque_key_material,json=opaqueKeyMaterial,proto3" json:"opaque_key_material,omitempty"`
+	ConversationId             string                       `protobuf:"bytes,8,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	IdempotencyKey             string                       `protobuf:"bytes,9,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
+}
+
+func (x *DirectKeyExchangeDelivery) Reset() {
+	*x = DirectKeyExchangeDelivery{}
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DirectKeyExchangeDelivery) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DirectKeyExchangeDelivery) ProtoMessage() {}
+
+func (x *DirectKeyExchangeDelivery) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_key_exchange_key_exchange_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DirectKeyExchangeDelivery.ProtoReflect.Descriptor instead.
+func (*DirectKeyExchangeDelivery) Descriptor() ([]byte, []int) {
+	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *DirectKeyExchangeDelivery) GetEnvelopeId() string {
+	if x != nil {
+		return x.EnvelopeId
+	}
+	return ""
+}
+
+func (x *DirectKeyExchangeDelivery) GetSender() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Sender
+	}
+	return nil
+}
+
+func (x *DirectKeyExchangeDelivery) GetRecipient() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Recipient
+	}
+	return nil
+}
+
+func (x *DirectKeyExchangeDelivery) GetRecipientHomeStationPeerId() string {
+	if x != nil {
+		return x.RecipientHomeStationPeerId
+	}
+	return ""
+}
+
+func (x *DirectKeyExchangeDelivery) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *DirectKeyExchangeDelivery) GetKind() DirectKeyExchangePayloadKind {
+	if x != nil {
+		return x.Kind
+	}
+	return DirectKeyExchangePayloadKind_DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_UNSPECIFIED
+}
+
+func (x *DirectKeyExchangeDelivery) GetOpaqueKeyMaterial() []byte {
+	if x != nil {
+		return x.OpaqueKeyMaterial
+	}
+	return nil
+}
+
+func (x *DirectKeyExchangeDelivery) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *DirectKeyExchangeDelivery) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
 var File_domain_key_exchange_key_exchange_proto protoreflect.FileDescriptor
 
 const file_domain_key_exchange_key_exchange_proto_rawDesc = "" +
 	"\n" +
-	"&domain/key_exchange/key_exchange.proto\x12!peers_touch.model.key_exchange.v1\x1a\x18domain/actor/actor.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf8\x01\n" +
-	"\x16UploadKeyBundleRequest\x12\x15\n" +
-	"\x06ik_pub\x18\x01 \x01(\tR\x05ikPub\x12\x15\n" +
-	"\x06spk_id\x18\x02 \x01(\x05R\x05spkId\x12\x17\n" +
-	"\aspk_pub\x18\x03 \x01(\tR\x06spkPub\x12\x17\n" +
-	"\aspk_sig\x18\x04 \x01(\tR\x06spkSig\x12\x17\n" +
-	"\aopk_ids\x18\x05 \x03(\x05R\x06opkIds\x12\x19\n" +
-	"\bopk_pubs\x18\x06 \x03(\tR\aopkPubs\x12\x1b\n" +
-	"\tdevice_id\x18\a \x01(\tR\bdeviceId\x12-\n" +
-	"\x12supported_versions\x18\b \x03(\rR\x11supportedVersions\"\x19\n" +
-	"\x17UploadKeyBundleResponse\"\xa9\x02\n" +
-	"\tKeyBundle\x12\x12\n" +
-	"\x04ptid\x18\x01 \x01(\tR\x04ptid\x12\x1b\n" +
-	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x15\n" +
-	"\x06ik_pub\x18\x03 \x01(\tR\x05ikPub\x12\x17\n" +
-	"\aspk_pub\x18\x04 \x01(\tR\x06spkPub\x12\x17\n" +
-	"\aspk_sig\x18\x05 \x01(\tR\x06spkSig\x12\x12\n" +
-	"\x04opks\x18\x06 \x03(\tR\x04opks\x12/\n" +
-	"\x14published_at_unix_ms\x18\a \x01(\x03R\x11publishedAtUnixMs\x12-\n" +
-	"\x12supported_versions\x18\b \x03(\rR\x11supportedVersions\x12\x15\n" +
-	"\x06spk_id\x18\t \x01(\x05R\x05spkId\x12\x17\n" +
-	"\aopk_ids\x18\n" +
-	" \x03(\x05R\x06opkIds\"y\n" +
-	"\x15FetchKeyBundleRequest\x12\x12\n" +
-	"\x04ptid\x18\x01 \x01(\tR\x04ptid\x12\x1b\n" +
-	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12/\n" +
-	"\x14home_station_peer_id\x18\x03 \x01(\tR\x11homeStationPeerId\"`\n" +
-	"\x16FetchKeyBundleResponse\x12F\n" +
-	"\abundles\x18\x01 \x03(\v2,.peers_touch.model.key_exchange.v1.KeyBundleR\abundles\"g\n" +
-	"\x14ReplenishOpksRequest\x12\x17\n" +
-	"\aopk_ids\x18\x01 \x03(\x05R\x06opkIds\x12\x19\n" +
-	"\bopk_pubs\x18\x02 \x03(\tR\aopkPubs\x12\x1b\n" +
-	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\"\x17\n" +
-	"\x15ReplenishOpksResponse\".\n" +
-	"\x0fOpkCountRequest\x12\x1b\n" +
-	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\"(\n" +
-	"\x10OpkCountResponse\x12\x14\n" +
-	"\x05count\x18\x01 \x01(\x03R\x05count\"K\n" +
+	"&domain/key_exchange/key_exchange.proto\x12!peers_touch.model.key_exchange.v1\x1a\x18domain/actor/actor.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"K\n" +
 	"\x13DirectOneTimePreKey\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\x05R\x05keyId\x12\x1d\n" +
 	"\n" +
@@ -1884,13 +1630,21 @@ const file_domain_key_exchange_key_exchange_proto_rawDesc = "" +
 	"\x18signed_pre_key_signature\x18\x05 \x01(\tR\x15signedPreKeySignature\x12a\n" +
 	"\x11one_time_pre_keys\x18\x06 \x03(\v26.peers_touch.model.key_exchange.v1.DirectOneTimePreKeyR\x0eoneTimePreKeys\x126\n" +
 	"\x17supported_wire_versions\x18\a \x03(\rR\x15supportedWireVersions\"\x1f\n" +
-	"\x1dUploadDirectKeyBundleResponse\"\xb5\x01\n" +
+	"\x1dUploadDirectKeyBundleResponse\"\x9e\x02\n" +
 	"\x1cFetchDirectKeyBundlesRequest\x12:\n" +
 	"\x05actor\x18\x01 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x05actor\x12(\n" +
 	"\x10target_device_id\x18\x02 \x01(\tR\x0etargetDeviceId\x12/\n" +
-	"\x14home_station_peer_id\x18\x03 \x01(\tR\x11homeStationPeerId\"m\n" +
+	"\x14home_station_peer_id\x18\x03 \x01(\tR\x11homeStationPeerId\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x04 \x01(\tR\trequestId\x12H\n" +
+	"\trequester\x18\x05 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\trequester\"m\n" +
 	"\x1dFetchDirectKeyBundlesResponse\x12L\n" +
-	"\abundles\x18\x01 \x03(\v22.peers_touch.model.key_exchange.v1.DirectKeyBundleR\abundles\"\xcd\x01\n" +
+	"\abundles\x18\x01 \x03(\v22.peers_touch.model.key_exchange.v1.DirectKeyBundleR\abundles\"\xc0\x01\n" +
+	"%FetchFederatedDirectKeyBundlesRequest\x12Y\n" +
+	"\arequest\x18\x01 \x01(\v2?.peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequestR\arequest\x12<\n" +
+	"\x1bsource_home_station_peer_id\x18\x02 \x01(\tR\x17sourceHomeStationPeerId\"\x86\x01\n" +
+	"&FetchFederatedDirectKeyBundlesResponse\x12\\\n" +
+	"\bresponse\x18\x01 \x01(\v2@.peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponseR\bresponse\"\xcd\x01\n" +
 	"$ReplenishDirectOneTimePreKeysRequest\x12B\n" +
 	"\x06device\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06device\x12a\n" +
 	"\x11one_time_pre_keys\x18\x02 \x03(\v26.peers_touch.model.key_exchange.v1.DirectOneTimePreKeyR\x0eoneTimePreKeys\"'\n" +
@@ -1913,23 +1667,33 @@ const file_domain_key_exchange_key_exchange_proto_rawDesc = "" +
 	"\x1bUploadMlsKeyPackageResponse\x12\x1d\n" +
 	"\n" +
 	"package_id\x18\x01 \x01(\tR\tpackageId\x12,\n" +
-	"\x12key_package_sha256\x18\x02 \x01(\fR\x10keyPackageSha256\"\x88\x01\n" +
+	"\x12key_package_sha256\x18\x02 \x01(\fR\x10keyPackageSha256\"\xf1\x01\n" +
 	"\x19FetchMlsKeyPackageRequest\x12:\n" +
 	"\x05actor\x18\x01 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x05actor\x12/\n" +
-	"\x14home_station_peer_id\x18\x02 \x01(\tR\x11homeStationPeerId\"\xca\x01\n" +
+	"\x14home_station_peer_id\x18\x02 \x01(\tR\x11homeStationPeerId\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x03 \x01(\tR\trequestId\x12H\n" +
+	"\trequester\x18\x04 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\trequester\"\xca\x01\n" +
 	"\x1aFetchMlsKeyPackageResponse\x12]\n" +
 	"\vreservation\x18\x01 \x01(\v2;.peers_touch.model.key_exchange.v1.MlsKeyPackageReservationR\vreservation\x12\x1c\n" +
 	"\tavailable\x18\x02 \x01(\bR\tavailable\x12/\n" +
-	"\x14home_station_peer_id\x18\x03 \x01(\tR\x11homeStationPeerId\"`\n" +
+	"\x14home_station_peer_id\x18\x03 \x01(\tR\x11homeStationPeerId\"\xba\x01\n" +
+	"\"FetchFederatedMlsKeyPackageRequest\x12V\n" +
+	"\arequest\x18\x01 \x01(\v2<.peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequestR\arequest\x12<\n" +
+	"\x1bsource_home_station_peer_id\x18\x02 \x01(\tR\x17sourceHomeStationPeerId\"\x80\x01\n" +
+	"#FetchFederatedMlsKeyPackageResponse\x12Y\n" +
+	"\bresponse\x18\x01 \x01(\v2=.peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponseR\bresponse\"`\n" +
 	"\x1aCountMlsKeyPackagesRequest\x12B\n" +
 	"\x06device\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06device\"3\n" +
 	"\x1bCountMlsKeyPackagesResponse\x12\x14\n" +
-	"\x05count\x18\x01 \x01(\x03R\x05count\"\x8a\x02\n" +
+	"\x05count\x18\x01 \x01(\x03R\x05count\"\xa9\x02\n" +
 	"\x19ClaimMlsKeyPackageRequest\x12*\n" +
 	"\x11authority_plan_id\x18\x01 \x01(\tR\x0fauthorityPlanId\x129\n" +
 	"\x19authority_station_peer_id\x18\x02 \x01(\tR\x16authorityStationPeerId\x12B\n" +
 	"\x06target\x18\x03 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06target\x12B\n" +
-	"\x0fplan_expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\rplanExpiresAt\"\xe1\x01\n" +
+	"\x0fplan_expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\rplanExpiresAt\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x05 \x01(\tR\trequestId\"\xe1\x01\n" +
 	"\x1aClaimMlsKeyPackageResponse\x12]\n" +
 	"\vreservation\x18\x01 \x01(\v2;.peers_touch.model.key_exchange.v1.MlsKeyPackageReservationR\vreservation\x12/\n" +
 	"\x14home_station_peer_id\x18\x02 \x01(\tR\x11homeStationPeerId\x123\n" +
@@ -1944,7 +1708,19 @@ const file_domain_key_exchange_key_exchange_proto_rawDesc = "" +
 	"\x0fconversation_id\x18\x06 \x01(\tR\x0econversationId\"@\n" +
 	"\x1dSendDirectKeyExchangeResponse\x12\x1f\n" +
 	"\venvelope_id\x18\x01 \x01(\tR\n" +
-	"envelopeId*\xf3\x01\n" +
+	"envelopeId\"\x84\x04\n" +
+	"\x19DirectKeyExchangeDelivery\x12\x1f\n" +
+	"\venvelope_id\x18\x01 \x01(\tR\n" +
+	"envelopeId\x12B\n" +
+	"\x06sender\x18\x02 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06sender\x12H\n" +
+	"\trecipient\x18\x03 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\trecipient\x12B\n" +
+	"\x1erecipient_home_station_peer_id\x18\x04 \x01(\tR\x1arecipientHomeStationPeerId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x05 \x01(\tR\tsessionId\x12S\n" +
+	"\x04kind\x18\x06 \x01(\x0e2?.peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKindR\x04kind\x12.\n" +
+	"\x13opaque_key_material\x18\a \x01(\fR\x11opaqueKeyMaterial\x12'\n" +
+	"\x0fconversation_id\x18\b \x01(\tR\x0econversationId\x12'\n" +
+	"\x0fidempotency_key\x18\t \x01(\tR\x0eidempotencyKey*\xf3\x01\n" +
 	"\x1cDirectKeyExchangePayloadKind\x120\n" +
 	",DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_UNSPECIFIED\x10\x00\x122\n" +
 	".DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_PREKEY_BUNDLE\x10\x01\x124\n" +
@@ -1964,69 +1740,73 @@ func file_domain_key_exchange_key_exchange_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_key_exchange_key_exchange_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_key_exchange_key_exchange_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_domain_key_exchange_key_exchange_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_domain_key_exchange_key_exchange_proto_goTypes = []any{
-	(DirectKeyExchangePayloadKind)(0),             // 0: peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind
-	(*UploadKeyBundleRequest)(nil),                // 1: peers_touch.model.key_exchange.v1.UploadKeyBundleRequest
-	(*UploadKeyBundleResponse)(nil),               // 2: peers_touch.model.key_exchange.v1.UploadKeyBundleResponse
-	(*KeyBundle)(nil),                             // 3: peers_touch.model.key_exchange.v1.KeyBundle
-	(*FetchKeyBundleRequest)(nil),                 // 4: peers_touch.model.key_exchange.v1.FetchKeyBundleRequest
-	(*FetchKeyBundleResponse)(nil),                // 5: peers_touch.model.key_exchange.v1.FetchKeyBundleResponse
-	(*ReplenishOpksRequest)(nil),                  // 6: peers_touch.model.key_exchange.v1.ReplenishOpksRequest
-	(*ReplenishOpksResponse)(nil),                 // 7: peers_touch.model.key_exchange.v1.ReplenishOpksResponse
-	(*OpkCountRequest)(nil),                       // 8: peers_touch.model.key_exchange.v1.OpkCountRequest
-	(*OpkCountResponse)(nil),                      // 9: peers_touch.model.key_exchange.v1.OpkCountResponse
-	(*DirectOneTimePreKey)(nil),                   // 10: peers_touch.model.key_exchange.v1.DirectOneTimePreKey
-	(*DirectKeyBundle)(nil),                       // 11: peers_touch.model.key_exchange.v1.DirectKeyBundle
-	(*UploadDirectKeyBundleRequest)(nil),          // 12: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest
-	(*UploadDirectKeyBundleResponse)(nil),         // 13: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleResponse
-	(*FetchDirectKeyBundlesRequest)(nil),          // 14: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest
-	(*FetchDirectKeyBundlesResponse)(nil),         // 15: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse
-	(*ReplenishDirectOneTimePreKeysRequest)(nil),  // 16: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest
-	(*ReplenishDirectOneTimePreKeysResponse)(nil), // 17: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysResponse
-	(*CountDirectOneTimePreKeysRequest)(nil),      // 18: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysRequest
-	(*CountDirectOneTimePreKeysResponse)(nil),     // 19: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysResponse
-	(*MlsKeyPackageReservation)(nil),              // 20: peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
-	(*UploadMlsKeyPackageRequest)(nil),            // 21: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageRequest
-	(*UploadMlsKeyPackageResponse)(nil),           // 22: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageResponse
-	(*FetchMlsKeyPackageRequest)(nil),             // 23: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest
-	(*FetchMlsKeyPackageResponse)(nil),            // 24: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse
-	(*CountMlsKeyPackagesRequest)(nil),            // 25: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesRequest
-	(*CountMlsKeyPackagesResponse)(nil),           // 26: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesResponse
-	(*ClaimMlsKeyPackageRequest)(nil),             // 27: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest
-	(*ClaimMlsKeyPackageResponse)(nil),            // 28: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageResponse
-	(*SendDirectKeyExchangeRequest)(nil),          // 29: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest
-	(*SendDirectKeyExchangeResponse)(nil),         // 30: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeResponse
-	(*model.ActorDeviceRef)(nil),                  // 31: peers_touch.model.actor.v1.ActorDeviceRef
-	(*model.ActorRef)(nil),                        // 32: peers_touch.model.actor.v1.ActorRef
-	(*timestamppb.Timestamp)(nil),                 // 33: google.protobuf.Timestamp
+	(DirectKeyExchangePayloadKind)(0),              // 0: peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind
+	(*DirectOneTimePreKey)(nil),                    // 1: peers_touch.model.key_exchange.v1.DirectOneTimePreKey
+	(*DirectKeyBundle)(nil),                        // 2: peers_touch.model.key_exchange.v1.DirectKeyBundle
+	(*UploadDirectKeyBundleRequest)(nil),           // 3: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest
+	(*UploadDirectKeyBundleResponse)(nil),          // 4: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleResponse
+	(*FetchDirectKeyBundlesRequest)(nil),           // 5: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest
+	(*FetchDirectKeyBundlesResponse)(nil),          // 6: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse
+	(*FetchFederatedDirectKeyBundlesRequest)(nil),  // 7: peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesRequest
+	(*FetchFederatedDirectKeyBundlesResponse)(nil), // 8: peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesResponse
+	(*ReplenishDirectOneTimePreKeysRequest)(nil),   // 9: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest
+	(*ReplenishDirectOneTimePreKeysResponse)(nil),  // 10: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysResponse
+	(*CountDirectOneTimePreKeysRequest)(nil),       // 11: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysRequest
+	(*CountDirectOneTimePreKeysResponse)(nil),      // 12: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysResponse
+	(*MlsKeyPackageReservation)(nil),               // 13: peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
+	(*UploadMlsKeyPackageRequest)(nil),             // 14: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageRequest
+	(*UploadMlsKeyPackageResponse)(nil),            // 15: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageResponse
+	(*FetchMlsKeyPackageRequest)(nil),              // 16: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest
+	(*FetchMlsKeyPackageResponse)(nil),             // 17: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse
+	(*FetchFederatedMlsKeyPackageRequest)(nil),     // 18: peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageRequest
+	(*FetchFederatedMlsKeyPackageResponse)(nil),    // 19: peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageResponse
+	(*CountMlsKeyPackagesRequest)(nil),             // 20: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesRequest
+	(*CountMlsKeyPackagesResponse)(nil),            // 21: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesResponse
+	(*ClaimMlsKeyPackageRequest)(nil),              // 22: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest
+	(*ClaimMlsKeyPackageResponse)(nil),             // 23: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageResponse
+	(*SendDirectKeyExchangeRequest)(nil),           // 24: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest
+	(*SendDirectKeyExchangeResponse)(nil),          // 25: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeResponse
+	(*DirectKeyExchangeDelivery)(nil),              // 26: peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery
+	(*model.ActorDeviceRef)(nil),                   // 27: peers_touch.model.actor.v1.ActorDeviceRef
+	(*model.ActorRef)(nil),                         // 28: peers_touch.model.actor.v1.ActorRef
+	(*timestamppb.Timestamp)(nil),                  // 29: google.protobuf.Timestamp
 }
 var file_domain_key_exchange_key_exchange_proto_depIdxs = []int32{
-	3,  // 0: peers_touch.model.key_exchange.v1.FetchKeyBundleResponse.bundles:type_name -> peers_touch.model.key_exchange.v1.KeyBundle
-	31, // 1: peers_touch.model.key_exchange.v1.DirectKeyBundle.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	10, // 2: peers_touch.model.key_exchange.v1.DirectKeyBundle.one_time_pre_keys:type_name -> peers_touch.model.key_exchange.v1.DirectOneTimePreKey
-	31, // 3: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	10, // 4: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest.one_time_pre_keys:type_name -> peers_touch.model.key_exchange.v1.DirectOneTimePreKey
-	32, // 5: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	11, // 6: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse.bundles:type_name -> peers_touch.model.key_exchange.v1.DirectKeyBundle
-	31, // 7: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	10, // 8: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest.one_time_pre_keys:type_name -> peers_touch.model.key_exchange.v1.DirectOneTimePreKey
-	31, // 9: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	31, // 10: peers_touch.model.key_exchange.v1.MlsKeyPackageReservation.target:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	31, // 11: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	32, // 12: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	20, // 13: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse.reservation:type_name -> peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
-	31, // 14: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	31, // 15: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest.target:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	33, // 16: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest.plan_expires_at:type_name -> google.protobuf.Timestamp
-	20, // 17: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageResponse.reservation:type_name -> peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
-	31, // 18: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest.recipient:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	0,  // 19: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest.kind:type_name -> peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind
-	20, // [20:20] is the sub-list for method output_type
-	20, // [20:20] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	27, // 0: peers_touch.model.key_exchange.v1.DirectKeyBundle.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	1,  // 1: peers_touch.model.key_exchange.v1.DirectKeyBundle.one_time_pre_keys:type_name -> peers_touch.model.key_exchange.v1.DirectOneTimePreKey
+	27, // 2: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	1,  // 3: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest.one_time_pre_keys:type_name -> peers_touch.model.key_exchange.v1.DirectOneTimePreKey
+	28, // 4: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	27, // 5: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest.requester:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	2,  // 6: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse.bundles:type_name -> peers_touch.model.key_exchange.v1.DirectKeyBundle
+	5,  // 7: peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesRequest.request:type_name -> peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest
+	6,  // 8: peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesResponse.response:type_name -> peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse
+	27, // 9: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	1,  // 10: peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest.one_time_pre_keys:type_name -> peers_touch.model.key_exchange.v1.DirectOneTimePreKey
+	27, // 11: peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	27, // 12: peers_touch.model.key_exchange.v1.MlsKeyPackageReservation.target:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	27, // 13: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	28, // 14: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	27, // 15: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest.requester:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	13, // 16: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse.reservation:type_name -> peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
+	16, // 17: peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageRequest.request:type_name -> peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest
+	17, // 18: peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageResponse.response:type_name -> peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse
+	27, // 19: peers_touch.model.key_exchange.v1.CountMlsKeyPackagesRequest.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	27, // 20: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest.target:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	29, // 21: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest.plan_expires_at:type_name -> google.protobuf.Timestamp
+	13, // 22: peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageResponse.reservation:type_name -> peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
+	27, // 23: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest.recipient:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	0,  // 24: peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest.kind:type_name -> peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind
+	27, // 25: peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	27, // 26: peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery.recipient:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	0,  // 27: peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery.kind:type_name -> peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind
+	28, // [28:28] is the sub-list for method output_type
+	28, // [28:28] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_domain_key_exchange_key_exchange_proto_init() }
@@ -2040,7 +1820,7 @@ func file_domain_key_exchange_key_exchange_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_key_exchange_key_exchange_proto_rawDesc), len(file_domain_key_exchange_key_exchange_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   30,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

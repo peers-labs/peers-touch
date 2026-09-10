@@ -18,17 +18,15 @@ use messaging_core::crypto::double_ratchet::{DrSessionState, DrSkippedMessageKey
 use messaging_core::crypto::prekeys::{PendingPreKeyBundle, PreKeyRepository};
 use messaging_core::crypto::session::{DirectSession, DirectSessionKey};
 use messaging_core::identity::{
-    DeviceEnrollmentRepository, FreshDeviceEnrollment, FreshDeviceIdentityState,
+    DeviceEnrollmentRepository, DeviceSigningKey, FreshDeviceEnrollment, FreshDeviceIdentityState,
     MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
 };
 use messaging_core::outbox::{
-    CommandOutboxEntry, DeliveryReceiptOutboxEntry, DeliveryReceiptRepository,
-    MetadataInteractionCommit, MetadataInteractionRepository, OutboxStore,
+    CommandOutboxEntry, MetadataInteractionCommit, MetadataInteractionRepository, OutboxStore,
 };
-use messaging_core::proto::actor::{ActorDeviceCertificate, ActorDeviceRef, ActorRef};
 use messaging_core::proto::chat::{
-    AttachmentPlaintextMetadata, AttachmentTransferState, EncryptedObjectDescriptor,
-    EncryptedObjectUploadSpec,
+    AttachmentPlaintextMetadata, AttachmentTransferState, DeviceConsumptionReceipt,
+    EncryptedObjectDescriptor, EncryptedObjectUploadSpec,
 };
 use messaging_core::store::{
     migrate_messaging_schema, DirectOutboundEditCommit, DirectOutboundRepository,
@@ -182,11 +180,99 @@ impl MobileMessagingStore {
         Self::from_connection(Connection::open_in_memory().map_err(|error| error.to_string())?)
     }
 
+    pub fn active_device_signing_identity(
+        &self,
+    ) -> Result<(FreshDeviceEnrollment, DeviceSigningKey), String> {
+        let enrollment = DeviceEnrollmentRepository::device_enrollment(self)?
+            .ok_or_else(|| "mobile messaging device identity is unavailable".to_string())?;
+        let certificate = &enrollment.certificate;
+        let device = certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "mobile messaging device identity has no endpoint".to_string())?;
+        let seed = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?
+            .query_row(
+                "SELECT identity.device_signing_seed
+                 FROM messaging_device_identity AS identity
+                 JOIN messaging_recovery_state AS recovery ON recovery.id = identity.id
+                 WHERE identity.id = 1 AND recovery.status = 'active'",
+                [],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| {
+                "mobile messaging active device signing identity is unavailable".to_string()
+            })?;
+        let signing_key = DeviceSigningKey::from_parts(
+            &fixed_key("device signing seed", seed)?,
+            ed25519_dalek::Signature::from_bytes(&enrollment.actor_cross_signature),
+            device.device_id.clone(),
+        );
+        if signing_key.verifying_key().as_bytes()
+            != certificate.device_signing_public_key.as_slice()
+        {
+            return Err("mobile messaging device signing key continuity mismatch".to_string());
+        }
+        Ok((enrollment, signing_key))
+    }
+
     fn from_connection(connection: Connection) -> Result<Self, String> {
         migrate_messaging_schema(&RusqliteMessagingSchema(&connection))?;
         Ok(Self {
             connection: Mutex::new(connection),
         })
+    }
+
+    pub(crate) fn reconcile_conversation_authority_scope(
+        &self,
+        conversation_id: &str,
+        authority_station_id: &str,
+        federation_id: &str,
+    ) -> Result<bool, String> {
+        if conversation_id.trim().is_empty()
+            || authority_station_id.trim().is_empty()
+            || federation_id.trim().is_empty()
+        {
+            return Err("mobile messaging conversation authority scope is incomplete".to_string());
+        }
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
+        let existing = connection
+            .query_row(
+                "SELECT authority_station_id, federation_id
+                 FROM messaging_conversations
+                 WHERE conversation_id = ?1",
+                params![conversation_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let Some((stored_authority, stored_federation)) = existing else {
+            return Ok(false);
+        };
+        if (!stored_authority.is_empty() && stored_authority != authority_station_id)
+            || (!stored_federation.is_empty() && stored_federation != federation_id)
+        {
+            return Err(
+                "mobile messaging conversation authority scope conflicts with Station".to_string(),
+            );
+        }
+        let changed = connection
+            .execute(
+                "UPDATE messaging_conversations
+                 SET authority_station_id = ?2, federation_id = ?3
+                 WHERE conversation_id = ?1
+                   AND (authority_station_id = '' OR federation_id = '')",
+                params![conversation_id, authority_station_id, federation_id],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(changed == 1)
     }
 
     fn with_transaction<T>(
@@ -2042,15 +2128,9 @@ impl DeviceEnrollmentRepository for MobileMessagingStore {
             return Ok(None);
         };
         Ok(Some(FreshDeviceEnrollment {
-            certificate: ActorDeviceCertificate {
+            certificate: messaging_core::proto::actor::ActorDeviceCertificate {
                 format_version: MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
-                device: Some(ActorDeviceRef {
-                    actor: Some(ActorRef {
-                        ptid: row.0,
-                        ..Default::default()
-                    }),
-                    device_id: row.1,
-                }),
+                device: Some(messaging_core::proto::actor_device_ref(row.0, row.1)),
                 actor_identity_public_key: row.2,
                 actor_identity_key_fingerprint: row.3,
                 device_signing_public_key: row.4,
@@ -2074,13 +2154,9 @@ impl DeviceEnrollmentRepository for MobileMessagingStore {
         let device = certificate
             .device
             .as_ref()
-            .ok_or_else(|| "fresh mobile messaging device identity has no device".to_string())?;
-        let actor = device
-            .actor
-            .as_ref()
-            .ok_or_else(|| "fresh mobile messaging device identity has no actor".to_string())?;
-        if actor.ptid.trim().is_empty()
-            || device.device_id.trim().is_empty()
+            .ok_or_else(|| "fresh mobile messaging device identity has no endpoint".to_string())?;
+        let ptid = messaging_core::proto::actor_device_ptid(device)?;
+        if device.device_id.trim().is_empty()
             || certificate.signing_key_id.trim().is_empty()
             || certificate.actor_identity_public_key.len() != 32
             || certificate.actor_identity_key_fingerprint.len() != 32
@@ -2099,7 +2175,7 @@ impl DeviceEnrollmentRepository for MobileMessagingStore {
                         signing_key_id, profile_version
                      ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                     params![
-                        actor.ptid,
+                        ptid,
                         device.device_id,
                         state.device_signing_seed.as_slice(),
                         certificate.actor_identity_public_key,
@@ -2325,9 +2401,12 @@ impl PreKeyRepository for MobileMessagingStore {
     }
 }
 
-impl DeliveryReceiptRepository for MobileMessagingStore {
-    fn next_delivery_receipt(&self) -> Result<Option<DeliveryReceiptOutboxEntry>, String> {
-        self.connection
+impl MobileMessagingStore {
+    pub fn next_device_consumption_receipt(
+        &self,
+    ) -> Result<Option<(String, Vec<u8>, DeviceConsumptionReceipt)>, String> {
+        let entry = self
+            .connection
             .lock()
             .map_err(|_| "mobile messaging store lock poisoned".to_string())?
             .query_row(
@@ -2338,18 +2417,21 @@ impl DeliveryReceiptRepository for MobileMessagingStore {
                  ORDER BY created_at_unix_ms ASC, receipt_id ASC
                  LIMIT 1",
                 [],
-                |row| {
-                    Ok(DeliveryReceiptOutboxEntry {
-                        receipt_id: row.get(0)?,
-                        receipt_bytes: row.get(1)?,
-                    })
-                },
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
             )
             .optional()
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        entry
+            .map(|(receipt_id, receipt_bytes)| {
+                let receipt = DeviceConsumptionReceipt::decode(receipt_bytes.as_slice()).map_err(
+                    |error| format!("decode mobile messaging device consumption receipt: {error}"),
+                )?;
+                Ok((receipt_id, receipt_bytes, receipt))
+            })
+            .transpose()
     }
 
-    fn mark_delivery_receipt_submitted(
+    pub fn mark_device_consumption_receipt_submitted(
         &self,
         receipt_id: &str,
         receipt_bytes: &[u8],
@@ -2367,7 +2449,9 @@ impl DeliveryReceiptRepository for MobileMessagingStore {
             )
             .map_err(|error| error.to_string())?;
         if changed != 1 {
-            return Err("mobile messaging delivery receipt transition mismatch".to_string());
+            return Err(
+                "mobile messaging device consumption receipt transition mismatch".to_string(),
+            );
         }
         Ok(())
     }
@@ -2562,11 +2646,13 @@ impl MessagingRepository for MobileMessagingStore {
             transaction
                 .execute(
                     "INSERT INTO messaging_conversations(
-                        conversation_id, authority_station_id, kind, name, owner_ptid,
+                        conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                      ON CONFLICT(conversation_id) DO UPDATE SET
                         authority_station_id=excluded.authority_station_id,
+                        federation_id=excluded.federation_id,
                         kind=excluded.kind, name=excluded.name,
                         owner_ptid=excluded.owner_ptid,
                         membership_epoch=excluded.membership_epoch,
@@ -2575,6 +2661,7 @@ impl MessagingRepository for MobileMessagingStore {
                     params![
                         projection.conversation_id,
                         projection.authority_station_id,
+                        projection.federation_id,
                         projection.kind,
                         projection.name,
                         projection.owner_ptid,
@@ -2642,7 +2729,8 @@ impl MessagingRepository for MobileMessagingStore {
             .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
         let mut statement = connection
             .prepare(
-                "SELECT conversation_id, authority_station_id, kind, name, owner_ptid,
+                "SELECT conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
                  FROM messaging_conversations ORDER BY updated_at_unix_ms DESC",
             )
@@ -2652,13 +2740,14 @@ impl MessagingRepository for MobileMessagingStore {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, i32>(2)?,
-                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i32>(3)?,
                     row.get::<_, String>(4)?,
-                    row.get::<_, i64>(5)?,
+                    row.get::<_, String>(5)?,
                     row.get::<_, i64>(6)?,
-                    row.get::<_, bool>(7)?,
-                    row.get::<_, i64>(8)?,
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, bool>(8)?,
+                    row.get::<_, i64>(9)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -2680,14 +2769,15 @@ impl MessagingRepository for MobileMessagingStore {
                 Ok(ConversationProjection {
                     conversation_id: row.0,
                     authority_station_id: row.1,
-                    kind: row.2,
-                    name: row.3,
-                    owner_ptid: row.4,
+                    federation_id: row.2,
+                    kind: row.3,
+                    name: row.4,
+                    owner_ptid: row.5,
                     member_ptids,
-                    membership_epoch: row.5,
-                    mls_epoch: row.6,
-                    active: row.7,
-                    updated_at_unix_ms: row.8,
+                    membership_epoch: row.6,
+                    mls_epoch: row.7,
+                    active: row.8,
+                    updated_at_unix_ms: row.9,
                 })
             })
             .collect()
@@ -3718,6 +3808,8 @@ impl MessagingRepository for MobileMessagingStore {
                 commit.event_id,
                 commit.receipt_id,
                 commit.receipt_bytes,
+                commit.delivery_receipt_id,
+                commit.delivery_receipt_bytes,
                 commit.consumed_at_unix_ms,
             )?;
             Ok(result)
@@ -3786,6 +3878,8 @@ impl MessagingRepository for MobileMessagingStore {
                 commit.event_id,
                 commit.receipt_id,
                 commit.receipt_bytes,
+                commit.delivery_receipt_id,
+                commit.delivery_receipt_bytes,
                 commit.consumed_at_unix_ms,
             )?;
             Ok(result)
@@ -4798,6 +4892,19 @@ impl MlsInboundRepository for MobileMessagingStore {
         {
             return Err("mobile messaging MLS sender transition is incomplete".to_string());
         }
+        if let Some(projection) = commit.genesis_projection {
+            if !projection.active {
+                return Err(
+                    "mobile messaging MLS sender genesis projection must be active".to_string(),
+                );
+            }
+            validate_mls_projection(
+                projection,
+                commit.conversation_id,
+                commit.membership_epoch,
+                commit.mls_epoch,
+            )?;
+        }
         self.with_transaction(|transaction| {
             let result = MobileMessagingStore::commit_claimed_item(
                 transaction,
@@ -4818,7 +4925,7 @@ impl MlsInboundRepository for MobileMessagingStore {
                 commit.event_sequence,
                 commit.event_hash,
                 commit.previous_event_hash,
-                false,
+                commit.genesis_projection.is_some(),
             )?;
             let pending = transaction
                 .query_row(
@@ -4849,23 +4956,27 @@ impl MlsInboundRepository for MobileMessagingStore {
                 commit.mls_epoch,
                 commit.consumed_at_unix_ms,
             )?;
-            let conversation_changed = transaction
-                .execute(
-                    "UPDATE messaging_conversations
-                     SET membership_epoch = ?2, mls_epoch = ?3, updated_at_unix_ms = ?4
-                     WHERE conversation_id = ?1",
-                    params![
-                        commit.conversation_id,
-                        commit.membership_epoch,
-                        commit.mls_epoch,
-                        commit.consumed_at_unix_ms
-                    ],
-                )
-                .map_err(|error| error.to_string())?;
-            if conversation_changed != 1 {
-                return Err(
-                    "mobile messaging MLS conversation projection is unavailable".to_string(),
-                );
+            if let Some(projection) = commit.genesis_projection {
+                persist_mls_conversation(transaction, projection, commit.consumed_at_unix_ms)?;
+            } else {
+                let conversation_changed = transaction
+                    .execute(
+                        "UPDATE messaging_conversations
+                         SET membership_epoch = ?2, mls_epoch = ?3, updated_at_unix_ms = ?4
+                         WHERE conversation_id = ?1",
+                        params![
+                            commit.conversation_id,
+                            commit.membership_epoch,
+                            commit.mls_epoch,
+                            commit.consumed_at_unix_ms
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+                if conversation_changed != 1 {
+                    return Err(
+                        "mobile messaging MLS conversation projection is unavailable".to_string(),
+                    );
+                }
             }
             for table in [
                 "messaging_local_commands",
@@ -5279,6 +5390,7 @@ fn validate_mls_projection(
 ) -> Result<(), String> {
     if projection.conversation_id != conversation_id
         || projection.authority_station_id.trim().is_empty()
+        || projection.federation_id.trim().is_empty()
         || projection.owner_ptid.trim().is_empty()
         || projection.membership_epoch != membership_epoch
         || projection.mls_epoch != mls_epoch
@@ -5299,11 +5411,13 @@ fn persist_mls_conversation(
     transaction
         .execute(
             "INSERT INTO messaging_conversations(
-                conversation_id, authority_station_id, kind, name, owner_ptid,
+                conversation_id, authority_station_id, federation_id,
+                kind, name, owner_ptid,
                 membership_epoch, mls_epoch, active, updated_at_unix_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(conversation_id) DO UPDATE SET
                 authority_station_id=excluded.authority_station_id,
+                federation_id=excluded.federation_id,
                 kind=excluded.kind,
                 name=excluded.name,
                 owner_ptid=excluded.owner_ptid,
@@ -5314,6 +5428,7 @@ fn persist_mls_conversation(
             params![
                 projection.conversation_id,
                 projection.authority_station_id,
+                projection.federation_id,
                 projection.kind,
                 projection.name,
                 projection.owner_ptid,
@@ -5406,6 +5521,8 @@ fn finish_direct_receive(
     event_id: &str,
     receipt_id: &str,
     receipt_bytes: &[u8],
+    _delivery_receipt_id: &str,
+    _delivery_receipt_bytes: &[u8],
     now_unix_ms: i64,
 ) -> Result<(), String> {
     finish_authority_receive(
@@ -5417,7 +5534,8 @@ fn finish_direct_receive(
         receipt_id,
         receipt_bytes,
         now_unix_ms,
-    )
+    )?;
+    Ok(())
 }
 
 fn finish_authority_receive(
@@ -6338,8 +6456,8 @@ mod tests {
     };
     use messaging_core::identity::generate_fresh_device_identity;
     use messaging_core::proto::chat::{
-        AttachmentEncryptionSuite, AttachmentNonceStrategy, CryptoEndpoint as ProtoCryptoEndpoint,
-        DeviceConsumptionReceipt,
+        AttachmentEncryptionSuite, AttachmentNonceStrategy, ConversationKind,
+        DeviceConsumptionReceipt, MemberRole,
     };
 
     fn store() -> MobileMessagingStore {
@@ -6349,21 +6467,16 @@ mod tests {
     fn activate_device(store: &MobileMessagingStore) -> FreshDeviceEnrollment {
         let identity = generate_fresh_device_identity("ptid:alice", [42; 32], 1).unwrap();
         DeviceEnrollmentRepository::install_fresh_device_identity(store, &identity).unwrap();
-        DeviceEnrollmentRepository::complete_device_enrollment(
-            store,
-            enrollment_device_id(&identity.enrollment),
-        )
-        .unwrap();
-        identity.enrollment
-    }
-
-    fn enrollment_device_id(enrollment: &FreshDeviceEnrollment) -> &str {
-        &enrollment
+        let device_id = identity
+            .enrollment
             .certificate
             .device
             .as_ref()
-            .expect("test enrollment device")
+            .unwrap()
             .device_id
+            .as_str();
+        DeviceEnrollmentRepository::complete_device_enrollment(store, device_id).unwrap();
+        identity.enrollment
     }
 
     fn direct_session(receive_counter: u32) -> DirectSession {
@@ -6570,6 +6683,7 @@ mod tests {
         let projection = ConversationProjection {
             conversation_id: "conversation-1".into(),
             authority_station_id: "station-1".into(),
+            federation_id: "federation-1".into(),
             kind: 2,
             name: "Group".into(),
             owner_ptid: "ptid:alice".into(),
@@ -6605,6 +6719,10 @@ mod tests {
         assert!(MessagingRepository::consumption_marker_matches(&store, "item-1", &hash).unwrap());
         assert_eq!(store.lane_checkpoint().unwrap(), (1, 1));
         assert_eq!(
+            store.conversation_projections().unwrap()[0].federation_id,
+            "federation-1"
+        );
+        assert_eq!(
             store.conversation_projections().unwrap()[0].member_ptids,
             vec!["ptid:alice", "ptid:bob"]
         );
@@ -6629,6 +6747,7 @@ mod tests {
         let projection = ConversationProjection {
             conversation_id: "conversation-1".into(),
             authority_station_id: "station-1".into(),
+            federation_id: "federation-1".into(),
             kind: 1,
             name: String::new(),
             owner_ptid: "ptid:alice".into(),
@@ -7017,6 +7136,7 @@ mod tests {
         let projection = ConversationProjection {
             conversation_id: "conversation-1".into(),
             authority_station_id: "station-1".into(),
+            federation_id: "federation-1".into(),
             kind: 1,
             name: String::new(),
             owner_ptid: "ptid:alice".into(),
@@ -7524,6 +7644,7 @@ mod tests {
         let joined = MlsConversationProjection {
             conversation_id: "group-1".into(),
             authority_station_id: "station-1".into(),
+            federation_id: "federation-1".into(),
             kind: 2,
             name: "Group".into(),
             owner_ptid: "ptid:alice".into(),
@@ -7705,6 +7826,7 @@ mod tests {
         let conversation = ConversationProjection {
             conversation_id: "group-1".into(),
             authority_station_id: "station-1".into(),
+            federation_id: "federation-1".into(),
             kind: 2,
             name: "Group".into(),
             owner_ptid: "ptid:alice".into(),
@@ -7778,6 +7900,7 @@ mod tests {
                     session_state: b"committed-session",
                     membership_epoch: 2,
                     mls_epoch: 2,
+                    genesis_projection: None,
                     receipt_id: "receipt-transition",
                     receipt_bytes: b"receipt",
                     consumed_at_unix_ms: 52,
@@ -7794,6 +7917,127 @@ mod tests {
         assert_eq!(
             MlsInboundRepository::load_mls_session_state(&store, "group-1").unwrap(),
             Some(b"committed-session".to_vec())
+        );
+    }
+
+    #[test]
+    fn mls_sender_genesis_atomically_commits_projection_session_and_marker() {
+        let store = store();
+        MlsTransitionRepository::persist_mls_transition(
+            &store,
+            &MlsTransitionSendCommit {
+                logical_intent_id: None,
+                command_id: "genesis-command",
+                conversation_id: "group-genesis",
+                transition_id: "genesis-transition",
+                delivery_plan_sha256: &[7; 32],
+                command_bytes: b"genesis-command-bytes",
+                pending_transition_state: b"pending-genesis-state",
+                created_at_unix_ms: 100,
+            },
+        )
+        .unwrap();
+        MlsInboundRepository::persist_claimed_item(
+            &store,
+            "genesis-item",
+            "genesis-event",
+            "group-genesis",
+            1,
+            1,
+            &[8; 32],
+            b"genesis-delivery",
+            101,
+        )
+        .unwrap();
+        let projection = MlsConversationProjection {
+            conversation_id: "group-genesis".to_string(),
+            authority_station_id: "station-authority".to_string(),
+            federation_id: "federation-1".to_string(),
+            kind: ConversationKind::Group as i32,
+            name: "Genesis group".to_string(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![
+                MlsConversationMemberProjection {
+                    ptid: "ptid:alice".to_string(),
+                    role: MemberRole::Owner as i32,
+                },
+                MlsConversationMemberProjection {
+                    ptid: "ptid:bob".to_string(),
+                    role: MemberRole::Member as i32,
+                },
+            ],
+            membership_epoch: 1,
+            mls_epoch: 1,
+            active: true,
+            updated_at_unix_ms: 101,
+        };
+        let commit = MlsSenderTransitionReceiveCommit {
+            item_id: "genesis-item",
+            event_id: "genesis-event",
+            conversation_id: "group-genesis",
+            command_id: "genesis-command",
+            transition_id: "genesis-transition",
+            event_sequence: 1,
+            lane_sequence: 1,
+            consumer_epoch: 1,
+            payload_sha256: &[8; 32],
+            event_hash: &[9; 32],
+            previous_event_hash: &[],
+            session_state: b"committed-genesis-state",
+            membership_epoch: 1,
+            mls_epoch: 1,
+            genesis_projection: Some(&projection),
+            receipt_id: "genesis-receipt",
+            receipt_bytes: b"genesis-receipt-bytes",
+            consumed_at_unix_ms: 101,
+        };
+
+        assert_eq!(
+            MlsInboundRepository::commit_mls_sender_transition(&store, &commit).unwrap(),
+            ReceiveCommitResult::Committed
+        );
+        assert_eq!(
+            MlsInboundRepository::commit_mls_sender_transition(&store, &commit).unwrap(),
+            ReceiveCommitResult::AlreadyCommitted
+        );
+        assert_eq!(
+            MlsInboundRepository::load_mls_session_state(&store, "group-genesis").unwrap(),
+            Some(b"committed-genesis-state".to_vec())
+        );
+        assert!(
+            MlsInboundRepository::pending_mls_transition(&store, "group-genesis")
+                .unwrap()
+                .is_none()
+        );
+        let conversations = MessagingRepository::conversation_projections(&store).unwrap();
+        assert_eq!(conversations.len(), 1);
+        assert_eq!(conversations[0].conversation_id, "group-genesis");
+        assert_eq!(conversations[0].federation_id, "federation-1");
+        assert_eq!(
+            MessagingRepository::lane_checkpoint(&store).unwrap(),
+            (1, 1)
+        );
+        let roles = store
+            .connection
+            .lock()
+            .unwrap()
+            .prepare(
+                "SELECT ptid, role FROM messaging_conversation_members
+                 WHERE conversation_id = ?1 ORDER BY ptid",
+            )
+            .unwrap()
+            .query_map(params!["group-genesis"], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            roles,
+            vec![
+                ("ptid:alice".to_string(), MemberRole::Owner as i32),
+                ("ptid:bob".to_string(), MemberRole::Member as i32),
+            ]
         );
     }
 
@@ -7891,6 +8135,13 @@ mod tests {
     fn enrollment_gates_prekeys_and_receipt_dispatch_state_is_exact_byte_bound() {
         let store = store();
         let identity = generate_fresh_device_identity("ptid:alice", [42; 32], 1).unwrap();
+        let device = identity
+            .enrollment
+            .certificate
+            .device
+            .as_ref()
+            .unwrap()
+            .clone();
         DeviceEnrollmentRepository::install_fresh_device_identity(&store, &identity).unwrap();
         assert_eq!(
             DeviceEnrollmentRepository::pending_device_enrollment(&store)
@@ -7907,11 +8158,18 @@ mod tests {
         )
         .is_err());
 
-        DeviceEnrollmentRepository::complete_device_enrollment(
-            &store,
-            enrollment_device_id(&identity.enrollment),
-        )
-        .unwrap();
+        DeviceEnrollmentRepository::complete_device_enrollment(&store, &device.device_id).unwrap();
+        let (active_enrollment, active_signing_key) =
+            store.active_device_signing_identity().unwrap();
+        assert_eq!(active_enrollment, identity.enrollment);
+        assert_eq!(active_signing_key.device_id(), device.device_id);
+        assert_eq!(
+            active_signing_key.verifying_key().as_bytes(),
+            active_enrollment
+                .certificate
+                .device_signing_public_key
+                .as_slice()
+        );
         PreKeyRepository::install_fresh_prekey_bundle(&store, 7, &[8; 32], &[(9, [10; 32])], 20)
             .unwrap();
         let bundle = PreKeyRepository::pending_prekey_bundle(&store)
@@ -7928,16 +8186,16 @@ mod tests {
             receipt_id: "device-consumed:item-1".to_string(),
             conversation_id: "conversation-1".to_string(),
             event_id: "event-1".to_string(),
-            consumer: Some(ProtoCryptoEndpoint {
+            consumer: Some(messaging_core::proto::chat::CryptoEndpoint {
                 ptid: "ptid:alice".to_string(),
-                device_id: enrollment_device_id(&identity.enrollment).to_string(),
+                device_id: device.device_id,
             }),
             event_sequence: 1,
             lane_sequence: 1,
-            payload_sha256: vec![7; 32],
+            payload_sha256: vec![1; 32],
             consumed_at: Some(prost_types::Timestamp {
-                seconds: 1,
-                nanos: 0,
+                seconds: 0,
+                nanos: 30_000_000,
             }),
         };
         let receipt_bytes = receipt.encode_to_vec();
@@ -7952,24 +8210,16 @@ mod tests {
                 params![receipt_bytes],
             )
             .unwrap();
-        let pending = DeliveryReceiptRepository::next_delivery_receipt(&store)
-            .unwrap()
+        let (receipt_id, pending_bytes, pending) =
+            store.next_device_consumption_receipt().unwrap().unwrap();
+        assert_eq!(pending, receipt);
+        assert!(store
+            .mark_device_consumption_receipt_submitted(&receipt_id, b"wrong")
+            .is_err());
+        store
+            .mark_device_consumption_receipt_submitted(&receipt_id, &pending_bytes)
             .unwrap();
-        assert!(DeliveryReceiptRepository::mark_delivery_receipt_submitted(
-            &store,
-            &pending.receipt_id,
-            b"wrong",
-        )
-        .is_err());
-        DeliveryReceiptRepository::mark_delivery_receipt_submitted(
-            &store,
-            &pending.receipt_id,
-            &pending.receipt_bytes,
-        )
-        .unwrap();
-        assert!(DeliveryReceiptRepository::next_delivery_receipt(&store)
-            .unwrap()
-            .is_none());
+        assert!(store.next_device_consumption_receipt().unwrap().is_none());
     }
 
     #[test]
@@ -8199,10 +8449,12 @@ mod tests {
             connection
                 .execute(
                     "INSERT INTO messaging_conversations(
-                        conversation_id, authority_station_id, kind, name, owner_ptid,
+                        conversation_id, authority_station_id, federation_id,
+                        kind, name, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
                      ) VALUES (
-                        'conversation-1', 'station-authority', 1, '', 'ptid:alice',
+                        'conversation-1', 'station-authority', 'federation-1',
+                        1, '', 'ptid:alice',
                         1, 0, 1, 10
                      )",
                     [],
@@ -8299,7 +8551,22 @@ mod tests {
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
-                "CREATE TABLE messaging_read_cursors (
+                "CREATE TABLE messaging_conversations (
+                    conversation_id TEXT PRIMARY KEY,
+                    authority_station_id TEXT NOT NULL,
+                    kind INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    owner_ptid TEXT NOT NULL,
+                    membership_epoch INTEGER NOT NULL,
+                    mls_epoch INTEGER NOT NULL,
+                    active INTEGER NOT NULL,
+                    updated_at_unix_ms INTEGER NOT NULL
+                 );
+                 INSERT INTO messaging_conversations VALUES (
+                    'conversation-legacy', 'station-authority', 1, '', 'ptid:alice',
+                    1, 0, 1, 10
+                 );
+                 CREATE TABLE messaging_read_cursors (
                     conversation_id TEXT NOT NULL,
                     actor_ptid TEXT NOT NULL,
                     last_read_sequence INTEGER NOT NULL,
@@ -8331,7 +8598,25 @@ mod tests {
             )
             .unwrap();
         let store = MobileMessagingStore::from_connection(connection).unwrap();
+        assert!(store
+            .reconcile_conversation_authority_scope(
+                "conversation-legacy",
+                "station-authority",
+                "federation-1",
+            )
+            .unwrap());
         let connection = store.connection.lock().unwrap();
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT federation_id FROM messaging_conversations
+                     WHERE conversation_id = 'conversation-legacy'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "federation-1"
+        );
         assert_eq!(
             connection
                 .query_row(

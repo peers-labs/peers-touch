@@ -10,6 +10,19 @@ use crate::store::MessagingRepository;
 use prost::Message;
 use std::sync::Arc;
 
+pub fn is_mls_sender_public_event(delivery: &DeviceEventDelivery) -> bool {
+    matches!(
+        delivery
+            .event
+            .as_ref()
+            .and_then(|event| event.payload.as_ref()),
+        Some(
+            conversation_event::Payload::MembershipTransitionCommitted(_)
+                | conversation_event::Payload::ConversationCreated(_)
+        )
+    )
+}
+
 pub trait MlsItemConsumer: Send + Sync {
     fn consume_application(
         &self,
@@ -89,15 +102,10 @@ impl<R: MessagingRepository, M: MlsItemConsumer> ClaimedItemConsumer
                 self.mls.consume_retirement(item, consumer_epoch)
             }
             PreparedEndpointPayloadKind::PublicEvent => {
-                match delivery
-                    .event
-                    .as_ref()
-                    .and_then(|event| event.payload.as_ref())
-                {
-                    Some(conversation_event::Payload::MembershipTransitionCommitted(_)) => {
-                        self.mls.consume_sender_transition(item, consumer_epoch)
-                    }
-                    _ => self.public_event.consume(item, consumer_epoch),
+                if is_mls_sender_public_event(&delivery) {
+                    self.mls.consume_sender_transition(item, consumer_epoch)
+                } else {
+                    self.public_event.consume(item, consumer_epoch)
                 }
             }
             PreparedEndpointPayloadKind::ConversationState => {
@@ -107,5 +115,44 @@ impl<R: MessagingRepository, M: MlsItemConsumer> ClaimedItemConsumer
                 Err("messaging consumer endpoint payload kind is unsupported".to_string())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::proto::chat::{
+        ConversationCreatedFact, ConversationEvent, MembershipTransitionCommittedFact,
+        MessageCommittedFact,
+    };
+
+    #[test]
+    fn group_creation_and_membership_events_use_mls_sender_processing() {
+        for payload in [
+            conversation_event::Payload::ConversationCreated(ConversationCreatedFact::default()),
+            conversation_event::Payload::MembershipTransitionCommitted(
+                MembershipTransitionCommittedFact::default(),
+            ),
+        ] {
+            let delivery = DeviceEventDelivery {
+                event: Some(ConversationEvent {
+                    payload: Some(payload),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            assert!(is_mls_sender_public_event(&delivery));
+        }
+
+        let message = DeviceEventDelivery {
+            event: Some(ConversationEvent {
+                payload: Some(conversation_event::Payload::MessageCommitted(
+                    MessageCommittedFact::default(),
+                )),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(!is_mls_sender_public_event(&message));
     }
 }

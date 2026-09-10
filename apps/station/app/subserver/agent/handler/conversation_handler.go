@@ -482,7 +482,7 @@ func conversationToJSON(c *domain.Conversation) map[string]any {
 	return map[string]any{
 		"conversation_id":          c.ConversationID,
 		"agent_id":                 c.AgentID,
-		"ptid":                     c.Ptid,
+		"ptid":                     c.ActorPTID,
 		"title":                    c.Title,
 		"description":              c.Description,
 		"provider_id":              c.ProviderID,

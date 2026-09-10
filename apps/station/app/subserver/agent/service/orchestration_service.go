@@ -4639,7 +4639,7 @@ func (s *OrchestrationService) ensureNodeConversation(
 	conversation := persistence.Conversation{
 		ID:          node.ID,
 		AgentID:     agent.AgentID,
-		Ptid:        actorPTID,
+		ActorPTID:   actorPTID,
 		Title:       task.Title,
 		ProviderID:  providerID,
 		ModelName:   &modelName,
