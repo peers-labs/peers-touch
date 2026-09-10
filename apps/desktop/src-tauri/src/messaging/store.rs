@@ -3674,9 +3674,9 @@ impl MessagingStore {
         let transaction = connection
             .transaction()
             .map_err(|error| error.to_string())?;
-        let draft_media_type = transaction
+        let draft_exists = transaction
             .query_row(
-                "SELECT mime_type FROM messaging_attachment_drafts
+                "SELECT 1 FROM messaging_attachment_drafts
                  WHERE attachment_id = ?1
                    AND conversation_id = ?2
                    AND message_id = ?3",
@@ -3685,16 +3685,10 @@ impl MessagingStore {
                     transfer.conversation_id,
                     transfer.message_id
                 ],
-                |row| row.get::<_, String>(0),
+                |row| row.get::<_, i64>(0),
             )
             .optional()
             .map_err(|error| error.to_string())?;
-        let mime_type = draft_media_type
-            .as_deref()
-            .unwrap_or(descriptor.media_type.as_str());
-        if mime_type != descriptor.media_type {
-            return Err("messaging attachment completion media type mismatch".to_string());
-        }
         let transfer_changed = transaction
             .execute(
                 "UPDATE messaging_attachment_transfers
@@ -3733,7 +3727,7 @@ impl MessagingStore {
                 params![transfer.attachment_id, descriptor_bytes],
             )
             .map_err(|error| error.to_string())?;
-        let draft_fenced = match draft_media_type {
+        let draft_fenced = match draft_exists {
             Some(_) => draft_changed == 1,
             None => draft_changed == 0,
         };
@@ -9050,6 +9044,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
 mod tests {
     use super::*;
     use crate::domain::crypto::IdentityKeyPair;
+    use crate::messaging::attachment_transfer;
     use crate::messaging::private_content::test_attachment_metadata;
     use crate::model::chat::AttachmentTransferErrorCode;
     use messaging_core::identity::generate_fresh_device_identity;
@@ -9874,6 +9869,92 @@ mod tests {
         assert_eq!(persisted.attempt_count, 1);
         assert_eq!(persisted.next_attempt_at_unix_ms, 20);
         assert_eq!(persisted.last_error_code, 8);
+    }
+
+    #[test]
+    fn completed_upload_preserves_private_mime_with_canonical_transport_type() {
+        let store = MessagingStore::in_memory().unwrap();
+        let metadata = test_attachment_metadata("attachment-1");
+        let descriptor = metadata.object.clone().unwrap();
+        assert_eq!(metadata.mime_type, "text/plain");
+        assert_eq!(descriptor.media_type, "application/octet-stream");
+        let upload_spec = EncryptedObjectUploadSpec {
+            ciphertext_size: descriptor.ciphertext_size,
+            ciphertext_sha256: descriptor.ciphertext_sha256.clone(),
+            media_type: descriptor.media_type.clone(),
+            chunk_size: descriptor.chunk_size,
+            chunk_count: descriptor.chunk_count,
+            encryption_suite: descriptor.encryption_suite,
+            tag_size: descriptor.tag_size,
+            nonce_strategy: descriptor.nonce_strategy,
+            chunk_ciphertext_sha256: descriptor.chunk_ciphertext_sha256.clone(),
+        };
+        let mut transfer = attachment_transfer();
+        transfer.plaintext_size = metadata.plaintext_size;
+        transfer.chunk_size = descriptor.chunk_size;
+        transfer.object_key = metadata.object_key.clone();
+        transfer.base_nonce = metadata.base_nonce.clone();
+        transfer.descriptor_sha256 = attachment_transfer::upload_commitment_fields(
+            &transfer.conversation_id,
+            &transfer.message_id,
+            &transfer.attachment_id,
+            &transfer.authority_station_id,
+            &upload_spec,
+        )
+        .to_vec();
+        let draft = PendingMessageDraft {
+            conversation_id: transfer.conversation_id.clone(),
+            conversation_kind: ConversationKind::Group as i32,
+            message_id: transfer.message_id.clone(),
+            sender_ptid: "ptid:alice".to_string(),
+            sender_device_id: "alice-device".to_string(),
+            plaintext: String::new(),
+            reply_to_message_id: String::new(),
+            thread_root_message_id: String::new(),
+            attachments: Vec::new(),
+            attempt_count: 0,
+            created_at_unix_ms: 10,
+        };
+        store
+            .create_message_draft_with_uploads(
+                &draft,
+                &[PendingAttachmentUpload {
+                    transfer: transfer.clone(),
+                    filename: metadata.filename.clone(),
+                    mime_type: metadata.mime_type.clone(),
+                    plaintext_sha256: metadata.plaintext_sha256.clone(),
+                }],
+            )
+            .unwrap();
+        transfer.state = AttachmentTransferState::Transferring as i32;
+        transfer.upload_id = "upload-1".to_string();
+        transfer.generation = 1;
+        transfer.completed_chunk_bitmap = vec![1];
+        store
+            .update_attachment_transfer_progress(
+                &transfer.attachment_id,
+                transfer.state,
+                &transfer.upload_id,
+                transfer.generation,
+                &transfer.completed_chunk_bitmap,
+                transfer.attempt_count,
+                0,
+                0,
+                11,
+            )
+            .unwrap();
+
+        store
+            .complete_attachment_upload(&transfer, &descriptor, 12)
+            .unwrap();
+
+        let completed = store.message_draft(&transfer.message_id).unwrap().unwrap();
+        assert_eq!(completed.attachments.len(), 1);
+        assert_eq!(completed.attachments[0].mime_type, "text/plain");
+        assert_eq!(
+            completed.attachments[0].object.as_ref().unwrap().media_type,
+            "application/octet-stream"
+        );
     }
 
     #[test]
