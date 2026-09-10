@@ -259,8 +259,8 @@ When starting new work:
 | Product accepted; needs new boundary / ownership / contract decision | DESIGN | Architecture not yet defined |
 | Product and architecture accepted; needs implementation breakdown | PLAN | Accepted contracts need an execution plan |
 | Plan exists and accepted | EXECUTE | Ready to implement |
-| Bug fix (any size, touches behavior) | CROSS-STAGE | Invoke `pt-defect-closure`; it orchestrates debug → fix → acceptance injection |
-| Cosmetic fix / typo | EXECUTE (small-fix) | Skip PRODUCT+DESIGN+PLAN; `pt-small-fix-discipline` only |
+| Bug fix (behavior, control flow, data, UI, interaction, visual) | CROSS-STAGE | Invoke `pt-defect-closure`; it orchestrates debug → fix → acceptance injection → growth |
+| Typo / comment / internal rename (zero product impact) | EXECUTE (small-fix) | Skip PRODUCT+DESIGN+PLAN; `pt-small-fix-discipline` only |
 | Code done, ready to ship | DELIVER | Package and submit |
 
 If unclear: "Is this a new product/capability, a new architecture decision, or
