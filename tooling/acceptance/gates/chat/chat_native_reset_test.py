@@ -18,6 +18,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     reset_local_client_storage,
     reset_station_chat_state,
     seed_cross_station_contact,
+    seed_same_station_contact,
     verify_disposable_station_runtime,
 )
 
@@ -396,6 +397,124 @@ INSERT INTO touch_actor VALUES (
 
             self.assertEqual(actor.ptid, "ptid:alice")
             self.assertEqual(actor.home_station_peer_id, "peer-sixwin")
+
+    def test_same_station_contact_seeds_canonical_sqlite_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "station.db"
+            import sqlite3
+
+            with closing(sqlite3.connect(database)) as connection:
+                connection.executescript(
+                    """
+CREATE TABLE federation (
+  federation_id TEXT PRIMARY KEY, name TEXT, description TEXT, status TEXT,
+  policy_type TEXT, sequencer_station_peer_id TEXT, genesis_hash BLOB,
+  head_hash BLOB, head_seq INTEGER, created_by_actor_ptid TEXT,
+  created_by_station_peer_id TEXT, created_at TEXT, updated_at TEXT
+);
+CREATE TABLE federation_station_membership (
+  federation_id TEXT, station_peer_id TEXT, station_name TEXT,
+  station_url TEXT, role TEXT, status TEXT, joined_at TEXT,
+  approved_by_event_id TEXT,
+  UNIQUE (federation_id, station_peer_id)
+);
+CREATE TABLE social_friend_requests (
+  request_id TEXT PRIMARY KEY, federation_id TEXT,
+  authority_station_peer_id TEXT, sender_ptid TEXT, receiver_ptid TEXT,
+  sender_actor_ref_bytes BLOB, receiver_actor_ref_bytes BLOB,
+  sender_home_station_peer_id TEXT, receiver_home_station_peer_id TEXT,
+  message TEXT, state INTEGER, sequence INTEGER, last_event_hash BLOB,
+  last_event_bytes BLOB, authority_confirmed INTEGER, created_at TEXT,
+  responded_at TEXT
+);
+CREATE TABLE social_relationship_projections (
+  owner_ptid TEXT, peer_ptid TEXT, request_id TEXT,
+  accepted_event_id TEXT, accepted_event_hash BLOB, accepted_at TEXT,
+  PRIMARY KEY (owner_ptid, peer_ptid)
+);
+"""
+                )
+            actor = FixtureActorRecord(
+                ptid="ptid:alice",
+                preferred_username="alice",
+                name="Alice",
+                summary="",
+                icon="",
+                image="",
+                url="http://127.0.0.1:18080/actors/alice",
+                federated_handle="@alice@127.0.0.1",
+                home_station_peer_id="peer-sixwin",
+                home_station_domain="127.0.0.1:18080",
+                visibility=1,
+                locator_seq=1,
+            )
+            peer = FixtureActorRecord(
+                ptid="ptid:bob",
+                preferred_username="bob",
+                name="Bob",
+                summary="",
+                icon="",
+                image="",
+                url="http://127.0.0.1:18080/actors/bob",
+                federated_handle="@bob@127.0.0.1",
+                home_station_peer_id="peer-sixwin",
+                home_station_domain="127.0.0.1:18080",
+                visibility=1,
+                locator_seq=1,
+            )
+            environment = {
+                "PT_ACCEPTANCE_RUNTIME_KIND": "local-source",
+                "PT_ACCEPTANCE_LOCAL_DATABASE": str(database),
+            }
+            with patch(
+                "tooling.acceptance.fixtures.chat_native_reset."
+                "acceptance_station_environment",
+                return_value=environment,
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_reset."
+                "verify_disposable_station_runtime",
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_reset."
+                "_encode_social_proto",
+                return_value=b"canonical-proto",
+            ):
+                seed_same_station_contact(
+                    "http://127.0.0.1:18080",
+                    "sixwin",
+                    actor,
+                    peer,
+                )
+                seed_same_station_contact(
+                    "http://127.0.0.1:18080",
+                    "sixwin",
+                    actor,
+                    peer,
+                )
+
+            with closing(sqlite3.connect(database)) as connection:
+                request = connection.execute(
+                    """
+SELECT state, sequence, authority_confirmed
+FROM social_friend_requests
+"""
+                ).fetchone()
+                relationships = connection.execute(
+                    """
+SELECT owner_ptid, peer_ptid
+FROM social_relationship_projections
+ORDER BY owner_ptid
+"""
+                ).fetchall()
+                memberships = connection.execute(
+                    "SELECT count(*) FROM federation_station_membership"
+                ).fetchone()[0]
+
+            self.assertEqual(request, (2, 2, 1))
+            self.assertEqual(
+                relationships,
+                [("ptid:alice", "ptid:bob"), ("ptid:bob", "ptid:alice")],
+            )
+            self.assertEqual(memberships, 1)
 
     def test_reset_rejects_unknown_account_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

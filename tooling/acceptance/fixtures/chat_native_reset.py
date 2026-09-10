@@ -1260,6 +1260,197 @@ COMMIT;
     _remote_psql(environment, sql)
 
 
+def seed_same_station_contact(
+    station_url: str,
+    environment_name: str,
+    actor: FixtureActorRecord,
+    peer: FixtureActorRecord,
+) -> None:
+    environment = acceptance_station_environment(station_url, environment_name)
+    verify_disposable_station_runtime(environment)
+    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") != LOCAL_SOURCE_RUNTIME:
+        raise RuntimeError(
+            "same-Station canonical contact seeding currently requires a "
+            "local-source Station"
+        )
+    if (
+        actor.home_station_peer_id != peer.home_station_peer_id
+        or actor.home_station_peer_id == ""
+    ):
+        raise RuntimeError(
+            "same-Station canonical contact actors must share one Station"
+        )
+
+    friendship = _accepted_friendship(actor, peer)
+    sender_ref = _encode_social_proto(
+        "peers_touch.model.actor.v1.ActorRef",
+        _actor_ref_text(friendship.sender),
+    )
+    receiver_ref = _encode_social_proto(
+        "peers_touch.model.actor.v1.ActorRef",
+        _actor_ref_text(friendship.receiver),
+    )
+    created_at = time.strftime(
+        "%Y-%m-%d %H:%M:%S+00:00",
+        time.gmtime(FIXTURE_FRIENDSHIP_CREATED_AT_UNIX),
+    )
+    accepted_at = time.strftime(
+        "%Y-%m-%d %H:%M:%S+00:00",
+        time.gmtime(FIXTURE_FRIENDSHIP_CREATED_AT_UNIX + 1),
+    )
+    database = environment["PT_ACCEPTANCE_LOCAL_DATABASE"]
+    with closing(sqlite3.connect(database, timeout=10)) as connection:
+        connection.execute("PRAGMA busy_timeout = 10000")
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            connection.execute(
+                """
+INSERT INTO federation (
+  federation_id, name, description, status, policy_type,
+  sequencer_station_peer_id, genesis_hash, head_hash, head_seq,
+  created_by_actor_ptid, created_by_station_peer_id, created_at, updated_at
+) VALUES (?, ?, '', 'active', 'single_admin', ?, ?, ?, 0, ?, ?, ?, ?)
+ON CONFLICT (federation_id) DO UPDATE SET
+  status = excluded.status,
+  sequencer_station_peer_id = excluded.sequencer_station_peer_id,
+  created_by_actor_ptid = excluded.created_by_actor_ptid,
+  created_by_station_peer_id = excluded.created_by_station_peer_id,
+  updated_at = excluded.updated_at
+""",
+                (
+                    friendship.federation_id,
+                    "chat-native-acceptance",
+                    friendship.sender.home_station_peer_id,
+                    bytes(32),
+                    bytes(32),
+                    friendship.sender.ptid,
+                    friendship.sender.home_station_peer_id,
+                    created_at,
+                    created_at,
+                ),
+            )
+            connection.execute(
+                """
+INSERT INTO federation_station_membership (
+  federation_id, station_peer_id, station_name, station_url, role,
+  status, joined_at, approved_by_event_id
+) VALUES (?, ?, ?, ?, 'founder', 'active', ?, '')
+ON CONFLICT (federation_id, station_peer_id) DO UPDATE SET
+  station_name = excluded.station_name,
+  station_url = excluded.station_url,
+  role = excluded.role,
+  status = excluded.status
+""",
+                (
+                    friendship.federation_id,
+                    friendship.sender.home_station_peer_id,
+                    friendship.sender.home_station_domain,
+                    station_url.rstrip("/"),
+                    created_at,
+                ),
+            )
+            connection.execute(
+                """
+INSERT INTO social_friend_requests (
+  request_id, federation_id, authority_station_peer_id,
+  sender_ptid, receiver_ptid, sender_actor_ref_bytes,
+  receiver_actor_ref_bytes, sender_home_station_peer_id,
+  receiver_home_station_peer_id, message, state, sequence,
+  last_event_hash, last_event_bytes, authority_confirmed,
+  created_at, responded_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', 2, 2, ?, ?, 1, ?, ?)
+ON CONFLICT (request_id) DO UPDATE SET
+  federation_id = excluded.federation_id,
+  authority_station_peer_id = excluded.authority_station_peer_id,
+  sender_ptid = excluded.sender_ptid,
+  receiver_ptid = excluded.receiver_ptid,
+  sender_actor_ref_bytes = excluded.sender_actor_ref_bytes,
+  receiver_actor_ref_bytes = excluded.receiver_actor_ref_bytes,
+  sender_home_station_peer_id = excluded.sender_home_station_peer_id,
+  receiver_home_station_peer_id = excluded.receiver_home_station_peer_id,
+  state = excluded.state,
+  sequence = excluded.sequence,
+  last_event_hash = excluded.last_event_hash,
+  last_event_bytes = excluded.last_event_bytes,
+  authority_confirmed = excluded.authority_confirmed,
+  created_at = excluded.created_at,
+  responded_at = excluded.responded_at
+""",
+                (
+                    friendship.request_id,
+                    friendship.federation_id,
+                    friendship.receiver.home_station_peer_id,
+                    friendship.sender.ptid,
+                    friendship.receiver.ptid,
+                    sender_ref,
+                    receiver_ref,
+                    friendship.sender.home_station_peer_id,
+                    friendship.receiver.home_station_peer_id,
+                    friendship.accepted_event_hash,
+                    friendship.accepted_event_bytes,
+                    created_at,
+                    accepted_at,
+                ),
+            )
+            connection.executemany(
+                """
+INSERT INTO social_relationship_projections (
+  owner_ptid, peer_ptid, request_id, accepted_event_id,
+  accepted_event_hash, accepted_at
+) VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (owner_ptid, peer_ptid) DO UPDATE SET
+  request_id = excluded.request_id,
+  accepted_event_id = excluded.accepted_event_id,
+  accepted_event_hash = excluded.accepted_event_hash,
+  accepted_at = excluded.accepted_at
+""",
+                (
+                    (
+                        actor.ptid,
+                        peer.ptid,
+                        friendship.request_id,
+                        friendship.accepted_event_id,
+                        friendship.accepted_event_hash,
+                        accepted_at,
+                    ),
+                    (
+                        peer.ptid,
+                        actor.ptid,
+                        friendship.request_id,
+                        friendship.accepted_event_id,
+                        friendship.accepted_event_hash,
+                        accepted_at,
+                    ),
+                ),
+            )
+            accepted_count = connection.execute(
+                """
+SELECT count(*)
+FROM social_friend_requests
+WHERE request_id = ? AND state = 2 AND sequence = 2
+  AND authority_confirmed = 1
+""",
+                (friendship.request_id,),
+            ).fetchone()[0]
+            relationship_count = connection.execute(
+                """
+SELECT count(*)
+FROM social_relationship_projections
+WHERE request_id = ?
+  AND owner_ptid IN (?, ?)
+""",
+                (friendship.request_id, actor.ptid, peer.ptid),
+            ).fetchone()[0]
+            if accepted_count != 1 or relationship_count != 2:
+                raise RuntimeError(
+                    "same-Station canonical accepted relationship is incomplete"
+                )
+            connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
+
+
 def restart_acceptance_station(
     station_url: str,
     expected_commit: str,
