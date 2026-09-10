@@ -230,7 +230,9 @@ export function FindPeopleModal({ open, onClose }: Props) {
     if (addingId) return;
     const receiverPtid = target.id;
     if (!receiverPtid || receiverPtid === currentUserPtid) return;
-    if (!activeFederationId || !target.homeStationPeerId) {
+    const federationId =
+      activeFederationId || joinedFederations[0]?.federationId || '';
+    if (!federationId || !target.homeStationPeerId) {
       message.error(t('chat.social.findPeople.catalogNoFederation'));
       return;
     }
@@ -239,7 +241,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
       await sendFriendRequest(
         receiverPtid,
         target.homeStationPeerId,
-        activeFederationId,
+        federationId,
         '',
       );
       setSentIds((prev) => new Set(prev).add(receiverPtid));

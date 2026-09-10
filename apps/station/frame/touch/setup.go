@@ -63,6 +63,10 @@ func onAfterStart() error {
 				log.Warnf(ctx, "seed dev friendships: %v", err)
 			}
 		}
+
+		if err := actor.SeedDevFederation(ctx, presets[0].Username); err != nil {
+			log.Warnf(ctx, "seed dev federation: %v", err)
+		}
 	}
 	return nil
 }
