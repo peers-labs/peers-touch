@@ -29,6 +29,7 @@ const (
 	ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT ToolApprovalDecisionErrorCode = 2
 	ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED              ToolApprovalDecisionErrorCode = 3
 	ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND            ToolApprovalDecisionErrorCode = 4
+	ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE ToolApprovalDecisionErrorCode = 5
 )
 
 // Enum value maps for ToolApprovalDecisionErrorCode.
@@ -39,6 +40,7 @@ var (
 		2: "TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT",
 		3: "TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED",
 		4: "TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND",
+		5: "TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE",
 	}
 	ToolApprovalDecisionErrorCode_value = map[string]int32{
 		"TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED":          0,
@@ -46,6 +48,7 @@ var (
 		"TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT": 2,
 		"TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED":              3,
 		"TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND":            4,
+		"TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE": 5,
 	}
 )
 
@@ -366,6 +369,7 @@ type SubmitToolApprovalDecisionResponse struct {
 	IdempotencyKey   string                        `protobuf:"bytes,7,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	PayloadHash      string                        `protobuf:"bytes,8,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
 	ErrorCode        ToolApprovalDecisionErrorCode `protobuf:"varint,9,opt,name=error_code,json=errorCode,proto3,enum=peers_touch.model.agent.v1.ToolApprovalDecisionErrorCode" json:"error_code,omitempty"`
+	OutcomeError     *ErrorPayload                 `protobuf:"bytes,10,opt,name=outcome_error,json=outcomeError,proto3" json:"outcome_error,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -463,11 +467,18 @@ func (x *SubmitToolApprovalDecisionResponse) GetErrorCode() ToolApprovalDecision
 	return ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED
 }
 
+func (x *SubmitToolApprovalDecisionResponse) GetOutcomeError() *ErrorPayload {
+	if x != nil {
+		return x.OutcomeError
+	}
+	return nil
+}
+
 var File_domain_agent_agent_config_proto protoreflect.FileDescriptor
 
 const file_domain_agent_agent_config_proto_rawDesc = "" +
 	"\n" +
-	"\x1fdomain/agent/agent_config.proto\x12\x1apeers_touch.model.agent.v1\"N\n" +
+	"\x1fdomain/agent/agent_config.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1edomain/agent/turn_stream.proto\"N\n" +
 	"\x10HideModelRequest\x12\x1f\n" +
 	"\vprovider_id\x18\x01 \x01(\tR\n" +
 	"providerId\x12\x19\n" +
@@ -489,7 +500,7 @@ const file_domain_agent_agent_config_proto_rawDesc = "" +
 	"\x11expected_revision\x18\x04 \x01(\x04R\x10expectedRevision\x12\x1a\n" +
 	"\bapproved\x18\x05 \x01(\bR\bapproved\x12'\n" +
 	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\x12!\n" +
-	"\fpayload_hash\x18\a \x01(\tR\vpayloadHash\"\x93\x03\n" +
+	"\fpayload_hash\x18\a \x01(\tR\vpayloadHash\"\xe2\x03\n" +
 	"\"SubmitToolApprovalDecisionResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12+\n" +
 	"\x11decision_revision\x18\x02 \x01(\x04R\x10decisionRevision\x12\x1f\n" +
@@ -503,13 +514,16 @@ const file_domain_agent_agent_config_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\x12!\n" +
 	"\fpayload_hash\x18\b \x01(\tR\vpayloadHash\x12X\n" +
 	"\n" +
-	"error_code\x18\t \x01(\x0e29.peers_touch.model.agent.v1.ToolApprovalDecisionErrorCodeR\terrorCode*\xa4\x02\n" +
+	"error_code\x18\t \x01(\x0e29.peers_touch.model.agent.v1.ToolApprovalDecisionErrorCodeR\terrorCode\x12M\n" +
+	"\routcome_error\x18\n" +
+	" \x01(\v2(.peers_touch.model.agent.v1.ErrorPayloadR\foutcomeError*\xe0\x02\n" +
 	"\x1dToolApprovalDecisionErrorCode\x121\n" +
 	"-TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED\x10\x00\x124\n" +
 	"0TOOL_APPROVAL_DECISION_ERROR_CODE_STALE_REVISION\x10\x01\x12:\n" +
 	"6TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT\x10\x02\x12-\n" +
 	")TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED\x10\x03\x12/\n" +
-	"+TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND\x10\x04BKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
+	"+TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND\x10\x04\x12:\n" +
+	"6TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE\x10\x05BKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
 
 var (
 	file_domain_agent_agent_config_proto_rawDescOnce sync.Once
@@ -533,14 +547,16 @@ var file_domain_agent_agent_config_proto_goTypes = []any{
 	(*GetHiddenModelsResponse)(nil),            // 4: peers_touch.model.agent.v1.GetHiddenModelsResponse
 	(*SubmitToolApprovalDecisionRequest)(nil),  // 5: peers_touch.model.agent.v1.SubmitToolApprovalDecisionRequest
 	(*SubmitToolApprovalDecisionResponse)(nil), // 6: peers_touch.model.agent.v1.SubmitToolApprovalDecisionResponse
+	(*ErrorPayload)(nil),                       // 7: peers_touch.model.agent.v1.ErrorPayload
 }
 var file_domain_agent_agent_config_proto_depIdxs = []int32{
 	0, // 0: peers_touch.model.agent.v1.SubmitToolApprovalDecisionResponse.error_code:type_name -> peers_touch.model.agent.v1.ToolApprovalDecisionErrorCode
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	7, // 1: peers_touch.model.agent.v1.SubmitToolApprovalDecisionResponse.outcome_error:type_name -> peers_touch.model.agent.v1.ErrorPayload
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_agent_config_proto_init() }
@@ -548,6 +564,7 @@ func file_domain_agent_agent_config_proto_init() {
 	if File_domain_agent_agent_config_proto != nil {
 		return
 	}
+	file_domain_agent_turn_stream_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

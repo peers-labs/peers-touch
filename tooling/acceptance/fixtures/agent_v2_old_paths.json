@@ -10,7 +10,7 @@
     "test-fixture"
   ],
   "discovery": {
-    "pattern": "\\bChatStore\\b|executeAgentTurnOnce|resolveAgentModelRef|buildAgentRuntimeConfig|buildAgentTurnDiagnosticsExport|agent-turn-diagnostics\\.v1|Replay through AgentExecuteTurnInput|default_cli_command|is_cli_provider|is_cli_turn|falling back to non-streaming|provider_remote::chat_completion|executeCLITurn|HandleVerifyCli|HandleFetchCliModels|replayAgentConversationEvents|stream_cancel_registry|stream_turn_registry|chatTaskEventSeq|deriveProviderReadiness|runtimeKind === 'cli'|hasCliCommand|provider\\.runtime_kind === 'direct'|catalogProviderReadyForAgent|catalogModelAvailableForAgent|cliRegistry\\.IsRegistered|\\bClientCapabilitySession\\b|executionOwner\\??:.*desktop-rust|owner: 'desktop-rust'|decideToolApproval|tool_approval_registry|pendingCalls|chatConfig|enabledTools|/config/(knowledge|skill|mcp)/(list|create|update|delete)|NewAgentConfigHandlers|NewAgentConfigService|type AgentConfigService interface|useMCPStore|\\bMcpStore\\b|McpServerRecord|mcp_process|peers-eval-datasets|quickCompletion|CustomPluginsPage|useCustomPluginsStore|peers-ai-custom-plugins|ecosystem/plugin|ecosystem_custom_plugins",
+    "pattern": "\\bChatStore\\b|\\bChatAttachmentInput\\b|\\b(local_attachment_path|localAttachmentPath|attachment_path|attachmentPath)\\b|executeAgentTurnOnce|resolveAgentModelRef|buildAgentRuntimeConfig|buildAgentTurnDiagnosticsExport|agent-turn-diagnostics\\.v1|Replay through AgentExecuteTurnInput|default_cli_command|is_cli_provider|is_cli_turn|falling back to non-streaming|provider_remote::chat_completion|executeCLITurn|HandleVerifyCli|HandleFetchCliModels|replayAgentConversationEvents|stream_cancel_registry|stream_turn_registry|chatTaskEventSeq|deriveProviderReadiness|runtimeKind === 'cli'|hasCliCommand|provider\\.runtime_kind === 'direct'|catalogProviderReadyForAgent|catalogModelAvailableForAgent|cliRegistry\\.IsRegistered|\\bClientCapabilitySession\\b|executionOwner\\??:.*desktop-rust|owner: 'desktop-rust'|decideToolApproval|tool_approval_registry|pendingCalls|chatConfig|enabledTools|/config/(knowledge|skill|mcp)/(list|create|update|delete)|NewAgentConfigHandlers|NewAgentConfigService|type AgentConfigService interface|useMCPStore|\\bMcpStore\\b|McpServerRecord|mcp_process|peers-eval-datasets|quickCompletion|CustomPluginsPage|useCustomPluginsStore|peers-ai-custom-plugins|ecosystem/plugin|ecosystem_custom_plugins",
     "paths": [
       "apps/desktop/src",
       "apps/desktop/src-tauri/src",
@@ -26,6 +26,13 @@
       "disposition": "deleted-authority",
       "pattern": "\\bChatStore\\b",
       "paths": ["apps/desktop/src-tauri/src/application/chat"]
+    },
+    {
+      "id": "desktop-legacy-chat-provider-call",
+      "closures": ["C01", "C02"],
+      "disposition": "deleted-authority",
+      "pattern": "provider_remote::chat_completion",
+      "paths": ["apps/desktop/src-tauri/src/application/chat/mod.rs"]
     },
     {
       "id": "browser-one-shot-agent-turn",
@@ -109,7 +116,7 @@
       "id": "desktop-split-replay-transport",
       "closures": ["C05"],
       "disposition": "deleted-authority",
-      "pattern": "replayAgentConversationEvents|agent_replay_conversation_events|replay_conversation_events_stream|replayStarted",
+      "pattern": "replayAgentConversationEvents|agent_replay_conversation_events|replay_conversation_events_stream",
       "paths": [
         "apps/desktop/src/services/desktop_api.ts",
         "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
@@ -170,6 +177,52 @@
         "apps/station/app/subserver/agent/service/provider_service.go",
         "apps/station/app/subserver/agent/service/turn_service.go",
         "apps/station/app/subserver/agent/service/orchestration_service.go"
+      ]
+    },
+    {
+      "id": "station-runtime-capability-name-inference",
+      "closures": ["C06"],
+      "disposition": "deleted-authority",
+      "pattern": "strings\\.Contains\\(strings\\.ToLower\\(modelID\\)|station-admission-resolver|SourceVersion:\\s*\"v1\"|dbModels,\\s*_",
+      "paths": [
+        "apps/station/app/subserver/agent/service/runtime_admission_service.go"
+      ]
+    },
+    {
+      "id": "station-provider-enabled-only-revalidation",
+      "closures": ["C06"],
+      "disposition": "deleted-authority",
+      "pattern": "revalidateProviderState",
+      "paths": [
+        "apps/station/app/subserver/agent/service/turn_service.go"
+      ]
+    },
+    {
+      "id": "station-ungoverned-memory-flush",
+      "closures": ["C06"],
+      "disposition": "deleted-authority",
+      "pattern": "FlushMemories|flushMaxIterations|parseFlushToolCalls|runKnowledgeSalvage|knowledgeSalvageMaxIterations",
+      "paths": [
+        "apps/station/app/subserver/agent/service/memory_service.go",
+        "apps/station/app/subserver/agent/service/turn_service.go"
+      ]
+    },
+    {
+      "id": "station-delegation-synthetic-conversation",
+      "closures": ["C06"],
+      "disposition": "deleted-authority",
+      "pattern": "ConversationID:\\s+fmt\\.Sprintf\\(\"%s_child_%s\"",
+      "paths": [
+        "apps/station/app/subserver/agent/service/turn_service.go"
+      ]
+    },
+    {
+      "id": "station-unguarded-follow-up-provider-call",
+      "closures": ["C06"],
+      "disposition": "deleted-authority",
+      "pattern": "GenerateFollowUpSuggestions",
+      "paths": [
+        "apps/station/app/subserver/agent/service/turn_service.go"
       ]
     },
     {
@@ -283,6 +336,42 @@
         "apps/station/app/subserver/agent/service/prompt_assembly_service.go",
         "apps/station/app/subserver/agent/service/context_reference_service.go",
         "apps/station/app/subserver/agent/domain/tool.go"
+      ]
+    },
+    {
+      "id": "agent-legacy-social-chat-attachment-contract",
+      "closures": ["C08"],
+      "disposition": "deleted-authority",
+      "pattern": "\\bChatAttachmentInput\\b",
+      "paths": [
+        "apps/desktop/src/store/chat.ts",
+        "apps/desktop/src/services/agentAttachments.ts",
+        "apps/desktop/src/components/composer/useAgentAttachmentDrafts.ts",
+        "model/domain/agent/agent.proto"
+      ]
+    },
+    {
+      "id": "agent-local-path-attachment-identity",
+      "closures": ["C08"],
+      "disposition": "deleted-authority",
+      "pattern": "\\b(local_attachment_path|localAttachmentPath|attachment_path|attachmentPath)\\b",
+      "paths": [
+        "apps/desktop/src/store/chat.ts",
+        "apps/desktop/src/services/agentAttachments.ts",
+        "apps/desktop/src/components/composer/useAgentAttachmentDrafts.ts",
+        "model/domain/agent/agent.proto",
+        "apps/station/app/subserver/agent/service/attachment_admission_service.go",
+        "apps/station/app/subserver/agent/service/prompt_assembly_service.go"
+      ]
+    },
+    {
+      "id": "social-chat-encrypted-attachment-contract",
+      "closures": ["C08"],
+      "disposition": "retained-guarded-downstream",
+      "pattern": "\\bChatAttachmentInput\\b",
+      "paths": [
+        "apps/desktop/src/services/desktop_api.ts",
+        "apps/desktop/src/store/socialChat.ts"
       ]
     },
     {

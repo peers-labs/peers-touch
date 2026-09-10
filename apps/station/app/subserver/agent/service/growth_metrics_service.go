@@ -283,7 +283,7 @@ func (s *GrowthMetricsService) RecordFeedback(
 		if queryErr := tx.
 			Joins("JOIN agent_conversations ON agent_conversations.id = agent_turns.conversation_id").
 			Where(
-				"agent_turns.id = ? AND agent_turns.agent_id = ? AND agent_turns.conversation_id = ? AND agent_conversations.ptid = ?",
+				"agent_turns.id = ? AND agent_turns.agent_id = ? AND agent_turns.conversation_id = ? AND agent_conversations.actor_ptid = ?",
 				input.TurnID,
 				input.AgentID,
 				input.ConversationID,

@@ -12,7 +12,7 @@
     "running Station messaging API",
     "Desktop messaging engine",
     "conversation event log",
-    "per-device messaging queue"
+    "per-device Device Inbox"
   ],
   "visible_surfaces": [
     {"type": "desktop-gateway", "command": "auth_login"},

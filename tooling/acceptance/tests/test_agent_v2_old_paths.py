@@ -61,6 +61,43 @@ class AgentV2OldPathsTest(unittest.TestCase):
         self.assertNotIn("legacy-untyped-client-capability-session", completed.stderr)
         self.assertNotIn("shared-portability-resource-contract", completed.stderr)
 
+    def test_c06_capability_inference_paths_are_deleted(self) -> None:
+        completed = self.run_script("--closure", "C06")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        report = json.loads(completed.stdout)
+        self.assertEqual(report["unresolvedCount"], 0)
+        entries = {entry["id"]: entry for entry in report["entries"]}
+        for entry_id in (
+            "desktop-provider-readiness-inference",
+            "desktop-provider-payload-capability-inference",
+            "desktop-rust-cli-routing",
+            "station-runtime-capability-name-inference",
+            "station-provider-enabled-only-revalidation",
+            "station-ungoverned-memory-flush",
+            "station-delegation-synthetic-conversation",
+            "station-unguarded-follow-up-provider-call",
+        ):
+            self.assertEqual(entries[entry_id]["matches"], 0)
+
+    def test_c08_agent_attachment_paths_are_portable(self) -> None:
+        completed = self.run_script("--closure", "C08")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        report = json.loads(completed.stdout)
+        self.assertEqual(report["unresolvedCount"], 0)
+        entries = {entry["id"]: entry for entry in report["entries"]}
+        self.assertEqual(
+            entries["agent-legacy-social-chat-attachment-contract"]["matches"],
+            0,
+        )
+        self.assertEqual(
+            entries["agent-local-path-attachment-identity"]["matches"],
+            0,
+        )
+        self.assertGreater(
+            entries["social-chat-encrypted-attachment-contract"]["matches"],
+            0,
+        )
+
     def test_unknown_closure_fails_closed(self) -> None:
         completed = self.run_script("--closure", "C99")
         self.assertEqual(completed.returncode, 1)

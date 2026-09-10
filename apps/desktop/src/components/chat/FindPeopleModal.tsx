@@ -23,6 +23,7 @@ interface ActorSearchResult {
   username: string;
   displayName: string;
   avatar: string;
+  homeStationPeerId: string;
   federation?: {
     handle: string;
     homeStationDomain: string;
@@ -96,6 +97,7 @@ function profileToResult(view: FederationResolveView): ActorSearchResult | null 
     username,
     displayName,
     avatar,
+    homeStationPeerId: view.homeStationPeerId,
     federation: {
       handle: view.federatedHandle,
       homeStationDomain: view.homeStationDomain,
@@ -117,6 +119,7 @@ function catalogEntryToResult(entry: FederationCatalogEntry): ActorSearchResult 
     username: localPart,
     displayName: entry.displayName || localPart,
     avatar: entry.avatarUrl || '',
+    homeStationPeerId: entry.homeStationPeerId,
     federation: {
       handle,
       homeStationDomain: host,
@@ -209,6 +212,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
           username: String(a.username ?? ''),
           displayName: String(a.displayName ?? ''),
           avatar: String(a.avatar ?? ''),
+          homeStationPeerId: String(a.homeStationPeerId ?? ''),
         })),
       );
     } catch (e: unknown) {
@@ -226,9 +230,18 @@ export function FindPeopleModal({ open, onClose }: Props) {
     if (addingId) return;
     const receiverPtid = target.id;
     if (!receiverPtid || receiverPtid === currentUserPtid) return;
+    if (!activeFederationId || !target.homeStationPeerId) {
+      message.error(t('chat.social.findPeople.catalogNoFederation'));
+      return;
+    }
     setAddingId(receiverPtid);
     try {
-      await sendFriendRequest(receiverPtid, '');
+      await sendFriendRequest(
+        receiverPtid,
+        target.homeStationPeerId,
+        activeFederationId,
+        '',
+      );
       setSentIds((prev) => new Set(prev).add(receiverPtid));
       sentTimestamps.current.set(receiverPtid, Date.now());
       message.success(t('chat.social.findPeople.requestSent'));

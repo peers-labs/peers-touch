@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package peers_touch.model.federation.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/core/federation/model;model";
+
+enum FederatedDomainPayloadKind {
+  FEDERATED_DOMAIN_PAYLOAD_KIND_UNSPECIFIED = 0;
+  FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DEVICE_DELIVERY = 1;
+  FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_AUTHORITY_COMMAND = 2;
+  FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_AUTHORITY_RESULT = 3;
+  FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_COMMAND = 4;
+  FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_EVENT = 5;
+  FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_RESULT = 6;
+  FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DELIVERY_RECEIPT = 7;
+}
+
+enum FederatedDomainFrameDisposition {
+  FEDERATED_DOMAIN_FRAME_DISPOSITION_UNSPECIFIED = 0;
+  FEDERATED_DOMAIN_FRAME_DISPOSITION_ACCEPTED = 1;
+  FEDERATED_DOMAIN_FRAME_DISPOSITION_DUPLICATE = 2;
+  FEDERATED_DOMAIN_FRAME_DISPOSITION_RETRYABLE_REJECTION = 3;
+  FEDERATED_DOMAIN_FRAME_DISPOSITION_TERMINAL_REJECTION = 4;
+  FEDERATED_DOMAIN_FRAME_DISPOSITION_PAYLOAD_HASH_CONFLICT = 5;
+}
+
+enum FederatedDomainFrameErrorCode {
+  FEDERATED_DOMAIN_FRAME_ERROR_CODE_UNSPECIFIED = 0;
+  FEDERATED_DOMAIN_FRAME_ERROR_CODE_INVALID_FRAME = 1;
+  FEDERATED_DOMAIN_FRAME_ERROR_CODE_UNAUTHENTICATED_SOURCE = 2;
+  FEDERATED_DOMAIN_FRAME_ERROR_CODE_WRONG_TARGET = 3;
+  FEDERATED_DOMAIN_FRAME_ERROR_CODE_UNSUPPORTED_PAYLOAD = 4;
+  FEDERATED_DOMAIN_FRAME_ERROR_CODE_PAYLOAD_HASH_CONFLICT = 5;
+  FEDERATED_DOMAIN_FRAME_ERROR_CODE_EXPIRED = 6;
+  FEDERATED_DOMAIN_FRAME_ERROR_CODE_OVERLOADED = 7;
+  FEDERATED_DOMAIN_FRAME_ERROR_CODE_DOMAIN_REJECTED = 8;
+}
+
+// Canonical bytes of this message are signed by the source Station.
+message FederatedDomainFrameSigningInput {
+  uint32 format_version = 1;
+  string frame_id = 2;
+  string source_station_peer_id = 3;
+  string target_station_peer_id = 4;
+  string idempotency_key = 5;
+  FederatedDomainPayloadKind payload_kind = 6;
+  string payload_id = 7;
+  string ordering_key = 8;
+  int64 ordering_sequence = 9;
+  bytes opaque_payload = 10;
+  bytes payload_sha256 = 11;
+  google.protobuf.Timestamp issued_at = 12;
+  google.protobuf.Timestamp expires_at = 13;
+  string signing_key_id = 14;
+}
+
+message FederatedDomainFrame {
+  uint32 format_version = 1;
+  string frame_id = 2;
+  string source_station_peer_id = 3;
+  string target_station_peer_id = 4;
+  string idempotency_key = 5;
+  FederatedDomainPayloadKind payload_kind = 6;
+  string payload_id = 7;
+  string ordering_key = 8;
+  int64 ordering_sequence = 9;
+  bytes opaque_payload = 10;
+  bytes payload_sha256 = 11;
+  google.protobuf.Timestamp issued_at = 12;
+  google.protobuf.Timestamp expires_at = 13;
+  string signing_key_id = 14;
+  bytes station_signature = 15;
+}
+
+message DeliverFederatedDomainFrameRequest {
+  FederatedDomainFrame frame = 1;
+}
+
+message DeliverFederatedDomainFrameResponse {
+  FederatedDomainFrameDisposition disposition = 1;
+  FederatedDomainFrameErrorCode error_code = 2;
+}

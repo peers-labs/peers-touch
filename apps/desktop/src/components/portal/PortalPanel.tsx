@@ -14,6 +14,7 @@ import { TopicCommentsView } from './views/TopicCommentsView';
 import { WorkingFilesView } from './views/WorkingFilesView';
 import { WorkingProgressView } from './views/WorkingProgressView';
 import { AgentOverviewView } from './views/AgentOverviewView';
+import { TurnDetailsView } from './views/TurnDetailsView';
 
 export function PortalPanel() {
   const { token } = theme.useToken();
@@ -42,6 +43,9 @@ export function PortalPanel() {
       const toolCall = msg?.toolCalls?.find((tc) => tc.id === activeView.toolCallId);
       if (!toolCall) return <ArtifactListView artifacts={allArtifacts} />;
       return <ToolDetailView toolCall={toolCall} />;
+    }
+    if (activeView.type === 'turnDetails') {
+      return <TurnDetailsView turnId={activeView.turnId} />;
     }
     if (activeView.type === 'thread') {
       return <ThreadView sessionKey={activeView.sessionKey} sourceMessageId={activeView.sourceMessageId} />;
@@ -75,6 +79,7 @@ export function PortalPanel() {
       <Flexbox
         data-pt-agent-portal
         data-pt-agent-portal-view={activeView?.type ?? 'artifacts'}
+        data-agent-turn-details={activeView?.type === 'turnDetails' ? activeView.turnId : undefined}
         style={{
           height: '100%',
           background: token.colorBgContainer,

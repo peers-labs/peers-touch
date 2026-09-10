@@ -1,4 +1,4 @@
-from ._paths import REPO_ROOT, ENVIRONMENTS_DIR, REPORTS_DIR
+from ._paths import REPO_ROOT, ENVIRONMENTS_DIR, RUNTIME_CELLS_DIR, REPORTS_DIR
 from .errors import (
     GateError,
     DriverError,
@@ -18,6 +18,7 @@ from .errors import (
     ProvisioningError,
     ClientBindingError,
     BlockedError,
+    EphemeralLaunchError,
     EphemeralCapabilityBlocked,
     EphemeralLaunchBindFailed,
     EphemeralLaunchCleanupFailed,
@@ -29,6 +30,7 @@ from .errors import (
 )
 from .evidence_store import (
     ARTIFACT_ROOT_ENV,
+    REDACTION_VALUES_ENV,
     RUN_GATE_ENV,
     RUN_ID_ENV,
     RUN_WORKSPACE_ENV,
@@ -36,6 +38,7 @@ from .evidence_store import (
     ArtifactRef,
     EvidenceStore,
     RunHandle,
+    canonical_secret_scan,
     canonical_workspace_path,
     current_artifact_ref,
     current_artifact_path,
@@ -50,7 +53,7 @@ from .evidence_store import (
 from .evidence import EvidenceReport, new_report, ActorRuntime
 from .gate import AcceptanceGate
 from .harness import call_async_harness, harness_ready
-from .drivers.base import BaseDriver, DomDriver
+from .drivers import AppLauncher, AppLaunchMetadata, BaseDriver, DomDriver
 from .fixtures.base import BaseFixture
 from .provisioning import (
     ProvisioningState,
@@ -73,6 +76,8 @@ from .provisioning import (
     require_runtime_service,
     require_runtime_client_service,
     verify_client_binding_observation,
+    persist_client_binding_observation,
+    validate_binding_proof_closure,
 )
 from .result_contracts import (
     CanonicalResultTuple,
@@ -99,6 +104,7 @@ from .runtime_cell import (
     CellSourceIdentity,
     CellTransportIdentity,
     RuntimeCellContract,
+    RuntimeCellLifecycle,
     RuntimeCellManifest,
     RuntimeCellState,
     parse_required_runtime_cells,
@@ -124,6 +130,7 @@ __all__ = [
     "ProvisioningError",
     "ClientBindingError",
     "BlockedError",
+    "EphemeralLaunchError",
     "EphemeralCapabilityBlocked",
     "EphemeralLaunchBindFailed",
     "EphemeralLaunchCleanupFailed",
@@ -135,6 +142,8 @@ __all__ = [
     "EvidenceReport",
     "new_report",
     "AcceptanceGate",
+    "AppLauncher",
+    "AppLaunchMetadata",
     "BaseDriver",
     "DomDriver",
     "BaseFixture",
@@ -142,6 +151,7 @@ __all__ = [
     "harness_ready",
     "REPO_ROOT",
     "ENVIRONMENTS_DIR",
+    "RUNTIME_CELLS_DIR",
     "REPORTS_DIR",
     "ActorRuntime",
     "ProvisioningState",
@@ -164,6 +174,8 @@ __all__ = [
     "require_runtime_service",
     "require_runtime_client_service",
     "verify_client_binding_observation",
+    "persist_client_binding_observation",
+    "validate_binding_proof_closure",
     "CanonicalResultTuple",
     "PlatformCellResult",
     "PlatformMatrixResult",
@@ -184,11 +196,13 @@ __all__ = [
     "CellSourceIdentity",
     "CellTransportIdentity",
     "RuntimeCellContract",
+    "RuntimeCellLifecycle",
     "RuntimeCellManifest",
     "RuntimeCellState",
     "parse_required_runtime_cells",
     "EnvironmentProvisioner",
     "ARTIFACT_ROOT_ENV",
+    "REDACTION_VALUES_ENV",
     "RUN_GATE_ENV",
     "RUN_ID_ENV",
     "RUN_WORKSPACE_ENV",
@@ -196,6 +210,7 @@ __all__ = [
     "ArtifactRef",
     "EvidenceStore",
     "RunHandle",
+    "canonical_secret_scan",
     "canonical_workspace_path",
     "current_artifact_ref",
     "current_artifact_path",

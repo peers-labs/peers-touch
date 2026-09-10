@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import signal
@@ -10,6 +11,7 @@ import socket
 import subprocess
 import threading
 import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -21,6 +23,10 @@ from selenium.webdriver.remote.remote_connection import RemoteConnection
 
 from tooling.acceptance.core.harness import call_async_harness, harness_ready
 from tooling.acceptance.drivers.chrome import ChromeDriver
+from tooling.acceptance.gates.agent.tcp_fault_proxy import (
+    TcpFaultProxy,
+    TcpFaultProxyCutController,
+)
 
 
 WAIT_TICK = threading.Event()
@@ -28,6 +34,99 @@ WAIT_TICK = threading.Event()
 
 class FoundationClientError(RuntimeError):
     """A provisioned Foundation client failed its lifecycle contract."""
+
+
+def report_browser_f06_timeout_debug(
+    hypothesis_id: str,
+    message: str,
+    data: Mapping[str, Any],
+) -> None:
+    # #region debug-point A-D:browser-f06-restart
+    try:
+        env_path = (
+            Path(__file__).resolve().parents[4]
+            / ".dbg"
+            / "foundation-browser-f06-timeout.env"
+        )
+        env_values = dict(
+            line.split("=", 1)
+            for line in env_path.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        debug_url = env_values["DEBUG_SERVER_URL"]
+        session_id = env_values["DEBUG_SESSION_ID"]
+    except Exception:
+        debug_url = "http://127.0.0.1:7779/event"
+        session_id = "foundation-browser-f06-timeout"
+    payload = json.dumps(
+        {
+            "sessionId": session_id,
+            "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
+            "hypothesisId": hypothesis_id,
+            "location": (
+                "tooling/acceptance/gates/agent/"
+                "foundation_runtime_client.py"
+            ),
+            "msg": f"[DEBUG] {message}",
+            "data": dict(data),
+            "ts": int(time.time() * 1000),
+        }
+    ).encode("utf-8")
+
+    def send() -> None:
+        try:
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    debug_url,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                ),
+                timeout=0.5,
+            ).read()
+        except Exception:
+            pass
+
+    threading.Thread(
+        target=send,
+        name="foundation-browser-f06-debug-report",
+        daemon=True,
+    ).start()
+    # #endregion
+
+
+def report_identity_boot_debug(
+    hypothesis_id: str,
+    message: str,
+    data: Mapping[str, Any],
+) -> None:
+    # #region debug-point A-D:foundation-launch-context
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request(
+                "http://127.0.0.1:7778/event",
+                data=json.dumps(
+                    {
+                        "sessionId": "foundation-identity-boot",
+                        "runId": "pre-fix",
+                        "hypothesisId": hypothesis_id,
+                        "location": (
+                            "tooling/acceptance/gates/agent/"
+                            "foundation_runtime_client.py:restart"
+                        ),
+                        "msg": f"[DEBUG] {message}",
+                        "data": dict(data),
+                        "ts": int(time.time() * 1000),
+                    }
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            ),
+            timeout=1,
+        ).read()
+    except Exception:
+        pass
+    # #endregion
 
 
 def port_open(port: int) -> bool:
@@ -110,6 +209,17 @@ class FoundationClientSpec:
     def surface(self) -> str:
         return "desktop" if self.runtime == "native-tauri" else "browser"
 
+    @property
+    def cargo_target_dir(self) -> Path:
+        return (
+            self.worktree
+            / ".local"
+            / "acceptance"
+            / "cargo-target"
+            / "agent-v2"
+            / self.runtime
+        )
+
 
 class FoundationRuntimeClient:
     def __init__(
@@ -121,7 +231,9 @@ class FoundationRuntimeClient:
         startup_timeout: float = 900,
     ) -> None:
         self.spec = spec
-        self.station_url = station_url.rstrip("/")
+        self._station_proxy = TcpFaultProxy.from_url(station_url.rstrip("/"))
+        self._fault_controller = TcpFaultProxyCutController(self._station_proxy)
+        self._station_url = self._station_proxy.url
         self.profile_env = dict(profile_env)
         self.startup_timeout = startup_timeout
         self.run_root = spec.storage_root.parent
@@ -131,6 +243,7 @@ class FoundationRuntimeClient:
         self.log_handle: Any = None
         self.driver: Any = None
         self.chrome: ChromeDriver | None = None
+        self.restart_generation = 0
 
     @property
     def actor_identity_root(self) -> Path:
@@ -145,8 +258,8 @@ class FoundationRuntimeClient:
             **self.profile_env,
             "PT_DEV_PROFILE": os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one"),
             "PT_STATION_MODE": "remote",
-            "PT_STATION_URL": self.station_url,
-            "PEERS_STATION_URL": self.station_url,
+            "PT_STATION_URL": self._station_url,
+            "PEERS_STATION_URL": self._station_url,
             "PEERS_STORAGE_ROOT": str(self.spec.storage_root),
             "PEERS_ACTOR_IDENTITY_ROOT": str(self.actor_identity_root),
             "PT_DESKTOP_APP_GATEWAY_PORT": str(self.spec.gateway_port),
@@ -176,33 +289,144 @@ class FoundationRuntimeClient:
             "PEERS_STORAGE_ROOT": str(self.spec.storage_root),
             "PEERS_ACTOR_IDENTITY_ROOT": str(self.actor_identity_root),
             "PT_STATION_MODE": "remote",
-            "PT_STATION_URL": self.station_url,
-            "PEERS_STATION_URL": self.station_url,
+            "PT_STATION_URL": self._station_url,
+            "PEERS_STATION_URL": self._station_url,
             "PT_DESKTOP_E2E": "true",
             "PT_AGENT_AS_F10_NEGATIVE_CONTROL": "1",
             "TAURI_WEBDRIVER_PORT": str(self.spec.webdriver_port),
+            "CARGO_TARGET_DIR": str(self.spec.cargo_target_dir),
             "RESTART": "1",
             "CARGO_BUILD_JOBS": "2",
         }
 
     def start(self) -> None:
-        self._write_runtime_profile()
-        self.log_handle = self.log_path.open("w", encoding="utf-8")
-        environment = os.environ.copy()
-        environment.update(self.launch_environment())
-        self.process = subprocess.Popen(
-            ["make", self.spec.make_target],
-            cwd=self.spec.worktree,
-            env=environment,
-            stdout=self.log_handle,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
+        start_started_at = time.monotonic()
+        # #region debug-point C-D:runtime-start
+        report_browser_f06_timeout_debug(
+            "C-D",
+            "runtime-start-entered",
+            {
+                "runtime": self.spec.runtime,
+                "restartGeneration": self.restart_generation,
+                "proxyAlive": self._station_proxy.is_alive,
+                "faultControllerAlive": self._fault_controller.is_alive,
+                "gatewayPortOpen": port_open(self.spec.gateway_port),
+                "rendererPortOpen": port_open(self.spec.renderer_port),
+                "webdriverPortOpen": port_open(self.spec.webdriver_port),
+            },
         )
-        self._connect_driver()
-        if not harness_ready(self.driver, namespace="agent", timeout=60):
-            raise FoundationClientError(
-                f"{self.spec.runtime} Agent acceptance Harness is unavailable"
+        # #endregion
+        self._station_proxy.start()
+        try:
+            self._fault_controller.start()
+            self._write_runtime_profile()
+            self.log_handle = self.log_path.open("w", encoding="utf-8")
+            environment = os.environ.copy()
+            environment.update(self.launch_environment())
+            self.process = subprocess.Popen(
+                ["make", self.spec.make_target],
+                cwd=self.spec.worktree,
+                env=environment,
+                stdout=self.log_handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
             )
+            # #region debug-point C:runtime-process-launched
+            report_browser_f06_timeout_debug(
+                "C",
+                "runtime-process-launched",
+                {
+                    "runtime": self.spec.runtime,
+                    "restartGeneration": self.restart_generation,
+                    "processRunning": self.process.poll() is None,
+                    "proxyAlive": self._station_proxy.is_alive,
+                    "faultControllerAlive": self._fault_controller.is_alive,
+                },
+            )
+            # #endregion
+            self._connect_driver()
+            if not harness_ready(self.driver, namespace="agent", timeout=60):
+                raise FoundationClientError(
+                    f"{self.spec.runtime} Agent acceptance Harness is unavailable"
+                )
+            # #region debug-point A-C:runtime-start-completed
+            report_browser_f06_timeout_debug(
+                "A-C",
+                "runtime-start-completed",
+                {
+                    "runtime": self.spec.runtime,
+                    "restartGeneration": self.restart_generation,
+                    "elapsedMs": int(
+                        (time.monotonic() - start_started_at) * 1000
+                    ),
+                    "processRunning": self.process.poll() is None,
+                    "gatewayPortOpen": port_open(self.spec.gateway_port),
+                    "rendererPortOpen": port_open(self.spec.renderer_port),
+                    "webdriverPortOpen": port_open(self.spec.webdriver_port),
+                },
+            )
+            # #endregion
+        except BaseException as error:
+            # #region debug-point A-D:runtime-start-failed
+            report_browser_f06_timeout_debug(
+                "A-D",
+                "runtime-start-failed",
+                {
+                    "runtime": self.spec.runtime,
+                    "restartGeneration": self.restart_generation,
+                    "elapsedMs": int(
+                        (time.monotonic() - start_started_at) * 1000
+                    ),
+                    "errorType": type(error).__name__,
+                    "processState": (
+                        "missing"
+                        if self.process is None
+                        else (
+                            "running"
+                            if self.process.poll() is None
+                            else "exited"
+                        )
+                    ),
+                    "proxyAlive": self._station_proxy.is_alive,
+                    "faultControllerAlive": self._fault_controller.is_alive,
+                    "gatewayPortOpen": port_open(self.spec.gateway_port),
+                    "rendererPortOpen": port_open(self.spec.renderer_port),
+                    "webdriverPortOpen": port_open(self.spec.webdriver_port),
+                },
+            )
+            # #endregion
+            rollback_failures: list[str] = []
+            try:
+                rollback = self._stop_runtime(
+                    logout=False,
+                    remove_storage=True,
+                )
+                rollback_failures.extend(rollback["failures"])
+            except BaseException as rollback_error:
+                rollback_failures.append(
+                    f"runtime cleanup: {rollback_error}"
+                )
+            # #region debug-point D:start-rollback-fault-close
+            report_browser_f06_timeout_debug(
+                "D",
+                "startup-rollback-closing-fault-transport",
+                {
+                    "runtime": self.spec.runtime,
+                    "restartGeneration": self.restart_generation,
+                    "proxyAlive": self._station_proxy.is_alive,
+                    "faultControllerAlive": self._fault_controller.is_alive,
+                },
+            )
+            # #endregion
+            fault_ports, fault_failures = self._close_fault_transport()
+            rollback_failures.extend(fault_failures)
+            if rollback_failures or not all(fault_ports.values()):
+                raise FoundationClientError(
+                    f"{self.spec.runtime} startup failed: {error}; "
+                    f"rollback failed: {rollback_failures}; "
+                    f"faultPortsReleased={fault_ports}"
+                ) from error
+            raise
 
     def _connect_driver(self) -> None:
         if self.spec.runtime == "native-tauri":
@@ -231,11 +455,92 @@ class FoundationRuntimeClient:
             "Browser gateway and renderer",
             self.startup_timeout,
         )
+        # #region debug-point C:browser-runtime-ready
+        report_browser_f06_timeout_debug(
+            "C",
+            "browser-runtime-ports-ready",
+            {
+                "restartGeneration": self.restart_generation,
+                "processRunning": self.process is not None
+                and self.process.poll() is None,
+                "gatewayPortOpen": port_open(self.spec.gateway_port),
+                "rendererPortOpen": port_open(self.spec.renderer_port),
+            },
+        )
+        # #endregion
+        chrome_started_at = time.monotonic()
         self.chrome = ChromeDriver(
             user_data_dir=str(self.spec.storage_root / "chrome"),
         )
         self.driver = self.chrome.start()
-        self.chrome.navigate(f"http://localhost:{self.spec.renderer_port}")
+        # #region debug-point B:chrome-started
+        report_browser_f06_timeout_debug(
+            "B",
+            "chrome-started",
+            {
+                "restartGeneration": self.restart_generation,
+                "elapsedMs": int((time.monotonic() - chrome_started_at) * 1000),
+                "driverPresent": self.driver is not None,
+                "chromeStoragePresent": (
+                    self.spec.storage_root / "chrome"
+                ).exists(),
+            },
+        )
+        # #endregion
+        navigation_started_at = time.monotonic()
+        # #region debug-point A-C:browser-navigation
+        report_browser_f06_timeout_debug(
+            "A-C",
+            "browser-navigation-started",
+            {
+                "restartGeneration": self.restart_generation,
+                "processRunning": self.process is not None
+                and self.process.poll() is None,
+                "gatewayPortOpen": port_open(self.spec.gateway_port),
+                "rendererPortOpen": port_open(self.spec.renderer_port),
+            },
+        )
+        try:
+            self.chrome.navigate(f"http://localhost:{self.spec.renderer_port}")
+        except BaseException as error:
+            report_browser_f06_timeout_debug(
+                "A-C",
+                "browser-navigation-failed",
+                {
+                    "restartGeneration": self.restart_generation,
+                    "elapsedMs": int(
+                        (time.monotonic() - navigation_started_at) * 1000
+                    ),
+                    "errorType": type(error).__name__,
+                    "processState": (
+                        "missing"
+                        if self.process is None
+                        else (
+                            "running"
+                            if self.process.poll() is None
+                            else "exited"
+                        )
+                    ),
+                    "gatewayPortOpen": port_open(self.spec.gateway_port),
+                    "rendererPortOpen": port_open(self.spec.renderer_port),
+                },
+            )
+            raise
+        report_browser_f06_timeout_debug(
+            "A-C",
+            "browser-navigation-completed",
+            {
+                "restartGeneration": self.restart_generation,
+                "elapsedMs": int(
+                    (time.monotonic() - navigation_started_at) * 1000
+                ),
+                "processRunning": self.process is not None
+                and self.process.poll() is None,
+                "gatewayPortOpen": port_open(self.spec.gateway_port),
+                "rendererPortOpen": port_open(self.spec.renderer_port),
+            },
+        )
+        # #endregion
         self.chrome.wait_for_ready(30)
 
     def _process_alive(self) -> bool:
@@ -266,17 +571,188 @@ class FoundationRuntimeClient:
                 script_timeout=timeout,
             )
         except Exception as error:
+            # #region debug-point C:client-harness-failure
+            try:
+                urllib.request.urlopen(
+                    urllib.request.Request(
+                        "http://127.0.0.1:7778/event",
+                        data=json.dumps(
+                            {
+                                "sessionId": "foundation-identity-boot",
+                                "runId": "post-fix",
+                                "hypothesisId": "C",
+                                "location": (
+                                    "tooling/acceptance/gates/agent/"
+                                    "foundation_runtime_client.py:harness"
+                                ),
+                                "msg": "[DEBUG] client harness failed",
+                                "data": {
+                                    "runtime": self.spec.runtime,
+                                    "method": method,
+                                    "processState": (
+                                        "missing"
+                                        if self.process is None
+                                        else (
+                                            "running"
+                                            if self.process.poll() is None
+                                            else "exited"
+                                        )
+                                    ),
+                                    "driverPresent": self.driver is not None,
+                                    "chromePresent": self.chrome is not None,
+                                    "gatewayPortOpen": port_open(
+                                        self.spec.gateway_port
+                                    ),
+                                    "rendererPortOpen": port_open(
+                                        self.spec.renderer_port
+                                    ),
+                                    "webdriverPortOpen": port_open(
+                                        self.spec.webdriver_port
+                                    ),
+                                    "errorType": type(error).__name__,
+                                },
+                                "ts": int(time.time() * 1000),
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    ),
+                    timeout=1,
+                ).read()
+            except Exception:
+                pass
+            # #endregion
             raise FoundationClientError(
                 f"{self.spec.runtime} harness {method} failed: {error}"
             ) from error
 
+    def configure_station(self, *, timeout: float = 60) -> None:
+        result = self.harness(
+            "configureStation",
+            {"stationUrl": self._station_url},
+            timeout=timeout,
+        )
+        if (
+            not isinstance(result, Mapping)
+            or result.get("configured") is not True
+            or result.get("activeUrl") != self._station_url
+            or result.get("peerIdAvailable") is not True
+        ):
+            raise FoundationClientError(
+                f"{self.spec.runtime} Station configuration failed: {result}"
+            )
+
+    def prepare_foundation_f06(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        timeout: float,
+    ) -> Any:
+        return self.harness(
+            "foundationF06Prepare",
+            {
+                **payload,
+                "faultControlUrl": self._fault_controller.cut_url,
+            },
+            timeout=timeout,
+        )
+
     def restart(self) -> None:
+        self.restart_generation += 1
+        restart_started_at = time.monotonic()
+        # #region debug-point A-D:client-restart
+        report_browser_f06_timeout_debug(
+            "A-D",
+            "client-restart-entered",
+            {
+                "runtime": self.spec.runtime,
+                "restartGeneration": self.restart_generation,
+                "proxyAlive": self._station_proxy.is_alive,
+                "faultControllerAlive": self._fault_controller.is_alive,
+                "driverPresent": self.driver is not None,
+                "chromePresent": self.chrome is not None,
+            },
+        )
+        # #endregion
+        report_identity_boot_debug(
+            "A-D",
+            "client-restart-started",
+            {
+                "runtime": self.spec.runtime,
+                "restartGeneration": self.restart_generation,
+                "storageRootPresent": self.spec.storage_root.exists(),
+                "chromeStoragePresent": (
+                    self.spec.storage_root / "chrome"
+                ).exists(),
+                "runtimeProfilePresent": self.runtime_profile.exists(),
+            },
+        )
         result = self._stop_runtime(logout=False, remove_storage=False)
+        report_identity_boot_debug(
+            "A-D",
+            "client-restart-stopped",
+            {
+                "runtime": self.spec.runtime,
+                "restartGeneration": self.restart_generation,
+                "cleanupStatus": result["status"],
+                "storagePreserved": result.get("storagePreserved"),
+                "portsReleased": result.get("portsReleased"),
+            },
+        )
         if result["status"] != "clean":
             raise FoundationClientError(
                 f"{self.spec.runtime} restart cleanup failed: {result['failures']}"
             )
-        self.start()
+        try:
+            self.start()
+        except BaseException as error:
+            # #region debug-point A-D:client-restart-failed
+            report_browser_f06_timeout_debug(
+                "A-D",
+                "client-restart-failed",
+                {
+                    "runtime": self.spec.runtime,
+                    "restartGeneration": self.restart_generation,
+                    "elapsedMs": int(
+                        (time.monotonic() - restart_started_at) * 1000
+                    ),
+                    "errorType": type(error).__name__,
+                    "proxyAlive": self._station_proxy.is_alive,
+                    "faultControllerAlive": self._fault_controller.is_alive,
+                },
+            )
+            # #endregion
+            raise
+        # #region debug-point A-D:client-restart-completed
+        report_browser_f06_timeout_debug(
+            "A-D",
+            "client-restart-completed",
+            {
+                "runtime": self.spec.runtime,
+                "restartGeneration": self.restart_generation,
+                "elapsedMs": int(
+                    (time.monotonic() - restart_started_at) * 1000
+                ),
+                "proxyAlive": self._station_proxy.is_alive,
+                "faultControllerAlive": self._fault_controller.is_alive,
+            },
+        )
+        # #endregion
+        report_identity_boot_debug(
+            "A-D",
+            "client-restart-completed",
+            {
+                "runtime": self.spec.runtime,
+                "restartGeneration": self.restart_generation,
+                "storageRootPresent": self.spec.storage_root.exists(),
+                "chromeStoragePresent": (
+                    self.spec.storage_root / "chrome"
+                ).exists(),
+                "runtimeProfilePresent": self.runtime_profile.exists(),
+                "driverPresent": self.driver is not None,
+                "chromePresent": self.chrome is not None,
+            },
+        )
 
     def _stop_runtime(
         self,
@@ -291,9 +767,13 @@ class FoundationRuntimeClient:
             except Exception as error:  # noqa: BLE001 - cleanup records failure.
                 failures.append(f"logout: {error}")
         if self.chrome is not None:
-            self.chrome.stop()
-            self.chrome = None
-            self.driver = None
+            try:
+                self.chrome.stop()
+            except Exception as error:  # noqa: BLE001 - cleanup records failure.
+                failures.append(f"chrome: {error}")
+            finally:
+                self.chrome = None
+                self.driver = None
         elif self.driver is not None:
             try:
                 self.driver.quit()
@@ -311,9 +791,13 @@ class FoundationRuntimeClient:
                 failures.append(f"process: {error}")
         self.process = None
         if self.log_handle is not None:
-            self.log_handle.flush()
-            self.log_handle.close()
-            self.log_handle = None
+            try:
+                self.log_handle.flush()
+                self.log_handle.close()
+            except Exception as error:  # noqa: BLE001 - cleanup records failure.
+                failures.append(f"log: {error}")
+            finally:
+                self.log_handle = None
         if remove_storage:
             shutil.rmtree(self.spec.storage_root, ignore_errors=True)
         ports = {
@@ -342,7 +826,75 @@ class FoundationRuntimeClient:
         }
 
     def stop(self, *, remove_storage: bool = True) -> dict[str, Any]:
-        return self._stop_runtime(logout=True, remove_storage=remove_storage)
+        try:
+            result = self._stop_runtime(
+                logout=True,
+                remove_storage=remove_storage,
+            )
+        except BaseException as error:
+            result = {
+                "status": "failed",
+                "portsReleased": {},
+                "storageReleased": None,
+                "storagePreserved": None,
+                "failures": [f"runtime cleanup: {error}"],
+            }
+        fault_ports, fault_failures = self._close_fault_transport()
+        result["portsReleased"].update(fault_ports)
+        result["failures"].extend(fault_failures)
+        if result["failures"]:
+            result["status"] = "failed"
+        return result
+
+    def _close_fault_transport(self) -> tuple[dict[str, bool], list[str]]:
+        failures: list[str] = []
+        # #region debug-point D:fault-transport-close
+        report_browser_f06_timeout_debug(
+            "D",
+            "fault-transport-close-started",
+            {
+                "runtime": self.spec.runtime,
+                "restartGeneration": self.restart_generation,
+                "proxyAlive": self._station_proxy.is_alive,
+                "faultControllerAlive": self._fault_controller.is_alive,
+            },
+        )
+        # #endregion
+        try:
+            self._fault_controller.close()
+        except BaseException as error:
+            failures.append(f"fault control cleanup: {error}")
+        try:
+            self._station_proxy.close()
+        except BaseException as error:
+            failures.append(f"fault proxy cleanup: {error}")
+        ports = {
+            "faultControl": not port_open(self._fault_controller.port),
+            "faultProxy": not port_open(self._station_proxy.port),
+        }
+        if not ports["faultControl"]:
+            failures.append("fault control port is still listening")
+        if not ports["faultProxy"]:
+            failures.append("fault proxy port is still listening")
+        # #region debug-point D:fault-transport-closed
+        report_browser_f06_timeout_debug(
+            "D",
+            "fault-transport-close-completed",
+            {
+                "runtime": self.spec.runtime,
+                "restartGeneration": self.restart_generation,
+                "proxyAlive": self._station_proxy.is_alive,
+                "faultControllerAlive": self._fault_controller.is_alive,
+                "faultControlPortReleased": ports["faultControl"],
+                "faultProxyPortReleased": ports["faultProxy"],
+                "failureCount": len(failures),
+            },
+        )
+        # #endregion
+        return ports, failures
+
+    def restore_station_transport(self) -> None:
+        self._station_proxy.restore()
 
 
 class FoundationRuntimePair:

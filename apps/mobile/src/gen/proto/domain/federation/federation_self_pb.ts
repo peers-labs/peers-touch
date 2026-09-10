@@ -226,4 +226,3 @@ export enum FederationVisibility {
  */
 export const FederationVisibilitySchema: GenEnum<FederationVisibility> = /*@__PURE__*/
   enumDesc(file_domain_federation_federation_self, 0);
-

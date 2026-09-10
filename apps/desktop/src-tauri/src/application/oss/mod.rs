@@ -1287,7 +1287,9 @@ fn json_payload(command: &'static str, value: &Value) -> AppResult<StubPayload> 
 
 #[cfg(test)]
 mod tests {
-    use super::{agent_attachment_content_matches, normalize_oss_resolution_input, validate_upload_source};
+    use super::{
+        agent_attachment_content_matches, normalize_oss_resolution_input, validate_upload_source,
+    };
     use std::path::PathBuf;
     use ulid::Ulid;
 

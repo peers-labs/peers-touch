@@ -1084,8 +1084,9 @@
       ],
       "evidence": {
         "truth_sources": [
-          "Station TurnConfig.AttachmentRefs",
-          "OSS uploaded file URIs"
+          "Station ExecuteTurnRequest.attachments and persisted AgentMessage.attachments",
+          "Actor-private OSS object metadata and bytes",
+          "Station ContextLedger attachment attribution"
         ],
         "surfaces": [
           "Native Tauri composer attach button",

@@ -999,4 +999,3 @@ export enum ProposalStatus {
  */
 export const ProposalStatusSchema: GenEnum<ProposalStatus> = /*@__PURE__*/
   enumDesc(file_domain_federation_federation_ledger, 1);
-

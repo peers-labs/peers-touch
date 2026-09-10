@@ -53,7 +53,8 @@
 
 | 优先级 | 状态 | 文档 | 定位 |
 |---|---|---|---|
-| V2 | plan-ready / execute-approval | [Modern Chat Agent V2](./execution-plans/20260817-modern-chat-agent-v2.md) · [Formal execution DAG](./execution-plans/20260817-modern-chat-agent-v2-execution.md) | PRODUCT、DESIGN 与第十九轮独立 PLAN review 已通过；W0/F1-F4/W1-W9 dependency DAG、atomic cutovers、Native/Station Gates 已落盘，等待 Owner EXECUTE approval；生产能力仍 0/9 PROVEN |
+| Current proposal | pending owner approval | [Agent Delivery Recovery](./execution-plans/20260908-agent-delivery-recovery.md) | Home-only sequencing and C11 atomic activation proposal; preserves the full Foundation/Home/final proof requirements and does not yet change the approved DAG |
+| V2 | active / G-F partial | [Modern Chat Agent V2](./execution-plans/20260817-modern-chat-agent-v2.md) · [Formal execution DAG](./execution-plans/20260817-modern-chat-agent-v2-execution.md) | Owner-approved execution; the formal status table records 4/16 complete workstreams after F2 source closure. F3/C08 source and Gate wiring are complete but its environment Gate was not run. G-F remains PARTIAL / UNPROVEN; all nine combined capabilities remain UNPROVEN. |
 | V1 | active / functional-first | [First Useful Answer](./execution-plans/20260815-v1-first-useful-answer.md) | **当前最高优先执行入口** — 以 Settings 配置 Direct Model → Agent Profile 保存 provider+model → New Topic → 真实流式回复 → Desktop 重启读回为一个原子产品切换；先关闭功能与运行态，像素级收口由 deferred [Visual Replica Contract](./execution-plans/20260815-v1-visual-replica-contract.md) 后置执行 |
 | P0-P2 | draft / design-blocked | [modern-chat-agent](./execution-plans/20260730-modern-chat-agent.md) | Station 单一真源下的现代 Agent Chat 集成、所有权切换与端到端验收计划 |
 | P0-P4 | capability inventory | [agent-lobehub-rebuild](./execution-plans/20260616-agent-lobehub-rebuild.md) | LobeHub Agent 广度能力库存；不得再以模块/文件存在替代产品旅程完成，V1 完成前不启动新的横向能力批次 |

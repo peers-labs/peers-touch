@@ -18,11 +18,12 @@ use crate::messaging::{
     decode_recovery_revision, encode_recovery_revision, MessagingEngine,
     INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
 };
-use crate::model::chat::{
-    GetLatestRecoveryRevisionRequest, GetLatestRecoveryRevisionResponse,
-    PutRecoveryRevisionRequest, PutRecoveryRevisionResponse,
+use crate::model::recovery::{
+    ReadLatestRecoveryRevisionRequest, ReadLatestRecoveryRevisionResponse,
+    StoreRecoveryRevisionRequest, StoreRecoveryRevisionResponse,
 };
 use crate::state::AppState;
+use messaging_core::proto::actor_device_ptid;
 
 use super::crypto::to_stub;
 
@@ -82,7 +83,7 @@ fn timestamp_ms(timestamp: Option<&prost_types::Timestamp>) -> i64 {
         .unwrap_or_default()
 }
 
-fn revision_json(revision: &GetLatestRecoveryRevisionResponse) -> serde_json::Value {
+fn revision_json(revision: &ReadLatestRecoveryRevisionResponse) -> serde_json::Value {
     json!({
         "backupId": revision.revision_id,
         "revision": revision.revision_id,
@@ -98,16 +99,21 @@ fn identity_json(engine: &MessagingEngine) -> Result<serde_json::Value, String> 
         .device_enrollment()?
         .ok_or_else(|| "messaging recovery identity is unavailable".to_string())?;
     let certificate = enrollment.certificate;
-    if certificate.ptid != engine.endpoint().ptid
-        || certificate.device_id != engine.endpoint().device_id
+    let device = certificate
+        .device
+        .as_ref()
+        .ok_or_else(|| "messaging recovery identity has no endpoint".to_string())?;
+    let ptid = actor_device_ptid(device)?;
+    if ptid != engine.endpoint().ptid
+        || device.device_id != engine.endpoint().device_id
         || certificate.actor_identity_key_fingerprint.len() != 32
     {
         return Err("messaging recovery identity binding is invalid".to_string());
     }
     Ok(json!({
         "ready": true,
-        "ptid": certificate.ptid,
-        "deviceId": certificate.device_id,
+        "ptid": ptid,
+        "deviceId": device.device_id,
         "fingerprint": hex::encode(certificate.actor_identity_key_fingerprint),
     }))
 }
@@ -116,17 +122,18 @@ fn latest_revision(
     session: &RecoverySession,
     device_id: &str,
 ) -> Result<
-    GetLatestRecoveryRevisionResponse,
+    ReadLatestRecoveryRevisionResponse,
     crate::infrastructure::station_client::StationClientError,
 > {
-    let mut revision: GetLatestRecoveryRevisionResponse = station_client::request_proto_for_device(
-        Method::GET,
-        "/messaging/recovery/latest",
-        &session.token,
-        None,
-        None::<&GetLatestRecoveryRevisionRequest>,
-        device_id,
-    )?;
+    let mut revision: ReadLatestRecoveryRevisionResponse =
+        station_client::request_proto_for_device(
+            Method::GET,
+            "/recovery/latest",
+            &session.token,
+            None,
+            None::<&ReadLatestRecoveryRevisionRequest>,
+            device_id,
+        )?;
     #[cfg(feature = "acceptance-webdriver")]
     if std::env::var_os("PT_MESSAGING_RECOVERY_CORRUPT_LATEST_FILE")
         .map(std::path::PathBuf::from)
@@ -205,15 +212,15 @@ pub fn messaging_recovery_create_revision(
         Ok(encoded) => encoded,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    let request = PutRecoveryRevisionRequest {
+    let request = StoreRecoveryRevisionRequest {
         revision_id: encoded.revision_id.clone(),
         format_version: encoded.format_version,
         encrypted_archive: encoded.bytes,
         encrypted_archive_sha256: encoded.sha256.to_vec(),
     };
-    let response: PutRecoveryRevisionResponse = match station_client::request_proto_for_device(
+    let response: StoreRecoveryRevisionResponse = match station_client::request_proto_for_device(
         Method::POST,
-        "/messaging/recovery/revision",
+        "/recovery/revision",
         &session.token,
         None,
         Some(&request),
@@ -329,7 +336,16 @@ pub fn messaging_recovery_restore_latest(
             return AppResult::fail(ErrorCode::InternalError, error, None);
         }
     };
-    let restored_device_id = enrollment.certificate.device_id.clone();
+    let restored_device_id = match enrollment.certificate.device.as_ref() {
+        Some(device) => device.device_id.clone(),
+        None => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "restored messaging identity has no endpoint",
+                None,
+            );
+        }
+    };
     station_client::set_device_id(restored_device_id.clone());
     let restored_identity = crypto::IdentityKeyPair::from_seed(&archive.actor_identity_seed);
     to_stub(
