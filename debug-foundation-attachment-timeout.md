@@ -107,3 +107,36 @@ submits a Turn and cannot observe a Station rejection.
   retains its two known unrelated `receiver-dom` fixture/profile errors.
 - Exact-source post-evidence-field deployment and runtime evidence remain
   pending.
+
+## 2026-09-10 Browser AS-F05 Turn Timeout
+
+### Reproduction
+
+- Exact source: `52cc444b6d1f980c7e4b1c18b5cf01a65c02ded5`.
+- C08 run `20260910T055522829091Z-9681f326699ee03f46adacc14c119f39`
+  passed all 19 assertions with clean resource release.
+- Foundation run
+  `20260910T055707604178Z-af431ffdcb8a1a040ddc0687391de851`
+  reached `FIXTURE_READY`, then failed at Browser `AS-F05 / en /
+  sample-001` with `agent.acceptance.turnSubmissionTimeout`.
+- Provisioner cleanup completed `DONE / PROVEN / passed`.
+
+### Hypotheses
+
+| ID | Hypothesis | Likelihood | Effort | Expected signal |
+|----|------------|------------|--------|-----------------|
+| I | Browser retained a cut or stale fault-proxy state from a preceding scenario. | High | Low | Submission starts while proxy or browser transport reports unavailable/reconnecting. |
+| J | Station reaches a terminal Turn, but Browser misses or filters its terminal SSE event. | High | Medium | Station readback is terminal while observed event list lacks the matching terminal sequence. |
+| K | Provider execution itself remains active beyond the fixed 120-second Turn bound. | Medium | Low | Station readback remains non-terminal with provider attempt still active at timeout. |
+| L | Shared Native/Browser capability-session state is stale after the preceding matrix rows. | Medium | Medium | Submitted Turn references a session/revision that no longer matches current readiness. |
+| M | Another Acceptance process contends for a local port or shared runtime resource. | Low | Low | Runtime metadata or process table shows conflicting listener/profile ownership. |
+
+### Current Evidence
+
+- Historical `foundation-attachment-timeout` post-fix entries show upload,
+  tombstone readback, Station rejection, and cleanup succeeding; they do not
+  contain this AS-F05 positive Turn submission.
+- The failed Foundation run produced no candidate manifest, so its outer
+  result cannot distinguish Station/provider progress from Browser event loss.
+- No product assertion, timeout, tuple, or retry policy may change during
+  diagnosis.

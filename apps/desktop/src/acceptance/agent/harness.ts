@@ -4363,6 +4363,15 @@ async function runFoundationAttachmentTurn(input: {
   result: ObservedFoundationTurnResult;
   turnId: string;
 }> {
+  const startedAt = performance.now();
+  // #region debug-point I-L:foundation-f05-turn
+  void reportFoundationAttachmentTimeoutDebug('I-L', 'turn-submission-started', {
+    attachmentCount: input.attachments.length,
+    capabilitySessionPresent: Boolean(input.capabilitySessionId),
+    providerPresent: Boolean(input.provider),
+    modelPresent: Boolean(input.model),
+  });
+  // #endregion
   const observed = startObservedFoundationTurn({
     conversationId: input.conversationId,
     agentId: input.agentId,
@@ -4372,8 +4381,29 @@ async function runFoundationAttachmentTurn(input: {
     model: input.model,
     clientCapabilitySessionId: input.capabilitySessionId,
     attachments: input.attachments,
+    // #region debug-point J-K:foundation-f05-events
+    onEvent: (event, events) => {
+      void reportFoundationAttachmentTimeoutDebug('J-K', 'turn-event-observed', {
+        eventCount: events.length,
+        eventType: event.event,
+        sequence: Number(event.data.seq ?? event.data.sequence ?? 0),
+        terminal: classifyAgentTurnTerminalEvent(event),
+      });
+    },
+    // #endregion
   });
   const result = await observed.result;
+  // #region debug-point J-K:foundation-f05-settled
+  await reportFoundationAttachmentTimeoutDebug('J-K', 'turn-submission-settled', {
+    elapsedMs: Math.round(performance.now() - startedAt),
+    errorCode: result.error
+      ? observedErrorCode(new Error(result.error))
+      : '',
+    eventCount: result.events.length,
+    lastEventType: result.events[result.events.length - 1]?.event ?? '',
+    ok: result.ok,
+  });
+  // #endregion
   return {
     result,
     turnId: observedTurnId(result.events),
@@ -4557,6 +4587,13 @@ async function runFoundationF05Scenario(input: {
         `sha256:${await sha256Bytes(await foundationResolvedBytes(attachment.object_ref))}`),
     );
 
+    // #region debug-point I-L:foundation-f05-positive-turn
+    void reportFoundationAttachmentTimeoutDebug('I-L', 'positive-turn-started', {
+      capabilitySessionPresent: Boolean(input.capabilitySessionId),
+      platform: input.platform,
+      uploadedAttachmentCount: 2,
+    });
+    // #endregion
     const valid = await runFoundationAttachmentTurn({
       agentId,
       conversationId: conversation.conversation_id,
@@ -4566,6 +4603,14 @@ async function runFoundationF05Scenario(input: {
       attachments: [png, pdf],
       content: 'Acknowledge the attached files in one short sentence.',
     });
+    // #region debug-point I-L:foundation-f05-positive-turn-result
+    void reportFoundationAttachmentTimeoutDebug('I-L', 'positive-turn-finished', {
+      eventCount: valid.result.events.length,
+      ok: valid.result.ok,
+      platform: input.platform,
+      turnIdPresent: Boolean(valid.turnId),
+    });
+    // #endregion
     if (!valid.result.ok || !valid.turnId) {
       throw new Error(
         valid.result.error || 'agent.acceptance.foundationAttachmentTurnFailed',
@@ -9194,7 +9239,7 @@ function reportFoundationAttachmentTimeoutDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'foundation-attachment-timeout',
-      runId: 'post-fix',
+      runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationAttachmentRejectedScenario',
       msg: `[DEBUG] ${stage}`,

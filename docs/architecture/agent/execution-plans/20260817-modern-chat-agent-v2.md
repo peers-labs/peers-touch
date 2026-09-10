@@ -22,20 +22,20 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | Exact-source checkpoint, C08 product proof, and G-F Foundation proof |
-| Current step | Checkpoint `03c895e0c` restored exact protocol attestation and reached C08 `FIXTURE_READY`；the current candidate repairs the stale native Agent launcher/session composition exposed next |
+| Current step | Checkpoint `52cc444b6` proves current-source C08；the 419-cell Gate now fails at Browser AS-F05 positive Turn timeout and is in source-bound instrumentation |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | C08 run `20260910T054309187739Z-91c78d39bad933eb55820ac65650cf05` proved source attestation and Fixture readiness before failing on the stale `TauriDriver` constructor path；135 focused launcher/Core/Agent tests now pass |
-| Current action | Create a clean checkpoint for the launcher/session remediation and redeploy that exact source |
-| Next action | Deploy the new exact source with `make station`，rerun current-source C08，then run the unchanged 419-cell G-F Gate |
+| Last completed | C08 run `20260910T055522829091Z-9681f326699ee03f46adacc14c119f39` is `DONE / PROVEN` with 19/19 assertions and clean resource release |
+| Current action | Instrument Browser AS-F05 Turn/SSE lifecycle without changing behavior，then run one source-bound reproduction |
+| Next action | Use pre-fix logs to identify the owning layer，apply the minimal root-cause fix，and rerun C08 plus unchanged 419-cell G-F on one clean checkpoint |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | No current C08 source blocker after the launcher/session candidate. The unrelated stale `acceptance-runtime-provisioning-self` Fixture expectation and uptime-sensitive launch-context test remain parked outside this Slice；C08 and G-F are still `UNPROVEN` pending clean exact-source Gates |
+| Blockers | G-F run `20260910T055707604178Z-af431ffdcb8a1a040ddc0687391de851` failed at Browser `AS-F05 / en / single / sample-001` with `agent.acceptance.turnSubmissionTimeout`；cleanup passed. C08 is proven，G-F remains `PARTIAL / UNPROVEN` pending runtime diagnosis |
 | Decisions required | none |
-| Evidence | G-FE1 source checks remain passed；Station `03c895e0c404` is healthy；driver smoke passes；protocol digest parity is `8f9daf1c...`；135 focused launcher/Core/Agent tests plus Infra boundary、quality-evidence、validator and diff checks pass；C08 and G-F product evidence remain `UNPROVEN` |
+| Evidence | Station/client source `52cc444b6d1f...` is clean；C08 has 19/19 PASS and complete cleanup；G-F reached `FIXTURE_READY` and Browser AS-F05 before timeout，with provisioner cleanup `DONE / PROVEN / passed`；G-F remains `UNPROVEN` |
 | Last updated | 2026-09-10 |
 
 ---

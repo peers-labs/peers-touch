@@ -1312,6 +1312,19 @@ and zero local-path leakage.
   existing caller-owned log path on `LocalTauriLauncher` and compose
   `TauriSession(LocalTauriLauncher(...))` in the business runner. This changes
   no C08 assertion, timeout, runtime cell, or product behavior.
+- **Current-source C08 proof and Foundation diagnostic (2026-09-10)**:
+  checkpoint `52cc444b6d1f980c7e4b1c18b5cf01a65c02ded5` passed C08 run
+  `20260910T055522829091Z-9681f326699ee03f46adacc14c119f39`
+  with 19/19 assertions, exact Station source, and complete process, port, and
+  storage cleanup. The unchanged 419-cell Foundation run
+  `20260910T055707604178Z-af431ffdcb8a1a040ddc0687391de851`
+  then failed at Browser `AS-F05 / en / single / sample-001` because the
+  positive attachment Turn did not reach a terminal event within its existing
+  120-second bound. Provisioner cleanup passed. The open
+  `foundation-attachment-timeout` debug session now adds only credential-safe
+  Turn submission and SSE lifecycle instrumentation to distinguish transport,
+  terminal-event, provider, and capability-session ownership. It does not
+  change timeout, tuple order/count, assertion, retry, or product behavior.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error
