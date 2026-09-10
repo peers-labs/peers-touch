@@ -194,6 +194,8 @@ class WindowsCellProfile:
     runtime_root: str
     python_executable: str
     vsdevcmd_path: str
+    windows_sdk_root: str
+    windows_sdk_version: str
     perl_path: str
     protoc_path: str
     webdriver_port: int
@@ -249,6 +251,16 @@ class WindowsCellProfile:
                 "PT_ACCEPTANCE_CELL_VSDEVCMD",
                 "C:/BuildTools/Common7/Tools/VsDevCmd.bat",
             ),
+            windows_sdk_root=_required(
+                values,
+                "PT_ACCEPTANCE_CELL_WINDOWS_SDK_ROOT",
+                path,
+            ),
+            windows_sdk_version=_required(
+                values,
+                "PT_ACCEPTANCE_CELL_WINDOWS_SDK_VERSION",
+                path,
+            ),
             perl_path=values.get(
                 "PT_ACCEPTANCE_CELL_PERL",
                 "C:/Strawberry/perl/bin/perl.exe",
@@ -290,6 +302,14 @@ class WindowsCellProfile:
         if not vsdevcmd.is_absolute():
             raise ProvisioningError(
                 "Windows runtime-cell VsDevCmd path must be drive-absolute"
+            )
+        if not PureWindowsPath(self.windows_sdk_root).is_absolute():
+            raise ProvisioningError(
+                "Windows runtime-cell SDK root must be drive-absolute"
+            )
+        if not re.fullmatch(r"\d+\.\d+\.\d+\.\d+", self.windows_sdk_version):
+            raise ProvisioningError(
+                "Windows runtime-cell SDK version must be numeric"
             )
         if not PureWindowsPath(self.perl_path).is_absolute():
             raise ProvisioningError(
@@ -1328,8 +1348,21 @@ class NativeDesktopWindowsProvisioner:
 
     def _build_binary(self, remote_source: str) -> tuple[str, str]:
         binary_path = _windows_join(remote_source, _BINARY_RELATIVE_PATH)
+        sdk_root = self.profile.windows_sdk_root.rstrip("/\\")
+        sdk_version = self.profile.windows_sdk_version.rstrip("/\\")
         command = (
             f"call {self.profile.vsdevcmd_path} -arch=x64 && "
+            'set "VSLANG=1033" && '
+            f'set "WindowsSdkDir={sdk_root}/" && '
+            f'set "WindowsSDKVersion={sdk_version}/" && '
+            f'set "INCLUDE={sdk_root}/Include/{sdk_version}/ucrt;'
+            f"{sdk_root}/Include/{sdk_version}/shared;"
+            f"{sdk_root}/Include/{sdk_version}/um;"
+            f'{sdk_root}/Include/{sdk_version}/winrt;'
+            f'{sdk_root}/Include/{sdk_version}/cppwinrt" && '
+            f'set "LIB={sdk_root}/Lib/{sdk_version}/ucrt/x64;'
+            f'{sdk_root}/Lib/{sdk_version}/um/x64" && '
+            f'set "PATH={sdk_root}/bin/{sdk_version}/x64;%PATH%" && '
             f'set "OPENSSL_SRC_PERL={self.profile.perl_path}" && '
             f'set "PROTOC={self.profile.protoc_path}" && '
             f"cd /d {remote_source} && "
