@@ -999,6 +999,17 @@ impl MessagingEngine {
         let conversation_kind = ConversationKind::try_from(draft.conversation_kind)
             .map_err(|_| "messaging draft conversation kind is invalid".to_string())?;
         let plan = self.prepare_send_plan(token, &draft.conversation_id)?;
+        // Drain inbox until the local authority head matches the send plan.
+        // A single drain may not suffice if the conversation was just created
+        // and the creation event hasn't arrived in the device inbox yet.
+        for _ in 0..5 {
+            let (local_seq, local_hash) = self.store.authority_head(&draft.conversation_id)?;
+            if local_seq == plan.authority_sequence && local_hash == plan.authority_hash {
+                break;
+            }
+            self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
         if plan.conversation_kind != draft.conversation_kind {
             return Err("messaging conversation kind does not match Station plan".to_string());
         }
