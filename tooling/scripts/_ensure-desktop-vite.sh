@@ -142,9 +142,10 @@ ensure_desktop_vite_ready() {
   fi
 
   echo "[INFO] Starting Vite on :$web_port..."
-  if [[ ! -d "$desktop_dir/node_modules" ]]; then
-    echo "[INFO] node_modules missing — running pnpm install ..."
-    (cd "$desktop_dir/../.." && pnpm install --no-frozen-lockfile)
+  local repo_root="$desktop_dir/../.."
+  if [[ ! -d "$repo_root/node_modules/.pnpm" ]]; then
+    echo "[INFO] Root node_modules missing — running pnpm install ..."
+    (cd "$repo_root" && pnpm install --no-frozen-lockfile)
   fi
   (cd "$desktop_dir" && VITE_GATEWAY_PORT="$gateway_port" VITE_ACCEPTANCE_HARNESS="${VITE_ACCEPTANCE_HARNESS:-}" pnpm dev --port "$web_port") &
   VITE_PID=$!
