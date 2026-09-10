@@ -415,7 +415,7 @@ func seedTurnEvidence(t *testing.T, db *gorm.DB, now time.Time) {
 	if err := db.Create(&persistence.Conversation{
 		ID:        "conversation-1",
 		AgentID:   "agent-1",
-		Ptid:      "actor-1",
+		ActorPTID: "actor-1",
 		Title:     "Evidence",
 		Status:    "active",
 		Version:   1,

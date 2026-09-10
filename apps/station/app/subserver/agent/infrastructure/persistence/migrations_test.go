@@ -245,7 +245,7 @@ func TestMigrateTurnEventsReplacesConversationCursorIndex(t *testing.T) {
 	}
 }
 
-func TestMigrateConversationsRenamesHistoricalOwnerToPtid(t *testing.T) {
+func TestMigrateConversationsRenamesHistoricalOwnerToActorPTID(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:agent-conversation-migration?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open database: %v", err)
@@ -273,15 +273,15 @@ func TestMigrateConversationsRenamesHistoricalOwnerToPtid(t *testing.T) {
 	if err := MigrateConversations(db); err != nil {
 		t.Fatalf("repeat conversation migration: %v", err)
 	}
-	if !db.Migrator().HasColumn("agent_conversations", "ptid") {
-		t.Fatal("ptid column missing after migration")
+	if !db.Migrator().HasColumn("agent_conversations", "actor_ptid") {
+		t.Fatal("actor_ptid column missing after migration")
 	}
 	if db.Migrator().HasColumn("agent_conversations", "user_id") {
 		t.Fatal("legacy user_id column remains after migration")
 	}
 	var ptid string
 	if err := db.Table("agent_conversations").
-		Select("ptid").
+		Select("actor_ptid").
 		Where("id = ?", "conversation-1").
 		Scan(&ptid).Error; err != nil {
 		t.Fatalf("read migrated owner: %v", err)
@@ -738,7 +738,7 @@ func TestMigrateTurnEvidenceBackfillsActorAndAssistantLineage(t *testing.T) {
 	if err := db.Create(&Conversation{
 		ID:        "conversation-1",
 		AgentID:   "agent-1",
-		Ptid:      "actor-1",
+		ActorPTID: "actor-1",
 		Title:     "Migration",
 		Status:    "active",
 		Version:   1,

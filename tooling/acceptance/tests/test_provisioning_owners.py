@@ -27,8 +27,8 @@ from tooling.acceptance.core.evidence_store import ArtifactRef, EvidenceStore
 from tooling.acceptance.fixtures import chat_native_reset
 from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
-    _login_session,
     produce_actor_manifest,
+    produce_bound_actor_manifest,
     reset_fixture,
 )
 
@@ -608,31 +608,18 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             },
         )
 
-    def test_login_session_requires_ptid_token_and_session(self) -> None:
-        session = _login_session(
-            {
-                "data": {
-                    "actor_ref": {"ptid": "ptid:alice"},
-                    "tokens": {"access_token": "runtime-token"},
-                    "session_id": "runtime-session",
-                }
-            },
-            "alice",
-        )
-        self.assertEqual(
-            session,
-            ("ptid:alice", "runtime-token", "runtime-session"),
-        )
-        with self.assertRaisesRegex(BlockedError, "releasable session"):
-            _login_session(
-                {
-                    "data": {
-                        "actorRef": {"ptid": "ptid:alice"},
-                        "tokens": {},
-                    }
-                },
-                "alice",
-            )
+    def test_actor_fixture_has_no_json_business_http_path(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[3]
+            / "tooling"
+            / "acceptance"
+            / "fixtures"
+            / "chat_native_actors.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("/actor/login", source)
+        self.assertNotIn("/actor/logout", source)
+        self.assertNotIn("/actor/federation/resolve", source)
+        self.assertNotIn("urllib.request", source)
 
     def test_reset_requires_explicit_authorization(self) -> None:
         with self.assertRaisesRegex(BlockedError, "CHAT_ACCEPTANCE_RESET=1"):
@@ -667,7 +654,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 "tooling.acceptance.fixtures.chat_native_actors.reset_fixture"
             ), patch(
                 "tooling.acceptance.fixtures.chat_native_actors.resolve_actor_identity",
-                side_effect=lambda station, role, password: ActorIdentity(
+                side_effect=lambda station, environment, role: ActorIdentity(
                     role=role,
                     account_ref=f"station-account:{role}@p.t",
                     ptid=f"ptid:{role}",
@@ -691,6 +678,69 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             self.assertEqual(
                 store.resolve(ArtifactRef.from_dict(reference)),
                 path,
+            )
+            run.close()
+
+    def test_bound_actor_manifest_uses_each_roles_declared_station(self) -> None:
+        from tooling.acceptance.core.provisioning import ActorIdentity
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("test-gate", source={})
+            with patch.dict(
+                os.environ,
+                run.subprocess_environment(os.environ),
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_actors.REPO_ROOT",
+                worktree,
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_actors.verify_reset_target"
+            ) as verify, patch(
+                "tooling.acceptance.fixtures.chat_native_actors.reset_fixture"
+            ) as reset, patch(
+                "tooling.acceptance.fixtures.chat_native_actors.resolve_actor_identity",
+                side_effect=lambda station, environment, role: ActorIdentity(
+                    role=role,
+                    account_ref=f"station-account:{role}@p.t",
+                    ptid=f"ptid:{role}:{station.rsplit('-', 1)[-1]}",
+                ),
+            ) as resolve, patch(
+                "tooling.acceptance.fixtures.chat_native_actors.prepare_bound_friendships"
+            ) as friendships:
+                manifest, _, _ = produce_bound_actor_manifest(
+                    environment_id="native-tauri-embedded-webdriver",
+                    run_id="run-1",
+                    role_targets={
+                        "alice": ("http://station-four", "station-four"),
+                        "bob": ("http://station-five", "station-five"),
+                    },
+                    credential_ref="fixture:preset-users",
+                    reset_authorized=True,
+                )
+
+            self.assertEqual(verify.call_count, 2)
+            reset.assert_any_call("station-four", ["alice"])
+            reset.assert_any_call("station-five", ["bob"])
+            self.assertEqual(
+                [call.args for call in resolve.call_args_list],
+                [
+                    ("http://station-four", "station-four", "alice"),
+                    ("http://station-five", "station-five", "bob"),
+                ],
+            )
+            friendships.assert_called_once_with(
+                {
+                    "alice": ("http://station-four", "station-four"),
+                    "bob": ("http://station-five", "station-five"),
+                },
+                manifest.actors,
+            )
+            self.assertEqual(
+                [actor.ptid for actor in manifest.actors],
+                ["ptid:alice:four", "ptid:bob:five"],
             )
             run.close()
 

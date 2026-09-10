@@ -3,6 +3,7 @@
   "plan": "closure-mp-w11",
   "description": "Machine-readable closure contract for MP-W11 Atomic Cutover And Completion Audit. Every deliverable here must be mechanically verified. No AI discretion over what counts as done.\n",
   "closure_contract": "MP-W11",
+  "claimed_runtime_cell": "desktop-linux-native",
   "selected_gates": [
     {
       "id": "chat-w11-forbidden-scan",
@@ -29,13 +30,25 @@
       ]
     },
     {
+      "id": "station-api-ownership",
+      "command": "go run ./apps/station/app/cmd/station_api_ownership --root . --registry docs/architecture/api-ownership/station-api-capabilities.yaml",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "provisioner": "",
+      "tier": "ci-structure",
+      "description": "Validate Station route, owner, contract, and truth-store ownership against the accepted capability registry.",
+      "required_by": [
+        "closure:MP-W11"
+      ]
+    },
+    {
       "id": "station-messaging-unit",
-      "command": "go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/envelope/...",
+      "command": "go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/federation/... ./apps/station/frame/core/federation/...",
       "timeout_seconds": 600,
       "environment": "local",
       "provisioner": "",
       "tier": "ci-cheap",
-      "description": "Run Station Conversation and envelope package tests.",
+      "description": "Run canonical Station Conversation and shared Federation package tests.",
       "required_by": [
         "closure:MP-W11"
       ]
@@ -66,38 +79,48 @@
     },
     {
       "id": "chat-native-visible-static",
-      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
+      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
       "timeout_seconds": 120,
       "environment": "local",
       "provisioner": "",
       "tier": "ci-cheap",
-      "description": "Validate W8 native runner fail-closed evidence, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey.",
+      "description": "Validate native runner fail-closed evidence, MP-W13 no-bypass DOM actions, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey.",
       "required_by": [
         "closure:MP-W11"
       ]
     },
     {
       "id": "chat-native-two-client-e2e",
-      "command": "python3 -m tooling.acceptance.gates.chat.native_two_client_runner && python3 -m tooling.acceptance.gates.chat.native_two_client_e2e",
+      "command": "python3 -m tooling.acceptance.gates.chat.native_two_client_entry && python3 -m tooling.acceptance.gates.chat.native_two_client_e2e",
       "timeout_seconds": 1800,
       "environment": "native-tauri-embedded-webdriver",
-      "provisioner": "",
+      "provisioner": "native-tauri-embedded-webdriver",
       "tier": "env-evidence",
       "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext plus DELIVERED receipt visibility.",
       "required_by": [
         "closure:MP-W11"
+      ],
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
       ]
     },
     {
       "id": "chat-native-interactions-e2e",
       "command": "python3 -m tooling.acceptance.gates.chat.native_interactions_runner",
       "timeout_seconds": 3600,
-      "environment": "home-station",
-      "provisioner": "",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
       "tier": "env-evidence",
-      "description": "Run isolated Native Direct and Group clients and prove reply/thread, author-only edit/retract, reaction, pin, read, offline, replay and restart convergence with Station and Engine durable readback.",
+      "description": "Run isolated Native Direct and Group clients and prove reply/thread, author-only edit/retract, reaction, pin, read, offline, replay and restart convergence with Conversation and Device Inbox durable readback.",
       "required_by": [
         "closure:MP-W11"
+      ],
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
       ]
     },
     {
@@ -121,48 +144,68 @@
       "id": "chat-native-typing-e2e",
       "command": "python3 -m tooling.acceptance.gates.chat.native_typing_runner",
       "timeout_seconds": 1800,
-      "environment": "home-station",
-      "provisioner": "",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
       "tier": "env-evidence",
       "description": "Run isolated Native Direct and Group clients and prove authenticated ephemeral typing start, stop, session switch, disconnect and TTL cleanup without durable lane or history writes.",
       "required_by": [
         "closure:MP-W11"
+      ],
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
       ]
     },
     {
       "id": "chat-native-multi-device-e2e",
       "command": "python3 -m tooling.acceptance.gates.chat.native_multi_device_runner",
       "timeout_seconds": 1800,
-      "environment": "home-station",
-      "provisioner": "",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
       "tier": "env-evidence",
       "description": "Run visible native direct-message acceptance with one recipient actor on two isolated devices.",
       "required_by": [
         "closure:MP-W11"
+      ],
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
       ]
     },
     {
       "id": "chat-native-recovery-e2e",
       "command": "python3 -m tooling.acceptance.gates.chat.native_recovery_runner",
       "timeout_seconds": 2400,
-      "environment": "home-station",
-      "provisioner": "",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
       "tier": "env-evidence",
       "description": "Run visible native reinstall and 24-word recovery history-restore acceptance.",
       "required_by": [
         "closure:MP-W11"
+      ],
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
       ]
     },
     {
       "id": "chat-native-group-mls-e2e",
       "command": "python3 -m tooling.acceptance.gates.chat.native_group_mls_runner",
       "timeout_seconds": 2400,
-      "environment": "home-station",
-      "provisioner": "",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
       "tier": "env-evidence",
       "description": "Run visible native three-device MLS add, send, remove, restart, and recovery acceptance.",
       "required_by": [
         "closure:MP-W11"
+      ],
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
       ]
     },
     {
@@ -215,12 +258,12 @@
     },
     {
       "id": "acceptance-runtime-provisioning-self",
-      "command": "python3 -m unittest tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_profile_lease && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py",
+      "command": "python3 -m unittest tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py",
       "timeout_seconds": 180,
       "environment": "local",
       "provisioner": "",
       "tier": "ci-cheap",
-      "description": "Validate Runtime Provisioning contracts, owners, shared profile lease contention, runner failure semantics, behavior planning, domain structural closure, Infra/business responsibility isolation, redaction, freshness, Gap Detector fail-closed behavior, and quality evidence range/readiness integrity.",
+      "description": "Validate Runtime Provisioning contracts, owners, shared profile lease contention, ephemeral Gate launch-context isolation and cleanup, runner failure semantics, behavior planning, domain structural closure, Infra/business responsibility isolation, redaction, freshness, Gap Detector fail-closed behavior, and quality evidence range/readiness integrity.",
       "required_by": [
         "closure:MP-W11"
       ]

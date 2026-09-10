@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-08-08 | **Updated**: 2026-08-17
+> **Created**: 2026-08-08 | **Updated**: 2026-09-05
 > **Owner**: Messaging Platform Team
 
 ---
@@ -40,7 +40,7 @@ native UI、Station truth 和 Device Engine durable evidence。
 | MP-C08 Recovery | J06 | A05/A07 | W08 | MP-G08 | fresh install 恢复并继续通信 |
 | MP-C09 Group MLS | J07/J08 | A08 | W07 | MP-G09 | add/remove/send/restart epoch 正确 |
 | MP-C10 Receipts | J10 | A02/A09 | W05 | MP-G10 | accepted/consumed/delivered/read 可区分 |
-| MP-C11 Federation | J09 | A02/A06 | W02/W06 | MP-G11 | 跨站断线重试后有序到达 |
+| MP-C11 Federation | J09 | A02/A06 | W02/W06/W14 | MP-G11 | 跨站断线重试后有序到达，Home Station follower membership与authority一致 |
 | MP-C12 Failure recovery | J12; S20-S28 | A03-A06/A10 | W02-W09 | MP-G12 | 故障可行动且不静默丢失 |
 | MP-C13 Attachments | J11 | A05/A11 | W10 | MP-G13 | 附件 E2EE、重启和恢复可用 |
 | MP-C14 Search | J11 | A05 | W10 | MP-G14 | 仅本地 plaintext index 返回结果 |
@@ -77,7 +77,7 @@ native UI、Station truth 和 Device Engine durable evidence。
 | MP-G08 | 24-word fresh storage restore；history、fresh device、后续消息通过 |
 | MP-G09 | create/add-device/add-member/send/remove/restart/recovery 全 journey |
 | MP-G10 | queue、device receipt、actor read cursor 与 UI 状态一致 |
-| MP-G11 | federation outbox 重试、目标 inbox 幂等、authority sequence 连续 |
+| MP-G11 | federation outbox重试、目标inbox幂等、authority sequence连续；self-contained create与independent owner-resolved late-join Welcome建立正确authority pin；Station-addressed follower projection覆盖zero-device/removal；replay只返回requesting Home Station具有immutable event grant的范围且event/grant digest都受签名保护；gap走signed event-log replay且不生成private payload；wrong target/nonce、stale/rollback/key mismatch、sequence/event collision、wrong previous hash fail closed；public buffer event/byte quota与expiry cleanup可证；event/grant co-retention、terminal tombstone和unexpected source loss可证；applied event bytes和endpoint metadata retention符合D29 |
 | MP-G12 | storage full/locked、bad ciphertext、lease expiry、poison item 均 fail closed |
 | MP-G13 | Direct/MLS encrypted attachment exact bytes；upload/download 在每个 chunk 边界中断后从 durable checkpoint 恢复；duplicate/conflicting part、ETag/range、ciphertext/plaintext hash 和 AEAD failure fail closed；Desktop/Station restart与fresh recovery后可用；removed actor 只能读取其已获 grant 的历史 object；Station rows/logs 无 filename/key/nonce/plaintext hash |
 | MP-G14 | SQLCipher FTS 对 text/filename 精确命中；offline/restart/recovery 后结果一致；bounded query/cursor；Station 请求/存储/log 中无 query 或 plaintext corpus |

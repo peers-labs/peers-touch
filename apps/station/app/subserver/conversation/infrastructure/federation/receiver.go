@@ -35,6 +35,7 @@ type ReceiverConfig struct {
 	AuthorityCommands  AuthorityCommandPort
 	AuthorityResults   AuthorityResultPort
 	DeviceDeliveries   DeviceDeliveryPort
+	DeliveryReceipts   DeliveryReceiptPort
 	Sender             *Sender
 	Clock              federationdelivery.Clock
 }
@@ -47,6 +48,7 @@ type Receiver struct {
 	authorityCommands  AuthorityCommandPort
 	authorityResults   AuthorityResultPort
 	deviceDeliveries   DeviceDeliveryPort
+	deliveryReceipts   DeliveryReceiptPort
 	sender             *Sender
 	clock              federationdelivery.Clock
 }
@@ -60,6 +62,7 @@ func NewReceiver(config ReceiverConfig) (*Receiver, error) {
 		config.AuthorityCommands == nil ||
 		config.AuthorityResults == nil ||
 		config.DeviceDeliveries == nil ||
+		config.DeliveryReceipts == nil ||
 		config.Sender == nil ||
 		config.Clock == nil {
 		return nil, federationdelivery.NewError(
@@ -75,6 +78,7 @@ func NewReceiver(config ReceiverConfig) (*Receiver, error) {
 		authorityCommands:  config.AuthorityCommands,
 		authorityResults:   config.AuthorityResults,
 		deviceDeliveries:   config.DeviceDeliveries,
+		deliveryReceipts:   config.DeliveryReceipts,
 		sender:             config.Sender,
 		clock:              config.Clock,
 	}, nil
@@ -96,6 +100,7 @@ func RegisterReceivers(
 		federationdelivery.PayloadKindConversationAuthorityCommand,
 		federationdelivery.PayloadKindConversationAuthorityResult,
 		federationdelivery.PayloadKindConversationDeviceDelivery,
+		federationdelivery.PayloadKindConversationDeliveryReceipt,
 	} {
 		if _, exists := registry.Lookup(kind); exists {
 			return federationdelivery.NewError(
@@ -125,13 +130,23 @@ func RegisterReceivers(
 	); err != nil {
 		return err
 	}
-	return federationdelivery.RegisterProtoReceiver(
+	if err := federationdelivery.RegisterProtoReceiver(
 		registry,
 		federationdelivery.PayloadKindConversationDeviceDelivery,
 		func() *chatmodel.DurableDeviceInboxItem {
 			return &chatmodel.DurableDeviceInboxItem{}
 		},
 		receiver.receiveDeviceDelivery,
+	); err != nil {
+		return err
+	}
+	return federationdelivery.RegisterProtoReceiver(
+		registry,
+		federationdelivery.PayloadKindConversationDeliveryReceipt,
+		func() *chatmodel.DeviceConsumptionReceipt {
+			return &chatmodel.DeviceConsumptionReceipt{}
+		},
+		receiver.receiveDeliveryReceipt,
 	)
 }
 
@@ -231,6 +246,7 @@ func (r *Receiver) receiveAuthorityCommand(
 		transaction,
 		VerifiedAuthorityCommand{
 			Proposal:              proto.Clone(proposal).(*chatmodel.ConversationCommandProposal),
+			SourceHomeStation:     frame.GetSourceStationPeerId(),
 			CanonicalCommandBytes: commandBytes,
 			CanonicalSigningBytes: signingBytes,
 			VerifiedSigningKey:    proto.Clone(key).(*actormodel.VerifiedActorDeviceSigningKey),
@@ -255,7 +271,7 @@ func (r *Receiver) receiveAuthorityCommand(
 		), nil
 	}
 	if outcome.Result.GetAccepted() &&
-		outcome.Result.GetCommittedEvent().GetCommittedByStationPeerId() !=
+		outcome.Result.GetEvent().GetAuthorityStationPeerId() !=
 			r.localStationPeerID {
 		return federationdelivery.Result{}, federationdelivery.NewError(
 			federationdelivery.FailureDomainDispatch,
@@ -393,6 +409,7 @@ func (r *Receiver) receiveDeviceDelivery(
 	intent, orderingSequence, err := canonicalDeviceDelivery(
 		item,
 		frame.GetSourceStationPeerId(),
+		valueobject.Sequence(frame.GetOrderingSequence()),
 	)
 	if err != nil ||
 		validateDeviceDeliveryFrame(item, intent, orderingSequence, frame) != nil {
@@ -416,6 +433,54 @@ func (r *Receiver) receiveDeviceDelivery(
 	return federationdelivery.AcceptedResult(), nil
 }
 
+func (r *Receiver) receiveDeliveryReceipt(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	receipt *chatmodel.DeviceConsumptionReceipt,
+	frame *federationdelivery.Frame,
+) (federationdelivery.Result, error) {
+	if transaction == nil || transaction.DB() == nil {
+		return federationdelivery.Result{}, federationdelivery.NewError(
+			federationdelivery.FailureInvalidArgument,
+			"receive Conversation delivery receipt",
+			fmt.Errorf("transaction-bound database is required"),
+		)
+	}
+	if err := validateCanonicalFramePayload(frame, receipt); err != nil ||
+		validateDeliveryReceiptFrame(
+			receipt,
+			frame,
+			r.localStationPeerID,
+		) != nil {
+		return federationdelivery.TerminalResult(
+			federationdelivery.FrameErrorInvalidFrame,
+		), nil
+	}
+	replay, err := r.deliveryReceipts.ApplyDeliveryReceipt(
+		ctx,
+		transaction,
+		proto.Clone(receipt).(*chatmodel.DeviceConsumptionReceipt),
+		frame.GetSourceStationPeerId(),
+	)
+	switch {
+	case errors.Is(err, ErrDeliveryReceiptConflict):
+		return federationdelivery.PayloadHashConflictResult(), nil
+	case errors.Is(err, ErrDeliveryReceiptRejected):
+		return federationdelivery.TerminalResult(
+			federationdelivery.FrameErrorDomainRejected,
+		), nil
+	case err != nil:
+		return federationdelivery.Result{}, fmt.Errorf(
+			"conversation Federation: apply delivery receipt: %w",
+			err,
+		)
+	case replay:
+		return federationdelivery.DuplicateResult(), nil
+	default:
+		return federationdelivery.AcceptedResult(), nil
+	}
+}
+
 type commandRejection struct {
 	code      chatmodel.ConversationCommandRejectCode
 	retryable bool
@@ -436,8 +501,10 @@ func validateAuthorityProposalShape(
 		proposal.GetActorPtid() == "" ||
 		proposal.GetActorDeviceId() == "" ||
 		proposal.GetActorSigningKeyId() == "" ||
+		proposal.GetCommand().GetSender() == nil ||
 		proposal.GetCommand().GetCommandId() == "" ||
 		proposal.GetCommand().GetConversationId() == "" ||
+		proposal.GetCommand().GetAuthorityStationPeerId() == "" ||
 		len(proposal.GetCommandSha256()) != sha256.Size ||
 		len(proposal.GetActorSignature()) != ed25519.SignatureSize {
 		return 0, &commandRejection{
@@ -447,6 +514,7 @@ func validateAuthorityProposalShape(
 	if frame.GetSourceStationPeerId() != proposal.GetHomeStationPeerId() ||
 		frame.GetTargetStationPeerId() != proposal.GetAuthorityStationPeerId() ||
 		proposal.GetAuthorityStationPeerId() != localStationPeerID ||
+		proposal.GetCommand().GetAuthorityStationPeerId() != proposal.GetAuthorityStationPeerId() ||
 		frame.GetPayloadId() != proposal.GetCommand().GetCommandId() {
 		return 0, &commandRejection{
 			code: chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_FIELD_BINDING_MISMATCH,
@@ -480,8 +548,8 @@ func validateAuthorityProposalShape(
 			code: chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_COMMAND_HASH_MISMATCH,
 		}
 	}
-	if proposal.GetCommand().GetSenderPtid() != proposal.GetActorPtid() ||
-		proposal.GetCommand().GetSenderDeviceId() != proposal.GetActorDeviceId() {
+	if proposal.GetCommand().GetSender().GetPtid() != proposal.GetActorPtid() ||
+		proposal.GetCommand().GetSender().GetDeviceId() != proposal.GetActorDeviceId() {
 		return 0, &commandRejection{
 			code: chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_FIELD_BINDING_MISMATCH,
 		}
@@ -594,13 +662,14 @@ func validateAuthorityOutcome(
 	result := outcome.Result
 	switch {
 	case result.GetAccepted():
-		event := result.GetCommittedEvent()
+		event := result.GetEvent()
 		if result.GetRetryable() ||
 			result.GetRejectCode() != chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_UNSPECIFIED ||
 			event == nil ||
 			event.GetConversationId() != proposal.GetCommand().GetConversationId() ||
-			event.GetGroupSeq() <= 0 ||
-			result.GetAuthorityGroupSeq() != event.GetGroupSeq() ||
+			event.GetCommandId() != proposal.GetCommand().GetCommandId() ||
+			event.GetSequence() <= 0 ||
+			result.GetAuthoritySequence() != event.GetSequence() ||
 			!bytes.Equal(result.GetAuthorityEventHash(), event.GetEventHash()) {
 			return federationdelivery.NewError(
 				federationdelivery.FailureDomainDispatch,
@@ -609,7 +678,7 @@ func validateAuthorityOutcome(
 			)
 		}
 	case result.GetRetryable():
-		if result.GetCommittedEvent() != nil ||
+		if result.GetEvent() != nil ||
 			result.GetRejectCode() == chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_UNSPECIFIED {
 			return federationdelivery.NewError(
 				federationdelivery.FailureDomainDispatch,
@@ -618,7 +687,7 @@ func validateAuthorityOutcome(
 			)
 		}
 	default:
-		if result.GetCommittedEvent() != nil ||
+		if result.GetEvent() != nil ||
 			result.GetRejectCode() == chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_UNSPECIFIED {
 			return federationdelivery.NewError(
 				federationdelivery.FailureDomainDispatch,
@@ -661,20 +730,21 @@ func validateAuthorityResult(
 	result := delivery.GetResult()
 	switch delivery.GetState() {
 	case chatmodel.ConversationCommandSubmissionState_CONVERSATION_COMMAND_SUBMISSION_STATE_ACCEPTED:
-		event := result.GetCommittedEvent()
+		event := result.GetEvent()
 		if !result.GetAccepted() ||
 			result.GetRetryable() ||
 			event == nil ||
 			event.GetConversationId() != delivery.GetConversationId() ||
-			event.GetCommittedByStationPeerId() != frame.GetSourceStationPeerId() ||
-			event.GetGroupSeq() != result.GetAuthorityGroupSeq() ||
+			event.GetCommandId() != delivery.GetCommandId() ||
+			event.GetAuthorityStationPeerId() != frame.GetSourceStationPeerId() ||
+			event.GetSequence() != result.GetAuthoritySequence() ||
 			!bytes.Equal(event.GetEventHash(), result.GetAuthorityEventHash()) {
 			return nil, fmt.Errorf("accepted authority result is inconsistent")
 		}
 	case chatmodel.ConversationCommandSubmissionState_CONVERSATION_COMMAND_SUBMISSION_STATE_TERMINAL_REJECTED:
 		if result.GetAccepted() ||
 			result.GetRetryable() ||
-			result.GetCommittedEvent() != nil ||
+			result.GetEvent() != nil ||
 			result.GetRejectCode() == chatmodel.ConversationCommandRejectCode_CONVERSATION_COMMAND_REJECT_CODE_UNSPECIFIED {
 			return nil, fmt.Errorf("terminal authority result is inconsistent")
 		}
@@ -706,6 +776,7 @@ func authorityResultCommandSHA256(payloadID string) ([]byte, error) {
 func canonicalDeviceDelivery(
 	item *chatmodel.DurableDeviceInboxItem,
 	sourceStationPeerID string,
+	eventSequence valueobject.Sequence,
 ) (conversationports.DeviceInboxIntent, int64, error) {
 	if item == nil ||
 		item.GetRecipient() == nil ||
@@ -777,7 +848,8 @@ func canonicalDeviceDelivery(
 			eventDelivery.GetEvent().GetEventId() != item.GetEventId() ||
 			eventDelivery.GetEvent().GetConversationId() != item.GetConversationId() ||
 			eventDelivery.GetEvent().GetSequence() <= 0 ||
-			eventDelivery.GetEvent().GetAuthorityStationId() != sourceStationPeerID {
+			valueobject.Sequence(eventDelivery.GetEvent().GetSequence()) != eventSequence ||
+			eventDelivery.GetEvent().GetAuthorityStationPeerId() != sourceStationPeerID {
 			return conversationports.DeviceInboxIntent{}, 0,
 				fmt.Errorf("Conversation event delivery is not bound to its device item")
 		}
@@ -792,18 +864,38 @@ func canonicalDeviceDelivery(
 		orderingSequence = eventDelivery.GetEvent().GetSequence()
 	case chatmodel.DeviceInboxPayloadType_DEVICE_INBOX_PAYLOAD_TYPE_DEVICE_RECEIPT:
 		cursor := &chatmodel.ActorReadCursor{}
-		if err := decodeCanonicalInnerPayload(item.GetOpaquePayload(), cursor); err != nil {
+		if err := decodeCanonicalInnerPayload(item.GetOpaquePayload(), cursor); err == nil {
+			if cursor.GetConversationId() != item.GetConversationId() ||
+				strings.TrimSpace(cursor.GetReaderPtid()) == "" ||
+				cursor.GetLastReadSequence() <= 0 ||
+				(eventSequence != 0 &&
+					valueobject.Sequence(cursor.GetLastReadSequence()) != eventSequence) ||
+				item.GetEventId() != valueobject.HashBytes(item.GetOpaquePayload()).String() {
+				return conversationports.DeviceInboxIntent{}, 0,
+					fmt.Errorf("read cursor delivery is not bound to its device item")
+			}
+			intent.EventSequence = valueobject.Sequence(cursor.GetLastReadSequence())
+			intent.PayloadKind = conversationports.DeviceInboxPayloadDeviceReceipt
+			break
+		}
+		receipt := &chatmodel.MessageReceipt{}
+		if err := decodeCanonicalInnerPayload(item.GetOpaquePayload(), receipt); err != nil {
 			return conversationports.DeviceInboxIntent{}, 0, err
 		}
-		if cursor.GetConversationId() != item.GetConversationId() ||
-			strings.TrimSpace(cursor.GetReaderPtid()) == "" ||
-			cursor.GetLastReadSequence() <= 0 ||
-			item.GetEventId() != valueobject.HashBytes(item.GetOpaquePayload()).String() {
+		if receipt.GetReceiptType() !=
+			chatmodel.ReceiptType_RECEIPT_TYPE_DELIVERED ||
+			receipt.GetConversationId() != item.GetConversationId() ||
+			receipt.GetMessageId() != item.GetEventId() ||
+			receipt.GetPtid() == "" ||
+			receipt.GetDeviceId() == "" ||
+			receipt.GetPtid() == item.GetRecipient().GetActor().GetPtid() ||
+			eventSequence == 0 {
 			return conversationports.DeviceInboxIntent{}, 0,
-				fmt.Errorf("read cursor delivery is not bound to its device item")
+				fmt.Errorf("delivery receipt is not bound to its device item")
 		}
-		intent.EventSequence = valueobject.Sequence(cursor.GetLastReadSequence())
+		intent.EventSequence = eventSequence
 		intent.PayloadKind = conversationports.DeviceInboxPayloadDeviceReceipt
+		orderingSequence = int64(eventSequence)
 	default:
 		return conversationports.DeviceInboxIntent{}, 0,
 			fmt.Errorf("device delivery payload type is not owned by the Conversation adapter")
@@ -827,11 +919,51 @@ func validateDeviceDeliveryFrame(
 			string(intent.Recipient.Device),
 			string(intent.ConversationID),
 			string(intent.PayloadKind),
+			intent.IntentID,
 		) ||
 		frame.GetOrderingSequence() != orderingSequence ||
 		!frame.GetIssuedAt().AsTime().Equal(intent.CreatedAt) {
 		return fmt.Errorf("device delivery frame is not bound to its target-local intent")
 	}
+	return nil
+}
+
+func validateDeliveryReceiptFrame(
+	receipt *chatmodel.DeviceConsumptionReceipt,
+	frame *federationdelivery.Frame,
+	localStationPeerID string,
+) error {
+	if receipt == nil ||
+		receipt.GetConsumer() == nil ||
+		receipt.GetReceiptId() == "" ||
+		receipt.GetConversationId() == "" ||
+		receipt.GetEventId() == "" ||
+		receipt.GetConsumer().GetPtid() == "" ||
+		receipt.GetConsumer().GetDeviceId() == "" ||
+		receipt.GetEventSequence() <= 0 ||
+		receipt.GetLaneSequence() <= 0 ||
+		len(receipt.GetPayloadSha256()) != sha256.Size ||
+		receipt.GetConsumedAt() == nil ||
+		!receipt.GetConsumedAt().IsValid() {
+		return fmt.Errorf("delivery receipt identity is incomplete")
+	}
+	if frame == nil ||
+		frame.GetSourceStationPeerId() == "" ||
+		frame.GetSourceStationPeerId() == localStationPeerID ||
+		frame.GetTargetStationPeerId() != localStationPeerID ||
+		frame.GetPayloadId() != receipt.GetReceiptId() ||
+		frame.GetIdempotencyKey() !=
+			deliveryReceiptFrameDomain+":"+receipt.GetReceiptId() ||
+		frame.GetOrderingKey() != conversationOrderingKey(
+			deliveryReceiptFrameDomain,
+			receipt.GetConversationId(),
+		) ||
+		frame.GetOrderingSequence() != 0 ||
+		frame.GetIssuedAt() == nil ||
+		!frame.GetIssuedAt().IsValid() {
+		return fmt.Errorf("delivery receipt frame binding is invalid")
+	}
+
 	return nil
 }
 
@@ -904,27 +1036,27 @@ func hasUnknownFields(message protoreflect.Message) bool {
 }
 
 func authorityCommandKind(
-	command *chatmodel.ConversationCommand,
+	command *chatmodel.ChatCommand,
 ) chatmodel.ConversationCommandKind {
 	if command == nil {
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED
 	}
 	switch command.GetPayload().(type) {
-	case *chatmodel.ConversationCommand_SendMessage:
+	case *chatmodel.ChatCommand_SendMessage:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_SEND_MESSAGE
-	case *chatmodel.ConversationCommand_EditMessage:
+	case *chatmodel.ChatCommand_EditMessage:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_EDIT_MESSAGE
-	case *chatmodel.ConversationCommand_RetractMessage:
+	case *chatmodel.ChatCommand_RetractMessage:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_RETRACT_MESSAGE
-	case *chatmodel.ConversationCommand_Dissolve:
+	case *chatmodel.ChatCommand_DissolveConversation:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_DISSOLVE
-	case *chatmodel.ConversationCommand_UpdateSettings:
+	case *chatmodel.ChatCommand_UpdateConversation:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UPDATE_SETTINGS
-	case *chatmodel.ConversationCommand_React:
+	case *chatmodel.ChatCommand_Reaction:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_REACT
-	case *chatmodel.ConversationCommand_PinMessage:
+	case *chatmodel.ChatCommand_PinMessage:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_PIN_MESSAGE
-	case *chatmodel.ConversationCommand_MembershipTransition:
+	case *chatmodel.ChatCommand_MembershipTransition:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBERSHIP_TRANSITION
 	default:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED

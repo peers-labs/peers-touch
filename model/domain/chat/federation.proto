@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "domain/chat/event.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+message ConversationFollowerProjection {
+  uint32 format_version = 1;
+  string authority_station_peer_id = 2;
+  string target_home_station_peer_id = 3;
+  ConversationEvent conversation_event = 4;
+}
+
+message ConversationEventProjectionGrant {
+  string event_id = 1;
+  string target_home_station_peer_id = 2;
+  string entitlement_reason = 3;
+}
+
+message GetConversationFollowerEventsRequest {
+  uint32 format_version = 1;
+  string conversation_id = 2;
+  string authority_station_peer_id = 3;
+  string target_home_station_peer_id = 4;
+  int64 after_sequence = 5;
+  bytes after_event_hash = 6;
+  bytes request_nonce = 7;
+  uint32 page_limit = 8;
+}
+
+message ConversationFollowerEventsPage {
+  uint32 format_version = 1;
+  string authority_station_peer_id = 2;
+  string target_home_station_peer_id = 3;
+  string conversation_id = 4;
+  bytes request_nonce = 5;
+  repeated ConversationEvent conversation_events = 6;
+  repeated ConversationEventProjectionGrant event_projection_grants = 7;
+  int64 next_sequence = 8;
+  bool has_more = 9;
+  google.protobuf.Timestamp generated_at = 10;
+  google.protobuf.Timestamp expires_at = 11;
+  string signing_key_id = 12;
+  bytes authority_signature = 13;
+}
+
+message ConversationFollowerEventsPageSigningInput {
+  uint32 format_version = 1;
+  string authority_station_peer_id = 2;
+  string target_home_station_peer_id = 3;
+  string conversation_id = 4;
+  bytes request_nonce = 5;
+  int64 after_sequence = 6;
+  bytes after_event_hash = 7;
+  bytes events_sha256 = 8;
+  bytes event_projection_grants_sha256 = 9;
+  int64 next_sequence = 10;
+  bool has_more = 11;
+  google.protobuf.Timestamp generated_at = 12;
+  google.protobuf.Timestamp expires_at = 13;
+  string signing_key_id = 14;
+}

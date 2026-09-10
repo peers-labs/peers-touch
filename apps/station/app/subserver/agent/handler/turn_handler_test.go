@@ -647,7 +647,7 @@ func TestConversationReadbackProjectsRuntimeBinding(t *testing.T) {
 	conversation := &domain.Conversation{
 		ConversationID: "conversation-1",
 		AgentID:        "agent-1",
-		Ptid:           "ptid:person:owner",
+		ActorPTID:      "ptid:person:owner",
 		RuntimeBinding: binding,
 	}
 

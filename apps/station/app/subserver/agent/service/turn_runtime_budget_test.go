@@ -136,7 +136,7 @@ func TestResumeReadyToolContinuationDoesNotResetMaxAttempts(t *testing.T) {
 	if err := db.Create(&persistence.Conversation{
 		ID:        "conversation-attempt-budget",
 		AgentID:   "agent-1",
-		Ptid:      "ptid:person:owner",
+		ActorPTID: "ptid:person:owner",
 		Title:     "Attempt budget",
 		Status:    "active",
 		CreatedAt: now,

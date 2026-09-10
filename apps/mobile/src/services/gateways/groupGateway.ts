@@ -69,6 +69,7 @@ export interface CreateGroupInput {
   readonly name: string;
   readonly description?: string;
   readonly initialMemberPtids: string[];
+  readonly federationId: string;
 }
 
 export interface UpdateGroupInput {

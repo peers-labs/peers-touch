@@ -42,6 +42,8 @@ pub struct RecoveryMessageProjection {
 pub struct RecoveryConversationProjection {
     pub conversation_id: String,
     pub authority_station_id: String,
+    #[serde(default)]
+    pub federation_id: String,
     pub kind: i32,
     pub name: String,
     pub owner_ptid: String,
@@ -232,9 +234,10 @@ pub fn decode_recovery_revision(
         .actor
         .as_ref()
         .map(|actor| actor.ptid.as_str())
-        .filter(|ptid| !ptid.trim().is_empty());
+        .filter(|ptid| !ptid.trim().is_empty())
+        .ok_or_else(|| "messaging recovery manifest actor is missing".to_string())?;
     if manifest.format_version != MESSAGING_RECOVERY_FORMAT_VERSION
-        || manifest_ptid != Some(expected_ptid)
+        || manifest_ptid != expected_ptid
         || manifest.revision_id != expected_revision_id
         || manifest.archive_sha256.len() != 32
         || manifest_hash(&manifest) != manifest.archive_sha256
@@ -262,10 +265,7 @@ pub fn decode_recovery_revision(
         decrypt_required_section(&key, &manifest, OpaqueRecoveryArchiveSectionKind::Trust)?;
     key.zeroize();
     let archive = MessagingRecoveryArchive {
-        ptid: manifest
-            .actor
-            .ok_or_else(|| "messaging recovery manifest actor is missing".to_string())?
-            .ptid,
+        ptid: manifest_ptid.to_string(),
         actor_identity_seed: identity.seed,
         actor_profile_version: identity.profile_version,
         conversations: history.conversations,
@@ -447,7 +447,7 @@ fn encrypt_section<T: Serialize>(
     let mut sealed = nonce.to_vec();
     sealed.extend_from_slice(&ciphertext);
     Ok(OpaqueRecoveryArchiveSection {
-        kind: i32::from(kind),
+        kind: kind as i32,
         ciphertext_sha256: Sha256::digest(&sealed).to_vec(),
         ciphertext: sealed,
         record_count,
@@ -462,9 +462,7 @@ fn decrypt_required_section<T: DeserializeOwned>(
     let matches = manifest
         .sections
         .iter()
-        .filter(|section| {
-            OpaqueRecoveryArchiveSectionKind::try_from(section.kind).ok() == Some(kind)
-        })
+        .filter(|section| section.kind == kind as i32)
         .collect::<Vec<_>>();
     if matches.len() != 1 {
         return Err("messaging recovery section set is invalid".to_string());
@@ -484,11 +482,11 @@ fn decrypt_required_section<T: DeserializeOwned>(
             Payload {
                 msg: ciphertext,
                 aad: &section_aad(
-                    &manifest
+                    manifest
                         .actor
                         .as_ref()
-                        .ok_or_else(|| "messaging recovery manifest actor is missing".to_string())?
-                        .ptid,
+                        .map(|actor| actor.ptid.as_str())
+                        .unwrap_or_default(),
                     &manifest.revision_id,
                     kind,
                 ),
@@ -501,10 +499,7 @@ fn decrypt_required_section<T: DeserializeOwned>(
 fn section_aad(ptid: &str, revision_id: &str, kind: OpaqueRecoveryArchiveSectionKind) -> Vec<u8> {
     format!(
         "peers-touch:messaging-recovery:{}:{}:{}:{}",
-        MESSAGING_RECOVERY_FORMAT_VERSION,
-        ptid,
-        revision_id,
-        i32::from(kind)
+        MESSAGING_RECOVERY_FORMAT_VERSION, ptid, revision_id, kind as i32
     )
     .into_bytes()
 }
@@ -563,6 +558,7 @@ mod tests {
             conversations: vec![RecoveryConversationProjection {
                 conversation_id: "conversation-1".to_string(),
                 authority_station_id: "station-local".to_string(),
+                federation_id: "federation-1".to_string(),
                 kind: 1,
                 name: String::new(),
                 owner_ptid: "ptid:alice".to_string(),
@@ -623,6 +619,10 @@ mod tests {
             .unwrap();
 
         assert!(projection.member_roles.is_empty());
+        assert!(projection.federation_id.is_empty());
+        let mut legacy = archive();
+        legacy.conversations = vec![projection];
+        assert!(validate_archive(&legacy).is_ok());
     }
 
     #[test]

@@ -11,7 +11,7 @@ use crate::domain::crypto::{
 use crate::model::chat::{
     conversation_event, CryptoEndpoint, DeviceConsumptionReceipt, DeviceInboxPayloadType,
     DirectCiphertextAad, DirectDeviceCiphertext, DirectSessionInit, DurableDeviceInboxItem,
-    MessageReceipt, MessagingContentKind, PreparedEndpointPayloadKind, ReceiptType,
+    MessagingContentKind, PreparedEndpointPayloadKind,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -207,22 +207,6 @@ impl DirectMessageProcessor {
             }),
         };
         let receipt_bytes = receipt.encode_to_vec();
-        let delivery_receipt = MessageReceipt {
-            conversation_id: event.conversation_id.clone(),
-            message_id: message_id.to_string(),
-            ptid: self.endpoint.ptid.clone(),
-            device_id: self.endpoint.device_id.clone(),
-            receipt_type: ReceiptType::Delivered as i32,
-            ts: Some(prost_types::Timestamp {
-                seconds: now.div_euclid(1_000),
-                nanos: (now.rem_euclid(1_000) * 1_000_000) as i32,
-            }),
-        };
-        let delivery_receipt_id = format!(
-            "message-delivered:{}:{}",
-            event.event_id, self.endpoint.device_id
-        );
-        let delivery_receipt_bytes = delivery_receipt.encode_to_vec();
 
         if is_edit {
             // Edit path: decrypt succeeded, apply the edit to the existing
@@ -246,8 +230,6 @@ impl DirectMessageProcessor {
                 edited_at_unix_ms: committed_at_unix_ms,
                 receipt_id: &receipt.receipt_id,
                 receipt_bytes: &receipt_bytes,
-                delivery_receipt_id: &delivery_receipt_id,
-                delivery_receipt_bytes: &delivery_receipt_bytes,
                 consumed_at_unix_ms: now,
             };
             if self.store.commit_direct_edit(&input)? == ReceiveCommitResult::Committed {
@@ -311,8 +293,6 @@ impl DirectMessageProcessor {
                 thread_root_message_id: projection.thread_root_message_id.as_deref(),
                 receipt_id: &receipt.receipt_id,
                 receipt_bytes: &receipt_bytes,
-                delivery_receipt_id: &delivery_receipt_id,
-                delivery_receipt_bytes: &delivery_receipt_bytes,
                 consumed_at_unix_ms: now,
             };
             if self.store.commit_direct_receive(&input)? == ReceiveCommitResult::Committed {
@@ -504,6 +484,7 @@ mod tests {
     use crate::model::chat::{
         ConversationEvent, DeviceEventDelivery, DoubleRatchetCiphertext, MessageCommittedFact,
     };
+    use messaging_core::proto::actor_device_ref;
 
     fn now() -> i64 {
         200
@@ -594,7 +575,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 1,
             mls_epoch: 0,
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MessageCommitted(
                 MessageCommittedFact {
                     message_id: "message-1".to_string(),
@@ -626,7 +607,7 @@ mod tests {
         let opaque_payload = delivery.encode_to_vec();
         let item = DurableDeviceInboxItem {
             item_id: "item-1".to_string(),
-            recipient: Some(crate::messaging::actor_device_ref(
+            recipient: Some(actor_device_ref(
                 &recipient_proto.ptid,
                 &recipient_proto.device_id,
             )),
@@ -634,7 +615,7 @@ mod tests {
             event_id: "event-1".to_string(),
             conversation_id: "conversation-1".to_string(),
             idempotency_key: "event:event-1".to_string(),
-            payload_type: i32::from(DeviceInboxPayloadType::ConversationEvent),
+            payload_type: DeviceInboxPayloadType::ConversationEvent as i32,
             opaque_payload: opaque_payload.clone(),
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
             ..Default::default()
@@ -658,13 +639,17 @@ mod tests {
         assert_eq!(archive.messages[0].plaintext, "exact direct plaintext");
         let pending_receipt = store.next_delivery_receipt().unwrap().unwrap();
         let delivery_receipt =
-            MessageReceipt::decode(pending_receipt.receipt_bytes.as_slice()).unwrap();
+            DeviceConsumptionReceipt::decode(pending_receipt.receipt_bytes.as_slice()).unwrap();
         assert_eq!(delivery_receipt.conversation_id, "conversation-1");
-        assert_eq!(delivery_receipt.message_id, "message-1");
-        assert_eq!(delivery_receipt.ptid, "ptid:bob");
-        assert_eq!(delivery_receipt.device_id, "bob-device");
-        assert_eq!(delivery_receipt.receipt_type, ReceiptType::Delivered as i32);
-        assert!(delivery_receipt.ts.is_some());
+        assert_eq!(delivery_receipt.event_id, "event-1");
+        assert_eq!(
+            delivery_receipt.consumer.as_ref(),
+            Some(&CryptoEndpoint {
+                ptid: "ptid:bob".to_string(),
+                device_id: "bob-device".to_string(),
+            })
+        );
+        assert!(delivery_receipt.consumed_at.is_some());
         store
             .mark_delivery_receipt_submitted(
                 &pending_receipt.receipt_id,

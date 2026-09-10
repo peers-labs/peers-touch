@@ -9,7 +9,7 @@ import (
 type Conversation struct {
 	ID                    string          `gorm:"primaryKey;type:varchar(36)"`
 	AgentID               string          `gorm:"type:varchar(36);index:idx_conversations_agent_id"`
-	Ptid                  string          `gorm:"not null;type:text;index:idx_conversations_ptid"`
+	ActorPTID             string          `gorm:"column:actor_ptid;not null;type:text;index:idx_conversations_actor_ptid"`
 	Title                 string          `gorm:"not null;type:varchar(255)"`
 	Description           *string         `gorm:"type:text"`
 	ProviderID            string          `gorm:"not null;type:varchar(64);index"`
