@@ -184,6 +184,24 @@ Use domain-specific loggers only (see platform docs for specifics).
   worktree identity also includes the verified branch, `workspaceId`, initial
   HEAD, expected/verified HEAD, and worktree-set digest.
 
+### Station Runs Through Profile Only
+
+Station **MUST** be started exclusively via `make station`. The active profile
+(`make profile <name>`) determines the mode (`local`, `compose`, or `remote`),
+target host, ports, database, and all runtime parameters.
+
+Forbidden alternatives — no exceptions, no "just quickly testing":
+
+- `go run .` or `go run ./apps/station/app` directly.
+- `go build` followed by running the binary manually.
+- `docker compose up station` outside of `make station`.
+- Any other path that bypasses the profile-driven `station-dev.sh` pipeline.
+
+Why: the profile system enforces host consistency guards, deploy env binding,
+compose project isolation, and health-check contracts. Bypassing it has caused
+silent deployment to the wrong remote machine and schema mismatches that took
+hours to diagnose.
+
 ### No Mocking
 
 Frontend-backend collaborative APIs: **NO MOCK** unless the user explicitly says so. Using mock = cheating.
