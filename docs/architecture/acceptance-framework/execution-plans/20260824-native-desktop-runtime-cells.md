@@ -4274,3 +4274,56 @@ interactive-desktop / stale-process preflight, ff-only master sync with the
 actual HEAD recorded, static cohorts and the four local Gates, exact-source
 identity for station-four, station-five, and sixwin, then the Product
 Closure-only run with `RUNTIME_CELL=desktop-windows-native`.
+
+### 2026-09-10 Windows Host Preflight And Import Portability
+
+The Windows execution branch is `fix/windows-native-chat-closure`, created
+from exact master `79ae008706ca29f4bb5f1da29d9b6651a59b2f7c`. The sixwin
+host preflight now proves:
+
+- TRAE and Explorer are both in active interactive Session 1;
+- a connected primary display is available;
+- OpenSSH for Windows 9.5p1 is listening on port 22 through the automatic
+  `OpenSSH-Server` service;
+- localhost public-key command execution succeeds through the strict
+  administrators key file;
+- stale file-dialog debug tasks were removed, while repository `.dbg`
+  resources remain untouched;
+- no PeersTouch, WebDriver, Cargo, or Acceptance runtime process remains.
+
+The legacy `sshd` service entry is disabled and deletion-pending after the
+working `OpenSSH-Server` registration. It is not restarted or repaired in
+place because the active service already owns port 22 and passes command
+execution; no host reboot is required.
+
+The ignored Windows Runtime Cell inputs now exist:
+
+- `.local/acceptance/runtime-cells/acceptance-windows.env` binds the
+  Administrator interactive user, runtime root, Python, VsDevCmd, Strawberry
+  Perl, protoc, WebDriver port 4645, and Gateway port 3230;
+- `.local/deploy/envs/acceptance-windows.env` binds direct exact-source sync
+  to sixwin over localhost SSH;
+- `.local/acceptance/known_hosts` pins the sixwin host keys.
+
+Fresh Windows Python initially could not import the Provisioner registry
+because `mobile_resource_lease.py` resolved POSIX `/var/tmp` with
+`strict=True` at module import. The Mobile ledger already enforces POSIX
+no-follow dirfd support when `ResourceLeaseLedger` is constructed, so the
+owner-layer correction removes only the import-time filesystem existence
+requirement. It does not weaken Mobile lease storage or business evidence.
+The source-sync portability test now sets both `HOME` and `USERPROFILE` for
+its isolated child checkout.
+
+Verification on the dirty correction range:
+
+- focused Win32 driver, broker, runtime-binding, and Product Closure static
+  cohort: 104/104 PASS;
+- SSH transport, Windows source-sync, and Windows lease cohort: 14/14 PASS;
+- Acceptance Infra ownership boundary: 8/8 PASS;
+- fresh `chat_native_reset` import, Python compilation, and
+  `git diff --check`: PASS.
+
+Product Closure and all remaining Windows product Gates remain
+`PARTIAL/UNPROVEN`. The next action is to commit this correction without push,
+run the four source-bound local Chat Gates, verify three-host source identity,
+and execute Product Closure only.

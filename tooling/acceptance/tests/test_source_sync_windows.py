@@ -164,7 +164,11 @@ class WindowsSourceSyncTests(unittest.TestCase):
                     "test-owner",
                     "acquire",
                 ],
-                env={**os.environ, "HOME": str(home)},
+                env={
+                    **os.environ,
+                    "HOME": str(home),
+                    "USERPROFILE": str(home),
+                },
                 capture_output=True,
                 text=True,
                 check=False,

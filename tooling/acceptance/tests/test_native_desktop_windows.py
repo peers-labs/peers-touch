@@ -6,6 +6,7 @@ import hashlib
 import json
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 import zlib
@@ -60,6 +61,25 @@ class _BrokerTransport:
 
 
 class WindowsCellProfileTest(unittest.TestCase):
+    def test_provisioner_registry_imports_in_fresh_process(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "from tooling.acceptance.provisioners import "
+                    "get_runtime_cell_lifecycle; "
+                    "assert callable(get_runtime_cell_lifecycle)"
+                ),
+            ],
+            cwd=Path(__file__).parents[3],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def setUp(self) -> None:
         self.contract = RuntimeCellContract.from_yaml(
             RUNTIME_CELLS_DIR / "desktop-windows-native.yaml"
