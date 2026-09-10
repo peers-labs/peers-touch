@@ -110,11 +110,17 @@ class SshTunnel:
         self._process = None
         try:
             if process.poll() is None:
-                os.killpg(process.pid, signal.SIGTERM)
+                if os.name == "posix":
+                    os.killpg(process.pid, signal.SIGTERM)
+                else:
+                    process.terminate()
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
+                    if os.name == "posix":
+                        os.killpg(process.pid, signal.SIGKILL)
+                    else:
+                        process.kill()
                     process.wait(timeout=5)
         finally:
             for stream in (process.stdout, process.stderr):

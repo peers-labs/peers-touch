@@ -4,16 +4,46 @@ import base64
 import json
 import subprocess
 import unittest
+from unittest.mock import Mock
 from unittest.mock import patch
 
 from tooling.acceptance.transports.ssh import (
     RemotePlatform,
     SshTarget,
     SshTransport,
+    SshTunnel,
 )
 
 
 class SshTransportRenderingTest(unittest.TestCase):
+    @patch("tooling.acceptance.transports.ssh.os.name", "nt")
+    def test_windows_tunnel_stop_terminates_process(self) -> None:
+        process = Mock()
+        process.poll.return_value = None
+        tunnel = SshTunnel(process, 4645)
+
+        tunnel.stop()
+
+        process.terminate.assert_called_once_with()
+        process.kill.assert_not_called()
+        process.wait.assert_called_once_with(timeout=5)
+
+    @patch("tooling.acceptance.transports.ssh.os.name", "nt")
+    def test_windows_tunnel_stop_kills_after_timeout(self) -> None:
+        process = Mock()
+        process.poll.return_value = None
+        process.wait.side_effect = (
+            subprocess.TimeoutExpired("ssh", 5),
+            0,
+        )
+        tunnel = SshTunnel(process, 4645)
+
+        tunnel.stop()
+
+        process.terminate.assert_called_once_with()
+        process.kill.assert_called_once_with()
+        self.assertEqual(process.wait.call_count, 2)
+
     def test_posix_rendering_is_unchanged(self) -> None:
         transport = SshTransport(SshTarget("host.example", "runner"))
         self.assertEqual(
