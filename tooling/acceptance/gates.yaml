@@ -219,6 +219,14 @@
       "tier": "env-evidence",
       "description": "Run a real Desktop HTTP gateway flow proving atomic multi-account identity transitions, JWT-bound PIN unlock, legacy PIN fail-closed behavior, and MLS/E2EE direct conversation delivery."
     },
+    "chat-friend-request-gateway-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat.friend_request_gateway_e2e",
+      "timeout_seconds": 300,
+      "environment": "local-desktop-gateway",
+      "provisioner": "local-desktop-gateway",
+      "tier": "env-evidence",
+      "description": "Prove the friend-request lifecycle through the Desktop gateway: send request, list pending, accept, verify friendship established. Requires federation to be active."
+    },
     "chat-federated-browser-prereq": {
       "command": "python3 tooling/acceptance/gates/chat/federated_browser_prereq.py",
       "timeout_seconds": 120,
