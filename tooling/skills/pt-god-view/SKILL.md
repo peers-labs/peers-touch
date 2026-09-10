@@ -188,6 +188,7 @@ The agent must NOT do the work itself when a skill exists for it:
 | Need a TRAE `/goal`, multi-subagent execution contract, or Goal review | Assemble an ad hoc prompt | `pt-trae-goal-orchestrator` |
 | Need tracked-work status, resume, handoff, or blocker projection | Reconstruct from chat | `pt-context-anchor` |
 | Need to implement planned step | Code without checking plan | `pt-execution-plan-guardian` |
+| Need to fix a bug with regression protection | Debug ad-hoc → fix → move on | `pt-defect-closure` |
 | Need to optimize/audit Acceptance Infra | Let business evidence drive framework readiness | `pt-acceptance-infra-engineering` |
 | Need business Domain Acceptance injection/proof | Infer onboarding or start from a Gate | `pt-acceptance-engineering` |
 | Need to commit | `git commit -m "stuff"` | `pt-github-commit` |
@@ -258,7 +259,8 @@ When starting new work:
 | Product accepted; needs new boundary / ownership / contract decision | DESIGN | Architecture not yet defined |
 | Product and architecture accepted; needs implementation breakdown | PLAN | Accepted contracts need an execution plan |
 | Plan exists and accepted | EXECUTE | Ready to implement |
-| Single-file bug / cosmetic fix | EXECUTE (small-fix) | Skip PRODUCT+DESIGN+PLAN |
+| Bug fix (behavior, control flow, data, UI, interaction, visual) | CROSS-STAGE | Invoke `pt-defect-closure`; it orchestrates debug → fix → acceptance injection → growth |
+| Typo / comment / internal rename (zero product impact) | EXECUTE (small-fix) | Skip PRODUCT+DESIGN+PLAN; `pt-small-fix-discipline` only |
 | Code done, ready to ship | DELIVER | Package and submit |
 
 If unclear: "Is this a new product/capability, a new architecture decision, or
@@ -359,6 +361,7 @@ pt-god-view (methodology OS / entry point)
   │     └── pt-plan-and-document (file + review prompt)
   │
   ├── EXECUTE stage
+  │     ├── pt-defect-closure (bug → fix → acceptance injection)
   │     ├── pt-execution-plan-guardian (plan adherence)
   │     ├── pt-read-before-edit (knowledge check)
   │     ├── pt-desktop-runtime-projections (if Desktop)

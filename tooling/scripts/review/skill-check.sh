@@ -171,6 +171,9 @@ fi
 if grep -Fq "User can deactivate by switching to Chinese" "$english_workflow_skill"; then
   fail "$english_workflow_skill must require explicit English-mode deactivation"
 fi
+if ! grep -Fq "^(tooling/skills/|" "$review_runner"; then
+  fail "$review_runner must run skill-check for every canonical project skill change"
+fi
 
 for marker in \
   "Mandatory Concurrency Decision" \
