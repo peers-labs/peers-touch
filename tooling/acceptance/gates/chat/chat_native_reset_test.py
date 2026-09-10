@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 import json
 import os
@@ -13,6 +14,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     FixtureActorRecord,
     _remote_transport,
     acceptance_station_environment,
+    read_fixture_actor,
     reset_local_client_storage,
     reset_station_chat_state,
     seed_cross_station_contact,
@@ -33,6 +35,62 @@ DISPOSABLE_ENVIRONMENT = {
 
 
 class DisposableAcceptanceTargetTest(unittest.TestCase):
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset."
+        "active_profile_environment",
+        return_value={
+            "PT_DEV_PROFILE": "sixwin",
+            "PT_STATION_MODE": "local",
+            "PT_STATION_URL": "http://127.0.0.1:18080",
+        },
+    )
+    def test_accepts_exact_active_local_source_station(
+        self,
+        _profile,
+    ) -> None:
+        resolved = acceptance_station_environment(
+            "http://127.0.0.1:18080/",
+            "local",
+        )
+
+        self.assertEqual(
+            resolved["PT_ACCEPTANCE_RUNTIME_KIND"],
+            "local-source",
+        )
+        self.assertEqual(
+            Path(resolved["PT_ACCEPTANCE_LOCAL_DATABASE"]),
+            (
+                Path(__file__).resolve().parents[4]
+                / ".local"
+                / "dev"
+                / "data"
+                / "sixwin"
+                / "station.db"
+            ).resolve(),
+        )
+
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset."
+        "active_profile_environment",
+        return_value={
+            "PT_DEV_PROFILE": "sixwin",
+            "PT_STATION_MODE": "local",
+            "PT_STATION_URL": "http://127.0.0.1:18080",
+        },
+    )
+    def test_rejects_non_loopback_local_source_station(
+        self,
+        _profile,
+    ) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Local source Chat Acceptance target mismatch",
+        ):
+            acceptance_station_environment(
+                "http://10.36.3.187:18080",
+                "local",
+            )
+
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset.deploy_environment",
         return_value=DISPOSABLE_ENVIRONMENT,
@@ -237,6 +295,107 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             storage = root / "alice" / "storage"
             self.assertTrue(storage.is_dir())
             self.assertEqual(list(storage.iterdir()), [])
+
+    @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"})
+    def test_local_source_reset_recreates_only_profile_database(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / "station.db"
+            wal = Path(f"{database}-wal")
+            shm = Path(f"{database}-shm")
+            for path in (database, wal, shm):
+                path.write_text("stale", encoding="utf-8")
+            environment = {
+                "PT_ACCEPTANCE_RUNTIME_KIND": "local-source",
+                "PT_ACCEPTANCE_LOCAL_DATABASE": str(database),
+            }
+            with patch(
+                "tooling.acceptance.fixtures.chat_native_reset."
+                "active_profile_environment",
+                return_value={
+                    "PT_STATION_URL": "http://127.0.0.1:18080",
+                },
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_reset."
+                "_local_source_environment",
+                return_value=environment,
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_reset."
+                "verify_disposable_station_runtime",
+            ) as verify, patch(
+                "tooling.acceptance.fixtures.chat_native_reset.subprocess.run",
+            ) as run:
+                run.return_value.returncode = 0
+                reset_station_chat_state("local")
+
+            self.assertEqual(verify.call_count, 2)
+            self.assertFalse(database.exists())
+            self.assertFalse(wal.exists())
+            self.assertFalse(shm.exists())
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(run.call_args_list[0].args[0][-1], "station")
+            self.assertTrue(
+                str(run.call_args_list[1].args[0][-1]).endswith(
+                    "station-dev.sh"
+                )
+            )
+
+    def test_reads_fixture_actor_from_owned_local_database(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "station.db"
+            import sqlite3
+
+            with closing(sqlite3.connect(database)) as connection:
+                connection.execute(
+                    """
+CREATE TABLE touch_actor (
+  email TEXT,
+  origin TEXT,
+  ptid TEXT,
+  preferred_username TEXT,
+  name TEXT,
+  summary TEXT,
+  icon TEXT,
+  image TEXT,
+  url TEXT,
+  federated_handle TEXT,
+  home_station_peer_id TEXT,
+  home_station_domain TEXT,
+  visibility INTEGER,
+  locator_seq INTEGER
+)
+"""
+                )
+                connection.execute(
+                    """
+INSERT INTO touch_actor VALUES (
+  'alice@p.t', 'local', 'ptid:alice', 'alice', 'Alice',
+  '', '', '', 'http://127.0.0.1:18080/actors/alice',
+  '@alice@127.0.0.1', 'peer-sixwin', '127.0.0.1', 1, 1
+)
+"""
+                )
+                connection.commit()
+            environment = {
+                "PT_ACCEPTANCE_RUNTIME_KIND": "local-source",
+                "PT_ACCEPTANCE_LOCAL_DATABASE": str(database),
+            }
+            with patch(
+                "tooling.acceptance.fixtures.chat_native_reset."
+                "acceptance_station_environment",
+                return_value=environment,
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_reset."
+                "verify_disposable_station_runtime",
+            ):
+                actor = read_fixture_actor(
+                    "http://127.0.0.1:18080",
+                    "local",
+                    "alice@p.t",
+                )
+
+            self.assertEqual(actor.ptid, "ptid:alice")
+            self.assertEqual(actor.home_station_peer_id, "peer-sixwin")
 
     def test_reset_rejects_unknown_account_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

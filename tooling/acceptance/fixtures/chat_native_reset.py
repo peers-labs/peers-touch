@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 from dataclasses import dataclass
 import hashlib
 import json
@@ -12,6 +13,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import sqlite3
 import subprocess
 import threading
 import time
@@ -25,6 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SAFE_RUNTIME_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
 APPROVED_DISPOSABLE_STATION_PORT = 18132
 PROTECTED_CLEANUP_PORTS = frozenset({4445, 18080})
+LOCAL_SOURCE_RUNTIME = "local-source"
 SOCIAL_RELATIONSHIP_PROTO = "domain/social/relationship.proto"
 SOCIAL_PROTO_ROOT = REPO_ROOT / "model"
 FIXTURE_FRIENDSHIP_CREATED_AT_UNIX = 1788739200
@@ -187,10 +190,70 @@ def active_station_url() -> str:
     return station_url
 
 
+def _local_source_environment(
+    station_url: str,
+    environment_name: str | None,
+) -> dict[str, str] | None:
+    try:
+        profile = active_profile_environment()
+    except RuntimeError:
+        return None
+    if profile.get("PT_STATION_MODE", "").strip() != "local":
+        return None
+    profile_name = profile.get("PT_DEV_PROFILE", "").strip()
+    expected_url = profile.get("PT_STATION_URL", "").rstrip("/")
+    if environment_name not in {None, "", "local", profile_name}:
+        return None
+    parsed_url = urllib.parse.urlparse(station_url)
+    expected = urllib.parse.urlparse(expected_url)
+    if (
+        not profile_name
+        or not expected_url
+        or station_url.rstrip("/") != expected_url
+        or parsed_url.scheme != "http"
+        or parsed_url.hostname not in {"127.0.0.1", "localhost"}
+        or parsed_url.port != expected.port
+        or parsed_url.path not in {"", "/"}
+        or parsed_url.params
+        or parsed_url.query
+        or parsed_url.fragment
+    ):
+        raise RuntimeError(
+            "Local source Chat Acceptance target mismatch: "
+            f"profile={profile_name or 'missing'} station_url={station_url} "
+            f"expected_url={expected_url or 'missing'}"
+        )
+    data_root = (
+        REPO_ROOT / ".local" / "dev" / "data" / profile_name
+    ).resolve()
+    pid_root = (
+        REPO_ROOT / ".local" / "dev" / "pids" / profile_name
+    ).resolve()
+    environment = dict(profile)
+    environment.update({
+        "PT_ACCEPTANCE_RUNTIME_KIND": LOCAL_SOURCE_RUNTIME,
+        "PT_ACCEPTANCE_ENVIRONMENT": profile_name,
+        "PT_ACCEPTANCE_STATION_URL": expected_url,
+        "PT_ACCEPTANCE_LOCAL_DATA_ROOT": str(data_root),
+        "PT_ACCEPTANCE_LOCAL_DATABASE": str(data_root / "station.db"),
+        "PT_ACCEPTANCE_LOCAL_PID_FILE": str(pid_root / "station.pid"),
+        "PT_ACCEPTANCE_LOCAL_CONFIG": str(
+            data_root / "station-conf" / "peers-sqlite.yml"
+        ),
+    })
+    return environment
+
+
 def acceptance_station_environment(
     station_url: str,
     environment_name: str | None = None,
 ) -> dict[str, str]:
+    local_environment = _local_source_environment(
+        station_url,
+        environment_name,
+    )
+    if local_environment is not None:
+        return local_environment
     selected_environment = environment_name or active_deployment_environment()
     environment = deploy_environment(selected_environment)
     host = environment.get("PT_DEPLOY_HOST", "").strip()
@@ -251,6 +314,8 @@ def verify_disposable_station_runtime(
     deadline_monotonic: float | None = None,
     cancellation: threading.Event | None = None,
 ) -> dict[str, str]:
+    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
+        return _verify_local_source_station(environment)
     expected_project = environment["PT_ACCEPTANCE_COMPOSE_PROJECT"]
     expected_volume = environment["PT_ACCEPTANCE_POSTGRES_VOLUME"]
     containers = {
@@ -306,6 +371,95 @@ def verify_disposable_station_runtime(
     observed["composeProject"] = expected_project
     observed["environment"] = environment["PT_ACCEPTANCE_ENVIRONMENT"]
     return observed
+
+
+def _verify_local_source_station(
+    environment: dict[str, str],
+) -> dict[str, str]:
+    profile_name = environment["PT_ACCEPTANCE_ENVIRONMENT"]
+    data_root = Path(environment["PT_ACCEPTANCE_LOCAL_DATA_ROOT"]).resolve()
+    database = Path(environment["PT_ACCEPTANCE_LOCAL_DATABASE"]).resolve()
+    config = Path(environment["PT_ACCEPTANCE_LOCAL_CONFIG"]).resolve()
+    pid_file = Path(environment["PT_ACCEPTANCE_LOCAL_PID_FILE"]).resolve()
+    expected_root = (
+        REPO_ROOT / ".local" / "dev" / "data" / profile_name
+    ).resolve()
+    if (
+        data_root != expected_root
+        or database.parent != expected_root
+        or config.parent.parent != expected_root
+        or pid_file.parent
+        != (REPO_ROOT / ".local" / "dev" / "pids" / profile_name).resolve()
+    ):
+        raise RuntimeError(
+            "Local source Chat Acceptance paths escape the active profile"
+        )
+    if not database.is_file() or not config.is_file() or not pid_file.is_file():
+        raise RuntimeError(
+            "Local source Chat Acceptance runtime files are incomplete"
+        )
+    pid = pid_file.read_text(encoding="utf-8").strip()
+    if not pid.isdigit():
+        raise RuntimeError("Local source Chat Acceptance PID is invalid")
+    if os.name == "nt":
+        powershell = (
+            Path(os.environ.get("SystemRoot", r"C:\Windows"))
+            / "System32"
+            / "WindowsPowerShell"
+            / "v1.0"
+            / "powershell.exe"
+        )
+        script = (
+            f"$p=Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\";"
+            f"$listener=Get-NetTCPConnection -State Listen -LocalPort "
+            f"{urllib.parse.urlparse(environment['PT_ACCEPTANCE_STATION_URL']).port} "
+            f"| Where-Object {{$_.OwningProcess -eq {pid}}};"
+            "if($null -eq $p -or $null -eq $listener){exit 3};"
+            "$p.CommandLine"
+        )
+        process = subprocess.run(
+            [str(powershell), "-NoProfile", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        command_line = process.stdout.strip()
+        if process.returncode != 0 or "peers-sqlite.yml" not in command_line:
+            raise RuntimeError(
+                "Local source Chat Acceptance process ownership mismatch"
+            )
+    else:
+        command_line = (
+            Path("/proc") / pid / "cmdline"
+        ).read_bytes().replace(b"\0", b" ").decode("utf-8")
+        if "peers-sqlite.yml" not in command_line:
+            raise RuntimeError(
+                "Local source Chat Acceptance process ownership mismatch"
+            )
+    version = _station_version(environment["PT_ACCEPTANCE_STATION_URL"])
+    live_commit = str(version.get("build_commit") or "")
+    source_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=True,
+    ).stdout.strip()
+    if not _commits_match(live_commit, source_commit):
+        raise RuntimeError(
+            "Local source Chat Acceptance commit mismatch: "
+            f"station={live_commit or 'missing'} source={source_commit}"
+        )
+    return {
+        "environment": profile_name,
+        "runtimeKind": LOCAL_SOURCE_RUNTIME,
+        "database": str(database),
+        "pid": pid,
+        "commandLine": command_line,
+        "commit": live_commit,
+    }
 
 
 def _commits_match(left: str, right: str) -> bool:
@@ -688,9 +842,57 @@ def read_fixture_actor(
         environment_name,
     )
     verify_disposable_station_runtime(environment)
-    output = _remote_psql(
-        environment,
-        f"""
+    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
+        with closing(sqlite3.connect(
+            environment["PT_ACCEPTANCE_LOCAL_DATABASE"],
+            timeout=10,
+        )) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+SELECT
+  ptid,
+  preferred_username,
+  name,
+  summary,
+  icon,
+  image,
+  url,
+  federated_handle,
+  home_station_peer_id,
+  home_station_domain,
+  visibility,
+  locator_seq
+FROM touch_actor
+WHERE email = ?
+  AND origin = 'local'
+""",
+                (account_email,),
+            ).fetchall()
+        if len(rows) != 1:
+            raise RuntimeError(
+                "Chat fixture requires exactly one local actor for "
+                f"account={account_email}"
+            )
+        row = rows[0]
+        value = {
+            "ptid": row["ptid"],
+            "preferredUsername": row["preferred_username"],
+            "name": row["name"],
+            "summary": row["summary"],
+            "icon": row["icon"],
+            "image": row["image"],
+            "url": row["url"],
+            "federatedHandle": row["federated_handle"],
+            "homeStationPeerId": row["home_station_peer_id"],
+            "homeStationDomain": row["home_station_domain"],
+            "visibility": row["visibility"],
+            "locatorSeq": row["locator_seq"],
+        }
+    else:
+        output = _remote_psql(
+            environment,
+            f"""
 SELECT json_build_object(
   'ptid', ptid,
   'preferredUsername', preferred_username,
@@ -709,14 +911,17 @@ FROM touch_actor
 WHERE email = {_sql_literal(account_email)}
   AND origin = 'local';
 """,
-    )
-    lines = [line for line in output.splitlines() if line.strip().startswith("{")]
-    if len(lines) != 1:
-        raise RuntimeError(
-            "Chat fixture requires exactly one local actor for "
-            f"account={account_email}"
         )
-    value = json.loads(lines[0])
+        lines = [
+            line for line in output.splitlines()
+            if line.strip().startswith("{")
+        ]
+        if len(lines) != 1:
+            raise RuntimeError(
+                "Chat fixture requires exactly one local actor for "
+                f"account={account_email}"
+            )
+        value = json.loads(lines[0])
     if not isinstance(value, dict):
         raise RuntimeError(
             f"Chat fixture actor projection is invalid for account={account_email}"
@@ -1157,6 +1362,55 @@ def reset_station_chat_state(environment_name: str) -> None:
         raise RuntimeError(
             "CHAT_ACCEPTANCE_RESET=1 is required for destructive Chat reset"
         )
+    profile = active_profile_environment()
+    station_url = profile.get("PT_STATION_URL", "").strip()
+    local_environment = _local_source_environment(
+        station_url,
+        environment_name,
+    )
+    if local_environment is not None:
+        verify_disposable_station_runtime(local_environment)
+        stop_script = REPO_ROOT / "tooling" / "scripts" / "local-dev" / "stop.sh"
+        start_script = (
+            REPO_ROOT / "tooling" / "scripts" / "local-dev" / "station-dev.sh"
+        )
+        stopped = subprocess.run(
+            ["bash", str(stop_script), "station"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        if stopped.returncode != 0:
+            raise RuntimeError(
+                "Local source Chat Acceptance Station stop failed: "
+                f"{stopped.stderr.strip() or stopped.stdout.strip()}"
+            )
+        database = Path(
+            local_environment["PT_ACCEPTANCE_LOCAL_DATABASE"]
+        ).resolve()
+        for path in (
+            database,
+            Path(f"{database}-wal"),
+            Path(f"{database}-shm"),
+        ):
+            path.unlink(missing_ok=True)
+        started = subprocess.run(
+            ["bash", str(start_script)],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=240,
+            check=False,
+        )
+        if started.returncode != 0:
+            raise RuntimeError(
+                "Local source Chat Acceptance Station start failed: "
+                f"{started.stderr.strip() or started.stdout.strip()}"
+            )
+        verify_disposable_station_runtime(local_environment)
+        return
     environment = deploy_environment(environment_name)
     station_url = environment.get("PT_ACCEPTANCE_STATION_URL", "").strip()
     environment = acceptance_station_environment(

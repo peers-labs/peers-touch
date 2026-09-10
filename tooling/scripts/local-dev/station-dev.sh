@@ -93,6 +93,12 @@ start_source_station() {
       ;;
   esac
   cp "$STATION_DIR"/conf/*.yml "$runtime_conf_dir/"
+  cat > "$runtime_conf_dir/server.host.local.yml" <<EOF
+peers:
+  node:
+    server:
+      baseurl: "$STATION_URL"
+EOF
 
   RUNTIME_DB="$native_runtime_db" \
   RUNTIME_IDENTITY="$runtime_identity" \
