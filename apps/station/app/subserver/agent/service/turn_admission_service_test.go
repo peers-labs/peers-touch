@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"testing"
@@ -24,6 +25,7 @@ func openTurnAdmissionDB(t *testing.T, name string) *gorm.DB {
 	}
 	if err := db.AutoMigrate(
 		&persistence.Conversation{},
+		&persistence.AgentMessage{},
 		&persistence.AgentTurn{},
 		&persistence.TurnAttempt{},
 		&persistence.TurnQueueEntry{},
@@ -38,7 +40,7 @@ func seedAdmissionConversation(t *testing.T, db *gorm.DB) {
 	if err := db.Create(&persistence.Conversation{
 		ID:         "conversation-1",
 		AgentID:    "agent-1",
-		Ptid:       "ptid:actor-1",
+		ActorPTID:  "ptid:actor-1",
 		Title:      "Queue",
 		ProviderID: "provider-1",
 		Status:     "active",
@@ -118,9 +120,8 @@ func TestTurnAdmissionRejectsAttachmentBeforePersistence(t *testing.T) {
 	db := openTurnAdmissionDB(t, "turn_admission_attachment_preflight")
 	seedAdmissionConversation(t, db)
 	svc := newTurnAdmissionServiceWithDB(db)
-	providerCalls := 0
-	svc.SetAttachmentPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
-		return attachmentRejected("attachment checksum mismatch")
+	svc.SetRequestPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
+		return attachmentRejected("attachment-1", "attachment checksum mismatch")
 	})
 	request := admissionRequest("attachment-rejected", "inspect")
 	request.Attachments = []*model.AgentAttachmentRef{{
@@ -128,8 +129,17 @@ func TestTurnAdmissionRejectsAttachmentBeforePersistence(t *testing.T) {
 		ObjectRef:    "oss:cas/01/object",
 	}}
 
-	if _, err := svc.Admit(context.Background(), "ptid:actor-1", request); err == nil {
+	_, err := svc.Admit(context.Background(), "ptid:actor-1", request)
+	if err == nil {
 		t.Fatal("expected attachment preflight rejection")
+	}
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentAttachmentRejected ||
+		bizErr.Payload == nil ||
+		bizErr.Payload.GetDetails()["attachment_id"] != "attachment-1" ||
+		bizErr.Payload.GetDetails()["reason_code"] != "attachment_checksum_mismatch" {
+		t.Fatalf("attachment preflight rejection lost typed details: %T %v", err, err)
 	}
 	var turnCount int64
 	if err := db.Model(&persistence.AgentTurn{}).Count(&turnCount).Error; err != nil {
@@ -139,12 +149,88 @@ func TestTurnAdmissionRejectsAttachmentBeforePersistence(t *testing.T) {
 	if err := db.Model(&persistence.TurnAttempt{}).Count(&attemptCount).Error; err != nil {
 		t.Fatalf("count attempts: %v", err)
 	}
-	if turnCount != 0 || attemptCount != 0 || providerCalls != 0 {
+	var queueEntryCount int64
+	if err := db.Model(&persistence.TurnQueueEntry{}).Count(&queueEntryCount).Error; err != nil {
+		t.Fatalf("count queue entries: %v", err)
+	}
+	var messageCount int64
+	if err := db.Model(&persistence.AgentMessage{}).Count(&messageCount).Error; err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	var conversation persistence.Conversation
+	if err := db.First(&conversation, "id = ?", "conversation-1").Error; err != nil {
+		t.Fatalf("read conversation: %v", err)
+	}
+	if turnCount != 0 ||
+		attemptCount != 0 ||
+		queueEntryCount != 0 ||
+		messageCount != 0 ||
+		conversation.Version != 1 {
 		t.Fatalf(
-			"rejected attachment produced side effects: turns=%d attempts=%d provider_calls=%d",
+			"rejected attachment produced persistence side effects: turns=%d attempts=%d queue=%d messages=%d conversation_version=%d",
 			turnCount,
 			attemptCount,
-			providerCalls,
+			queueEntryCount,
+			messageCount,
+			conversation.Version,
+		)
+	}
+}
+
+func TestTurnAdmissionRejectsInputOverflowBeforePersistence(t *testing.T) {
+	db := openTurnAdmissionDB(t, "turn_admission_input_overflow")
+	seedAdmissionConversation(t, db)
+	svc := newTurnAdmissionServiceWithDB(db)
+	svc.SetRequestPreflight(func(
+		context.Context,
+		string,
+		*model.ExecuteTurnRequest,
+	) error {
+		return errcode.NewContextOverflow(1, 2)
+	})
+
+	_, err := svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequest("input-overflow", "oversized"),
+	)
+	if err == nil {
+		t.Fatal("expected input overflow rejection")
+	}
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentContextOverflow ||
+		bizErr.Payload == nil ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentContextOverflowLocaleKey ||
+		bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		len(bizErr.Payload.GetDetails()) != 2 ||
+		bizErr.Payload.GetDetails()["limit_tokens"] != "1" ||
+		bizErr.Payload.GetDetails()["actual_tokens"] != "2" {
+		t.Fatalf("input overflow rejection lost typed details: %T %v", err, err)
+	}
+	for name, record := range map[string]interface{}{
+		"turn":        &persistence.AgentTurn{},
+		"attempt":     &persistence.TurnAttempt{},
+		"queue entry": &persistence.TurnQueueEntry{},
+		"message":     &persistence.AgentMessage{},
+	} {
+		var count int64
+		if err := db.Model(record).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("input overflow persisted %d %s rows", count, name)
+		}
+	}
+	var conversation persistence.Conversation
+	if err := db.First(&conversation, "id = ?", "conversation-1").Error; err != nil {
+		t.Fatalf("read conversation: %v", err)
+	}
+	if conversation.Version != 1 {
+		t.Fatalf(
+			"input overflow changed conversation version to %d",
+			conversation.Version,
 		)
 	}
 }
@@ -154,10 +240,10 @@ func TestTurnAdmissionReplaysBeforeAttachmentRevalidation(t *testing.T) {
 	seedAdmissionConversation(t, db)
 	svc := newTurnAdmissionServiceWithDB(db)
 	preflightCalls := 0
-	svc.SetAttachmentPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
+	svc.SetRequestPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
 		preflightCalls++
 		if preflightCalls > 1 {
-			return attachmentRejected("attachment expired after admission")
+			return attachmentRejected("attachment-1", "attachment expired after admission")
 		}
 		return nil
 	})
@@ -186,21 +272,34 @@ func TestTurnAdmissionIdempotencyAndCapacity(t *testing.T) {
 	db := openTurnAdmissionDB(t, "turn_admission_capacity")
 	seedAdmissionConversation(t, db)
 	svc := newTurnAdmissionServiceWithDB(db)
-	if _, err := svc.Admit(
+	first, err := svc.Admit(
 		context.Background(),
 		"ptid:actor-1",
 		admissionRequest("active", "active"),
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatalf("admit active: %v", err)
 	}
+	_, err = svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequest("active", "different"),
+	)
+	requireAdmissionDuplicateConflict(t, err, "active", first.GetTurnId())
+
+	var firstQueued *model.TurnAdmission
 	for index := uint32(0); index < turnQueueCapacity; index++ {
 		key := fmt.Sprintf("queued-%d", index)
-		if _, err := svc.Admit(
+		admission, err := svc.Admit(
 			context.Background(),
 			"ptid:actor-1",
 			admissionRequest(key, key),
-		); err != nil {
+		)
+		if err != nil {
 			t.Fatalf("queue %d: %v", index, err)
+		}
+		if index == 0 {
+			firstQueued = admission
 		}
 	}
 
@@ -214,13 +313,20 @@ func TestTurnAdmissionIdempotencyAndCapacity(t *testing.T) {
 		replayed.GetQueueEntry().GetQueuePosition() != 1 {
 		t.Fatalf("same-payload replay failed: admission=%+v err=%v", replayed, err)
 	}
-	if _, err := svc.Admit(
+	if firstQueued == nil || firstQueued.GetQueueEntry() == nil {
+		t.Fatal("first queued admission is missing")
+	}
+	_, err = svc.Admit(
 		context.Background(),
 		"ptid:actor-1",
 		admissionRequest("queued-0", "different"),
-	); !hasAdmissionCode(err, errcode.AgentIdempotencyConflict) {
-		t.Fatalf("different-payload replay did not conflict: %v", err)
-	}
+	)
+	requireAdmissionDuplicateConflict(
+		t,
+		err,
+		"queued-0",
+		firstQueued.GetQueueEntry().GetQueueEntryId(),
+	)
 	if _, err := svc.Admit(
 		context.Background(),
 		"ptid:actor-1",
@@ -318,9 +424,9 @@ func TestTurnAdmissionCancelsQueuedEntryWhenAttachmentExpiresBeforeDequeue(t *te
 	seedAdmissionConversation(t, db)
 	svc := newTurnAdmissionServiceWithDB(db)
 	reject := false
-	svc.SetAttachmentPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
+	svc.SetRequestPreflight(func(context.Context, string, *model.ExecuteTurnRequest) error {
 		if reject {
-			return attachmentRejected("attachment expired before dequeue")
+			return attachmentRejected("attachment-1", "attachment expired before dequeue")
 		}
 		return nil
 	})
@@ -377,4 +483,33 @@ func TestTurnAdmissionCancelsQueuedEntryWhenAttachmentExpiresBeforeDequeue(t *te
 func hasAdmissionCode(err error, code errcode.Code) bool {
 	var biz *errcode.BizError
 	return errors.As(err, &biz) && biz.Code == code
+}
+
+func requireAdmissionDuplicateConflict(
+	t *testing.T,
+	err error,
+	idempotencyKey string,
+	existingCommandID string,
+) {
+	t.Helper()
+	var biz *errcode.BizError
+	if !errors.As(err, &biz) {
+		t.Fatalf("expected duplicate conflict, got %v", err)
+	}
+	idempotencyKeyHash := fmt.Sprintf(
+		"%x",
+		sha256.Sum256([]byte(idempotencyKey)),
+	)
+	if biz.Code != errcode.AgentIdempotencyConflict ||
+		biz.Payload == nil ||
+		biz.Payload.GetError() != errcode.AgentAdmissionDuplicateConflictLocaleKey ||
+		biz.Payload.GetErrorType() != string(errcode.AgentAdmissionDuplicateConflict) ||
+		biz.Payload.GetLocaleKey() != errcode.AgentAdmissionDuplicateConflictLocaleKey ||
+		biz.Payload.GetRetryable() ||
+		!biz.Payload.GetTerminal() ||
+		len(biz.Payload.GetDetails()) != 2 ||
+		biz.Payload.GetDetails()["idempotency_key_hash"] != idempotencyKeyHash ||
+		biz.Payload.GetDetails()["existing_command_id"] != existingCommandID {
+		t.Fatalf("unexpected duplicate conflict: %+v", biz)
+	}
 }

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v0.1
-> **Created**: 2026-08-17 | **Updated**: 2026-08-18
+> **Created**: 2026-08-17 | **Updated**: 2026-09-09
 > **Owner**: Peers-Touch Agent Team
 > **Plan type**: PRODUCT → DESIGN → PLAN → EXECUTE（Owner approval 已收到）
 > **Predecessor**: `20260816-lobehub-parity-full-landing.md`
@@ -11,32 +11,32 @@
 
 ---
 
-## Context Anchor
+## Execution Status
 
 | Field | Current value |
 |---|---|
 | Main task | 将 Peers-Touch 单 Agent Chat 从源码能力对齐推进到 LobeHub 级产品体验与运行可靠性 |
-| Plan source | `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2.md` |
-| Tracking source | `docs/architecture/agent/modern-chat-agent/`、`docs/architecture/agent/lobehub-parity-mindmap.source.md` |
+| Plan source | `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-execution.md` |
+| Tracking source | this product-level overview、`docs/architecture/agent/modern-chat-agent/`、and `docs/architecture/agent/lobehub-parity-mindmap.source.md` |
 | Worktree | `<repo-root>` |
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
-| Current workstream | F2 Runtime, Stream, Capability, And Portability |
-| Current step | Q4 C06 admission capability/budget snapshot与zero-provider-call rejection |
-| Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；2/14 workstreams evidence-complete |
-| Last completed | Q3 C05已闭合per-turn persisted event sequence、cursor replay/snapshot、actor-scoped idempotent cancellation、App/Browser SSE parity与全部split replay/one-shot/task-cursor路径 |
-| Current action | 在原子Station snapshot cut前，对账C06 capability provenance、admission budget、provider call边界与client/catalog readiness inference |
-| Next action | 实现immutable Station capability/budget snapshot，并证明unsupported/stale/budget rejection的provider call为零 |
-| Autonomous execution window | 无需 Owner 交互持续执行 F2 source closure；F2 验证通过后并行执行 F3 Context/Resource 与 F4 Tool/Observability；二者通过后执行 G-F preflight，仅在 runtime/artifact 前置条件齐备时运行 Foundation Native Gate |
-| Overnight execution queue | `Q1` 补齐 F2 old-path checker 对 C06/C10 的覆盖并冻结完整 consumer/deletion inventory；`Q2` 闭合 C03 Station-only runtime resolution 与 P12/CLI non-advertisement；`Q3` 闭合 C05 persisted monotonic events、SSE replay/snapshot/cancel、App/Browser parity并删除 Browser one-shot fallback；`Q4` 闭合 C06 admission capability/budget snapshot 与 zero-provider-call reject；`Q5` 闭合 C10 platform-neutral client capability session及Desktop/Browser/Mobile adapters；`Q6` 运行F2全套checks与zero-old-path proof；`Q7A` F2后实现F3 typed ContextLedger与opaque authorized resource refs；`Q7B` F2后并行实现F4 Station Tool decision authority、toolRuntime、fenced Rust ingress、usage/feedback/diagnostic replay并删除重复approval authority；`Q8` reconcile F3/F4并运行全套checks；`Q9` 运行G-F preflight，前置条件齐备时执行Foundation Native Gate；`Q10` 仅在C01-C10全部current-source `PROVEN`后进入W1 |
-| Parallel policy | F2内部Q1-Q6保持依赖顺序，独立只读审计/测试可并行；Q7A/Q7B是首个允许并行的实现lane；G-F是join barrier；W1必须等待G-F `PROVEN` |
-| Overnight stop conditions | 遇到`PRODUCT_AMENDMENT_REQUIRED`或`DESIGN_AMENDMENT_REQUIRED`停止对应lane；机械inventory/plan drift允许自修计划后继续；Native环境/凭据/artifact root不可用时记录`BLOCKED/UNPROVEN`并继续独立lane；禁止伪造证据、降级Gate、fallback/dual-write或静默扩域 |
-| Overnight non-scope | 不commit/push/PR，不版本升级，不做package/release build，不移除Canvas guard，不advertise P12/CLI，不在G-F前激活W1，不清理/删除无关`.dbg`、`test-results`与Acceptance reports |
+| Current workstream | Exact-source checkpoint, C08 product proof, and G-F Foundation proof |
+| Current step | C08 `DONE / PROVEN`；G-F crossed all four AS-F06 tuples and is implementing the planned `BASE-EXECUTOR-UNAVAILABLE` vertical |
+| Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
+| Last completed | C08 exact-source attachment journey `DONE / PROVEN`；G-F exact-source run crossed Browser/Desktop AS-F06 recovery tuples with cleanup proven |
+| Current action | Close the accepted G-FE1 typed-error backlog through non-overlapping Station、Desktop、Rust runtime control、and Acceptance lanes |
+| Next action | Reconcile the parallel lanes，run focused checks once，then let the integrator checkpoint、deploy exact source with `make station`、and rerun G-F |
+| Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
+| Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
+| Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
+| Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
+| Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | Q4源码执行无阻塞；Foundation Native Gate保持`UNPROVEN` |
+| Blockers | No external blocker. G-F is source-blocked by the planned but incomplete `BASE-EXECUTOR-UNAVAILABLE` vertical；Foundation and downstream work remain `PARTIAL / UNPROVEN` until the exact-source Gate passes |
 | Decisions required | none |
-| Evidence | Q3：保留canonical typed `turn_stream.proto`并删除重复flat contract；Station per-turn event sequence/migration、actor-fenced replay/snapshot、running-text fold与idempotent cancellation测试PASS；Browser Gateway代理live/replay SSE；Desktop Rust在worker内cursor recovery且删除stream/replay registry；Browser one-shot与Chat task cursor已删除。Station Agent packages PASS；Desktop check + 306 tests PASS（1个environment E2E skipped）；Rust `agent_turn` 6 PASS且check PASS；Mobile Agent contract 4 PASS；checker 13 PASS；C05 `unresolvedCount=0`、`unregisteredMatches=0`；hard-rules/diff check PASS。所有产品Gates仍为`UNPROVEN` |
-| Last updated | 2026-08-19 11:23 CST |
+| Evidence | C08 run `20260909T091942082203Z-5ecd651bb57a293a45c0032d5b46861d` is `DONE / PROVEN`。G-F run `20260909T141502294542Z-5a3fca9b8d25c0a8f7ac1582a5b320b7` crossed all four AS-F06 tuples，then failed closed at `BASE-EXECUTOR-UNAVAILABLE` with Provisioner cleanup `DONE / PROVEN / passed` |
+| Last updated | 2026-09-09 |
 
 ---
 
@@ -61,7 +61,7 @@ Peers-Touch 的 Station 单一真源、Tauri capability kernel 和跨设备边�
 | ID | 决策 | 状态 | 影响 |
 |---|---|---|---|
 | V2-D01 | G1 Image Generation 长期不支持 | accepted | 从候选移入 unsupported；不得保留空入口或完成度债务 |
-| V2-D02 | G2 Video Generation 当前 V2 deferred | accepted | 当前产品 claim 不含视频生成；后续如重新立项必须重新经过 PRODUCT gate |
+| V2-D02 | G2 Video Generation 与 G1 相同，在 Peers-Touch 中长期 unsupported | accepted | Peers-Touch 不保留视频生成入口或未来阶段债务；如需该能力，由其它项目独立立项并建立自己的产品合同 |
 | V2-D03 | P3 Home 深度进入 V2 required scope | accepted | Home 从静态 landing 升级为可执行 Agent 入口 |
 | V2-D04 | Tool + MCP + Connector 进入 V2 required scope | accepted | 目标是统一能力平面与真实 Chat 执行闭环，不是重复 CRUD |
 | V2-D05 | 独立 Custom Plugin 产品不做 | accepted | X2 继续合并进 Tool/MCP/Connector，不保存独立 endpoint 凭据体系 |
@@ -134,7 +134,7 @@ confirmation 和独立 PRODUCT review 均已通过。
 | Evaluation Lab benchmark/dataset/case/run | adapt | 保留用户可见产品；Station 持有数据集、run、case result 和状态真源，Desktop 只投影与发命令 |
 | Custom HTTP plugins with local secrets | reject | 合并 Connector/MCP，凭证不进入 localStorage/chat trace |
 | Image generation | reject | 长期 unsupported，不进入产品 claim |
-| Video generation | defer | Owner 已确认当前 V2 不做；不计入当前 readiness claim |
+| Video generation | reject | Owner 已确认与 Image Generation 相同，不属于 Peers-Touch；未来只能由其它项目独立立项 |
 | Server-side TTS / audio generation | defer | Owner 已确认当前 V2 不做；不影响文本 Chat Agent readiness，G3a 本机朗读维持现状 |
 
 ## 6. 关键用户旅程
@@ -201,12 +201,12 @@ confirmation 和独立 PRODUCT review 均已通过。
 ### Explicitly Unsupported
 
 - G1 Image Generation；
+- G2 Video Generation；
 - 独立 Custom Plugins；
 - LobeHub Cloud Gateway、商业 Community/Store、托管订阅体系。
 
 ### Deferred
 
-- G2 Video Generation；
 - G3b server-side TTS 与其他音频生成能力；
 - Mobile UI；
 - Multi-Agent Canvas/Groups/Collaboration；
@@ -245,7 +245,7 @@ Deliverables:
 
 - 修订 `modern-chat-agent/product-definition.md` capability profile；
 - 修订 benchmark disposition、journeys、state model、acceptance matrix；
-- G1 标为 unsupported；G2/G3b 标为 deferred；
+- G1/G2 标为 unsupported；G3b 标为 deferred；
 - E1 已进入 required；Home scope 获得 Owner 决策；
 - Home、Tool、Evaluation states 的 executable prototype 已获 Owner confirmation。
 
@@ -420,7 +420,8 @@ Gate:
 | Phase 1 Architecture Contract | complete | 2026-08-17 | D14-D18/C11-C15/A15-A20 reconciliation 与独立 DESIGN review 通过 |
 | Execution W0 Contract/Evidence/Gates | complete | 2026-08-18 | Proto-first contracts、external candidate/proof chain、matrix、D11、locale 与七 Gate contracts 完成；产品 Gate 仍 `UNPROVEN` |
 | Execution F1 Agent/Conversation Authority | complete | 2026-08-18 | C01/C02 source closure、D11 guard、Desktop full check 与 old-path deletion evidence PASS |
-| Execution F2 Runtime/Stream/Capability/Portability | in progress | — | F1 complete 后唯一 dependency-ready foundation workstream |
+| Execution F2 Runtime/Stream/Capability/Portability | complete | 2026-09-09 | Q4 C06与Q5/C10 source closure完成；Station、Desktop、Rust、Mobile与C03/C05/C06/C10 zero-old-path checks通过；product proof仍由G-F负责 |
+| Execution F3 Context/Resource Intelligence | source complete / product proof unproven | — | C04 core与C08 production source、stable Gate、Home Station provisioning和old-path inventory闭合；`agent-attachment-e2e`未运行 |
 | Phase 2 Home | pending execution dependencies | — | confirmed prototype 仅证明产品意图；生产能力 `UNPROVEN` |
 | Phase 3 Capability Plane | pending | — | 现有 foundations 不等于 product closure |
 | Phase 4 MCP | pending | — | 需要真实 disposable MCP |
@@ -479,11 +480,11 @@ Station readback 和 resource cleanup 必须单独产出 source-bound evidence�
 | MCP 进程/secret 泄漏 | 本地安全和资源残留 | Rust owner、redaction、bounded lifecycle、leak canary |
 | Connector 使用个人连接 | 验收污染 | 显式 approved fixture ID；禁止任意 connected fallback |
 | Prototype 与生产漂移 | UI 返工 | Phase 0 confirmed prototype + replica gate |
-| V2 scope 扩成完整 LobeHub | 无法收口 | G1/X2/商业生态明确 unsupported；G2/G3b 明确 deferred |
+| V2 scope 扩成完整 LobeHub | 无法收口 | G1/G2/X2/商业生态明确 unsupported；G3b 明确 deferred |
 
 ## 13. 进入实施前必须满足
 
-- [x] V2-Q01 音视频决策：当前 V2 不做；G2/G3b deferred，G3a 保持现状；
+- [x] V2-Q01 音视频决策：G2 与 G1 相同，在 Peers-Touch 中长期 unsupported；G3b deferred，G3a 保持现状；
 - [x] V2-Q02 E1 决策：用户可见 Evaluation Lab 进入 V2 required scope；
 - [x] V2-Q03 Home 深度与平台声明确认；
 - [x] Modern Chat Agent 产品文档矛盾消除；

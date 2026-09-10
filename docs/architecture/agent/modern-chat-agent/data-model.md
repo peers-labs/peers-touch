@@ -567,7 +567,10 @@ Required:
 - Optional client capability session selected for device-local work.
 
 Same actor, conversation, and idempotency key returns the original turn.
-Different payload with the same key returns `IDEMPOTENCY_CONFLICT`.
+Different payload with the same key retains the Station
+`IDEMPOTENCY_CONFLICT` domain classification and projects the user-facing
+`ADMISSION_DUPLICATE_CONFLICT` typed error with only
+`idempotency_key_hash` and `existing_command_id`.
 
 The request must not carry Agent identity/system prompt, retry authority,
 arbitrary CLI command, runtime backend, allowed filesystem roots, or a local

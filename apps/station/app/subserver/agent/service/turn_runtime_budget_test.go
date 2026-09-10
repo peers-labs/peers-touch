@@ -6,11 +6,110 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestDelegatedTurnConfigInheritsActorDepthAndPinnedBudget(t *testing.T) {
+	parentBudget := &model.RuntimeBudget{
+		MaxAttempts:           2,
+		MaxAgentSteps:         4,
+		MaxToolCalls:          6,
+		MaxIdenticalToolCalls: 1,
+		MaxDelegationDepth:    2,
+		WallTimeMs:            5000,
+		MaxInputTokens:        1024,
+		MaxOutputTokens:       256,
+		MaxAttachmentBytes:    4096,
+	}
+	parent := &TurnConfig{
+		ActorID:           "ptid:person:owner",
+		AgentID:           "agent-1",
+		ConversationID:    "conversation-1",
+		Provider:          "provider-1",
+		Model:             "model-1",
+		ThinkingMode:      domain.ThinkingModeDisabled,
+		RuntimeBudget:     parentBudget,
+		Depth:             1,
+		ContextWindowSize: 128000,
+	}
+	task := &domain.DelegationTask{TaskID: "child-1", Depth: 2}
+
+	child, err := delegatedTurnConfig(
+		parent,
+		task,
+		[]string{"tool-a"},
+		"conversation-child-1",
+	)
+	if err != nil {
+		t.Fatalf("derive delegated turn config: %v", err)
+	}
+	if child.ActorID != parent.ActorID ||
+		child.Provider != parent.Provider ||
+		child.Model != parent.Model ||
+		child.Depth != task.Depth ||
+		len(child.RestrictedTools) != 1 ||
+		child.RestrictedTools[0] != "tool-a" {
+		t.Fatalf("delegated turn lost parent authority: %+v", child)
+	}
+	inherited, err := effectiveRuntimeBudget(
+		defaultRuntimeBudget(int32(parent.ContextWindowSize)),
+		child.RequestedBudgetJSON,
+	)
+	if err != nil {
+		t.Fatalf("decode delegated runtime budget: %v", err)
+	}
+	if !proto.Equal(inherited, parentBudget) {
+		t.Fatalf("delegated budget = %+v, want %+v", inherited, parentBudget)
+	}
+	child.AvailableTools[0] = "mutated"
+	if parent.AvailableTools != nil {
+		t.Fatal("delegated toolset mutated parent config")
+	}
+}
+
+func TestDelegatedToolRestrictionRejectsUnlistedProviderTool(t *testing.T) {
+	filtered := restrictAuthorizedToolNames(
+		[]string{"tool-a", "tool-b"},
+		[]string{"tool-a"},
+	)
+	if len(filtered) != 1 || filtered[0] != "tool-a" {
+		t.Fatalf("delegated tool restriction = %v, want [tool-a]", filtered)
+	}
+	config := &TurnConfig{
+		AvailableTools:  []string{"tool-a"},
+		RestrictedTools: []string{"tool-a"},
+	}
+	err := validateProviderToolCallsBeforePersistence(
+		config,
+		[]toolCallEntry{{ToolName: "tool-b"}},
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentInvalidSourceState {
+		t.Fatalf("unexpected delegated tool rejection: %#v", err)
+	}
+}
+
+func TestStationDelegationBudgetRejectsBeforeChildExecution(t *testing.T) {
+	config := &TurnConfig{
+		RuntimeBudget: &model.RuntimeBudget{MaxDelegationDepth: 1},
+		Depth:         1,
+	}
+	err := validateStationToolBudgetBeforeExecution(
+		config,
+		toolCallEntry{ToolName: "delegate_task"},
+	)
+	var budgetErr *errcode.BizError
+	if !errors.As(err, &budgetErr) ||
+		budgetErr.Code != errcode.AgentToolBudgetExhausted ||
+		budgetErr.Message != maxDelegationDepthExhaustedReason {
+		t.Fatalf("unexpected delegation budget rejection: %#v", err)
+	}
+}
 
 func TestWallTimeDeadlineRetainsTypedBudgetExhaustion(t *testing.T) {
 	ctx, cancel := withRuntimeBudgetDeadline(
@@ -28,6 +127,52 @@ func TestWallTimeDeadlineRetainsTypedBudgetExhaustion(t *testing.T) {
 		budgetErr.Message != wallTimeExhaustedReason ||
 		!budgetErr.Payload.GetTerminal() {
 		t.Fatalf("wall-time deadline lost typed budget exhaustion: %#v", err)
+	}
+}
+
+func TestResumeReadyToolContinuationDoesNotResetMaxAttempts(t *testing.T) {
+	db := openConversationAuthorityDB(t, "continuation_provider_attempt_budget")
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.Conversation{
+		ID:        "conversation-attempt-budget",
+		AgentID:   "agent-1",
+		ActorPTID: "ptid:person:owner",
+		Title:     "Attempt budget",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	if err := db.Create(&persistence.AgentTurn{
+		ID:                   "turn-attempt-budget",
+		ConversationID:       "conversation-attempt-budget",
+		AgentID:              "agent-1",
+		ProviderAttemptCount: 1,
+		Status:               "waiting_local_tool",
+		StartedAt:            now,
+	}).Error; err != nil {
+		t.Fatalf("seed turn: %v", err)
+	}
+	service := &TurnService{}
+	config := &TurnConfig{
+		TurnID:        "turn-attempt-budget",
+		RuntimeBudget: &model.RuntimeBudget{MaxAttempts: 1},
+	}
+
+	err := service.reserveProviderAttempt(context.Background(), config)
+	var budgetErr *errcode.BizError
+	if !errors.As(err, &budgetErr) ||
+		budgetErr.Code != errcode.AgentToolBudgetExhausted ||
+		budgetErr.Message != maxAttemptsExhaustedReason {
+		t.Fatalf("continuation reset provider-attempt budget: %T %v", err, err)
+	}
+	var turn persistence.AgentTurn
+	if err := db.First(&turn, "id = ?", config.TurnID).Error; err != nil {
+		t.Fatalf("load turn: %v", err)
+	}
+	if turn.ProviderAttemptCount != 1 {
+		t.Fatalf("provider attempt count = %d, want 1", turn.ProviderAttemptCount)
 	}
 }
 
@@ -59,6 +204,74 @@ func TestProcessToolCallsRejectsIdenticalBudgetBeforeDispatch(t *testing.T) {
 		},
 		maxIdenticalToolCallsExhaustedReason,
 	)
+}
+
+func TestProcessToolCallsRejectsAgentStepBudgetBeforeDispatch(t *testing.T) {
+	assertToolBatchRejectedBeforeDispatchAtIteration(
+		t,
+		&model.RuntimeBudget{
+			MaxAgentSteps:         1,
+			MaxToolCalls:          10,
+			MaxIdenticalToolCalls: 3,
+		},
+		[]ProviderToolCall{{
+			ID:        "provider-call-2",
+			Name:      "skills_list",
+			Arguments: `{}`,
+		}},
+		1,
+		maxAgentStepsExhaustedReason,
+	)
+}
+
+func TestProcessToolCallsRejectsProviderToolsWithoutNativeToolsBeforePersistence(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	service := &TurnService{toolDispatch: fixture.service}
+	config := &TurnConfig{
+		TurnID:        "turn-native-tools-disabled",
+		AttemptID:     "attempt-native-tools-disabled",
+		RuntimeBudget: defaultRuntimeBudget(128000),
+		RuntimeCapabilities: &model.RuntimeCapabilitySnapshot{
+			Agentic: &model.RuntimeAgenticCapabilities{NativeTools: false},
+		},
+	}
+	response := ""
+
+	iterations, paused, err := service.processToolCalls(
+		context.Background(),
+		config,
+		config.TurnID,
+		nil,
+		"",
+		nil,
+		&response,
+		[]ProviderToolCall{{
+			ID:        "provider-call-1",
+			Name:      "skills_list",
+			Arguments: `{}`,
+		}},
+		0,
+	)
+	if err == nil {
+		t.Fatal("expected native Tool capability rejection")
+	}
+	if iterations != 0 || paused {
+		t.Fatalf("rejected ToolCall changed loop state: iterations=%d paused=%v", iterations, paused)
+	}
+	for name, record := range map[string]interface{}{
+		"assistant message": &persistence.AgentMessage{},
+		"turn event":        &persistence.TurnEvent{},
+		"tool call":         &persistence.ToolCall{},
+		"tool batch":        &persistence.ToolBatch{},
+	} {
+		var count int64
+		if err := fixture.db.Model(record).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("native Tool rejection persisted %d %s rows", count, name)
+		}
+	}
 }
 
 func TestToolLoopBudgetStopsProviderContinuationAtBound(t *testing.T) {
@@ -163,6 +376,78 @@ func TestEffectiveRuntimeBudgetNeverRaisesPolicyLimits(t *testing.T) {
 	}
 }
 
+func TestInputBudgetPreflightReturnsContextOverflow(t *testing.T) {
+	err := validateInputBudgetBeforePersistence(
+		NewCompressionService(),
+		&model.RuntimeBudget{MaxInputTokens: 1},
+		"oversized",
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentContextOverflow ||
+		bizErr.Payload == nil ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentContextOverflow) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentContextOverflowLocaleKey ||
+		bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		len(bizErr.Payload.GetDetails()) != 2 ||
+		bizErr.Payload.GetDetails()["limit_tokens"] != "1" ||
+		bizErr.Payload.GetDetails()["actual_tokens"] != "12" {
+		t.Fatalf("input budget preflight error = %T %+v", err, bizErr)
+	}
+}
+
+func TestAdmittedInputBudgetRetainsToolBudgetSemantics(t *testing.T) {
+	err := validateAdmittedInputBudget(
+		NewCompressionService(),
+		&model.RuntimeBudget{MaxInputTokens: 1},
+		"oversized",
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentToolBudgetExhausted ||
+		bizErr.Message != maxInputTokensExhaustedReason ||
+		bizErr.Payload == nil ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentToolBudgetExhausted) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentToolBudgetExhaustedLocaleKey ||
+		bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		len(bizErr.Payload.GetDetails()) != 3 ||
+		bizErr.Payload.GetDetails()["reason"] != maxInputTokensExhaustedReason ||
+		bizErr.Payload.GetDetails()["limit"] != "1" ||
+		bizErr.Payload.GetDetails()["consumed"] != "12" {
+		t.Fatalf("admitted input budget error = %T %+v", err, bizErr)
+	}
+}
+
+func TestEffectiveRuntimeBudgetRejectsExplicitZeroLimits(t *testing.T) {
+	for _, requested := range []string{
+		`{"maxAttempts":0}`,
+		`{"max_agent_steps":0}`,
+		`{"maxToolCalls":0}`,
+		`{"maxIdenticalToolCalls":0}`,
+		`{"maxDelegationDepth":0}`,
+		`{"wallTimeMs":"0"}`,
+		`{"maxInputTokens":"0"}`,
+		`{"maxOutputTokens":"0"}`,
+		`{"maxAttachmentBytes":"0"}`,
+		`{"maxCost":0}`,
+		`{"maxCost":-1}`,
+	} {
+		t.Run(requested, func(t *testing.T) {
+			_, err := effectiveRuntimeBudget(
+				defaultRuntimeBudget(128000),
+				[]byte(requested),
+			)
+			var bizErr *errcode.BizError
+			if !errors.As(err, &bizErr) ||
+				bizErr.Code != errcode.AgentInvalidRequest {
+				t.Fatalf("explicit non-positive budget %s error = %T %v", requested, err, err)
+			}
+		})
+	}
+}
+
 func TestQueuedTurnConfigCarriesRequestedBudget(t *testing.T) {
 	config, err := (&TurnService{}).queuedTurnConfig(
 		"actor-1",
@@ -259,6 +544,22 @@ func assertToolBatchRejectedBeforeDispatch(
 	providerCalls []ProviderToolCall,
 	wantReason string,
 ) {
+	assertToolBatchRejectedBeforeDispatchAtIteration(
+		t,
+		budget,
+		providerCalls,
+		0,
+		wantReason,
+	)
+}
+
+func assertToolBatchRejectedBeforeDispatchAtIteration(
+	t *testing.T,
+	budget *model.RuntimeBudget,
+	providerCalls []ProviderToolCall,
+	startingIterations int,
+	wantReason string,
+) {
 	t.Helper()
 	fixture := newToolDispatchFixture(t)
 	service := &TurnService{toolDispatch: fixture.service}
@@ -278,7 +579,7 @@ func assertToolBatchRejectedBeforeDispatch(
 		nil,
 		&response,
 		providerCalls,
-		0,
+		startingIterations,
 	)
 	if err == nil {
 		t.Fatal("expected runtime budget exhaustion")
@@ -290,8 +591,13 @@ func assertToolBatchRejectedBeforeDispatch(
 		!budgetErr.Payload.GetTerminal() {
 		t.Fatalf("unexpected budget exhaustion: %#v", err)
 	}
-	if iterations != 0 || paused {
-		t.Fatalf("rejected batch changed loop state: iterations=%d paused=%v", iterations, paused)
+	if iterations != startingIterations || paused {
+		t.Fatalf(
+			"rejected batch changed loop state: iterations=%d want=%d paused=%v",
+			iterations,
+			startingIterations,
+			paused,
+		)
 	}
 
 	for name, record := range map[string]interface{}{

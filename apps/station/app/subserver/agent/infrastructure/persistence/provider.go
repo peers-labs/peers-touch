@@ -15,7 +15,7 @@ import (
 // the legacy cross-domain dependency on the ai_chat_providers table.
 type AgentProvider struct {
 	ID            string          `gorm:"primaryKey;type:varchar(36)"`
-	ActorPTID     string          `gorm:"column:actor_ptid;not null;type:varchar(36);default:'';uniqueIndex:idx_agent_providers_actor_ptid_provider"`
+	ActorPTID     string          `gorm:"column:actor_ptid;not null;type:text;default:'';uniqueIndex:idx_agent_providers_actor_ptid_provider"`
 	Name          string          `gorm:"not null;type:text;uniqueIndex:idx_agent_providers_actor_ptid_provider"`
 	DisplayName   string          `gorm:"type:varchar(256)"`
 	BaseURL       string          `gorm:"type:text"`

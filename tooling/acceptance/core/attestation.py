@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shlex
 import subprocess
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -19,6 +19,12 @@ from .evidence_store import (
 from .provisioning import ServiceAttestation, utc_now
 
 
+_GENERATED_COVERAGE_REPORT = (
+    "docs/architecture/acceptance-framework/coverage-report.md"
+)
+RemoteSourceIdentityProvider = Callable[[str], tuple[str, str, str]]
+
+
 def commits_match(actual: str, expected: str) -> bool:
     return (
         len(actual) >= 7
@@ -28,11 +34,21 @@ def commits_match(actual: str, expected: str) -> bool:
 
 
 def source_proto_digest(root: Path) -> str:
-    paths = [
-        *(root / "model" / "domain").rglob("*.proto"),
-        *(root / "apps" / "desktop" / "src" / "gen" / "proto").rglob("*.ts"),
-        *(root / "apps" / "station").rglob("*.pb.go"),
-    ]
+    tracked = subprocess.run(
+        [
+            "git",
+            "ls-files",
+            "-z",
+            "--",
+            ":(glob)model/domain/**/*.proto",
+            ":(glob)apps/desktop/src/gen/proto/**/*.ts",
+            ":(glob)apps/station/**/*.pb.go",
+        ],
+        cwd=root,
+        capture_output=True,
+        check=True,
+    ).stdout.split(b"\0")
+    paths = [root / path.decode() for path in tracked if path]
     digest = hashlib.sha256()
     for path in sorted(paths, key=lambda item: item.relative_to(root).as_posix()):
         relative = path.relative_to(root).as_posix().encode()
@@ -45,18 +61,39 @@ def source_proto_digest(root: Path) -> str:
 
 def source_workspace_digest(root: Path) -> str:
     diff = subprocess.run(
-        ["git", "diff", "--binary", "HEAD"],
+        [
+            "git",
+            "diff",
+            "--binary",
+            "HEAD",
+            "--",
+            ".",
+            f":(exclude){_GENERATED_COVERAGE_REPORT}",
+        ],
         cwd=root,
         capture_output=True,
         check=True,
     ).stdout
     untracked = subprocess.run(
-        ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+        [
+            "git",
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            ".",
+            f":(exclude){_GENERATED_COVERAGE_REPORT}",
+        ],
         cwd=root,
         capture_output=True,
         check=True,
     ).stdout.split(b"\0")
-    paths = sorted(path for path in untracked if path)
+    paths = sorted(
+        path
+        for path in untracked
+        if path and path.decode() != _GENERATED_COVERAGE_REPORT
+    )
     if not diff and not paths:
         return "clean"
 
@@ -124,89 +161,6 @@ def read_service_runtime_identity(service_url: str) -> str:
     return peer_id
 
 
-def _load_env(path: Path) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip("'\"")
-    return values
-
-
-def _remote_source_identity(deploy_environment: str) -> tuple[str, str, str]:
-    environment_path = (
-        REPO_ROOT / ".local" / "deploy" / "envs" / f"{deploy_environment}.env"
-    )
-    if not environment_path.is_file():
-        raise BlockedError(
-            reason=f"Station deployment environment is missing: {environment_path}",
-            resource=f"station-deployment:{deploy_environment}",
-        )
-    environment = _load_env(environment_path)
-    host = environment.get("PT_DEPLOY_HOST", "")
-    user = environment.get("PT_DEPLOY_USER", "")
-    deploy_path = environment.get("PT_DEPLOY_PATH", "")
-    if not host or not user or not deploy_path:
-        raise BlockedError(
-            reason=(
-                f"Station deployment environment {deploy_environment} must define "
-                "PT_DEPLOY_HOST, PT_DEPLOY_USER, and PT_DEPLOY_PATH"
-            ),
-            resource=f"station-deployment:{deploy_environment}",
-        )
-
-    digest_script = (
-        "import hashlib,pathlib;"
-        "r=pathlib.Path('.').resolve();"
-        "p=list((r/'model/domain').rglob('*.proto'))+"
-        "list((r/'apps/desktop/src/gen/proto').rglob('*.ts'))+"
-        "list((r/'apps/station').rglob('*.pb.go'));"
-        "h=hashlib.sha256();"
-        "[(h.update(x.relative_to(r).as_posix().encode()),h.update(b'\\0'),"
-        "h.update(x.read_bytes()),h.update(b'\\0')) for x in "
-        "sorted(p,key=lambda x:x.relative_to(r).as_posix())];"
-        "print(h.hexdigest())"
-    )
-    remote_command = (
-        f"cd \"$HOME\"/{shlex.quote(deploy_path)} && "
-        "printf '%s\\n' \"$(git rev-parse HEAD)\" && "
-        "status=\"$(git status --porcelain | "
-        "sed '/^?? \\.bare\\.git\\/$/d')\" && "
-        "if test -z \"$status\"; then echo clean; else echo dirty; fi && "
-        f"python3 -c {shlex.quote(digest_script)}"
-    )
-    completed = subprocess.run(
-        [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"{user}@{host}",
-            remote_command,
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
-    lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
-    if completed.returncode != 0 or len(lines) < 3:
-        detail = completed.stderr.strip() or completed.stdout.strip() or "no output"
-        raise BlockedError(
-            reason=(
-                f"Cannot attest Station deployment {deploy_environment}: {detail}"
-            ),
-            resource=f"station-deployment:{deploy_environment}",
-        )
-    return lines[-3], lines[-2], lines[-1]
-
-
 def _local_source_identity() -> tuple[str, str, str]:
     commit = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -233,6 +187,7 @@ def produce_station_attestation(
     station_url: str,
     profile_env: dict[str, str],
     require_runtime_identity: bool = False,
+    remote_source_identity_provider: RemoteSourceIdentityProvider | None = None,
 ) -> ServiceAttestation:
     return produce_service_attestation(
         environment_id=environment_id,
@@ -244,6 +199,7 @@ def produce_station_attestation(
         deployment_environment=profile_env.get("PT_STATION_DEPLOY_ENV", ""),
         producer="station-deployment",
         require_runtime_identity=require_runtime_identity,
+        remote_source_identity_provider=remote_source_identity_provider,
     )
 
 
@@ -258,6 +214,7 @@ def produce_service_attestation(
     deployment_environment: str,
     producer: str,
     require_runtime_identity: bool = False,
+    remote_source_identity_provider: RemoteSourceIdentityProvider | None = None,
 ) -> ServiceAttestation:
     del run_id
     version = read_service_version(endpoint)
@@ -289,8 +246,16 @@ def produce_service_attestation(
                 ),
                 resource=f"service-deployment:{service_id}",
             )
-        deployed_commit, workspace_digest, proto_digest = _remote_source_identity(
-            deployment_environment
+        if remote_source_identity_provider is None:
+            raise BlockedError(
+                reason=(
+                    f"Remote service {service_id!r} is missing its deployment "
+                    "source identity provider"
+                ),
+                resource=f"service-deployment:{service_id}",
+            )
+        deployed_commit, workspace_digest, proto_digest = (
+            remote_source_identity_provider(deployment_environment)
         )
     else:
         deployed_commit, workspace_digest, proto_digest = _local_source_identity()

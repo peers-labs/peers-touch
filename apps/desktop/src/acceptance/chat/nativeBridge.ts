@@ -15,6 +15,8 @@ import { imServiceV1 } from '../../services/im-service';
 import { useSessionStore } from '../../store/session';
 import { requireCanonicalAcceptancePtid } from './identity';
 
+export type { MessagingAcceptanceInteractionSnapshot } from '../../services/desktop_api';
+
 export interface NativeAcceptanceActorInput {
   actorPtid: string;
 }
@@ -223,7 +225,7 @@ export const nativeAcceptanceBridge = createNativeAcceptanceBridge({
   readConversations: () =>
     imServiceV1.messaging.listConversations(),
   readMemberSettings: (conversationId) =>
-    imServiceV1.conversation.getMemberSettings(conversationId),
+    imServiceV1.messaging.getMemberSettings(conversationId),
   openAttachment: (attachmentId) =>
     imServiceV1.messaging.openAttachment(attachmentId),
   identityState: () => {

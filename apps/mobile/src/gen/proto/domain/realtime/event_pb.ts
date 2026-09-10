@@ -1001,11 +1001,9 @@ export const ResyncSchema: GenMessage<Resync> = /*@__PURE__*/
   messageDesc(file_domain_realtime_event, 13);
 
 /**
- * EnvelopeDelivered notifies a device that a new StationEnvelope has
- * been written to its durable inbox and is available for immediate
- * processing. Fat-push: the full payload is embedded so clients can
- * process without a round-trip fetch. Clients MUST still ACK via
- * POST /envelope/ack after successful processing.
+ * EnvelopeDelivered notifies a device that its canonical durable Device Inbox
+ * has new work. The embedded payload is a wake or projection hint only; clients
+ * claim and acknowledge durable items through /device/inbox/*.
  *
  * Deduplication: inbox_item_id is the canonical dedup key. A device
  * receiving the same inbox_item_id from both SSE push and resume poll
@@ -1251,4 +1249,3 @@ export enum SocialGraphEvent_Kind {
  */
 export const SocialGraphEvent_KindSchema: GenEnum<SocialGraphEvent_Kind> = /*@__PURE__*/
   enumDesc(file_domain_realtime_event, 16, 0);
-

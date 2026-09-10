@@ -19,6 +19,8 @@ import {
   Braces,
   Workflow,
   ExternalLink,
+  Minimize2,
+  Settings,
 } from 'lucide-react';
 import type { ChatMessage, DelegationTaskInfo, MessageArtifact } from '../../store/chat';
 import { extractMessageArtifacts, useChatStore } from '../../store/chat';
@@ -26,6 +28,7 @@ import { useAgentStore } from '../../store/agent';
 import { usePortalStore } from '../../store/portal';
 import { useTTSStore } from '../../store/tts';
 import { parseAgentChatConfig, api } from '../../services/desktop_api';
+import { EVENT, eventBus } from '../../kernel/events';
 import { LazyMarkdown as Markdown } from '../LazyMarkdown';
 import { AgentIconTile } from '../agent/AgentIconTile';
 import { ProviderIcon } from '../settings/ProviderIcon';
@@ -37,6 +40,7 @@ import { ThinkingIndicator } from './ThinkingBlock';
 import { chatMarkdownProps } from './markdownConfig';
 import { timeAgo, fullTime, downloadCodeBlock, downloadArtifact } from './shared';
 import { TTSControls } from '../chat/TTSControls';
+import { SourceAttributionBadges } from './SourceAttributionBadges';
 
 // --- Collect delegation results from message + tool calls ---
 
@@ -180,7 +184,7 @@ function DiagnosticsBlock({
 }) {
   const [expanded, setExpanded] = useState(false);
   const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
+  const { t } = useTranslation(['chat', 'agent']);
   const toolCalls = message.toolCalls || [];
   const knowledgeChunks = message.knowledgeChunks || [];
   const delegationResults = collectDelegationResults(message);
@@ -188,7 +192,9 @@ function DiagnosticsBlock({
   const pendingTools = toolCalls.filter((tool) => tool.pending || tool.status === 'approval_required').length;
   const failedDelegations = delegationResults.filter((item) => item.status === 'failed' || item.status === 'timeout').length;
   const presentedError = message.error
-    ? t(message.error, { defaultValue: message.error })
+    ? message.error.startsWith('agent.')
+      ? t(message.error, { ns: 'agent', defaultValue: message.error })
+      : t(message.error, { defaultValue: message.error })
     : undefined;
   const hasRuntimeDiagnostics = !!message.thinking || !!message.error || !!message.processDuration || toolCalls.length > 0 || knowledgeChunks.length > 0 || delegationResults.length > 0;
   const hasDiagnostics = hasRuntimeDiagnostics;
@@ -196,14 +202,20 @@ function DiagnosticsBlock({
   if (!hasDiagnostics) return null;
 
   return (
-    <div style={{
+    <div
+      data-pt-agent-message-error={message.error}
+      data-pt-agent-error-type={message.typedError?.error_type}
+      data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
+      style={{
       borderRadius: 8,
       border: `1px solid ${message.error ? token.colorErrorBorder : token.colorBorderSecondary}`,
       background: message.error ? token.colorErrorBg : token.colorFillQuaternary,
       marginBottom: message.content ? 6 : 0,
       overflow: 'hidden',
-    }}>
+      }}
+    >
       <div
+        data-pt-agent-message-error-toggle={message.error ? 'true' : undefined}
         onClick={() => setExpanded(!expanded)}
         style={{
           display: 'flex',
@@ -230,7 +242,12 @@ function DiagnosticsBlock({
           {message.error && (
             <Flexbox gap={3}>
               <span style={{ fontSize: 12, fontWeight: 600, color: token.colorErrorText }}>{t('chat.message.diagnostics.error')}</span>
-              <span style={{ fontSize: 12, color: token.colorErrorText }}>{presentedError}</span>
+              <span
+                data-pt-agent-message-error-text={message.error}
+                style={{ fontSize: 12, color: token.colorErrorText }}
+              >
+                {presentedError}
+              </span>
             </Flexbox>
           )}
           {message.thinking && (
@@ -315,9 +332,11 @@ interface AssistantMessageProps {
  */
 export function AssistantMessage({ message, onOpenArtifact }: AssistantMessageProps) {
   const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
+  const { t } = useTranslation(['chat', 'agent']);
   const presentedError = message.error
-    ? t(message.error, { defaultValue: message.error })
+    ? message.error.startsWith('agent.')
+      ? t(message.error, { ns: 'agent', defaultValue: message.error })
+      : t(message.error, { ns: 'chat', defaultValue: message.error })
     : undefined;
   const [hovered, setHovered] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -331,9 +350,11 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const retryMessage = useChatStore(s => s.retryMessage);
   const retryTurnRecovery = useChatStore(s => s.retryTurnRecovery);
   const reloadTurnSnapshot = useChatStore(s => s.reloadTurnSnapshot);
+  const requestComposerFocus = useChatStore(s => s.requestComposerFocus);
   const sendMessage = useChatStore(s => s.sendMessage);
   const translateMessage = useChatStore(s => s.translateMessage);
   const openThread = usePortalStore(s => s.openThread);
+  const openTurnDetails = usePortalStore(s => s.openTurnDetails);
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
   const operation = useChatStore((state) => {
     const current = state.operations[state.currentSessionKey];
@@ -353,6 +374,16 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const messageModel = message.model ? availableModels.find((model) => model.id === message.model) : undefined;
   const providerName = messageModel?.provider_name || messageModel?.provider_id || activeAgent?.provider || '';
   const agentDisplayName = activeAgent?.title || activeAgent?.name;
+  const isContextOverflow =
+    message.typedError?.error_type === 'CONTEXT_OVERFLOW';
+  const resolutionLabel = message.resolution?.label.startsWith('agent.')
+    ? t(message.resolution.label, { ns: 'agent' })
+    : message.resolution?.label;
+  const resolutionTarget = message.resolution?.type === 'openProviderSettings'
+    ? 'configure-credential'
+    : message.resolution?.type === 'openOriginal'
+      ? 'open-original'
+      : 'true';
   const artifacts = useMemo(() => extractMessageArtifacts(message), [message]);
 
   const handleCopy = useCallback(() => {
@@ -378,7 +409,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   }, [regenerateMessage, message.id]);
 
   const handleRetry = useCallback(() => {
-    retryMessage(message.id);
+    return retryMessage(message.id);
   }, [retryMessage, message.id]);
 
   const handleRetryRecovery = useCallback(() => {
@@ -388,6 +419,25 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const handleReloadSnapshot = useCallback(() => {
     void reloadTurnSnapshot(currentSessionKey);
   }, [currentSessionKey, reloadTurnSnapshot]);
+
+  const handleOpenTurnDetails = useCallback(() => {
+    if (message.turnId) openTurnDetails(message.id, message.turnId);
+  }, [message.id, message.turnId, openTurnDetails]);
+
+  const handleOpenOriginal = useCallback((turnId: string) => {
+    const originalMessage = useChatStore.getState().messages.find(
+      (candidate) => (
+        candidate.role === 'assistant'
+        && candidate.turnId === turnId
+        && candidate.id !== message.id
+      ),
+    );
+    if (!originalMessage) {
+      toast.error(t('chat.message.turnDetails.loadFailed'));
+      return;
+    }
+    openTurnDetails(originalMessage.id, turnId);
+  }, [message.id, openTurnDetails, t]);
 
   const handleDelAndRegenerate = useCallback(() => {
     deleteAndRegenerateMessage(message.id);
@@ -417,6 +467,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     <Flexbox
       data-pt-agent-message="assistant"
       data-pt-agent-message-id={message.id}
+      data-pt-agent-terminal-status={message.terminalStatus}
+      data-pt-agent-error-type={message.typedError?.error_type}
+      data-pt-agent-error-resource-kind={message.typedError?.details.resource_kind}
+      data-pt-agent-error-resource-id={message.typedError?.details.resource_id}
       id={`agent-message-${message.id}`}
       align="flex-start"
       gap={8}
@@ -487,9 +541,50 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             compressionEnabled={!!activeChatConfig.enableContextCompression}
           />
 
+          {message.budgetNotice && (
+            <Flexbox
+              data-budget-notice
+              data-budget-kind={message.budgetNotice.kind}
+              gap={8}
+              style={{
+                border: `1px solid ${token.colorWarningBorder}`,
+                borderRadius: token.borderRadiusLG,
+                background: token.colorWarningBg,
+                color: token.colorWarningText,
+                marginBottom: 8,
+                padding: '10px 12px',
+              }}
+            >
+              <Flexbox horizontal align="center" gap={6}>
+                <AlertTriangle size={14} />
+                <strong>{t('chat.message.budget.title')}</strong>
+              </Flexbox>
+              <span style={{ fontSize: 12 }}>
+                {t(`chat.message.budget.kind.${message.budgetNotice.kind}`, {
+                  limit: message.budgetNotice.limit,
+                  consumed: message.budgetNotice.consumed,
+                })}
+              </span>
+              <Flexbox horizontal gap={8}>
+                <Button size="small" onClick={handleRetry}>
+                  {t('chat.message.budget.retry')}
+                </Button>
+                {message.turnId && (
+                  <Button size="small" type="text" onClick={handleOpenTurnDetails}>
+                    {t('chat.message.action.turnDetails')}
+                  </Button>
+                )}
+              </Flexbox>
+            </Flexbox>
+          )}
+
           {/* Tool calls block */}
           {message.toolCalls && message.toolCalls.length > 0 && (
-            <ToolCallsBlock toolCalls={message.toolCalls} messageId={message.id} />
+            <ToolCallsBlock
+              toolCalls={message.toolCalls}
+              messageId={message.id}
+              onRequestAgain={handleRetry}
+            />
           )}
 
           {/* Artifacts */}
@@ -553,6 +648,13 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             </div>
           ) : null}
 
+          <div data-source-badges>
+            <SourceAttributionBadges
+              message={message}
+              onOpenDetails={message.turnId ? handleOpenTurnDetails : undefined}
+            />
+          </div>
+
           {/* TTS inline controls */}
           <TTSControls messageId={message.id} />
 
@@ -579,7 +681,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           )}
 
           {/* Error block */}
-          {message.error && (
+          {message.error && !message.budgetNotice && (
             <div
               className="selectable"
               style={{
@@ -598,20 +700,58 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
               <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
               <div style={{ flex: 1 }}>
                 <div>{presentedError}</div>
-                {message.resolution && (
+                {isContextOverflow && (
                   <Button
+                    data-pt-agent-message-error-recovery="reduce-context"
                     type="primary"
                     size="small"
                     danger
+                    icon={<Minimize2 size={14} />}
+                    style={{ marginTop: 8 }}
+                    onClick={requestComposerFocus}
+                  >
+                    {t('agent.recovery.reduceContext', { ns: 'agent' })}
+                  </Button>
+                )}
+                {message.resolution && (
+                  <Button
+                    data-pt-agent-message-error-recovery={resolutionTarget}
+                    type="primary"
+                    size="small"
+                    danger={message.resolution.type !== 'openOriginal'}
+                    icon={
+                      message.resolution.type === 'openProviderSettings'
+                        ? <Settings size={14} />
+                        : message.resolution.type === 'openOriginal'
+                          ? <ExternalLink size={14} />
+                          : undefined
+                    }
                     style={{ marginTop: 8 }}
                     onClick={async () => {
                       try {
+                        if (message.resolution!.type === 'openProviderSettings') {
+                          eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
+                            resource: 'settings',
+                            id: 'providers',
+                          });
+                          toast.success(t('chat.message.resolution.settingsOpened'));
+                          return;
+                        }
+                        if (message.resolution!.type === 'openOriginal') {
+                          handleOpenOriginal(
+                            message.resolution!.existingCommandId ?? '',
+                          );
+                          return;
+                        }
                         const result = await api.resolveErrorAction(message.resolution!);
                         if (result.message) {
                           toast.success(result.message);
                         } else if (result.reauth) {
                           toast.success(t('chat.message.resolution.authOpened'));
                         } else if (result.opened) {
+                          eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
+                            resource: 'settings',
+                          });
                           toast.success(t('chat.message.resolution.settingsOpened'));
                         }
                       } catch (err: unknown) {
@@ -620,7 +760,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                       }
                     }}
                   >
-                    {message.resolution.label}
+                    {resolutionLabel}
                   </Button>
                 )}
               </div>
@@ -670,6 +810,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             onDeleteAndRegenerate: handleDelAndRegenerate,
             onTranslate: () => translateMessage(message.id),
             onThread: () => openThread(currentSessionKey, message.id),
+            onTurnDetails: handleOpenTurnDetails,
             onReadAloud: () => {
               if (message.content) {
                 useTTSStore.getState().speak(message.id, message.content);

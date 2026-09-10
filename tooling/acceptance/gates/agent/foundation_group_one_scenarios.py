@@ -53,6 +53,34 @@ def _replay_delivery_identity(
     }
 
 
+def _replay_payload_sequence(
+    payload: Mapping[str, Any],
+    *,
+    scenario: str,
+) -> int:
+    data = _mapping(payload, "data", scenario=scenario)
+    value = data.get("seq")
+    if value is None:
+        value = data.get("sequence")
+    if isinstance(value, bool):
+        raise GroupOneScenarioError(
+            f"{scenario} replay payload sequence must be a positive integer"
+        )
+    if isinstance(value, int):
+        sequence = value
+    elif isinstance(value, str) and value.isdigit():
+        sequence = int(value)
+    else:
+        raise GroupOneScenarioError(
+            f"{scenario} replay payload sequence must be a positive integer"
+        )
+    if sequence <= 0:
+        raise GroupOneScenarioError(
+            f"{scenario} replay payload sequence must be a positive integer"
+        )
+    return sequence
+
+
 def evaluate_as_f02(capture: Mapping[str, Any]) -> dict[str, bool]:
     invalid = _mapping(capture, "invalidSubmission")
     duplicate = _mapping(capture, "duplicateSubmission")
@@ -450,6 +478,11 @@ def evaluate_as_f05(capture: Mapping[str, Any]) -> dict[str, bool]:
     unauthorized = _mapping(rejections, "unauthorized", scenario="AS-F05")
     references = _list(capture, "references", scenario="AS-F05")
     download = _mapping(capture, "authorizedDownload", scenario="AS-F05")
+    receiver_interaction = _mapping(
+        capture,
+        "receiverInteraction",
+        scenario="AS-F05",
+    )
 
     def valid_handled_file(
         fact: Mapping[str, Any],
@@ -630,6 +663,20 @@ def evaluate_as_f05(capture: Mapping[str, Any]) -> dict[str, bool]:
                 scenario="AS-F05",
             )
         ),
+        "historyAttachmentActionVisible": (
+            receiver_interaction.get("attachmentId") in expected_attachment_ids
+            and receiver_interaction.get("visible") is True
+            and receiver_interaction.get("keyboardReachable") is True
+            and receiver_interaction.get("accessibleNamePresent") is True
+            and receiver_interaction.get("openInvoked") is True
+            and bool(
+                _nonempty_string(
+                    receiver_interaction,
+                    "openedUrlHash",
+                    scenario="AS-F05",
+                )
+            )
+        ),
     }
     failed = sorted(key for key, passed in assertions.items() if not passed)
     if failed:
@@ -734,10 +781,7 @@ def evaluate_as_f06(
     replay_payload_hashes_valid = all(
         payload.get("eventType") == delivery.get("eventType")
         and delivery.get("eventType") not in AS_F06_CONTROL_EVENTS
-        and (
-            _mapping(payload, "data", scenario="AS-F06").get("seq")
-            or _mapping(payload, "data", scenario="AS-F06").get("sequence")
-        )
+        and _replay_payload_sequence(payload, scenario="AS-F06")
         == delivery.get("sequence")
         and _nonempty_string(
             delivery,
@@ -784,6 +828,21 @@ def evaluate_as_f06(
         for delivery in replay_deliveries
     )
     after_cursor = _positive_int(replay, "afterCursor", scenario="AS-F06")
+    replay_request_cursor = _positive_int(
+        handoff,
+        "replayRequestCursor",
+        scenario="AS-F06",
+    )
+    acknowledged_cursor = _positive_int(
+        handoff,
+        "acknowledgedCursor",
+        scenario="AS-F06",
+    )
+    through_cursor = _positive_int(
+        replay,
+        "throughCursor",
+        scenario="AS-F06",
+    )
     blocker = recovery_failure.get("blocker")
     if not isinstance(blocker, str):
         raise GroupOneScenarioError("AS-F06 blocker fact is invalid")
@@ -901,8 +960,13 @@ def evaluate_as_f06(
         ),
         "replayAfterAcknowledgedCursor": (
             bool(replay_sequences)
+            and after_cursor == acknowledged_cursor
+            and acknowledged_cursor >= replay_request_cursor
+            and through_cursor > acknowledged_cursor
+            and acknowledged_cursor == cursor_before_mutation
             and replay_sequences == sorted(set(replay_sequences))
             and replay_sequences == replay_delivery_sequences
+            and replay_sequences[-1] == through_cursor
             and all(sequence > after_cursor for sequence in replay_sequences)
             and replay_payload_hashes_valid
             and replay_source_matches
@@ -1221,6 +1285,7 @@ def evaluate_as_f07(capture: Mapping[str, Any]) -> dict[str, bool]:
                 "sourceConversationId",
                 scenario="AS-F07",
             )
+            and retry.get("sourceStatus") == "cancelled"
             and source_turn_id
             == _nonempty_string(
                 retry,
@@ -1432,6 +1497,7 @@ def evaluate_as_f10(
     platform: str,
 ) -> dict[str, bool | None]:
     core = _mapping(capture, "coreOutcome", scenario="AS-F10")
+    tool_isolation = _mapping(capture, "toolIsolation", scenario="AS-F10")
     session = _mapping(capture, "capabilitySession", scenario="AS-F10")
     selected_device = _mapping(capture, "selectedDevice", scenario="AS-F10")
     rejections = _mapping(capture, "rejections", scenario="AS-F10")
@@ -1545,6 +1611,33 @@ def evaluate_as_f10(
         "coreOutcomesMatch": (
             core.get("stationStatus") == "completed"
             and core.get("receiverStatus") == "completed"
+            and _nonnegative_int(
+                tool_isolation,
+                "readyCapabilityCount",
+                scenario="AS-F10",
+            )
+            == 0
+            and tool_isolation.get("restorationVerified") is True
+            and _nonnegative_int(
+                tool_isolation,
+                "restoredReadyCapabilityCount",
+                scenario="AS-F10",
+            )
+            == _nonnegative_int(
+                tool_isolation,
+                "originalReadyCapabilityCount",
+                scenario="AS-F10",
+            )
+            and _nonempty_string(
+                tool_isolation,
+                "restoredReadyCapabilityHash",
+                scenario="AS-F10",
+            )
+            == _nonempty_string(
+                tool_isolation,
+                "originalReadyCapabilityHash",
+                scenario="AS-F10",
+            )
         ),
         "unsupportedRejected": unsupported_result,
         "unauthorizedRejected": rejected(unauthorized, "unauthorized"),
@@ -1580,6 +1673,601 @@ def evaluate_as_f10(
             f"AS-F10 production facts failed assertions: {failed}"
         )
     return assertions
+
+
+def evaluate_as_f12(
+    capture: Mapping[str, Any],
+    *,
+    platform: str,
+    locale: str,
+    sample_id: str,
+) -> dict[str, bool]:
+    scenario = "AS-F12"
+    scope = _mapping(capture, "scope", scenario=scenario)
+    tool_isolation = _mapping(
+        capture,
+        "toolIsolation",
+        scenario=scenario,
+    )
+    topics = _mapping(capture, "topics", scenario=scenario)
+    restart = _mapping(capture, "restart", scenario=scenario)
+    station = _mapping(restart, "station", scenario=scenario)
+    stale = _mapping(capture, "staleMutation", scenario=scenario)
+    stale_before = _mapping(stale, "before", scenario=scenario)
+    stale_after = _mapping(stale, "after", scenario=scenario)
+
+    if set(topics) != {"alpha", "beta"}:
+        raise GroupOneScenarioError(
+            f"{scenario} topics must contain alpha and beta"
+        )
+
+    expected_scenario_key = "|".join(
+        (platform, locale, scenario, sample_id)
+    )
+    topic_facts = {
+        key: _evaluate_as_f12_topic(
+            _mapping(topics, key, scenario=scenario),
+            key=key,
+            scenario=scenario,
+        )
+        for key in ("alpha", "beta")
+    }
+    alpha = topic_facts["alpha"]
+    beta = topic_facts["beta"]
+    conversation_ids = {
+        alpha["conversation_id"],
+        beta["conversation_id"],
+    }
+    distinct_topic_identity = (
+        alpha["fact"] != beta["fact"]
+        and len(conversation_ids) == 2
+        and alpha["message_ids"].isdisjoint(beta["message_ids"])
+        and alpha["branch_ids"].isdisjoint(beta["branch_ids"])
+        and alpha["turn_ids"].isdisjoint(beta["turn_ids"])
+        and _as_f12_runtime_ownership_isolated(alpha, beta)
+    )
+    source_restart_proven = (
+        _sha256_string(
+            station,
+            "stationUrlHash",
+            scenario=scenario,
+        )
+        and _sha256_string(
+            station,
+            "protoDigest",
+            scenario=scenario,
+        )
+        and _nonempty_string(
+            station,
+            "containerId",
+            scenario=scenario,
+        )
+        and _nonempty_string(
+            station,
+            "imageId",
+            scenario=scenario,
+        )
+        and _nonempty_string(
+            station,
+            "imageRef",
+            scenario=scenario,
+        )
+        and _nonempty_string(
+            station,
+            "beforeStartedAt",
+            scenario=scenario,
+        )
+        != _nonempty_string(
+            station,
+            "afterStartedAt",
+            scenario=scenario,
+        )
+        and _hex_identity_matches(
+            _nonempty_string(
+                station,
+                "sourceCommit",
+                scenario=scenario,
+            ),
+            _nonempty_string(
+                station,
+                "beforeCommit",
+                scenario=scenario,
+            ),
+        )
+        and _hex_identity_matches(
+            _nonempty_string(
+                station,
+                "sourceCommit",
+                scenario=scenario,
+            ),
+            _nonempty_string(
+                station,
+                "afterCommit",
+                scenario=scenario,
+            ),
+        )
+        and _mapping(
+            station,
+            "clientReloads",
+            scenario=scenario,
+        ).get(platform)
+        is True
+        and station.get("owningPlatform") == platform
+        and station.get("existingSessionRestored") is True
+    )
+    stale_target = _nonempty_string(
+        stale,
+        "targetConversationId",
+        scenario=scenario,
+    )
+    stale_expected_version = _positive_int(
+        stale,
+        "expectedVersion",
+        scenario=scenario,
+    )
+    stale_before_alpha_version = _positive_int(
+        stale_before,
+        "alphaVersion",
+        scenario=scenario,
+    )
+    stale_preserved = (
+        stale.get("errorCode") == "VERSION_CONFLICT"
+        and stale_target == alpha["conversation_id"]
+        and _nonempty_string(
+            stale,
+            "attemptedBranchMessageId",
+            scenario=scenario,
+        )
+        == alpha["source_assistant_message_id"]
+        and stale_expected_version < stale_before_alpha_version
+        and _sha256_string(
+            stale_before,
+            "alphaHash",
+            scenario=scenario,
+        )
+        == _sha256_string(
+            stale_after,
+            "alphaHash",
+            scenario=scenario,
+        )
+        == alpha["post_restart_hash"]
+        and _sha256_string(
+            stale_before,
+            "betaHash",
+            scenario=scenario,
+        )
+        == _sha256_string(
+            stale_after,
+            "betaHash",
+            scenario=scenario,
+        )
+        == beta["post_restart_hash"]
+        and stale_before_alpha_version
+        == _positive_int(
+            stale_after,
+            "alphaVersion",
+            scenario=scenario,
+        )
+        and _positive_int(
+            stale_before,
+            "betaVersion",
+            scenario=scenario,
+        )
+        == _positive_int(
+            stale_after,
+            "betaVersion",
+            scenario=scenario,
+        )
+    )
+    scope_matches = (
+        scope.get("scenarioKey") == expected_scenario_key
+        and scope.get("platform") == platform
+        and scope.get("locale") == locale
+        and scope.get("sampleId") == sample_id
+    )
+    assertions = {
+        "twoTopicsDistinct": (
+            distinct_topic_identity
+            and _positive_int(
+                tool_isolation,
+                "disabledBindingCount",
+                scenario=scenario,
+            )
+            > 0
+            and _nonnegative_int(
+                tool_isolation,
+                "readyCapabilityCount",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "restartRestored": (
+            scope_matches
+            and source_restart_proven
+            and alpha["restart_restored"]
+            and beta["restart_restored"]
+        ),
+        "branchesIndependent": (
+            distinct_topic_identity
+            and alpha["branch_owned"]
+            and beta["branch_owned"]
+            and alpha["selected_branch_message_id"]
+            != beta["selected_branch_message_id"]
+        ),
+        "noCrossTopicReferences": (
+            distinct_topic_identity
+            and alpha["references_owned"]
+            and beta["references_owned"]
+        ),
+        "staleMutationConflict": stale_preserved,
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        diagnostics = {
+            "scopeMatches": scope_matches,
+            "sourceRestartProven": bool(source_restart_proven),
+            "alphaRestart": alpha["restart_checks"],
+            "betaRestart": beta["restart_checks"],
+        }
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}; "
+            f"diagnostics={json.dumps(diagnostics, sort_keys=True)}"
+        )
+    return assertions
+
+
+def _evaluate_as_f12_topic(
+    topic: Mapping[str, Any],
+    *,
+    key: str,
+    scenario: str,
+) -> dict[str, Any]:
+    if topic.get("key") != key:
+        raise GroupOneScenarioError(
+            f"{scenario} {key} topic key is invalid"
+        )
+    conversation_id = _nonempty_string(
+        topic,
+        "conversationId",
+        scenario=scenario,
+    )
+    fact = _nonempty_string(topic, "fact", scenario=scenario)
+    turn_ids = _string_set(topic, "turnIds", scenario=scenario)
+    runtime_turn_id = _nonempty_string(
+        topic,
+        "runtimeTurnId",
+        scenario=scenario,
+    )
+    source_assistant_message_id = _nonempty_string(
+        topic,
+        "sourceAssistantMessageId",
+        scenario=scenario,
+    )
+    sibling_message_id = _nonempty_string(
+        topic,
+        "siblingMessageId",
+        scenario=scenario,
+    )
+    selected_branch_message_id = _nonempty_string(
+        topic,
+        "selectedBranchMessageId",
+        scenario=scenario,
+    )
+    pre_restart = _mapping(topic, "preRestart", scenario=scenario)
+    post_restart = _mapping(topic, "postRestart", scenario=scenario)
+    alternate_post_restart = _mapping(
+        topic,
+        "alternatePostRestart",
+        scenario=scenario,
+    )
+    restored_post_restart = _mapping(
+        topic,
+        "restoredSelectedPostRestart",
+        scenario=scenario,
+    )
+    pre_restart_hash = _sha256_string(
+        topic,
+        "preRestartHash",
+        scenario=scenario,
+    )
+    post_restart_hash = _sha256_string(
+        topic,
+        "postRestartHash",
+        scenario=scenario,
+    )
+    receiver_before = _mapping(topic, "receiverBefore", scenario=scenario)
+    receiver_after = _mapping(topic, "receiverAfter", scenario=scenario)
+
+    post_conversation = _mapping(
+        post_restart,
+        "conversation",
+        scenario=scenario,
+    )
+    runtime_binding = _mapping(
+        post_conversation,
+        "runtimeBinding",
+        scenario=scenario,
+    )
+    runtime_turn = _mapping(
+        post_restart,
+        "runtimeTurn",
+        scenario=scenario,
+    )
+    messages_by_id: dict[str, Mapping[str, Any]] = {}
+    for snapshot in (
+        post_restart,
+        alternate_post_restart,
+        restored_post_restart,
+    ):
+        for message in _list(snapshot, "messages", scenario=scenario):
+            message_id = _nonempty_string(
+                message,
+                "messageId",
+                scenario=scenario,
+            )
+            existing = messages_by_id.get(message_id)
+            if existing is not None and existing != message:
+                raise GroupOneScenarioError(
+                    f"{scenario} {key} message {message_id} changed "
+                    "while traversing branches"
+                )
+            messages_by_id[message_id] = message
+    messages = list(messages_by_id.values())
+    message_ids = set(messages_by_id)
+    if not message_ids:
+        raise GroupOneScenarioError(
+            f"{scenario} {key} message IDs are missing"
+        )
+    branch_ids = {
+        str(message.get("branchId") or "")
+        for message in messages
+        if message.get("branchId")
+    }
+    if not branch_ids:
+        raise GroupOneScenarioError(
+            f"{scenario} {key} branch IDs are missing"
+        )
+    message_references_owned = all(
+        message.get("conversationId") == conversation_id
+        and (
+            not message.get("turnId")
+            or message.get("turnId") in turn_ids
+        )
+        and (
+            not message.get("parentMessageId")
+            or message.get("parentMessageId") in message_ids
+        )
+        and (
+            not message.get("replacesMessageId")
+            or message.get("replacesMessageId") in message_ids
+        )
+        for message in messages
+    )
+    receiver_before_owned = _evaluate_as_f12_receiver(
+        receiver_before,
+        conversation_id=conversation_id,
+        selected_branch_message_id=selected_branch_message_id,
+        message_ids=message_ids,
+        scenario=scenario,
+    )
+    receiver_after_owned = _evaluate_as_f12_receiver(
+        receiver_after,
+        conversation_id=conversation_id,
+        selected_branch_message_id=selected_branch_message_id,
+        message_ids=message_ids,
+        scenario=scenario,
+    )
+    alternate_branch_message_id = (
+        source_assistant_message_id
+        if selected_branch_message_id == sibling_message_id
+        else sibling_message_id
+    )
+    alternate_conversation = _mapping(
+        alternate_post_restart,
+        "conversation",
+        scenario=scenario,
+    )
+    restored_conversation = _mapping(
+        restored_post_restart,
+        "conversation",
+        scenario=scenario,
+    )
+    runtime_identity_matches = all(
+        _nonempty_string(runtime_binding, field, scenario=scenario)
+        == _nonempty_string(runtime_turn, field, scenario=scenario)
+        for field in (
+            "runtimeKind",
+            "providerId",
+            "modelId",
+            "runtimeProfileId",
+        )
+    ) and (
+        _optional_string(
+            runtime_binding,
+            "externalSessionId",
+            scenario=scenario,
+        )
+        == _optional_string(
+            runtime_turn,
+            "externalSessionId",
+            scenario=scenario,
+        )
+    ) and (
+        _nonnegative_int(
+            runtime_binding,
+            "externalSessionEpoch",
+            scenario=scenario,
+        )
+        == _nonnegative_int(
+            runtime_turn,
+            "externalSessionEpoch",
+            scenario=scenario,
+        )
+    )
+    pre_conversation = _mapping(
+        pre_restart,
+        "conversation",
+        scenario=scenario,
+    )
+    pre_messages = _list(pre_restart, "messages", scenario=scenario)
+    post_messages = _list(post_restart, "messages", scenario=scenario)
+    pre_runtime_turn = _mapping(
+        pre_restart,
+        "runtimeTurn",
+        scenario=scenario,
+    )
+    restart_checks = {
+        "preHashMatches": (
+            _canonical_payload_hash(pre_restart) == pre_restart_hash
+        ),
+        "postHashMatches": (
+            _canonical_payload_hash(post_restart) == post_restart_hash
+        ),
+        "hashesEqual": pre_restart_hash == post_restart_hash,
+        "payloadsEqual": pre_restart == post_restart,
+        "conversationVersionEqual": (
+            pre_conversation.get("version") == post_conversation.get("version")
+        ),
+        "activeBranchEqual": (
+            pre_conversation.get("activeBranchMessageId")
+            == post_conversation.get("activeBranchMessageId")
+        ),
+        "runtimeBindingEqual": (
+            pre_conversation.get("runtimeBinding")
+            == post_conversation.get("runtimeBinding")
+        ),
+        "messagesEqual": pre_messages == post_messages,
+        "runtimeTurnEqual": pre_runtime_turn == runtime_turn,
+        "selectedBranchEqual": (
+            pre_restart.get("selectedBranchMessageId")
+            == post_restart.get("selectedBranchMessageId")
+        ),
+        "conversationMatches": (
+            post_conversation.get("conversationId") == conversation_id
+        ),
+        "topicMatches": (
+            post_restart.get("topicLabel") == key
+            and post_restart.get("fact") == fact
+        ),
+        "turnMatches": (
+            runtime_turn.get("turnId") == runtime_turn_id
+            and runtime_turn_id in turn_ids
+        ),
+        "runtimeMatches": runtime_identity_matches,
+    }
+    return {
+        "conversation_id": conversation_id,
+        "fact": fact,
+        "turn_ids": turn_ids,
+        "message_ids": message_ids,
+        "branch_ids": branch_ids,
+        "runtime_kind": _nonempty_string(
+            runtime_binding,
+            "runtimeKind",
+            scenario=scenario,
+        ),
+        "runtime_home_ref": _optional_string(
+            runtime_binding,
+            "runtimeHomeRef",
+            scenario=scenario,
+        ),
+        "external_session_id": _optional_string(
+            runtime_binding,
+            "externalSessionId",
+            scenario=scenario,
+        ),
+        "source_assistant_message_id": source_assistant_message_id,
+        "selected_branch_message_id": selected_branch_message_id,
+        "post_restart_hash": post_restart_hash,
+        "restart_checks": restart_checks,
+        "restart_restored": all(restart_checks.values()),
+        "branch_owned": (
+            source_assistant_message_id != sibling_message_id
+            and source_assistant_message_id in message_ids
+            and sibling_message_id in message_ids
+            and selected_branch_message_id
+            in {source_assistant_message_id, sibling_message_id}
+            and selected_branch_message_id in message_ids
+            and post_conversation.get("activeBranchMessageId")
+            == selected_branch_message_id
+            and post_restart.get("selectedBranchMessageId")
+            == selected_branch_message_id
+            and alternate_conversation.get("conversationId")
+            == conversation_id
+            and alternate_conversation.get("activeBranchMessageId")
+            == alternate_branch_message_id
+            and alternate_post_restart.get("selectedBranchMessageId")
+            == alternate_branch_message_id
+            and restored_conversation.get("conversationId")
+            == conversation_id
+            and restored_conversation.get("activeBranchMessageId")
+            == selected_branch_message_id
+            and restored_post_restart.get("selectedBranchMessageId")
+            == selected_branch_message_id
+        ),
+        "references_owned": (
+            message_references_owned
+            and receiver_before_owned
+            and receiver_after_owned
+        ),
+    }
+
+
+def _evaluate_as_f12_receiver(
+    receiver: Mapping[str, Any],
+    *,
+    conversation_id: str,
+    selected_branch_message_id: str,
+    message_ids: set[str],
+    scenario: str,
+) -> bool:
+    rendered = _list(receiver, "rendered", scenario=scenario)
+    rendered_ids = {
+        _nonempty_string(item, "messageId", scenario=scenario)
+        for item in rendered
+    }
+    store_message_ids = _string_set(
+        receiver,
+        "storeMessageIds",
+        scenario=scenario,
+    )
+    selected_visible = any(
+        item.get("messageId") == selected_branch_message_id
+        and item.get("visible") is True
+        for item in rendered
+    )
+    return (
+        receiver.get("conversationId") == conversation_id
+        and receiver.get("selectedBranchMessageId")
+        == selected_branch_message_id
+        and receiver.get("selectedBranchVisible") is True
+        and receiver.get("ownFactVisible") is True
+        and receiver.get("foreignFactVisible") is False
+        and selected_visible
+        and rendered_ids <= message_ids
+        and store_message_ids <= message_ids
+    )
+
+
+def _as_f12_runtime_ownership_isolated(
+    alpha: Mapping[str, Any],
+    beta: Mapping[str, Any],
+) -> bool:
+    runtime_kinds = {alpha["runtime_kind"], beta["runtime_kind"]}
+    if runtime_kinds == {"direct_model"}:
+        return all(
+            not topic[field]
+            for topic in (alpha, beta)
+            for field in ("runtime_home_ref", "external_session_id")
+        )
+    if runtime_kinds == {"external_agent"}:
+        return all(
+            alpha[field]
+            and beta[field]
+            and alpha[field] != beta[field]
+            for field in ("runtime_home_ref", "external_session_id")
+        )
+    return False
 
 
 def evaluate_base_active_mutation_conflict(
@@ -1704,6 +2392,7 @@ def evaluate_base_active_mutation_conflict(
         "cleanupComplete": (
             cleanup.get("deletedFromRoster") is True
             and cleanup.get("deletedFromStation") is True
+            and cleanup.get("conversationDeleted") is True
             and _nonempty_string(
                 cleanup,
                 "restoredSelection",
@@ -1714,6 +2403,1409 @@ def evaluate_base_active_mutation_conflict(
                 "priorSelection",
                 scenario=scenario,
             )
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
+def evaluate_base_cancelled(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-CANCELLED"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    receiver_phases = _mapping(receiver, "phases", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    persisted_outcome = _mapping(
+        station,
+        "persistedOutcome",
+        scenario=scenario,
+    )
+    persisted_details = _mapping(
+        persisted_outcome,
+        "details",
+        scenario=scenario,
+    )
+    replay = _mapping(capture, "replay", scenario=scenario)
+    replay_snapshot = _mapping(replay, "snapshot", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    cancellation = _mapping(capture, "cancellation", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+    turn_id = _nonempty_string(station, "turnId", scenario=scenario)
+    source_hash = _sha256_string(
+        replay,
+        "sourceHash",
+        scenario=scenario,
+    )
+
+    def receiver_phase_matches(
+        phase_name: str,
+        expected_message_id: str,
+        expected_error_detail: str,
+    ) -> bool:
+        phase = _mapping(receiver_phases, phase_name, scenario=scenario)
+        return (
+            phase.get("visible") is True
+            and phase.get("terminalStatus") == "cancelled"
+            and phase.get("errorType") == "LIFECYCLE_CANCELLED"
+            and phase.get("resourceKind") == "turn"
+            and phase.get("resourceId") == turn_id
+            and _nonempty_string(
+                phase,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                phase,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and phase.get("recoveryVisible") is False
+            and phase.get("resolutionPresent") is False
+            and phase.get("messageId") == expected_message_id
+            and phase.get("errorDetail") == expected_error_detail
+        )
+
+    assertions = {
+        "typedCancellationProjected": (
+            outcome.get("error") == "agent.errors.lifecycleCancelled"
+            and outcome.get("error_type") == "LIFECYCLE_CANCELLED"
+            and outcome.get("locale_key")
+            == "agent.errors.lifecycleCancelled"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and sorted(details) == ["resource_id", "resource_kind"]
+            and details.get("resource_kind") == "turn"
+            and details.get("resource_id") == turn_id
+            and runtime_event.get("eventType") == "cancelled"
+            and runtime_event.get("errorType") == "LIFECYCLE_CANCELLED"
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and _sha256_string(
+                runtime_event,
+                "sourcePtidHash",
+                scenario=scenario,
+            )
+            and runtime_event.get("sourceConversationId")
+            == station.get("conversationId")
+            and runtime_event.get("sourceTurnId") == turn_id
+            and runtime_event.get("sourceSequence")
+            == runtime_event.get("sequence")
+            and runtime_event.get("sourceEventType")
+            == runtime_event.get("eventType")
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            ) > 0
+        ),
+        "localizedCancellationVisible": (
+            receiver.get("visible") is True
+            and receiver.get("terminalStatus") == "cancelled"
+            and receiver.get("errorType") == "LIFECYCLE_CANCELLED"
+            and receiver.get("resourceKind") == "turn"
+            and receiver.get("resourceId") == turn_id
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is False
+            and receiver.get("resolutionPresent") is False
+            and receiver_phase_matches(
+                "live",
+                str(station.get("messageId")),
+                "cancelled_by_user",
+            )
+            and receiver_phase_matches(
+                "reload",
+                str(station.get("messageId")),
+                "",
+            )
+            and receiver_phase_matches(
+                "replaySnapshot",
+                str(station.get("messageId")),
+                "cancelled_by_user",
+            )
+        ),
+        "cancelledPersisted": (
+            station.get("turnStatus") == "cancelled"
+            and station.get("attemptStatus") == "cancelled"
+            and station.get("messageStatus") == "cancelled"
+            and station.get("terminalReason") == "cancelled_by_user"
+            and persisted_outcome.get("error") == outcome.get("error")
+            and persisted_outcome.get("error_type")
+            == outcome.get("error_type")
+            and persisted_outcome.get("locale_key")
+            == outcome.get("locale_key")
+            and persisted_outcome.get("retryable")
+            == outcome.get("retryable")
+            and persisted_outcome.get("terminal")
+            == outcome.get("terminal")
+            and sorted(persisted_details) == sorted(details)
+            and persisted_details.get("resource_kind")
+            == details.get("resource_kind")
+            and persisted_details.get("resource_id")
+            == details.get("resource_id")
+            and cancellation.get("status") == "cancelled"
+        ),
+        "exactlyOneAuthoritativeTerminal": (
+            _positive_int(
+                station,
+                "terminalEventCount",
+                scenario=scenario,
+            ) == 1
+            and _positive_int(
+                station,
+                "cancelledEventCount",
+                scenario=scenario,
+            ) == 1
+            and _nonnegative_int(
+                station,
+                "errorEventCount",
+                scenario=scenario,
+            ) == 0
+        ),
+        "zeroLateSuccess": (
+            _nonnegative_int(
+                station,
+                "doneEventCount",
+                scenario=scenario,
+            ) == 0
+            and _nonnegative_int(
+                station,
+                "liveDoneEventCount",
+                scenario=scenario,
+            ) == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _sha256_string(
+                replay,
+                "replayHash",
+                scenario=scenario,
+            ) == source_hash
+            and replay_snapshot.get("sourceTransport") == "station-sse"
+            and _sha256_string(
+                replay_snapshot,
+                "sourcePtidHash",
+                scenario=scenario,
+            )
+            == runtime_event.get("sourcePtidHash")
+            and replay_snapshot.get("sourceConversationId")
+            == station.get("conversationId")
+            and replay_snapshot.get("sourceTurnId") == turn_id
+            and replay_snapshot.get("sourceSequence")
+            == runtime_event.get("sourceSequence")
+            and replay_snapshot.get("sourceEventType") == "snapshot"
+            and replay_snapshot.get("status") == "cancelled"
+        ),
+        "cleanupComplete": (
+            _positive_int(
+                cleanup,
+                "cancellationRequestCount",
+                scenario=scenario,
+            ) == 1
+            and _positive_int(
+                cleanup,
+                "terminalCleanupCount",
+                scenario=scenario,
+            ) == 1
+            and cleanup.get("conversationDeleted") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
+def evaluate_base_approval_denied(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-APPROVAL_DENIED"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    decision = _mapping(capture, "decision", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    lineage = _mapping(station, "lineage", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    states = station.get("states")
+    if not isinstance(states, list) or any(
+        not isinstance(value, str) or not value
+        for value in states
+    ):
+        raise GroupOneScenarioError(
+            f"{scenario} station states fact is invalid"
+        )
+
+    tool_call_id = _nonempty_string(
+        decision,
+        "toolCallId",
+        scenario=scenario,
+    )
+    decision_id = _nonempty_string(
+        decision,
+        "decisionId",
+        scenario=scenario,
+    )
+    decision_revision = _positive_int(
+        decision,
+        "decisionRevision",
+        scenario=scenario,
+    )
+    acknowledgement_source_hash = _nonempty_string(
+        replay,
+        "acknowledgementSourceHash",
+        scenario=scenario,
+    )
+    diagnostic_source_hash = _nonempty_string(
+        replay,
+        "diagnosticSourceHash",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedDenialProjected": (
+            outcome.get("error_type") == "TOOL_APPROVAL_DENIED"
+            and outcome.get("locale_key")
+            == "agent.errors.toolApprovalDenied"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and sorted(details) == ["decision_id", "tool_call_id"]
+            and details.get("tool_call_id") == tool_call_id
+            and details.get("decision_id") == decision_id
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+            and receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+        ),
+        "denialPersisted": (
+            decision.get("accepted") is True
+            and decision.get("approved") is False
+            and station.get("policy") == "manual"
+            and states == ["policy_check", "awaiting_user", "denied"]
+            and station.get("errorCode") == "TOOL_APPROVAL_DENIED"
+            and lineage.get("toolCallId") == tool_call_id
+            and lineage.get("decisionId") == decision_id
+            and _positive_int(
+                lineage,
+                "decisionRevision",
+                scenario=scenario,
+            )
+            == decision_revision
+        ),
+        "zeroSideEffect": all(
+            _nonnegative_int(station, key, scenario=scenario) == 0
+            for key in (
+                "executionAttemptCount",
+                "sideEffectCount",
+                "resultCount",
+                "continuationCount",
+            )
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _nonempty_string(
+                replay,
+                "acknowledgementReplayHash",
+                scenario=scenario,
+            )
+            == acknowledgement_source_hash
+            and _nonempty_string(
+                replay,
+                "diagnosticReplayHash",
+                scenario=scenario,
+            )
+            == diagnostic_source_hash
+        ),
+        "cleanupComplete": (
+            cleanup.get("conversationDeleted") is True
+            and cleanup.get("bindingRestored") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
+def evaluate_base_context_overflow(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-CONTEXT_OVERFLOW"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+    try:
+        limit_tokens = int(str(details.get("limit_tokens", "")))
+        actual_tokens = int(str(details.get("actual_tokens", "")))
+    except ValueError:
+        limit_tokens = 0
+        actual_tokens = 0
+
+    assertions = {
+        "typedContextOverflow": (
+            outcome.get("error") == "agent.errors.contextOverflow"
+            and outcome.get("error_type") == "CONTEXT_OVERFLOW"
+            and outcome.get("locale_key") == "agent.errors.contextOverflow"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and sorted(details) == ["actual_tokens", "limit_tokens"]
+            and limit_tokens > 0
+            and actual_tokens > limit_tokens
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType") == "CONTEXT_OVERFLOW"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            ) > 0
+            and _positive_int(
+                runtime_event,
+                "streamGeneration",
+                scenario=scenario,
+            ) > 0
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and _sha256_string(
+                runtime_event,
+                "sourcePtidHash",
+                scenario=scenario,
+            )
+            and runtime_event.get("sourceConversationId")
+            == station.get("conversationId")
+            and runtime_event.get("sourceTurnId") == ""
+            and runtime_event.get("sourceSequence") == 0
+            and runtime_event.get("sourceEventType") == "error"
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+        ),
+        "rejectedDraftPreserved": (
+            _positive_int(
+                receiver,
+                "draftLengthBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                receiver,
+                "draftLengthAfterRejection",
+                scenario=scenario,
+            )
+            and _sha256_string(
+                receiver,
+                "draftHashBefore",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                receiver,
+                "draftHashAfterRejection",
+                scenario=scenario,
+            )
+        ),
+        "reduceContextExecuted": (
+            receiver.get("composerFocusedAfterRecovery") is True
+            and 0 < _positive_int(
+                receiver,
+                "reducedDraftLength",
+                scenario=scenario,
+            )
+            < _positive_int(
+                receiver,
+                "draftLengthAfterRejection",
+                scenario=scenario,
+            )
+            and bool(
+                _sha256_string(
+                    receiver,
+                    "reducedDraftHash",
+                    scenario=scenario,
+                )
+            )
+        ),
+        "stationStateUnchanged": (
+            station.get("conversationVersionAfter")
+            == station.get("conversationVersionBefore")
+            and _sha256_string(
+                station,
+                "afterHash",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                station,
+                "beforeHash",
+                scenario=scenario,
+            )
+        ),
+        "zeroPersistenceAndProvider": (
+            _nonnegative_int(station, "turnDelta", scenario=scenario) == 0
+            and _nonnegative_int(station, "messageDelta", scenario=scenario)
+            == 0
+            and _nonnegative_int(station, "queueDelta", scenario=scenario)
+            == 0
+            and _nonnegative_int(
+                station,
+                "providerExecutionDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _sha256_string(
+                replay,
+                "sourceHash",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                replay,
+                "replayHash",
+                scenario=scenario,
+            )
+        ),
+        "cleanupComplete": (
+            cleanup.get("draftCleared") is True
+            and cleanup.get("localProjectionCleared") is True
+            and cleanup.get("conversationDeleted") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
+def evaluate_base_credential_missing(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-CREDENTIAL_MISSING"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+
+    provider_id = _nonempty_string(
+        station,
+        "providerId",
+        scenario=scenario,
+    )
+    conversation_id = _nonempty_string(
+        station,
+        "conversationId",
+        scenario=scenario,
+    )
+    before_hash = _sha256_string(
+        station,
+        "beforeHash",
+        scenario=scenario,
+    )
+    after_hash = _sha256_string(
+        station,
+        "afterHash",
+        scenario=scenario,
+    )
+    source_hash = _sha256_string(
+        replay,
+        "sourceHash",
+        scenario=scenario,
+    )
+    replay_hash = _sha256_string(
+        replay,
+        "replayHash",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedProviderConfigMissing": (
+            outcome.get("error")
+            == "agent.errors.providerCredentialMissing"
+            and outcome.get("error_type")
+            == "PROVIDER_CREDENTIAL_MISSING"
+            and outcome.get("locale_key")
+            == "agent.errors.providerCredentialMissing"
+            and outcome.get("retryable") is True
+            and outcome.get("terminal") is True
+            and sorted(details) == ["provider_id"]
+            and details.get("provider_id") == provider_id
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType")
+            == "PROVIDER_CREDENTIAL_MISSING"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            )
+            > 0
+            and _positive_int(
+                runtime_event,
+                "streamGeneration",
+                scenario=scenario,
+            )
+            > 0
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "eventId",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "streamIdHash",
+                    scenario=scenario,
+                )
+            )
+            and _sha256_string(
+                runtime_event,
+                "conversationIdHash",
+                scenario=scenario,
+            )
+            == hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "payloadHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _nonempty_string(
+                    runtime_event,
+                    "observedAt",
+                    scenario=scenario,
+                )
+            )
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "sourcePtidHash",
+                    scenario=scenario,
+                )
+            )
+            and runtime_event.get("sourceConversationId") == conversation_id
+            and _optional_string(
+                runtime_event,
+                "sourceTurnId",
+                scenario=scenario,
+            )
+            == ""
+            and _nonnegative_int(
+                runtime_event,
+                "sourceSequence",
+                scenario=scenario,
+            )
+            == 0
+            and runtime_event.get("sourceEventType")
+            == runtime_event.get("eventType")
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+        ),
+        "configureProviderExecuted": (
+            receiver.get("configureProviderExecuted") is True
+        ),
+        "providerConfigAbsentAtAdmission": (
+            station.get("providerStatusBefore") == "not_configured"
+            and station.get("providerConfiguredBefore") is False
+            and station.get("providerStatusAfter")
+            == station.get("providerStatusBefore")
+            and station.get("providerConfiguredAfter") is False
+        ),
+        "stationStateUnchanged": (
+            _positive_int(
+                station,
+                "conversationVersionBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                station,
+                "conversationVersionAfter",
+                scenario=scenario,
+            )
+            and before_hash == after_hash
+            and _nonnegative_int(
+                station,
+                "turnDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "messageDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "queueDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "zeroProviderCall": (
+            _nonnegative_int(
+                station,
+                "providerExecutionDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and source_hash == replay_hash == before_hash == after_hash
+        ),
+        "cleanupComplete": (
+            cleanup.get("conversationDeleted") is True
+            and cleanup.get("disposableAgentDeleted") is True
+            and _nonempty_string(
+                cleanup,
+                "restoredSelection",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                cleanup,
+                "priorSelection",
+                scenario=scenario,
+            )
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
+def evaluate_base_duplicate_conflict(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-DUPLICATE_CONFLICT"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+
+    conversation_id = _nonempty_string(
+        station,
+        "conversationId",
+        scenario=scenario,
+    )
+    original_turn_id = _nonempty_string(
+        station,
+        "originalTurnId",
+        scenario=scenario,
+    )
+    idempotency_key_hash = _sha256_string(
+        station,
+        "idempotencyKeyHash",
+        scenario=scenario,
+    )
+    before_hash = _sha256_string(
+        station,
+        "beforeHash",
+        scenario=scenario,
+    )
+    after_hash = _sha256_string(
+        station,
+        "afterHash",
+        scenario=scenario,
+    )
+    source_hash = _sha256_string(
+        replay,
+        "sourceHash",
+        scenario=scenario,
+    )
+    replay_hash = _sha256_string(
+        replay,
+        "replayHash",
+        scenario=scenario,
+    )
+    message_ids_before = _string_list(
+        station,
+        "originalMessageIdsBefore",
+        scenario=scenario,
+    )
+    message_ids_after = _string_list(
+        station,
+        "originalMessageIdsAfter",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedDuplicateConflictProjected": (
+            outcome.get("error") == "agent.errors.duplicateConflict"
+            and outcome.get("error_type") == "ADMISSION_DUPLICATE_CONFLICT"
+            and outcome.get("locale_key") == "agent.errors.duplicateConflict"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and sorted(details)
+            == ["existing_command_id", "idempotency_key_hash"]
+            and details.get("idempotency_key_hash") == idempotency_key_hash
+            and details.get("existing_command_id") == original_turn_id
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType")
+            == "ADMISSION_DUPLICATE_CONFLICT"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            )
+            > 0
+            and _positive_int(
+                runtime_event,
+                "streamGeneration",
+                scenario=scenario,
+            )
+            > 0
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "eventId",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "streamIdHash",
+                    scenario=scenario,
+                )
+            )
+            and _sha256_string(
+                runtime_event,
+                "conversationIdHash",
+                scenario=scenario,
+            )
+            == hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "payloadHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _nonempty_string(
+                    runtime_event,
+                    "observedAt",
+                    scenario=scenario,
+                )
+            )
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "sourcePtidHash",
+                    scenario=scenario,
+                )
+            )
+            and runtime_event.get("sourceConversationId") == conversation_id
+            and _optional_string(
+                runtime_event,
+                "sourceTurnId",
+                scenario=scenario,
+            )
+            == ""
+            and _nonnegative_int(
+                runtime_event,
+                "sourceSequence",
+                scenario=scenario,
+            )
+            == 0
+            and runtime_event.get("sourceEventType") == "error"
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+        ),
+        "openOriginalExecuted": (
+            receiver.get("openOriginalExecuted") is True
+            and receiver.get("openedTurnId") == original_turn_id
+        ),
+        "originalCommandPreserved": (
+            station.get("existingCommandId") == original_turn_id
+            and _positive_int(
+                station,
+                "conversationVersionBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                station,
+                "conversationVersionAfter",
+                scenario=scenario,
+            )
+            and before_hash == after_hash
+            and message_ids_before == message_ids_after
+            and bool(message_ids_before)
+        ),
+        "zeroNewRows": (
+            _nonnegative_int(
+                station,
+                "turnDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "messageDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "queueDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "zeroProviderCall": (
+            _nonnegative_int(
+                station,
+                "providerExecutionDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and source_hash == replay_hash == before_hash == after_hash
+        ),
+        "cleanupComplete": (
+            cleanup.get("conversationDeleted") is True
+            and cleanup.get("localProjectionCleared") is True
+            and cleanup.get("operationCleared") is True
+            and cleanup.get("portalClosed") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
+def evaluate_base_attachment_rejected(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-ATTACHMENT_REJECTED"
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    deletion_readback = _mapping(
+        cleanup,
+        "deletionReadback",
+        scenario=scenario,
+    )
+
+    attachment_id = _nonempty_string(
+        station,
+        "attachmentId",
+        scenario=scenario,
+    )
+    reason_code = _nonempty_string(
+        station,
+        "reasonCode",
+        scenario=scenario,
+    )
+    object_ref_hash = _sha256_string(
+        station,
+        "objectRefHash",
+        scenario=scenario,
+    )
+    before_hash = _sha256_string(
+        station,
+        "beforeHash",
+        scenario=scenario,
+    )
+    after_hash = _sha256_string(
+        station,
+        "afterHash",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedAttachmentRejected": (
+            outcome.get("error") == "agent.errors.attachmentRejected"
+            and outcome.get("error_type") == "CONTEXT_ATTACHMENT_REJECTED"
+            and outcome.get("locale_key")
+            == "agent.errors.attachmentRejected"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and sorted(details) == ["attachment_id", "reason_code"]
+            and details.get("attachment_id") == attachment_id
+            and details.get("reason_code") == reason_code
+            and reason_code == "attachment_object_is_unavailable"
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType")
+            == "CONTEXT_ATTACHMENT_REJECTED"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            )
+            > 0
+            and _positive_int(
+                runtime_event,
+                "streamGeneration",
+                scenario=scenario,
+            )
+            > 0
+            and bool(
+                _nonempty_string(
+                    runtime_event,
+                    "observedAt",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "eventId",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "streamIdHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "conversationIdHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "payloadHash",
+                    scenario=scenario,
+                )
+            )
+        ),
+        "localizedRemovalVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("removalVisible") is True
+            and _nonempty_string(
+                receiver,
+                "removalText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRemovalText",
+                scenario=scenario,
+            )
+        ),
+        "rejectedDraftPreserved": (
+            receiver.get("attachmentVisibleAfterReject") is True
+            and receiver.get("attachmentStatusAfterReject") == "rejected"
+            and _nonempty_string(
+                receiver,
+                "draftTextAfterRejection",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "draftTextBefore",
+                scenario=scenario,
+            )
+        ),
+        "removeAttachmentExecuted": (
+            receiver.get("removalExecuted") is True
+            and receiver.get("attachmentPresentAfterRemoval") is False
+        ),
+        "stationStateUnchanged": (
+            _positive_int(
+                station,
+                "conversationVersionBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                station,
+                "conversationVersionAfter",
+                scenario=scenario,
+            )
+            and before_hash == after_hash
+            and _nonnegative_int(
+                station,
+                "turnDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "messageDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "zeroSideEffect": (
+            _nonnegative_int(
+                station,
+                "providerExecutionDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _sha256_string(
+                replay,
+                "sourceHash",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                replay,
+                "replayHash",
+                scenario=scenario,
+            )
+        ),
+        "cleanupComplete": (
+            cleanup.get("draftRemoved") is True
+            and cleanup.get("objectDeleted") is True
+            and deletion_readback.get("source") == "oss-owner-list"
+            and _sha256_string(
+                deletion_readback,
+                "objectRefHash",
+                scenario=scenario,
+            )
+            == object_ref_hash
+            and bool(
+                _sha256_string(
+                    deletion_readback,
+                    "objectPathHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _nonempty_string(
+                    deletion_readback,
+                    "deletedAt",
+                    scenario=scenario,
+                )
+            )
+            and _positive_int(
+                deletion_readback,
+                "readAttempt",
+                scenario=scenario,
+            )
+            > 0
+            and cleanup.get("conversationDeleted") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
+def evaluate_base_approval_expired(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-APPROVAL_EXPIRED"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    decision = _mapping(capture, "decision", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    lineage = _mapping(station, "lineage", scenario=scenario)
+    recovery = _mapping(capture, "recovery", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    states = station.get("states")
+    if not isinstance(states, list) or any(
+        not isinstance(value, str) or not value
+        for value in states
+    ):
+        raise GroupOneScenarioError(
+            f"{scenario} station states fact is invalid"
+        )
+
+    decision_id = _nonempty_string(
+        decision,
+        "decisionId",
+        scenario=scenario,
+    )
+    tool_call_id = _nonempty_string(
+        decision,
+        "toolCallId",
+        scenario=scenario,
+    )
+    expires_at = _nonempty_string(
+        decision,
+        "expiresAt",
+        scenario=scenario,
+    )
+    acknowledgement_source_hash = _nonempty_string(
+        replay,
+        "acknowledgementSourceHash",
+        scenario=scenario,
+    )
+    station_source_hash = _nonempty_string(
+        replay,
+        "stationSourceHash",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedExpiryProjected": (
+            outcome.get("error_type") == "TOOL_APPROVAL_EXPIRED"
+            and outcome.get("locale_key")
+            == "agent.errors.toolApprovalExpired"
+            and outcome.get("retryable") is True
+            and outcome.get("terminal") is True
+            and sorted(details) == ["decision_id", "expires_at"]
+            and details.get("decision_id") == decision_id
+            and details.get("expires_at") == expires_at
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+            and receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+        ),
+        "expiredDecisionImmutable": (
+            decision.get("accepted") is False
+            and decision.get("errorCode")
+            == "TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED"
+            and station.get("policy") == "manual"
+            and states == ["policy_check", "awaiting_user", "expired"]
+            and station.get("errorCode") == "TOOL_APPROVAL_EXPIRED"
+            and lineage.get("toolCallId") == tool_call_id
+            and lineage.get("decisionId") == ""
+            and _nonnegative_int(
+                lineage,
+                "decisionRevision",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                decision,
+                "decisionRevision",
+                scenario=scenario,
+            )
+        ),
+        "requestAgainCreatedOneAttempt": (
+            receiver.get("recoveryExecuted") is True
+            and _nonnegative_int(
+                recovery,
+                "attemptCountAfter",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                recovery,
+                "attemptCountBefore",
+                scenario=scenario,
+            )
+            + 1
+            and recovery.get("newApprovalIdentityDistinct") is True
+            and recovery.get("cancellationStatus") == "cancelled"
+            and recovery.get("retryToolStatus") == "cancelled"
+        ),
+        "zeroSideEffect": (
+            all(
+                _nonnegative_int(station, key, scenario=scenario) == 0
+                for key in (
+                    "executionAttemptCount",
+                    "sideEffectCount",
+                    "resultCount",
+                    "continuationCount",
+                )
+            )
+            and _nonnegative_int(
+                recovery,
+                "retryExecutionAttemptCount",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                recovery,
+                "retrySideEffectCount",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                recovery,
+                "retryResultCount",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                recovery,
+                "retryContinuationCount",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _nonempty_string(
+                replay,
+                "acknowledgementReplayHash",
+                scenario=scenario,
+            )
+            == acknowledgement_source_hash
+            and _nonempty_string(
+                replay,
+                "stationReplayHash",
+                scenario=scenario,
+            )
+            == station_source_hash
+        ),
+        "cleanupComplete": (
+            cleanup.get("conversationDeleted") is True
+            and cleanup.get("bindingRestored") is True
         ),
     }
     failed = sorted(key for key, passed in assertions.items() if not passed)
@@ -1763,6 +3855,43 @@ def _string_list(
     ):
         raise GroupOneScenarioError(f"{scenario} {key} fact is invalid")
     return list(item)
+
+
+def _string_set(
+    value: Mapping[str, Any],
+    key: str,
+    *,
+    scenario: str,
+) -> set[str]:
+    items = _string_list(value, key, scenario=scenario)
+    if not items or len(items) != len(set(items)):
+        raise GroupOneScenarioError(
+            f"{scenario} {key} fact must contain unique values"
+        )
+    return set(items)
+
+
+def _sha256_string(
+    value: Mapping[str, Any],
+    key: str,
+    *,
+    scenario: str,
+) -> str:
+    item = _nonempty_string(value, key, scenario=scenario)
+    if re.fullmatch(r"[0-9a-f]{64}", item) is None:
+        raise GroupOneScenarioError(
+            f"{scenario} {key} must be a lowercase SHA-256 digest"
+        )
+    return item
+
+
+def _hex_identity_matches(left: str, right: str) -> bool:
+    pattern = re.compile(r"^[0-9a-f]{12,40}$")
+    return (
+        pattern.fullmatch(left) is not None
+        and pattern.fullmatch(right) is not None
+        and (left.startswith(right) or right.startswith(left))
+    )
 
 
 def _normalized_attachment_metadata(
@@ -1887,5 +4016,19 @@ def _nonempty_string(
     if not isinstance(item, str) or not item:
         raise GroupOneScenarioError(
             f"{scenario} {key} must be a non-empty string"
+        )
+    return item
+
+
+def _optional_string(
+    value: Mapping[str, Any],
+    key: str,
+    *,
+    scenario: str,
+) -> str:
+    item = value.get(key)
+    if not isinstance(item, str):
+        raise GroupOneScenarioError(
+            f"{scenario} {key} must be a string"
         )
     return item

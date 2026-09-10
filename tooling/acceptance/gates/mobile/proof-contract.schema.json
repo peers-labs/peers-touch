@@ -1043,7 +1043,11 @@
           "$ref": "#/$defs/nonEmptyString"
         },
         "gateId": {
-          "const": "mobile-native-access-e2e"
+          "enum": [
+            "mobile-native-access-e2e",
+            "mobile-native-lifecycle-e2e",
+            "mobile-native-platform-e2e"
+          ]
         },
         "clientId": {
           "enum": [
@@ -1261,7 +1265,11 @@
           "$ref": "#/$defs/nonEmptyString"
         },
         "gateId": {
-          "const": "mobile-native-access-e2e"
+          "enum": [
+            "mobile-native-access-e2e",
+            "mobile-native-lifecycle-e2e",
+            "mobile-native-platform-e2e"
+          ]
         },
         "leaseId": {
           "$ref": "#/$defs/nonEmptyString"

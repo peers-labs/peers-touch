@@ -189,6 +189,14 @@ pub fn account_unlock(input: AccountUnlockInput) -> AppResult<StubPayload> {
             ),
             None,
         ),
+        Err(PinVerifyError::ActorBindingMissing) => AppResult::fail(
+            ErrorCode::Unauthorized,
+            "Encrypted session is not bound to an actor; sign in again",
+            Some(json!({
+                "command": "account_unlock",
+                "reason": "persisted_actor_missing"
+            })),
+        ),
         Err(PinVerifyError::Internal(msg)) => internal_error(msg),
     }
 }
@@ -232,6 +240,16 @@ pub fn account_relink_pin(
                     remaining_secs
                 ),
                 Some(json!({ "remaining_secs": remaining_secs })),
+            )
+        }
+        Err(PinVerifyError::ActorBindingMissing) => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "Encrypted session is not bound to an actor; sign in again",
+                Some(json!({
+                    "command": "account_relink_pin",
+                    "reason": "persisted_actor_missing"
+                })),
             )
         }
         Err(PinVerifyError::Internal(msg)) => return internal_error(msg),
