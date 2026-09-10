@@ -251,7 +251,7 @@ Parallel policy:
 | W0 Contract/Evidence/Gates | complete | Owner EXECUTE approval received; W0 verification and completion audit PASS |
 | F1 Agent/Conversation Authority | complete | W0 complete |
 | F2 Runtime/Stream/Capability/Portability | implementation checks complete: Q4 C06 and Q5/Q6 C10 source closures pass; product proof remains pending G-F | F1 |
-| F3 Context/Resource Intelligence | C04 core and C08 product source complete; exact-source C08 run `20260909T091942082203Z-5ecd651bb57a293a45c0032d5b46861d` is `DONE / PROVEN` | F2 |
+| F3 Context/Resource Intelligence | C04 core and C08 product source complete; exact-source C08 run `20260910T153114899448Z-81ad0db7ab3ea3f037c936fb85d6c30f` on `5a625c62a` is `DONE / PROVEN` with 19/19 assertions | F2 |
 | F4 Tool Policy/Observability | G1-A through G1-F and pre-W1 G1-XR diagnostic complete through AS-F03; post-W8a G-F pending | F2 + accepted D19A/D19B/D19C |
 | W1 Capability Authority | implementation checks complete; product proof UNPROVEN until W9 Gate | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
 | W2 Home Projection | pending | G-F complete 419-cell Foundation Gate |
@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress; checkpoint `ff7bfa9f8342a154c2b637e1f0170b2c61c8a31c` implements the planned `BASE-EXECUTOR-UNAVAILABLE` Station/Web/Rust/Acceptance vertical and passes local source checks; current-source C08 and the unchanged 419-cell Foundation Gate remain `UNPROVEN` pending exact-source deployment and execution | W8a |
+| G-F Complete Foundation Gate | partial / externally blocked; checkpoint `7485d1c224065a789f521f6531c2701c6083fda5` aligns the completed `BASE-EXECUTOR_UNAVAILABLE` Station/Web/Rust/Acceptance vertical with the canonical matrix ID, and exact-source focused Desktop/Browser tuples pass 9/9 with clean cleanup; C08 is `DONE / PROVEN` on `5a625c62a`; the unchanged 419-cell Gate remains `UNPROVEN` after repeated Ark provider deadlines in AS-F07 and intermittent AS-F06 recovery failures | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1348,6 +1348,44 @@ and zero local-path leakage.
   focused attachment Turn with the existing production
   `thinkingMode=disabled` contract. Provider, model, attachments, timeout,
   assertions, evidence roles, and matrix tuples remain unchanged.
+- **G-FE1 matrix identifier closure (2026-09-10)**: exact-source run
+  `20260910T095838995350Z-5b30e67ab7a6fa7b11e1f9f54bc32bdd`
+  on `7485d1c224065a789f521f6531c2701c6083fda5` crossed Browser
+  AS-F01 through AS-F12 and reached the planned
+  `BASE-EXECUTOR_UNAVAILABLE` cell. The cell failed closed before runtime
+  execution because the G-FE1 direct adapter, Harness, coordinator, and oracle
+  used the non-canonical hyphenated identifier
+  `BASE-EXECUTOR-UNAVAILABLE`, while the reviewed 419-cell matrix and Mobile
+  contract use `BASE-EXECUTOR_UNAVAILABLE`. Checkpoint `7485d1c22` aligns the
+  existing vertical to the canonical matrix identifier without changing
+  assertions, tuple count, timeout, product behavior, or Station/proto
+  contracts. Full Agent Gate tests pass `372/372`, native-static checks pass
+  `83/83`, Desktop TypeScript passes, and `git diff --check` passes.
+- **G-FE1 focused runtime evidence (2026-09-10)**: on exact source
+  `5a625c62a24ca7d0324e7bae7d892191e09e82e9`, the production
+  `FoundationExecutorUnavailableCoordinator` executed both Desktop and Browser
+  `BASE-EXECUTOR_UNAVAILABLE / en / single / sample-001` tuples independently.
+  Each tuple passed all 9 independent assertions: typed error and localized
+  recovery, one rejected approval, preserved waiting-approval state, zero
+  execution claim and side effect, replay equality, exact executor reconnect,
+  and complete cleanup. Both runtime pairs released actor identity, storage,
+  and all ports. This focused evidence proves the vertical behavior but does
+  not replace the unchanged 419-cell Gate.
+- **Current-source C08 and full-Gate boundary (2026-09-10)**: C08 run
+  `20260910T153114899448Z-81ad0db7ab3ea3f037c936fb85d6c30f`
+  on `5a625c62a24ca7d0324e7bae7d892191e09e82e9` is
+  `DONE / PROVEN` with 19/19 assertions, exact Station attestation, and clean
+  process, port, and storage release. The unchanged Foundation run
+  `20260910T145017268064Z-b114c90ac7be2cb442602d3be7e003df`
+  passed the first regenerate in 106.610 seconds, then the second regenerate
+  failed after 300.172 seconds. Remote Station logs prove two Ark provider
+  `context deadline exceeded` failures, terminal
+  `wall_time_exhausted`, and HTTP 422. A focused retry run independently
+  observed the same external boundary after two provider timeouts and
+  `max_attempts_exhausted`. No timeout inflation, provider fallback, mock, or
+  tuple reduction is authorized. G-F therefore remains
+  `PARTIAL / UNPROVEN`; the external Ark runtime is parked until it can execute
+  the unchanged provider-backed AS-F07 sequence.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

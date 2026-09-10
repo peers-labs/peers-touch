@@ -443,3 +443,59 @@ or raw tokens.
 | Z | The first regenerate succeeds and the second uses a stale conversation version. | Medium | Low | First success checkpoint, then `operation=second` with HTTP 409 / `VERSION_CONFLICT`. |
 | AA | Retry completion leaves the source assistant or active branch in a state that regeneration rejects. | Medium | Low | First regenerate fails with a typed invalid-source/state error while the submitted version matches the pre-call readback. |
 | AB | Desktop error adaptation hides an otherwise typed Station response. | High | Low | `errorMessage=agent_regenerate_turn failed` while `details.body` contains a more specific Station code/message. |
+
+### Regenerate Evidence
+
+- Exact-source run
+  `20260910T145017268064Z-b114c90ac7be2cb442602d3be7e003df`
+  on `5a625c62a24ca7d0324e7bae7d892191e09e82e9` reached Browser
+  English AS-F07. Cancellation settled as `cancelled`, retry completed after
+  235.976 seconds with attempt count `1 -> 2`, and the baseline Turn completed.
+- Debug lines 9-10 show the first regenerate started at conversation version
+  `4`, completed in 106.610 seconds, returned a message, and advanced the
+  version to `5`.
+- Debug lines 11-12 show the second regenerate submitted version `5` and failed
+  after 300.172 seconds with HTTP `422` / Desktop `INTERNAL_ERROR`. No typed
+  Station error body was present.
+- Remote Station logs for request
+  `30cc8279-c6f0-4ffc-b09d-6d125187e531` show the second regenerate entered at
+  `15:11:35Z`, provider attempts failed at `15:13:36Z` and `15:15:36Z` with
+  `context deadline exceeded`, the Turn settled as `wall_time_exhausted`, and
+  `/turn/regenerate` returned `422` at `15:16:36Z`.
+- A separate focused run observed the same provider boundary on retry:
+  `/turn/retry` returned `422` after 4 minutes when both Ark attempts timed out
+  and the Turn settled as `max_attempts_exhausted`.
+
+### Regenerate Conclusion
+
+- Hypothesis Y is confirmed: the failures are real provider execution
+  timeouts, not revision admission or version-CAS failures.
+- Hypothesis Z is rejected: the first regenerate succeeded and the second
+  submitted the exact version returned by the first.
+- Hypothesis AA is rejected: Station admitted both regenerate requests and the
+  first completed successfully.
+- Hypothesis AB is rejected as the root cause: Desktop exposes a generic
+  `INTERNAL_ERROR`, but Station logs independently prove the owning provider
+  timeout and terminal reason.
+- No timeout inflation, fallback provider, mock, tuple reduction, or product
+  behavior change is justified. The full Foundation Gate remains
+  `PARTIAL / UNPROVEN` behind the unavailable Ark execution resource.
+- Exact-source run
+  `20260910T145017268064Z-b114c90ac7be2cb442602d3be7e003df`
+  on `5a625c62a24ca7d0324e7bae7d892191e09e82e9` provided the
+  decisive operation split. Retry completed in 235.976 seconds and the
+  baseline completed. The first regenerate then completed in 106.610 seconds
+  and advanced conversation version `4 -> 5`; the second regenerate submitted
+  version `5` and failed after 300.172 seconds with HTTP `422`.
+- Remote Station logs show the first `/turn/regenerate` returned `200` after
+  1m45.896s. The second request then recorded provider deadlines after two and
+  four minutes, settled the Turn as `wall_time_exhausted`, and returned `422`
+  after 5m0.020s. This independently confirms provider ownership of the
+  failure and rejects a stale-version or invalid-source defect.
+- A formally provisioned focused diagnostic also reproduced the provider
+  boundary on retry: both Ark attempts timed out, the Turn settled as
+  `max_attempts_exhausted`, and `/turn/retry` returned `422` after 4m0.084s.
+- The same exact source separately passed focused
+  `BASE-EXECUTOR_UNAVAILABLE` Desktop and Browser tuples with all 9 assertions
+  and clean runtime/provisioner cleanup. Those diagnostics do not replace the
+  unchanged 419-cell Gate.
