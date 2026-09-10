@@ -4200,3 +4200,77 @@ dependency-ready action is a checkpoint commit without push, exact-source
 deployment, and another Product Closure-only run. The remaining seven Windows
 Native Chat Gates and PostgreSQL contention stay deferred until Product
 Closure passes.
+
+### 2026-09-10 Windows Operator Profile Injection
+
+Work resumed from the ordinary repo on master HEAD
+`79ae008706ca29f4bb5f1da29d9b6651a59b2f7c` (clean, single worktree, workspace
+`1f485431c64ce139`), which matches the handoff HEAD exactly. No Gate ran in
+this checkpoint; all Windows Gate claims remain `PARTIAL/UNPROVEN`.
+
+The scope is the Windows branch only: NDR-W9-D Product Closure first, then the
+seven remaining NDR-W10-D Windows Native Chat Gates, then PostgreSQL
+contention/recovery, Gap Detector, and completion audit. NDR-W1–W7 are closed
+Linux evidence and are not reopened; NDR-W8 macOS stays out of scope.
+
+Operator environment findings on sixwin:
+
+- Git for Windows 2.55 provides bash at `C:/Program Files/Git/bin/bash.exe`;
+  `C:/Program Files/Git/cmd` is in the system PATH but newly opened operator
+  shells must be restarted to inherit it.
+- No GNU `make` ships with Git for Windows. Strawberry Perl provides
+  `gmake.exe` only; local-dev make recipes hard-code `/bin/bash`, so profile
+  operations run through Git Bash directly, and Acceptance make targets map
+  1:1 to `python tooling/scripts/acceptance-run.py ...`.
+- The operator Python is 3.12.1 as `python` (there is no `python3` shim);
+  cargo, node, pnpm, an `id_ed25519` SSH key, protoc at
+  `C:/Tools/protobuf-36.0/bin/protoc.exe`, VsDevCmd under `C:/BuildTools`, and
+  Strawberry Perl are present.
+- The local-dev env tool is bash + per-worktree symlink based. Git Bash's
+  default `ln -s` creates a plain copy (so env.sh's `-L` active-pointer check
+  fails), while `MSYS=winsymlinks:nativestrict ln` creates a real symlink but
+  returns exit 1 and its `-sfn` replacement leaves stray temporary links.
+  Therefore `profile.sh activate` cannot perform its final symlink step on
+  Windows without a cross-platform owner-layer fix.
+
+Profile resolution (two layers, both verified):
+
+- Canonical deployable profile added in the sibling env repository as
+  `env/peers-touch/sixwin/profile.env.example`: `PT_DEV_PROFILE=sixwin`,
+  slot 6, `PT_STATION_MODE=remote`, default Station station-four
+  `10.37.245.247:18080` with its standalone relay, local Desktop ports
+  3160/3610 and web 3161/3611, mobile 5276, and the same actor/reset variables
+  as the four/fiveArm profiles (`CHAT_NATIVE_DEMO_PASSWORD=1`,
+  `CHAT_ACCEPTANCE_RESET=1`, station restart kept at 0 and exported
+  explicitly only when a Gate is authorized). station-five remains bound by
+  the Chat Acceptance multi-Station manifest for two-client Gates. The env
+  inventory moved `discovered` to `provisioned`.
+- On sixwin the import cache was bootstrapped at
+  `.local/dev/profiles/sixwin.env` and the active pointer
+  `.local/dev/active/peers-touch.env` was created as a native file symlink to
+  that cache (Windows `mklink` equivalent), bypassing the broken `ln` step.
+
+Injection verification passed three ways: Git Bash `config.sh` resolves the
+canonical env-repository file and redacts the password; Python
+`Path.is_symlink()`/`resolve(strict=True)` (the same mechanism as
+`BaseProvisioner._resolve_active_profile`) resolves the cache and matches
+`PT_DEV_PROFILE` to the `sixwin.env` stem; `profile.sh list` runs. No
+peers-touch tracked file other than this checkpoint changed, and `.local/`
+remains ignored, so exact-source proof is not diluted.
+
+Outstanding before the first Product Closure run (fail-closed inputs the
+Windows provisioner reads independently of the dev profile):
+`.local/acceptance/runtime-cells/acceptance-windows.env`
+(`PT_ACCEPTANCE_CELL_DEPLOY_ENV`, `PT_ACCEPTANCE_CELL_DESKTOP_USER`,
+`PT_ACCEPTANCE_CELL_PROTOC=C:/Tools/protobuf-36.0/bin/protoc.exe`, build
+ports) and `.local/deploy/envs/acceptance-windows.env` (loopback SSH deploy
+target for the local cell) do not yet exist. A cross-platform
+`profile.sh activate` symlink fix is an owner-layer enhancement to be made on
+a fresh branch with the local/static cohorts rerun; it is not a Gate blocker
+because the active pointer is already provisioned.
+
+The next dependency-ready action remains the handoff sequence: sixwin sshd /
+interactive-desktop / stale-process preflight, ff-only master sync with the
+actual HEAD recorded, static cohorts and the four local Gates, exact-source
+identity for station-four, station-five, and sixwin, then the Product
+Closure-only run with `RUNTIME_CELL=desktop-windows-native`.
