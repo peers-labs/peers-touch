@@ -1337,6 +1337,17 @@ and zero local-path leakage.
   ownership, own/foreign fact visibility, and runtime matching. No topic,
   message, conversation, Turn, branch, fact, or runtime identity is logged,
   and the F12 assertion remains unchanged.
+- **AS-F05 thinking-only root cause (2026-09-10)**: exact-source run
+  `20260910T072607175644Z-c90314dd22ec5c31a74c08cfb37c5cc8`
+  reproduced Browser `AS-F05 / en / single / sample-001`. The Turn was
+  admitted with its target capability session and emitted four ordered
+  progress events plus 1,074 ordered thinking events through sequence 1,078
+  over the existing 120-second bound, but no answer or terminal event.
+  Provisioner cleanup passed. Because AS-F05 proves attachment behavior rather
+  than thinking behavior, its source-backed remediation is to submit the
+  focused attachment Turn with the existing production
+  `thinkingMode=disabled` contract. Provider, model, attachments, timeout,
+  assertions, evidence roles, and matrix tuples remain unchanged.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

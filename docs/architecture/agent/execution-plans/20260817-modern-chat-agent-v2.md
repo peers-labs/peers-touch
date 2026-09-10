@@ -22,20 +22,20 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | Exact-source checkpoint, C08 product proof, and G-F Foundation proof |
-| Current step | Checkpoint `52cc444b6` proves current-source C08；the latest 419-cell run stopped earlier at Browser AS-F12 cross-topic isolation and now has bounded subcondition instrumentation |
+| Current step | C08 remains proven；Browser AS-F05 root cause is a 1,074-event thinking-only stream，and the attachment Turn now uses the accepted disabled-thinking contract |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
 | Last completed | C08 run `20260910T055522829091Z-9681f326699ee03f46adacc14c119f39` is `DONE / PROVEN` with 19/19 assertions and clean resource release |
-| Current action | Instrument Browser AS-F12 cross-topic subconditions without changing assertions，then run one source-bound reproduction |
-| Next action | Use F12 pre-fix logs to identify the owning layer，apply the minimal root-cause fix，then resume AS-F05 diagnosis and rerun unchanged 419-cell G-F |
+| Current action | Verify and checkpoint the AS-F05 thinking-mode correction while retaining F12 safe diagnostics |
+| Next action | Deploy exact source and rerun unchanged 419-cell G-F；use F12 diagnostics if that intermittent first failure returns |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | Latest G-F run `20260910T063541600785Z-66f9f64175626498fe1e0a22aa0845b7` failed only Browser `AS-F12 / en / single / sample-001` `noCrossTopicReferences` while all published restart diagnostics and cleanup passed；the prior AS-F05 timeout remains parked behind this earlier first failure |
+| Blockers | Browser AS-F05 thinking-only timeout now has an evidence-backed local correction. Browser AS-F12 cross-topic isolation remains intermittently unproven and has safe oracle diagnostics ready；G-F requires another clean exact-source run |
 | Decisions required | none |
-| Evidence | Station/client source `46a171978244...` is clean；C08 remains current-source proven at parent product source；latest G-F reached `FIXTURE_READY` and Browser AS-F12 with all restart diagnostics true except the combined cross-topic assertion，and cleanup `DONE / PROVEN / passed`；G-F remains `UNPROVEN` |
+| Evidence | C08 remains current-source proven；AS-F05 pre-fix captured 4 progress + 1,074 thinking events and no terminal over 120 seconds；all failed G-F attempts reached `FIXTURE_READY` and completed provisioner cleanup；G-F remains `UNPROVEN` |
 | Last updated | 2026-09-10 |
 
 ---

@@ -361,6 +361,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertTrue(HARNESS.is_file(), f"{HARNESS} must exist")
         self.source = HARNESS.read_text(encoding="utf-8")
 
+    def test_attachment_turn_disables_unrelated_thinking(self) -> None:
+        attachment_turn = self.source.split(
+            "async function runFoundationAttachmentTurn",
+            1,
+        )[1].split(
+            "async function foundationResolvedBytes",
+            1,
+        )[0]
+        self.assertIn("thinkingMode: 'disabled'", attachment_turn)
+
     def test_harness_registers_agent_namespace(self) -> None:
         self.assertIn("registerAcceptanceHarness('agent'", self.source)
 

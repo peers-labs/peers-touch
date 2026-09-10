@@ -4379,6 +4379,7 @@ async function runFoundationAttachmentTurn(input: {
     idempotencyKey: crypto.randomUUID(),
     provider: input.provider,
     model: input.model,
+    thinkingMode: 'disabled',
     clientCapabilitySessionId: input.capabilitySessionId,
     attachments: input.attachments,
     // #region debug-point J-K:foundation-f05-events
@@ -9239,7 +9240,7 @@ function reportFoundationAttachmentTimeoutDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'foundation-attachment-timeout',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationAttachmentRejectedScenario',
       msg: `[DEBUG] ${stage}`,

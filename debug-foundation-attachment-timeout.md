@@ -140,3 +140,17 @@ submits a Turn and cannot observe a Station rejection.
   result cannot distinguish Station/provider progress from Browser event loss.
 - No product assertion, timeout, tuple, or retry policy may change during
   diagnosis.
+- Exact-source instrumentation run
+  `20260910T072607175644Z-c90314dd22ec5c31a74c08cfb37c5cc8`
+  reproduced Browser `AS-F05 / en / single / sample-001`. The Turn was
+  admitted and yielded four `progress` events followed by 1,074 ordered
+  `thinking` events (`seq=5..1078`) across 120 seconds, with no answer or
+  terminal event. The Turn ID and configured capability session were present,
+  and provisioner cleanup passed.
+- Hypotheses I, J, L, and M are rejected for this failure. Hypothesis K is
+  confirmed: the provider-backed Turn remained in a thinking-only stream until
+  the existing client bound expired.
+- The attachment scenario does not assert thinking behavior. The evidence-backed
+  fix is to submit this focused Turn with the existing production contract
+  `thinkingMode: disabled`, retaining the same provider, model, attachment
+  inputs, timeout, evidence roles, and product assertions.
