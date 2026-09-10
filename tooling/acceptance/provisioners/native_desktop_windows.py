@@ -352,6 +352,7 @@ class _ActorRuntime:
 class _EndpointRuntime:
     endpoint_id: str
     tunnel: SshTunnel
+    tunnel_pid: int
     local_port: int
     remote_port: int
     released: bool = False
@@ -803,15 +804,17 @@ class NativeDesktopWindowsProvisioner:
             raise ProvisioningError(
                 "orchestrator endpoint must declare an explicit port"
             )
+        remote_port = self.transport.available_remote_port()
         tunnel = self.transport.start_reverse_forward(
             local_port=port,
-            remote_port=port,
+            remote_port=remote_port,
         )
         runtime = _EndpointRuntime(
             endpoint_id=normalized,
             tunnel=tunnel,
+            tunnel_pid=tunnel.process_id,
             local_port=port,
-            remote_port=port,
+            remote_port=remote_port,
         )
         self._endpoints[normalized] = runtime
         return {
@@ -819,15 +822,15 @@ class NativeDesktopWindowsProvisioner:
             "url": urlunsplit(
                 (
                     parsed.scheme,
-                    f"127.0.0.1:{port}",
+                f"127.0.0.1:{remote_port}",
                     parsed.path,
                     parsed.query,
                     parsed.fragment,
                 )
             ),
-            "tunnelPid": tunnel.process_id,
+            "tunnelPid": runtime.tunnel_pid,
             "localPort": port,
-            "remotePort": port,
+            "remotePort": remote_port,
         }
 
     def release_endpoint(self, endpoint_id: str) -> dict[str, Any]:
@@ -861,7 +864,7 @@ class NativeDesktopWindowsProvisioner:
         self._endpoints.pop(endpoint_id, None)
         return {
             "endpointId": endpoint_id,
-            "tunnelPid": runtime.tunnel.process_id,
+            "tunnelPid": runtime.tunnel_pid,
             "localPort": runtime.local_port,
             "remotePort": runtime.remote_port,
             "released": True,
@@ -871,7 +874,7 @@ class NativeDesktopWindowsProvisioner:
         active = [
             {
                 "endpointId": endpoint_id,
-                "tunnelPid": runtime.tunnel.process_id,
+                "tunnelPid": runtime.tunnel_pid,
                 "localPort": runtime.local_port,
                 "remotePort": runtime.remote_port,
             }

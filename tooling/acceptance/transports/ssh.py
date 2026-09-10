@@ -397,6 +397,35 @@ class SshTransport:
             return False
         return probe.returncode == 0
 
+    def available_remote_port(self, *, timeout: float = 10) -> int:
+        executable = (
+            "python"
+            if self.target.remote_platform == RemotePlatform.WINDOWS
+            else "python3"
+        )
+        completed = self.run_argv(
+            (
+                executable,
+                "-c",
+                (
+                    "import socket;"
+                    "listener=socket.socket(socket.AF_INET,socket.SOCK_STREAM);"
+                    "listener.bind(('127.0.0.1',0));"
+                    "print(listener.getsockname()[1]);"
+                    "listener.close()"
+                ),
+            ),
+            timeout=timeout,
+            check=True,
+        )
+        value = completed.stdout.strip()
+        if not value.isdecimal():
+            raise ProvisioningError("remote port allocation returned invalid output")
+        port = int(value)
+        if port < 1 or port > 65535:
+            raise ProvisioningError("remote port allocation returned invalid port")
+        return port
+
     @staticmethod
     def _valid_windows_path(value: str) -> bool:
         if not _WINDOWS_PATH_PATTERN.fullmatch(value):

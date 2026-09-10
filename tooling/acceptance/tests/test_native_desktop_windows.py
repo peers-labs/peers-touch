@@ -152,6 +152,29 @@ class WindowsCellProfileTest(unittest.TestCase):
 
 
 class WindowsProvisionerContractTest(unittest.TestCase):
+    def test_orchestrator_endpoint_uses_distinct_remote_port(self) -> None:
+        provisioner = NativeDesktopWindowsProvisioner.__new__(
+            NativeDesktopWindowsProvisioner
+        )
+        provisioner._endpoints = {}
+        provisioner.transport = Mock()
+        provisioner.transport.available_remote_port.return_value = 61234
+        tunnel = Mock()
+        tunnel.process_id = 4321
+        provisioner.transport.start_reverse_forward.return_value = tunnel
+
+        result = provisioner.expose_orchestrator_endpoint(
+            "fault-proxy",
+            "http://127.0.0.1:58057/fault",
+        )
+
+        provisioner.transport.start_reverse_forward.assert_called_once_with(
+            local_port=58057,
+            remote_port=61234,
+        )
+        self.assertEqual(result["url"], "http://127.0.0.1:61234/fault")
+        self.assertEqual(result["tunnelPid"], 4321)
+
     def test_screenshot_probe_geometry_uses_validated_metadata(self) -> None:
         content = bytearray(128)
         content[:2] = b"BM"

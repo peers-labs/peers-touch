@@ -158,6 +158,30 @@ class SshTransportRenderingTest(unittest.TestCase):
 
         self.assertEqual(run.call_args.kwargs["timeout"], 1.5)
 
+    def test_available_remote_port_uses_target_python(self) -> None:
+        transport = SshTransport(
+            SshTarget(
+                "host.example",
+                "runner",
+                remote_platform=RemotePlatform.WINDOWS,
+            )
+        )
+        completed = subprocess.CompletedProcess(
+            ("python",),
+            0,
+            stdout="61234\n",
+            stderr="",
+        )
+        with patch.object(
+            transport,
+            "run_argv",
+            return_value=completed,
+        ) as run:
+            self.assertEqual(transport.available_remote_port(), 61234)
+
+        self.assertEqual(run.call_args.args[0][0], "python")
+        self.assertTrue(run.call_args.kwargs["check"])
+
 
 if __name__ == "__main__":
     unittest.main()
