@@ -117,13 +117,16 @@ class Win32NativeDesktopAdapterContractTest(unittest.TestCase):
 
     def test_file_chooser_path_targets_the_filename_edit_control(self) -> None:
         source = WINDOWS_ADAPTER_PATH.read_text(encoding="utf-8")
-        start = source.index("    def set_file_chooser_path_to_process(")
+        start = source.index("    def select_file_chooser_path_to_process(")
         method = source[start:source.index("    def focused_control(", start)]
 
         self.assertIn("EnumChildWindows", method)
         self.assertIn('self._window_class_name(child_hwnd).lower() == "edit"', method)
         self.assertIn("key=lambda hwnd: self._window_rect(hwnd).top", method)
         self.assertIn("_WM_SETTEXT", method)
+        self.assertIn("GetDlgItem(dialog_hwnd, _IDOK)", method)
+        self.assertIn("_BM_CLICK", method)
+        self.assertIn("while self._file_chooser_window(process_id):", method)
         self.assertIn("self._activate_window(dialog_hwnd, process_id)", method)
 
     def test_focus_probe_reads_the_foreground_gui_thread(self) -> None:

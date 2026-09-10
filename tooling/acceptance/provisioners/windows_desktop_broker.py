@@ -873,9 +873,9 @@ try:
         result = adapter.reveal_file_chooser_location_to_process(
             process_id
         ).to_dict()
-    elif operation == "set_file_chooser_path_to_process":
+    elif operation == "select_file_chooser_path_to_process":
         process_id = int(payload["processId"])
-        result = adapter.set_file_chooser_path_to_process(
+        result = adapter.select_file_chooser_path_to_process(
             process_id,
             str(payload["path"]),
         ).to_dict()

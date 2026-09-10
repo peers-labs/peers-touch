@@ -727,15 +727,15 @@ class NativeProductClosureGate(AcceptanceGate):
             return control if control.kind == "text-field" else None
 
         if self.native_adapter.platform == "win32":
-            path_control = (
-                self.native_adapter.set_file_chooser_path_to_process(
+            selected_control = (
+                self.native_adapter.select_file_chooser_path_to_process(
                     client.process_id or 0,
                     str(selected_path),
                 )
             )
-            if path_control is None or path_control.kind != "text-field":
+            if selected_control is None or selected_control.dialog_count:
                 raise GateError(
-                    "Native file chooser filename path was not accepted"
+                    "Native file chooser selection was not committed"
                 )
         else:
             revealed_control = (
@@ -792,43 +792,47 @@ class NativeProductClosureGate(AcceptanceGate):
                 )
             finally:
                 self.native_adapter.write_clipboard(original_clipboard)
-        self.native_adapter.post_key_to_process(
-            client.process_id or 0,
-            NativeKey.ENTER,
-            private_source=True,
-        )
-
-        baseline_window_count = baseline_control.window_count
-
-        def selection_or_browser_ready(_: Any) -> dict[str, object] | None:
-            control = self.native_adapter.focused_control(client.process_id or 0)
-            if control.window_count < baseline_window_count:
-                return None
-            if control.kind == "application-dialog":
-                return {"selected": False, "control": control}
-            if panel_open(control) and control.kind != "text-field":
-                return {"selected": False, "control": control}
-            if (
-                not panel_open(control)
-                and control.main_window
-                and control.frontmost
-                and control.focused_window
-            ):
-                return {"selected": True, "control": control}
-            return None
-
-        intermediate = WebDriverWait(
-            client.driver,
-            NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
-            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(selection_or_browser_ready)
-
-        if not intermediate["selected"]:
             self.native_adapter.post_key_to_process(
                 client.process_id or 0,
                 NativeKey.ENTER,
                 private_source=True,
             )
+
+            def selection_or_browser_ready(
+                _: Any,
+            ) -> dict[str, object] | None:
+                control = self.native_adapter.focused_control(
+                    client.process_id or 0
+                )
+                if control.window_count < baseline_control.window_count:
+                    return None
+                if control.kind == "application-dialog":
+                    return {"selected": False, "control": control}
+                if panel_open(control) and control.kind != "text-field":
+                    return {"selected": False, "control": control}
+                if (
+                    not panel_open(control)
+                    and control.main_window
+                    and control.frontmost
+                    and control.focused_window
+                ):
+                    return {"selected": True, "control": control}
+                return None
+
+            intermediate = WebDriverWait(
+                client.driver,
+                NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(selection_or_browser_ready)
+
+            if not intermediate["selected"]:
+                self.native_adapter.post_key_to_process(
+                    client.process_id or 0,
+                    NativeKey.ENTER,
+                    private_source=True,
+                )
+
+        baseline_window_count = baseline_control.window_count
 
         def native_window_restored(_: Any) -> NativeControlSnapshot | None:
             control = self.native_adapter.activate_and_focused_control(

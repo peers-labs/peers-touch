@@ -1563,7 +1563,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('return {"selected": True, "control": control}', self.source)
         self.assertIn("NativeKey.A,", self.source)
         self.assertIn(
-            "self.native_adapter.set_file_chooser_path_to_process(",
+            "self.native_adapter.select_file_chooser_path_to_process(",
             self.source,
         )
         self.assertNotIn("def location_field_cleared(", self.source)

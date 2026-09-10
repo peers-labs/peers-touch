@@ -67,7 +67,9 @@ _SWP_NOMOVE = 0x0002
 _SWP_NOSIZE = 0x0001
 
 _MK_LBUTTON = 0x0001
+_BM_CLICK = 0x00F5
 _WM_SETTEXT = 0x000C
+_IDOK = 1
 
 # Virtual key codes
 _VK_LBUTTON = 0x01
@@ -101,6 +103,7 @@ _MODIFIER_VK_MAP: dict[NativeModifier, int] = {
 # File-chooser navigation constants
 _FILE_CHOOSER_FOCUS_STEPS = 8
 _FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS = 1.0
+_FILE_CHOOSER_SELECTION_TIMEOUT_SECONDS = 10.0
 
 # ---------------------------------------------------------------------------
 # Win32 structs for SendInput
@@ -203,6 +206,8 @@ _user32.SetClipboardData.argtypes = [
     ctypes.c_void_p,
 ]
 _user32.SetClipboardData.restype = ctypes.c_void_p
+_user32.GetDlgItem.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
+_user32.GetDlgItem.restype = ctypes.wintypes.HWND
 _user32.SendMessageW.argtypes = [
     ctypes.wintypes.HWND,
     ctypes.wintypes.UINT,
@@ -588,7 +593,7 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
             f"{last_control.to_dict()}"
         )
 
-    def set_file_chooser_path_to_process(
+    def select_file_chooser_path_to_process(
         self,
         process_id: int,
         path: str,
@@ -623,6 +628,11 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
             edit_controls,
             key=lambda hwnd: self._window_rect(hwnd).top,
         )
+        submit_button = _user32.GetDlgItem(dialog_hwnd, _IDOK)
+        if not submit_button:
+            raise DriverError(
+                "Win32 Native file chooser has no submit button"
+            )
         self._activate_window(dialog_hwnd, process_id)
         current_thread = _kernel32.GetCurrentThreadId()
         target_thread = _user32.GetWindowThreadProcessId(
@@ -647,6 +657,13 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
                 0,
                 ctypes.cast(path_buffer, ctypes.c_void_p).value,
             )
+            if accepted:
+                _user32.SendMessageW(
+                    submit_button,
+                    _BM_CLICK,
+                    0,
+                    0,
+                )
         finally:
             if attached:
                 _user32.AttachThreadInput(
@@ -658,11 +675,17 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
             raise DriverError(
                 "Win32 Native file chooser rejected its filename path"
             )
+        deadline = time.monotonic() + _FILE_CHOOSER_SELECTION_TIMEOUT_SECONDS
+        while self._file_chooser_window(process_id):
+            if time.monotonic() >= deadline:
+                raise DriverError(
+                    "Win32 Native file chooser did not close after submit"
+                )
+            time.sleep(0.05)
         control = self.focused_control(process_id)
-        if control.kind != "text-field":
+        if control.dialog_count:
             raise DriverError(
-                "Win32 Native file chooser filename control lost focus: "
-                f"{control.to_dict()}"
+                "Win32 Native file chooser remained visible after submit"
             )
         return control
 

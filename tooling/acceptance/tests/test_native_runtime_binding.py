@@ -117,14 +117,14 @@ class SyntheticRemoteNativeLifecycle:
             "activate_process",
             "focused_control",
             "reveal_file_chooser_location_to_process",
-            "set_file_chooser_path_to_process",
+            "select_file_chooser_path_to_process",
         }:
             return {
                 "kind": (
                     "text-field"
                     if operation in {
                         "reveal_file_chooser_location_to_process",
-                        "set_file_chooser_path_to_process",
+                        "select_file_chooser_path_to_process",
                     }
                     else "window"
                 ),
@@ -225,7 +225,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         revealed_control = (
             binding.native_adapter.reveal_file_chooser_location_to_process(712)
         )
-        path_control = binding.native_adapter.set_file_chooser_path_to_process(
+        path_control = binding.native_adapter.select_file_chooser_path_to_process(
             712,
             r"C:\acceptance\fixture.png",
         )
@@ -282,7 +282,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             (
                 "execute_adapter",
                 (
-                    "set_file_chooser_path_to_process",
+                    "select_file_chooser_path_to_process",
                     {
                         "processId": 712,
                         "path": r"C:\acceptance\fixture.png",

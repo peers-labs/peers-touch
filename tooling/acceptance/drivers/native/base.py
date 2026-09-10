@@ -197,7 +197,7 @@ class NativeDesktopAdapter(ABC):
         self.reveal_file_chooser_location()
         return None
 
-    def set_file_chooser_path_to_process(
+    def select_file_chooser_path_to_process(
         self,
         process_id: int,
         path: str,
