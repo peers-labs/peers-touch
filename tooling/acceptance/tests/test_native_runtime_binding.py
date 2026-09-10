@@ -117,11 +117,15 @@ class SyntheticRemoteNativeLifecycle:
             "activate_process",
             "focused_control",
             "reveal_file_chooser_location_to_process",
+            "set_file_chooser_path_to_process",
         }:
             return {
                 "kind": (
                     "text-field"
-                    if operation == "reveal_file_chooser_location_to_process"
+                    if operation in {
+                        "reveal_file_chooser_location_to_process",
+                        "set_file_chooser_path_to_process",
+                    }
                     else "window"
                 ),
                 "actualFrontmostPid": payload["processId"],
@@ -221,10 +225,16 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         revealed_control = (
             binding.native_adapter.reveal_file_chooser_location_to_process(712)
         )
+        path_control = binding.native_adapter.set_file_chooser_path_to_process(
+            712,
+            r"C:\acceptance\fixture.png",
+        )
         activated_control = binding.native_adapter.activate_and_focused_control(712)
         control = binding.native_adapter.focused_control(712)
         self.assertIsNotNone(revealed_control)
         self.assertEqual(revealed_control.kind, "text-field")
+        self.assertIsNotNone(path_control)
+        self.assertEqual(path_control.kind, "text-field")
         self.assertTrue(activated_control.frontmost)
         self.assertTrue(control.frontmost)
         self.assertEqual(control.actual_frontmost_pid, 712)
@@ -264,6 +274,19 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 (
                     "reveal_file_chooser_location_to_process",
                     {"processId": 712},
+                ),
+            ),
+            lifecycle.calls,
+        )
+        self.assertIn(
+            (
+                "execute_adapter",
+                (
+                    "set_file_chooser_path_to_process",
+                    {
+                        "processId": 712,
+                        "path": r"C:\acceptance\fixture.png",
+                    },
                 ),
             ),
             lifecycle.calls,

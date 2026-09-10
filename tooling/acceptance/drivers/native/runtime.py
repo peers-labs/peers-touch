@@ -712,6 +712,20 @@ class RemoteNativeDesktopAdapter(NativeDesktopAdapter):
             )
         )
 
+    def set_file_chooser_path_to_process(
+        self,
+        process_id: int,
+        path: str,
+    ) -> NativeControlSnapshot | None:
+        if self._platform != "win32":
+            return super().set_file_chooser_path_to_process(process_id, path)
+        return self._control_snapshot(
+            self._execute(
+                "set_file_chooser_path_to_process",
+                {"processId": process_id, "path": path},
+            )
+        )
+
     @staticmethod
     def _control_snapshot(payload: dict[str, Any]) -> NativeControlSnapshot:
         return NativeControlSnapshot(

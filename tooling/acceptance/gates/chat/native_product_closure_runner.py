@@ -726,55 +726,72 @@ class NativeProductClosureGate(AcceptanceGate):
             control = self.native_adapter.focused_control(client.process_id or 0)
             return control if control.kind == "text-field" else None
 
-        revealed_control = self.native_adapter.reveal_file_chooser_location_to_process(
-            client.process_id or 0
-        )
-        if revealed_control is None:
-            WebDriverWait(
-                client.driver,
-                10,
-                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-            ).until(go_to_field_ready)
-        elif revealed_control.kind != "text-field":
-            raise GateError(
-                "Native file chooser reveal returned an invalid control: "
-                f"{revealed_control.to_dict()}"
-            )
-
-        original_clipboard = self.native_adapter.read_clipboard()
-        try:
-            self.native_adapter.write_clipboard(
-                str(selected_path).encode("utf-8")
-            )
-            self.native_adapter.post_key_to_process(
-                client.process_id or 0,
-                NativeKey.A,
-                modifiers=(NativeModifier.PRIMARY,),
-            )
-            self.native_adapter.post_key_to_process(
-                client.process_id or 0,
-                NativeKey.V,
-                modifiers=(NativeModifier.PRIMARY,),
-            )
-            WebDriverWait(
-                client.driver,
-                10,
-                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-            ).until(
-                lambda _: (
-                    control
-                    if (
-                        (control := self.native_adapter.focused_control(
-                            client.process_id or 0
-                        )).kind
-                        == "text-field"
-                        and control.value == str(selected_path)
-                    )
-                    else None
+        if self.native_adapter.platform == "win32":
+            path_control = (
+                self.native_adapter.set_file_chooser_path_to_process(
+                    client.process_id or 0,
+                    str(selected_path),
                 )
             )
-        finally:
-            self.native_adapter.write_clipboard(original_clipboard)
+            if path_control is None or path_control.kind != "text-field":
+                raise GateError(
+                    "Native file chooser filename path was not accepted"
+                )
+        else:
+            revealed_control = (
+                self.native_adapter.reveal_file_chooser_location_to_process(
+                    client.process_id or 0
+                )
+            )
+            if revealed_control is None:
+                WebDriverWait(
+                    client.driver,
+                    10,
+                    poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+                ).until(go_to_field_ready)
+            elif revealed_control.kind != "text-field":
+                raise GateError(
+                    "Native file chooser reveal returned an invalid control: "
+                    f"{revealed_control.to_dict()}"
+                )
+
+            original_clipboard = self.native_adapter.read_clipboard()
+            try:
+                selected_path_bytes = str(selected_path).encode("utf-8")
+                self.native_adapter.write_clipboard(selected_path_bytes)
+                if self.native_adapter.read_clipboard() != selected_path_bytes:
+                    raise GateError(
+                        "Native file chooser clipboard path did not round-trip"
+                    )
+                self.native_adapter.post_key_to_process(
+                    client.process_id or 0,
+                    NativeKey.A,
+                    modifiers=(NativeModifier.PRIMARY,),
+                )
+                self.native_adapter.post_key_to_process(
+                    client.process_id or 0,
+                    NativeKey.V,
+                    modifiers=(NativeModifier.PRIMARY,),
+                )
+                WebDriverWait(
+                    client.driver,
+                    10,
+                    poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+                ).until(
+                    lambda _: (
+                        control
+                        if (
+                            (control := self.native_adapter.focused_control(
+                                client.process_id or 0
+                            )).kind
+                            == "text-field"
+                            and control.value == str(selected_path)
+                        )
+                        else None
+                    )
+                )
+            finally:
+                self.native_adapter.write_clipboard(original_clipboard)
         self.native_adapter.post_key_to_process(
             client.process_id or 0,
             NativeKey.ENTER,

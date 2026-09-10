@@ -67,6 +67,7 @@ _SWP_NOMOVE = 0x0002
 _SWP_NOSIZE = 0x0001
 
 _MK_LBUTTON = 0x0001
+_WM_SETTEXT = 0x000C
 
 # Virtual key codes
 _VK_LBUTTON = 0x01
@@ -202,6 +203,13 @@ _user32.SetClipboardData.argtypes = [
     ctypes.c_void_p,
 ]
 _user32.SetClipboardData.restype = ctypes.c_void_p
+_user32.SendMessageW.argtypes = [
+    ctypes.wintypes.HWND,
+    ctypes.wintypes.UINT,
+    ctypes.wintypes.WPARAM,
+    ctypes.wintypes.LPARAM,
+]
+_user32.SendMessageW.restype = ctypes.c_ssize_t
 
 
 # ---------------------------------------------------------------------------
@@ -579,6 +587,84 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
             "Win32 Native file chooser did not expose its location field: "
             f"{last_control.to_dict()}"
         )
+
+    def set_file_chooser_path_to_process(
+        self,
+        process_id: int,
+        path: str,
+    ) -> NativeControlSnapshot:
+        process_id = _validated_process_id(process_id)
+        if not path:
+            raise DriverError("Win32 Native file chooser path is required")
+        dialog_hwnd = self._file_chooser_window(process_id)
+        if not dialog_hwnd:
+            raise DriverError(
+                "Win32 Native file chooser window is not visible "
+                f"for process {process_id}"
+            )
+
+        edit_controls: list[ctypes.wintypes.HWND] = []
+
+        @_ENUM_WINDOWS_PROC
+        def collect_edit_controls(
+            child_hwnd: ctypes.wintypes.HWND,
+            _lparam: ctypes.wintypes.LPARAM,
+        ) -> bool:
+            if self._window_class_name(child_hwnd).lower() == "edit":
+                edit_controls.append(child_hwnd)
+            return True
+
+        _user32.EnumChildWindows(dialog_hwnd, collect_edit_controls, 0)
+        if not edit_controls:
+            raise DriverError(
+                "Win32 Native file chooser has no filename edit control"
+            )
+        filename_control = max(
+            edit_controls,
+            key=lambda hwnd: self._window_rect(hwnd).top,
+        )
+        self._activate_window(dialog_hwnd, process_id)
+        current_thread = _kernel32.GetCurrentThreadId()
+        target_thread = _user32.GetWindowThreadProcessId(
+            filename_control,
+            None,
+        )
+        attached = bool(
+            target_thread
+            and target_thread != current_thread
+            and _user32.AttachThreadInput(
+                current_thread,
+                target_thread,
+                True,
+            )
+        )
+        path_buffer = ctypes.create_unicode_buffer(path)
+        try:
+            _user32.SetFocus(filename_control)
+            accepted = _user32.SendMessageW(
+                filename_control,
+                _WM_SETTEXT,
+                0,
+                ctypes.cast(path_buffer, ctypes.c_void_p).value,
+            )
+        finally:
+            if attached:
+                _user32.AttachThreadInput(
+                    current_thread,
+                    target_thread,
+                    False,
+                )
+        if not accepted:
+            raise DriverError(
+                "Win32 Native file chooser rejected its filename path"
+            )
+        control = self.focused_control(process_id)
+        if control.kind != "text-field":
+            raise DriverError(
+                "Win32 Native file chooser filename control lost focus: "
+                f"{control.to_dict()}"
+            )
+        return control
 
     def focused_control(self, process_id: int) -> NativeControlSnapshot:
         process_id = _validated_process_id(process_id)
