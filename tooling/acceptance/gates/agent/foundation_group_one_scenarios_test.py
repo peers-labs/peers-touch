@@ -15,6 +15,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_context_overflow,
     evaluate_base_credential_missing,
     evaluate_base_duplicate_conflict,
+    evaluate_base_executor_unavailable,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -1382,6 +1383,95 @@ def valid_approval_denied_capture() -> dict[str, object]:
         },
         "cleanup": {
             "bindingRestored": True,
+            "conversationDeleted": True,
+        },
+    }
+
+
+def valid_executor_unavailable_capture() -> dict[str, object]:
+    station = {
+        "policy": "manual",
+        "states": ["policy_check", "awaiting_user"],
+        "errorCode": "",
+        "executionOwner": "client_capability",
+        "executionAttemptCount": 0,
+        "sideEffectCount": 0,
+        "resultCount": 0,
+        "continuationCount": 0,
+        "lineage": {
+            "toolCallId": "tool-call-executor",
+            "approvalId": "approval-executor",
+            "decisionId": "",
+            "decisionRevision": 0,
+            "executionClaimId": "",
+            "fencingToken": 0,
+            "sideEffectReceiptId": "",
+            "resultId": "",
+            "continuationId": "",
+            "dispatchCommittedAt": None,
+        },
+    }
+    return {
+        "outcome": {
+            "error": "agent.errors.executorUnavailable",
+            "error_type": "CLIENT_EXECUTOR_UNAVAILABLE",
+            "locale_key": "agent.errors.executorUnavailable",
+            "retryable": True,
+            "terminal": True,
+            "details": {
+                "target_device_id": "device-executor",
+                "capability_id": "clipboard.read",
+            },
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "The required client executor is unavailable.",
+            "expectedErrorText": "The required client executor is unavailable.",
+            "recoveryVisible": True,
+            "recoveryText": "Reconnect executor",
+            "expectedRecoveryText": "Reconnect executor",
+            "approveDisabled": True,
+            "repeatedApprovalBlocked": True,
+            "recoveryExecuted": True,
+            "approvalEnabledAfterRecovery": True,
+        },
+        "decision": {
+            "accepted": False,
+            "approved": True,
+            "errorCode": (
+                "TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE"
+            ),
+            "approvalId": "approval-executor",
+            "toolCallId": "tool-call-executor",
+            "decisionId": "decision-executor",
+            "decisionRevision": 0,
+        },
+        "station": station,
+        "stationAfterRecovery": copy.deepcopy(station),
+        "executor": {
+            "targetDeviceId": "device-executor",
+            "targetCapabilityId": "clipboard.read",
+            "sessionRemoved": True,
+            "localSessionRemoved": True,
+            "sessionRestored": True,
+            "restoredDeviceId": "device-executor",
+            "restoredCapabilityId": "clipboard.read",
+            "withdrawnExecutionAttemptCount": 0,
+            "restoredExecutionAttemptCount": 0,
+            "withdrawnSideEffectCount": 0,
+            "restoredSideEffectCount": 0,
+        },
+        "replay": {
+            "acknowledgementSourceHash": "a" * 64,
+            "acknowledgementReplayHash": "a" * 64,
+            "diagnosticSourceHash": "b" * 64,
+            "diagnosticReplayHash": "b" * 64,
+            "equal": True,
+        },
+        "cleanup": {
+            "bindingRestored": True,
+            "executorRestored": True,
+            "turnCancelled": True,
             "conversationDeleted": True,
         },
     }
@@ -2856,6 +2946,34 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "zeroSideEffect",
         ):
             evaluate_base_approval_denied(capture)
+
+    def test_executor_unavailable_accepts_exact_production_facts(self) -> None:
+        assertions = evaluate_base_executor_unavailable(
+            valid_executor_unavailable_capture()
+        )
+
+        self.assertEqual(len(assertions), 9)
+        self.assertTrue(all(assertions.values()))
+
+    def test_executor_unavailable_rejects_decision_mutation(self) -> None:
+        capture = valid_executor_unavailable_capture()
+        capture["station"]["lineage"]["decisionId"] = "decision-executor"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "waitingApprovalPreserved",
+        ):
+            evaluate_base_executor_unavailable(capture)
+
+    def test_executor_unavailable_rejects_local_side_effect_delta(self) -> None:
+        capture = valid_executor_unavailable_capture()
+        capture["executor"]["restoredSideEffectCount"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroSideEffect",
+        ):
+            evaluate_base_executor_unavailable(capture)
 
     def test_approval_expired_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_approval_expired(

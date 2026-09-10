@@ -2493,6 +2493,22 @@ export interface AgentTypedErrorPayload {
   details: Record<string, string>;
 }
 
+export const AGENT_ATTACHMENT_REJECTED_ERROR_TYPE =
+  'CONTEXT_ATTACHMENT_REJECTED';
+export const AGENT_CONTEXT_LIMIT_ERROR_TYPE = 'CONTEXT_OVERFLOW';
+
+export function isAgentAttachmentRejectedError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentTypedErrorPayload {
+  return error?.error_type === AGENT_ATTACHMENT_REJECTED_ERROR_TYPE;
+}
+
+export function isAgentContextOverflowError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentTypedErrorPayload {
+  return error?.error_type === AGENT_CONTEXT_LIMIT_ERROR_TYPE;
+}
+
 export interface AgentTurnStreamError extends Error {
   typedError?: AgentTypedErrorPayload;
   resolution?: unknown;
@@ -4991,6 +5007,18 @@ export const api = {
   closeBrowserCapabilitySession: () =>
     invokeRustDataFromStatus<Record<string, never>, { state: string }>(
       'agent_browser_capability_session_close',
+      {},
+    ),
+
+  startAgentClientExecutorSupervisor: () =>
+    invokeRustDataFromStatus<Record<string, never>, { available: boolean; state: string }>(
+      'agent_client_executor_supervisor_start',
+      {},
+    ),
+
+  stopAgentClientExecutorSupervisor: () =>
+    invokeRustDataFromStatus<Record<string, never>, { available: boolean; state: string }>(
+      'agent_client_executor_supervisor_stop',
       {},
     ),
 

@@ -647,6 +647,8 @@ fn main() {
             runtime_evidence::agent_capability_sessions,
             runtime_evidence::agent_browser_capability_session_open,
             runtime_evidence::agent_browser_capability_session_close,
+            runtime_evidence::agent_client_executor_supervisor_start,
+            runtime_evidence::agent_client_executor_supervisor_stop,
             runtime_evidence::agent_runtime_activity_station,
             runtime_evidence::agent_runtime_activity_local,
             runtime_evidence::agent_capability_session_snapshot,

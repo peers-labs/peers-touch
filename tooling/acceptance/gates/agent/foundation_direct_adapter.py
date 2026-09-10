@@ -215,6 +215,19 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-EXECUTOR-UNAVAILABLE": frozenset(
+        {
+            "typedExecutorUnavailable",
+            "localizedRecoveryVisible",
+            "singleRejectedApproval",
+            "waitingApprovalPreserved",
+            "zeroExecutionClaim",
+            "zeroSideEffect",
+            "replayEqual",
+            "executorReconnected",
+            "cleanupComplete",
+        }
+    ),
     "BASE-APPROVAL_DENIED": frozenset(
         {
             "typedDenialProjected",

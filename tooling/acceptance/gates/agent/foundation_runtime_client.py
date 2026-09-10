@@ -293,6 +293,7 @@ class FoundationRuntimeClient:
             "PEERS_STATION_URL": self._station_url,
             "PT_DESKTOP_E2E": "true",
             "PT_AGENT_AS_F10_NEGATIVE_CONTROL": "1",
+            "PT_AGENT_GFE1_EXECUTOR_CONTROL": "1",
             "TAURI_WEBDRIVER_PORT": str(self.spec.webdriver_port),
             "CARGO_TARGET_DIR": str(self.spec.cargo_target_dir),
             "RESTART": "1",

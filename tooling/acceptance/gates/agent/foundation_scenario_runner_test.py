@@ -19,15 +19,115 @@ from tooling.acceptance.gates.agent.foundation_group_one_probe import (
     GroupOneProbeError,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
+    evaluate_base_executor_unavailable,
     evaluate_as_f04,
     evaluate_as_f06,
     evaluate_as_f12,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
+    valid_executor_unavailable_capture,
     valid_as_f04_capture,
     valid_as_f06_capture,
     valid_as_f12_capture,
 )
+
+
+class ExecutorUnavailableHarnessClient:
+    def __init__(
+        self,
+        platform: str,
+        *,
+        call_log: list[str],
+    ) -> None:
+        self.platform = platform
+        self.call_log = call_log
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        del timeout
+        request = payload or {}
+        self.call_log.append(f"{self.platform}:{method}")
+        if method == "setFoundationLocale":
+            return {"locale": request["locale"]}
+        if method == "getFoundationClientExecutorTarget":
+            return {
+                "capabilitySessionId": "session-native",
+                "targetDeviceId": "device-executor",
+                "targetCapabilityId": "clipboard.read",
+            }
+        if method == "prepareFoundationExecutorUnavailable":
+            return {
+                "scenarioKey": request["scenarioKey"],
+                "conversationId": "conversation-executor",
+                "turnId": "turn-executor",
+            }
+        if method == "setFoundationClientExecutorAvailable":
+            available = bool(request["available"])
+            return {
+                "sessionRemoved": not available,
+                "localSessionRemoved": not available,
+                "sessionRestored": available,
+                "restoredDeviceId": (
+                    "device-executor" if available else ""
+                ),
+                "restoredCapabilityId": (
+                    "clipboard.read" if available else ""
+                ),
+                "withdrawnExecutionAttemptCount": 0,
+                "withdrawnSideEffectCount": 0,
+                "restoredExecutionAttemptCount": 0,
+                "restoredSideEffectCount": 0,
+            }
+        if method == "rejectFoundationExecutorUnavailable":
+            facts = valid_executor_unavailable_capture()
+            facts["cleanup"]["conversationDeleted"] = False
+            facts["cleanup"]["bindingRestored"] = False
+            facts["cleanup"]["executorRestored"] = False
+            facts["receiver"]["recoveryExecuted"] = False
+            facts["receiver"]["approvalEnabledAfterRecovery"] = False
+            return {
+                "conversationId": "conversation-executor",
+                "turnId": "turn-executor",
+                "durationMs": 1,
+                "runtimeEvent": {
+                    "eventType": "tool_approval_required",
+                    "sequence": 1,
+                    "observedAt": "2026-09-10T00:00:00Z",
+                },
+                "facts": facts,
+            }
+        if method == "recoverFoundationExecutorUnavailable":
+            facts = valid_executor_unavailable_capture()
+            return {
+                "conversationId": "conversation-executor",
+                "turnId": "turn-executor",
+                "durationMs": 2,
+                "runtimeEvent": {
+                    "eventType": "tool_approval_required",
+                    "sequence": 1,
+                    "observedAt": "2026-09-10T00:00:00Z",
+                },
+                "facts": facts,
+            }
+        if method == "foundationDirectProbe":
+            probe = DirectRuntimeProbeInput(
+                platform=str(request["platform"]),
+                locale=str(request["locale"]),
+                cell=str(request["cell"]),
+                sample_id=str(request["sampleId"]),
+            )
+            result = capture(probe)
+            facts = valid_executor_unavailable_capture()
+            result["scenarioFacts"] = facts
+            result["assertions"] = evaluate_base_executor_unavailable(facts)
+            return result
+        if method == "abortFoundationExecutorUnavailable":
+            return {"scenarioKey": request["scenarioKey"], "cleaned": True}
+        raise AssertionError(f"unexpected method: {method}")
 
 
 class DirectProbeHarnessClient:
@@ -1877,6 +1977,53 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
 
         self.assertEqual(native.cleanup_calls, [])
         self.assertEqual(browser.cleanup_calls, [])
+
+    def test_executor_unavailable_coordinates_native_executor_for_browser_receiver(
+        self,
+    ) -> None:
+        call_log: list[str] = []
+        native = ExecutorUnavailableHarnessClient(
+            "desktop_app",
+            call_log=call_log,
+        )
+        browser = ExecutorUnavailableHarnessClient(
+            "browser",
+            call_log=call_log,
+        )
+        coordinator = (
+            foundation_scenario_runner.FoundationExecutorUnavailableCoordinator(
+                SimpleNamespace(native=native, browser=browser)
+            )
+        )
+        probe = foundation_scenario_runner._make_direct_probe(
+            browser,
+            executor_unavailable_coordinator=coordinator,
+        )
+
+        result = probe(
+            DirectRuntimeProbeInput(
+                platform="browser",
+                locale="en",
+                cell="BASE-EXECUTOR-UNAVAILABLE",
+                sample_id="sample-001",
+            )
+        )
+
+        self.assertTrue(result["assertions"]["typedExecutorUnavailable"])
+        self.assertEqual(
+            call_log,
+            [
+                "browser:setFoundationLocale",
+                "desktop_app:getFoundationClientExecutorTarget",
+                "browser:prepareFoundationExecutorUnavailable",
+                "desktop_app:setFoundationClientExecutorAvailable",
+                "browser:rejectFoundationExecutorUnavailable",
+                "desktop_app:setFoundationClientExecutorAvailable",
+                "browser:recoverFoundationExecutorUnavailable",
+                "browser:foundationDirectProbe",
+                "browser:abortFoundationExecutorUnavailable",
+            ],
+        )
 
 
 if __name__ == "__main__":

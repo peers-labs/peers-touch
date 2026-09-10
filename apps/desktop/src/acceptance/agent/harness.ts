@@ -1546,6 +1546,28 @@ interface FoundationToolTurn {
   observed: ObservedFoundationTurn;
 }
 
+interface FoundationExecutorUnavailableScenario {
+  scenarioKey: string;
+  platform: string;
+  sampleId: string;
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  fixture: FoundationToolFixture;
+  originalBinding: AgentCapabilityBinding | null;
+  currentBinding: AgentCapabilityBinding;
+  turn: FoundationToolTurn;
+  approvalId: string;
+  toolCallId: string;
+  expectedRevision: number;
+  targetCapabilitySessionId: string;
+  targetDeviceId: string;
+  targetCapabilityId: string;
+  startedAt: number;
+  bindingRestored: boolean;
+}
+
+const foundationExecutorUnavailableScenarios =
+  new Map<string, FoundationExecutorUnavailableScenario>();
+
 interface FoundationToolTurnSession {
   capabilitySessionId: string;
   facts: Record<string, unknown>;
@@ -2881,6 +2903,516 @@ async function runFoundationF04Scenario(input: {
       );
     }
   }
+}
+
+async function restoreFoundationExecutorUnavailableBinding(
+  scenario: FoundationExecutorUnavailableScenario,
+): Promise<boolean> {
+  if (scenario.originalBinding) {
+    await updateFoundationToolPolicy(
+      scenario.agent,
+      scenario.fixture,
+      scenario.currentBinding,
+      scenario.originalBinding.approvalPolicy,
+      scenario.originalBinding.enabled,
+    );
+  } else {
+    await api.deleteAgentCapabilityBinding(
+      scenario.currentBinding.bindingId,
+      scenario.currentBinding.revision,
+      crypto.randomUUID(),
+      'acceptance_fixture_cleanup',
+    );
+  }
+  const bindings = await api.listAgentCapabilityBindings(
+    scenario.agent.id || scenario.agent.name,
+  );
+  const restored = bindings.find((candidate) =>
+    candidate.capabilityId === scenario.fixture.manifest.capabilityId
+    && candidate.capabilityVersion === scenario.fixture.manifest.version
+    && !candidate.tombstonedAt) ?? null;
+  return scenario.originalBinding
+    ? (
+        restored?.approvalPolicy === scenario.originalBinding.approvalPolicy
+        && restored.enabled === scenario.originalBinding.enabled
+      )
+    : restored === null;
+}
+
+async function cleanupFoundationExecutorUnavailableScenario(
+  scenarioKey: string,
+): Promise<void> {
+  const scenario = foundationExecutorUnavailableScenarios.get(scenarioKey);
+  if (!scenario) return;
+  foundationExecutorUnavailableScenarios.delete(scenarioKey);
+  const failures: unknown[] = [];
+  if (!scenario.bindingRestored) {
+    try {
+      await restoreFoundationExecutorUnavailableBinding(scenario);
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  try {
+    await cleanupFoundationToolConversation(
+      scenario.turn.conversationId,
+      scenario.turn.turnId,
+    );
+  } catch (error) {
+    failures.push(error);
+  }
+  if (failures.length > 0) {
+    throw Object.assign(
+      new Error('agent.acceptance.foundationExecutorUnavailableCleanupFailed'),
+      { failures },
+    );
+  }
+}
+
+async function prepareFoundationExecutorUnavailableScenario(input: {
+  scenarioKey: string;
+  platform: string;
+  sampleId: string;
+  targetCapabilitySessionId: string;
+  targetDeviceId: string;
+  targetCapabilityId: string;
+}): Promise<Record<string, unknown>> {
+  if (foundationExecutorUnavailableScenarios.has(input.scenarioKey)) {
+    throw new Error('agent.acceptance.foundationExecutorScenarioConflict');
+  }
+  const agent = selectedAgent();
+  if (!agent) throw new Error('agent.acceptance.agentMissing');
+  const agentId = agent.id || agent.name;
+  const targetSession = (
+    await api.listAgentCapabilitySessions()
+  ).sessions.find((session) =>
+    session.session_id === input.targetCapabilitySessionId
+    && session.device_id === input.targetDeviceId
+    && session.typed_capabilities.some(
+      (capability) => capability.capability_id === input.targetCapabilityId,
+    ));
+  if (!targetSession) {
+    throw new Error('agent.acceptance.foundationExecutorTargetUnavailable');
+  }
+
+  const fixture = await foundationToolFixture(agentId, 'desktop_app');
+  if (fixture.manifest.capabilityId !== input.targetCapabilityId) {
+    throw new Error('agent.acceptance.foundationExecutorCapabilityMismatch');
+  }
+  let currentBinding = fixture.binding;
+  let turn: FoundationToolTurn | null = null;
+  try {
+    currentBinding = await updateFoundationToolPolicy(
+      agent,
+      fixture,
+      currentBinding,
+      CapabilityApprovalPolicy.MANUAL,
+    );
+    turn = await startFoundationToolTurn({
+      agent,
+      capabilitySessionId: input.targetCapabilitySessionId,
+      fixture,
+      sampleId: input.sampleId,
+      label: 'executor-unavailable',
+    });
+    await useChatStore.getState().selectSession(turn.conversationId);
+    const approval = await waitForToolApprovalEvent(turn);
+    const approvalId = String(
+      evidenceField(approval, 'approvalId', 'approval_id') ?? '',
+    );
+    const toolCallId = String(
+      evidenceField(approval, 'toolCallId', 'tool_call_id') ?? '',
+    );
+    const expectedRevision = Number(
+      evidenceField(approval, 'decisionRevision', 'decision_revision') ?? 0,
+    );
+    if (!approvalId || !toolCallId || !Number.isInteger(expectedRevision)) {
+      throw new Error('agent.acceptance.foundationToolApprovalInvalid');
+    }
+    await waitFor(
+      () => Boolean(document.querySelector(
+        `[data-pt-agent-tool-call="${toolCallId}"]`,
+      )),
+      'executor-unavailable ToolCall receiver',
+      30_000,
+    );
+    foundationExecutorUnavailableScenarios.set(input.scenarioKey, {
+      scenarioKey: input.scenarioKey,
+      platform: input.platform,
+      sampleId: input.sampleId,
+      agent,
+      fixture,
+      originalBinding: fixture.binding,
+      currentBinding,
+      turn,
+      approvalId,
+      toolCallId,
+      expectedRevision,
+      targetCapabilitySessionId: input.targetCapabilitySessionId,
+      targetDeviceId: input.targetDeviceId,
+      targetCapabilityId: input.targetCapabilityId,
+      startedAt: performance.now(),
+      bindingRestored: false,
+    });
+    return {
+      scenarioKey: input.scenarioKey,
+      conversationId: turn.conversationId,
+      turnId: turn.turnId,
+      approvalId,
+      toolCallId,
+      expectedRevision,
+      targetCapabilitySessionId: input.targetCapabilitySessionId,
+      targetDeviceId: input.targetDeviceId,
+      targetCapabilityId: input.targetCapabilityId,
+    };
+  } catch (error) {
+    if (turn) {
+      await cleanupFoundationToolConversation(
+        turn.conversationId,
+        turn.turnId,
+      ).catch(() => undefined);
+    }
+    if (currentBinding) {
+      if (fixture.binding) {
+        await updateFoundationToolPolicy(
+          agent,
+          fixture,
+          currentBinding,
+          fixture.binding.approvalPolicy,
+          fixture.binding.enabled,
+        ).catch(() => undefined);
+      } else {
+        await api.deleteAgentCapabilityBinding(
+          currentBinding.bindingId,
+          currentBinding.revision,
+          crypto.randomUUID(),
+          'acceptance_fixture_cleanup',
+        ).catch(() => undefined);
+      }
+    }
+    throw error;
+  }
+}
+
+function executorUnavailableStationFact(
+  fact: Record<string, unknown>,
+): Record<string, unknown> {
+  const stringField = (camelCase: string, snakeCase: string): string =>
+    String(evidenceField(fact, camelCase, snakeCase) ?? '');
+  const numberField = (camelCase: string, snakeCase: string): number =>
+    Number(evidenceField(fact, camelCase, snakeCase) ?? 0);
+  return {
+    policy: String(
+      evidenceField(fact, 'approvalPolicy', 'approval_policy') ?? '',
+    ),
+    states: ['policy_check', 'awaiting_user'],
+    errorCode: stringField('errorCode', 'error_code'),
+    executionOwner: toolExecutionOwnerName(
+      evidenceField(fact, 'executionOwner', 'execution_owner'),
+    ),
+    executionAttemptCount: numberField(
+      'executionAttemptCount',
+      'execution_attempt_count',
+    ),
+    sideEffectCount: stringField(
+      'sideEffectReceiptId',
+      'side_effect_receipt_id',
+    ) ? 1 : 0,
+    resultCount: stringField('resultId', 'result_id') ? 1 : 0,
+    continuationCount: stringField('continuationId', 'continuation_id') ? 1 : 0,
+    lineage: {
+      toolCallId: stringField('toolCallId', 'tool_call_id'),
+      approvalId: stringField('approvalId', 'approval_id'),
+      decisionId: stringField('decisionId', 'decision_id'),
+      decisionRevision: numberField(
+        'decisionRevision',
+        'decision_revision',
+      ),
+      executionClaimId: stringField(
+        'executionClaimId',
+        'execution_claim_id',
+      ),
+      fencingToken: numberField('fencingToken', 'fencing_token'),
+      sideEffectReceiptId: stringField(
+        'sideEffectReceiptId',
+        'side_effect_receipt_id',
+      ),
+      resultId: stringField('resultId', 'result_id'),
+      continuationId: stringField('continuationId', 'continuation_id'),
+      dispatchCommittedAt: evidenceField(
+        fact,
+        'dispatchCommittedAt',
+        'dispatch_committed_at',
+      ) ?? null,
+    },
+  };
+}
+
+async function rejectFoundationExecutorUnavailableScenario(
+  scenarioKey: string,
+  executorStop: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const scenario = foundationExecutorUnavailableScenarios.get(scenarioKey);
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationExecutorScenarioMissing');
+  }
+  const toolCallElement = document.querySelector<HTMLElement>(
+    `[data-pt-agent-tool-call="${scenario.toolCallId}"]`,
+  );
+  if (!toolCallElement) {
+    throw new Error('agent.acceptance.foundationToolCallSurfaceMissing');
+  }
+  let approve = toolCallElement.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-tool-decision="approve"]',
+  );
+  if (!approve) {
+    toolCallElement.querySelector<HTMLElement>(
+      '[data-pt-agent-tool-call-toggle]',
+    )?.click();
+    await waitFor(
+      () => Boolean(toolCallElement.querySelector(
+        '[data-pt-agent-tool-decision="approve"]',
+      )),
+      'executor-unavailable approve action',
+      10_000,
+    );
+    approve = toolCallElement.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-tool-decision="approve"]',
+    );
+  }
+  if (!approve) {
+    throw new Error('agent.acceptance.foundationToolApproveMissing');
+  }
+  approve.click();
+  await waitFor(
+    () => (
+      toolRuntime.getProjection(scenario.toolCallId)
+        ?.decisionOutcome?.error_type === 'CLIENT_EXECUTOR_UNAVAILABLE'
+    ),
+    'executor-unavailable typed outcome',
+    30_000,
+  );
+  const projection = toolRuntime.getProjection(scenario.toolCallId);
+  const attempt = toolRuntime.getDecisionAttempt(scenario.toolCallId);
+  if (!projection?.decisionOutcome || !attempt) {
+    throw new Error('agent.acceptance.foundationExecutorOutcomeMissing');
+  }
+  const replayedAcknowledgement = await api.submitAgentToolDecision(
+    attempt.input,
+  );
+  let repeatedApprovalBlocked = false;
+  try {
+    await toolRuntime.submitDecision(scenario.toolCallId, true);
+  } catch (error) {
+    repeatedApprovalBlocked =
+      observedErrorCode(error).includes('agent.errors.executorUnavailable');
+  }
+  const source = await waitForFoundationToolFacts(
+    scenario.turn.turnId,
+    (facts) => (
+      facts.length === 1
+      && Number(facts[0].status) === ToolCallStatus.WAITING_APPROVAL
+    ),
+    'executor-unavailable Station source readback',
+  );
+  const replayed = await waitForFoundationToolFacts(
+    scenario.turn.turnId,
+    (facts) => (
+      facts.length === 1
+      && Number(facts[0].status) === ToolCallStatus.WAITING_APPROVAL
+    ),
+    'executor-unavailable Station replay readback',
+  );
+  const station = executorUnavailableStationFact(replayed.facts[0]);
+  const errorSelector =
+    '[data-pt-agent-tool-error="agent.errors.executorUnavailable"]';
+  const recoverySelector =
+    '[data-pt-agent-tool-recovery="reconnect-executor"]';
+  await waitFor(
+    () => Boolean(toolCallElement.querySelector(errorSelector))
+      && Boolean(toolCallElement.querySelector(recoverySelector)),
+    'executor-unavailable recovery surface',
+    10_000,
+  );
+  const errorElement = toolCallElement.querySelector<HTMLElement>(errorSelector);
+  const recovery = toolCallElement.querySelector<HTMLButtonElement>(
+    recoverySelector,
+  );
+  const firstAcknowledgementHash = await sha256Hex(
+    stableJson(attempt.response),
+  );
+  const replayedAcknowledgementHash = await sha256Hex(
+    stableJson(replayedAcknowledgement),
+  );
+  const sourceReplayHash = await sha256Hex(stableJson(
+    withoutDiagnosticGenerationTime(source.replay),
+  ));
+  const diagnosticReplayHash = await sha256Hex(stableJson(
+    withoutDiagnosticGenerationTime(replayed.replay),
+  ));
+  const runtimeEvent = [...scenario.turn.observed.events]
+    .reverse()
+    .map((event) => ({
+      eventType: event.event,
+      sequence: Number(event.data.seq ?? 0),
+      observedAt: event.observedAt,
+    }))
+    .find((event) => event.sequence > 0);
+  if (!runtimeEvent) {
+    throw new Error('agent.acceptance.foundationToolRuntimeEventMissing');
+  }
+
+  return {
+    conversationId: scenario.turn.conversationId,
+    turnId: scenario.turn.turnId,
+    durationMs: performance.now() - scenario.startedAt,
+    runtimeEvent,
+    facts: {
+      outcome: projection.decisionOutcome,
+      receiver: {
+        errorVisible: Boolean(
+          errorElement && errorElement.getClientRects().length > 0,
+        ),
+        errorText: errorElement?.textContent?.trim() ?? '',
+        expectedErrorText: i18n.t(
+          'agent.errors.executorUnavailable',
+          { ns: 'agent' },
+        ),
+        recoveryVisible: Boolean(
+          recovery && recovery.getClientRects().length > 0,
+        ),
+        recoveryText: recovery?.textContent?.trim() ?? '',
+        expectedRecoveryText: i18n.t(
+          'agent.recovery.reconnectExecutor',
+          { ns: 'agent' },
+        ),
+        approveDisabled: approve.disabled,
+        repeatedApprovalBlocked,
+        recoveryExecuted: false,
+      },
+      decision: {
+        accepted: attempt.response.accepted,
+        approved: attempt.response.approved,
+        errorCode: attempt.response.error_code,
+        approvalId: attempt.response.approval_id,
+        toolCallId: attempt.response.tool_call_id,
+        decisionId: attempt.response.decision_id,
+        decisionRevision: attempt.response.decision_revision,
+      },
+      station,
+      executor: {
+        ...executorStop,
+        targetCapabilitySessionId: scenario.targetCapabilitySessionId,
+        targetDeviceId: scenario.targetDeviceId,
+        targetCapabilityId: scenario.targetCapabilityId,
+      },
+      replay: {
+        acknowledgementSourceHash: firstAcknowledgementHash,
+        acknowledgementReplayHash: replayedAcknowledgementHash,
+        diagnosticSourceHash: sourceReplayHash,
+        diagnosticReplayHash,
+        equal:
+          firstAcknowledgementHash === replayedAcknowledgementHash
+          && sourceReplayHash === diagnosticReplayHash,
+      },
+      cleanup: {
+        bindingRestored: false,
+        conversationDeleted: false,
+        executorRestored: false,
+      },
+    },
+  };
+}
+
+async function recoverFoundationExecutorUnavailableScenario(input: {
+  scenarioKey: string;
+  rejectedScenario: Record<string, unknown>;
+  executorStart: Record<string, unknown>;
+}): Promise<Record<string, unknown>> {
+  const scenario = foundationExecutorUnavailableScenarios.get(input.scenarioKey);
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationExecutorScenarioMissing');
+  }
+  const facts = evidenceRecord(
+    input.rejectedScenario.facts,
+    'foundationExecutorUnavailableFacts',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationExecutorUnavailableReceiver',
+  );
+  const toolCallElement = document.querySelector<HTMLElement>(
+    `[data-pt-agent-tool-call="${scenario.toolCallId}"]`,
+  );
+  const recovery = toolCallElement?.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-tool-recovery="reconnect-executor"]',
+  );
+  if (!toolCallElement || !recovery) {
+    throw new Error('agent.acceptance.foundationToolRecoveryMissing');
+  }
+  recovery.click();
+  await waitFor(
+    () => {
+      const projection = toolRuntime.getProjection(scenario.toolCallId);
+      return projection?.status === 'approval_required'
+        && projection.error === undefined
+        && projection.decisionOutcome === undefined;
+    },
+    'executor-unavailable reconnect reconciliation',
+    30_000,
+  );
+  const approve = toolCallElement.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-tool-decision="approve"]',
+  );
+  const postRecovery = await waitForFoundationToolFacts(
+    scenario.turn.turnId,
+    (toolFacts) => (
+      toolFacts.length === 1
+      && Number(toolFacts[0].status) === ToolCallStatus.WAITING_APPROVAL
+    ),
+    'executor-unavailable post-recovery readback',
+  );
+  const stationAfterRecovery = executorUnavailableStationFact(
+    postRecovery.facts[0],
+  );
+  const cancellation = await api.cancelAgentTurn(scenario.turn.turnId);
+  const turnCancelled =
+    String(cancellation.status ?? '').toLowerCase() === 'cancelled';
+  if (!turnCancelled) {
+    throw new Error('agent.acceptance.foundationExecutorTurnCleanupFailed');
+  }
+  const bindingRestored =
+    await restoreFoundationExecutorUnavailableBinding(scenario);
+  scenario.bindingRestored = bindingRestored;
+
+  return {
+    ...input.rejectedScenario,
+    facts: {
+      ...facts,
+      receiver: {
+        ...receiver,
+        recoveryExecuted: true,
+        approvalEnabledAfterRecovery: approve?.disabled === false,
+      },
+      stationAfterRecovery,
+      executor: {
+        ...evidenceRecord(
+          facts.executor,
+          'foundationExecutorUnavailableExecutor',
+        ),
+        ...input.executorStart,
+      },
+      cleanup: {
+        ...evidenceRecord(
+          facts.cleanup,
+          'foundationExecutorUnavailableCleanup',
+        ),
+        bindingRestored,
+        executorRestored: true,
+        turnCancelled,
+      },
+    },
+  };
 }
 
 async function runFoundationApprovalDeniedScenario(input: {
@@ -11120,6 +11652,8 @@ async function evaluateDirectCellAssertions(
       return evaluateBaseDuplicateConflict(ctx);
     case 'BASE-CREDENTIAL_MISSING':
       return evaluateBaseCredentialMissing(ctx);
+    case 'BASE-EXECUTOR-UNAVAILABLE':
+      return evaluateBaseExecutorUnavailable(ctx);
     case 'BASE-APPROVAL_DENIED':
       return evaluateBaseApprovalDenied(ctx);
     case 'BASE-APPROVAL_EXPIRED':
@@ -11129,6 +11663,144 @@ async function evaluateDirectCellAssertions(
     default:
       throw new Error(`agent.acceptance.unsupportedFoundationCell:${ctx.cell}`);
   }
+}
+
+function evaluateBaseExecutorUnavailable(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationExecutorUnavailableFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationExecutorUnavailableOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationExecutorUnavailableDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationExecutorUnavailableReceiver',
+  );
+  const decision = evidenceRecord(
+    facts.decision,
+    'foundationExecutorUnavailableDecision',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationExecutorUnavailableStation',
+  );
+  const stationAfterRecovery = evidenceRecord(
+    facts.stationAfterRecovery,
+    'foundationExecutorUnavailableStationAfterRecovery',
+  );
+  const lineage = evidenceRecord(
+    station.lineage,
+    'foundationExecutorUnavailableLineage',
+  );
+  const recoveryLineage = evidenceRecord(
+    stationAfterRecovery.lineage,
+    'foundationExecutorUnavailableRecoveryLineage',
+  );
+  const executor = evidenceRecord(
+    facts.executor,
+    'foundationExecutorUnavailableExecutor',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationExecutorUnavailableReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationExecutorUnavailableCleanup',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+  const zeroStationOutcome = (value: Record<string, unknown>) => (
+    Number(value.executionAttemptCount) === 0
+    && Number(value.sideEffectCount) === 0
+    && Number(value.resultCount) === 0
+    && Number(value.continuationCount) === 0
+  );
+  return {
+    typedExecutorUnavailable: (
+      outcome.error_type === 'CLIENT_EXECUTOR_UNAVAILABLE'
+      && outcome.locale_key === 'agent.errors.executorUnavailable'
+      && outcome.retryable === true
+      && outcome.terminal === true
+      && safeDetailKeys.length === 2
+      && safeDetailKeys[0] === 'capability_id'
+      && safeDetailKeys[1] === 'target_device_id'
+      && details.target_device_id === executor.targetDeviceId
+      && details.capability_id === executor.targetCapabilityId
+    ),
+    localizedRecoveryVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    singleRejectedApproval: (
+      decision.accepted === false
+      && decision.approved === true
+      && decision.errorCode
+        === 'TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE'
+      && receiver.approveDisabled === true
+      && receiver.repeatedApprovalBlocked === true
+    ),
+    waitingApprovalPreserved: (
+      station.policy === 'manual'
+      && stableJson(station.states)
+        === stableJson(['policy_check', 'awaiting_user'])
+      && station.executionOwner === 'client_capability'
+      && lineage.toolCallId === decision.toolCallId
+      && lineage.approvalId === decision.approvalId
+      && lineage.decisionId === ''
+      && Number(lineage.decisionRevision) === decision.decisionRevision
+    ),
+    zeroExecutionClaim: (
+      lineage.executionClaimId === ''
+      && Number(lineage.fencingToken) === 0
+      && lineage.sideEffectReceiptId === ''
+      && lineage.dispatchCommittedAt === null
+      && recoveryLineage.executionClaimId === ''
+      && Number(recoveryLineage.fencingToken) === 0
+      && recoveryLineage.sideEffectReceiptId === ''
+      && recoveryLineage.dispatchCommittedAt === null
+    ),
+    zeroSideEffect: (
+      zeroStationOutcome(station)
+      && zeroStationOutcome(stationAfterRecovery)
+      && Number(executor.withdrawnExecutionAttemptCount) >= 0
+      && Number(executor.withdrawnSideEffectCount) >= 0
+      && Number(executor.restoredExecutionAttemptCount)
+        === Number(executor.withdrawnExecutionAttemptCount)
+      && Number(executor.restoredSideEffectCount)
+        === Number(executor.withdrawnSideEffectCount)
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.acknowledgementSourceHash
+        === replay.acknowledgementReplayHash
+      && replay.diagnosticSourceHash === replay.diagnosticReplayHash
+    ),
+    executorReconnected: (
+      executor.sessionRemoved === true
+      && executor.localSessionRemoved === true
+      && executor.sessionRestored === true
+      && executor.restoredDeviceId === executor.targetDeviceId
+      && executor.restoredCapabilityId === executor.targetCapabilityId
+      && receiver.recoveryExecuted === true
+      && receiver.approvalEnabledAfterRecovery === true
+    ),
+    cleanupComplete: (
+      cleanup.bindingRestored === true
+      && cleanup.executorRestored === true
+      && cleanup.turnCancelled === true
+      && cleanup.conversationDeleted === true
+    ),
+  };
 }
 
 function evaluateBaseCancelled(
@@ -13654,6 +14326,190 @@ export function installAcceptanceHarness(): void {
       return { opened: true };
     },
 
+    async getFoundationClientExecutorTarget() {
+      const agent = selectedAgent();
+      if (!agent) throw new Error('agent.acceptance.agentMissing');
+      const fixture = await foundationToolFixture(
+        agent.id || agent.name,
+        'desktop_app',
+      );
+      const session = await resolveFoundationToolTurnSession();
+      const stationSessions = await api.listAgentCapabilitySessions();
+      const target = stationSessions.sessions.find((candidate) =>
+        candidate.session_id === session.capabilitySessionId
+        && candidate.typed_capabilities.some(
+          (capability) =>
+            capability.capability_id === fixture.manifest.capabilityId,
+        ));
+      if (!target) {
+        throw new Error('agent.acceptance.foundationExecutorTargetUnavailable');
+      }
+      return {
+        capabilitySessionId: target.session_id,
+        targetDeviceId: target.device_id,
+        targetCapabilityId: fixture.manifest.capabilityId,
+      };
+    },
+
+    async setFoundationClientExecutorAvailable({
+      available,
+      targetCapabilitySessionId,
+      targetDeviceId,
+      targetCapabilityId,
+    }: {
+      available: boolean;
+      targetCapabilitySessionId: string;
+      targetDeviceId: string;
+      targetCapabilityId: string;
+    }) {
+      const [before, beforeLocal] = await Promise.all([
+        api.listAgentCapabilitySessions(),
+        api.getAgentCapabilitySessionSnapshot(),
+      ]);
+      const [targetDeviceIdHash, targetCapabilitySessionIdHash] =
+        await Promise.all([
+          sha256Hex(targetDeviceId),
+          sha256Hex(targetCapabilitySessionId),
+        ]);
+      if (available) {
+        await api.startAgentClientExecutorSupervisor();
+      } else {
+        await api.stopAgentClientExecutorSupervisor();
+      }
+      let after = await api.listAgentCapabilitySessions();
+      let afterLocal = await api.getAgentCapabilitySessionSnapshot();
+      const deadline = Date.now() + 30_000;
+      const matchesTarget = () => after.sessions.find((session) =>
+        session.device_id === targetDeviceId
+        && session.typed_capabilities.some(
+          (capability) => capability.capability_id === targetCapabilityId,
+        ));
+      const matchesLocalTarget = () => afterLocal.sessions.find((session) =>
+        session.device_id_hash === targetDeviceIdHash
+        && session.capability_ids.includes(targetCapabilityId));
+      while (
+        (
+          available
+            ? !matchesTarget() || !matchesLocalTarget()
+            : after.sessions.some(
+                (session) => session.session_id === targetCapabilitySessionId,
+              ) || afterLocal.sessions.some(
+                (session) =>
+                  session.capability_session_id_hash
+                    === targetCapabilitySessionIdHash,
+              )
+        )
+        && Date.now() < deadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        [after, afterLocal] = await Promise.all([
+          api.listAgentCapabilitySessions(),
+          api.getAgentCapabilitySessionSnapshot(),
+        ]);
+      }
+      const restored = matchesTarget();
+      const restoredLocal = matchesLocalTarget();
+      const sessionRemoved = !after.sessions.some(
+        (session) => session.session_id === targetCapabilitySessionId,
+      );
+      const localSessionRemoved = !afterLocal.sessions.some(
+        (session) =>
+          session.capability_session_id_hash === targetCapabilitySessionIdHash,
+      );
+      if (
+        (available && (!restored || !restoredLocal))
+        || (!available && (!sessionRemoved || !localSessionRemoved))
+      ) {
+        throw new Error(
+          available
+            ? 'agent.acceptance.foundationExecutorRestoreTimeout'
+            : 'agent.acceptance.foundationExecutorWithdrawalTimeout',
+        );
+      }
+      const beforeTargetLocal = beforeLocal.sessions.find(
+        (session) =>
+          session.capability_session_id_hash === targetCapabilitySessionIdHash,
+      );
+      return {
+        requestedAvailable: available,
+        targetCapabilitySessionId,
+        targetDeviceId,
+        targetCapabilityId,
+        sessionPresentBefore: before.sessions.some(
+          (session) => session.session_id === targetCapabilitySessionId,
+        ),
+        sessionRemoved,
+        localSessionRemoved,
+        sessionRestored: Boolean(restored),
+        restoredCapabilitySessionId: restored?.session_id ?? '',
+        restoredDeviceId: restored?.device_id ?? '',
+        restoredCapabilityId: restored
+          ?.typed_capabilities.find(
+            (capability) => capability.capability_id === targetCapabilityId,
+          )?.capability_id ?? '',
+        ...(available
+          ? {
+              restoredExecutionAttemptCount:
+                restoredLocal?.local_execution_attempt_count ?? -1,
+              restoredSideEffectCount:
+                restoredLocal?.local_side_effect_count ?? -1,
+            }
+          : {
+              withdrawnExecutionAttemptCount:
+                beforeTargetLocal?.local_execution_attempt_count ?? -1,
+              withdrawnSideEffectCount:
+                beforeTargetLocal?.local_side_effect_count ?? -1,
+            }),
+      };
+    },
+
+    async prepareFoundationExecutorUnavailable(input: {
+      scenarioKey: string;
+      platform: string;
+      sampleId: string;
+      targetCapabilitySessionId: string;
+      targetDeviceId: string;
+      targetCapabilityId: string;
+    }) {
+      return evidenceValue(
+        await prepareFoundationExecutorUnavailableScenario(input),
+      );
+    },
+
+    async rejectFoundationExecutorUnavailable({
+      scenarioKey,
+      executorStop,
+    }: {
+      scenarioKey: string;
+      executorStop: Record<string, unknown>;
+    }) {
+      return evidenceValue(
+        await rejectFoundationExecutorUnavailableScenario(
+          scenarioKey,
+          executorStop,
+        ),
+      );
+    },
+
+    async recoverFoundationExecutorUnavailable(input: {
+      scenarioKey: string;
+      rejectedScenario: Record<string, unknown>;
+      executorStart: Record<string, unknown>;
+    }) {
+      return evidenceValue(
+        await recoverFoundationExecutorUnavailableScenario(input),
+      );
+    },
+
+    async abortFoundationExecutorUnavailable({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      await cleanupFoundationExecutorUnavailableScenario(scenarioKey);
+      return { scenarioKey, cleaned: true };
+    },
+
     async runFoundationCapabilityNegativeControl({
       control,
       capabilitySessionIdHash,
@@ -14301,6 +15157,7 @@ export function installAcceptanceHarness(): void {
       scenarioKey,
       stationRestart,
       durableReloadEvidence,
+      preparedScenario,
     }: {
       platform: string;
       locale: string;
@@ -14309,6 +15166,7 @@ export function installAcceptanceHarness(): void {
       scenarioKey?: string;
       stationRestart?: Record<string, unknown>;
       durableReloadEvidence?: Record<string, unknown>;
+      preparedScenario?: Record<string, unknown>;
     }) {
       await reportFoundationCapabilityIsolationDebug(
         'C-D',
@@ -14362,6 +15220,41 @@ export function installAcceptanceHarness(): void {
         | null = null;
 
       try {
+      if (cell === 'BASE-EXECUTOR-UNAVAILABLE') {
+        const scenario = evidenceRecord(
+          preparedScenario,
+          'foundationExecutorUnavailablePreparedScenario',
+        );
+        preparedConversationId = String(scenario.conversationId ?? '');
+        preparedTurnId = String(scenario.turnId ?? '');
+        turnDurationMs = Number(scenario.durationMs ?? 0);
+        scenarioFacts = evidenceRecord(
+          scenario.facts,
+          'foundationExecutorUnavailableFacts',
+        );
+        const runtimeEvent = evidenceRecord(
+          scenario.runtimeEvent,
+          'foundationExecutorUnavailableRuntimeEvent',
+        );
+        preparedRuntimeEvent.current = {
+          eventType: String(runtimeEvent.eventType ?? ''),
+          sequence: Number(runtimeEvent.sequence ?? 0),
+          observedAt: String(runtimeEvent.observedAt ?? ''),
+        };
+        if (
+          !preparedConversationId
+          || !preparedTurnId
+          || !turnDurationMs
+          || !preparedRuntimeEvent.current.eventType
+          || preparedRuntimeEvent.current.sequence <= 0
+          || !preparedRuntimeEvent.current.observedAt
+        ) {
+          throw new Error(
+            'agent.acceptance.foundationExecutorPreparedScenarioInvalid',
+          );
+        }
+      }
+
       if (cell === 'BASE-DUPLICATE_CONFLICT') {
         const capabilitySessionId =
           capabilitySessions.selectedStationSession?.session_id;
@@ -15630,7 +16523,8 @@ export function installAcceptanceHarness(): void {
       }
       if (
         (
-          cell === 'BASE-APPROVAL_DENIED'
+          cell === 'BASE-EXECUTOR-UNAVAILABLE'
+          || cell === 'BASE-APPROVAL_DENIED'
           || cell === 'BASE-APPROVAL_EXPIRED'
           || cell === 'BASE-ATTACHMENT_REJECTED'
           || cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
@@ -15669,6 +16563,8 @@ export function installAcceptanceHarness(): void {
                 ? 'foundationDuplicateConflictCleanup'
               : cell === 'BASE-CREDENTIAL_MISSING'
                 ? 'foundationCredentialMissingCleanup'
+              : cell === 'BASE-EXECUTOR-UNAVAILABLE'
+                ? 'foundationExecutorUnavailableCleanup'
               : cell === 'BASE-APPROVAL_DENIED'
                 ? 'foundationApprovalDeniedCleanup'
                 : cell === 'BASE-APPROVAL_EXPIRED'
@@ -15861,6 +16757,23 @@ export function installAcceptanceHarness(): void {
           providerExecution: station.providerExecutionDelta,
         };
         stationReadback.credentialStatus = station.credentialStatusAfter;
+      }
+      if (cell === 'BASE-EXECUTOR-UNAVAILABLE' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationExecutorUnavailableStation',
+        );
+        const lineage = evidenceRecord(
+          station.lineage,
+          'foundationExecutorUnavailableLineage',
+        );
+        stationReadback.entityKind = 'agent-tool-call';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(lineage.toolCallId),
+        );
+        stationReadback.revision = Number(lineage.decisionRevision);
+        stationReadback.stateHash = await sha256Hex(stableJson(station));
+        stationReadback.typedError = scenarioFacts.outcome;
       }
       if (
         (
@@ -16180,6 +17093,26 @@ export function installAcceptanceHarness(): void {
                   },
                 };
               })()
+          : cell === 'BASE-EXECUTOR-UNAVAILABLE' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationExecutorUnavailableStation',
+                );
+                const lineage = evidenceRecord(
+                  station.lineage,
+                  'foundationExecutorUnavailableLineage',
+                );
+                return {
+                  counterId: String(lineage.toolCallId),
+                  count:
+                    Number(station.executionAttemptCount)
+                    + Number(station.sideEffectCount)
+                    + Number(station.resultCount)
+                    + Number(station.continuationCount),
+                  maximum: 0,
+                };
+              })()
           : (
             cell === 'BASE-APPROVAL_DENIED'
             || cell === 'BASE-APPROVAL_EXPIRED'
@@ -16393,6 +17326,25 @@ export function installAcceptanceHarness(): void {
                     'foundationAttachmentRejectedCleanup',
                   ).conversationDeleted === true
                 )
+            : cell === 'BASE-EXECUTOR-UNAVAILABLE' && scenarioFacts
+              ? (
+                  evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationExecutorUnavailableCleanup',
+                  ).conversationDeleted === true
+                  && evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationExecutorUnavailableCleanup',
+                  ).bindingRestored === true
+                  && evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationExecutorUnavailableCleanup',
+                  ).executorRestored === true
+                  && evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationExecutorUnavailableCleanup',
+                  ).turnCancelled === true
+                )
             : (
               cell === 'BASE-APPROVAL_DENIED'
               || cell === 'BASE-APPROVAL_EXPIRED'
@@ -16456,6 +17408,8 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-EXECUTOR-UNAVAILABLE' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : (
             cell === 'BASE-APPROVAL_DENIED'
             || cell === 'BASE-APPROVAL_EXPIRED'
@@ -16477,6 +17431,7 @@ export function installAcceptanceHarness(): void {
       const receiver = (
         cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
         || cell === 'BASE-CANCELLED'
+        || cell === 'BASE-EXECUTOR-UNAVAILABLE'
         || cell === 'BASE-APPROVAL_DENIED'
         || cell === 'BASE-APPROVAL_EXPIRED'
         || cell === 'BASE-ATTACHMENT_REJECTED'
@@ -16500,7 +17455,19 @@ export function installAcceptanceHarness(): void {
         receiverSelector = '[data-pt-agent-message-attachment]';
         receiverText = receiverDom.messageAttachments.text;
       } else if (receiver) {
-        if (
+        if (cell === 'BASE-EXECUTOR-UNAVAILABLE') {
+          receiverVisible =
+            receiver.recoveryVisible === true
+            && receiver.errorVisible === true
+            && receiver.recoveryExecuted === true;
+          receiverSelector =
+            '[data-pt-agent-tool-recovery="reconnect-executor"],'
+            + '[data-pt-agent-tool-error="agent.errors.executorUnavailable"]';
+          receiverText = {
+            recoveryText: receiver.recoveryText,
+            errorText: receiver.errorText,
+          };
+        } else if (
           cell === 'BASE-APPROVAL_DENIED'
           || cell === 'BASE-APPROVAL_EXPIRED'
         ) {
@@ -16609,6 +17576,15 @@ export function installAcceptanceHarness(): void {
         );
         replayEvidence.sourceHash = replay.sourceHash;
         replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+      }
+      if (cell === 'BASE-EXECUTOR-UNAVAILABLE' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationExecutorUnavailableReplay',
+        );
+        replayEvidence.sourceHash = replay.acknowledgementSourceHash;
+        replayEvidence.replayHash = replay.acknowledgementReplayHash;
         replayEvidence.equal = replay.equal;
       }
       if (
@@ -16847,6 +17823,27 @@ export function installAcceptanceHarness(): void {
             throw Object.assign(
               new Error(
                 'agent.acceptance.foundationCredentialMissingAttestationCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-EXECUTOR-UNAVAILABLE'
+          && preparedConversationId
+        ) {
+          try {
+            await cleanupFoundationToolConversation(
+              preparedConversationId,
+              preparedTurnId ?? '',
+            );
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationExecutorUnavailableCleanupFailed',
               ),
               {
                 primaryError: error,

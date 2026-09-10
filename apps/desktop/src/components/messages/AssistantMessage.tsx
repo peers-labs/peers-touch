@@ -27,7 +27,11 @@ import { extractMessageArtifacts, useChatStore } from '../../store/chat';
 import { useAgentStore } from '../../store/agent';
 import { usePortalStore } from '../../store/portal';
 import { useTTSStore } from '../../store/tts';
-import { parseAgentChatConfig, api } from '../../services/desktop_api';
+import {
+  api,
+  isAgentContextOverflowError,
+  parseAgentChatConfig,
+} from '../../services/desktop_api';
 import { EVENT, eventBus } from '../../kernel/events';
 import { LazyMarkdown as Markdown } from '../LazyMarkdown';
 import { AgentIconTile } from '../agent/AgentIconTile';
@@ -374,8 +378,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const messageModel = message.model ? availableModels.find((model) => model.id === message.model) : undefined;
   const providerName = messageModel?.provider_name || messageModel?.provider_id || activeAgent?.provider || '';
   const agentDisplayName = activeAgent?.title || activeAgent?.name;
-  const isContextOverflow =
-    message.typedError?.error_type === 'CONTEXT_OVERFLOW';
+  const isContextOverflow = isAgentContextOverflowError(message.typedError);
   const resolutionLabel = message.resolution?.label.startsWith('agent.')
     ? t(message.resolution.label, { ns: 'agent' })
     : message.resolution?.label;

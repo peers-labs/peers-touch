@@ -221,6 +221,7 @@ class FoundationClientSpecTest(unittest.TestCase):
         self.assertEqual(environment["GATEWAY_PORT"], "23030")
         self.assertEqual(environment["WEB_PORT"], "23210")
         self.assertEqual(environment["PT_DESKTOP_E2E"], "true")
+        self.assertEqual(environment["PT_AGENT_GFE1_EXECUTOR_CONTROL"], "1")
         self.assertEqual(
             environment["CARGO_TARGET_DIR"],
             str(

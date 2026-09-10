@@ -23,7 +23,11 @@ import {
 import { useMentionTrigger } from './chat/composer/useMentionTrigger';
 import { MentionPopup } from './chat/MentionPopup';
 import { MentionTagBar } from './chat/MentionTag';
-import type { AvailableModel, Agent } from '../services/desktop_api';
+import {
+  isAgentAttachmentRejectedError,
+  type AvailableModel,
+  type Agent,
+} from '../services/desktop_api';
 import { ProviderIcon } from './settings/ProviderIcon';
 import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning';
 
@@ -165,7 +169,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
       },
       onRejected: (error) => {
-        if (error?.error_type !== 'CONTEXT_ATTACHMENT_REJECTED') return;
+        if (!isAgentAttachmentRejectedError(error)) return;
         rejectDraft(
           error.details.attachment_id,
           error.locale_key || 'agent.errors.attachmentRejected',

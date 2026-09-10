@@ -238,11 +238,186 @@ def _build_client_manifest(runtime_manifest: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+class FoundationExecutorUnavailableCoordinator:
+    def __init__(self, runtime_pair: "FoundationRuntimePair") -> None:
+        self._runtime_pair = runtime_pair
+
+    @staticmethod
+    def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
+        return "|".join(
+            (
+                probe_input.platform,
+                probe_input.locale,
+                probe_input.cell,
+                probe_input.sample_id,
+            )
+        )
+
+    def _receiver(self, platform: str) -> Any:
+        if platform == "desktop_app":
+            return self._runtime_pair.native
+        if platform == "browser":
+            return self._runtime_pair.browser
+        raise ScenarioRunnerError(
+            f"BASE-EXECUTOR-UNAVAILABLE has no receiver for {platform}"
+        )
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        receiver = self._receiver(probe_input.platform)
+        executor = self._runtime_pair.native
+        scenario_key = self._scenario_key(probe_input)
+        locale = receiver.harness(
+            "setFoundationLocale",
+            {"locale": probe_input.locale},
+            timeout=30,
+        )
+        if (
+            not isinstance(locale, Mapping)
+            or locale.get("locale") != probe_input.locale
+        ):
+            raise ScenarioRunnerError(
+                "BASE-EXECUTOR-UNAVAILABLE locale did not converge"
+            )
+        target = executor.harness(
+            "getFoundationClientExecutorTarget",
+            timeout=60,
+        )
+        if not isinstance(target, Mapping):
+            raise ScenarioRunnerError(
+                "BASE-EXECUTOR-UNAVAILABLE target is invalid"
+            )
+        lifecycle_input = {
+            "targetCapabilitySessionId": target.get("capabilitySessionId"),
+            "targetDeviceId": target.get("targetDeviceId"),
+            "targetCapabilityId": target.get("targetCapabilityId"),
+        }
+        executor_available = True
+        primary_error: BaseException | None = None
+        cleanup_errors: list[str] = []
+        try:
+            prepared = receiver.harness(
+                "prepareFoundationExecutorUnavailable",
+                {
+                    "scenarioKey": scenario_key,
+                    "platform": probe_input.platform,
+                    "sampleId": probe_input.sample_id,
+                    **lifecycle_input,
+                },
+                timeout=180,
+            )
+            if not isinstance(prepared, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR-UNAVAILABLE preparation is invalid"
+                )
+            executor_stop = executor.harness(
+                "setFoundationClientExecutorAvailable",
+                {
+                    "available": False,
+                    **lifecycle_input,
+                },
+                timeout=60,
+            )
+            if not isinstance(executor_stop, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR-UNAVAILABLE withdrawal is invalid"
+                )
+            executor_available = False
+            rejected = receiver.harness(
+                "rejectFoundationExecutorUnavailable",
+                {
+                    "scenarioKey": scenario_key,
+                    "executorStop": dict(executor_stop),
+                },
+                timeout=180,
+            )
+            if not isinstance(rejected, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR-UNAVAILABLE rejection is invalid"
+                )
+            executor_start = executor.harness(
+                "setFoundationClientExecutorAvailable",
+                {
+                    "available": True,
+                    **lifecycle_input,
+                },
+                timeout=60,
+            )
+            if not isinstance(executor_start, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR-UNAVAILABLE restoration is invalid"
+                )
+            executor_available = True
+            recovered = receiver.harness(
+                "recoverFoundationExecutorUnavailable",
+                {
+                    "scenarioKey": scenario_key,
+                    "rejectedScenario": dict(rejected),
+                    "executorStart": dict(executor_start),
+                },
+                timeout=60,
+            )
+            if not isinstance(recovered, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR-UNAVAILABLE recovery is invalid"
+                )
+            capture = receiver.harness(
+                "foundationDirectProbe",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "cell": probe_input.cell,
+                    "sampleId": probe_input.sample_id,
+                    "preparedScenario": dict(recovered),
+                },
+                timeout=300,
+            )
+            if not isinstance(capture, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR-UNAVAILABLE direct capture is invalid"
+                )
+            assert_group_one_capture(probe_input, capture)
+            return capture
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            if not executor_available:
+                try:
+                    executor.harness(
+                        "setFoundationClientExecutorAvailable",
+                        {
+                            "available": True,
+                            **lifecycle_input,
+                        },
+                        timeout=60,
+                    )
+                except BaseException as error:
+                    cleanup_errors.append(f"executor restore: {error}")
+            try:
+                receiver.harness(
+                    "abortFoundationExecutorUnavailable",
+                    {"scenarioKey": scenario_key},
+                    timeout=120,
+                )
+            except BaseException as error:
+                cleanup_errors.append(f"scenario cleanup: {error}")
+            if cleanup_errors:
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR-UNAVAILABLE cleanup failed: "
+                    f"primary={primary_error}; cleanup={cleanup_errors}"
+                )
+
+
 def _make_direct_probe(
     client: Any,
     *,
     f06_coordinator: "FoundationF06Coordinator | None" = None,
     f12_coordinator: "FoundationF12Coordinator | None" = None,
+    executor_unavailable_coordinator:
+        "FoundationExecutorUnavailableCoordinator | None" = None,
 ) -> "Callable[[DirectRuntimeProbeInput], Mapping[str, Any]]":
     """Create a direct-runtime probe that executes via WebDriver harness.
 
@@ -251,6 +426,12 @@ def _make_direct_probe(
     full capture dictionary expected by DirectRuntimeFoundationAdapter.
     """
     def probe(probe_input: DirectRuntimeProbeInput) -> Mapping[str, Any]:
+        if probe_input.cell == "BASE-EXECUTOR-UNAVAILABLE":
+            if executor_unavailable_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-EXECUTOR-UNAVAILABLE requires executor orchestration"
+                )
+            return executor_unavailable_coordinator.capture(probe_input)
         if probe_input.cell == "AS-F06":
             if f06_coordinator is None:
                 raise ScenarioRunnerError(
@@ -1536,6 +1717,9 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
             runtime_manifest,
             profile_env,
         )
+        executor_unavailable_coordinator = (
+            FoundationExecutorUnavailableCoordinator(runtime_pair)
+        )
 
         # 1. Desktop native adapter: real WebDriver probe through native client.
         desktop_native_adapter = DirectRuntimeFoundationAdapter(
@@ -1543,6 +1727,9 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 runtime_pair.native,
                 f06_coordinator=f06_coordinator,
                 f12_coordinator=f12_coordinator,
+                executor_unavailable_coordinator=(
+                    executor_unavailable_coordinator
+                ),
             )
         )
 
@@ -1552,6 +1739,9 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 runtime_pair.browser,
                 f06_coordinator=f06_coordinator,
                 f12_coordinator=f12_coordinator,
+                executor_unavailable_coordinator=(
+                    executor_unavailable_coordinator
+                ),
             )
         )
 

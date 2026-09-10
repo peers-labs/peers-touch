@@ -61,6 +61,15 @@ HOME_STATION_PROVISIONER = (
 DESKTOP_HTTP_GATEWAY = (
     ROOT / "apps" / "desktop" / "src-tauri" / "src" / "interface" / "http_gateway" / "mod.rs"
 )
+DESKTOP_RUNTIME_EVIDENCE = (
+    ROOT
+    / "apps"
+    / "desktop"
+    / "src-tauri"
+    / "src"
+    / "application"
+    / "runtime_evidence.rs"
+)
 DESKTOP_API = ROOT / "apps" / "desktop" / "src" / "services" / "desktop_api.ts"
 DESKTOP_ASSISTANT_MESSAGE = (
     ROOT
@@ -1866,6 +1875,8 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             "agent_capability_sessions",
             "agent_browser_capability_session_open",
             "agent_browser_capability_session_close",
+            "agent_client_executor_supervisor_start",
+            "agent_client_executor_supervisor_stop",
             "agent_runtime_activity_station",
             "agent_runtime_activity_local",
             "agent_capability_session_snapshot",
@@ -1881,6 +1892,10 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             gateway,
         )
         self.assertIn(
+            "app_runtime_evidence::set_client_executor_supervisor_available",
+            gateway,
+        )
+        self.assertIn(
             "app_runtime_evidence::capability_session_snapshot",
             gateway,
         )
@@ -1890,6 +1905,25 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         )
         self.assertIn("app_agent_growth::agent_submit_feedback", gateway)
         self.assertIn("app_agent_growth::agent_list_turn_feedback", gateway)
+
+    def test_executor_supervisor_control_is_acceptance_gated(self) -> None:
+        runtime_evidence = DESKTOP_RUNTIME_EVIDENCE.read_text(encoding="utf-8")
+        desktop_main = DESKTOP_MAIN.read_text(encoding="utf-8")
+
+        self.assertIn('feature = "acceptance-webdriver"', runtime_evidence)
+        self.assertIn("PT_AGENT_GFE1_EXECUTOR_CONTROL", runtime_evidence)
+        self.assertIn(
+            "set_client_executor_supervisor_available",
+            runtime_evidence,
+        )
+        self.assertIn(
+            "runtime_evidence::agent_client_executor_supervisor_start",
+            desktop_main,
+        )
+        self.assertIn(
+            "runtime_evidence::agent_client_executor_supervisor_stop",
+            desktop_main,
+        )
 
     def test_native_feedback_commands_are_registered(self) -> None:
         desktop_main = DESKTOP_MAIN.read_text(encoding="utf-8")

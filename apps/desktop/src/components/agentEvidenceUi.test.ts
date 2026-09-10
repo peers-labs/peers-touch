@@ -14,7 +14,11 @@ import {
   projectBudgetNotice,
   reduceStreamEvent,
 } from '../store/streaming/handler';
-import type { AvailableModel } from '../services/desktop_api';
+import {
+  AGENT_ATTACHMENT_REJECTED_ERROR_TYPE,
+  AGENT_CONTEXT_LIMIT_ERROR_TYPE,
+  type AvailableModel,
+} from '../services/desktop_api';
 import type { ChatMessage } from '../store/chat';
 import type { ExportTurnDiagnosticsResponse } from '../gen/proto/domain/agent/agent_pb';
 
@@ -92,7 +96,7 @@ describe('Agent evidence UI projections', () => {
   it('preserves typed attachment rejection details on the receiver message', () => {
     const data = {
       error: 'agent.errors.attachmentRejected',
-      error_type: 'CONTEXT_ATTACHMENT_REJECTED',
+      error_type: AGENT_ATTACHMENT_REJECTED_ERROR_TYPE,
       locale_key: 'agent.errors.attachmentRejected',
       retryable: false,
       terminal: true,
@@ -115,7 +119,7 @@ describe('Agent evidence UI projections', () => {
   it('projects typed context overflow details onto the receiver message', () => {
     const data = {
       error: 'agent.errors.contextOverflow',
-      error_type: 'CONTEXT_OVERFLOW',
+      error_type: AGENT_CONTEXT_LIMIT_ERROR_TYPE,
       locale_key: 'agent.errors.contextOverflow',
       retryable: false,
       terminal: true,

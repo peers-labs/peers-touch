@@ -23,6 +23,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_context_overflow,
     evaluate_base_credential_missing,
     evaluate_base_duplicate_conflict,
+    evaluate_base_executor_unavailable,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -41,6 +42,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_context_overflow_capture,
     valid_credential_missing_capture,
     valid_duplicate_conflict_capture,
+    valid_executor_unavailable_capture,
     valid_as_f04_capture,
     valid_as_f05_capture,
     valid_as_f06_capture,
@@ -138,6 +140,11 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
         facts = valid_approval_expired_capture()
         result["scenarioFacts"] = facts
         result["assertions"] = evaluate_base_approval_expired(facts)
+        return result
+    if probe.cell == "BASE-EXECUTOR-UNAVAILABLE":
+        facts = valid_executor_unavailable_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_executor_unavailable(facts)
         return result
     if probe.cell == "AS-F03":
         facts = {
@@ -427,6 +434,31 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneProbeError,
             "BASE-APPROVAL_DENIED assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_executor_unavailable_routes_to_independent_oracle(self) -> None:
+        facts = valid_executor_unavailable_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_executor_unavailable(facts),
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-EXECUTOR-UNAVAILABLE",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "zeroExecutionClaim": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-EXECUTOR-UNAVAILABLE assertions do not match",
         ):
             assert_group_one_capture(probe, capture_value)
 

@@ -2632,6 +2632,214 @@ def evaluate_base_cancelled(
     return assertions
 
 
+def evaluate_base_executor_unavailable(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-EXECUTOR-UNAVAILABLE"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    decision = _mapping(capture, "decision", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    station_after = _mapping(
+        capture,
+        "stationAfterRecovery",
+        scenario=scenario,
+    )
+    lineage = _mapping(station, "lineage", scenario=scenario)
+    recovery_lineage = _mapping(
+        station_after,
+        "lineage",
+        scenario=scenario,
+    )
+    executor = _mapping(capture, "executor", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    states = station.get("states")
+    if states != ["policy_check", "awaiting_user"]:
+        raise GroupOneScenarioError(
+            f"{scenario} Station waiting-approval state is invalid"
+        )
+
+    tool_call_id = _nonempty_string(
+        decision,
+        "toolCallId",
+        scenario=scenario,
+    )
+    approval_id = _nonempty_string(
+        decision,
+        "approvalId",
+        scenario=scenario,
+    )
+    acknowledgement_source_hash = _nonempty_string(
+        replay,
+        "acknowledgementSourceHash",
+        scenario=scenario,
+    )
+    diagnostic_source_hash = _nonempty_string(
+        replay,
+        "diagnosticSourceHash",
+        scenario=scenario,
+    )
+
+    def zero_outcome(value: Mapping[str, Any]) -> bool:
+        return all(
+            _nonnegative_int(value, key, scenario=scenario) == 0
+            for key in (
+                "executionAttemptCount",
+                "sideEffectCount",
+                "resultCount",
+                "continuationCount",
+            )
+        )
+
+    assertions = {
+        "typedExecutorUnavailable": (
+            outcome.get("error_type") == "CLIENT_EXECUTOR_UNAVAILABLE"
+            and outcome.get("locale_key")
+            == "agent.errors.executorUnavailable"
+            and outcome.get("retryable") is True
+            and outcome.get("terminal") is True
+            and sorted(details) == ["capability_id", "target_device_id"]
+            and details.get("target_device_id")
+            == executor.get("targetDeviceId")
+            and details.get("capability_id")
+            == executor.get("targetCapabilityId")
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+        ),
+        "singleRejectedApproval": (
+            decision.get("accepted") is False
+            and decision.get("approved") is True
+            and decision.get("errorCode")
+            == "TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE"
+            and receiver.get("approveDisabled") is True
+            and receiver.get("repeatedApprovalBlocked") is True
+        ),
+        "waitingApprovalPreserved": (
+            station.get("policy") == "manual"
+            and station.get("executionOwner") == "client_capability"
+            and lineage.get("toolCallId") == tool_call_id
+            and lineage.get("approvalId") == approval_id
+            and lineage.get("decisionId") == ""
+            and _nonnegative_int(
+                lineage,
+                "decisionRevision",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                decision,
+                "decisionRevision",
+                scenario=scenario,
+            )
+        ),
+        "zeroExecutionClaim": (
+            lineage.get("executionClaimId") == ""
+            and _nonnegative_int(
+                lineage,
+                "fencingToken",
+                scenario=scenario,
+            )
+            == 0
+            and lineage.get("sideEffectReceiptId") == ""
+            and lineage.get("dispatchCommittedAt") is None
+            and recovery_lineage.get("executionClaimId") == ""
+            and _nonnegative_int(
+                recovery_lineage,
+                "fencingToken",
+                scenario=scenario,
+            )
+            == 0
+            and recovery_lineage.get("sideEffectReceiptId") == ""
+            and recovery_lineage.get("dispatchCommittedAt") is None
+        ),
+        "zeroSideEffect": (
+            zero_outcome(station)
+            and zero_outcome(station_after)
+            and _nonnegative_int(
+                executor,
+                "withdrawnExecutionAttemptCount",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                executor,
+                "restoredExecutionAttemptCount",
+                scenario=scenario,
+            )
+            and _nonnegative_int(
+                executor,
+                "withdrawnSideEffectCount",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                executor,
+                "restoredSideEffectCount",
+                scenario=scenario,
+            )
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _nonempty_string(
+                replay,
+                "acknowledgementReplayHash",
+                scenario=scenario,
+            )
+            == acknowledgement_source_hash
+            and _nonempty_string(
+                replay,
+                "diagnosticReplayHash",
+                scenario=scenario,
+            )
+            == diagnostic_source_hash
+        ),
+        "executorReconnected": (
+            executor.get("sessionRemoved") is True
+            and executor.get("localSessionRemoved") is True
+            and executor.get("sessionRestored") is True
+            and executor.get("restoredDeviceId")
+            == executor.get("targetDeviceId")
+            and executor.get("restoredCapabilityId")
+            == executor.get("targetCapabilityId")
+            and receiver.get("recoveryExecuted") is True
+            and receiver.get("approvalEnabledAfterRecovery") is True
+        ),
+        "cleanupComplete": (
+            cleanup.get("bindingRestored") is True
+            and cleanup.get("executorRestored") is True
+            and cleanup.get("turnCancelled") is True
+            and cleanup.get("conversationDeleted") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_approval_denied(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:

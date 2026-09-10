@@ -26,6 +26,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_context_overflow,
     evaluate_base_credential_missing,
     evaluate_base_duplicate_conflict,
+    evaluate_base_executor_unavailable,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -210,6 +211,9 @@ def assert_group_one_capture(
         ),
         "BASE-DUPLICATE_CONFLICT": (
             lambda facts: evaluate_base_duplicate_conflict(facts)
+        ),
+        "BASE-EXECUTOR-UNAVAILABLE": (
+            lambda facts: evaluate_base_executor_unavailable(facts)
         ),
         "AS-F02": lambda facts: evaluate_as_f02(facts),
         "AS-F03": lambda facts: evaluate_as_f03(facts),

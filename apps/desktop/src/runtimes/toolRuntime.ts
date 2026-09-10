@@ -1,10 +1,12 @@
 import type { RuntimeDescriptor } from '../kernel/runtime';
+import { isBrowserGatewayRuntime } from '../kernel/gateway';
 import {
   ToolCallStatus as AgentToolCallStatus,
   type TurnDiagnosticToolFact,
 } from '../gen/proto/domain/agent/agent_pb';
 import {
   api,
+  type AgentCapabilitySessionList,
   type AgentTypedErrorPayload,
   type AgentToolDecisionIntentInput,
   type AgentToolDecisionIntentResponse,
@@ -39,7 +41,17 @@ export interface ToolProjection {
 
 export type ToolProjectionState = Readonly<Record<string, ToolProjection>>;
 
+export interface ToolDecisionAttempt {
+  readonly input: AgentToolDecisionIntentInput;
+  readonly response: AgentToolDecisionIntentResponse;
+}
+
 type Listener = () => void;
+
+const CLIENT_EXECUTOR_UNAVAILABLE = 'CLIENT_EXECUTOR_UNAVAILABLE';
+const EXECUTOR_UNAVAILABLE_DECISION_ERROR_CODE =
+  'TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE';
+const EXECUTOR_UNAVAILABLE_LOCALE_KEY = 'agent.errors.executorUnavailable';
 
 function stringValue(data: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
@@ -74,7 +86,11 @@ function booleanValue(data: Record<string, unknown>, ...keys: string[]): boolean
 function decisionOutcomeError(
   outcome: AgentTypedErrorPayload | null | undefined,
 ): string | undefined {
-  return outcome?.locale_key?.trim()
+  return (
+    outcome?.error_type === CLIENT_EXECUTOR_UNAVAILABLE
+      ? EXECUTOR_UNAVAILABLE_LOCALE_KEY
+      : outcome?.locale_key?.trim()
+  )
     || (
       outcome?.error_type === 'TOOL_APPROVAL_DENIED'
         ? 'agent.errors.toolApprovalDenied'
@@ -87,6 +103,41 @@ function decisionOutcomeError(
     )
     || outcome?.error?.trim()
     || undefined;
+}
+
+function isExecutorUnavailableProjection(
+  projection: ToolProjection,
+): boolean {
+  return projection.decisionOutcome?.error_type === CLIENT_EXECUTOR_UNAVAILABLE
+    || projection.decisionErrorCode === EXECUTOR_UNAVAILABLE_DECISION_ERROR_CODE;
+}
+
+interface ExecutorRecoveryTarget {
+  targetDeviceId: string;
+  capabilityId: string;
+}
+
+function executorRecoveryTarget(
+  projection: ToolProjection,
+): ExecutorRecoveryTarget | null {
+  const details = projection.decisionOutcome?.details;
+  const targetDeviceId = details?.target_device_id?.trim();
+  const capabilityId = details?.capability_id?.trim();
+  if (!targetDeviceId || !capabilityId) return null;
+  return { targetDeviceId, capabilityId };
+}
+
+function hasExecutorRecoveryTarget(
+  capabilitySessions: AgentCapabilitySessionList,
+  target: ExecutorRecoveryTarget,
+): boolean {
+  return capabilitySessions.sessions.some(
+    (session) =>
+      session.device_id === target.targetDeviceId
+      && session.typed_capabilities.some(
+        (capability) => capability.capability_id === target.capabilityId,
+      ),
+  );
 }
 
 function projectionIdentity(data: Record<string, unknown>) {
@@ -358,8 +409,15 @@ export function resolveToolCallProjection(
       || projection.decisionOutcome?.terminal === true
     )
   );
+  const projectionRetainsWaitingApproval =
+    projection.status === 'approval_required'
+    && isExecutorUnavailableProjection(projection);
   if (
-    (sourceIsTerminal && !projectionAddsTypedTerminalOutcome)
+    (
+      sourceIsTerminal
+      && !projectionAddsTypedTerminalOutcome
+      && !projectionRetainsWaitingApproval
+    )
     || projection.decisionRevision < (source.decisionRevision ?? 0)
   ) {
     return source;
@@ -566,7 +624,9 @@ class ToolRuntime implements RuntimeDescriptor {
   private actorId: string | null = null;
   private installed = false;
   private pendingDecisions = new Map<string, Promise<AgentToolDecisionIntentResponse>>();
+  private pendingExecutorReconnects = new Map<string, Promise<void>>();
   private decisionIntentIds = new Map<string, string>();
+  private decisionAttempts = new Map<string, ToolDecisionAttempt>();
 
   install(): void {
     if (this.installed) return;
@@ -578,7 +638,9 @@ class ToolRuntime implements RuntimeDescriptor {
     this.installed = false;
     this.actorId = null;
     this.pendingDecisions.clear();
+    this.pendingExecutorReconnects.clear();
     this.decisionIntentIds.clear();
+    this.decisionAttempts.clear();
     this.replaceState({});
   }
 
@@ -586,7 +648,9 @@ class ToolRuntime implements RuntimeDescriptor {
     if (this.actorId === actorId) return;
     this.actorId = actorId;
     this.pendingDecisions.clear();
+    this.pendingExecutorReconnects.clear();
     this.decisionIntentIds.clear();
+    this.decisionAttempts.clear();
     this.replaceState({});
   }
 
@@ -601,6 +665,10 @@ class ToolRuntime implements RuntimeDescriptor {
 
   getProjection(toolCallId: string): ToolProjection | undefined {
     return this.state[toolCallId];
+  }
+
+  getDecisionAttempt(toolCallId: string): ToolDecisionAttempt | undefined {
+    return this.decisionAttempts.get(toolCallId);
   }
 
   consume(event: StreamEvent): boolean {
@@ -728,6 +796,9 @@ class ToolRuntime implements RuntimeDescriptor {
       projection.status !== 'approval_required') {
       return Promise.reject(new Error('agent.toolDecisionUnavailable'));
     }
+    if (approved && isExecutorUnavailableProjection(projection)) {
+      return Promise.reject(new Error(EXECUTOR_UNAVAILABLE_LOCALE_KEY));
+    }
 
     const actionKey = `${toolCallId}:${projection.decisionRevision}:${approved}`;
     const decisionId = projection.decisionId ||
@@ -747,6 +818,7 @@ class ToolRuntime implements RuntimeDescriptor {
     };
     const request = api.submitAgentToolDecision(input)
       .then((response) => {
+        this.decisionAttempts.set(toolCallId, { input, response });
         const outcomeError = decisionOutcomeError(response.outcome_error);
         if (!response.accepted) {
           const expired =
@@ -795,9 +867,68 @@ class ToolRuntime implements RuntimeDescriptor {
     return request;
   }
 
+  reconnectExecutor(toolCallId: string): Promise<void> {
+    const projection = this.state[toolCallId];
+    const recoveryTarget = projection
+      ? executorRecoveryTarget(projection)
+      : null;
+    if (
+      !projection
+      || projection.status !== 'approval_required'
+      || !isExecutorUnavailableProjection(projection)
+      || !recoveryTarget
+    ) {
+      return Promise.reject(new Error('agent.toolExecutorRecoveryUnavailable'));
+    }
+
+    const recoveryKey = `${toolCallId}:${projection.decisionRevision}`;
+    const pending = this.pendingExecutorReconnects.get(recoveryKey);
+    if (pending) return pending;
+
+    const decisionRevision = projection.decisionRevision;
+    const ensureLocalSupervisor = isBrowserGatewayRuntime()
+      ? Promise.resolve()
+      : api.startAgentClientExecutorSupervisor().then(() => undefined);
+    const request = ensureLocalSupervisor
+      .then(() => api.listAgentCapabilitySessions())
+      .then((capabilitySessions) => {
+        if (!hasExecutorRecoveryTarget(capabilitySessions, recoveryTarget)) {
+          throw new Error(EXECUTOR_UNAVAILABLE_LOCALE_KEY);
+        }
+        const current = this.state[toolCallId];
+        const currentTarget = current
+          ? executorRecoveryTarget(current)
+          : null;
+        if (
+          !current
+          || current.decisionRevision !== decisionRevision
+          || !isExecutorUnavailableProjection(current)
+          || !currentTarget
+          || currentTarget.targetDeviceId !== recoveryTarget.targetDeviceId
+          || currentTarget.capabilityId !== recoveryTarget.capabilityId
+        ) {
+          return;
+        }
+        this.decisionIntentIds.delete(`${toolCallId}:${decisionRevision}:true`);
+        this.decisionAttempts.delete(toolCallId);
+        this.patch(toolCallId, {
+          error: undefined,
+          decisionErrorCode: undefined,
+          decisionOutcome: undefined,
+        });
+      })
+      .finally(() => {
+        this.pendingExecutorReconnects.delete(recoveryKey);
+      });
+    this.pendingExecutorReconnects.set(recoveryKey, request);
+    return request;
+  }
+
   reset(): void {
     this.pendingDecisions.clear();
+    this.pendingExecutorReconnects.clear();
     this.decisionIntentIds.clear();
+    this.decisionAttempts.clear();
     this.replaceState({});
   }
 
@@ -822,6 +953,8 @@ export const submitAgentToolDecision = (
   toolCallId: string,
   approved: boolean,
 ): Promise<AgentToolDecisionIntentResponse> => toolRuntime.submitDecision(toolCallId, approved);
+export const reconnectAgentToolExecutor = (toolCallId: string): Promise<void> =>
+  toolRuntime.reconnectExecutor(toolCallId);
 
 export function logToolDecisionFailure(toolCallId: string, error: unknown): void {
   log.error('toolRuntime', 'Failed to submit Station tool decision intent', {
