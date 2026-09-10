@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -40,13 +41,13 @@ from tooling.acceptance.drivers.native import (
     NativeModifier,
 )
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
-from tooling.acceptance.drivers.station import StationDriver
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
     AcceptanceStationSubmitFaultProxy,
 )
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
+    cleanup_preserving_primary_failure,
     commits_match,
     read_station_version,
     runtime_station_service,
@@ -71,13 +72,72 @@ RECOVERY_SELECTORS = {
     "restore_input": "[data-recovery-restore-input]",
     "restore_submit": "[data-recovery-restore-submit]",
 }
+MESSAGE_ACTION_SELECTORS = {
+    "reaction": '[data-message-action="reaction"]',
+    "reply": '[data-message-action="reply"]',
+    "thread": '[data-message-action="thread"]',
+}
 NATIVE_INPUT_ACK_POLL_SECONDS = 0.01
+NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS = 0.2
 NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS = 30
+NATIVE_ACTOR_LOGIN_TIMEOUT_SECONDS = 60
 VALID_ATTACHMENT_IMAGE_BYTES = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
     "0000000d49444154789c63f8cfc0f01f00050001ff89993d1d"
     "0000000049454e44ae426082"
 )
+
+
+# #region debug-point A-E:cross-station-direct-open
+def _debug_report(
+    hypothesis_id: str,
+    location: str,
+    message: str,
+    data: dict[str, Any],
+) -> None:
+    env_path = REPO_ROOT / ".dbg" / "direct-projection-role.env"
+    if not env_path.exists():
+        return
+    values = {}
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            values[key] = value
+    url = values.get("DEBUG_SERVER_URL", "")
+    session_id = values.get("DEBUG_SESSION_ID", "")
+    if not url or not session_id:
+        return
+    endpoint = url.removeprefix("http://")
+    authority, separator, path = endpoint.partition("/")
+    if not separator or ":" not in authority:
+        return
+    host, raw_port = authority.rsplit(":", 1)
+    payload = json.dumps(
+        {
+            "sessionId": session_id,
+            "runId": os.environ.get("PT_DEBUG_RUN_ID", "pre-fix"),
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "msg": f"[DEBUG] {message}",
+            "data": data,
+            "ts": int(time.time() * 1000),
+        }
+    ).encode("utf-8")
+    try:
+        connection = http.client.HTTPConnection(host, int(raw_port), timeout=1)
+        connection.request(
+            "POST",
+            f"/{path}",
+            body=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        connection.getresponse().read()
+        connection.close()
+    except (OSError, ValueError):
+        pass
+# #endregion
+
+
 LOCALIZATION_KEY_PATTERN = re.compile(
     r"\b(?:agent|applet|auth|channels|chat|common|cron|error|errors|layout|memory|"
     r"moments|notes|oauth|provider|search|settings|share|tts)"
@@ -255,12 +315,12 @@ class NativeProductClosureGate(AcceptanceGate):
         self.native_adapter: NativeDesktopAdapter = (
             runtime_binding.native_adapter
         )
-        station = runtime_station_service(self.manifest)
+        station = runtime_station_service(self.manifest, "alice")
         self.station_url = str(station.get("endpoint") or "").rstrip("/")
         if not self.station_url:
             raise GateError("runtime manifest Station URL is required")
         self.client_specs = {
-            str(client.get("actor")): client
+            str(client.get("id")): client
             for client in self.manifest.get("clients", [])
             if isinstance(client, dict)
         }
@@ -287,7 +347,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.localization_checks: dict[str, dict[str, list[str]]] = {}
         self.native_activation_diagnostics: list[dict[str, Any]] = []
         self.reaction_proxy: AcceptanceStationSubmitFaultProxy | None = None
-        self.reaction_endpoint_url: str | None = None
+        self.reaction_transport_override = None
         self.fixture_root = Path(tempfile.mkdtemp(prefix="pt-chat-product-closure-"))
         self.report.station_url = self.station_url
         self.report.manifest = self.manifest
@@ -297,6 +357,8 @@ class NativeProductClosureGate(AcceptanceGate):
             value = action()
         except Exception as error:
             self.steps.append({"step": name, "status": "fail", "error": str(error)})
+            self.report.runtime["steps"] = list(self.steps)
+            self.report.runtime["firstFailedStep"] = name
             raise
         self.steps.append({"step": name, "status": "pass"})
         return value
@@ -309,11 +371,6 @@ class NativeProductClosureGate(AcceptanceGate):
             encoding="utf-8",
         )
         self.report.add_evidence_file(key, path)
-
-    def configure_station(self, client: TauriSession, station_url: str) -> None:
-        with StationDriver(f"http://127.0.0.1:{client.gateway_port}") as station:
-            station.station_add(station_url)
-            station.station_set_active(station_url)
 
     def wait_for_realtime_device(
         self,
@@ -352,11 +409,6 @@ class NativeProductClosureGate(AcceptanceGate):
         spec = self.client_specs[actor]
         actor_role = CLIENT_ACTOR_ROLES[actor]
         window_actors = tuple(CLIENT_ACTOR_ROLES)
-        actor_station_url = (
-            self.reaction_endpoint_url
-            if actor == "alice" and self.reaction_endpoint_url is not None
-            else self.station_url
-        )
         client = self.runtime_binding.create_bound_session(
             actor,
             NativeLaunchOptions(
@@ -390,16 +442,22 @@ class NativeProductClosureGate(AcceptanceGate):
                 client,
             )
         try:
-            client.start()
             self.client_lifecycles.mark_live(client)
             attempt["pid"] = client.process_id
             attempt["logPath"] = str(client.log_path or "")
             if client.process_id:
                 self.runtime_pids.add(int(client.process_id))
             self.register_driver(client)
-            client.wait_for_acceptance_harness(30)
+            if (
+                actor == "alice"
+                and self.reaction_transport_override is not None
+            ):
+                self.runtime_binding.apply_transport_override(
+                    "alice",
+                    "station",
+                    self.reaction_transport_override,
+                )
             if not restore_session:
-                self.configure_station(client, actor_station_url)
                 account_ref = str(
                     self.actor_specs[actor_role].get("accountRef") or ""
                 )
@@ -409,7 +467,7 @@ class NativeProductClosureGate(AcceptanceGate):
                     "loginWithPassword",
                     {"account": account, "password": public_fixture_password()},
                     namespace="chat",
-                    script_timeout=30,
+                    script_timeout=NATIVE_ACTOR_LOGIN_TIMEOUT_SECONDS,
                 )
                 if not (login or {}).get("authenticated"):
                     raise GateError(f"{actor} login did not authenticate")
@@ -578,6 +636,33 @@ class NativeProductClosureGate(AcceptanceGate):
             "height": float(rect["height"]) / scale,
         }
 
+    def native_content_origin(
+        self,
+        client: TauriSession,
+    ) -> tuple[float, float]:
+        process_id = client.process_id
+        if process_id is None:
+            raise GateError("Native content origin has no owning process")
+        viewport = client.driver.execute_script(
+            "return { width: innerWidth, height: innerHeight };"
+        )
+        window = self.native_window(client)
+        content_origin = self.native_adapter.content_origin(process_id)
+        if content_origin is not None:
+            return content_origin
+        return (
+            window["left"]
+            + max(
+                0.0,
+                (window["width"] - float(viewport["width"])) / 2,
+            ),
+            window["top"]
+            + max(
+                0.0,
+                window["height"] - float(viewport["height"]),
+            ),
+        )
+
     def choose_native_file(
         self,
         actor: str,
@@ -597,7 +682,9 @@ class NativeProductClosureGate(AcceptanceGate):
         )
 
         def native_app_baseline_ready(_: Any) -> NativeControlSnapshot | None:
-            control = self.native_adapter.focused_control(client.process_id or 0)
+            control = self.native_adapter.activate_and_focused_control(
+                client.process_id or 0
+            )
             return (
                 control
                 if control.window_count >= 1
@@ -639,18 +726,31 @@ class NativeProductClosureGate(AcceptanceGate):
             control = self.native_adapter.focused_control(client.process_id or 0)
             return control if control.kind == "text-field" else None
 
-        self.native_adapter.reveal_file_chooser_location()
-        WebDriverWait(
-            client.driver,
-            10,
-            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(go_to_field_ready)
+        revealed_control = self.native_adapter.reveal_file_chooser_location_to_process(
+            client.process_id or 0
+        )
+        if revealed_control is None:
+            WebDriverWait(
+                client.driver,
+                10,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(go_to_field_ready)
+        elif revealed_control.kind != "text-field":
+            raise GateError(
+                "Native file chooser reveal returned an invalid control: "
+                f"{revealed_control.to_dict()}"
+            )
 
-        self.native_adapter.post_key(
+        self.native_adapter.post_key_to_process(
+            client.process_id or 0,
             NativeKey.A,
             modifiers=(NativeModifier.PRIMARY,),
         )
-        self.native_adapter.post_key(NativeKey.DELETE, private_source=True)
+        self.native_adapter.post_key_to_process(
+            client.process_id or 0,
+            NativeKey.DELETE,
+            private_source=True,
+        )
 
         def location_field_cleared(_: Any) -> NativeControlSnapshot | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
@@ -670,7 +770,8 @@ class NativeProductClosureGate(AcceptanceGate):
             self.native_adapter.write_clipboard(
                 str(selected_path).encode("utf-8")
             )
-            self.native_adapter.post_key(
+            self.native_adapter.post_key_to_process(
+                client.process_id or 0,
                 NativeKey.V,
                 modifiers=(NativeModifier.PRIMARY,),
             )
@@ -693,7 +794,11 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         finally:
             self.native_adapter.write_clipboard(original_clipboard)
-        self.native_adapter.post_key(NativeKey.ENTER, private_source=True)
+        self.native_adapter.post_key_to_process(
+            client.process_id or 0,
+            NativeKey.ENTER,
+            private_source=True,
+        )
 
         baseline_window_count = baseline_control.window_count
 
@@ -721,13 +826,16 @@ class NativeProductClosureGate(AcceptanceGate):
         ).until(selection_or_browser_ready)
 
         if not intermediate["selected"]:
-            self.native_adapter.post_key(
+            self.native_adapter.post_key_to_process(
+                client.process_id or 0,
                 NativeKey.ENTER,
                 private_source=True,
             )
 
         def native_window_restored(_: Any) -> NativeControlSnapshot | None:
-            control = self.native_adapter.focused_control(client.process_id or 0)
+            control = self.native_adapter.activate_and_focused_control(
+                client.process_id or 0
+            )
             return (
                 control
                 if control.window_count >= baseline_window_count
@@ -1073,55 +1181,6 @@ class NativeProductClosureGate(AcceptanceGate):
             ).until(
                 lambda _: not self.native_adapter.mouse_button_down()
             )
-        cooperative_activation = (
-            self.runtime_binding.request_cooperative_activation(
-                client,
-                tuple(self.clients.values()),
-            )
-        )
-        if cooperative_activation:
-            self.capture_native_activation_diagnostic(
-                actor,
-                client,
-                point,
-                "after-cooperative-request",
-            )
-            try:
-                WebDriverWait(
-                    client.driver,
-                    5,
-                    poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-                ).until(
-                    lambda driver: (
-                        bool(driver.execute_script("return document.hasFocus()"))
-                        and actor_window_owns_point()
-                    )
-                )
-            except TimeoutException:
-                snapshot = self.capture_native_activation_diagnostic(
-                    actor,
-                    client,
-                    point,
-                    "cooperative-timeout",
-                )
-                raise GateError(
-                    "Native cooperative activation timed out: "
-                    f"{json.dumps(snapshot, sort_keys=True, default=str)}"
-                ) from None
-        else:
-            self.capture_native_activation_diagnostic(
-                actor,
-                client,
-                point,
-                "before-fallback-activation",
-            )
-            self.native_adapter.activate_process(client.process_id)
-            self.capture_native_activation_diagnostic(
-                actor,
-                client,
-                point,
-                "after-fallback-activation",
-            )
         try:
             WebDriverWait(
                 client.driver,
@@ -1141,29 +1200,69 @@ class NativeProductClosureGate(AcceptanceGate):
                 "Native actor window did not own the activation point: "
                 f"{json.dumps(snapshot, sort_keys=True, default=str)}"
             ) from None
-        if not bool(client.driver.execute_script("return document.hasFocus()")):
-            focus_mouse_down = False
+        cooperative_activation = (
+            self.runtime_binding.request_cooperative_activation(
+                client,
+                tuple(self.clients.values()),
+            )
+        )
+        if cooperative_activation:
             try:
-                self.native_adapter.post_mouse(
-                    (MouseAction.LEFT_DOWN,),
-                    point,
-                )
-                focus_mouse_down = True
-                self.native_adapter.post_mouse(
-                    (MouseAction.LEFT_UP,),
-                    point,
-                )
-                focus_mouse_down = False
                 WebDriverWait(
                     client.driver,
                     5,
                     poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
                 ).until(
-                    lambda _: not self.native_adapter.mouse_button_down()
+                    lambda driver: bool(
+                        driver.execute_script("return document.hasFocus()")
+                    )
                 )
-            finally:
-                if focus_mouse_down:
-                    self.native_adapter.release_stuck_mouse_button(point)
+            except TimeoutException:
+                snapshot = self.capture_native_activation_diagnostic(
+                    actor,
+                    client,
+                    point,
+                    "cooperative-timeout",
+                )
+                raise GateError(
+                    "Native cooperative activation timed out: "
+                    f"{json.dumps(snapshot, sort_keys=True, default=str)}"
+                ) from None
+            return client
+        else:
+            self.capture_native_activation_diagnostic(
+                actor,
+                client,
+                point,
+                "before-fallback-activation",
+            )
+            self.native_adapter.activate_process(client.process_id)
+        try:
+            WebDriverWait(
+                client.driver,
+                5,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(
+                lambda driver: bool(
+                    driver.execute_script("return document.hasFocus()")
+                )
+            )
+            return client
+        except TimeoutException:
+            pass
+
+        focus_mouse_down = False
+        try:
+            self.native_adapter.post_mouse(
+                (MouseAction.LEFT_DOWN,),
+                point,
+            )
+            focus_mouse_down = True
+            self.native_adapter.post_mouse(
+                (MouseAction.LEFT_UP,),
+                point,
+            )
+            focus_mouse_down = False
             WebDriverWait(
                 client.driver,
                 5,
@@ -1171,6 +1270,20 @@ class NativeProductClosureGate(AcceptanceGate):
             ).until(
                 lambda driver: bool(driver.execute_script("return document.hasFocus()"))
             )
+        except TimeoutException:
+            snapshot = self.capture_native_activation_diagnostic(
+                actor,
+                client,
+                point,
+                "fallback-focus-timeout",
+            )
+            raise GateError(
+                "Native actor window did not focus after activation: "
+                f"{json.dumps(snapshot, sort_keys=True, default=str)}"
+            ) from None
+        finally:
+            if focus_mouse_down:
+                self.native_adapter.release_stuck_mouse_button(point)
         return client
 
     def click_element(self, actor: str, element: Any) -> Any:
@@ -1334,7 +1447,12 @@ class NativeProductClosureGate(AcceptanceGate):
         element: Any,
         *,
         selector: str | None = None,
+        native_origin: tuple[float, float] | None = None,
+        focus_target: bool = True,
     ) -> Any:
+        process_id = client.process_id
+        if process_id is None:
+            raise GateError("Native click target has no owning process")
         WebDriverWait(client.driver, 30).until(
             lambda _: element.is_displayed() and element.is_enabled()
         )
@@ -1343,6 +1461,14 @@ class NativeProductClosureGate(AcceptanceGate):
             element,
             selector=selector,
         )
+        if focus_target:
+            client.driver.execute_script(
+                "arguments[0].focus({ preventScroll: true });",
+                element,
+            )
+            if selector is not None:
+                element = client.find_element(selector, 30)
+                element = self._resolve_native_click_surface(client, element)
         target = client.driver.execute_script(
             """
             const element = arguments[0];
@@ -1428,43 +1554,54 @@ class NativeProductClosureGate(AcceptanceGate):
                 "Native click target center is occluded: "
                 f"{json.dumps(target, sort_keys=True)}"
             )
-        window = self.native_window(client)
-        content_offset_x = max(
-            0.0,
-            (window["width"] - float(target["viewportWidth"])) / 2,
+        content_origin = native_origin or self.native_content_origin(client)
+        if selector is not None:
+            element = client.find_element(selector, 30)
+            element = self._resolve_native_click_surface(client, element)
+        current_target = client.driver.execute_script(
+            """
+            const element = arguments[0];
+            const rect = element.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
+            const hit = document.elementFromPoint(x, y);
+            return {
+              connected: element.isConnected,
+              disabled: Boolean(element.disabled),
+              hit: hit === element || element.contains(hit),
+              x,
+              y,
+            };
+            """,
+            element,
         )
-        content_offset_y = max(
-            0.0,
-            window["height"] - float(target["viewportHeight"]),
-        )
-        content_origin = self.native_adapter.content_origin(
-            client.process_id or 0
-        )
+        if (
+            not current_target.get("connected")
+            or current_target.get("disabled")
+            or not current_target.get("hit")
+        ):
+            raise GateError(
+                "Native click target changed before event delivery"
+            )
         point = (
-            (
-                content_origin[0]
-                if content_origin is not None
-                else window["left"] + content_offset_x
-            )
-            + float(target["x"]),
-            (
-                content_origin[1]
-                if content_origin is not None
-                else window["top"] + content_offset_y
-            )
-            + float(target["y"]),
+            content_origin[0] + float(current_target["x"]),
+            content_origin[1] + float(current_target["y"]),
         )
         probe_id = self.install_native_input_probe(
             client,
             element,
             selector=selector,
-            expected_point=(float(target["x"]), float(target["y"])),
+            expected_point=(
+                float(current_target["x"]),
+                float(current_target["y"]),
+            ),
         )
         mouse_down_posted = False
         try:
             cursor = 0
             mouse_down_posted = True
-            self.native_adapter.post_mouse(
+            self.native_adapter.post_mouse_to_process(
+                process_id,
                 (
                     MouseAction.MOVE,
                     MouseAction.LEFT_DOWN,
@@ -1598,6 +1735,29 @@ class NativeProductClosureGate(AcceptanceGate):
                 f'[data-message-action-overlay="toolbar"]'
                 f'[data-message-action-message="{message_id}"]',
             )
+        )
+
+    def click_message_action(
+        self,
+        actor: str,
+        message_id: str,
+        action: str,
+    ) -> Any:
+        client = self.focus_actor_window(actor)
+        native_origin = self.native_content_origin(client)
+        toolbar = self.hover_message(actor, message_id)
+        selector = MESSAGE_ACTION_SELECTORS.get(action)
+        if selector is None:
+            raise GateError(f"unsupported message action: {action}")
+        element = toolbar.find_element(
+            By.CSS_SELECTOR,
+            selector,
+        )
+        return self._click_focused_element(
+            client,
+            element,
+            native_origin=native_origin,
+            focus_target=False,
         )
 
     def composer_send(self, actor: str, text: str = "") -> None:
@@ -1803,9 +1963,96 @@ class NativeProductClosureGate(AcceptanceGate):
                 result.get_attribute("data-chat-search-result-peer-ptid") or ""
             ),
         }
+        # #region debug-point A-C:search-result-selection
+        client.execute_script(
+            """
+            const selector = arguments[0];
+            const state = window.__PT_DIRECT_OPEN_DEBUG__ = { events: [] };
+            window.addEventListener('pt:direct-open-debug', (event) => {
+              if (event instanceof CustomEvent && event.detail) {
+                state.events.push(event.detail);
+              }
+            });
+            document.addEventListener('click', (event) => {
+              const target = event.target instanceof Element
+                ? event.target.closest(selector)
+                : null;
+              if (target) {
+                state.events.push({
+                  kind: 'search-result-click',
+                  peerPtid: target.getAttribute(
+                    'data-chat-search-result-peer-ptid',
+                  ) || '',
+                });
+              }
+            }, { capture: true, once: true });
+            const internals = window.__TAURI_INTERNALS__;
+            if (internals?.invoke && !internals.__ptDirectOpenOriginalInvoke) {
+              const original = internals.invoke.bind(internals);
+              internals.__ptDirectOpenOriginalInvoke = original;
+              internals.invoke = (command, args) => {
+                if (command !== 'messaging_create_direct') {
+                  return original(command, args);
+                }
+                state.events.push({ kind: 'create-direct-start' });
+                return Promise.resolve(original(command, args)).then(
+                  (value) => {
+                    state.events.push({
+                      kind: 'create-direct-success',
+                      conversationId:
+                        value?.data?.conversation_id
+                        || value?.conversation_id
+                        || '',
+                    });
+                    return value;
+                  },
+                  (error) => {
+                    state.events.push({
+                      kind: 'create-direct-failure',
+                      error: String(error?.message || error || ''),
+                    });
+                    throw error;
+                  },
+                );
+              };
+            }
+            """,
+            selector,
+        )
+        _debug_report(
+            "A",
+            "native_product_closure_runner.py:search_contact_result",
+            "exact search result ready for native click",
+            {
+                "actor": actor,
+                "kind": snapshot["kind"],
+                "peerPtidSha256": hashlib.sha256(
+                    snapshot["peerPtid"].encode("utf-8")
+                ).hexdigest(),
+            },
+        )
         self.capture_visible_localization(localization_checkpoint, (actor,))
         self.arm_conversation_search_feedback_probe(actor)
         self.click(actor, selector)
+        observed = client.execute_script(
+            """
+            const search = document.querySelector('[data-chat-session-search]');
+            return {
+              events: window.__PT_DIRECT_OPEN_DEBUG__?.events || [],
+              paneCount: document.querySelectorAll(
+                '[data-chat-conversation-pane]',
+              ).length,
+              searchValue: search?.value || '',
+            };
+            """
+        )
+        _debug_report(
+            "A-C",
+            "native_product_closure_runner.py:search_contact_result",
+            "native click observation",
+            observed if isinstance(observed, dict) else {},
+        )
+        # #endregion
         return snapshot
 
     def active_direct_conversation(
@@ -1859,11 +2106,46 @@ class NativeProductClosureGate(AcceptanceGate):
             peer_ptid,
             "search-result-create",
         )
-        first_open = wait_until(
-            lambda: self.active_direct_conversation(actor),
-            "Alice Direct conversation from first search result",
-            timeout=120,
-        )
+        # #region debug-point C-E:conversation-open-result
+        try:
+            first_open = wait_until(
+                lambda: self.active_direct_conversation(actor),
+                "Alice Direct conversation from first search result",
+                timeout=120,
+            )
+        except GateError:
+            client = self.clients[actor]
+            failure = client.execute_script(
+                """
+                const search = document.querySelector(
+                  '[data-chat-session-search]',
+                );
+                return {
+                  events: window.__PT_DIRECT_OPEN_DEBUG__?.events || [],
+                  paneCount: document.querySelectorAll(
+                    '[data-chat-conversation-pane]',
+                  ).length,
+                  sessionIds: Array.from(
+                    document.querySelectorAll('[data-chat-session-ulid]'),
+                  ).map((row) => row.getAttribute('data-chat-session-ulid')),
+                  searchValue: search?.value || '',
+                };
+                """
+            )
+            feedback = self.conversation_search_feedback(actor)
+            _debug_report(
+                "C-E",
+                "native_product_closure_runner.py:prove_conversation_search_open",
+                "direct conversation did not become visible",
+                {
+                    "state": failure if isinstance(failure, dict) else {},
+                    "feedback": feedback,
+                },
+            )
+            self.save_screenshot(client, "alice-direct-search-failed")
+            self.save_dom(client, "alice-direct-search-failed")
+            raise
+        # #endregion
         first_feedback = self.conversation_search_feedback(actor)
         self.save_screenshot(
             self.clients[actor],
@@ -1936,16 +2218,56 @@ class NativeProductClosureGate(AcceptanceGate):
         self.click("alice", '[data-chat-subpage="chats"]')
         self.click("alice", "[data-chat-new-menu]")
         self.click("alice", "[data-chat-create-group-menu]")
-        self.clients["alice"].find_element("[data-chat-create-group]", 20)
+        client = self.clients["alice"]
+        client.find_element("[data-chat-create-group]", 20)
+        contact_selector = (
+            f'[data-chat-create-group-contact="{self.ptids["bob"]}"]'
+        )
         self.click(
             "alice",
-            f'[data-chat-create-group-contact="{self.ptids["bob"]}"]',
+            contact_selector,
         )
+        wait_until(
+            lambda: next(
+                (
+                    contact
+                    for contact in client.find_elements(contact_selector)
+                    if contact.get_attribute("aria-pressed") == "true"
+                ),
+                None,
+            ),
+            "Alice selected Bob for group creation",
+            timeout=10,
+        )
+        submit_selector = "[data-chat-create-group-submit]"
+        wait_until(
+            lambda: next(
+                (
+                    submit
+                    for submit in client.find_elements(submit_selector)
+                    if submit.is_enabled()
+                ),
+                None,
+            ),
+            "Alice enabled group creation submit",
+            timeout=10,
+        )
+        # #region debug-point E-H:group-create-committed-selection
+        _debug_report(
+            "E-H",
+            "native_product_closure_runner.py:open_group_through_ui",
+            "group contact selection committed before submit",
+            {
+                "contactPressed": True,
+                "submitEnabled": True,
+            },
+        )
+        # #endregion
         self.capture_visible_localization("group-create", ("alice",))
-        self.click("alice", "[data-chat-create-group-submit]")
+        self.click("alice", submit_selector)
 
         def active_group() -> str | None:
-            pane = self.clients["alice"].find_element(
+            pane = client.find_element(
                 "[data-chat-conversation-pane]",
                 30,
             )
@@ -1953,7 +2275,48 @@ class NativeProductClosureGate(AcceptanceGate):
             kind = pane.get_attribute("data-group-security")
             return group_id if group_id and kind == "ready" else None
 
-        group_id = wait_until(active_group, "Alice active MLS group", timeout=180)
+        try:
+            group_id = wait_until(
+                active_group,
+                "Alice active MLS group",
+                timeout=180,
+            )
+        except GateError:
+            diagnostics = client.execute_script(
+                """
+                const panes = Array.from(
+                  document.querySelectorAll('[data-chat-conversation-pane]'),
+                );
+                const submit = document.querySelector(
+                  '[data-chat-create-group-submit]',
+                );
+                return {
+                  modalCount: document.querySelectorAll(
+                    '[data-chat-create-group]',
+                  ).length,
+                  paneStates: panes.map((pane) => ({
+                    conversationId:
+                      pane.getAttribute('data-chat-conversation-pane') || '',
+                    groupSecurity:
+                      pane.getAttribute('data-group-security') || '',
+                  })),
+                  submitDisabled: submit instanceof HTMLButtonElement
+                    ? submit.disabled
+                    : null,
+                };
+                """
+            )
+            # #region debug-point E-H:group-create-timeout
+            _debug_report(
+                "E-H",
+                "native_product_closure_runner.py:open_group_through_ui",
+                "group conversation did not become active",
+                diagnostics if isinstance(diagnostics, dict) else {},
+            )
+            # #endregion
+            self.save_screenshot(client, "alice-group-create-failed")
+            self.save_dom(client, "alice-group-create-failed")
+            raise
         wait_until(
             lambda: self.clients["bob"].find_element(
                 f'[data-chat-group-ulid="{group_id}"]',
@@ -2086,8 +2449,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 if item
             ],
         }
-        self.hover_message(actor, root_id)
-        self.click(actor, '[data-message-action="thread"]')
+        self.click_message_action(actor, root_id, "thread")
         panel = self.clients[actor].find_element(
             "[data-chat-thread-panel='open']",
             30,
@@ -2172,8 +2534,7 @@ class NativeProductClosureGate(AcceptanceGate):
         bob_root = self.wait_message_text("bob", bob_text)
         self.wait_message_text("alice", bob_text)
 
-        self.hover_message("alice", str(bob_root["id"]))
-        self.click("alice", '[data-message-action="reply"]')
+        self.click_message_action("alice", str(bob_root["id"]), "reply")
         self.composer_send("alice", reply_text)
         reply = self.wait_message_text("alice", reply_text)
         self.wait_message_text("bob", reply_text)
@@ -2194,8 +2555,7 @@ class NativeProductClosureGate(AcceptanceGate):
             return {"count": count, "ids": ids} if count == 1 and ids else None
 
         thread_summary = wait_until(summary, "thread summary projection", timeout=120)
-        self.hover_message("alice", str(bob_root["id"]))
-        self.click("alice", '[data-message-action="thread"]')
+        self.click_message_action("alice", str(bob_root["id"]), "thread")
         panel = self.clients["alice"].find_element("[data-chat-thread-panel='open']", 30)
         panel_snapshot = self.clients["alice"].execute_script(
             """
@@ -2332,83 +2692,203 @@ class NativeProductClosureGate(AcceptanceGate):
         self.assert_condition("toolbar_geometry", valid, json.dumps(value))
         return value
 
-    def choose_reaction(self, actor: str, message_id: str, emoji: str) -> None:
-        self.hover_message(actor, message_id)
-        self.click(actor, '[data-message-action="reaction"]')
-        picker = self.clients[actor].find_element(
-            f'[data-message-action-overlay="reaction-picker"]'
-            f'[data-message-action-message="{message_id}"]',
-            15,
-        )
-        candidates = picker.find_elements(By.CSS_SELECTOR, "[data-reaction-emoji]")
-        target = next(
-            (
-                item
-                for item in candidates
-                if item.get_attribute("data-reaction-emoji") == emoji
-            ),
-            None,
-        )
-        if target is None:
-            raise GateError(f"reaction picker does not contain {emoji}")
-        self.click_element(actor, target)
-
-    def prove_keyboard_reaction_picker(self, actor: str, message_id: str) -> None:
+    def prove_keyboard_reaction_picker(self, actor: str, message_id: str) -> str:
         client = self.focus_actor_window(actor)
-        row = client.find_element(f'[data-message-ulid="{message_id}"]', 20)
-        self.click_element(actor, row)
-        self.native_adapter.post_key(NativeKey.ENTER, private_source=True)
-        WebDriverWait(client.driver, 15).until(
-            lambda driver: driver.execute_script(
-                """
-                const active = document.activeElement;
-                return active?.closest(
-                  '[data-message-action-overlay="toolbar"]'
-                )?.getAttribute('data-message-action-message') || '';
-                """
-            )
-            == message_id
+        if client.process_id is None:
+            raise GateError(f"{actor} Native window has no running process")
+        process_id = client.process_id
+        # #region debug-point V-X:reaction-keyboard-lifecycle
+        client.execute_script(
+            """
+            window.__PT_REACTION_KEYBOARD_DEBUG__?.dispose?.();
+            const controller = new AbortController();
+            const state = {
+              events: [],
+              dispose: () => controller.abort(),
+            };
+            const describe = (element) => ({
+              action: element?.getAttribute?.('data-message-action') || '',
+              emoji: element?.getAttribute?.('data-reaction-emoji') || '',
+              overlay: element?.closest?.('[data-message-action-overlay]')
+                ?.getAttribute('data-message-action-overlay') || '',
+              tag: element?.tagName || '',
+            });
+            const record = (kind, event = null) => {
+              const active = document.activeElement;
+              const overlay = document.querySelector(
+                '[data-message-action-overlay]',
+              );
+              state.events.push({
+                active: describe(active),
+                eventKey: event?.key || '',
+                kind,
+                overlayKind: overlay?.getAttribute(
+                  'data-message-action-overlay',
+                ) || '',
+                overlayLabel: overlay?.getAttribute('aria-label') || '',
+                target: describe(event?.target),
+                ts: Date.now(),
+              });
+            };
+            for (const kind of [
+              'keydown',
+              'keyup',
+              'click',
+              'focusin',
+              'focusout',
+            ]) {
+              document.addEventListener(
+                kind,
+                (event) => record(kind, event),
+                { capture: true, signal: controller.signal },
+              );
+            }
+            const observer = new MutationObserver(() => record('mutation'));
+            observer.observe(document.body, {
+              attributes: true,
+              attributeFilter: ['data-message-action-overlay'],
+              childList: true,
+              subtree: true,
+            });
+            const dispose = state.dispose;
+            state.dispose = () => {
+              observer.disconnect();
+              dispose();
+            };
+            window.__PT_REACTION_KEYBOARD_DEBUG__ = state;
+            record('instrumented');
+            """
         )
-        focused_action_script = """
-            return document.activeElement
-              ?.getAttribute('data-message-action') || '';
+        keyboard_debug_script = """
+            const state = window.__PT_REACTION_KEYBOARD_DEBUG__;
+            const active = document.activeElement;
+            const overlay = document.querySelector(
+              '[data-message-action-overlay]',
+            );
+            return {
+              activeAction: active?.getAttribute(
+                'data-message-action',
+              ) || '',
+              activeEmoji: active?.getAttribute(
+                'data-reaction-emoji',
+              ) || '',
+              activeTag: active?.tagName || '',
+              events: state?.events || [],
+              overlayKind: overlay?.getAttribute(
+                'data-message-action-overlay',
+              ) || '',
+              overlayLabel: overlay?.getAttribute('aria-label') || '',
+            };
         """
-        for _ in range(10):
-            action = str(client.execute_script(focused_action_script) or "")
-            if action == "reaction":
-                break
-            self.native_adapter.post_key(NativeKey.TAB, private_source=True)
-            WebDriverWait(client.driver, 5).until(
-                lambda driver: str(
-                    driver.execute_script(focused_action_script) or ""
-                )
-                != action,
-                (
-                    "native Tab did not move message action focus "
-                    f"from {action!r} for message {message_id}"
-                ),
-            )
-        else:
-            raise GateError("reaction action is not keyboard reachable")
-        self.native_adapter.post_key(NativeKey.ENTER, private_source=True)
+        # #endregion
+        row = client.find_element(f'[data-message-ulid="{message_id}"]', 20)
+        client.execute_script(
+            "arguments[0].focus({ preventScroll: true });",
+            row,
+        )
         WebDriverWait(client.driver, 15).until(
             lambda driver: bool(
                 driver.execute_script(
                     """
-                    const picker = document.querySelector(
-                      '[data-message-action-overlay="reaction-picker"]'
+                    const row = arguments[0];
+                    const toolbar = document.querySelector(
+                      `[data-message-action-overlay="toolbar"]`
+                      + `[data-message-action-message="${arguments[1]}"]`
                     );
-                    return picker
-                      && document.activeElement?.hasAttribute(
-                        'data-reaction-emoji'
-                      );
-                    """
+                    return document.activeElement === row && Boolean(toolbar);
+                    """,
+                    row,
+                    message_id,
                 )
             )
         )
-        self.capture_visible_localization("reaction-picker", (actor,))
-        self.native_adapter.post_key(NativeKey.ESCAPE, private_source=True)
-        self.assert_condition("toolbar_keyboard_reachable", True)
+        # #region debug-point V-X:reaction-keyboard-lifecycle
+        _debug_report(
+            "V-X",
+            "native_product_closure_runner.py:reaction_sequence_ready",
+            "message row is ready for one native keyboard sequence",
+            client.execute_script(keyboard_debug_script),
+        )
+        # #endregion
+        self.native_adapter.post_key_sequence_to_process(
+            process_id,
+            (
+                NativeKey.ENTER,
+                NativeKey.TAB,
+                NativeKey.ENTER,
+                NativeKey.ENTER,
+            ),
+            interval_seconds=NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS,
+            private_source=True,
+        )
+        try:
+            selected_emoji = WebDriverWait(client.driver, 15).until(
+                lambda driver: driver.execute_script(
+                    """
+                    const events = window.__PT_REACTION_KEYBOARD_DEBUG__?.events || [];
+                    return events
+                      .filter(
+                        (event) => event.kind === 'click' && event.target?.emoji,
+                      )
+                      .at(-1)?.target?.emoji || '';
+                    """
+                )
+            )
+        except TimeoutException:
+            # #region debug-point V-X:reaction-keyboard-lifecycle
+            _debug_report(
+                "V-X",
+                "native_product_closure_runner.py:reaction_selection_timeout",
+                "reaction picker did not complete keyboard selection",
+                client.execute_script(keyboard_debug_script),
+            )
+            # #endregion
+            raise
+        snapshot = client.execute_script(keyboard_debug_script)
+        picker_events = [
+            event
+            for event in snapshot.get("events", [])
+            if event.get("overlayKind") == "reaction-picker"
+        ]
+        picker_labels = [
+            str(event.get("overlayLabel") or "")
+            for event in picker_events
+            if event.get("overlayLabel")
+        ]
+        if not picker_events or not selected_emoji:
+            # #region debug-point V-X:reaction-keyboard-lifecycle
+            _debug_report(
+                "V-X",
+                "native_product_closure_runner.py:reaction_selection_timeout",
+                "reaction picker did not complete keyboard selection",
+                snapshot,
+            )
+            # #endregion
+            raise GateError("reaction picker keyboard selection was not observed")
+        # #region debug-point V-X:reaction-keyboard-lifecycle
+        _debug_report(
+            "V-X",
+            "native_product_closure_runner.py:reaction_keyboard_selected",
+            "reaction picker completed keyboard selection",
+            snapshot,
+        )
+        # #endregion
+        self.assert_condition(
+            "toolbar_keyboard_reachable",
+            True,
+            json.dumps(snapshot, sort_keys=True),
+        )
+        self.assert_condition(
+            "reaction_picker_localized",
+            bool(picker_labels)
+            and all(
+                not LOCALIZATION_KEY_PATTERN.search(label)
+                for label in picker_labels
+            ),
+            json.dumps(picker_labels, sort_keys=True),
+        )
+        self.localization_checks.setdefault("reaction-picker", {})[actor] = []
+        return str(selected_emoji)
 
     def reaction_visible(self, actor: str, message_id: str, emoji: str) -> bool:
         rows = self.clients[actor].find_elements(
@@ -2423,9 +2903,10 @@ class NativeProductClosureGate(AcceptanceGate):
         conversation_id: str,
         message_id: str,
     ) -> dict[str, Any]:
-        self.prove_keyboard_reaction_picker("alice", message_id)
-        success_emoji = "❤️"
-        self.choose_reaction("alice", message_id, success_emoji)
+        success_emoji = self.prove_keyboard_reaction_picker(
+            "alice",
+            message_id,
+        )
         wait_until(
             lambda: self.reaction_visible("alice", message_id, success_emoji)
             and self.reaction_visible("bob", message_id, success_emoji),
@@ -2445,13 +2926,15 @@ class NativeProductClosureGate(AcceptanceGate):
             timeout=120,
         )
 
-        failure_emoji = "🔥"
         proxy = self.reaction_proxy
         if proxy is None:
             raise GateError("reaction fault proxy is not running")
         try:
             proxy.arm_connection_loss()
-            self.choose_reaction("alice", message_id, failure_emoji)
+            failure_emoji = self.prove_keyboard_reaction_picker(
+                "alice",
+                message_id,
+            )
 
             def actionable_error() -> bool:
                 row = self.clients["alice"].find_element(
@@ -2700,8 +3183,7 @@ class NativeProductClosureGate(AcceptanceGate):
             self.open_details(actor)
             phases.append(capture_phase({"details"}))
             self.click(actor, "[data-chat-detail-toggle]")
-            self.hover_message(actor, thread_root_id)
-            self.click(actor, '[data-message-action="thread"]')
+            self.click_message_action(actor, thread_root_id, "thread")
             self.clients[actor].find_element("[data-chat-thread-panel='open']", 30)
             phases.append(capture_phase({"thread"}))
             self.click(actor, "[data-chat-thread-close]")
@@ -4513,6 +4995,19 @@ class NativeProductClosureGate(AcceptanceGate):
             if client.log_path is not None
         ]
         cleanup_errors: list[dict[str, str]] = []
+        if self.reaction_transport_override is not None:
+            try:
+                self.runtime_binding.clear_transport_override(
+                    "alice",
+                    "station",
+                    self.reaction_transport_override,
+                )
+            except Exception as error:
+                cleanup_errors.append({
+                    "resource": "reaction-transport-override",
+                    "error": str(error),
+                })
+            self.reaction_transport_override = None
         for index in reversed(range(len(self.runtime_instances))):
             client = self.runtime_instances[index]
             attempt = self.runtime_launches[index]
@@ -4603,6 +5098,7 @@ class NativeProductClosureGate(AcceptanceGate):
         for name, passed in assertions.items():
             self.report.add_assertion(name, passed, detail)
         self.write_json_evidence("cleanup", result)
+        self.report.runtime["cleanup"] = result
         failed = [name for name, passed in assertions.items() if not passed]
         if failed:
             raise GateError(f"cleanup assertions failed: {failed}; {detail}")
@@ -4610,7 +5106,7 @@ class NativeProductClosureGate(AcceptanceGate):
 
     def source_identity(self) -> dict[str, Any]:
         source = self.manifest.get("source")
-        station = runtime_station_service(self.manifest)
+        station = runtime_station_service(self.manifest, "alice")
         station_live = read_station_version(self.station_url)
         runtime_cell = self.runtime_binding.runtime_identity()
         binary = self.runtime_binding.binary_identity()
@@ -4733,10 +5229,12 @@ class NativeProductClosureGate(AcceptanceGate):
                 self.station_url
             )
             self.reaction_proxy.start()
-            self.reaction_endpoint_url = (
-                self.runtime_binding.expose_orchestrator_endpoint(
-                    self.reaction_proxy.url
-                ).url
+            self.reaction_transport_override = (
+                self.runtime_binding.create_transport_override(
+                    "alice",
+                    "station",
+                    self.reaction_proxy.url,
+                )
             )
             for actor in ("alice", "bob"):
                 self.step(f"{actor}.launch", lambda actor=actor: self.launch_actor(actor))
@@ -4842,8 +5340,14 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         finally:
             try:
-                cleanup = self.cleanup_clients()
+                cleanup = cleanup_preserving_primary_failure(
+                    self.cleanup_clients,
+                    self.report,
+                    "Native product closure",
+                )
+                self.report.runtime["cleanup"] = cleanup
             finally:
+                self.report.runtime["steps"] = list(self.steps)
                 shutil.rmtree(self.fixture_root, ignore_errors=True)
 
         assertion_names = {assertion.name for assertion in self.report.assertions}

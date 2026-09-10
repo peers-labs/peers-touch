@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import re
 import shlex
@@ -10,15 +11,17 @@ import socket
 import subprocess
 import time
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Mapping, Sequence
 
 from tooling.acceptance.core.errors import ProvisioningError
+from tooling.acceptance.remote_platform import RemotePlatform
 
 
 _HOST_PATTERN = re.compile(r"^[A-Za-z0-9._:%-]+$")
 _USER_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 _REMOTE_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9._/-]+$")
+_WINDOWS_PATH_PATTERN = re.compile(r"^[A-Za-z]:/[A-Za-z0-9._ /-]+$")
 
 
 def _validate_atom(
@@ -44,6 +47,7 @@ class SshTarget:
     user: str
     port: int = 22
     known_hosts_file: str = ""
+    remote_platform: RemotePlatform = RemotePlatform.POSIX
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -164,6 +168,27 @@ class SshTransport:
     def git_ssh_command(self) -> str:
         return shlex.join(self.command_prefix())
 
+    def render_remote_argv(self, argv: Sequence[str]) -> str:
+        if self.target.remote_platform == RemotePlatform.POSIX:
+            return shlex.join(str(argument) for argument in argv)
+        arguments = " ".join(
+            "'" + str(argument).replace("'", "''") + "'"
+            for argument in argv
+        )
+        script = (
+            "$ErrorActionPreference='Stop'; "
+            "$utf8=[System.Text.UTF8Encoding]::new($false); "
+            "$OutputEncoding=$utf8; "
+            "[Console]::OutputEncoding=$utf8; "
+            f"& {arguments}; "
+            "if ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }"
+        )
+        encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+        return (
+            "powershell.exe -NoProfile -NonInteractive "
+            f"-EncodedCommand {encoded}"
+        )
+
     def run_argv(
         self,
         argv: Sequence[str],
@@ -181,7 +206,7 @@ class SshTransport:
             [
                 *self.command_prefix(),
                 self.target.destination,
-                shlex.join(str(argument) for argument in argv),
+                self.render_remote_argv(argv),
             ],
             capture_output=True,
             text=True,
@@ -201,20 +226,22 @@ class SshTransport:
     def copy_file(
         self,
         source: Path,
-        remote_path: Path,
+        remote_path: str | Path,
         *,
         timeout: float = 30,
     ) -> None:
         local_source = source.expanduser().resolve()
-        remote_destination = str(remote_path)
+        remote_destination = str(remote_path).replace("\\", "/")
         if not local_source.is_file():
             raise ProvisioningError(
                 f"SSH copy source is missing or not a file: {local_source}"
             )
-        if (
-            not remote_path.is_absolute()
-            or not _REMOTE_PATH_PATTERN.fullmatch(remote_destination)
-        ):
+        valid_destination = (
+            bool(_REMOTE_PATH_PATTERN.fullmatch(remote_destination))
+            if self.target.remote_platform == RemotePlatform.POSIX
+            else self._valid_windows_path(remote_destination)
+        )
+        if not valid_destination:
             raise ProvisioningError("SSH copy destination is invalid")
         if timeout <= 0:
             raise ProvisioningError("SSH copy timeout must be positive")
@@ -273,6 +300,13 @@ class SshTransport:
         selected_local_port = local_port or available_local_port()
         if selected_local_port < 1 or selected_local_port > 65535:
             raise ProvisioningError("local forward port is invalid")
+        if not self.remote_loopback_port_listening(
+            remote_port,
+            timeout=timeout,
+        ):
+            raise ProvisioningError(
+                "remote endpoint is not listening before SSH local forward"
+            )
         return self._start_forward(
             direction="-L",
             specification=(
@@ -308,14 +342,27 @@ class SshTransport:
         self,
         port: int,
         *,
-        timeout: float = 2,
+        timeout: float | None = None,
     ) -> bool:
         if port < 1 or port > 65535:
             raise ProvisioningError("remote loopback probe port is invalid")
+        probe_timeout = (
+            timeout
+            if timeout is not None
+            else (
+                5.0
+                if self.target.remote_platform == RemotePlatform.WINDOWS
+                else 2.0
+            )
+        )
         try:
             probe = self.run_argv(
                 (
-                    "python3",
+                    (
+                        "python"
+                        if self.target.remote_platform == RemotePlatform.WINDOWS
+                        else "python3"
+                    ),
                     "-c",
                     (
                         "import socket,sys;"
@@ -325,12 +372,24 @@ class SshTransport:
                     ),
                     str(port),
                 ),
-                timeout=timeout,
+                timeout=probe_timeout,
                 check=False,
             )
         except subprocess.TimeoutExpired:
             return False
         return probe.returncode == 0
+
+    @staticmethod
+    def _valid_windows_path(value: str) -> bool:
+        if not _WINDOWS_PATH_PATTERN.fullmatch(value):
+            return False
+        path = PureWindowsPath(value)
+        if not path.is_absolute() or value.startswith(("//", "\\\\")):
+            return False
+        return all(
+            part not in {".", ".."} and not part.endswith((" ", "."))
+            for part in path.parts[1:]
+        )
 
     def _start_forward(
         self,

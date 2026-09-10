@@ -42,7 +42,7 @@ func (s *TurnService) ExportTurnDiagnostics(
 	var turn persistence.AgentTurn
 	if err := db.WithContext(ctx).
 		Joins("JOIN agent_conversations ON agent_conversations.id = agent_turns.conversation_id").
-		Where("agent_turns.id = ? AND agent_conversations.ptid = ?", turnID, ptid).
+		Where("agent_turns.id = ? AND agent_conversations.actor_ptid = ?", turnID, ptid).
 		First(&turn).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "turn diagnostics not found", err)

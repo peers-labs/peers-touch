@@ -198,5 +198,4 @@ describe('identity handler actor-scoped projection cleanup', () => {
 
     expect(mocks.restoreSession).toHaveBeenCalledOnce();
   });
-
 });

@@ -4,11 +4,9 @@ import type { JsonValue } from '@bufbuild/protobuf'
 import { RustCommandException, type RustCommandResult } from './desktop_api'
 import type {
   ConversationServiceContract,
-  EnvelopeServiceContract,
   KeyPackageServiceContract,
   DeviceServiceContract,
   DeviceInfo,
-  DirectKeyExchangeServiceContract,
   IMServiceV1,
   ThreadCountResult,
   MemberSettingsResult,
@@ -17,14 +15,15 @@ import type {
   MessagingProjection,
   MessagingServiceContract,
 } from './im-service-contract'
-import { DirectKeyExchangeKind } from './im-service-contract'
-import type { Conversation, CommittedConversationEvent } from '../gen/proto/domain/chat/conversation_pb'
+import type { Conversation } from '../gen/proto/domain/chat/conversation_pb'
 import {
-  CommittedConversationEventSchema,
   ConversationMemberSchema,
   ConversationSchema,
 } from '../gen/proto/domain/chat/conversation_pb'
-import { DurableDeviceInboxItemSchema } from '../gen/proto/domain/chat/queue_pb'
+import {
+  ConversationEventSchema,
+  type ConversationEvent,
+} from '../gen/proto/domain/chat/event_pb'
 
 async function cmd<TInput, TData>(command: string, input?: TInput): Promise<TData> {
   const payload = input === undefined ? undefined : { input }
@@ -98,9 +97,9 @@ const GO_EVENT_PAYLOAD_KEYS: Record<string, string> = {
   MembershipTransitionCommitted: 'membershipTransitionCommitted',
   ConversationCreated: 'conversationCreated',
   ConversationDissolved: 'conversationDissolved',
-  SettingsChanged: 'settingsChanged',
-  Reaction: 'reaction',
-  Pin: 'pin',
+  ConversationUpdated: 'conversationUpdated',
+  ReactionCommitted: 'reactionCommitted',
+  MessagePinCommitted: 'messagePinCommitted',
 }
 
 function protobufTimestampJson(value: unknown): unknown {
@@ -119,7 +118,7 @@ function normalizeGoEventTimestamps(value: unknown): unknown {
   for (const [key, item] of Object.entries(source)) {
     normalized[key] = [
       'committed_at',
-      'client_ts',
+      'client_timestamp',
       'edited_at',
       'retracted_at',
       'ts',
@@ -146,12 +145,15 @@ function normalizeGoConversationEvent(value: unknown): unknown {
   return normalized
 }
 
-export function normalizeConversationEvents(events: readonly unknown[] | undefined): CommittedConversationEvent[] {
+export function normalizeConversationEvents(events: readonly unknown[] | undefined): ConversationEvent[] {
   return (events ?? []).map((event) => {
     try {
-      return fromJson(CommittedConversationEventSchema, event as any)
+      return fromJson(ConversationEventSchema, event as JsonValue)
     } catch {
-      return fromJson(CommittedConversationEventSchema, normalizeGoConversationEvent(event) as any)
+      return fromJson(
+        ConversationEventSchema,
+        normalizeGoConversationEvent(event) as JsonValue,
+      )
     }
   })
 }
@@ -163,6 +165,7 @@ function conversationFromProjection(
     conversationId: projection.conversationId,
     kind: projection.kind,
     authorityStationPeerId: projection.authorityStationId,
+    federationId: projection.federationId,
     membershipEpoch: projection.membershipEpoch,
     mlsEpoch: projection.mlsEpoch,
     status: projection.active
@@ -220,107 +223,12 @@ const conversationService: ConversationServiceContract = {
     return { events: normalizeConversationEvents(resp.events), hasMore: resp.has_more ?? false }
   },
 
-  async threadCounts(conversationId, rootIds) {
-    const resp = await cmd<any, { counts: ThreadCountResult[] }>('conversation_thread_counts', {
-      conversation_id: conversationId,
-      root_ids: rootIds,
-    })
-    return { counts: resp.counts ?? [] }
-  },
-
-  async getMemberSettings(conversationId) {
-    const resp = await cmd<{ conversation_id: string }, MemberSettingsResult>(
-      'conversation_get_member_settings',
-      {
-      conversation_id: conversationId,
-      },
-    )
-    return {
-      nickname: resp.nickname ?? '',
-      muted: resp.muted ?? false,
-      alertEnabled: resp.alertEnabled ?? true,
-      pinned: resp.pinned ?? false,
-      background: resp.background ?? 'default',
-      backgroundImage: resp.backgroundImage ?? '',
-      clearedAtUnixMs: resp.clearedAtUnixMs ?? 0,
-    }
-  },
-
-  async updateMemberSettings(conversationId, settings) {
-    const resp = await cmd<
-      {
-        conversation_id: string
-        nickname?: string
-        muted?: boolean
-        alert_enabled?: boolean
-        pinned?: boolean
-        background?: string
-        background_image?: string
-        cleared_at_unix_ms?: number
-      },
-      MemberSettingsResult
-    >('conversation_update_member_settings', {
-        conversation_id: conversationId,
-        nickname: settings.nickname,
-        muted: settings.muted,
-        alert_enabled: settings.alertEnabled,
-        pinned: settings.pinned,
-        background: settings.background,
-        background_image: settings.backgroundImage,
-        cleared_at_unix_ms: settings.clearedAtUnixMs,
-      })
-    return {
-      nickname: resp.nickname ?? '',
-      muted: resp.muted ?? false,
-      alertEnabled: resp.alertEnabled ?? true,
-      pinned: resp.pinned ?? false,
-      background: resp.background ?? 'default',
-      backgroundImage: resp.backgroundImage ?? '',
-      clearedAtUnixMs: resp.clearedAtUnixMs ?? 0,
-    }
-  },
-
   async syncFromStation(conversationId, limit) {
     const resp = await cmd<any, { events: unknown[]; has_more: boolean }>('conversation_sync_from_station', {
       conversation_id: conversationId,
       limit: limit ?? 200,
     })
     return { events: normalizeConversationEvents(resp.events), hasMore: resp.has_more ?? false }
-  },
-}
-
-const envelopeService: EnvelopeServiceContract = {
-  async submit(envelope) {
-    const payloadB64 = envelope.payloadBytes && envelope.payloadBytes.length > 0
-      ? bytesToBase64(envelope.payloadBytes)
-      : '';
-    const resp = await cmd<any, { envelope_id?: string; error?: string }>('envelope_submit', {
-      envelope: {
-        conversation_id: envelope.conversationId,
-        sender_ptid: envelope.senderPtid,
-        sender_device_id: envelope.senderDeviceId,
-        recipient_ptid: envelope.recipientPtid,
-        payload_type: envelope.payloadType,
-        payload_bytes: payloadB64,
-        idempotency_key: envelope.idempotencyKey,
-      },
-    })
-    if (!resp.envelope_id) {
-      throw new Error(resp.error || 'envelope_submit: no envelope_id returned')
-    }
-    return resp.envelope_id
-  },
-
-  async ack(deviceId, inboxItemId) {
-    await cmd('envelope_ack', { device_id: deviceId, inbox_item_id: inboxItemId })
-  },
-
-  async resume(deviceId, afterCursor) {
-    const resp = await cmd<any, { items: unknown[] }>('envelope_resume', {
-      device_id: deviceId,
-      after_cursor: afterCursor ?? '',
-    })
-    return (resp.items ?? []).map(item => fromJson(DurableDeviceInboxItemSchema, item as any))
   },
 }
 
@@ -361,32 +269,6 @@ const deviceService: DeviceServiceContract = {
 
   async revoke(deviceId) {
     await cmd('device_revoke', { device_id: deviceId })
-  },
-}
-
-const dkxService: DirectKeyExchangeServiceContract = {
-  async send(
-    recipientPtid,
-    recipientDeviceId,
-    conversationId,
-    sessionId,
-    kind,
-    opaqueKeyMaterial,
-    recipientStationPeerId,
-  ) {
-    if (!recipientPtid || !recipientDeviceId) {
-      throw new Error('direct key exchange requires a recipient endpoint');
-    }
-    const resp = await cmd<any, { envelope_id: string }>('dkx_send', {
-      recipient_ptid: recipientPtid,
-      recipient_device_id: recipientDeviceId,
-      recipient_station_peer_id: recipientStationPeerId ?? '',
-      conversation_id: conversationId,
-      session_id: sessionId,
-      kind: kind as number,
-      opaque_key_material: bytesToBase64(opaqueKeyMaterial),
-    })
-    return resp.envelope_id
   },
 }
 
@@ -461,20 +343,28 @@ function projectMessagingMessage(message: MessagingMessageWire): MessagingProjec
 }
 
 const messagingService: MessagingServiceContract = {
-  async createDirect(peerPtid) {
+  async createDirect(input) {
     const response = await cmd<
-      { peer_ptid: string },
+      { peer_ptid: string; federation_id: string },
       { conversation_id: string; state: 'projected' }
-    >('messaging_create_direct', { peer_ptid: peerPtid })
+    >('messaging_create_direct', {
+      peer_ptid: input.peerPtid,
+      federation_id: input.federationId,
+    })
     return {
       conversationId: response.conversation_id,
       state: response.state,
     }
   },
 
-  async createGroup(conversationId, name, memberPtids) {
+  async createGroup(conversationId, name, memberPtids, federationId) {
     const response = await cmd<
-      { conversation_id: string; name: string; member_ptids: string[] },
+      {
+        conversation_id: string
+        name: string
+        member_ptids: string[]
+        federation_id: string
+      },
       {
         conversation_id: string
         command_id: string
@@ -484,6 +374,7 @@ const messagingService: MessagingServiceContract = {
       conversation_id: conversationId,
       name,
       member_ptids: memberPtids,
+      federation_id: federationId,
     })
     return {
       conversationId: response.conversation_id,
@@ -623,6 +514,7 @@ const messagingService: MessagingServiceContract = {
         conversations: Array<{
           conversation_id: string
           authority_station_id: string
+          federation_id: string
           kind: number
           name: string
           owner_ptid: string
@@ -638,6 +530,7 @@ const messagingService: MessagingServiceContract = {
     const conversations = response.conversations.map(conversation => ({
       conversationId: conversation.conversation_id,
       authorityStationId: conversation.authority_station_id,
+      federationId: conversation.federation_id,
       kind: conversation.kind as 1 | 2,
       name: conversation.name,
       ownerPtid: conversation.owner_ptid,
@@ -756,6 +649,67 @@ const messagingService: MessagingServiceContract = {
     return response.messages.map(projectMessagingMessage)
   },
 
+  async threadCounts(conversationId, rootMessageIds) {
+    const response = await cmd<
+      { conversation_id: string; root_message_ids: string[] },
+      { counts: ThreadCountResult[] }
+    >('messaging_thread_counts', {
+      conversation_id: conversationId,
+      root_message_ids: rootMessageIds,
+    })
+    return { counts: response.counts ?? [] }
+  },
+
+  async getMemberSettings(conversationId) {
+    const response = await cmd<{ conversation_id: string }, MemberSettingsResult>(
+      'messaging_get_member_settings',
+      { conversation_id: conversationId },
+    )
+    return {
+      nickname: response.nickname ?? '',
+      muted: response.muted ?? false,
+      alertEnabled: response.alertEnabled ?? true,
+      pinned: response.pinned ?? false,
+      background: response.background ?? 'default',
+      backgroundImage: response.backgroundImage ?? '',
+      clearedAtUnixMs: response.clearedAtUnixMs ?? 0,
+    }
+  },
+
+  async updateMemberSettings(conversationId, settings) {
+    const response = await cmd<
+      {
+        conversation_id: string
+        nickname?: string
+        muted?: boolean
+        alert_enabled?: boolean
+        pinned?: boolean
+        background?: string
+        background_image?: string
+        cleared_at_unix_ms?: number
+      },
+      MemberSettingsResult
+    >('messaging_update_member_settings', {
+      conversation_id: conversationId,
+      nickname: settings.nickname,
+      muted: settings.muted,
+      alert_enabled: settings.alertEnabled,
+      pinned: settings.pinned,
+      background: settings.background,
+      background_image: settings.backgroundImage,
+      cleared_at_unix_ms: settings.clearedAtUnixMs,
+    })
+    return {
+      nickname: response.nickname ?? '',
+      muted: response.muted ?? false,
+      alertEnabled: response.alertEnabled ?? true,
+      pinned: response.pinned ?? false,
+      background: response.background ?? 'default',
+      backgroundImage: response.backgroundImage ?? '',
+      clearedAtUnixMs: response.clearedAtUnixMs ?? 0,
+    }
+  },
+
   async searchMessages(conversationId, query, options = {}) {
     const response = await cmd<
       {
@@ -853,11 +807,7 @@ const messagingService: MessagingServiceContract = {
 
 export const imServiceV1: IMServiceV1 = {
   conversation: conversationService,
-  envelope: envelopeService,
   keyPackage: keyPackageService,
   device: deviceService,
-  dkx: dkxService,
   messaging: messagingService,
 }
-
-export { DirectKeyExchangeKind }

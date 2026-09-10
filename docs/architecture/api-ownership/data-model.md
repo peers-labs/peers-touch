@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-06 | **Updated**: 2026-09-07
+> **Created**: 2026-09-06 | **Updated**: 2026-09-06
 > **Owner**: Architecture Team
 
 ---
@@ -209,16 +209,20 @@ FriendRequestCommand
     created_at
     expires_at
     authorizing_device
+    federation_id
   signing_key_id
   actor_device_signature
 
 FriendRequestEvent
   event_id
   request_id
-  authority_station_id
+  authority_station_peer_id
   state: PENDING | ACCEPTED | REJECTED
   sender_actor_ref
   receiver_actor_ref
+  sender_home_station_peer_id
+  receiver_home_station_peer_id
+  federation_id
   sequence
   committed_at
   previous_hash
@@ -250,35 +254,37 @@ outbox facts needed for sender-local projection. Conversation creation is a subs
 Social-owned integration call after accepted relationship convergence; it is not part of
 the Federation transport.
 
-## 7. Proposed Wire Contract Reconciliation
+## 7. Canonical Command And Destructive-Read Identity
 
-`AO-D07` resolves the remaining mismatch between the accepted semantic contracts
-and the CA-W1 request/response families.
-
-| Boundary | Canonical identity | Canonical result | Transport |
-|---|---|---|---|
-| Direct creation | deterministic Direct ID + caller `command_id` + command hash | `ConversationEvent` | `/conversation/direct` |
-| Group genesis | plan ID/hash + caller `ChatCommand` ID/hash | `ConversationEvent` | `/conversation/group` |
-| Conversation command | conversation ID + command ID/hash | durable submission + `ConversationEvent` | `/conversation/command`; shared Federation frame when remote |
-| Friend Request mutation | authority Station + command ID/hash | durable submission + `FriendRequestCommandResult` | `/api/v1/social/*`; shared Federation frame when remote |
-| Direct bundle fetch | requester endpoint + request ID/hash | exact stored bundle response | typed peer request/response |
-| MLS fetch | requester endpoint + request ID/hash | exact stored consumed package | typed peer request/response |
-| MLS authority claim | source authority + plan ID + target + hash | exact stored reservation | typed peer request/response |
-| DKX | caller `delivery_id` + payload hash | target durable admission | shared Federation frame |
-
-All Conversation response, query, follower, persistence, and delivery surfaces use
-`ConversationEvent`. The older `CommittedConversationEvent` family is a deletion
-target, not a compatibility input.
-
-The exact proposed messages, route disposition, replay rules, and failure semantics
-are defined in:
+AO-D07 fixes the replay identity for every mutation or read that consumes
+one-time material:
 
 ```text
-proposals/20260907-ca-w5-canonical-wire-contract-amendment.md
+Direct creation
+  identity = (derived conversation_id, command_id)
+  exact payload = deterministic CreateDirectConversationRequest bytes
+
+Group creation
+  preparation identity = (conversation_id, authority_plan_id)
+  creation identity = (conversation_id, ChatCommand.command_id)
+  name, members, routes, and reservations = persisted authority plan only
+
+Conversation command
+  local authority = raw ChatCommand
+  remote authority = actor-device-signed ConversationCommandProposal
+  cross-Station transport = FederatedDomainFrame only
+  terminal result = ConversationCommandResultDelivery through Federation
+
+Destructive Key Exchange read
+  identity = (authenticated requester, request_id)
+  exact payload = deterministic request bytes containing target and Home Station
+  exact retry = persisted original response
 ```
 
-The machine ownership registry must not be updated to the proposal until Owner
-acceptance.
+Signed Home Station and Federation fields are assertions that must match Actor
+Identity and active Federation membership. They are never trusted routing
+inputs. `ConversationEvent` is the sole committed Conversation event type, and
+AO-D07-modified Station identity fields use the `*_station_peer_id` name.
 
 ## 8. Gate Result
 

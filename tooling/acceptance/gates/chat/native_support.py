@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,7 +23,7 @@ from tooling.acceptance.core import (
     ProvisioningError,
     REPO_ROOT,
     call_async_harness,
-    require_runtime_service,
+    require_runtime_client_service,
 )
 from tooling.acceptance.core.provisioning import load_runtime_manifest
 from tooling.acceptance.drivers.native import (
@@ -30,15 +31,13 @@ from tooling.acceptance.drivers.native import (
     resolve_native_desktop_runtime,
 )
 from tooling.acceptance.drivers.station import StationDriver
-from tooling.acceptance.drivers.tauri import TauriDriver, TauriSession
+from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import (
-    active_deployment_environment,
-    active_station_url,
-    run_acceptance_station_sql,
+    acceptance_station_environment,
 )
+from tooling.acceptance.transports import SshTarget, SshTransport
 
 
-DEFAULT_STATION = "http://10.37.94.156:18132"
 DEV_ACCOUNT_PASSWORD = "1"
 ACCOUNTS = {
     "alice": "alice@p.t",
@@ -47,9 +46,37 @@ ACCOUNTS = {
 }
 
 
-def runtime_station_service(manifest: dict[str, Any]) -> dict[str, Any]:
+def is_native_tauri_url(value: str) -> bool:
     try:
-        return require_runtime_service(manifest, "station", "station")
+        parsed = urllib.parse.urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.username is None
+        and parsed.password is None
+        and port is None
+        and (
+            (parsed.scheme == "tauri" and parsed.hostname == "localhost")
+            or (
+                parsed.scheme == "http"
+                and parsed.hostname == "tauri.localhost"
+            )
+        )
+    )
+
+
+def runtime_station_service(
+    manifest: dict[str, Any],
+    client_id: str,
+) -> dict[str, Any]:
+    try:
+        _, service = require_runtime_client_service(
+            manifest,
+            client_id,
+            "station",
+        )
+        return service
     except ProvisioningError as error:
         raise GateError(str(error)) from error
 
@@ -242,7 +269,9 @@ class NativeClientLifecycleLedger:
 def selected_native_runtime(gate_id: str) -> SelectedNativeRuntime | None:
     cell_id = os.environ.get("PT_ACCEPTANCE_RUNTIME_CELL", "").strip()
     if not cell_id:
-        return None
+        raise GateError(
+            "PT_ACCEPTANCE_RUNTIME_CELL is required for Native Chat Gates"
+        )
     raw_path = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "").strip()
     if not raw_path:
         raise GateError(
@@ -265,14 +294,16 @@ def selected_native_runtime(gate_id: str) -> SelectedNativeRuntime | None:
     )
     if not source_commit:
         raise GateError("runtime manifest source commit is required")
+    binding = resolve_native_desktop_runtime(
+        cell_id,
+        gate_id=gate_id,
+        source_commit=source_commit,
+    )
+    binding.set_runtime_manifest(manifest)
     return SelectedNativeRuntime(
         manifest=manifest,
         actor_manifest=actors,
-        binding=resolve_native_desktop_runtime(
-            cell_id,
-            gate_id=gate_id,
-            source_commit=source_commit,
-        ),
+        binding=binding,
     )
 
 
@@ -326,7 +357,7 @@ def native_runtime_source_identity(
     station_live: dict[str, Any],
 ) -> dict[str, Any]:
     source = manifest.get("source")
-    station = runtime_station_service(manifest)
+    station = runtime_station_service(manifest, "alice")
     runtime_cell = runtime_binding.runtime_identity()
     binary = runtime_binding.binary_identity()
     cell_source = (
@@ -426,33 +457,6 @@ def native_runtime_source_identity(
     return identity
 
 
-
-def reset_fixture(accounts: tuple[str, ...] = ("alice", "bob")) -> None:
-    if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-        raise GateError(
-            "native Chat gate requires CHAT_ACCEPTANCE_RESET=1 against the "
-            "authorized disposable Station"
-        )
-    subprocess.run(
-        [
-            sys.executable,
-            str(
-                REPO_ROOT
-                / "tooling"
-                / "acceptance"
-                / "fixtures"
-                / "chat_native_reset.py"
-            ),
-            "--environment",
-            "station-three",
-            "--accounts",
-            *accounts,
-        ],
-        cwd=REPO_ROOT,
-        check=True,
-    )
-
-
 def async_harness(
     driver: Any,
     method: str,
@@ -504,14 +508,14 @@ def logout_native_client(
     return result
 
 
-def configure_station(client: TauriDriver, station_url: str) -> None:
-    with StationDriver(f"http://127.0.0.1:{client.gateway_port}") as station:
-        station.station_add(station_url)
-        station.station_set_active(station_url)
+def enter_chat_page(client: TauriSession) -> None:
+    def chat_surface_ready(driver: Any) -> bool:
+        return (
+            driver.current_url.endswith("#/chat")
+            and bool(driver.find_elements(By.CSS_SELECTOR, "[data-social-chat-layout]"))
+        )
 
-
-def enter_chat_page(client: TauriDriver) -> None:
-    if client.get_current_url().endswith("#/chat"):
+    if chat_surface_ready(client.driver):
         return
     WebDriverWait(client.driver, 20).until(
         lambda driver: driver.find_element(
@@ -521,62 +525,11 @@ def enter_chat_page(client: TauriDriver) -> None:
         )
     ).click()
     WebDriverWait(client.driver, 20).until(
-        lambda driver: driver.current_url.endswith("#/chat")
+        chat_surface_ready
     )
 
 
-def start_authenticated_client(
-    account: str,
-    port: int,
-    station_url: str,
-    instance: str = "",
-) -> tuple[TauriDriver, str]:
-    label = instance or account
-    storage = (
-        REPO_ROOT
-        / ".local"
-        / "acceptance"
-        / "embedded-webdriver"
-        / label
-        / "storage"
-    )
-    storage.mkdir(parents=True, exist_ok=True)
-    client = TauriDriver(
-        port=port,
-        profile=f"acceptance-{label}",
-        storage_root=str(storage),
-        environment={"PEERS_STATION_URL": station_url},
-    )
-    client.start()
-    try:
-        client.wait_for_acceptance_harness(30)
-        configure_station(client, station_url)
-        login = async_harness(
-            client,
-            "loginWithPassword",
-            {
-                "account": ACCOUNTS[account],
-                "password": DEV_ACCOUNT_PASSWORD,
-            },
-            timeout=30,
-        )
-        ptid = str((login or {}).get("actorPtid") or "")
-        if not (login or {}).get("authenticated") or not ptid.startswith("ptid:"):
-            raise GateError(
-                f"{account} login did not return canonical PTID: {login}"
-            )
-        if not client.get_current_url().startswith("tauri://localhost"):
-            raise GateError(
-                f"{account} is not running in native Tauri WebView: "
-                f"{client.get_current_url()}"
-            )
-        return client, ptid
-    except Exception:
-        client.stop()
-        raise
-
-
-def stop_client(client: TauriDriver) -> None:
+def stop_client(client: TauriSession) -> None:
     try:
         with StationDriver(
             f"http://127.0.0.1:{client.gateway_port}"
@@ -661,7 +614,7 @@ def wait_until(
     raise GateError(f"timed out waiting for {description}{suffix}")
 
 
-def send_text(client: TauriDriver, text: str) -> dict[str, Any]:
+def send_text(client: TauriSession, text: str) -> dict[str, Any]:
     composer = client.find_element('[data-pt-text-input="chat-composer"]', 30)
     client.execute_script(
         """
@@ -690,7 +643,7 @@ def send_text(client: TauriDriver, text: str) -> dict[str, Any]:
     )
 
 
-def message_snapshot(client: TauriDriver, text: str) -> dict[str, Any] | None:
+def message_snapshot(client: TauriSession, text: str) -> dict[str, Any] | None:
     value = client.execute_script(
         """
         const text = arguments[0];
@@ -710,7 +663,7 @@ def message_snapshot(client: TauriDriver, text: str) -> dict[str, Any] | None:
 
 
 def gateway_command(
-    client: TauriDriver,
+    client: TauriSession,
     command: str,
     args: dict[str, Any],
 ) -> dict[str, Any]:
@@ -734,7 +687,22 @@ def sql_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def station_readback(conversation_id: str, message_id: str) -> dict[str, Any]:
+def station_readback(
+    conversation_id: str,
+    message_id: str,
+    *,
+    station_url: str = "",
+) -> dict[str, Any]:
+    if not station_url:
+        raise GateError("Station readback requires an explicit bound service URL")
+    environment = acceptance_station_environment(station_url)
+    host = environment.get("PT_DEPLOY_HOST", "").strip()
+    user = environment.get("PT_DEPLOY_USER", "").strip()
+    if not host or not user:
+        raise GateError(
+            "Chat Acceptance Station deployment host identity is unavailable"
+        )
+    container = environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"]
     conversation = sql_literal(conversation_id)
     message = sql_literal(message_id)
     query = f"""
@@ -773,47 +741,48 @@ SELECT json_build_object(
     FROM device_queue_items
     WHERE conversation_id = {conversation}
   ), '[]'::json),
-  'deliveryCommitments', COALESCE((
-    SELECT json_agg(json_build_object(
-      'eventId', event_id,
-      'recipientPtid', recipient_ptid,
-      'recipientDeviceId', recipient_device_id,
-      'eventSequence', event_sequence,
-      'queueItemId', queue_item_id,
-      'commitmentSha256', encode(delivery_commitment_sha256, 'hex')
-    ) ORDER BY event_sequence, recipient_ptid, recipient_device_id)
-    FROM conversation_delivery_commitments
-    WHERE conversation_id = {conversation}
-  ), '[]'::json),
-  'deliveryReceipts', COALESCE((
-    SELECT json_agg(json_build_object(
-      'receiptId', receipt_id,
-      'eventId', event_id,
-      'recipientPtid', recipient_ptid,
-      'recipientDeviceId', recipient_device_id,
-      'eventSequence', event_sequence,
-      'laneSequence', lane_sequence,
-      'commitmentSha256', encode(delivery_commitment_sha256, 'hex')
-    ) ORDER BY event_sequence, recipient_ptid, recipient_device_id)
-    FROM conversation_delivery_receipts
-    WHERE conversation_id = {conversation}
-  ), '[]'::json),
   'readCursors', COALESCE((
     SELECT json_agg(json_build_object(
-      'readerPtid', ptid,
+      'readerPtid', reader_ptid,
       'lastReadSequence', last_read_sequence
-    ) ORDER BY ptid)
+    ) ORDER BY reader_ptid)
     FROM conversation_read_cursors
     WHERE conversation_id = {conversation}
   ), '[]'::json)
 );
 """
-    output = run_acceptance_station_sql(
-        active_station_url(),
-        query,
-        active_deployment_environment(),
+    remote = (
+        f"docker exec -i {container} sh -lc "
+        "'psql -At -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"'"
     )
-    value = json.loads(output)
+    try:
+        port = int(
+            environment.get(
+                "PT_DEPLOY_SSH_PORT",
+                environment.get("PT_DEPLOY_PORT", "22"),
+            )
+        )
+    except ValueError as error:
+        raise GateError(
+            "Chat Acceptance deployment SSH port is invalid"
+        ) from error
+    result = SshTransport(
+        SshTarget(
+            host=host,
+            user=user,
+            port=port,
+            known_hosts_file=environment.get(
+                "PT_DEPLOY_KNOWN_HOSTS_FILE",
+                "",
+            ).strip(),
+        )
+    ).run_argv(
+        ["sh", "-lc", remote],
+        input_text=query,
+        timeout=30,
+        check=True,
+    )
+    value = json.loads(result.stdout.strip())
     if not isinstance(value, dict):
         raise GateError("Station interaction readback is invalid")
     return value

@@ -87,12 +87,16 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
 
 - Product：`PRODUCT_ACCEPTED`
 - Architecture：`ARCHITECTURE_ACCEPTED` through revised `MP-D30` and
-  `AO-D01..AO-D06`; Conversation DDD and resource-owned APIs are accepted.
+  `AO-D01..AO-D06`; `MP-D29` follower projection evidence remains valid under
+  the Conversation owner, and Conversation DDD plus resource-owned APIs are
+  accepted.
 - Plan：CA-HC hard-cut plan `PLAN_APPROVED`; the older Messaging Platform plan is
   superseded for Station authority/API ownership while its Device Messaging Engine
-  evidence remains historical input. CA-W1 canonical resource-owned contracts are
-  complete; `MP-W13` corrective amendment remains separate.
+  and MP-W14 follower-projection work remain historical input, not a second
+  active plan. CA-W0 through CA-W2 are complete; CA-W3 and CA-W4 have source
+  checkpoints only. CA-W5 production cutover and CA-W6 runtime/PostgreSQL proof
+  remain `UNPROVEN`.
 - Execution：live product evidence invalidated the prior MP-W10-E/MP-W12/MP-W11
-  receiver-proof claims；`MP-W13` defines projection、interaction UI、identity/Station
-  attribution、conversation actions/background、attachments and real Native proof
-  closures before MP-W11 can close again。
+  receiver-proof claims. `MP-W13` and `MP-W14` below retain historical source and
+  Native evidence; CA-HC exclusively owns the Station authority cutover and its
+  completion proof.

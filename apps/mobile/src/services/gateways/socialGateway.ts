@@ -11,13 +11,18 @@
 import type { MobileAuthSession } from '../../features/auth/authSession';
 import { normalizeFriendRequest } from '../../features/social/socialNormalizers';
 import type {
-  FriendChatSession,
   FriendRequest,
   FriendshipStatus,
 } from '../../features/social/socialTypes';
+import { readableErrorMessage } from '../../features/social/socialTypes';
 import { FriendshipStatus as FriendshipStatusCode } from '../../gen/proto/domain/chat/chat_pb';
 import type { ChatBackgroundId, FriendConversationSettings, UpdateFriendConversationSettingsInput } from '../../features/social/socialApiTypes';
 import { normalizeChatBackgroundId } from '../../features/social/socialApiTypes';
+import {
+  socialFriendRequestAccept,
+  socialFriendRequestReject,
+  socialFriendRequestSend,
+} from '../mobileCommands';
 import {
   createGatewayTransport,
   type CommandOutcome,
@@ -51,10 +56,15 @@ export interface SocialFriendRequestsResult {
   readonly total: number;
 }
 
-export interface SocialSessionsResult {
-  readonly sessions: FriendChatSession[];
-  readonly total: number;
-}
+type FriendRequestDecisionContext = Pick<
+  FriendRequest,
+  | 'requestId'
+  | 'federationId'
+  | 'senderPtid'
+  | 'receiverPtid'
+  | 'senderHomeStationPeerId'
+  | 'receiverHomeStationPeerId'
+>;
 
 // ---------------------------------------------------------------------------
 // Social gateway interface
@@ -63,9 +73,9 @@ export interface SocialSessionsResult {
 export interface SocialGateway {
   // Friend requests
   listFriendRequests: (status?: number, limit?: number, offset?: number) => Promise<CommandOutcome<SocialFriendRequestsResult>>;
-  sendFriendRequest: (receiverPtid: string, message?: string) => Promise<CommandOutcome<{ request?: FriendRequest }>>;
-  acceptFriendRequest: (requestId: string) => Promise<CommandOutcome<{ request?: FriendRequest; session?: FriendChatSession }>>;
-  rejectFriendRequest: (requestId: string) => Promise<CommandOutcome<{ request?: FriendRequest }>>;
+  sendFriendRequest: (receiverPtid: string, receiverHomeStationPeerId: string, federationId: string, message?: string) => Promise<CommandOutcome<{ request?: FriendRequest }>>;
+  acceptFriendRequest: (request: FriendRequestDecisionContext) => Promise<CommandOutcome<{ request?: FriendRequest }>>;
+  rejectFriendRequest: (request: FriendRequestDecisionContext) => Promise<CommandOutcome<{ request?: FriendRequest }>>;
 
   // Conversation settings
   getConversationSettings: (sessionUlid: string) => Promise<CommandOutcome<FriendConversationSettings>>;
@@ -109,7 +119,7 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
       const result = await command<ListFriendRequestsRaw>({
         method: 'GET',
         path: '/api/v1/social/friend-requests',
-        query: { status, limit, offset },
+        query: { state: status, limit, offset },
       });
       if (!result.ok) return result;
       // JSON quarantine: normalize raw payloads to typed domain objects
@@ -117,24 +127,70 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
       return { ok: true, data: { requests, total: result.data.total ?? requests.length } };
     },
 
-    sendFriendRequest: (receiverPtid, message = '') =>
-      command({ method: 'POST', path: '/api/v1/social/friend-request/send', body: { receiver_ptid: receiverPtid, message } }),
+    sendFriendRequest: (receiverPtid, receiverHomeStationPeerId, federationId, message = '') =>
+      invokeFriendRequestCommand('/api/v1/social/friend-request/send', async () => {
+        const response = await socialFriendRequestSend({
+          stationPeerId: session.stationPeerId,
+          actorPtid: session.actorRef.ptid,
+          receiverPtid,
+          receiverHomeStationPeerId,
+          federationId,
+          message,
+        });
+        return {
+          request: response.request
+            ? normalizeFriendRequest(response.request as unknown as Partial<FriendRequest>)
+            : undefined,
+        };
+      }),
 
-    acceptFriendRequest: (requestId) =>
-      command({ method: 'POST', path: '/api/v1/social/friend-request/accept', body: { request_id: requestId } }),
+    acceptFriendRequest: (request) =>
+      invokeFriendRequestCommand('/api/v1/social/friend-request/accept', async () => {
+        const response = await socialFriendRequestAccept({
+          stationPeerId: session.stationPeerId,
+          actorPtid: session.actorRef.ptid,
+          requestId: request.requestId,
+          senderPtid: request.senderPtid,
+          receiverPtid: request.receiverPtid,
+          senderHomeStationPeerId: request.senderHomeStationPeerId,
+          receiverHomeStationPeerId: request.receiverHomeStationPeerId,
+          federationId: request.federationId,
+        });
+        return {
+          request: response.request
+            ? normalizeFriendRequest(response.request as unknown as Partial<FriendRequest>)
+            : undefined,
+        };
+      }),
 
-    rejectFriendRequest: (requestId) =>
-      command({ method: 'POST', path: '/api/v1/social/friend-request/reject', body: { request_id: requestId } }),
+    rejectFriendRequest: (request) =>
+      invokeFriendRequestCommand('/api/v1/social/friend-request/reject', async () => {
+        const response = await socialFriendRequestReject({
+          stationPeerId: session.stationPeerId,
+          actorPtid: session.actorRef.ptid,
+          requestId: request.requestId,
+          senderPtid: request.senderPtid,
+          receiverPtid: request.receiverPtid,
+          senderHomeStationPeerId: request.senderHomeStationPeerId,
+          receiverHomeStationPeerId: request.receiverHomeStationPeerId,
+          federationId: request.federationId,
+        });
+        return {
+          request: response.request
+            ? normalizeFriendRequest(response.request as unknown as Partial<FriendRequest>)
+            : undefined,
+        };
+      }),
 
     // --- Conversation settings ---
     getConversationSettings,
 
-    updateConversationSettings: async (sessionUlid, input) => {
+    updateConversationSettings: async (conversationId, input) => {
       const result = await command<Record<string, unknown>>({
         method: 'PUT',
         path: '/conversation/member/settings',
         body: {
-          conversation_id: sessionUlid,
+          conversation_id: conversationId,
           settings: {
             ...(input.isMuted !== undefined ? { muted: input.isMuted } : {}),
             ...(input.isPinned !== undefined ? { pinned: input.isPinned } : {}),
@@ -145,7 +201,7 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
         },
       });
       if (!result.ok) return result;
-      return getConversationSettings(sessionUlid);
+      return getConversationSettings(conversationId);
     },
 
     // --- Block ---
@@ -184,6 +240,25 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
 // ---------------------------------------------------------------------------
 // JSON quarantine normalizers (private)
 // ---------------------------------------------------------------------------
+
+async function invokeFriendRequestCommand<T>(
+  path: string,
+  invokeCommand: () => Promise<T>,
+): Promise<CommandOutcome<T>> {
+  try {
+    return { ok: true, data: await invokeCommand() };
+  } catch (error) {
+    return {
+      ok: false,
+      error: {
+        code: 'SOCIAL_FRIEND_REQUEST_COMMAND_FAILED',
+        message: readableErrorMessage(error),
+        method: 'POST',
+        path,
+      },
+    };
+  }
+}
 
 function normalizeConversationSettings(
   payload: unknown,

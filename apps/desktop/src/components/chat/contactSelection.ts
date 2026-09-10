@@ -1,10 +1,12 @@
 import type { DesktopIMConversationProjection } from '../../store/socialProjection';
+import type { PresentedError } from '../../services/errorPresenter';
 
 export type ContactSelection =
   | {
       kind: 'friend';
       conversationId?: string;
       peerPtid: string;
+      federationId: string;
       displayName: string;
       avatar?: string;
     }
@@ -15,6 +17,48 @@ export type ContactSelection =
       avatar?: string;
       memberCount: number;
     };
+
+export type FriendContactSelection = Extract<ContactSelection, { kind: 'friend' }>;
+
+export type DirectConversationOpenIntent =
+  | {
+      phase: 'creating';
+      peerPtid: string;
+      federationId: string;
+      displayName: string;
+      avatar?: string;
+    }
+  | {
+      phase: 'failed';
+      peerPtid: string;
+      federationId: string;
+      displayName: string;
+      avatar?: string;
+      error: PresentedError;
+    };
+
+export function beginDirectConversationOpen(
+  contact: FriendContactSelection,
+): DirectConversationOpenIntent {
+  return {
+    phase: 'creating',
+    peerPtid: contact.peerPtid,
+    federationId: contact.federationId,
+    displayName: contact.displayName,
+    avatar: contact.avatar,
+  };
+}
+
+export function failDirectConversationOpen(
+  intent: DirectConversationOpenIntent,
+  error: PresentedError,
+): DirectConversationOpenIntent {
+  return {
+    ...intent,
+    phase: 'failed',
+    error,
+  };
+}
 
 export function findContactConversation(
   selection: ContactSelection,
@@ -41,6 +85,7 @@ export function findContactConversation(
 
 export function friendContactSelection(
   peerPtid: string,
+  federationId: string,
   displayName: string,
   avatar: string | undefined,
   conversations: DesktopIMConversationProjection[],
@@ -52,6 +97,7 @@ export function friendContactSelection(
     kind: 'friend',
     ...(conversation ? { conversationId: conversation.id } : {}),
     peerPtid,
+    federationId,
     displayName,
     avatar,
   };
