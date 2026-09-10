@@ -24,7 +24,7 @@
 | Current workstream | G-FE1 executor-unavailable closure and exact-source Foundation proof |
 | Current step | `BASE-EXECUTOR_UNAVAILABLE` is source-complete and both Desktop/Browser focused runtime tuples pass 9/9；C08 is current-source proven；the unchanged full Gate is parked at the external Ark provider boundary |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | C08 run `20260910T153710003596Z-e2a0b281ca165e6caaaf510dad7c5bfd` on `a48a8f3cf` is `DONE / PROVEN` with 19/19 assertions and clean resource release |
+| Last completed | C08 run `20260910T154114435441Z-b37867daa1135f6ace77f0a4f77da078` on `3bf3650e2` is `DONE / PROVEN` with 19/19 assertions and clean resource release |
 | Current action | Preserve the external-provider failure evidence and wait for Ark to execute the unchanged AS-F07 retry/regenerate sequence |
 | Next action | When Ark is healthy, deploy the current clean checkpoint, rerun C08, then rerun the unchanged 419-cell G-F Gate；admit only the next source-backed `BASE-*` failure |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
@@ -35,7 +35,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | Full G-F is externally blocked by repeated Ark `context deadline exceeded` failures during AS-F07 retry/regenerate；two additional runs stopped earlier at AS-F06 recovery/session boundaries. No timeout inflation, fallback provider, mock, tuple reduction, or Gate weakening is authorized |
 | Decisions required | none |
-| Evidence | `7485d1c22` aligns the executor cell ID with the canonical matrix；Desktop and Browser focused executor tuples each pass 9/9 with clean cleanup；C08 is `DONE / PROVEN` on `a48a8f3cf`；full G-F remains `PARTIAL / UNPROVEN` |
+| Evidence | `7485d1c22` aligns the executor cell ID with the canonical matrix；Desktop and Browser focused executor tuples each pass 9/9 with clean cleanup；C08 is `DONE / PROVEN` on `3bf3650e2`；full G-F remains `PARTIAL / UNPROVEN` |
 | Last updated | 2026-09-10 |
 
 ---
