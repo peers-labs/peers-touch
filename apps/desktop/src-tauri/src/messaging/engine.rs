@@ -2166,7 +2166,14 @@ fn attachment_source_root(profile_id: &str) -> Result<PathBuf, String> {
 
 fn managed_attachment_source(profile_id: &str, path: &Path) -> Result<bool, String> {
     let root = attachment_source_root(profile_id)?;
-    Ok(path.parent() == Some(root.as_path())
+    let Some(parent) = path.parent() else {
+        return Ok(false);
+    };
+    let canonical_root = std::fs::canonicalize(&root)
+        .map_err(|error| format!("resolve messaging attachment source root: {error}"))?;
+    let canonical_parent = std::fs::canonicalize(parent)
+        .map_err(|error| format!("resolve messaging attachment source parent: {error}"))?;
+    Ok(canonical_parent == canonical_root
         && path
             .file_name()
             .and_then(|value| value.to_str())
@@ -2365,6 +2372,8 @@ mod tests {
 
         assert!(source_path.is_file());
         assert!(managed_attachment_source(&profile_id, &staged_path).unwrap());
+        let canonical_staged_path = std::fs::canonicalize(&staged_path).unwrap();
+        assert!(managed_attachment_source(&profile_id, &canonical_staged_path).unwrap());
         assert_eq!(std::fs::read(&staged_path).unwrap(), bytes);
 
         engine
