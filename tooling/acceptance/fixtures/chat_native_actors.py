@@ -201,7 +201,10 @@ def _terminate_reset_process(
     try:
         process.communicate(timeout=min(0.25, remaining))
     except subprocess.TimeoutExpired:
-        _signal_reset_process_group(process, signal.SIGKILL)
+        if os.name == "posix":
+            _signal_reset_process_group(process, signal.SIGKILL)
+        else:
+            process.kill()
         remaining = max(0.0, deadline_monotonic - time.monotonic())
         try:
             process.communicate(timeout=remaining)
@@ -216,9 +219,9 @@ def _kill_remaining_reset_group(
     process: subprocess.Popen[str],
     deadline_monotonic: float,
 ) -> None:
-    _signal_reset_process_group(process, signal.SIGKILL)
     if os.name != "posix":
         return
+    _signal_reset_process_group(process, signal.SIGKILL)
     while True:
         try:
             os.killpg(process.pid, 0)
