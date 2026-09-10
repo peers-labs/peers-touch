@@ -187,6 +187,22 @@ _user32 = ctypes.windll.user32  # type: ignore[attr-defined]
 _kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
 _gdi32 = ctypes.windll.gdi32  # type: ignore[attr-defined]
 
+_kernel32.GlobalAlloc.argtypes = [ctypes.wintypes.UINT, ctypes.c_size_t]
+_kernel32.GlobalAlloc.restype = ctypes.c_void_p
+_kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+_kernel32.GlobalLock.restype = ctypes.c_void_p
+_kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+_kernel32.GlobalUnlock.restype = ctypes.wintypes.BOOL
+_kernel32.GlobalFree.argtypes = [ctypes.c_void_p]
+_kernel32.GlobalFree.restype = ctypes.c_void_p
+_user32.GetClipboardData.argtypes = [ctypes.wintypes.UINT]
+_user32.GetClipboardData.restype = ctypes.c_void_p
+_user32.SetClipboardData.argtypes = [
+    ctypes.wintypes.UINT,
+    ctypes.c_void_p,
+]
+_user32.SetClipboardData.restype = ctypes.c_void_p
+
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -40,6 +40,18 @@ class Win32NativeDesktopAdapterContractTest(unittest.TestCase):
         self.assertNotIn("win32api", source)
         self.assertNotIn("pywinauto", source)
 
+    def test_clipboard_pointer_apis_declare_64_bit_signatures(self) -> None:
+        source = WINDOWS_ADAPTER_PATH.read_text(encoding="utf-8")
+        for function in (
+            "GlobalAlloc",
+            "GlobalLock",
+            "GlobalFree",
+            "GetClipboardData",
+            "SetClipboardData",
+        ):
+            self.assertIn(f"{function}.argtypes =", source)
+            self.assertIn(f"{function}.restype = ctypes.c_void_p", source)
+
     def test_activation_preserves_focus_when_process_is_already_foreground(self) -> None:
         source = WINDOWS_ADAPTER_PATH.read_text(encoding="utf-8")
         activation = source[
