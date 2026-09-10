@@ -5709,7 +5709,7 @@ mod tests {
 
     fn context() -> AccessContext {
         AccessContext {
-            actor_ptid: Some("actor-test".to_string()),
+            actor_ptid: Some("ptid:person:applet-test".to_string()),
             token: "token-test".to_string(),
         }
     }
@@ -6673,6 +6673,7 @@ mod tests {
 
     #[test]
     fn denies_capability_missing_from_manifest_permissions() {
+        let data_dir = temp_data_dir("permission-denied");
         let result = applets_invoke_registered(
             context(),
             invoke(
@@ -6682,7 +6683,7 @@ mod tests {
                 None,
                 manifest(vec!["app.getContext"]),
             ),
-            Path::new("."),
+            &data_dir,
         );
         assert!(!result.ok);
         assert_eq!(result.error.as_ref().unwrap().code, ErrorCode::Forbidden);
@@ -6737,6 +6738,7 @@ mod tests {
 
     #[test]
     fn rejects_raw_network_url_before_proxying() {
+        let data_dir = temp_data_dir("raw-network-url");
         let result = applets_invoke_registered(
             context(),
             invoke(
@@ -6746,7 +6748,7 @@ mod tests {
                 Some(json!({ "url": "https://example.com/api" })),
                 manifest(vec!["network.request"]),
             ),
-            Path::new("."),
+            &data_dir,
         );
         assert!(!result.ok);
         assert!(result
@@ -6763,6 +6765,7 @@ mod tests {
 
     #[test]
     fn rejects_network_path_outside_service_binding() {
+        let data_dir = temp_data_dir("network-path-policy");
         let result = applets_invoke_registered(
             context(),
             invoke(
@@ -6772,7 +6775,7 @@ mod tests {
                 Some(json!({ "service": "station-api", "path": "/admin", "method": "GET" })),
                 manifest(vec!["network.request"]),
             ),
-            Path::new("."),
+            &data_dir,
         );
         assert!(!result.ok);
         assert!(result
@@ -6784,6 +6787,7 @@ mod tests {
 
     #[test]
     fn rejects_oversized_gateway_request_payload() {
+        let data_dir = temp_data_dir("gateway-payload-limit");
         let result = applets_invoke_registered(
             context(),
             invoke(
@@ -6795,7 +6799,7 @@ mod tests {
                 ),
                 manifest(vec!["storage.set"]),
             ),
-            Path::new("."),
+            &data_dir,
         );
         assert!(!result.ok);
         assert_eq!(result.error.as_ref().unwrap().code, ErrorCode::Conflict);
@@ -6944,6 +6948,7 @@ mod tests {
 
         let mut timeout_manifest = manifest(vec!["network.request"]);
         timeout_manifest.services[0].id = "timeout-api".to_string();
+        let data_dir = temp_data_dir("capability-timeout");
         let result = applets_invoke_registered(
             context(),
             invoke(
@@ -6955,7 +6960,7 @@ mod tests {
                 ),
                 timeout_manifest,
             ),
-            Path::new("."),
+            &data_dir,
         );
         std::env::remove_var("PEERS_APPLET_SERVICE_TIMEOUT_API");
         let _ = server.join();
@@ -7096,6 +7101,7 @@ mod tests {
     #[test]
     fn routes_navigation_through_authorized_host_command() {
         let session_manifest = manifest(vec!["navigation.navigateTo"]);
+        let data_dir = temp_data_dir("navigation-command");
         let result = applets_invoke_registered(
             context(),
             invoke(
@@ -7105,7 +7111,7 @@ mod tests {
                 Some(json!({ "page": "applets" })),
                 session_manifest,
             ),
-            Path::new("."),
+            &data_dir,
         );
 
         assert!(result.ok, "navigation failed: {:?}", result.error);
@@ -7118,6 +7124,7 @@ mod tests {
     #[test]
     fn routes_ui_through_authorized_host_command() {
         let session_manifest = manifest(vec!["ui.showModal"]);
+        let data_dir = temp_data_dir("ui-command");
         let result = applets_invoke_registered(
             context(),
             invoke(
@@ -7127,7 +7134,7 @@ mod tests {
                 Some(json!({ "title": "Confirm", "content": "Proceed" })),
                 session_manifest,
             ),
-            Path::new("."),
+            &data_dir,
         );
 
         assert!(result.ok, "ui.showModal failed: {:?}", result.error);
@@ -7306,6 +7313,7 @@ mod tests {
 
     #[test]
     fn uses_declared_skills_without_hardcoded_skill_results() {
+        let data_dir = temp_data_dir("declared-skills");
         let result = applets_invoke_registered(
             context(),
             invoke(
@@ -7315,7 +7323,7 @@ mod tests {
                 None,
                 manifest(vec!["skills.list"]),
             ),
-            Path::new("."),
+            &data_dir,
         );
         assert!(result.ok);
         let status = result.data.unwrap().status;

@@ -1,243 +1,275 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Input, message, Typography } from 'antd';
-import { ImagePlus, RotateCcw, Send, Trash2 } from 'lucide-react';
-import { create } from '@bufbuild/protobuf';
+/**
+ * MomentsPage.tsx — Pure renderer for the Moments feed
+ *
+ * Consumes the moments projection (via MomentsFeedStore) and renders
+ * the feed, composer, comments, and state indicators. This page does
+ * NOT perform mount-time fetches; data flows from the runtime-owned
+ * projection and the feed store's cursor-based pagination.
+ *
+ * Architecture:
+ * - MomentComposer: draft save/restore via DraftRestorationPort
+ * - MomentFeedItem: individual post card with reactions
+ * - MomentCommentsSection: comment panel with reply support
+ * - MomentsFeedStates: empty/loading/error/unavailable/policy states
+ *
+ * All interactions dispatch through InteractionAdmission (reactions,
+ * comments) or the MomentsGateway (feed pagination, publish).
+ *
+ * W6B: Refactored from monolithic page to pure-renderer pattern
+ * with runtime-owned projection, cursor pagination, draft recovery,
+ * reaction/comment/reply flows, and bounded feed.
+ *
+ * W6B-sync: Visual hierarchy aligned with prototype MomentsPage.
+ * Header uses ImagePlus toggle; feed uses Card-based layout.
+ */
+
+import { useCallback, useMemo, useState } from 'react';
+import { Button, Typography } from 'antd';
+import { ImagePlus } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import { MobileNotice } from '../components/MobileNotice';
 import { useAuthStore } from '../features/auth/authStore';
-import { uploadMobileMomentImage } from '../features/social/socialApi';
-import { useSocialStore } from '../features/social/socialStore';
-import { readableErrorMessage } from '../features/social/socialTypes';
+import { useMomentsFeed } from '../features/social/useMomentsFeed';
+import { getInteractionAdmission } from '../runtimes/commandRuntime';
+import { createMomentsGateway, type MomentsGateway } from '../services/gateways/momentsGateway';
 import {
-  Audience_Kind,
-  AudienceSchema,
-  type ImageAttachment,
-} from '../gen/proto/domain/social/post_pb';
+  createMomentsProjection,
+  type MomentsProjectionController,
+} from '../runtimes/momentsProjectionDescriptor';
+import { createSocialEventIngress } from '../runtimes/socialEventIngress';
+import type { Post } from '../gen/proto/domain/social/post_pb';
+import type { MobileAuthSession } from '../features/auth/authSession';
+
+import { MomentComposer } from './moments/MomentComposer';
+import { MomentFeedItem } from './moments/MomentFeedItem';
+import { MomentCommentsSection } from './moments/MomentCommentsSection';
+import {
+  MomentsFeedEmpty,
+  MomentsFeedError,
+  MomentsFeedLoading,
+  MomentsUnavailable,
+} from './moments/MomentsFeedStates';
 
 const { Text } = Typography;
-const MAX_IMAGES_PER_POST = 9;
 
-interface PendingMomentImage {
-  localId: string;
-  file: File;
-  previewUrl: string;
-  status: 'uploading' | 'done' | 'error';
-  image?: ImageAttachment;
-  error?: string;
+// ---------------------------------------------------------------------------
+// Lazy-initialized runtime singletons scoped to authenticated session
+// ---------------------------------------------------------------------------
+
+let cachedGateway: MomentsGateway | null = null;
+let cachedProjection: MomentsProjectionController | null = null;
+let cachedSessionToken = '';
+
+function getSessionGateway(session: MobileAuthSession): MomentsGateway {
+  if (cachedGateway && cachedSessionToken === session.accessToken) {
+    return cachedGateway;
+  }
+  cachedSessionToken = session.accessToken;
+  cachedGateway = createMomentsGateway(session);
+  return cachedGateway;
 }
 
-let pendingImageSeq = 0;
-
-function nextPendingImageId(): string {
-  pendingImageSeq += 1;
-  return `mobile-moment-image-${Date.now()}-${pendingImageSeq}`;
+function getSessionProjection(): MomentsProjectionController {
+  if (cachedProjection) return cachedProjection;
+  const ingress = createSocialEventIngress({
+    onEvent: () => {
+      // Events routed through projection ingestEvent below
+    },
+  });
+  cachedProjection = createMomentsProjection(ingress);
+  return cachedProjection;
 }
+
+// ---------------------------------------------------------------------------
+// Page component
+// ---------------------------------------------------------------------------
 
 export function MomentsPage() {
   const { t } = useMobileI18n();
   const authSession = useAuthStore((state) => state.session);
-  const api = useSocialStore((state) => state.api);
-  const [text, setText] = useState('');
-  const [pendingImages, setPendingImages] = useState<PendingMomentImage[]>([]);
-  const [publishing, setPublishing] = useState(false);
+
+  // Memoize gateway and projection based on session
+  const gateway = useMemo(
+    () => (authSession ? getSessionGateway(authSession) : null),
+    [authSession],
+  );
+  const projection = useMemo(() => getSessionProjection(), []);
+
+  // Feed state from the store
+  const feed = useMomentsFeed(gateway, projection);
+
+  // Local UI state
   const [noticeError, setNoticeError] = useState('');
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const pendingImagesRef = useRef<PendingMomentImage[]>([]);
+  const [activeCommentsPostId, setActiveCommentsPostId] = useState<string | null>(null);
+  const [showNewPost, setShowNewPost] = useState(false);
 
-  useEffect(() => {
-    pendingImagesRef.current = pendingImages;
-  }, [pendingImages]);
+  // -- Projection availability check --
+  const projectionState = projection.state();
+  const isUnavailable = !projectionState.availability.available;
+  const unavailableReason = !projectionState.availability.available
+    ? projectionState.availability.reason
+    : '';
 
-  useEffect(() => () => {
-    pendingImagesRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+  // -- Handlers --
+
+  const handlePublished = useCallback(
+    (post: Post) => {
+      feed.prependPost(post);
+      setShowNewPost(false);
+    },
+    [feed],
+  );
+
+  const handleReact = useCallback(
+    async (postId: string, reactionKind: number) => {
+      if (!gateway) return;
+
+      // Record in command ledger
+      try {
+        const admission = getInteractionAdmission();
+        await admission.admit({
+          commandType: 'reaction_toggle',
+          category: 'moments',
+          orderingKey: `post:${postId}`,
+          payloadJson: JSON.stringify({ postId, reactionKind }),
+        });
+      } catch {
+        // Ledger recording is best-effort
+      }
+
+      // Check current state to toggle
+      const post = feed.posts.find((p) => p.id === postId);
+      const currentReaction = post?.reactions.find((r) => r.kind === reactionKind);
+      const isCurrentlyReacted = currentReaction?.reactedByViewer ?? false;
+
+      const result = isCurrentlyReacted
+        ? await gateway.unreactToPost(postId, reactionKind)
+        : await gateway.reactToPost(postId, reactionKind);
+
+      if (result.ok) {
+        feed.updateReaction(postId, result.data.reactions);
+      } else {
+        setNoticeError(t('mobile.moments.reaction.error'));
+      }
+    },
+    [gateway, feed, t],
+  );
+
+  const handleOpenComments = useCallback((postId: string) => {
+    setActiveCommentsPostId(postId);
   }, []);
 
-  const uploadingCount = useMemo(
-    () => pendingImages.filter((item) => item.status === 'uploading').length,
-    [pendingImages],
-  );
-  const errorCount = useMemo(
-    () => pendingImages.filter((item) => item.status === 'error').length,
-    [pendingImages],
-  );
-  const slotsLeft = MAX_IMAGES_PER_POST - pendingImages.length;
-  const canPublish = Boolean(text.trim()) && uploadingCount === 0 && errorCount === 0 && !publishing;
+  const handleCloseComments = useCallback(() => {
+    setActiveCommentsPostId(null);
+  }, []);
 
-  const uploadOne = async (item: PendingMomentImage) => {
-    if (!authSession) return;
-    try {
-      const image = await uploadMobileMomentImage(authSession, item.file);
-      setPendingImages((current) => current.map((candidate) => (
-        candidate.localId === item.localId
-          ? { ...candidate, status: 'done', image, error: undefined }
-          : candidate
-      )));
-    } catch (error) {
-      setPendingImages((current) => current.map((candidate) => (
-        candidate.localId === item.localId
-          ? { ...candidate, status: 'error', error: readableErrorMessage(error) }
-          : candidate
-      )));
-    }
-  };
+  const handleOpenDetail = useCallback((postId: string) => {
+    // For now, open comments as detail view
+    setActiveCommentsPostId(postId);
+  }, []);
 
-  const handleFilesSelected = async (files: FileList | null) => {
-    if (!files?.length || !authSession) return;
-    const selected = Array.from(files).slice(0, Math.max(0, slotsLeft));
-    if (!selected.length) {
-      message.warning(t('mobile.moments.imageMaxReached', { max: MAX_IMAGES_PER_POST }));
-      return;
-    }
+  const handleRetry = useCallback(() => {
+    projection.markAvailable();
+    feed.loadFeed();
+  }, [projection, feed]);
 
-    const drafts = selected.map((file) => ({
-      localId: nextPendingImageId(),
-      file,
-      previewUrl: URL.createObjectURL(file),
-      status: 'uploading' as const,
-    }));
-    setPendingImages((current) => [...current, ...drafts]);
-    for (const item of drafts) {
-      await uploadOne(item);
-    }
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
+  // -- Render --
 
-  const removeImage = (localId: string) => {
-    setPendingImages((current) => {
-      const removed = current.find((item) => item.localId === localId);
-      if (removed) URL.revokeObjectURL(removed.previewUrl);
-      return current.filter((item) => item.localId !== localId);
-    });
-  };
-
-  const retryImage = (localId: string) => {
-    const target = pendingImages.find((item) => item.localId === localId);
-    if (!target) return;
-    setPendingImages((current) => current.map((item) => (
-      item.localId === localId ? { ...item, status: 'uploading', error: undefined } : item
-    )));
-    void uploadOne({ ...target, status: 'uploading', error: undefined });
-  };
-
-  const publish = async () => {
-    const trimmed = text.trim();
-    if (!api || !authSession) {
-      message.warning(t('mobile.social.notAuthenticated'));
-      return;
-    }
-    if (!trimmed) {
-      message.warning(t('mobile.moments.emptyError'));
-      return;
-    }
-    if (uploadingCount > 0) {
-      message.warning(t('mobile.moments.imageUploading'));
-      return;
-    }
-    if (errorCount > 0) {
-      message.warning(t('mobile.moments.imageHasErrors'));
-      return;
-    }
-
-    const images = pendingImages
-      .filter((item) => item.status === 'done' && item.image)
-      .map((item) => item.image as ImageAttachment);
-    const imageIds = images.map((image) => image.id || image.url).filter(Boolean);
-
-    setPublishing(true);
-    setNoticeError('');
-    try {
-      await api.createMoment(images.length > 0
-        ? {
-          kind: 'image',
-          text: trimmed,
-          audience: create(AudienceSchema, { kind: Audience_Kind.PUBLIC }),
-          imageIds,
-          images,
-        }
-        : {
-          kind: 'text',
-          text: trimmed,
-          audience: create(AudienceSchema, { kind: Audience_Kind.PUBLIC }),
-        });
-      message.success(t('mobile.moments.published'));
-      pendingImages.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-      setPendingImages([]);
-      setText('');
-    } catch (error) {
-      setNoticeError(readableErrorMessage(error));
-    } finally {
-      setPublishing(false);
-    }
-  };
+  // If comments panel is open, show it full-screen
+  if (activeCommentsPostId && gateway) {
+    return (
+      <div className="page-container moments-page">
+        <MomentCommentsSection
+          postId={activeCommentsPostId}
+          gateway={gateway}
+          onClose={handleCloseComments}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="page-container moments-page">
-      <div className="page-header">
-        <div className="header-title">{t('mobile.moments.title')}</div>
-      </div>
+      {/* Header: title + ImagePlus new-post toggle (prototype) */}
+      <header className="page-header">
+        <h1 className="header-title">{t('mobile.moments.title')}</h1>
+        <button
+          type="button"
+          className="header-action"
+          aria-label={t('mobile.moments.newPost')}
+          onClick={() => setShowNewPost(!showNewPost)}
+        >
+          <ImagePlus size={20} />
+        </button>
+      </header>
 
       {noticeError ? (
         <MobileNotice onClose={() => setNoticeError('')}>{noticeError}</MobileNotice>
       ) : null}
 
-      <section className="moments-composer-card">
-        <Text className="moments-composer-eyebrow">{t('mobile.moments.publicAudience')}</Text>
-        <Input.TextArea
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder={t('mobile.moments.placeholder')}
-          autoSize={{ minRows: 4, maxRows: 8 }}
-          maxLength={5000}
-          showCount
+      {/* Unavailable state: projection failure */}
+      {isUnavailable && (
+        <MomentsUnavailable reason={unavailableReason} onRetry={handleRetry} />
+      )}
+
+      {/* Composer: toggled by the header ImagePlus button */}
+      {showNewPost && !isUnavailable && authSession && gateway && (
+        <MomentComposer
+          session={authSession}
+          gateway={gateway}
+          onPublished={handlePublished}
         />
+      )}
 
-        {pendingImages.length > 0 && (
-          <div className="moments-image-grid">
-            {pendingImages.map((item) => (
-              <div className={`moments-image-tile ${item.status}`} key={item.localId}>
-                <img src={item.previewUrl} alt="" />
-                <div className="moments-image-status">
-                  {item.status === 'uploading' && t('mobile.moments.imageUploadingShort')}
-                  {item.status === 'done' && t('mobile.moments.imageReady')}
-                  {item.status === 'error' && t('mobile.moments.imageFailed')}
-                </div>
-                <div className="moments-image-actions">
-                  {item.status === 'error' && (
-                    <button type="button" onClick={() => retryImage(item.localId)} aria-label={t('mobile.moments.retryImage')}>
-                      <RotateCcw size={14} />
-                    </button>
-                  )}
-                  <button type="button" onClick={() => removeImage(item.localId)} aria-label={t('mobile.moments.removeImage')}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      {/* Feed states */}
+      {!isUnavailable && feed.loadState === 'loading' && feed.posts.length === 0 && (
+        <MomentsFeedLoading />
+      )}
 
-        <div className="moments-composer-actions">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={(event) => void handleFilesSelected(event.target.files)}
-          />
-          <Button
-            icon={<ImagePlus size={16} />}
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!authSession || slotsLeft <= 0 || publishing}
-          >
-            {t('mobile.moments.attachImage', { count: pendingImages.length, max: MAX_IMAGES_PER_POST })}
-          </Button>
-          <Button type="primary" icon={<Send size={16} />} onClick={() => void publish()} disabled={!canPublish} loading={publishing}>
-            {t('mobile.moments.publish')}
-          </Button>
+      {!isUnavailable && feed.loadState === 'error' && feed.posts.length === 0 && (
+        <MomentsFeedError message={feed.errorMessage} onRetry={feed.loadFeed} />
+      )}
+
+      {!isUnavailable && feed.loadState === 'idle' && feed.posts.length === 0 && (
+        <MomentsFeedEmpty />
+      )}
+
+      {/* Feed list — prototype card layout */}
+      {!isUnavailable && feed.posts.length > 0 && (
+        <div className="moments-feed" role="feed" aria-label={t('mobile.moments.title')}>
+          {feed.posts.map((post) => (
+            <MomentFeedItem
+              key={post.id}
+              post={post}
+              onReact={(postId, kind) => void handleReact(postId, kind)}
+              onOpenComments={handleOpenComments}
+              onOpenDetail={handleOpenDetail}
+            />
+          ))}
+
+          {/* Load more trigger */}
+          {feed.hasMore && feed.loadState === 'idle' && (
+            <div className="moments-feed-load-more">
+              <Button type="text" onClick={feed.loadMore}>
+                {t('mobile.moments.feed.loadMore')}
+              </Button>
+            </div>
+          )}
+
+          {feed.loadState === 'loading-more' && (
+            <div className="moments-feed-loading-more">
+              <Text type="secondary">{t('mobile.moments.feed.loadingMore')}</Text>
+            </div>
+          )}
+
+          {!feed.hasMore && (
+            <div className="moments-feed-end">
+              <Text type="secondary">{t('mobile.moments.feed.noMore')}</Text>
+            </div>
+          )}
         </div>
-      </section>
+      )}
     </div>
   );
 }

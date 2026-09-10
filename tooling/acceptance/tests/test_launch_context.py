@@ -651,6 +651,30 @@ class LaunchContextProtocolTests(unittest.TestCase):
         self.assertLess(handler.dispatch_times[0], handler.deadlines[0])
         self.assertTrue(close_context(context, client).succeeded)
 
+    def test_cross_process_deadline_translates_to_parent_monotonic_clock(
+        self,
+    ) -> None:
+        handler = DeadlineRecordingHandler()
+        context = new_context(handler, request_timeout_seconds=1_000)
+        context._child_monotonic_offset = 500
+        assert context._identity is not None
+        request: dict[str, object] = {
+            "requestId": "cross-process-clock",
+            **context._identity,
+            "capability": "synthetic.echo",
+            "operation": "echo",
+            "payload": {},
+            "timeoutSeconds": 1_000,
+            "deadlineMonotonic": 10.0,
+        }
+        request["requestDigest"] = launch_context_module._digest(request)
+
+        encoded = context._dispatch_request(request)
+        response = json.loads(encoded.decode("utf-8"))
+
+        self.assertEqual(response["status"], "OK")
+        self.assertEqual(handler.deadlines, [510.0])
+
     def test_request_expired_on_arrival_returns_encoded_typed_timeout(
         self,
     ) -> None:

@@ -3,26 +3,45 @@ use crate::inbox::{
     DirectMessageProcessor, PublicEventProcessor,
 };
 use crate::proto::chat::{
-    conversation_event, DeviceEventDelivery, DeviceQueueItem, DeviceQueuePayloadType,
+    conversation_event, DeviceEventDelivery, DeviceInboxPayloadType, DurableDeviceInboxItem,
     PreparedEndpointPayloadKind,
 };
 use crate::store::MessagingRepository;
 use prost::Message;
 use std::sync::Arc;
 
+pub fn is_mls_sender_public_event(delivery: &DeviceEventDelivery) -> bool {
+    matches!(
+        delivery
+            .event
+            .as_ref()
+            .and_then(|event| event.payload.as_ref()),
+        Some(
+            conversation_event::Payload::MembershipTransitionCommitted(_)
+                | conversation_event::Payload::ConversationCreated(_)
+        )
+    )
+}
+
 pub trait MlsItemConsumer: Send + Sync {
     fn consume_application(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String>;
-    fn consume_transition(&self, item: &DeviceQueueItem, consumer_epoch: u64)
-        -> Result<(), String>;
-    fn consume_retirement(&self, item: &DeviceQueueItem, consumer_epoch: u64)
-        -> Result<(), String>;
+    fn consume_transition(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), String>;
+    fn consume_retirement(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), String>;
     fn consume_sender_transition(
         &self,
-        item: &DeviceQueueItem,
+        item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String>;
 }
@@ -56,13 +75,13 @@ impl<R: MessagingRepository, M: MlsItemConsumer> MessagingItemConsumer<R, M> {
 impl<R: MessagingRepository, M: MlsItemConsumer> ClaimedItemConsumer
     for MessagingItemConsumer<R, M>
 {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
-        let payload_type = DeviceQueuePayloadType::try_from(item.payload_type)
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+        let payload_type = DeviceInboxPayloadType::try_from(item.payload_type)
             .map_err(|_| "messaging queue payload type is invalid".to_string())?;
-        if payload_type == DeviceQueuePayloadType::DeviceReceipt {
+        if payload_type == DeviceInboxPayloadType::DeviceReceipt {
             return self.delivery_receipt.consume(item, consumer_epoch);
         }
-        if payload_type != DeviceQueuePayloadType::ConversationEvent {
+        if payload_type != DeviceInboxPayloadType::ConversationEvent {
             return Err("messaging consumer received unsupported queue payload type".to_string());
         }
         let delivery = DeviceEventDelivery::decode(item.opaque_payload.as_slice())
@@ -83,15 +102,10 @@ impl<R: MessagingRepository, M: MlsItemConsumer> ClaimedItemConsumer
                 self.mls.consume_retirement(item, consumer_epoch)
             }
             PreparedEndpointPayloadKind::PublicEvent => {
-                match delivery
-                    .event
-                    .as_ref()
-                    .and_then(|event| event.payload.as_ref())
-                {
-                    Some(conversation_event::Payload::MembershipTransitionCommitted(_)) => {
-                        self.mls.consume_sender_transition(item, consumer_epoch)
-                    }
-                    _ => self.public_event.consume(item, consumer_epoch),
+                if is_mls_sender_public_event(&delivery) {
+                    self.mls.consume_sender_transition(item, consumer_epoch)
+                } else {
+                    self.public_event.consume(item, consumer_epoch)
                 }
             }
             PreparedEndpointPayloadKind::ConversationState => {
@@ -101,5 +115,44 @@ impl<R: MessagingRepository, M: MlsItemConsumer> ClaimedItemConsumer
                 Err("messaging consumer endpoint payload kind is unsupported".to_string())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::proto::chat::{
+        ConversationCreatedFact, ConversationEvent, MembershipTransitionCommittedFact,
+        MessageCommittedFact,
+    };
+
+    #[test]
+    fn group_creation_and_membership_events_use_mls_sender_processing() {
+        for payload in [
+            conversation_event::Payload::ConversationCreated(ConversationCreatedFact::default()),
+            conversation_event::Payload::MembershipTransitionCommitted(
+                MembershipTransitionCommittedFact::default(),
+            ),
+        ] {
+            let delivery = DeviceEventDelivery {
+                event: Some(ConversationEvent {
+                    payload: Some(payload),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            assert!(is_mls_sender_public_event(&delivery));
+        }
+
+        let message = DeviceEventDelivery {
+            event: Some(ConversationEvent {
+                payload: Some(conversation_event::Payload::MessageCommitted(
+                    MessageCommittedFact::default(),
+                )),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(!is_mls_sender_public_event(&message));
     }
 }

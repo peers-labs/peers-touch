@@ -601,6 +601,7 @@ func (x *TurnSnapshot) GetUpdatedAt() *timestamppb.Timestamp {
 type CancelledPayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Reason        string                 `protobuf:"bytes,1,opt,name=reason,proto3" json:"reason,omitempty"`
+	OutcomeError  *ErrorPayload          `protobuf:"bytes,2,opt,name=outcome_error,json=outcomeError,proto3" json:"outcome_error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -640,6 +641,13 @@ func (x *CancelledPayload) GetReason() string {
 		return x.Reason
 	}
 	return ""
+}
+
+func (x *CancelledPayload) GetOutcomeError() *ErrorPayload {
+	if x != nil {
+		return x.OutcomeError
+	}
+	return nil
 }
 
 type CatchupDonePayload struct {
@@ -1522,9 +1530,10 @@ const file_domain_agent_turn_stream_proto_rawDesc = "" +
 	"\rlast_sequence\x18\x06 \x01(\x04R\flastSequence\x12'\n" +
 	"\x0fterminal_reason\x18\a \x01(\tR\x0eterminalReason\x129\n" +
 	"\n" +
-	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"*\n" +
+	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"y\n" +
 	"\x10CancelledPayload\x12\x16\n" +
-	"\x06reason\x18\x01 \x01(\tR\x06reason\"9\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\x12M\n" +
+	"\routcome_error\x18\x02 \x01(\v2(.peers_touch.model.agent.v1.ErrorPayloadR\foutcomeError\"9\n" +
 	"\x12CatchupDonePayload\x12#\n" +
 	"\rlast_sequence\x18\x01 \x01(\x04R\flastSequence\"!\n" +
 	"\vTextPayload\x12\x12\n" +
@@ -1677,17 +1686,18 @@ var file_domain_agent_turn_stream_proto_depIdxs = []int32{
 	5,  // 15: peers_touch.model.agent.v1.TurnStreamEvent.catchup_done:type_name -> peers_touch.model.agent.v1.CatchupDonePayload
 	20, // 16: peers_touch.model.agent.v1.TurnSnapshot.status:type_name -> peers_touch.model.agent.v1.TurnStatus
 	19, // 17: peers_touch.model.agent.v1.TurnSnapshot.updated_at:type_name -> google.protobuf.Timestamp
-	19, // 18: peers_touch.model.agent.v1.ToolApprovalRequiredPayload.expires_at:type_name -> google.protobuf.Timestamp
-	21, // 19: peers_touch.model.agent.v1.ToolApprovalDecisionPayload.actor_ref:type_name -> peers_touch.model.actor.v1.ActorRef
-	19, // 20: peers_touch.model.agent.v1.ToolApprovalDecisionPayload.decided_at:type_name -> google.protobuf.Timestamp
-	18, // 21: peers_touch.model.agent.v1.ErrorPayload.details:type_name -> peers_touch.model.agent.v1.ErrorPayload.DetailsEntry
-	17, // 22: peers_touch.model.agent.v1.DonePayload.turn_summary:type_name -> peers_touch.model.agent.v1.TurnSummary
-	20, // 23: peers_touch.model.agent.v1.TurnSummary.status:type_name -> peers_touch.model.agent.v1.TurnStatus
-	24, // [24:24] is the sub-list for method output_type
-	24, // [24:24] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	15, // 18: peers_touch.model.agent.v1.CancelledPayload.outcome_error:type_name -> peers_touch.model.agent.v1.ErrorPayload
+	19, // 19: peers_touch.model.agent.v1.ToolApprovalRequiredPayload.expires_at:type_name -> google.protobuf.Timestamp
+	21, // 20: peers_touch.model.agent.v1.ToolApprovalDecisionPayload.actor_ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	19, // 21: peers_touch.model.agent.v1.ToolApprovalDecisionPayload.decided_at:type_name -> google.protobuf.Timestamp
+	18, // 22: peers_touch.model.agent.v1.ErrorPayload.details:type_name -> peers_touch.model.agent.v1.ErrorPayload.DetailsEntry
+	17, // 23: peers_touch.model.agent.v1.DonePayload.turn_summary:type_name -> peers_touch.model.agent.v1.TurnSummary
+	20, // 24: peers_touch.model.agent.v1.TurnSummary.status:type_name -> peers_touch.model.agent.v1.TurnStatus
+	25, // [25:25] is the sub-list for method output_type
+	25, // [25:25] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_turn_stream_proto_init() }

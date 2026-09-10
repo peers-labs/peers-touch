@@ -7,6 +7,10 @@
 
 ---
 
+All Chat journeys enter through Conversation at `/conversation/*`. Device,
+Inbox, Recovery, Key Exchange, and Federation calls use their resource-owner
+APIs; the Device Messaging Engine remains an internal Desktop/Mobile runtime.
+
 ## 1. Journey Index
 
 | ID | Journey | Capabilities |

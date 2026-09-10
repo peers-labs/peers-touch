@@ -8,11 +8,10 @@
 //
 // 2026-04-09: Initial creation. Full 1:1 mapping of all 237 tauri commands.
 
+use std::io::{self, Read};
 use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use ed25519_dalek::Signer;
-use rand::rngs::OsRng;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
@@ -21,7 +20,6 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use crate::contracts::*;
 use crate::domain::crypto::{self};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::local_chat_store;
 use crate::state::AppState;
 
 // -------------------------------------------------------------------------
@@ -29,14 +27,15 @@ use crate::state::AppState;
 // -------------------------------------------------------------------------
 use crate::application::account as app_account;
 use crate::application::admin as app_admin;
+use crate::application::agent_growth as app_agent_growth;
 use crate::application::agent_orchestration as app_agent_orchestration;
 use crate::application::agent_turn as app_agent_turn;
 use crate::application::agents as app_agents;
 use crate::application::applet_store as app_applet_store;
 use crate::application::applets as app_applets;
 use crate::application::auth::service as app_auth;
+use crate::application::capability_authority as app_capability_authority;
 use crate::application::channels as app_channels;
-use crate::application::chat as app_chat;
 use crate::application::chat_storage;
 use crate::application::cron as app_cron;
 use crate::application::federation as app_federation;
@@ -51,6 +50,7 @@ use crate::application::oauth2 as app_oauth2;
 use crate::application::oss as app_oss;
 use crate::application::profile as app_profile;
 use crate::application::provider as app_provider;
+use crate::application::runtime_evidence as app_runtime_evidence;
 use crate::application::search as app_search;
 use crate::application::settings as app_settings;
 use crate::application::skills as app_skills;
@@ -62,9 +62,11 @@ use crate::application::tts as app_tts;
 // Actor & chat modules use station_client + proto directly
 use crate::infrastructure::station_client;
 use crate::interface::tauri_commands::oss::{
-    safe_temp_filename, validate_oss_upload_scope, OssUploadAttachmentBytesInput,
+    safe_temp_filename, OssKeyInput, OssListMyFilesInput, OssResolveUrlInput,
+    OssUploadAttachmentBytesInput,
 };
 use crate::model;
+use messaging_core::proto::{actor_device_ptid, actor_device_ref, actor_ref};
 use prost::Message;
 use reqwest::Method;
 use ulid::Ulid;
@@ -72,6 +74,185 @@ use ulid::Ulid;
 const DEFAULT_PORT: u16 = 3030;
 const POOL_SIZE: usize = 8;
 const MAX_FRONTEND_TELEMETRY_BATCH_EVENTS: usize = 500;
+
+struct GatewayRequestDiagnostics {
+    active_workers_at_enqueue: usize,
+    queue_wait_ms: u128,
+    queued_at_enqueue: usize,
+}
+
+struct AgentStreamBody<R> {
+    inner: R,
+    station_path: &'static str,
+    closed: bool,
+}
+
+impl<R> AgentStreamBody<R> {
+    fn new(inner: R, station_path: &'static str) -> Self {
+        Self {
+            inner,
+            station_path,
+            closed: false,
+        }
+    }
+}
+
+impl<R: Read> Read for AgentStreamBody<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if self.closed {
+            return Ok(0);
+        }
+        loop {
+            match self.inner.read(buffer) {
+                Ok(0) => {
+                    self.closed = true;
+                    return Ok(0);
+                }
+                Ok(read) => return Ok(read),
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) => {
+                    self.closed = true;
+                    tracing::warn!(
+                        path = self.station_path,
+                        error = %error,
+                        "Agent stream upstream transport closed"
+                    );
+                    return Ok(0);
+                }
+            }
+        }
+    }
+}
+
+// #region debug-point D-E:foundation-gateway-dispatch
+fn report_foundation_gateway_debug(stage: &str, data: Value) {
+    if std::env::var("PT_DESKTOP_E2E").as_deref() != Ok("true") {
+        return;
+    }
+    let payload = json!({
+        "sessionId": "foundation-identity-boot",
+        "runId": "pre-fix",
+        "hypothesisId": "D-E",
+        "location": "http_gateway/mod.rs:handle_request",
+        "msg": format!("[DEBUG] {stage}"),
+        "data": data,
+        "ts": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0),
+    });
+    let _ = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_millis(100))
+        .timeout(std::time::Duration::from_millis(250))
+        .build()
+        .and_then(|client| {
+            client
+                .post("http://127.0.0.1:7778/event")
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(payload.to_string())
+                .send()
+        });
+}
+// #endregion
+
+// #region debug-point B-D:foundation-queue-stream
+fn foundation_queue_stream_request(body: &str) -> Option<(&'static str, u64)> {
+    let payload: Value = serde_json::from_str(body).ok()?;
+    let user_input = payload.get("user_input").and_then(Value::as_str)?;
+    if user_input == "Write a detailed 1200-word numbered response about reliable queues." {
+        return Some(("active", 0));
+    }
+    if user_input == "Overflow" {
+        return Some(("overflow", 0));
+    }
+    let queue_index = user_input.strip_prefix("Queued ")?.parse::<u64>().ok()?;
+    Some(("queued", queue_index))
+}
+
+fn report_foundation_queue_stream_debug(
+    stage: &str,
+    request_kind: &str,
+    queue_index: u64,
+    data: Value,
+) {
+    if std::env::var("PT_DESKTOP_E2E").as_deref() != Ok("true") {
+        return;
+    }
+    let payload = json!({
+        "sessionId": "foundation-queue-capacity",
+        "runId": "post-fix-2",
+        "hypothesisId": "B-D",
+        "location": "http_gateway/mod.rs:handle_agent_stream_proxy",
+        "msg": format!("[DEBUG] {stage}"),
+        "data": {
+            "requestKind": request_kind,
+            "queueIndex": queue_index,
+            "transport": data,
+        },
+        "ts": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0),
+    });
+    let _ = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_millis(100))
+        .timeout(std::time::Duration::from_millis(250))
+        .build()
+        .and_then(|client| {
+            client
+                .post("http://127.0.0.1:7786/event")
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(payload.to_string())
+                .send()
+        });
+}
+// #endregion
+
+// #region debug-point B-D:foundation-fault-ack
+fn foundation_fault_stream_request(body: &str) -> bool {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|payload| {
+            payload
+                .get("user_input")
+                .and_then(Value::as_str)
+                .map(|user_input| {
+                    user_input
+                        == "Write a detailed 2000-word numbered guide to durable event stream recovery."
+                })
+        })
+        .unwrap_or(false)
+}
+
+fn report_foundation_fault_stream_debug(stage: &str, data: Value) {
+    if std::env::var("PT_DESKTOP_E2E").as_deref() != Ok("true") {
+        return;
+    }
+    let payload = json!({
+        "sessionId": "foundation-fault-ack",
+        "runId": "pre-fix",
+        "hypothesisId": "B-D",
+        "location": "http_gateway/mod.rs:handle_agent_stream_proxy",
+        "msg": format!("[DEBUG] {stage}"),
+        "data": data,
+        "ts": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0),
+    });
+    let _ = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_millis(100))
+        .timeout(std::time::Duration::from_millis(250))
+        .build()
+        .and_then(|client| {
+            client
+                .post("http://127.0.0.1:7783/event")
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(payload.to_string())
+                .send()
+        });
+}
+// #endregion
 
 #[derive(Clone)]
 enum GatewayRuntime {
@@ -162,8 +343,20 @@ fn start_with_runtime(state: Arc<AppState>, runtime: GatewayRuntime) {
 
                 let state = Arc::clone(&state);
                 let runtime = runtime.clone();
+                let enqueued_at = std::time::Instant::now();
+                let active_workers_at_enqueue = pool.active_count();
+                let queued_at_enqueue = pool.queued_count();
                 pool.execute(move || {
-                    handle_request(request, &state, &runtime);
+                    handle_request(
+                        request,
+                        &state,
+                        &runtime,
+                        GatewayRequestDiagnostics {
+                            active_workers_at_enqueue,
+                            queue_wait_ms: enqueued_at.elapsed().as_millis(),
+                            queued_at_enqueue,
+                        },
+                    );
                 });
             }
         })
@@ -174,7 +367,12 @@ fn start_with_runtime(state: Arc<AppState>, runtime: GatewayRuntime) {
 // Request handling
 // -------------------------------------------------------------------------
 
-fn handle_request(mut request: tiny_http::Request, state: &AppState, runtime: &GatewayRuntime) {
+fn handle_request(
+    mut request: tiny_http::Request,
+    state: &AppState,
+    runtime: &GatewayRuntime,
+    diagnostics: GatewayRequestDiagnostics,
+) {
     // CORS preflight
     if *request.method() == tiny_http::Method::Options {
         let response = tiny_http::Response::empty(200)
@@ -227,6 +425,20 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState, runtime: &G
         return;
     }
 
+    if request.url() == "/agent/turn/stream" {
+        handle_agent_stream_proxy(request, state, "/sub-agent/agent/turn/stream", &diagnostics);
+        return;
+    }
+    if request.url() == "/agent/turn/events" {
+        handle_agent_stream_proxy(
+            request,
+            state,
+            "/sub-agent/agent/conversation/events",
+            &diagnostics,
+        );
+        return;
+    }
+
     // Read body
     let mut body = String::new();
     if let Err(e) = request.as_reader().read_to_string(&mut body) {
@@ -265,7 +477,26 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState, runtime: &G
         None => raw_args,
     };
 
+    let dispatch_started_at = std::time::Instant::now();
+    report_foundation_gateway_debug(
+        "gateway-dispatch-started",
+        json!({
+            "command": cmd,
+            "activeWorkersAtEnqueue": diagnostics.active_workers_at_enqueue,
+            "queuedAtEnqueue": diagnostics.queued_at_enqueue,
+            "queueWaitMs": diagnostics.queue_wait_ms,
+        }),
+    );
     let result = dispatch(cmd, args, state, runtime);
+    report_foundation_gateway_debug(
+        "gateway-dispatch-completed",
+        json!({
+            "command": cmd,
+            "dispatchDurationMs": dispatch_started_at.elapsed().as_millis(),
+            "resultCode": result.get("code").cloned().unwrap_or(Value::Null),
+            "resultOk": result.get("ok").and_then(Value::as_bool),
+        }),
+    );
 
     let response_body = result.to_string();
     let response = tiny_http::Response::from_string(response_body)
@@ -273,6 +504,179 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState, runtime: &G
         .with_header(content_type_json())
         .with_header(cors_origin());
     let _ = request.respond(response);
+}
+
+fn handle_agent_stream_proxy(
+    mut request: tiny_http::Request,
+    state: &AppState,
+    station_path: &'static str,
+    diagnostics: &GatewayRequestDiagnostics,
+) {
+    let Some(token) = http_gateway_bearer_token(state) else {
+        let response = tiny_http::Response::from_string(
+            json!({"ok": false, "error": "authentication required"}).to_string(),
+        )
+        .with_status_code(401)
+        .with_header(content_type_json())
+        .with_header(cors_origin());
+        let _ = request.respond(response);
+        return;
+    };
+    let mut body = String::new();
+    if request.as_reader().read_to_string(&mut body).is_err() {
+        let response = tiny_http::Response::from_string("invalid stream request")
+            .with_status_code(400)
+            .with_header(cors_origin());
+        let _ = request.respond(response);
+        return;
+    }
+    let queue_request = (std::env::var("PT_DESKTOP_E2E").as_deref() == Ok("true"))
+        .then(|| foundation_queue_stream_request(&body))
+        .flatten();
+    let fault_request = std::env::var("PT_DESKTOP_E2E").as_deref() == Ok("true")
+        && foundation_fault_stream_request(&body);
+    let stream_started_at = std::time::Instant::now();
+    if let Some((request_kind, queue_index)) = queue_request {
+        report_foundation_queue_stream_debug(
+            "stream-proxy-started",
+            request_kind,
+            queue_index,
+            json!({
+                "activeWorkersAtEnqueue": diagnostics.active_workers_at_enqueue,
+                "queuedAtEnqueue": diagnostics.queued_at_enqueue,
+                "queueWaitMs": diagnostics.queue_wait_ms,
+            }),
+        );
+    }
+    let client = match reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            let response = tiny_http::Response::from_string(error.to_string())
+                .with_status_code(500)
+                .with_header(cors_origin());
+            let _ = request.respond(response);
+            return;
+        }
+    };
+    let station_url = station_client::station_base_url();
+    if fault_request {
+        let route = reqwest::Url::parse(&station_url).ok();
+        report_foundation_fault_stream_debug(
+            "gateway-stream-started",
+            json!({
+                "stationPath": station_path,
+                "stationIsLoopback": route
+                    .as_ref()
+                    .and_then(reqwest::Url::host_str)
+                    == Some("127.0.0.1"),
+                "stationPort": route.as_ref().and_then(reqwest::Url::port_or_known_default),
+                "activeWorkersAtEnqueue": diagnostics.active_workers_at_enqueue,
+                "queuedAtEnqueue": diagnostics.queued_at_enqueue,
+                "queueWaitMs": diagnostics.queue_wait_ms,
+            }),
+        );
+    }
+    let upstream = client
+        .post(format!("{station_url}{station_path}"))
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header(reqwest::header::ACCEPT, "text/event-stream")
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(body)
+        .send();
+    let upstream = match upstream {
+        Ok(response) => response,
+        Err(error) => {
+            if fault_request {
+                report_foundation_fault_stream_debug(
+                    "gateway-upstream-error",
+                    json!({
+                        "elapsedMs": stream_started_at.elapsed().as_millis(),
+                        "isConnect": error.is_connect(),
+                        "isTimeout": error.is_timeout(),
+                    }),
+                );
+            }
+            let response = tiny_http::Response::from_string(error.to_string())
+                .with_status_code(502)
+                .with_header(cors_origin());
+            let _ = request.respond(response);
+            return;
+        }
+    };
+    let status = upstream.status().as_u16();
+    let turn_id_header = upstream
+        .headers()
+        .get("x-agent-turn-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| format!("X-Agent-Turn-ID: {value}").parse().ok());
+    if fault_request {
+        report_foundation_fault_stream_debug(
+            "gateway-upstream-admitted",
+            json!({
+                "elapsedMs": stream_started_at.elapsed().as_millis(),
+                "status": status,
+                "turnIdPresent": turn_id_header.is_some(),
+            }),
+        );
+    }
+    if let Some((request_kind, queue_index)) = queue_request {
+        report_foundation_queue_stream_debug(
+            "stream-upstream-admitted",
+            request_kind,
+            queue_index,
+            json!({
+                "elapsedMs": stream_started_at.elapsed().as_millis(),
+                "status": status,
+                "turnIdPresent": turn_id_header.is_some(),
+            }),
+        );
+    }
+    let mut response_headers = vec![
+        "Content-Type: text/event-stream; charset=utf-8"
+            .parse()
+            .unwrap(),
+        "Cache-Control: no-cache".parse().unwrap(),
+        "Access-Control-Expose-Headers: X-Agent-Turn-ID"
+            .parse()
+            .unwrap(),
+        cors_origin(),
+    ];
+    if let Some(header) = turn_id_header {
+        response_headers.push(header);
+    }
+    let response = tiny_http::Response::new(
+        tiny_http::StatusCode(status),
+        response_headers,
+        AgentStreamBody::new(upstream, station_path),
+        None,
+        None,
+    );
+    let response_result = request.respond(response);
+    if fault_request {
+        report_foundation_fault_stream_debug(
+            "gateway-stream-completed",
+            json!({
+                "elapsedMs": stream_started_at.elapsed().as_millis(),
+                "responseOk": response_result.is_ok(),
+            }),
+        );
+    }
+    if let Some((request_kind, queue_index)) = queue_request {
+        report_foundation_queue_stream_debug(
+            "stream-proxy-completed",
+            request_kind,
+            queue_index,
+            json!({
+                "elapsedMs": stream_started_at.elapsed().as_millis(),
+                "responseOk": response_result.is_ok(),
+            }),
+        );
+    }
 }
 
 // -------------------------------------------------------------------------
@@ -464,6 +868,46 @@ fn bind_gateway_session(
     Ok(())
 }
 
+fn bind_gateway_auth_result(state: &AppState, result: AppResult<AuthSessionPayload>) -> Value {
+    if !result.ok {
+        return to_json(result);
+    }
+    let Some(payload) = result.data.as_ref() else {
+        return to_json(AppResult::<AuthSessionPayload>::fail(
+            ErrorCode::Unauthorized,
+            "authenticated response is missing session data",
+            None,
+        ));
+    };
+    let Some(actor_ptid) = payload.actor_ptid.clone() else {
+        return to_json(AppResult::<AuthSessionPayload>::fail(
+            ErrorCode::Unauthorized,
+            "authenticated response is missing canonical actor PTID",
+            None,
+        ));
+    };
+    let Some(token) = payload.session_token.clone() else {
+        return to_json(AppResult::<AuthSessionPayload>::fail(
+            ErrorCode::Unauthorized,
+            "authenticated response is missing session token",
+            None,
+        ));
+    };
+    let Some(account_id) =
+        crate::infrastructure::auth_identity::find_account_id_by_actor_ptid(&actor_ptid)
+    else {
+        return to_json(AppResult::<AuthSessionPayload>::fail(
+            ErrorCode::Unauthorized,
+            "authenticated actor has no local account",
+            None,
+        ));
+    };
+    if let Err(error) = bind_gateway_session(state, account_id, actor_ptid, token) {
+        return error;
+    }
+    to_json(result)
+}
+
 fn gateway_access_context(state: &AppState) -> Result<(String, String, String), Value> {
     let session = gateway_session(state).ok_or_else(|| to_json(unauthorized_error()))?;
     if !session.actor.ptid.starts_with("ptid:") || session.jwt.trim().is_empty() {
@@ -536,13 +980,6 @@ macro_rules! require_gateway_user_scope {
             Err(error) => return error,
         }
     };
-}
-
-fn now_unix_seconds_i32() -> i32 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs().min(i32::MAX as u64) as i32)
-        .unwrap_or(0)
 }
 
 #[derive(Debug, Deserialize)]
@@ -675,26 +1112,6 @@ fn optional_string_arg(args: &Value, snake_case: &str, camel_case: &str) -> Opti
     (!value.trim().is_empty()).then_some(value)
 }
 
-fn u32_arg(args: &Value, snake_case: &str, camel_case: &str) -> u32 {
-    args.get(snake_case)
-        .or_else(|| args.get(camel_case))
-        .and_then(Value::as_u64)
-        .unwrap_or_default() as u32
-}
-
-fn authenticated_crypto_context(state: &AppState) -> Result<(String, String), Value> {
-    let actor_ptid = actor_ptid_from_state(state)
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::Unauthorized,
-                "Authentication required — please log in",
-                None,
-            ))
-        })?;
-    Ok((actor_ptid, user_scope_from_state(state)?))
-}
-
 fn dispatch_oss_upload_agent_attachment_bytes(args: Value, state: &AppState) -> Value {
     let input = match parse_args::<OssUploadAttachmentBytesInput>(args) {
         Ok(v) => v,
@@ -712,18 +1129,6 @@ fn dispatch_oss_upload_agent_attachment_bytes(args: Value, state: &AppState) -> 
         ));
     }
 
-    let vis = input.visibility.trim().to_ascii_lowercase();
-    let (bucket, visibility, chat_sid) = match validate_oss_upload_scope(
-        input.bucket.as_str(),
-        vis.as_str(),
-        &input.chat_session_id,
-    ) {
-        Ok(scope) => scope,
-        Err(error) => return to_json(error),
-    };
-    let bucket = bucket.to_string();
-    let visibility = visibility.to_string();
-    let chat_sid = chat_sid.map(str::to_string);
     let filename = safe_temp_filename(input.filename.as_str());
     let mime_override = input.mime_type.trim().to_string();
     let temp_path = std::env::temp_dir().join(format!("peers-agent-{}-{}", Ulid::new(), filename));
@@ -737,18 +1142,12 @@ fn dispatch_oss_upload_agent_attachment_bytes(args: Value, state: &AppState) -> 
     }
     let cleanup = app_oss::TempFileCleanup::new(temp_path.clone(), "HTTP Agent attachment");
 
-    let result = app_oss::upload_attachment_with_mime(
+    let result = app_oss::upload_agent_attachment(
         temp_path.to_string_lossy().as_ref(),
         &token,
-        "agent",
-        bucket.as_str(),
-        visibility.as_str(),
-        chat_sid.as_deref(),
-        if mime_override.is_empty() {
-            None
-        } else {
-            Some(mime_override.as_str())
-        },
+        &input.conversation_id,
+        &filename,
+        &mime_override,
     );
     cleanup.remove_now();
     to_json(result)
@@ -927,295 +1326,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 }),
             ))
         }
-        "crypto_generate_identity" => {
-            let actor_ptid = match actor_ptid_from_state(state) {
-                Some(id) if !id.trim().is_empty() => id,
-                _ => {
-                    return to_json(AppResult::<StubPayload>::fail(
-                        ErrorCode::Unauthorized,
-                        "Authentication required — please log in",
-                        None,
-                    ));
-                }
-            };
-            let identity_key_ref = crate::infrastructure::local_scope::LocalScope::from_actor_ptid(
-                actor_ptid.as_str(),
-            )
-            .identity_key_ref();
-            let kp = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
-                Ok(k) => k,
-                Err(reason) => {
-                    return to_json(AppResult::<StubPayload>::fail(
-                        ErrorCode::InternalError,
-                        format!("Identity operation failed: {}", reason),
-                        None,
-                    ));
-                }
-            };
-            to_json(to_stub(
-                "crypto_generate_identity",
-                json!({
-                    "fingerprint": crypto::identity_fingerprint_hex(&kp.verifying_key),
-                    "public_key": hex::encode(kp.verifying_key.to_bytes()),
-                }),
-            ))
-        }
-        "crypto_generate_key_bundle" => {
-            let actor_ptid = match actor_ptid_from_state(state) {
-                Some(id) if !id.trim().is_empty() => id,
-                _ => {
-                    return to_json(AppResult::<StubPayload>::fail(
-                        ErrorCode::Unauthorized,
-                        "Authentication required — please log in",
-                        None,
-                    ));
-                }
-            };
-            let user_scope = require_gateway_user_scope!(state);
-            let identity_key_ref = crate::infrastructure::local_scope::LocalScope::from_actor_ptid(
-                actor_ptid.as_str(),
-            )
-            .identity_key_ref();
-            let ik = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
-                Ok(k) => k,
-                Err(reason) => {
-                    return to_json(AppResult::<StubPayload>::fail(
-                        ErrorCode::InternalError,
-                        format!("Identity operation failed: {}", reason),
-                        None,
-                    ));
-                }
-            };
-
-            let spk_sk = StaticSecret::random_from_rng(OsRng);
-            let spk_pub = PublicKey::from(&spk_sk);
-            let spk_pub_bytes = spk_pub.to_bytes();
-            let spk_sig = ik.signing_key.sign(spk_pub_bytes.as_slice());
-            let spk_id = now_unix_seconds_i32();
-
-            if let Err(reason) = local_chat_store::crypto_store_signed_prekey(
-                user_scope.as_str(),
-                i64::from(spk_id),
-                spk_sk.to_bytes().as_slice(),
-            ) {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InternalError,
-                    format!("Failed to store signed pre-key: {}", reason),
-                    None,
-                ));
-            }
-
-            let mut opk_privs: Vec<Vec<u8>> = Vec::new();
-            let mut opk_pubs: Vec<[u8; 32]> = Vec::new();
-            for _ in 0..20 {
-                let opk_sk = StaticSecret::random_from_rng(OsRng);
-                let pk = PublicKey::from(&opk_sk);
-                opk_pubs.push(pk.to_bytes());
-                opk_privs.push(opk_sk.to_bytes().to_vec());
-            }
-            let opk_ids =
-                match local_chat_store::crypto_insert_opks(user_scope.as_str(), &opk_privs) {
-                    Ok(ids) => ids,
-                    Err(reason) => {
-                        return to_json(AppResult::<StubPayload>::fail(
-                            ErrorCode::InternalError,
-                            format!("Failed to store one-time pre-keys: {}", reason),
-                            None,
-                        ));
-                    }
-                };
-
-            to_json(to_stub(
-                "crypto_generate_key_bundle",
-                json!({
-                    "identityPublicKey": B64.encode(ik.verifying_key.to_bytes()),
-                    "signedPreKey": {
-                        "keyId": spk_id.to_string(),
-                        "publicKey": B64.encode(spk_pub_bytes),
-                        "signature": B64.encode(spk_sig.to_bytes()),
-                        "createdAtUnixMs": i64::from(spk_id) * 1000,
-                    },
-                    "oneTimePreKeys": opk_ids.iter().zip(opk_pubs.iter()).map(|(id, key)| json!({
-                        "keyId": id.to_string(),
-                        "publicKey": B64.encode(key),
-                    })).collect::<Vec<Value>>(),
-                    "supportedVersions": [1],
-                }),
-            ))
-        }
-        "crypto_init_session" => {
-            let (actor_ptid, user_scope) = match authenticated_crypto_context(state) {
-                Ok(context) => context,
-                Err(error) => return error,
-            };
-            let supported_versions = args
-                .get("supported_versions")
-                .or_else(|| args.get("supportedVersions"))
-                .and_then(Value::as_array)
-                .map(|values| {
-                    values
-                        .iter()
-                        .filter_map(Value::as_u64)
-                        .filter_map(|value| u32::try_from(value).ok())
-                        .collect()
-                })
-                .unwrap_or_default();
-            to_json(
-                crate::interface::tauri_commands::crypto::crypto_init_session_for_context(
-                    string_arg(&args, "session_id", "sessionId"),
-                    string_arg(&args, "conversation_id", "conversationId"),
-                    args.get("session_generation")
-                        .or_else(|| args.get("sessionGeneration"))
-                        .and_then(Value::as_u64)
-                        .unwrap_or(0),
-                    string_arg(&args, "peer_ptid", "peerPtid"),
-                    string_arg(&args, "peer_device_id", "peerDeviceId"),
-                    string_arg(&args, "peer_identity_public_key", "peerIdentityPublicKey"),
-                    string_arg(&args, "peer_signed_pre_key_id", "peerSignedPreKeyId"),
-                    string_arg(&args, "peer_signed_pre_key", "peerSignedPreKey"),
-                    string_arg(&args, "peer_signed_pre_key_sig", "peerSignedPreKeySig"),
-                    optional_string_arg(&args, "peer_one_time_pre_key_id", "peerOneTimePreKeyId"),
-                    optional_string_arg(&args, "peer_one_time_pre_key", "peerOneTimePreKey"),
-                    supported_versions,
-                    actor_ptid,
-                    user_scope,
-                ),
-            )
-        }
-        "crypto_accept_session" => {
-            let (actor_ptid, user_scope) = match authenticated_crypto_context(state) {
-                Ok(context) => context,
-                Err(error) => return error,
-            };
-            to_json(
-                crate::interface::tauri_commands::crypto::crypto_accept_session_for_context(
-                    string_arg(&args, "session_id", "sessionId"),
-                    string_arg(&args, "conversation_id", "conversationId"),
-                    args.get("session_generation")
-                        .or_else(|| args.get("sessionGeneration"))
-                        .and_then(Value::as_u64)
-                        .unwrap_or(0),
-                    string_arg(&args, "peer_ptid", "peerPtid"),
-                    string_arg(&args, "peer_device_id", "peerDeviceId"),
-                    string_arg(&args, "sender_identity_key", "senderIdentityKey"),
-                    string_arg(&args, "sender_ephemeral_key", "senderEphemeralKey"),
-                    string_arg(
-                        &args,
-                        "recipient_signed_pre_key_id",
-                        "recipientSignedPreKeyId",
-                    ),
-                    optional_string_arg(
-                        &args,
-                        "recipient_one_time_pre_key_id",
-                        "recipientOneTimePreKeyId",
-                    ),
-                    u32_arg(&args, "negotiated_version", "negotiatedVersion"),
-                    actor_ptid,
-                    user_scope,
-                ),
-            )
-        }
-        "crypto_session_status" => {
-            let (_, user_scope) = match authenticated_crypto_context(state) {
-                Ok(context) => context,
-                Err(error) => return error,
-            };
-            to_json(
-                crate::interface::tauri_commands::crypto::crypto_session_status_for_scope(
-                    string_arg(&args, "session_id", "sessionId"),
-                    user_scope,
-                ),
-            )
-        }
-        "crypto_list_sessions" => to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InvalidArgument,
-            "crypto_list_sessions is available through the native Tauri boundary",
-            None,
-        )),
-        "crypto_list_sessions_for_peer" => to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InvalidArgument,
-            format!(
-                "crypto_list_sessions_for_peer requires native endpoint context for {}",
-                string_arg(&args, "peer_ptid", "peerPtid")
-            ),
-            None,
-        )),
-        "crypto_encrypt" => {
-            let (_, user_scope) = match authenticated_crypto_context(state) {
-                Ok(context) => context,
-                Err(error) => return error,
-            };
-            let session_ids = args
-                .get("session_ids")
-                .or_else(|| args.get("sessionIds"))
-                .and_then(Value::as_array)
-                .map(|values| {
-                    values
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .map(str::to_string)
-                        .collect()
-                })
-                .unwrap_or_default();
-            to_json(
-                crate::interface::tauri_commands::crypto::crypto_encrypt_for_scope(
-                    session_ids,
-                    string_arg(&args, "plaintext", "plaintext"),
-                    string_arg(&args, "command_id", "commandId"),
-                    args.get("content_type")
-                        .or_else(|| args.get("contentType"))
-                        .and_then(Value::as_i64)
-                        .and_then(|value| i32::try_from(value).ok())
-                        .unwrap_or(0),
-                    optional_string_arg(&args, "reply_to_message_id", "replyToMessageId"),
-                    optional_string_arg(&args, "thread_root_message_id", "threadRootMessageId"),
-                    user_scope,
-                ),
-            )
-        }
-        "crypto_mark_session_ready" => {
-            let (_, user_scope) = match authenticated_crypto_context(state) {
-                Ok(context) => context,
-                Err(error) => return error,
-            };
-            to_json(
-                crate::interface::tauri_commands::crypto::crypto_mark_session_ready_for_scope(
-                    string_arg(&args, "session_id", "sessionId"),
-                    user_scope,
-                ),
-            )
-        }
-        "dr_encrypt" => {
-            let (_, user_scope) = match authenticated_crypto_context(state) {
-                Ok(context) => context,
-                Err(error) => return error,
-            };
-            to_json(
-                crate::interface::tauri_commands::crypto::dr_encrypt_for_scope(
-                    string_arg(&args, "session_id", "sessionId"),
-                    string_arg(&args, "plaintext", "plaintext"),
-                    user_scope,
-                ),
-            )
-        }
-        "dr_decrypt" => {
-            let (_, user_scope) = match authenticated_crypto_context(state) {
-                Ok(context) => context,
-                Err(error) => return error,
-            };
-            to_json(
-                crate::interface::tauri_commands::crypto::dr_decrypt_for_scope(
-                    string_arg(&args, "session_id", "sessionId"),
-                    string_arg(&args, "ciphertext", "ciphertext"),
-                    string_arg(&args, "ratchet_pub", "ratchetPub"),
-                    u32_arg(&args, "counter", "counter"),
-                    u32_arg(&args, "prev_counter", "prevCounter"),
-                    string_arg(&args, "nonce", "nonce"),
-                    u32_arg(&args, "version", "version"),
-                    user_scope,
-                ),
-            )
-        }
         "key_exchange_upload_bundle" => {
             let input = match parse_args::<KeyExchangeUploadInput>(args) {
                 Ok(v) => v,
@@ -1245,19 +1355,35 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ));
                 }
             };
-            let req = model::key_exchange::UploadKeyBundleRequest {
-                ik_pub: input.ik_pub,
-                spk_id: input.spk_id,
-                spk_pub: input.spk_pub,
-                spk_sig: input.spk_sig,
-                opk_ids: input.opk_ids,
-                opk_pubs: input.opk_pubs,
-                device_id,
-                supported_versions: vec![1],
+            if input.opk_ids.len() != input.opk_pubs.len() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "opk_ids and opk_pubs must have the same length",
+                    None,
+                ));
+            }
+            let req = model::key_exchange::UploadDirectKeyBundleRequest {
+                device: Some(actor_device_ref(actor_ptid, device_id)),
+                identity_key_public: input.ik_pub,
+                signed_pre_key_id: input.spk_id,
+                signed_pre_key_public: input.spk_pub,
+                signed_pre_key_signature: input.spk_sig,
+                one_time_pre_keys: input
+                    .opk_ids
+                    .into_iter()
+                    .zip(input.opk_pubs)
+                    .map(
+                        |(key_id, public_key)| model::key_exchange::DirectOneTimePreKey {
+                            key_id,
+                            public_key,
+                        },
+                    )
+                    .collect(),
+                supported_wire_versions: vec![1],
             };
             match station_client::request_proto::<
-                model::key_exchange::UploadKeyBundleRequest,
-                model::key_exchange::UploadKeyBundleResponse,
+                model::key_exchange::UploadDirectKeyBundleRequest,
+                model::key_exchange::UploadDirectKeyBundleResponse,
             >(
                 Method::POST,
                 "/key-exchange/keys/bundle",
@@ -1274,9 +1400,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
             };
             if input.ptid.trim().is_empty() {
                 return to_json(AppResult::<StubPayload>::fail(
@@ -1285,39 +1411,71 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     None,
                 ));
             }
-            let req = model::key_exchange::FetchKeyBundleRequest {
-                ptid: input.ptid,
-                device_id: input.device_id.unwrap_or_default(),
-                home_station_peer_id: input.home_station_peer_id.unwrap_or_default(),
+            let device_id = match device_install::get_or_create_device_id(&actor_ptid) {
+                Ok(device_id) => device_id,
+                Err(error) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("device_id: {error}"),
+                        None,
+                    ));
+                }
             };
-            match station_client::request_proto::<
-                model::key_exchange::FetchKeyBundleRequest,
-                model::key_exchange::FetchKeyBundleResponse,
+            let req = model::key_exchange::FetchDirectKeyBundlesRequest {
+                actor: Some(actor_ref(input.ptid)),
+                target_device_id: input.device_id.unwrap_or_default(),
+                home_station_peer_id: input.home_station_peer_id.unwrap_or_default(),
+                request_id: Ulid::new().to_string(),
+                requester: Some(actor_device_ref(actor_ptid, device_id.clone())),
+            };
+            match station_client::request_proto_for_device::<
+                model::key_exchange::FetchDirectKeyBundlesRequest,
+                model::key_exchange::FetchDirectKeyBundlesResponse,
             >(
                 Method::POST,
                 "/key-exchange/keys/bundle/fetch",
                 &token,
                 None,
                 Some(&req),
+                &device_id,
             ) {
                 Ok(r) => {
-                    let bundles_json: Vec<Value> = r
-                        .bundles
-                        .iter()
-                        .map(|b| {
-                            json!({
-                                "ptid": b.ptid,
-                                "device_id": b.device_id,
-                                "ik_pub": b.ik_pub,
-                                "fingerprint": wire::identity_fingerprint_hex(&b.ik_pub),
-                                "spk_pub": b.spk_pub,
-                                "spk_sig": b.spk_sig,
-                                "opks": b.opks,
-                                "published_at_unix_ms": b.published_at_unix_ms,
-                                "supported_versions": b.supported_versions,
-                            })
-                        })
-                        .collect();
+                    let mut bundles_json = Vec::with_capacity(r.bundles.len());
+                    for bundle in &r.bundles {
+                        let device = match bundle.device.as_ref() {
+                            Some(device) => device,
+                            None => {
+                                return to_json(AppResult::<StubPayload>::fail(
+                                    ErrorCode::InternalError,
+                                    "Station returned a key bundle without a device",
+                                    None,
+                                ));
+                            }
+                        };
+                        let ptid = match actor_device_ptid(device) {
+                            Ok(ptid) => ptid,
+                            Err(error) => {
+                                return to_json(AppResult::<StubPayload>::fail(
+                                    ErrorCode::InternalError,
+                                    error,
+                                    None,
+                                ));
+                            }
+                        };
+                        bundles_json.push(json!({
+                            "ptid": ptid,
+                            "device_id": device.device_id,
+                            "ik_pub": bundle.identity_key_public,
+                            "fingerprint": wire::identity_fingerprint_hex(&bundle.identity_key_public),
+                            "spk_id": bundle.signed_pre_key_id,
+                            "spk_pub": bundle.signed_pre_key_public,
+                            "spk_sig": bundle.signed_pre_key_signature,
+                            "opks": bundle.one_time_pre_keys.iter().map(|key| key.public_key.clone()).collect::<Vec<_>>(),
+                            "opk_ids": bundle.one_time_pre_keys.iter().map(|key| key.key_id).collect::<Vec<_>>(),
+                            "published_at_unix_ms": bundle.published_at_unix_ms,
+                            "supported_versions": bundle.supported_wire_versions,
+                        }));
+                    }
                     to_json(to_stub(
                         "key_exchange_fetch_bundle",
                         json!({ "bundles": bundles_json }),
@@ -2024,6 +2182,47 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         "oss_upload_agent_attachment_bytes" => {
             dispatch_oss_upload_agent_attachment_bytes(args, state)
         }
+        "oss_resolve_url" => {
+            let input = match parse_args::<OssResolveUrlInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_oss::oss_resolve_url(&input.uri, &token, &actor_ptid))
+        }
+        "oss_list_my_files" => {
+            let input = match parse_args::<OssListMyFilesInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            let query = app_oss::ListMyFilesQuery {
+                bucket: input.bucket,
+                visibility: input.visibility,
+                mime: input.mime,
+                include_deleted: input.include_deleted,
+                page: input.page,
+                page_size: input.page_size,
+            };
+            to_json(app_oss::oss_list_my_files(&token, &query))
+        }
+        "oss_delete_file" => {
+            let input = match parse_args::<OssKeyInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            to_json(app_oss::oss_delete_file(&token, &input.key))
+        }
 
         // =================================================================
         // Actor (state-dependent, proto-based)
@@ -2061,6 +2260,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     json!({
                         "actorPtid": actor_ptid, "username": a.username,
                         "displayName": a.display_name, "email": a.email, "avatar": a.avatar,
+                        "homeStationPeerId": a.home_station_peer_id,
                     })
                 })
                 .collect();
@@ -2100,11 +2300,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // Auth (state-dependent)
         // =================================================================
         "auth_login" => {
-            let input = match parse_args::<AuthLoginInput>(args) {
+            let mut input = match parse_args::<AuthLoginInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_auth::auth_login(input, state))
+            if input.device_type.is_none() {
+                input.device_type = Some("desktop-browser".to_string());
+            }
+            bind_gateway_auth_result(state, app_auth::auth_login(input, state))
         }
         // Interactive access-gate login chain (Email Login path). These mirror
         // the one-shot `auth_login` but drive the Station's pre-login gate
@@ -2118,14 +2321,24 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(app_auth::access_submit_invite_code(input))
         }
         "access_submit_login" => {
-            let input = match parse_args::<AccessSubmitLoginInput>(args) {
+            let mut input = match parse_args::<AccessSubmitLoginInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_auth::access_submit_login(input, state))
+            if input.device_type.is_none() {
+                input.device_type = Some("desktop-browser".to_string());
+            }
+            bind_gateway_auth_result(state, app_auth::access_submit_login(input, state))
         }
-        "auth_logout" => to_json(app_auth::auth_logout(state)),
-        "auth_restore_session" => to_json(app_auth::auth_restore_session(state)),
+        "auth_logout" => {
+            let result = app_auth::auth_logout(state);
+            state.sessions.unbind(HTTP_GATEWAY_SESSION_LABEL);
+            to_json(result)
+        }
+        "auth_restore_session" => bind_gateway_auth_result(
+            state,
+            app_auth::auth_restore_session_for_device(state, "desktop-browser"),
+        ),
         "auth_validate_token" => {
             let input = match parse_args::<AuthValidateTokenInput>(args) {
                 Ok(v) => v,
@@ -2176,96 +2389,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(app_settings::settings_set(state, input))
         }
         "settings_reset" => to_json(app_settings::settings_reset(state)),
-
-        // =================================================================
-        // Chat (no state)
-        // =================================================================
-        "chat_list_conversations" => to_json(app_chat::chat_list_conversations("")),
-        "chat_list_messages" => {
-            let input = match parse_args::<ChatListMessagesInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_list_messages("", input))
-        }
-        "chat_send_message" => {
-            let input = match parse_args::<ChatSendMessageInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_send_message("", input))
-        }
-        "chat_mark_read" => {
-            let input = match parse_args::<ChatMarkReadInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_mark_read("", input))
-        }
-        "chat_delete_conversation" => {
-            let input = match parse_args::<ChatConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_delete_conversation("", input))
-        }
-        "chat_rename_conversation" => {
-            let input = match parse_args::<ChatRenameConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_rename_conversation("", input))
-        }
-        "chat_duplicate_conversation" => {
-            let input = match parse_args::<ChatConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_duplicate_conversation("", input))
-        }
-        "chat_smart_rename_conversation" => {
-            let input = match parse_args::<ChatConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_smart_rename_conversation("", input))
-        }
-        "chat_set_conversation_model" => {
-            let input = match parse_args::<ChatSetConversationModelInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_set_conversation_model("", input))
-        }
-        "chat_delete_message" => {
-            let input = match parse_args::<ChatMessageInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_delete_message("", input))
-        }
-        "chat_update_message" => {
-            let input = match parse_args::<ChatUpdateMessageInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_update_message("", input))
-        }
-        "chat_stop" => {
-            let input = match parse_args::<ChatConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_stop("", input))
-        }
-        // chat_completion_once: blocking call (originally async in tauri, runs sync here)
-        "chat_completion_once" => {
-            let input = match parse_args::<ChatCompletionInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_completion_once("", "", input))
-        }
 
         // Note: legacy `timeline_*` dev-HTTP routes were removed in P2. The
         // new `social_*` Tauri commands target proto-typed responses and
@@ -2744,87 +2867,116 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
 
         // =================================================================
-        // Agents (no state)
+        // Agents
         // =================================================================
-        "agents_list" => to_json(app_agents::agents_list("")),
-        "agents_get_selected" => to_json(app_agents::agents_get_selected("")),
+        "agents_list" => {
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_list(&actor_ptid, &token))
+        }
+        "agents_get_selected" => {
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_get_selected(&actor_ptid))
+        }
         "agents_set_selected" => {
             let input = match parse_args::<AgentSelectInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_set_selected("", input))
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_set_selected(&actor_ptid, input))
         }
-        "agents_get_default" => to_json(app_agents::agents_get_default("")),
+        "agents_get_default" => {
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_get_default(&actor_ptid))
+        }
         "agents_set_default" => {
             let input = match parse_args::<AgentIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_set_default("", input))
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_set_default(&actor_ptid, input))
         }
         "agents_get" => {
             let input = match parse_args::<AgentIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_get("", input))
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_get(&actor_ptid, &token, input))
         }
         "agents_create" => {
             let input = match parse_args::<AgentCreateInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_create("", input))
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_create(&actor_ptid, &token, input))
         }
         "agents_update" => {
             let input = match parse_args::<AgentUpdateInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_update("", input))
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_update(&actor_ptid, &token, input))
         }
         "agents_delete" => {
             let input = match parse_args::<AgentIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_delete("", input))
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_delete(&actor_ptid, &token, input))
         }
         "agents_duplicate" => {
             let input = match parse_args::<AgentDuplicateInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_duplicate("", input))
-        }
-        "agents_export_package" => {
-            let input = match parse_args::<AgentPackageExportInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
             };
-            to_json(app_agents::agents_export_package("", input))
-        }
-        "agents_import_package" => {
-            let input = match parse_args::<AgentPackageImportInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_agents::agents_import_package("", input))
+            to_json(app_agents::agents_duplicate(&actor_ptid, &token, input))
         }
         "agents_search" => {
             let input = match parse_args::<AgentSearchInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_search("", input))
-        }
-        "agents_list_sessions" => {
-            let input = match parse_args::<AgentIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
             };
-            to_json(app_agents::agents_list_sessions("", input))
+            to_json(app_agents::agents_search(&actor_ptid, input))
         }
         "agent_conversation_list" => {
             let input = match parse_args::<AgentConversationListInput>(args) {
@@ -2870,6 +3022,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_agent_turn::agent_conversation_messages(input, &token))
         }
+        "agent_conversation_update" => {
+            let input = match parse_args::<AgentConversationUpdateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_conversation_update(input, &token))
+        }
         "agent_conversation_archive" => {
             let input = match parse_args::<AgentConversationArchiveInput>(args) {
                 Ok(v) => v,
@@ -2880,6 +3043,72 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_turn::agent_conversation_archive(input, &token))
+        }
+        "agent_conversation_restore" => {
+            let input = match parse_args::<AgentConversationRestoreInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_conversation_restore(input, &token))
+        }
+        "agent_retry_turn" => {
+            let input = match parse_args::<AgentRetryTurnInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_retry_turn(input, &token))
+        }
+        "agent_regenerate_turn" => {
+            let input = match parse_args::<AgentRegenerateTurnInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_regenerate_turn(input, &token))
+        }
+        "agent_edit_and_resend" => {
+            let input = match parse_args::<AgentEditAndResendInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_edit_and_resend(input, &token))
+        }
+        "agent_select_active_branch" => {
+            let input = match parse_args::<AgentSelectActiveBranchInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_select_active_branch(input, &token))
+        }
+        "agent_tombstone_message" => {
+            let input = match parse_args::<AgentTombstoneMessageInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_tombstone_message(input, &token))
         }
         "agent_execute_turn" => {
             let input = match parse_args::<AgentExecuteTurnInput>(args) {
@@ -2908,7 +3137,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 .filter(|value| !value.is_empty())
                 .map(str::to_string)
                 .unwrap_or_else(|| format!("agent-turn-{}", Ulid::new()));
-            let cancel_flag = app_agent_turn::register_agent_turn_stream(&stream_id);
+            let cancellation =
+                app_agent_turn::register_agent_turn_live_stream("http-gateway", "", &stream_id);
             let stream_id_for_task = stream_id.clone();
             let app_for_task = match runtime.app_handle("agent_execute_turn_stream") {
                 Ok(app_handle) => app_handle,
@@ -2921,21 +3151,57 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     input,
                     token,
                     "".to_string(),
-                    cancel_flag,
+                    cancellation,
                 );
-                app_agent_turn::unregister_agent_turn_stream(&stream_id_for_task);
             });
             to_json(AppResult::success(StubPayload {
                 command: "agent_execute_turn_stream".to_string(),
                 status: json!({ "stream_id": stream_id }).to_string(),
             }))
         }
-        "agent_cancel_turn_stream" => {
+        "agent_cancel_turn" => {
             let input = match parse_args::<AgentTurnStreamCancelInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agent_turn::cancel_agent_turn_stream(&input.stream_id))
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::cancel_agent_turn(&input.turn_id, &token))
+        }
+        "agent_turn_queue_list" => {
+            let input = match parse_args::<AgentTurnQueueListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_turn_queue_list(input, &token))
+        }
+        "agent_turn_queue_cancel" => {
+            let input = match parse_args::<AgentTurnQueueCancelInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_turn_queue_cancel(input, &token))
+        }
+        "agent_submit_tool_decision" => {
+            let input = match parse_args::<AgentToolDecisionIntentInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::submit_tool_decision(input, &token))
         }
         "agent_turn_trace_list" => {
             let input = match parse_args::<AgentTurnTraceListInput>(args) {
@@ -2959,12 +3225,235 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_agent_turn::agent_turn_trace_get(input, &token))
         }
-        "agent_resolve_local_tool_request" => {
-            let input = match parse_args::<AgentLocalToolRequestInput>(args) {
+        "agent_turn_diagnostics_export" => {
+            let input = match parse_args::<AgentTurnDiagnosticsInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agent_turn::agent_resolve_local_tool_request(input))
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_turn_diagnostics_export(input, &token))
+        }
+        "agent_submit_feedback" => {
+            let input = match parse_args::<app_agent_growth::AgentFeedbackInput>(args) {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_growth::agent_submit_feedback(input, &token))
+        }
+        "agent_list_turn_feedback" => {
+            let input = match parse_args::<app_agent_growth::AgentTurnFeedbackListInput>(args) {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_growth::agent_list_turn_feedback(input, &token))
+        }
+        "agent_runtime_profile_effective" => {
+            let input = match parse_args::<AgentRuntimeProfileInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_runtime_evidence::effective_runtime_profile(
+                input, &token,
+            ))
+        }
+        "agent_capability_sessions" => {
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_runtime_evidence::station_capability_sessions(&token))
+        }
+        "agent_browser_capability_session_open" => {
+            if http_gateway_bearer_token(state).is_none() {
+                return to_json(unauthorized_error());
+            }
+            let app = match runtime.app_handle("agent_browser_capability_session_open") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(app_runtime_evidence::open_browser_capability_session(
+                supervisor.inner(),
+            ))
+        }
+        "agent_browser_capability_session_close" => {
+            if http_gateway_bearer_token(state).is_none() {
+                return to_json(unauthorized_error());
+            }
+            let app = match runtime.app_handle("agent_browser_capability_session_close") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(app_runtime_evidence::close_browser_capability_session(
+                supervisor.inner(),
+            ))
+        }
+        "agent_runtime_activity_station" => {
+            let input = match parse_args::<AgentRuntimeActivityInput>(args) {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_runtime_evidence::station_runtime_activity(
+                input, &token,
+            ))
+        }
+        "agent_runtime_activity_local" => {
+            let input = match parse_args::<AgentRuntimeActivityInput>(args) {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_runtime_evidence::local_runtime_activity(input, &token))
+        }
+        "agent_capability_session_snapshot" => {
+            if http_gateway_bearer_token(state).is_none() {
+                return to_json(unauthorized_error());
+            }
+            let input = if args.as_object().is_some_and(|value| value.is_empty()) {
+                None
+            } else {
+                match parse_args::<app_runtime_evidence::AgentCapabilitySessionSnapshotInput>(args)
+                {
+                    Ok(input) => Some(input),
+                    Err(error) => return error,
+                }
+            };
+            let app = match runtime.app_handle("agent_capability_session_snapshot") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            if let Some(negative_control) = input.and_then(|value| value.negative_control) {
+                return to_json(app_runtime_evidence::capability_negative_control(
+                    negative_control,
+                    supervisor.inner(),
+                ));
+            }
+            match supervisor.snapshot() {
+                Ok(snapshot) => {
+                    to_json(app_runtime_evidence::capability_session_snapshot(snapshot))
+                }
+                Err(error) => to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InternalError,
+                    "agent.capabilitySessionSnapshotFailed",
+                    Some(json!({ "cause": error })),
+                )),
+            }
+        }
+        "agent_capability_manifest_list" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityManifestListInput>(args) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::list_manifests(input, &token))
+        }
+        "agent_capability_binding_list" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityBindingListInput>(args) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::list_bindings(input, &token))
+        }
+        "agent_capability_binding_upsert" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityBindingUpsertInput>(args) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::upsert_binding(input, &token))
+        }
+        "agent_capability_binding_delete" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityBindingDeleteInput>(args) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::delete_binding(input, &token))
+        }
+        "agent_capability_readiness" => {
+            let input = match parse_args::<app_capability_authority::CapabilityReadinessInput>(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::readiness(input, &token))
+        }
+        "agent_package_export" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::export_agent_package(
+                input, &token,
+            ))
+        }
+        "agent_package_import" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::import_agent_package(
+                input, &token,
+            ))
         }
         "agent_collaboration_create" => {
             let input = match parse_args::<AgentCollaborationCreateInput>(args) {
@@ -3032,7 +3521,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             ))
         }
         "agent_collaboration_resume_task" => {
-            let input = match parse_args::<AgentCollaborationCancelTaskInput>(args) {
+            let input = match parse_args::<AgentCollaborationResumeTaskInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
@@ -3040,7 +3529,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_orchestration::agent_collaboration_cancel_task(
+            to_json(app_agent_orchestration::agent_collaboration_resume_task(
                 input, &token,
             ))
         }
@@ -4557,30 +5046,81 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
+            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
             };
-            if input.receiver_ptid.trim().is_empty() {
+            if input.receiver_ptid.trim().is_empty()
+                || input.receiver_home_station_peer_id.trim().is_empty()
+                || input.federation_id.trim().is_empty()
+            {
                 return to_json(AppResult::<Vec<u8>>::fail(
                     ErrorCode::InvalidArgument,
-                    "receiver_ptid is required",
+                    "receiver_ptid, receiver_home_station_peer_id, and federation_id are required",
                     None,
                 ));
             }
-            let req = model::chat::SendFriendRequestRequest {
-                receiver_ptid: input.receiver_ptid,
-                message: input.message.unwrap_or_default(),
+            let sender_home_station_peer_id = match station_client::active_station_peer_id() {
+                Some(peer_id) => peer_id,
+                None => {
+                    return to_json(AppResult::<Vec<u8>>::fail(
+                        ErrorCode::InternalError,
+                        "active Station peer ID is unavailable",
+                        None,
+                    ));
+                }
             };
-            let resp = match station_client::request_proto::<
-                model::chat::SendFriendRequestRequest,
-                model::chat::SendFriendRequestResponse,
+            let command =
+                match crate::interface::tauri_commands::social::sign_friend_request_command(
+                    state,
+                    &account_id,
+                    &actor_ptid,
+                    crate::interface::tauri_commands::social::FriendRequestCommandInput {
+                        request_id: Ulid::new().to_string(),
+                        action: model::social::FriendRequestAction::Send,
+                        sender_ptid: actor_ptid.clone(),
+                        receiver_ptid: input.receiver_ptid,
+                        sender_home_station_peer_id,
+                        receiver_home_station_peer_id: input.receiver_home_station_peer_id,
+                        message: input.message.unwrap_or_default(),
+                        federation_id: input.federation_id,
+                    },
+                ) {
+                    Ok(command) => command,
+                    Err(error) => {
+                        return to_json(AppResult::<Vec<u8>>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ));
+                    }
+                };
+            let device_id =
+                match crate::interface::tauri_commands::social::friend_request_command_device_id(
+                    &command,
+                ) {
+                    Ok(device_id) => device_id.to_string(),
+                    Err(error) => {
+                        return to_json(AppResult::<Vec<u8>>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ));
+                    }
+                };
+            let req = model::social::SendSocialFriendRequestRequest {
+                command: Some(command),
+            };
+            let resp = match station_client::request_proto_for_device::<
+                model::social::SendSocialFriendRequestRequest,
+                model::social::SendSocialFriendRequestResponse,
             >(
                 Method::POST,
                 "/api/v1/social/friend-request/send",
                 &token,
                 None,
                 Some(&req),
+                &device_id,
             ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
@@ -4592,29 +5132,82 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
+            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
             };
-            if input.request_id.trim().is_empty() {
+            if input.request_id.trim().is_empty()
+                || input.sender_ptid.trim().is_empty()
+                || input.sender_home_station_peer_id.trim().is_empty()
+                || input.federation_id.trim().is_empty()
+            {
                 return to_json(AppResult::<Vec<u8>>::fail(
                     ErrorCode::InvalidArgument,
-                    "request_id is required",
+                    "friend request acceptance context is incomplete",
                     None,
                 ));
             }
-            let req = model::chat::AcceptFriendRequestRequest {
-                request_id: input.request_id,
+            let receiver_home_station_peer_id = match station_client::active_station_peer_id() {
+                Some(peer_id) => peer_id,
+                None => {
+                    return to_json(AppResult::<Vec<u8>>::fail(
+                        ErrorCode::InternalError,
+                        "active Station peer ID is unavailable",
+                        None,
+                    ));
+                }
             };
-            let resp = match station_client::request_proto::<
-                model::chat::AcceptFriendRequestRequest,
-                model::chat::AcceptFriendRequestResponse,
+            let command =
+                match crate::interface::tauri_commands::social::sign_friend_request_command(
+                    state,
+                    &account_id,
+                    &actor_ptid,
+                    crate::interface::tauri_commands::social::FriendRequestCommandInput {
+                        request_id: input.request_id,
+                        action: model::social::FriendRequestAction::Accept,
+                        sender_ptid: input.sender_ptid,
+                        receiver_ptid: actor_ptid.clone(),
+                        sender_home_station_peer_id: input.sender_home_station_peer_id,
+                        receiver_home_station_peer_id,
+                        message: input.message.unwrap_or_default(),
+                        federation_id: input.federation_id,
+                    },
+                ) {
+                    Ok(command) => command,
+                    Err(error) => {
+                        return to_json(AppResult::<Vec<u8>>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ));
+                    }
+                };
+            let device_id =
+                match crate::interface::tauri_commands::social::friend_request_command_device_id(
+                    &command,
+                ) {
+                    Ok(device_id) => device_id.to_string(),
+                    Err(error) => {
+                        return to_json(AppResult::<Vec<u8>>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ));
+                    }
+                };
+            let req = model::social::AcceptSocialFriendRequestRequest {
+                command: Some(command),
+            };
+            let resp = match station_client::request_proto_for_device::<
+                model::social::AcceptSocialFriendRequestRequest,
+                model::social::AcceptSocialFriendRequestResponse,
             >(
                 Method::POST,
                 "/api/v1/social/friend-request/accept",
                 &token,
                 None,
                 Some(&req),
+                &device_id,
             ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
@@ -4626,29 +5219,82 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
+            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
             };
-            if input.request_id.trim().is_empty() {
+            if input.request_id.trim().is_empty()
+                || input.sender_ptid.trim().is_empty()
+                || input.sender_home_station_peer_id.trim().is_empty()
+                || input.federation_id.trim().is_empty()
+            {
                 return to_json(AppResult::<Vec<u8>>::fail(
                     ErrorCode::InvalidArgument,
-                    "request_id is required",
+                    "friend request rejection context is incomplete",
                     None,
                 ));
             }
-            let req = model::chat::RejectFriendRequestRequest {
-                request_id: input.request_id,
+            let receiver_home_station_peer_id = match station_client::active_station_peer_id() {
+                Some(peer_id) => peer_id,
+                None => {
+                    return to_json(AppResult::<Vec<u8>>::fail(
+                        ErrorCode::InternalError,
+                        "active Station peer ID is unavailable",
+                        None,
+                    ));
+                }
             };
-            let resp = match station_client::request_proto::<
-                model::chat::RejectFriendRequestRequest,
-                model::chat::RejectFriendRequestResponse,
+            let command =
+                match crate::interface::tauri_commands::social::sign_friend_request_command(
+                    state,
+                    &account_id,
+                    &actor_ptid,
+                    crate::interface::tauri_commands::social::FriendRequestCommandInput {
+                        request_id: input.request_id,
+                        action: model::social::FriendRequestAction::Reject,
+                        sender_ptid: input.sender_ptid,
+                        receiver_ptid: actor_ptid.clone(),
+                        sender_home_station_peer_id: input.sender_home_station_peer_id,
+                        receiver_home_station_peer_id,
+                        message: input.message.unwrap_or_default(),
+                        federation_id: input.federation_id,
+                    },
+                ) {
+                    Ok(command) => command,
+                    Err(error) => {
+                        return to_json(AppResult::<Vec<u8>>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ));
+                    }
+                };
+            let device_id =
+                match crate::interface::tauri_commands::social::friend_request_command_device_id(
+                    &command,
+                ) {
+                    Ok(device_id) => device_id.to_string(),
+                    Err(error) => {
+                        return to_json(AppResult::<Vec<u8>>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ));
+                    }
+                };
+            let req = model::social::RejectSocialFriendRequestRequest {
+                command: Some(command),
+            };
+            let resp = match station_client::request_proto_for_device::<
+                model::social::RejectSocialFriendRequestRequest,
+                model::social::RejectSocialFriendRequestResponse,
             >(
                 Method::POST,
                 "/api/v1/social/friend-request/reject",
                 &token,
                 None,
                 Some(&req),
+                &device_id,
             ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
@@ -4666,13 +5312,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             let mut query = Vec::new();
             if let Some(status) = input.status {
-                query.push(("status", status.to_string()));
+                query.push(("state", status.to_string()));
             }
             query.push(("limit", input.limit.unwrap_or(50).clamp(1, 200).to_string()));
             query.push(("offset", input.offset.unwrap_or(0).to_string()));
             let resp = match station_client::request_proto::<
                 (),
-                model::chat::ListFriendRequestsResponse,
+                model::social::ListSocialFriendRequestsResponse,
             >(
                 Method::GET,
                 "/api/v1/social/friend-requests",
@@ -4769,31 +5415,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 input.max_pages.unwrap_or(50),
             ) {
                 Ok(data) => to_json(to_stub("group_chat_list_thread_messages", data)),
-                Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
-            }
-        }
-        "group_chat_thread_counts" => {
-            let input = match parse_args::<GroupChatThreadCountsInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            if input.group_ulid.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "group_ulid is required",
-                    None,
-                ));
-            }
-            match chat_storage::group_thread_counts(
-                &token,
-                input.group_ulid.as_str(),
-                input.root_ulids.as_slice(),
-            ) {
-                Ok(data) => to_json(to_stub("group_chat_thread_counts", data)),
                 Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
             }
         }
@@ -5764,738 +6385,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
 
-        // =================================================================
-        // MLS Group (E2E encryption — requires Tauri AppHandle for state)
-        // =================================================================
-        "mls_init_identity" => {
-            let actor_ptid = match actor_ptid_from_state(state) {
-                Some(id) if !id.trim().is_empty() => id,
-                _ => {
-                    return to_json(AppResult::<StubPayload>::fail(
-                        ErrorCode::Unauthorized,
-                        "auth required",
-                        None,
-                    ))
-                }
-            };
-            let token = match token_from_state(state) {
-                Ok(token) => token,
-                Err(error) => return error,
-            };
-            let identity = match station_client::request_proto::<
-                (),
-                model::chat::GetConversationIdentityResponse,
-            >(
-                Method::GET,
-                "/conversation/identity",
-                &token,
-                None,
-                None::<&()>,
-            ) {
-                Ok(identity) => identity,
-                Err(error) => {
-                    return to_json(
-                        error.into_app_result::<StubPayload>("resolve authenticated actor PTID"),
-                    )
-                }
-            };
-            let app = match runtime.app_handle("mls_init_identity") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let actor_identity =
-                app.state::<Arc<crate::domain::actor_device_identity::ActorDeviceIdentity>>();
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            if !identity.ptid.starts_with("ptid:") {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::Conflict,
-                    "authenticated actor has no canonical PTID",
-                    None,
-                ));
-            }
-            let scope =
-                crate::infrastructure::local_scope::user_scope_for_actor_ptid(actor_ptid.as_str());
-            let device_id = match device_install::get_or_create_device_id(actor_ptid.as_str()) {
-                Ok(device_id) => device_id,
-                Err(error) => {
-                    return to_json(AppResult::<StubPayload>::fail(
-                        ErrorCode::InternalError,
-                        format!("device_id: {error}"),
-                        None,
-                    ))
-                }
-            };
-            crate::infrastructure::station_client::set_device_id(device_id.clone());
-            to_json(
-                crate::interface::tauri_commands::mls::mls_init_identity_for_scope(
-                    crate::interface::tauri_commands::mls::MlsInitIdentityInput {
-                        ptid: identity.ptid,
-                        device_id,
-                    },
-                    actor_identity.inner(),
-                    mls.inner(),
-                    &scope,
-                ),
-            )
-        }
-        "mls_submit_leave_intent" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::mls::MlsSubmitLeaveIntentInput,
-            >(args)
-            {
-                Ok(input) => input,
-                Err(error) => return error,
-            };
-            let token = match token_from_state(state) {
-                Ok(token) => token,
-                Err(error) => return error,
-            };
-            let app = match runtime.app_handle("mls_submit_leave_intent") {
-                Ok(app) => app,
-                Err(error) => return error,
-            };
-            let identity =
-                app.state::<Arc<crate::domain::actor_device_identity::ActorDeviceIdentity>>();
-            to_json(
-                crate::interface::tauri_commands::mls::mls_submit_leave_intent_with_token(
-                    input,
-                    identity.inner(),
-                    &token,
-                ),
-            )
-        }
-        "conversation_submit_command_proposal" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::conversation::ConversationSubmitCommandProposalInput,
-            >(args)
-            {
-                Ok(input) => input,
-                Err(error) => return error,
-            };
-            let token = match token_from_state(state) {
-                Ok(token) => token,
-                Err(error) => return error,
-            };
-            let app = match runtime.app_handle("conversation_submit_command_proposal") {
-                Ok(app) => app,
-                Err(error) => return error,
-            };
-            let identity =
-                app.state::<Arc<crate::domain::actor_device_identity::ActorDeviceIdentity>>();
-            to_json(
-                crate::interface::tauri_commands::conversation::conversation_submit_command_proposal_with_token(
-                    input,
-                    identity.inner(),
-                    &token,
-                ),
-            )
-        }
-        "conversation_get_command_proposal_result" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::conversation::ConversationGetCommandProposalResultInput,
-            >(args)
-            {
-                Ok(input) => input,
-                Err(error) => return error,
-            };
-            let token = match token_from_state(state) {
-                Ok(token) => token,
-                Err(error) => return error,
-            };
-            to_json(
-                crate::interface::tauri_commands::conversation::conversation_get_command_proposal_result_with_token(
-                    input,
-                    &token,
-                ),
-            )
-        }
-        "mls_list_leave_intents" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::mls::MlsListLeaveIntentsInput,
-            >(args)
-            {
-                Ok(input) => input,
-                Err(error) => return error,
-            };
-            let token = match token_from_state(state) {
-                Ok(token) => token,
-                Err(error) => return error,
-            };
-            to_json(
-                crate::interface::tauri_commands::mls::mls_list_leave_intents_with_token(
-                    input, &token,
-                ),
-            )
-        }
-        "mls_generate_key_package" => {
-            let app = match runtime.app_handle("mls_generate_key_package") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let scope = require_gateway_user_scope!(state);
-            to_json(
-                crate::interface::tauri_commands::mls::mls_generate_key_package_for_scope(
-                    mls.inner(),
-                    &scope,
-                ),
-            )
-        }
-        "mls_group_create" => {
-            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupCreateInput>(
-                args,
-            ) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_create") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            match mls.create_group(&input.conversation_id, &input.members) {
-                Ok(result) => {
-                    let scope = require_gateway_user_scope!(state);
-                    let blob = match mls.export_pending_transition(&input.conversation_id) {
-                        Ok(blob) => blob,
-                        Err(e) => {
-                            return to_json(AppResult::<Value>::fail(
-                                ErrorCode::InternalError,
-                                &e,
-                                None,
-                            ))
-                        }
-                    };
-                    match crate::infrastructure::local_chat_store::crypto_save_mls_pending_transition(
-                        &scope,
-                        &input.conversation_id,
-                        &result.transition_id,
-                        &blob,
-                    ) {
-                        Ok(()) => to_json(AppResult::success(json!(result))),
-                        Err(e) => {
-                            mls.discard_pending_transition(&input.conversation_id);
-                            to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None))
-                        }
-                    }
-                }
-                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
-            }
-        }
-        "mls_group_join" => {
-            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupJoinInput>(
-                args,
-            ) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_join") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let scope = require_gateway_user_scope!(state);
-            to_json(
-                crate::interface::tauri_commands::mls::mls_group_join_for_scope(
-                    input,
-                    mls.inner(),
-                    &scope,
-                ),
-            )
-        }
-        "mls_group_encrypt" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::mls::MlsGroupEncryptInput,
-            >(args)
-            {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_encrypt") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let scope = require_gateway_user_scope!(state);
-            to_json(
-                crate::interface::tauri_commands::mls::mls_group_encrypt_for_scope(
-                    input,
-                    mls.inner(),
-                    &scope,
-                ),
-            )
-        }
-        "mls_group_decrypt" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::mls::MlsGroupDecryptInput,
-            >(args)
-            {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_decrypt") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            match mls.decrypt(&input.conversation_id, &input.ciphertext) {
-                Ok(plaintext) => to_json(AppResult::success(json!({ "plaintext": plaintext }))),
-                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
-            }
-        }
-        "mls_group_process_commit" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::mls::MlsGroupProcessCommitInput,
-            >(args)
-            {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_process_commit") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            match mls.process_commit(&input.conversation_id, &input.commit_bytes) {
-                Ok(()) => to_json(AppResult::success(json!({}))),
-                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
-            }
-        }
-        "mls_group_add_member" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::mls::MlsGroupAddMemberInput,
-            >(args)
-            {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_add_member") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            match mls.add_member(&input.conversation_id, &input.member) {
-                Ok(prepared) => {
-                    let scope = require_gateway_user_scope!(state);
-                    let blob = match mls.export_pending_transition(&input.conversation_id) {
-                        Ok(blob) => blob,
-                        Err(e) => {
-                            return to_json(AppResult::<Value>::fail(
-                                ErrorCode::InternalError,
-                                &e,
-                                None,
-                            ))
-                        }
-                    };
-                    match crate::infrastructure::local_chat_store::crypto_save_mls_pending_transition(
-                        &scope, &input.conversation_id, &prepared.transition_id, &blob,
-                    ) {
-                        Ok(()) => to_json(AppResult::success(json!(prepared))),
-                        Err(e) => {
-                            mls.discard_pending_transition(&input.conversation_id);
-                            to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None))
-                        }
-                    }
-                }
-                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
-            }
-        }
-        "mls_group_remove_member" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::mls::MlsGroupRemoveMemberInput,
-            >(args)
-            {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_remove_member") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            match mls.remove_member(&input.conversation_id, &input.member_ptid) {
-                Ok(prepared) => {
-                    let scope = require_gateway_user_scope!(state);
-                    let blob = match mls.export_pending_transition(&input.conversation_id) {
-                        Ok(blob) => blob,
-                        Err(e) => {
-                            return to_json(AppResult::<Value>::fail(
-                                ErrorCode::InternalError,
-                                &e,
-                                None,
-                            ))
-                        }
-                    };
-                    match crate::infrastructure::local_chat_store::crypto_save_mls_pending_transition(
-                        &scope, &input.conversation_id, &prepared.transition_id, &blob,
-                    ) {
-                        Ok(()) => to_json(AppResult::success(json!(prepared))),
-                        Err(e) => {
-                            mls.discard_pending_transition(&input.conversation_id);
-                            to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None))
-                        }
-                    }
-                }
-                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
-            }
-        }
-        "mls_group_remove_device" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::mls::MlsGroupRemoveDeviceInput,
-            >(args)
-            {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_remove_device") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            match mls.remove_device(&input.conversation_id, &input.member_ptid, &input.device_id) {
-                Ok(prepared) => {
-                    let scope = require_gateway_user_scope!(state);
-                    let blob = match mls.export_pending_transition(&input.conversation_id) {
-                        Ok(blob) => blob,
-                        Err(e) => {
-                            return to_json(AppResult::<Value>::fail(
-                                ErrorCode::InternalError,
-                                &e,
-                                None,
-                            ))
-                        }
-                    };
-                    match crate::infrastructure::local_chat_store::crypto_save_mls_pending_transition(
-                        &scope, &input.conversation_id, &prepared.transition_id, &blob,
-                    ) {
-                        Ok(()) => to_json(AppResult::success(json!(prepared))),
-                        Err(e) => {
-                            mls.discard_pending_transition(&input.conversation_id);
-                            to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None))
-                        }
-                    }
-                }
-                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
-            }
-        }
-        "mls_group_accept_pending" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::mls::MlsPendingTransitionInput,
-            >(args)
-            {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_accept_pending") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let scope = require_gateway_user_scope!(state);
-            to_json(
-                crate::interface::tauri_commands::mls::mls_group_accept_pending_for_scope(
-                    input,
-                    mls.inner(),
-                    &scope,
-                ),
-            )
-        }
-        "mls_group_discard_pending" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::mls::MlsPendingTransitionInput,
-            >(args)
-            {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_discard_pending") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let scope = require_gateway_user_scope!(state);
-            if let Err(e) =
-                crate::infrastructure::local_chat_store::crypto_delete_mls_pending_transition(
-                    &scope,
-                    &input.conversation_id,
-                )
-            {
-                return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None));
-            }
-            to_json(AppResult::success(json!({
-                "discarded": mls.discard_pending_transition(&input.conversation_id),
-            })))
-        }
-        "mls_group_pending_status" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::mls::MlsPendingTransitionInput,
-            >(args)
-            {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_pending_status") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            to_json(AppResult::success(json!({
-                "pending": mls.has_pending_transition(&input.conversation_id),
-            })))
-        }
-        "mls_recipient_record_authority_event" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::mls::MlsRecipientAuthorityEventInput,
-            >(args)
-            {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_recipient_record_authority_event") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let actor = match resolve_scope(state) {
-                Ok(actor) => actor,
-                Err(e) => return e,
-            };
-            let Some(actor_ptid) = actor.filter(|value| !value.trim().is_empty()) else {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            };
-            let scope =
-                crate::infrastructure::local_scope::user_scope_for_actor_ptid(actor_ptid.as_str());
-            let recipient_ptid =
-                match crate::interface::tauri_commands::mls::canonical_mls_identity_ptid(&scope) {
-                    Ok(ptid) => ptid,
-                    Err(error) => {
-                        return to_json(AppResult::<Value>::fail(ErrorCode::Conflict, &error, None))
-                    }
-                };
-            to_json(
-                crate::interface::tauri_commands::mls::mls_recipient_record_authority_event_for_scope(
-                    input,
-                    mls.inner(),
-                    &scope,
-                    &recipient_ptid,
-                ),
-            )
-        }
-        "mls_recipient_apply_delivery" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::mls::MlsRecipientDeliveryInput,
-            >(args)
-            {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_recipient_apply_delivery") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let actor = match resolve_scope(state) {
-                Ok(actor) => actor,
-                Err(e) => return e,
-            };
-            let Some(actor_ptid) = actor.filter(|value| !value.trim().is_empty()) else {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            };
-            let scope =
-                crate::infrastructure::local_scope::user_scope_for_actor_ptid(actor_ptid.as_str());
-            let recipient_ptid =
-                match crate::interface::tauri_commands::mls::canonical_mls_identity_ptid(&scope) {
-                    Ok(ptid) => ptid,
-                    Err(error) => {
-                        return to_json(AppResult::<Value>::fail(ErrorCode::Conflict, &error, None))
-                    }
-                };
-            to_json(
-                crate::interface::tauri_commands::mls::mls_recipient_apply_delivery_for_scope(
-                    input,
-                    mls.inner(),
-                    &scope,
-                    &recipient_ptid,
-                ),
-            )
-        }
-        "mls_recipient_status" => {
-            let input = match parse_args::<
-                crate::interface::tauri_commands::mls::MlsRecipientStatusInput,
-            >(args)
-            {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_recipient_status") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let actor = match resolve_scope(state) {
-                Ok(actor) => actor,
-                Err(e) => return e,
-            };
-            let Some(recipient_ptid) = actor.filter(|value| !value.trim().is_empty()) else {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::Unauthorized,
-                    "authentication required",
-                    None,
-                ));
-            };
-            let scope = crate::infrastructure::local_scope::user_scope_for_actor_ptid(
-                recipient_ptid.as_str(),
-            );
-            to_json(
-                crate::interface::tauri_commands::mls::mls_recipient_status_for_scope(
-                    input,
-                    mls.inner(),
-                    &scope,
-                ),
-            )
-        }
-        "mls_group_public_head" => {
-            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupStatusInput>(
-                args,
-            ) {
-                Ok(input) => input,
-                Err(error) => return error,
-            };
-            let app = match runtime.app_handle("mls_group_public_head") {
-                Ok(app) => app,
-                Err(error) => return error,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            match mls.public_head(&input.conversation_id) {
-                Ok(head) => to_json(AppResult::success(json!(head))),
-                Err(error) => to_json(AppResult::<Value>::fail(ErrorCode::NotFound, error, None)),
-            }
-        }
-        "mls_group_save" => {
-            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupSaveInput>(
-                args,
-            ) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_save") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let user_scope = require_gateway_user_scope!(state);
-            to_json(
-                crate::interface::tauri_commands::mls::mls_group_save_for_scope(
-                    input,
-                    mls.inner(),
-                    &user_scope,
-                ),
-            )
-        }
-        "mls_group_load" => {
-            let input = match parse_args::<crate::interface::tauri_commands::mls::MlsGroupLoadInput>(
-                args,
-            ) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("mls_group_load") {
-                Ok(a) => a,
-                Err(e) => return e,
-            };
-            let mls = app.state::<Arc<crate::domain::mls_group::MlsGroupManager>>();
-            let user_scope = require_gateway_user_scope!(state);
-            to_json(
-                crate::interface::tauri_commands::mls::mls_group_load_for_scope(
-                    input,
-                    mls.inner(),
-                    &user_scope,
-                ),
-            )
-        }
-
-        // =================================================================
-        // Envelope submit (send encrypted payload to Station)
-        // =================================================================
-        "envelope_submit" => {
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let envelope = args.get("envelope").cloned().unwrap_or(json!({}));
-            let env_obj = envelope.as_object();
-            let body = json!({
-                "envelope": {
-                    "conversation_id": env_obj.and_then(|o| o.get("conversation_id")).and_then(|v| v.as_str()).unwrap_or(""),
-                    "sender_ptid": env_obj.and_then(|o| o.get("sender_ptid")).and_then(|v| v.as_str()).unwrap_or(""),
-                    "sender_device_id": env_obj.and_then(|o| o.get("sender_device_id")).and_then(|v| v.as_str()).unwrap_or(""),
-                    "recipient_ptid": env_obj.and_then(|o| o.get("recipient_ptid")).and_then(|v| v.as_str()).unwrap_or(""),
-                    "payload_type": env_obj.and_then(|o| o.get("payload_type")).and_then(|v| v.as_i64()).unwrap_or(1),
-                    "payload_bytes": env_obj.and_then(|o| o.get("payload_bytes")),
-                    "idempotency_key": env_obj.and_then(|o| o.get("idempotency_key")).and_then(|v| v.as_str()).unwrap_or(""),
-                }
-            });
-            match crate::infrastructure::station_client::request_json_auth(
-                reqwest::Method::POST,
-                "/envelope/submit",
-                &token,
-                None,
-                Some(&body),
-            ) {
-                Ok(resp) => to_json(AppResult::success(resp)),
-                Err(e) => to_json(AppResult::<Value>::fail(
-                    ErrorCode::InternalError,
-                    &format!("envelope submit: {e}"),
-                    None,
-                )),
-            }
-        }
-        "envelope_ack" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/envelope/ack",
-            None,
-            Some(json!({
-                "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "inbox_item_id": args.get("inbox_item_id").and_then(|v| v.as_str()).unwrap_or(""),
-            })),
-            "envelope ack",
-        ),
-        "envelope_resume" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::GET,
-            "/envelope/resume",
-            Some(vec![
-                (
-                    "device_id",
-                    args.get("device_id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                ),
-                (
-                    "after_cursor",
-                    args.get("after_cursor")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                ),
-            ]),
-            None,
-            "envelope resume",
-        ),
         "keypackage_upload" => proxy_authenticated_station_json(
             state,
             reqwest::Method::POST,
-            "/keypackage/upload",
+            "/key-exchange/mls/key-package/upload",
             None,
             Some(json!({
                 "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
@@ -6506,7 +6399,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         "keypackage_fetch" => proxy_authenticated_station_json(
             state,
             reqwest::Method::POST,
-            "/keypackage/fetch",
+            "/key-exchange/mls/key-package/fetch",
             None,
             Some(json!({
                 "ptid": args.get("ptid").and_then(|v| v.as_str()).unwrap_or(""),
@@ -6517,24 +6410,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         "keypackage_count" => proxy_authenticated_station_json(
             state,
             reqwest::Method::GET,
-            "/keypackage/count",
+            "/key-exchange/mls/key-package/count",
             None,
             None,
             "key package count",
-        ),
-        "device_register" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/device/register",
-            None,
-            Some(json!({
-                "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "label": args.get("label").and_then(|v| v.as_str()).unwrap_or(""),
-                "public_key": args.get("public_key").and_then(|v| v.as_str()).unwrap_or(""),
-                "signing_key_id": args.get("signing_key_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "profile_version": 1,
-            })),
-            "device register",
         ),
         "device_list" => proxy_authenticated_station_json(
             state,
@@ -6557,7 +6436,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         "dkx_send" => proxy_authenticated_station_json(
             state,
             reqwest::Method::POST,
-            "/dkx/send",
+            "/key-exchange/dkx/send",
             None,
             Some(json!({
                 "recipient_ptid": args.get("recipient_ptid").and_then(|v| v.as_str()).unwrap_or(""),
@@ -6572,63 +6451,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // =================================================================
         // Conversation (unified IM layer — station proxy)
         // =================================================================
-        "conversation_create_direct" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/conversation/direct",
-            None,
-            Some(json!({
-                "peer_ptid": args.get("peer_ptid").and_then(|v| v.as_str()).unwrap_or(""),
-                "peer_station_peer_id": args.get("peer_station_peer_id").and_then(|v| v.as_str()).unwrap_or(""),
-            })),
-            "conversation create direct",
-        ),
-        "conversation_create_group" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/conversation/group",
-            None,
-            Some(json!({
-                "name": args.get("name").and_then(|v| v.as_str()).unwrap_or(""),
-                "genesis_transition": args.get("genesis_transition").cloned().unwrap_or_else(|| json!({})),
-                "federation_id": args.get("federation_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-            })),
-            "conversation create group",
-        ),
-        "conversation_list" => {
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            match crate::infrastructure::station_client::request_json_auth(
-                reqwest::Method::GET,
-                "/conversation/list",
-                &token,
-                None,
-                None,
-            ) {
-                Ok(resp) => to_json(AppResult::success(resp)),
-                Err(e) => to_json(AppResult::<Value>::fail(
-                    ErrorCode::InternalError,
-                    &format!("conversation list: {e}"),
-                    None,
-                )),
-            }
-        }
-        "conversation_submit_receipt" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/conversation/receipt",
-            None,
-            Some(json!({
-                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "message_id": args.get("message_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "receipt_type": args.get("receipt_type").and_then(|v| v.as_i64()).unwrap_or(0),
-            })),
-            "conversation submit receipt",
-        ),
         "conversation_list_events" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,
@@ -6738,43 +6560,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             None,
             "conversation list thread messages",
         ),
-        "conversation_thread_counts" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/conversation/thread/counts",
-            None,
-            Some(json!({
-                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "root_ids": args.get("root_ids").cloned().unwrap_or_else(|| json!([])),
-            })),
-            "conversation thread counts",
-        ),
-        "conversation_get_member_settings" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::GET,
-            "/conversation/member/settings",
-            Some(vec![(
-                "conversation_id",
-                args.get("conversation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            )]),
-            None,
-            "conversation get member settings",
-        ),
-        "conversation_update_member_settings" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::PUT,
-            "/conversation/member/settings",
-            None,
-            Some(json!({
-                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "nickname": args.get("nickname").cloned().unwrap_or(Value::Null),
-                "muted": args.get("muted").cloned().unwrap_or(Value::Null),
-            })),
-            "conversation update member settings",
-        ),
         "conversation_get_members" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,
@@ -6796,28 +6581,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => to_json(AppResult::<Value>::fail(
                     ErrorCode::InternalError,
                     &format!("conversation members: {e}"),
-                    None,
-                )),
-            }
-        }
-        "conversation_submit_command" => {
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let command = args.get("command").cloned().unwrap_or(json!({}));
-            let body = json!({ "command": command });
-            match crate::infrastructure::station_client::request_json_auth(
-                reqwest::Method::POST,
-                "/conversation/command",
-                &token,
-                None,
-                Some(&body),
-            ) {
-                Ok(resp) => to_json(AppResult::success(resp)),
-                Err(e) => to_json(AppResult::<Value>::fail(
-                    ErrorCode::InternalError,
-                    &format!("conversation command: {e}"),
                     None,
                 )),
             }
@@ -6934,6 +6697,89 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 }
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
+        }
+        "messaging_thread_counts" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingThreadCountsInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::messaging_thread_counts_result(
+                    &engine, &input,
+                ),
+            )
+        }
+        "messaging_get_member_settings" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MemberSettingsInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::messaging_get_member_settings_result(
+                    &token, &engine, &input,
+                ),
+            )
+        }
+        "messaging_update_member_settings" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingUpdateMemberSettingsInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::
+                    messaging_update_member_settings_result(&token, &engine, input),
+            )
         }
         "messaging_drain" => {
             let (account_id, actor_ptid, token) = match gateway_access_context(state) {
@@ -7082,7 +6928,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(AppResult::success(json!(results)))
         }
         "messaging_create_direct" => {
-            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingCreateDirectInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, token) = match gateway_access_context(state) {
                 Ok(context) => context,
                 Err(error) => return error,
             };
@@ -7096,19 +6949,18 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ))
                 }
             };
-            let peer_ptid = args
-                .get("peer_ptid")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if peer_ptid.is_empty() {
+            if input.peer_ptid.trim().is_empty() || input.federation_id.trim().is_empty() {
                 return to_json(AppResult::<Value>::fail(
                     ErrorCode::InvalidArgument,
-                    "peer_ptid required",
+                    "peer_ptid and federation_id are required",
                     None,
                 ));
             }
-            let conversation_id = match engine.create_direct_conversation(&token, &peer_ptid) {
+            let conversation_id = match engine.create_direct_conversation(
+                &token,
+                &input.peer_ptid,
+                &input.federation_id,
+            ) {
                 Ok(id) => id,
                 Err(e) => {
                     return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None))
@@ -7126,7 +6978,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             })))
         }
         "messaging_create_group" => {
-            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingCreateGroupInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, token) = match gateway_access_context(state) {
                 Ok(context) => context,
                 Err(error) => return error,
             };
@@ -7140,51 +6999,30 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ))
                 }
             };
-            let name = args
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let member_ptids: Vec<String> = args
-                .get("member_ptids")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                        .collect()
-                })
-                .unwrap_or_default();
-            if member_ptids.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::InvalidArgument,
-                    "member_ptids required",
-                    None,
-                ));
-            }
-            let conversation_id = format!("g-{}", ulid::Ulid::new().to_string().to_lowercase());
-            match engine.create_group_conversation(&token, &conversation_id, &name, &member_ptids) {
-                Ok(id) => {
-                    let now_unix_ms = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as i64;
-                    let retry_policy = crate::messaging::CommandRetryPolicy {
-                        initial_delay_ms: 1000,
-                        maximum_delay_ms: 30000,
-                    };
-                    let _ = engine.dispatch_command_once(&token, now_unix_ms, retry_policy);
-                    let _ = engine.drain_once(&token, 100);
-                    let _ = state.messaging_engines.wake_profile(&account_id);
-                    to_json(AppResult::success(json!({
-                        "conversation_id": id,
-                        "state": "created",
-                    })))
+            let result =
+                crate::interface::tauri_commands::messaging::messaging_create_group_with_engine(
+                    input, &token, &engine,
+                );
+            if result.ok {
+                if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+                    tracing::warn!(
+                        account_id = %account_id,
+                        error = %error,
+                        "browser messaging group lifecycle wake failed after durable preparation"
+                    );
                 }
-                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
+            to_json(result)
         }
         "messaging_membership_transition" => {
-            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingMembershipTransitionInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, token) = match gateway_access_context(state) {
                 Ok(context) => context,
                 Err(error) => return error,
             };
@@ -7198,80 +7036,159 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ))
                 }
             };
-            let conversation_id = args
-                .get("conversation_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let action_str = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
-            let target_ptid = args
-                .get("target_ptid")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let target_device_id = args
-                .get("target_device_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let role = args
-                .get("role")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if conversation_id.is_empty() || target_ptid.is_empty() {
-                return to_json(AppResult::<Value>::fail(
-                    ErrorCode::InvalidArgument,
-                    "conversation_id and target_ptid required",
-                    None,
-                ));
+            let result = crate::interface::tauri_commands::messaging::
+                messaging_membership_transition_with_engine(input, &token, &engine);
+            if result.ok {
+                if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        error,
+                        None,
+                    ));
+                }
             }
-            let action = match action_str {
-                "add_actor" => crate::model::chat::MessagingMembershipAction::AddActor,
-                "remove_actor" => crate::model::chat::MessagingMembershipAction::RemoveActor,
-                "add_device" => crate::model::chat::MessagingMembershipAction::AddDevice,
-                "remove_device" => crate::model::chat::MessagingMembershipAction::RemoveDevice,
+            to_json(result)
+        }
+        "messaging_submit_leave_intent" => {
+            let (account_id, _, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
                 _ => {
                     return to_json(AppResult::<Value>::fail(
-                        ErrorCode::InvalidArgument,
-                        "unsupported action",
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
                         None,
                     ))
                 }
             };
-            match engine.prepare_membership_transition(
-                &token,
-                &crate::messaging::MembershipTransitionIntentInput {
-                    conversation_id,
-                    action,
-                    target_ptid,
-                    target_device_id,
-                    role,
-                },
-            ) {
-                Ok(command) => {
-                    let command_id = command.command_id.clone();
-                    let now_unix_ms = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as i64;
-                    let retry_policy = crate::messaging::CommandRetryPolicy {
-                        initial_delay_ms: 1000,
-                        maximum_delay_ms: 30000,
-                    };
-                    let _ = engine.dispatch_command_once(&token, now_unix_ms, retry_policy);
-                    let _ = engine.drain_once(&token, 100);
-                    let _ = state.messaging_engines.wake_profile(&account_id);
-                    to_json(AppResult::success(json!({
-                        "command_id": command_id,
-                        "state": "pending",
-                    })))
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingSubmitLeaveIntentInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::messaging_submit_leave_intent_with_engine(
+                    input,
+                    &token,
+                    &engine,
+                ),
+            )
+        }
+        "messaging_list_leave_intents" => {
+            let (account_id, _, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
                 }
-                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            };
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingListLeaveIntentsInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::messaging_list_leave_intents_with_engine(
+                    input,
+                    &token,
+                    &engine,
+                ),
+            )
+        }
+        "messaging_commit_authorized_leave" => {
+            let (account_id, _, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingCommitAuthorizedLeaveInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let result =
+                crate::interface::tauri_commands::messaging::messaging_commit_authorized_leave_with_engine(
+                    input,
+                    &token,
+                    &engine,
+                );
+            if result.ok {
+                if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        error,
+                        None,
+                    ));
+                }
             }
+            to_json(result)
+        }
+        #[cfg(feature = "acceptance-webdriver")]
+        "messaging_acceptance_current_endpoint" => {
+            let (account_id, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let expected_actor_ptid = args
+                .get("expected_actor_ptid")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if expected_actor_ptid != actor_ptid {
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Forbidden,
+                    "acceptance.chat.actorMismatch",
+                    Some(json!({ "reason": "actor_mismatch" })),
+                ));
+            }
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "acceptance.chat.messagingEngineInactive",
+                        Some(json!({ "reason": "messaging_engine_inactive" })),
+                    ))
+                }
+            };
+            if engine.endpoint().ptid != actor_ptid {
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Forbidden,
+                    "acceptance.chat.messagingEndpointActorMismatch",
+                    Some(json!({ "reason": "messaging_endpoint_actor_mismatch" })),
+                ));
+            }
+            to_json(AppResult::success(json!({
+                "actor_ptid": actor_ptid,
+                "device_id": engine.endpoint().device_id.as_str(),
+            })))
         }
         "messaging_list_conversations" => {
-            let (account_id, actor_ptid, _) = match gateway_access_context(state) {
+            let (account_id, _, _) = match gateway_access_context(state) {
                 Ok(context) => context,
                 Err(error) => return error,
             };
@@ -7287,24 +7204,21 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             match engine.conversations() {
                 Ok(conversations) => {
-                    let items: Vec<Value> = conversations
+                    let items = conversations
                         .iter()
-                        .map(|c| {
-                            json!({
-                                "conversation_id": c.conversation_id,
-                                "authority_station_id": c.authority_station_id,
-                                "kind": c.kind,
-                                "name": c.name,
-                                "owner_ptid": c.owner_ptid,
-                                "member_ptids": c.member_ptids,
-                                "membership_epoch": c.membership_epoch,
-                                "mls_epoch": c.mls_epoch,
-                                "active": c.active,
-                                "updated_at_unix_ms": c.updated_at_unix_ms,
-                            })
+                        .map(|conversation| {
+                            crate::interface::tauri_commands::messaging::
+                                conversation_projection_json(&engine, conversation)
                         })
-                        .collect();
-                    to_json(AppResult::success(json!({ "conversations": items })))
+                        .collect::<Result<Vec<_>, _>>();
+                    match items {
+                        Ok(items) => to_json(AppResult::success(json!({ "conversations": items }))),
+                        Err(error) => to_json(AppResult::<Value>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        )),
+                    }
                 }
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
@@ -7357,12 +7271,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     .get("authority_station_peer_id")
                     .and_then(|v| v.as_str())
                     .unwrap_or_default();
-                if conv_id.is_empty() || authority.is_empty() {
+                let federation_id = conv
+                    .get("federation_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                if conv_id.is_empty() || authority.is_empty() || federation_id.is_empty() {
                     continue;
                 }
                 projections.push(crate::messaging::ConversationProjection {
                     conversation_id: conv_id.to_string(),
                     authority_station_id: authority.to_string(),
+                    federation_id: federation_id.to_string(),
                     kind: kind_i32,
                     name: conv
                         .get("name")
@@ -7374,7 +7293,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string(),
-                    member_ptids: Vec::new(),
+                    members: Vec::new(),
                     membership_epoch: conv
                         .get("membership_epoch")
                         .and_then(|v| v.as_str())
@@ -7397,37 +7316,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
         }
-        "conversation_react" => {
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let body = json!({
-                "command": {
-                    "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-                    "react": {
-                        "message_id": args.get("message_id").and_then(|v| v.as_str()).unwrap_or(""),
-                        "emoji": args.get("emoji").and_then(|v| v.as_str()).unwrap_or(""),
-                        "remove": args.get("remove").and_then(|v| v.as_bool()).unwrap_or(false),
-                    }
-                }
-            });
-            match crate::infrastructure::station_client::request_json_auth(
-                reqwest::Method::POST,
-                "/conversation/command",
-                &token,
-                None,
-                Some(&body),
-            ) {
-                Ok(resp) => to_json(AppResult::success(resp)),
-                Err(e) => to_json(AppResult::<Value>::fail(
-                    ErrorCode::InternalError,
-                    &format!("conversation react: {e}"),
-                    None,
-                )),
-            }
-        }
-
         // =================================================================
         // Unknown command
         // =================================================================
@@ -7536,8 +7424,51 @@ mod tests {
     use crate::infrastructure::i18n::I18nService;
     use crate::infrastructure::storage::{StorageKind, StorageLayout};
     use std::collections::HashMap;
+    use std::io::Cursor;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct ErrorAfterBody {
+        body: Cursor<Vec<u8>>,
+        failed: bool,
+    }
+
+    impl Read for ErrorAfterBody {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let read = self.body.read(buffer)?;
+            if read > 0 {
+                return Ok(read);
+            }
+            if self.failed {
+                panic!("stream body was read again after transport failure");
+            }
+            self.failed = true;
+            Err(io::Error::new(
+                io::ErrorKind::ConnectionReset,
+                "upstream disconnected",
+            ))
+        }
+    }
+
+    #[test]
+    fn agent_stream_body_converts_upstream_failure_to_eof() {
+        let upstream = ErrorAfterBody {
+            body: Cursor::new(b"data: partial\n\n".to_vec()),
+            failed: false,
+        };
+        let mut body = AgentStreamBody::new(upstream, "/sub-agent/agent/turn/stream");
+        let mut received = Vec::new();
+
+        body.read_to_end(&mut received)
+            .expect("upstream failure should terminate the downstream body");
+
+        assert_eq!(received, b"data: partial\n\n");
+        assert_eq!(
+            body.read(&mut [0_u8; 1])
+                .expect("terminated body should stay at EOF"),
+            0
+        );
+    }
 
     fn temp_layout(name: &str) -> StorageLayout {
         let stamp = SystemTime::now()
@@ -7643,6 +7574,39 @@ mod tests {
         let runtime = GatewayRuntime::headless();
 
         let result = dispatch("acceptance_current_session", json!({}), &state, &runtime);
+
+        assert_eq!(result.get("ok").and_then(Value::as_bool), Some(false));
+        assert_eq!(
+            result
+                .get("error")
+                .and_then(|error| error.get("code"))
+                .and_then(Value::as_str),
+            Some("UNAUTHORIZED")
+        );
+    }
+
+    #[test]
+    fn oss_list_my_files_routes_to_authenticated_application_boundary() {
+        let layout = temp_layout("oss-list-auth");
+        let config_dir = layout
+            .dirs
+            .get(&StorageKind::Config)
+            .cloned()
+            .unwrap_or_else(PathBuf::new);
+        let state = AppState::new(layout, I18nService::new(&config_dir));
+        let runtime = GatewayRuntime::headless();
+
+        let result = dispatch(
+            "oss_list_my_files",
+            json!({
+                "include_deleted": true,
+                "mime": "application/pdf",
+                "page": 1,
+                "page_size": 200
+            }),
+            &state,
+            &runtime,
+        );
 
         assert_eq!(result.get("ok").and_then(Value::as_bool), Some(false));
         assert_eq!(

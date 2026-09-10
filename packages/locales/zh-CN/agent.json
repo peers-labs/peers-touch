@@ -924,6 +924,7 @@
   "agent.portal.artifacts": "产物",
   "agent.portal.artifact": "产物",
   "agent.portal.toolDetail": "工具详情",
+  "agent.portal.turnDetails": "回合详情",
   "agent.portal.thread": "分支",
   "agent.portal.topicComments": "评论",
   "agent.portal.back": "返回",

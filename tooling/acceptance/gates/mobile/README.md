@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-28 | **Updated**: 2026-08-29
+> **Created**: 2026-08-28 | **Updated**: 2026-09-09
 > **Owner**: Mobile Team
 > **Module**: `tooling/acceptance/gates/mobile/`
 
@@ -248,6 +248,7 @@ authority and the fallback for platform-specific coverage.
 |---|---|
 | `appium.py` | W3C transport, session capabilities, context switching |
 | `simulator_e2e.py` | Simulator callback/restart/fail-closed assertions |
+| `simulator_layout_accessibility_e2e.py` | W9-B compact/large iOS launch-surface layout, locale, keyboard, AX, DOM, and cleanup assertions |
 | `native_e2e.py` | Physical-device provider and product journeys |
 | `mobile_simulator.py` | Simulator/emulator/build/Appium resource lifecycle |
 | `mobile_native.py` | Physical devices, services, credentials, and fixture inputs |
@@ -336,7 +337,248 @@ Those claims require `mobile-native-access-e2e`, physical iOS and Android
 devices, approved disposable provider accounts, authoritative Station proof
 snapshots, and all required negative cells.
 
-## 9. Reversal Triggers
+### 8.1 W9-B iOS Layout And Accessibility Gate
+
+`mobile-ios-simulator-layout-accessibility-e2e` uses the dedicated
+`mobile-ios-layout-simulator` environment. It builds one embedded iOS
+application and installs it on:
+
+- iPhone SE (3rd generation), the compact viewport cell;
+- iPhone 15 Pro Max, the large viewport cell.
+
+Each cell captures English portrait, keyboard-open portrait, Chinese portrait,
+and Chinese landscape evidence. The Gate rejects clipped leaf text, unlabeled
+interactive controls, controls outside native application bounds, controls
+outside the WebView viewport, missing locale changes, keyboard occlusion, and
+cleanup failure. Appium session cleanup and Provisioner cleanup are distinct
+from authenticated account-purge cleanup because this Gate exercises the
+unauthenticated Station launch surface.
+
+A pass does not prove authenticated Shell surfaces, Android, physical display
+behavior, VoiceOver/TalkBack, or physical-device performance.
+
+### 8.2 Supplemental Social Simulator Gates
+
+`mobile-simulator-social-convergence-e2e` and
+`mobile-simulator-chat-contacts-e2e` use
+`mobile-social-simulator` with two isolated simulator clients bound to two
+source-attested disposable Stations. They exercise the shared
+`MobileMessagingJourney` through production Harness actions.
+
+Successful execution is recorded as `PASS / PARTIAL / UNPROVEN`. It does not
+replace the physical `mobile-native-social-convergence-e2e` or
+`mobile-native-chat-contacts-e2e` Gates and cannot prove physical lifecycle,
+forced event-loss recovery, authoritative Station history, or full MS-AG04 /
+MS-AG06.
+
+Each supplemental result uses the canonical
+`acceptance-gate-evidence-report` shape so the outer runner retains its
+Gate/Phase/BOM/Spec traceability. Cleanup failures preserve a redacted reason
+separately from the primary product failure.
+
+## 9. Gate Runner Workflow
+
+### 9.1 W9-B Layout E2E (`simulator_layout_accessibility_e2e.py`)
+
+The W9-B Gate uses
+`tooling/acceptance/environments/mobile-ios-layout-simulator.yaml`, shares the
+base iOS build and XCUITest pins, runs the compact and large cells
+sequentially, emits the canonical `acceptance-gate-evidence-report`, and
+releases sessions and Provisioner resources in reverse acquisition order.
+
+### 9.2 Simulator E2E (`simulator_e2e.py`)
+
+The simulator gate runner executes the following sequence:
+
+1. **Environment load**: reads `tooling/acceptance/environments/mobile-simulator.yaml`
+   to determine build commands, Appium configuration, client definitions, and
+   cleanup order.
+2. **Build**: compiles the web layer and platform binary with acceptance Harness
+   flags (`VITE_ACCEPTANCE_HARNESS=1`, `MOBILE_TAURI_STATIC_BUNDLE_BUILD=1`).
+3. **Provision**: boots the simulator/emulator, starts Appium with the configured
+   driver, installs the application.
+4. **Session**: creates an Appium session with `noReset=true` and
+   `fullReset=false` (Provisioner owns install/uninstall).
+5. **Execute**: runs gate scenarios using native context for lifecycle actions
+   and WebView context for typed Harness actions via
+   `window.__PEERS_MOBILE_ACCEPTANCE__`.
+6. **Evidence**: collects screenshots, accessibility trees, projection readback,
+   timing data, and error codes. Artifacts are written to the run-scoped
+   storage root. The primary result uses the canonical
+   `acceptance-gate-evidence-report` envelope with Gate, Phase, BOM, Spec,
+   observed scope, unproven scope, and sample-emission fields so the outer
+   runner can retain source traceability and admit successful environment
+   evidence.
+7. **Cleanup**: tears down resources in the deterministic order defined in the
+   environment config: Appium process, app installations, ports, storage,
+   emulator process, simulator boot, environment lease.
+
+### 9.3 Simulator Runtime Lifecycle (`simulator_lifecycle_e2e.py`)
+
+`mobile-simulator-runtime-lifecycle-e2e` reuses the same pinned iOS Simulator
+and Android Emulator provisioner, then drives the production lifecycle kernel
+through typed Harness actions. It verifies:
+
+- one stable dependency-ordered runtime graph;
+- reverse-order suspend and forward-order resume;
+- monotonic generation advancement;
+- graph restart without page-owned runtime setup;
+- visible app, DOM, accessibility, and deterministic session cleanup.
+
+The Gate has no Station, actor, Relay, provider, or physical-device resources.
+It therefore does not prove session revalidation, Station/actor switching,
+revocation, physical background/foreground delivery, or secure-storage failure
+behavior.
+
+### 9.4 Station-Bound Simulator Lifecycle
+
+`mobile-simulator-station-lifecycle-e2e` uses the
+`mobile-station-lifecycle-simulator` environment. The environment composes the
+base iOS Simulator and Android Emulator build/runtime owner with two
+source-attested disposable Stations and one same-actor Fixture on both
+Stations. Relay and provider credentials are not part of this lifecycle cell.
+
+The Provisioner owns target verification, Fixture reset, Appium, and reverse
+cleanup. The Gate consumes Appium only through the inherited
+`mobile.simulator.appium-session` capability and selects Stations through typed
+client binding roles, so neither Appium connection details nor Station
+endpoints enter Gate logic.
+
+`create_bound_session` accepts only the client ID and a closed, topology-free
+launch-options object. Before returning, the parent resolves every required
+role from `RuntimeManifest.services`, observes each Station through the running
+client, persists the complete per-generation binding-proof set, and restores
+the primary role. Product Station changes use the separate `select_binding`
+operation, retain the same launch generation, and return the selected role's
+existing proof plus the remote-revocation result.
+Fixture account lookup and credential submission are likewise parent-owned;
+the child Gate requests authentication by client ID and receives only
+sanitized decision, session, lifecycle, and proof projections.
+
+The Gate proves valid-session restore, same-device-type takeover followed by
+revocation recovery, ten Station switches, logout, monotonic generation, and
+old-scope absence for AS-04 and AS-10. Physical background/foreground,
+Keychain/Keystore deletion failure, W4 persistence, and W5 event-ingress
+reconciliation remain outside this Gate.
+
+### 9.5 Native E2E (`native_e2e.py`)
+
+The native gate runner extends the simulator workflow for physical devices:
+
+1. **Environment load**: reads `tooling/acceptance/environments/mobile-native.yaml`
+   with service dependencies, fixtures, credentials, and device leases.
+2. **Lease acquisition**: acquires physical device leases through the resource
+   broker with fenced tokens, heartbeat, and quarantine policy.
+3. **Fixture setup**: prepares two-actor fixtures on the target Stations.
+4. **Build attestation**: records platform-specific build provenance (iOS
+   codesign CDHash, Android signer certificate).
+5. **Session**: creates per-device Appium sessions with isolated port sets.
+6. **Execute**: runs the full gate scenario set including real provider OAuth,
+   browser handoff, cross-device convergence, and performance measurement.
+7. **Evidence**: produces all simulator-tier artifacts plus physical-device
+   lease records, provider proof snapshots, build identity attestations, and
+   the `mobile-lease-outcome` payload.
+8. **Cleanup**: follows the extended cleanup order from `mobile-native.yaml`:
+   Appium sessions, client processes, ports, storage, fixture sessions, fixture
+   data, provider browser session leases, provider account leases, physical
+   device leases, correlation channel, client profile leases, environment
+   profile lease, deployment leases.
+
+`mobile-native.yaml.scenarios` is the resource-selection authority for this
+shared environment. The access scenario retains four clients, two Stations,
+Relay, actor reset, provider accounts, browser sessions, and all three D-18
+capabilities. Lifecycle and platform each select one physical iOS client and
+one physical Android client plus the Appium capability only; they do not resolve
+OAuth credentials, lease provider browsers/accounts, start Relay, or reset
+actors. Their Harness action lists are closed per scenario.
+
+The lifecycle branch drives Appium's bounded physical `background_app`
+operation for twenty background/foreground cycles, then verifies canonical
+generation/state through the production lifecycle Harness before restart. The
+platform branch uses XCUITest alert acceptance on iOS and UiAutomator2
+permission grants on Android, executes the production `platform.permission.*`
+and `platform.network.read` actions, and captures native accessibility,
+screenshot, and WebView evidence. Source tests validate orchestration only and
+never count as physical proof.
+
+### 9.6 Static Gate (`contract_static.py`)
+
+Runs compile-time contract checks without Appium or devices. Validates proto
+generation, PTID-only identity, and forbidden-pattern scans.
+
+## 10. Evidence Format
+
+### 10.1 Artifacts Per Gate
+
+Each gate run produces artifacts under its run-scoped storage root:
+
+| Artifact | Format | Produced by |
+|---|---|---|
+| Screenshots | PNG | Native context capture at assertion points |
+| Accessibility tree | JSON | Native context accessibility snapshot |
+| Projection readback | JSON | WebView Harness `projection.read` response |
+| Timing data | JSON | Timestamps for lifecycle transitions, command round-trips |
+| Error codes | JSON | Typed error codes from failed assertions |
+| Cleanup audit | JSON | Resource cleanup verification with before/after state |
+| Build identity | JSON | `mobile-installed-build-identity` payload (native tier) |
+| Device lease | JSON | `physical-device-lease` payload (native tier) |
+| Lease outcome | JSON | `mobile-lease-outcome` terminal payload (native tier) |
+| Fresh install trace | JSON | `mobile-fresh-install-trace` payload (native tier) |
+
+### 10.2 Evidence Store Integration
+
+Artifacts are registered in the Evidence Store with `ArtifactRef`s that bind:
+- the gate ID and run ID;
+- the source commit and workspace digest;
+- the artifact path and SHA-256;
+- the lifecycle generation and Station/PTID scope.
+
+Evidence indexed by `MS-PAxx` rows maps to the `MS-AGxx` gates through the
+product-to-architecture mapping in `docs/architecture/mobile/acceptance-matrix.md`.
+
+## 11. Coverage Audit
+
+### 11.1 Checking Proven Versus Unproven
+
+```bash
+# Validate all domain rows and report coverage
+python3 tooling/scripts/acceptance-validate.py --domain mobile --require-proven
+
+# Generate a coverage report
+make acceptance-coverage-report
+```
+
+The validator checks each `MS-PAxx` and `MS-AGxx` row against the Evidence
+Store. A row is `PROVEN` only when:
+- a passing runtime gate produced indexed evidence;
+- the evidence matches the required runtime cell (simulator or physical);
+- cleanup audit confirms resource baseline restoration.
+
+A row is `UNPROVEN` when evidence is missing, stale, mock-only, single-actor
+(for two-actor rows), browser-only (for native rows), or unindexed.
+
+### 11.2 Gap Detector
+
+```bash
+python3 -m tooling.acceptance.gates.mobile.proof_contracts --verify-cutover-inventory
+```
+
+This checks for the 25+ bypass patterns defined in `pt-acceptance-gap-detector`:
+mocks, stale evidence, single-actor claims on two-actor rows, hardcoded
+credentials, downgraded gates, and browser-only substitution for native proof.
+
+## 12. Environment Configuration Files
+
+| File | Purpose |
+|---|---|
+| `tooling/acceptance/environments/mobile-simulator.yaml` | Simulator/emulator tier: build commands, Appium server and driver config, client definitions with port roles, Harness contract, proof scope, and cleanup order |
+| `tooling/acceptance/environments/mobile-native.yaml` | Physical device tier: Station service dependencies, fixture definitions, credential references, device lease broker config, provider account assignments, browser profile mappings, and extended cleanup order |
+
+These files are consumed by the provisioner and gate runners. They are the
+machine-readable implementation of the environment contract defined in
+`docs/architecture/mobile/mobile-acceptance-environment.md`.
+
+## 13. Reversal Triggers
 
 Re-evaluate Appium as the primary Mobile transport if:
 
@@ -346,8 +588,12 @@ Re-evaluate Appium as the primary Mobile transport if:
 - platform-specific XCTest/UiAutomator suites can share the same typed action,
   evidence, isolation, and cleanup contracts without duplication.
 
-## 10. References
+## 14. References
 
+- Environment contract:
+  `docs/architecture/mobile/mobile-acceptance-environment.md`
+- Setup procedures: `docs/client/mobile/acceptance-setup.md`
+- Acceptance matrix: `docs/architecture/mobile/acceptance-matrix.md`
 - Tauri WebDriver: https://v2.tauri.app/develop/tests/webdriver/
 - Tauri manual WebDriver setup:
   https://v2.tauri.app/develop/tests/webdriver/manual-setup/

@@ -3,19 +3,89 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
+
+type turnHandlerTestStore struct{}
+
+func (*turnHandlerTestStore) Init(context.Context, ...option.Option) error {
+	return nil
+}
+
+func (*turnHandlerTestStore) RDS(
+	context.Context,
+	...store.RDSDMLOption,
+) (*gorm.DB, error) {
+	return turnHandlerTestDB, nil
+}
+
+func (*turnHandlerTestStore) Name() string {
+	return "turn-handler-test"
+}
+
+var turnHandlerTestStoreOnce sync.Once
+var turnHandlerTestDB *gorm.DB
+
+func openTurnHandlerTestDB(t *testing.T, name string) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(
+		sqlite.Open("file:"+name+"?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open turn handler database: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&persistence.Agent{},
+		&persistence.Conversation{},
+	); err != nil {
+		t.Fatalf("migrate turn handler database: %v", err)
+	}
+	turnHandlerTestDB = db
+	var injectErr error
+	turnHandlerTestStoreOnce.Do(func() {
+		injectErr = store.InjectStore(
+			context.Background(),
+			&turnHandlerTestStore{},
+		)
+	})
+	if injectErr != nil {
+		t.Fatalf("inject turn handler store: %v", injectErr)
+	}
+	return db
+}
+
+type fakeTurnRequest struct {
+	body []byte
+}
+
+func (r *fakeTurnRequest) Context() context.Context  { return context.Background() }
+func (r *fakeTurnRequest) Header() map[string]string { return map[string]string{} }
+func (r *fakeTurnRequest) Method() server.Method     { return server.POST }
+func (r *fakeTurnRequest) Path() string              { return "/agent/turns/stream" }
+func (r *fakeTurnRequest) Body() []byte              { return r.body }
 
 type fakeStreamResponse struct {
 	headers  map[string]string
@@ -109,6 +179,179 @@ func TestWriteTurnStreamEvent(t *testing.T) {
 	}
 }
 
+func TestWriteTurnStreamErrorPreservesTypedAttachmentPayload(t *testing.T) {
+	resp := &fakeStreamResponse{}
+	if err := writeTurnStreamError(
+		resp,
+		errcode.NewAttachmentRejected(
+			"attachment-1",
+			"attachment_content_does_not_match_mime",
+		),
+	); err != nil {
+		t.Fatalf("write typed stream error: %v", err)
+	}
+
+	body := resp.body.String()
+	dataLine := strings.TrimPrefix(
+		strings.TrimSpace(strings.Split(body, "\n")[1]),
+		"data: ",
+	)
+	var payload struct {
+		Type      string            `json:"type"`
+		Error     string            `json:"error"`
+		ErrorType string            `json:"error_type"`
+		LocaleKey string            `json:"locale_key"`
+		Retryable bool              `json:"retryable"`
+		Terminal  bool              `json:"terminal"`
+		Details   map[string]string `json:"details"`
+	}
+	if err := json.Unmarshal([]byte(dataLine), &payload); err != nil {
+		t.Fatalf("decode typed stream error: %v", err)
+	}
+	if payload.Type != "error" ||
+		payload.Error != errcode.AgentAttachmentRejectedLocaleKey ||
+		payload.ErrorType != string(errcode.AgentAttachmentRejected) ||
+		payload.LocaleKey != errcode.AgentAttachmentRejectedLocaleKey ||
+		payload.Retryable ||
+		!payload.Terminal ||
+		len(payload.Details) != 2 ||
+		payload.Details["attachment_id"] != "attachment-1" ||
+		payload.Details["reason_code"] != "attachment_content_does_not_match_mime" {
+		t.Fatalf("typed stream error payload = %+v", payload)
+	}
+}
+
+func TestWriteTurnStreamErrorPreservesAdmissionDuplicatePayload(t *testing.T) {
+	resp := &fakeStreamResponse{}
+	if err := writeTurnStreamErrorWithIdentity(
+		resp,
+		errcode.NewAdmissionDuplicateConflict("request-1", "turn-1"),
+		"conversation-1",
+		"agent-1",
+	); err != nil {
+		t.Fatalf("write typed stream error: %v", err)
+	}
+
+	body := resp.body.String()
+	dataLine := strings.TrimPrefix(
+		strings.TrimSpace(strings.Split(body, "\n")[1]),
+		"data: ",
+	)
+	var payload struct {
+		Error          string            `json:"error"`
+		ErrorType      string            `json:"error_type"`
+		LocaleKey      string            `json:"locale_key"`
+		Retryable      bool              `json:"retryable"`
+		Terminal       bool              `json:"terminal"`
+		Details        map[string]string `json:"details"`
+		ConversationID string            `json:"conversationId"`
+		AgentID        string            `json:"agentId"`
+	}
+	if err := json.Unmarshal([]byte(dataLine), &payload); err != nil {
+		t.Fatalf("decode typed stream error: %v", err)
+	}
+	if payload.Error != errcode.AgentAdmissionDuplicateConflictLocaleKey ||
+		payload.ErrorType != string(errcode.AgentAdmissionDuplicateConflict) ||
+		payload.LocaleKey != errcode.AgentAdmissionDuplicateConflictLocaleKey ||
+		payload.Retryable ||
+		!payload.Terminal ||
+		len(payload.Details) != 2 ||
+		payload.Details["idempotency_key_hash"] != fmt.Sprintf(
+			"%x",
+			sha256.Sum256([]byte("request-1")),
+		) ||
+		payload.Details["existing_command_id"] != "turn-1" ||
+		payload.ConversationID != "conversation-1" ||
+		payload.AgentID != "agent-1" {
+		t.Fatalf("typed stream error payload = %+v", payload)
+	}
+}
+
+func TestWriteTurnStreamErrorPreservesContextOverflowPayload(t *testing.T) {
+	resp := &fakeStreamResponse{}
+	if err := writeTurnStreamErrorWithIdentity(
+		resp,
+		errcode.NewContextOverflow(128, 129),
+		"conversation-1",
+		"agent-1",
+	); err != nil {
+		t.Fatalf("write typed stream error: %v", err)
+	}
+
+	body := resp.body.String()
+	dataLine := strings.TrimPrefix(
+		strings.TrimSpace(strings.Split(body, "\n")[1]),
+		"data: ",
+	)
+	var payload struct {
+		Error          string            `json:"error"`
+		ErrorType      string            `json:"error_type"`
+		LocaleKey      string            `json:"locale_key"`
+		Retryable      bool              `json:"retryable"`
+		Terminal       bool              `json:"terminal"`
+		Details        map[string]string `json:"details"`
+		ConversationID string            `json:"conversationId"`
+		AgentID        string            `json:"agentId"`
+	}
+	if err := json.Unmarshal([]byte(dataLine), &payload); err != nil {
+		t.Fatalf("decode typed stream error: %v", err)
+	}
+	if payload.Error != errcode.AgentContextOverflowLocaleKey ||
+		payload.ErrorType != string(errcode.AgentContextOverflow) ||
+		payload.LocaleKey != errcode.AgentContextOverflowLocaleKey ||
+		payload.Retryable ||
+		!payload.Terminal ||
+		len(payload.Details) != 2 ||
+		payload.Details["limit_tokens"] != "128" ||
+		payload.Details["actual_tokens"] != "129" ||
+		payload.ConversationID != "conversation-1" ||
+		payload.AgentID != "agent-1" {
+		t.Fatalf("typed stream error payload = %+v", payload)
+	}
+}
+
+func TestWriteTurnStreamErrorPreservesProviderCredentialMissingPayload(t *testing.T) {
+	resp := &fakeStreamResponse{}
+	if err := writeTurnStreamErrorWithIdentity(
+		resp,
+		errcode.NewProviderCredentialMissing("provider-1"),
+		"conversation-1",
+		"agent-1",
+	); err != nil {
+		t.Fatalf("write typed stream error: %v", err)
+	}
+
+	body := resp.body.String()
+	dataLine := strings.TrimPrefix(
+		strings.TrimSpace(strings.Split(body, "\n")[1]),
+		"data: ",
+	)
+	var payload struct {
+		Error          string            `json:"error"`
+		ErrorType      string            `json:"error_type"`
+		LocaleKey      string            `json:"locale_key"`
+		Retryable      bool              `json:"retryable"`
+		Terminal       bool              `json:"terminal"`
+		Details        map[string]string `json:"details"`
+		ConversationID string            `json:"conversationId"`
+		AgentID        string            `json:"agentId"`
+	}
+	if err := json.Unmarshal([]byte(dataLine), &payload); err != nil {
+		t.Fatalf("decode typed stream error: %v", err)
+	}
+	if payload.Error != errcode.AgentProviderCredentialMissingLocaleKey ||
+		payload.ErrorType != string(errcode.AgentProviderCredentialMissing) ||
+		payload.LocaleKey != errcode.AgentProviderCredentialMissingLocaleKey ||
+		!payload.Retryable ||
+		!payload.Terminal ||
+		len(payload.Details) != 1 ||
+		payload.Details["provider_id"] != "provider-1" ||
+		payload.ConversationID != "conversation-1" ||
+		payload.AgentID != "agent-1" {
+		t.Fatalf("typed stream error payload = %+v", payload)
+	}
+}
+
 func TestExposeTurnStreamIdentityFlushesDurableTurnID(t *testing.T) {
 	resp := &fakeStreamResponse{}
 
@@ -171,6 +414,132 @@ func TestDrainTurnStreamEventsStopsOnDisconnectedClient(t *testing.T) {
 func TestDomainTurnStatusToProtoProjectsLocalToolWaitAsRunning(t *testing.T) {
 	if got := domainTurnStatusToProto(domain.TurnStatusWaitingLocalTool); got != model.TurnStatus_TURN_STATUS_RUNNING {
 		t.Fatalf("waiting local tool must remain a non-terminal running projection, got %s", got)
+	}
+}
+
+func TestExecuteTurnPreflightsBeforeCreatingMissingConversation(t *testing.T) {
+	db := openTurnHandlerTestDB(t, "turn_handler_missing_conversation_sync")
+	ctx := coreauth.WithSubject(
+		context.Background(),
+		&coreauth.Subject{ID: "ptid:person:owner"},
+	)
+	handlers := NewTurnHandlers(
+		&service.TurnService{},
+		service.NewToolRegistryService(nil, nil),
+		nil,
+		service.NewConversationService(),
+	)
+
+	_, err := handlers.HandleExecuteTurn(ctx, &model.ExecuteTurnRequest{
+		ConversationId: "missing-sync-conversation",
+		AgentId:        "agent-1",
+		UserInput:      "must preflight",
+		Provider:       stringPointer("test-provider"),
+		Model:          stringPointer("test-model"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "runtime admission authority is required") {
+		t.Fatalf("missing conversation preflight error = %v", err)
+	}
+	assertConversationNotCreated(t, db, "missing-sync-conversation")
+	_, err = handlers.HandleExecuteTurn(ctx, &model.ExecuteTurnRequest{
+		AgentId:   "agent-1",
+		UserInput: "must preflight generated conversation",
+		Provider:  stringPointer("test-provider"),
+		Model:     stringPointer("test-model"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "runtime admission authority is required") {
+		t.Fatalf("generated conversation preflight error = %v", err)
+	}
+	assertConversationCount(t, db, 0)
+}
+
+func TestExecuteTurnStreamPreflightsBeforeCreatingMissingConversation(t *testing.T) {
+	db := openTurnHandlerTestDB(t, "turn_handler_missing_conversation_stream")
+	ctx := coreauth.WithSubject(
+		context.Background(),
+		&coreauth.Subject{ID: "ptid:person:owner"},
+	)
+	handlers := NewTurnHandlers(
+		&service.TurnService{},
+		service.NewToolRegistryService(nil, nil),
+		nil,
+		service.NewConversationService(),
+	)
+	requestBody, err := protojson.Marshal(&model.ExecuteTurnRequest{
+		ConversationId: "missing-stream-conversation",
+		AgentId:        "agent-1",
+		UserInput:      "must preflight",
+		Provider:       stringPointer("test-provider"),
+		Model:          stringPointer("test-model"),
+	})
+	if err != nil {
+		t.Fatalf("encode stream request: %v", err)
+	}
+	response := &fakeStreamResponse{}
+	if err := handlers.HandleExecuteTurnStream(
+		ctx,
+		&fakeTurnRequest{body: requestBody},
+		response,
+	); err != nil {
+		t.Fatalf("execute stream handler: %v", err)
+	}
+	if !strings.Contains(
+		response.body.String(),
+		"runtime admission authority is required",
+	) {
+		t.Fatalf("stream preflight response = %q", response.body.String())
+	}
+	assertConversationNotCreated(t, db, "missing-stream-conversation")
+	generatedRequestBody, err := protojson.Marshal(&model.ExecuteTurnRequest{
+		AgentId:   "agent-1",
+		UserInput: "must preflight generated conversation",
+		Provider:  stringPointer("test-provider"),
+		Model:     stringPointer("test-model"),
+	})
+	if err != nil {
+		t.Fatalf("encode generated stream request: %v", err)
+	}
+	generatedResponse := &fakeStreamResponse{}
+	if err := handlers.HandleExecuteTurnStream(
+		ctx,
+		&fakeTurnRequest{body: generatedRequestBody},
+		generatedResponse,
+	); err != nil {
+		t.Fatalf("execute generated stream handler: %v", err)
+	}
+	if !strings.Contains(
+		generatedResponse.body.String(),
+		"runtime admission authority is required",
+	) {
+		t.Fatalf(
+			"generated stream preflight response = %q",
+			generatedResponse.body.String(),
+		)
+	}
+	assertConversationCount(t, db, 0)
+}
+
+func assertConversationNotCreated(t *testing.T, db *gorm.DB, conversationID string) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&persistence.Conversation{}).
+		Where("id = ?", conversationID).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count conversations: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("preflight rejection persisted conversation %q", conversationID)
+	}
+}
+
+func assertConversationCount(t *testing.T, db *gorm.DB, want int64) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&persistence.Conversation{}).Count(&count).Error; err != nil {
+		t.Fatalf("count all conversations: %v", err)
+	}
+	if count != want {
+		t.Fatalf("conversation count = %d, want %d", count, want)
 	}
 }
 
@@ -278,7 +647,7 @@ func TestConversationReadbackProjectsRuntimeBinding(t *testing.T) {
 	conversation := &domain.Conversation{
 		ConversationID: "conversation-1",
 		AgentID:        "agent-1",
-		Ptid:           "ptid:person:owner",
+		ActorPTID:      "ptid:person:owner",
 		RuntimeBinding: binding,
 	}
 

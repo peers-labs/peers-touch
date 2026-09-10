@@ -4,13 +4,16 @@ import { Flexbox } from 'react-layout-kit';
 import { ActionIcon } from '@lobehub/ui';
 import { Dropdown, Input, theme } from 'antd';
 import type { MenuProps } from 'antd';
-import { ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, Search, Slash, Square } from 'lucide-react';
+import { AlertTriangle, ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, Search, Slash, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
 import { useMentionStore } from '../store/mentions';
 import { AttachmentStage } from './composer/AttachmentStage';
-import { useAgentAttachmentDrafts } from './composer/useAgentAttachmentDrafts';
+import {
+  AGENT_ATTACHMENT_ACCEPT,
+  useAgentAttachmentDrafts,
+} from './composer/useAgentAttachmentDrafts';
 import {
   modelMenuIconStyle,
   modelMenuItemStyle,
@@ -22,6 +25,7 @@ import { MentionPopup } from './chat/MentionPopup';
 import { MentionTagBar } from './chat/MentionTag';
 import type { AvailableModel, Agent } from '../services/desktop_api';
 import { ProviderIcon } from './settings/ProviderIcon';
+import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning';
 
 const COMPOSER_COLORS = {
   border: '#d1d1d1',
@@ -59,7 +63,9 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
   const readinessErrorKey = useChatStore(s => s.readinessErrorKey);
   const composerFill = useChatStore(s => s.composerFill);
+  const composerFocusNonce = useChatStore(s => s.composerFocusNonce);
   const consumeComposerFill = useChatStore(s => s.consumeComposerFill);
+  const consumeComposerFocus = useChatStore(s => s.consumeComposerFocus);
   const selectedModel = useAgentStore(s => s.selectedModel);
   const selectedProviderId = useAgentStore(s => s.selectedProviderId);
   const defaultModel = useAgentStore(s => s.defaultModel);
@@ -80,6 +86,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     failed,
     addFiles,
     clearDrafts,
+    rejectDraft,
     removeDraft,
     retryDraft,
   } = useAgentAttachmentDrafts({
@@ -87,6 +94,11 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     disabled: isStreaming,
     fallbackName: t('chat.input.attachmentFallbackName'),
   });
+  const currentModelId = selectedModel || defaultModel;
+  const modelInfo =
+    availableModels.find((model) => model.id === currentModelId && (!selectedProviderId || model.provider_id === selectedProviderId)) ||
+    availableModels.find((model) => model.id === currentModelId);
+  const capabilityWarning = selectAgentCapabilityWarning(modelInfo, readyAttachments);
 
   useEffect(() => {
     const previousKey = prevSessionKeyRef.current;
@@ -115,6 +127,12 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     });
   }, [composerFill, consumeComposerFill]);
 
+  useEffect(() => {
+    if (composerFocusNonce === 0) return;
+    consumeComposerFocus();
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [composerFocusNonce, consumeComposerFocus]);
+
   const resizeTextarea = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -138,7 +156,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if ((!text && readyAttachments.length === 0) || isStreaming || uploading || failed) return;
+    if ((!text && readyAttachments.length === 0) || isStreaming || uploading || failed || capabilityWarning?.blocking) return;
     sendMessage(text, toComposerAttachments(), {
       onAccepted: () => {
         setInput('');
@@ -146,8 +164,15 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         clearMentions();
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
       },
+      onRejected: (error) => {
+        if (error?.error_type !== 'CONTEXT_ATTACHMENT_REJECTED') return;
+        rejectDraft(
+          error.details.attachment_id,
+          error.locale_key || 'agent.errors.attachmentRejected',
+        );
+      },
     });
-  }, [input, readyAttachments.length, isStreaming, uploading, failed, sendMessage, toComposerAttachments, clearDrafts, clearMentions]);
+  }, [input, readyAttachments.length, isStreaming, uploading, failed, capabilityWarning, sendMessage, toComposerAttachments, clearDrafts, clearMentions, rejectDraft]);
 
   // Scan the draft for "@" triggers whenever it changes, driving the popup.
   const handleInputChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -202,12 +227,8 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     event.target.value = '';
   }, [addFiles]);
 
-  const currentModelId = selectedModel || defaultModel;
-  const modelInfo =
-    availableModels.find((model) => model.id === currentModelId && (!selectedProviderId || model.provider_id === selectedProviderId)) ||
-    availableModels.find((model) => model.id === currentModelId);
   const currentModelKey = modelInfo ? modelMenuKey(modelInfo) : currentModelId;
-  const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading || failed;
+  const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading || failed || Boolean(capabilityWarning?.blocking);
 
   const modelDisplayName = modelInfo?.display_name || modelInfo?.id || currentModelId;
   const modelLabel = modelInfo
@@ -327,6 +348,26 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         <div style={{ color: token.colorError, fontSize: 12 }}>
           {t(readinessErrorKey)}
         </div>
+      )}
+
+      {capabilityWarning && (
+        <Flexbox
+          data-agent-capability-warning={capabilityWarning.kind}
+          horizontal
+          align="center"
+          gap={6}
+          style={{
+            color: token.colorWarningText,
+            background: token.colorWarningBg,
+            border: `1px solid ${token.colorWarningBorder}`,
+            borderRadius: token.borderRadiusSM,
+            fontSize: 12,
+            padding: '6px 8px',
+          }}
+        >
+          <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+          <span>{t(capabilityWarning.messageKey)}</span>
+        </Flexbox>
       )}
 
       <MentionTagBar />
@@ -483,9 +524,10 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
       </Flexbox>
 
       <input
+        data-pt-agent-attachment-input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept={AGENT_ATTACHMENT_ACCEPT}
         multiple
         style={{ display: 'none' }}
         onChange={handleFilesSelected}

@@ -8,7 +8,7 @@ import type { AgentAttachmentRefInput } from '../../services/desktop_api';
 import { conversationIdFromAgentDraftKey } from '../../store/agentDraft';
 import { log } from '../../utils/logger';
 
-export type AgentDraftStatus = 'uploading' | 'ready' | 'failed';
+export type AgentDraftStatus = 'uploading' | 'ready' | 'failed' | 'rejected';
 
 export interface AgentAttachmentDraft {
   id: string;
@@ -22,6 +22,27 @@ export interface AgentAttachmentDraft {
   attachment?: AgentAttachmentRefInput;
   file: File;
 }
+
+// #region debug-point A-D:foundation-attachment-upload
+function reportFoundationAttachmentUploadDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7787/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-attachment-timeout',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'useAgentAttachmentDrafts.ts',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
 
 interface UseAgentAttachmentDraftsOptions {
   conversationId: string;
@@ -50,7 +71,12 @@ function deleteUploadedAttachment(draft: AgentAttachmentDraft): void {
 export function agentAttachmentDraftsBlockSend(
   drafts: readonly Pick<AgentAttachmentDraft, 'status'>[],
 ): boolean {
-  return drafts.some((draft) => draft.status === 'uploading' || draft.status === 'failed');
+  return drafts.some(
+    (draft) =>
+      draft.status === 'uploading'
+      || draft.status === 'failed'
+      || draft.status === 'rejected',
+  );
 }
 
 /** File types accepted by the agent attachment flow. */
@@ -91,13 +117,39 @@ export function useAgentAttachmentDrafts({
     deleteUploadedAttachment(target);
   }, []);
 
+  const rejectDraft = useCallback((attachmentId: string, error: string) => {
+    const target = draftsRef.current.find(
+      (draft) => draft.attachment?.attachment_id === attachmentId,
+    );
+    if (!target) return;
+    patchDraft(target.id, {
+      status: 'rejected',
+      progress: 100,
+      error,
+    });
+  }, [patchDraft]);
+
   const uploadDraft = useCallback((draft: AgentAttachmentDraft) => {
     patchDraft(draft.id, { status: 'uploading', progress: 10, error: undefined });
     const attachmentConversationId =
       conversationIdFromAgentDraftKey(conversationId) ?? conversationId;
+    void reportFoundationAttachmentUploadDebug('A-D', 'upload-started', {
+      draftId: draft.id,
+      conversationIdPresent: attachmentConversationId.length > 0,
+      conversationUsesDraftKey: attachmentConversationId !== conversationId,
+      mimeType: draft.file.type,
+      sizeBytes: draft.file.size,
+    });
     uploadAgentAttachmentFile({ conversationId: attachmentConversationId }, draft.file)
       .then((attachment) => {
-        if (!draftsRef.current.some((item) => item.id === draft.id)) {
+        const draftRetained = draftsRef.current.some((item) => item.id === draft.id);
+        void reportFoundationAttachmentUploadDebug('A-B', 'upload-resolved', {
+          draftId: draft.id,
+          draftRetained,
+          attachmentIdPresent: Boolean(attachment.attachment_id),
+          objectRefPresent: Boolean(attachment.object_ref),
+        });
+        if (!draftRetained) {
           void deleteAgentAttachment(attachment);
           return;
         }
@@ -106,11 +158,24 @@ export function useAgentAttachmentDrafts({
       .catch((error) => {
         log.error('agentChat', 'attachment upload failed', error);
         const errorMessage = error instanceof Error ? error.message : 'upload_failed';
+        void reportFoundationAttachmentUploadDebug('A-D', 'upload-rejected', {
+          draftId: draft.id,
+          draftRetained: draftsRef.current.some((item) => item.id === draft.id),
+          errorName: error instanceof Error ? error.name : typeof error,
+          errorMessage,
+        });
         patchDraft(draft.id, { status: 'failed', progress: 0, error: errorMessage });
       });
   }, [conversationId, patchDraft]);
 
   const addFiles = useCallback((files: File[]) => {
+    void reportFoundationAttachmentUploadDebug('A-C', 'files-selected', {
+      disabled,
+      fileCount: files.length,
+      mimeTypes: files.map((file) => file.type),
+      sizes: files.map((file) => file.size),
+      conversationIdPresent: conversationId.length > 0,
+    });
     if (disabled || files.length === 0) return;
     const added = files.map<AgentAttachmentDraft>((file) => ({
       id: nextDraftId(),
@@ -131,7 +196,7 @@ export function useAgentAttachmentDrafts({
 
   const retryDraft = useCallback((id: string) => {
     const draft = draftsRef.current.find((item) => item.id === id);
-    if (draft) uploadDraft(draft);
+    if (draft?.status === 'failed') uploadDraft(draft);
   }, [uploadDraft]);
 
   useEffect(() => () => {
@@ -150,12 +215,16 @@ export function useAgentAttachmentDrafts({
   return {
     drafts,
     readyAttachments: drafts
+      .filter((draft) => draft.status === 'ready')
       .map((draft) => draft.attachment)
       .filter((attachment): attachment is AgentAttachmentRefInput => Boolean(attachment)),
     uploading: drafts.some((draft) => draft.status === 'uploading'),
-    failed: drafts.some((draft) => draft.status === 'failed'),
+    failed: drafts.some(
+      (draft) => draft.status === 'failed' || draft.status === 'rejected',
+    ),
     addFiles,
     clearDrafts,
+    rejectDraft,
     removeDraft,
     retryDraft,
   };

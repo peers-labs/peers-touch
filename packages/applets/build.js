@@ -48,14 +48,29 @@ function writeStderr(message = '') {
   process.stderr.write(`${message}\n`)
 }
 
+function quoteWindowsCommandArgument(value) {
+  return `"${String(value).replaceAll('"', '""')}"`
+}
+
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const windows = process.platform === 'win32'
+  const executable = windows
+    ? [command, ...args.map(quoteWindowsCommandArgument)].join(' ')
+    : command
+  const spawnOptions = {
     cwd: options.cwd,
     stdio: options.stdio ?? 'inherit',
     encoding: 'utf8',
-  })
+    shell: windows,
+  }
+  const result = windows
+    ? spawnSync(executable, spawnOptions)
+    : spawnSync(executable, args, spawnOptions)
   if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(' ')} failed with exit code ${result.status ?? 'unknown'}`)
+    const detail = result.error ? `: ${result.error.message}` : ''
+    throw new Error(
+      `${command} ${args.join(' ')} failed with exit code ${result.status ?? 'unknown'}${detail}`,
+    )
   }
   return result
 }

@@ -10,6 +10,7 @@ export interface MobileStationEntry {
   lastUsedAt: number;
   lastCheckedAt?: number;
   online?: boolean;
+  identityVerified?: boolean;
 }
 
 export interface StoredStationRegistry {
@@ -76,26 +77,30 @@ export function addStationEntry(
   registry: StoredStationRegistry,
   input: VerifiedStationInput,
   status: StationStatusInput = {},
+  identityVerified: boolean = true,
 ): { ok: true; registry: StoredStationRegistry } | { ok: false; error: string } {
   const stationPeerId = input.stationPeerId.trim();
   const normalized = normalizeVerifiedStationUrl(input.url);
   if (!stationPeerId || !normalized) return { ok: false, error: 'mobile.launch.stationIdentityInvalid' };
-  const conflictingUrl = registry.entries.find(
-    (entry) => entry.url === normalized && entry.stationPeerId !== stationPeerId,
-  );
-  if (conflictingUrl) return { ok: false, error: 'mobile.launch.stationIdentityMismatch' };
+  if (identityVerified) {
+    const conflictingUrl = registry.entries.find(
+      (entry) => entry.url === normalized && entry.stationPeerId !== stationPeerId,
+    );
+    if (conflictingUrl) return { ok: false, error: 'mobile.launch.stationIdentityMismatch' };
+  }
 
   const now = Date.now();
   const entries = registry.entries.filter((entry) => entry.stationPeerId !== stationPeerId);
   const existing = registry.entries.find((entry) => entry.stationPeerId === stationPeerId);
   const nextEntry: MobileStationEntry = existing
-    ? { ...existing, url: normalized, lastUsedAt: now }
+    ? { ...existing, url: normalized, lastUsedAt: now, identityVerified }
     : {
         stationPeerId,
         url: normalized,
         label: extractStationLabel(normalized),
         createdAt: now,
         lastUsedAt: now,
+        identityVerified,
       };
   const checkedEntry = applyStationStatus(nextEntry, status);
 

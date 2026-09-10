@@ -119,17 +119,20 @@ class CredentialRefTests(unittest.TestCase):
     def test_reference_suffix_is_safe_but_reference_secret_is_redacted(self):
         self.assertFalse(is_sensitive_key("credentialRefs"))
         self.assertFalse(is_sensitive_key("credential_reference"))
+        self.assertFalse(is_sensitive_key("errorKey"))
         self.assertTrue(is_sensitive_key("credential_reference_secret"))
         value = redact_value(
             {
                 "accessTokensPresent": False,
                 "credentialRefs": ["env:TEST_PASSWORD"],
                 "credentialReferenceSecret": "must-not-survive",
+                "errorKey": "auth.oauth.invalidCallback",
             }
         )
         self.assertFalse(value["accessTokensPresent"])
         self.assertEqual(value["credentialRefs"], ["env:TEST_PASSWORD"])
         self.assertEqual(value["credentialReferenceSecret"], REDACTED)
+        self.assertEqual(value["errorKey"], "auth.oauth.invalidCallback")
 
 
 class EnvironmentContractTests(unittest.TestCase):
@@ -140,7 +143,9 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertTrue(contract.profile.identity_match)
         self.assertIn("station", contract.services)
         self.assertTrue(contract.services["station"].required)
-        self.assertEqual(contract.services["station"].kind, "station")
+        self.assertTrue(
+            all(service.kind == "station" for service in contract.services.values())
+        )
         self.assertEqual(len(contract.credentials), 1)
         self.assertEqual(contract.credentials[0].id, "evidence-leak-canary")
         self.assertTrue(contract.credentials[0].generated_if_missing)
@@ -151,25 +156,25 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(contract.id, "local-desktop-gateway")
         self.assertIn("station", contract.services)
         self.assertIn("desktop-gateway", contract.services)
-        self.assertEqual(contract.fixtures[0].id, "chat-native-actors")
-        self.assertTrue(contract.fixtures[0].authorization_required)
-        self.assertEqual(
-            contract.fixtures[0].authorization_ref,
-            "env:CHAT_ACCEPTANCE_RESET",
-        )
-        self.assertEqual(contract.credentials[0].id, "chat-password")
-        self.assertEqual(
-            contract.credentials[0].source_ref,
-            "fixture:apps/station/app/conf/actor.yml#preset_users",
-        )
+        self.assertEqual(contract.fixtures, ())
+        self.assertEqual(contract.credentials, ())
 
     def test_load_native_tauri_contract(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
         )
         self.assertEqual(contract.id, "native-tauri-embedded-webdriver")
-        self.assertEqual(set(contract.services), {"station"})
-        self.assertEqual(contract.services["station"].kind, "station")
+        self.assertEqual(
+            set(contract.services),
+            {"station-four", "station-five"},
+        )
+        self.assertEqual(
+            {client.id for client in contract.clients},
+            {"alice", "alice2", "bob", "bob1", "bob2", "charlie"},
+        )
+        self.assertTrue(
+            all(service.kind == "station" for service in contract.services.values())
+        )
 
     def test_load_mobile_native_contract(self):
         contract = EnvironmentContract.from_yaml(

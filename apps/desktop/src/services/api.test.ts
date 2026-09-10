@@ -4,6 +4,7 @@ import { create, toBinary } from '@bufbuild/protobuf'
 import {
   AGENT_REPLAY_RETRY_DELAYS_MS,
   AGENT_SSE_IDLE_TIMEOUT_MS,
+  agentTurnStreamErrorFromData,
   api,
   classifyAgentTurnTerminalEvent,
   createAgentTurnSourceDelivery,
@@ -43,6 +44,115 @@ afterEach(() => {
   if (!hadWindow && typeof window !== 'undefined') {
     delete (globalThis as unknown as { window?: Window }).window
   }
+})
+
+describe('agentTurnStreamErrorFromData', () => {
+  it('preserves the Station attachment rejection contract', () => {
+    const error = agentTurnStreamErrorFromData({
+      type: 'error',
+      error: 'agent.errors.attachmentRejected',
+      error_type: 'CONTEXT_ATTACHMENT_REJECTED',
+      locale_key: 'agent.errors.attachmentRejected',
+      retryable: false,
+      terminal: true,
+      details: {
+        attachment_id: 'attachment-1',
+        reason_code: 'attachment_content_does_not_match_mime',
+      },
+    })
+
+    expect(error.message).toBe('agent.errors.attachmentRejected')
+    expect(error.typedError).toEqual({
+      error: 'agent.errors.attachmentRejected',
+      error_type: 'CONTEXT_ATTACHMENT_REJECTED',
+      locale_key: 'agent.errors.attachmentRejected',
+      retryable: false,
+      terminal: true,
+      details: {
+        attachment_id: 'attachment-1',
+        reason_code: 'attachment_content_does_not_match_mime',
+      },
+    })
+  })
+
+  it('adds the credential settings recovery without changing the typed payload', () => {
+    const error = agentTurnStreamErrorFromData({
+      type: 'error',
+      error: 'agent.errors.providerCredentialMissing',
+      error_type: 'PROVIDER_CREDENTIAL_MISSING',
+      locale_key: 'agent.errors.providerCredentialMissing',
+      retryable: true,
+      terminal: true,
+      details: {
+        provider_id: 'provider-1',
+      },
+    })
+
+    expect(error.typedError).toEqual({
+      error: 'agent.errors.providerCredentialMissing',
+      error_type: 'PROVIDER_CREDENTIAL_MISSING',
+      locale_key: 'agent.errors.providerCredentialMissing',
+      retryable: true,
+      terminal: true,
+      details: {
+        provider_id: 'provider-1',
+      },
+    })
+    expect(error.providerId).toBe('provider-1')
+    expect(error.resolution).toEqual({
+      type: 'openProviderSettings',
+      providerId: 'provider-1',
+      label: 'agent.recovery.configureCredential',
+    })
+  })
+
+  it('adds the original turn recovery for duplicate admission conflicts', () => {
+    const error = agentTurnStreamErrorFromData({
+      type: 'error',
+      error: 'agent.errors.duplicateConflict',
+      error_type: 'ADMISSION_DUPLICATE_CONFLICT',
+      locale_key: 'agent.errors.duplicateConflict',
+      retryable: false,
+      terminal: true,
+      details: {
+        idempotency_key_hash: 'a'.repeat(64),
+        existing_command_id: 'turn-original',
+      },
+    })
+
+    expect(error.typedError).toEqual({
+      error: 'agent.errors.duplicateConflict',
+      error_type: 'ADMISSION_DUPLICATE_CONFLICT',
+      locale_key: 'agent.errors.duplicateConflict',
+      retryable: false,
+      terminal: true,
+      details: {
+        idempotency_key_hash: 'a'.repeat(64),
+        existing_command_id: 'turn-original',
+      },
+    })
+    expect(error.resolution).toEqual({
+      type: 'openOriginal',
+      existingCommandId: 'turn-original',
+      label: 'agent.recovery.openOriginal',
+    })
+  })
+
+  it('does not expose original recovery without an authoritative command id', () => {
+    const error = agentTurnStreamErrorFromData({
+      type: 'error',
+      error: 'agent.errors.duplicateConflict',
+      error_type: 'ADMISSION_DUPLICATE_CONFLICT',
+      locale_key: 'agent.errors.duplicateConflict',
+      retryable: false,
+      terminal: true,
+      details: {
+        idempotency_key_hash: 'a'.repeat(64),
+      },
+    })
+
+    expect(error.resolution).toBeUndefined()
+  })
 })
 
 describe('api.health', () => {
@@ -171,6 +281,168 @@ describe('Agent turn stream completion', () => {
 
     expect(source.conversationId).toBe('')
     expect(source.turnId).toBe('')
+  })
+
+  it('source-binds a Browser pre-admission error before projection metadata', async () => {
+    const browserWindow = Object.assign(new EventTarget(), {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    })
+    vi.stubGlobal('window', browserWindow)
+    ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
+      'http://127.0.0.1:3030'
+    const rawData = {
+      type: 'error',
+      error: 'agent.errors.contextOverflow',
+      error_type: 'CONTEXT_OVERFLOW',
+      locale_key: 'agent.errors.contextOverflow',
+      retryable: false,
+      terminal: true,
+      conversationId: 'conversation-1',
+      agentId: 'agent-1',
+      details: {
+        limit_tokens: '64',
+        actual_tokens: '65',
+      },
+    }
+    mockFetch.mockResolvedValue(new Response(
+      `event: error\ndata: ${JSON.stringify(rawData)}\n\n`,
+      {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      },
+    ))
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurn(
+      {
+        client_idempotency_key: 'request-browser-context-overflow',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'oversized',
+      },
+      onEvent,
+      vi.fn(),
+      onError,
+      'ptid:person:owner',
+    )
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'error',
+      data: {
+        ...rawData,
+        streamGeneration: expect.any(Number),
+      },
+      sourceDelivery: {
+        transport: 'station-sse',
+        ptid: 'ptid:person:owner',
+        conversationId: 'conversation-1',
+        turnId: '',
+        sequence: 0,
+        rawPayload: {
+          eventType: 'error',
+          data: rawData,
+        },
+      },
+    }))
+  })
+
+  it('source-binds a native pre-admission error before projection metadata', async () => {
+    type NativeTurnEvent = {
+      payload: {
+        streamId: string
+        ptid: string
+        event: string
+        data: Record<string, unknown>
+      }
+    }
+    let listener: ((event: NativeTurnEvent) => void) | undefined
+    let startedStreamId = ''
+    const unlisten = vi.fn()
+    mockListen.mockImplementation(async (_event, callback) => {
+      listener = callback as (event: NativeTurnEvent) => void
+      return unlisten
+    })
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      if (command !== 'agent_execute_turn_stream') {
+        return Promise.reject(new Error(`unexpected command: ${command}`))
+      }
+      startedStreamId = String(
+        (args as { input: { stream_id: string } }).input.stream_id,
+      )
+      return Promise.resolve({
+        ok: true,
+        data: {
+          command,
+          status: JSON.stringify({ stream_id: startedStreamId }),
+        },
+      })
+    })
+    const rawData = {
+      type: 'error',
+      error: 'agent.errors.contextOverflow',
+      error_type: 'CONTEXT_OVERFLOW',
+      locale_key: 'agent.errors.contextOverflow',
+      retryable: false,
+      terminal: true,
+      conversationId: 'conversation-1',
+      agentId: 'agent-1',
+      details: {
+        limit_tokens: '64',
+        actual_tokens: '65',
+      },
+    }
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurn(
+      {
+        client_idempotency_key: 'request-native-context-overflow',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'oversized',
+      },
+      onEvent,
+      vi.fn(),
+      onError,
+      'ptid:person:owner',
+    )
+    await vi.waitFor(() => {
+      expect(listener).toBeTypeOf('function')
+      expect(startedStreamId).not.toBe('')
+    })
+
+    listener?.({
+      payload: {
+        streamId: startedStreamId,
+        ptid: 'ptid:person:owner',
+        event: 'error',
+        data: rawData,
+      },
+    })
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'error',
+      data: {
+        ...rawData,
+        streamGeneration: expect.any(Number),
+      },
+      sourceDelivery: {
+        transport: 'station-sse',
+        ptid: 'ptid:person:owner',
+        conversationId: 'conversation-1',
+        turnId: '',
+        sequence: 0,
+        rawPayload: {
+          eventType: 'error',
+          data: rawData,
+        },
+      },
+    }))
+    expect(unlisten).toHaveBeenCalledTimes(1)
   })
 
   it('cancels a native transport aborted while its start command is pending', async () => {

@@ -74,6 +74,7 @@ message TurnSnapshot {
 
 message CancelledPayload {
   string reason = 1;
+  ErrorPayload outcome_error = 2;
 }
 
 message CatchupDonePayload {

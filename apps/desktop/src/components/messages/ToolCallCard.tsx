@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { Tag } from '@lobehub/ui';
 import { theme } from 'antd';
@@ -10,11 +10,18 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  RotateCcw,
   Workflow,
 } from 'lucide-react';
 import type { ToolCallInfo, DelegationTaskInfo } from '../../store/chat';
 import { usePortalStore } from '../../store/portal';
-import { logToolDecisionFailure, submitAgentToolDecision, toolRuntime } from '../../runtimes/toolRuntime';
+import {
+  logToolDecisionFailure,
+  logToolRecoveryFailure,
+  resolveToolCallProjection,
+  submitAgentToolDecision,
+  toolRuntime,
+} from '../../runtimes/toolRuntime';
 import { useTranslation } from 'react-i18next';
 
 // --- Delegation helpers ---
@@ -91,56 +98,51 @@ export function DelegationResultsBlock({ results }: { results: DelegationTaskInf
 
 // --- Single tool call row ---
 
-export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallInfo; messageId?: string }) {
+export function ToolCallItem({
+  tool: sourceTool,
+  messageId,
+  onRequestAgain,
+}: {
+  tool: ToolCallInfo;
+  messageId?: string;
+  onRequestAgain?: () => Promise<void>;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [submittingDecision, setSubmittingDecision] = useState(false);
+  const [requestingAgain, setRequestingAgain] = useState(false);
   const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
+  const { t } = useTranslation(['chat', 'agent']);
   const projection = useSyncExternalStore(
     toolRuntime.subscribe,
     () => toolRuntime.getProjection(sourceTool.id),
     () => undefined,
   );
-  const sourceIsTerminal = sourceTool.status === 'success' ||
-    sourceTool.status === 'error' ||
-    sourceTool.status === 'denied' ||
-    sourceTool.status === 'cancelled';
-  const useProjection = projection &&
-    !sourceIsTerminal &&
-    projection.decisionRevision >= (sourceTool.decisionRevision ?? 0);
-  const tool: ToolCallInfo = useProjection
-    ? {
-      ...sourceTool,
-      id: projection.toolCallId,
-      name: projection.toolName,
-      args: projection.arguments,
-      result: projection.result,
-      pending: projection.pending,
-      status: projection.status,
-      progress: projection.progress,
-      progressPct: projection.progressPct,
-      approvalId: projection.approvalId,
-      serverName: projection.serverName,
-      source: projection.source,
-      approvalActor: projection.approvalActor,
-      approvedAt: projection.decidedAt,
-      decisionId: projection.decisionId,
-      decisionRevision: projection.decisionRevision,
-      payloadHash: projection.payloadHash,
-      error: projection.error || projection.decisionErrorCode,
-      delegationResults: projection.delegationResults,
-    }
-    : sourceTool;
+  const tool = resolveToolCallProjection(sourceTool, projection);
   const approvalRequired = tool.status === 'approval_required' && !!tool.approvalId;
   const canSubmitDecision = approvalRequired &&
     tool.decisionRevision !== undefined &&
     !submittingDecision;
-  const denied = tool.status === 'denied' || tool.status === 'error';
+  const denied =
+    tool.status === 'denied'
+    || tool.status === 'error'
+    || tool.status === 'expired';
+  const approvalExpired =
+    tool.status === 'expired'
+    && tool.error === 'agent.errors.toolApprovalExpired';
+  const deniedMessage = denied && tool.error
+    ? (
+        tool.error.startsWith('agent.')
+          ? t(tool.error, { ns: 'agent' })
+          : tool.error
+      )
+    : '';
   const status = tool.status || (tool.pending ? 'pending' : 'success');
   const statusColor = status === 'success' || status === 'approved'
     ? 'success'
     : status === 'error' || status === 'denied'
       ? 'error'
+      : status === 'expired'
+        ? 'warning'
       : status === 'cancelled'
         ? 'default'
         : status === 'approval_required'
@@ -150,8 +152,12 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
   const delegationResults = tool.delegationResults || [];
 
   return (
-    <div style={{ borderRadius: 6, overflow: 'hidden' }}>
+    <div
+      data-pt-agent-tool-call={tool.id}
+      style={{ borderRadius: 6, overflow: 'hidden' }}
+    >
       <div
+        data-pt-agent-tool-call-toggle
         onClick={() => setExpanded(!expanded)}
         style={{
           display: 'flex',
@@ -198,7 +204,7 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
               e.stopPropagation();
               usePortalStore.getState().openToolDetail(messageId, tool.id);
             }}
-            title="Open in panel"
+            title={t('chat.message.toolCall.openPanel')}
           >
             ⋯
           </span>
@@ -266,6 +272,7 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
                 {t('chat.message.toolCall.approve')}
               </button>
               <button
+                data-pt-agent-tool-recovery="continue-without-tool"
                 disabled={!canSubmitDecision}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -284,9 +291,65 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
                   fontSize: 12,
                 }}
               >
-                {t('chat.message.toolCall.deny')}
+                {t('agent.recovery.continueWithoutTool', { ns: 'agent' })}
               </button>
             </Flexbox>
+          )}
+          {deniedMessage && (
+            <div
+              data-pt-agent-tool-error={tool.error}
+              style={{ marginBottom: 8, color: token.colorErrorText }}
+            >
+              {deniedMessage}
+            </div>
+          )}
+          {approvalExpired && onRequestAgain && (
+            <button
+              data-pt-agent-tool-recovery="request-again"
+              disabled={requestingAgain}
+              onClick={(event) => {
+                event.stopPropagation();
+                // #region debug-point A:recovery-click
+                void fetch('http://127.0.0.1:7777/event', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    sessionId: 'approval-expiry-retry',
+                    runId: 'post-fix',
+                    hypothesisId: 'A',
+                    location: 'ToolCallCard.tsx:request-again',
+                    msg: '[DEBUG] request-again-clicked',
+                    data: {
+                      requestingAgain,
+                      messageIdPresent: Boolean(messageId),
+                      toolStatus: tool.status ?? null,
+                    },
+                    ts: Date.now(),
+                  }),
+                }).catch(() => {});
+                // #endregion
+                setRequestingAgain(true);
+                void onRequestAgain()
+                  .catch((error: unknown) =>
+                    logToolRecoveryFailure(tool.id, error))
+                  .finally(() => setRequestingAgain(false));
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                marginBottom: 8,
+                borderRadius: 6,
+                border: `1px solid ${token.colorBorder}`,
+                background: token.colorBgContainer,
+                color: token.colorText,
+                cursor: requestingAgain ? 'not-allowed' : 'pointer',
+                fontSize: 12,
+              }}
+            >
+              <RotateCcw size={12} />
+              {t('agent.recovery.requestAgain', { ns: 'agent' })}
+            </button>
           )}
           {delegationResults.length > 0 && (
             <DelegationResultsBlock results={delegationResults} />
@@ -315,12 +378,49 @@ export function ToolCallItem({ tool: sourceTool, messageId }: { tool: ToolCallIn
 
 // --- Collapsed tool calls block ---
 
-export function ToolCallsBlock({ toolCalls, messageId }: { toolCalls: ToolCallInfo[]; messageId?: string }) {
-  const [expanded, setExpanded] = useState(false);
+function hasActionableToolState(
+  toolCalls: readonly ToolCallInfo[],
+): boolean {
+  return toolCalls.some((toolCall) => {
+    const status = toolCall.status;
+    const error = toolCall.error;
+    return (
+      status === 'approval_required'
+      && Boolean(toolCall.approvalId)
+    ) || (
+      status === 'expired'
+      && error === 'agent.errors.toolApprovalExpired'
+    );
+  });
+}
+
+export function ToolCallsBlock({
+  toolCalls,
+  messageId,
+  onRequestAgain,
+}: {
+  toolCalls: ToolCallInfo[];
+  messageId?: string;
+  onRequestAgain?: () => Promise<void>;
+}) {
+  const projections = useSyncExternalStore(
+    toolRuntime.subscribe,
+    toolRuntime.getSnapshot,
+    toolRuntime.getSnapshot,
+  );
+  const projectedToolCalls = toolCalls.map((toolCall) =>
+    resolveToolCallProjection(toolCall, projections[toolCall.id]));
+  const actionableToolState = hasActionableToolState(projectedToolCalls);
+  const [expanded, setExpanded] = useState(actionableToolState);
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const pendingCount = toolCalls.filter((tc) => tc.pending).length;
-  const doneCount = toolCalls.length - pendingCount;
+  const pendingCount = projectedToolCalls.filter((toolCall) =>
+    toolCall.pending).length;
+  const doneCount = projectedToolCalls.length - pendingCount;
+
+  useEffect(() => {
+    if (actionableToolState) setExpanded(true);
+  }, [actionableToolState]);
 
   const summary = pendingCount > 0
     ? t('chat.message.toolCall.using', { count: toolCalls.length })
@@ -360,7 +460,12 @@ export function ToolCallsBlock({ toolCalls, messageId }: { toolCalls: ToolCallIn
       {expanded && (
         <div style={{ padding: '0 4px 4px', borderTop: `1px solid ${token.colorBorderSecondary}` }}>
           {toolCalls.map((tc) => (
-            <ToolCallItem key={tc.id} tool={tc} messageId={messageId} />
+            <ToolCallItem
+              key={tc.id}
+              tool={tc}
+              messageId={messageId}
+              onRequestAgain={onRequestAgain}
+            />
           ))}
         </div>
       )}

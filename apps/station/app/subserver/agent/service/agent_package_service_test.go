@@ -171,7 +171,7 @@ func TestAgentPackageServiceImport(t *testing.T) {
 			t.Fatalf("import resolved Agent package: %v", err)
 		}
 		if imported.GetAgent() == nil ||
-			imported.GetAgent().GetOwnerActorId() != agentPackageTestOwner ||
+			imported.GetAgent().GetOwnerActorPtid() != agentPackageTestOwner ||
 			imported.GetAgent().GetName() != "Resolved Import" {
 			t.Fatalf("unexpected imported Agent: %+v", imported.GetAgent())
 		}
@@ -354,20 +354,20 @@ func seedAgentPackageTestAgent(
 	t.Helper()
 	now := time.Date(2026, time.August, 28, 12, 0, 0, 0, time.UTC)
 	if err := db.Create(&persistence.Agent{
-		ID:           agentID,
-		Name:         "Package Agent",
-		Title:        "Portable Agent",
-		Description:  "Agent package test fixture",
-		ProviderID:   "provider-test",
-		ModelName:    "model-test",
-		Effort:       "medium",
-		ThinkingMode: string(domain.ThinkingModeAuto),
-		Visibility:   string(domain.AgentVisibilityPrivate),
-		OwnerActorID: ptid,
-		ConfigJSON:   configJSON,
-		Version:      1,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:             agentID,
+		Name:           "Package Agent",
+		Title:          "Portable Agent",
+		Description:    "Agent package test fixture",
+		ProviderID:     "provider-test",
+		ModelName:      "model-test",
+		Effort:         "medium",
+		ThinkingMode:   string(domain.ThinkingModeAuto),
+		Visibility:     string(domain.AgentVisibilityPrivate),
+		OwnerActorPTID: ptid,
+		ConfigJSON:     configJSON,
+		Version:        1,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}).Error; err != nil {
 		t.Fatalf("seed Agent package Agent: %v", err)
 	}
@@ -396,18 +396,18 @@ func agentPackageTestDocument(content []byte) *model.AgentPackageDocument {
 	document := &model.AgentPackageDocument{
 		SchemaVersion: agentPackageSchemaVersion,
 		Agent: &model.Agent{
-			AgentId:      "source-agent",
-			Name:         "Source Agent",
-			Title:        "Portable Agent",
-			Description:  "Portable Agent package",
-			ProviderId:   "provider-test",
-			ModelName:    "model-test",
-			Effort:       "medium",
-			Visibility:   model.AgentVisibility_AGENT_VISIBILITY_PRIVATE,
-			OwnerActorId: "ptid:person:source",
-			ConfigJson:   `{"temperature":0.2}`,
-			Version:      9,
-			ThinkingMode: string(domain.ThinkingModeAuto),
+			AgentId:        "source-agent",
+			Name:           "Source Agent",
+			Title:          "Portable Agent",
+			Description:    "Portable Agent package",
+			ProviderId:     "provider-test",
+			ModelName:      "model-test",
+			Effort:         "medium",
+			Visibility:     model.AgentVisibility_AGENT_VISIBILITY_PRIVATE,
+			OwnerActorPtid: "ptid:person:source",
+			ConfigJson:     `{"temperature":0.2}`,
+			Version:        9,
+			ThinkingMode:   string(domain.ThinkingModeAuto),
 		},
 	}
 	if len(content) == 0 {
