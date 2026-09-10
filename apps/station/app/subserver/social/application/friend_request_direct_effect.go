@@ -11,10 +11,11 @@ import (
 
 // EnsureDirectConversationRequest carries the durable Social effect identity.
 type EnsureDirectConversationRequest struct {
-	EffectID   string
-	RequestID  string
-	ActorAPTID string
-	ActorBPTID string
+	EffectID     string
+	RequestID    string
+	FederationID string
+	ActorAPTID   string
+	ActorBPTID   string
 }
 
 // DirectConversationPort creates or returns one Direct Conversation idempotently.
@@ -86,10 +87,11 @@ func (s *FriendRequestDirectEffectService) ProcessOne(
 	conversationID, err := s.port.EnsureDirectConversation(
 		ctx,
 		EnsureDirectConversationRequest{
-			EffectID:   claim.Effect.EffectID,
-			RequestID:  claim.Effect.RequestID,
-			ActorAPTID: claim.Effect.ActorAPTID,
-			ActorBPTID: claim.Effect.ActorBPTID,
+			EffectID:     claim.Effect.EffectID,
+			RequestID:    claim.Effect.RequestID,
+			FederationID: claim.Effect.FederationID,
+			ActorAPTID:   claim.Effect.ActorAPTID,
+			ActorBPTID:   claim.Effect.ActorBPTID,
 		},
 	)
 	if err != nil {

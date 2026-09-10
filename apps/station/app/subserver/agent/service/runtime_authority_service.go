@@ -145,7 +145,7 @@ func (s *TurnService) persistRuntimeAuthority(
 		var conversation persistence.Conversation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where(
-				"id = ? AND ptid = ? AND agent_id = ?",
+				"id = ? AND actor_ptid = ? AND agent_id = ?",
 				config.ConversationID,
 				config.ActorID,
 				config.AgentID,
@@ -207,9 +207,9 @@ func (s *TurnService) persistRuntimeAuthority(
 			}
 			result := tx.Model(&persistence.Conversation{}).
 				Where(
-					"id = ? AND ptid = ? AND (runtime_binding IS NULL OR length(runtime_binding) = 0)",
+					"id = ? AND actor_ptid = ? AND (runtime_binding IS NULL OR length(runtime_binding) = 0)",
 					conversation.ID,
-					conversation.Ptid,
+					conversation.ActorPTID,
 				).
 				Updates(map[string]interface{}{
 					"runtime_binding": encodedBinding,
@@ -351,7 +351,7 @@ func (s *TurnService) validatePinnedRuntimeAuthority(
 		Joins("JOIN agent_turns AS turns ON turns.id = attempts.turn_id").
 		Joins("JOIN agent_conversations AS conversations ON conversations.id = turns.conversation_id").
 		Where(
-			"attempts.id = ? AND attempts.turn_id = ? AND conversations.ptid = ?",
+			"attempts.id = ? AND attempts.turn_id = ? AND conversations.actor_ptid = ?",
 			config.AttemptID,
 			config.TurnID,
 			config.ActorID,

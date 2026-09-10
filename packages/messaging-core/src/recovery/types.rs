@@ -18,6 +18,8 @@ pub struct RecoveryMessageProjection {
 pub struct RecoveryConversationProjection {
     pub conversation_id: String,
     pub authority_station_id: String,
+    #[serde(default)]
+    pub federation_id: String,
     pub kind: i32,
     pub name: String,
     pub owner_ptid: String,

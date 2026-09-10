@@ -2,26 +2,41 @@ package persistence
 
 import (
 	"context"
-	"crypto/ed25519"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/recovery/application/ports"
-	actoridentitypersistence "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure/persistence"
-	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/app/subserver/recovery/domain"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	modeldb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 )
 
-// ActorDeviceAuthorizer verifies Recovery access against canonical Actor stores.
+// ActorDeviceAuthorizer reads Actor Identity truth without taking mutation ownership.
 type ActorDeviceAuthorizer struct {
-	db *gorm.DB
+	db      *gorm.DB
+	devices *touchactor.DeviceStore
 }
 
-// NewActorDeviceAuthorizer constructs the production Recovery authorization adapter.
-func NewActorDeviceAuthorizer(db *gorm.DB) *ActorDeviceAuthorizer {
-	return &ActorDeviceAuthorizer{db: db}
+var _ ports.ActorDeviceAuthorizer = (*ActorDeviceAuthorizer)(nil)
+
+// NewActorDeviceAuthorizer constructs the Recovery authorization adapter.
+func NewActorDeviceAuthorizer(db *gorm.DB) (*ActorDeviceAuthorizer, error) {
+	if db == nil {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			"persistence.new_actor_device_authorizer",
+			"database",
+			"is required",
+		)
+	}
+
+	return &ActorDeviceAuthorizer{
+		db:      db,
+		devices: touchactor.NewDeviceStore(db),
+	}, nil
 }
 
-// IsActorAuthorizedForRecovery permits a fresh device to restore only an existing actor.
+// IsActorAuthorizedForRecovery permits a local authenticated actor to restore
+// before the replacement device has been enrolled.
 func (a *ActorDeviceAuthorizer) IsActorAuthorizedForRecovery(
 	ctx context.Context,
 	ptid string,
@@ -29,31 +44,38 @@ func (a *ActorDeviceAuthorizer) IsActorAuthorizedForRecovery(
 	var count int64
 	err := a.db.WithContext(ctx).
 		Model(&modeldb.Actor{}).
-		Where("ptid = ?", ptid).
-		Count(&count).Error
-	return count == 1, err
+		Where("ptid = ? AND origin = ?", ptid, touchactor.OriginLocal).
+		Count(&count).
+		Error
+	if err != nil {
+		return false, domain.WrapError(
+			domain.ErrorCodePersistence,
+			"persistence.authorize_recovery_actor",
+			"touch_actor",
+			"failed to read the actor identity",
+			err,
+		)
+	}
+
+	return count == 1, nil
 }
 
-// IsDeviceAuthorizedForRecovery requires one active, locally verified actor device.
+// IsDeviceAuthorizedForRecovery requires one active verified actor-owned device.
 func (a *ActorDeviceAuthorizer) IsDeviceAuthorizedForRecovery(
 	ctx context.Context,
 	ptid string,
 	deviceID string,
 ) (bool, error) {
-	var count int64
-	err := a.db.WithContext(ctx).
-		Model(&actoridentitypersistence.ActorDeviceModel{}).
-		Where(
-			"ptid = ? AND device_id = ? AND revoked = ? "+
-				"AND verification_source <> ? AND length(public_key) = ?",
-			ptid,
-			deviceID,
-			false,
-			int32(actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_UNSPECIFIED),
-			ed25519.PublicKeySize,
-		).
-		Count(&count).Error
-	return count == 1, err
-}
+	authorized, err := a.devices.IsVerifiedActive(ctx, ptid, deviceID)
+	if err != nil {
+		return false, domain.WrapError(
+			domain.ErrorCodePersistence,
+			"persistence.authorize_recovery_device",
+			"actor_devices",
+			"failed to read the actor device",
+			err,
+		)
+	}
 
-var _ ports.ActorDeviceAuthorizer = (*ActorDeviceAuthorizer)(nil)
+	return authorized, nil
+}

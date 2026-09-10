@@ -544,7 +544,7 @@ class EvidenceStoreTests(unittest.TestCase):
                     run.write_bytes(relative_path, b"safe")
         run.close()
 
-    def test_finalize_preserves_valid_json_when_secret_has_control_characters(
+    def test_finalize_preserves_valid_json_when_secret_contains_control_characters(
         self,
     ) -> None:
         run = self.store.begin_run("control-character-redaction", source={})

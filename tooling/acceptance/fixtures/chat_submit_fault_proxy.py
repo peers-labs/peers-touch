@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Transparent Profile Three proxy with bounded Chat submit connection loss."""
+"""Transparent proxy with bounded canonical Conversation command loss."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from typing import Any
 from tooling.acceptance.fixtures.chat_native_reset import acceptance_station_environment
 
 
-SUBMIT_PATH = "/conversation/command"
+CONVERSATION_COMMAND_PATH = "/conversation/command"
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -40,7 +40,7 @@ def _read_varint(payload: bytes, offset: int) -> tuple[int, int]:
     raise ValueError("invalid protobuf varint")
 
 
-def _submit_command_bytes(payload: bytes) -> bytes:
+def _authority_command_bytes(payload: bytes) -> bytes:
     offset = 0
     while offset < len(payload):
         tag, offset = _read_varint(payload, offset)
@@ -66,7 +66,7 @@ def _submit_command_bytes(payload: bytes) -> bytes:
             offset += 4
             continue
         raise ValueError("unsupported protobuf wire type")
-    raise ValueError("submit request has no command field")
+    raise ValueError("Conversation authority request has no command field")
 
 
 class _FaultState:
@@ -77,6 +77,7 @@ class _FaultState:
         self.command_sha256: list[str] = []
         self.connection_loss_count = 0
         self.forwarded_count = 0
+        self.forwarded_paths: dict[str, int] = {}
 
     def arm(self) -> None:
         with self.lock:
@@ -85,6 +86,7 @@ class _FaultState:
             self.command_sha256 = []
             self.connection_loss_count = 0
             self.forwarded_count = 0
+            self.forwarded_paths = {}
 
     def disarm(self) -> None:
         with self.lock:
@@ -92,25 +94,27 @@ class _FaultState:
 
     def classify(self, path: str, body: bytes) -> bool:
         with self.lock:
-            if path == SUBMIT_PATH:
+            if path == CONVERSATION_COMMAND_PATH:
                 self.request_sha256.append(hashlib.sha256(body).hexdigest())
-                command = _submit_command_bytes(body)
+                command = _authority_command_bytes(body)
                 self.command_sha256.append(hashlib.sha256(command).hexdigest())
-            if self.armed and path == SUBMIT_PATH:
+            if self.armed and path == CONVERSATION_COMMAND_PATH:
                 self.connection_loss_count += 1
                 return True
             self.forwarded_count += 1
+            self.forwarded_paths[path] = self.forwarded_paths.get(path, 0) + 1
             return False
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
             return {
-                "targetPath": SUBMIT_PATH,
+                "targetPath": CONVERSATION_COMMAND_PATH,
                 "armed": self.armed,
                 "requestSha256": list(self.request_sha256),
                 "commandSha256": list(self.command_sha256),
                 "connectionLossCount": self.connection_loss_count,
                 "forwardedCount": self.forwarded_count,
+                "forwardedPaths": dict(sorted(self.forwarded_paths.items())),
             }
 
 
@@ -180,7 +184,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
             if self.command != "HEAD":
                 self.wfile.write(response_body)
         except (OSError, http.client.HTTPException):
-            self.send_error(502, "Profile Three forwarding failed")
+            self.send_error(502, "Acceptance Station forwarding failed")
         finally:
             upstream.close()
 
@@ -196,8 +200,8 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         return
 
 
-class ProfileThreeSubmitFaultProxy:
-    """Forward to Profile Three and drop armed command-submit connections."""
+class AcceptanceStationSubmitFaultProxy:
+    """Forward to the disposable Acceptance Station and drop armed submits."""
 
     def __init__(self, station_url: str) -> None:
         acceptance_station_environment(station_url)

@@ -1,25 +1,18 @@
-import { memo, type CSSProperties, type KeyboardEvent } from 'react';
+import { memo, useRef, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Tooltip } from '@lobehub/ui';
-import { Popover, theme, Typography } from 'antd';
+import { Popover, Spin, theme, Typography } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import {
   Check,
   CheckCheck,
-  CornerUpRight,
-  MessageSquareReply,
   MessagesSquare,
-  Pencil,
   Pin,
-  RotateCcw,
-  SmilePlus,
-  Trash2,
 } from 'lucide-react';
 import {
   chatMessageRowMaxWidth,
   chatVisualLayoutForSurface,
   countHiddenEarlierChatThreadReplies,
-  type ChatVisualLayoutContract,
 } from '@peers-touch/client-chat-core';
 
 import { UserSquareAvatar } from '../../common/UserSquareAvatar';
@@ -36,22 +29,14 @@ import {
   messageEditedAtMs,
   messageReplyToUlid,
   messageThreadRootUlid,
-  messageTimestampMs,
   type ChatMessage,
   type ChatSurfaceKind,
 } from './chatMessageModel';
+import { blocksMessageActionOverlay } from './messageReactionState';
 
 const { Text } = Typography;
 
-/**
- * Mirrors `application.DefaultMutationWindow` on the Station side.
- * The server is still the source of truth; the UI only hides buttons
- * that are guaranteed to fail.
- */
-const FRIEND_RECALL_WINDOW_MS = 4 * 60 * 1000 + 30 * 1000;
-
 interface ChatMessageRowProps {
-  actionVisibility?: Partial<Record<'delete' | 'edit' | 'recall' | 'reply' | 'thread', boolean>>;
   activeConversationId: string;
   activeKind: ChatSurfaceKind;
   currentUserPtid: string | null;
@@ -64,20 +49,25 @@ interface ChatMessageRowProps {
   highlighted: boolean;
   message: ChatMessage;
   messages: ChatMessage[];
-  onDelete: (message: ChatMessage) => void;
-  onEdit: (message: ChatMessage) => void;
-  onForward: (message: ChatMessage) => void;
+  onActionTargetChange: (
+    message: ChatMessage,
+    anchorElement: HTMLElement,
+    requestFocus: boolean,
+  ) => void;
+  onActionTargetLeave: () => void;
   onOpenThread: (rootUlid: string) => void;
   onPin: (message: ChatMessage) => void;
-  onReact: (message: ChatMessage) => void;
-  onRecall: (message: ChatMessage) => void;
-  onReply: (messageUlid: string) => void;
+  onReact: (message: ChatMessage, emoji: string) => void;
+  onRetryReaction: (message: ChatMessage) => void;
+  reactionMutationEmoji?: string;
+  reactionMutationPhase?: 'pending' | 'awaiting-projection' | 'error';
   reactions?: { actorPtid: string; emoji: string }[];
   pinned?: boolean;
   showHoverActions?: boolean;
   showThreadSummary?: boolean;
   threadPreviewMessages: ChatMessage[];
   threadReplyCount: number;
+  threadReplyIds: string[];
   threadUnreadCount: number;
   timelineGap: boolean;
 }
@@ -107,175 +97,6 @@ function receiptEvidenceStatus(status: FriendMessageStatus): string {
   if (status === FMS.DELIVERED) return 'delivered';
   if (status === FMS.SENT) return 'sent';
   return 'unknown';
-}
-
-interface HoverActionsProps {
-  canEdit: boolean;
-  canDelete: boolean;
-  canOpenThread: boolean;
-  canRecall: boolean;
-  canReply: boolean;
-  isOwn: boolean;
-  layout: ChatVisualLayoutContract;
-  onDelete: () => void;
-  onEdit: () => void;
-  onForward: () => void;
-  onOpenThread: () => void;
-  onPin: () => void;
-  onReact: () => void;
-  onRecall: () => void;
-  onReply: () => void;
-}
-
-function HoverActions({
-  canEdit,
-  canDelete,
-  canOpenThread,
-  canRecall,
-  canReply,
-  isOwn,
-  layout,
-  onDelete,
-  onEdit,
-  onForward,
-  onOpenThread,
-  onPin,
-  onReact,
-  onRecall,
-  onReply,
-}: HoverActionsProps) {
-  const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
-  const actionButtonStyle: CSSProperties = {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-  };
-
-  return (
-    <Flexbox
-      horizontal
-      gap={3}
-      style={{
-        position: 'absolute',
-        top: '100%',
-        left: isOwn ? 'auto' : 0,
-        right: isOwn ? 0 : 'auto',
-        marginTop: 4,
-        opacity: 0,
-        transition: 'opacity 0.15s ease',
-        pointerEvents: 'none',
-        background: token.colorBgElevated,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: 10,
-        padding: 3,
-        boxShadow: token.boxShadowSecondary,
-        zIndex: 2,
-      }}
-      className="msg-hover-actions"
-    >
-      <span
-        aria-hidden="true"
-        style={{
-          position: 'absolute',
-          top: -layout.hoverActionBridgeHeight,
-          left: 0,
-          right: 0,
-          height: layout.hoverActionBridgeHeight,
-        }}
-      />
-      {canOpenThread && (
-        <Tooltip title={t('chat.social.thread.open')}>
-          <Button
-            data-message-action="thread"
-            type="text"
-            size="small"
-            icon={<MessagesSquare size={14} />}
-            onClick={onOpenThread}
-            style={actionButtonStyle}
-          />
-        </Tooltip>
-      )}
-      <Tooltip title={t('chat.social.messageArea.actionReact')}>
-        <Button
-          data-message-action="reaction"
-          type="text"
-          size="small"
-          icon={<SmilePlus size={14} />}
-          onClick={onReact}
-          style={actionButtonStyle}
-        />
-      </Tooltip>
-      <Tooltip title={t('chat.social.contextMenu.pin')}>
-        <Button
-          data-message-action="pin"
-          type="text"
-          size="small"
-          icon={<Pin size={14} />}
-          onClick={onPin}
-          style={actionButtonStyle}
-        />
-      </Tooltip>
-      {canReply && (
-        <Tooltip title={t('chat.social.messageArea.actionReply')}>
-          <Button
-            data-message-action="reply"
-            type="text"
-            size="small"
-            icon={<MessageSquareReply size={14} />}
-            onClick={onReply}
-            style={actionButtonStyle}
-          />
-        </Tooltip>
-      )}
-      <Tooltip title={t('chat.social.messageArea.actionForward')}>
-        <Button
-          data-message-action="forward"
-          type="text"
-          size="small"
-          icon={<CornerUpRight size={14} />}
-          onClick={onForward}
-          style={actionButtonStyle}
-        />
-      </Tooltip>
-      {canEdit && (
-        <Tooltip title={t('chat.social.messageArea.actionEdit')}>
-          <Button
-            data-message-action="edit"
-            type="text"
-            size="small"
-            icon={<Pencil size={14} />}
-            onClick={onEdit}
-            style={actionButtonStyle}
-          />
-        </Tooltip>
-      )}
-      {canRecall && (
-        <Tooltip title={t('chat.social.messageArea.actionRecall')}>
-          <Button
-            data-message-action="retract"
-            type="text"
-            size="small"
-            icon={<RotateCcw size={14} />}
-            onClick={onRecall}
-            style={actionButtonStyle}
-          />
-        </Tooltip>
-      )}
-      {canDelete && (
-        <Tooltip title={t('chat.social.messageArea.actionDelete')}>
-          <Button
-            data-message-action="delete"
-            type="text"
-            size="small"
-            icon={<Trash2 size={14} />}
-            onClick={onDelete}
-            style={{ ...actionButtonStyle, color: token.colorError }}
-          />
-        </Tooltip>
-      )}
-    </Flexbox>
-  );
 }
 
 function ReplyBlock({
@@ -450,6 +271,7 @@ function ThreadReplyPreviewList({
                 return (
                   <div
                     key={reply.ulid}
+                    data-thread-preview-message-id={reply.ulid}
                     style={{
                       display: 'grid',
                       gridTemplateColumns: 'max-content minmax(0, 1fr)',
@@ -474,6 +296,7 @@ function ThreadReplyPreviewList({
                       {ownReply ? t('chat.social.thread.you') : profile.name}
                     </Text>
                     <Text
+                      data-thread-preview-message-content={reply.ulid}
                       ellipsis
                       style={{
                         minWidth: 0,
@@ -498,13 +321,13 @@ function ThreadReplyPreviewList({
 export function ChatMessageRowInteractionStyle() {
   const { token } = theme.useToken();
   const rowInteractionStyle = `
-    .msg-row:hover .msg-hover-actions,
-    .msg-row:focus-within .msg-hover-actions {
-      opacity: 1 !important;
-      pointer-events: auto !important;
-    }
     .msg-row.highlighted .msg-bubble {
       box-shadow: 0 0 0 2px ${token.colorPrimaryBorder}, ${token.boxShadowSecondary} !important;
+    }
+    .msg-row:focus-visible {
+      outline: 2px solid ${token.colorPrimaryBorder};
+      outline-offset: 3px;
+      border-radius: 12px;
     }
   `;
 
@@ -512,7 +335,6 @@ export function ChatMessageRowInteractionStyle() {
 }
 
 export const ChatMessageRow = memo(function ChatMessageRow({
-  actionVisibility,
   activeConversationId,
   activeKind,
   currentUserPtid,
@@ -521,20 +343,21 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   highlighted,
   message,
   messages,
-  onDelete,
-  onEdit,
-  onForward,
+  onActionTargetChange,
+  onActionTargetLeave,
   onOpenThread,
   onPin,
   onReact,
-  onRecall,
-  onReply,
+  onRetryReaction,
+  reactionMutationEmoji,
+  reactionMutationPhase,
   reactions,
   pinned = false,
   showHoverActions = true,
   showThreadSummary = true,
   threadPreviewMessages,
   threadReplyCount,
+  threadReplyIds,
   threadUnreadCount,
   timelineGap,
 }: ChatMessageRowProps) {
@@ -556,18 +379,14 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     && message.content.trim().length === 0
     && attachments.length > 0
     && attachments.every(isVisualMessageAttachment);
-  const sentMs = messageTimestampMs(message);
-  const withinWindow = sentMs > 0 && (Date.now() - sentMs) < FRIEND_RECALL_WINDOW_MS;
-  const canOpenThread = actionVisibility?.thread !== false;
-  const canReply = actionVisibility?.reply !== false;
-  const canDelete = actionVisibility?.delete !== false;
-  const canRecall = actionVisibility?.recall !== false && isOwn && !isRecalled && withinWindow;
-  const canEdit = actionVisibility?.edit !== false && isOwn && !isRecalled && withinWindow && !encryptedPlaceholder;
   const threadRootUlid = messageThreadRootUlid(message) || message.ulid;
   const compact = density === 'compact';
   const layout = chatVisualLayoutForSurface(compact ? 'desktop-thread' : 'desktop-main');
   const avatarSize = layout.avatarSize;
   const avatarGap = layout.avatarGap;
+  const messageActionAnchorRef = useRef<HTMLDivElement>(null);
+  const messageActionsAvailable = showHoverActions
+    && !blocksMessageActionOverlay(reactionMutationPhase);
 
   const bubbleBg = mediaOnlyMessage
     ? 'transparent'
@@ -593,8 +412,44 @@ export const ChatMessageRow = memo(function ChatMessageRow({
       data-message-reply-to={replyToUlid || ''}
       data-message-thread-root={messageThreadRootUlid(message) || ''}
       data-message-thread-reply-count={threadReplyCount}
+      data-message-thread-reply-ids={threadReplyIds.join(',')}
       data-message-read-by={readByPtids.join(',')}
+      data-message-authority-sequence={message.eventSequence}
+      data-message-attachment-count={attachments.length}
       className={`msg-row ${highlighted ? 'highlighted' : ''}`}
+      tabIndex={0}
+      onMouseEnter={() => {
+        if (messageActionsAvailable && messageActionAnchorRef.current) {
+          onActionTargetChange(message, messageActionAnchorRef.current, false);
+        }
+      }}
+      onMouseLeave={onActionTargetLeave}
+      onFocusCapture={() => {
+        if (messageActionsAvailable && messageActionAnchorRef.current) {
+          onActionTargetChange(message, messageActionAnchorRef.current, false);
+        }
+      }}
+      onBlurCapture={(event) => {
+        if (
+          event.relatedTarget instanceof Node
+          && event.currentTarget.contains(event.relatedTarget)
+        ) {
+          return;
+        }
+        onActionTargetLeave();
+      }}
+      onKeyDown={(event) => {
+        if (
+          event.target !== event.currentTarget
+          || (event.key !== 'Enter' && event.key !== ' ')
+          || !messageActionsAvailable
+          || !messageActionAnchorRef.current
+        ) {
+          return;
+        }
+        event.preventDefault();
+        onActionTargetChange(message, messageActionAnchorRef.current, true);
+      }}
       horizontal
       align="flex-start"
       justify={isOwn ? 'flex-end' : 'flex-start'}
@@ -604,8 +459,6 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         width: 'fit-content',
         position: 'relative',
         marginTop: timelineGap ? (compact ? 6 : 8) : 0,
-        paddingBottom: 38,
-        marginBottom: -38,
       }}
       gap={avatarGap}
     >
@@ -637,6 +490,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
       )}
 
       <Flexbox
+        ref={messageActionAnchorRef}
+        data-message-action-anchor={message.ulid}
         align={isOwn ? 'flex-end' : 'flex-start'}
         style={{
           position: 'relative',
@@ -645,26 +500,6 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           maxWidth: `calc(100% - ${avatarSize + avatarGap}px)`,
         }}
       >
-        {showHoverActions && (
-          <HoverActions
-            isOwn={isOwn}
-            canDelete={canDelete}
-            canOpenThread={canOpenThread}
-            canRecall={canRecall}
-            canReply={canReply}
-            canEdit={canEdit}
-            layout={layout}
-            onOpenThread={() => onOpenThread(threadRootUlid)}
-            onPin={() => onPin(message)}
-            onReact={() => onReact(message)}
-            onForward={() => onForward(message)}
-            onReply={() => onReply(message.ulid)}
-            onDelete={() => onDelete(message)}
-            onRecall={() => onRecall(message)}
-            onEdit={() => onEdit(message)}
-          />
-        )}
-
         {!isOwn && isGroup && (
           <Text
             type="secondary"
@@ -681,6 +516,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         )}
 
         <Flexbox
+          data-message-content={message.ulid}
           className="msg-bubble"
           style={{
             alignSelf: isOwn ? 'flex-end' : 'flex-start',
@@ -740,21 +576,65 @@ export const ChatMessageRow = memo(function ChatMessageRow({
                 return acc;
               }, {}),
             ).map(([emoji, count]) => (
-              <span
+              <button
+                type="button"
                 data-message-reaction={emoji}
                 key={emoji}
                 style={{
                   fontSize: 12,
                   padding: '1px 5px',
+                  border: 0,
                   borderRadius: 10,
                   background: token.colorFillTertiary,
                   cursor: 'pointer',
                 }}
-                onClick={() => onReact(message)}
+                aria-label={`${t('chat.social.messageArea.actionReact')} ${emoji}`}
+                onClick={() => onReact(message, emoji)}
               >
                 {emoji} {count > 1 ? count : ''}
-              </span>
+              </button>
             ))}
+          </Flexbox>
+        )}
+
+        {reactionMutationPhase && (
+          <Flexbox
+            data-message-reaction-state={reactionMutationPhase}
+            data-message-reaction-emoji={reactionMutationEmoji}
+            horizontal
+            align="center"
+            gap={6}
+            aria-live="polite"
+            aria-busy={reactionMutationPhase !== 'error'}
+            style={{
+              alignSelf: isOwn ? 'flex-end' : 'flex-start',
+              marginTop: 3,
+              paddingLeft: isOwn ? 0 : 4,
+              paddingRight: isOwn ? 4 : 0,
+              color: reactionMutationPhase === 'error'
+                ? token.colorError
+                : token.colorTextTertiary,
+              fontSize: 11,
+            }}
+          >
+            {reactionMutationPhase === 'error' ? (
+              <>
+                <Text type="danger" style={{ fontSize: 11 }}>
+                  {t('chat.message.resolution.actionFailed')}
+                </Text>
+                <Button
+                  data-message-reaction-retry={message.ulid}
+                  type="text"
+                  size="small"
+                  onClick={() => onRetryReaction(message)}
+                  style={{ height: 24, paddingInline: 6 }}
+                >
+                  {t('chat.message.action.retry')}
+                </Button>
+              </>
+            ) : (
+              <Spin size="small" />
+            )}
           </Flexbox>
         )}
 

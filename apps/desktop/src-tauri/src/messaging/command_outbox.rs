@@ -222,6 +222,8 @@ mod tests {
         store
             .persist_direct_send(&DirectSendCommit {
                 command_bytes: b"immutable encrypted command",
+                expected_authority_sequence: 0,
+                expected_authority_hash: &[],
                 advanced_sessions: &[session()],
                 session_inits: &[],
                 projection: PendingSenderProjection {

@@ -16,12 +16,16 @@ deliverables:
       type: path-absent
       paths:
         - apps/station/app/subserver/messaging
+        - apps/station/app/subserver/conversation/engine
         - apps/desktop/src/runtimes/cryptoRuntime.ts
         - apps/desktop/src/runtimes/imRuntime.ts
         - apps/mobile/src-tauri/src/domain/crypto/sender_keys.rs
         - apps/mobile/src-tauri/src/domain/crypto/sender_key_store.rs
         - apps/mobile/src-tauri/src/commands/group_crypto.rs
+        - model/domain/chat/device.proto
         - model/domain/chat/key_exchange.proto
+        - model/domain/chat/messaging_api.proto
+        - model/domain/chat/recovery.proto
         - apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs
         - apps/desktop/src-tauri/src/application/friend_chat/mod.rs
         - apps/desktop/src/modules/p2p/friendChatP2p.ts

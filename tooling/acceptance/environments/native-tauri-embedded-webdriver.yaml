@@ -5,15 +5,99 @@
     "identity_match": true
   },
   "services": {
-    "station": {
+    "station-four": {
       "kind": "station",
       "required": true,
+      "runtime_identity_required": true,
+      "ready_action": "station",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    },
+    "station-five": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
       "ready_action": "station",
       "health_action": "station-check",
       "status_action": "station-status",
       "attestation_producer": "station-deployment"
     }
   },
+  "clients": [
+    {
+      "id": "alice",
+      "actor": "alice",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-four",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "alice2",
+      "actor": "alice",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-four",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "bob",
+      "actor": "bob",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-five",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "bob1",
+      "actor": "bob",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-five",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "bob2",
+      "actor": "bob",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-five",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "charlie",
+      "actor": "charlie",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-five",
+          "required_kind": "station"
+        }
+      }
+    }
+  ],
   "fixtures": [
     {
       "id": "chat-native-actors",

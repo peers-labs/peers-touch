@@ -2,6 +2,7 @@ package httpinterface
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	kemodel "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"google.golang.org/protobuf/proto"
 )
 
 type CanonicalAPI struct {
@@ -111,6 +113,20 @@ func (a *CanonicalAPI) FetchDirectKeyBundles(
 	if request == nil {
 		return nil, missingRequest(operation)
 	}
+	authenticated := authenticatedEndpoint(
+		authenticatedActorPTID,
+		authenticatedDeviceID,
+	)
+	identity, err := destructiveReadIdentity(
+		operation,
+		authenticated,
+		request.GetRequester(),
+		request.GetRequestId(),
+		request,
+	)
+	if err != nil {
+		return nil, err
+	}
 	actorPTID, err := actorPTIDFromProto(
 		operation,
 		"actor",
@@ -121,10 +137,8 @@ func (a *CanonicalAPI) FetchDirectKeyBundles(
 	}
 	bundles, err := a.service.FetchDirectKeyBundles(
 		ctx,
-		authenticatedEndpoint(
-			authenticatedActorPTID,
-			authenticatedDeviceID,
-		),
+		authenticated,
+		identity,
 		actorPTID,
 		request.GetTargetDeviceId(),
 		request.GetHomeStationPeerId(),
@@ -132,13 +146,55 @@ func (a *CanonicalAPI) FetchDirectKeyBundles(
 	if err != nil {
 		return nil, err
 	}
-	response := &kemodel.FetchDirectKeyBundlesResponse{
-		Bundles: make([]*kemodel.DirectKeyBundle, 0, len(bundles)),
+	return directBundlesResponse(bundles), nil
+}
+
+// FetchDirectKeyBundlesForPeer serves the canonical fetch contract after the
+// transport layer has authenticated and bound the Federation peer claims.
+func (a *CanonicalAPI) FetchDirectKeyBundlesForPeer(
+	ctx context.Context,
+	request *kemodel.FetchDirectKeyBundlesRequest,
+) (*kemodel.FetchDirectKeyBundlesResponse, error) {
+	const operation = "key_exchange.api.fetch_direct_bundles_for_peer"
+	if request == nil {
+		return nil, missingRequest(operation)
 	}
-	for _, bundle := range bundles {
-		response.Bundles = append(response.Bundles, directBundleToProto(bundle))
+	identity, err := destructiveReadIdentity(
+		operation,
+		domain.Endpoint{},
+		request.GetRequester(),
+		request.GetRequestId(),
+		request,
+	)
+	if err != nil {
+		return nil, err
 	}
-	return response, nil
+	actorPTID, err := actorPTIDFromProto(
+		operation,
+		"actor",
+		request.GetActor(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(request.GetHomeStationPeerId()) == "" {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"home_station_peer_id",
+			"is required for a Federation request",
+		)
+	}
+	bundles, err := a.service.FetchDirectKeyBundlesForPeer(
+		ctx,
+		identity,
+		actorPTID,
+		request.GetTargetDeviceId(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return directBundlesResponse(bundles), nil
 }
 
 func (a *CanonicalAPI) ReplenishDirectOneTimePreKeys(
@@ -254,6 +310,20 @@ func (a *CanonicalAPI) FetchMLSKeyPackage(
 	if request == nil {
 		return nil, missingRequest(operation)
 	}
+	authenticated := authenticatedEndpoint(
+		authenticatedActorPTID,
+		authenticatedDeviceID,
+	)
+	identity, err := destructiveReadIdentity(
+		operation,
+		authenticated,
+		request.GetRequester(),
+		request.GetRequestId(),
+		request,
+	)
+	if err != nil {
+		return nil, err
+	}
 	actorPTID, err := actorPTIDFromProto(
 		operation,
 		"actor",
@@ -264,12 +334,69 @@ func (a *CanonicalAPI) FetchMLSKeyPackage(
 	}
 	reservation, err := a.service.FetchMLSKeyPackage(
 		ctx,
-		authenticatedEndpoint(
-			authenticatedActorPTID,
-			authenticatedDeviceID,
-		),
+		authenticated,
+		identity,
 		actorPTID,
 		request.GetHomeStationPeerId(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if reservation == nil {
+		return &kemodel.FetchMlsKeyPackageResponse{
+			Available: false,
+			HomeStationPeerId: strings.TrimSpace(
+				request.GetHomeStationPeerId(),
+			),
+		}, nil
+	}
+	return &kemodel.FetchMlsKeyPackageResponse{
+		Reservation:       reservationToProto(*reservation),
+		Available:         true,
+		HomeStationPeerId: reservation.HomeStation,
+	}, nil
+}
+
+// FetchMLSKeyPackageForPeer serves the canonical fetch contract after the
+// transport layer has authenticated and bound the Federation peer claims.
+func (a *CanonicalAPI) FetchMLSKeyPackageForPeer(
+	ctx context.Context,
+	request *kemodel.FetchMlsKeyPackageRequest,
+) (*kemodel.FetchMlsKeyPackageResponse, error) {
+	const operation = "key_exchange.api.fetch_mls_key_package_for_peer"
+	if request == nil {
+		return nil, missingRequest(operation)
+	}
+	identity, err := destructiveReadIdentity(
+		operation,
+		domain.Endpoint{},
+		request.GetRequester(),
+		request.GetRequestId(),
+		request,
+	)
+	if err != nil {
+		return nil, err
+	}
+	actorPTID, err := actorPTIDFromProto(
+		operation,
+		"actor",
+		request.GetActor(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(request.GetHomeStationPeerId()) == "" {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"home_station_peer_id",
+			"is required for a Federation request",
+		)
+	}
+	reservation, err := a.service.FetchMLSKeyPackageForPeer(
+		ctx,
+		identity,
+		actorPTID,
 	)
 	if err != nil {
 		return nil, err
@@ -349,12 +476,18 @@ func (a *CanonicalAPI) ClaimMLSKeyPackage(
 			err,
 		)
 	}
+	requestSHA256, err := exactRequestSHA256(operation, request)
+	if err != nil {
+		return nil, err
+	}
 	reservation, err := a.service.ClaimMLSKeyPackage(
 		ctx,
 		domain.MLSKeyPackageClaim{
 			AuthenticatedAuthorityStation: strings.TrimSpace(
 				authenticatedAuthorityStationID,
 			),
+			RequestID:     request.GetRequestId(),
+			RequestSHA256: requestSHA256,
 			AuthorityPlanID: strings.TrimSpace(
 				request.GetAuthorityPlanId(),
 			),
@@ -572,6 +705,18 @@ func directBundleToProto(
 	}
 }
 
+func directBundlesResponse(
+	bundles []domain.DirectKeyBundle,
+) *kemodel.FetchDirectKeyBundlesResponse {
+	response := &kemodel.FetchDirectKeyBundlesResponse{
+		Bundles: make([]*kemodel.DirectKeyBundle, 0, len(bundles)),
+	}
+	for _, bundle := range bundles {
+		response.Bundles = append(response.Bundles, directBundleToProto(bundle))
+	}
+	return response
+}
+
 func reservationToProto(
 	reservation domain.MLSKeyPackageReservation,
 ) *kemodel.MlsKeyPackageReservation {
@@ -586,6 +731,57 @@ func reservationToProto(
 		KeyPackage:       append([]byte(nil), reservation.KeyPackage...),
 		KeyPackageSha256: append([]byte(nil), reservation.PackageHash[:]...),
 	}
+}
+
+func destructiveReadIdentity(
+	operation string,
+	authenticated domain.Endpoint,
+	requester *actormodel.ActorDeviceRef,
+	requestID string,
+	request proto.Message,
+) (domain.DestructiveReadIdentity, error) {
+	endpoint, err := endpointFromProto(operation, "requester", requester)
+	if err != nil {
+		return domain.DestructiveReadIdentity{}, err
+	}
+	if authenticated != (domain.Endpoint{}) && endpoint != authenticated {
+		return domain.DestructiveReadIdentity{}, domain.NewError(
+			domain.ErrorCodeUnauthorized,
+			operation,
+			"requester",
+			"does not match the authenticated endpoint",
+		)
+	}
+	requestSHA256, err := exactRequestSHA256(operation, request)
+	if err != nil {
+		return domain.DestructiveReadIdentity{}, err
+	}
+	identity := domain.DestructiveReadIdentity{
+		RequestID:     requestID,
+		Requester:     endpoint,
+		RequestSHA256: requestSHA256,
+	}
+	if err := identity.Validate(operation); err != nil {
+		return domain.DestructiveReadIdentity{}, err
+	}
+
+	return identity, nil
+}
+
+func exactRequestSHA256(
+	operation string,
+	request proto.Message,
+) ([sha256.Size]byte, error) {
+	requestBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(request)
+	if err != nil {
+		return [sha256.Size]byte{}, domain.WrapError(
+			domain.ErrorCodeInternal,
+			operation,
+			err,
+		)
+	}
+
+	return sha256.Sum256(requestBytes), nil
 }
 
 func directKeyExchangeKindFromProto(

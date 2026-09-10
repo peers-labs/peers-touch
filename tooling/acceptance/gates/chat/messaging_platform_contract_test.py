@@ -6,101 +6,82 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[4]
-MODEL_PROTO = ROOT / "model/domain"
-CHAT_PROTO = MODEL_PROTO / "chat"
-CAPABILITY_REGISTRY = (
-    ROOT / "docs/architecture/api-ownership/station-api-capabilities.yaml"
-)
+CHAT_PROTO = ROOT / "model/domain/chat"
 
 
-def read_source_tree(root: Path, suffixes: set[str]) -> str:
-    sources: list[str] = []
-    for path in root.rglob("*"):
-        if (
-            path.is_file()
-            and path.suffix in suffixes
-            and not path.name.endswith("_test.go")
-            and not any(part in {"gen", "node_modules", "target"} for part in path.parts)
-        ):
-            sources.append(path.read_text(encoding="utf-8", errors="replace"))
-    return "\n".join(sources)
-
-
-def declared_proto_symbols() -> set[str]:
-    declarations: set[str] = set()
-    for path in MODEL_PROTO.rglob("*.proto"):
+def text_offenders(
+    paths: tuple[Path, ...],
+    forbidden: tuple[str, ...],
+) -> dict[str, list[str]]:
+    offenders: dict[str, list[str]] = {}
+    for path in paths:
         source = path.read_text(encoding="utf-8")
-        package_match = re.search(r"^package\s+([\w.]+);", source, re.MULTILINE)
-        if package_match is None:
-            continue
-        package = package_match.group(1)
-        for symbol in re.findall(
-            r"^\s*(?:message|enum|service)\s+(\w+)",
-            source,
-            re.MULTILINE,
-        ):
-            declarations.add(f"{package}.{symbol}")
-    return declarations
-
-
-def registry_superseded_symbols() -> set[str]:
-    symbols: set[str] = set()
-    collecting = False
-    for line in CAPABILITY_REGISTRY.read_text(encoding="utf-8").splitlines():
-        if line.strip() == "superseded_symbols:":
-            collecting = True
-            continue
-        if collecting and line.startswith("      - peers_touch."):
-            symbols.add(line.split("- ", maxsplit=1)[1].strip())
-            continue
-        if collecting and line.strip():
-            collecting = False
-    return symbols
+        matches = [value for value in forbidden if value in source]
+        if matches:
+            offenders[str(path.relative_to(ROOT))] = matches
+    return offenders
 
 
 class MessagingPlatformContractTest(unittest.TestCase):
-    def assert_proto_declares(self, source: str, *symbols: str) -> None:
-        for symbol in symbols:
-            with self.subTest(symbol=symbol):
-                self.assertRegex(
-                    source,
-                    rf"(?m)^\s*(?:message|enum)\s+{re.escape(symbol)}\b",
-                )
+    def test_conversation_ddd_owns_member_settings_by_ptid(self) -> None:
+        conversation_api = (CHAT_PROTO / "conversation_api.proto").read_text(
+            encoding="utf-8"
+        )
+        persistence = (
+            ROOT
+            / "apps/station/app/subserver/conversation/infrastructure/persistence/models.go"
+        ).read_text(encoding="utf-8")
+        command_service = (
+            ROOT
+            / "apps/station/app/subserver/conversation/application/command/projections.go"
+        ).read_text(encoding="utf-8")
+        query_service = (
+            ROOT
+            / "apps/station/app/subserver/conversation/application/query/service.go"
+        ).read_text(encoding="utf-8")
+        conversation_subserver = (
+            ROOT / "apps/station/app/subserver/conversation/subserver.go"
+        ).read_text(encoding="utf-8")
+        desktop_sources = tuple(
+            (ROOT / "apps/desktop/src-tauri/src").rglob("*.rs")
+        ) + tuple((ROOT / "apps/desktop/src").rglob("*.ts*"))
 
-    def test_canonical_proto_sources_replace_retired_chat_contracts(self) -> None:
-        canonical_sources = {
-            MODEL_PROTO / "actor/actor.proto": "package peers_touch.model.actor.v1;",
-            CHAT_PROTO / "conversation_api.proto": "package peers_touch.model.chat.v1;",
-            CHAT_PROTO / "queue.proto": "package peers_touch.model.chat.v1;",
-            MODEL_PROTO / "recovery/recovery.proto": (
-                "package peers_touch.model.recovery.v1;"
+        self.assertIn('"/conversation/member/settings"', conversation_subserver)
+        self.assertIn("message MemberSettings", conversation_api)
+        self.assertIn("message GetMemberSettingsRequest", conversation_api)
+        self.assertIn("message UpdateMemberSettingsRequest", conversation_api)
+        self.assertIn('return "conversation_member_settings"', persistence)
+        self.assertIn("PTID", persistence)
+        self.assertIn("UpdateMemberSettings(", command_service)
+        self.assertIn("MemberSettings(", query_service)
+        self.assertEqual(
+            text_offenders(
+                desktop_sources,
+                (
+                    "GroupChatThreadCountsInput",
+                    "ConversationThreadCountsInput",
+                    "ConversationMemberSettingsInput",
+                    "ConversationUpdateMemberSettingsInput",
+                ),
             ),
-            MODEL_PROTO / "key_exchange/key_exchange.proto": (
-                "package peers_touch.model.key_exchange.v1;"
-            ),
-            MODEL_PROTO / "federation/delivery.proto": (
-                "package peers_touch.model.federation.v1;"
-            ),
-        }
-        for path, package in canonical_sources.items():
-            with self.subTest(path=path.relative_to(ROOT)):
-                self.assertTrue(path.is_file())
-                self.assertIn(package, path.read_text(encoding="utf-8"))
+            {},
+        )
 
-        for retired_name in (
-            "device.proto",
-            "federation.proto",
-            "key_exchange.proto",
-            "messaging_api.proto",
-            "recovery.proto",
-        ):
-            with self.subTest(retired_name=retired_name):
-                self.assertFalse((CHAT_PROTO / retired_name).exists())
-
+    def test_crypto_endpoint_has_one_canonical_source(self) -> None:
         endpoint = (CHAT_PROTO / "endpoint.proto").read_text(encoding="utf-8")
+        actor = (ROOT / "model/domain/actor/actor.proto").read_text(
+            encoding="utf-8"
+        )
+
         self.assertIn("message CryptoEndpoint", endpoint)
         self.assertIn("string ptid = 1;", endpoint)
         self.assertIn("string device_id = 2;", endpoint)
+        self.assertIn("message ActorDeviceRef", actor)
+        self.assertIn("ActorRef actor = 1;", actor)
+        self.assertTrue(
+            (ROOT / "model/domain/key_exchange/key_exchange.proto").exists()
+        )
+        self.assertFalse((CHAT_PROTO / "key_exchange.proto").exists())
 
     def test_logical_event_and_device_delivery_identities_are_separate(self) -> None:
         queue = (CHAT_PROTO / "queue.proto").read_text(encoding="utf-8")
@@ -111,6 +92,7 @@ class MessagingPlatformContractTest(unittest.TestCase):
         self.assertIn("message ConversationEvent", event)
         self.assertIn("string event_id = 1;", event)
         self.assertIn("repeated bytes delivery_commitments = 9;", event)
+        self.assertIn("message DurableDeviceInboxItem", queue)
         self.assertIn("string item_id = 1;", queue)
         self.assertIn("int64 lane_sequence = 3;", queue)
         self.assertIn("string event_id = 4;", queue)
@@ -118,6 +100,7 @@ class MessagingPlatformContractTest(unittest.TestCase):
             "peers_touch.model.actor.v1.ActorDeviceRef recipient = 2;",
             queue,
         )
+        self.assertNotIn("message DeviceQueueItem", queue)
 
     def test_direct_ciphertext_targets_exactly_one_endpoint(self) -> None:
         direct = (CHAT_PROTO / "direct_crypto.proto").read_text(encoding="utf-8")
@@ -152,6 +135,301 @@ class MessagingPlatformContractTest(unittest.TestCase):
         self.assertIn("bytes sender_actor_identity_public_key = 7;", event)
         self.assertNotIn("DeviceEncryptedPayload", event)
 
+    def test_client_conversation_projection_preserves_federation_identity(self) -> None:
+        schema = (
+            ROOT / "packages/messaging-core/src/store/schema.rs"
+        ).read_text(encoding="utf-8")
+        core_contract = (
+            ROOT / "packages/messaging-core/src/contracts/mod.rs"
+        ).read_text(encoding="utf-8")
+        core_event_projection = (
+            ROOT / "packages/messaging-core/src/inbox/conversation_state.rs"
+        ).read_text(encoding="utf-8")
+        core_mls_projection = (
+            ROOT / "packages/messaging-core/src/mls/inbound.rs"
+        ).read_text(encoding="utf-8")
+        desktop_store = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/store.rs"
+        ).read_text(encoding="utf-8")
+        desktop_event_projection = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/conversation_state.rs"
+        ).read_text(encoding="utf-8")
+        desktop_lifecycle = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/lifecycle.rs"
+        ).read_text(encoding="utf-8")
+        desktop_engine = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/engine.rs"
+        ).read_text(encoding="utf-8")
+        desktop_recovery = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/recovery.rs"
+        ).read_text(encoding="utf-8")
+        desktop_json = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
+        ).read_text(encoding="utf-8")
+        desktop_contract = (
+            ROOT / "apps/desktop/src/services/im-service-contract.ts"
+        ).read_text(encoding="utf-8")
+        desktop_service = (
+            ROOT / "apps/desktop/src/services/im-service.ts"
+        ).read_text(encoding="utf-8")
+        social_store = (
+            ROOT / "apps/desktop/src/store/socialChat.ts"
+        ).read_text(encoding="utf-8")
+        mobile_store = (
+            ROOT / "apps/mobile/src-tauri/src/messaging/adapter.rs"
+        ).read_text(encoding="utf-8")
+        mobile_engine = (
+            ROOT / "apps/mobile/src-tauri/src/messaging/engine.rs"
+        ).read_text(encoding="utf-8")
+        mobile_lifecycle = (
+            ROOT / "apps/mobile/src-tauri/src/messaging/lifecycle.rs"
+        ).read_text(encoding="utf-8")
+        mobile_transport = (
+            ROOT / "apps/mobile/src-tauri/src/messaging/transport.rs"
+        ).read_text(encoding="utf-8")
+        mobile_commands = (
+            ROOT / "apps/mobile/src-tauri/src/messaging/commands.rs"
+        ).read_text(encoding="utf-8")
+        mobile_contract = (
+            ROOT / "apps/mobile/src/services/mobileCommands.ts"
+        ).read_text(encoding="utf-8")
+        mobile_acceptance_projection = (
+            ROOT / "apps/mobile/src/acceptance/projection.ts"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("federation_id TEXT NOT NULL", schema)
+        self.assertIn('column: "federation_id"', schema)
+        self.assertIn("pub federation_id: String", core_contract)
+        self.assertIn(
+            "federation_id: post_state.federation_id.clone()",
+            core_event_projection,
+        )
+        self.assertIn(
+            "federation_id: snapshot.federation_id.clone()",
+            core_mls_projection,
+        )
+        self.assertIn("pub federation_id: String", desktop_store)
+        self.assertIn(
+            "federation_id: post_state.federation_id.clone()",
+            desktop_event_projection,
+        )
+        self.assertIn(
+            "projection.federation_id.trim().is_empty()",
+            desktop_lifecycle,
+        )
+        self.assertNotIn(
+            "if !self.store.conversation_projections()?.is_empty()",
+            desktop_engine,
+        )
+        self.assertIn("pub federation_id: String", desktop_recovery)
+        self.assertIn('"federation_id": conversation.federation_id', desktop_json)
+        self.assertIn("federationId: string", desktop_contract)
+        self.assertIn(
+            "federationId: conversation.federation_id",
+            desktop_service,
+        )
+        self.assertIn(
+            "federation_id: conversation.federationId",
+            social_store,
+        )
+        self.assertIn(
+            "federation_id=excluded.federation_id",
+            mobile_store,
+        )
+        self.assertIn(
+            "pub(crate) fn reconcile_conversation_authority_scope",
+            mobile_store,
+        )
+        self.assertIn(
+            "hydrate_conversation_authority_scopes",
+            mobile_engine,
+        )
+        self.assertIn(
+            "dissolved_conversation_scope_remains_repairable",
+            mobile_engine,
+        )
+        self.assertIn(
+            "engine.hydrate_conversation_authority_scopes()?",
+            mobile_lifecycle,
+        )
+        self.assertIn(
+            ".list_conversations()?",
+            mobile_engine,
+        )
+        self.assertIn(
+            "pub fn list_conversations",
+            mobile_transport,
+        )
+        self.assertIn(
+            "conversation.federation_id == federation_id",
+            mobile_commands,
+        )
+        self.assertIn(
+            "federation_id: conversation.federation_id",
+            mobile_commands,
+        )
+        self.assertIn("federationId: string", mobile_contract)
+        self.assertIn(
+            "federationId: conversation.federationId",
+            mobile_acceptance_projection,
+        )
+
+    def test_group_genesis_uses_server_verified_endpoint_routes(self) -> None:
+        production_http = (
+            ROOT / "apps/station/app/subserver/conversation/production_http.go"
+        ).read_text(encoding="utf-8")
+        command_service = (
+            ROOT
+            / "apps/station/app/subserver/conversation/application/command/service.go"
+        ).read_text(encoding="utf-8")
+        reservation_adapter = (
+            ROOT / "apps/station/app/subserver/conversation/production_adapters.go"
+        ).read_text(encoding="utf-8")
+        key_exchange = (
+            ROOT
+            / "apps/station/app/subserver/key_exchange/application/canonical_service.go"
+        ).read_text(encoding="utf-8")
+        desktop_transport = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/transport.rs"
+        ).read_text(encoding="utf-8")
+        desktop_consumer = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/consumer.rs"
+        ).read_text(encoding="utf-8")
+        desktop_command_result = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/command_result.rs"
+        ).read_text(encoding="utf-8")
+        production_federation = (
+            ROOT
+            / "apps/station/app/subserver/conversation/production_federation.go"
+        ).read_text(encoding="utf-8")
+
+        self.assertGreaterEqual(
+            len(re.findall(r"VerifiedRoutes:\s+verifiedRoutes", production_http)),
+            3,
+        )
+        self.assertGreaterEqual(
+            len(re.findall(r"VerifiedRoutes\s+\[\]ports\.EndpointRoute", command_service)),
+            2,
+        )
+        self.assertIn(
+            "canonicalActorRoutes(request.VerifiedRoutes, actors)",
+            command_service,
+        )
+        self.assertIn(
+            "routes []ports.EndpointRoute",
+            reservation_adapter,
+        )
+        self.assertNotIn(
+            "r.identity.activeRoute(ctx, endpoint)",
+            reservation_adapter,
+        )
+        self.assertIn(
+            "ReserveMLSKeyPackageForVerifiedRoute",
+            key_exchange,
+        )
+        self.assertIn(
+            "productionEndpointManifestSetHashes",
+            production_http,
+        )
+        self.assertIn(
+            "ReplayGroupCreation",
+            production_http,
+        )
+        self.assertLess(
+            production_http.index("ReplayGroupCreation"),
+            production_http.index("s.loadAuthorityPlan"),
+        )
+        self.assertIn(
+            "EndpointManifestSetHash",
+            command_service,
+        )
+        self.assertIn(
+            "EndpointManifestStateHash",
+            command_service,
+        )
+        create_group_request = re.search(
+            r"type CreateGroupRequest struct \{(?P<body>.*?)\n\}",
+            command_service,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(create_group_request)
+        create_group_request_body = create_group_request.group("body")
+        self.assertNotRegex(create_group_request_body, r"\bName\s+")
+        self.assertNotRegex(create_group_request_body, r"\bMembers\s+")
+        self.assertIn(
+            "actors := productionPlanActors(plan)",
+            production_http,
+        )
+        self.assertIn(
+            'const GROUP_CREATION_PATH: &str = "/conversation/group";',
+            desktop_transport,
+        )
+        self.assertIn(
+            'const AUTHORITY_COMMAND_PATH: &str = "/conversation/command";',
+            desktop_transport,
+        )
+        self.assertIn(
+            "CreateGroupConversationRequest",
+            desktop_transport,
+        )
+        self.assertIn(
+            "command_submission_route(&command)",
+            desktop_transport,
+        )
+        self.assertIn(
+            "prepared_epoch_zero_group_genesis_uses_group_creation_route",
+            desktop_transport,
+        )
+        self.assertIn(
+            "ordinary_commands_use_authority_command_route",
+            desktop_transport,
+        )
+        self.assertIn(
+            "with_remote_command_identity",
+            desktop_transport,
+        )
+        self.assertIn(
+            "Submission::Proposal",
+            desktop_transport,
+        )
+        self.assertIn(
+            '"/conversation/public-head"',
+            desktop_transport,
+        )
+        self.assertIn(
+            "remote_command_proposal_is_device_signed_and_exactly_repeatable",
+            desktop_transport,
+        )
+        self.assertIn(
+            "DeviceInboxPayloadType::CommandResult",
+            desktop_consumer,
+        )
+        self.assertIn(
+            "commit_command_result",
+            desktop_command_result,
+        )
+        self.assertIn(
+            "discard_pending_transition",
+            desktop_command_result,
+        )
+        self.assertIn(
+            "existingConversationProposalReplay",
+            production_federation,
+        )
+        self.assertIn(
+            "validateNewConversationProposal",
+            production_federation,
+        )
+        self.assertIn(
+            "validateConversationProposalFollowerHead",
+            production_federation,
+        )
+        self.assertIn(
+            "group_creation_request_preserves_exact_command_bytes",
+            desktop_transport,
+        )
+
     def test_sending_endpoint_uses_ordered_public_event_marker(self) -> None:
         command = (CHAT_PROTO / "command.proto").read_text(encoding="utf-8")
         event = (CHAT_PROTO / "event.proto").read_text(encoding="utf-8")
@@ -163,39 +441,43 @@ class MessagingPlatformContractTest(unittest.TestCase):
         self.assertIn("string command_id = 3;", event)
         self.assertIn("CryptoEndpoint sending_endpoint = 4;", event)
 
-    def test_conversation_contract_binds_canonical_authority_plan(self) -> None:
+    def test_send_preparation_binds_active_device_plan(self) -> None:
         command = (CHAT_PROTO / "command.proto").read_text(encoding="utf-8")
+        conversation = (CHAT_PROTO / "conversation.proto").read_text(
+            encoding="utf-8"
+        )
         api = (CHAT_PROTO / "conversation_api.proto").read_text(encoding="utf-8")
 
         self.assertIn("bytes delivery_plan_sha256 = 7;", command)
-        self.assert_proto_declares(
-            api,
-            "CreateDirectConversationRequest",
-            "CreateDirectConversationResponse",
-            "ListConversationsRequest",
-            "ListConversationsResponse",
-            "PrepareConversationCommandRequest",
-            "PrepareConversationCommandResponse",
-            "PrepareConversationGroupRequest",
-            "PrepareConversationGroupResponse",
-            "PrepareConversationMembershipRequest",
-            "PrepareConversationMembershipResponse",
-            "SubmitConversationAuthorityCommandRequest",
-            "SubmitConversationAuthorityCommandResponse",
-        )
+        self.assertIn("message PrepareConversationCommandRequest", api)
+        self.assertIn("message PrepareConversationCommandResponse", api)
         self.assertIn(
             "repeated peers_touch.model.actor.v1.ActorDeviceRef required_endpoints = 7;",
             api,
         )
         self.assertIn("bytes delivery_plan_sha256 = 8;", api)
-
-    def test_production_runtime_registers_canonical_resource_routes(self) -> None:
-        station_main = (ROOT / "apps/station/app/main.go").read_text(encoding="utf-8")
-        station_source = read_source_tree(
-            ROOT / "apps/station/app/subserver",
-            {".go"},
+        self.assertIn(
+            "CONVERSATION_COMMAND_REJECT_CODE_STALE_DELIVERY_PLAN = 20;",
+            conversation,
         )
-        registry = CAPABILITY_REGISTRY.read_text(encoding="utf-8")
+        self.assertIn("message SubmitConversationAuthorityCommandRequest", api)
+        self.assertIn("message SubmitConversationAuthorityCommandResponse", api)
+
+    def test_production_runtime_registers_resource_routes_and_profile_engine(self) -> None:
+        station_main = (ROOT / "apps/station/app/main.go").read_text(encoding="utf-8")
+        station_owner_roots = (
+            ROOT / "apps/station/app/subserver/conversation",
+            ROOT / "apps/station/app/subserver/actor_identity",
+            ROOT / "apps/station/app/subserver/key_exchange",
+            ROOT / "apps/station/app/subserver/recovery",
+            ROOT / "apps/station/frame/core/federation",
+        )
+        resource_owner_source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for owner_root in station_owner_roots
+            for path in owner_root.rglob("*.go")
+            if "engine" not in path.parts and not path.name.endswith("_test.go")
+        )
         desktop_state = (
             ROOT / "apps/desktop/src-tauri/src/state/mod.rs"
         ).read_text(encoding="utf-8")
@@ -203,45 +485,39 @@ class MessagingPlatformContractTest(unittest.TestCase):
             ROOT / "apps/desktop/src-tauri/src/application/auth/service.rs"
         ).read_text(encoding="utf-8")
 
-        for owner in (
-            "actor_identity",
-            "conversation",
-            "federation",
-            "key_exchange",
-            "recovery",
-        ):
-            with self.subTest(owner=owner):
-                self.assertEqual(
-                    station_main.count(f'server.WithSubServer("{owner}"'),
-                    1,
-                )
+        self.assertEqual(
+            station_main.count('server.WithSubServer("conversation"'),
+            1,
+        )
         self.assertNotIn('"conversation_engine"', station_main)
+        self.assertNotIn("conversationengine", station_main)
+        self.assertEqual(
+            station_main.count('server.WithSubServer("actor_identity"'),
+            1,
+        )
+        self.assertEqual(
+            station_main.count('server.WithSubServer("recovery"'),
+            1,
+        )
+        self.assertEqual(
+            station_main.count('server.WithSubServer("key_exchange"'),
+            1,
+        )
         self.assertNotIn('server.WithSubServer("messaging"', station_main)
-
         for route in (
             "/conversation/direct",
-            "/conversation/group",
             "/conversation/group/prepare",
             "/conversation/membership/prepare",
             "/conversation/list",
             "/conversation/command/prepare",
             "/conversation/command",
             "/device/enroll",
-            "/device/list",
-            "/device/revoke",
             "/device/inbox/claim",
             "/device/inbox/ack",
             "/device/inbox/reject",
             "/recovery/revision",
             "/recovery/latest",
-            "/key-exchange/keys/bundle",
-            "/key-exchange/keys/bundle/fetch",
-            "/key-exchange/keys/replenish",
-            "/key-exchange/keys/count",
-            "/key-exchange/mls/key-package/upload",
-            "/key-exchange/mls/key-package/fetch",
-            "/key-exchange/mls/key-package/count",
-            "/key-exchange/dkx/send",
+            "/conversation/attachments/uploads:begin",
             "/federation/delivery",
             "/federation/actor/endpoint-manifest",
             "/federation/conversation/command/prepare",
@@ -250,10 +526,11 @@ class MessagingPlatformContractTest(unittest.TestCase):
             "/conversation/read-cursor",
             "/conversation/delivery/receipt",
         ):
-            with self.subTest(route=route):
-                self.assertIn(f"path: {route}", registry)
-                self.assertIn(f'"{route}"', station_source)
-
+            self.assertIn(route, resource_owner_source)
+        self.assertNotIn('"/messaging/', resource_owner_source)
+        self.assertFalse(
+            (ROOT / "apps/station/app/subserver/conversation/engine").exists()
+        )
         self.assertIn("pub messaging_engines: EngineRegistry", desktop_state)
         self.assertIn("activate_messaging_profile(", auth_service)
         self.assertIn("deactivate_messaging_profile(", auth_service)
@@ -263,8 +540,12 @@ class MessagingPlatformContractTest(unittest.TestCase):
             (ROOT / "apps/station/app/subserver/messaging").exists(),
             "the deleted Station Messaging facade must not be restored",
         )
+        self.assertFalse(
+            (ROOT / "apps/station/app/subserver/envelope").exists(),
+            "the retired Station Envelope owner must not be restored",
+        )
 
-        route_literal = re.compile(r"""["']/messaging/""")
+        route_literal = re.compile(r"""["']/(?:messaging|envelope)/""")
         source_roots = (
             ROOT / "apps/station/app",
             ROOT / "apps/desktop/src",
@@ -294,31 +575,102 @@ class MessagingPlatformContractTest(unittest.TestCase):
 
         self.assertEqual(violations, [])
 
-        superseded = registry_superseded_symbols()
-        self.assertTrue(superseded, "capability registry exposed no superseded symbols")
-        self.assertEqual(sorted(superseded & declared_proto_symbols()), [])
+    def test_retired_station_authority_and_proto_sources_are_absent(self) -> None:
+        self.assertFalse(
+            (ROOT / "apps/station/app/subserver/conversation/engine").exists()
+        )
+        for retired_proto in (
+            "device.proto",
+            "envelope.proto",
+            "envelope_api.proto",
+            "key_exchange.proto",
+            "messaging_api.proto",
+            "recovery.proto",
+        ):
+            self.assertFalse((CHAT_PROTO / retired_proto).exists(), retired_proto)
 
-        self.assertTrue((ROOT / "packages/messaging-core").is_dir())
-        self.assertTrue((ROOT / "apps/desktop/src-tauri/src/messaging").is_dir())
-        self.assertTrue((ROOT / "apps/mobile/src-tauri/src/messaging").is_dir())
+        ownership = (
+            ROOT
+            / "docs/architecture/api-ownership/station-api-capabilities.yaml"
+        ).read_text(encoding="utf-8")
+        target_absent_stores = ownership.split(
+            "target_absent_truth_stores:",
+            maxsplit=1,
+        )[1]
+        retired_tables = tuple(
+            re.findall(r"^  - ([a-z0-9_]+)$", target_absent_stores, re.MULTILINE)
+        )
+        self.assertTrue(retired_tables)
 
-    def test_profile_engine_uses_canonical_key_exchange_service_and_api(self) -> None:
-        desktop_messaging = ROOT / "apps/desktop/src-tauri/src/messaging"
-        lifecycle = (desktop_messaging / "lifecycle.rs").read_text(encoding="utf-8")
-        prekeys = (desktop_messaging / "prekeys.rs").read_text(encoding="utf-8")
-        mls_key_packages = (desktop_messaging / "mls_key_packages.rs").read_text(
+        production_sources = tuple(
+            path
+            for root in (
+                ROOT / "apps/station/app",
+                ROOT / "apps/station/frame",
+            )
+            for path in root.rglob("*.go")
+            if not path.name.endswith("_test.go")
+        )
+        self.assertEqual(
+            text_offenders(production_sources, retired_tables),
+            {},
+        )
+
+    def test_desktop_uses_resource_owned_key_exchange_routes(self) -> None:
+        desktop_rust = ROOT / "apps/desktop/src-tauri/src"
+        legacy_route = re.compile(
+            r"""["']/(?:keypackage/(?:upload|fetch|count)|dkx/send)["']"""
+        )
+        violations: list[str] = []
+        for path in desktop_rust.rglob("*.rs"):
+            if any(part == "target" for part in path.parts):
+                continue
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8", errors="replace").splitlines(),
+                start=1,
+            ):
+                if legacy_route.search(line):
+                    violations.append(
+                        f"{path.relative_to(ROOT)}:{line_number}: {line.strip()}"
+                    )
+
+        self.assertEqual(violations, [])
+
+        mls_transport = (
+            desktop_rust / "messaging/mls_key_packages.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            '"/key-exchange/mls/key-package/upload"',
+            mls_transport,
+        )
+
+        canonical_routes = (
+            "/key-exchange/mls/key-package/upload",
+            "/key-exchange/mls/key-package/fetch",
+            "/key-exchange/mls/key-package/count",
+            "/key-exchange/dkx/send",
+        )
+        for relative_path in (
+            "interface/http_gateway/mod.rs",
+            "interface/tauri_commands/conversation.rs",
+        ):
+            source = (desktop_rust / relative_path).read_text(encoding="utf-8")
+            for route in canonical_routes:
+                self.assertIn(f'"{route}"', source)
+
+    def test_profile_engine_owns_lifecycle_and_fresh_key_activation(self) -> None:
+        messaging = ROOT / "apps/desktop/src-tauri/src/messaging"
+        lifecycle = (messaging / "lifecycle.rs").read_text(encoding="utf-8")
+        prekeys = (messaging / "prekeys.rs").read_text(encoding="utf-8")
+        mls_key_packages = (messaging / "mls_key_packages.rs").read_text(
             encoding="utf-8"
         )
-        engine = (desktop_messaging / "engine.rs").read_text(encoding="utf-8")
-        key_exchange_handler = (
+        engine = (messaging / "engine.rs").read_text(encoding="utf-8")
+        key_exchange = (
             ROOT / "apps/station/app/subserver/key_exchange/handler.go"
         ).read_text(encoding="utf-8")
-        key_exchange_subserver = (
-            ROOT / "apps/station/app/subserver/key_exchange/subserver.go"
-        ).read_text(encoding="utf-8")
-        key_exchange_api = (
-            ROOT
-            / "apps/station/app/subserver/key_exchange/interface/http/canonical.go"
+        key_exchange_device_directory = (
+            ROOT / "apps/station/app/subserver/key_exchange/production_ports.go"
         ).read_text(encoding="utf-8")
 
         self.assertIn("pub struct MessagingLifecycleWorker", lifecycle)
@@ -329,52 +681,45 @@ class MessagingPlatformContractTest(unittest.TestCase):
         self.assertIn("PreKeyPublisher", prekeys)
         self.assertIn("messaging_core::crypto::prekeys", prekeys)
         self.assertIn("engine.publish_prekeys(token)", lifecycle)
-        self.assertTrue((desktop_messaging / "direct_session.rs").exists())
+        self.assertTrue((messaging / "direct_session.rs").exists())
         self.assertIn(
             "direct_session_bootstraps",
-            (desktop_messaging / "store.rs").read_text(encoding="utf-8"),
+            (messaging / "store.rs").read_text(encoding="utf-8"),
         )
         self.assertIn("MlsKeyPackageTransport", mls_key_packages)
-        self.assertIn('"/key-exchange/mls/key-package/upload"', mls_key_packages)
+        self.assertIn(
+            '"/key-exchange/mls/key-package/upload"',
+            mls_key_packages,
+        )
         self.assertIn("engine.publish_mls_key_packages(token)", lifecycle)
         self.assertIn("activate_profile_worker(", engine)
+        self.assertIn("authenticatedCanonicalAPI(", key_exchange)
+        self.assertIn("ResolveActiveDevice(", key_exchange_device_directory)
+        self.assertIn("IsVerifiedActive(", key_exchange_device_directory)
 
-        self.assertIn("application.NewCanonicalService(", key_exchange_subserver)
-        self.assertIn("httpinterface.NewCanonicalAPI(service)", key_exchange_subserver)
-        self.assertIn("type CanonicalAPI struct", key_exchange_api)
-        self.assertIn("authenticatedKeyExchangeEndpoint(ctx)", key_exchange_handler)
-        for operation in (
-            "UploadDirectKeyBundle",
-            "FetchDirectKeyBundles",
-            "ReplenishDirectOneTimePreKeys",
-            "CountDirectOneTimePreKeys",
-            "UploadMLSKeyPackage",
-            "FetchMLSKeyPackage",
-            "CountMLSKeyPackages",
-            "SendDirectKeyExchange",
-        ):
-            with self.subTest(operation=operation):
-                self.assertIn(f"s.api.{operation}(", key_exchange_handler)
-        self.assertNotIn("requireVerifiedActiveDevice", key_exchange_handler)
+        social_store = (
+            ROOT / "apps/desktop/src/store/socialChat.ts"
+        ).read_text(encoding="utf-8")
+        self.assertIn("imServiceV1.messaging.listConversations()", social_store)
+        self.assertNotIn("primeDirectSessions(", social_store)
+        group_modal = (
+            ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
+        ).read_text(encoding="utf-8")
+        self.assertIn("imServiceV1.messaging.createGroup(", group_modal)
+        self.assertNotIn("keyPackage.fetch(", group_modal)
+        self.assertNotIn("createAuthorizedGroup(", group_modal)
+        group_detail = (
+            ROOT / "apps/desktop/src/components/chat/ChatDetailPanel.tsx"
+        ).read_text(encoding="utf-8")
+        self.assertIn("imServiceV1.messaging.submitMembershipIntent(", group_detail)
+        self.assertNotIn("imServiceV1.keyPackage.fetch(", group_detail)
+        self.assertNotIn("imServiceV1.mlsGroup.addAuthorizedMember(", group_detail)
+        self.assertNotIn("imServiceV1.mlsGroup.removeAuthorizedMember(", group_detail)
 
-    def test_device_inbox_ack_is_fenced_and_hash_bound(self) -> None:
+    def test_queue_ack_is_fenced_and_hash_bound(self) -> None:
         queue = (CHAT_PROTO / "queue.proto").read_text(encoding="utf-8")
 
-        self.assert_proto_declares(
-            queue,
-            "DeviceInboxPayloadType",
-            "DeviceInboxItemState",
-            "DeviceInboxRejectCode",
-            "DeviceInboxLease",
-            "DurableDeviceInboxItem",
-            "ClaimDeviceInboxRequest",
-            "ClaimDeviceInboxResponse",
-            "AcknowledgeDeviceInboxItemRequest",
-            "AcknowledgeDeviceInboxItemResponse",
-            "RejectDeviceInboxItemRequest",
-            "RejectDeviceInboxItemResponse",
-            "DeviceInboxWakeHint",
-        )
+        self.assertIn("message AcknowledgeDeviceInboxItemRequest", queue)
         self.assertIn(
             "peers_touch.model.actor.v1.ActorDeviceRef device = 1;",
             queue,
@@ -382,23 +727,14 @@ class MessagingPlatformContractTest(unittest.TestCase):
         self.assertIn("int64 lane_sequence = 3;", queue)
         self.assertIn("uint64 consumer_epoch = 4;", queue)
         self.assertIn("bytes payload_sha256 = 5;", queue)
+        self.assertNotIn("message AcknowledgeDeviceQueueItemRequest", queue)
 
     def test_device_enrollment_is_actor_cross_signed(self) -> None:
-        actor = (MODEL_PROTO / "actor/actor.proto").read_text(encoding="utf-8")
-
-        self.assert_proto_declares(
-            actor,
-            "ActorDeviceRef",
-            "ActorDeviceCertificate",
-            "ActorDevice",
-            "EnrollActorDeviceRequest",
-            "EnrollActorDeviceResponse",
-            "ListActorDevicesRequest",
-            "ListActorDevicesResponse",
-            "RevokeActorDeviceRequest",
-            "RevokeActorDeviceResponse",
-            "ActorEndpointManifest",
+        actor = (ROOT / "model/domain/actor/actor.proto").read_text(
+            encoding="utf-8"
         )
+
+        self.assertIn("message ActorDeviceCertificate", actor)
         self.assertIn("ActorDeviceRef device = 2;", actor)
         self.assertIn("bytes actor_identity_public_key = 3;", actor)
         self.assertIn("bytes actor_identity_key_fingerprint = 4;", actor)
@@ -407,52 +743,78 @@ class MessagingPlatformContractTest(unittest.TestCase):
         self.assertIn("uint64 observed_profile_version = 7;", actor)
         self.assertIn("ActorDeviceCertificate certificate = 1;", actor)
         self.assertIn("bytes actor_cross_signature = 3;", actor)
+        self.assertFalse((CHAT_PROTO / "device.proto").exists())
 
     def test_federation_frame_is_signed_hash_bound_and_preserves_event_identity(self) -> None:
-        federation = (
-            MODEL_PROTO / "federation/delivery.proto"
+        delivery = (
+            ROOT / "model/domain/federation/delivery.proto"
+        ).read_text(encoding="utf-8")
+        conversation_federation = (CHAT_PROTO / "federation.proto").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("message FederatedDomainFrameSigningInput", delivery)
+        self.assertIn("message FederatedDomainFrame", delivery)
+        self.assertIn("string source_station_peer_id = 3;", delivery)
+        self.assertIn("string target_station_peer_id = 4;", delivery)
+        self.assertIn("string idempotency_key = 5;", delivery)
+        self.assertIn("string payload_id = 7;", delivery)
+        self.assertIn("string ordering_key = 8;", delivery)
+        self.assertIn("int64 ordering_sequence = 9;", delivery)
+        self.assertIn("bytes payload_sha256 = 11;", delivery)
+        self.assertIn("bytes station_signature = 15;", delivery)
+        self.assertIn(
+            "message ConversationFollowerProjection",
+            conversation_federation,
+        )
+        self.assertNotIn(
+            "message MessagingFederationFrame",
+            conversation_federation,
+        )
+
+    def test_inter_station_messaging_control_plane_uses_protobuf(self) -> None:
+        frame = (
+            ROOT / "apps/station/frame/core/federation/delivery/frame.go"
+        ).read_text(encoding="utf-8")
+        transport = (
+            ROOT / "apps/station/frame/core/federation/transport.go"
+        ).read_text(encoding="utf-8")
+        conversation_sender = (
+            ROOT
+            / "apps/station/app/subserver/conversation/infrastructure/federation/sender.go"
+        ).read_text(encoding="utf-8")
+        routes = (
+            ROOT / "apps/station/frame/core/federation/routes.go"
         ).read_text(encoding="utf-8")
 
-        self.assert_proto_declares(
-            federation,
-            "FederatedDomainPayloadKind",
-            "FederatedDomainFrameDisposition",
-            "FederatedDomainFrameErrorCode",
-            "FederatedDomainFrameSigningInput",
-            "FederatedDomainFrame",
-            "DeliverFederatedDomainFrameRequest",
-            "DeliverFederatedDomainFrameResponse",
+        for source in (frame, transport, conversation_sender):
+            self.assertIn('"google.golang.org/protobuf/proto"', source)
+            self.assertNotIn("protojson", source)
+        self.assertIn(
+            'request.Header.Set("Content-Type", "application/protobuf")',
+            transport,
         )
-        self.assertIn("string source_station_peer_id = 3;", federation)
-        self.assertIn("string target_station_peer_id = 4;", federation)
-        self.assertIn("string idempotency_key = 5;", federation)
-        self.assertIn("string ordering_key = 8;", federation)
-        self.assertIn("int64 ordering_sequence = 9;", federation)
-        self.assertIn("bytes payload_sha256 = 11;", federation)
-        self.assertIn("bytes station_signature = 15;", federation)
+        self.assertIn(
+            'request.Header.Set("Accept", "application/protobuf")',
+            transport,
+        )
+        self.assertIn('DeliveryRoute = "/federation/delivery"', routes)
+        self.assertIn(
+            'ConversationFollowerEventsRoute = '
+            '"/federation/conversation/follower/events"',
+            routes,
+        )
 
     def test_recovery_archive_excludes_live_crypto_state(self) -> None:
         recovery = (
-            MODEL_PROTO / "recovery/recovery.proto"
+            ROOT / "model/domain/recovery/recovery.proto"
         ).read_text(encoding="utf-8")
 
-        self.assert_proto_declares(
-            recovery,
-            "OpaqueRecoveryArchiveSectionKind",
-            "OpaqueRecoveryArchiveSection",
-            "OpaqueRecoveryArchiveManifest",
-            "StoreRecoveryRevisionRequest",
-            "StoreRecoveryRevisionResponse",
-            "ReadLatestRecoveryRevisionRequest",
-            "ReadLatestRecoveryRevisionResponse",
-        )
-        self.assertIn(
-            "OPAQUE_RECOVERY_ARCHIVE_SECTION_KIND_MESSAGE_HISTORY",
-            recovery,
-        )
+        self.assertIn("RECOVERY_ARCHIVE_SECTION_KIND_MESSAGE_HISTORY", recovery)
         self.assertNotIn("RATCHET", recovery)
         self.assertNotIn("SKIPPED_KEY", recovery)
         self.assertNotIn("MLS_STATE", recovery)
+        self.assertFalse((CHAT_PROTO / "recovery.proto").exists())
 
     def test_attachment_contract_separates_private_content_and_resumable_object_state(self) -> None:
         attachment = (CHAT_PROTO / "attachment.proto").read_text(encoding="utf-8")

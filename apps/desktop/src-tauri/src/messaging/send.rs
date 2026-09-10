@@ -160,16 +160,18 @@ fn model_endpoint(endpoint: &EngineEndpoint) -> CryptoEndpoint {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::crypto::double_ratchet::DrSessionState;
     use crate::domain::crypto::{
         CryptoEndpoint as SessionEndpoint, DirectSession, DirectSessionKey,
     };
     use crate::messaging::private_content::test_attachment_metadata;
     use crate::messaging::{decode_message_private_content, AttachmentTransferRecord};
     use crate::model::chat::{
-        chat_command, AttachmentTransferState, ConversationKind, EncryptedObjectUploadSpec,
-        PreparedEndpointPayload,
+        chat_command, AttachmentTransferState, ConversationKind, DirectCiphertextAad,
+        DirectDeviceCiphertext, EncryptedObjectUploadSpec, PreparedEndpointPayload,
     };
+    use messaging_core::crypto::double_ratchet::{self, DrCiphertextWire, DrSessionState};
+    use messaging_core::proto::{actor_device_ref, chat_endpoint};
+    use prost::Message;
 
     fn session(peer_ptid: &str, peer_device_id: &str, seed: u8) -> DirectSession {
         let session_id = format!("session-{peer_ptid}-{peer_device_id}");
@@ -330,9 +332,9 @@ mod tests {
             membership_epoch: 1,
             mls_epoch: 0,
             required_endpoints: vec![
-                crate::messaging::actor_device_ref("ptid:alice", "alice-device"),
-                crate::messaging::actor_device_ref("ptid:alice", "alice-phone"),
-                crate::messaging::actor_device_ref("ptid:bob", "bob-device"),
+                actor_device_ref("ptid:alice", "alice-device"),
+                actor_device_ref("ptid:alice", "alice-phone"),
+                actor_device_ref("ptid:bob", "bob-device"),
             ],
             delivery_plan_sha256: vec![9; 32],
             endpoint_manifests: Vec::new(),
@@ -393,16 +395,11 @@ mod tests {
                 .iter()
                 .map(|payload| payload.recipient.clone().unwrap())
                 .collect::<Vec<_>>(),
-            vec![
-                CryptoEndpoint {
-                    ptid: "ptid:alice".to_string(),
-                    device_id: "alice-phone".to_string(),
-                },
-                CryptoEndpoint {
-                    ptid: "ptid:bob".to_string(),
-                    device_id: "bob-device".to_string(),
-                },
-            ]
+            plan.required_endpoints[1..]
+                .iter()
+                .map(chat_endpoint)
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
         );
         let bob_payload = send
             .direct_payloads
@@ -494,8 +491,8 @@ mod tests {
             membership_epoch: 1,
             mls_epoch: 0,
             required_endpoints: vec![
-                crate::messaging::actor_device_ref("ptid:alice", "alice-device"),
-                crate::messaging::actor_device_ref("ptid:bob", "bob-device"),
+                actor_device_ref("ptid:alice", "alice-device"),
+                actor_device_ref("ptid:bob", "bob-device"),
             ],
             delivery_plan_sha256: vec![9; 32],
             endpoint_manifests: Vec::new(),

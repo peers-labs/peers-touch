@@ -6,7 +6,6 @@ owns:
   - apps/station/frame/core/server/server_base.go
   - apps/station/frame/core/plugin/native/subserver/bootstrap/
   - apps/station/app/subserver/conversation/
-  - apps/station/app/subserver/envelope/
 referenced-by: []
 related:
   - ../../station/subserver-standard.md

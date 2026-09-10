@@ -14,6 +14,31 @@ describe('IM service boundary', () => {
   it('does not expose the removed raw MLS service', () => {
     expect(imServiceV1).not.toHaveProperty('mlsGroup')
   })
+
+  it('requires the selected federation when opening a Direct conversation', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        conversation_id: 'conversation-1',
+        state: 'projected',
+      },
+    })
+
+    await expect(imServiceV1.messaging.createDirect({
+      peerPtid: 'ptid:bob',
+      federationId: 'federation-1',
+    })).resolves.toEqual({
+      conversationId: 'conversation-1',
+      state: 'projected',
+    })
+
+    expect(invokeMock).toHaveBeenCalledWith('messaging_create_direct', {
+      input: {
+        peer_ptid: 'ptid:bob',
+        federation_id: 'federation-1',
+      },
+    })
+  })
 })
 
 describe('normalizeConversationEvents', () => {
@@ -21,43 +46,41 @@ describe('normalizeConversationEvents', () => {
     const [event] = normalizeConversationEvents([{
       event_id: 'event-1',
       conversation_id: 'conversation-1',
-      group_seq: 7,
+      sequence: 7,
+      command_id: 'command-1',
       membership_epoch: 2,
-      committed_by_station_peer_id: 'station-1',
+      authority_station_peer_id: 'station-1',
       committed_at: { seconds: 1_785_634_845, nanos: 250_000_000 },
       Payload: {
         MessageCommitted: {
           message_id: 'message-1',
-          sender_ptid: 'alice',
-          sender_device_id: 'desktop',
-          device_payloads: [{
-            recipient_ptid: 'bob',
-            recipient_device_id: 'mobile',
-            session_id: 'session-1',
-            encrypted_envelope: 'AQID',
-          }],
-          content_type: 1,
+          sender: {
+            ptid: 'alice',
+            device_id: 'desktop',
+          },
+          content_kind: 1,
         },
       },
     }])
 
-    expect(event.groupSeq).toBe(7n)
+    expect(event.sequence).toBe(7n)
     expect(event.membershipEpoch).toBe(2n)
+    expect(event.authorityStationPeerId).toBe('station-1')
     expect(event.committedAt?.seconds).toBe(1_785_634_845n)
     expect(event.payload.case).toBe('messageCommitted')
     if (event.payload.case !== 'messageCommitted') throw new Error('unexpected payload')
-    expect(event.payload.value.devicePayloads).toHaveLength(1)
-    expect(event.payload.value.devicePayloads[0]?.encryptedEnvelope)
-      .toEqual(new Uint8Array([1, 2, 3]))
+    expect(event.payload.value.sender?.ptid).toBe('alice')
+    expect(event.payload.value.sender?.deviceId).toBe('desktop')
   })
 
   it('decodes canonical membership transition evidence', () => {
     const [event] = normalizeConversationEvents([{
       event_id: 'event-transition-1',
       conversation_id: 'conversation-1',
-      group_seq: 2,
+      sequence: 2,
+      command_id: 'command-transition-1',
       membership_epoch: 1,
-      committed_by_station_peer_id: 'station-1',
+      authority_station_peer_id: 'station-1',
       event_hash: 'AQID',
       Payload: {
         MembershipTransitionCommitted: {
@@ -66,16 +89,14 @@ describe('normalizeConversationEvents', () => {
           to_membership_epoch: 1,
           from_mls_epoch: 0,
           to_mls_epoch: 1,
-          opaque_mls_commit_bytes: 'BAUG',
-          commit_sha256: 'BwgJ',
+          mls_commit_sha256: 'BwgJ',
           changes: [{
             ptid: 'alice',
-            actor_home_station_peer_id: 'station-1',
+            home_station_peer_id: 'station-1',
             action: 1,
-            role: 3,
+            role: 'owner',
             device_id: 'alice-device',
           }],
-          welcome_descriptors: [],
         },
       },
     }])
@@ -86,7 +107,7 @@ describe('normalizeConversationEvents', () => {
     }
     expect(event.payload.value.transitionId).toBe('transition-1')
     expect(event.payload.value.toMlsEpoch).toBe(1n)
-    expect(event.payload.value.opaqueMlsCommitBytes).toEqual(new Uint8Array([4, 5, 6]))
+    expect(event.payload.value.mlsCommitSha256).toEqual(new Uint8Array([7, 8, 9]))
   })
 })
 
@@ -244,13 +265,14 @@ describe('Messaging leave intent boundary', () => {
 })
 
 describe('Messaging conversation projection', () => {
-  it('retains the authority Station identity from the Rust projection', async () => {
+  it('retains authority and Federation identity from the Rust projection', async () => {
     invokeMock.mockResolvedValueOnce({
       ok: true,
       data: {
         conversations: [{
           conversation_id: 'conversation-1',
           authority_station_id: 'station-authority',
+          federation_id: 'federation-1',
           kind: 2,
           name: 'Group',
           owner_ptid: 'ptid:test:alice',
@@ -280,6 +302,7 @@ describe('Messaging conversation projection', () => {
     await expect(imServiceV1.messaging.listConversations()).resolves.toEqual([{
       conversationId: 'conversation-1',
       authorityStationId: 'station-authority',
+      federationId: 'federation-1',
       kind: 2,
       name: 'Group',
       ownerPtid: 'ptid:test:alice',
@@ -356,7 +379,41 @@ describe('Messaging message projection', () => {
   })
 })
 
-describe('Conversation member settings projection', () => {
+describe('Messaging local projections and member settings', () => {
+  it('reads thread counts from the Device Messaging Engine', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        counts: [{
+          rootUlid: 'root-1',
+          replyCount: 2,
+          latestReplyUlid: 'reply-2',
+          latestReplyAt: 1_800_000_000_000,
+          unreadCount: 1,
+        }],
+      },
+    })
+
+    await expect(imServiceV1.messaging.threadCounts(
+      'conversation-1',
+      ['root-1'],
+    )).resolves.toEqual({
+      counts: [{
+        rootUlid: 'root-1',
+        replyCount: 2,
+        latestReplyUlid: 'reply-2',
+        latestReplyAt: 1_800_000_000_000,
+        unreadCount: 1,
+      }],
+    })
+    expect(invokeMock).toHaveBeenCalledWith('messaging_thread_counts', {
+      input: {
+        conversation_id: 'conversation-1',
+        root_message_ids: ['root-1'],
+      },
+    })
+  })
+
   it('round-trips typed Station-backed conversation actions', async () => {
     invokeMock.mockResolvedValueOnce({
       ok: true,
@@ -371,7 +428,7 @@ describe('Conversation member settings projection', () => {
       },
     })
 
-    await expect(imServiceV1.conversation.updateMemberSettings('conversation-1', {
+    await expect(imServiceV1.messaging.updateMemberSettings('conversation-1', {
       muted: true,
       pinned: true,
       background: 'mint',
@@ -387,7 +444,7 @@ describe('Conversation member settings projection', () => {
       clearedAtUnixMs: 1_800_000_000_000,
     })
 
-    expect(invokeMock).toHaveBeenCalledWith('conversation_update_member_settings', {
+    expect(invokeMock).toHaveBeenCalledWith('messaging_update_member_settings', {
       input: {
         conversation_id: 'conversation-1',
         nickname: undefined,
@@ -534,6 +591,7 @@ describe('Messaging group creation boundary', () => {
         'group-1',
         'Project group',
         ['ptid:bob'],
+        'federation-1',
       )).resolves.toEqual({
         conversationId: 'group-1',
         commandId: 'group-command-1',
@@ -545,6 +603,7 @@ describe('Messaging group creation boundary', () => {
           conversation_id: 'group-1',
           name: 'Project group',
           member_ptids: ['ptid:bob'],
+          federation_id: 'federation-1',
         },
       })
       const input = invokeMock.mock.calls[0]?.[1]?.input

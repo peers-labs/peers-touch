@@ -410,16 +410,19 @@ export interface NativeDeepLinkOutput {
 
 export interface MessagingCreateDirectActionInput {
   peerPtid: string;
+  federationId: string;
 }
 
 export interface MessagingCreateGroupActionInput {
   conversationId: string;
   name: string;
   memberPtids: string[];
+  federationId: string;
 }
 
 export type MessagingCreateDirectActionOutput = {
   conversationId: string;
+  commandId: string;
   state: 'pending' | 'projected';
 };
 
@@ -611,6 +614,7 @@ export interface PublicMessagingProjection {
   conversations: Array<{
     conversationId: string;
     authorityStationId: string;
+    federationId: string;
     kind: number;
     name: string;
     ownerPtid: string;
@@ -628,8 +632,11 @@ export interface PublicSocialRuntimeProjection {
   activeSessionUlid: string | null;
   friendRequests: Array<{
     requestId: string;
+    federationId: string;
     senderPtid: string;
     receiverPtid: string;
+    senderHomeStationPeerId: string;
+    receiverHomeStationPeerId: string;
     status: number;
   }>;
   typingPeers: Record<string, Record<string, {
@@ -642,6 +649,8 @@ export interface PublicSocialRuntimeProjection {
 
 export interface SocialRequestSendActionInput {
   receiverPtid: string;
+  receiverHomeStationPeerId: string;
+  federationId: string;
   message?: string;
 }
 

@@ -44,6 +44,19 @@ func newReceiptPersistenceFixture(t *testing.T) *receiptPersistenceFixture {
 	}
 	eventID := valueobject.EventID(digest("receipt:event"))
 	endpointPayload := []byte("endpoint-private-ciphertext")
+	originator := valueobject.Endpoint{
+		Actor:  "ptid:alice",
+		Device: "alice-device",
+	}
+	originatorPrepared, err := valueobject.NewPreparedDelivery(
+		originator,
+		"station:local",
+		valueobject.DeliveryKindPublicEvent,
+		[]byte("originator-public-marker"),
+	)
+	if err != nil {
+		t.Fatalf("prepare receipt originator delivery: %v", err)
+	}
 	prepared, err := valueobject.NewPreparedDelivery(
 		fixture.recipient,
 		"station:local",
@@ -56,7 +69,7 @@ func newReceiptPersistenceFixture(t *testing.T) *receiptPersistenceFixture {
 	commitments, err := domainservice.BuildDeliveryCommitments(
 		"conversation-1",
 		eventID,
-		[]valueobject.PreparedDelivery{prepared},
+		[]valueobject.PreparedDelivery{originatorPrepared, prepared},
 	)
 	if err != nil {
 		t.Fatalf("build receipt delivery commitment: %v", err)
@@ -80,19 +93,23 @@ func newReceiptPersistenceFixture(t *testing.T) *receiptPersistenceFixture {
 	if err != nil {
 		t.Fatalf("encode receipt source command: %v", err)
 	}
+	commitmentByEndpoint := make(map[string]valueobject.Hash, len(commitments))
+	eventCommitments := make([]valueobject.Hash, 0, len(commitments))
+	for _, commitment := range commitments {
+		commitmentByEndpoint[commitment.Recipient.Key()] = commitment.Hash
+		eventCommitments = append(eventCommitments, commitment.Hash)
+	}
 	event, err := conversationhttp.ProtobufEventSealer{}.Seal(domainevent.RecordInput{
-		ID:               eventID,
-		ConversationID:   "conversation-1",
-		Sequence:         1,
-		CommandID:        "command-1",
-		Actor:            valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-device"},
-		CommittedAt:      fixture.clock.now.Add(-time.Hour),
-		MembershipEpoch:  1,
-		MLSEpoch:         1,
-		AuthorityStation: "station:local",
-		DeliveryCommitments: []valueobject.Hash{
-			commitments[0].Hash,
-		},
+		ID:                  eventID,
+		ConversationID:      "conversation-1",
+		Sequence:            1,
+		CommandID:           "command-1",
+		Actor:               originator,
+		CommittedAt:         fixture.clock.now.Add(-time.Hour),
+		MembershipEpoch:     1,
+		MLSEpoch:            1,
+		AuthorityStation:    "station:local",
+		DeliveryCommitments: eventCommitments,
 		Fact: domainevent.NewCommandCommittedFact(
 			domainevent.KindMessageCommitted,
 			"message-1",
@@ -105,7 +122,7 @@ func newReceiptPersistenceFixture(t *testing.T) *receiptPersistenceFixture {
 	opaquePayload, err := conversationhttp.ProtobufDeviceEventEncoder{}.EncodeDeviceEvent(
 		event,
 		prepared,
-		commitments[0].Hash,
+		commitmentByEndpoint[prepared.Recipient.Key()],
 		make([]byte, ed25519.PublicKeySize),
 	)
 	if err != nil {
@@ -147,33 +164,75 @@ func newReceiptPersistenceFixture(t *testing.T) *receiptPersistenceFixture {
 	if err != nil {
 		t.Fatalf("new authority delivery ledger: %v", err)
 	}
+	originatorPayload, err := conversationhttp.ProtobufDeviceEventEncoder{}.
+		EncodeDeviceEvent(
+			event,
+			originatorPrepared,
+			commitmentByEndpoint[originator.Key()],
+			make([]byte, ed25519.PublicKeySize),
+		)
+	if err != nil {
+		t.Fatalf("encode receipt originator delivery: %v", err)
+	}
+	originatorItemID := valueobject.HashBytes(valueobject.CanonicalTuple(
+		[]byte("peers-touch/conversation-delivery"),
+		[]byte(event.ID),
+		[]byte(originator.Actor),
+		[]byte(originator.Device),
+	)).String()
 	if err := authorityLedger.RecordCommitments(
 		context.Background(),
-		[]ports.AuthorityDeliveryCommitment{{
-			ConversationID:      event.ConversationID,
-			EventID:             event.ID,
-			EventSequence:       event.Sequence,
-			Originator:          event.Actor.Actor,
-			Recipient:           item.Recipient,
-			HomeStation:         "station:local",
-			PayloadKind:         prepared.Kind,
-			EndpointPayloadHash: prepared.PayloadHash,
-			Commitment:          commitments[0].Hash,
-			QueueItemID:         item.ItemID,
-			QueuePayloadHash:    item.PayloadHash,
-			RequiredRecipient:   true,
-			CreatedAt:           event.CommittedAt,
-		}},
+		[]ports.AuthorityDeliveryCommitment{
+			{
+				ConversationID:      event.ConversationID,
+				EventID:             event.ID,
+				EventSequence:       event.Sequence,
+				Originator:          event.Actor.Actor,
+				Recipient:           originator,
+				HomeStation:         "station:local",
+				PayloadKind:         originatorPrepared.Kind,
+				EndpointPayloadHash: originatorPrepared.PayloadHash,
+				Commitment:          commitmentByEndpoint[originator.Key()],
+				QueueItemID:         originatorItemID,
+				QueuePayloadHash:    valueobject.HashBytes(originatorPayload),
+				RequiredRecipient:   false,
+				CreatedAt:           event.CommittedAt,
+			},
+			{
+				ConversationID:      event.ConversationID,
+				EventID:             event.ID,
+				EventSequence:       event.Sequence,
+				Originator:          event.Actor.Actor,
+				Recipient:           item.Recipient,
+				HomeStation:         "station:local",
+				PayloadKind:         prepared.Kind,
+				EndpointPayloadHash: prepared.PayloadHash,
+				Commitment:          commitmentByEndpoint[prepared.Recipient.Key()],
+				QueueItemID:         item.ItemID,
+				QueuePayloadHash:    item.PayloadHash,
+				RequiredRecipient:   true,
+				CreatedAt:           event.CommittedAt,
+			}},
 	); err != nil {
 		t.Fatalf("seed authority delivery ledger: %v", err)
 	}
-	if err := fixture.db.Create(&persistence.ConversationMemberDeviceModel{
-		ConversationID: string(item.ConversationID),
-		PTID:           string(item.Recipient.Actor),
-		DeviceID:       string(item.Recipient.Device),
-		HomeStation:    "station:local",
-		Active:         true,
-		JoinedSequence: 1,
+	if err := fixture.db.Create([]persistence.ConversationMemberDeviceModel{
+		{
+			ConversationID: string(item.ConversationID),
+			PTID:           string(originator.Actor),
+			DeviceID:       string(originator.Device),
+			HomeStation:    "station:local",
+			Active:         true,
+			JoinedSequence: 1,
+		},
+		{
+			ConversationID: string(item.ConversationID),
+			PTID:           string(item.Recipient.Actor),
+			DeviceID:       string(item.Recipient.Device),
+			HomeStation:    "station:local",
+			Active:         true,
+			JoinedSequence: 1,
+		},
 	}).Error; err != nil {
 		t.Fatalf("seed receipt member device: %v", err)
 	}
@@ -261,6 +320,10 @@ func newCrossStationReceiptFixture(t *testing.T) *crossStationReceiptFixture {
 		t.Fatalf("migrate cross-Station receipt dependencies: %v", err)
 	}
 	originator := fixture.recipient
+	originatorRemote := valueobject.Endpoint{
+		Actor:  originator.Actor,
+		Device: "bob-remote-1",
+	}
 	firstRemote := valueobject.Endpoint{
 		Actor:  "ptid:alice",
 		Device: "alice-remote-1",
@@ -276,6 +339,13 @@ func newCrossStationReceiptFixture(t *testing.T) *crossStationReceiptFixture {
 			"station:local",
 			valueobject.DeliveryKindPublicEvent,
 			"originator-public-marker",
+		),
+		mustPreparedReceiptDelivery(
+			t,
+			originatorRemote,
+			"station:remote-c",
+			valueobject.DeliveryKindPublicEvent,
+			"originator-remote-public-marker",
 		),
 		mustPreparedReceiptDelivery(
 			t,
@@ -525,6 +595,11 @@ func TestReceiptRecorderAggregatesRemoteEndpointsAndExcludesOriginatorMarkers(
 		originatorResult.Aggregate.FullyDelivered {
 		t.Fatalf("originator marker aggregate = %+v", originatorResult.Aggregate)
 	}
+	if len(originatorResult.OriginatorRoutes) != 2 ||
+		originatorResult.OriginatorRoutes[0].Endpoint.Actor != fixture.originator.Actor ||
+		originatorResult.OriginatorRoutes[1].HomeStation != "station:remote-c" {
+		t.Fatalf("originator routes = %+v", originatorResult.OriginatorRoutes)
+	}
 	var localItem deliveryinfra.DeviceQueueItemModel
 	if err := fixture.db.First(
 		&localItem,
@@ -615,6 +690,45 @@ func TestReceiptRecorderAggregatesRemoteEndpointsAndExcludesOriginatorMarkers(
 	}
 }
 
+func TestReceiptRecorderAdmitsExactFollowerConsumptionBeforeForwarding(
+	t *testing.T,
+) {
+	fixture := newReceiptPersistenceFixture(t)
+
+	replay, err := fixture.recorder.RecordFollowerConsumption(
+		context.Background(),
+		"station:local",
+		fixture.receipt,
+	)
+	if err != nil || replay {
+		t.Fatalf("record follower consumption: replay=%v error=%v", replay, err)
+	}
+	replay, err = fixture.recorder.RecordFollowerConsumption(
+		context.Background(),
+		"station:local",
+		fixture.receipt,
+	)
+	if err != nil || !replay {
+		t.Fatalf("replay follower consumption: replay=%v error=%v", replay, err)
+	}
+	if _, err := fixture.recorder.RecordFollowerConsumption(
+		context.Background(),
+		"station:wrong",
+		fixture.receipt,
+	); !interaction.IsCode(err, interaction.ErrorCodeIntegrityFailed) {
+		t.Fatalf("wrong follower authority error = %v", err)
+	}
+	conflicting := fixture.receipt
+	conflicting.LaneSequence++
+	if _, err := fixture.recorder.RecordFollowerConsumption(
+		context.Background(),
+		"station:local",
+		conflicting,
+	); !interaction.IsCode(err, interaction.ErrorCodeIdempotencyConflict) {
+		t.Fatalf("follower receipt conflict error = %v", err)
+	}
+}
+
 func TestReceiptRecorderPersistsConsumedTransitionAndAllowsDelayedAck(t *testing.T) {
 	fixture := newReceiptPersistenceFixture(t)
 
@@ -624,6 +738,10 @@ func TestReceiptRecorderPersistsConsumedTransitionAndAllowsDelayedAck(t *testing
 	}
 	if recorded.Replay ||
 		recorded.Originator != "ptid:alice" ||
+		recorded.MessageID != "message-1" ||
+		len(recorded.OriginatorRoutes) != 1 ||
+		recorded.OriginatorRoutes[0].Endpoint.Actor != "ptid:alice" ||
+		recorded.OriginatorRoutes[0].HomeStation != "station:local" ||
 		recorded.Aggregate.ConsumedDeviceCount != 1 ||
 		!recorded.Aggregate.Delivered ||
 		!recorded.Aggregate.FullyDelivered {

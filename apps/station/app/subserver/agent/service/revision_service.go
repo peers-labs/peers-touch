@@ -86,7 +86,7 @@ func validateRevisionRequest(request RevisionRequest) error {
 func loadOwnedConversationTx(tx *gorm.DB, request RevisionRequest) (*persistence.Conversation, error) {
 	var conversation persistence.Conversation
 	if err := tx.Where(
-		"id = ? AND ptid = ? AND status != ?",
+		"id = ? AND actor_ptid = ? AND status != ?",
 		request.ConversationID,
 		request.Ptid,
 		"deleted",
@@ -551,7 +551,7 @@ func (s *RevisionService) admitAndExecute(
 			}
 		}
 		result := tx.Model(&persistence.Conversation{}).
-			Where("id = ? AND ptid = ? AND version = ?", request.ConversationID, request.Ptid, request.ExpectedConversationVersion).
+			Where("id = ? AND actor_ptid = ? AND version = ?", request.ConversationID, request.Ptid, request.ExpectedConversationVersion).
 			Updates(updates)
 		if result.Error != nil {
 			return result.Error
@@ -672,7 +672,7 @@ func (s *RevisionService) mutateConversationOnly(
 			}
 		}
 		result := tx.Model(&persistence.Conversation{}).
-			Where("id = ? AND ptid = ? AND version = ?", request.ConversationID, request.Ptid, request.ExpectedConversationVersion).
+			Where("id = ? AND actor_ptid = ? AND version = ?", request.ConversationID, request.Ptid, request.ExpectedConversationVersion).
 			Updates(updates)
 		if result.Error != nil {
 			return result.Error

@@ -6,9 +6,13 @@ use rusqlite::{ffi, params, Connection};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::ffi::CStr;
+#[cfg(target_os = "windows")]
+use std::ffi::OsString;
 use std::fmt;
 use std::fs;
 use std::io::Write;
+#[cfg(target_os = "windows")]
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -199,11 +203,45 @@ pub fn resolve_database_path(
         sanitize_storage_segment(domain),
         sanitize_storage_segment(profile)
     );
-    app_file_path(
+    let path = app_file_path(
         app_name,
         StorageKind::Data,
         &["db", "users", &user_scope, &file_name],
-    )
+    )?;
+    Ok(sqlite_compatible_path(path))
+}
+
+#[cfg(target_os = "windows")]
+fn sqlite_compatible_path(path: PathBuf) -> PathBuf {
+    const WINDOWS_DIRECTORY_PATH_LIMIT: usize = 248;
+    const BACKSLASH: u16 = b'\\' as u16;
+
+    if !path.is_absolute() {
+        return path;
+    }
+    let encoded = path.as_os_str().encode_wide().collect::<Vec<_>>();
+    if encoded.len() < WINDOWS_DIRECTORY_PATH_LIMIT
+        || encoded.starts_with(&[BACKSLASH, BACKSLASH, b'?' as u16, BACKSLASH])
+    {
+        return path;
+    }
+
+    let mut extended = if encoded.starts_with(&[BACKSLASH, BACKSLASH]) {
+        "\\\\?\\UNC\\".encode_utf16().collect::<Vec<_>>()
+    } else {
+        "\\\\?\\".encode_utf16().collect::<Vec<_>>()
+    };
+    extended.extend_from_slice(if encoded.starts_with(&[BACKSLASH, BACKSLASH]) {
+        &encoded[2..]
+    } else {
+        &encoded
+    });
+    PathBuf::from(OsString::from_wide(&extended))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn sqlite_compatible_path(path: PathBuf) -> PathBuf {
+    path
 }
 
 pub fn open_database(
@@ -454,5 +492,30 @@ fn default_platform_root() -> Result<PathBuf, StorageError> {
             .join(".local")
             .join("share")
             .join("peers-touch"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sqlite_compatible_path;
+    use std::path::PathBuf;
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn sqlite_path_is_unchanged_outside_windows() {
+        let path = PathBuf::from("/tmp/peers-touch/chat.main.db");
+        assert_eq!(sqlite_compatible_path(path.clone()), path);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn long_sqlite_path_uses_extended_length_syntax() {
+        let path = PathBuf::from("C:\\")
+            .join("acceptance")
+            .join("x".repeat(260))
+            .join("chat.main.db");
+        let compatible = sqlite_compatible_path(path);
+
+        assert!(compatible.to_string_lossy().starts_with("\\\\?\\C:\\"));
     }
 }

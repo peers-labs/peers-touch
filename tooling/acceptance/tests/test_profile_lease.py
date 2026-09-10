@@ -213,12 +213,6 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
 
     def test_remote_script_blocks_competing_git_writer_and_releases(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory) / "station-three"
-            subprocess.run(
-                ["git", "init", str(repo)],
-                check=True,
-                capture_output=True,
-            )
             first = self._start_lease(directory, "first-owner")
             try:
                 lease_path = (
@@ -258,12 +252,6 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
 
     def test_remote_script_process_exit_releases_source_lease(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory) / "station-three"
-            subprocess.run(
-                ["git", "init", str(repo)],
-                check=True,
-                capture_output=True,
-            )
             process = self._start_lease(directory, "crash-owner")
             process.terminate()
             process.wait(timeout=10)

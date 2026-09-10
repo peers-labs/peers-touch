@@ -16,7 +16,7 @@ use messaging_core::crypto::identity::IdentityKeyPair;
 use messaging_core::crypto::prekeys::PreKeyPublisher;
 use messaging_core::identity::{
     is_stale_endpoint_error, load_or_create_device_identity, DeviceEnrollmentManager,
-    INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+    DeviceSigningKey, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
 };
 use messaging_core::inbox::{
     AcknowledgedItemObserver, ClaimedItemConsumer, ConversationStateProcessor,
@@ -36,18 +36,25 @@ use messaging_core::mls::{
     MlsTransitionProcessor,
 };
 use messaging_core::outbox::{
-    CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy, DeliveryReceiptRepository,
-    DirectEditIntent, DirectOutboundPreparer, DirectSendIntent, DirectSessionBootstrapper,
-    MetadataInteraction, MetadataInteractionPreparer,
+    CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy, DirectEditIntent,
+    DirectOutboundPreparer, DirectSendIntent, DirectSessionBootstrapper, MetadataInteraction,
+    MetadataInteractionPreparer,
 };
 use messaging_core::ports::AttachmentBlob;
-use messaging_core::proto::actor::{ActorDevice, ActorDeviceRef, ActorRef};
+use messaging_core::proto::actor::{ActorDevice, ActorKind, ActorRef};
 use messaging_core::proto::chat::{
-    chat_command, ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationKind,
-    CryptoEndpoint, DeviceConsumptionReceipt, DurableDeviceInboxItem,
+    chat_command, ActorReadCursor, AttachmentTransferState, ChatCommand, Conversation,
+    ConversationKind, ConversationStatus, CryptoEndpoint, DurableDeviceInboxItem,
     PrepareConversationCommandRequest, PrepareConversationCommandResponse,
     SubmitConversationReadCursorRequest, SubmitConversationTypingRequest,
 };
+use messaging_core::proto::social::{
+    AcceptSocialFriendRequestRequest, AcceptSocialFriendRequestResponse, FriendRequestAction,
+    FriendRequestCommand, FriendRequestCommandBody, FriendRequestCommandSigningInput,
+    FriendRequestState, RejectSocialFriendRequestRequest, RejectSocialFriendRequestResponse,
+    SendSocialFriendRequestRequest, SendSocialFriendRequestResponse,
+};
+use messaging_core::proto::{actor_device_ptid, actor_device_ref};
 use messaging_core::store::MessagingRepository;
 use prost::Message;
 use rand::rngs::OsRng;
@@ -65,15 +72,32 @@ use super::transport::{
     StationAttachmentTransferTransport, StationCommandTransport, StationConversationTransport,
     StationDeliveryReceiptTransport, StationDeviceTransport, StationKeyBundleTransport,
     StationMlsKeyPackageTransport, StationPreKeyTransport, StationQueueTransport,
+    StationSocialTransport,
 };
 
 const DRAIN_BATCH_LIMIT: u32 = 100;
 pub const ATTACHMENT_STAGE_CHUNK_SIZE: usize = 1024 * 1024;
-const TYPING_PULSE_TTL_MS: i64 = 6_000;
+const FRIEND_REQUEST_COMMAND_FORMAT_VERSION: u32 = 1;
+const FRIEND_REQUEST_COMMAND_LIFETIME_MS: i64 = 60 * 60 * 1_000;
+const FRIEND_REQUEST_IDENTIFIER_MAX_BYTES: usize = 255;
+const FRIEND_REQUEST_MESSAGE_MAX_BYTES: usize = 4_096;
 const COMMAND_RETRY_POLICY: CommandRetryPolicy = CommandRetryPolicy {
     initial_delay_ms: 1_000,
     maximum_delay_ms: 60_000,
 };
+
+struct FriendRequestCommandIntent<'a> {
+    action: FriendRequestAction,
+    command_id: &'a str,
+    request_id: &'a str,
+    sender_ptid: &'a str,
+    receiver_ptid: &'a str,
+    sender_home_station_peer_id: &'a str,
+    receiver_home_station_peer_id: &'a str,
+    federation_id: &'a str,
+    message: &'a str,
+    created_at_unix_ms: i64,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MessageDraftResumeProgress {
@@ -100,6 +124,12 @@ pub struct MessagingSubmitMessageOutcome {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedGroupConversation {
+    pub conversation_id: String,
+    pub command_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedDirectConversation {
     pub conversation_id: String,
     pub command_id: String,
 }
@@ -230,7 +260,6 @@ pub struct MobileMessagingEngine {
     consumer: Arc<CoreItemConsumer>,
     consumer_id: String,
     consumer_epoch: AtomicU64,
-    typing_pulse_generation: AtomicU64,
     drain_lock: Mutex<()>,
     dispatch_lock: Mutex<()>,
     send_intent_lock: Mutex<()>,
@@ -267,24 +296,19 @@ impl MobileMessagingEngine {
             *actor_identity_seed,
             INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
         )?;
-        let enrolled_device = enrollment
+        let device = enrollment
             .certificate
             .device
             .as_ref()
-            .ok_or_else(|| "mobile messaging device certificate has no device".to_string())?;
-        if enrolled_device
-            .actor
-            .as_ref()
-            .map(|actor| actor.ptid.as_str())
-            != Some(actor_ptid.as_str())
-        {
-            return Err("mobile messaging device certificate actor mismatch".to_string());
+            .ok_or_else(|| "mobile messaging device identity has no endpoint".to_string())?;
+        if actor_device_ptid(device)? != actor_ptid {
+            return Err("mobile messaging device identity belongs to another actor".to_string());
         }
         let scope = MessagingAccountScope {
             station_peer_id,
             station_origin,
             actor_ptid,
-            device_id: enrolled_device.device_id.clone(),
+            device_id: device.device_id.clone(),
         };
         let actor_identity = Arc::new(IdentityKeyPair::from_seed(&actor_identity_seed));
         let mls_identity = Arc::new(ActorDeviceIdentity::new());
@@ -364,9 +388,6 @@ impl MobileMessagingEngine {
             consumer,
             consumer_id,
             consumer_epoch: AtomicU64::new(0),
-            typing_pulse_generation: AtomicU64::new(
-                u64::try_from(now_unix_ms()).unwrap_or_default(),
-            ),
             drain_lock: Mutex::new(()),
             dispatch_lock: Mutex::new(()),
             send_intent_lock: Mutex::new(()),
@@ -386,35 +407,248 @@ impl MobileMessagingEngine {
         self.store.conversation_projections()
     }
 
-    pub fn create_direct_conversation(&self, peer_ptid: &str) -> Result<String, String> {
-        let result = self.try_create_direct_conversation(peer_ptid);
-        match result {
-            Ok(conversation_id) => Ok(conversation_id),
-            Err(error) if is_stale_endpoint_error(&error) => {
-                log::warn!(
-                    "mobile messaging direct creation found stale enrollment; attempting recovery"
-                );
-                let _ = self.recover_stale_enrollment(&error);
-                self.enroll_pending_device()?;
-                self.try_create_direct_conversation(peer_ptid)
-            }
-            Err(error) => Err(error),
+    pub fn hydrate_conversation_authority_scopes(&self) -> Result<usize, String> {
+        let incomplete_conversation_ids = self
+            .store
+            .conversation_projections()?
+            .into_iter()
+            .filter(|conversation| {
+                conversation.active && conversation.federation_id.trim().is_empty()
+            })
+            .map(|conversation| conversation.conversation_id)
+            .collect::<Vec<_>>();
+        if incomplete_conversation_ids.is_empty() {
+            return Ok(0);
         }
-    }
-
-    fn try_create_direct_conversation(&self, peer_ptid: &str) -> Result<String, String> {
         let response = StationConversationTransport::new(
             self.scope.station_origin.clone(),
             self.access_token()?,
             self.scope.device_id.clone(),
             self.proto_endpoint(),
         )?
-        .create_direct(peer_ptid)?;
-        response
-            .conversation
-            .map(|conversation| conversation.conversation_id)
-            .filter(|conversation_id| !conversation_id.trim().is_empty())
-            .ok_or_else(|| "mobile messaging Station returned no direct conversation".to_string())
+        .list_conversations()?;
+        let mut repaired = 0;
+        for conversation in response.conversations {
+            if !incomplete_conversation_ids.contains(&conversation.conversation_id) {
+                continue;
+            }
+            let (authority_station_id, federation_id) =
+                conversation_authority_scope(&conversation)?;
+            if self.store.reconcile_conversation_authority_scope(
+                &conversation.conversation_id,
+                authority_station_id,
+                federation_id,
+            )? {
+                repaired += 1;
+            }
+        }
+        Ok(repaired)
+    }
+
+    pub fn send_social_friend_request(
+        &self,
+        receiver_ptid: &str,
+        receiver_home_station_peer_id: &str,
+        federation_id: &str,
+        message: &str,
+    ) -> Result<SendSocialFriendRequestResponse, String> {
+        let command_id = Ulid::new().to_string();
+        let request_id = Ulid::new().to_string();
+        let command = self.build_social_friend_request_command(FriendRequestCommandIntent {
+            action: FriendRequestAction::Send,
+            command_id: &command_id,
+            request_id: &request_id,
+            sender_ptid: &self.scope.actor_ptid,
+            receiver_ptid,
+            sender_home_station_peer_id: &self.scope.station_peer_id,
+            receiver_home_station_peer_id,
+            federation_id,
+            message,
+            created_at_unix_ms: now_unix_ms(),
+        })?;
+        StationSocialTransport::new(
+            self.scope.station_origin.clone(),
+            self.access_token()?,
+            self.scope.device_id.clone(),
+        )?
+        .send_friend_request(&SendSocialFriendRequestRequest {
+            command: Some(command),
+        })
+    }
+
+    pub fn accept_social_friend_request(
+        &self,
+        request_id: &str,
+        sender_ptid: &str,
+        receiver_ptid: &str,
+        sender_home_station_peer_id: &str,
+        receiver_home_station_peer_id: &str,
+        federation_id: &str,
+    ) -> Result<AcceptSocialFriendRequestResponse, String> {
+        let command_id = Ulid::new().to_string();
+        let command = self.build_social_friend_request_command(FriendRequestCommandIntent {
+            action: FriendRequestAction::Accept,
+            command_id: &command_id,
+            request_id,
+            sender_ptid,
+            receiver_ptid,
+            sender_home_station_peer_id,
+            receiver_home_station_peer_id,
+            federation_id,
+            message: "",
+            created_at_unix_ms: now_unix_ms(),
+        })?;
+        StationSocialTransport::new(
+            self.scope.station_origin.clone(),
+            self.access_token()?,
+            self.scope.device_id.clone(),
+        )?
+        .accept_friend_request(&AcceptSocialFriendRequestRequest {
+            command: Some(command),
+        })
+    }
+
+    pub fn reject_social_friend_request(
+        &self,
+        request_id: &str,
+        sender_ptid: &str,
+        receiver_ptid: &str,
+        sender_home_station_peer_id: &str,
+        receiver_home_station_peer_id: &str,
+        federation_id: &str,
+    ) -> Result<RejectSocialFriendRequestResponse, String> {
+        let command_id = Ulid::new().to_string();
+        let command = self.build_social_friend_request_command(FriendRequestCommandIntent {
+            action: FriendRequestAction::Reject,
+            command_id: &command_id,
+            request_id,
+            sender_ptid,
+            receiver_ptid,
+            sender_home_station_peer_id,
+            receiver_home_station_peer_id,
+            federation_id,
+            message: "",
+            created_at_unix_ms: now_unix_ms(),
+        })?;
+        StationSocialTransport::new(
+            self.scope.station_origin.clone(),
+            self.access_token()?,
+            self.scope.device_id.clone(),
+        )?
+        .reject_friend_request(&RejectSocialFriendRequestRequest {
+            command: Some(command),
+        })
+    }
+
+    fn build_social_friend_request_command(
+        &self,
+        intent: FriendRequestCommandIntent<'_>,
+    ) -> Result<FriendRequestCommand, String> {
+        let authorizing_ptid = match intent.action {
+            FriendRequestAction::Send => intent.sender_ptid,
+            FriendRequestAction::Accept | FriendRequestAction::Reject => intent.receiver_ptid,
+            FriendRequestAction::Unspecified => "",
+        };
+        let source_home_station_peer_id = match intent.action {
+            FriendRequestAction::Send => intent.sender_home_station_peer_id,
+            FriendRequestAction::Accept | FriendRequestAction::Reject => {
+                intent.receiver_home_station_peer_id
+            }
+            FriendRequestAction::Unspecified => "",
+        };
+        if authorizing_ptid != self.scope.actor_ptid
+            || source_home_station_peer_id != self.scope.station_peer_id
+        {
+            return Err(
+                "mobile Social Friend Request command authority does not match the active account"
+                    .to_string(),
+            );
+        }
+        let (enrollment, signing_key) = self.store.active_device_signing_identity()?;
+        let certificate = &enrollment.certificate;
+        let device = certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "mobile messaging device identity has no endpoint".to_string())?;
+        if actor_device_ptid(device)? != self.scope.actor_ptid
+            || device.device_id != self.scope.device_id
+        {
+            return Err(
+                "mobile Social Friend Request signer does not match the active endpoint"
+                    .to_string(),
+            );
+        }
+        build_signed_friend_request_command(
+            intent,
+            &signing_key,
+            &certificate.signing_key_id,
+            &device.device_id,
+        )
+    }
+
+    pub fn create_direct_conversation(
+        &self,
+        peer_ptid: &str,
+        federation_id: &str,
+    ) -> Result<PreparedDirectConversation, String> {
+        let command_id = Ulid::new().to_string();
+        let result = self.try_create_direct_conversation(peer_ptid, federation_id, &command_id);
+        match result {
+            Ok(conversation) => Ok(conversation),
+            Err(error) if is_stale_endpoint_error(&error) => {
+                log::warn!(
+                    "mobile messaging direct creation found stale enrollment; attempting recovery"
+                );
+                let _ = self.recover_stale_enrollment(&error);
+                self.enroll_pending_device()?;
+                self.try_create_direct_conversation(peer_ptid, federation_id, &command_id)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    fn try_create_direct_conversation(
+        &self,
+        peer_ptid: &str,
+        federation_id: &str,
+        command_id: &str,
+    ) -> Result<PreparedDirectConversation, String> {
+        let response = StationConversationTransport::new(
+            self.scope.station_origin.clone(),
+            self.access_token()?,
+            self.scope.device_id.clone(),
+            self.proto_endpoint(),
+        )?
+        .create_direct(peer_ptid, federation_id, command_id)?;
+        let conversation = response.conversation.ok_or_else(|| {
+            "mobile messaging Station returned no direct conversation".to_string()
+        })?;
+        if conversation.conversation_id.trim().is_empty()
+            || conversation.kind != ConversationKind::Direct as i32
+            || conversation.status != ConversationStatus::Active as i32
+            || conversation.federation_id != federation_id
+            || conversation.authority_station_peer_id.trim().is_empty()
+        {
+            return Err("mobile messaging direct conversation response is invalid".to_string());
+        }
+        self.store.reconcile_conversation_authority_scope(
+            &conversation.conversation_id,
+            &conversation.authority_station_peer_id,
+            &conversation.federation_id,
+        )?;
+        let conversation_id = conversation.conversation_id;
+        // Reopening an existing deterministic Direct does not commit a new event.
+        if let Some(event) = response.event {
+            if event.command_id != command_id || event.conversation_id != conversation_id {
+                return Err(
+                    "mobile messaging direct creation response binding mismatch".to_string()
+                );
+            }
+        }
+        Ok(PreparedDirectConversation {
+            conversation_id,
+            command_id: command_id.to_string(),
+        })
     }
 
     pub fn create_group_conversation(
@@ -422,6 +656,7 @@ impl MobileMessagingEngine {
         conversation_id: &str,
         name: &str,
         member_ptids: &[String],
+        federation_id: &str,
     ) -> Result<PreparedGroupConversation, String> {
         let _guard = self
             .send_intent_lock
@@ -433,7 +668,7 @@ impl MobileMessagingEngine {
             self.scope.device_id.clone(),
             self.proto_endpoint(),
         )?
-        .prepare_group_genesis(conversation_id, name, member_ptids)?;
+        .prepare_group_genesis(conversation_id, name, member_ptids, federation_id)?;
         let command = GroupGenesisPreparer::new(
             self.store.clone(),
             self.mls_manager.clone(),
@@ -676,7 +911,7 @@ impl MobileMessagingEngine {
                 )?
                 .prepare_missing(
                     conversation_id,
-                    &crypto_endpoints(&plan.required_endpoints)?,
+                    &plan.required_endpoints,
                     created_at_unix_ms,
                     &StationKeyBundleTransport::new(
                         self.scope.station_origin.clone(),
@@ -1015,7 +1250,7 @@ impl MobileMessagingEngine {
                 )?
                 .prepare_missing(
                     &plan.conversation_id,
-                    &crypto_endpoints(&plan.required_endpoints)?,
+                    &plan.required_endpoints,
                     created_at_unix_ms,
                     &StationKeyBundleTransport::new(
                         self.scope.station_origin.clone(),
@@ -1115,12 +1350,6 @@ impl MobileMessagingEngine {
         }
         self.store
             .conversation_authority_station_id(conversation_id)?;
-        let now = now_unix_ms();
-        let pulse_generation = self
-            .typing_pulse_generation
-            .fetch_add(1, Ordering::AcqRel)
-            .checked_add(1)
-            .ok_or_else(|| "mobile messaging typing pulse generation overflow".to_string())?;
         let token = self.access_token()?;
         StationCommandTransport::new(
             self.scope.station_origin.clone(),
@@ -1129,9 +1358,13 @@ impl MobileMessagingEngine {
         )?
         .submit_typing(&SubmitConversationTypingRequest {
             conversation_id: conversation_id.to_string(),
-            sender: Some(self.actor_device_ref()),
-            pulse_generation,
-            expires_at: Some(timestamp(now.saturating_add(TYPING_PULSE_TTL_MS))),
+            sender: Some(actor_device_ref(
+                self.scope.actor_ptid.clone(),
+                self.scope.device_id.clone(),
+            )),
+            pulse_generation: u64::try_from(now_unix_ms())
+                .map_err(|_| "mobile messaging typing generation is invalid".to_string())?,
+            expires_at: Some(timestamp(now_unix_ms().saturating_add(5_000))),
             is_typing,
         })
     }
@@ -1182,7 +1415,7 @@ impl MobileMessagingEngine {
                 self.scope.device_id.clone(),
             )?,
             self.consumer.clone(),
-            self.actor_device_ref(),
+            actor_device_ref(self.scope.actor_ptid.clone(), self.scope.device_id.clone()),
             self.consumer_id.clone(),
             DRAIN_BATCH_LIMIT,
         )?;
@@ -1416,7 +1649,7 @@ impl MobileMessagingEngine {
                 )?
                 .prepare_missing(
                     &draft.conversation_id,
-                    &crypto_endpoints(&plan.required_endpoints)?,
+                    &plan.required_endpoints,
                     draft.created_at_unix_ms,
                     &StationKeyBundleTransport::new(
                         self.scope.station_origin.clone(),
@@ -1520,12 +1753,11 @@ impl MobileMessagingEngine {
     }
 
     pub fn dispatch_delivery_receipt_once(&self) -> Result<bool, String> {
-        let Some(entry) = DeliveryReceiptRepository::next_delivery_receipt(self.store.as_ref())?
+        let Some((receipt_id, receipt_bytes, receipt)) =
+            self.store.next_device_consumption_receipt()?
         else {
             return Ok(false);
         };
-        let receipt = DeviceConsumptionReceipt::decode(entry.receipt_bytes.as_slice())
-            .map_err(|error| format!("decode mobile messaging consumption receipt: {error}"))?;
         let token = self.access_token()?;
         StationDeliveryReceiptTransport::new(
             self.scope.station_origin.clone(),
@@ -1533,11 +1765,8 @@ impl MobileMessagingEngine {
             self.scope.device_id.clone(),
         )?
         .submit(&receipt)?;
-        DeliveryReceiptRepository::mark_delivery_receipt_submitted(
-            self.store.as_ref(),
-            &entry.receipt_id,
-            &entry.receipt_bytes,
-        )?;
+        self.store
+            .mark_device_consumption_receipt_submitted(&receipt_id, &receipt_bytes)?;
         Ok(true)
     }
 
@@ -1554,7 +1783,7 @@ impl MobileMessagingEngine {
         &self,
         access_token: &str,
         conversation_id: &str,
-    ) -> Result<PrepareConversationCommandResponse, String> {
+    ) -> Result<messaging_core::proto::chat::PrepareConversationCommandResponse, String> {
         if conversation_id.trim().is_empty() {
             return Err("mobile messaging send plan requires conversation ID".to_string());
         }
@@ -1568,7 +1797,10 @@ impl MobileMessagingEngine {
         )?
         .prepare_send(&PrepareConversationCommandRequest {
             conversation_id: conversation_id.to_string(),
-            sender: Some(self.actor_device_ref()),
+            sender: Some(actor_device_ref(
+                self.scope.actor_ptid.clone(),
+                self.scope.device_id.clone(),
+            )),
             authority_station_peer_id: authority_station_id,
         })
     }
@@ -1583,16 +1815,6 @@ impl MobileMessagingEngine {
     fn proto_endpoint(&self) -> CryptoEndpoint {
         CryptoEndpoint {
             ptid: self.scope.actor_ptid.clone(),
-            device_id: self.scope.device_id.clone(),
-        }
-    }
-
-    fn actor_device_ref(&self) -> ActorDeviceRef {
-        ActorDeviceRef {
-            actor: Some(ActorRef {
-                ptid: self.scope.actor_ptid.clone(),
-                ..Default::default()
-            }),
             device_id: self.scope.device_id.clone(),
         }
     }
@@ -1816,24 +2038,6 @@ fn earlier_unix_timestamp(left: Option<i64>, right: Option<i64>) -> Option<i64> 
     }
 }
 
-fn crypto_endpoints(devices: &[ActorDeviceRef]) -> Result<Vec<CryptoEndpoint>, String> {
-    devices
-        .iter()
-        .map(|device| {
-            let actor = device.actor.as_ref().ok_or_else(|| {
-                "mobile messaging canonical device endpoint has no actor".to_string()
-            })?;
-            if actor.ptid.trim().is_empty() || device.device_id.trim().is_empty() {
-                return Err("mobile messaging canonical device endpoint is incomplete".to_string());
-            }
-            Ok(CryptoEndpoint {
-                ptid: actor.ptid.clone(),
-                device_id: device.device_id.clone(),
-            })
-        })
-        .collect()
-}
-
 fn replacement_command_id(command_id: &str, delivery_plan_sha256: &[u8]) -> String {
     let mut hasher = Sha256::new();
     for value in [
@@ -1866,6 +2070,130 @@ fn hex_bytes(bytes: &[u8]) -> String {
     encoded
 }
 
+fn build_signed_friend_request_command(
+    intent: FriendRequestCommandIntent<'_>,
+    device_signing_key: &DeviceSigningKey,
+    signing_key_id: &str,
+    device_id: &str,
+) -> Result<FriendRequestCommand, String> {
+    for (field, value) in [
+        ("command_id", intent.command_id),
+        ("request_id", intent.request_id),
+        ("sender_ptid", intent.sender_ptid),
+        ("receiver_ptid", intent.receiver_ptid),
+        (
+            "sender_home_station_peer_id",
+            intent.sender_home_station_peer_id,
+        ),
+        (
+            "receiver_home_station_peer_id",
+            intent.receiver_home_station_peer_id,
+        ),
+        ("federation_id", intent.federation_id),
+        ("signing_key_id", signing_key_id),
+        ("device_id", device_id),
+    ] {
+        validate_friend_request_identifier(field, value)?;
+    }
+    if !intent.sender_ptid.starts_with("ptid:")
+        || !intent.receiver_ptid.starts_with("ptid:")
+        || intent.sender_ptid == intent.receiver_ptid
+        || device_signing_key.device_id() != device_id
+        || intent.message != intent.message.trim()
+        || intent.message.len() > FRIEND_REQUEST_MESSAGE_MAX_BYTES
+    {
+        return Err("mobile Social Friend Request command input is invalid".to_string());
+    }
+    let observed_request_state = match intent.action {
+        FriendRequestAction::Send => FriendRequestState::Unspecified,
+        FriendRequestAction::Accept | FriendRequestAction::Reject if intent.message.is_empty() => {
+            FriendRequestState::Pending
+        }
+        FriendRequestAction::Accept | FriendRequestAction::Reject => {
+            return Err("mobile Social Friend Request decision message must be empty".to_string())
+        }
+        FriendRequestAction::Unspecified => {
+            return Err("mobile Social Friend Request action is unspecified".to_string())
+        }
+    };
+    let expires_at_unix_ms = intent
+        .created_at_unix_ms
+        .checked_add(FRIEND_REQUEST_COMMAND_LIFETIME_MS)
+        .ok_or_else(|| "mobile Social Friend Request expiry overflow".to_string())?;
+    let sender = human_actor_ref(intent.sender_ptid);
+    let receiver = human_actor_ref(intent.receiver_ptid);
+    let authorizing_actor = match intent.action {
+        FriendRequestAction::Send => sender.clone(),
+        FriendRequestAction::Accept | FriendRequestAction::Reject => receiver.clone(),
+        FriendRequestAction::Unspecified => unreachable!(),
+    };
+    let body = FriendRequestCommandBody {
+        format_version: FRIEND_REQUEST_COMMAND_FORMAT_VERSION,
+        command_id: intent.command_id.to_string(),
+        request_id: intent.request_id.to_string(),
+        action: intent.action as i32,
+        sender: Some(sender),
+        receiver: Some(receiver),
+        sender_home_station_peer_id: intent.sender_home_station_peer_id.to_string(),
+        receiver_home_station_peer_id: intent.receiver_home_station_peer_id.to_string(),
+        message: intent.message.to_string(),
+        observed_request_state: observed_request_state as i32,
+        created_at: Some(timestamp(intent.created_at_unix_ms)),
+        expires_at: Some(timestamp(expires_at_unix_ms)),
+        authorizing_device: Some(messaging_core::proto::actor::ActorDeviceRef {
+            actor: Some(authorizing_actor),
+            device_id: device_id.to_string(),
+        }),
+        federation_id: intent.federation_id.to_string(),
+    };
+    let signing_input = FriendRequestCommandSigningInput {
+        body: Some(body.clone()),
+        signing_key_id: signing_key_id.to_string(),
+    }
+    .encode_to_vec();
+    Ok(FriendRequestCommand {
+        body: Some(body),
+        signing_key_id: signing_key_id.to_string(),
+        actor_device_signature: device_signing_key.sign(&signing_input).to_bytes().to_vec(),
+    })
+}
+
+fn conversation_authority_scope(conversation: &Conversation) -> Result<(&str, &str), String> {
+    if conversation.conversation_id.trim().is_empty()
+        || conversation.authority_station_peer_id.trim().is_empty()
+        || conversation.federation_id.trim().is_empty()
+    {
+        return Err(
+            "mobile messaging Station returned an incomplete Conversation projection".to_string(),
+        );
+    }
+    Ok((
+        conversation.authority_station_peer_id.as_str(),
+        conversation.federation_id.as_str(),
+    ))
+}
+
+fn human_actor_ref(ptid: &str) -> ActorRef {
+    ActorRef {
+        ptid: ptid.to_string(),
+        kind: ActorKind::Person as i32,
+        ..Default::default()
+    }
+}
+
+fn validate_friend_request_identifier(field: &str, value: &str) -> Result<(), String> {
+    if value.is_empty()
+        || value != value.trim()
+        || value.len() > FRIEND_REQUEST_IDENTIFIER_MAX_BYTES
+        || value.contains('\0')
+    {
+        return Err(format!(
+            "mobile Social Friend Request {field} is not canonical"
+        ));
+    }
+    Ok(())
+}
+
 fn now_unix_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1883,6 +2211,7 @@ fn timestamp(unix_ms: i64) -> prost_types::Timestamp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::{Signature, Verifier};
 
     fn test_engine(label: &str) -> (MobileMessagingEngine, PathBuf) {
         let root = std::env::temp_dir().join(format!(
@@ -1912,6 +2241,110 @@ mod tests {
         assert_ne!(first, replacement_command_id("command-1", &[8; 32]));
         assert_ne!(first, replacement_command_id("command-2", &[7; 32]));
         assert!(Ulid::from_string(&first).is_ok());
+    }
+
+    #[test]
+    fn friend_request_command_signing_is_deterministic_and_device_bound() {
+        let actor_identity = messaging_core::identity::IdentityKeyPair::from_seed(&[7; 32]);
+        let signing_key =
+            DeviceSigningKey::generate_cross_signed(&actor_identity, "device-1", |_| Vec::new());
+        let intent = || FriendRequestCommandIntent {
+            action: FriendRequestAction::Send,
+            command_id: "command-1",
+            request_id: "request-1",
+            sender_ptid: "ptid:alice",
+            receiver_ptid: "ptid:bob",
+            sender_home_station_peer_id: "station-a",
+            receiver_home_station_peer_id: "station-b",
+            federation_id: "federation-1",
+            message: "hello",
+            created_at_unix_ms: 1_800_000_000_000,
+        };
+        let first =
+            build_signed_friend_request_command(intent(), &signing_key, "device-key-1", "device-1")
+                .unwrap();
+        let second =
+            build_signed_friend_request_command(intent(), &signing_key, "device-key-1", "device-1")
+                .unwrap();
+        assert_eq!(first.encode_to_vec(), second.encode_to_vec());
+
+        let body = first.body.as_ref().unwrap();
+        assert_eq!(body.federation_id, "federation-1");
+        assert_eq!(body.sender_home_station_peer_id, "station-a");
+        assert_eq!(body.receiver_home_station_peer_id, "station-b");
+        assert_eq!(
+            body.authorizing_device
+                .as_ref()
+                .and_then(|device| device.actor.as_ref())
+                .map(|actor| actor.ptid.as_str()),
+            Some("ptid:alice")
+        );
+        let signing_input = FriendRequestCommandSigningInput {
+            body: Some(body.clone()),
+            signing_key_id: first.signing_key_id.clone(),
+        }
+        .encode_to_vec();
+        signing_key
+            .verifying_key()
+            .verify(
+                &signing_input,
+                &Signature::from_slice(&first.actor_device_signature).unwrap(),
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn friend_request_decision_binds_receiver_device_and_pending_state() {
+        let actor_identity = messaging_core::identity::IdentityKeyPair::from_seed(&[8; 32]);
+        let signing_key =
+            DeviceSigningKey::generate_cross_signed(&actor_identity, "device-2", |_| Vec::new());
+        let command = build_signed_friend_request_command(
+            FriendRequestCommandIntent {
+                action: FriendRequestAction::Accept,
+                command_id: "command-accept",
+                request_id: "request-1",
+                sender_ptid: "ptid:alice",
+                receiver_ptid: "ptid:bob",
+                sender_home_station_peer_id: "station-a",
+                receiver_home_station_peer_id: "station-b",
+                federation_id: "federation-1",
+                message: "",
+                created_at_unix_ms: 1_800_000_000_000,
+            },
+            &signing_key,
+            "device-key-2",
+            "device-2",
+        )
+        .unwrap();
+        let body = command.body.unwrap();
+        assert_eq!(
+            FriendRequestState::try_from(body.observed_request_state).unwrap(),
+            FriendRequestState::Pending
+        );
+        assert_eq!(
+            body.authorizing_device
+                .as_ref()
+                .and_then(|device| device.actor.as_ref())
+                .map(|actor| actor.ptid.as_str()),
+            Some("ptid:bob")
+        );
+        assert!(body.message.is_empty());
+    }
+
+    #[test]
+    fn dissolved_conversation_scope_remains_repairable() {
+        let conversation = Conversation {
+            conversation_id: "conversation-1".to_string(),
+            authority_station_peer_id: "station-authority".to_string(),
+            federation_id: "federation-1".to_string(),
+            status: ConversationStatus::Dissolved as i32,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            conversation_authority_scope(&conversation).unwrap(),
+            ("station-authority", "federation-1")
+        );
     }
 
     #[test]

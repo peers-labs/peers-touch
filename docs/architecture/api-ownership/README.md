@@ -63,10 +63,10 @@ machine ownership registry and regression fixtures.
 | [module-layout.md](./module-layout.md) | Target module and dependency layout |
 | [integration.md](./integration.md) | Evidence ledger, root cause, current-to-target mapping, and deletions |
 | [station-api-capabilities.yaml](./station-api-capabilities.yaml) | Complete governed-route inventory, target deletion set, DDD layer rules, and fail-closed Gate input |
-| [proposals/20260907-ca-w5-canonical-wire-contract-amendment.md](./proposals/20260907-ca-w5-canonical-wire-contract-amendment.md) | Proposed AO-D07 contract correction for the six CA-W5 wire gaps |
-| [proposals/20260907-ca-w5-canonical-wire-contract-review-prompt.md](./proposals/20260907-ca-w5-canonical-wire-contract-review-prompt.md) | Focused independent architecture review prompt for AO-D07 |
 | [execution-plans/20260906-conversation-authority-hard-cut.md](./execution-plans/20260906-conversation-authority-hard-cut.md) | Dependency-ordered Conversation DDD and full Messaging facade hard cut |
 | [execution-plans/20260906-conversation-authority-hard-cut-review-prompt.md](./execution-plans/20260906-conversation-authority-hard-cut-review-prompt.md) | Independent plan review prompt |
+| [CA-W5 canonical wire amendment](./proposals/20260907-ca-w5-canonical-wire-contract-amendment.md) | Accepted command identity, authority scope, event truth, and exact-replay contract required to finish CA-W5 |
+| [CA-W5 canonical wire review prompt](./proposals/20260907-ca-w5-canonical-wire-contract-review-prompt.md) | Review checklist for AO-D07 |
 
 ## 5. Review Status
 
@@ -80,7 +80,7 @@ CA-W2 through CA-W4 now have source-complete, test-only implementations for the
 Conversation DDD authority, resource-owner services, and shared
 Federation/Social reliability semantics. CA-W5 remains the atomic production
 registration, store migration, consumer cutover, and old-path deletion boundary;
-runtime convergence remains explicitly unproven until CA-W6. Proposed `AO-D07`
-now resolves the six CA-W5 wire gaps and has passed independent architecture
-review with zero P0/P1 findings. CA-W5 is blocked only at the mandatory Owner
-acceptance gate.
+runtime convergence remains explicitly unproven until CA-W6. The Owner accepted
+AO-D07 on 2026-09-07 after CA-W5 exposed incomplete creation, command, event,
+and destructive-read wire semantics. Proto-first CA-W5 execution has resumed;
+production cutover remains incomplete until the source Gates pass.

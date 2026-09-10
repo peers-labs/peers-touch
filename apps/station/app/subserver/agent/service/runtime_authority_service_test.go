@@ -769,7 +769,7 @@ func TestDelegatedChildEstablishesPinnedAuthorityBeforeProviderCall(t *testing.T
 		t.Fatalf("load delegated conversation: %v", err)
 	}
 	if child.ParentID == nil || *child.ParentID != parentConfig.ConversationID ||
-		child.Ptid != parentConfig.ActorID {
+		child.ActorPTID != parentConfig.ActorID {
 		t.Fatalf("delegated conversation lost parent authority: %+v", child)
 	}
 }
@@ -1689,7 +1689,7 @@ func seedRuntimeAuthorityRows(t *testing.T, db *gorm.DB, turnID string, attemptI
 	if err := db.Create(&persistence.Conversation{
 		ID:         "conversation-1",
 		AgentID:    "agent-1",
-		Ptid:       "ptid:person:owner",
+		ActorPTID:  "ptid:person:owner",
 		Title:      "Runtime authority",
 		ProviderID: "provider-1",
 		Status:     "active",

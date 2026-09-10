@@ -2,20 +2,19 @@ package recovery
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/recovery/application"
-	recoverydomain "github.com/peers-labs/peers-touch/station/app/subserver/recovery/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/recovery/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/recovery/infrastructure/persistence"
 	recoveryhttp "github.com/peers-labs/peers-touch/station/app/subserver/recovery/interface/http"
 	recoverymodel "github.com/peers-labs/peers-touch/station/app/subserver/recovery/model"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -25,193 +24,359 @@ import (
 )
 
 const (
-	storeRecoveryRevisionPath = "/recovery/revision"
-	readLatestRecoveryPath    = "/recovery/latest"
-	maxEncryptedArchiveBytes  = 256 << 20
+	storeRecoveryRevisionPath          = "/recovery/revision"
+	readLatestRecoveryRevisionPath     = "/recovery/latest"
+	defaultMaxEncryptedRecoveryArchive = 256 << 20
 )
 
 type systemClock struct{}
 
 func (systemClock) Now() time.Time {
-	return time.Now().UTC()
+	return time.Now()
 }
 
-// SubServer owns canonical opaque Recovery persistence and HTTP routes.
-type SubServer struct {
-	mu         sync.RWMutex
-	status     server.Status
-	contract   *recoveryhttp.ContractAdapter
-	jwtWrapper server.Wrapper
+type subServerDependencies struct {
+	database                 func(context.Context) (*gorm.DB, error)
+	authorizer               func(*gorm.DB) (ports.ActorDeviceAuthorizer, error)
+	authProvider             func() coreauth.Provider
+	subjectResolver          serverwrapper.SubjectResolver
+	clock                    ports.Clock
+	maxEncryptedArchiveBytes int
 }
 
-// NewRecoverySubServer constructs the production Recovery subserver.
+type subServer struct {
+	mu sync.RWMutex
+
+	status       server.Status
+	addrs        []string
+	dependencies subServerDependencies
+	repository   *persistence.Repository
+	service      *application.Service
+	contract     *recoveryhttp.ContractAdapter
+	jwtWrapper   server.Wrapper
+}
+
+// NewRecoverySubServer constructs the production Recovery HTTP subserver.
 func NewRecoverySubServer(_ ...option.Option) server.Subserver {
-	return &SubServer{status: server.StatusStopped}
+	return newRecoverySubServer(productionSubServerDependencies())
 }
 
-// Init composes Recovery over its canonical store and Actor-owned authorization.
-func (s *SubServer) Init(ctx context.Context, _ ...option.Option) error {
-	s.setStatus(server.StatusStarting)
-	database, err := store.GetRDS(ctx)
+func newRecoverySubServer(dependencies subServerDependencies) *subServer {
+	return &subServer{
+		status:       server.StatusStopped,
+		addrs:        []string{},
+		dependencies: dependencies,
+	}
+}
+
+func productionSubServerDependencies() subServerDependencies {
+	return subServerDependencies{
+		database: func(ctx context.Context) (*gorm.DB, error) {
+			return store.GetRDS(ctx)
+		},
+		authorizer: func(database *gorm.DB) (ports.ActorDeviceAuthorizer, error) {
+			return persistence.NewActorDeviceAuthorizer(database)
+		},
+		authProvider:             newRecoveryAuthProvider,
+		subjectResolver:          touchactor.ResolveSubjectPTID,
+		clock:                    systemClock{},
+		maxEncryptedArchiveBytes: defaultMaxEncryptedRecoveryArchive,
+	}
+}
+
+func newRecoveryAuthProvider() coreauth.Provider {
+	config := coreauth.Get()
+
+	return coreauth.NewJWTProvider(config.Secret, config.AccessTTL)
+}
+
+// Init composes the canonical persistence, application, HTTP, and auth layers.
+func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
+	if err := s.beginInitialization(); err != nil {
+		logger.Errorf(ctx, "recovery subserver initialization rejected: %v", err)
+
+		return err
+	}
+
+	if err := s.initialize(ctx); err != nil {
+		s.setStatus(server.StatusError)
+		logger.Errorf(ctx, "recovery subserver initialization failed: %v", err)
+
+		return err
+	}
+
+	logger.Info(ctx, "recovery subserver initialized")
+
+	return nil
+}
+
+func (s *subServer) beginInitialization() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.status != server.StatusStopped {
+		return fmt.Errorf(
+			"recovery subserver initialization requires stopped status, got %s",
+			s.status,
+		)
+	}
+	s.status = server.StatusStarting
+
+	return nil
+}
+
+func (s *subServer) initialize(ctx context.Context) error {
+	if err := validateSubServerDependencies(s.dependencies); err != nil {
+		return err
+	}
+
+	database, err := s.dependencies.database(ctx)
 	if err != nil {
-		return s.fail(fmt.Errorf("recovery: get Station database: %w", err))
+		return fmt.Errorf("open Recovery database: %w", err)
 	}
-	contract, err := compose(database, maxEncryptedArchiveBytes)
-	if err != nil {
-		return s.fail(err)
-	}
-	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
-	s.contract = contract
-	s.jwtWrapper = serverwrapper.CanonicalSubject(
-		server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider)),
-		serverwrapper.SubjectResolver(touchactor.ResolveSubjectPTID),
-	)
-	return nil
-}
-
-func (s *SubServer) Start(context.Context, ...option.Option) error {
-	s.setStatus(server.StatusRunning)
-	return nil
-}
-
-func (s *SubServer) Stop(context.Context) error {
-	s.setStatus(server.StatusStopped)
-	return nil
-}
-
-func (s *SubServer) Name() string                     { return "recovery" }
-func (s *SubServer) Type() server.SubserverType       { return server.SubserverTypeHTTP }
-func (s *SubServer) Address() server.SubserverAddress { return server.SubserverAddress{} }
-
-func (s *SubServer) Status() server.Status {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.status
-}
-
-// Handlers registers the sole production owners for opaque Recovery revisions.
-func (s *SubServer) Handlers() []server.Handler {
-	logID := serverwrapper.LogID()
-	deviceID := serverwrapper.DeviceID()
-	return []server.Handler{
-		server.NewTypedHandler(
-			"recovery-revision-store",
-			storeRecoveryRevisionPath,
-			server.POST,
-			s.handleStoreRecoveryRevision,
-			logID,
-			deviceID,
-			s.jwtWrapper,
-		),
-		server.NewTypedHandler(
-			"recovery-revision-latest",
-			readLatestRecoveryPath,
-			server.GET,
-			s.handleReadLatestRecoveryRevision,
-			logID,
-			s.jwtWrapper,
-		),
-	}
-}
-
-func compose(database *gorm.DB, maximumArchiveBytes int) (*recoveryhttp.ContractAdapter, error) {
 	repository, err := persistence.NewRepository(database)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("construct Recovery repository: %w", err)
 	}
-	if err := repository.Migrate(context.Background()); err != nil {
-		return nil, err
+	if err := repository.Migrate(ctx); err != nil {
+		return fmt.Errorf("migrate Recovery schema: %w", err)
+	}
+	authorizer, err := s.dependencies.authorizer(database)
+	if err != nil {
+		return fmt.Errorf("construct Recovery actor-device authorizer: %w", err)
 	}
 	service, err := application.NewService(
 		repository,
-		persistence.NewActorDeviceAuthorizer(database),
-		systemClock{},
-		maximumArchiveBytes,
+		authorizer,
+		s.dependencies.clock,
+		s.dependencies.maxEncryptedArchiveBytes,
 	)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("construct Recovery application service: %w", err)
 	}
-	return recoveryhttp.NewContractAdapter(service)
+	contract, err := recoveryhttp.NewContractAdapter(service)
+	if err != nil {
+		return fmt.Errorf("construct Recovery HTTP adapter: %w", err)
+	}
+	provider := s.dependencies.authProvider()
+	if provider == nil {
+		return fmt.Errorf("construct Recovery auth provider: provider is required")
+	}
+	jwtWrapper := serverwrapper.CanonicalSubject(
+		server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider)),
+		s.dependencies.subjectResolver,
+	)
+
+	s.mu.Lock()
+	s.repository = repository
+	s.service = service
+	s.contract = contract
+	s.jwtWrapper = jwtWrapper
+	s.mu.Unlock()
+
+	return nil
 }
 
-func (s *SubServer) handleStoreRecoveryRevision(
+func validateSubServerDependencies(dependencies subServerDependencies) error {
+	switch {
+	case dependencies.database == nil:
+		return fmt.Errorf("recovery database provider is required")
+	case dependencies.authorizer == nil:
+		return fmt.Errorf("recovery actor-device authorizer provider is required")
+	case dependencies.authProvider == nil:
+		return fmt.Errorf("recovery auth provider is required")
+	case dependencies.subjectResolver == nil:
+		return fmt.Errorf("recovery subject resolver is required")
+	case dependencies.clock == nil:
+		return fmt.Errorf("recovery clock is required")
+	case dependencies.maxEncryptedArchiveBytes <= 0:
+		return fmt.Errorf("recovery encrypted archive byte limit must be positive")
+	default:
+		return nil
+	}
+}
+
+// Start transitions an initialized Recovery subserver into running state.
+func (s *subServer) Start(ctx context.Context, _ ...option.Option) error {
+	s.mu.Lock()
+	if s.status != server.StatusStarting || s.contract == nil || s.jwtWrapper == nil {
+		currentStatus := s.status
+		s.status = server.StatusError
+		s.mu.Unlock()
+
+		err := fmt.Errorf(
+			"recovery subserver start requires initialized status, got %s",
+			currentStatus,
+		)
+		logger.Errorf(ctx, "recovery subserver start failed: %v", err)
+
+		return err
+	}
+	s.status = server.StatusRunning
+	s.mu.Unlock()
+
+	logger.Info(ctx, "recovery subserver started")
+
+	return nil
+}
+
+// Stop transitions Recovery to stopped without closing the shared Station store.
+func (s *subServer) Stop(ctx context.Context) error {
+	s.mu.Lock()
+	if s.status == server.StatusStopped {
+		s.mu.Unlock()
+
+		return nil
+	}
+	s.status = server.StatusStopping
+	s.status = server.StatusStopped
+	s.mu.Unlock()
+
+	logger.Info(ctx, "recovery subserver stopped")
+
+	return nil
+}
+
+// Name returns the stable Recovery runtime name.
+func (s *subServer) Name() string {
+	return "recovery"
+}
+
+// Type identifies Recovery as an HTTP subserver.
+func (s *subServer) Type() server.SubserverType {
+	return server.SubserverTypeHTTP
+}
+
+// Address reports that Recovery is mounted on the parent Station listener.
+func (s *subServer) Address() server.SubserverAddress {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return server.SubserverAddress{
+		Address: append([]string(nil), s.addrs...),
+	}
+}
+
+// Status returns the current Recovery lifecycle state.
+func (s *subServer) Status() server.Status {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.status
+}
+
+// Handlers registers only the canonical Recovery resource routes.
+func (s *subServer) Handlers() []server.Handler {
+	s.mu.RLock()
+	contract := s.contract
+	jwtWrapper := s.jwtWrapper
+	s.mu.RUnlock()
+	if contract == nil || jwtWrapper == nil {
+		return nil
+	}
+
+	logIDWrapper := serverwrapper.LogID()
+	deviceIDWrapper := serverwrapper.DeviceID()
+
+	return []server.Handler{
+		server.NewTypedHandler(
+			"recovery-revision-put",
+			storeRecoveryRevisionPath,
+			server.POST,
+			s.handleStoreRecoveryRevision,
+			logIDWrapper,
+			deviceIDWrapper,
+			jwtWrapper,
+		),
+		server.NewTypedHandler(
+			"recovery-revision-latest",
+			readLatestRecoveryRevisionPath,
+			server.GET,
+			s.handleReadLatestRecoveryRevision,
+			logIDWrapper,
+			jwtWrapper,
+		),
+	}
+}
+
+func (s *subServer) handleStoreRecoveryRevision(
 	ctx context.Context,
 	request *recoverymodel.StoreRecoveryRevisionRequest,
 ) (*recoverymodel.StoreRecoveryRevisionResponse, error) {
-	authenticated, err := authenticatedActorDevice(ctx, true)
+	authenticated, err := authenticatedRecoveryActor(ctx, true)
 	if err != nil {
 		return nil, err
 	}
-	response, err := s.contract.StoreRecoveryRevision(ctx, authenticated, request)
-	return response, mapRecoveryError(err)
+	contract, err := s.currentContract()
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := contract.StoreRecoveryRevision(ctx, authenticated, request)
+	if err != nil {
+		logger.Warnf(ctx, "store Recovery revision failed: %v", err)
+	}
+	return response, recoveryhttp.MapError(err)
 }
 
-func (s *SubServer) handleReadLatestRecoveryRevision(
+func (s *subServer) handleReadLatestRecoveryRevision(
 	ctx context.Context,
 	request *recoverymodel.ReadLatestRecoveryRevisionRequest,
 ) (*recoverymodel.ReadLatestRecoveryRevisionResponse, error) {
-	authenticated, err := authenticatedActorDevice(ctx, false)
+	authenticated, err := authenticatedRecoveryActor(ctx, false)
 	if err != nil {
 		return nil, err
 	}
-	response, err := s.contract.ReadLatestRecoveryRevision(ctx, authenticated, request)
-	return response, mapRecoveryError(err)
+	contract, err := s.currentContract()
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := contract.ReadLatestRecoveryRevision(ctx, authenticated, request)
+	if err != nil {
+		logger.Warnf(ctx, "read latest Recovery revision failed: %v", err)
+	}
+	return response, recoveryhttp.MapError(err)
 }
 
-func authenticatedActorDevice(
+func authenticatedRecoveryActor(
 	ctx context.Context,
-	requireDevice bool,
+	requireDeviceID bool,
 ) (recoveryhttp.AuthenticatedActorDevice, error) {
 	subject := coreauth.GetSubject(ctx)
 	if subject == nil || strings.TrimSpace(subject.ID) == "" {
 		return recoveryhttp.AuthenticatedActorDevice{},
-			server.Unauthorized("authentication required")
+			server.Unauthorized("authenticated Recovery actor required")
 	}
+
 	deviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
-	if requireDevice && deviceID == "" {
+	if requireDeviceID && deviceID == "" {
 		return recoveryhttp.AuthenticatedActorDevice{},
-			server.BadRequest("X-Device-ID is required")
+			server.Unauthorized("authenticated Recovery device required")
 	}
+
 	return recoveryhttp.AuthenticatedActorDevice{
-		PTID:     subject.ID,
+		PTID:     strings.TrimSpace(subject.ID),
 		DeviceID: deviceID,
 	}, nil
 }
 
-func mapRecoveryError(err error) error {
-	if err == nil {
-		return nil
+func (s *subServer) currentContract() (*recoveryhttp.ContractAdapter, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.contract == nil {
+		return nil, server.InternalError("Recovery subserver is not initialized")
 	}
-	var typed *recoverydomain.Error
-	if !errors.As(err, &typed) {
-		return server.InternalErrorWithCause("recovery operation failed", err)
-	}
-	message := fmt.Sprintf("[%s] recovery operation failed", typed.Code)
-	switch typed.Code {
-	case recoverydomain.ErrorCodeInvalidArgument,
-		recoverydomain.ErrorCodeArchiveIntegrity,
-		recoverydomain.ErrorCodeArchiveTooLarge:
-		return server.NewHandlerErrorWithCause(http.StatusBadRequest, message, err)
-	case recoverydomain.ErrorCodeUnauthorized:
-		return server.NewHandlerErrorWithCause(http.StatusForbidden, message, err)
-	case recoverydomain.ErrorCodeRevisionNotFound:
-		return server.NewHandlerErrorWithCause(http.StatusNotFound, message, err)
-	case recoverydomain.ErrorCodeRevisionConflict:
-		return server.NewHandlerErrorWithCause(http.StatusConflict, message, err)
-	default:
-		return server.NewHandlerErrorWithCause(http.StatusInternalServerError, message, err)
-	}
+
+	return s.contract, nil
 }
 
-func (s *SubServer) setStatus(status server.Status) {
+func (s *subServer) setStatus(status server.Status) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.status = status
 }
 
-func (s *SubServer) fail(err error) error {
-	s.setStatus(server.StatusError)
-	return err
-}
-
-var _ server.Subserver = (*SubServer)(nil)
+var _ server.Subserver = (*subServer)(nil)

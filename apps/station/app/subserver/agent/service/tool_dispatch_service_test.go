@@ -733,7 +733,7 @@ func (f toolDispatchFixture) seedPinnedRuntimeAuthority(
 	conversation := &persistence.Conversation{
 		ID:        proposal.ConversationID,
 		AgentID:   proposal.AgentID,
-		Ptid:      f.actorID,
+		ActorPTID: f.actorID,
 		Title:     "Station tool authority",
 		Status:    "active",
 		CreatedAt: f.now,
@@ -2080,7 +2080,7 @@ func TestTurnServiceProcessToolCallsPausesAfterDurableDispatch(t *testing.T) {
 	conversation := &persistence.Conversation{
 		ID:        "conversation-pause",
 		AgentID:   "agent-1",
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Pause",
 		Status:    "active",
 		CreatedAt: now,
@@ -2248,7 +2248,7 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 	conversation := &persistence.Conversation{
 		ID:        "conversation-1",
 		AgentID:   "agent-1",
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Resume",
 		Status:    "active",
 		CreatedAt: now,
@@ -2460,7 +2460,7 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 	conversation := &persistence.Conversation{
 		ID:        authority.ConversationID,
 		AgentID:   authority.AgentID,
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Lifecycle cancellation",
 		Status:    "active",
 		CreatedAt: fixture.now,
@@ -2877,7 +2877,7 @@ func TestTurnServiceSettlesReconciliationRequiredTurn(t *testing.T) {
 	conversation := &persistence.Conversation{
 		ID:        "conversation-reconciliation",
 		AgentID:   "agent-1",
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Reconciliation",
 		Status:    "active",
 		CreatedAt: now,
@@ -2963,7 +2963,7 @@ func TestTurnServiceSettlesBlockedToolBatchForCurrentAttempt(t *testing.T) {
 	conversation := &persistence.Conversation{
 		ID:        "conversation-current-blocked",
 		AgentID:   "agent-1",
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Current blocked batch",
 		Status:    "active",
 		CreatedAt: now,
@@ -3038,7 +3038,7 @@ func TestTurnServiceIgnoresBlockedToolBatchFromPreviousAttempt(t *testing.T) {
 	conversation := &persistence.Conversation{
 		ID:        "conversation-retry-blocked",
 		AgentID:   "agent-1",
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Retry blocked batch",
 		Status:    "active",
 		CreatedAt: now,
@@ -3123,7 +3123,7 @@ func TestTurnServiceIgnoresReconciliationFromPreviousAttempt(t *testing.T) {
 	conversation := &persistence.Conversation{
 		ID:        "conversation-retry-reconciliation",
 		AgentID:   "agent-1",
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Retry reconciliation",
 		Status:    "active",
 		CreatedAt: now,
@@ -3217,7 +3217,7 @@ func TestTurnServiceCancelWaitingToolTurnBlocksBatch(t *testing.T) {
 	conversation := &persistence.Conversation{
 		ID:        "conversation-cancel",
 		AgentID:   "agent-1",
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Cancel",
 		Status:    "active",
 		CreatedAt: now,

@@ -4,11 +4,12 @@
 This gate validates the Desktop Rust gateway as a real Chat client boundary
 using the MLS/E2EE messaging pipeline:
 
-1. create two temporary actors through the running Station;
+1. consume the Provisioner-owned Alice/Bob fixture identities;
 2. login actor A through the Desktop HTTP gateway, create a direct
    conversation with actor B, and send an E2EE message;
 3. login actor B through the Desktop HTTP gateway, hydrate conversations,
    and verify the message is received and decrypted.
+4. prove account switch and PIN unlock preserve one account/JWT/Engine tuple.
 
 It is intentionally not a DOM-level Desktop UI E2E. It proves the
 desktop-rust BFF/gateway contract over real auth, MLS key exchange,
@@ -24,20 +25,29 @@ from __future__ import annotations
 import json
 import os
 import secrets
-import sys
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from threading import Barrier
 from typing import Any
 
 from tooling.acceptance.core import (
+    AcceptanceGate,
+    ArtifactRef,
+    EvidenceReport,
+    EvidenceStore,
     ProvisioningError,
+    REPO_ROOT,
     load_runtime_manifest,
     require_runtime_service,
+)
+from tooling.acceptance.fixtures.chat_native_actors import (
+    ACTOR_ACCOUNTS,
+    ACTOR_PASSWORD,
 )
 
 GATE_ID = "chat-desktop-gateway-e2e"
@@ -50,7 +60,6 @@ class ActorCredentials:
     password: str
     actor_ptid: str = ""
     account_id: str = ""
-
 
 
 class GateError(RuntimeError):
@@ -66,6 +75,22 @@ def runtime_manifest() -> dict[str, Any]:
         return load_runtime_manifest(Path(path), GATE_ID)
     except ProvisioningError as error:
         raise GateError(str(error)) from error
+
+
+@lru_cache(maxsize=1)
+def actor_manifest() -> dict[str, Any]:
+    reference = runtime_manifest().get("actorManifest")
+    if not isinstance(reference, dict):
+        raise GateError("runtime manifest actorManifest is required")
+    manifest = EvidenceStore.from_environment(
+        repo_root=REPO_ROOT,
+        worktree=REPO_ROOT,
+    ).read_json(
+        ArtifactRef.from_dict(reference)
+    )
+    if manifest.get("artifactKind") != "acceptance-actor-manifest":
+        raise GateError("runtime actor manifest has invalid artifact kind")
+    return manifest
 
 
 def station_url() -> str:
@@ -88,20 +113,6 @@ def gateway_url() -> str:
     if not isinstance(port, int) or port <= 0:
         raise GateError("runtime manifest Desktop gateway port is invalid")
     return f"http://127.0.0.1:{port}"
-
-
-def require_disposable_station(base: str) -> None:
-    hostname = urllib.parse.urlparse(base).hostname
-    if hostname in {"127.0.0.1", "localhost", "::1"}:
-        return
-    if os.environ.get("PT_ACCEPTANCE_ALLOW_SHARED_TEMP_ACTORS") == "1":
-        return
-    raise GateError(
-        "temporary actor gate requires a disposable loopback Station; "
-        "set PT_ACCEPTANCE_ALLOW_SHARED_TEMP_ACTORS=1 only for an explicitly disposable remote database"
-    )
-
-
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise GateError(message)
@@ -142,64 +153,12 @@ def fixture_actor(role: str) -> ActorCredentials:
     )
 
 
-
-def data_or_self(body: dict[str, Any]) -> dict[str, Any]:
-    data = body.get("data")
-    return data if isinstance(data, dict) else body
-
-
-def actor_id_from_login(data: dict[str, Any]) -> str:
-    actor = data.get("actor") if isinstance(data.get("actor"), dict) else {}
-    actor_ref = data.get("actor_ref") if isinstance(data.get("actor_ref"), dict) else {}
-    for candidate in [
-        actor.get("id"),
-        actor.get("actor_id"),
-        actor_ref.get("actor_id"),
-        actor_ref.get("id"),
-    ]:
-        if candidate:
-            return str(candidate)
-    raise GateError(f"login response missing actor id fields={sorted(data.keys())}")
-
-
-def signup(base: str, label: str) -> tuple[str, str, str]:
-    suffix = f"{int(time.time() * 1000)}{secrets.token_hex(3)}"
-    name = f"gw{label}{suffix}"[:20]
-    email = f"{name}@testnet.local"
-    password = "ChatAa1@" + secrets.token_hex(4)
-    station_request("POST", base, "/actor/sign-up", {"name": name, "email": email, "password": password})
-    time.sleep(4)
-    return name, email, password
-
-
-def station_login(base: str, email: str, password: str) -> tuple[str, str]:
-    for attempt in range(5):
-        try:
-            login_body = station_request(
-                "POST", base, "/actor/login",
-                {"email": email, "password": password, "device_type": "desktop"},
-            )
-            login_data = data_or_self(login_body)
-            token_data = login_data.get("tokens") if isinstance(login_data.get("tokens"), dict) else {}
-            token = token_data.get("access_token")
-            if not token:
-                raise GateError(f"login response missing access_token fields={sorted(login_data.keys())}")
-            actor_id = actor_id_from_login(login_data)
-            return str(token), actor_id
-        except GateError:
-            if attempt == 4:
-                raise
-            time.sleep(3)
-    raise GateError("unreachable")
-
-
-def signup_and_login(base: str, label: str) -> ActorCredentials:
-    name, email, password = signup(base, label)
-    token, actor_id = station_login(base, email, password)
-    return ActorCredentials(name=name, email=email, password=password, token=token, actor_id=actor_id)
-
-
-def gateway_command(gateway: str, command: str, args: dict[str, Any] | None = None, timeout: int = 30) -> dict[str, Any]:
+def gateway_envelope(
+    gateway: str,
+    command: str,
+    args: dict[str, Any] | None = None,
+    timeout: int = 30,
+) -> dict[str, Any]:
     body = json.dumps({"cmd": command, "args": args or {}}).encode("utf-8")
     req = urllib.request.Request(
         gateway,
@@ -213,6 +172,17 @@ def gateway_command(gateway: str, command: str, args: dict[str, Any] | None = No
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")
         raise GateError(f"gateway command {command} failed status={error.code} body={detail}") from error
+    require(isinstance(envelope, dict), f"gateway command {command} returned invalid envelope")
+    return envelope
+
+
+def gateway_command(
+    gateway: str,
+    command: str,
+    args: dict[str, Any] | None = None,
+    timeout: int = 30,
+) -> dict[str, Any]:
+    envelope = gateway_envelope(gateway, command, args, timeout)
     if not envelope.get("ok"):
         raise GateError(f"gateway command {command} failed envelope={envelope}")
     data = envelope.get("data")
@@ -504,12 +474,8 @@ def gateway_login(gateway: str, actor: ActorCredentials, timeout: int = 30) -> s
     return actor_ptid
 
 
-
 def gateway_logout(gateway: str) -> None:
-    try:
-        gateway_command(gateway, "auth_logout", timeout=10)
-    except Exception:
-        pass
+    gateway_command(gateway, "auth_logout", timeout=10)
 
 
 def wait_alive(gateway: str, seconds: int = 30) -> None:
@@ -517,7 +483,12 @@ def wait_alive(gateway: str, seconds: int = 30) -> None:
     for _ in range(seconds):
         try:
             body = json.dumps({"cmd": "station_list", "args": {}}).encode("utf-8")
-            req = urllib.request.Request(gateway, data=body, headers={"Content-Type": "application/json"}, method="POST")
+            req = urllib.request.Request(
+                gateway,
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
             with urllib.request.urlopen(req, timeout=5) as resp:
                 json.loads(resp.read().decode("utf-8"))
                 return
@@ -527,36 +498,32 @@ def wait_alive(gateway: str, seconds: int = 30) -> None:
     raise GateError(f"gateway at {gateway} did not become ready within {seconds}s: {last_err}")
 
 
-def main() -> int:
+def run_gateway_flow(report: EvidenceReport) -> dict[str, Any]:
     base = station_url()
     gateway = gateway_url()
-    print("Chat Desktop Gateway E2E (MLS messaging)")
-    print("========================================")
-    print(f"station={base}")
-    print(f"gateway={gateway}")
 
     wait_alive(gateway)
-    print("[OK] gateway is reachable")
+    report.add_assertion("gateway_reachable", True)
 
-    print("[..] configuring station on gateway...")
     gateway_command(gateway, "station_add", {"url": base}, timeout=10)
     gateway_command(gateway, "station_set_active", {"url": base}, timeout=10)
-    print("[OK] station configured")
+    report.add_assertion("station_configured", True)
 
-    actor_a = signup_and_login(base, "a")
-    actor_b = signup_and_login(base, "b")
-    print(f"[OK] actors created: a={actor_a.actor_id} b={actor_b.actor_id}")
+    actor_a = fixture_actor("alice")
+    actor_b = fixture_actor("bob")
 
     # --- Login B first to publish KeyPackages/PreKeys to station and get PTID ---
     gateway_login(gateway, actor_b, timeout=30)
-    print(f"[OK] gateway authenticated actor B ptid={actor_b.ptid[:60]}...")
+    report.add_assertion("actor_b_authenticated", True)
     time.sleep(10)
-    gateway_logout(gateway)
-    time.sleep(3)
 
-    # --- Login A via gateway and create direct conversation with B ---
+    # --- Prove identity transitions before exercising the messaging path ---
     gateway_login(gateway, actor_a, timeout=30)
-    print(f"[OK] gateway authenticated actor A ptid={actor_a.ptid[:60]}...")
+    report.add_assertion("actor_a_authenticated", True)
+    run_identity_consistency_flow(report, gateway, actor_a, actor_b)
+
+    # Refresh A after PIN takeover testing, then create a direct conversation with B.
+    gateway_login(gateway, actor_a, timeout=30)
     time.sleep(8)
 
     create_result = gateway_command(
@@ -565,22 +532,36 @@ def main() -> int:
         {"peer_ptid": actor_b.actor_ptid},
         timeout=30,
     )
-
     conv_id = create_result.get("conversation_id") or ""
-    require(bool(conv_id), f"messaging_create_direct missing conversation_id result={create_result}")
-    print(f"[OK] direct conversation created: {conv_id}")
-    time.sleep(8)
+    require(
+        bool(conv_id),
+        f"messaging_create_direct missing conversation_id result={create_result}",
+    )
+    report.add_assertion(
+        "direct_conversation_created",
+        True,
+        detail=f"conversation_id={conv_id}",
+    )
 
     # --- Send message from A ---
     test_content = f"acceptance-mls-{int(time.time() * 1000)}"
-    send_result = gateway_command(gateway, "messaging_send_message", {
-        "conversation_id": conv_id,
-        "conversation_kind": "direct",
-        "plaintext": test_content,
-    }, timeout=30)
+    send_result = gateway_command(
+        gateway,
+        "messaging_send_message",
+        {
+            "conversation_id": conv_id,
+            "conversation_kind": "direct",
+            "plaintext": test_content,
+        },
+        timeout=30,
+    )
     msg_id = send_result.get("message_id") or ""
     require(bool(msg_id), f"send_message missing message_id result={send_result}")
-    print(f"[OK] message sent from A: {msg_id}")
+    report.add_assertion(
+        "message_sent",
+        True,
+        detail=f"message_id={msg_id}",
+    )
     time.sleep(6)
 
     # Drain A's queue to ensure delivery
@@ -591,12 +572,10 @@ def main() -> int:
 
     # --- Login B via gateway and verify receipt ---
     gateway_login(gateway, actor_b, timeout=30)
-    print("[OK] gateway authenticated actor B")
     time.sleep(5)
 
     # Hydrate conversations from Station
     gateway_command(gateway, "messaging_hydrate", {}, timeout=30)
-    print("[OK] B hydrated conversations from Station")
     time.sleep(5)
 
     # List conversations - should see the direct conv
@@ -604,7 +583,6 @@ def main() -> int:
     conversations = list_conv_result.get("conversations") or []
     require(isinstance(conversations, list), f"conversations response not a list result={list_conv_result}")
     conv_ids = [str(c.get("conversation_id", "")) for c in conversations if isinstance(c, dict)]
-    print(f"[OK] B sees {len(conversations)} conversation(s): {conv_ids[:5]}")
     b_has_conv = any(cid == conv_id for cid in conv_ids)
     if not b_has_conv:
         time.sleep(5)
@@ -614,7 +592,7 @@ def main() -> int:
         conv_ids = [str(c.get("conversation_id", "")) for c in conversations if isinstance(c, dict)]
         b_has_conv = any(cid == conv_id for cid in conv_ids)
     require(b_has_conv, f"B does not see direct conversation {conv_id} conv_ids={conv_ids}")
-    print("[OK] B sees the direct conversation with A")
+    report.add_assertion("receiver_conversation_hydrated", True)
 
     # List messages in the conversation
     list_msg_result = gateway_command(gateway, "messaging_list_messages", {
@@ -622,7 +600,6 @@ def main() -> int:
     }, timeout=15)
     messages = list_msg_result.get("messages") or []
     require(isinstance(messages, list), f"messages response not a list result={list_msg_result}")
-    print(f"[OK] B sees {len(messages)} message(s) in conversation")
 
     found = False
     for msg in messages:
@@ -650,24 +627,46 @@ def main() -> int:
                 break
 
     require(found, f"B did not receive message '{test_content}' messages={messages[:3]}")
-    print(f"[OK] B received and decrypted message: '{test_content}'")
+    report.add_assertion("receiver_message_decrypted", True)
 
-    gateway_logout(gateway)
+    return {
+        "conversationId": conv_id,
+        "messageId": msg_id,
+        "journey": "desktop-gateway-direct-message",
+    }
 
-    print()
-    print("=" * 56)
-    print("CHAT DESKTOP GATEWAY E2E PASSED (MLS)")
-    print(f"  Direct conversation: {conv_id}")
-    print(f"  Message verified: '{test_content}'")
-    print(f"  A: {actor_a.email}")
-    print(f"  B: {actor_b.email}")
-    print("=" * 56)
-    return 0
+
+class DesktopGatewayE2EGate(AcceptanceGate):
+    gate_id = GATE_ID
+    phase = "MP-W03"
+    bom = ("MP-G01", "MP-G02", "MP-G03", "MP-G04")
+    spec = ("chat-desktop-gateway-message-flow",)
+
+    def run(self) -> dict[str, Any]:
+        self.report.manifest = runtime_manifest()
+        self.report.station_url = station_url()
+        gateway = gateway_url()
+        try:
+            result = run_gateway_flow(self.report)
+        except Exception:
+            try:
+                gateway_logout(gateway)
+                self.report.add_assertion("gateway_local_session_cleanup", True)
+            except Exception as cleanup_error:
+                self.report.add_assertion(
+                    "gateway_local_session_cleanup",
+                    False,
+                    str(cleanup_error),
+                )
+            raise
+        gateway_logout(gateway)
+        self.report.add_assertion("gateway_local_session_cleanup", True)
+        return result
+
+
+def main() -> int:
+    return DesktopGatewayE2EGate().execute()
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as error:
-        print(f"chat desktop gateway e2e failed: {error}", file=sys.stderr)
-        raise SystemExit(1)
+    raise SystemExit(main())

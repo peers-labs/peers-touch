@@ -15,13 +15,21 @@ from .harness import call_async_harness
 
 class AcceptanceGate(ABC):
     gate_id: str = ""
+    phase: str = ""
+    bom: tuple[str, ...] = ()
+    spec: tuple[str, ...] = ()
     report_path: Optional[Path] = None
     evidence_dir: Optional[Path] = None
 
     def __init__(self) -> None:
         if not self.gate_id:
             raise GateError(f"Gate subclass {type(self).__name__} must define gate_id")
-        self.report: EvidenceReport = new_report(self.gate_id)
+        self.report: EvidenceReport = new_report(
+            self.gate_id,
+            phase=self.phase or None,
+            bom=self.bom,
+            spec=self.spec,
+        )
         self._start_time: float = 0.0
         self._drivers: list[BaseDriver] = []
 
@@ -107,6 +115,11 @@ class AcceptanceGate(ABC):
         caught_error: Exception | None = None
         try:
             result = self.run()
+            runtime_binding = getattr(self, "runtime_binding", None)
+            if runtime_binding is not None:
+                self.report.runtime["clientBindingProofs"] = (
+                    runtime_binding.binding_proof_evidence()
+                )
             self.report.status = "PASS"
             if isinstance(result, dict):
                 self.report.runtime.update({k: v for k, v in result.items()
@@ -120,6 +133,12 @@ class AcceptanceGate(ABC):
             self.report.status = "FAIL"
             self.report.error = str(error)
             self.report.error_type = type(error).__name__
+            runtime_binding = getattr(self, "runtime_binding", None)
+            if runtime_binding is not None:
+                self.report.runtime["clientBindingProofs"] = {
+                    "proofRefs": list(runtime_binding.proof_refs()),
+                    "closure": "UNPROVEN",
+                }
         cleanup_failures = self._cleanup_drivers()
         if cleanup_failures:
             detail = "; ".join(cleanup_failures)

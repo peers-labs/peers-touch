@@ -81,7 +81,7 @@ func (s *ConversationService) SubscribeTurnEvents(
 	if err := db.WithContext(ctx).Table("agent_turns AS turn").
 		Joins("JOIN agent_conversations AS conversation ON conversation.id = turn.conversation_id").
 		Where(
-			"turn.id = ? AND turn.conversation_id = ? AND conversation.ptid = ?",
+			"turn.id = ? AND turn.conversation_id = ? AND conversation.actor_ptid = ?",
 			turnID,
 			conversationID,
 			ptid,
@@ -234,7 +234,7 @@ func (s *ConversationService) ListConversations(ctx context.Context, agentID, pt
 		return nil, 0, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized, "ptid is required", nil)
 	}
 	query := db.WithContext(ctx).Model(&persistence.Conversation{}).
-		Where("agent_id = ? AND ptid = ?", agentID, ptid)
+		Where("agent_id = ? AND actor_ptid = ?", agentID, ptid)
 	status := strings.TrimSpace(statusFilter)
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -278,7 +278,7 @@ func (s *ConversationService) GetConversation(ctx context.Context, ptid, convers
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "ptid and conversation_id are required", nil)
 	}
 	var row persistence.Conversation
-	if err := db.WithContext(ctx).Where("id = ? AND ptid = ?", conversationID, ptid).First(&row).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ? AND actor_ptid = ?", conversationID, ptid).First(&row).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "conversation not found", err)
 		}
@@ -311,7 +311,7 @@ func (s *ConversationService) CreateConversation(ctx context.Context, agentID, p
 	row := &persistence.Conversation{
 		ID:         generateID("conv"),
 		AgentID:    agentID,
-		Ptid:       ptid,
+		ActorPTID:  ptid,
 		Title:      title,
 		ProviderID: firstNonEmpty(providerID, ""),
 		Status:     string(domain.ConversationStatusActive),
@@ -358,7 +358,7 @@ func (s *ConversationService) CreateConversationWithID(ctx context.Context, conv
 	row := &persistence.Conversation{
 		ID:         conversationID,
 		AgentID:    agentID,
-		Ptid:       ptid,
+		ActorPTID:  ptid,
 		Title:      title,
 		ProviderID: firstNonEmpty(providerID, ""),
 		Status:     string(domain.ConversationStatusActive),
@@ -421,7 +421,7 @@ func (s *ConversationService) UpdateConversation(
 		var row persistence.Conversation
 		if err := db.WithContext(ctx).
 			Select("meta").
-			Where("id = ? AND ptid = ? AND version = ?", conversationID, ptid, expectedVersion).
+			Where("id = ? AND actor_ptid = ? AND version = ?", conversationID, ptid, expectedVersion).
 			First(&row).Error; err != nil {
 			return nil, errcode.New(errcode.AgentVersionConflict, http.StatusConflict,
 				"conversation missing, not owned, or version changed", err)
@@ -441,7 +441,7 @@ func (s *ConversationService) UpdateConversation(
 	}
 
 	result := db.WithContext(ctx).Model(&persistence.Conversation{}).
-		Where("id = ? AND ptid = ? AND version = ?", conversationID, ptid, expectedVersion).
+		Where("id = ? AND actor_ptid = ? AND version = ?", conversationID, ptid, expectedVersion).
 		Updates(updates)
 	if result.Error != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to update conversation", result.Error)
@@ -470,7 +470,7 @@ func (s *ConversationService) SetMessageTranslation(ctx context.Context, ptid, m
 	if err := db.WithContext(ctx).Table("agent_messages AS message").
 		Select("message.*").
 		Joins("JOIN agent_conversations AS conversation ON conversation.id = message.conversation_id").
-		Where("message.id = ? AND conversation.ptid = ?", messageID, ptid).
+		Where("message.id = ? AND conversation.actor_ptid = ?", messageID, ptid).
 		First(&row).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return errcode.New(errcode.AgentInvalidRequest, http.StatusNotFound, "message not found", err)
@@ -509,7 +509,7 @@ func (s *ConversationService) ArchiveConversation(ctx context.Context, ptid, con
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var conversation persistence.Conversation
 		if queryErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND ptid = ? AND version = ?", conversationID, ptid, expectedVersion).
+			Where("id = ? AND actor_ptid = ? AND version = ?", conversationID, ptid, expectedVersion).
 			First(&conversation).Error; queryErr != nil {
 			return errcode.New(
 				errcode.AgentVersionConflict,
@@ -571,7 +571,7 @@ func (s *ConversationService) RestoreConversation(
 	}
 	result := db.WithContext(ctx).Model(&persistence.Conversation{}).
 		Where(
-			"id = ? AND ptid = ? AND version = ? AND status = ?",
+			"id = ? AND actor_ptid = ? AND version = ? AND status = ?",
 			conversationID,
 			ptid,
 			expectedVersion,
@@ -662,7 +662,7 @@ func (s *ConversationService) ListMessages(ctx context.Context, ptid, conversati
 	var conversation persistence.Conversation
 	if err := db.WithContext(ctx).
 		Select("active_branch_message_id").
-		Where("id = ? AND ptid = ? AND status != ?", conversationID, ptid, "deleted").
+		Where("id = ? AND actor_ptid = ? AND status != ?", conversationID, ptid, "deleted").
 		First(&conversation).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, 0, false, nil
@@ -1073,7 +1073,7 @@ func (s *ConversationService) replayTurnEventsThroughFence(
 		Select("event.*").
 		Joins("JOIN agent_conversations AS conversation ON conversation.id = event.conversation_id").
 		Where(
-			"event.conversation_id = ? AND event.turn_id = ? AND event.event_seq <= ? AND conversation.ptid = ?",
+			"event.conversation_id = ? AND event.turn_id = ? AND event.event_seq <= ? AND conversation.actor_ptid = ?",
 			conversationID,
 			turnID,
 			throughSeq,
@@ -1167,7 +1167,7 @@ func (s *ConversationService) getTurnEventSnapshotAtFence(
 	if err := db.WithContext(ctx).Table("agent_turns AS turn").
 		Select("turn.*").
 		Joins("JOIN agent_conversations AS conversation ON conversation.id = turn.conversation_id").
-		Where("turn.id = ? AND turn.conversation_id = ? AND conversation.ptid = ?", turnID, conversationID, strings.TrimSpace(ptid)).
+		Where("turn.id = ? AND turn.conversation_id = ? AND conversation.actor_ptid = ?", turnID, conversationID, strings.TrimSpace(ptid)).
 		First(&turn).Error; err != nil {
 		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "turn snapshot not found", err)
 	}
@@ -1353,7 +1353,7 @@ func persistenceConversationToDomain(row *persistence.Conversation) (*domain.Con
 	c := &domain.Conversation{
 		ConversationID:        row.ID,
 		AgentID:               row.AgentID,
-		Ptid:                  row.Ptid,
+		ActorPTID:             row.ActorPTID,
 		Title:                 row.Title,
 		ProviderID:            row.ProviderID,
 		Status:                domain.ConversationStatus(row.Status),

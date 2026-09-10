@@ -8,14 +8,21 @@ use crate::contracts::CryptoEndpoint;
 use crate::crypto::identity::IdentityKeyPair;
 use crate::crypto::session::{establish_sender_session, DirectSessionKey};
 use crate::crypto::x3dh::PreKeyBundle;
+use crate::proto::actor::ActorDeviceRef;
 use crate::proto::chat::{CryptoEndpoint as ProtoCryptoEndpoint, DirectSessionInit};
 use crate::proto::key_exchange::DirectKeyBundle;
+use crate::proto::{actor_device_ptid, actor_device_ref, chat_endpoint};
 use crate::store::DirectOutboundRepository;
 
 use super::DirectSessionBootstrap;
 
 pub trait KeyBundleTransport: Send + Sync {
-    fn fetch(&self, endpoint: &ProtoCryptoEndpoint) -> Result<DirectKeyBundle, String>;
+    fn fetch(
+        &self,
+        request_id: &str,
+        requester: &ActorDeviceRef,
+        endpoint: &ActorDeviceRef,
+    ) -> Result<DirectKeyBundle, String>;
 }
 
 pub struct DirectSessionBootstrapper<R> {
@@ -41,7 +48,7 @@ impl<R: DirectOutboundRepository> DirectSessionBootstrapper<R> {
     pub fn prepare_missing<T: KeyBundleTransport>(
         &self,
         conversation_id: &str,
-        endpoints: &[ProtoCryptoEndpoint],
+        endpoints: &[ActorDeviceRef],
         now_unix_ms: i64,
         transport: &T,
     ) -> Result<Vec<DirectSessionBootstrap>, String> {
@@ -49,11 +56,13 @@ impl<R: DirectOutboundRepository> DirectSessionBootstrapper<R> {
             return Err("messaging Direct bootstrap context is incomplete".to_string());
         }
         let mut bootstraps = Vec::new();
+        let requester = actor_device_ref(&self.local.ptid, &self.local.device_id);
         for endpoint in endpoints {
-            if endpoint.ptid == self.local.ptid && endpoint.device_id == self.local.device_id {
+            let endpoint_ptid = actor_device_ptid(endpoint)?;
+            if endpoint_ptid == self.local.ptid && endpoint.device_id == self.local.device_id {
                 continue;
             }
-            let peer = CryptoEndpoint::new(endpoint.ptid.clone(), endpoint.device_id.clone())?;
+            let peer = CryptoEndpoint::new(endpoint_ptid, endpoint.device_id.clone())?;
             if self
                 .store
                 .load_direct_outbound_session(conversation_id, &peer)?
@@ -61,7 +70,8 @@ impl<R: DirectOutboundRepository> DirectSessionBootstrapper<R> {
             {
                 continue;
             }
-            let wire_bundle = transport.fetch(endpoint)?;
+            let request_id = Ulid::new().to_string();
+            let wire_bundle = transport.fetch(&request_id, &requester, endpoint)?;
             let bundle = decode_bundle(&wire_bundle)?;
             let generation = self
                 .store
@@ -84,7 +94,7 @@ impl<R: DirectOutboundRepository> DirectSessionBootstrapper<R> {
                         ptid: self.local.ptid.clone(),
                         device_id: self.local.device_id.clone(),
                     }),
-                    recipient: Some(endpoint.clone()),
+                    recipient: Some(chat_endpoint(endpoint)?),
                     sender_identity_key: self.actor_identity.verifying_key().to_bytes().to_vec(),
                     sender_ephemeral_key: x3dh.ephemeral_pub.to_vec(),
                     recipient_signed_prekey_id: x3dh.spk_id,
@@ -103,19 +113,19 @@ fn decode_bundle(bundle: &DirectKeyBundle) -> Result<PreKeyBundle, String> {
         return Err("messaging key bundle IDs are invalid".to_string());
     }
     let (opk_pub, opk_id) = match bundle.one_time_pre_keys.first() {
-        Some(prekey) if prekey.key_id > 0 => (
+        Some(pre_key) if pre_key.key_id > 0 => (
             Some(fixed_key(
                 "one-time prekey",
-                B64.decode(&prekey.public_key)
+                B64.decode(&pre_key.public_key)
                     .map_err(|error| error.to_string())?,
             )?),
             Some(
-                u32::try_from(prekey.key_id)
+                u32::try_from(pre_key.key_id)
                     .map_err(|_| "invalid one-time prekey ID".to_string())?,
             ),
         ),
         None => (None, None),
-        _ => return Err("messaging key bundle one-time prekey is invalid".to_string()),
+        Some(_) => return Err("messaging key bundle one-time prekey is invalid".to_string()),
     };
     Ok(PreKeyBundle {
         ik_pub: fixed_key(
@@ -202,10 +212,24 @@ mod tests {
     struct FixedTransport(DirectKeyBundle);
 
     impl KeyBundleTransport for FixedTransport {
-        fn fetch(&self, endpoint: &ProtoCryptoEndpoint) -> Result<DirectKeyBundle, String> {
-            let device = self.0.device.as_ref().ok_or_else(|| "missing device".to_string())?;
-            let actor = device.actor.as_ref().ok_or_else(|| "missing actor".to_string())?;
-            if actor.ptid != endpoint.ptid || device.device_id != endpoint.device_id {
+        fn fetch(
+            &self,
+            request_id: &str,
+            requester: &ActorDeviceRef,
+            endpoint: &ActorDeviceRef,
+        ) -> Result<DirectKeyBundle, String> {
+            if Ulid::from_string(request_id).is_err()
+                || actor_device_ptid(requester)? != "ptid:alice"
+                || requester.device_id != "alice-device"
+            {
+                return Err("request identity mismatch".to_string());
+            }
+            let bundle_device = self
+                .0
+                .device
+                .as_ref()
+                .ok_or_else(|| "bundle endpoint missing".to_string())?;
+            if bundle_device != endpoint {
                 return Err("endpoint mismatch".to_string());
             }
             Ok(self.0.clone())
@@ -224,22 +248,15 @@ mod tests {
             alice,
         )
         .unwrap();
-        let peer = ProtoCryptoEndpoint {
-            ptid: "ptid:bob".to_string(),
-            device_id: "bob-device".to_string(),
-        };
+        let peer = crate::proto::actor_device_ref("ptid:bob", "bob-device");
         let bootstraps = bootstrapper
             .prepare_missing(
                 "conversation-1",
                 std::slice::from_ref(&peer),
                 100,
                 &FixedTransport(DirectKeyBundle {
-                    device: Some(crate::proto::actor_device_ref_from_parts(
-                        &peer.ptid,
-                        &peer.device_id,
-                    )),
+                    device: Some(peer.clone()),
                     identity_key_public: B64.encode(bob.verifying_key().to_bytes()),
-                    signed_pre_key_id: 7,
                     signed_pre_key_public: B64.encode(bob_spk.public_bytes()),
                     signed_pre_key_signature: B64
                         .encode(bob.signing_key().sign(&bob_spk.public_bytes()).to_bytes()),
@@ -249,6 +266,7 @@ mod tests {
                     }],
                     published_at_unix_ms: 1,
                     supported_wire_versions: vec![1],
+                    signed_pre_key_id: 7,
                 }),
             )
             .unwrap();

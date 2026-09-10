@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
@@ -16,11 +17,15 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const friendRequestResultFrameLifetime = 24 * time.Hour
+const (
+	friendRequestResultFrameLifetime = 24 * time.Hour
+	defaultFriendRequestListLimit    = int32(50)
+	maxFriendRequestListLimit        = int32(100)
+)
 
 // FederatedFriendRequestService coordinates Social authority through shared Federation.
 type FederatedFriendRequestService struct {
-	store          infrastructure.FederatedFriendRequestUnitOfWork
+	store          infrastructure.FederatedFriendRequestStore
 	stationSigner  delivery.Signer
 	localStationID string
 	clock          delivery.Clock
@@ -33,9 +38,9 @@ type SubmitFriendRequestCommandResult struct {
 	Duplicate  bool
 }
 
-// NewFederatedFriendRequestService constructs the test-only CA-W4 Social service.
+// NewFederatedFriendRequestService constructs the Social Federation authority service.
 func NewFederatedFriendRequestService(
-	store infrastructure.FederatedFriendRequestUnitOfWork,
+	store infrastructure.FederatedFriendRequestStore,
 	stationSigner delivery.Signer,
 	localStationID string,
 	clock delivery.Clock,
@@ -194,6 +199,17 @@ func (s *FederatedFriendRequestService) SubmitFriendRequestCommand(
 				return saveErr
 			}
 			outcome.Projection = projection
+		} else {
+			projection, loadErr := transaction.LoadProjection(
+				ctx,
+				body.GetRequestId(),
+			)
+			if loadErr != nil {
+				return loadErr
+			}
+			if projection != nil {
+				outcome.Projection = *projection
+			}
 		}
 		if transaction.Outbox() == nil {
 			return domain.NewFederationError(
@@ -212,6 +228,61 @@ func (s *FederatedFriendRequestService) SubmitFriendRequestCommand(
 		return SubmitFriendRequestCommandResult{}, err
 	}
 	return outcome, nil
+}
+
+// ListFriendRequestProjections reads the canonical actor-local Social projection.
+func (s *FederatedFriendRequestService) ListFriendRequestProjections(
+	ctx context.Context,
+	actorPTID string,
+	state model.FriendRequestState,
+	limit int32,
+	offset int32,
+) ([]domain.FriendRequestProjection, int64, error) {
+	const operation = "social.list_friend_request_projections"
+	if actorPTID == "" || actorPTID != strings.TrimSpace(actorPTID) {
+		return nil, 0, domain.NewFederationError(
+			domain.FederationErrorInvalidArgument,
+			operation,
+			"actor_ptid",
+			"is required and must be canonical",
+		)
+	}
+	switch state {
+	case model.FriendRequestState_FRIEND_REQUEST_STATE_UNSPECIFIED,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_PENDING,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_ACCEPTED,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_REJECTED,
+		model.FriendRequestState_FRIEND_REQUEST_STATE_EXPIRED:
+	default:
+		return nil, 0, domain.NewFederationError(
+			domain.FederationErrorInvalidArgument,
+			operation,
+			"state",
+			"is unsupported",
+		)
+	}
+	if offset < 0 {
+		return nil, 0, domain.NewFederationError(
+			domain.FederationErrorInvalidArgument,
+			operation,
+			"offset",
+			"must not be negative",
+		)
+	}
+	if limit <= 0 {
+		limit = defaultFriendRequestListLimit
+	}
+	if limit > maxFriendRequestListLimit {
+		limit = maxFriendRequestListLimit
+	}
+
+	return s.store.ListFriendRequestProjections(
+		ctx,
+		actorPTID,
+		state,
+		int(limit),
+		int(offset),
+	)
 }
 
 // ReceiveFriendRequestCommand applies one receiver-authority command transaction.
@@ -827,6 +898,7 @@ func (s *FederatedFriendRequestService) persistDirectConversationEffect(
 		domain.DirectConversationEffect{
 			EffectID:        domain.DirectConversationEffectID(event.GetRequestId()),
 			RequestID:       event.GetRequestId(),
+			FederationID:    event.GetFederationId(),
 			ActorAPTID:      event.GetSender().GetPtid(),
 			ActorBPTID:      event.GetReceiver().GetPtid(),
 			AcceptedEventID: event.GetEventId(),

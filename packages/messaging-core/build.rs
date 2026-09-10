@@ -16,7 +16,6 @@ fn main() {
         "domain/chat/conversation_api.proto",
         "domain/chat/direct_crypto.proto",
         "domain/chat/endpoint.proto",
-        "domain/chat/envelope.proto",
         "domain/chat/event.proto",
         "domain/chat/friend_chat.proto",
         "domain/chat/group_chat.proto",

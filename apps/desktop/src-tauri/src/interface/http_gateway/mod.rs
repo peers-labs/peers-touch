@@ -66,6 +66,7 @@ use crate::interface::tauri_commands::oss::{
     OssUploadAttachmentBytesInput,
 };
 use crate::model;
+use messaging_core::proto::{actor_device_ptid, actor_device_ref, actor_ref};
 use prost::Message;
 use reqwest::Method;
 use ulid::Ulid;
@@ -1354,19 +1355,35 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ));
                 }
             };
-            let req = model::key_exchange::UploadKeyBundleRequest {
-                ik_pub: input.ik_pub,
-                spk_id: input.spk_id,
-                spk_pub: input.spk_pub,
-                spk_sig: input.spk_sig,
-                opk_ids: input.opk_ids,
-                opk_pubs: input.opk_pubs,
-                device_id,
-                supported_versions: vec![1],
+            if input.opk_ids.len() != input.opk_pubs.len() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "opk_ids and opk_pubs must have the same length",
+                    None,
+                ));
+            }
+            let req = model::key_exchange::UploadDirectKeyBundleRequest {
+                device: Some(actor_device_ref(actor_ptid, device_id)),
+                identity_key_public: input.ik_pub,
+                signed_pre_key_id: input.spk_id,
+                signed_pre_key_public: input.spk_pub,
+                signed_pre_key_signature: input.spk_sig,
+                one_time_pre_keys: input
+                    .opk_ids
+                    .into_iter()
+                    .zip(input.opk_pubs)
+                    .map(
+                        |(key_id, public_key)| model::key_exchange::DirectOneTimePreKey {
+                            key_id,
+                            public_key,
+                        },
+                    )
+                    .collect(),
+                supported_wire_versions: vec![1],
             };
             match station_client::request_proto::<
-                model::key_exchange::UploadKeyBundleRequest,
-                model::key_exchange::UploadKeyBundleResponse,
+                model::key_exchange::UploadDirectKeyBundleRequest,
+                model::key_exchange::UploadDirectKeyBundleResponse,
             >(
                 Method::POST,
                 "/key-exchange/keys/bundle",
@@ -1383,9 +1400,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
+            let (_, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
             };
             if input.ptid.trim().is_empty() {
                 return to_json(AppResult::<StubPayload>::fail(
@@ -1394,39 +1411,71 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     None,
                 ));
             }
-            let req = model::key_exchange::FetchKeyBundleRequest {
-                ptid: input.ptid,
-                device_id: input.device_id.unwrap_or_default(),
-                home_station_peer_id: input.home_station_peer_id.unwrap_or_default(),
+            let device_id = match device_install::get_or_create_device_id(&actor_ptid) {
+                Ok(device_id) => device_id,
+                Err(error) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("device_id: {error}"),
+                        None,
+                    ));
+                }
             };
-            match station_client::request_proto::<
-                model::key_exchange::FetchKeyBundleRequest,
-                model::key_exchange::FetchKeyBundleResponse,
+            let req = model::key_exchange::FetchDirectKeyBundlesRequest {
+                actor: Some(actor_ref(input.ptid)),
+                target_device_id: input.device_id.unwrap_or_default(),
+                home_station_peer_id: input.home_station_peer_id.unwrap_or_default(),
+                request_id: Ulid::new().to_string(),
+                requester: Some(actor_device_ref(actor_ptid, device_id.clone())),
+            };
+            match station_client::request_proto_for_device::<
+                model::key_exchange::FetchDirectKeyBundlesRequest,
+                model::key_exchange::FetchDirectKeyBundlesResponse,
             >(
                 Method::POST,
                 "/key-exchange/keys/bundle/fetch",
                 &token,
                 None,
                 Some(&req),
+                &device_id,
             ) {
                 Ok(r) => {
-                    let bundles_json: Vec<Value> = r
-                        .bundles
-                        .iter()
-                        .map(|b| {
-                            json!({
-                                "ptid": b.ptid,
-                                "device_id": b.device_id,
-                                "ik_pub": b.ik_pub,
-                                "fingerprint": wire::identity_fingerprint_hex(&b.ik_pub),
-                                "spk_pub": b.spk_pub,
-                                "spk_sig": b.spk_sig,
-                                "opks": b.opks,
-                                "published_at_unix_ms": b.published_at_unix_ms,
-                                "supported_versions": b.supported_versions,
-                            })
-                        })
-                        .collect();
+                    let mut bundles_json = Vec::with_capacity(r.bundles.len());
+                    for bundle in &r.bundles {
+                        let device = match bundle.device.as_ref() {
+                            Some(device) => device,
+                            None => {
+                                return to_json(AppResult::<StubPayload>::fail(
+                                    ErrorCode::InternalError,
+                                    "Station returned a key bundle without a device",
+                                    None,
+                                ));
+                            }
+                        };
+                        let ptid = match actor_device_ptid(device) {
+                            Ok(ptid) => ptid,
+                            Err(error) => {
+                                return to_json(AppResult::<StubPayload>::fail(
+                                    ErrorCode::InternalError,
+                                    error,
+                                    None,
+                                ));
+                            }
+                        };
+                        bundles_json.push(json!({
+                            "ptid": ptid,
+                            "device_id": device.device_id,
+                            "ik_pub": bundle.identity_key_public,
+                            "fingerprint": wire::identity_fingerprint_hex(&bundle.identity_key_public),
+                            "spk_id": bundle.signed_pre_key_id,
+                            "spk_pub": bundle.signed_pre_key_public,
+                            "spk_sig": bundle.signed_pre_key_signature,
+                            "opks": bundle.one_time_pre_keys.iter().map(|key| key.public_key.clone()).collect::<Vec<_>>(),
+                            "opk_ids": bundle.one_time_pre_keys.iter().map(|key| key.key_id).collect::<Vec<_>>(),
+                            "published_at_unix_ms": bundle.published_at_unix_ms,
+                            "supported_versions": bundle.supported_wire_versions,
+                        }));
+                    }
                     to_json(to_stub(
                         "key_exchange_fetch_bundle",
                         json!({ "bundles": bundles_json }),
@@ -2211,6 +2260,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     json!({
                         "actorPtid": actor_ptid, "username": a.username,
                         "displayName": a.display_name, "email": a.email, "avatar": a.avatar,
+                        "homeStationPeerId": a.home_station_peer_id,
                     })
                 })
                 .collect();
@@ -4996,25 +5046,72 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
+            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
             };
-            if input.receiver_ptid.trim().is_empty() {
+            if input.receiver_ptid.trim().is_empty()
+                || input.receiver_home_station_peer_id.trim().is_empty()
+                || input.federation_id.trim().is_empty()
+            {
                 return to_json(AppResult::<Vec<u8>>::fail(
                     ErrorCode::InvalidArgument,
-                    "receiver_ptid is required",
+                    "receiver_ptid, receiver_home_station_peer_id, and federation_id are required",
                     None,
                 ));
             }
-            let req = model::social::SendSocialFriendRequestRequest {
-                receiver: Some(model::actor::ActorRef {
-                    ptid: input.receiver_ptid,
-                    ..Default::default()
-                }),
-                message: input.message.unwrap_or_default(),
+            let sender_home_station_peer_id = match station_client::active_station_peer_id() {
+                Some(peer_id) => peer_id,
+                None => {
+                    return to_json(AppResult::<Vec<u8>>::fail(
+                        ErrorCode::InternalError,
+                        "active Station peer ID is unavailable",
+                        None,
+                    ));
+                }
             };
-            let resp = match station_client::request_proto::<
+            let command =
+                match crate::interface::tauri_commands::social::sign_friend_request_command(
+                    state,
+                    &account_id,
+                    &actor_ptid,
+                    crate::interface::tauri_commands::social::FriendRequestCommandInput {
+                        request_id: Ulid::new().to_string(),
+                        action: model::social::FriendRequestAction::Send,
+                        sender_ptid: actor_ptid.clone(),
+                        receiver_ptid: input.receiver_ptid,
+                        sender_home_station_peer_id,
+                        receiver_home_station_peer_id: input.receiver_home_station_peer_id,
+                        message: input.message.unwrap_or_default(),
+                        federation_id: input.federation_id,
+                    },
+                ) {
+                    Ok(command) => command,
+                    Err(error) => {
+                        return to_json(AppResult::<Vec<u8>>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ));
+                    }
+                };
+            let device_id =
+                match crate::interface::tauri_commands::social::friend_request_command_device_id(
+                    &command,
+                ) {
+                    Ok(device_id) => device_id.to_string(),
+                    Err(error) => {
+                        return to_json(AppResult::<Vec<u8>>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ));
+                    }
+                };
+            let req = model::social::SendSocialFriendRequestRequest {
+                command: Some(command),
+            };
+            let resp = match station_client::request_proto_for_device::<
                 model::social::SendSocialFriendRequestRequest,
                 model::social::SendSocialFriendRequestResponse,
             >(
@@ -5023,6 +5120,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 &token,
                 None,
                 Some(&req),
+                &device_id,
             ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
@@ -5034,21 +5132,73 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
+            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
             };
-            if input.request_id.trim().is_empty() {
+            if input.request_id.trim().is_empty()
+                || input.sender_ptid.trim().is_empty()
+                || input.sender_home_station_peer_id.trim().is_empty()
+                || input.federation_id.trim().is_empty()
+            {
                 return to_json(AppResult::<Vec<u8>>::fail(
                     ErrorCode::InvalidArgument,
-                    "request_id is required",
+                    "friend request acceptance context is incomplete",
                     None,
                 ));
             }
-            let req = model::social::AcceptSocialFriendRequestRequest {
-                request_id: input.request_id,
+            let receiver_home_station_peer_id = match station_client::active_station_peer_id() {
+                Some(peer_id) => peer_id,
+                None => {
+                    return to_json(AppResult::<Vec<u8>>::fail(
+                        ErrorCode::InternalError,
+                        "active Station peer ID is unavailable",
+                        None,
+                    ));
+                }
             };
-            let resp = match station_client::request_proto::<
+            let command =
+                match crate::interface::tauri_commands::social::sign_friend_request_command(
+                    state,
+                    &account_id,
+                    &actor_ptid,
+                    crate::interface::tauri_commands::social::FriendRequestCommandInput {
+                        request_id: input.request_id,
+                        action: model::social::FriendRequestAction::Accept,
+                        sender_ptid: input.sender_ptid,
+                        receiver_ptid: actor_ptid.clone(),
+                        sender_home_station_peer_id: input.sender_home_station_peer_id,
+                        receiver_home_station_peer_id,
+                        message: input.message.unwrap_or_default(),
+                        federation_id: input.federation_id,
+                    },
+                ) {
+                    Ok(command) => command,
+                    Err(error) => {
+                        return to_json(AppResult::<Vec<u8>>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ));
+                    }
+                };
+            let device_id =
+                match crate::interface::tauri_commands::social::friend_request_command_device_id(
+                    &command,
+                ) {
+                    Ok(device_id) => device_id.to_string(),
+                    Err(error) => {
+                        return to_json(AppResult::<Vec<u8>>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ));
+                    }
+                };
+            let req = model::social::AcceptSocialFriendRequestRequest {
+                command: Some(command),
+            };
+            let resp = match station_client::request_proto_for_device::<
                 model::social::AcceptSocialFriendRequestRequest,
                 model::social::AcceptSocialFriendRequestResponse,
             >(
@@ -5057,6 +5207,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 &token,
                 None,
                 Some(&req),
+                &device_id,
             ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
@@ -5068,21 +5219,73 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
+            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
             };
-            if input.request_id.trim().is_empty() {
+            if input.request_id.trim().is_empty()
+                || input.sender_ptid.trim().is_empty()
+                || input.sender_home_station_peer_id.trim().is_empty()
+                || input.federation_id.trim().is_empty()
+            {
                 return to_json(AppResult::<Vec<u8>>::fail(
                     ErrorCode::InvalidArgument,
-                    "request_id is required",
+                    "friend request rejection context is incomplete",
                     None,
                 ));
             }
-            let req = model::social::RejectSocialFriendRequestRequest {
-                request_id: input.request_id,
+            let receiver_home_station_peer_id = match station_client::active_station_peer_id() {
+                Some(peer_id) => peer_id,
+                None => {
+                    return to_json(AppResult::<Vec<u8>>::fail(
+                        ErrorCode::InternalError,
+                        "active Station peer ID is unavailable",
+                        None,
+                    ));
+                }
             };
-            let resp = match station_client::request_proto::<
+            let command =
+                match crate::interface::tauri_commands::social::sign_friend_request_command(
+                    state,
+                    &account_id,
+                    &actor_ptid,
+                    crate::interface::tauri_commands::social::FriendRequestCommandInput {
+                        request_id: input.request_id,
+                        action: model::social::FriendRequestAction::Reject,
+                        sender_ptid: input.sender_ptid,
+                        receiver_ptid: actor_ptid.clone(),
+                        sender_home_station_peer_id: input.sender_home_station_peer_id,
+                        receiver_home_station_peer_id,
+                        message: input.message.unwrap_or_default(),
+                        federation_id: input.federation_id,
+                    },
+                ) {
+                    Ok(command) => command,
+                    Err(error) => {
+                        return to_json(AppResult::<Vec<u8>>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ));
+                    }
+                };
+            let device_id =
+                match crate::interface::tauri_commands::social::friend_request_command_device_id(
+                    &command,
+                ) {
+                    Ok(device_id) => device_id.to_string(),
+                    Err(error) => {
+                        return to_json(AppResult::<Vec<u8>>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ));
+                    }
+                };
+            let req = model::social::RejectSocialFriendRequestRequest {
+                command: Some(command),
+            };
+            let resp = match station_client::request_proto_for_device::<
                 model::social::RejectSocialFriendRequestRequest,
                 model::social::RejectSocialFriendRequestResponse,
             >(
@@ -5091,6 +5294,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 &token,
                 None,
                 Some(&req),
+                &device_id,
             ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
@@ -5108,7 +5312,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             let mut query = Vec::new();
             if let Some(status) = input.status {
-                query.push(("status", status.to_string()));
+                query.push(("state", status.to_string()));
             }
             query.push(("limit", input.limit.unwrap_or(50).clamp(1, 200).to_string()));
             query.push(("offset", input.offset.unwrap_or(0).to_string()));
@@ -5211,31 +5415,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 input.max_pages.unwrap_or(50),
             ) {
                 Ok(data) => to_json(to_stub("group_chat_list_thread_messages", data)),
-                Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
-            }
-        }
-        "group_chat_thread_counts" => {
-            let input = match parse_args::<GroupChatThreadCountsInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            if input.group_ulid.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "group_ulid is required",
-                    None,
-                ));
-            }
-            match chat_storage::group_thread_counts(
-                &token,
-                input.group_ulid.as_str(),
-                input.root_ulids.as_slice(),
-            ) {
-                Ok(data) => to_json(to_stub("group_chat_thread_counts", data)),
                 Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
             }
         }
@@ -6206,76 +6385,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
 
-        // =================================================================
-        // Envelope submit (send encrypted payload to Station)
-        // =================================================================
-        "envelope_submit" => {
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let envelope = args.get("envelope").cloned().unwrap_or(json!({}));
-            let env_obj = envelope.as_object();
-            let body = json!({
-                "envelope": {
-                    "conversation_id": env_obj.and_then(|o| o.get("conversation_id")).and_then(|v| v.as_str()).unwrap_or(""),
-                    "sender_ptid": env_obj.and_then(|o| o.get("sender_ptid")).and_then(|v| v.as_str()).unwrap_or(""),
-                    "sender_device_id": env_obj.and_then(|o| o.get("sender_device_id")).and_then(|v| v.as_str()).unwrap_or(""),
-                    "recipient_ptid": env_obj.and_then(|o| o.get("recipient_ptid")).and_then(|v| v.as_str()).unwrap_or(""),
-                    "payload_type": env_obj.and_then(|o| o.get("payload_type")).and_then(|v| v.as_i64()).unwrap_or(1),
-                    "payload_bytes": env_obj.and_then(|o| o.get("payload_bytes")),
-                    "idempotency_key": env_obj.and_then(|o| o.get("idempotency_key")).and_then(|v| v.as_str()).unwrap_or(""),
-                }
-            });
-            match crate::infrastructure::station_client::request_json_auth(
-                reqwest::Method::POST,
-                "/envelope/submit",
-                &token,
-                None,
-                Some(&body),
-            ) {
-                Ok(resp) => to_json(AppResult::success(resp)),
-                Err(e) => to_json(AppResult::<Value>::fail(
-                    ErrorCode::InternalError,
-                    &format!("envelope submit: {e}"),
-                    None,
-                )),
-            }
-        }
-        "envelope_ack" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/envelope/ack",
-            None,
-            Some(json!({
-                "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "inbox_item_id": args.get("inbox_item_id").and_then(|v| v.as_str()).unwrap_or(""),
-            })),
-            "envelope ack",
-        ),
-        "envelope_resume" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::GET,
-            "/envelope/resume",
-            Some(vec![
-                (
-                    "device_id",
-                    args.get("device_id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                ),
-                (
-                    "after_cursor",
-                    args.get("after_cursor")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                ),
-            ]),
-            None,
-            "envelope resume",
-        ),
         "keypackage_upload" => proxy_authenticated_station_json(
             state,
             reqwest::Method::POST,
@@ -6451,43 +6560,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             None,
             "conversation list thread messages",
         ),
-        "conversation_thread_counts" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/conversation/thread/counts",
-            None,
-            Some(json!({
-                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "root_ids": args.get("root_ids").cloned().unwrap_or_else(|| json!([])),
-            })),
-            "conversation thread counts",
-        ),
-        "conversation_get_member_settings" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::GET,
-            "/conversation/member/settings",
-            Some(vec![(
-                "conversation_id",
-                args.get("conversation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            )]),
-            None,
-            "conversation get member settings",
-        ),
-        "conversation_update_member_settings" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::PUT,
-            "/conversation/member/settings",
-            None,
-            Some(json!({
-                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "nickname": args.get("nickname").cloned().unwrap_or(Value::Null),
-                "muted": args.get("muted").cloned().unwrap_or(Value::Null),
-            })),
-            "conversation update member settings",
-        ),
         "conversation_get_members" => {
             let token = match token_from_state(state) {
                 Ok(t) => t,
@@ -6625,6 +6697,89 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 }
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
+        }
+        "messaging_thread_counts" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingThreadCountsInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::messaging_thread_counts_result(
+                    &engine, &input,
+                ),
+            )
+        }
+        "messaging_get_member_settings" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MemberSettingsInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::messaging_get_member_settings_result(
+                    &token, &engine, &input,
+                ),
+            )
+        }
+        "messaging_update_member_settings" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingUpdateMemberSettingsInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::
+                    messaging_update_member_settings_result(&token, &engine, input),
+            )
         }
         "messaging_drain" => {
             let (account_id, actor_ptid, token) = match gateway_access_context(state) {
@@ -6773,7 +6928,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(AppResult::success(json!(results)))
         }
         "messaging_create_direct" => {
-            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingCreateDirectInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, token) = match gateway_access_context(state) {
                 Ok(context) => context,
                 Err(error) => return error,
             };
@@ -6787,19 +6949,18 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ))
                 }
             };
-            let peer_ptid = args
-                .get("peer_ptid")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if peer_ptid.is_empty() {
+            if input.peer_ptid.trim().is_empty() || input.federation_id.trim().is_empty() {
                 return to_json(AppResult::<Value>::fail(
                     ErrorCode::InvalidArgument,
-                    "peer_ptid required",
+                    "peer_ptid and federation_id are required",
                     None,
                 ));
             }
-            let conversation_id = match engine.create_direct_conversation(&token, &peer_ptid) {
+            let conversation_id = match engine.create_direct_conversation(
+                &token,
+                &input.peer_ptid,
+                &input.federation_id,
+            ) {
                 Ok(id) => id,
                 Err(e) => {
                     return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None))
@@ -7110,12 +7271,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     .get("authority_station_peer_id")
                     .and_then(|v| v.as_str())
                     .unwrap_or_default();
-                if conv_id.is_empty() || authority.is_empty() {
+                let federation_id = conv
+                    .get("federation_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                if conv_id.is_empty() || authority.is_empty() || federation_id.is_empty() {
                     continue;
                 }
                 projections.push(crate::messaging::ConversationProjection {
                     conversation_id: conv_id.to_string(),
                     authority_station_id: authority.to_string(),
+                    federation_id: federation_id.to_string(),
                     kind: kind_i32,
                     name: conv
                         .get("name")

@@ -6,8 +6,6 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { ActorDeviceRef } from "../actor/actor_pb";
 import { file_domain_actor_actor } from "../actor/actor_pb";
-import type { CryptoEndpoint } from "./endpoint_pb";
-import { file_domain_chat_endpoint } from "./endpoint_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
@@ -16,339 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/chat/queue.proto.
  */
 export const file_domain_chat_queue: GenFile = /*@__PURE__*/
-  fileDesc("Chdkb21haW4vY2hhdC9xdWV1ZS5wcm90bxIZcGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MSJvChBEZXZpY2VRdWV1ZUxlYXNlEhMKC2NvbnN1bWVyX2lkGAEgASgJEhYKDmNvbnN1bWVyX2Vwb2NoGAIgASgEEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wItkFCg9EZXZpY2VRdWV1ZUl0ZW0SDwoHaXRlbV9pZBgBIAEoCRI8CglyZWNpcGllbnQYAiABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNyeXB0b0VuZHBvaW50EhUKDWxhbmVfc2VxdWVuY2UYAyABKAMSEAoIZXZlbnRfaWQYBCABKAkSFwoPY29udmVyc2F0aW9uX2lkGAUgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgGIAEoCRJHCgxwYXlsb2FkX3R5cGUYByABKA4yMS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkRldmljZVF1ZXVlUGF5bG9hZFR5cGUSFgoOb3BhcXVlX3BheWxvYWQYCCABKAwSFgoOcGF5bG9hZF9zaGEyNTYYCSABKAwSPgoFc3RhdGUYCiABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkRldmljZVF1ZXVlSXRlbVN0YXRlEhUKDWF0dGVtcHRfY291bnQYCyABKA0SOgoFbGVhc2UYDCABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkRldmljZVF1ZXVlTGVhc2USMwoPZmlyc3RfcXVldWVkX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIzCg9uZXh0X2F0dGVtcHRfYXQYDiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYDyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2NvbnN1bWVkX2F0GBAgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghhY2tlZF9hdBgRIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFwoPbGFzdF9lcnJvcl9jb2RlGBIgASgJIpQBChdDbGFpbURldmljZVF1ZXVlUmVxdWVzdBIRCglkZXZpY2VfaWQYASABKAkSEwoLY29uc3VtZXJfaWQYAiABKAkSHwoXZXhwZWN0ZWRfY29uc3VtZXJfZXBvY2gYAyABKAQSGwoTYWZ0ZXJfbGFuZV9zZXF1ZW5jZRgEIAEoAxITCgtiYXRjaF9saW1pdBgFIAEoDSKpAQoYQ2xhaW1EZXZpY2VRdWV1ZVJlc3BvbnNlEhYKDmNvbnN1bWVyX2Vwb2NoGAEgASgEEjkKBWl0ZW1zGAIgAygLMioucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5EZXZpY2VRdWV1ZUl0ZW0SGgoSbGFuZV9oZWFkX3NlcXVlbmNlGAMgASgDEh4KFmFja2VkX3Rocm91Z2hfc2VxdWVuY2UYBCABKAMijgEKIUFja25vd2xlZGdlRGV2aWNlUXVldWVJdGVtUmVxdWVzdBIRCglkZXZpY2VfaWQYASABKAkSDwoHaXRlbV9pZBgCIAEoCRIVCg1sYW5lX3NlcXVlbmNlGAMgASgDEhYKDmNvbnN1bWVyX2Vwb2NoGAQgASgEEhYKDnBheWxvYWRfc2hhMjU2GAUgASgMIkQKIkFja25vd2xlZGdlRGV2aWNlUXVldWVJdGVtUmVzcG9uc2USHgoWYWNrZWRfdGhyb3VnaF9zZXF1ZW5jZRgBIAEoAyKYAQocUmVqZWN0RGV2aWNlUXVldWVJdGVtUmVxdWVzdBIRCglkZXZpY2VfaWQYASABKAkSDwoHaXRlbV9pZBgCIAEoCRIVCg1sYW5lX3NlcXVlbmNlGAMgASgDEhYKDmNvbnN1bWVyX2Vwb2NoGAQgASgEEhIKCmVycm9yX2NvZGUYBSABKAkSEQoJcmV0cnlhYmxlGAYgASgIIh8KHVJlamVjdERldmljZVF1ZXVlSXRlbVJlc3BvbnNlIkQKE0RldmljZVF1ZXVlV2FrZUhpbnQSEQoJZGV2aWNlX2lkGAEgASgJEhoKEmxhbmVfaGVhZF9zZXF1ZW5jZRgCIAEoAyJvChBEZXZpY2VJbmJveExlYXNlEhMKC2NvbnN1bWVyX2lkGAEgASgJEhYKDmNvbnN1bWVyX2Vwb2NoGAIgASgEEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIuIFChZEdXJhYmxlRGV2aWNlSW5ib3hJdGVtEg8KB2l0ZW1faWQYASABKAkSPQoJcmVjaXBpZW50GAIgASgLMioucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JEZXZpY2VSZWYSFQoNbGFuZV9zZXF1ZW5jZRgDIAEoAxIQCghldmVudF9pZBgEIAEoCRIXCg9jb252ZXJzYXRpb25faWQYBSABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAYgASgJEkcKDHBheWxvYWRfdHlwZRgHIAEoDjIxLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRGV2aWNlSW5ib3hQYXlsb2FkVHlwZRIWCg5vcGFxdWVfcGF5bG9hZBgIIAEoDBIWCg5wYXlsb2FkX3NoYTI1NhgJIAEoDBI+CgVzdGF0ZRgKIAEoDjIvLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRGV2aWNlSW5ib3hJdGVtU3RhdGUSFQoNYXR0ZW1wdF9jb3VudBgLIAEoDRI6CgVsZWFzZRgMIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRGV2aWNlSW5ib3hMZWFzZRIzCg9maXJzdF9xdWV1ZWRfYXQYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKD25leHRfYXR0ZW1wdF9hdBgOIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgPIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoIYWNrZWRfYXQYECABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEkkKD2xhc3RfZXJyb3JfY29kZRgRIAEoDjIwLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRGV2aWNlSW5ib3hSZWplY3RDb2RlIr0BChdDbGFpbURldmljZUluYm94UmVxdWVzdBI6CgZkZXZpY2UYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvckRldmljZVJlZhITCgtjb25zdW1lcl9pZBgCIAEoCRIfChdleHBlY3RlZF9jb25zdW1lcl9lcG9jaBgDIAEoBBIbChNhZnRlcl9sYW5lX3NlcXVlbmNlGAQgASgDEhMKC2JhdGNoX2xpbWl0GAUgASgNIrABChhDbGFpbURldmljZUluYm94UmVzcG9uc2USFgoOY29uc3VtZXJfZXBvY2gYASABKAQSQAoFaXRlbXMYAiADKAsyMS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkR1cmFibGVEZXZpY2VJbmJveEl0ZW0SGgoSbGFuZV9oZWFkX3NlcXVlbmNlGAMgASgDEh4KFmFja2VkX3Rocm91Z2hfc2VxdWVuY2UYBCABKAMitwEKIUFja25vd2xlZGdlRGV2aWNlSW5ib3hJdGVtUmVxdWVzdBI6CgZkZXZpY2UYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvckRldmljZVJlZhIPCgdpdGVtX2lkGAIgASgJEhUKDWxhbmVfc2VxdWVuY2UYAyABKAMSFgoOY29uc3VtZXJfZXBvY2gYBCABKAQSFgoOcGF5bG9hZF9zaGEyNTYYBSABKAwiRAoiQWNrbm93bGVkZ2VEZXZpY2VJbmJveEl0ZW1SZXNwb25zZRIeChZhY2tlZF90aHJvdWdoX3NlcXVlbmNlGAEgASgDIuABChxSZWplY3REZXZpY2VJbmJveEl0ZW1SZXF1ZXN0EjoKBmRldmljZRgBIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yRGV2aWNlUmVmEg8KB2l0ZW1faWQYAiABKAkSFQoNbGFuZV9zZXF1ZW5jZRgDIAEoAxIWCg5jb25zdW1lcl9lcG9jaBgEIAEoBBJECgplcnJvcl9jb2RlGAUgASgOMjAucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5EZXZpY2VJbmJveFJlamVjdENvZGUilAEKHVJlamVjdERldmljZUluYm94SXRlbVJlc3BvbnNlEj4KBXN0YXRlGAEgASgOMi8ucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5EZXZpY2VJbmJveEl0ZW1TdGF0ZRIzCg9uZXh0X2F0dGVtcHRfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIm0KE0RldmljZUluYm94V2FrZUhpbnQSOgoGZGV2aWNlGAEgASgLMioucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JEZXZpY2VSZWYSGgoSbGFuZV9oZWFkX3NlcXVlbmNlGAIgASgDKrICChZEZXZpY2VRdWV1ZVBheWxvYWRUeXBlEikKJURFVklDRV9RVUVVRV9QQVlMT0FEX1RZUEVfVU5TUEVDSUZJRUQQABIwCixERVZJQ0VfUVVFVUVfUEFZTE9BRF9UWVBFX0NPTlZFUlNBVElPTl9FVkVOVBABEjEKLURFVklDRV9RVUVVRV9QQVlMT0FEX1RZUEVfRElSRUNUX1NFU1NJT05fSU5JVBACEiwKKERFVklDRV9RVUVVRV9QQVlMT0FEX1RZUEVfTUxTX1RSQU5TSVRJT04QAxIsCihERVZJQ0VfUVVFVUVfUEFZTE9BRF9UWVBFX0NPTU1BTkRfUkVTVUxUEAQSLAooREVWSUNFX1FVRVVFX1BBWUxPQURfVFlQRV9ERVZJQ0VfUkVDRUlQVBAFKqMCChREZXZpY2VRdWV1ZUl0ZW1TdGF0ZRInCiNERVZJQ0VfUVVFVUVfSVRFTV9TVEFURV9VTlNQRUNJRklFRBAAEiMKH0RFVklDRV9RVUVVRV9JVEVNX1NUQVRFX1BFTkRJTkcQARIjCh9ERVZJQ0VfUVVFVUVfSVRFTV9TVEFURV9DTEFJTUVEEAISJgoiREVWSUNFX1FVRVVFX0lURU1fU1RBVEVfUkVUUllfV0FJVBADEiQKIERFVklDRV9RVUVVRV9JVEVNX1NUQVRFX0NPTlNVTUVEEAQSIQodREVWSUNFX1FVRVVFX0lURU1fU1RBVEVfQUNLRUQQBRInCiNERVZJQ0VfUVVFVUVfSVRFTV9TVEFURV9ERUFEX0xFVFRFUhAGKrICChZEZXZpY2VJbmJveFBheWxvYWRUeXBlEikKJURFVklDRV9JTkJPWF9QQVlMT0FEX1RZUEVfVU5TUEVDSUZJRUQQABIwCixERVZJQ0VfSU5CT1hfUEFZTE9BRF9UWVBFX0NPTlZFUlNBVElPTl9FVkVOVBABEjEKLURFVklDRV9JTkJPWF9QQVlMT0FEX1RZUEVfRElSRUNUX1NFU1NJT05fSU5JVBACEiwKKERFVklDRV9JTkJPWF9QQVlMT0FEX1RZUEVfTUxTX1RSQU5TSVRJT04QAxIsCihERVZJQ0VfSU5CT1hfUEFZTE9BRF9UWVBFX0NPTU1BTkRfUkVTVUxUEAQSLAooREVWSUNFX0lOQk9YX1BBWUxPQURfVFlQRV9ERVZJQ0VfUkVDRUlQVBAFKv0BChREZXZpY2VJbmJveEl0ZW1TdGF0ZRInCiNERVZJQ0VfSU5CT1hfSVRFTV9TVEFURV9VTlNQRUNJRklFRBAAEiMKH0RFVklDRV9JTkJPWF9JVEVNX1NUQVRFX1BFTkRJTkcQARIjCh9ERVZJQ0VfSU5CT1hfSVRFTV9TVEFURV9DTEFJTUVEEAISJgoiREVWSUNFX0lOQk9YX0lURU1fU1RBVEVfUkVUUllfV0FJVBADEiEKHURFVklDRV9JTkJPWF9JVEVNX1NUQVRFX0FDS0VEEAQSJwojREVWSUNFX0lOQk9YX0lURU1fU1RBVEVfREVBRF9MRVRURVIQBSqwAgoVRGV2aWNlSW5ib3hSZWplY3RDb2RlEigKJERFVklDRV9JTkJPWF9SRUpFQ1RfQ09ERV9VTlNQRUNJRklFRBAAEiwKKERFVklDRV9JTkJPWF9SRUpFQ1RfQ09ERV9QQVlMT0FEX0lOVkFMSUQQARI1CjFERVZJQ0VfSU5CT1hfUkVKRUNUX0NPREVfQ1JZUFRPX1NUQVRFX1VOQVZBSUxBQkxFEAISLQopREVWSUNFX0lOQk9YX1JFSkVDVF9DT0RFX0lOVEVHUklUWV9GQUlMRUQQAxIvCitERVZJQ0VfSU5CT1hfUkVKRUNUX0NPREVfUkVDSVBJRU5UX01JU01BVENIEAQSKAokREVWSUNFX0lOQk9YX1JFSkVDVF9DT0RFX1JFVFJZX0xBVEVSEAVCR1pFZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvY2hhdDtjaGF0YgZwcm90bzM", [file_domain_actor_actor, file_domain_chat_endpoint, file_google_protobuf_timestamp]);
-
-/**
- * @generated from message peers_touch.model.chat.v1.DeviceQueueLease
- */
-export type DeviceQueueLease = Message<"peers_touch.model.chat.v1.DeviceQueueLease"> & {
-  /**
-   * @generated from field: string consumer_id = 1;
-   */
-  consumerId: string;
-
-  /**
-   * @generated from field: uint64 consumer_epoch = 2;
-   */
-  consumerEpoch: bigint;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp expires_at = 3;
-   */
-  expiresAt?: Timestamp | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.DeviceQueueLease.
- * Use `create(DeviceQueueLeaseSchema)` to create a new message.
- */
-export const DeviceQueueLeaseSchema: GenMessage<DeviceQueueLease> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 0);
-
-/**
- * A device-specific transport item. event_id preserves the shared logical
- * message identity while item_id and lane_sequence address this delivery.
- *
- * @generated from message peers_touch.model.chat.v1.DeviceQueueItem
- */
-export type DeviceQueueItem = Message<"peers_touch.model.chat.v1.DeviceQueueItem"> & {
-  /**
-   * @generated from field: string item_id = 1;
-   */
-  itemId: string;
-
-  /**
-   * @generated from field: peers_touch.model.chat.v1.CryptoEndpoint recipient = 2;
-   */
-  recipient?: CryptoEndpoint | undefined;
-
-  /**
-   * @generated from field: int64 lane_sequence = 3;
-   */
-  laneSequence: bigint;
-
-  /**
-   * @generated from field: string event_id = 4;
-   */
-  eventId: string;
-
-  /**
-   * @generated from field: string conversation_id = 5;
-   */
-  conversationId: string;
-
-  /**
-   * @generated from field: string idempotency_key = 6;
-   */
-  idempotencyKey: string;
-
-  /**
-   * @generated from field: peers_touch.model.chat.v1.DeviceQueuePayloadType payload_type = 7;
-   */
-  payloadType: DeviceQueuePayloadType;
-
-  /**
-   * @generated from field: bytes opaque_payload = 8;
-   */
-  opaquePayload: Uint8Array;
-
-  /**
-   * @generated from field: bytes payload_sha256 = 9;
-   */
-  payloadSha256: Uint8Array;
-
-  /**
-   * @generated from field: peers_touch.model.chat.v1.DeviceQueueItemState state = 10;
-   */
-  state: DeviceQueueItemState;
-
-  /**
-   * @generated from field: uint32 attempt_count = 11;
-   */
-  attemptCount: number;
-
-  /**
-   * @generated from field: peers_touch.model.chat.v1.DeviceQueueLease lease = 12;
-   */
-  lease?: DeviceQueueLease | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp first_queued_at = 13;
-   */
-  firstQueuedAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp next_attempt_at = 14;
-   */
-  nextAttemptAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp expires_at = 15;
-   */
-  expiresAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp consumed_at = 16;
-   */
-  consumedAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp acked_at = 17;
-   */
-  ackedAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: string last_error_code = 18;
-   */
-  lastErrorCode: string;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.DeviceQueueItem.
- * Use `create(DeviceQueueItemSchema)` to create a new message.
- */
-export const DeviceQueueItemSchema: GenMessage<DeviceQueueItem> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 1);
-
-/**
- * @generated from message peers_touch.model.chat.v1.ClaimDeviceQueueRequest
- */
-export type ClaimDeviceQueueRequest = Message<"peers_touch.model.chat.v1.ClaimDeviceQueueRequest"> & {
-  /**
-   * @generated from field: string device_id = 1;
-   */
-  deviceId: string;
-
-  /**
-   * @generated from field: string consumer_id = 2;
-   */
-  consumerId: string;
-
-  /**
-   * @generated from field: uint64 expected_consumer_epoch = 3;
-   */
-  expectedConsumerEpoch: bigint;
-
-  /**
-   * @generated from field: int64 after_lane_sequence = 4;
-   */
-  afterLaneSequence: bigint;
-
-  /**
-   * @generated from field: uint32 batch_limit = 5;
-   */
-  batchLimit: number;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.ClaimDeviceQueueRequest.
- * Use `create(ClaimDeviceQueueRequestSchema)` to create a new message.
- */
-export const ClaimDeviceQueueRequestSchema: GenMessage<ClaimDeviceQueueRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 2);
-
-/**
- * @generated from message peers_touch.model.chat.v1.ClaimDeviceQueueResponse
- */
-export type ClaimDeviceQueueResponse = Message<"peers_touch.model.chat.v1.ClaimDeviceQueueResponse"> & {
-  /**
-   * @generated from field: uint64 consumer_epoch = 1;
-   */
-  consumerEpoch: bigint;
-
-  /**
-   * @generated from field: repeated peers_touch.model.chat.v1.DeviceQueueItem items = 2;
-   */
-  items: DeviceQueueItem[];
-
-  /**
-   * @generated from field: int64 lane_head_sequence = 3;
-   */
-  laneHeadSequence: bigint;
-
-  /**
-   * @generated from field: int64 acked_through_sequence = 4;
-   */
-  ackedThroughSequence: bigint;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.ClaimDeviceQueueResponse.
- * Use `create(ClaimDeviceQueueResponseSchema)` to create a new message.
- */
-export const ClaimDeviceQueueResponseSchema: GenMessage<ClaimDeviceQueueResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 3);
-
-/**
- * @generated from message peers_touch.model.chat.v1.AcknowledgeDeviceQueueItemRequest
- */
-export type AcknowledgeDeviceQueueItemRequest = Message<"peers_touch.model.chat.v1.AcknowledgeDeviceQueueItemRequest"> & {
-  /**
-   * @generated from field: string device_id = 1;
-   */
-  deviceId: string;
-
-  /**
-   * @generated from field: string item_id = 2;
-   */
-  itemId: string;
-
-  /**
-   * @generated from field: int64 lane_sequence = 3;
-   */
-  laneSequence: bigint;
-
-  /**
-   * @generated from field: uint64 consumer_epoch = 4;
-   */
-  consumerEpoch: bigint;
-
-  /**
-   * @generated from field: bytes payload_sha256 = 5;
-   */
-  payloadSha256: Uint8Array;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.AcknowledgeDeviceQueueItemRequest.
- * Use `create(AcknowledgeDeviceQueueItemRequestSchema)` to create a new message.
- */
-export const AcknowledgeDeviceQueueItemRequestSchema: GenMessage<AcknowledgeDeviceQueueItemRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 4);
-
-/**
- * @generated from message peers_touch.model.chat.v1.AcknowledgeDeviceQueueItemResponse
- */
-export type AcknowledgeDeviceQueueItemResponse = Message<"peers_touch.model.chat.v1.AcknowledgeDeviceQueueItemResponse"> & {
-  /**
-   * @generated from field: int64 acked_through_sequence = 1;
-   */
-  ackedThroughSequence: bigint;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.AcknowledgeDeviceQueueItemResponse.
- * Use `create(AcknowledgeDeviceQueueItemResponseSchema)` to create a new message.
- */
-export const AcknowledgeDeviceQueueItemResponseSchema: GenMessage<AcknowledgeDeviceQueueItemResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 5);
-
-/**
- * @generated from message peers_touch.model.chat.v1.RejectDeviceQueueItemRequest
- */
-export type RejectDeviceQueueItemRequest = Message<"peers_touch.model.chat.v1.RejectDeviceQueueItemRequest"> & {
-  /**
-   * @generated from field: string device_id = 1;
-   */
-  deviceId: string;
-
-  /**
-   * @generated from field: string item_id = 2;
-   */
-  itemId: string;
-
-  /**
-   * @generated from field: int64 lane_sequence = 3;
-   */
-  laneSequence: bigint;
-
-  /**
-   * @generated from field: uint64 consumer_epoch = 4;
-   */
-  consumerEpoch: bigint;
-
-  /**
-   * @generated from field: string error_code = 5;
-   */
-  errorCode: string;
-
-  /**
-   * @generated from field: bool retryable = 6;
-   */
-  retryable: boolean;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.RejectDeviceQueueItemRequest.
- * Use `create(RejectDeviceQueueItemRequestSchema)` to create a new message.
- */
-export const RejectDeviceQueueItemRequestSchema: GenMessage<RejectDeviceQueueItemRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 6);
-
-/**
- * @generated from message peers_touch.model.chat.v1.RejectDeviceQueueItemResponse
- */
-export type RejectDeviceQueueItemResponse = Message<"peers_touch.model.chat.v1.RejectDeviceQueueItemResponse"> & {
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.RejectDeviceQueueItemResponse.
- * Use `create(RejectDeviceQueueItemResponseSchema)` to create a new message.
- */
-export const RejectDeviceQueueItemResponseSchema: GenMessage<RejectDeviceQueueItemResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 7);
-
-/**
- * @generated from message peers_touch.model.chat.v1.DeviceQueueWakeHint
- */
-export type DeviceQueueWakeHint = Message<"peers_touch.model.chat.v1.DeviceQueueWakeHint"> & {
-  /**
-   * @generated from field: string device_id = 1;
-   */
-  deviceId: string;
-
-  /**
-   * @generated from field: int64 lane_head_sequence = 2;
-   */
-  laneHeadSequence: bigint;
-};
-
-/**
- * Describes the message peers_touch.model.chat.v1.DeviceQueueWakeHint.
- * Use `create(DeviceQueueWakeHintSchema)` to create a new message.
- */
-export const DeviceQueueWakeHintSchema: GenMessage<DeviceQueueWakeHint> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 8);
+  fileDesc("Chdkb21haW4vY2hhdC9xdWV1ZS5wcm90bxIZcGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MSJvChBEZXZpY2VJbmJveExlYXNlEhMKC2NvbnN1bWVyX2lkGAEgASgJEhYKDmNvbnN1bWVyX2Vwb2NoGAIgASgEEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIuIFChZEdXJhYmxlRGV2aWNlSW5ib3hJdGVtEg8KB2l0ZW1faWQYASABKAkSPQoJcmVjaXBpZW50GAIgASgLMioucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JEZXZpY2VSZWYSFQoNbGFuZV9zZXF1ZW5jZRgDIAEoAxIQCghldmVudF9pZBgEIAEoCRIXCg9jb252ZXJzYXRpb25faWQYBSABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAYgASgJEkcKDHBheWxvYWRfdHlwZRgHIAEoDjIxLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRGV2aWNlSW5ib3hQYXlsb2FkVHlwZRIWCg5vcGFxdWVfcGF5bG9hZBgIIAEoDBIWCg5wYXlsb2FkX3NoYTI1NhgJIAEoDBI+CgVzdGF0ZRgKIAEoDjIvLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRGV2aWNlSW5ib3hJdGVtU3RhdGUSFQoNYXR0ZW1wdF9jb3VudBgLIAEoDRI6CgVsZWFzZRgMIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRGV2aWNlSW5ib3hMZWFzZRIzCg9maXJzdF9xdWV1ZWRfYXQYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKD25leHRfYXR0ZW1wdF9hdBgOIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgPIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoIYWNrZWRfYXQYECABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEkkKD2xhc3RfZXJyb3JfY29kZRgRIAEoDjIwLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRGV2aWNlSW5ib3hSZWplY3RDb2RlIr0BChdDbGFpbURldmljZUluYm94UmVxdWVzdBI6CgZkZXZpY2UYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvckRldmljZVJlZhITCgtjb25zdW1lcl9pZBgCIAEoCRIfChdleHBlY3RlZF9jb25zdW1lcl9lcG9jaBgDIAEoBBIbChNhZnRlcl9sYW5lX3NlcXVlbmNlGAQgASgDEhMKC2JhdGNoX2xpbWl0GAUgASgNIrABChhDbGFpbURldmljZUluYm94UmVzcG9uc2USFgoOY29uc3VtZXJfZXBvY2gYASABKAQSQAoFaXRlbXMYAiADKAsyMS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkR1cmFibGVEZXZpY2VJbmJveEl0ZW0SGgoSbGFuZV9oZWFkX3NlcXVlbmNlGAMgASgDEh4KFmFja2VkX3Rocm91Z2hfc2VxdWVuY2UYBCABKAMitwEKIUFja25vd2xlZGdlRGV2aWNlSW5ib3hJdGVtUmVxdWVzdBI6CgZkZXZpY2UYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvckRldmljZVJlZhIPCgdpdGVtX2lkGAIgASgJEhUKDWxhbmVfc2VxdWVuY2UYAyABKAMSFgoOY29uc3VtZXJfZXBvY2gYBCABKAQSFgoOcGF5bG9hZF9zaGEyNTYYBSABKAwiRAoiQWNrbm93bGVkZ2VEZXZpY2VJbmJveEl0ZW1SZXNwb25zZRIeChZhY2tlZF90aHJvdWdoX3NlcXVlbmNlGAEgASgDIuABChxSZWplY3REZXZpY2VJbmJveEl0ZW1SZXF1ZXN0EjoKBmRldmljZRgBIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yRGV2aWNlUmVmEg8KB2l0ZW1faWQYAiABKAkSFQoNbGFuZV9zZXF1ZW5jZRgDIAEoAxIWCg5jb25zdW1lcl9lcG9jaBgEIAEoBBJECgplcnJvcl9jb2RlGAUgASgOMjAucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5EZXZpY2VJbmJveFJlamVjdENvZGUilAEKHVJlamVjdERldmljZUluYm94SXRlbVJlc3BvbnNlEj4KBXN0YXRlGAEgASgOMi8ucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5EZXZpY2VJbmJveEl0ZW1TdGF0ZRIzCg9uZXh0X2F0dGVtcHRfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIm0KE0RldmljZUluYm94V2FrZUhpbnQSOgoGZGV2aWNlGAEgASgLMioucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JEZXZpY2VSZWYSGgoSbGFuZV9oZWFkX3NlcXVlbmNlGAIgASgDKrICChZEZXZpY2VJbmJveFBheWxvYWRUeXBlEikKJURFVklDRV9JTkJPWF9QQVlMT0FEX1RZUEVfVU5TUEVDSUZJRUQQABIwCixERVZJQ0VfSU5CT1hfUEFZTE9BRF9UWVBFX0NPTlZFUlNBVElPTl9FVkVOVBABEjEKLURFVklDRV9JTkJPWF9QQVlMT0FEX1RZUEVfRElSRUNUX1NFU1NJT05fSU5JVBACEiwKKERFVklDRV9JTkJPWF9QQVlMT0FEX1RZUEVfTUxTX1RSQU5TSVRJT04QAxIsCihERVZJQ0VfSU5CT1hfUEFZTE9BRF9UWVBFX0NPTU1BTkRfUkVTVUxUEAQSLAooREVWSUNFX0lOQk9YX1BBWUxPQURfVFlQRV9ERVZJQ0VfUkVDRUlQVBAFKv0BChREZXZpY2VJbmJveEl0ZW1TdGF0ZRInCiNERVZJQ0VfSU5CT1hfSVRFTV9TVEFURV9VTlNQRUNJRklFRBAAEiMKH0RFVklDRV9JTkJPWF9JVEVNX1NUQVRFX1BFTkRJTkcQARIjCh9ERVZJQ0VfSU5CT1hfSVRFTV9TVEFURV9DTEFJTUVEEAISJgoiREVWSUNFX0lOQk9YX0lURU1fU1RBVEVfUkVUUllfV0FJVBADEiEKHURFVklDRV9JTkJPWF9JVEVNX1NUQVRFX0FDS0VEEAQSJwojREVWSUNFX0lOQk9YX0lURU1fU1RBVEVfREVBRF9MRVRURVIQBSqwAgoVRGV2aWNlSW5ib3hSZWplY3RDb2RlEigKJERFVklDRV9JTkJPWF9SRUpFQ1RfQ09ERV9VTlNQRUNJRklFRBAAEiwKKERFVklDRV9JTkJPWF9SRUpFQ1RfQ09ERV9QQVlMT0FEX0lOVkFMSUQQARI1CjFERVZJQ0VfSU5CT1hfUkVKRUNUX0NPREVfQ1JZUFRPX1NUQVRFX1VOQVZBSUxBQkxFEAISLQopREVWSUNFX0lOQk9YX1JFSkVDVF9DT0RFX0lOVEVHUklUWV9GQUlMRUQQAxIvCitERVZJQ0VfSU5CT1hfUkVKRUNUX0NPREVfUkVDSVBJRU5UX01JU01BVENIEAQSKAokREVWSUNFX0lOQk9YX1JFSkVDVF9DT0RFX1JFVFJZX0xBVEVSEAVCR1pFZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvY2hhdDtjaGF0YgZwcm90bzM", [file_domain_actor_actor, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.chat.v1.DeviceInboxLease
@@ -375,7 +41,7 @@ export type DeviceInboxLease = Message<"peers_touch.model.chat.v1.DeviceInboxLea
  * Use `create(DeviceInboxLeaseSchema)` to create a new message.
  */
 export const DeviceInboxLeaseSchema: GenMessage<DeviceInboxLease> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 9);
+  messageDesc(file_domain_chat_queue, 0);
 
 /**
  * @generated from message peers_touch.model.chat.v1.DurableDeviceInboxItem
@@ -472,7 +138,7 @@ export type DurableDeviceInboxItem = Message<"peers_touch.model.chat.v1.DurableD
  * Use `create(DurableDeviceInboxItemSchema)` to create a new message.
  */
 export const DurableDeviceInboxItemSchema: GenMessage<DurableDeviceInboxItem> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 10);
+  messageDesc(file_domain_chat_queue, 1);
 
 /**
  * @generated from message peers_touch.model.chat.v1.ClaimDeviceInboxRequest
@@ -509,7 +175,7 @@ export type ClaimDeviceInboxRequest = Message<"peers_touch.model.chat.v1.ClaimDe
  * Use `create(ClaimDeviceInboxRequestSchema)` to create a new message.
  */
 export const ClaimDeviceInboxRequestSchema: GenMessage<ClaimDeviceInboxRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 11);
+  messageDesc(file_domain_chat_queue, 2);
 
 /**
  * @generated from message peers_touch.model.chat.v1.ClaimDeviceInboxResponse
@@ -541,7 +207,7 @@ export type ClaimDeviceInboxResponse = Message<"peers_touch.model.chat.v1.ClaimD
  * Use `create(ClaimDeviceInboxResponseSchema)` to create a new message.
  */
 export const ClaimDeviceInboxResponseSchema: GenMessage<ClaimDeviceInboxResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 12);
+  messageDesc(file_domain_chat_queue, 3);
 
 /**
  * @generated from message peers_touch.model.chat.v1.AcknowledgeDeviceInboxItemRequest
@@ -578,7 +244,7 @@ export type AcknowledgeDeviceInboxItemRequest = Message<"peers_touch.model.chat.
  * Use `create(AcknowledgeDeviceInboxItemRequestSchema)` to create a new message.
  */
 export const AcknowledgeDeviceInboxItemRequestSchema: GenMessage<AcknowledgeDeviceInboxItemRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 13);
+  messageDesc(file_domain_chat_queue, 4);
 
 /**
  * @generated from message peers_touch.model.chat.v1.AcknowledgeDeviceInboxItemResponse
@@ -595,7 +261,7 @@ export type AcknowledgeDeviceInboxItemResponse = Message<"peers_touch.model.chat
  * Use `create(AcknowledgeDeviceInboxItemResponseSchema)` to create a new message.
  */
 export const AcknowledgeDeviceInboxItemResponseSchema: GenMessage<AcknowledgeDeviceInboxItemResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 14);
+  messageDesc(file_domain_chat_queue, 5);
 
 /**
  * @generated from message peers_touch.model.chat.v1.RejectDeviceInboxItemRequest
@@ -632,7 +298,7 @@ export type RejectDeviceInboxItemRequest = Message<"peers_touch.model.chat.v1.Re
  * Use `create(RejectDeviceInboxItemRequestSchema)` to create a new message.
  */
 export const RejectDeviceInboxItemRequestSchema: GenMessage<RejectDeviceInboxItemRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 15);
+  messageDesc(file_domain_chat_queue, 6);
 
 /**
  * @generated from message peers_touch.model.chat.v1.RejectDeviceInboxItemResponse
@@ -654,7 +320,7 @@ export type RejectDeviceInboxItemResponse = Message<"peers_touch.model.chat.v1.R
  * Use `create(RejectDeviceInboxItemResponseSchema)` to create a new message.
  */
 export const RejectDeviceInboxItemResponseSchema: GenMessage<RejectDeviceInboxItemResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 16);
+  messageDesc(file_domain_chat_queue, 7);
 
 /**
  * @generated from message peers_touch.model.chat.v1.DeviceInboxWakeHint
@@ -676,98 +342,10 @@ export type DeviceInboxWakeHint = Message<"peers_touch.model.chat.v1.DeviceInbox
  * Use `create(DeviceInboxWakeHintSchema)` to create a new message.
  */
 export const DeviceInboxWakeHintSchema: GenMessage<DeviceInboxWakeHint> = /*@__PURE__*/
-  messageDesc(file_domain_chat_queue, 17);
+  messageDesc(file_domain_chat_queue, 8);
 
 /**
- * @generated from enum peers_touch.model.chat.v1.DeviceQueuePayloadType
- */
-export enum DeviceQueuePayloadType {
-  /**
-   * @generated from enum value: DEVICE_QUEUE_PAYLOAD_TYPE_UNSPECIFIED = 0;
-   */
-  UNSPECIFIED = 0,
-
-  /**
-   * @generated from enum value: DEVICE_QUEUE_PAYLOAD_TYPE_CONVERSATION_EVENT = 1;
-   */
-  CONVERSATION_EVENT = 1,
-
-  /**
-   * @generated from enum value: DEVICE_QUEUE_PAYLOAD_TYPE_DIRECT_SESSION_INIT = 2;
-   */
-  DIRECT_SESSION_INIT = 2,
-
-  /**
-   * @generated from enum value: DEVICE_QUEUE_PAYLOAD_TYPE_MLS_TRANSITION = 3;
-   */
-  MLS_TRANSITION = 3,
-
-  /**
-   * @generated from enum value: DEVICE_QUEUE_PAYLOAD_TYPE_COMMAND_RESULT = 4;
-   */
-  COMMAND_RESULT = 4,
-
-  /**
-   * @generated from enum value: DEVICE_QUEUE_PAYLOAD_TYPE_DEVICE_RECEIPT = 5;
-   */
-  DEVICE_RECEIPT = 5,
-}
-
-/**
- * Describes the enum peers_touch.model.chat.v1.DeviceQueuePayloadType.
- */
-export const DeviceQueuePayloadTypeSchema: GenEnum<DeviceQueuePayloadType> = /*@__PURE__*/
-  enumDesc(file_domain_chat_queue, 0);
-
-/**
- * @generated from enum peers_touch.model.chat.v1.DeviceQueueItemState
- */
-export enum DeviceQueueItemState {
-  /**
-   * @generated from enum value: DEVICE_QUEUE_ITEM_STATE_UNSPECIFIED = 0;
-   */
-  UNSPECIFIED = 0,
-
-  /**
-   * @generated from enum value: DEVICE_QUEUE_ITEM_STATE_PENDING = 1;
-   */
-  PENDING = 1,
-
-  /**
-   * @generated from enum value: DEVICE_QUEUE_ITEM_STATE_CLAIMED = 2;
-   */
-  CLAIMED = 2,
-
-  /**
-   * @generated from enum value: DEVICE_QUEUE_ITEM_STATE_RETRY_WAIT = 3;
-   */
-  RETRY_WAIT = 3,
-
-  /**
-   * @generated from enum value: DEVICE_QUEUE_ITEM_STATE_CONSUMED = 4;
-   */
-  CONSUMED = 4,
-
-  /**
-   * @generated from enum value: DEVICE_QUEUE_ITEM_STATE_ACKED = 5;
-   */
-  ACKED = 5,
-
-  /**
-   * @generated from enum value: DEVICE_QUEUE_ITEM_STATE_DEAD_LETTER = 6;
-   */
-  DEAD_LETTER = 6,
-}
-
-/**
- * Describes the enum peers_touch.model.chat.v1.DeviceQueueItemState.
- */
-export const DeviceQueueItemStateSchema: GenEnum<DeviceQueueItemState> = /*@__PURE__*/
-  enumDesc(file_domain_chat_queue, 1);
-
-/**
- * Canonical /device/inbox contract. The DeviceQueue messages above remain
- * available only until the CA-W5 atomic consumer cutover.
+ * Canonical /device/inbox contract.
  *
  * @generated from enum peers_touch.model.chat.v1.DeviceInboxPayloadType
  */
@@ -807,7 +385,7 @@ export enum DeviceInboxPayloadType {
  * Describes the enum peers_touch.model.chat.v1.DeviceInboxPayloadType.
  */
 export const DeviceInboxPayloadTypeSchema: GenEnum<DeviceInboxPayloadType> = /*@__PURE__*/
-  enumDesc(file_domain_chat_queue, 2);
+  enumDesc(file_domain_chat_queue, 0);
 
 /**
  * @generated from enum peers_touch.model.chat.v1.DeviceInboxItemState
@@ -848,7 +426,7 @@ export enum DeviceInboxItemState {
  * Describes the enum peers_touch.model.chat.v1.DeviceInboxItemState.
  */
 export const DeviceInboxItemStateSchema: GenEnum<DeviceInboxItemState> = /*@__PURE__*/
-  enumDesc(file_domain_chat_queue, 3);
+  enumDesc(file_domain_chat_queue, 1);
 
 /**
  * @generated from enum peers_touch.model.chat.v1.DeviceInboxRejectCode
@@ -889,5 +467,5 @@ export enum DeviceInboxRejectCode {
  * Describes the enum peers_touch.model.chat.v1.DeviceInboxRejectCode.
  */
 export const DeviceInboxRejectCodeSchema: GenEnum<DeviceInboxRejectCode> = /*@__PURE__*/
-  enumDesc(file_domain_chat_queue, 4);
+  enumDesc(file_domain_chat_queue, 2);
 

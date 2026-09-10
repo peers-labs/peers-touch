@@ -17,6 +17,7 @@ const CMD_SEND_FRIEND_REQUEST = 'social.send-friend-request';
 const CMD_ACCEPT_FRIEND_REQUEST = 'social.accept-friend-request';
 const CMD_REJECT_FRIEND_REQUEST = 'social.reject-friend-request';
 const CMD_CREATE_GROUP = 'group.create';
+const FRIEND_REQUEST_STATUS_ACCEPTED = 2;
 
 // ---------------------------------------------------------------------------
 // Command dispatchers
@@ -24,17 +25,24 @@ const CMD_CREATE_GROUP = 'group.create';
 
 export async function dispatchSendFriendRequest(
   receiverPtid: string,
+  receiverHomeStationPeerId: string,
+  federationId: string,
   message: string,
 ): Promise<void> {
   const commandId = await getInteractionAdmission().admit({
     commandType: CMD_SEND_FRIEND_REQUEST,
     category: 'social',
-    orderingKey: `friend-request:${receiverPtid}`,
-    payloadJson: JSON.stringify({ receiverPtid }),
+    orderingKey: `friend-request:${federationId}:${receiverPtid}`,
+    payloadJson: JSON.stringify({ receiverPtid, receiverHomeStationPeerId, federationId }),
   });
 
   try {
-    await useSocialStore.getState().sendFriendRequest(receiverPtid, message);
+    await useSocialStore.getState().sendFriendRequest(
+      receiverPtid,
+      receiverHomeStationPeerId,
+      federationId,
+      message,
+    );
     await getInteractionAdmission().markCommitted(commandId);
   } catch (error) {
     await getInteractionAdmission().markFailed(commandId, error instanceof Error ? error.message : 'request_failed');
@@ -81,15 +89,37 @@ export async function dispatchCreateGroup(input: {
   description: string;
   initialMemberPtids: string[];
 }): Promise<string | null> {
+  const social = useSocialStore.getState();
+  const federationIds = new Set(input.initialMemberPtids.map((memberPtid) => {
+    const relationship = social.friendRequests.find((request) =>
+      request.status === FRIEND_REQUEST_STATUS_ACCEPTED
+      && request.federationId.trim()
+      && (
+        (request.senderPtid === social.currentUserPtid && request.receiverPtid === memberPtid)
+        || (request.receiverPtid === social.currentUserPtid && request.senderPtid === memberPtid)
+      )
+    );
+    if (!relationship) {
+      throw new Error('mobile.group.federationScopeRequired');
+    }
+    return relationship.federationId;
+  }));
+  if (federationIds.size !== 1) {
+    throw new Error('mobile.group.federationScopeRequired');
+  }
+  const federationId = [...federationIds][0];
   const commandId = await getInteractionAdmission().admit({
     commandType: CMD_CREATE_GROUP,
     category: 'social',
-    orderingKey: `group:create:${Date.now()}`,
-    payloadJson: JSON.stringify({ name: input.name }),
+    orderingKey: `group:create:${federationId}:${Date.now()}`,
+    payloadJson: JSON.stringify({ name: input.name, federationId }),
   });
 
   try {
-    const groupUlid = await useGroupStore.getState().createGroup(input);
+    const groupUlid = await useGroupStore.getState().createGroup({
+      ...input,
+      federationId,
+    });
     if (groupUlid) {
       await getInteractionAdmission().markCommitted(commandId);
     } else {

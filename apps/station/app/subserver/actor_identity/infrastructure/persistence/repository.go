@@ -3,6 +3,8 @@ package persistence
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
@@ -35,9 +37,31 @@ func NewRepository(db *gorm.DB) (*Repository, error) {
 	return &Repository{db: db}, nil
 }
 
-// AutoMigrate creates the Actor Identity tables for test-only composition.
+// AutoMigrate creates the canonical Actor Identity tables for Station composition.
 func (r *Repository) AutoMigrate() error {
-	if err := r.db.AutoMigrate(&ActorIdentityModel{}, &ActorDeviceModel{}); err != nil {
+	if err := r.db.Transaction(func(tx *gorm.DB) error {
+		if !tx.Migrator().HasTable(&ActorDeviceModel{}) {
+			return tx.AutoMigrate(
+				&ActorIdentityModel{},
+				&ActorDeviceModel{},
+				&ActorEndpointDirectoryVersionModel{},
+			)
+		}
+		if err := tx.AutoMigrate(
+			&ActorIdentityModel{},
+			&ActorEndpointDirectoryVersionModel{},
+		); err != nil {
+			return err
+		}
+		if err := addActorDeviceMetadataColumns(tx); err != nil {
+			return err
+		}
+		if err := backfillActorDeviceMetadata(tx); err != nil {
+			return err
+		}
+
+		return enforceActorDeviceMetadataConstraints(tx)
+	}); err != nil {
 		return domain.WrapError(
 			domain.ErrorCodePersistence,
 			"actor_identity.migrate",
@@ -46,6 +70,184 @@ func (r *Repository) AutoMigrate() error {
 	}
 
 	return nil
+}
+
+func enforceActorDeviceMetadataConstraints(tx *gorm.DB) error {
+	switch tx.Dialector.Name() {
+	case "postgres":
+		for _, column := range []string{"actor_acct", "actor_kind"} {
+			if err := tx.Exec(
+				fmt.Sprintf(
+					"ALTER TABLE actor_devices ALTER COLUMN %s SET NOT NULL",
+					column,
+				),
+			).Error; err != nil {
+				return fmt.Errorf(
+					"actor identity migration: require actor device field %s: %w",
+					column,
+					err,
+				)
+			}
+		}
+	case "sqlite":
+		// SQLite cannot tighten one column without rebuilding the legacy table.
+		// The verified backfill above and repository writes preserve the invariant.
+	default:
+		return fmt.Errorf(
+			"actor identity migration: unsupported database dialect %q",
+			tx.Dialector.Name(),
+		)
+	}
+
+	return nil
+}
+
+func addActorDeviceMetadataColumns(tx *gorm.DB) error {
+	migration := &actorDeviceMetadataMigrationModel{}
+	for _, column := range []struct {
+		field      string
+		name       string
+		definition string
+	}{
+		{field: "ActorAccount", name: "actor_acct", definition: "VARCHAR(255)"},
+		{field: "ActorKind", name: "actor_kind", definition: "INTEGER"},
+	} {
+		if tx.Migrator().HasColumn(migration, column.field) {
+			continue
+		}
+		if err := tx.Exec(
+			fmt.Sprintf(
+				"ALTER TABLE actor_devices ADD COLUMN %s %s",
+				column.name,
+				column.definition,
+			),
+		).Error; err != nil {
+			return fmt.Errorf(
+				"actor identity migration: add actor device field %s: %w",
+				column.field,
+				err,
+			)
+		}
+	}
+
+	return nil
+}
+
+func backfillActorDeviceMetadata(tx *gorm.DB) error {
+	var devices []actorDeviceMetadataMigrationModel
+	if err := tx.
+		Where("actor_acct IS NULL OR actor_kind IS NULL").
+		Order("id ASC").
+		Find(&devices).Error; err != nil {
+		return fmt.Errorf(
+			"actor identity migration: list incomplete actor devices: %w",
+			err,
+		)
+	}
+	if len(devices) == 0 {
+		return nil
+	}
+	if !tx.Migrator().HasTable("touch_actor") {
+		return fmt.Errorf(
+			"actor identity migration: touch_actor is required to backfill %d actor devices",
+			len(devices),
+		)
+	}
+
+	for _, device := range devices {
+		var actor actorMetadataMigrationRow
+		if err := tx.Table("touch_actor").
+			Select("ptid", "preferred_username", "federated_handle", "kind").
+			Where("ptid = ?", device.PTID).
+			Take(&actor).Error; err != nil {
+			return fmt.Errorf(
+				"actor identity migration: resolve metadata for actor device %d (%s): %w",
+				device.ID,
+				device.PTID,
+				err,
+			)
+		}
+		updates := make(map[string]interface{}, 2)
+		if device.ActorAccount == nil {
+			updates["actor_acct"] = migrationActorAccount(actor)
+		}
+		if device.ActorKind == nil {
+			actorKind, err := migrationActorKind(actor.Kind)
+			if err != nil {
+				return fmt.Errorf(
+					"actor identity migration: resolve kind for actor device %d (%s): %w",
+					device.ID,
+					device.PTID,
+					err,
+				)
+			}
+			updates["actor_kind"] = actorKind
+		}
+		if len(updates) == 0 {
+			continue
+		}
+		result := tx.Model(&actorDeviceMetadataMigrationModel{}).
+			Where("id = ?", device.ID).
+			Updates(updates)
+		if result.Error != nil {
+			return fmt.Errorf(
+				"actor identity migration: backfill actor device %d: %w",
+				device.ID,
+				result.Error,
+			)
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf(
+				"actor identity migration: actor device %d changed during backfill",
+				device.ID,
+			)
+		}
+	}
+
+	var incomplete int64
+	if err := tx.Model(&actorDeviceMetadataMigrationModel{}).
+		Where("actor_acct IS NULL OR actor_kind IS NULL").
+		Count(&incomplete).Error; err != nil {
+		return fmt.Errorf(
+			"actor identity migration: verify actor device metadata: %w",
+			err,
+		)
+	}
+	if incomplete != 0 {
+		return fmt.Errorf(
+			"actor identity migration: %d actor devices remain incomplete",
+			incomplete,
+		)
+	}
+
+	return nil
+}
+
+func migrationActorAccount(actor actorMetadataMigrationRow) string {
+	if handle := strings.TrimSpace(actor.FederatedHandle); handle != "" {
+		return strings.TrimPrefix(handle, "@")
+	}
+
+	return strings.TrimSpace(actor.PreferredUsername)
+}
+
+func migrationActorKind(kind string) (int32, error) {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "p", "":
+		return int32(actormodel.ActorKind_ACTOR_KIND_PERSON), nil
+	case "g":
+		return int32(actormodel.ActorKind_ACTOR_KIND_GROUP), nil
+	case "o":
+		return int32(actormodel.ActorKind_ACTOR_KIND_ORGANIZATION), nil
+	case "s":
+		return int32(actormodel.ActorKind_ACTOR_KIND_SERVICE), nil
+	case "a":
+		return int32(actormodel.ActorKind_ACTOR_KIND_APPLICATION), nil
+	case "n":
+		return int32(actormodel.ActorKind_ACTOR_KIND_NODE), nil
+	default:
+		return 0, fmt.Errorf("unsupported actor kind %q", kind)
+	}
 }
 
 // Enroll atomically establishes actor continuity and activates one verified device.

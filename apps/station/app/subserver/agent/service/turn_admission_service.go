@@ -284,7 +284,7 @@ func (s *TurnAdmissionService) List(
 	}
 	var conversation persistence.Conversation
 	if err := db.WithContext(ctx).
-		Where("id = ? AND ptid = ?", strings.TrimSpace(conversationID), strings.TrimSpace(actorID)).
+		Where("id = ? AND actor_ptid = ?", strings.TrimSpace(conversationID), strings.TrimSpace(actorID)).
 		First(&conversation).Error; err != nil {
 		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "conversation not found", err)
 	}
@@ -640,7 +640,7 @@ func lockAdmissionConversation(
 	agentID string,
 ) (*persistence.Conversation, error) {
 	query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("id = ? AND ptid = ?", strings.TrimSpace(conversationID), strings.TrimSpace(actorID))
+		Where("id = ? AND actor_ptid = ?", strings.TrimSpace(conversationID), strings.TrimSpace(actorID))
 	if strings.TrimSpace(agentID) != "" {
 		query = query.Where("agent_id = ?", strings.TrimSpace(agentID))
 	}

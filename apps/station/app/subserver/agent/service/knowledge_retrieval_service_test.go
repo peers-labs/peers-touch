@@ -171,7 +171,7 @@ func newKnowledgeAuthorityFixture(t *testing.T) *knowledgeAuthorityFixture {
 	if err := db.Create(&persistence.Conversation{
 		ID:        fixture.conversation,
 		AgentID:   fixture.agentID,
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Knowledge",
 		Status:    "active",
 		CreatedAt: fixture.now,

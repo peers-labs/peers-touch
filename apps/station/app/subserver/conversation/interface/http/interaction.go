@@ -186,6 +186,10 @@ func (h *InteractionHandler) SubmitDeliveryReceipt(
 		return nil, err
 	}
 
+	if result.Forwarded {
+		return &chat.SubmitConversationDeliveryReceiptResponse{}, nil
+	}
+
 	return &chat.SubmitConversationDeliveryReceiptResponse{
 		Delivery: &chat.MessageDeliveryAggregate{
 			ConversationId:      string(result.Aggregate.ConversationID),

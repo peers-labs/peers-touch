@@ -103,6 +103,7 @@ liveDescribe('C6 MLS three-Station convergence', () => {
       conversationId,
       'C6 MLS convergence',
       [bob.ptid],
+      topology.federation_id,
     )
     expect(created.conversationId).toBe(conversationId)
     expect(created.state).not.toBe('failed')

@@ -683,6 +683,15 @@ fn run_engine_cycle(
     if !worker_is_running(state) {
         return Ok(None);
     }
+    let repaired_projection_scopes = engine.hydrate_conversation_authority_scopes()?;
+    if repaired_projection_scopes > 0 {
+        log::info!(
+            "mobile messaging repaired {repaired_projection_scopes} Conversation authority scopes"
+        );
+    }
+    if !worker_is_running(state) {
+        return Ok(None);
+    }
     engine.publish_prekeys()?;
     if !worker_is_running(state) {
         return Ok(None);

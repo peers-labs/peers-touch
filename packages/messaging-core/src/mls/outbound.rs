@@ -1,10 +1,10 @@
 use super::group::MlsGroupManager;
 use crate::codec::private_content::encode_message_private_content;
+use crate::proto::actor_device_ptid;
 use crate::proto::chat::{
     chat_command, AttachmentPlaintextMetadata, ChatCommand, ConversationKind, CryptoEndpoint,
     EditMessageIntent, MessagingContentKind, PrepareConversationCommandResponse, SendMessageIntent,
 };
-use crate::proto::crypto_endpoints_from_actor_device_refs;
 use crate::store::{
     MlsOutboundEditCommit, MlsOutboundRepository, MlsOutboundSendCommit, PendingSenderProjection,
 };
@@ -177,21 +177,23 @@ fn validate_send_context(
         return Err("messaging private content is empty".to_string());
     }
 
-    let required_endpoints = crypto_endpoints_from_actor_device_refs(&plan.required_endpoints)
-        .ok_or_else(|| "messaging send plan has incomplete endpoint".to_string())?;
     let mut previous: Option<(&str, &str)> = None;
     let mut local_count = 0;
-    for required in &required_endpoints {
-        let key = (required.ptid.as_str(), required.device_id.as_str());
+    for required in &plan.required_endpoints {
+        let required_ptid = actor_device_ptid(required)?;
+        if required.device_id.trim().is_empty() {
+            return Err("messaging send plan has incomplete endpoint".to_string());
+        }
+        let key = (required_ptid, required.device_id.as_str());
         if previous.is_some_and(|value| value >= key) {
             return Err("messaging send plan endpoints are not strictly sorted".to_string());
         }
         previous = Some(key);
-        if required == endpoint {
+        if required_ptid == endpoint.ptid && required.device_id == endpoint.device_id {
             local_count += 1;
         }
     }
-    if local_count != 1 || required_endpoints.len() < 2 {
+    if local_count != 1 || plan.required_endpoints.len() < 2 {
         return Err("messaging send plan does not contain the sending endpoint".to_string());
     }
     Ok(())
@@ -253,7 +255,7 @@ fn build_send_command(
         observed_mls_epoch: plan.mls_epoch,
         client_timestamp: Some(timestamp(intent.client_timestamp_unix_ms)),
         delivery_plan_sha256: plan.delivery_plan_sha256.clone(),
-        authority_station_id: plan.authority_station_peer_id.clone(),
+        authority_station_peer_id: plan.authority_station_peer_id.clone(),
         payload: Some(chat_command::Payload::SendMessage(SendMessageIntent {
             message_id: intent.message_id.to_string(),
             content_kind: MessagingContentKind::Text as i32,
@@ -281,7 +283,7 @@ fn build_edit_command(
         observed_mls_epoch: plan.mls_epoch,
         client_timestamp: Some(timestamp(intent.client_timestamp_unix_ms)),
         delivery_plan_sha256: plan.delivery_plan_sha256.clone(),
-        authority_station_id: plan.authority_station_peer_id.clone(),
+        authority_station_peer_id: plan.authority_station_peer_id.clone(),
         payload: Some(chat_command::Payload::EditMessage(EditMessageIntent {
             message_id: intent.message_id.to_string(),
             direct_payloads: Vec::new(),
@@ -303,6 +305,7 @@ mod tests {
     use super::*;
     use crate::codec::private_content::{decode_message_private_content, test_attachment_metadata};
     use crate::mls::group::MlsMemberKeyPackage;
+    use crate::proto::actor_device_ref;
     use crate::store::{MlsOutboundEditCommit, MlsOutboundSendCommit};
     use std::sync::Mutex;
 
@@ -427,8 +430,8 @@ mod tests {
             membership_epoch: 1,
             mls_epoch: 1,
             required_endpoints: vec![
-                crate::proto::actor_device_ref_from_parts("ptid:alice", "alice-device"),
-                crate::proto::actor_device_ref_from_parts("ptid:bob", "bob-device"),
+                actor_device_ref("ptid:alice", "alice-device"),
+                actor_device_ref("ptid:bob", "bob-device"),
             ],
             delivery_plan_sha256: vec![8; 32],
             endpoint_manifests: Vec::new(),

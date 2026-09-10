@@ -1961,9 +1961,9 @@ source identity and resume those items in dependency order.
 - The dependency-ordered hard-cut plan is
   `docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md`.
   It is `PLAN_APPROVED`; CA-W0 inventory, the fail-closed ownership Gate, and
-  CA-W1 canonical proto consolidation are complete. CA-W2, CA-W3, and CA-W4 are
-  dependency-ready; W5, W6A, W8, and W9-D remain blocked behind the atomic hard
-  cut. No route
+  CA-W1 canonical proto consolidation are complete. CA-W2 is complete in
+  test-only composition; CA-W3 and CA-W4 have source checkpoints only. W5,
+  W6A, W8, and W9-D remain blocked behind the atomic hard cut. No route
   alias, redirect, dual write, fallback read, or partial production migration is
   permitted.
 

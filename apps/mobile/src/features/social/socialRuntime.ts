@@ -47,8 +47,11 @@ export interface SocialRuntimePublicProjection {
   activeSessionUlid: string | null;
   friendRequests: Array<{
     requestId: string;
+    federationId: string;
     senderPtid: string;
     receiverPtid: string;
+    senderHomeStationPeerId: string;
+    receiverHomeStationPeerId: string;
     status: number;
   }>;
   typingPeers: Record<string, Record<string, {
@@ -66,8 +69,11 @@ export function readSocialRuntimeProjection(): SocialRuntimePublicProjection {
     activeSessionUlid: state.activeSessionUlid,
     friendRequests: state.friendRequests.map((request) => ({
       requestId: request.requestId || request.id || '',
+      federationId: request.federationId,
       senderPtid: request.senderPtid,
       receiverPtid: request.receiverPtid,
+      senderHomeStationPeerId: request.senderHomeStationPeerId,
+      receiverHomeStationPeerId: request.receiverHomeStationPeerId,
       status: request.status,
     })),
     typingPeers: Object.fromEntries(
@@ -91,10 +97,17 @@ export function readSocialRuntimeProjection(): SocialRuntimePublicProjection {
 
 export async function sendSocialFriendRequest(
   receiverPtid: string,
+  receiverHomeStationPeerId: string,
+  federationId: string,
   message?: string,
 ): Promise<SocialRuntimePublicProjection> {
   requireActiveSocialRuntime();
-  await useSocialStore.getState().sendFriendRequest(receiverPtid, message);
+  await useSocialStore.getState().sendFriendRequest(
+    receiverPtid,
+    receiverHomeStationPeerId,
+    federationId,
+    message,
+  );
   return readSocialRuntimeProjection();
 }
 

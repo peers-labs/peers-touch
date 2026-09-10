@@ -168,17 +168,27 @@ pub struct AttachmentInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialFriendRequestSendInput {
     pub receiver_ptid: String,
+    pub receiver_home_station_peer_id: String,
+    pub federation_id: String,
     pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialFriendRequestAcceptInput {
     pub request_id: String,
+    pub sender_ptid: String,
+    pub sender_home_station_peer_id: String,
+    pub federation_id: String,
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialFriendRequestRejectInput {
     pub request_id: String,
+    pub sender_ptid: String,
+    pub sender_home_station_peer_id: String,
+    pub federation_id: String,
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -227,12 +237,6 @@ pub struct GroupChatThreadInput {
     pub after_ulid: Option<String>,
     pub limit: Option<u32>,
     pub max_pages: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatThreadCountsInput {
-    pub group_ulid: String,
-    pub root_ulids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

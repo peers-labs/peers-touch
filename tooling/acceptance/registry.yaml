@@ -26,7 +26,14 @@
       "when": {
         "paths": [
           "apps/station/app/subserver/conversation/**",
-          "apps/station/app/subserver/envelope/**"
+          "apps/station/app/subserver/actor_identity/**",
+          "apps/station/app/subserver/key_exchange/**",
+          "apps/station/app/subserver/recovery/**",
+          "apps/station/frame/core/federation/**",
+          "model/domain/actor/actor.proto",
+          "model/domain/federation/delivery.proto",
+          "model/domain/key_exchange/key_exchange.proto",
+          "model/domain/recovery/recovery.proto"
         ]
       },
       "require": [
@@ -50,10 +57,13 @@
           "apps/desktop/src-tauri/src/messaging/consumer.rs",
           "apps/desktop/src-tauri/src/messaging/receipt.rs",
           "apps/desktop/src/store/socialChat.ts",
-          "apps/station/app/subserver/conversation/engine/application/receipt_service.go",
-          "apps/station/app/subserver/conversation/engine/application/receipt_service_test.go",
-          "apps/station/app/subserver/conversation/engine/interface/http/receipt_handler.go",
-          "apps/station/app/subserver/conversation/engine/subserver.go",
+          "apps/station/app/subserver/conversation/application/interaction/service.go",
+          "apps/station/app/subserver/conversation/application/interaction/service_test.go",
+          "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder.go",
+          "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder_test.go",
+          "apps/station/app/subserver/conversation/interface/http/interaction.go",
+          "apps/station/app/subserver/conversation/interface/http/interaction_test.go",
+          "apps/station/app/subserver/conversation/subserver.go",
           "tooling/acceptance/fixtures/chat_native_reset.py",
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
           "tooling/acceptance/gates/chat/native_two_client_runner.py",
@@ -77,8 +87,11 @@
         "paths": [
           "model/domain/chat/command.proto",
           "model/domain/chat/event.proto",
-          "apps/station/app/subserver/conversation/engine/application/authority_service.go",
-          "apps/station/app/subserver/conversation/engine/application/receipt_service.go",
+          "apps/station/app/subserver/conversation/application/command/service.go",
+          "apps/station/app/subserver/conversation/application/interaction/service.go",
+          "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder.go",
+          "apps/station/app/subserver/conversation/interface/http/interaction.go",
+          "apps/station/app/subserver/conversation/interface/http/mapper.go",
           "apps/desktop/src-tauri/src/messaging/engine.rs",
           "apps/desktop/src-tauri/src/messaging/direct.rs",
           "apps/desktop/src-tauri/src/messaging/mls.rs",
@@ -94,13 +107,10 @@
           "apps/desktop/src/acceptance/chat/**",
           "tooling/acceptance/fixtures/chat_native_reset.py",
           "tooling/acceptance/fixtures/chat_submit_fault_proxy.py",
-          "tooling/acceptance/fixtures/chat_contact_message_fault_proxy.py",
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
           "tooling/acceptance/gates/chat/chat_submit_fault_proxy_test.py",
-          "tooling/acceptance/gates/chat/chat_contact_message_fault_proxy_test.py",
           "tooling/acceptance/gates/chat/native_interactions_runner.py",
           "tooling/acceptance/gates/chat/native_interactions_static_test.py",
-          "tooling/acceptance/gates/chat/contact_message_resilience_runner.py",
           "tooling/acceptance/gates/chat/native_support.py"
         ]
       },
@@ -109,8 +119,7 @@
         "messaging-platform-contract",
         "desktop-check",
         "chat-native-visible-static",
-        "chat-native-interactions-e2e",
-        "chat-contact-message-resilience-e2e"
+        "chat-native-interactions-e2e"
       ]
     },
     {
@@ -121,8 +130,9 @@
       "when": {
         "paths": [
           "model/domain/chat/conversation.proto",
-          "apps/station/app/subserver/conversation/engine/application/typing_service.go",
-          "apps/station/app/subserver/conversation/engine/interface/http/typing_handler.go",
+          "apps/station/app/subserver/conversation/application/interaction/pulse_ledger.go",
+          "apps/station/app/subserver/conversation/application/interaction/service.go",
+          "apps/station/app/subserver/conversation/interface/http/interaction.go",
           "apps/desktop/src/components/chat/ChatMessageArea.tsx",
           "apps/desktop/src/store/socialChat.ts",
           "apps/desktop/src/acceptance/chat/**",
@@ -156,12 +166,16 @@
           "apps/desktop/src/pages/SocialChatPage.descriptor.tsx",
           "apps/desktop/src/components/chat/**",
           "apps/desktop/src/store/socialChat.ts",
-          "apps/desktop/src/services/socialChatRealtime.ts"
+          "apps/desktop/src/services/socialChatRealtime.ts",
+          "tooling/acceptance/fixtures/chat_contact_message_fault_proxy.py",
+          "tooling/acceptance/gates/chat/chat_contact_message_fault_proxy_test.py",
+          "tooling/acceptance/gates/chat/contact_message_resilience_runner.py"
         ]
       },
       "require": [
         "desktop-check",
-        "chat-native-visible-static"
+        "chat-native-visible-static",
+        "chat-contact-message-resilience-e2e"
       ]
     },
     {
@@ -652,6 +666,32 @@
       },
       "require": [
         "agent-v2-kernel-foundation-e2e"
+      ]
+    },
+    {
+      "id": "agent-stream-resilience",
+      "features": ["agent-stream-resilience"],
+      "when": {
+        "paths": [
+          "apps/station/app/subserver/agent/**/turn_handler*",
+          "apps/station/app/subserver/agent/**/live_resume*",
+          "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
+          "apps/desktop/src/components/GlobalOperationTray.tsx",
+          "apps/desktop/src/components/OpStatusTray.tsx",
+          "apps/desktop/src/kernel/identityRuntime.ts",
+          "apps/desktop/src/services/desktop_api.ts",
+          "apps/desktop/src/services/eventStream*",
+          "apps/desktop/src/services/identityHandlers.ts",
+          "apps/desktop/src/services/identityPipeline.ts",
+          "apps/desktop/src/store/chat.ts",
+          "apps/desktop/src/store/chatOperationEvent.test.ts",
+          "apps/desktop/src/store/session.ts"
+        ]
+      },
+      "require": [
+        "station-agent-unit",
+        "desktop-check",
+        "agent-stream-resilience-e2e"
       ]
     },
     {

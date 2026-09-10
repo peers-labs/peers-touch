@@ -4990,7 +4990,7 @@ func (s *TurnService) createDelegatedConversation(
 	var parent persistence.Conversation
 	if err := db.WithContext(ctx).
 		Where(
-			"id = ? AND ptid = ? AND agent_id = ?",
+			"id = ? AND actor_ptid = ? AND agent_id = ?",
 			parentConfig.ConversationID,
 			parentConfig.ActorID,
 			parentConfig.AgentID,
@@ -5008,7 +5008,7 @@ func (s *TurnService) createDelegatedConversation(
 	child := &persistence.Conversation{
 		ID:          childID,
 		AgentID:     parent.AgentID,
-		Ptid:        parent.Ptid,
+		ActorPTID:   parent.ActorPTID,
 		Title:       parent.Title,
 		Description: parent.Description,
 		ProviderID:  parent.ProviderID,
@@ -5596,7 +5596,7 @@ func (s *TurnService) ListTurnTraces(ctx context.Context, options domain.TurnTra
 		Model(&persistence.TurnTrace{}).
 		Joins("JOIN agent_turns ON agent_turns.id = agent_turn_traces.turn_id").
 		Joins("JOIN agent_conversations ON agent_conversations.id = agent_turns.conversation_id").
-		Where("agent_turns.agent_id = ? AND agent_conversations.ptid = ?", options.AgentID, options.Ptid)
+		Where("agent_turns.agent_id = ? AND agent_conversations.actor_ptid = ?", options.AgentID, options.Ptid)
 	if strings.TrimSpace(options.ConversationID) != "" {
 		query = query.Where("agent_turns.conversation_id = ?", options.ConversationID)
 	}
@@ -5655,7 +5655,7 @@ func (s *TurnService) GetTurnTrace(ctx context.Context, ptid, traceID, turnID st
 		Preload("Turn").
 		Joins("JOIN agent_turns ON agent_turns.id = agent_turn_traces.turn_id").
 		Joins("JOIN agent_conversations ON agent_conversations.id = agent_turns.conversation_id").
-		Where("agent_conversations.ptid = ?", ptid)
+		Where("agent_conversations.actor_ptid = ?", ptid)
 	if traceID != "" {
 		query = query.Where("agent_turn_traces.id = ?", traceID)
 	}
@@ -6346,7 +6346,7 @@ func (s *TurnService) cancelTurnWithResult(
 			if expectedPtid != "" {
 				var ownerCount int64
 				if err := tx.Model(&persistence.Conversation{}).
-					Where("id = ? AND ptid = ?", turn.ConversationID, expectedPtid).
+					Where("id = ? AND actor_ptid = ?", turn.ConversationID, expectedPtid).
 					Count(&ownerCount).Error; err != nil {
 					return err
 				}

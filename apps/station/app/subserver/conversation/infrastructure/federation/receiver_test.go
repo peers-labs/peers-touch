@@ -74,8 +74,8 @@ func TestAuthorityCommandReceiverUsesVerifiedProjectionAndPreservesReceiptReplay
 
 	fixture.actorKeys.setRevokedAt(time.Time{})
 	conflictProposal := proto.Clone(proposal).(*chatmodel.ConversationCommandProposal)
-	conflictProposal.GetCommand().GetSendMessage().ContentType =
-		chatmodel.MessageContentType_MESSAGE_CONTENT_TYPE_IMAGE
+	conflictProposal.GetCommand().GetSendMessage().ContentKind =
+		chatmodel.MessagingContentKind_MESSAGING_CONTENT_KIND_IMAGE
 	fixture.signProposal(t, conflictProposal)
 	conflictFrame := fixture.authorityCommandFrame(t, conflictProposal, 1)
 	conflictFrame.FrameId = "conflict-" + conflictFrame.FrameId
@@ -112,6 +112,11 @@ func TestAuthorityCommandReceiverUsesVerifiedProjectionAndPreservesReceiptReplay
 	if fixture.authority.callCount() != 3 {
 		t.Fatalf("authority applications = %d, want 3", fixture.authority.callCount())
 	}
+	for _, source := range fixture.authority.sourceHomeStations() {
+		if source != testStationA {
+			t.Fatalf("verified authority source = %q, want %q", source, testStationA)
+		}
+	}
 	if fixture.db.Migrator().HasTable("actor_devices") {
 		t.Fatal("Conversation adapter created or depended on a local actor_devices table")
 	}
@@ -142,7 +147,7 @@ func TestAuthorityCommandReceiverUsesVerifiedProjectionAndPreservesReceiptReplay
 		switch resultDelivery.GetState() {
 		case chatmodel.ConversationCommandSubmissionState_CONVERSATION_COMMAND_SUBMISSION_STATE_ACCEPTED:
 			acceptedResults++
-			if resultDelivery.GetResult().GetCommittedEvent().GetGroupSeq() != 1 {
+			if resultDelivery.GetResult().GetEvent().GetSequence() != 1 {
 				t.Fatalf("accepted authority result = %+v", &resultDelivery)
 			}
 		case chatmodel.ConversationCommandSubmissionState_CONVERSATION_COMMAND_SUBMISSION_STATE_TERMINAL_REJECTED:
@@ -336,6 +341,40 @@ func TestAuthorityCommandReceiverTerminatesUnroutableMalformedProposal(t *testin
 	assertTableCount(t, fixture.db, &federationdelivery.OutboxRecord{}, 0)
 }
 
+func TestAuthorityCommandSenderRejectsMismatchedCommandAuthority(t *testing.T) {
+	clock := &testClock{
+		now: time.Date(2026, time.September, 7, 12, 0, 0, 0, time.UTC),
+	}
+	sender, err := conversationfederation.NewSender(
+		testStationA,
+		newTestKey(0x11).signer(),
+		clock,
+		time.Hour,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal := &chatmodel.ConversationCommandProposal{
+		HomeStationPeerId:      testStationA,
+		AuthorityStationPeerId: testStationB,
+		Command: &chatmodel.ChatCommand{
+			AuthorityStationPeerId: "station-c",
+		},
+	}
+
+	if _, err := sender.EnqueueAuthorityCommand(
+		context.Background(),
+		&capturingOutbox{},
+		proposal,
+		1,
+	); err == nil {
+		t.Fatal("mismatched command authority was accepted")
+	} else if code, ok := federationdelivery.FailureCodeOf(err); !ok ||
+		code != federationdelivery.FailureInvalidFrame {
+		t.Fatalf("mismatched command authority error = %v", err)
+	}
+}
+
 func TestDeviceDeliverySenderRejectsMissingActorWithoutPanic(t *testing.T) {
 	clock := &testClock{
 		now: time.Date(2026, time.September, 6, 12, 0, 0, 0, time.UTC),
@@ -504,6 +543,111 @@ func TestDeviceDeliveryReceiverRollsBackFollowerAndInboxAsOneTransaction(
 	assertTableCount(t, fixture.db, &conversationdelivery.DeviceQueueItemModel{}, 1)
 }
 
+func TestDeviceDeliveryReceiverAcceptsRemoteMessageReceipt(t *testing.T) {
+	fixture := newReceiverFixture(t, testStationA)
+	fixture.enableCanonicalDeviceInbox(t)
+	intent := newMessageReceiptIntent(t, fixture.clock.Now())
+	frame := fixture.deviceDeliveryFrame(t, intent)
+
+	result, err := fixture.coreReceiver.Receive(context.Background(), frame)
+	if err != nil {
+		t.Fatalf("receive remote message receipt: %v", err)
+	}
+	if result != federationdelivery.AcceptedResult() {
+		t.Fatalf("remote message receipt result = %+v", result)
+	}
+	var item conversationdelivery.DeviceQueueItemModel
+	if err := fixture.db.First(
+		&item,
+		"item_id = ?",
+		string(intent.IntentID),
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if item.EventID != string(intent.EventID) ||
+		item.EventSequence != uint64(intent.EventSequence) ||
+		item.RecipientPTID != string(intent.Recipient.Actor) ||
+		item.RecipientDeviceID != string(intent.Recipient.Device) {
+		t.Fatalf("remote message receipt item = %+v", item)
+	}
+}
+
+func TestDeliveryReceiptReceiverBindsSourceAndPreservesReplayConflict(
+	t *testing.T,
+) {
+	fixture := newReceiverFixture(t, testStationB)
+	receipt := &chatmodel.DeviceConsumptionReceipt{
+		ReceiptId:      "device-consumed:item-1",
+		ConversationId: "conversation-1",
+		EventId:        "event-1",
+		Consumer: &chatmodel.CryptoEndpoint{
+			Ptid:     testActor,
+			DeviceId: testDevice,
+		},
+		EventSequence: 1,
+		LaneSequence:  7,
+		PayloadSha256: bytes.Repeat([]byte{0x44}, sha256.Size),
+		ConsumedAt:    timestamppb.New(fixture.clock.Now()),
+	}
+	frame := fixture.deliveryReceiptFrame(t, receipt)
+
+	first, err := fixture.coreReceiver.Receive(context.Background(), frame)
+	if err != nil {
+		t.Fatalf("receive delivery receipt: %v", err)
+	}
+	if first != federationdelivery.AcceptedResult() {
+		t.Fatalf("delivery receipt result = %+v", first)
+	}
+	var stored deliveryReceiptApplyTestModel
+	if err := fixture.db.First(&stored, "receipt_id = ?", receipt.GetReceiptId()).
+		Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Source != testStationA {
+		t.Fatalf("delivery receipt source = %q, want %q", stored.Source, testStationA)
+	}
+
+	replayed, err := fixture.coreReceiver.Receive(
+		context.Background(),
+		proto.Clone(frame).(*federationdelivery.Frame),
+	)
+	if err != nil {
+		t.Fatalf("receive exact delivery receipt replay: %v", err)
+	}
+	if replayed != federationdelivery.DuplicateResult() {
+		t.Fatalf("delivery receipt replay = %+v", replayed)
+	}
+
+	conflicting := proto.Clone(receipt).(*chatmodel.DeviceConsumptionReceipt)
+	conflicting.LaneSequence++
+	conflict, err := fixture.coreReceiver.Receive(
+		context.Background(),
+		fixture.deliveryReceiptFrame(t, conflicting),
+	)
+	if err != nil {
+		t.Fatalf("receive delivery receipt conflict: %v", err)
+	}
+	if conflict != federationdelivery.PayloadHashConflictResult() {
+		t.Fatalf("delivery receipt conflict = %+v", conflict)
+	}
+
+	fixture.receipt.expectedSource = testStationB
+	rejected := proto.Clone(receipt).(*chatmodel.DeviceConsumptionReceipt)
+	rejected.ReceiptId = "device-consumed:item-2"
+	rejection, err := fixture.coreReceiver.Receive(
+		context.Background(),
+		fixture.deliveryReceiptFrame(t, rejected),
+	)
+	if err != nil {
+		t.Fatalf("receive wrong-source delivery receipt: %v", err)
+	}
+	if rejection != federationdelivery.TerminalResult(
+		federationdelivery.FrameErrorDomainRejected,
+	) {
+		t.Fatalf("wrong-source delivery receipt = %+v", rejection)
+	}
+}
+
 func TestAuthorityResultReceiverUsesTransactionBoundPort(t *testing.T) {
 	fixture := newReceiverFixture(t, testStationA)
 	proposal := fixture.signedProposal(t, "command-result")
@@ -514,16 +658,17 @@ func TestAuthorityResultReceiverUsesTransactionBoundPort(t *testing.T) {
 	result := &chatmodel.ConversationCommandProposalResult{
 		CommandId: proposal.GetCommand().GetCommandId(),
 		Accepted:  true,
-		CommittedEvent: &chatmodel.CommittedConversationEvent{
-			EventId:                  "event-result",
-			ConversationId:           proposal.GetCommand().GetConversationId(),
-			GroupSeq:                 7,
-			MembershipEpoch:          3,
-			CommittedByStationPeerId: testStationB,
-			CommittedAt:              timestamppb.New(fixture.clock.Now()),
-			EventHash:                eventHash[:],
+		Event: &chatmodel.ConversationEvent{
+			EventId:                "event-result",
+			ConversationId:         proposal.GetCommand().GetConversationId(),
+			Sequence:               7,
+			CommandId:              proposal.GetCommand().GetCommandId(),
+			MembershipEpoch:        3,
+			AuthorityStationPeerId: testStationB,
+			CommittedAt:            timestamppb.New(fixture.clock.Now()),
+			EventHash:              eventHash[:],
 		},
-		AuthorityGroupSeq:  7,
+		AuthoritySequence:  7,
 		AuthorityEventHash: eventHash[:],
 	}
 	sender, err := conversationfederation.NewSender(
@@ -608,8 +753,8 @@ func TestAuthorityResultReceiverRejectsConflictBeforeBoundAcceptedResult(
 	fixture := newReceiverFixture(t, testStationA)
 	acceptedProposal := fixture.signedProposal(t, "command-result-reverse")
 	conflictingProposal := proto.Clone(acceptedProposal).(*chatmodel.ConversationCommandProposal)
-	conflictingProposal.GetCommand().GetSendMessage().ContentType =
-		chatmodel.MessageContentType_MESSAGE_CONTENT_TYPE_IMAGE
+	conflictingProposal.GetCommand().GetSendMessage().ContentKind =
+		chatmodel.MessagingContentKind_MESSAGING_CONTENT_KIND_IMAGE
 	fixture.signProposal(t, conflictingProposal)
 	fixture.persistOutgoingProposal(t, acceptedProposal)
 
@@ -661,8 +806,8 @@ func TestAuthorityResultReceiverRejectsAcceptedBeforeBoundConflictResult(
 	fixture := newReceiverFixture(t, testStationA)
 	acceptedProposal := fixture.signedProposal(t, "command-result-hash-mismatch")
 	conflictingProposal := proto.Clone(acceptedProposal).(*chatmodel.ConversationCommandProposal)
-	conflictingProposal.GetCommand().GetSendMessage().ContentType =
-		chatmodel.MessageContentType_MESSAGE_CONTENT_TYPE_IMAGE
+	conflictingProposal.GetCommand().GetSendMessage().ContentKind =
+		chatmodel.MessagingContentKind_MESSAGING_CONTENT_KIND_IMAGE
 	fixture.signProposal(t, conflictingProposal)
 	fixture.persistOutgoingProposal(t, conflictingProposal)
 
@@ -719,6 +864,7 @@ type receiverFixture struct {
 	authority    *transactionalAuthorityPort
 	result       *transactionalResultPort
 	device       *transactionalDevicePort
+	receipt      *transactionalDeliveryReceiptPort
 	coreReceiver *federationdelivery.DeliveryReceiver
 }
 
@@ -751,10 +897,12 @@ func newReceiverFixture(t *testing.T, localStation string) *receiverFixture {
 	}
 	resultPort := &transactionalResultPort{}
 	devicePort := &transactionalDevicePort{}
+	receiptPort := &transactionalDeliveryReceiptPort{}
 	if err := db.AutoMigrate(
 		&authorityReceiptTestModel{},
 		&authorityResultTestModel{},
 		&deviceApplyTestModel{},
+		&deliveryReceiptApplyTestModel{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -782,6 +930,7 @@ func newReceiverFixture(t *testing.T, localStation string) *receiverFixture {
 			AuthorityCommands:  authority,
 			AuthorityResults:   resultPort,
 			DeviceDeliveries:   devicePort,
+			DeliveryReceipts:   receiptPort,
 			Sender:             sender,
 			Clock:              clock,
 		},
@@ -814,6 +963,7 @@ func newReceiverFixture(t *testing.T, localStation string) *receiverFixture {
 		authority:    authority,
 		result:       resultPort,
 		device:       devicePort,
+		receipt:      receiptPort,
 		coreReceiver: coreReceiver,
 	}
 }
@@ -860,16 +1010,16 @@ func (f *receiverFixture) signedProposal(
 ) *chatmodel.ConversationCommandProposal {
 	t.Helper()
 	createdAt := f.clock.Now().Add(-time.Minute)
-	command := &chatmodel.ConversationCommand{
+	command := &chatmodel.ChatCommand{
 		CommandId:               commandID,
 		ConversationId:          "conversation-1",
-		SenderPtid:              testActor,
-		SenderDeviceId:          testDevice,
+		Sender:                  &chatmodel.CryptoEndpoint{Ptid: testActor, DeviceId: testDevice},
 		ObservedMembershipEpoch: 1,
-		ClientTs:                timestamppb.New(createdAt),
-		Payload: &chatmodel.ConversationCommand_SendMessage{
-			SendMessage: &chatmodel.SendMessageCommand{
-				ContentType: chatmodel.MessageContentType_MESSAGE_CONTENT_TYPE_TEXT,
+		ClientTimestamp:         timestamppb.New(createdAt),
+		AuthorityStationPeerId:  testStationB,
+		Payload: &chatmodel.ChatCommand_SendMessage{
+			SendMessage: &chatmodel.SendMessageIntent{
+				ContentKind: chatmodel.MessagingContentKind_MESSAGING_CONTENT_KIND_TEXT,
 			},
 		},
 	}
@@ -1060,6 +1210,33 @@ func (f *receiverFixture) deviceDeliveryFrame(
 	return outbox.single(t)
 }
 
+func (f *receiverFixture) deliveryReceiptFrame(
+	t *testing.T,
+	receipt *chatmodel.DeviceConsumptionReceipt,
+) *federationdelivery.Frame {
+	t.Helper()
+	sender, err := conversationfederation.NewSender(
+		testStationA,
+		f.stationKeys[testStationA].signer(),
+		f.clock,
+		24*time.Hour,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outbox := &capturingOutbox{}
+	if _, err := sender.EnqueueDeliveryReceipt(
+		context.Background(),
+		outbox,
+		testStationB,
+		receipt,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	return outbox.single(t)
+}
+
 type testClock struct {
 	mu  sync.RWMutex
 	now time.Time
@@ -1212,6 +1389,7 @@ type transactionalAuthorityPort struct {
 	clock             *testClock
 	calls             int
 	retryableAttempts int
+	sources           []string
 }
 
 func (p *transactionalAuthorityPort) ApplyAuthorityCommand(
@@ -1221,6 +1399,7 @@ func (p *transactionalAuthorityPort) ApplyAuthorityCommand(
 ) (conversationfederation.AuthorityCommandOutcome, error) {
 	p.mu.Lock()
 	p.calls++
+	p.sources = append(p.sources, command.SourceHomeStation)
 	if p.retryableAttempts > 0 {
 		p.retryableAttempts--
 		p.mu.Unlock()
@@ -1271,16 +1450,17 @@ func (p *transactionalAuthorityPort) ApplyAuthorityCommand(
 	result := &chatmodel.ConversationCommandProposalResult{
 		CommandId: command.Proposal.GetCommand().GetCommandId(),
 		Accepted:  true,
-		CommittedEvent: &chatmodel.CommittedConversationEvent{
-			EventId:                  "event-" + command.Proposal.GetCommand().GetCommandId(),
-			ConversationId:           command.Proposal.GetCommand().GetConversationId(),
-			GroupSeq:                 1,
-			MembershipEpoch:          command.Proposal.GetCommand().GetObservedMembershipEpoch(),
-			CommittedByStationPeerId: p.localStation,
-			CommittedAt:              timestamppb.New(p.clock.Now()),
-			EventHash:                eventHash[:],
+		Event: &chatmodel.ConversationEvent{
+			EventId:                "event-" + command.Proposal.GetCommand().GetCommandId(),
+			ConversationId:         command.Proposal.GetCommand().GetConversationId(),
+			Sequence:               1,
+			CommandId:              command.Proposal.GetCommand().GetCommandId(),
+			MembershipEpoch:        command.Proposal.GetCommand().GetObservedMembershipEpoch(),
+			AuthorityStationPeerId: p.localStation,
+			CommittedAt:            timestamppb.New(p.clock.Now()),
+			EventHash:              eventHash[:],
 		},
-		AuthorityGroupSeq:  1,
+		AuthoritySequence:  1,
 		AuthorityEventHash: eventHash[:],
 	}
 	resultBytes := mustMarshalWithoutTest(result)
@@ -1298,6 +1478,12 @@ func (p *transactionalAuthorityPort) callCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.calls
+}
+
+func (p *transactionalAuthorityPort) sourceHomeStations() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.sources...)
 }
 
 func (p *transactionalAuthorityPort) setRetryableAttempts(attempts int) {
@@ -1396,6 +1582,62 @@ type deviceApplyTestModel struct {
 
 func (*deviceApplyTestModel) TableName() string {
 	return "test_conversation_device_apply"
+}
+
+type deliveryReceiptApplyTestModel struct {
+	ReceiptID   string `gorm:"column:receipt_id;primaryKey"`
+	Source      string `gorm:"column:source_station;not null"`
+	PayloadHash []byte `gorm:"column:payload_hash;type:blob;not null"`
+}
+
+func (*deliveryReceiptApplyTestModel) TableName() string {
+	return "test_conversation_delivery_receipt_apply"
+}
+
+type transactionalDeliveryReceiptPort struct {
+	expectedSource string
+}
+
+func (p *transactionalDeliveryReceiptPort) ApplyDeliveryReceipt(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	receipt *chatmodel.DeviceConsumptionReceipt,
+	sourceHomeStationPeerID string,
+) (bool, error) {
+	expectedSource := p.expectedSource
+	if expectedSource == "" {
+		expectedSource = testStationA
+	}
+	if sourceHomeStationPeerID != expectedSource {
+		return false, conversationfederation.ErrDeliveryReceiptRejected
+	}
+	payload := mustMarshalWithoutTest(receipt)
+	payloadHash := federationdelivery.PayloadSHA256(payload)
+	var existing deliveryReceiptApplyTestModel
+	err := transaction.DB().WithContext(ctx).
+		Where("receipt_id = ?", receipt.GetReceiptId()).
+		First(&existing).Error
+	if err == nil {
+		if existing.Source != sourceHomeStationPeerID ||
+			!bytes.Equal(existing.PayloadHash, payloadHash) {
+			return false, conversationfederation.ErrDeliveryReceiptConflict
+		}
+
+		return true, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, err
+	}
+	if err := transaction.DB().WithContext(ctx).
+		Create(&deliveryReceiptApplyTestModel{
+			ReceiptID:   receipt.GetReceiptId(),
+			Source:      sourceHomeStationPeerID,
+			PayloadHash: payloadHash,
+		}).Error; err != nil {
+		return false, err
+	}
+
+	return false, nil
 }
 
 type transactionalDevicePort struct {
@@ -1500,16 +1742,17 @@ func acceptedCommandResult(
 	return &chatmodel.ConversationCommandProposalResult{
 		CommandId: proposal.GetCommand().GetCommandId(),
 		Accepted:  true,
-		CommittedEvent: &chatmodel.CommittedConversationEvent{
-			EventId:                  "event-" + hex.EncodeToString(eventHash[:8]),
-			ConversationId:           proposal.GetCommand().GetConversationId(),
-			GroupSeq:                 7,
-			MembershipEpoch:          3,
-			CommittedByStationPeerId: authorityStationPeerID,
-			CommittedAt:              timestamppb.New(committedAt),
-			EventHash:                eventHash[:],
+		Event: &chatmodel.ConversationEvent{
+			EventId:                "event-" + hex.EncodeToString(eventHash[:8]),
+			ConversationId:         proposal.GetCommand().GetConversationId(),
+			Sequence:               7,
+			CommandId:              proposal.GetCommand().GetCommandId(),
+			MembershipEpoch:        3,
+			AuthorityStationPeerId: authorityStationPeerID,
+			CommittedAt:            timestamppb.New(committedAt),
+			EventHash:              eventHash[:],
 		},
-		AuthorityGroupSeq:  7,
+		AuthoritySequence:  7,
 		AuthorityEventHash: eventHash[:],
 	}
 }
@@ -1533,12 +1776,12 @@ func newDeviceDeliveryIntent(
 	endpointPayloadHash := sha256.Sum256(endpointPayload)
 	eventDelivery := &chatmodel.DeviceEventDelivery{
 		Event: &chatmodel.ConversationEvent{
-			EventId:            "event-device",
-			ConversationId:     "conversation-device",
-			Sequence:           4,
-			EventHash:          eventHash[:],
-			CommittedAt:        timestamppb.New(now),
-			AuthorityStationId: testStationB,
+			EventId:                "event-device",
+			ConversationId:         "conversation-device",
+			Sequence:               4,
+			EventHash:              eventHash[:],
+			CommittedAt:            timestamppb.New(now),
+			AuthorityStationPeerId: testStationB,
 		},
 		Recipient: &chatmodel.CryptoEndpoint{
 			Ptid:     testActor,
@@ -1605,6 +1848,40 @@ func newDeviceReceiptIntent(
 	}
 }
 
+func newMessageReceiptIntent(
+	t *testing.T,
+	now time.Time,
+) conversationports.FederationOutboxIntent {
+	t.Helper()
+	receipt := &chatmodel.MessageReceipt{
+		ConversationId: "conversation-1",
+		MessageId:      "message-4",
+		Ptid:           "ptid:p:bob",
+		DeviceId:       "bob-device",
+		ReceiptType:    chatmodel.ReceiptType_RECEIPT_TYPE_DELIVERED,
+		Ts:             timestamppb.New(now),
+	}
+	payload := mustMarshal(t, receipt)
+	return conversationports.FederationOutboxIntent{
+		IntentID:       valueobject.HashBytes([]byte("message-receipt-item")).String(),
+		ConversationID: "conversation-1",
+		EventID:        "message-4",
+		EventSequence:  4,
+		Recipient: valueobject.Endpoint{
+			Actor:  testActor,
+			Device: testDevice,
+		},
+		TargetStation: testStationA,
+		IdempotencyKey: valueobject.HashBytes(
+			[]byte("message-receipt-idempotency"),
+		).String(),
+		PayloadKind:   conversationports.DeviceInboxPayloadDeviceReceipt,
+		OpaquePayload: payload,
+		PayloadHash:   valueobject.HashBytes(payload),
+		CreatedAt:     now,
+	}
+}
+
 func openSQLite(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(
@@ -1666,4 +1943,5 @@ var (
 	_ conversationfederation.AuthorityCommandPort           = (*transactionalAuthorityPort)(nil)
 	_ conversationfederation.AuthorityResultPort            = (*transactionalResultPort)(nil)
 	_ conversationfederation.DeviceDeliveryPort             = (*transactionalDevicePort)(nil)
+	_ conversationfederation.DeliveryReceiptPort            = (*transactionalDeliveryReceiptPort)(nil)
 )

@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.wintypes
+import json
 import struct
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -136,6 +138,20 @@ class _INPUT(ctypes.Structure):
     _fields_ = [
         ("type", ctypes.wintypes.DWORD),
         ("union", _INPUT_UNION),
+    ]
+
+
+class _GUITHREADINFO(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", ctypes.wintypes.DWORD),
+        ("flags", ctypes.wintypes.DWORD),
+        ("hwndActive", ctypes.wintypes.HWND),
+        ("hwndFocus", ctypes.wintypes.HWND),
+        ("hwndCapture", ctypes.wintypes.HWND),
+        ("hwndMenuOwner", ctypes.wintypes.HWND),
+        ("hwndMoveSize", ctypes.wintypes.HWND),
+        ("hwndCaret", ctypes.wintypes.HWND),
+        ("rcCaret", ctypes.wintypes.RECT),
     ]
 
 
@@ -275,6 +291,19 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
         return int(pid.value)
 
     @staticmethod
+    def _focused_window_for_gui_thread(
+        hwnd: ctypes.wintypes.HWND,
+    ) -> ctypes.wintypes.HWND | int:
+        thread_id = _user32.GetWindowThreadProcessId(hwnd, None)
+        if not thread_id:
+            return 0
+        info = _GUITHREADINFO()
+        info.cbSize = ctypes.sizeof(_GUITHREADINFO)
+        if not _user32.GetGUIThreadInfo(thread_id, ctypes.byref(info)):
+            return 0
+        return info.hwndFocus or info.hwndActive or 0
+
+    @staticmethod
     def _window_text(hwnd: ctypes.wintypes.HWND) -> str:
         length = _user32.GetWindowTextLengthW(hwnd)
         if length <= 0:
@@ -316,6 +345,19 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
             if self._window_process_id(hwnd) == process_id
         ]
 
+    def _file_chooser_window(
+        self,
+        process_id: int,
+    ) -> ctypes.wintypes.HWND | None:
+        return next(
+            (
+                hwnd
+                for hwnd in self._find_windows_by_pid(process_id)
+                if self._window_class_name(hwnd) == "#32770"
+            ),
+            None,
+        )
+
     @staticmethod
     def _process_name(process_id: int) -> str:
         """Return the executable name for *process_id*, or empty string."""
@@ -347,23 +389,66 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
             raise DriverError(
                 f"Win32 Native actor process {process_id} has no visible window"
             )
-        # Use the last (topmost) window owned by the process
-        hwnd = windows[-1]
+        # EnumWindows returns top-level windows in top-to-bottom z-order.
+        hwnd = windows[0]
+        foreground = _user32.GetForegroundWindow()
+        if foreground and self._window_process_id(foreground) == process_id:
+            return
         if self._is_window_minimized(hwnd):
             _user32.ShowWindow(hwnd, _SW_RESTORE)
-        # AllowSetForegroundWindow for the current process
-        _user32.AllowSetForegroundWindow(process_id)
-        if not _user32.SetForegroundWindow(hwnd):
-            # Fallback: use an Alt-key trick to unlock foreground permission
-            _send_inputs(
-                _make_key_input(0xA4, 0),  # VK_LMENU press
-                _make_key_input(0xA4, _KEYEVENTF_KEYUP),
-            )
+        self._activate_window(hwnd, process_id)
+
+    def _activate_window(
+        self,
+        hwnd: ctypes.wintypes.HWND,
+        process_id: int,
+    ) -> None:
+        foreground = _user32.GetForegroundWindow()
+        if foreground == hwnd:
+            return
+        current_thread = _kernel32.GetCurrentThreadId()
+        target_thread = _user32.GetWindowThreadProcessId(hwnd, None)
+        foreground_thread = (
+            _user32.GetWindowThreadProcessId(foreground, None)
+            if foreground
+            else 0
+        )
+        attached_threads: list[int] = []
+        try:
+            for thread_id in {target_thread, foreground_thread}:
+                if (
+                    thread_id
+                    and thread_id != current_thread
+                    and _user32.AttachThreadInput(
+                        current_thread,
+                        thread_id,
+                        True,
+                    )
+                ):
+                    attached_threads.append(thread_id)
+            _user32.AllowSetForegroundWindow(process_id)
+            _user32.BringWindowToTop(hwnd)
+            _user32.SetActiveWindow(hwnd)
+            _user32.SetFocus(hwnd)
             if not _user32.SetForegroundWindow(hwnd):
-                raise DriverError(
-                    f"Win32 Native activation failed for process {process_id}"
+                _send_inputs(
+                    _make_key_input(0xA4, 0),  # VK_LMENU press
+                    _make_key_input(0xA4, _KEYEVENTF_KEYUP),
                 )
-        _user32.BringWindowToTop(hwnd)
+                _user32.SetForegroundWindow(hwnd)
+        finally:
+            for thread_id in reversed(attached_threads):
+                _user32.AttachThreadInput(
+                    current_thread,
+                    thread_id,
+                    False,
+                )
+        foreground = _user32.GetForegroundWindow()
+        if foreground != hwnd:
+            raise DriverError(
+                "Win32 Native activation failed for process "
+                f"{process_id} window {hwnd!r}"
+            )
 
     def post_mouse(
         self,
@@ -432,19 +517,78 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
         """
         self.post_key(NativeKey.L, modifiers=(NativeModifier.PRIMARY,))
 
+    def reveal_file_chooser_location_to_process(
+        self,
+        process_id: int,
+    ) -> NativeControlSnapshot:
+        process_id = _validated_process_id(process_id)
+        deadline = time.monotonic() + _FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS
+        dialog_hwnd = self._file_chooser_window(process_id)
+        while not dialog_hwnd:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise DriverError(
+                    "Win32 Native file chooser window is not visible "
+                    f"for process {process_id}"
+                )
+            time.sleep(
+                min(
+                    _FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS
+                    / _FILE_CHOOSER_FOCUS_STEPS,
+                    remaining,
+                )
+            )
+            dialog_hwnd = self._file_chooser_window(process_id)
+
+        self._activate_window(dialog_hwnd, process_id)
+        self.reveal_file_chooser_location()
+
+        last_control = self.focused_control(process_id)
+        for _ in range(_FILE_CHOOSER_FOCUS_STEPS):
+            if last_control.kind == "text-field":
+                return last_control
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(
+                min(
+                    _FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS
+                    / _FILE_CHOOSER_FOCUS_STEPS,
+                    remaining,
+                )
+            )
+            last_control = self.focused_control(process_id)
+
+        raise DriverError(
+            "Win32 Native file chooser did not expose its location field: "
+            f"{last_control.to_dict()}"
+        )
+
     def focused_control(self, process_id: int) -> NativeControlSnapshot:
         process_id = _validated_process_id(process_id)
         try:
             windows = self._find_windows_by_pid(process_id)
             foreground_hwnd = _user32.GetForegroundWindow()
-            foreground_pid = self._window_process_id(foreground_hwnd) if foreground_hwnd else -1
-            focused_hwnd = _user32.GetFocus()
-            focused_pid = self._window_process_id(focused_hwnd) if focused_hwnd else -1
+            foreground_pid = (
+                self._window_process_id(foreground_hwnd)
+                if foreground_hwnd
+                else -1
+            )
+            focused_hwnd = (
+                self._focused_window_for_gui_thread(foreground_hwnd)
+                if foreground_hwnd
+                else 0
+            )
+            focused_pid = (
+                self._window_process_id(focused_hwnd)
+                if focused_hwnd
+                else -1
+            )
 
             dialog_count = sum(
                 1
                 for hwnd in windows
-                if _user32.GetWindow(hwnd, _GW_OWNER) != 0
+                if self._window_class_name(hwnd) == "#32770"
             )
             actor_frontmost = foreground_pid == process_id
             actor_focused = focused_pid == process_id or actor_frontmost
@@ -455,8 +599,7 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
             value = ""
             platform_role = ""
             if actor_frontmost and foreground_hwnd:
-                # Walk focused child
-                child = _user32.GetFocus()
+                child = focused_hwnd
                 if child:
                     cls = self._window_class_name(child)
                     platform_role = cls
@@ -465,8 +608,133 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
                     elif "listbox" in cls.lower() or "syslistview" in cls.lower():
                         kind = "list"
                     title = self._window_text(child)
-                if dialog_count > 0:
+                    if kind == "text-field":
+                        value = title
+                if kind == "application" and dialog_count > 0:
                     kind = "application-dialog"
+
+            # #region debug-point AI-AJ:file-dialog-focus
+            try:
+                foreground_thread_id = (
+                    _user32.GetWindowThreadProcessId(foreground_hwnd, None)
+                    if foreground_hwnd
+                    else 0
+                )
+                gui_info = _GUITHREADINFO()
+                gui_info.cbSize = ctypes.sizeof(_GUITHREADINFO)
+                ctypes.set_last_error(0)
+                gui_info_ok = bool(
+                    foreground_thread_id
+                    and _user32.GetGUIThreadInfo(
+                        foreground_thread_id,
+                        ctypes.byref(gui_info),
+                    )
+                )
+                gui_info_error = ctypes.get_last_error()
+
+                def debug_handle(hwnd: ctypes.wintypes.HWND | int) -> int:
+                    return int(getattr(hwnd, "value", hwnd) or 0)
+
+                focused_ancestors: list[dict[str, object]] = []
+                ancestor = focused_hwnd
+                seen_ancestors: set[int] = set()
+                for _ in range(8):
+                    ancestor_value = debug_handle(ancestor)
+                    if not ancestor_value or ancestor_value in seen_ancestors:
+                        break
+                    seen_ancestors.add(ancestor_value)
+                    focused_ancestors.append(
+                        {
+                            "hwnd": ancestor_value,
+                            "class": self._window_class_name(ancestor),
+                            "processId": self._window_process_id(ancestor),
+                        }
+                    )
+                    ancestor = _user32.GetParent(ancestor)
+
+                child_classes: set[str] = set()
+
+                @_ENUM_WINDOWS_PROC
+                def collect_child_classes(
+                    child_hwnd: ctypes.wintypes.HWND,
+                    _lparam: ctypes.wintypes.LPARAM,
+                ) -> bool:
+                    child_class = self._window_class_name(child_hwnd)
+                    if child_class:
+                        child_classes.add(child_class)
+                    return True
+
+                if foreground_hwnd:
+                    _user32.EnumChildWindows(
+                        foreground_hwnd,
+                        collect_child_classes,
+                        0,
+                    )
+
+                foreground_class = (
+                    self._window_class_name(foreground_hwnd)
+                    if foreground_hwnd
+                    else ""
+                )
+                actor_windows = [
+                    {
+                        "hwnd": debug_handle(hwnd),
+                        "class": self._window_class_name(hwnd),
+                        "owner": debug_handle(_user32.GetWindow(hwnd, _GW_OWNER)),
+                    }
+                    for hwnd in windows
+                ]
+                dialog_visible = (
+                    dialog_count > 0
+                    or foreground_class == "#32770"
+                    or any(
+                        item["class"] == "#32770"
+                        for item in actor_windows
+                    )
+                )
+                if dialog_visible:
+                    event = {
+                        "sessionId": "cross-station-direct-open",
+                        "runId": "post-fix-dialog",
+                        "hypothesisId": "AI-AJ",
+                        "location": "windows.py:focused_control",
+                        "msg": "[DEBUG] Win32 file-dialog focus hierarchy",
+                        "data": {
+                            "requestedProcessId": process_id,
+                            "foregroundHwnd": debug_handle(foreground_hwnd),
+                            "foregroundProcessId": foreground_pid,
+                            "foregroundThreadId": foreground_thread_id,
+                            "foregroundClass": foreground_class,
+                            "guiThreadInfoOk": gui_info_ok,
+                            "guiThreadInfoError": gui_info_error,
+                            "guiActiveHwnd": debug_handle(
+                                gui_info.hwndActive
+                            ),
+                            "guiFocusHwnd": debug_handle(gui_info.hwndFocus),
+                            "guiCaretHwnd": debug_handle(gui_info.hwndCaret),
+                            "resolvedFocusHwnd": debug_handle(focused_hwnd),
+                            "resolvedFocusProcessId": focused_pid,
+                            "resolvedFocusClass": platform_role,
+                            "resolvedKind": kind,
+                            "resolvedValueLength": len(value),
+                            "actorFrontmost": actor_frontmost,
+                            "actorFocused": actor_focused,
+                            "dialogCount": dialog_count,
+                            "actorWindows": actor_windows,
+                            "focusedAncestors": focused_ancestors,
+                            "childClasses": sorted(child_classes),
+                        },
+                    }
+                    request = urllib.request.Request(
+                        "http://127.0.0.1:7777/event",
+                        data=json.dumps(event).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    urllib.request.urlopen(request, timeout=0.25).close()
+            except Exception:
+                pass
+            # #endregion
 
             return NativeControlSnapshot(
                 kind=kind,
@@ -526,7 +794,7 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
         windows = self._find_windows_by_pid(process_id)
         if not windows:
             return None
-        hwnd = windows[-1]
+        hwnd = windows[0]
         # ClientToScreen gives the client area origin relative to the screen
         point = ctypes.wintypes.POINT(0, 0)
         _user32.ClientToScreen(hwnd, ctypes.byref(point))

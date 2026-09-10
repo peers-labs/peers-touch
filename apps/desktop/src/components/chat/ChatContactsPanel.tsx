@@ -94,7 +94,7 @@ export function ChatContactsPanel({
         const peerId = isSender ? r.receiverPtid : r.senderPtid;
         const peerName = isSender ? r.receiverDisplayName : r.senderDisplayName;
         const peerAvatar = isSender ? r.receiverAvatar : r.senderAvatar;
-        return { peerId, peerName, peerAvatar };
+        return { peerId, peerName, peerAvatar, federationId: r.federationId };
       })
       .filter(({ peerId }) => !existingPeerIds.has(peerId));
   })();
@@ -113,6 +113,7 @@ export function ChatContactsPanel({
           peerPtid: outgoing ? request.receiverPtid : request.senderPtid,
           peerName: outgoing ? request.receiverDisplayName : request.senderDisplayName,
           peerAvatar: outgoing ? request.receiverAvatar : request.senderAvatar,
+          federationId: request.federationId,
         };
       })
       .sort((left, right) => {
@@ -169,11 +170,13 @@ export function ChatContactsPanel({
 
   const selectAcceptedActor = (
     peerPtid: string,
+    federationId: string,
     displayName: string,
     avatar?: string,
   ) => {
     const selection = friendContactSelection(
       peerPtid,
+      federationId,
       displayName,
       avatar,
       friendConversations,
@@ -189,7 +192,14 @@ export function ChatContactsPanel({
     />
   ) : (
     <Flexbox gap={8}>
-      {unifiedRequests.map(({ request, direction, peerPtid, peerName, peerAvatar }) => {
+      {unifiedRequests.map(({
+        request,
+        direction,
+        peerPtid,
+        peerName,
+        peerAvatar,
+        federationId,
+      }) => {
         const cachedProfile = peerProfiles[peerPtid];
         const peerLabel = cachedProfile?.display_name?.trim()
           || cachedProfile?.username?.trim()
@@ -210,13 +220,13 @@ export function ChatContactsPanel({
             role={isAccepted ? 'button' : undefined}
             tabIndex={isAccepted ? 0 : undefined}
             onClick={isAccepted
-              ? () => selectAcceptedActor(peerPtid, peerLabel, resolvedAvatar)
+              ? () => selectAcceptedActor(peerPtid, federationId, peerLabel, resolvedAvatar)
               : undefined}
             onKeyDown={isAccepted
               ? (event) => {
                   if (event.key !== 'Enter' && event.key !== ' ') return;
                   event.preventDefault();
-                  selectAcceptedActor(peerPtid, peerLabel, resolvedAvatar);
+                  selectAcceptedActor(peerPtid, federationId, peerLabel, resolvedAvatar);
                 }
               : undefined}
             style={{
@@ -265,7 +275,7 @@ export function ChatContactsPanel({
                     onClick={async () => {
                       setBusyAction({ id: request.id, kind: 'accept' });
                       try {
-                        await acceptFriendRequest(request.id);
+                        await acceptFriendRequest(request);
                       } catch (error) {
                         log.error('contacts', 'acceptFriendRequest failed', error);
                       } finally {
@@ -282,7 +292,7 @@ export function ChatContactsPanel({
                     onClick={async () => {
                       setBusyAction({ id: request.id, kind: 'reject' });
                       try {
-                        await rejectFriendRequest(request.id);
+                        await rejectFriendRequest(request);
                       } catch (error) {
                         log.error('contacts', 'rejectFriendRequest failed', error);
                       } finally {
@@ -431,6 +441,7 @@ export function ChatContactsPanel({
                       kind: 'friend',
                       conversationId: conversation.id,
                       peerPtid: conversation.peerPtid || '',
+                      federationId: conversation.federationId || '',
                       displayName: label,
                       avatar: conversation.avatar,
                     });
@@ -440,6 +451,7 @@ export function ChatContactsPanel({
                       kind: 'friend',
                       conversationId: conversation.id,
                       peerPtid: conversation.peerPtid || '',
+                      federationId: conversation.federationId || '',
                       displayName: label,
                       avatar: conversation.avatar,
                     });
@@ -471,7 +483,7 @@ export function ChatContactsPanel({
                 </Flexbox>
               );
             })}
-            {acceptedContacts.map(({ peerId, peerName, peerAvatar }) => {
+            {acceptedContacts.map(({ peerId, peerName, peerAvatar, federationId }) => {
               const cachedProfile = peerProfiles[peerId];
               const label = cachedProfile?.display_name?.trim()
                 || cachedProfile?.username?.trim()
@@ -491,6 +503,7 @@ export function ChatContactsPanel({
                   onClick={() => onSelectContact({
                     kind: 'friend',
                     peerPtid: peerId,
+                    federationId,
                     displayName: label,
                     avatar,
                   })}

@@ -4,8 +4,8 @@ use crate::proto::chat::{
     MessagingMembershipAction, MessagingMembershipChangeIntent, PrepareConversationGroupResponse,
     PreparedEndpointPayload, PreparedEndpointPayloadKind,
 };
-use crate::proto::crypto_endpoint_from_actor_device_ref;
 use crate::proto::key_exchange::MlsKeyPackageReservation;
+use crate::proto::{actor_device_ptid, chat_endpoint};
 use crate::store::{MlsTransitionRepository, MlsTransitionSendCommit};
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -51,15 +51,13 @@ impl<R: MlsTransitionRepository> GroupGenesisPreparer<R> {
             return Err("messaging group genesis plan is invalid".to_string());
         }
 
-        let prospective_endpoints = plan
+        let expected_members = plan
             .prospective_endpoints
             .iter()
-            .map(crypto_endpoint_from_actor_device_ref)
-            .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| "messaging group genesis plan has incomplete endpoint".to_string())?;
-        let expected_members = prospective_endpoints
-            .iter()
-            .filter(|endpoint| **endpoint != self.endpoint)
+            .filter(|endpoint| {
+                actor_device_ptid(endpoint).ok() != Some(self.endpoint.ptid.as_str())
+                    || endpoint.device_id != self.endpoint.device_id
+            })
             .cloned()
             .collect::<Vec<_>>();
         let member_key_packages = validated_key_packages(&plan.reserved_key_packages)?;
@@ -69,7 +67,9 @@ impl<R: MlsTransitionRepository> GroupGenesisPreparer<R> {
             .collect::<HashSet<_>>();
         if expected_members.len() != member_key_packages.len()
             || expected_members.iter().any(|endpoint| {
-                !package_endpoints.contains(&(endpoint.ptid.as_str(), endpoint.device_id.as_str()))
+                actor_device_ptid(endpoint)
+                    .map(|ptid| !package_endpoints.contains(&(ptid, endpoint.device_id.as_str())))
+                    .unwrap_or(true)
             })
         {
             return Err("messaging group genesis KeyPackage set mismatch".to_string());
@@ -80,37 +80,40 @@ impl<R: MlsTransitionRepository> GroupGenesisPreparer<R> {
             .create_group(conversation_id, &member_key_packages)?;
         let command_id = Ulid::new().to_string();
         let mut seen_actors = HashSet::new();
-        let changes = prospective_endpoints
+        let changes = plan
+            .prospective_endpoints
             .iter()
             .map(|endpoint| {
-                let first_device = seen_actors.insert(endpoint.ptid.clone());
-                MessagingMembershipChangeIntent {
+                let ptid = actor_device_ptid(endpoint)?;
+                let first_device = seen_actors.insert(ptid.to_string());
+                Ok(MessagingMembershipChangeIntent {
                     action: if first_device {
                         MessagingMembershipAction::AddActor as i32
                     } else {
                         MessagingMembershipAction::AddDevice as i32
                     },
-                    ptid: endpoint.ptid.clone(),
+                    ptid: ptid.to_string(),
                     device_id: endpoint.device_id.clone(),
-                    home_station_id: String::new(),
-                    role: if endpoint.ptid == self.endpoint.ptid {
+                    role: if ptid == self.endpoint.ptid {
                         "owner".to_string()
                     } else {
                         "member".to_string()
                     },
-                }
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, String>>()?;
         let welcome_hash = Sha256::digest(&prepared.welcome_bytes).to_vec();
         let welcome_payloads = expected_members
             .iter()
-            .map(|endpoint| PreparedEndpointPayload {
-                recipient: Some(endpoint.clone()),
-                kind: PreparedEndpointPayloadKind::MlsWelcome as i32,
-                opaque_payload: prepared.welcome_bytes.clone(),
-                payload_sha256: welcome_hash.clone(),
+            .map(|endpoint| {
+                Ok(PreparedEndpointPayload {
+                    recipient: Some(chat_endpoint(endpoint)?),
+                    kind: PreparedEndpointPayloadKind::MlsWelcome as i32,
+                    opaque_payload: prepared.welcome_bytes.clone(),
+                    payload_sha256: welcome_hash.clone(),
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, String>>()?;
         let command = ChatCommand {
             command_id: command_id.clone(),
             conversation_id: conversation_id.to_string(),
@@ -122,7 +125,7 @@ impl<R: MlsTransitionRepository> GroupGenesisPreparer<R> {
                 nanos: (created_at_unix_ms.rem_euclid(1_000) * 1_000_000) as i32,
             }),
             delivery_plan_sha256: plan.authority_plan_sha256.clone(),
-            authority_station_id: plan.authority_station_peer_id.clone(),
+            authority_station_peer_id: plan.authority_station_peer_id.clone(),
             payload: Some(chat_command::Payload::MembershipTransition(
                 MembershipTransitionIntent {
                     transition_id: prepared.transition_id.clone(),
@@ -167,7 +170,6 @@ fn validated_key_packages(
             let target = reserved
                 .target
                 .as_ref()
-                .and_then(crypto_endpoint_from_actor_device_ref)
                 .ok_or_else(|| "messaging reserved KeyPackage has no target".to_string())?;
             let hash = Sha256::digest(&reserved.key_package);
             if reserved.package_id.trim().is_empty()
@@ -177,7 +179,7 @@ fn validated_key_packages(
                 return Err("messaging reserved KeyPackage is invalid".to_string());
             }
             Ok(MlsMemberKeyPackage {
-                ptid: target.ptid.clone(),
+                ptid: actor_device_ptid(target)?.to_string(),
                 device_id: target.device_id.clone(),
                 key_package: reserved.key_package.clone(),
             })
@@ -189,6 +191,7 @@ fn validated_key_packages(
 mod tests {
     use super::*;
     use crate::mls::test_support::TestTransitionRepository;
+    use crate::proto::actor_device_ref;
 
     #[test]
     fn genesis_persists_exact_command_and_pending_openmls_state() {
@@ -209,14 +212,11 @@ mod tests {
             }),
             authority_station_peer_id: "station-local".to_string(),
             prospective_endpoints: vec![
-                crate::proto::actor_device_ref_from_parts("ptid:alice", "alice-device"),
-                crate::proto::actor_device_ref_from_parts("ptid:bob", "bob-device"),
+                actor_device_ref("ptid:alice", "alice-device"),
+                actor_device_ref("ptid:bob", "bob-device"),
             ],
             reserved_key_packages: vec![MlsKeyPackageReservation {
-                target: Some(crate::proto::actor_device_ref_from_parts(
-                    "ptid:bob",
-                    "bob-device",
-                )),
+                target: Some(actor_device_ref("ptid:bob", "bob-device")),
                 package_id: "package-1".to_string(),
                 key_package_sha256: Sha256::digest(&bob_key_package).to_vec(),
                 key_package: bob_key_package,
@@ -228,10 +228,7 @@ mod tests {
         let command = GroupGenesisPreparer::new(
             store.clone(),
             alice,
-            CryptoEndpoint {
-                ptid: "ptid:alice".to_string(),
-                device_id: "alice-device".to_string(),
-            },
+            chat_endpoint(&plan.prospective_endpoints[0]).unwrap(),
         )
         .unwrap()
         .prepare(&plan, "group-1", 100)
@@ -246,10 +243,7 @@ mod tests {
         assert_eq!(transition.welcome_payloads.len(), 1);
         assert_eq!(
             transition.welcome_payloads[0].recipient,
-            Some(CryptoEndpoint {
-                ptid: "ptid:bob".to_string(),
-                device_id: "bob-device".to_string(),
-            })
+            Some(chat_endpoint(&plan.prospective_endpoints[1]).unwrap())
         );
         let persisted = store.transition().unwrap();
         assert_eq!(persisted.logical_intent_id, None);

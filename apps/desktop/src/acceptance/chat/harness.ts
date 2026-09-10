@@ -10,6 +10,7 @@ import { messageGroupSeq } from '../../store/socialProjection';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import { registerAcceptanceHarness } from '../registry';
 import { requireCanonicalAcceptancePtid } from './identity';
+import { nativeAcceptanceBridge } from './nativeBridge';
 
 interface LoginInput {
   account: string;
@@ -24,6 +25,7 @@ interface SyncFriendInput {
 
 interface CreateGroupInput {
   name: string;
+  federationId: string;
   description?: string;
   memberPtids?: string[];
   initialFederatedMembers?: GroupChatFederatedActorInput[];
@@ -244,6 +246,36 @@ async function hydrateSocialForActiveActor(): Promise<void> {
 export function installAcceptanceHarness(): void {
   (window as any).__PT_ACCEPTANCE_STORE__ = useSocialChatStore;
   registerAcceptanceHarness('chat', {
+    logout: (input: { actorPtid: string }) =>
+      nativeAcceptanceBridge.logout(input),
+
+    engineInteractionSnapshot: (input: {
+      actorPtid: string;
+      conversationId: string;
+      messageId: string;
+      commandId?: string;
+    }) => nativeAcceptanceBridge.engineInteractionSnapshot(input),
+
+    engineMessages: (input: {
+      actorPtid: string;
+      conversationId: string;
+    }) => nativeAcceptanceBridge.engineMessages(input),
+
+    engineConversations: (input: { actorPtid: string }) =>
+      nativeAcceptanceBridge.engineConversations(input),
+
+    conversationMemberSettings: (input: {
+      actorPtid: string;
+      conversationId: string;
+    }) => nativeAcceptanceBridge.conversationMemberSettings(input),
+
+    openAttachment: (input: {
+      actorPtid: string;
+      attachmentId: string;
+    }) => nativeAcceptanceBridge.openAttachment(input),
+
+    identityState: () => nativeAcceptanceBridge.identityState(),
+
     async loginWithPassword({ account, password }: LoginInput) {
       await waitForIdentityState(
         ({ phase, lifecycle }) => phase.kind === 'accountGate' && lifecycle.dataReady,
@@ -264,18 +296,30 @@ export function installAcceptanceHarness(): void {
       };
     },
 
-    async createDirectConversation({ peerPtid }: { peerPtid: string }) {
-      const conversation = await imServiceV1.messaging.createDirect(peerPtid);
+    async hydrateActiveActor() {
+      await hydrateSocialForActiveActor();
+      return {
+        actorPtid: activeActorPtid(),
+      };
+    },
+
+    async createDirectConversation({
+      peerPtid,
+      federationId,
+    }: {
+      peerPtid: string;
+      federationId: string;
+    }) {
+      const conversation = await imServiceV1.messaging.createDirect({
+        peerPtid,
+        federationId,
+      });
       await useSocialChatStore.getState().loadSessions();
       return { conversationId: conversation.conversationId };
     },
 
     async syncFriendSession({ sessionUlid, limit: _limit = 50, maxPages: _maxPages = 1 }: SyncFriendInput) {
-      const social = useSocialChatStore.getState();
-      await imServiceV1.conversation.syncFromStation(sessionUlid, _limit);
-      await social.loadMessages(sessionUlid, 'friend');
-      social.selectSession(sessionUlid);
-      social.setActiveTab('friend');
+      await refreshConversation('friend', sessionUlid);
       const messages = useSocialChatStore.getState().getIMMessages('friend', sessionUlid);
       return {
         sessionUlid,
@@ -285,9 +329,20 @@ export function installAcceptanceHarness(): void {
       };
     },
 
-    async createGroup({ name, description: _description, memberPtids = [], initialFederatedMembers: _initialFederatedMembers = [] }: CreateGroupInput) {
+    async createGroup({
+      name,
+      federationId,
+      description: _description,
+      memberPtids = [],
+      initialFederatedMembers: _initialFederatedMembers = [],
+    }: CreateGroupInput) {
       const conversationId = crypto.randomUUID().replace(/-/g, '').slice(0, 26);
-      const result = await imServiceV1.messaging.createGroup(conversationId, name || 'Acceptance Group', memberPtids);
+      const result = await imServiceV1.messaging.createGroup(
+        conversationId,
+        name || 'Acceptance Group',
+        memberPtids,
+        federationId,
+      );
       const groupUlid = result.conversationId || conversationId;
       const social = useSocialChatStore.getState();
       await social.loadGroups();
@@ -689,15 +744,15 @@ export function installAcceptanceHarness(): void {
     },
 
     async getRealtimeDevice() {
-      const device = await api.accountGetDeviceId();
+      const device = await api.messagingAcceptanceCurrentEndpoint(activeActorPtid());
       return {
-        actorPtid: activeActorPtid(),
+        actorPtid: String(device?.actor_ptid ?? ''),
         deviceId: String(device?.device_id ?? ''),
       };
     },
 
     async revokeCurrentDevice() {
-      const device = await api.accountGetDeviceId();
+      const device = await api.messagingAcceptanceCurrentEndpoint(activeActorPtid());
       const deviceId = String(device?.device_id ?? '');
       if (!deviceId) {
         throw new Error('No active device is available for revocation');

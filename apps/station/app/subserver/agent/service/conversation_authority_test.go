@@ -44,7 +44,7 @@ func TestConversationTurnEventReplayAndSnapshot(t *testing.T) {
 	conversation := persistence.Conversation{
 		ID:        "conversation-events",
 		AgentID:   "agent-1",
-		Ptid:      owner,
+		ActorPTID: owner,
 		Title:     "Events",
 		Status:    "active",
 		Version:   1,
@@ -126,7 +126,7 @@ func TestTurnEventReplayFencesReopenedTurnToCurrentAttempt(t *testing.T) {
 	owner := "ptid:person:owner"
 	now := time.Now().UTC()
 	conversation := persistence.Conversation{
-		ID: "conversation-retry", AgentID: "agent-1", Ptid: owner,
+		ID: "conversation-retry", AgentID: "agent-1", ActorPTID: owner,
 		Title: "Retry", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}
 	turn := persistence.AgentTurn{
@@ -210,7 +210,7 @@ func TestTurnTextEventAndAssistantProjectionCommitAtomically(t *testing.T) {
 	service := NewConversationService()
 	now := time.Now().UTC()
 	conversation := persistence.Conversation{
-		ID: "conversation-text", AgentID: "agent-1", Ptid: "ptid:person:owner",
+		ID: "conversation-text", AgentID: "agent-1", ActorPTID: "ptid:person:owner",
 		Title: "Text projection", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}
 	turn := persistence.AgentTurn{
@@ -387,7 +387,7 @@ func TestTurnEventSubscriptionKeepsOneAttemptFenceAcrossRetry(t *testing.T) {
 	service := NewConversationService()
 	now := time.Now().UTC()
 	conversation := persistence.Conversation{
-		ID: "conversation-fenced-retry", AgentID: "agent-1", Ptid: "ptid:person:owner",
+		ID: "conversation-fenced-retry", AgentID: "agent-1", ActorPTID: "ptid:person:owner",
 		Title: "Fenced retry", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}
 	turn := persistence.AgentTurn{
@@ -430,7 +430,7 @@ func TestTurnEventSubscriptionKeepsOneAttemptFenceAcrossRetry(t *testing.T) {
 
 	_, boundary, fence, unsubscribe, err := service.SubscribeTurnEvents(
 		ctx,
-		conversation.Ptid,
+		conversation.ActorPTID,
 		conversation.ID,
 		turn.ID,
 	)
@@ -468,7 +468,7 @@ func TestTurnEventSubscriptionKeepsOneAttemptFenceAcrossRetry(t *testing.T) {
 
 	replayed, err := service.ReplayTurnEventsThroughFence(
 		ctx,
-		conversation.Ptid,
+		conversation.ActorPTID,
 		conversation.ID,
 		turn.ID,
 		0,
@@ -486,7 +486,7 @@ func TestTurnEventSubscriptionKeepsOneAttemptFenceAcrossRetry(t *testing.T) {
 	}
 	snapshot, err := service.GetTurnEventSnapshotAtFence(
 		ctx,
-		conversation.Ptid,
+		conversation.ActorPTID,
 		conversation.ID,
 		turn.ID,
 		boundary,
@@ -507,7 +507,7 @@ func TestTurnEventSubscriptionSignalsDurableReplayWithoutLostWindow(t *testing.T
 	db := openConversationAuthorityDB(t, "conversation_turn_event_tail")
 	now := time.Now()
 	conversation := persistence.Conversation{
-		ID: "conversation-tail", AgentID: "agent-1", Ptid: "ptid:person:owner",
+		ID: "conversation-tail", AgentID: "agent-1", ActorPTID: "ptid:person:owner",
 		Title: "Tail", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}
 	turn := persistence.AgentTurn{
@@ -524,7 +524,7 @@ func TestTurnEventSubscriptionSignalsDurableReplayWithoutLostWindow(t *testing.T
 	service := NewConversationService()
 	notifications, boundary, _, unsubscribe, err := service.SubscribeTurnEvents(
 		context.Background(),
-		conversation.Ptid,
+		conversation.ActorPTID,
 		conversation.ID,
 		turn.ID,
 	)
@@ -551,7 +551,7 @@ func TestTurnEventSubscriptionSignalsDurableReplayWithoutLostWindow(t *testing.T
 	}
 	events, err := service.ReplayTurnEvents(
 		context.Background(),
-		conversation.Ptid,
+		conversation.ActorPTID,
 		conversation.ID,
 		turn.ID,
 		0,
@@ -568,7 +568,7 @@ func TestTurnEventSubscriptionBoundaryDoesNotSkipReplaySnapshotWindow(t *testing
 	db := openConversationAuthorityDB(t, "conversation_turn_event_boundary")
 	now := time.Now()
 	conversation := persistence.Conversation{
-		ID: "conversation-boundary", AgentID: "agent-1", Ptid: "ptid:person:owner",
+		ID: "conversation-boundary", AgentID: "agent-1", ActorPTID: "ptid:person:owner",
 		Title: "Boundary", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}
 	turn := persistence.AgentTurn{
@@ -594,7 +594,7 @@ func TestTurnEventSubscriptionBoundaryDoesNotSkipReplaySnapshotWindow(t *testing
 	}
 	notifications, boundary, fence, unsubscribe, err := service.SubscribeTurnEvents(
 		context.Background(),
-		conversation.Ptid,
+		conversation.ActorPTID,
 		conversation.ID,
 		turn.ID,
 	)
@@ -607,7 +607,7 @@ func TestTurnEventSubscriptionBoundaryDoesNotSkipReplaySnapshotWindow(t *testing
 	}
 	initial, err := service.ReplayTurnEventsThroughFence(
 		context.Background(),
-		conversation.Ptid,
+		conversation.ActorPTID,
 		conversation.ID,
 		turn.ID,
 		0,
@@ -632,7 +632,7 @@ func TestTurnEventSubscriptionBoundaryDoesNotSkipReplaySnapshotWindow(t *testing
 	}
 	snapshot, err := service.GetTurnEventSnapshotAtFence(
 		context.Background(),
-		conversation.Ptid,
+		conversation.ActorPTID,
 		conversation.ID,
 		turn.ID,
 		boundary,
@@ -651,7 +651,7 @@ func TestTurnEventSubscriptionBoundaryDoesNotSkipReplaySnapshotWindow(t *testing
 	}
 	tail, err := service.ReplayTurnEvents(
 		context.Background(),
-		conversation.Ptid,
+		conversation.ActorPTID,
 		conversation.ID,
 		turn.ID,
 		boundary,
@@ -668,10 +668,10 @@ func TestTurnEventSubscriptionsEnforceTurnActorAndGlobalLimits(t *testing.T) {
 	db := openConversationAuthorityDB(t, "conversation_turn_event_limits")
 	now := time.Now()
 	conversations := []persistence.Conversation{
-		{ID: "conversation-owner-1", AgentID: "agent-1", Ptid: "ptid:person:owner", Title: "Owner 1", Status: "active", CreatedAt: now, UpdatedAt: now},
-		{ID: "conversation-owner-2", AgentID: "agent-1", Ptid: "ptid:person:owner", Title: "Owner 2", Status: "active", CreatedAt: now, UpdatedAt: now},
-		{ID: "conversation-other", AgentID: "agent-1", Ptid: "ptid:person:other", Title: "Other", Status: "active", CreatedAt: now, UpdatedAt: now},
-		{ID: "conversation-third", AgentID: "agent-1", Ptid: "ptid:person:third", Title: "Third", Status: "active", CreatedAt: now, UpdatedAt: now},
+		{ID: "conversation-owner-1", AgentID: "agent-1", ActorPTID: "ptid:person:owner", Title: "Owner 1", Status: "active", CreatedAt: now, UpdatedAt: now},
+		{ID: "conversation-owner-2", AgentID: "agent-1", ActorPTID: "ptid:person:owner", Title: "Owner 2", Status: "active", CreatedAt: now, UpdatedAt: now},
+		{ID: "conversation-other", AgentID: "agent-1", ActorPTID: "ptid:person:other", Title: "Other", Status: "active", CreatedAt: now, UpdatedAt: now},
+		{ID: "conversation-third", AgentID: "agent-1", ActorPTID: "ptid:person:third", Title: "Third", Status: "active", CreatedAt: now, UpdatedAt: now},
 	}
 	turns := []persistence.AgentTurn{
 		{ID: "turn-owner-1", ConversationID: conversations[0].ID, AgentID: "agent-1", Status: string(domain.TurnStatusRunning), StartedAt: now},
@@ -710,19 +710,19 @@ func TestTurnEventSubscriptionsEnforceTurnActorAndGlobalLimits(t *testing.T) {
 		service := newConversationServiceWithSubscriptionLimits(turnEventSubscriptionLimits{
 			perTurn: 2, perActor: 4, global: 8,
 		})
-		cancelFirst := subscribe(t, service, conversations[0].Ptid, conversations[0].ID, turns[0].ID)
-		cancelSecond := subscribe(t, service, conversations[0].Ptid, conversations[0].ID, turns[0].ID)
+		cancelFirst := subscribe(t, service, conversations[0].ActorPTID, conversations[0].ID, turns[0].ID)
+		cancelSecond := subscribe(t, service, conversations[0].ActorPTID, conversations[0].ID, turns[0].ID)
 		defer cancelSecond()
 		if _, _, _, _, err := service.SubscribeTurnEvents(
 			context.Background(),
-			conversations[0].Ptid,
+			conversations[0].ActorPTID,
 			conversations[0].ID,
 			turns[0].ID,
 		); err == nil || !strings.Contains(err.Error(), "limit exceeded: turn") {
 			t.Fatalf("turn limit rejection = %v", err)
 		}
 		cancelFirst()
-		cancelReplacement := subscribe(t, service, conversations[0].Ptid, conversations[0].ID, turns[0].ID)
+		cancelReplacement := subscribe(t, service, conversations[0].ActorPTID, conversations[0].ID, turns[0].ID)
 		cancelReplacement()
 		cancelFirst()
 	})
@@ -731,13 +731,13 @@ func TestTurnEventSubscriptionsEnforceTurnActorAndGlobalLimits(t *testing.T) {
 		service := newConversationServiceWithSubscriptionLimits(turnEventSubscriptionLimits{
 			perTurn: 4, perActor: 2, global: 8,
 		})
-		cancelFirst := subscribe(t, service, conversations[0].Ptid, conversations[0].ID, turns[0].ID)
+		cancelFirst := subscribe(t, service, conversations[0].ActorPTID, conversations[0].ID, turns[0].ID)
 		defer cancelFirst()
-		cancelSecond := subscribe(t, service, conversations[1].Ptid, conversations[1].ID, turns[1].ID)
+		cancelSecond := subscribe(t, service, conversations[1].ActorPTID, conversations[1].ID, turns[1].ID)
 		defer cancelSecond()
 		if _, _, _, _, err := service.SubscribeTurnEvents(
 			context.Background(),
-			conversations[0].Ptid,
+			conversations[0].ActorPTID,
 			conversations[0].ID,
 			turns[0].ID,
 		); err == nil || !strings.Contains(err.Error(), "limit exceeded: actor") {
@@ -749,13 +749,13 @@ func TestTurnEventSubscriptionsEnforceTurnActorAndGlobalLimits(t *testing.T) {
 		service := newConversationServiceWithSubscriptionLimits(turnEventSubscriptionLimits{
 			perTurn: 4, perActor: 4, global: 2,
 		})
-		cancelFirst := subscribe(t, service, conversations[0].Ptid, conversations[0].ID, turns[0].ID)
+		cancelFirst := subscribe(t, service, conversations[0].ActorPTID, conversations[0].ID, turns[0].ID)
 		defer cancelFirst()
-		cancelSecond := subscribe(t, service, conversations[2].Ptid, conversations[2].ID, turns[2].ID)
+		cancelSecond := subscribe(t, service, conversations[2].ActorPTID, conversations[2].ID, turns[2].ID)
 		defer cancelSecond()
 		if _, _, _, _, err := service.SubscribeTurnEvents(
 			context.Background(),
-			conversations[3].Ptid,
+			conversations[3].ActorPTID,
 			conversations[3].ID,
 			turns[3].ID,
 		); err == nil || !strings.Contains(err.Error(), "limit exceeded: global") {
@@ -913,7 +913,7 @@ func TestConversationAuthorityIsActorScopedAndVersioned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create owner conversation: %v", err)
 	}
-	if conversation.Ptid != owner || conversation.Version != 1 {
+	if conversation.ActorPTID != owner || conversation.Version != 1 {
 		t.Fatalf("unexpected conversation readback: %+v", conversation)
 	}
 
@@ -1001,7 +1001,7 @@ func TestConversationMessageMutationRequiresOwner(t *testing.T) {
 	conversation := persistence.Conversation{
 		ID:        "conversation-1",
 		AgentID:   "agent-1",
-		Ptid:      owner,
+		ActorPTID: owner,
 		Title:     "Owner topic",
 		Status:    "active",
 		Version:   1,
@@ -1049,7 +1049,7 @@ func TestConversationMetadataUpdatesMergeAndBranchProjectionHidesTombstones(t *t
 	conversation := persistence.Conversation{
 		ID:                    "conversation-projection",
 		AgentID:               "agent-1",
-		Ptid:                  "ptid:person:owner",
+		ActorPTID:             "ptid:person:owner",
 		Title:                 "Projection",
 		Status:                "active",
 		ActiveBranchMessageID: "assistant-active",
@@ -1109,7 +1109,7 @@ func TestConversationMetadataUpdatesMergeAndBranchProjectionHidesTombstones(t *t
 
 	updated, err := service.UpdateConversation(
 		ctx,
-		conversation.Ptid,
+		conversation.ActorPTID,
 		conversation.ID,
 		1,
 		"",
@@ -1123,7 +1123,7 @@ func TestConversationMetadataUpdatesMergeAndBranchProjectionHidesTombstones(t *t
 	}
 	updated, err = service.UpdateConversation(
 		ctx,
-		conversation.Ptid,
+		conversation.ActorPTID,
 		conversation.ID,
 		updated.Version,
 		"",
@@ -1141,7 +1141,7 @@ func TestConversationMetadataUpdatesMergeAndBranchProjectionHidesTombstones(t *t
 
 	messages, _, hasMore, err := service.ListMessages(
 		ctx,
-		conversation.Ptid,
+		conversation.ActorPTID,
 		conversation.ID,
 		0,
 		0,

@@ -1,6 +1,6 @@
 // Package actor_identity owns the Station-side Actor Device lifecycle.
 //
-// CA-W3 prepares its domain, application, persistence, and HTTP mapping layers
-// for test composition only. Production route registration remains deferred to
-// the atomic CA-W5 cutover so the repository never exposes two device owners.
+// Its production Subserver composes the canonical repository, application
+// service, and HTTP adapter for the /device/enroll, /device/list, and
+// /device/revoke routes.
 package actor_identity

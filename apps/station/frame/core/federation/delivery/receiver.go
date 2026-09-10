@@ -72,6 +72,7 @@ type ProtoReceiver[T proto.Message] func(
 type Registry struct {
 	mu        sync.RWMutex
 	receivers map[PayloadKind]Receiver
+	sealed    bool
 }
 
 // NewRegistry creates an empty receiver registry without global mutable state.
@@ -94,6 +95,13 @@ func (r *Registry) Register(kind PayloadKind, receiver Receiver) error {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.sealed {
+		return NewError(
+			FailureInvalidArgument,
+			"register receiver",
+			errorsText("registry is sealed"),
+		)
+	}
 	if _, exists := r.receivers[kind]; exists {
 		return NewError(
 			FailureInvalidArgument,
@@ -102,6 +110,23 @@ func (r *Registry) Register(kind PayloadKind, receiver Receiver) error {
 		)
 	}
 	r.receivers[kind] = receiver
+	return nil
+}
+
+// Seal prevents all subsequent registrations, including through retained
+// registry pointers.
+func (r *Registry) Seal() error {
+	if r == nil {
+		return NewError(
+			FailureInvalidArgument,
+			"seal receiver registry",
+			errorsText("registry is nil"),
+		)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sealed = true
+
 	return nil
 }
 

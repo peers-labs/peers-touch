@@ -285,6 +285,19 @@ func TestOutgoingFriendRequestResultRequiresExactPersistedCommandHash(t *testing
 			); domain.FederationErrorCodeOf(err) != domain.FederationErrorIdempotencyConflict {
 				t.Fatalf("conflicting outgoing result error = %v", err)
 			}
+
+			wrongFederation := proto.Clone(result).(*model.FriendRequestCommandResult)
+			wrongFederation.Event.FederationId = "federation:other"
+			wrongFederation.Event.EventHash = nil
+			if err := domain.SealFriendRequestEvent(wrongFederation.Event); err != nil {
+				t.Fatal(err)
+			}
+			if err := domain.ValidateOutgoingFriendRequestCommandResult(
+				record,
+				wrongFederation,
+			); domain.FederationErrorCodeOf(err) != domain.FederationErrorIdempotencyConflict {
+				t.Fatalf("wrong-federation outgoing result error = %v", err)
+			}
 		})
 	}
 }
@@ -333,6 +346,7 @@ func signedDomainFriendRequestCommand(
 				Actor:    authorizer,
 				DeviceId: authorizer.GetPtid() + ":device",
 			},
+			FederationId: "federation:test",
 		},
 		SigningKeyId: "device-key",
 	}

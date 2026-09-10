@@ -5133,7 +5133,7 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
 		`CREATE TABLE agent_conversations (
                                   id text PRIMARY KEY,
                                   agent_id text,
-                                  ptid text NOT NULL,
+                                  actor_ptid text NOT NULL,
                                   title text NOT NULL,
                                   description text,
                                   provider_id text NOT NULL,

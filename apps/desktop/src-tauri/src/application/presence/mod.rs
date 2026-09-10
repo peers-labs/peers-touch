@@ -8,7 +8,7 @@
 //!   2. Tauri event `presence.synced { actor_ptid, count, sessions }`
 //!
 //! Durable message reconciliation belongs to the Envelope runtime and
-//! `/envelope/resume`; Presence does not own a second message queue.
+//! `/device/inbox/claim`; Presence does not own a second message queue.
 //!
 //! # Why a supervisor and not a free function
 //!

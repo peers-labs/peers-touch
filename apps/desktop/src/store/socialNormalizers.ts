@@ -1,12 +1,15 @@
 import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { Conversation, ConversationMember } from '../gen/proto/domain/chat/conversation_pb';
 import { ConversationKind, ConversationStatus, MemberRole, MemberStatus } from '../gen/proto/domain/chat/conversation_pb';
-import { timestampDate, type Timestamp } from '@bufbuild/protobuf/wkt';
+import type { Timestamp } from '@bufbuild/protobuf/wkt';
 
 export interface FriendRequestData {
   id: string;
   senderPtid: string;
   receiverPtid: string;
+  federationId: string;
+  senderHomeStationPeerId: string;
+  receiverHomeStationPeerId: string;
   status: number;
   message: string;
   createdAt: string;
@@ -55,21 +58,33 @@ export function friendRequestProfileDids(
 
 export function normalizeFriendRequestData(raw: unknown): FriendRequestData {
   const record = recordFromUnknown(raw);
-  const sender = recordFromUnknown(record.sender);
-  const receiver = recordFromUnknown(record.receiver);
   return {
-    id: stringValue(record.requestId, record.request_id, record.id, record.Id),
-    senderPtid: stringValue(sender.ptid, record.senderPtid),
-    receiverPtid: stringValue(receiver.ptid, record.receiverPtid),
-    status: numberValue(record.state ?? record.status),
+    id: stringValue(record.requestId, record.request_id),
+    senderPtid: actorPtid(record.sender),
+    receiverPtid: actorPtid(record.receiver),
+    federationId: stringValue(record.federationId, record.federation_id),
+    senderHomeStationPeerId: stringValue(
+      record.senderHomeStationPeerId,
+      record.sender_home_station_peer_id,
+    ),
+    receiverHomeStationPeerId: stringValue(
+      record.receiverHomeStationPeerId,
+      record.receiver_home_station_peer_id,
+    ),
+    status: numberValue(record.state),
     message: stringValue(record.message),
-    createdAt: timestampString(record.createdAt ?? record.created_at),
-    respondedAt: timestampString(record.respondedAt ?? record.responded_at),
+    createdAt: stringValue(record.createdAt, record.created_at),
+    respondedAt: stringValue(record.respondedAt, record.responded_at),
     senderDisplayName: stringValue(record.senderDisplayName, record.sender_display_name),
     senderAvatar: stringValue(record.senderAvatar, record.sender_avatar),
     receiverDisplayName: stringValue(record.receiverDisplayName, record.receiver_display_name),
     receiverAvatar: stringValue(record.receiverAvatar, record.receiver_avatar),
   };
+}
+
+function actorPtid(value: unknown): string {
+  const actor = recordFromUnknown(value);
+  return stringValue(actor.ptid);
 }
 
 function recordFromUnknown(value: unknown): RawRecord {
@@ -140,12 +155,6 @@ function normalizeTimestamp(value: unknown): Timestamp | undefined {
     }
   }
   return undefined;
-}
-
-function timestampString(value: unknown): string {
-  if (typeof value === 'string') return value;
-  const timestamp = normalizeTimestamp(value);
-  return timestamp ? timestampDate(timestamp).toISOString() : '';
 }
 
 export function normalizeConversation(raw: unknown): Conversation {

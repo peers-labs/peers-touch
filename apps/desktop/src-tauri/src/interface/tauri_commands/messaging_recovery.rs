@@ -15,7 +15,7 @@ use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::session_vault;
 use crate::infrastructure::station_client::{self, StationClientErrorKind};
 use crate::messaging::{
-    actor_device_parts, decode_recovery_revision, encode_recovery_revision, MessagingEngine,
+    decode_recovery_revision, encode_recovery_revision, MessagingEngine,
     INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
 };
 use crate::model::recovery::{
@@ -23,6 +23,7 @@ use crate::model::recovery::{
     StoreRecoveryRevisionRequest, StoreRecoveryRevisionResponse,
 };
 use crate::state::AppState;
+use messaging_core::proto::actor_device_ptid;
 
 use super::crypto::to_stub;
 
@@ -98,15 +99,13 @@ fn identity_json(engine: &MessagingEngine) -> Result<serde_json::Value, String> 
         .device_enrollment()?
         .ok_or_else(|| "messaging recovery identity is unavailable".to_string())?;
     let certificate = enrollment.certificate;
-    let (ptid, device_id) = certificate
+    let device = certificate
         .device
         .as_ref()
-        .and_then(actor_device_parts)
-        .ok_or_else(|| {
-            "messaging recovery identity has no canonical device reference".to_string()
-        })?;
+        .ok_or_else(|| "messaging recovery identity has no endpoint".to_string())?;
+    let ptid = actor_device_ptid(device)?;
     if ptid != engine.endpoint().ptid
-        || device_id != engine.endpoint().device_id
+        || device.device_id != engine.endpoint().device_id
         || certificate.actor_identity_key_fingerprint.len() != 32
     {
         return Err("messaging recovery identity binding is invalid".to_string());
@@ -114,8 +113,8 @@ fn identity_json(engine: &MessagingEngine) -> Result<serde_json::Value, String> 
     Ok(json!({
         "ready": true,
         "ptid": ptid,
-        "deviceId": device_id,
-        "fingerprint": hex::encode(&certificate.actor_identity_key_fingerprint),
+        "deviceId": device.device_id,
+        "fingerprint": hex::encode(certificate.actor_identity_key_fingerprint),
     }))
 }
 
@@ -126,16 +125,15 @@ fn latest_revision(
     ReadLatestRecoveryRevisionResponse,
     crate::infrastructure::station_client::StationClientError,
 > {
-    let revision: ReadLatestRecoveryRevisionResponse = station_client::request_proto_for_device(
-        Method::GET,
-        "/recovery/latest",
-        &session.token,
-        None,
-        None::<&ReadLatestRecoveryRevisionRequest>,
-        device_id,
-    )?;
-    #[cfg(feature = "acceptance-webdriver")]
-    let mut revision = revision;
+    let mut revision: ReadLatestRecoveryRevisionResponse =
+        station_client::request_proto_for_device(
+            Method::GET,
+            "/recovery/latest",
+            &session.token,
+            None,
+            None::<&ReadLatestRecoveryRevisionRequest>,
+            device_id,
+        )?;
     #[cfg(feature = "acceptance-webdriver")]
     if std::env::var_os("PT_MESSAGING_RECOVERY_CORRUPT_LATEST_FILE")
         .map(std::path::PathBuf::from)
@@ -338,19 +336,14 @@ pub fn messaging_recovery_restore_latest(
             return AppResult::fail(ErrorCode::InternalError, error, None);
         }
     };
-    let restored_device_id = match enrollment
-        .certificate
-        .device
-        .as_ref()
-        .and_then(actor_device_parts)
-    {
-        Some((ptid, device_id)) if ptid == session.ptid => device_id.to_string(),
-        _ => {
+    let restored_device_id = match enrollment.certificate.device.as_ref() {
+        Some(device) => device.device_id.clone(),
+        None => {
             return AppResult::fail(
                 ErrorCode::InternalError,
-                "restored identity has no canonical device reference",
+                "restored messaging identity has no endpoint",
                 None,
-            )
+            );
         }
     };
     station_client::set_device_id(restored_device_id.clone());

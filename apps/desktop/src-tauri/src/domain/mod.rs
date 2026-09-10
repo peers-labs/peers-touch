@@ -5,7 +5,6 @@ pub mod chat;
 pub mod crypto;
 pub mod device_identity;
 pub mod identity;
-pub mod mls_transition;
 pub mod pin_lock;
 pub mod presence;
 pub mod profile;

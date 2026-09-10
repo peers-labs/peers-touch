@@ -62,16 +62,6 @@ LEGACY_MIGRATION_ALLOWLIST = {
         "participant_a_did",
         "participant_b_did",
     },
-    Path(
-        "apps/station/app/subserver/envelope/infrastructure/repo.go"
-    ): {
-        "recipient_did",
-    },
-    Path(
-        "apps/station/app/subserver/envelope/infrastructure/repo_test.go"
-    ): {
-        "recipient_did",
-    },
     Path("apps/station/app/subserver/conversation/subserver.go"): {
         "actor_did",
     },

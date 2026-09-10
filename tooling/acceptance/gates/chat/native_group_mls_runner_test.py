@@ -93,6 +93,21 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
                     "protocolDigest": "c" * 64,
                 },
             },
+            "clients": [
+                {
+                    "id": actor,
+                    "actor": actor,
+                    "runtime": "native-tauri",
+                    "required_service_roles": ["station"],
+                    "service_bindings": {
+                        "station": {
+                            "service_id": "station",
+                            "required_kind": "station",
+                        },
+                    },
+                }
+                for actor in ("alice", "bob", "charlie")
+            ],
         }
         gate.tested_commit = "commit-a"
         gate.runtime_binding = binding

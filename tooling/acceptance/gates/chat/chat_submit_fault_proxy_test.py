@@ -9,7 +9,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
-    SUBMIT_PATH,
+    CONVERSATION_COMMAND_PATH,
     _ProxyServer,
 )
 
@@ -91,7 +91,11 @@ class ChatSubmitFaultProxyTest(unittest.TestCase):
         with self.assertRaises(
             (ConnectionError, http.client.HTTPException, OSError)
         ):
-            connection.request("POST", SUBMIT_PATH, body=submit_request)
+            connection.request(
+                "POST",
+                CONVERSATION_COMMAND_PATH,
+                body=submit_request,
+            )
             connection.getresponse()
         connection.close()
 
@@ -109,7 +113,7 @@ class ChatSubmitFaultProxyTest(unittest.TestCase):
 
         self.proxy.state.disarm()
         request = urllib.request.Request(
-            f"{self.proxy_url}{SUBMIT_PATH}",
+            f"{self.proxy_url}{CONVERSATION_COMMAND_PATH}",
             data=submit_request,
             method="POST",
         )

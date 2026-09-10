@@ -1,17 +1,15 @@
-use crate::proto::actor::ActorDeviceRef;
 use crate::proto::chat::{
     AcknowledgeDeviceInboxItemRequest, ClaimDeviceInboxRequest, ClaimDeviceInboxResponse,
     DurableDeviceInboxItem,
 };
-use crate::proto::crypto_endpoint_from_actor_device_ref;
+use crate::proto::{actor::ActorDeviceRef, actor_device_ptid};
 use std::sync::Arc;
 
 pub type AcknowledgedItemObserver = Arc<dyn Fn(&DurableDeviceInboxItem) + Send + Sync>;
 pub type ConsumerEpochObserver = Arc<dyn Fn(u64) + Send + Sync>;
 
 pub trait QueueTransport {
-    fn claim(&self, request: ClaimDeviceInboxRequest)
-        -> Result<ClaimDeviceInboxResponse, String>;
+    fn claim(&self, request: ClaimDeviceInboxRequest) -> Result<ClaimDeviceInboxResponse, String>;
     fn acknowledge(&self, request: AcknowledgeDeviceInboxItemRequest) -> Result<(), String>;
 }
 
@@ -51,7 +49,8 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
         consumer_id: String,
         batch_limit: u32,
     ) -> Result<Self, String> {
-        if crypto_endpoint_from_actor_device_ref(&device).is_none()
+        if actor_device_ptid(&device).is_err()
+            || device.device_id.trim().is_empty()
             || consumer_id.trim().is_empty()
             || batch_limit == 0
             || batch_limit > 100
@@ -138,6 +137,7 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proto::actor_device_ref;
     use std::cell::RefCell;
 
     struct Transport {
@@ -215,7 +215,7 @@ mod tests {
                 fail_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
-            crate::proto::actor_device_ref_from_parts("ptid:alice", "device-1"),
+            actor_device_ref("ptid:alice", "device-1"),
             "consumer-1".to_string(),
             10,
         )
@@ -253,7 +253,7 @@ mod tests {
                 fail_at: Some(1),
                 consumed: RefCell::new(Vec::new()),
             },
-            crate::proto::actor_device_ref_from_parts("ptid:alice", "device-1"),
+            actor_device_ref("ptid:alice", "device-1"),
             "consumer-1".to_string(),
             10,
         )
@@ -282,7 +282,7 @@ mod tests {
                 fail_at: Some(2),
                 consumed: RefCell::new(Vec::new()),
             },
-            crate::proto::actor_device_ref_from_parts("ptid:alice", "device-1"),
+            actor_device_ref("ptid:alice", "device-1"),
             "consumer-1".to_string(),
             10,
         )
@@ -307,7 +307,7 @@ mod tests {
                 fail_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
-            crate::proto::actor_device_ref_from_parts("ptid:alice", "device-1"),
+            actor_device_ref("ptid:alice", "device-1"),
             "consumer-after-restart".to_string(),
             10,
         )
@@ -331,7 +331,7 @@ mod tests {
                 fail_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
-            crate::proto::actor_device_ref_from_parts("ptid:alice", "device-1"),
+            actor_device_ref("ptid:alice", "device-1"),
             "consumer-1".to_string(),
             10,
         )

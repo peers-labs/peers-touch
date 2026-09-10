@@ -501,6 +501,30 @@ impl MlsGroupManager {
         welcome_bytes: &[u8],
         changes: &[MembershipTransitionChange],
     ) -> Result<MlsPreparedReceive, String> {
+        self.prepare_received_welcome_with_membership(
+            conversation_id,
+            welcome_bytes,
+            changes,
+            false,
+        )
+    }
+
+    pub fn prepare_received_genesis_welcome(
+        &self,
+        conversation_id: &str,
+        welcome_bytes: &[u8],
+        changes: &[MembershipTransitionChange],
+    ) -> Result<MlsPreparedReceive, String> {
+        self.prepare_received_welcome_with_membership(conversation_id, welcome_bytes, changes, true)
+    }
+
+    fn prepare_received_welcome_with_membership(
+        &self,
+        conversation_id: &str,
+        welcome_bytes: &[u8],
+        changes: &[MembershipTransitionChange],
+        require_exact_membership: bool,
+    ) -> Result<MlsPreparedReceive, String> {
         let (signer, _cwk) = self.actor_identity.snapshot()?;
         let providers = self.pending_join_providers.lock().unwrap();
         let provider_pool_state = serialize_join_provider_pool(&providers)?;
@@ -531,7 +555,11 @@ impl MlsGroupManager {
         let Some((provider_index, group)) = matched else {
             return Err("stage welcome: NoMatchingKeyPackage".to_string());
         };
-        validate_welcome_leaf_changes(&group_leaf_identities(&group)?, changes)?;
+        let leaves = group_leaf_identities(&group)?;
+        validate_welcome_leaf_changes(&leaves, changes)?;
+        if require_exact_membership {
+            validate_genesis_welcome_membership(&leaves, changes)?;
+        }
         let provider = providers.remove(provider_index);
         let session = MlsGroupSession {
             provider,
@@ -1018,6 +1046,30 @@ fn validate_welcome_leaf_changes(
                 return Err("authority event contains an unspecified membership action".to_string())
             }
         }
+    }
+    Ok(())
+}
+
+fn validate_genesis_welcome_membership(
+    leaves: &HashSet<(String, String)>,
+    changes: &[MembershipTransitionChange],
+) -> Result<(), String> {
+    let mut expected = HashSet::with_capacity(changes.len());
+    for change in changes {
+        let action = MembershipTransitionAction::try_from(change.action)
+            .map_err(|_| "authority event contains an unknown membership action".to_string())?;
+        if !matches!(
+            action,
+            MembershipTransitionAction::Add | MembershipTransitionAction::AddDevice
+        ) || change.ptid.trim().is_empty()
+            || change.device_id.trim().is_empty()
+            || !expected.insert((change.ptid.clone(), change.device_id.clone()))
+        {
+            return Err("MLS genesis membership changes are invalid".to_string());
+        }
+    }
+    if &expected != leaves {
+        return Err("OpenMLS Welcome leaf set does not match Group genesis".to_string());
     }
     Ok(())
 }

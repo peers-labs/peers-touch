@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Transparent proxy that injects HTTP 500 for createDirect when armed."""
+"""Transparent proxy that faults canonical Conversation Direct creation."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 from tooling.acceptance.fixtures.chat_native_reset import acceptance_station_environment
 
 
-CREATE_DIRECT_PATH = "/conversation/direct"
+CONVERSATION_DIRECT_PATH = "/conversation/direct"
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -44,7 +44,7 @@ class _FaultState:
 
     def should_intercept(self, path: str) -> bool:
         with self.lock:
-            if self.armed and path == CREATE_DIRECT_PATH:
+            if self.armed and path == CONVERSATION_DIRECT_PATH:
                 self.intercepted_count += 1
                 return True
             self.forwarded_count += 1
@@ -53,7 +53,7 @@ class _FaultState:
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
             return {
-                "targetPath": CREATE_DIRECT_PATH,
+                "targetPath": CONVERSATION_DIRECT_PATH,
                 "armed": self.armed,
                 "interceptedCount": self.intercepted_count,
                 "forwardedCount": self.forwarded_count,
@@ -143,8 +143,8 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         return
 
 
-class ProfileThreeContactMessageFaultProxy:
-    """Forward to Profile Three, inject 500 for armed createDirect calls."""
+class AcceptanceStationContactMessageFaultProxy:
+    """Forward to the disposable Station and fail armed createDirect calls."""
 
     def __init__(self, station_url: str) -> None:
         acceptance_station_environment(station_url)

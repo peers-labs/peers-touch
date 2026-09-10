@@ -60,7 +60,7 @@
         "desktop-windows-native"
       ],
       "tier": "env-evidence",
-      "description": "Run isolated Native Direct and Group clients and prove reply/thread, author-only edit/retract, reaction, pin, read, offline, replay and restart convergence with Station and Engine durable readback."
+      "description": "Run isolated Native Direct and Group clients and prove reply/thread, author-only edit/retract, reaction, pin, read, offline, replay and restart convergence with Conversation and Device Inbox durable readback."
     },
     "chat-contact-message-resilience-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.contact_message_resilience_runner",
@@ -73,7 +73,7 @@
         "desktop-windows-native"
       ],
       "tier": "env-evidence",
-      "description": "Prove that clicking the contact Message button opens the chat view immediately even when createDirect fails, and the error is presented within the open view."
+      "description": "Prove that clicking the contact Message button immediately opens a peer-bound conversation intent pane even when createDirect fails, with inline error and retry instead of the generic empty Chat view."
     },
     "chat-native-typing-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_typing_runner",
@@ -198,11 +198,11 @@
       "description": "Parse Station handler registrations with Go AST and fail closed on API ownership, canonical route, owner root, superseded proto, and forbidden truth-store violations."
     },
     "station-messaging-unit": {
-      "command": "go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/envelope/...",
+      "command": "go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/federation/... ./apps/station/frame/core/federation/...",
       "timeout_seconds": 600,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Run Station Conversation and envelope package tests."
+      "description": "Run canonical Station Conversation and shared Federation package tests."
     },
     "messaging-platform-contract": {
       "command": "python3 -m unittest tooling.acceptance.gates.chat.messaging_platform_contract_test",

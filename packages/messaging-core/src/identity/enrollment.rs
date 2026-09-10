@@ -3,7 +3,7 @@ use crate::proto::actor::{
     ActorDevice, ActorDeviceCertificate, ActorDeviceStatus, EnrollActorDeviceRequest,
     EnrollActorDeviceResponse,
 };
-use crate::proto::{actor_device_ref_from_parts, crypto_endpoint_from_actor_device_ref};
+use crate::proto::{actor_device_ptid, actor_device_ref};
 use prost::Message;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -95,12 +95,18 @@ impl<R: DeviceEnrollmentRepository> DeviceEnrollmentManager<R> {
             return Ok(None);
         };
         let certificate = &enrollment.certificate;
-        let certificate_device = certificate
-            .device
-            .as_ref()
-            .and_then(crypto_endpoint_from_actor_device_ref)
-            .ok_or_else(|| "messaging pending enrollment has no device".to_string())?;
-        if certificate_device.ptid != self.ptid || certificate_device.device_id != self.device_id {
+        if actor_device_ptid(
+            certificate
+                .device
+                .as_ref()
+                .ok_or_else(|| "messaging pending enrollment has no endpoint".to_string())?,
+        )? != self.ptid
+            || certificate
+                .device
+                .as_ref()
+                .map(|device| device.device_id.as_str())
+                != Some(self.device_id.as_str())
+        {
             return Err("messaging pending enrollment belongs to another endpoint".to_string());
         }
         let response = transport.enroll(&EnrollActorDeviceRequest {
@@ -172,12 +178,12 @@ pub fn validate_enrollment_actor(
     let actor_public_key = actor_identity.verifying_key().to_bytes();
     let actor_fingerprint = Sha256::digest(actor_public_key);
     let certificate = &enrollment.certificate;
-    let certificate_ptid = certificate
+    if certificate
         .device
         .as_ref()
-        .and_then(|device| device.actor.as_ref())
-        .map(|actor| actor.ptid.as_str());
-    if certificate_ptid != Some(expected_ptid)
+        .map(actor_device_ptid)
+        .transpose()?
+        != Some(expected_ptid)
         || certificate.actor_identity_public_key != actor_public_key
         || certificate.actor_identity_key_fingerprint != actor_fingerprint.as_slice()
         || certificate.observed_profile_version != expected_profile_version
@@ -203,7 +209,20 @@ pub fn validate_enrollment_response(
     if ActorDeviceStatus::try_from(device.status)
         .map_err(|_| "messaging enrollment response status is invalid".to_string())?
         != ActorDeviceStatus::Active
-        || device.r#ref.as_ref() != certificate.device.as_ref()
+        || device.r#ref.as_ref().map(actor_device_ptid).transpose()?
+            != certificate
+                .device
+                .as_ref()
+                .map(actor_device_ptid)
+                .transpose()?
+        || device
+            .r#ref
+            .as_ref()
+            .map(|endpoint| endpoint.device_id.as_str())
+            != certificate
+                .device
+                .as_ref()
+                .map(|endpoint| endpoint.device_id.as_str())
         || device.signing_key_id != certificate.signing_key_id
         || device.profile_version != certificate.observed_profile_version
         || device.actor_identity_key_fingerprint != certificate.actor_identity_key_fingerprint
@@ -232,7 +251,7 @@ fn build_device_certificate(
     let device_fingerprint = Sha256::digest(device_signing_public_key);
     ActorDeviceCertificate {
         format_version: MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
-        device: Some(actor_device_ref_from_parts(ptid, device_id)),
+        device: Some(actor_device_ref(ptid, device_id)),
         actor_identity_public_key: actor_public_key.to_vec(),
         actor_identity_key_fingerprint: actor_fingerprint.to_vec(),
         device_signing_public_key: device_signing_public_key.to_vec(),

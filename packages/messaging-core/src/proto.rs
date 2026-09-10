@@ -53,45 +53,82 @@ pub mod social {
     pub use v1::*;
 }
 
-pub(crate) fn actor_ref_from_ptid(ptid: &str) -> actor::ActorRef {
+pub fn actor_ref(ptid: impl Into<String>) -> actor::ActorRef {
+    let ptid = ptid.into();
     actor::ActorRef {
-        ptid: ptid.to_string(),
+        kind: actor_kind_from_ptid(&ptid) as i32,
+        ptid,
         ..Default::default()
     }
 }
 
-pub(crate) fn actor_device_ref_from_parts(ptid: &str, device_id: &str) -> actor::ActorDeviceRef {
-    actor::ActorDeviceRef {
-        actor: Some(actor_ref_from_ptid(ptid)),
-        device_id: device_id.to_string(),
+fn actor_kind_from_ptid(ptid: &str) -> actor::ActorKind {
+    match ptid.split(':').nth(4) {
+        Some("p") => actor::ActorKind::Person,
+        Some("g") => actor::ActorKind::Group,
+        Some("o") => actor::ActorKind::Organization,
+        Some("s") => actor::ActorKind::Service,
+        Some("a") => actor::ActorKind::Application,
+        Some("n") => actor::ActorKind::Node,
+        _ => actor::ActorKind::Unspecified,
     }
 }
 
-#[cfg(test)]
-pub(crate) fn actor_device_ref_from_crypto_endpoint(
-    endpoint: &chat::CryptoEndpoint,
+pub fn actor_device_ref(
+    ptid: impl Into<String>,
+    device_id: impl Into<String>,
 ) -> actor::ActorDeviceRef {
-    actor_device_ref_from_parts(&endpoint.ptid, &endpoint.device_id)
+    actor::ActorDeviceRef {
+        actor: Some(actor_ref(ptid)),
+        device_id: device_id.into(),
+    }
 }
 
-pub(crate) fn crypto_endpoint_from_actor_device_ref(
-    device: &actor::ActorDeviceRef,
-) -> Option<chat::CryptoEndpoint> {
-    let actor = device.actor.as_ref()?;
-    if actor.ptid.trim().is_empty() || device.device_id.trim().is_empty() {
-        return None;
+pub fn actor_device_ptid(device: &actor::ActorDeviceRef) -> Result<&str, String> {
+    device
+        .actor
+        .as_ref()
+        .map(|actor| actor.ptid.as_str())
+        .filter(|ptid| !ptid.trim().is_empty())
+        .ok_or_else(|| "actor device reference requires PTID".to_string())
+}
+
+pub fn chat_endpoint(device: &actor::ActorDeviceRef) -> Result<chat::CryptoEndpoint, String> {
+    if device.device_id.trim().is_empty() {
+        return Err("actor device reference requires device ID".to_string());
     }
-    Some(chat::CryptoEndpoint {
-        ptid: actor.ptid.clone(),
+    Ok(chat::CryptoEndpoint {
+        ptid: actor_device_ptid(device)?.to_string(),
         device_id: device.device_id.clone(),
     })
 }
 
-pub(crate) fn crypto_endpoints_from_actor_device_refs(
-    devices: &[actor::ActorDeviceRef],
-) -> Option<Vec<chat::CryptoEndpoint>> {
-    devices
-        .iter()
-        .map(crypto_endpoint_from_actor_device_ref)
-        .collect()
+pub fn actor_device_from_chat_endpoint(endpoint: &chat::CryptoEndpoint) -> actor::ActorDeviceRef {
+    actor_device_ref(endpoint.ptid.clone(), endpoint.device_id.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{actor, actor_ref};
+
+    #[test]
+    fn actor_ref_derives_kind_from_canonical_ptid() {
+        let cases = [
+            ("p", actor::ActorKind::Person),
+            ("g", actor::ActorKind::Group),
+            ("o", actor::ActorKind::Organization),
+            ("s", actor::ActorKind::Service),
+            ("a", actor::ActorKind::Application),
+            ("n", actor::ActorKind::Node),
+        ];
+
+        for (kind, expected) in cases {
+            let ptid = format!("ptid:v1:actor:peers:{kind}:alice:fingerprint");
+            assert_eq!(actor_ref(ptid).kind, expected as i32);
+        }
+        assert_eq!(
+            actor_ref("ptid:invalid").kind,
+            actor::ActorKind::Unspecified as i32
+        );
+    }
 }

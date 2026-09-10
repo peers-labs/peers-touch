@@ -1,8 +1,8 @@
 # Station Dockerfile — multi-stage build
 # Build: from project root, e.g. docker build -f tooling/docker/station.Dockerfile .
 
-ARG BUILDER_IMAGE=swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/golang:1.24.6
-ARG BASE_IMAGE=swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/ubuntu:22.04
+ARG BUILDER_IMAGE=docker.m.daocloud.io/library/golang:1.24.6
+ARG BASE_IMAGE=docker.m.daocloud.io/library/ubuntu:22.04
 
 # ─── Stage 1: Builder ─────────────────────────────────────────────────────────
 FROM ${BUILDER_IMAGE} AS builder

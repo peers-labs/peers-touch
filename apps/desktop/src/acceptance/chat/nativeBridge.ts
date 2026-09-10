@@ -1,10 +1,21 @@
-import type { AuthSessionResponse } from '../../services/desktop_api';
+import { identityRuntime } from '../../kernel/identityRuntime';
+import { runIdentityPipeline } from '../../services/identityPipeline';
+import { markLocalIdentityAction } from '../../services/identity_event';
+import {
+  api,
+  type AuthSessionResponse,
+  type MessagingAcceptanceInteractionSnapshot,
+} from '../../services/desktop_api';
 import {
   type MemberSettingsResult,
   type MessagingConversationProjection,
   type MessagingProjection,
 } from '../../services/im-service-contract';
+import { imServiceV1 } from '../../services/im-service';
+import { useSessionStore } from '../../store/session';
 import { requireCanonicalAcceptancePtid } from './identity';
+
+export type { MessagingAcceptanceInteractionSnapshot } from '../../services/desktop_api';
 
 export interface NativeAcceptanceActorInput {
   actorPtid: string;
@@ -37,23 +48,6 @@ export interface NativeAcceptanceIdentityState {
 export interface NativeAcceptanceLogoutResult {
   actorPtid: string;
   status: string;
-}
-
-export interface MessagingAcceptanceInteractionSnapshot {
-  actorPtid: string;
-  conversationId: string;
-  messageId: string;
-  projection: Record<string, unknown> | null;
-  intent: Record<string, unknown> | null;
-  outbox: Record<string, unknown> | null;
-  directSessions: Array<Record<string, unknown>>;
-  commandLedger: Array<Record<string, unknown>>;
-  reactions: Array<Record<string, unknown>>;
-  pins: Array<Record<string, unknown>>;
-  readCursors: Array<Record<string, unknown>>;
-  consumptionCount: number;
-  laneSequence: number;
-  consumerEpoch: number;
 }
 
 interface NativeAcceptanceBridgeDependencies {
@@ -210,3 +204,38 @@ export function createNativeAcceptanceBridge(
     },
   };
 }
+
+export const nativeAcceptanceBridge = createNativeAcceptanceBridge({
+  activeActorPtid: () =>
+    useSessionStore.getState().currentUser?.actorPtid ?? null,
+  markLocalIdentityAction,
+  logoutWindowSession: (actorPtid) =>
+    api.acceptanceLogoutWindowSession(actorPtid),
+  completeLogoutLifecycle: async () => {
+    await runIdentityPipeline({
+      reason: 'logout',
+      actorPtid: null,
+      loginMethod: null,
+    });
+  },
+  readInteractionSnapshot: (input) =>
+    api.messagingAcceptanceInteractionSnapshot(input),
+  readMessages: (conversationId) =>
+    imServiceV1.messaging.listMessages(conversationId),
+  readConversations: () =>
+    imServiceV1.messaging.listConversations(),
+  readMemberSettings: (conversationId) =>
+    imServiceV1.messaging.getMemberSettings(conversationId),
+  openAttachment: (attachmentId) =>
+    imServiceV1.messaging.openAttachment(attachmentId),
+  identityState: () => {
+    const snapshot = identityRuntime.getSnapshot();
+    const phase = snapshot.phase;
+    return {
+      phase: phase.kind,
+      reason: 'reason' in phase ? phase.reason : '',
+      authenticated: snapshot.lifecycle.authenticated,
+      actorPtid: useSessionStore.getState().currentUser?.actorPtid ?? '',
+    };
+  },
+});
