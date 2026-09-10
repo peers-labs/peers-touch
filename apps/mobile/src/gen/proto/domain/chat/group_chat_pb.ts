@@ -2821,4 +2821,3 @@ export enum GroupOfflineMessageStatus {
  */
 export const GroupOfflineMessageStatusSchema: GenEnum<GroupOfflineMessageStatus> = /*@__PURE__*/
   enumDesc(file_domain_chat_group_chat, 6);
-

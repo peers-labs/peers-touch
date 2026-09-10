@@ -24,7 +24,7 @@ import (
 	fedprofile "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile"
 	profilepb "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
-	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 // Public errors. The resolver maps DHT / network / signature failures
@@ -69,6 +69,7 @@ type Resolver struct {
 	lookupTimeout time.Duration
 	remoteTimeout time.Duration
 	skipCache     bool
+	peerKeys      authfed.PeerKeyStore
 }
 
 // Config tunes the resolver. Zero value gives sensible production
@@ -85,6 +86,11 @@ type Config struct {
 	// answer. The write-through still runs so subsequent reads see a
 	// fresh row.
 	SkipCache bool
+
+	// PeerKeys stores the Home Station key authenticated by the signed
+	// locator and profile pair. Production defaults to the shared
+	// federation TOFU store.
+	PeerKeys authfed.PeerKeyStore
 }
 
 // New constructs a resolver. The zero Config is fine.
@@ -95,6 +101,7 @@ func New(cfg Config) *Resolver {
 		lookupTimeout: cfg.LookupTimeout,
 		remoteTimeout: cfg.RemoteTimeout,
 		skipCache:     cfg.SkipCache,
+		peerKeys:      cfg.PeerKeys,
 	}
 	if r.httpClient == nil {
 		r.httpClient = &http.Client{Timeout: 30 * time.Second}
@@ -107,6 +114,9 @@ func New(cfg Config) *Resolver {
 	}
 	if r.remoteTimeout <= 0 {
 		r.remoteTimeout = 15 * time.Second
+	}
+	if r.peerKeys == nil {
+		r.peerKeys = authfed.NewPeerKeyStoreGORM("")
 	}
 	return r
 }
@@ -153,6 +163,12 @@ func (r *Resolver) ResolveByHandle(
 	if err != nil {
 		return nil, err
 	}
+	isLocal := rec.GetHomeStationPeerId() == id.StationPeerID.String()
+	if !isLocal {
+		if err := r.rememberRemoteStationKey(ctx, rec); err != nil {
+			return nil, err
+		}
+	}
 	if rec.GetTombstone() {
 		// Persist the withdrawal so subsequent lookups don't replay
 		// the slow DHT/relay path on a known-dead handle. Best-effort —
@@ -165,7 +181,7 @@ func (r *Resolver) ResolveByHandle(
 		return nil, ErrTombstoned
 	}
 
-	if rec.GetHomeStationPeerId() == id.StationPeerID.String() {
+	if isLocal {
 		return r.resolveLocal(ctx, canon, rec, fetcher, keys)
 	}
 	res, err := r.resolveRemote(ctx, canon, rec)
@@ -184,6 +200,37 @@ func (r *Resolver) ResolveByHandle(
 		logger.Warnf(ctx, "[resolver] cache upsert failed handle=%s err=%v", canon, cerr)
 	}
 	return res, nil
+}
+
+func (r *Resolver) rememberRemoteStationKey(
+	ctx context.Context,
+	record *locatorpb.ActorLocatorRecord,
+) error {
+	if record == nil ||
+		record.GetHomeStationPeerId() == "" ||
+		record.GetSigningKeyKid() == "" ||
+		record.GetSigningKeyPem() == "" {
+		return errors.New("resolver: verified locator has incomplete station identity")
+	}
+	_, derivedKeyID, err := authfed.ParsePeerJWKPEM(record.GetSigningKeyPem())
+	if err != nil {
+		return fmt.Errorf("resolver: parse verified locator key: %w", err)
+	}
+	if derivedKeyID != record.GetSigningKeyKid() {
+		return fmt.Errorf("resolver: verified locator key id mismatch")
+	}
+	if err := r.peerKeys.UpsertTOFU(ctx, authfed.PeerKey{
+		StationID: record.GetHomeStationPeerId(),
+		Kid:       record.GetSigningKeyKid(),
+		PubPEM:    record.GetSigningKeyPem(),
+	}); err != nil {
+		return fmt.Errorf(
+			"resolver: persist Home Station trust station=%s: %w",
+			record.GetHomeStationPeerId(),
+			err,
+		)
+	}
+	return nil
 }
 
 // cachedToProtos rebuilds the resolver-return-shape protos from a
@@ -403,7 +450,7 @@ func (r *Resolver) resolveRemote(
 		return nil, fmt.Errorf("resolver: build forward request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/protobuf")
 
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
@@ -425,7 +472,7 @@ func (r *Resolver) resolveRemote(
 	}
 
 	env := &profilepb.ActorProfileEnvelope{}
-	if err := protojson.Unmarshal(body, env); err != nil {
+	if err := proto.Unmarshal(body, env); err != nil {
 		return nil, fmt.Errorf("resolver: parse envelope: %w", err)
 	}
 
@@ -436,6 +483,10 @@ func (r *Resolver) resolveRemote(
 	}); vErr != nil {
 		logger.Warnf(ctx, "[resolver] envelope verify failed handle=%s err=%v", canon, vErr)
 		return nil, fmt.Errorf("resolver: verify envelope: %w", vErr)
+	}
+	if env.GetHomeStationPeerId() != rec.GetHomeStationPeerId() ||
+		env.GetHomeStationDomain() != rec.GetHomeStationDomain() {
+		return nil, errors.New("resolver: profile Home Station does not match locator")
 	}
 	if err := touchactor.CacheVerifiedRemoteDeviceSigningKeys(
 		ctx,

@@ -104,6 +104,7 @@ const interruptedSnapshot = {
   role: 'assistant',
   status: 'interrupted',
   content: '',
+  errorJson: '{"error_type":"LIFECYCLE_INTERRUPTED"}',
   seq: 5,
   reconciliationSource: 'station-snapshot',
   createdAt: '2026-08-30T00:00:00Z',
@@ -123,6 +124,7 @@ const retainedSnapshot = mergeAgentMessages(
 )[0];
 assert.equal(retainedSnapshot.status, 'interrupted');
 assert.equal(retainedSnapshot.content, '');
+assert.equal(retainedSnapshot.errorJson, interruptedSnapshot.errorJson);
 assert.equal(retainedSnapshot.updatedAt, interruptedSnapshot.updatedAt);
 
 const acceptedSnapshot = mergeAgentMessages(
@@ -139,6 +141,118 @@ const acceptedNewerMessage = mergeAgentMessages(
 assert.equal(acceptedNewerMessage.status, 'failed');
 assert.equal(acceptedNewerMessage.content, 'stale partial response');
 assert.equal(acceptedNewerMessage.updatedAt, '2026-08-30T00:00:04Z');
+
+function branchMessage(messageId, seq, content) {
+  return {
+    messageId,
+    conversationId: 'conversation-branch',
+    role: 'assistant',
+    content,
+    seq,
+    createdAt: `2026-08-30T00:00:0${seq}Z`,
+    updatedAt: `2026-08-30T00:00:0${seq}Z`,
+  };
+}
+
+const branchMessageRepo = memoryRepository();
+const branchCursorRepo = memoryRepository();
+const fetchAfterSequences = [];
+let paginateProjection = false;
+let activeBranchProjection = [
+  branchMessage('root', 1, 'root'),
+  branchMessage('user', 2, 'question'),
+  branchMessage('sibling-high', 6, 'regenerated answer'),
+];
+const branchCache = createAgentChatCache({
+  conversationRepo: memoryRepository(),
+  messageRepo: branchMessageRepo,
+  turnEventRepo: memoryRepository(),
+  cursorRepo: branchCursorRepo,
+  fetcher: {
+    listConversations: async () => ({ conversations: [] }),
+    listMessages: async (_conversationId, afterSeq) => {
+      fetchAfterSequences.push(afterSeq);
+      if (paginateProjection && afterSeq === 0) {
+        return {
+          messages: activeBranchProjection.slice(0, 2),
+          nextCursor: 2,
+          hasMore: true,
+        };
+      }
+      return {
+        messages: activeBranchProjection.filter((message) => message.seq > afterSeq),
+        nextCursor: 0,
+        hasMore: false,
+      };
+    },
+  },
+});
+
+assert.deepEqual(
+  (await branchCache.syncConversation('conversation-branch')).map((message) => message.messageId),
+  ['root', 'user', 'sibling-high'],
+);
+activeBranchProjection = [
+  branchMessage('root', 1, 'root'),
+  branchMessage('user', 2, 'question'),
+  branchMessage('original-low', 4, 'original answer'),
+];
+assert.deepEqual(
+  (await branchCache.syncConversation('conversation-branch')).map((message) => message.messageId),
+  ['root', 'user', 'sibling-high'],
+);
+paginateProjection = true;
+assert.deepEqual(
+  (await branchCache.refreshConversation('conversation-branch')).map((message) => message.messageId),
+  ['root', 'user', 'original-low'],
+);
+assert.equal(await branchCursorRepo.readValue('conversation-branch'), 4);
+
+activeBranchProjection = [
+  ...activeBranchProjection,
+  branchMessage('follow-up', 5, 'follow-up answer'),
+];
+assert.deepEqual(
+  (await branchCache.syncConversation('conversation-branch')).map((message) => message.messageId),
+  ['root', 'user', 'original-low', 'follow-up'],
+);
+assert.deepEqual(fetchAfterSequences, [0, 6, 0, 2, 4]);
+
+let resolveStaleRefresh;
+const staleRefreshPage = new Promise((resolve) => {
+  resolveStaleRefresh = resolve;
+});
+let concurrentRefreshCalls = 0;
+const concurrentCache = createAgentChatCache({
+  conversationRepo: memoryRepository(),
+  messageRepo: memoryRepository(),
+  turnEventRepo: memoryRepository(),
+  cursorRepo: memoryRepository(),
+  fetcher: {
+    listConversations: async () => ({ conversations: [] }),
+    listMessages: async () => {
+      concurrentRefreshCalls += 1;
+      if (concurrentRefreshCalls === 1) return staleRefreshPage;
+      return {
+        messages: [branchMessage('selected-current', 4, 'current branch')],
+        hasMore: false,
+      };
+    },
+  },
+});
+const staleRefresh = concurrentCache.refreshConversation('conversation-branch');
+const currentRefresh = concurrentCache.refreshConversation('conversation-branch');
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(concurrentRefreshCalls, 1);
+resolveStaleRefresh({
+  messages: [branchMessage('selected-stale', 6, 'stale branch')],
+  hasMore: false,
+});
+await staleRefresh;
+assert.deepEqual(
+  (await currentRefresh).map((message) => message.messageId),
+  ['selected-current'],
+);
 
 const messages = projectIMMessages([
   {

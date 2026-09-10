@@ -88,7 +88,11 @@ Every authenticated edge must run the same reconciliation closure:
 IdentityAuthenticatedEdge
   -> kind: fresh_login | completed_login | restored_session | pin_unlock | account_switch | applet_launch
   -> completion: pending | ready
-  -> set current session user from auth response / restored session
+  -> set current session user from the current window-bound session
+  -> fresh login / OAuth / PIN transitions validate that binding without
+     issuing a second takeover session
+  -> cold-launch / renderer-reload restoration may perform persisted-session
+     takeover before binding the window
   -> for fresh password/OAuth login, enter authenticatedPendingCompletion
      until the login page finishes set/relink/skip PIN
   -> PROFILE_SYNC_STARTED

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-08-08 | **Updated**: 2026-08-10
+> **Created**: 2026-08-08 | **Updated**: 2026-09-06
 > **Owner**: Messaging Platform Team
 
 ---
@@ -21,11 +21,30 @@ new contract/owner ready
 
 回滚通过 commit/deployment rollback，不通过永久 compatibility shim。
 
-## 2. Current-To-Target Ownership Map
+### 1.1 Accepted API Ownership Correction
+
+Conversation is the sole Chat entry point at `/conversation/*`. Device, Inbox,
+Recovery, Key Exchange, and Federation APIs are exposed by their resource owners.
+MP-D30 corrects a verified pre-consolidation violation of this rule: the tree had
+parallel business surfaces and authority-store families. The hard cut is defined
+by `docs/architecture/api-ownership/integration.md` and requires:
+
+```text
+modern authority semantics -> Conversation owner and /conversation/*
+device identity/inbox/recovery/key exchange -> their resource owners
+attachment/typing/receipt -> Conversation-owned routes
+cross-Station mechanics -> shared Federation transport
+duplicate routes/types/stores/callers -> deleted in the same closure
+```
+
+Existing duplicate paths are implementation debt and may not be cited as an API
+precedent or extended by new callers.
+
+## 2. Pre-Consolidation-To-Target Ownership Map
 
 | 当前责任 | 目标 owner | 切换要求 |
 |---|---|---|
-| conversation command/event | Station Messaging Authority | 单一 typed framework |
+| conversation command/event | Station Conversation DDD Authority | 单一 typed framework + aggregate/UOW |
 | envelope inbox/outbox | Device Queue/Federation services | lane/lease/ACK semantics 完整 |
 | Web `imRuntime` receive | Device Messaging Engine inbox | Web 不再 resume/ACK |
 | Web `cryptoRuntime` protocol | Device Messaging Engine direct/MLS | Web 只投影 security state |
@@ -41,9 +60,10 @@ new contract/owner ready
 | Concern | New source | Cutover condition | Required deletion proof |
 |---|---|---|---|
 | Contracts | `model/domain/chat/*` | W01 catalog generated；W05/W07/W09 按 runtime owner 原子切换 | obsolete proto/messages 在对应 cutover 后 zero refs |
-| Station authority | messaging command/event domain | Direct/Group command gates pass | old conversation mutation paths zero |
-| Device queues | lane/lease queue service | replay/crash/fencing gates pass | envelope ACK/resume paths zero |
+| Station authority | Conversation DDD command/event domain | Direct/Group command gates pass | flat Conversation + Messaging authority owners zero |
+| Device inbox | Conversation delivery lane/lease service | replay/crash/fencing gates pass | superseded queue and envelope ACK/resume paths zero |
 | Federation routing | signed endpoint manifest + authority outbox | D19 accepted；two-Station disconnect/restart gate passes | old Envelope/Conversation federation messaging zero |
+| Follower membership | authority-signed public event projection at Home Station | D29 accepted；create/remove/gap/restart/settings gate passes | legacy Conversation membership authorization for Messaging IDs zero |
 | Device Engine | native Messaging Engine | receive/send transaction gates pass | Web crypto/inbox ownership zero |
 | Direct crypto | endpoint-pair engine | two/three-device gates pass | actor-wide session keys zero |
 | Group crypto | OpenMLS engine | MLS journey gate passes | Sender Keys/Megolm zero |
@@ -137,6 +157,67 @@ signed Home Station endpoint manifests
 不能把现有outbox/dispatcher单测当成跨Station能力证明；必须有authority producer、
 Home Station route truth、target ingest和两个独立数据库的native receiver evidence。
 
+#### 3.3.1 Home Station Follower Membership Cutover
+
+> `MP-D29` amendment status: accepted (Owner accepted 2026-09-05)
+
+```text
+authority commit writes Station-addressed projection outbox + device batch
+  -> target validates and atomically applies public follower projection
+  -> device batch validates matching public event and enqueues private payload
+  -> follower conversation/head/member repositories
+  -> authority-signed event-log replay for missing base or gaps
+  -> canonical Messaging membership reader
+  -> typed member-settings path
+  -> delete legacy thread/settings requests for Messaging conversations
+```
+
+该cutover必须保持：
+
+- endpoint-private payload仍以opaque bytes写入device lane；
+- follower projection只消费public authority event；
+- projection target使用authority-persisted member Home Station route，不依赖active
+  device；
+- creation/member snapshot使用`ptid + home_station_id + role`，不存在target-side
+  directory猜测；
+- authority transaction持久化per-event projection grant，replay严格按requesting
+  Home Station entitlement过滤；
+- authority和follower repository按`authority_station_id`互斥选择，不双写同一truth；
+- removal projection通过pre/post Home Station union送达，与device queue delivery解耦；
+- missing base、gap、fork、invalid signature时settings fail closed；
+- event-log replay不推进device lane、不生成missing ciphertext、不回滚follower head；
+- authority event/projection grant co-retain；unexpected replay-source loss进入typed
+  read-only，不能静默重建；
+- thread summary/count来自Device Engine local projection，不回退legacy plaintext
+  Conversation API。
+
+Required deletion proof：
+
+- Desktop canonical Chat 不再调用legacy JSON
+  `/conversation/member/settings`与`/conversation/thread/counts`；
+- Station canonical Messaging authorization不读取legacy
+  `conversation_members`或`conversation_follower_members`；
+- target ingest不解析`DeviceEventDelivery.endpoint_payload`，也不持久化已apply的完整
+  public event bytes；
+- queue-history/client-state membership inference zero；
+- swallowed member-settings/thread-count authorization errors zero。
+
+Required two-Station evidence：
+
+- remote Direct和Group create后，Bob Home Station存在verified follower membership；
+- duplicate frame/restart保持one head/one membership projection；
+- zero-active-device member仍收到Station-addressed projection；
+- gap触发event-log replay且replay前settings fail closed，missing device frame仍从
+  source outbox exact retry；
+- stale replay、wrong target/nonce、authority key mismatch和sequence rollback全部拒绝；
+- late-join Welcome必须通过independent owner Home Station resolve建立authority pin，
+  pre-join/post-removal replay拒绝；
+- replay event/grant digest mismatch和unexpected source loss拒绝；
+- sequence/event collision、wrong previous hash、buffer overflow/expiry进入明确
+  fail-closed state；
+- removal final projection把Bob置inactive，之后settings write明确拒绝；
+- Alice/Bob Native settings、thread/toolbar journey无403或runtime-log audit failure。
+
 ### 3.4 Attachment Data-Plane Cutover
 
 > `MP-D23`–`MP-D25` amendment status: accepted (Owner accepted 2026-08-10).
@@ -169,7 +250,7 @@ Replaced：
 Required deletion proof：
 
 - UI 不调用 upload part/complete、decrypt/hash-accept 或维护 durable transfer cursor；
-- Station Messaging authority 是 descriptor validation 与 recipient grant 的唯一 owner；
+- Station Conversation authority 是 descriptor validation 与 recipient grant 的唯一 owner；
 - `conversation_search_messages` 和 server plaintext search 在 canonical Chat path zero refs；
 - attachment filename/key/nonce/plaintext hash 不出现在 Station row/log/federation frame。
 

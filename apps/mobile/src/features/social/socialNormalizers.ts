@@ -31,12 +31,21 @@ export function timestampMillis(timestamp?: SocialTimestamp | string): number {
 
 export function normalizeFriendRequest(raw: Partial<FriendRequest>): FriendRequest {
   const record = raw as Record<string, unknown>;
+  const sender = (record.sender ?? {}) as Record<string, unknown>;
+  const receiver = (record.receiver ?? {}) as Record<string, unknown>;
   return {
     ...raw,
     requestId: String(raw.requestId ?? raw.id ?? record.request_id ?? ''),
-    senderPtid: String(record.sender_ptid ?? raw.senderPtid ?? ''),
-    receiverPtid: String(record.receiver_ptid ?? raw.receiverPtid ?? ''),
-    status: normalizeFriendRequestStatus(raw.status),
+    federationId: String(raw.federationId ?? record.federation_id ?? ''),
+    senderPtid: String(sender.ptid ?? record.sender_ptid ?? raw.senderPtid ?? ''),
+    receiverPtid: String(receiver.ptid ?? record.receiver_ptid ?? raw.receiverPtid ?? ''),
+    senderHomeStationPeerId: String(
+      raw.senderHomeStationPeerId ?? record.sender_home_station_peer_id ?? '',
+    ),
+    receiverHomeStationPeerId: String(
+      raw.receiverHomeStationPeerId ?? record.receiver_home_station_peer_id ?? '',
+    ),
+    status: normalizeFriendRequestStatus(record.state ?? raw.status),
     message: String(raw.message ?? ''),
     senderDisplayName: String(raw.senderDisplayName ?? record.sender_display_name ?? ''),
     senderAvatar: String(raw.senderAvatar ?? record.sender_avatar ?? ''),
@@ -145,6 +154,8 @@ export function normalizeActorSearchResult(raw: Partial<ActorSearchResult>): Act
   return {
     id: ptid,
     ptid,
+    federationId: String(raw.federationId ?? record.federation_id ?? ''),
+    homeStationPeerId: String(raw.homeStationPeerId ?? record.home_station_peer_id ?? ''),
     username: String(raw.username ?? ''),
     displayName: String(raw.displayName ?? record.display_name ?? ''),
     avatar: String(raw.avatar ?? ''),
@@ -163,6 +174,8 @@ export function federationViewToResult(view: FederationResolveView): ActorSearch
   return {
     id,
     ptid: id,
+    federationId: String(view.federationId ?? view.federation_id ?? ''),
+    homeStationPeerId: String(view.homeStationPeerId ?? view.home_station_peer_id ?? ''),
     username,
     displayName,
     avatar,

@@ -3,26 +3,28 @@
   "status": "active",
   "product_area": "chat",
   "owners": [
-    "apps/station/app/subserver/messaging/**",
-    "apps/station/app/subserver/envelope/**",
+    "apps/station/app/subserver/conversation/application/delivery/**",
+    "apps/station/app/subserver/conversation/infrastructure/delivery/**",
+    "apps/station/app/subserver/conversation/interface/http/device_inbox.go",
+    "apps/station/frame/core/federation/**",
     "apps/desktop/src-tauri/src/messaging/**",
-    "apps/desktop/src/runtimes/imRuntime.ts",
+    "apps/desktop/src/runtimes/socialRuntime.ts",
     "apps/desktop/src/store/socialChat.ts"
   ],
   "truth_sources": [
-    "per-device ordered messaging queue",
+    "per-device ordered Device Inbox",
     "Desktop messaging lifecycle worker",
     "Desktop social chat projection"
   ],
   "visible_surfaces": [
-    {"type": "desktop-runtime", "route": "imRuntime"},
-    {"type": "api", "route": "/messaging/queue/claim"},
-    {"type": "api", "route": "/messaging/queue/ack"}
+    {"type": "desktop-runtime", "route": "socialRuntime"},
+    {"type": "api", "route": "/device/inbox/claim"},
+    {"type": "api", "route": "/device/inbox/ack"}
   ],
   "required_gates": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"],
   "acceptance": {
     "service": [
-      "messaging queue and envelope contracts compile and package tests pass",
+      "Conversation DDD delivery, Device Inbox and shared Federation contracts compile and package tests pass",
       "Desktop lifecycle and projection clients compile with messaging service contracts"
     ],
     "visible": [

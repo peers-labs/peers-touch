@@ -241,7 +241,10 @@ def _role_observations(runtime_tuple: FoundationTuple) -> dict[str, dict[str, ob
             "selector": "[data-agent-message]",
             "locale": runtime_tuple.locale,
             "textHash": HASH,
-            "visible": True,
+            "visible": (
+                runtime_tuple.runtime_attestation_profile
+                != "non_advertised"
+            ),
         },
         "station-readback": {
             "entityKind": "turn",
@@ -778,6 +781,10 @@ class FoundationCandidateProducerTest(unittest.TestCase):
     def test_token_accounting_fields_are_not_treated_as_credentials(self) -> None:
         _ensure_evidence_safe(
             {
+                "details": {
+                    "actual_tokens": "128",
+                    "limit_tokens": "64",
+                },
                 "limits": {
                     "contextTokens": 128000,
                     "outputTokens": 8192,
@@ -790,6 +797,51 @@ class FoundationCandidateProducerTest(unittest.TestCase):
             },
             "runtimeAttestation",
         )
+
+        with self.assertRaisesRegex(
+            FoundationCandidateError,
+            "secret-bearing evidence field",
+        ):
+            _ensure_evidence_safe(
+                {"details": {"api_token": "must-not-be-persisted"}},
+                "runtimeAttestation",
+            )
+
+    def test_credential_status_is_safe_but_its_value_is_still_scanned(self) -> None:
+        _ensure_evidence_safe(
+            {"credentialStatus": "not_configured"},
+            "station-readback",
+        )
+
+        with self.assertRaisesRegex(
+            FoundationCandidateError,
+            "secret-bearing evidence value",
+        ):
+            _ensure_evidence_safe(
+                {"credentialStatus": "api_key=must-not-be-persisted"},
+                "station-readback",
+            )
+
+    def test_object_path_hash_is_not_treated_as_secret(self) -> None:
+        _ensure_evidence_safe(
+            {"deletionReadback": {"objectPathHash": "0" * 64}},
+            "cleanup",
+        )
+
+    def test_topic_label_is_safe_but_bare_key_is_rejected(self) -> None:
+        _ensure_evidence_safe(
+            {"topics": {"alpha": {"topicLabel": "alpha"}}},
+            "station-readback",
+        )
+
+        with self.assertRaisesRegex(
+            FoundationCandidateError,
+            "secret-bearing evidence field",
+        ):
+            _ensure_evidence_safe(
+                {"topics": {"alpha": {"key": "alpha"}}},
+                "station-readback",
+            )
 
     def test_wrong_gate_or_source_identity_is_rejected_before_collection(self) -> None:
         adapter = RecordingAdapter()

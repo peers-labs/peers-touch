@@ -19,6 +19,7 @@ interface Contact {
   did: string;
   name: string;
   avatar: string;
+  federationId: string;
 }
 
 function getFirstLetter(name: string): string {
@@ -31,7 +32,16 @@ function getFirstLetter(name: string): string {
 export function CreateGroupModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const { sessions, friendRequests, currentUserPtid, loadGroups, selectGroup, setActiveTab, getIMConversations, loadSessions } = useActiveSocialChatSlice((s) => ({
+  const {
+    sessions,
+    friendRequests,
+    currentUserPtid,
+    loadGroups,
+    selectGroup,
+    setActiveTab,
+    getIMConversations,
+    trackPendingGroupCreation,
+  } = useActiveSocialChatSlice((s) => ({
     sessions: s.sessions,
     friendRequests: s.friendRequests,
     currentUserPtid: s.currentUserPtid,
@@ -39,7 +49,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
     selectGroup: s.selectGroup,
     setActiveTab: s.setActiveTab,
     getIMConversations: s.getIMConversations,
-    loadSessions: s.loadSessions,
+    trackPendingGroupCreation: s.trackPendingGroupCreation,
   }));
   const sessionActorPtid = useActiveChatSessionSlice((s) => s.currentUser?.actorPtid ?? null);
   const ownDid = currentUserPtid || sessionActorPtid;
@@ -51,6 +61,20 @@ export function CreateGroupModal({ open, onClose }: Props) {
   const contacts: Contact[] = useMemo(() => {
     if (!ownDid) return [];
     const seen = new Map<string, Contact>();
+    const federationByPtid = new Map<string, string>();
+
+    for (const req of friendRequests) {
+      if (req.status !== 2) continue;
+      const peerId = req.senderPtid === ownDid ? req.receiverPtid : req.senderPtid;
+      if (peerId && req.federationId) {
+        federationByPtid.set(peerId, req.federationId);
+      }
+    }
+    for (const conversation of getIMConversations()) {
+      if (conversation.kind === 'friend' && conversation.peerPtid && conversation.federationId) {
+        federationByPtid.set(conversation.peerPtid, conversation.federationId);
+      }
+    }
 
     for (const s of sessions) {
       const peer = peerOfSession(s, ownDid);
@@ -59,6 +83,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
         did: peer.did,
         name: peer.name || t('chat.social.sessionList.unknown'),
         avatar: peer.avatar,
+        federationId: federationByPtid.get(peer.did) || '',
       });
     }
 
@@ -69,6 +94,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
         did: conv.peerPtid,
         name: conv.title || t('chat.social.sessionList.unknown'),
         avatar: conv.avatar || '',
+        federationId: conv.federationId || '',
       });
     }
 
@@ -83,6 +109,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
         did: peerId,
         name: peerName || t('chat.social.sessionList.unknown'),
         avatar: peerAvatar || '',
+        federationId: req.federationId,
       });
     }
 
@@ -155,6 +182,19 @@ export function CreateGroupModal({ open, onClose }: Props) {
 
     const memberPtids = Array.from(selectedDids).filter((did) => did !== ownDid);
     if (memberPtids.length === 0) { setCreating(false); return; }
+    const selectedFederationIds = new Set(
+      selectedContacts.map(contact => contact.federationId),
+    );
+    if (
+      selectedContacts.length !== memberPtids.length
+      || selectedContacts.some(contact => !contact.federationId)
+      || selectedFederationIds.size !== 1
+    ) {
+      setCreating(false);
+      toast.error(t('chat.social.createGroup.failed'));
+      return;
+    }
+    const [federationId] = selectedFederationIds;
 
     const namesByDid = new Map(contacts.map((c) => [c.did, c.name]));
     const groupName =
@@ -167,13 +207,35 @@ export function CreateGroupModal({ open, onClose }: Props) {
     const conversationId = crypto.randomUUID();
     useSocialChatStore.getState().setGroupSecurityState(conversationId, 'establishing');
     try {
-      await imServiceV1.messaging.createGroup(conversationId, groupName, memberPtids);
-      useSocialChatStore.getState().setGroupSecurityState(conversationId, 'ready');
+      const created = await imServiceV1.messaging.createGroup(
+        conversationId,
+        groupName,
+        memberPtids,
+        federationId,
+      );
+      if (created.state === 'failed') {
+        useSocialChatStore.getState().setGroupSecurityState(conversationId, 'error');
+        toast.error(t('chat.social.createGroup.failed'));
+        return;
+      }
+      trackPendingGroupCreation(conversationId, created.commandId);
       await loadGroups();
-      await loadSessions();
+      const projectionReady = useSocialChatStore.getState().conversations.some(
+        conversation => conversation.conversationId === conversationId,
+      );
+      if (!projectionReady) {
+        toast.info({
+          description: t('chat.social.encryption.establishing'),
+          placement: 'top',
+        });
+        return;
+      }
       setActiveTab('group');
       selectGroup(conversationId);
-      toast.success(t('chat.social.createGroup.success'));
+      toast.success({
+        description: t('chat.social.createGroup.success'),
+        placement: 'top',
+      });
     } catch (err) {
       useSocialChatStore.getState().setGroupSecurityState(conversationId, 'error');
       log.error('chat', 'createGroup failed', { conversationId, error: err });

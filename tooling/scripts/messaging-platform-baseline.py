@@ -33,9 +33,7 @@ SOURCE_ROOTS = (
     "model/domain/chat",
     "apps/station/frame/touch/model/chat",
     "apps/station/app/subserver/conversation",
-    "apps/station/app/subserver/envelope",
     "apps/station/app/subserver/key_exchange",
-    "apps/station/app/subserver/messaging",
     "apps/desktop/src/gen/proto/domain/chat",
     "apps/desktop/src-tauri/build.rs",
     "apps/desktop/src/runtimes/cryptoRuntime.ts",
@@ -82,7 +80,15 @@ SCAN_ROOTS = (
     "apps/mobile/src-tauri/src",
 )
 
+FORBIDDEN_PATHS = {
+    "station_messaging_subserver": "apps/station/app/subserver/messaging",
+}
+
 FORBIDDEN_RULES = {
+    "public_messaging_route": (
+        re.compile(r"""["']/messaging/"""),
+        SCAN_ROOTS,
+    ),
     "frontend_inbox_ownership": (
         re.compile(r"\b(envelope_ack|envelope_resume|dkx_send)\b"),
         ("apps/desktop/src",),
@@ -212,7 +218,17 @@ def iter_source_files(prefixes: Iterable[str]) -> Iterable[Path]:
 
 
 def forbidden_inventory() -> dict[str, object]:
-    result: dict[str, object] = {}
+    result: dict[str, object] = {
+        rule_id: {
+            "count": int((ROOT / relative_path).exists()),
+            "examples": (
+                [{"path": relative_path}]
+                if (ROOT / relative_path).exists()
+                else []
+            ),
+        }
+        for rule_id, relative_path in FORBIDDEN_PATHS.items()
+    }
     for rule_id, (pattern, prefixes) in FORBIDDEN_RULES.items():
         matches: list[dict[str, object]] = []
         for path in iter_source_files(prefixes):

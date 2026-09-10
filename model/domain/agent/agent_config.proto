@@ -4,6 +4,8 @@ package peers_touch.model.agent.v1;
 
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
 
+import "domain/agent/turn_stream.proto";
+
 // Provider model visibility preferences.
 message HideModelRequest {
   string provider_id = 1;
@@ -32,6 +34,7 @@ enum ToolApprovalDecisionErrorCode {
   TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT = 2;
   TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED = 3;
   TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND = 4;
+  TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE = 5;
 }
 
 message SubmitToolApprovalDecisionResponse {
@@ -44,4 +47,5 @@ message SubmitToolApprovalDecisionResponse {
   string idempotency_key = 7;
   string payload_hash = 8;
   ToolApprovalDecisionErrorCode error_code = 9;
+  ErrorPayload outcome_error = 10;
 }

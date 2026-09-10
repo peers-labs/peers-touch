@@ -3,7 +3,7 @@ use crate::contracts::{
     ConversationProjection, ConversationStateReceiveCommit, CryptoEndpoint, ReceiveCommitResult,
 };
 use crate::proto::chat::{
-    conversation_event, ConversationStateMarker, DeviceConsumptionReceipt, DeviceQueueItem,
+    conversation_event, ConversationStateMarker, DeviceConsumptionReceipt, DurableDeviceInboxItem,
     PreparedEndpointPayloadKind,
 };
 use crate::store::MessagingRepository;
@@ -34,7 +34,7 @@ impl<R: MessagingRepository> ConversationStateProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -73,20 +73,33 @@ impl<R: MessagingRepository> ConversationStateProcessor<R> {
             Some(conversation_event::Payload::ConversationCreated(created)) => created,
             _ => return Err("messaging conversation-state event is unsupported".to_string()),
         };
+        let post_state = created
+            .post_state
+            .as_ref()
+            .filter(|state| !state.federation_id.trim().is_empty())
+            .ok_or_else(|| {
+                "messaging conversation-state Federation projection is missing".to_string()
+            })?;
         if !created
-            .member_ptids
-            .binary_search(&self.endpoint.ptid)
-            .is_ok()
+            .members
+            .iter()
+            .any(|member| member.ptid == self.endpoint.ptid)
         {
             return Err("messaging recipient is not a conversation member".to_string());
         }
+        let member_ptids = created
+            .members
+            .iter()
+            .map(|member| member.ptid.clone())
+            .collect();
         let projection = ConversationProjection {
             conversation_id: event.conversation_id.clone(),
-            authority_station_id: event.authority_station_id.clone(),
+            authority_station_id: event.authority_station_peer_id.clone(),
+            federation_id: post_state.federation_id.clone(),
             kind: created.kind,
             name: created.name.clone(),
             owner_ptid: created.owner_ptid.clone(),
-            member_ptids: created.member_ptids.clone(),
+            member_ptids,
             membership_epoch: event.membership_epoch,
             mls_epoch: event.mls_epoch,
             active: true,
@@ -133,7 +146,7 @@ impl<R: MessagingRepository> ConversationStateProcessor<R> {
 }
 
 impl<R: MessagingRepository> ClaimedItemConsumer for ConversationStateProcessor<R> {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }

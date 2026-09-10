@@ -269,7 +269,7 @@ func TestToolDispatchServiceLateAppliedAfterCancellationPersistsWithoutContinuat
 	conversation := &persistence.Conversation{
 		ID:        "conversation-1",
 		AgentID:   "agent-1",
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Recovery cancellation",
 		Status:    "active",
 		CreatedAt: now,

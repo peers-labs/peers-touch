@@ -50,7 +50,7 @@ func TestEmitTurnEventPersistsWithoutLiveSink(t *testing.T) {
 	if err := db.Create(&persistence.Conversation{
 		ID:        "conv_persisted",
 		AgentID:   "agent_1",
-		Ptid:      "actor_1",
+		ActorPTID: "actor_1",
 		Title:     "Persisted events",
 		Status:    "active",
 		CreatedAt: now,
@@ -95,7 +95,7 @@ func TestTurnServiceSaveTurnTraceUpsertsByTurn(t *testing.T) {
 	if err := db.Create(&persistence.Conversation{
 		ID:        "conv_trace",
 		AgentID:   "agent_1",
-		Ptid:      "actor_1",
+		ActorPTID: "actor_1",
 		Title:     "Trace",
 		Status:    "active",
 		CreatedAt: now,
@@ -150,12 +150,14 @@ func TestTurnServiceSaveTurnTraceUpsertsByTurn(t *testing.T) {
 }
 
 func TestToolDecisionTurnEventCarriesManualApprovalProjection(t *testing.T) {
+	expiresAt := time.Date(2026, 8, 29, 12, 30, 0, 123456789, time.UTC)
 	event := toolDecisionTurnEvent(ProposalDecision{
 		ToolCallID:       "tool-call-1",
 		ToolName:         "local_shell_safe",
 		Arguments:        `{"command_ref":"command-1"}`,
 		ApprovalID:       "approval-1",
 		DecisionRevision: 0,
+		ExpiresAt:        expiresAt,
 		Status:           persistence.ToolCallStatusWaitingApproval,
 	}, 2)
 
@@ -165,6 +167,7 @@ func TestToolDecisionTurnEventCarriesManualApprovalProjection(t *testing.T) {
 		event.Arguments != `{"command_ref":"command-1"}` ||
 		event.ApprovalID != "approval-1" ||
 		event.DecisionRevision != 0 ||
+		event.ExpiresAt != canonicalToolDeadline(expiresAt).Format(time.RFC3339Nano) ||
 		event.Iteration != 2 {
 		t.Fatalf("unexpected approval projection: %+v", event)
 	}
@@ -249,7 +252,7 @@ func TestSupersededExecutionCannotRaceNewOwnerTerminalCommit(t *testing.T) {
 	db := openConversationAuthorityDB(t, "superseded_execution_terminal_race")
 	now := time.Now().UTC()
 	if err := db.Create(&persistence.Conversation{
-		ID: "conv_generation_race", AgentID: "agent_1", Ptid: "actor_1",
+		ID: "conv_generation_race", AgentID: "agent_1", ActorPTID: "actor_1",
 		Title: "Generation race", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatal(err)
@@ -369,7 +372,7 @@ func TestLifecycleCancellationInterruptsDirectTurnForRetry(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	if err := db.Create(&persistence.Conversation{
-		ID: "conv_lifecycle", AgentID: "agent_1", Ptid: "actor_1",
+		ID: "conv_lifecycle", AgentID: "agent_1", ActorPTID: "actor_1",
 		Title: "Lifecycle", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatal(err)
@@ -430,7 +433,7 @@ func TestEmitTurnEventFailsClosedWhenPersistenceFails(t *testing.T) {
 	if err := db.Create(&persistence.Conversation{
 		ID:        "conv_failure",
 		AgentID:   "agent_1",
-		Ptid:      "actor_1",
+		ActorPTID: "actor_1",
 		Title:     "Persistence failure",
 		Status:    "active",
 		CreatedAt: now,
@@ -475,7 +478,7 @@ func TestCompleteTurnRollsBackAllTerminalStateWhenEventPersistenceFails(t *testi
 	}
 	now := time.Now()
 	if err := db.Create(&persistence.Conversation{
-		ID: "conv_atomic", AgentID: "agent_1", Ptid: "actor_1",
+		ID: "conv_atomic", AgentID: "agent_1", ActorPTID: "actor_1",
 		Title: "Atomic", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatal(err)
@@ -527,7 +530,7 @@ func TestCompleteTurnDeliversCommittedTerminalSequence(t *testing.T) {
 	db := openConversationAuthorityDB(t, "turn_terminal_live_sequence")
 	now := time.Now()
 	if err := db.Create(&persistence.Conversation{
-		ID: "conv_terminal_live", AgentID: "agent_1", Ptid: "actor_1",
+		ID: "conv_terminal_live", AgentID: "agent_1", ActorPTID: "actor_1",
 		Title: "Terminal live", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatal(err)
@@ -577,7 +580,7 @@ func TestFailedTurnDeliversCommittedTerminalSequence(t *testing.T) {
 	db := openConversationAuthorityDB(t, "turn_failed_live_sequence")
 	now := time.Now()
 	if err := db.Create(&persistence.Conversation{
-		ID: "conv_failed_live", AgentID: "agent_1", Ptid: "actor_1",
+		ID: "conv_failed_live", AgentID: "agent_1", ActorPTID: "actor_1",
 		Title: "Failed live", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatal(err)
@@ -635,7 +638,7 @@ func TestCreateOrReopenTurnRecordRequiresAtomicRetryAdmission(t *testing.T) {
 	if err := db.Create(&persistence.Conversation{
 		ID:        "conv_interrupted",
 		AgentID:   "agent_1",
-		Ptid:      "ptid:person:owner",
+		ActorPTID: "ptid:person:owner",
 		Title:     "Interrupted retry",
 		Status:    "active",
 		CreatedAt: now,
@@ -690,7 +693,7 @@ func TestExistingRetryAdmissionSettlesEarlyExecutionFailure(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	if err := db.Create(&persistence.Conversation{
-		ID: "conv_retry_early_failure", AgentID: "agent_1", Ptid: "ptid:person:owner",
+		ID: "conv_retry_early_failure", AgentID: "agent_1", ActorPTID: "ptid:person:owner",
 		Title: "Retry early failure", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatal(err)
@@ -883,7 +886,7 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 				value interface{}
 			}{
 				{name: "conversation", value: &persistence.Conversation{
-					ID: "conv_" + test.name, AgentID: "agent_1", Ptid: "actor_1",
+					ID: "conv_" + test.name, AgentID: "agent_1", ActorPTID: "actor_1",
 					Title: "Post-admission settlement", Status: "active",
 					CreatedAt: now, UpdatedAt: now,
 				}},
@@ -903,9 +906,9 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 				}},
 				{name: "task", value: &persistence.TaskRun{
 					TaskID: taskID, Title: "Post-admission settlement",
-					Surface:      int32(model.TaskSurface_TASK_SURFACE_CHAT),
-					Status:       int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-					OwnerActorID: "actor_1", ConversationID: "conv_" + test.name,
+					Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
+					Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+					OwnerActorPTID: "actor_1", ConversationID: "conv_" + test.name,
 					CreatedAt: now, StartedAt: now, UpdatedAt: now,
 				}},
 				{name: "step", value: &persistence.ExecutionStep{
@@ -1011,7 +1014,7 @@ func TestRequestCancelWaitingToolPersistsCancelledEvent(t *testing.T) {
 	if err := db.Create(&persistence.Conversation{
 		ID:        "conv_cancel",
 		AgentID:   "agent_1",
-		Ptid:      "actor_1",
+		ActorPTID: "actor_1",
 		Title:     "Cancel waiting tool",
 		Status:    "active",
 		CreatedAt: now,
@@ -1027,6 +1030,28 @@ func TestRequestCancelWaitingToolPersistsCancelledEvent(t *testing.T) {
 		StartedAt:      now,
 	}).Error; err != nil {
 		t.Fatalf("seed turn: %v", err)
+	}
+	if err := db.Create(&persistence.TurnAttempt{
+		ID:           "attempt_cancel",
+		TurnID:       "turn_cancel",
+		AttemptIndex: 1,
+		Status:       string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:    now,
+	}).Error; err != nil {
+		t.Fatalf("seed turn attempt: %v", err)
+	}
+	if err := db.Create(&persistence.AgentMessage{
+		ID:             "message_cancel",
+		ConversationID: "conv_cancel",
+		TurnID:         optionalString("turn_cancel"),
+		Role:           string(domain.MessageRoleAssistant),
+		Status:         "pending",
+		Content:        optionalString("partial"),
+		Seq:            1,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed assistant message: %v", err)
 	}
 
 	svc := TurnService{convService: NewConversationService()}
@@ -1044,6 +1069,62 @@ func TestRequestCancelWaitingToolPersistsCancelledEvent(t *testing.T) {
 	}
 	if event.EventSeq != 1 {
 		t.Fatalf("cancelled event sequence = %d, want 1", event.EventSeq)
+	}
+	var payload TurnEvent
+	if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+		t.Fatalf("decode cancelled event payload: %v", err)
+	}
+	var eventError model.ErrorPayload
+	if err := json.Unmarshal(payload.OutcomeError, &eventError); err != nil {
+		t.Fatalf("decode cancelled event outcome: %v", err)
+	}
+	assertLifecycleCancelledJSON(t, payload.OutcomeError)
+	assertLifecycleCancelledPayload(t, &eventError, "turn_cancel")
+
+	var message persistence.AgentMessage
+	if err := db.First(&message, "id = ?", "message_cancel").Error; err != nil {
+		t.Fatalf("load cancelled assistant message: %v", err)
+	}
+	if message.Status != string(domain.TurnStatusCancelled) {
+		t.Fatalf("assistant message status = %q, want cancelled", message.Status)
+	}
+	var messageError model.ErrorPayload
+	if err := json.Unmarshal(message.ErrorJSON, &messageError); err != nil {
+		t.Fatalf("decode cancelled assistant error: %v", err)
+	}
+	assertLifecycleCancelledJSON(t, message.ErrorJSON)
+	assertLifecycleCancelledPayload(t, &messageError, "turn_cancel")
+}
+
+func assertLifecycleCancelledJSON(t *testing.T, encoded []byte) {
+	t.Helper()
+	var payload map[string]interface{}
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatalf("decode lifecycle cancellation JSON: %v", err)
+	}
+	retryable, retryablePresent := payload["retryable"]
+	terminal, terminalPresent := payload["terminal"]
+	if !retryablePresent || retryable != false || !terminalPresent || terminal != true {
+		t.Fatalf("lifecycle cancellation booleans are incomplete: %+v", payload)
+	}
+}
+
+func assertLifecycleCancelledPayload(
+	t *testing.T,
+	payload *model.ErrorPayload,
+	turnID string,
+) {
+	t.Helper()
+	if payload == nil ||
+		payload.GetError() != errcode.AgentLifecycleCancelledLocaleKey ||
+		payload.GetErrorType() != string(errcode.AgentLifecycleCancelled) ||
+		payload.GetLocaleKey() != errcode.AgentLifecycleCancelledLocaleKey ||
+		payload.GetRetryable() ||
+		!payload.GetTerminal() ||
+		len(payload.GetDetails()) != 2 ||
+		payload.GetDetails()["resource_kind"] != "turn" ||
+		payload.GetDetails()["resource_id"] != turnID {
+		t.Fatalf("lifecycle cancellation payload = %+v", payload)
 	}
 }
 
@@ -1070,7 +1151,7 @@ func TestRequestCancelDoesNotSignalBeforeDurableCommit(t *testing.T) {
 	db := openConversationAuthorityDB(t, "cancel_crash_order")
 	now := time.Now()
 	if err := db.Create(&persistence.Conversation{
-		ID: "conv_cancel_crash", AgentID: "agent_1", Ptid: "actor_1",
+		ID: "conv_cancel_crash", AgentID: "agent_1", ActorPTID: "actor_1",
 		Title: "Cancel crash order", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatal(err)
@@ -1110,7 +1191,7 @@ func TestRequestCancelReturnsDurableTerminalWinner(t *testing.T) {
 	db := openConversationAuthorityDB(t, "cancel_terminal_winner")
 	now := time.Now()
 	if err := db.Create(&persistence.Conversation{
-		ID: "conv_cancel_winner", AgentID: "agent_1", Ptid: "actor_1",
+		ID: "conv_cancel_winner", AgentID: "agent_1", ActorPTID: "actor_1",
 		Title: "Cancel terminal winner", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatal(err)
@@ -1160,7 +1241,7 @@ func TestRequestCancelAllowsCurrentExecutionToFinalizeUsageAndTrace(t *testing.T
 	}
 	now := time.Now().UTC()
 	if err := db.Create(&persistence.Conversation{
-		ID: "conv_cancel_usage", AgentID: "agent_1", Ptid: "actor_1",
+		ID: "conv_cancel_usage", AgentID: "agent_1", ActorPTID: "actor_1",
 		Title: "Cancelled usage", Status: "active", CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatal(err)

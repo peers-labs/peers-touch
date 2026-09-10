@@ -1,6 +1,13 @@
 # Desktop Group Admin E2E Acceptance Script
 
-> Status: active P2 verification script
+> **Status: SUPERSEDED / HISTORICAL — DO NOT EXECUTE**
+>
+> Superseded by
+> `docs/architecture/api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md`.
+> All route examples, commands, matrices, evidence claims, and run instructions
+> below are historical records only. They must not be used as current acceptance
+> guidance or as alternatives to Conversation and resource-owned APIs.
+>
 > Scope: Desktop group detail, Station group admin APIs, realtime membership refresh, group sender-key rotation
 
 ## Purpose

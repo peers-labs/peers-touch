@@ -18,7 +18,6 @@ from tooling.acceptance.core.evidence_store import (
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.provisioning import utc_now
 from tooling.acceptance.fixtures.chat_native_actors import (
-    ACTOR_PASSWORD,
     reset_fixture,
     resolve_actor_identity,
     verify_reset_target,
@@ -157,7 +156,7 @@ def prepare_fixture(
         verify_reset_target(station_url, deployment_environment)
         reset_fixture(deployment_environment, ROLES)
         actors = [
-            resolve_actor_identity(station_url, role, ACTOR_PASSWORD)
+            resolve_actor_identity(station_url, deployment_environment, role)
             for role in ROLES
         ]
         stations[service_id] = {
