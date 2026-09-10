@@ -1563,18 +1563,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('return {"selected": True, "control": control}', self.source)
         self.assertIn(
             "self.native_adapter.post_key_to_process(\n"
-            "            client.process_id or 0,\n"
-            "            NativeKey.A,\n"
-            "            modifiers=(NativeModifier.PRIMARY,),",
+            "                client.process_id or 0,\n"
+            "                NativeKey.A,\n"
+            "                modifiers=(NativeModifier.PRIMARY,),",
             self.source,
         )
-        self.assertIn(
-            "client.process_id or 0,\n"
-            "            NativeKey.DELETE,\n"
-            "            private_source=True,",
-            self.source,
-        )
-        self.assertIn('control.value == ""', self.source)
+        self.assertNotIn("def location_field_cleared(", self.source)
         self.assertIn(
             "poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS",
             self.source,

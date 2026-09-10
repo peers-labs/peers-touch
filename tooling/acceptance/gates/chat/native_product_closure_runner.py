@@ -741,34 +741,15 @@ class NativeProductClosureGate(AcceptanceGate):
                 f"{revealed_control.to_dict()}"
             )
 
-        self.native_adapter.post_key_to_process(
-            client.process_id or 0,
-            NativeKey.A,
-            modifiers=(NativeModifier.PRIMARY,),
-        )
-        self.native_adapter.post_key_to_process(
-            client.process_id or 0,
-            NativeKey.DELETE,
-            private_source=True,
-        )
-
-        def location_field_cleared(_: Any) -> NativeControlSnapshot | None:
-            control = self.native_adapter.focused_control(client.process_id or 0)
-            return (
-                control
-                if control.kind == "text-field" and control.value == ""
-                else None
-            )
-
-        WebDriverWait(
-            client.driver,
-            10,
-            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(location_field_cleared)
         original_clipboard = self.native_adapter.read_clipboard()
         try:
             self.native_adapter.write_clipboard(
                 str(selected_path).encode("utf-8")
+            )
+            self.native_adapter.post_key_to_process(
+                client.process_id or 0,
+                NativeKey.A,
+                modifiers=(NativeModifier.PRIMARY,),
             )
             self.native_adapter.post_key_to_process(
                 client.process_id or 0,
