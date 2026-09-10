@@ -20,6 +20,7 @@ type AgentHandlers struct {
 }
 
 func NewAgentHandlers(agentService *service.AgentService, eventBus domain.EventBus) *AgentHandlers {
+	agentService.SetEventBus(eventBus)
 	return &AgentHandlers{agentService: agentService, eventBus: eventBus}
 }
 
@@ -54,15 +55,16 @@ func (h *AgentHandlers) HandleGetAgent(ctx context.Context, req *model.GetAgentR
 func (h *AgentHandlers) HandleCreateAgent(ctx context.Context, req *model.CreateAgentRequest) (*model.CreateAgentResponse, error) {
 	configJSON := mergeConfigExtras(req.GetConfigJson(), "", "")
 	agent, err := h.agentService.CreateAgent(ctx, domain.AgentUpsertOptions{
-		ActorPTID:   subjectActorPTID(ctx),
-		Name:        req.GetName(),
-		Title:       req.GetTitle(),
-		Description: req.GetDescription(),
-		ProviderID:  req.GetProviderId(),
-		ModelName:   req.GetModelName(),
-		Effort:      req.GetEffort(),
-		Visibility:  protoAgentVisibilityToDomain(req.GetVisibility()),
-		ConfigJSON:  configJSON,
+		ActorPTID:    subjectActorID(ctx),
+		Name:         req.GetName(),
+		Title:        req.GetTitle(),
+		Description:  req.GetDescription(),
+		ProviderID:   req.GetProviderId(),
+		ModelName:    req.GetModelName(),
+		Effort:       req.GetEffort(),
+		ThinkingMode: domain.ThinkingMode(req.GetThinkingMode()),
+		Visibility:   protoAgentVisibilityToDomain(req.GetVisibility()),
+		ConfigJSON:   configJSON,
 	})
 	if err != nil {
 		return nil, toHandlerError(err)
@@ -82,6 +84,7 @@ func (h *AgentHandlers) HandleCreateAgentRaw(ctx context.Context, req server.Req
 		Model             string `json:"model"`
 		ModelName         string `json:"model_name"`
 		Effort            string `json:"effort"`
+		ThinkingMode      string `json:"thinking_mode"`
 		Visibility        string `json:"visibility"`
 		Identity          string `json:"identity"`
 		SoulMd            string `json:"soul_md"`
@@ -132,15 +135,16 @@ func (h *AgentHandlers) HandleCreateAgentRaw(ctx context.Context, req server.Req
 		visibility = domain.AgentVisibilityWorkspace
 	}
 	agent, err := h.agentService.CreateAgent(ctx, domain.AgentUpsertOptions{
-		ActorPTID:   subjectActorPTID(ctx),
-		Name:        body.Name,
-		Title:       body.Title,
-		Description: body.Description,
-		ProviderID:  provider,
-		ModelName:   modelName,
-		Effort:      body.Effort,
-		Visibility:  visibility,
-		ConfigJSON:  cfgJSON,
+		ActorPTID:    subjectActorID(ctx),
+		Name:         body.Name,
+		Title:        body.Title,
+		Description:  body.Description,
+		ProviderID:   provider,
+		ModelName:    modelName,
+		Effort:       body.Effort,
+		ThinkingMode: domain.ThinkingMode(body.ThinkingMode),
+		Visibility:   visibility,
+		ConfigJSON:   cfgJSON,
 	})
 	if err != nil {
 		resp.WriteHeader(500)
@@ -183,9 +187,12 @@ func domainAgentToMap(agent *domain.Agent) map[string]interface{} {
 		"description":      agent.Description,
 		"provider_id":      agent.ProviderID,
 		"model_name":       agent.ModelName,
+		"effort":           agent.Effort,
+		"thinking_mode":    agent.ThinkingMode,
 		"visibility":       agent.Visibility,
 		"owner_actor_ptid": agent.OwnerActorPTID,
 		"config_json":      agent.ConfigJSON,
+		"version":          agent.Version,
 		"created_at":       agent.CreatedAt,
 		"updated_at":       agent.UpdatedAt,
 	}
@@ -193,16 +200,18 @@ func domainAgentToMap(agent *domain.Agent) map[string]interface{} {
 
 func (h *AgentHandlers) HandleUpdateAgent(ctx context.Context, req *model.UpdateAgentRequest) (*model.UpdateAgentResponse, error) {
 	agent, err := h.agentService.UpdateAgent(ctx, domain.AgentUpsertOptions{
-		ActorPTID:   subjectActorPTID(ctx),
-		AgentID:     req.GetAgentId(),
-		Name:        req.GetName(),
-		Title:       req.GetTitle(),
-		Description: req.GetDescription(),
-		ProviderID:  req.GetProviderId(),
-		ModelName:   req.GetModelName(),
-		Effort:      req.GetEffort(),
-		Visibility:  protoAgentVisibilityToDomain(req.GetVisibility()),
-		ConfigJSON:  req.GetConfigJson(),
+		ActorPTID:    subjectActorID(ctx),
+		AgentID:      req.GetAgentId(),
+		Name:         req.GetName(),
+		Title:        req.GetTitle(),
+		Description:  req.GetDescription(),
+		ProviderID:   req.GetProviderId(),
+		ModelName:    req.GetModelName(),
+		Effort:       req.GetEffort(),
+		ThinkingMode: domain.ThinkingMode(req.GetThinkingMode()),
+		Visibility:   protoAgentVisibilityToDomain(req.GetVisibility()),
+		ConfigJSON:   req.GetConfigJson(),
+		Version:      req.GetVersion(),
 	})
 	if err != nil {
 		return nil, toHandlerError(err)
@@ -244,6 +253,11 @@ func subjectActorPTID(ctx context.Context) string {
 	return subject.ID
 }
 
+// subjectActorID is an alias for subjectActorPTID, retained for V2 call sites.
+func subjectActorID(ctx context.Context) string {
+	return subjectActorPTID(ctx)
+}
+
 func protoAgentVisibilityToDomain(visibility model.AgentVisibility) domain.AgentVisibility {
 	if visibility == model.AgentVisibility_AGENT_VISIBILITY_WORKSPACE {
 		return domain.AgentVisibilityWorkspace
@@ -270,9 +284,11 @@ func domainAgentToProto(agent *domain.Agent) *model.Agent {
 		ProviderId:     agent.ProviderID,
 		ModelName:      agent.ModelName,
 		Effort:         agent.Effort,
+		ThinkingMode:   string(agent.ThinkingMode),
 		Visibility:     domainAgentVisibilityToProto(agent.Visibility),
 		OwnerActorPtid: agent.OwnerActorPTID,
 		ConfigJson:     agent.ConfigJSON,
+		Version:        agent.Version,
 		CreatedAt:      timestamppb.New(agent.CreatedAt),
 		UpdatedAt:      timestamppb.New(agent.UpdatedAt),
 	}

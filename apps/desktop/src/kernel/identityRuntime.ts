@@ -2,7 +2,7 @@ import { useAccountIdentityStore } from '../store/accountIdentity';
 import { useOAuth2Store } from '../store/oauth2';
 import { useSessionStore } from '../store/session';
 import { useSocialChatStore } from '../store/socialChat';
-import { markLocalIdentityAction } from '../services/identity_event';
+import { clearLocalIdentityAction, markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
 import { readDesktopPreferenceSync, removeDesktopPreferenceSync, writeDesktopPreferenceSync } from '../storage/desktopClientStorage';
 import type { AppLifecycle, SessionUser } from '../types/navigation';
@@ -36,6 +36,28 @@ import { setAppletProductWindowLaunchContext } from '../applet/productWindowE2E'
 const WARM_RESUME_KEY = 'pt.auth.lastActiveAt';
 const LAST_ACTIVE_PAGE_KEY = 'pt.nav.lastActivePage';
 const RENDERER_AUTH_MARKER_KEY = 'pt.identity.rendererAuthenticated';
+
+// #region debug-point A-D:foundation-launch-context
+function reportFoundationLaunchContextDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown>,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7778/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-identity-boot',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'identityRuntime.ts:boot',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
 
 export function clearWarmResume(): void {
   try {
@@ -175,6 +197,15 @@ function classifyRestoreFailure(error: unknown): IdentityAuthGateReason {
   return 'restore_failed';
 }
 
+function isDetachedAccountSwitchFailure(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('details' in error)) return false;
+  const details = (error as { details?: unknown }).details;
+  return typeof details === 'object'
+    && details !== null
+    && 'detached' in details
+    && details.detached === true;
+}
+
 interface IdentityRuntimeSnapshot {
   phase: IdentityPhase;
   lifecycle: AppLifecycle;
@@ -232,7 +263,25 @@ class IdentityRuntime {
     this.dispatch({ type: 'LAUNCH_CONTEXT_CHECK_STARTED' });
     markPhaseStart('identity');
 
-    api.appletsProductWindowLaunchContext().catch(() => ({ enabled: false })).then((context) => {
+    const launchContextStartedAt = performance.now();
+    reportFoundationLaunchContextDebug('A', 'launch-context-started', {
+      bootReason,
+    });
+    api.appletsProductWindowLaunchContext().then((context) => {
+      reportFoundationLaunchContextDebug('A-D', 'launch-context-resolved', {
+        bootReason,
+        durationMs: Math.round(performance.now() - launchContextStartedAt),
+        enabled: context.enabled,
+      });
+      return context;
+    }).catch((error: unknown) => {
+      reportFoundationLaunchContextDebug('A-D', 'launch-context-rejected', {
+        bootReason,
+        durationMs: Math.round(performance.now() - launchContextStartedAt),
+        errorType: error instanceof Error ? error.name : typeof error,
+      });
+      return { enabled: false };
+    }).then((context) => {
       if (activateAppletProductWindowLaunch(context)) {
         const launchUser = appletLaunchContextToSessionUser(context);
         void this.acceptAuthenticatedEdge(identityAuthenticatedEdge('applet_launch', launchUser));
@@ -288,13 +337,7 @@ class IdentityRuntime {
   };
 
   loginWithPassword = async (account: string, password: string): Promise<void> => {
-    markLocalIdentityAction();
-    const resp = await api.authLogin({ account, password });
-    await runIdentityPipeline({
-      reason: 'login',
-      actorPtid: resp.actor_ptid ?? null,
-      loginMethod: 'password',
-    });
+    await useSessionStore.getState().loginWithPassword(account, password);
     await this.acceptAuthenticatedEdgeFromCurrentSession('fresh_login');
   };
 
@@ -307,7 +350,7 @@ class IdentityRuntime {
       });
     }
     markLocalIdentityAction();
-    const resp = await api.ensureStationSession(sessionId);
+    const resp = await api.ensureStationSession();
     useSessionStore.getState().activateAuthenticatedSession(resp);
     const method = (resp.login_method as string) || 'oauth';
     await runIdentityPipeline({
@@ -320,13 +363,23 @@ class IdentityRuntime {
 
   switchAccount = async (accountId: string): Promise<void> => {
     markLocalIdentityAction();
-    const restored = await api.accountSwitch(accountId);
-    useSessionStore.getState().activateAuthenticatedSession(restored);
+    try {
+      await api.accountSwitch(accountId);
+    } catch (error) {
+      clearLocalIdentityAction();
+      if (isDetachedAccountSwitchFailure(error)) {
+        useSessionStore.getState().reset();
+        await this.loadAuthGate('restore_failed', false);
+      }
+      throw error;
+    }
+    const restored = await api.authValidateToken({});
     await runIdentityPipeline({
       reason: 'switch',
-      actorPtid: restored.actor_ptid ?? accountId,
+      actorPtid: restored.actor_ptid ?? null,
       loginMethod: restored.login_method ?? null,
     });
+    useSessionStore.getState().activateAuthenticatedSession(restored);
     await useAccountIdentityStore.getState().load();
     await this.acceptAuthenticatedEdgeFromCurrentSession('account_switch');
   };
@@ -402,10 +455,11 @@ class IdentityRuntime {
   };
 
   revokeSession = async (): Promise<void> => {
+    const actorPtid = useSessionStore.getState().currentUser?.actorPtid ?? null;
     this.dispatch({ type: 'SESSION_REVOKED', reason: 'revoked' });
     await runIdentityPipeline({
       reason: 'revoked',
-      actorId: null,
+      actorPtid,
       loginMethod: null,
     });
     await this.loadAuthGate('revoked', false);
@@ -413,8 +467,16 @@ class IdentityRuntime {
 
   logout = async (): Promise<void> => {
     this.dispatch({ type: 'LOGOUT_REQUESTED' });
-    await useSessionStore.getState().logout();
+    let cleanupError: unknown;
+    try {
+      await useSessionStore.getState().logout();
+    } catch (error) {
+      cleanupError = error;
+    }
     await this.loadAuthGate('logout', false);
+    if (cleanupError) {
+      throw cleanupError;
+    }
   };
 
   revalidateIfNeeded = (): void => {

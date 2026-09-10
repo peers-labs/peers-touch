@@ -2,8 +2,10 @@
 // @generated from file domain/social/relationship.proto (package peers_touch.model.social.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { ActorDeviceRef, ActorRef } from "../actor/actor_pb";
+import { file_domain_actor_actor } from "../actor/actor_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
@@ -12,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/social/relationship.proto.
  */
 export const file_domain_social_relationship: GenFile = /*@__PURE__*/
-  fileDesc("CiBkb21haW4vc29jaWFsL3JlbGF0aW9uc2hpcC5wcm90bxIbcGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxIioKDUZvbGxvd1JlcXVlc3QSGQoRdGFyZ2V0X2FjdG9yX3B0aWQYASABKAkiYgoORm9sbG93UmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCBI/CgxyZWxhdGlvbnNoaXAYAiABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuUmVsYXRpb25zaGlwIiwKD1VuZm9sbG93UmVxdWVzdBIZChF0YXJnZXRfYWN0b3JfcHRpZBgBIAEoCSIjChBVbmZvbGxvd1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiMwoWR2V0UmVsYXRpb25zaGlwUmVxdWVzdBIZChF0YXJnZXRfYWN0b3JfcHRpZBgBIAEoCSJaChdHZXRSZWxhdGlvbnNoaXBSZXNwb25zZRI/CgxyZWxhdGlvbnNoaXAYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuUmVsYXRpb25zaGlwIjUKF0dldFJlbGF0aW9uc2hpcHNSZXF1ZXN0EhoKEnRhcmdldF9hY3Rvcl9wdGlkcxgBIAMoCSJcChhHZXRSZWxhdGlvbnNoaXBzUmVzcG9uc2USQAoNcmVsYXRpb25zaGlwcxgBIAMoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5SZWxhdGlvbnNoaXAijgEKDFJlbGF0aW9uc2hpcBIKCgJpZBgBIAEoCRIZChF0YXJnZXRfYWN0b3JfcHRpZBgCIAEoCRIRCglmb2xsb3dpbmcYAyABKAgSEwoLZm9sbG93ZWRfYnkYBCABKAgSLwoLZm9sbG93ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkgKE0dldEZvbGxvd2Vyc1JlcXVlc3QSEgoKYWN0b3JfcHRpZBgBIAEoCRIOCgZjdXJzb3IYAiABKAkSDQoFbGltaXQYAyABKAUidAoUR2V0Rm9sbG93ZXJzUmVzcG9uc2USOAoJZm9sbG93ZXJzGAEgAygLMiUucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZvbGxvd2VyEhMKC25leHRfY3Vyc29yGAIgASgJEg0KBXRvdGFsGAMgASgFIkgKE0dldEZvbGxvd2luZ1JlcXVlc3QSEgoKYWN0b3JfcHRpZBgBIAEoCRIOCgZjdXJzb3IYAiABKAkSDQoFbGltaXQYAyABKAUidQoUR2V0Rm9sbG93aW5nUmVzcG9uc2USOQoJZm9sbG93aW5nGAEgAygLMiYucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZvbGxvd2luZxITCgtuZXh0X2N1cnNvchgCIAEoCRINCgV0b3RhbBgDIAEoBSLpAQoIRm9sbG93ZXISEgoKYWN0b3JfcHRpZBgBIAEoCRIQCgh1c2VybmFtZRgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRIvCgtmb2xsb3dlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKgoQZmVkZXJhdGVkX2hhbmRsZRgGIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIwChNob21lX3N0YXRpb25fZG9tYWluGAcgASgJUhNob21lX3N0YXRpb25fZG9tYWluIuoBCglGb2xsb3dpbmcSEgoKYWN0b3JfcHRpZBgBIAEoCRIQCgh1c2VybmFtZRgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRIvCgtmb2xsb3dlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKgoQZmVkZXJhdGVkX2hhbmRsZRgGIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIwChNob21lX3N0YXRpb25fZG9tYWluGAcgASgJUhNob21lX3N0YXRpb25fZG9tYWluQkNaQWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("CiBkb21haW4vc29jaWFsL3JlbGF0aW9uc2hpcC5wcm90bxIbcGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxIioKDUZvbGxvd1JlcXVlc3QSGQoRdGFyZ2V0X2FjdG9yX3B0aWQYASABKAkiYgoORm9sbG93UmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCBI/CgxyZWxhdGlvbnNoaXAYAiABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuUmVsYXRpb25zaGlwIiwKD1VuZm9sbG93UmVxdWVzdBIZChF0YXJnZXRfYWN0b3JfcHRpZBgBIAEoCSIjChBVbmZvbGxvd1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiMwoWR2V0UmVsYXRpb25zaGlwUmVxdWVzdBIZChF0YXJnZXRfYWN0b3JfcHRpZBgBIAEoCSJaChdHZXRSZWxhdGlvbnNoaXBSZXNwb25zZRI/CgxyZWxhdGlvbnNoaXAYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuUmVsYXRpb25zaGlwIjUKF0dldFJlbGF0aW9uc2hpcHNSZXF1ZXN0EhoKEnRhcmdldF9hY3Rvcl9wdGlkcxgBIAMoCSJcChhHZXRSZWxhdGlvbnNoaXBzUmVzcG9uc2USQAoNcmVsYXRpb25zaGlwcxgBIAMoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5SZWxhdGlvbnNoaXAijgEKDFJlbGF0aW9uc2hpcBIKCgJpZBgBIAEoCRIZChF0YXJnZXRfYWN0b3JfcHRpZBgCIAEoCRIRCglmb2xsb3dpbmcYAyABKAgSEwoLZm9sbG93ZWRfYnkYBCABKAgSLwoLZm9sbG93ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkgKE0dldEZvbGxvd2Vyc1JlcXVlc3QSEgoKYWN0b3JfcHRpZBgBIAEoCRIOCgZjdXJzb3IYAiABKAkSDQoFbGltaXQYAyABKAUidAoUR2V0Rm9sbG93ZXJzUmVzcG9uc2USOAoJZm9sbG93ZXJzGAEgAygLMiUucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZvbGxvd2VyEhMKC25leHRfY3Vyc29yGAIgASgJEg0KBXRvdGFsGAMgASgFIkgKE0dldEZvbGxvd2luZ1JlcXVlc3QSEgoKYWN0b3JfcHRpZBgBIAEoCRIOCgZjdXJzb3IYAiABKAkSDQoFbGltaXQYAyABKAUidQoUR2V0Rm9sbG93aW5nUmVzcG9uc2USOQoJZm9sbG93aW5nGAEgAygLMiYucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZvbGxvd2luZxITCgtuZXh0X2N1cnNvchgCIAEoCRINCgV0b3RhbBgDIAEoBSLpAQoIRm9sbG93ZXISEgoKYWN0b3JfcHRpZBgBIAEoCRIQCgh1c2VybmFtZRgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRIvCgtmb2xsb3dlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKgoQZmVkZXJhdGVkX2hhbmRsZRgGIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIwChNob21lX3N0YXRpb25fZG9tYWluGAcgASgJUhNob21lX3N0YXRpb25fZG9tYWluIuoBCglGb2xsb3dpbmcSEgoKYWN0b3JfcHRpZBgBIAEoCRIQCgh1c2VybmFtZRgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRIvCgtmb2xsb3dlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKgoQZmVkZXJhdGVkX2hhbmRsZRgGIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIwChNob21lX3N0YXRpb25fZG9tYWluGAcgASgJUhNob21lX3N0YXRpb25fZG9tYWluIpkEChNTb2NpYWxGcmllbmRSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSNAoGc2VuZGVyGAIgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWYSNgoIcmVjZWl2ZXIYAyABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZhIPCgdtZXNzYWdlGAQgASgJEj4KBXN0YXRlGAUgASgOMi8ucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZyaWVuZFJlcXVlc3RTdGF0ZRIuCgpjcmVhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxyZXNwb25kZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhsKE3NlbmRlcl9kaXNwbGF5X25hbWUYCCABKAkSFQoNc2VuZGVyX2F2YXRhchgJIAEoCRIdChVyZWNlaXZlcl9kaXNwbGF5X25hbWUYCiABKAkSFwoPcmVjZWl2ZXJfYXZhdGFyGAsgASgJEhUKDWZlZGVyYXRpb25faWQYDCABKAkSIwobc2VuZGVyX2hvbWVfc3RhdGlvbl9wZWVyX2lkGA0gASgJEiUKHXJlY2VpdmVyX2hvbWVfc3RhdGlvbl9wZWVyX2lkGA4gASgJIpgBCh5TZW5kU29jaWFsRnJpZW5kUmVxdWVzdFJlcXVlc3QSQgoHY29tbWFuZBgEIAEoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5GcmllbmRSZXF1ZXN0Q29tbWFuZEoECAEQAkoECAIQA0oECAMQBFIIcmVjZWl2ZXJSB21lc3NhZ2VSDWZlZGVyYXRpb25faWQiZAofU2VuZFNvY2lhbEZyaWVuZFJlcXVlc3RSZXNwb25zZRJBCgdyZXF1ZXN0GAEgASgLMjAucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlNvY2lhbEZyaWVuZFJlcXVlc3QieAogQWNjZXB0U29jaWFsRnJpZW5kUmVxdWVzdFJlcXVlc3QSQgoHY29tbWFuZBgCIAEoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5GcmllbmRSZXF1ZXN0Q29tbWFuZEoECAEQAlIKcmVxdWVzdF9pZCJmCiFBY2NlcHRTb2NpYWxGcmllbmRSZXF1ZXN0UmVzcG9uc2USQQoHcmVxdWVzdBgBIAEoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5Tb2NpYWxGcmllbmRSZXF1ZXN0IngKIFJlamVjdFNvY2lhbEZyaWVuZFJlcXVlc3RSZXF1ZXN0EkIKB2NvbW1hbmQYAiABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdENvbW1hbmRKBAgBEAJSCnJlcXVlc3RfaWQiZgohUmVqZWN0U29jaWFsRnJpZW5kUmVxdWVzdFJlc3BvbnNlEkEKB3JlcXVlc3QYASABKAsyMC5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuU29jaWFsRnJpZW5kUmVxdWVzdCKAAQofTGlzdFNvY2lhbEZyaWVuZFJlcXVlc3RzUmVxdWVzdBI+CgVzdGF0ZRgBIAEoDjIvLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5GcmllbmRSZXF1ZXN0U3RhdGUSDQoFbGltaXQYAiABKAUSDgoGb2Zmc2V0GAMgASgFInUKIExpc3RTb2NpYWxGcmllbmRSZXF1ZXN0c1Jlc3BvbnNlEkIKCHJlcXVlc3RzGAEgAygLMjAucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlNvY2lhbEZyaWVuZFJlcXVlc3QSDQoFdG90YWwYAiABKAUi9wQKGEZyaWVuZFJlcXVlc3RDb21tYW5kQm9keRIWCg5mb3JtYXRfdmVyc2lvbhgBIAEoDRISCgpjb21tYW5kX2lkGAIgASgJEhIKCnJlcXVlc3RfaWQYAyABKAkSQAoGYWN0aW9uGAQgASgOMjAucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZyaWVuZFJlcXVlc3RBY3Rpb24SNAoGc2VuZGVyGAUgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWYSNgoIcmVjZWl2ZXIYBiABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZhIjChtzZW5kZXJfaG9tZV9zdGF0aW9uX3BlZXJfaWQYByABKAkSJQodcmVjZWl2ZXJfaG9tZV9zdGF0aW9uX3BlZXJfaWQYCCABKAkSDwoHbWVzc2FnZRgJIAEoCRJPChZvYnNlcnZlZF9yZXF1ZXN0X3N0YXRlGAogASgOMi8ucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZyaWVuZFJlcXVlc3RTdGF0ZRIuCgpjcmVhdGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBJGChJhdXRob3JpemluZ19kZXZpY2UYDSABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvckRldmljZVJlZhIVCg1mZWRlcmF0aW9uX2lkGA4gASgJIn8KIEZyaWVuZFJlcXVlc3RDb21tYW5kU2lnbmluZ0lucHV0EkMKBGJvZHkYASABKAsyNS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdENvbW1hbmRCb2R5EhYKDnNpZ25pbmdfa2V5X2lkGAIgASgJIpMBChRGcmllbmRSZXF1ZXN0Q29tbWFuZBJDCgRib2R5GAEgASgLMjUucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZyaWVuZFJlcXVlc3RDb21tYW5kQm9keRIWCg5zaWduaW5nX2tleV9pZBgCIAEoCRIeChZhY3Rvcl9kZXZpY2Vfc2lnbmF0dXJlGAMgASgMIvEDChJGcmllbmRSZXF1ZXN0RXZlbnQSEAoIZXZlbnRfaWQYASABKAkSEgoKcmVxdWVzdF9pZBgCIAEoCRISCgpjb21tYW5kX2lkGAMgASgJEiEKGWF1dGhvcml0eV9zdGF0aW9uX3BlZXJfaWQYBCABKAkSPgoFc3RhdGUYBSABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdFN0YXRlEjQKBnNlbmRlchgGIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yUmVmEjYKCHJlY2VpdmVyGAcgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWYSIwobc2VuZGVyX2hvbWVfc3RhdGlvbl9wZWVyX2lkGAggASgJEiUKHXJlY2VpdmVyX2hvbWVfc3RhdGlvbl9wZWVyX2lkGAkgASgJEhAKCHNlcXVlbmNlGAogASgDEjAKDGNvbW1pdHRlZF9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcHJldmlvdXNfaGFzaBgMIAEoDBISCgpldmVudF9oYXNoGA0gASgMEhUKDWZlZGVyYXRpb25faWQYDiABKAki0gIKGkZyaWVuZFJlcXVlc3RDb21tYW5kUmVzdWx0EhIKCmNvbW1hbmRfaWQYASABKAkSEgoKcmVxdWVzdF9pZBgCIAEoCRIeChZjb21tYW5kX3BheWxvYWRfc2hhMjU2GAMgASgMEkkKBGtpbmQYBCABKA4yOy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdENvbW1hbmRSZXN1bHRLaW5kEj4KBWV2ZW50GAUgASgLMi8ucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZyaWVuZFJlcXVlc3RFdmVudBJOCgplcnJvcl9jb2RlGAYgASgOMjoucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZyaWVuZFJlcXVlc3RDb21tYW5kRXJyb3JDb2RlEhEKCXJldHJ5YWJsZRgHIAEoCCqgAQoTRnJpZW5kUmVxdWVzdEFjdGlvbhIlCiFGUklFTkRfUkVRVUVTVF9BQ1RJT05fVU5TUEVDSUZJRUQQABIeChpGUklFTkRfUkVRVUVTVF9BQ1RJT05fU0VORBABEiAKHEZSSUVORF9SRVFVRVNUX0FDVElPTl9BQ0NFUFQQAhIgChxGUklFTkRfUkVRVUVTVF9BQ1RJT05fUkVKRUNUEAMqxAEKEkZyaWVuZFJlcXVlc3RTdGF0ZRIkCiBGUklFTkRfUkVRVUVTVF9TVEFURV9VTlNQRUNJRklFRBAAEiAKHEZSSUVORF9SRVFVRVNUX1NUQVRFX1BFTkRJTkcQARIhCh1GUklFTkRfUkVRVUVTVF9TVEFURV9BQ0NFUFRFRBACEiEKHUZSSUVORF9SRVFVRVNUX1NUQVRFX1JFSkVDVEVEEAMSIAocRlJJRU5EX1JFUVVFU1RfU1RBVEVfRVhQSVJFRBAEKpoCCh5GcmllbmRSZXF1ZXN0Q29tbWFuZFJlc3VsdEtpbmQSMgouRlJJRU5EX1JFUVVFU1RfQ09NTUFORF9SRVNVTFRfS0lORF9VTlNQRUNJRklFRBAAEjAKLEZSSUVORF9SRVFVRVNUX0NPTU1BTkRfUkVTVUxUX0tJTkRfQ09NTUlUVEVEEAESMAosRlJJRU5EX1JFUVVFU1RfQ09NTUFORF9SRVNVTFRfS0lORF9EVVBMSUNBVEUQAhIvCitGUklFTkRfUkVRVUVTVF9DT01NQU5EX1JFU1VMVF9LSU5EX1JFSkVDVEVEEAMSLworRlJJRU5EX1JFUVVFU1RfQ09NTUFORF9SRVNVTFRfS0lORF9DT05GTElDVBAEKqAECh1GcmllbmRSZXF1ZXN0Q29tbWFuZEVycm9yQ29kZRIxCi1GUklFTkRfUkVRVUVTVF9DT01NQU5EX0VSUk9SX0NPREVfVU5TUEVDSUZJRUQQABItCilGUklFTkRfUkVRVUVTVF9DT01NQU5EX0VSUk9SX0NPREVfSU5WQUxJRBABEjIKLkZSSUVORF9SRVFVRVNUX0NPTU1BTkRfRVJST1JfQ09ERV9VTkFVVEhPUklaRUQQAhItCilGUklFTkRfUkVRVUVTVF9DT01NQU5EX0VSUk9SX0NPREVfQkxPQ0tFRBADEi8KK0ZSSUVORF9SRVFVRVNUX0NPTU1BTkRfRVJST1JfQ09ERV9OT1RfRk9VTkQQBBI1CjFGUklFTkRfUkVRVUVTVF9DT01NQU5EX0VSUk9SX0NPREVfQUxSRUFEWV9GUklFTkRTEAUSNAowRlJJRU5EX1JFUVVFU1RfQ09NTUFORF9FUlJPUl9DT0RFX1NUQVRFX0NPTkZMSUNUEAYSOgo2RlJJRU5EX1JFUVVFU1RfQ09NTUFORF9FUlJPUl9DT0RFX0lERU1QT1RFTkNZX0NPTkZMSUNUEAcSLQopRlJJRU5EX1JFUVVFU1RfQ09NTUFORF9FUlJPUl9DT0RFX0VYUElSRUQQCBIxCi1GUklFTkRfUkVRVUVTVF9DT01NQU5EX0VSUk9SX0NPREVfUkVUUllfTEFURVIQCUJDWkFnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbDttb2RlbGIGcHJvdG8z", [file_domain_actor_actor, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.social.v1.FollowRequest
@@ -401,3 +403,659 @@ export type Following = Message<"peers_touch.model.social.v1.Following"> & {
 export const FollowingSchema: GenMessage<Following> = /*@__PURE__*/
   messageDesc(file_domain_social_relationship, 14);
 
+/**
+ * @generated from message peers_touch.model.social.v1.SocialFriendRequest
+ */
+export type SocialFriendRequest = Message<"peers_touch.model.social.v1.SocialFriendRequest"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef sender = 2;
+   */
+  sender?: ActorRef | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef receiver = 3;
+   */
+  receiver?: ActorRef | undefined;
+
+  /**
+   * @generated from field: string message = 4;
+   */
+  message: string;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestState state = 5;
+   */
+  state: FriendRequestState;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 6;
+   */
+  createdAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp responded_at = 7;
+   */
+  respondedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string sender_display_name = 8;
+   */
+  senderDisplayName: string;
+
+  /**
+   * @generated from field: string sender_avatar = 9;
+   */
+  senderAvatar: string;
+
+  /**
+   * @generated from field: string receiver_display_name = 10;
+   */
+  receiverDisplayName: string;
+
+  /**
+   * @generated from field: string receiver_avatar = 11;
+   */
+  receiverAvatar: string;
+
+  /**
+   * @generated from field: string federation_id = 12;
+   */
+  federationId: string;
+
+  /**
+   * @generated from field: string sender_home_station_peer_id = 13;
+   */
+  senderHomeStationPeerId: string;
+
+  /**
+   * @generated from field: string receiver_home_station_peer_id = 14;
+   */
+  receiverHomeStationPeerId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.SocialFriendRequest.
+ * Use `create(SocialFriendRequestSchema)` to create a new message.
+ */
+export const SocialFriendRequestSchema: GenMessage<SocialFriendRequest> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 15);
+
+/**
+ * @generated from message peers_touch.model.social.v1.SendSocialFriendRequestRequest
+ */
+export type SendSocialFriendRequestRequest = Message<"peers_touch.model.social.v1.SendSocialFriendRequestRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestCommand command = 4;
+   */
+  command?: FriendRequestCommand | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.SendSocialFriendRequestRequest.
+ * Use `create(SendSocialFriendRequestRequestSchema)` to create a new message.
+ */
+export const SendSocialFriendRequestRequestSchema: GenMessage<SendSocialFriendRequestRequest> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 16);
+
+/**
+ * @generated from message peers_touch.model.social.v1.SendSocialFriendRequestResponse
+ */
+export type SendSocialFriendRequestResponse = Message<"peers_touch.model.social.v1.SendSocialFriendRequestResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialFriendRequest request = 1;
+   */
+  request?: SocialFriendRequest | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.SendSocialFriendRequestResponse.
+ * Use `create(SendSocialFriendRequestResponseSchema)` to create a new message.
+ */
+export const SendSocialFriendRequestResponseSchema: GenMessage<SendSocialFriendRequestResponse> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 17);
+
+/**
+ * @generated from message peers_touch.model.social.v1.AcceptSocialFriendRequestRequest
+ */
+export type AcceptSocialFriendRequestRequest = Message<"peers_touch.model.social.v1.AcceptSocialFriendRequestRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestCommand command = 2;
+   */
+  command?: FriendRequestCommand | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.AcceptSocialFriendRequestRequest.
+ * Use `create(AcceptSocialFriendRequestRequestSchema)` to create a new message.
+ */
+export const AcceptSocialFriendRequestRequestSchema: GenMessage<AcceptSocialFriendRequestRequest> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 18);
+
+/**
+ * @generated from message peers_touch.model.social.v1.AcceptSocialFriendRequestResponse
+ */
+export type AcceptSocialFriendRequestResponse = Message<"peers_touch.model.social.v1.AcceptSocialFriendRequestResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialFriendRequest request = 1;
+   */
+  request?: SocialFriendRequest | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.AcceptSocialFriendRequestResponse.
+ * Use `create(AcceptSocialFriendRequestResponseSchema)` to create a new message.
+ */
+export const AcceptSocialFriendRequestResponseSchema: GenMessage<AcceptSocialFriendRequestResponse> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 19);
+
+/**
+ * @generated from message peers_touch.model.social.v1.RejectSocialFriendRequestRequest
+ */
+export type RejectSocialFriendRequestRequest = Message<"peers_touch.model.social.v1.RejectSocialFriendRequestRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestCommand command = 2;
+   */
+  command?: FriendRequestCommand | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.RejectSocialFriendRequestRequest.
+ * Use `create(RejectSocialFriendRequestRequestSchema)` to create a new message.
+ */
+export const RejectSocialFriendRequestRequestSchema: GenMessage<RejectSocialFriendRequestRequest> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 20);
+
+/**
+ * @generated from message peers_touch.model.social.v1.RejectSocialFriendRequestResponse
+ */
+export type RejectSocialFriendRequestResponse = Message<"peers_touch.model.social.v1.RejectSocialFriendRequestResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialFriendRequest request = 1;
+   */
+  request?: SocialFriendRequest | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.RejectSocialFriendRequestResponse.
+ * Use `create(RejectSocialFriendRequestResponseSchema)` to create a new message.
+ */
+export const RejectSocialFriendRequestResponseSchema: GenMessage<RejectSocialFriendRequestResponse> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 21);
+
+/**
+ * @generated from message peers_touch.model.social.v1.ListSocialFriendRequestsRequest
+ */
+export type ListSocialFriendRequestsRequest = Message<"peers_touch.model.social.v1.ListSocialFriendRequestsRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestState state = 1;
+   */
+  state: FriendRequestState;
+
+  /**
+   * @generated from field: int32 limit = 2;
+   */
+  limit: number;
+
+  /**
+   * @generated from field: int32 offset = 3;
+   */
+  offset: number;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.ListSocialFriendRequestsRequest.
+ * Use `create(ListSocialFriendRequestsRequestSchema)` to create a new message.
+ */
+export const ListSocialFriendRequestsRequestSchema: GenMessage<ListSocialFriendRequestsRequest> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 22);
+
+/**
+ * @generated from message peers_touch.model.social.v1.ListSocialFriendRequestsResponse
+ */
+export type ListSocialFriendRequestsResponse = Message<"peers_touch.model.social.v1.ListSocialFriendRequestsResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.social.v1.SocialFriendRequest requests = 1;
+   */
+  requests: SocialFriendRequest[];
+
+  /**
+   * @generated from field: int32 total = 2;
+   */
+  total: number;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.ListSocialFriendRequestsResponse.
+ * Use `create(ListSocialFriendRequestsResponseSchema)` to create a new message.
+ */
+export const ListSocialFriendRequestsResponseSchema: GenMessage<ListSocialFriendRequestsResponse> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 23);
+
+/**
+ * @generated from message peers_touch.model.social.v1.FriendRequestCommandBody
+ */
+export type FriendRequestCommandBody = Message<"peers_touch.model.social.v1.FriendRequestCommandBody"> & {
+  /**
+   * @generated from field: uint32 format_version = 1;
+   */
+  formatVersion: number;
+
+  /**
+   * @generated from field: string command_id = 2;
+   */
+  commandId: string;
+
+  /**
+   * @generated from field: string request_id = 3;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestAction action = 4;
+   */
+  action: FriendRequestAction;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef sender = 5;
+   */
+  sender?: ActorRef | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef receiver = 6;
+   */
+  receiver?: ActorRef | undefined;
+
+  /**
+   * @generated from field: string sender_home_station_peer_id = 7;
+   */
+  senderHomeStationPeerId: string;
+
+  /**
+   * @generated from field: string receiver_home_station_peer_id = 8;
+   */
+  receiverHomeStationPeerId: string;
+
+  /**
+   * @generated from field: string message = 9;
+   */
+  message: string;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestState observed_request_state = 10;
+   */
+  observedRequestState: FriendRequestState;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 11;
+   */
+  createdAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 12;
+   */
+  expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef authorizing_device = 13;
+   */
+  authorizingDevice?: ActorDeviceRef | undefined;
+
+  /**
+   * @generated from field: string federation_id = 14;
+   */
+  federationId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.FriendRequestCommandBody.
+ * Use `create(FriendRequestCommandBodySchema)` to create a new message.
+ */
+export const FriendRequestCommandBodySchema: GenMessage<FriendRequestCommandBody> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 24);
+
+/**
+ * @generated from message peers_touch.model.social.v1.FriendRequestCommandSigningInput
+ */
+export type FriendRequestCommandSigningInput = Message<"peers_touch.model.social.v1.FriendRequestCommandSigningInput"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestCommandBody body = 1;
+   */
+  body?: FriendRequestCommandBody | undefined;
+
+  /**
+   * @generated from field: string signing_key_id = 2;
+   */
+  signingKeyId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.FriendRequestCommandSigningInput.
+ * Use `create(FriendRequestCommandSigningInputSchema)` to create a new message.
+ */
+export const FriendRequestCommandSigningInputSchema: GenMessage<FriendRequestCommandSigningInput> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 25);
+
+/**
+ * @generated from message peers_touch.model.social.v1.FriendRequestCommand
+ */
+export type FriendRequestCommand = Message<"peers_touch.model.social.v1.FriendRequestCommand"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestCommandBody body = 1;
+   */
+  body?: FriendRequestCommandBody | undefined;
+
+  /**
+   * @generated from field: string signing_key_id = 2;
+   */
+  signingKeyId: string;
+
+  /**
+   * @generated from field: bytes actor_device_signature = 3;
+   */
+  actorDeviceSignature: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.FriendRequestCommand.
+ * Use `create(FriendRequestCommandSchema)` to create a new message.
+ */
+export const FriendRequestCommandSchema: GenMessage<FriendRequestCommand> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 26);
+
+/**
+ * @generated from message peers_touch.model.social.v1.FriendRequestEvent
+ */
+export type FriendRequestEvent = Message<"peers_touch.model.social.v1.FriendRequestEvent"> & {
+  /**
+   * @generated from field: string event_id = 1;
+   */
+  eventId: string;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: string command_id = 3;
+   */
+  commandId: string;
+
+  /**
+   * @generated from field: string authority_station_peer_id = 4;
+   */
+  authorityStationPeerId: string;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestState state = 5;
+   */
+  state: FriendRequestState;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef sender = 6;
+   */
+  sender?: ActorRef | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef receiver = 7;
+   */
+  receiver?: ActorRef | undefined;
+
+  /**
+   * @generated from field: string sender_home_station_peer_id = 8;
+   */
+  senderHomeStationPeerId: string;
+
+  /**
+   * @generated from field: string receiver_home_station_peer_id = 9;
+   */
+  receiverHomeStationPeerId: string;
+
+  /**
+   * @generated from field: int64 sequence = 10;
+   */
+  sequence: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp committed_at = 11;
+   */
+  committedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: bytes previous_hash = 12;
+   */
+  previousHash: Uint8Array;
+
+  /**
+   * @generated from field: bytes event_hash = 13;
+   */
+  eventHash: Uint8Array;
+
+  /**
+   * @generated from field: string federation_id = 14;
+   */
+  federationId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.FriendRequestEvent.
+ * Use `create(FriendRequestEventSchema)` to create a new message.
+ */
+export const FriendRequestEventSchema: GenMessage<FriendRequestEvent> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 27);
+
+/**
+ * @generated from message peers_touch.model.social.v1.FriendRequestCommandResult
+ */
+export type FriendRequestCommandResult = Message<"peers_touch.model.social.v1.FriendRequestCommandResult"> & {
+  /**
+   * @generated from field: string command_id = 1;
+   */
+  commandId: string;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bytes command_payload_sha256 = 3;
+   */
+  commandPayloadSha256: Uint8Array;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestCommandResultKind kind = 4;
+   */
+  kind: FriendRequestCommandResultKind;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestEvent event = 5;
+   */
+  event?: FriendRequestEvent | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestCommandErrorCode error_code = 6;
+   */
+  errorCode: FriendRequestCommandErrorCode;
+
+  /**
+   * @generated from field: bool retryable = 7;
+   */
+  retryable: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.FriendRequestCommandResult.
+ * Use `create(FriendRequestCommandResultSchema)` to create a new message.
+ */
+export const FriendRequestCommandResultSchema: GenMessage<FriendRequestCommandResult> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 28);
+
+/**
+ * @generated from enum peers_touch.model.social.v1.FriendRequestAction
+ */
+export enum FriendRequestAction {
+  /**
+   * @generated from enum value: FRIEND_REQUEST_ACTION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_ACTION_SEND = 1;
+   */
+  SEND = 1,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_ACTION_ACCEPT = 2;
+   */
+  ACCEPT = 2,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_ACTION_REJECT = 3;
+   */
+  REJECT = 3,
+}
+
+/**
+ * Describes the enum peers_touch.model.social.v1.FriendRequestAction.
+ */
+export const FriendRequestActionSchema: GenEnum<FriendRequestAction> = /*@__PURE__*/
+  enumDesc(file_domain_social_relationship, 0);
+
+/**
+ * @generated from enum peers_touch.model.social.v1.FriendRequestState
+ */
+export enum FriendRequestState {
+  /**
+   * @generated from enum value: FRIEND_REQUEST_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_STATE_PENDING = 1;
+   */
+  PENDING = 1,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_STATE_ACCEPTED = 2;
+   */
+  ACCEPTED = 2,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_STATE_REJECTED = 3;
+   */
+  REJECTED = 3,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_STATE_EXPIRED = 4;
+   */
+  EXPIRED = 4,
+}
+
+/**
+ * Describes the enum peers_touch.model.social.v1.FriendRequestState.
+ */
+export const FriendRequestStateSchema: GenEnum<FriendRequestState> = /*@__PURE__*/
+  enumDesc(file_domain_social_relationship, 1);
+
+/**
+ * @generated from enum peers_touch.model.social.v1.FriendRequestCommandResultKind
+ */
+export enum FriendRequestCommandResultKind {
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_RESULT_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_RESULT_KIND_COMMITTED = 1;
+   */
+  COMMITTED = 1,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_RESULT_KIND_DUPLICATE = 2;
+   */
+  DUPLICATE = 2,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_RESULT_KIND_REJECTED = 3;
+   */
+  REJECTED = 3,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_RESULT_KIND_CONFLICT = 4;
+   */
+  CONFLICT = 4,
+}
+
+/**
+ * Describes the enum peers_touch.model.social.v1.FriendRequestCommandResultKind.
+ */
+export const FriendRequestCommandResultKindSchema: GenEnum<FriendRequestCommandResultKind> = /*@__PURE__*/
+  enumDesc(file_domain_social_relationship, 2);
+
+/**
+ * @generated from enum peers_touch.model.social.v1.FriendRequestCommandErrorCode
+ */
+export enum FriendRequestCommandErrorCode {
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_ERROR_CODE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_ERROR_CODE_INVALID = 1;
+   */
+  INVALID = 1,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_ERROR_CODE_UNAUTHORIZED = 2;
+   */
+  UNAUTHORIZED = 2,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_ERROR_CODE_BLOCKED = 3;
+   */
+  BLOCKED = 3,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_ERROR_CODE_NOT_FOUND = 4;
+   */
+  NOT_FOUND = 4,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_ERROR_CODE_ALREADY_FRIENDS = 5;
+   */
+  ALREADY_FRIENDS = 5,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_ERROR_CODE_STATE_CONFLICT = 6;
+   */
+  STATE_CONFLICT = 6,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_ERROR_CODE_IDEMPOTENCY_CONFLICT = 7;
+   */
+  IDEMPOTENCY_CONFLICT = 7,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_ERROR_CODE_EXPIRED = 8;
+   */
+  EXPIRED = 8,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_ERROR_CODE_RETRY_LATER = 9;
+   */
+  RETRY_LATER = 9,
+}
+
+/**
+ * Describes the enum peers_touch.model.social.v1.FriendRequestCommandErrorCode.
+ */
+export const FriendRequestCommandErrorCodeSchema: GenEnum<FriendRequestCommandErrorCode> = /*@__PURE__*/
+  enumDesc(file_domain_social_relationship, 3);

@@ -338,16 +338,218 @@ def check_report_status(report: dict, label: str) -> list[str]:
     if report.get("error"):
         errors.append(f"{label}: report contains error: {report['error']}")
     assertions = report.get("assertions", [])
-    if not assertions:
+    if not isinstance(assertions, list) or not assertions:
         errors.append(f"{label}: no assertions recorded")
-    else:
+    elif any(
+        not isinstance(assertion, dict)
+        or assertion.get("passed") is not True
+        for assertion in assertions
+    ):
         failed = [
-            a for a in assertions
-            if isinstance(a, dict) and a.get("passed") is False
+            assertion.get("name", "?")
+            if isinstance(assertion, dict)
+            else "malformed"
+            for assertion in assertions
+            if not isinstance(assertion, dict)
+            or assertion.get("passed") is not True
         ]
         if failed:
-            names = [a.get("name", "?") for a in failed]
-            errors.append(f"{label}: failed assertions: {names}")
+            errors.append(f"{label}: failed or malformed assertions: {failed}")
+    return errors
+
+
+def _nested_value(value: dict, path: tuple[str, ...]) -> object:
+    current: object = value
+    for part in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+    return current
+
+
+def source_identities_match(
+    observed: object,
+    expected: dict[str, str],
+) -> bool:
+    if not isinstance(observed, dict):
+        return False
+    if (
+        observed.get("commit") != expected.get("commit")
+        or observed.get("workspaceDigest") != expected.get("workspaceDigest")
+    ):
+        return False
+
+    expected_worktree_hash = expected.get("canonicalWorktreeHash")
+    observed_worktree_hash = observed.get("canonicalWorktreeHash")
+    observed_worktree = observed.get("worktree")
+    if not expected_worktree_hash or not (
+        observed_worktree_hash or observed_worktree
+    ):
+        return False
+    if (
+        observed_worktree_hash
+        and observed_worktree_hash != expected_worktree_hash
+    ):
+        return False
+    if (
+        observed_worktree
+        and workspace_id(Path(str(observed_worktree)))
+        != expected_worktree_hash
+    ):
+        return False
+    return True
+
+
+def compare_runtime_manifest_identity(
+    observed: dict,
+    immutable: dict,
+    *,
+    label: str,
+) -> list[str]:
+    identity_fields = (
+        ("artifactKind",),
+        ("cellId",),
+        ("gateId",),
+        ("runId",),
+        ("state",),
+        ("source", "mode"),
+        ("source", "commit"),
+        ("source", "workspaceDigest"),
+        ("source", "remoteSourceDigest"),
+        ("source", "remoteCheckoutClean"),
+        ("source", "binarySha256"),
+        ("platform", "os"),
+        ("platform", "architecture"),
+        ("platform", "isolationKind"),
+        ("platform", "imageDigest"),
+        ("transport", "kind"),
+        ("transport", "hostIdentitySha256"),
+        ("transport", "hostKeySha256"),
+    )
+    missing = [
+        ".".join(path)
+        for path in identity_fields
+        if _nested_value(immutable, path) is None
+    ]
+    mismatched = [
+        ".".join(path)
+        for path in identity_fields
+        if _nested_value(observed, path) != _nested_value(immutable, path)
+    ]
+    errors: list[str] = []
+    if missing:
+        errors.append(f"{label} immutable identity is incomplete: {missing}")
+    if mismatched:
+        errors.append(f"{label} identity mismatch: {mismatched}")
+    return errors
+
+
+def check_native_report_identity(
+    report: dict,
+    label: str,
+    *,
+    expected_source: dict[str, str],
+    runtime_cell: str,
+    expected_runtime_manifest: object,
+    expected_station_attestation: object,
+) -> list[str]:
+    errors: list[str] = []
+    runtime = report.get("runtime")
+    if not isinstance(runtime, dict):
+        return [f"{label}: runtime evidence is missing"]
+    if runtime.get("runtimeCell") != runtime_cell:
+        errors.append(f"{label}: report runtime cell identity mismatch")
+
+    identity = runtime.get("sourceIdentity")
+    if not isinstance(identity, dict):
+        return errors + [f"{label}: report source identity is missing"]
+    orchestrator = identity.get("orchestrator")
+    station = identity.get("station")
+    station_live = identity.get("stationLive")
+    cell = identity.get("runtimeCell")
+    binary = identity.get("binary")
+    if not source_identities_match(orchestrator, expected_source):
+        errors.append(f"{label}: report orchestrator source identity mismatch")
+    errors.extend(
+        check_station_identity(
+            station,
+            station_live,
+            expected_station_attestation,
+            expected_source=expected_source,
+            label=label,
+        )
+    )
+    if (
+        not isinstance(cell, dict)
+        or cell.get("artifactKind")
+        != "acceptance-runtime-cell-manifest"
+        or cell.get("cellId") != runtime_cell
+        or cell.get("gateId") != label
+        or not cell.get("runId")
+        or cell.get("runId") != runtime.get("runtimeCellRunId")
+        or cell.get("state") != "LEASED"
+    ):
+        errors.append(f"{label}: report runtime-cell manifest identity mismatch")
+        return errors
+    if not isinstance(expected_runtime_manifest, dict):
+        errors.append(
+            f"{label}: immutable runtime-cell manifest is missing"
+        )
+    else:
+        errors.extend(
+            compare_runtime_manifest_identity(
+                cell,
+                expected_runtime_manifest,
+                label=f"{label}: report runtime-cell",
+            )
+        )
+
+    cell_source = cell.get("source")
+    binary_digest = (
+        str(binary.get("sha256") or "")
+        if isinstance(binary, dict)
+        else ""
+    )
+    if (
+        not isinstance(binary, dict)
+        or binary.get("sourceCommit") != expected_source.get("commit")
+        or re.fullmatch(r"[0-9a-f]{64}", binary_digest) is None
+        or not isinstance(cell_source, dict)
+        or cell_source.get("commit") != expected_source.get("commit")
+        or cell_source.get("workspaceDigest") != "clean"
+        or cell_source.get("binarySha256") != binary_digest
+    ):
+        errors.append(f"{label}: report source or binary identity mismatch")
+    if runtime_cell == "desktop-linux-native":
+        platform = cell.get("platform")
+        transport = cell.get("transport")
+        if (
+            not isinstance(cell_source, dict)
+            or cell_source.get("remoteCheckoutClean") is not True
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(cell_source.get("remoteSourceDigest") or ""),
+            )
+            is None
+            or not isinstance(platform, dict)
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(platform.get("imageDigest") or ""),
+            )
+            is None
+            or not isinstance(transport, dict)
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(transport.get("hostIdentitySha256") or ""),
+            )
+            is None
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(transport.get("hostKeySha256") or ""),
+            )
+            is None
+        ):
+            errors.append(f"{label}: Linux runtime attestation is incomplete")
     return errors
 
 

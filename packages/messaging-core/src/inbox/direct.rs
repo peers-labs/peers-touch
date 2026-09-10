@@ -8,8 +8,8 @@ use crate::crypto::identity::{IdentityKeyPair, X25519KeyPair};
 use crate::crypto::session::{self, DirectSession, DirectSessionKey};
 use crate::crypto::x3dh::X3dhReceiverInput;
 use crate::proto::chat::{
-    conversation_event, CryptoEndpoint as ProtoCryptoEndpoint, DeviceQueueItem,
-    DeviceQueuePayloadType, DirectCiphertextAad, DirectDeviceCiphertext, DirectSessionInit,
+    conversation_event, CryptoEndpoint as ProtoCryptoEndpoint, DeviceInboxPayloadType,
+    DirectCiphertextAad, DirectDeviceCiphertext, DirectSessionInit, DurableDeviceInboxItem,
     MessagingContentKind, PreparedEndpointPayloadKind,
 };
 use crate::store::MessagingRepository;
@@ -61,7 +61,7 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -79,9 +79,9 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
         {
             return Ok(());
         }
-        if DeviceQueuePayloadType::try_from(item.payload_type)
+        if DeviceInboxPayloadType::try_from(item.payload_type)
             .map_err(|_| "messaging Direct queue payload type is invalid".to_string())?
-            != DeviceQueuePayloadType::ConversationEvent
+            != DeviceInboxPayloadType::ConversationEvent
         {
             return Err("messaging Direct processor received wrong queue payload type".to_string());
         }
@@ -383,7 +383,7 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
 }
 
 impl<R: MessagingRepository> ClaimedItemConsumer for DirectMessageProcessor<R> {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }

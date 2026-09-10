@@ -12,6 +12,10 @@
  *  - Message ordering is authoritative by Station `seq` (monotonic per conversation).
  *  - Live streaming continues to flow through the existing SSE/stream path;
  *    the repository simply upserts completed messages by `message_id`/`seq`.
+ *  - Active-branch changes require a full refresh because the selected
+ *    projection can move behind the incremental cursor.
+ *  - Conversation writes are serialized so an older refresh cannot commit
+ *    after a newer user action.
  *  - A failed sync never blanks already-cached history.
  */
 
@@ -62,6 +66,7 @@ export interface CachedAgentMessage {
   readonly reasoningJson?: string;
   readonly toolCallsJson?: string;
   readonly metadataJson?: string;
+  readonly errorJson?: string;
   readonly attachments?: readonly CachedAgentAttachment[];
   readonly reconciliationSource?: 'station-list' | 'station-snapshot';
   readonly createdAt: string;
@@ -90,6 +95,8 @@ export interface StationConversationListResult {
 export interface StationMessagesResult {
   readonly messages: readonly CachedAgentMessage[];
   readonly turnEvents?: readonly CachedAgentTurnEvent[];
+  readonly nextCursor?: number;
+  readonly hasMore?: boolean;
 }
 
 export interface StationAgentFetcher {
@@ -102,6 +109,7 @@ export interface AgentChatCache {
   getMessages(conversationId: string): Promise<readonly CachedAgentMessage[]>;
   getTurnEvents(conversationId: string): Promise<readonly CachedAgentTurnEvent[]>;
   syncConversation(conversationId: string): Promise<readonly CachedAgentMessage[]>;
+  refreshConversation(conversationId: string): Promise<readonly CachedAgentMessage[]>;
   upsertMessage(message: CachedAgentMessage): Promise<void>;
   clearConversation(conversationId: string): Promise<void>;
 }
@@ -114,6 +122,28 @@ export function createAgentChatCache(deps: {
   fetcher: StationAgentFetcher;
 }): AgentChatCache {
   const { conversationRepo, messageRepo, turnEventRepo, cursorRepo, fetcher } = deps;
+  const conversationOperations = new Map<string, Promise<void>>();
+
+  async function runConversationOperation<T>(
+    conversationId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const predecessor = conversationOperations.get(conversationId)
+      ?? Promise.resolve();
+    const result = predecessor.catch(() => undefined).then(operation);
+    const settled = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    conversationOperations.set(conversationId, settled);
+    try {
+      return await result;
+    } finally {
+      if (conversationOperations.get(conversationId) === settled) {
+        conversationOperations.delete(conversationId);
+      }
+    }
+  }
 
   async function readConversationBundle(agentId: string): Promise<Record<string, CachedAgentConversation>> {
     return (await conversationRepo.readValue(agentId)) ?? {};
@@ -127,6 +157,19 @@ export function createAgentChatCache(deps: {
   async function writeMessages(conversationId: string, messages: readonly CachedAgentMessage[]): Promise<void> {
     const map = (await messageRepo.readValue(conversationId)) ?? {};
     map[conversationId] = mergeAgentMessages(messages, map[conversationId] ?? []);
+    await messageRepo.write(conversationId, map);
+  }
+
+  async function replaceMessages(
+    conversationId: string,
+    messages: readonly CachedAgentMessage[],
+  ): Promise<void> {
+    const map = (await messageRepo.readValue(conversationId)) ?? {};
+    const authoritativeIds = new Set(messages.map((message) => message.messageId));
+    const retainedSnapshots = (map[conversationId] ?? []).filter(
+      (message) => authoritativeIds.has(message.messageId),
+    );
+    map[conversationId] = mergeAgentMessages(messages, retainedSnapshots);
     await messageRepo.write(conversationId, map);
   }
 
@@ -150,17 +193,54 @@ export function createAgentChatCache(deps: {
   }
 
   async function syncConversation(conversationId: string): Promise<readonly CachedAgentMessage[]> {
-    const since = await readCursor(conversationId);
-    const result = await fetcher.listMessages(conversationId, since);
-    if (result.messages.length > 0) {
-      await writeMessages(conversationId, result.messages);
-      const highest = result.messages.reduce((max, message) => Math.max(max, message.seq), since);
-      await writeCursor(conversationId, highest);
-    }
-    if (result.turnEvents && result.turnEvents.length > 0) {
-      await writeTurnEvents(conversationId, result.turnEvents);
-    }
-    return readMessages(conversationId);
+    return runConversationOperation(conversationId, async () => {
+      const since = await readCursor(conversationId);
+      const result = await fetcher.listMessages(conversationId, since);
+      if (result.messages.length > 0) {
+        await writeMessages(conversationId, result.messages);
+        const highest = result.messages.reduce((max, message) => Math.max(max, message.seq), since);
+        await writeCursor(conversationId, highest);
+      }
+      if (result.turnEvents && result.turnEvents.length > 0) {
+        await writeTurnEvents(conversationId, result.turnEvents);
+      }
+      return readMessages(conversationId);
+    });
+  }
+
+  async function refreshConversation(conversationId: string): Promise<readonly CachedAgentMessage[]> {
+    return runConversationOperation(conversationId, async () => {
+      const messages: CachedAgentMessage[] = [];
+      const turnEvents: CachedAgentTurnEvent[] = [];
+      let afterSeq = 0;
+
+      while (true) {
+        const result = await fetcher.listMessages(conversationId, afterSeq);
+        messages.push(...result.messages);
+        turnEvents.push(...(result.turnEvents ?? []));
+        if (!result.hasMore) break;
+
+        const nextCursor = result.nextCursor
+          ?? result.messages.reduce(
+            (highest, message) => Math.max(highest, message.seq),
+            afterSeq,
+          );
+        if (!Number.isSafeInteger(nextCursor) || nextCursor <= afterSeq) {
+          throw new Error('clientChatCache.error.invalidPaginationCursor');
+        }
+        afterSeq = nextCursor;
+      }
+
+      await replaceMessages(conversationId, messages);
+      await writeCursor(
+        conversationId,
+        messages.reduce((highest, message) => Math.max(highest, message.seq), 0),
+      );
+      if (turnEvents.length > 0) {
+        await writeTurnEvents(conversationId, turnEvents);
+      }
+      return readMessages(conversationId);
+    });
   }
 
   return {
@@ -192,19 +272,24 @@ export function createAgentChatCache(deps: {
     },
 
     syncConversation,
+    refreshConversation,
 
     async upsertMessage(message: CachedAgentMessage): Promise<void> {
-      await writeMessages(message.conversationId, [message]);
-      const since = await readCursor(message.conversationId);
-      if (message.seq > since) await writeCursor(message.conversationId, message.seq);
+      await runConversationOperation(message.conversationId, async () => {
+        await writeMessages(message.conversationId, [message]);
+        const since = await readCursor(message.conversationId);
+        if (message.seq > since) await writeCursor(message.conversationId, message.seq);
+      });
     },
 
     async clearConversation(conversationId: string): Promise<void> {
-      await Promise.all([
-        messageRepo.remove(conversationId),
-        turnEventRepo.remove(conversationId),
-        cursorRepo.remove(conversationId),
-      ]);
+      await runConversationOperation(conversationId, async () => {
+        await Promise.all([
+          messageRepo.remove(conversationId),
+          turnEventRepo.remove(conversationId),
+          cursorRepo.remove(conversationId),
+        ]);
+      });
     },
   };
 }
@@ -265,6 +350,7 @@ function reconcileMessage(
     content: authoritative.content,
     reasoningJson: authoritative.reasoningJson ?? fallback.reasoningJson,
     toolCallsJson: authoritative.toolCallsJson ?? fallback.toolCallsJson,
+    errorJson: authoritative.errorJson ?? fallback.errorJson,
   };
 }
 

@@ -115,7 +115,7 @@ func TestAgentServicePreservesThinkingModeWhenUpdateOmitsIt(t *testing.T) {
 	}
 	service := NewAgentService()
 	created, err := service.CreateAgent(context.Background(), domain.AgentUpsertOptions{
-		ActorID:      "ptid:person:owner",
+		ActorPTID:    "ptid:person:owner",
 		Name:         "assistant",
 		ThinkingMode: domain.ThinkingModeDisabled,
 	})
@@ -124,10 +124,10 @@ func TestAgentServicePreservesThinkingModeWhenUpdateOmitsIt(t *testing.T) {
 	}
 
 	updated, err := service.UpdateAgent(context.Background(), domain.AgentUpsertOptions{
-		ActorID: "ptid:person:owner",
-		AgentID: created.AgentID,
-		Name:    created.Name,
-		Version: created.Version,
+		ActorPTID: "ptid:person:owner",
+		AgentID:   created.AgentID,
+		Name:      created.Name,
+		Version:   created.Version,
 	})
 	if err != nil {
 		t.Fatalf("update agent: %v", err)

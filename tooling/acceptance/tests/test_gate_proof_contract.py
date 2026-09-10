@@ -537,6 +537,12 @@ class GateProofContractTest(unittest.TestCase):
                             "oracleAssertionId": oracle_id,
                         }
                     )
+                    if (
+                        role == "receiver-dom"
+                        and tuple_item.get("attestationProfile")
+                        == "non_advertised"
+                    ):
+                        observation["visible"] = False
                     if "cellId" in observation:
                         observation["cellId"] = tuple_item["cell"]
                     observations.append(observation)
@@ -798,15 +804,56 @@ class GateProofContractTest(unittest.TestCase):
                 candidate.sha256,
             )
 
-    def test_candidate_rejects_contract_and_guard_failure_semantics(self) -> None:
-        gate_id = "agent-v2-kernel-foundation-e2e"
+    def test_candidate_rejects_every_role_failure_semantic(self) -> None:
         mutations = (
+            ("cell-results", "status", "failed"),
+            ("cleanup", "status", "dirty"),
+            ("command-ids", "objectIds", ["object-1", "object-1"]),
+            ("command-ids", "objectIds", [""]),
             ("contract-evidence", "status", "failed"),
             ("contract-evidence", "roundTripEqual", False),
+            ("executor-receipts", "fencingToken", 0),
+            ("executor-receipts", "status", "PREPARED"),
             ("guard-report", "violationCount", 1),
             ("guard-report", "passed", False),
+            ("measurement-report", "sampleIds", ["sample-001", "sample-001"]),
+            ("measurement-report", "sampleIds", [""]),
+            ("measurement-report", "passed", False),
+            ("metrics-lineage", "sourceAttemptIds", ["attempt-1", "attempt-1"]),
+            ("metrics-lineage", "sourceAttemptIds", [""]),
+            ("oauth-resource-manifest", "connectionRevision", 0),
+            ("process-port-secret-canary", "processCount", 1),
+            ("process-port-secret-canary", "portCount", 1),
+            ("process-port-secret-canary", "secretLeakCount", 1),
+            ("process-port-secret-canary", "passed", False),
+            ("projection-revisions", "afterRevision", 0),
+            ("provider-revoke", "status", "pending"),
+            ("readiness-snapshots", "revision", 0),
+            ("readiness-snapshots", "state", "unknown"),
+            ("readiness-snapshots", "authority", "client"),
+            ("receiver-dom", "visible", False),
+            ("replay", "equal", False),
+            ("replay", "replayHash", "b" * 64),
+            ("runtime-events", "sequence", 0),
+            ("side-effect-count", "count", 2),
+            ("side-effect-count", "count", -1),
+            ("side-effect-count", "maximum", -1),
+            ("station-readback", "revision", 0),
+            ("turn-trace", "terminalStatus", "running"),
+            ("zero-execution", "count", 1),
+            ("zero-execution", "expected", 1),
         )
         for role, field, replacement in mutations:
+            gate_id = min(
+                (
+                    gate
+                    for gate, definition in self.contract["gates"].items()
+                    if role in definition["roles"]
+                ),
+                key=lambda gate: self.contract["gates"][gate][
+                    "expectedTuples"
+                ],
+            )
             with self.subTest(role=role, field=field):
                 candidate = self.create_candidate(
                     gate_id,
@@ -818,6 +865,48 @@ class GateProofContractTest(unittest.TestCase):
                         candidate,
                         candidate.sha256,
                     )
+
+    def test_foundation_accepts_absent_non_advertised_runtime_selector(self) -> None:
+        candidate = self.create_candidate("agent-v2-kernel-foundation-e2e")
+        self.validator.validate_candidate(
+            self.store,
+            candidate,
+            candidate.sha256,
+        )
+
+    def test_candidate_accepts_source_backed_terminal_outcomes(self) -> None:
+        accepted = (
+            ("executor-receipts", "status", "FAILED"),
+            ("executor-receipts", "status", "RECONCILED_UNKNOWN"),
+            ("provider-revoke", "status", "revocation_unconfirmed"),
+            ("readiness-snapshots", "state", "degraded"),
+            ("readiness-snapshots", "state", "unavailable"),
+            ("readiness-snapshots", "state", "blocked"),
+            ("turn-trace", "terminalStatus", "failed"),
+            ("turn-trace", "terminalStatus", "cancelled"),
+            ("turn-trace", "terminalStatus", "interrupted"),
+        )
+        for role, field, replacement in accepted:
+            gate_id = min(
+                (
+                    gate
+                    for gate, definition in self.contract["gates"].items()
+                    if role in definition["roles"]
+                ),
+                key=lambda gate: self.contract["gates"][gate][
+                    "expectedTuples"
+                ],
+            )
+            with self.subTest(role=role, field=field, replacement=replacement):
+                candidate = self.create_candidate(
+                    gate_id,
+                    role_value_override=(role, field, replacement),
+                )
+                self.validator.validate_candidate(
+                    self.store,
+                    candidate,
+                    candidate.sha256,
+                )
 
     def test_candidate_rejects_wrong_or_fabricated_attestation_profile(self) -> None:
         gate_id = "agent-v2-kernel-foundation-e2e"
@@ -1095,6 +1184,57 @@ class GateProofContractTest(unittest.TestCase):
                 str(self.base / "second-proof.json"),
                 None,
             )
+
+    def test_validator_attestation_fails_closed_on_identity_or_shape_drift(
+        self,
+    ) -> None:
+        gate_id = "agent-v2-evaluation-lab-e2e"
+        candidate = self.create_candidate(gate_id)
+        validator_run_id = (
+            "20260903T000000000000Z-0123456789abcdef0123456789abcdef"
+        )
+        attestation = {
+            "artifactKind": "agent-v2-validator-attestation",
+            "schema": self.schema("validator-attestation"),
+            "role": "validator-attestation",
+            "gateId": gate_id,
+            "runId": validator_run_id,
+            "producer": {
+                "kind": "validator",
+                "processId": os.getpid(),
+                "invocationId": "validator-invocation",
+            },
+            "candidateManifest": candidate.to_dict(),
+            "validatedAt": "2026-09-03T00:00:00+00:00",
+        }
+        producer = self.validator.validate_validator_attestation(
+            self.contract,
+            attestation,
+            gate_id=gate_id,
+            validator_run_id=validator_run_id,
+            candidate_ref=candidate,
+        )
+        self.assertEqual(producer["kind"], "validator")
+
+        mutations = (
+            ("extra", True),
+            ("gateId", "other-gate"),
+            ("runId", "other-run"),
+            ("candidateManifest", {**candidate.to_dict(), "sha256": "0" * 64}),
+            ("schema", {**self.schema("validator-attestation"), "sha256": "0" * 64}),
+        )
+        for field, replacement in mutations:
+            with self.subTest(field=field):
+                malformed = copy.deepcopy(attestation)
+                malformed[field] = replacement
+                with self.assertRaises(RuntimeError):
+                    self.validator.validate_validator_attestation(
+                        self.contract,
+                        malformed,
+                        gate_id=gate_id,
+                        validator_run_id=validator_run_id,
+                        candidate_ref=candidate,
+                    )
 
     def test_gate_catalog_pins_unproven_roles_and_matrix(self) -> None:
         catalog = json.loads(

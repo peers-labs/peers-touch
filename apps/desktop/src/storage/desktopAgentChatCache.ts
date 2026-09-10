@@ -24,7 +24,11 @@ export function getDesktopAgentChatCache(): AgentChatCache {
           after_seq: afterSeq,
           limit: 200,
         });
-        return { messages: result.messages.map(toCachedMessage) };
+        return {
+          messages: result.messages.map(toCachedMessage),
+          nextCursor: result.next_cursor,
+          hasMore: result.has_more,
+        };
       },
     },
   });
@@ -79,6 +83,7 @@ function toCachedMessage(message: {
   reasoning_json?: string;
   tool_calls_json?: string;
   metadata_json?: string;
+  error_json?: string;
   attachments?: AgentAttachmentRefInput[];
   created_at: string;
   updated_at: string;
@@ -97,6 +102,7 @@ function toCachedMessage(message: {
     reasoningJson: message.reasoning_json,
     toolCallsJson: message.tool_calls_json,
     metadataJson: message.metadata_json,
+    errorJson: message.error_json,
     attachments: message.attachments?.map((attachment) => ({
       attachmentId: attachment.attachment_id,
       objectRef: attachment.object_ref,

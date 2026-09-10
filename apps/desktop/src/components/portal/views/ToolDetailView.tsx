@@ -1,6 +1,12 @@
+import { useSyncExternalStore } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Typography, Tag } from 'antd';
+import { useTranslation } from 'react-i18next';
 
+import {
+  resolveToolCallProjection,
+  toolRuntime,
+} from '../../../runtimes/toolRuntime';
 import type { ToolCallInfo } from '../../../store/chat';
 
 interface ToolDetailViewProps {
@@ -9,6 +15,16 @@ interface ToolDetailViewProps {
 
 export function ToolDetailView({ toolCall }: ToolDetailViewProps) {
   const { token } = theme.useToken();
+  const { t } = useTranslation(['chat', 'agent']);
+  const projection = useSyncExternalStore(
+    toolRuntime.subscribe,
+    () => toolRuntime.getProjection(toolCall.id),
+    () => undefined,
+  );
+  const projected = resolveToolCallProjection(toolCall, projection);
+  const error = projected.error?.startsWith('agent.')
+    ? t(projected.error, { ns: 'agent' })
+    : projected.error;
 
   const statusColor = {
     success: 'green',
@@ -19,47 +35,80 @@ export function ToolDetailView({ toolCall }: ToolDetailViewProps) {
     approved: 'green',
     denied: 'red',
     approval_required: 'orange',
+    expired: 'orange',
   } as const;
 
   return (
     <Flexbox gap={16}>
       <Flexbox horizontal align="center" gap={8}>
         <Typography.Text strong style={{ fontSize: 15 }}>
-          {toolCall.name}
+          {projected.name}
         </Typography.Text>
-        {toolCall.status && (
-          <Tag color={statusColor[toolCall.status] || 'default'}>
-            {toolCall.status}
+        {projected.status && (
+          <Tag color={statusColor[projected.status] || 'default'}>
+            {t(`chat.message.toolCall.status.${projected.status}`)}
           </Tag>
         )}
       </Flexbox>
 
-      {toolCall.serverName && (
-        <Section label="Server" content={toolCall.serverName} token={token} />
+      {projected.serverName && (
+        <Section
+          label={t('chat.message.toolCall.server')}
+          content={projected.serverName}
+          token={token}
+        />
       )}
 
-      {toolCall.args && (
-        <Section label="Arguments" content={toolCall.args} token={token} mono />
+      {projected.args && (
+        <Section
+          label={t('chat.message.toolCall.arguments')}
+          content={projected.args}
+          token={token}
+          mono
+        />
       )}
 
-      {toolCall.result && (
-        <Section label="Result" content={toolCall.result} token={token} mono />
+      {projected.result && (
+        <Section
+          label={t('chat.message.toolCall.result')}
+          content={projected.result}
+          token={token}
+          mono
+        />
       )}
 
-      {toolCall.approvalActor && (
+      {error && (
+        <Section
+          label={t('chat.message.diagnostics.error')}
+          content={error}
+          token={token}
+        />
+      )}
+
+      {projected.approvalActor && (
         <Flexbox gap={4}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Approved by
+            {t('chat.message.toolCall.approval')}
           </Typography.Text>
           <Typography.Text style={{ fontSize: 13 }}>
-            {toolCall.approvalActor}
-            {toolCall.approvedAt && ` · ${toolCall.approvedAt}`}
+            {projected.status === 'denied'
+              ? t('chat.message.toolCall.deniedBy', {
+                  actor: projected.approvalActor,
+                })
+              : t('chat.message.toolCall.approvedBy', {
+                  actor: projected.approvalActor,
+                })}
+            {projected.approvedAt && ` · ${projected.approvedAt}`}
           </Typography.Text>
         </Flexbox>
       )}
 
-      {toolCall.progress && (
-        <Section label="Progress" content={toolCall.progress} token={token} />
+      {projected.progress && (
+        <Section
+          label={t('chat.message.toolCall.progress')}
+          content={projected.progress}
+          token={token}
+        />
       )}
     </Flexbox>
   );

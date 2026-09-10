@@ -1,0 +1,3 @@
+"NSCameraUsageDescription" = "当你选择拍摄媒体内容时，Peers 需要访问相机。";
+"NSMicrophoneUsageDescription" = "当你选择录制音频时，Peers 需要访问麦克风。";
+"NSPhotoLibraryUsageDescription" = "当你选择分享媒体内容时，Peers 需要访问照片图库。";

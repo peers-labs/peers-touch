@@ -38,3 +38,14 @@ func TestProviderRecordSupportedByFrozenProfileRejectsProtocolInference(t *testi
 		t.Fatal("CLI protocol must not masquerade as an HTTP Direct Model provider")
 	}
 }
+
+func TestProviderRecordSupportedByFrozenProfileRejectsUnimplementedProtocol(t *testing.T) {
+	provider := newProviderRecord(ProviderCreateRequest{
+		ProviderID: "custom-gemini",
+		Protocol:   "gemini",
+	})
+
+	if providerRecordSupportedByFrozenProfile(provider) {
+		t.Fatal("provider protocol without a Station execution adapter must not be advertised")
+	}
+}

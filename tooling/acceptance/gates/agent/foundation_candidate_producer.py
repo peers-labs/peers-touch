@@ -78,14 +78,17 @@ ROW_ADAPTERS = {
 }
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 SAFE_SCHEMA_KEYS = {
+    "actual_tokens",
     "cacheTokens",
     "cache_tokens",
     "contextTokens",
     "context_tokens",
+    "credentialStatus",
     "fencingToken",
     "hasTokenAccounting",
     "inputTokens",
     "input_tokens",
+    "limit_tokens",
     "maxInputTokens",
     "maxOutputTokens",
     "outputTokens",

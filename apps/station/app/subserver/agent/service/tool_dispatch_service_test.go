@@ -511,6 +511,8 @@ func TestToolDispatchServiceProposeAuthorizedBatchFailsClosed(t *testing.T) {
 
 func TestTurnServiceExecutesAuthorizedStationToolExactlyOnce(t *testing.T) {
 	fixture := newToolDispatchFixture(t)
+	restore := setupTestCatalog()
+	t.Cleanup(restore)
 	proposal := fixture.authorizedProposalForOwner(
 		t,
 		"station-auto",
@@ -519,6 +521,10 @@ func TestTurnServiceExecutesAuthorizedStationToolExactlyOnce(t *testing.T) {
 		true,
 		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION,
 	)
+	proposal.Provider = "test-provider"
+	proposal.Model = "test-model"
+	proposal.DelegationDepth = 2
+	resolver := fixture.seedPinnedRuntimeAuthority(t, proposal, 2)
 	if _, err := fixture.service.ProposeAuthorizedBatch(
 		context.Background(),
 		proposal,
@@ -541,8 +547,9 @@ func TestTurnServiceExecutesAuthorizedStationToolExactlyOnce(t *testing.T) {
 		},
 	})
 	turnService := &TurnService{
-		toolDispatch: fixture.service,
-		toolRegistry: registry,
+		toolDispatch:      fixture.service,
+		toolRegistry:      registry,
+		admissionResolver: resolver,
 	}
 	if err := turnService.executeReadyStationTools(context.Background()); err != nil {
 		t.Fatalf("execute Station tool: %v", err)
@@ -611,8 +618,165 @@ func TestTurnServiceExecutesAuthorizedStationToolExactlyOnce(t *testing.T) {
 	}
 }
 
+func TestTurnServiceRejectsStaleStationToolBeforeHandlerExecution(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	restore := setupTestCatalog()
+	t.Cleanup(restore)
+	proposal := fixture.authorizedProposalForOwner(
+		t,
+		"station-stale",
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION,
+	)
+	proposal.Provider = "test-provider"
+	proposal.Model = "test-model"
+	proposal.DelegationDepth = 1
+	resolver := fixture.seedPinnedRuntimeAuthority(t, proposal, 1)
+	if _, err := fixture.service.ProposeAuthorizedBatch(
+		context.Background(),
+		proposal,
+	); err != nil {
+		t.Fatalf("propose Station tool: %v", err)
+	}
+	if err := fixture.db.Model(&persistence.AgentProvider{}).
+		Where("actor_ptid = ? AND name = ?", fixture.actorID, proposal.Provider).
+		Update("version", 2).Error; err != nil {
+		t.Fatalf("advance provider capability source: %v", err)
+	}
+
+	executionCount := 0
+	registry := NewToolRegistryService(nil, nil)
+	registry.Register(&domain.ToolDefinition{
+		Name:       proposal.Calls[0].ToolName,
+		JSONSchema: []byte(`{"type":"object"}`),
+		Handler: func(
+			context.Context,
+			*domain.ToolCallMeta,
+			json.RawMessage,
+		) (*domain.ToolResult, error) {
+			executionCount++
+			return &domain.ToolResult{Content: "unexpected"}, nil
+		},
+	})
+	turnService := &TurnService{
+		toolDispatch:      fixture.service,
+		toolRegistry:      registry,
+		admissionResolver: resolver,
+	}
+	if err := turnService.executeReadyStationTools(context.Background()); err == nil {
+		t.Fatal("expected stale Station tool authority rejection")
+	}
+	if executionCount != 0 {
+		t.Fatalf("stale Station tool executed handler %d times", executionCount)
+	}
+	var call persistence.ToolCall
+	if err := fixture.db.Where(
+		"tool_call_id = ?",
+		proposal.Calls[0].ToolCallID,
+	).First(&call).Error; err != nil {
+		t.Fatalf("load rejected Station tool call: %v", err)
+	}
+	if call.Status != persistence.ToolCallStatusFailed {
+		t.Fatalf("stale Station tool status = %q, want failed", call.Status)
+	}
+}
+
+func (f toolDispatchFixture) seedPinnedRuntimeAuthority(
+	t *testing.T,
+	proposal ToolBatchProposal,
+	delegationDepth uint32,
+) *RuntimeAdmissionResolver {
+	t.Helper()
+	if err := f.db.AutoMigrate(
+		&persistence.AgentProvider{},
+		&persistence.AgentModel{},
+		&persistence.AgentTurn{},
+	); err != nil {
+		t.Fatalf("migrate Station tool runtime authority: %v", err)
+	}
+	seedTestProvider(
+		t,
+		f.db,
+		f.actorID,
+		proposal.Provider,
+		true,
+		`{"api_key":"test-key"}`,
+	)
+	resolver := NewRuntimeAdmissionResolver(
+		NewProviderConfigService(),
+		NewModelConfigService(),
+	)
+	admission, err := resolver.Resolve(
+		context.Background(),
+		f.actorID,
+		proposal.Provider,
+		proposal.Model,
+	)
+	if err != nil {
+		t.Fatalf("resolve Station tool runtime authority: %v", err)
+	}
+	snapshot := newDirectRuntimeSnapshot(
+		admission,
+		"1",
+		domain.ThinkingModeDisabled,
+	)
+	encoded, err := persistence.MarshalRuntimeSnapshot(snapshot)
+	if err != nil {
+		t.Fatalf("encode Station tool runtime authority: %v", err)
+	}
+	snapshotHash, err := runtimeSnapshotHash(snapshot)
+	if err != nil {
+		t.Fatalf("hash Station tool runtime authority: %v", err)
+	}
+	conversation := &persistence.Conversation{
+		ID:        proposal.ConversationID,
+		AgentID:   proposal.AgentID,
+		ActorPTID: f.actorID,
+		Title:     "Station tool authority",
+		Status:    "active",
+		CreatedAt: f.now,
+		UpdatedAt: f.now,
+	}
+	if err := f.db.Create(conversation).Error; err != nil {
+		t.Fatalf("seed Station tool conversation: %v", err)
+	}
+	if err := f.db.Create(&persistence.AgentTurn{
+		ID:             proposal.TurnID,
+		ConversationID: proposal.ConversationID,
+		AgentID:        proposal.AgentID,
+		Status:         string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:      f.now,
+	}).Error; err != nil {
+		t.Fatalf("seed Station tool turn: %v", err)
+	}
+	if err := f.db.Create(&persistence.TurnAttempt{
+		ID:                  proposal.AttemptID,
+		TurnID:              proposal.TurnID,
+		AttemptIndex:        1,
+		Status:              string(domain.TurnStatusWaitingLocalTool),
+		ReadinessSnapshotID: proposal.ReadinessSnapshotID,
+		RuntimeSnapshot:     encoded,
+		RuntimeSnapshotHash: snapshotHash,
+		StartedAt:           f.now,
+	}).Error; err != nil {
+		t.Fatalf("seed Station tool attempt: %v", err)
+	}
+	if proposal.DelegationDepth != delegationDepth {
+		t.Fatalf(
+			"Station tool delegation depth = %d, want %d",
+			proposal.DelegationDepth,
+			delegationDepth,
+		)
+	}
+	return resolver
+}
+
 func TestStationToolPolicyBlocksExecutionUntilApproved(t *testing.T) {
 	fixture := newToolDispatchFixture(t)
+	restore := setupTestCatalog()
+	t.Cleanup(restore)
 	proposal := fixture.authorizedProposalForOwner(
 		t,
 		"station-manual",
@@ -621,6 +785,9 @@ func TestStationToolPolicyBlocksExecutionUntilApproved(t *testing.T) {
 		true,
 		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION,
 	)
+	proposal.Provider = "test-provider"
+	proposal.Model = "test-model"
+	resolver := fixture.seedPinnedRuntimeAuthority(t, proposal, 0)
 	decisions, err := fixture.service.ProposeAuthorizedBatch(
 		context.Background(),
 		proposal,
@@ -644,8 +811,9 @@ func TestStationToolPolicyBlocksExecutionUntilApproved(t *testing.T) {
 		},
 	})
 	turnService := &TurnService{
-		toolDispatch: fixture.service,
-		toolRegistry: registry,
+		toolDispatch:      fixture.service,
+		toolRegistry:      registry,
+		admissionResolver: resolver,
 	}
 	if err := turnService.executeReadyStationTools(context.Background()); err != nil {
 		t.Fatalf("execute unapproved Station tool: %v", err)
@@ -765,6 +933,13 @@ func TestStationToolDenyAndExpiryExecuteZeroTimes(t *testing.T) {
 				call.ResultID != "" {
 				t.Fatalf("%s Station tool state is invalid: %+v", test.name, call)
 			}
+			if test.expire && call.ErrorCode != string(errcode.AgentToolApprovalExpired) {
+				t.Fatalf(
+					"expired approval error code = %q, want %q",
+					call.ErrorCode,
+					errcode.AgentToolApprovalExpired,
+				)
+			}
 		})
 	}
 }
@@ -854,7 +1029,7 @@ func (f toolDispatchFixture) authorizedProposalForOwner(
 		ToolBatchID: "batch-" + suffix, ConversationID: "conversation-1", AgentID: binding.AgentID,
 		Provider: "provider-1", Model: "model-1", ThinkingMode: string(domain.ThinkingModeDisabled),
 		MaxRetries: 3, ContextWindowSize: 128000,
-		ClientCapabilitySessionID: f.session.GetCapabilitySessionId(), ReadinessSnapshotID: snapshotID,
+		ClientCapabilitySessionID: selectedSessionID, ReadinessSnapshotID: snapshotID,
 		Deadline: f.now.Add(time.Minute),
 		Calls: []AuthorizedToolProposal{{
 			ToolCallID: "tool-call-" + suffix, ToolName: toolName,
@@ -1232,11 +1407,19 @@ func TestToolDispatchServiceSettleExpiredToolCalls(t *testing.T) {
 		t.Fatalf("load settled tool calls: %v", err)
 	}
 	statusByID := make(map[string]string, len(calls))
+	errorCodeByID := make(map[string]string, len(calls))
 	for i := range calls {
 		statusByID[calls[i].ToolCallID] = calls[i].Status
+		errorCodeByID[calls[i].ToolCallID] = calls[i].ErrorCode
 	}
 	if statusByID["tool-call-dispatched"] != persistence.ToolCallStatusExpired {
 		t.Fatalf("unprepared call must expire, got %s", statusByID["tool-call-dispatched"])
+	}
+	if errorCodeByID["tool-call-dispatched"] != "tool_deadline_expired" {
+		t.Fatalf(
+			"committed dispatch must retain execution deadline code, got %s",
+			errorCodeByID["tool-call-dispatched"],
+		)
 	}
 	if statusByID["tool-call-prepared"] != persistence.ToolCallStatusPrepared {
 		t.Fatalf("prepared call must remain reconcilable, got %s", statusByID["tool-call-prepared"])
@@ -1394,6 +1577,288 @@ func TestToolDispatchServiceSubmitDecision(t *testing.T) {
 	}
 	if outboxCount != 1 {
 		t.Fatalf("expected one targeted dispatch, got %d", outboxCount)
+	}
+}
+
+func TestToolDispatchServiceSubmitDeniedDecisionReturnsTypedOutcome(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	proposal := fixture.authorizedProposal(
+		t,
+		"denied-decision",
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+	)
+	decisions, err := fixture.service.ProposeAuthorizedBatch(context.Background(), proposal)
+	if err != nil {
+		t.Fatalf("propose manual tool: %v", err)
+	}
+	request := &model.SubmitToolApprovalDecisionRequest{
+		ApprovalId:       decisions[0].ApprovalID,
+		ToolCallId:       proposal.Calls[0].ToolCallID,
+		DecisionId:       "decision-denied-1",
+		ExpectedRevision: decisions[0].DecisionRevision,
+		Approved:         false,
+		IdempotencyKey:   "decision-denied-command-1",
+	}
+	request.PayloadHash = decisionPayloadHash(request)
+
+	first, err := fixture.service.SubmitDecision(context.Background(), fixture.actorID, request)
+	if err != nil {
+		t.Fatalf("submit denied decision: %v", err)
+	}
+	outcome := first.GetOutcomeError()
+	if !first.GetAccepted() || first.GetApproved() || outcome == nil {
+		t.Fatalf("unexpected denied acknowledgement: %+v", first)
+	}
+	if outcome.GetErrorType() != string(errcode.AgentToolApprovalDenied) ||
+		outcome.GetLocaleKey() != errcode.AgentToolApprovalDeniedLocaleKey ||
+		outcome.GetRetryable() ||
+		!outcome.GetTerminal() ||
+		len(outcome.GetDetails()) != 2 ||
+		outcome.GetDetails()["tool_call_id"] != request.GetToolCallId() ||
+		outcome.GetDetails()["decision_id"] != request.GetDecisionId() {
+		t.Fatalf("unexpected denied outcome: %+v", outcome)
+	}
+
+	replayed, err := fixture.service.SubmitDecision(context.Background(), fixture.actorID, request)
+	if err != nil {
+		t.Fatalf("replay denied decision: %v", err)
+	}
+	if !proto.Equal(first, replayed) {
+		t.Fatalf("denied replay differs: first=%+v replayed=%+v", first, replayed)
+	}
+
+	var call persistence.ToolCall
+	if err := fixture.db.Where("tool_call_id = ?", request.GetToolCallId()).First(&call).Error; err != nil {
+		t.Fatalf("load denied tool call: %v", err)
+	}
+	if call.Status != persistence.ToolCallStatusDenied ||
+		call.DecisionID != request.GetDecisionId() ||
+		call.ErrorCode != string(errcode.AgentToolApprovalDenied) {
+		t.Fatalf("unexpected denied tool call: %+v", call)
+	}
+	var outboxCount int64
+	if err := fixture.db.Model(&persistence.ToolDispatchOutbox{}).Count(&outboxCount).Error; err != nil {
+		t.Fatalf("count denied outbox rows: %v", err)
+	}
+	var continuationCount int64
+	if err := fixture.db.Model(&persistence.ToolContinuation{}).Count(&continuationCount).Error; err != nil {
+		t.Fatalf("count denied continuation rows: %v", err)
+	}
+	if outboxCount != 0 || continuationCount != 0 {
+		t.Fatalf("denied decision dispatched work: outbox=%d continuation=%d", outboxCount, continuationCount)
+	}
+}
+
+func TestToolDispatchServiceRejectsUnavailableClientExecutorBeforeClaim(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	proposal := fixture.authorizedProposal(
+		t,
+		"executor-unavailable",
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+	)
+	decisions, err := fixture.service.ProposeAuthorizedBatch(context.Background(), proposal)
+	if err != nil {
+		t.Fatalf("propose manual client tool: %v", err)
+	}
+	revokedAt := fixture.now
+	if err := fixture.db.Model(&persistence.ClientCapabilityLease{}).
+		Where("session_id = ?", fixture.session.GetCapabilitySessionId()).
+		Updates(map[string]interface{}{
+			"revoked_at":    revokedAt,
+			"revoke_reason": int32(model.ClientCapabilityLeaseRevokeReason_CLIENT_CAPABILITY_LEASE_REVOKE_REASON_WORKER_SHUTDOWN),
+			"updated_at":    revokedAt,
+		}).Error; err != nil {
+		t.Fatalf("revoke client executor lease: %v", err)
+	}
+
+	request := &model.SubmitToolApprovalDecisionRequest{
+		ApprovalId:       decisions[0].ApprovalID,
+		ToolCallId:       proposal.Calls[0].ToolCallID,
+		DecisionId:       "decision-executor-unavailable-1",
+		ExpectedRevision: decisions[0].DecisionRevision,
+		Approved:         true,
+		IdempotencyKey:   "decision-executor-unavailable-command-1",
+	}
+	request.PayloadHash = decisionPayloadHash(request)
+
+	first, err := fixture.service.SubmitDecision(context.Background(), fixture.actorID, request)
+	if err != nil {
+		t.Fatalf("submit unavailable executor decision: %v", err)
+	}
+	outcome := first.GetOutcomeError()
+	if first.GetAccepted() ||
+		first.GetErrorCode() != model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE ||
+		outcome == nil {
+		t.Fatalf("unexpected executor unavailable acknowledgement: %+v", first)
+	}
+	if outcome.GetErrorType() != string(errcode.AgentClientExecutorUnavailable) ||
+		outcome.GetLocaleKey() != errcode.AgentClientExecutorUnavailableLocaleKey ||
+		!outcome.GetRetryable() ||
+		!outcome.GetTerminal() ||
+		len(outcome.GetDetails()) != 2 ||
+		outcome.GetDetails()["target_device_id"] != fixture.deviceID ||
+		outcome.GetDetails()["capability_id"] != proposal.Calls[0].CapabilityID {
+		t.Fatalf("unexpected executor unavailable outcome: %+v", outcome)
+	}
+
+	replayed, err := fixture.service.SubmitDecision(context.Background(), fixture.actorID, request)
+	if err != nil {
+		t.Fatalf("replay unavailable executor decision: %v", err)
+	}
+	if !proto.Equal(first, replayed) {
+		t.Fatalf("executor unavailable replay differs: first=%+v replayed=%+v", first, replayed)
+	}
+
+	var call persistence.ToolCall
+	if err := fixture.db.Where("tool_call_id = ?", request.GetToolCallId()).First(&call).Error; err != nil {
+		t.Fatalf("load waiting tool call: %v", err)
+	}
+	if call.Status != persistence.ToolCallStatusWaitingApproval ||
+		call.DecisionID != "" ||
+		call.DecisionRevision != decisions[0].DecisionRevision ||
+		call.ExecutionClaimID != "" ||
+		call.ExecutionAttemptCount != 0 ||
+		call.ResultID != "" ||
+		call.ErrorCode != "" {
+		t.Fatalf("unavailable executor mutated ToolCall authority: %+v", call)
+	}
+	for name, modelValue := range map[string]interface{}{
+		"dispatch":     &persistence.ToolDispatchOutbox{},
+		"result":       &persistence.ToolResult{},
+		"continuation": &persistence.ToolContinuation{},
+	} {
+		var count int64
+		if err := fixture.db.Model(modelValue).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("unavailable executor created %d %s rows", count, name)
+		}
+	}
+}
+
+func TestToolDispatchServiceSubmitExpiredDecisionReturnsTypedOutcome(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	proposal := fixture.authorizedProposal(
+		t,
+		"expired-decision",
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+	)
+	proposal.Deadline = proposal.Deadline.Add(789 * time.Nanosecond)
+	decisions, err := fixture.service.ProposeAuthorizedBatch(context.Background(), proposal)
+	if err != nil {
+		t.Fatalf("propose manual tool: %v", err)
+	}
+	expectedDeadline := proposal.Deadline.UTC().Truncate(time.Microsecond)
+	if !decisions[0].ExpiresAt.Equal(expectedDeadline) {
+		t.Fatalf(
+			"proposal deadline = %s, want canonical %s",
+			decisions[0].ExpiresAt.Format(time.RFC3339Nano),
+			expectedDeadline.Format(time.RFC3339Nano),
+		)
+	}
+	fixture.service.now = func() time.Time {
+		return proposal.Deadline.Add(time.Second)
+	}
+	request := &model.SubmitToolApprovalDecisionRequest{
+		ApprovalId:       decisions[0].ApprovalID,
+		ToolCallId:       proposal.Calls[0].ToolCallID,
+		DecisionId:       "decision-expired-1",
+		ExpectedRevision: decisions[0].DecisionRevision,
+		Approved:         true,
+		IdempotencyKey:   "decision-expired-command-1",
+	}
+	request.PayloadHash = decisionPayloadHash(request)
+
+	first, err := fixture.service.SubmitDecision(
+		context.Background(),
+		fixture.actorID,
+		request,
+	)
+	if err != nil {
+		t.Fatalf("submit expired decision: %v", err)
+	}
+	outcome := first.GetOutcomeError()
+	if first.GetAccepted() ||
+		first.GetErrorCode() != model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED ||
+		outcome == nil {
+		t.Fatalf("unexpected expired acknowledgement: %+v", first)
+	}
+	if outcome.GetErrorType() != string(errcode.AgentToolApprovalExpired) ||
+		outcome.GetLocaleKey() != errcode.AgentToolApprovalExpiredLocaleKey ||
+		!outcome.GetRetryable() ||
+		!outcome.GetTerminal() ||
+		len(outcome.GetDetails()) != 2 ||
+		outcome.GetDetails()["decision_id"] != request.GetDecisionId() ||
+		outcome.GetDetails()["expires_at"] != expectedDeadline.Format(time.RFC3339Nano) {
+		t.Fatalf("unexpected expired outcome: %+v", outcome)
+	}
+
+	replayed, err := fixture.service.SubmitDecision(
+		context.Background(),
+		fixture.actorID,
+		request,
+	)
+	if err != nil {
+		t.Fatalf("replay expired decision: %v", err)
+	}
+	if !proto.Equal(first, replayed) {
+		t.Fatalf("expired rejection changed: first=%+v replayed=%+v", first, replayed)
+	}
+	conflicting := proto.Clone(request).(*model.SubmitToolApprovalDecisionRequest)
+	conflicting.Approved = false
+	conflicting.PayloadHash = decisionPayloadHash(conflicting)
+	conflict, err := fixture.service.SubmitDecision(
+		context.Background(),
+		fixture.actorID,
+		conflicting,
+	)
+	if err != nil {
+		t.Fatalf("submit conflicting expired decision: %v", err)
+	}
+	if conflict.GetAccepted() ||
+		conflict.GetErrorCode() != model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT {
+		t.Fatalf("unexpected expired decision conflict: %+v", conflict)
+	}
+	var commandCount int64
+	if err := fixture.db.Model(&persistence.ToolDecisionCommand{}).Count(&commandCount).Error; err != nil {
+		t.Fatalf("count expired decision commands: %v", err)
+	}
+	if commandCount != 1 {
+		t.Fatalf("expired decision command count = %d, want 1", commandCount)
+	}
+
+	var call persistence.ToolCall
+	if err := fixture.db.Where("tool_call_id = ?", request.GetToolCallId()).First(&call).Error; err != nil {
+		t.Fatalf("load expired tool call: %v", err)
+	}
+	if call.Status != persistence.ToolCallStatusExpired ||
+		call.DecisionID != "" ||
+		call.DecisionRevision != decisions[0].DecisionRevision ||
+		call.ExecutionAttemptCount != 0 ||
+		call.DuplicateDeliveryCount != 1 ||
+		call.ResultID != "" ||
+		call.ErrorCode != string(errcode.AgentToolApprovalExpired) {
+		t.Fatalf("expired tool call mutated incorrectly: %+v", call)
+	}
+	for name, modelValue := range map[string]interface{}{
+		"dispatch":     &persistence.ToolDispatchOutbox{},
+		"result":       &persistence.ToolResult{},
+		"continuation": &persistence.ToolContinuation{},
+	} {
+		var count int64
+		if err := fixture.db.Model(modelValue).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("expired approval created %d %s rows", count, name)
+		}
 	}
 }
 
@@ -1615,7 +2080,7 @@ func TestTurnServiceProcessToolCallsPausesAfterDurableDispatch(t *testing.T) {
 	conversation := &persistence.Conversation{
 		ID:        "conversation-pause",
 		AgentID:   "agent-1",
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Pause",
 		Status:    "active",
 		CreatedAt: now,
@@ -1659,6 +2124,11 @@ func TestTurnServiceProcessToolCallsPausesAfterDurableDispatch(t *testing.T) {
 		ClientCapabilitySessionID: fixture.session.GetCapabilitySessionId(),
 		AttemptID:                 proposal.AttemptID,
 		TurnID:                    proposal.TurnID,
+		RuntimeCapabilities: &model.RuntimeCapabilitySnapshot{
+			Agentic: &model.RuntimeAgenticCapabilities{NativeTools: true},
+		},
+		RestrictedTools: []string{"local_file_read"},
+		Depth:           2,
 	}
 	authorized, err := LoadAuthorizedCapabilitySet(
 		context.Background(),
@@ -1703,6 +2173,20 @@ func TestTurnServiceProcessToolCallsPausesAfterDurableDispatch(t *testing.T) {
 	if batch.CapabilitySessionID != fixture.session.GetCapabilitySessionId() {
 		t.Fatalf("capability session was not frozen on batch: %+v", batch)
 	}
+	if batch.DelegationDepth != uint32(config.Depth) {
+		t.Fatalf(
+			"delegation depth was not frozen on batch: got=%d want=%d",
+			batch.DelegationDepth,
+			config.Depth,
+		)
+	}
+	var restrictedTools []string
+	if err := json.Unmarshal(batch.RestrictedToolsJSON, &restrictedTools); err != nil {
+		t.Fatalf("decode frozen restricted tools: %v", err)
+	}
+	if len(restrictedTools) != 1 || restrictedTools[0] != "local_file_read" {
+		t.Fatalf("restricted tools were not frozen on batch: %v", restrictedTools)
+	}
 	var call persistence.ToolCall
 	if err := fixture.db.First(&call, "tool_batch_id = ?", batch.ID).Error; err != nil {
 		t.Fatalf("load governed tool call: %v", err)
@@ -1730,7 +2214,27 @@ func TestTurnServiceProcessToolCallsPausesAfterDurableDispatch(t *testing.T) {
 }
 
 func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
+	restore := setupTestCatalog()
+	defer restore()
 	fixture := newToolDispatchFixture(t)
+	if err := fixture.db.AutoMigrate(
+		&persistence.AgentProvider{},
+		&persistence.AgentModel{},
+	); err != nil {
+		t.Fatalf("migrate continuation runtime authority: %v", err)
+	}
+	seedTestProvider(
+		t,
+		fixture.db,
+		fixture.actorID,
+		"test-provider",
+		true,
+		`{"api_key":"test-key"}`,
+	)
+	admissionResolver := NewRuntimeAdmissionResolver(
+		NewProviderConfigService(),
+		NewModelConfigService(),
+	)
 	now := fixture.now
 	authority := fixture.authorizedProposal(
 		t,
@@ -1739,10 +2243,12 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
 		true,
 	)
+	authority.Provider = "test-provider"
+	authority.Model = "test-model"
 	conversation := &persistence.Conversation{
 		ID:        "conversation-1",
 		AgentID:   "agent-1",
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Resume",
 		Status:    "active",
 		CreatedAt: now,
@@ -1758,14 +2264,32 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 		StartedAt:      now,
 	}
 	pinnedBudget := &model.RuntimeBudget{
+		MaxAttempts:           3,
 		MaxToolCalls:          7,
 		MaxIdenticalToolCalls: 2,
 	}
-	runtimeSnapshot, err := persistence.MarshalRuntimeSnapshot(&model.RuntimeSnapshot{
-		Budget: pinnedBudget,
-	})
+	admission, err := admissionResolver.Resolve(
+		context.Background(),
+		fixture.actorID,
+		authority.Provider,
+		authority.Model,
+	)
+	if err != nil {
+		t.Fatalf("resolve continuation runtime authority: %v", err)
+	}
+	pinnedSnapshot := newDirectRuntimeSnapshot(
+		admission,
+		"1",
+		domain.ThinkingModeDisabled,
+	)
+	pinnedSnapshot.Budget = pinnedBudget
+	runtimeSnapshot, err := persistence.MarshalRuntimeSnapshot(pinnedSnapshot)
 	if err != nil {
 		t.Fatalf("encode pinned runtime budget: %v", err)
+	}
+	snapshotHash, err := runtimeSnapshotHash(pinnedSnapshot)
+	if err != nil {
+		t.Fatalf("hash pinned runtime snapshot: %v", err)
 	}
 	attempt := &persistence.TurnAttempt{
 		ID:                  "attempt-1",
@@ -1774,6 +2298,7 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 		Status:              string(domain.TurnStatusWaitingLocalTool),
 		ReadinessSnapshotID: authority.ReadinessSnapshotID,
 		RuntimeSnapshot:     runtimeSnapshot,
+		RuntimeSnapshotHash: snapshotHash,
 		StartedAt:           now,
 	}
 	if err := fixture.db.Create(conversation).Error; err != nil {
@@ -1835,8 +2360,9 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 	resumedThinkingMode := domain.ThinkingMode("")
 	var resumedBudget *model.RuntimeBudget
 	service := &TurnService{
-		toolDispatch: fixture.service,
-		nudgeState:   domain.NewNudgeState(),
+		toolDispatch:      fixture.service,
+		nudgeState:        domain.NewNudgeState(),
+		admissionResolver: admissionResolver,
 		resumeProviderCall: func(
 			_ context.Context,
 			config *TurnConfig,
@@ -1897,10 +2423,28 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 }
 
 func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing.T) {
+	restore := setupTestCatalog()
+	defer restore()
 	fixture := newToolDispatchFixture(t)
-	if err := fixture.db.AutoMigrate(&persistence.TaskRun{}); err != nil {
+	if err := fixture.db.AutoMigrate(
+		&persistence.TaskRun{},
+		&persistence.AgentProvider{},
+		&persistence.AgentModel{},
+	); err != nil {
 		t.Fatalf("migrate chat task run: %v", err)
 	}
+	seedTestProvider(
+		t,
+		fixture.db,
+		fixture.actorID,
+		"test-provider",
+		true,
+		`{"api_key":"test-key"}`,
+	)
+	admissionResolver := NewRuntimeAdmissionResolver(
+		NewProviderConfigService(),
+		NewModelConfigService(),
+	)
 
 	authority := fixture.authorizedProposal(
 		t,
@@ -1909,12 +2453,14 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
 		true,
 	)
+	authority.Provider = "test-provider"
+	authority.Model = "test-model"
 	authority.TaskID = "task-lifecycle-cancel"
 	authority.StepID = "step-lifecycle-cancel"
 	conversation := &persistence.Conversation{
 		ID:        authority.ConversationID,
 		AgentID:   authority.AgentID,
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Lifecycle cancellation",
 		Status:    "active",
 		CreatedAt: fixture.now,
@@ -1929,11 +2475,33 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 		Status:         string(domain.TurnStatusWaitingLocalTool),
 		StartedAt:      fixture.now,
 	}
-	runtimeSnapshot, err := persistence.MarshalRuntimeSnapshot(&model.RuntimeSnapshot{
-		Budget: &model.RuntimeBudget{MaxToolCalls: 7, MaxIdenticalToolCalls: 2},
-	})
+	pinnedBudget := &model.RuntimeBudget{
+		MaxAttempts:           3,
+		MaxToolCalls:          7,
+		MaxIdenticalToolCalls: 2,
+	}
+	admission, err := admissionResolver.Resolve(
+		context.Background(),
+		fixture.actorID,
+		authority.Provider,
+		authority.Model,
+	)
+	if err != nil {
+		t.Fatalf("resolve lifecycle runtime authority: %v", err)
+	}
+	pinnedSnapshot := newDirectRuntimeSnapshot(
+		admission,
+		"1",
+		domain.ThinkingModeDisabled,
+	)
+	pinnedSnapshot.Budget = pinnedBudget
+	runtimeSnapshot, err := persistence.MarshalRuntimeSnapshot(pinnedSnapshot)
 	if err != nil {
 		t.Fatalf("encode runtime snapshot: %v", err)
+	}
+	snapshotHash, err := runtimeSnapshotHash(pinnedSnapshot)
+	if err != nil {
+		t.Fatalf("hash runtime snapshot: %v", err)
 	}
 	attempt := &persistence.TurnAttempt{
 		ID:                  authority.AttemptID,
@@ -1942,13 +2510,14 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 		Status:              string(domain.TurnStatusWaitingLocalTool),
 		ReadinessSnapshotID: authority.ReadinessSnapshotID,
 		RuntimeSnapshot:     runtimeSnapshot,
+		RuntimeSnapshotHash: snapshotHash,
 		StartedAt:           fixture.now,
 	}
 	task := &persistence.TaskRun{
 		TaskID:         authority.TaskID,
 		Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 		Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		OwnerActorID:   fixture.actorID,
+		OwnerActorPTID: fixture.actorID,
 		ConversationID: authority.ConversationID,
 		CreatedAt:      fixture.now,
 		StartedAt:      fixture.now,
@@ -2011,8 +2580,9 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 
 	providerStarted := make(chan struct{})
 	service := &TurnService{
-		toolDispatch: fixture.service,
-		nudgeState:   domain.NewNudgeState(),
+		toolDispatch:      fixture.service,
+		nudgeState:        domain.NewNudgeState(),
+		admissionResolver: admissionResolver,
 		resumeProviderCall: func(
 			ctx context.Context,
 			_ *TurnConfig,
@@ -2034,7 +2604,11 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 	}) {
 		t.Fatal("continuation worker was rejected before shutdown")
 	}
-	<-providerStarted
+	select {
+	case <-providerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("continuation provider did not start")
+	}
 	stopCtx, cancelStop := context.WithTimeout(context.Background(), time.Second)
 	defer cancelStop()
 	if err := service.StopExecutionLifecycle(stopCtx); err != nil {
@@ -2124,7 +2698,7 @@ func TestChatTaskServicePreservesDurableToolContinuation(t *testing.T) {
 			TaskID:         steps[0].TaskID,
 			Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-			OwnerActorID:   fixture.actorID,
+			OwnerActorPTID: fixture.actorID,
 			ConversationID: "conversation-waiting-receipt",
 			CreatedAt:      fixture.now,
 			StartedAt:      fixture.now,
@@ -2134,7 +2708,7 @@ func TestChatTaskServicePreservesDurableToolContinuation(t *testing.T) {
 			TaskID:         steps[1].TaskID,
 			Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-			OwnerActorID:   fixture.actorID,
+			OwnerActorPTID: fixture.actorID,
 			ConversationID: "conversation-ready-continuation",
 			CreatedAt:      fixture.now,
 			StartedAt:      fixture.now,
@@ -2144,7 +2718,7 @@ func TestChatTaskServicePreservesDurableToolContinuation(t *testing.T) {
 			TaskID:         steps[2].TaskID,
 			Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-			OwnerActorID:   fixture.actorID,
+			OwnerActorPTID: fixture.actorID,
 			ConversationID: "conversation-reconciliation-required",
 			CreatedAt:      fixture.now,
 			StartedAt:      fixture.now,
@@ -2303,7 +2877,7 @@ func TestTurnServiceSettlesReconciliationRequiredTurn(t *testing.T) {
 	conversation := &persistence.Conversation{
 		ID:        "conversation-reconciliation",
 		AgentID:   "agent-1",
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Reconciliation",
 		Status:    "active",
 		CreatedAt: now,
@@ -2383,13 +2957,267 @@ func TestTurnServiceSettlesReconciliationRequiredTurn(t *testing.T) {
 	}
 }
 
+func TestTurnServiceSettlesBlockedToolBatchForCurrentAttempt(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	now := fixture.now
+	conversation := &persistence.Conversation{
+		ID:        "conversation-current-blocked",
+		AgentID:   "agent-1",
+		ActorPTID: fixture.actorID,
+		Title:     "Current blocked batch",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	turn := &persistence.AgentTurn{
+		ID:             "turn-current-blocked",
+		ConversationID: conversation.ID,
+		AgentID:        "agent-1",
+		Status:         string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:      now,
+	}
+	attempt := &persistence.TurnAttempt{
+		ID:           "attempt-current-blocked",
+		TurnID:       turn.ID,
+		AttemptIndex: 1,
+		Status:       string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:    now,
+	}
+	batch := &persistence.ToolBatch{
+		ID:             "batch-current-blocked",
+		ActorID:        fixture.actorID,
+		TurnID:         turn.ID,
+		AttemptID:      attempt.ID,
+		ConversationID: conversation.ID,
+		AgentID:        "agent-1",
+		Provider:       "provider-1",
+		Model:          "model-1",
+		SystemPrompt:   "system",
+		Iteration:      1,
+		Status:         persistence.ToolBatchStatusBlocked,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	for label, value := range map[string]interface{}{
+		"conversation": conversation,
+		"turn":         turn,
+		"attempt":      attempt,
+		"batch":        batch,
+	} {
+		if err := fixture.db.Create(value).Error; err != nil {
+			t.Fatalf("seed %s: %v", label, err)
+		}
+	}
+
+	service := &TurnService{}
+	if err := service.settleBlockedToolBatches(context.Background()); err != nil {
+		t.Fatalf("settle blocked tool batches: %v", err)
+	}
+
+	var reloadedTurn persistence.AgentTurn
+	if err := fixture.db.First(&reloadedTurn, "id = ?", turn.ID).Error; err != nil {
+		t.Fatalf("reload turn: %v", err)
+	}
+	if reloadedTurn.Status != string(domain.TurnStatusInterrupted) {
+		t.Fatalf("expected interrupted turn, got %s", reloadedTurn.Status)
+	}
+	var reloadedAttempt persistence.TurnAttempt
+	if err := fixture.db.First(&reloadedAttempt, "id = ?", attempt.ID).Error; err != nil {
+		t.Fatalf("reload attempt: %v", err)
+	}
+	if reloadedAttempt.Status != string(domain.TurnStatusInterrupted) ||
+		reloadedAttempt.EndedAt == nil {
+		t.Fatalf("expected interrupted terminal attempt, got %+v", reloadedAttempt)
+	}
+}
+
+func TestTurnServiceIgnoresBlockedToolBatchFromPreviousAttempt(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	now := fixture.now
+	endedAt := now.Add(-time.Minute)
+	conversation := &persistence.Conversation{
+		ID:        "conversation-retry-blocked",
+		AgentID:   "agent-1",
+		ActorPTID: fixture.actorID,
+		Title:     "Retry blocked batch",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	turn := &persistence.AgentTurn{
+		ID:             "turn-retry-blocked",
+		ConversationID: conversation.ID,
+		AgentID:        "agent-1",
+		Status:         string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:      now,
+	}
+	previousAttempt := &persistence.TurnAttempt{
+		ID:           "attempt-retry-blocked-1",
+		TurnID:       turn.ID,
+		AttemptIndex: 1,
+		Status:       string(domain.TurnStatusInterrupted),
+		StartedAt:    now.Add(-2 * time.Minute),
+		EndedAt:      &endedAt,
+	}
+	currentAttempt := &persistence.TurnAttempt{
+		ID:           "attempt-retry-blocked-2",
+		TurnID:       turn.ID,
+		AttemptIndex: 2,
+		Status:       string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:    now,
+	}
+	staleBatch := &persistence.ToolBatch{
+		ID:             "batch-retry-blocked-1",
+		ActorID:        fixture.actorID,
+		TurnID:         turn.ID,
+		AttemptID:      previousAttempt.ID,
+		ConversationID: conversation.ID,
+		AgentID:        "agent-1",
+		Provider:       "provider-1",
+		Model:          "model-1",
+		SystemPrompt:   "system",
+		Iteration:      1,
+		Status:         persistence.ToolBatchStatusBlocked,
+		CreatedAt:      now.Add(-2 * time.Minute),
+		UpdatedAt:      endedAt,
+		SettledAt:      &endedAt,
+	}
+	for label, value := range map[string]interface{}{
+		"conversation":     conversation,
+		"turn":             turn,
+		"previous attempt": previousAttempt,
+		"current attempt":  currentAttempt,
+		"stale batch":      staleBatch,
+	} {
+		if err := fixture.db.Create(value).Error; err != nil {
+			t.Fatalf("seed %s: %v", label, err)
+		}
+	}
+
+	service := &TurnService{}
+	if err := service.settleBlockedToolBatches(context.Background()); err != nil {
+		t.Fatalf("settle blocked tool batches: %v", err)
+	}
+
+	var reloadedTurn persistence.AgentTurn
+	if err := fixture.db.First(&reloadedTurn, "id = ?", turn.ID).Error; err != nil {
+		t.Fatalf("reload turn: %v", err)
+	}
+	if reloadedTurn.Status != string(domain.TurnStatusWaitingLocalTool) {
+		t.Fatalf("stale batch interrupted current retry: %s", reloadedTurn.Status)
+	}
+	var reloadedAttempt persistence.TurnAttempt
+	if err := fixture.db.First(&reloadedAttempt, "id = ?", currentAttempt.ID).Error; err != nil {
+		t.Fatalf("reload current attempt: %v", err)
+	}
+	if reloadedAttempt.Status != string(domain.TurnStatusWaitingLocalTool) ||
+		reloadedAttempt.EndedAt != nil {
+		t.Fatalf("current retry attempt was settled by stale batch: %+v", reloadedAttempt)
+	}
+}
+
+func TestTurnServiceIgnoresReconciliationFromPreviousAttempt(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	now := fixture.now
+	endedAt := now.Add(-time.Minute)
+	conversation := &persistence.Conversation{
+		ID:        "conversation-retry-reconciliation",
+		AgentID:   "agent-1",
+		ActorPTID: fixture.actorID,
+		Title:     "Retry reconciliation",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	turn := &persistence.AgentTurn{
+		ID:             "turn-retry-reconciliation",
+		ConversationID: conversation.ID,
+		AgentID:        "agent-1",
+		Status:         string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:      now,
+	}
+	previousAttempt := &persistence.TurnAttempt{
+		ID:           "attempt-retry-reconciliation-1",
+		TurnID:       turn.ID,
+		AttemptIndex: 1,
+		Status:       string(domain.TurnStatusInterrupted),
+		StartedAt:    now.Add(-2 * time.Minute),
+		EndedAt:      &endedAt,
+	}
+	currentAttempt := &persistence.TurnAttempt{
+		ID:           "attempt-retry-reconciliation-2",
+		TurnID:       turn.ID,
+		AttemptIndex: 2,
+		Status:       string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:    now,
+	}
+	staleBatch := &persistence.ToolBatch{
+		ID:             "batch-retry-reconciliation-1",
+		ActorID:        fixture.actorID,
+		TurnID:         turn.ID,
+		AttemptID:      previousAttempt.ID,
+		ConversationID: conversation.ID,
+		AgentID:        "agent-1",
+		Provider:       "provider-1",
+		Model:          "model-1",
+		SystemPrompt:   "system",
+		Iteration:      1,
+		Status:         persistence.ToolBatchStatusReadyForContinuation,
+		CreatedAt:      now.Add(-2 * time.Minute),
+		UpdatedAt:      endedAt,
+	}
+	staleContinuation := &persistence.ToolContinuation{
+		ID:                     "continuation-retry-reconciliation-1",
+		TurnID:                 turn.ID,
+		AttemptID:              previousAttempt.ID,
+		ToolBatchID:            staleBatch.ID,
+		Status:                 persistence.ToolContinuationStatusReconciliationRequired,
+		ProviderRequestEmitted: true,
+		CreatedAt:              now.Add(-2 * time.Minute),
+		UpdatedAt:              endedAt,
+	}
+	for label, value := range map[string]interface{}{
+		"conversation":       conversation,
+		"turn":               turn,
+		"previous attempt":   previousAttempt,
+		"current attempt":    currentAttempt,
+		"stale batch":        staleBatch,
+		"stale continuation": staleContinuation,
+	} {
+		if err := fixture.db.Create(value).Error; err != nil {
+			t.Fatalf("seed %s: %v", label, err)
+		}
+	}
+
+	service := &TurnService{}
+	if err := service.settleReconciliationRequiredTurns(context.Background()); err != nil {
+		t.Fatalf("settle reconciliation-required turns: %v", err)
+	}
+
+	var reloadedTurn persistence.AgentTurn
+	if err := fixture.db.First(&reloadedTurn, "id = ?", turn.ID).Error; err != nil {
+		t.Fatalf("reload turn: %v", err)
+	}
+	if reloadedTurn.Status != string(domain.TurnStatusWaitingLocalTool) {
+		t.Fatalf("stale continuation interrupted current retry: %s", reloadedTurn.Status)
+	}
+	var reloadedAttempt persistence.TurnAttempt
+	if err := fixture.db.First(&reloadedAttempt, "id = ?", currentAttempt.ID).Error; err != nil {
+		t.Fatalf("reload current attempt: %v", err)
+	}
+	if reloadedAttempt.Status != string(domain.TurnStatusWaitingLocalTool) ||
+		reloadedAttempt.EndedAt != nil {
+		t.Fatalf("current retry attempt was settled by stale continuation: %+v", reloadedAttempt)
+	}
+}
+
 func TestTurnServiceCancelWaitingToolTurnBlocksBatch(t *testing.T) {
 	fixture := newToolDispatchFixture(t)
 	now := fixture.now
 	conversation := &persistence.Conversation{
 		ID:        "conversation-cancel",
 		AgentID:   "agent-1",
-		Ptid:      fixture.actorID,
+		ActorPTID: fixture.actorID,
 		Title:     "Cancel",
 		Status:    "active",
 		CreatedAt: now,

@@ -173,6 +173,9 @@ func (s *OrchestrationService) CreateCollaborationTask(
 	actorPTID string,
 	req *model.CreateCollaborationTaskRequest,
 ) (*model.CollaborationTask, []*model.TaskNode, error) {
+	if err := enforce_canvas_single_agent_readiness(); err != nil {
+		return nil, nil, err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -391,12 +394,18 @@ func (s *OrchestrationService) ListTaskEvents(ctx context.Context, actorPTID str
 }
 
 func (s *OrchestrationService) StartTaskRecovery(ctx context.Context) {
+	if enforce_canvas_single_agent_readiness() != nil {
+		return
+	}
 	s.recoveryOnce.Do(func() {
 		go s.recoverRunningTasks(context.Background())
 	})
 }
 
 func (s *OrchestrationService) recoverRunningTasks(ctx context.Context) {
+	if enforce_canvas_single_agent_readiness() != nil {
+		return
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		logger.Errorf(ctx, "failed to open db for collaboration recovery: err=%v", err)
@@ -446,6 +455,9 @@ func isDirectRunTaskForRecovery(ctx context.Context, db *gorm.DB, taskID string)
 }
 
 func (s *OrchestrationService) startTaskExecution(actorPTID string, task persistence.CollaborationTask, nodes []persistence.CollaborationTaskNode, reason string) {
+	if enforce_canvas_single_agent_readiness() != nil {
+		return
+	}
 	actorPTID = strings.TrimSpace(actorPTID)
 	if actorPTID == "" {
 		return
@@ -460,6 +472,9 @@ func (s *OrchestrationService) startTaskExecution(actorPTID string, task persist
 }
 
 func (s *OrchestrationService) startDirectRunExecution(actorPTID string, taskID string, reason string) {
+	if enforce_canvas_single_agent_readiness() != nil {
+		return
+	}
 	actorPTID = strings.TrimSpace(actorPTID)
 	taskID = strings.TrimSpace(taskID)
 	if actorPTID == "" || taskID == "" {
@@ -481,6 +496,13 @@ type directRunRuntimeSnapshot struct {
 }
 
 func (s *OrchestrationService) executePendingDirectRun(ctx context.Context, actorPTID string, taskID string, reason string) error {
+	if err := enforce_canvas_single_agent_readiness(); err != nil {
+		return err
+	}
+	return s.executePendingDirectRunAfterCanvasReadiness(ctx, actorPTID, taskID, reason)
+}
+
+func (s *OrchestrationService) executePendingDirectRunAfterCanvasReadiness(ctx context.Context, actorPTID string, taskID string, reason string) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
@@ -533,8 +555,8 @@ func (s *OrchestrationService) executePendingDirectRun(ctx context.Context, acto
 			Role:    domain.MessageRoleUser,
 			Content: directRunUserPrompt(runtime),
 		}},
-		ActorPTID: actorPTID,
-		Effort:    directRunReasoningEffort(runtime.Run.InputSnapshotJSON),
+		UserID: actorPTID,
+		Effort: directRunReasoningEffort(runtime.Run.InputSnapshotJSON),
 	})
 	if callErr != nil {
 		failureEvents, finishErr := s.finishDirectRunFailure(ctx, db, runtime, fmt.Sprintf("DirectRun provider execution failed: %v", callErr))
@@ -1406,6 +1428,9 @@ func (s *OrchestrationService) CancelCollaborationTask(ctx context.Context, acto
 }
 
 func (s *OrchestrationService) ResumeCollaborationTask(ctx context.Context, actorPTID, taskID, reason string) (*model.CollaborationTask, []*model.TaskNode, error) {
+	if err := enforce_canvas_single_agent_readiness(); err != nil {
+		return nil, nil, err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -1499,6 +1524,9 @@ func (s *OrchestrationService) ResolveCollaborationInterrupt(
 	reason string,
 	payload map[string]interface{},
 ) (*model.CollaborationTask, []*model.TaskNode, error) {
+	if err := enforce_canvas_single_agent_readiness(); err != nil {
+		return nil, nil, err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -1584,6 +1612,9 @@ func requestCollaborationInterruptTx(
 }
 
 func (s *OrchestrationService) RunCollaborationSupervisorTick(ctx context.Context, actorPTID string, taskID string) (*model.CollaborationTask, *model.TaskEvent, bool, error) {
+	if err := enforce_canvas_single_agent_readiness(); err != nil {
+		return nil, nil, false, err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, nil, false, err
@@ -1611,6 +1642,13 @@ func (s *OrchestrationService) RunCollaborationSupervisorTick(ctx context.Contex
 }
 
 func (s *OrchestrationService) RunCollaborationSupervisorSweep(ctx context.Context, actorPTID string, limit int) (*CollaborationSupervisorSweepResult, error) {
+	if err := enforce_canvas_single_agent_readiness(); err != nil {
+		return nil, err
+	}
+	return s.runCollaborationSupervisorSweepAfterCanvasReadiness(ctx, actorPTID, limit)
+}
+
+func (s *OrchestrationService) runCollaborationSupervisorSweepAfterCanvasReadiness(ctx context.Context, actorPTID string, limit int) (*CollaborationSupervisorSweepResult, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -1651,7 +1689,9 @@ func (s *OrchestrationService) RunCollaborationSupervisorSweep(ctx context.Conte
 		var requested bool
 		if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			var txErr error
-			_, _, requested, txErr = runCollaborationSupervisorTickTx(ctx, tx, writer, actorPTID, taskID, now)
+			_, _, requested, txErr = runCollaborationSupervisorTickTxAfterCanvasReadiness(
+				ctx, tx, writer, actorPTID, taskID, now,
+			)
 			return txErr
 		}); err != nil {
 			return nil, err
@@ -1667,6 +1707,22 @@ func (s *OrchestrationService) RunCollaborationSupervisorSweep(ctx context.Conte
 }
 
 func runCollaborationSupervisorTickTx(
+	ctx context.Context,
+	tx *gorm.DB,
+	writer *TaskEventWriter,
+	actorPTID string,
+	taskID string,
+	now time.Time,
+) (persistence.CollaborationTask, *persistence.TaskEvent, bool, error) {
+	if err := enforce_canvas_single_agent_readiness(); err != nil {
+		return persistence.CollaborationTask{}, nil, false, err
+	}
+	return runCollaborationSupervisorTickTxAfterCanvasReadiness(
+		ctx, tx, writer, actorPTID, taskID, now,
+	)
+}
+
+func runCollaborationSupervisorTickTxAfterCanvasReadiness(
 	ctx context.Context,
 	tx *gorm.DB,
 	writer *TaskEventWriter,
@@ -2754,6 +2810,13 @@ func validateCollaborationTaskResumable(task persistence.CollaborationTask, node
 }
 
 func (s *OrchestrationService) SubmitCollaborationNodeResult(ctx context.Context, actorPTID string, req *model.SubmitCollaborationNodeResultRequest) (*model.CollaborationTask, []*model.TaskNode, error) {
+	if err := enforce_canvas_single_agent_readiness(); err != nil {
+		return nil, nil, err
+	}
+	return s.submitCollaborationNodeResultAfterCanvasReadiness(ctx, actorPTID, req)
+}
+
+func (s *OrchestrationService) submitCollaborationNodeResultAfterCanvasReadiness(ctx context.Context, actorPTID string, req *model.SubmitCollaborationNodeResultRequest) (*model.CollaborationTask, []*model.TaskNode, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -2927,6 +2990,9 @@ func (s *OrchestrationService) SubmitCollaborationNodeResult(ctx context.Context
 }
 
 func (s *OrchestrationService) ClaimDesktopExecutorTask(ctx context.Context, actorPTID string, req *model.ClaimDesktopExecutorTaskRequest) (*model.ClaimDesktopExecutorTaskResponse, error) {
+	if err := enforce_canvas_single_agent_readiness(); err != nil {
+		return nil, err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -3014,6 +3080,9 @@ func (s *OrchestrationService) ClaimDesktopExecutorTask(ctx context.Context, act
 }
 
 func (s *OrchestrationService) HeartbeatExecutorLease(ctx context.Context, actorPTID string, req *model.HeartbeatExecutorLeaseRequest) (*model.ExecutorLease, error) {
+	if err := enforce_canvas_single_agent_readiness(); err != nil {
+		return nil, err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -4607,7 +4676,7 @@ func (s *OrchestrationService) turnConfigForNode(actorPTID string, task *persist
 	effort := firstNonEmptyString(runtimeProvider.ReasoningEffort, strings.TrimSpace(agent.Effort))
 	return &TurnConfig{
 		AgentID:           agent.AgentID,
-		ActorPTID:         actorPTID,
+		ActorID:           actorPTID,
 		ConversationID:    node.ID,
 		Identity:          agent.Name,
 		AgentConfigPrompt: agentPrompt,
@@ -4710,10 +4779,6 @@ func agentExecutorKind(agent *domain.Agent) model.ExecutorKind {
 		return model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE
 	case "station_hosted", strings.ToLower(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED.String()):
 		return model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED
-	}
-	runtimeKind := strings.ToLower(firstConfigString(config, "runtimeKind", "runtime_kind", "protocol"))
-	if runtimeKind == "cli" || firstConfigString(config, "cliCommand", "cli_command") != "" {
-		return model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE
 	}
 	return model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED
 }

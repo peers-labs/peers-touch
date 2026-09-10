@@ -2,74 +2,165 @@ syntax = "proto3";
 
 package peers_touch.model.key_exchange.v1;
 
+import "domain/actor/actor.proto";
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model;model";
 
-// X3DH key bundle upload — base64-encoded public keys.
-message UploadKeyBundleRequest {
-  string ik_pub   = 1;
-  int32  spk_id   = 2;
-  string spk_pub  = 3;
-  string spk_sig  = 4;
-  repeated int32  opk_ids  = 5;
-  repeated string opk_pubs = 6;
-  // Opaque per-install identifier. Empty => server stores as "legacy".
-  string device_id = 7;
-  // Supported encrypted payload wire versions. [0] = legacy chain-only,
-  // [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
-  // for backward compatibility.
-  repeated uint32 supported_versions = 8;
+message DirectOneTimePreKey {
+  int32 key_id = 1;
+  string public_key = 2;
 }
 
-message UploadKeyBundleResponse {}
-
-// One logical device publish for a PTID (may share the PTID across installs).
-message KeyBundle {
-  string ptid = 1;
-  // Stable per-install id from the publisher; empty string means legacy row
-  // (server key "legacy" is mapped to "").
-  string device_id = 2;
-  string ik_pub = 3; // Ed25519 public, base64
-  string spk_pub = 4;
-  string spk_sig = 5;
-  // One-time prekey pubs consumed for this fetch (base64), newest policy via server.
-  repeated string opks = 6;
-  int64 published_at_unix_ms = 7; // server stamp (identity upsert time)
-  repeated uint32 supported_versions = 8;
-  int32 spk_id = 9;
-  repeated int32 opk_ids = 10;
+message DirectKeyBundle {
+  peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+  string identity_key_public = 2;
+  int32 signed_pre_key_id = 3;
+  string signed_pre_key_public = 4;
+  string signed_pre_key_signature = 5;
+  repeated DirectOneTimePreKey one_time_pre_keys = 6;
+  int64 published_at_unix_ms = 7;
+  repeated uint32 supported_wire_versions = 8;
 }
 
-// Fetch another actor's key bundles by PTID.
-message FetchKeyBundleRequest {
-  string ptid = 1;
-  // When empty, return all bundles for the PTID. When set, only that device_id
-  // (after server-side normalization matching upload).
-  string device_id = 2;
-  // Optional Station peer id for federated lookup. When present and different
-  // from the local Station, the serving Station relay-forwards the request to
-  // the actor's home Station under a peer-JWT protected fetch route.
+message UploadDirectKeyBundleRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+  string identity_key_public = 2;
+  int32 signed_pre_key_id = 3;
+  string signed_pre_key_public = 4;
+  string signed_pre_key_signature = 5;
+  repeated DirectOneTimePreKey one_time_pre_keys = 6;
+  repeated uint32 supported_wire_versions = 7;
+}
+
+message UploadDirectKeyBundleResponse {}
+
+message FetchDirectKeyBundlesRequest {
+  peers_touch.model.actor.v1.ActorRef actor = 1;
+  string target_device_id = 2;
+  string home_station_peer_id = 3;
+  string request_id = 4;
+  peers_touch.model.actor.v1.ActorDeviceRef requester = 5;
+}
+
+message FetchDirectKeyBundlesResponse {
+  repeated DirectKeyBundle bundles = 1;
+}
+
+message FetchFederatedDirectKeyBundlesRequest {
+  FetchDirectKeyBundlesRequest request = 1;
+  string source_home_station_peer_id = 2;
+}
+
+message FetchFederatedDirectKeyBundlesResponse {
+  FetchDirectKeyBundlesResponse response = 1;
+}
+
+message ReplenishDirectOneTimePreKeysRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+  repeated DirectOneTimePreKey one_time_pre_keys = 2;
+}
+
+message ReplenishDirectOneTimePreKeysResponse {}
+
+message CountDirectOneTimePreKeysRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+}
+
+message CountDirectOneTimePreKeysResponse {
+  int64 count = 1;
+}
+
+message MlsKeyPackageReservation {
+  peers_touch.model.actor.v1.ActorDeviceRef target = 1;
+  string package_id = 2;
+  bytes key_package = 3;
+  bytes key_package_sha256 = 4;
+}
+
+message UploadMlsKeyPackageRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+  bytes key_package = 2;
+}
+
+message UploadMlsKeyPackageResponse {
+  string package_id = 1;
+  bytes key_package_sha256 = 2;
+}
+
+message FetchMlsKeyPackageRequest {
+  peers_touch.model.actor.v1.ActorRef actor = 1;
+  string home_station_peer_id = 2;
+  string request_id = 3;
+  peers_touch.model.actor.v1.ActorDeviceRef requester = 4;
+}
+
+message FetchMlsKeyPackageResponse {
+  MlsKeyPackageReservation reservation = 1;
+  bool available = 2;
   string home_station_peer_id = 3;
 }
 
-message FetchKeyBundleResponse {
-  repeated KeyBundle bundles = 1;
+message FetchFederatedMlsKeyPackageRequest {
+  FetchMlsKeyPackageRequest request = 1;
+  string source_home_station_peer_id = 2;
 }
 
-// Replenish one-time prekeys.
-message ReplenishOpksRequest {
-  repeated int32  opk_ids  = 1;
-  repeated string opk_pubs = 2;
-  // Targets the same device row as uploads; empty => legacy.
-  string device_id = 3;
+message FetchFederatedMlsKeyPackageResponse {
+  FetchMlsKeyPackageResponse response = 1;
 }
 
-message ReplenishOpksResponse {}
-
-// Count remaining one-time prekeys.
-message OpkCountRequest {
-  string device_id = 1; // empty => legacy bucket for this PTID.
+message CountMlsKeyPackagesRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef device = 1;
 }
 
-message OpkCountResponse {
+message CountMlsKeyPackagesResponse {
   int64 count = 1;
+}
+
+message ClaimMlsKeyPackageRequest {
+  string authority_plan_id = 1;
+  string authority_station_peer_id = 2;
+  peers_touch.model.actor.v1.ActorDeviceRef target = 3;
+  google.protobuf.Timestamp plan_expires_at = 4;
+  string request_id = 5;
+}
+
+message ClaimMlsKeyPackageResponse {
+  MlsKeyPackageReservation reservation = 1;
+  string home_station_peer_id = 2;
+  bool irreversibly_consumed = 3;
+}
+
+enum DirectKeyExchangePayloadKind {
+  DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_UNSPECIFIED = 0;
+  DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_PREKEY_BUNDLE = 1;
+  DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_INITIAL_MESSAGE = 2;
+  DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_RATCHET_KEY_UPDATE = 3;
+}
+
+message SendDirectKeyExchangeRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef recipient = 1;
+  string recipient_home_station_peer_id = 2;
+  string session_id = 3;
+  DirectKeyExchangePayloadKind kind = 4;
+  bytes opaque_key_material = 5;
+  string conversation_id = 6;
+}
+
+message SendDirectKeyExchangeResponse {
+  string envelope_id = 1;
+}
+
+// Canonical Device Inbox payload for one endpoint-targeted Direct key exchange.
+message DirectKeyExchangeDelivery {
+  string envelope_id = 1;
+  peers_touch.model.actor.v1.ActorDeviceRef sender = 2;
+  peers_touch.model.actor.v1.ActorDeviceRef recipient = 3;
+  string recipient_home_station_peer_id = 4;
+  string session_id = 5;
+  DirectKeyExchangePayloadKind kind = 6;
+  bytes opaque_key_material = 7;
+  string conversation_id = 8;
+  string idempotency_key = 9;
 }

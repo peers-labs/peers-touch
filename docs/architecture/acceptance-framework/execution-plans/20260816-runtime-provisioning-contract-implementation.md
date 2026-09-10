@@ -1,35 +1,12 @@
 # Runtime Provisioning Contract Implementation Plan
 
-> **Status**: complete — merged in PR #91; product proof remains separately UNPROVEN
+> **Status**: complete — current-source WS2/WS3 maintenance verified
 > **Version**: v1.0
-> **Created**: 2026-08-16 | **Updated**: 2026-08-17
+> **Created**: 2026-08-16 | **Updated**: 2026-09-09
 > **Owner**: Architecture Team
 > **Branch**: design/acceptance-runtime-provisioning-contract
 > **Parent Design**: [../design.md](../design.md)
 > **Approved Decisions**: D-07, D-08, D-09, D-10
-
----
-
-## Context Anchor
-
-| Field | Current value |
-|---|---|
-| Main task | Complete the Runtime Provisioning Contract from EXECUTE through truthful Native proof, independent audit, PR review, and merge. |
-| Plan source | `docs/architecture/acceptance-framework/execution-plans/20260816-runtime-provisioning-contract-implementation.md` |
-| Tracking source | This plan's workstream table, acceptance scenarios, and Final Readiness Gate |
-| Worktree | `<repo-root>` |
-| Branch | `design/acceptance-runtime-provisioning-contract` |
-| Stage | `complete` |
-| Current workstream | Framework delivery closed |
-| Current step | none |
-| Progress | Framework scope merged; WS2/WS6 successful-product cleanup proof remains `UNPROVEN`; WS8 product assertion remains `FAILED/UNPROVEN` and outside framework delivery |
-| Last completed | PR #91 merged the Runtime Provisioning and Evidence Store framework into `master` at `93691c088` |
-| Current action | none; this framework plan is closed under the owner-approved infrastructure/product evidence boundary |
-| Next action | Messaging product work owns Direct Chat DELIVERED repair and subsequent Native proof |
-| Blockers | none for this closed framework plan; product evidence remains explicitly `UNPROVEN` |
-| Decisions required | none |
-| Evidence | PR #91 merged; AS-01 through AS-05 and framework gates passed. `chat-native-two-client-e2e` remains `FAILED/UNPROVEN` at `receipt.delivered`; dependent product Gates remain unrun |
-| Last updated | 2026-08-17 |
 
 ---
 
@@ -405,8 +382,8 @@ Once this gate passes, the framework is ready to be used to validate actual prod
 | Workstream | Status | Completion Date | Commit | Notes |
 |------------|--------|-----------------|--------|-------|
 | WS1: Core Data Model | DONE | 2026-08-16 | `9d05335e1` | Immutable contract/manifest models and schema tests pass. |
-| WS2: Provisioner Runtime | PARTIAL | — | `9d05335e1`, `b274e68c1`, `034bd725b`, `298f656b1` | Shared local/remote leases, structured blocking, and failed-Gate reverse cleanup are live-proven. A successful complete product Gate cleanup remains unproven. |
-| WS3: Attestation & Actors | DONE | 2026-08-17 | `9d05335e1`, `d0af86743`, `1fc55890f`, `d4f082492` | Live/deployed/client commit and proto identity match; workspace is clean; authorized reset produced canonical Alice/Bob PTIDs; both actors logged in through the source-bound Native run. |
+| WS2: Provisioner Runtime | DONE | 2026-09-09 | current checkpoint | Local Desktop Gateway declares its Fixture/credential contract; generated coverage-report changes are excluded from workspace source identity; aggregate reports retain exact source identity. Product cleanup proof remains separately unproven. |
+| WS3: Attestation & Actors | DONE | 2026-09-09 | current checkpoint | Proto identity uses only tracked contract artifacts; remote attestation delegates to strict `SshTransport` and rejects missing/invalid known-hosts configuration before network access. |
 | WS4: Credential Redaction | DONE | 2026-08-17 | `9d05335e1`, `f9bcead42`, `602c730eb`, `d4f082492` | Actor login credential ownership is explicit, runtime canary resolution is live-proven, and the exact high-entropy scan found zero leaked artifacts. |
 | WS5: Registry Behavior Rules | DONE | 2026-08-16 | `9d05335e1` | Receipt owner selects two-client Gate; unrelated messaging and proto paths do not over-select it. |
 | WS6: Runner Integration | PARTIAL | — | `9d05335e1`, `f9bcead42`, `8f88bb038`, `b274e68c1`, `034bd725b`, `7b6938982`, `ba1d799ba`, `d4f082492`, `0e5915aa4`, `907c0fe94` | Provision-before-run, manifest-only input, TauriDriver, cleanup, failed-result traceability, and final live commit guard are live-proven. A successful complete product Gate remains unproven. |
@@ -415,3 +392,132 @@ Once this gate passes, the framework is ready to be used to validate actual prod
 | WS8-B: Shared Profile Lease | DONE | 2026-08-17 | `602c730eb`, `298f656b1`, `907c0fe94` | Local contention, SSH-held remote Git exclusion, process-exit release, 237-second Gate source stability, and cleanup all pass. |
 | WS8-C: Leak Canary | DONE | 2026-08-17 | `602c730eb`, `d4f082492`, `907c0fe94` | Live current-run scan covered one high-entropy generated CredentialRef and found zero leaked artifacts. |
 | WS8: Chat Native Validation | FAILED / UNPROVEN | — | `907c0fe94` | Both actors reached shell/device/bundle readiness; Alice submitted and Bob visibly received/decrypted. Alice never projected `DELIVERED` within 120 seconds. Dependent Native Gates remain unrun and Direct Chat DELIVERED is unproven. |
+
+### 9.1 Current-Source Maintenance Closure — 2026-09-09
+
+Checkpoint `c0d169b6f3bb035de66fb31c566b982a0ae95f6b` reproduced four
+generic WS2/WS3 failures before any Station access:
+
+- `local-desktop-gateway` no longer satisfies its declared Fixture contract;
+- `source_proto_digest` includes non-git-tracked generated artifacts;
+- remote source attestation invokes SSH with `StrictHostKeyChecking=no` and
+  does not fail closed on an invalid known-hosts contract;
+- `source_workspace_digest` treats the generated coverage report as source
+  drift.
+
+This maintenance slice repairs only the generic contracts and synthetic tests.
+It does not modify a business Gate, provision a remote environment, or establish
+Agent product evidence.
+
+Aggregate verification exposed two additional generic lifecycle defects:
+`reports/run.json` omitted the aggregate source identity, and validation rejected
+stale historical evidence before considering the current source-bound aggregate.
+The runner now persists the exact aggregate source, while the validator admits a
+current source-matched result envelope and still rejects stale latest evidence
+when no current envelope exists.
+
+Closure evidence passes five focused provisioning/attestation regressions, the
+149-test combined provisioning/launch-context suite, the complete runner and
+validator suites, `acceptance-runtime-provisioning-self`, and
+`acceptance-infra-validation` on one clean current-source checkpoint. No remote
+Station access or product Gate execution occurred.
+
+### 9.2 Fresh-Process Attestation Boundary Correction — 2026-09-09
+
+Exact-source C08 run
+`20260909T055708232887Z-6df7154a9628552defe39def315d74bf` exposed a WS3
+dependency inversion before Fixture mutation:
+
+```text
+fixtures.chat_native_reset
+  -> transports.ssh
+  -> core.__init__
+  -> core.provisioner
+  -> core.attestation
+  -> transports.ssh
+```
+
+Core attestation now accepts an explicit remote source-identity provider.
+Strict-known-host SSH acquisition lives in
+`provisioners/remote_source_identity.py`, and every concrete Provisioner
+injects that owner. The old Core-to-transport implementation is deleted.
+
+Closure requires:
+
+- the reset entry point imports in a fresh Python process;
+- remote identity tests preserve strict known-host verification and tracked
+  proto digest semantics;
+- provisioning owner/runtime, runner, validator, boundary, planner, gap,
+  coverage, quality, and skill checks pass;
+- `acceptance-runtime-provisioning-self` and
+  `acceptance-infra-validation` pass again on the committed clean checkpoint.
+
+This correction proves only generic Acceptance Infra. C08 remains product
+`UNPROVEN` until `agent-attachment-e2e` executes after the clean checkpoint is
+deployed through `make station`.
+
+### 9.3 Caller-Owned Native Driver Log — 2026-09-09
+
+Exact-source C08 runtime preparation exposed a second ownership mismatch: the
+business Gate launched `make desktop` directly and created runtime logs outside
+the Provisioner-owned cleanup root. When the outer Gate deadline expired, the
+Desktop process tree and credential-bearing storage survived.
+
+WS2 now permits a concrete caller to provide `TauriDriver.log_path`. The Driver
+still owns process and WebDriver lifecycle; the caller owns that log file and
+places it under the run-scoped storage root. This keeps timeout cleanup atomic
+without changing Driver startup deadlines, Gate timeouts, or product evidence
+semantics.
+
+Framework closure requires the configured-log unit regression, launch-context
+process-group regressions, runner/planner/validator tests, boundary checks, and
+the complete clean-source Acceptance Infra aggregate. Agent journey selection,
+assertions, credentials, and product proof remain business-owned injection.
+
+### 9.4 Runtime Artifact Redaction Idempotence — 2026-09-09
+
+Exact-source C08 execution at
+`88d15ea799c515ddc63b8aa26168a4b723c4e435` reached the product runner after
+the disposable host disk was recovered, but the outer Acceptance runner
+discarded the child run with:
+
+```text
+EvidenceConflict: resolved credentials bypassed the immutable artifact writer:
+logs/desktop.log
+```
+
+The Agent runner stages its Desktop log outside the Evidence Store and writes
+it exactly once through `ArtifactSession.write_bytes`. The generic outer audit
+then applies `redact_artifact_bytes` again. An existing already-redacted Agent
+log reproduces a second-pass mutation while the exact resolved provider
+credential is absent: Rust-like fragments such as
+`api_key: [REDACTED]` and `token: [REDACTED]` gain an additional closing
+bracket. The audit equates that non-idempotent normalization with a credential
+leak and discards the complete run.
+
+This is an Acceptance Infra defect, not Agent business injection. Closure
+requires:
+
+- `redact_artifact_bytes(redact_artifact_bytes(value))` is byte-identical on
+  already-redacted plain-text artifacts;
+- Rust-like identifiers and type syntax cannot grow delimiters across repeated
+  passes;
+- exact resolved credential representations remain removed on the first pass;
+- the outer runtime-artifact audit still rejects direct, unredacted writes;
+- focused redaction/Evidence Store/runner tests and the complete clean-source
+  Acceptance Infra aggregate pass.
+
+The correction treats the canonical `[REDACTED]` sentinel as one complete
+assignment or command-flag value before the generic unquoted-value branch.
+Focused verification passes 27 redaction tests, including Rust-like typed
+fragments and explicit secrets; 57 combined redaction/Evidence Store tests;
+66 Acceptance runner tests; and the planner, validator, responsibility
+boundary, gap-detector, coverage, and quality suites. The retained Agent log
+now has `secondChanged=false`, byte-identical first/second outputs, and no
+resolved provider credential.
+
+The unrelated repository-wide `skill-check` still reports pre-existing
+`pt-github-review` upstream-rule freshness drift; no skill file is changed by
+this closure. C08 and G-F remain `UNPROVEN`. Product Gate execution resumes
+only after this generic correction is committed, the current-source Infra
+Gates pass, and the exact source is redeployed.

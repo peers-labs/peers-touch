@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v1.0
-> **Created**: 2026-07-23 | **Updated**: 2026-07-23
+> **Created**: 2026-07-23 | **Updated**: 2026-09-03
 > **Owner**: Agent Team
 
 ---
@@ -227,8 +227,8 @@ data: {"error": "[AGENT_5004] no credentials registered for provider \"trae-cli\
 
 ### 5.4 Per-Actor Isolation Invariants
 
-1. All provider/credential/model queries include actor_id filter.
-2. JWT actor_id is the sole identity source — cannot be overridden by request body.
+1. All provider/credential/model queries include the canonical `actor_ptid` filter.
+2. JWT `actor_ptid` is the sole identity source and cannot be overridden by request body.
 3. A request for actor A must never return or mutate actor B's records.
 4. Global/shared providers (if any) are explicitly marked and read-only from client perspective.
 
@@ -298,7 +298,7 @@ Station owns turn and subprocess lifecycle independent of client connection stat
 
 - **Responsibility**: CRUD for provider/model config, version-gated writes, per-actor scoping.
 - **Owner**: Agent subserver
-- **Inputs**: Client mutations (with version + JWT actor_id)
+- **Inputs**: Client mutations (with version + JWT `actor_ptid`)
 - **Outputs**: Updated config with new version
 - **Dependencies**: PostgreSQL
 - **Must NOT**: Accept writes without version, return credentials in responses
@@ -307,7 +307,7 @@ Station owns turn and subprocess lifecycle independent of client connection stat
 
 - **Responsibility**: Store, lease, rotate, and recover credentials per actor per provider.
 - **Owner**: Agent subserver
-- **Inputs**: Turn execution requests (provider + actor_id)
+- **Inputs**: Turn execution requests (provider + `actor_ptid`)
 - **Outputs**: Leased credential for turn execution
 - **Dependencies**: PostgreSQL `agent_credential_pool`
 - **Must NOT**: Expose credential values to any external API, share across actors
@@ -316,7 +316,7 @@ Station owns turn and subprocess lifecycle independent of client connection stat
 
 - **Responsibility**: Resolve provider + model + credential → execute LLM call → stream SSE response.
 - **Owner**: Agent subserver
-- **Inputs**: Turn request (provider, model, messages, actor_id)
+- **Inputs**: Turn request (provider, model, messages, `actor_ptid`)
 - **Outputs**: SSE event stream (text, tool_call, thinking, done, error)
 - **Dependencies**: Credential Pool, Provider Execution Runtime
 - **Must NOT**: Return credentials in error messages, execute without valid credential lease
@@ -337,7 +337,7 @@ Station owns turn and subprocess lifecycle independent of client connection stat
 
 1. Desktop/Mobile must NOT execute any LLM API call or spawn CLI for AI turns.
 2. Desktop/Mobile must NOT persist credentials locally (ephemeral form state only).
-3. Station must NOT serve provider config without actor_id scoping.
+3. Station must NOT serve provider config without `actor_ptid` scoping.
 4. Station must NOT accept config mutations without version field.
 5. Station must NOT return credential values in any API response.
 6. Station must NOT execute turns with another actor's credentials.

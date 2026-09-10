@@ -78,6 +78,50 @@ const PHASE_BY_EVENT: Record<string, AgentTurnRecoveryPhase> = {
   recovery_failed: 'RECOVERY_FAILED',
 };
 
+// #region debug-point A-D:foundation-recovery-registration
+function reportFoundationRecoveryRegistrationDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown>,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7780/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-recovery-registration',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'agentTurnRecovery.ts',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
+// #region debug-point A-D:foundation-recovery-error-key
+function reportFoundationRecoveryErrorKeyDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown>,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7782/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-recovery-error-key',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'agentTurnRecovery.ts',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 function stringField(
   data: Record<string, unknown>,
   camelCase: string,
@@ -227,8 +271,15 @@ export const useAgentTurnRecoveryStore = createDesktopStore<AgentTurnRecoverySta
     watermarks: {},
 
     beginActor: (nextActorId) => {
-      set((state) => state.actorId === nextActorId
-        ? state
+      const state = get();
+      const actorChanged = state.actorId !== nextActorId;
+      reportFoundationRecoveryRegistrationDebug('B', 'actor-begin', {
+        actorChanged,
+        activeCount: Object.keys(state.active).length,
+        watermarkCount: Object.keys(state.watermarks).length,
+      });
+      set((current) => current.actorId === nextActorId
+        ? current
         : { actorId: nextActorId, active: {}, watermarks: {} });
     },
 
@@ -260,8 +311,37 @@ export const useAgentTurnRecoveryStore = createDesktopStore<AgentTurnRecoverySta
         stringField(payload.data, 'conversationId', 'conversation_id')
         || payload.conversationId.trim();
       const current = conversationId ? get().active[conversationId] : undefined;
+      const turnId =
+        stringField(payload.data, 'turnId', 'turn_id')
+        || current?.turnId
+        || '';
+      const sequence = sequenceField(payload.data);
       const reduction = reduceAgentTurnRecovery(nextActorId, current, payload, options);
-      if (!reduction.accepted || !conversationId) return reduction;
+      const terminalEvent =
+        TERMINAL_EVENTS.has(payload.event)
+        || (payload.event === 'snapshot' && snapshotIsTerminal(payload.data));
+      const shouldReport =
+        !current || terminalEvent || Boolean(PHASE_BY_EVENT[payload.event]);
+      if (!reduction.accepted || !conversationId) {
+        if (shouldReport) {
+          reportFoundationRecoveryRegistrationDebug(
+            terminalEvent ? 'A-D' : 'B-C',
+            'event-rejected',
+            {
+              eventType: payload.event,
+              sequence,
+              conversationPresent: Boolean(conversationId),
+              hadActiveRecord: current !== undefined,
+              actorMatches: payload.ptid === nextActorId,
+              turnMatches: current?.turnId === turnId,
+              generationMatches:
+                current?.streamGeneration === payload.streamGeneration,
+              terminalDeferred: options?.deferTerminalClosure === true,
+            },
+          );
+        }
+        return reduction;
+      }
       set((state) => {
         const active = { ...state.active };
         if (reduction.terminal) {
@@ -269,11 +349,6 @@ export const useAgentTurnRecoveryStore = createDesktopStore<AgentTurnRecoverySta
         } else if (reduction.record) {
           active[conversationId] = reduction.record;
         }
-        const turnId =
-          stringField(payload.data, 'turnId', 'turn_id')
-          || current?.turnId
-          || '';
-        const sequence = sequenceField(payload.data);
         return {
           active,
           watermarks: {
@@ -289,6 +364,52 @@ export const useAgentTurnRecoveryStore = createDesktopStore<AgentTurnRecoverySta
           },
         };
       });
+      if (shouldReport) {
+        const activeAfter = get().active[conversationId];
+        reportFoundationRecoveryRegistrationDebug(
+          terminalEvent ? 'A-D' : 'B-C',
+          'event-consumed',
+          {
+            eventType: payload.event,
+            sequence: sequenceField(payload.data),
+            hadActiveRecord: current !== undefined,
+            actorMatches: payload.ptid === nextActorId,
+            turnMatches: current?.turnId === turnId,
+            generationMatches:
+              current?.streamGeneration === payload.streamGeneration,
+            reductionAccepted: reduction.accepted,
+            reductionTerminal: reduction.terminal,
+            terminalDeferred: options?.deferTerminalClosure === true,
+            activeRecordPresentAfter: activeAfter !== undefined,
+            activePhaseAfter: activeAfter?.phase ?? 'MISSING',
+          },
+        );
+        if (payload.event === 'recovery_failed') {
+          reportFoundationRecoveryErrorKeyDebug(
+            'A-C',
+            'recovery-failed-event-consumed',
+            {
+              sequence,
+              sameSequenceAsCurrent: current?.cursor === sequence,
+              olderThanCurrent: Boolean(current && sequence < current.cursor),
+              eventErrorPresent:
+                typeof payload.data.error === 'string'
+                && payload.data.error.trim().length > 0,
+              eventReasonPresent:
+                typeof payload.data.reason === 'string'
+                && payload.data.reason.trim().length > 0,
+              eventErrorCodePresent:
+                typeof (payload.data.errorCode ?? payload.data.error_code) === 'string'
+                && String(
+                  payload.data.errorCode ?? payload.data.error_code,
+                ).trim().length > 0,
+              currentFailureKeyPresent: Boolean(current?.failureKey),
+              reducedFailureKeyPresent: Boolean(reduction.record?.failureKey),
+              activeFailureKeyPresent: Boolean(activeAfter?.failureKey),
+            },
+          );
+        }
+      }
       return reduction;
     },
 
@@ -309,12 +430,33 @@ export const useAgentTurnRecoveryStore = createDesktopStore<AgentTurnRecoverySta
       set((state) => ({
         active: { ...state.active, [conversationId]: next },
       }));
+      if (phase === 'RECOVERY_FAILED' || current.phase === 'RECOVERY_FAILED') {
+        reportFoundationRecoveryErrorKeyDebug(
+          'A-D',
+          'phase-transitioned',
+          {
+            previousPhase: current.phase,
+            nextPhase: phase,
+            failureKeyArgumentPresent: Boolean(failureKey),
+            previousFailureKeyPresent: Boolean(current.failureKey),
+            nextFailureKeyPresent: Boolean(next.failureKey),
+            recoveryEpochBefore: current.recoveryEpoch,
+            recoveryEpochAfter: next.recoveryEpoch,
+          },
+        );
+      }
       return next;
     },
 
     clear: (conversationId, turnId) => {
       const current = get().active[conversationId];
       if (!current || current.turnId !== turnId) return;
+      reportFoundationRecoveryRegistrationDebug('A-D', 'record-cleared', {
+        activeCount: Object.keys(get().active).length,
+        phase: current.phase,
+        cursor: current.cursor,
+        generationMatches: current.streamGeneration > 0,
+      });
       set((state) => {
         const active = { ...state.active };
         delete active[conversationId];
@@ -322,6 +464,12 @@ export const useAgentTurnRecoveryStore = createDesktopStore<AgentTurnRecoverySta
       });
     },
 
-    reset: () => set({ actorId: null, active: {}, watermarks: {} }),
+    reset: () => {
+      reportFoundationRecoveryRegistrationDebug('B', 'store-reset', {
+        activeCount: Object.keys(get().active).length,
+        watermarkCount: Object.keys(get().watermarks).length,
+      });
+      set({ actorId: null, active: {}, watermarks: {} });
+    },
   }),
 );

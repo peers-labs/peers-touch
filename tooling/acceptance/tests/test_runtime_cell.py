@@ -237,8 +237,37 @@ class RuntimeCellManifestTests(unittest.TestCase):
                 with self.assertRaises(ProvisioningError):
                     replace(manifest, native_adapter=adapter).validate(contract)
 
+    def test_fixed_display_geometry_mismatch_fails(self) -> None:
+        from dataclasses import replace
+
+        contract = RuntimeCellContract.from_dict(_valid_linux_contract())
+        manifest = _ready_manifest()
+        display = replace(manifest.display, width=1696, height=912)
+
+        with self.assertRaisesRegex(
+            ProvisioningError,
+            "does not match required 1920x1080",
+        ):
+            replace(manifest, display=display).validate(contract)
+
 
 class RequiredRuntimeCellsTests(unittest.TestCase):
+    def test_windows_runtime_cell_contract_loads(self) -> None:
+        contract = RuntimeCellContract.from_yaml(
+            REPO_ROOT
+            / "tooling"
+            / "acceptance"
+            / "runtime-cells"
+            / "desktop-windows-native.yaml"
+        )
+        self.assertEqual(contract.cell_id, "desktop-windows-native")
+        self.assertEqual(contract.platform, "windows")
+        self.assertEqual(contract.isolation.kind, "host")
+        self.assertEqual(contract.display.session_type, "native-windows")
+        self.assertEqual(contract.transport.webdriver_forward, "local-loopback")
+        self.assertIn("scheduled-task", contract.cleanup_resources)
+        self.assertIn("gui-session-lease", contract.cleanup_resources)
+
     def test_required_runtime_cells_parse_fail_closed(self) -> None:
         required = (
             "desktop-macos-native",

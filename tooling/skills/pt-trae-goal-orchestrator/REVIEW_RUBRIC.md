@@ -1,4 +1,4 @@
-# TRAE Goal Slice Review Rubric
+# TRAE Adaptive Goal Slice Review Rubric
 
 Score each dimension from 0 to 2.
 
@@ -7,10 +7,16 @@ Score each dimension from 0 to 2.
 | Source grounding | Every instruction projects an authoritative source or explicit owner decision |
 | Stage purity | The Slice belongs to one methodology stage and stops before its review boundary |
 | Slice closure | The Slice is dependency-, ownership-, evidence-, recovery-, and scope-closed |
+| Queue completeness | All in-scope actions are classified as ready, in progress, parked, or done |
+| Queue liveness | A blocked action is parked and the complete ready frontier continues |
+| Dynamic admission | Newly discovered work is admitted only when accepted sources determine it and the durable plan is updated first |
+| Exhaustion proof | Goal-level blocked requires an empty Ready Queue, no legal remediation, and explicit hard blockers |
 | Scope fidelity | Selected work and remainder match the owning workflow or formal plan |
 | Dependency fidelity | The Goal does not invent, remove, or reorder semantic dependencies |
 | Worktree binding | Explicit-root capture, six literal identity values, shell-safe exact verifier command, explicit mutating `workdir`, and recheck points form a fail-closed contract |
-| Worker ownership | Concurrent subagents have non-overlapping writes and focused checks |
+| Concurrency decision | Parallel, serial, or hybrid mode follows explicit dependency, write-set, generated-output, shared-resource, verification, and integration analysis |
+| Worker ownership | Concurrent subagents have reserved non-overlapping writes, forbidden shared paths, focused checks, and exact changed-file returns |
+| Agent reconciliation | Only live, backend-addressable, identity-equivalent agents block; stale entries cannot create a blanket spawn ban |
 | Reconciliation | One integrator verifies interfaces, diffs, and combined behavior |
 | Gate projection | Review, acceptance, evidence, and cleanup are copied from owning sources |
 | Failure routing | Every hard stop routes to the skill that owns the missing decision |
@@ -20,9 +26,9 @@ Score each dimension from 0 to 2.
 
 Interpretation:
 
-- `24-26`: executable.
-- `21-23`: conditionally executable after named corrections.
-- `<21`: reject.
+- `35-38`: executable.
+- `30-34`: conditionally executable after named corrections.
+- `<30`: reject.
 
 ## Mandatory Rejection Conditions
 
@@ -30,6 +36,11 @@ Reject regardless of score when:
 
 - an equivalent Goal or background agent with the same repository/worktree,
   branch, stage, and source unit is already active;
+- a listed but backend-unaddressable agent is treated as a live conflict or
+  converted into a persistent no-subagent constraint;
+- an active Goal has a stale binding or superseded execution constraint that
+  cannot be edited in place and is not rejected with
+  `GOAL_REPLACEMENT_REQUIRED`;
 - no current stage can be resolved;
 - the `Worktree Binding` section is absent or leaves the canonical runtime
   worktree root, branch, `workspaceId`, initial `HEAD`, expected `HEAD`, or
@@ -62,7 +73,20 @@ Reject regardless of score when:
 - an EXECUTE Goal has no approved plan or matching tracked-work state;
 - the Goal changes product, architecture, or plan semantics;
 - concurrent writers overlap;
-- blocked external work is treated as ready;
+- execution mode is chosen from task count or speed preference without explicit
+  dependency, write-set, generated-output, shared-resource, verification, and
+  integration analysis;
+- the Goal lacks an explicit Ready Queue and Parked Queue;
+- one blocked action can mark the whole Goal blocked without recomputing the
+  complete in-scope dependency-ready frontier;
+- Goal-level blocked is allowed without an exhaustion proof or before the
+  repeated-blocker lifecycle threshold is satisfied;
+- blocked external work is treated as ready or counted as progress;
+- dynamic admission may change product behavior, architecture, ownership,
+  topology, version/schema policy, destructive authorization, or proof
+  strength;
+- a source-defined root-cause fix or mechanical plan amendment is left out
+  merely because it was discovered after Goal creation;
 - evidence required by the source is omitted or weakened;
 - the output is not one uninterrupted copyable block.
 

@@ -27,7 +27,6 @@ pub mod mcp;
 pub mod memory;
 pub mod messaging;
 pub mod messaging_recovery;
-pub mod mls;
 pub mod model_config;
 
 pub mod notebook;

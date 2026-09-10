@@ -1457,7 +1457,11 @@ Evidence Store latest(`station-dashboard-domain-validation`)
 
 Chat managed domain 的边界：
 
-- 事实源来自 `model/domain/chat/*.proto`、Station messaging/conversation/envelope subservers、conversation event log、per-device messaging queue，以及 Desktop messaging engine 对 Station API 的 typed contract。
+- Conversation `/conversation/*` 是唯一 Chat 入口；Device、Inbox、Recovery、
+  Key Exchange 与 Federation 证据分别来自其 resource-owner API。
+- 事实源来自 `model/domain/chat/*.proto`、Station Conversation DDD、conversation
+  event log、per-device inbox，以及 Desktop/Mobile Device Messaging Engine
+  对 resource-owner API 的 typed contract。
 - Queue / envelope delivery 是 delivery contract，不是 message persistence truth。
 - Desktop typed surface 只能证明页面、store、service API 的编译期契约，不能替代 DOM 级可见性或 live realtime DOM event-consumption proof。
 - 当前 stable gates 是 `proto-build`、`station-messaging-unit`、`messaging-platform-contract`、`desktop-check` 和 `chat-native-visible-static`；`chat-desktop-gateway-e2e` 是 app-runtime gate，证明 desktop-rust messaging engine 的 E2EE direct-message 闭环；native multi-client gates 负责用户可见双客户端、multi-device、recovery 与 MLS 证据。
@@ -1465,7 +1469,7 @@ Chat managed domain 的边界：
 该 domain 的目标是反思并验证设计落地：acceptance 不能只覆盖管理面和 Federation，还必须能表达高频用户路径的事实源、传输面、可见面和未证明范围。
 
 ```text
-model/domain/chat/** + apps/station/app/subserver/{messaging,conversation,envelope}/** + apps/desktop/**messaging**
+model/domain/chat/** + apps/station/app/subserver/conversation/** + resource-owner services + apps/{desktop,mobile}/**messaging**
           │
           ▼
 tooling/acceptance/registry.yaml

@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-02
-covered_docs_hash: 1ef0db9597856f1b52fd9704f7a8353ed7700c5f2eeab0dd4383d091c0cb6af9
+last_verified_at: 2026-09-09
+covered_docs_hash: ff3bea87e0b21dab8559301bbf14a6cc50730e788890dc821182907db1d2a73f
 
 covered_docs:
   - AGENTS.md
@@ -108,3 +108,58 @@ identity without module/package shadowing, and rejection of required-finalizer
 `PROVEN` manifests whose finalization record, identity digests, finalizer ID, or
 published tuple does not match the protected binding. Dedicated planner,
 validator, registry, and coverage regressions own these checks.
+
+## 2026-09-09 Review
+
+Runtime Provisioning WS2/WS3 and Ephemeral Launch Context EGLC-W1/W3/W4 were
+reopened for current-source self-validation repair. Strict SSH host
+verification, git-tracked source identity, generated-report exclusion, and
+cross-process monotonic deadline translation strengthen existing review
+requirements without changing review workflow or requiring a new review
+fixture. Final aggregate closure also requires source identity in the run report
+and allows only an exact current-source result envelope to supersede stale
+historical evidence; stale latest evidence still fails closed without that
+envelope.
+
+The C08 fresh-process correction makes the existing dependency direction
+explicit: Core attestation validates an injected remote source identity, while
+concrete Provisioners own strict-known-host SSH acquisition. A dedicated
+fresh-process regression and operational pitfall now guard the boundary. This
+strengthens structural review without changing the review workflow or requiring
+a new golden review fixture.
+
+The native Driver follow-up makes caller-owned run storage explicit for
+runtime logs. Review must verify that business Gates consume `TauriDriver`
+through bounded `argv` launch, retain the catalog timeout, and remove the old
+Gate-owned `make desktop` process path rather than adding a fallback. Existing
+Driver and launch-context regressions cover the generic lifecycle contract; no
+new review workflow or golden fixture is required.
+
+Execution governance now requires an explicit concurrency decision for every
+implementation slice. Review must reject parallelism without dependency,
+write-set, generated-output, shared-resource, verification, and integration
+analysis; it must also reject unexplained serialization, stale-agent metadata
+promoted to a blanket spawn ban, overlapping write sets, or missing integrator
+reconciliation. Context Anchors now expose completed delta, ready queue,
+execution mode and lanes, conflict controls, critical path, and an
+evidence-backed ETA or `unknown`; resume synchronization must not interrupt
+already-authorized execution. These changes update review behavior directly,
+so `pt-github-review/SKILL.md` was updated; no new golden fixture is required
+because `review/skill-check.sh` enforces the canonical Skill, Goal template,
+Goal rubric, and Anchor markers directly.
+
+Goal execution now uses an adaptive Ready/Parked queue and requires fixed-point
+exhaustion before a tracked Goal can be marked blocked. This changes execution
+orchestration, not PR review severity or evidence semantics, so the existing
+review skill and fixtures remain sufficient.
+
+The Mobile Acceptance coverage update adds lifecycle and native-platform
+surfaces while preserving the existing rule that unrun physical or destructive
+Gates remain explicitly `UNPROVEN`.
+
+## 2026-09-10 Review
+
+The Conversation Authority and native Desktop runtime-cell consolidation
+strengthens existing ownership, exact-source, platform identity, and cleanup
+requirements. The review skill already covers those checks, so no workflow or
+fixture change is required.

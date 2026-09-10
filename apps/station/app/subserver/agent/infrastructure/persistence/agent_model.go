@@ -9,7 +9,7 @@ import (
 // Stores per-actor model configuration within a provider.
 type AgentModel struct {
 	ID               string          `gorm:"primaryKey;type:varchar(36)"`
-	ActorPTID        string          `gorm:"column:actor_ptid;not null;type:varchar(36);default:'';uniqueIndex:idx_agent_models_actor_ptid_provider_model"`
+	ActorPTID        string          `gorm:"column:actor_ptid;not null;type:text;default:'';uniqueIndex:idx_agent_models_actor_ptid_provider_model"`
 	ProviderID       string          `gorm:"not null;type:varchar(64);uniqueIndex:idx_agent_models_actor_ptid_provider_model"`
 	ModelID          string          `gorm:"not null;type:varchar(128);uniqueIndex:idx_agent_models_actor_ptid_provider_model"`
 	DisplayName      string          `gorm:"type:varchar(256)"`

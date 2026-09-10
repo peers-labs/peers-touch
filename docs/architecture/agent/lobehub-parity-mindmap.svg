@@ -250,7 +250,7 @@
 <text x="996.0" y="1011.0" text-anchor="start" fill="#24292f">G1 Image Gen · 已闭环 · store/image/*</text>
 <line x1="680.0" y1="1040.0" x2="672.0" y2="1029.0" stroke="#d0d7de"/>
 <circle cx="672.0" cy="1029.0" r="4" fill="#cf222e"/>
-<text x="664.0" y="1033.0" text-anchor="end" fill="#24292f">⏸ G2 Video Gen · V2 deferred · 当前不做</text>
+<text x="664.0" y="1033.0" text-anchor="end" fill="#24292f">⛔ G2 Video Gen · 长期不支持 · 其它项目独立立项</text>
 <line x1="980.0" y1="1040.0" x2="988.0" y2="1029.0" stroke="#d0d7de"/>
 <circle cx="988.0" cy="1029.0" r="4" fill="#1a7f37"/>
 <text x="996.0" y="1033.0" text-anchor="start" fill="#24292f">G2 Video Gen · 已闭环 · store/video/*</text>

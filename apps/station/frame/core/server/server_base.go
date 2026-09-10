@@ -53,8 +53,10 @@ func (b *BaseServer) Start(opts ...option.Option) error {
 	b.subMutex.RLock()
 	defer b.subMutex.RUnlock()
 
-	// Start all subservers sequentially with shared context
-	for _, sub := range b.subServers {
+	// Domain subservers must register their Federation receivers before the
+	// Federation runtime seals its registry and starts dispatching.
+	for _, name := range orderedStartedSubserverNames(b.subServers) {
+		sub := b.subServers[name]
 		// Ensure all subservers are started
 		if err := sub.Start(b.opts.Ctx()); err != nil {
 			panic(err)
@@ -126,6 +128,21 @@ func orderedSubserverNames(subservers map[string]subServerNewFunctions) []string
 	if _, ok := subservers["bootstrap"]; ok {
 		names = append([]string{"bootstrap"}, names...)
 	}
+	return names
+}
+
+func orderedStartedSubserverNames(subservers map[string]Subserver) []string {
+	names := make([]string, 0, len(subservers))
+	for name := range subservers {
+		if name != "federation" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	if _, ok := subservers["federation"]; ok {
+		names = append(names, "federation")
+	}
+
 	return names
 }
 

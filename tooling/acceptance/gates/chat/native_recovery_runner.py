@@ -3,11 +3,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import shutil
 import time
-from pathlib import Path
 from typing import Any, Callable
 
 from selenium.webdriver.common.by import By
@@ -17,38 +17,32 @@ from tooling.acceptance.core import (
     AcceptanceGate,
     ActorRuntime,
     GateError,
-    REPORTS_DIR,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.chat.native_support import (
-    DEFAULT_STATION,
     DEV_ACCOUNT_PASSWORD,
     NativeClientLifecycleLedger,
     async_harness,
+    cleanup_preserving_primary_failure,
     commits_match,
     current_commit,
     current_workspace_digest,
     enter_chat_page,
+    is_native_tauri_url,
     message_snapshot,
+    native_runtime_source_identity,
     read_station_version,
-    reset_fixture,
     runtime_station_service,
     selected_native_runtime,
     send_text,
-    start_authenticated_client,
-    stop_client,
+    verify_runtime_fixture_ready,
     wait_until,
 )
 
 
-REPORT_PATH = Path(
-    os.environ.get(
-        "CHAT_NATIVE_RECOVERY_REPORT",
-        str(REPORTS_DIR / "chat-native-recovery-run.json"),
-    )
-)
+REPORT_PATH = None
 CLIENT_PORTS = {"alice": 4445, "bob": 4446}
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 REQUIRED_ASSERTIONS = {
@@ -72,12 +66,36 @@ SELECTORS = {
 }
 
 
+def selected_runtime() -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    NativeDesktopRuntimeBinding,
+] | None:
+    selected = selected_native_runtime(NativeRecoveryGate.gate_id)
+    if selected is None:
+        return None
+    return selected.manifest, selected.actor_manifest, selected.binding
+
+
 class NativeRecoveryGate(AcceptanceGate):
     gate_id = "chat-native-recovery-e2e"
+    phase = "MP-W08"
+    bom = ("MP-G07", "MP-G08", "MP-G12")
+    spec = ("chat-native-visible-clients",)
     report_path = REPORT_PATH
-    evidence_dir = REPORT_PATH.parent / "chat-native-recovery-evidence"
+    evidence_dir = (
+        REPORT_PATH.parent / "chat-native-recovery-evidence"
+        if REPORT_PATH is not None
+        else None
+    )
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        manifest: dict[str, Any] | None = None,
+        actor_manifest: dict[str, Any] | None = None,
+        runtime_binding: NativeDesktopRuntimeBinding | None = None,
+    ) -> None:
         super().__init__()
         injected = (manifest, actor_manifest, runtime_binding)
         if any(value is not None for value in injected) and not all(
@@ -109,7 +127,7 @@ class NativeRecoveryGate(AcceptanceGate):
         self.actor_manifest = actor_manifest
         self.runtime_binding = runtime_binding
         if manifest is not None:
-            station = runtime_station_service(manifest)
+            station = runtime_station_service(manifest, "alice")
             source = manifest.get("source")
             self.station_url = str(station.get("endpoint") or "").rstrip("/")
             self.tested_commit = str(
@@ -121,7 +139,7 @@ class NativeRecoveryGate(AcceptanceGate):
                 else ""
             )
             self.client_specs = {
-                str(client.get("actor")): client
+                str(client.get("id")): client
                 for client in manifest.get("clients", [])
                 if isinstance(client, dict)
             }
@@ -140,10 +158,9 @@ class NativeRecoveryGate(AcceptanceGate):
                 )
             self.report.manifest = manifest
         else:
-            self.station_url = os.environ.get(
-                "CHAT_NATIVE_STATION_URL",
-                DEFAULT_STATION,
-            ).rstrip("/")
+            raise GateError(
+                "Native recovery requires provisioned runtime resources"
+            )
             self.tested_commit = current_commit()
             self.workspace_digest = current_workspace_digest()
             self.client_specs: dict[str, dict[str, Any]] = {}
@@ -156,6 +173,19 @@ class NativeRecoveryGate(AcceptanceGate):
         self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
+        self.report.station_url = self.station_url
+        self.report.runtime.update(
+            {
+                "runtimeCell": (
+                    runtime_binding.cell_id
+                    if runtime_binding is not None
+                    else "native-tauri-embedded-webdriver"
+                ),
+                "journey": "reinstall-24-word-recovery-restore",
+                "steps": self.steps,
+                "cleanup": {},
+            }
+        )
 
     def step(
         self,
@@ -189,37 +219,12 @@ class NativeRecoveryGate(AcceptanceGate):
 
     def start_client(self, actor: str) -> None:
         if self.runtime_binding is None:
-            client, ptid = start_authenticated_client(
-                actor,
-                CLIENT_PORTS[actor],
-                self.station_url,
-            )
-            self.register_driver(client)
-            self.clients[actor] = client
-            self.ptids[actor] = ptid
-            device = async_harness(client, "getRealtimeDevice", {})
-            device_id = str((device or {}).get("deviceId") or "")
-            if not device_id:
-                raise GateError(f"{actor}: messaging device ID is missing")
-            self.device_ids[actor] = device_id
-            self.report.add_actor(
-                ActorRuntime(
-                    name=actor,
-                    runtime="native-tauri-embedded-webdriver",
-                    port=client.port,
-                    gateway_port=client.gateway_port,
-                    profile=client.profile,
-                    storage_root=client.storage_root,
-                    pid=client.process_id,
-                )
-            )
-            return
+            raise GateError("Native Desktop runtime binding is required")
         self.start_injected_client(actor)
 
     def start_injected_client(self, actor: str) -> None:
         if self.runtime_binding is None:
             raise GateError("Native Desktop runtime binding is required")
-        spec = self.client_specs[actor]
         client = self.runtime_binding.create_bound_session(
             actor,
             NativeLaunchOptions(
@@ -230,11 +235,8 @@ class NativeRecoveryGate(AcceptanceGate):
         self.runtime_instances.append(client)
         expected_ptid = str(self.actor_specs[actor].get("ptid") or "")
         self.client_lifecycles.register(client, expected_ptid)
-        client.start()
         self.client_lifecycles.mark_live(client)
         self.register_driver(client)
-        client.wait_for_acceptance_harness(30)
-        configure_station(client, self.station_url)
         account_ref = str(
             self.actor_specs[actor].get("accountRef") or ""
         )
@@ -262,7 +264,7 @@ class NativeRecoveryGate(AcceptanceGate):
                 f"{actor} login identity mismatch: "
                 f"expected={expected_ptid} actual={ptid}"
             )
-        if not client.get_current_url().startswith("tauri://localhost"):
+        if not is_native_tauri_url(client.get_current_url()):
             raise GateError(
                 f"{actor} is not running in native Tauri WebView: "
                 f"{client.get_current_url()}"
@@ -277,7 +279,7 @@ class NativeRecoveryGate(AcceptanceGate):
         self.report.add_actor(
             ActorRuntime(
                 name=actor,
-                runtime="native-tauri-embedded-webdriver",
+                runtime=self.runtime_binding.cell_id,
                 port=client.port,
                 gateway_port=client.gateway_port,
                 profile=client.profile,
@@ -384,18 +386,13 @@ class NativeRecoveryGate(AcceptanceGate):
 
     def reinstall_and_restore(self, phrase: str, text: str, conversation_id: str = "") -> None:
         bob = self.clients["bob"]
-        bob_storage = bob.storage_root
-        stop_client(bob)
-        shutil.rmtree(bob_storage, ignore_errors=True)
-        new_bob, ptid = start_authenticated_client(
-            "bob",
-            CLIENT_PORTS["bob"],
-            self.station_url,
-        )
-        self.register_driver(new_bob)
-        if ptid != self.ptids["bob"]:
+        self.stop_authenticated_client(bob)
+        self.start_injected_client("bob")
+        new_bob = self.clients["bob"]
+        if self.ptids["bob"] != str(
+            self.actor_specs["bob"].get("ptid") or ""
+        ):
             raise GateError("Bob identity changed after reinstall")
-        self.clients["bob"] = new_bob
         new_bob.find_element(SELECTORS["settings_nav"], 30).click()
         new_bob.find_element(SELECTORS["security_section"], 10).click()
         WebDriverWait(new_bob.driver, 30).until(
@@ -493,12 +490,7 @@ class NativeRecoveryGate(AcceptanceGate):
 
     def cleanup_clients(self) -> dict[str, Any]:
         if self.runtime_binding is None:
-            for client in self.clients.values():
-                try:
-                    stop_client(client)
-                except Exception:
-                    client.stop()
-            return {}
+            raise GateError("Native Desktop runtime binding is required")
         cleanup_errors: list[dict[str, str]] = []
         for client in reversed(self.runtime_instances):
             try:
@@ -563,7 +555,6 @@ class NativeRecoveryGate(AcceptanceGate):
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
 
-        self.report.station_url = self.station_url
         version = self.step(
             "station.identity",
             lambda: read_station_version(self.station_url),
@@ -575,9 +566,14 @@ class NativeRecoveryGate(AcceptanceGate):
                 f"station={live_commit or 'missing'} client={self.tested_commit}"
             )
 
-        self.step("fixture.reset", reset_fixture)
+        source_identity = self.source_identity(version)
+        self.step(
+            "fixture.reset",
+            self.verify_fixture_ready,
+        )
         order = ["alice", "bob"]
         random.SystemRandom().shuffle(order)
+        cleanup: dict[str, Any] = {}
         try:
             for actor in order:
                 self.step(
@@ -588,7 +584,7 @@ class NativeRecoveryGate(AcceptanceGate):
             self.assert_condition(
                 "native_runtime",
                 all(
-                    client.get_current_url().startswith("tauri://localhost")
+                    is_native_tauri_url(client.get_current_url())
                     for client in self.clients.values()
                 ),
             )
@@ -626,25 +622,32 @@ class NativeRecoveryGate(AcceptanceGate):
                 self.save_dom(self.clients[actor], actor)
                 self.save_app_log(self.clients[actor], actor)
         finally:
-            for client in self.clients.values():
-                try:
-                    stop_client(client)
-                except Exception:
-                    client.stop()
+            cleanup = cleanup_preserving_primary_failure(
+                self.cleanup_clients,
+                self.report,
+                "Native recovery",
+            )
+            self.report.runtime["steps"] = self.steps
 
         assertion_names = {assertion.name for assertion in self.report.assertions}
         missing = REQUIRED_ASSERTIONS - assertion_names
         if missing:
             raise GateError(f"required assertions are missing: {sorted(missing)}")
         return {
-            "runtimeCell": "native-tauri-embedded-webdriver",
+            "runtimeCell": (
+                self.runtime_binding.cell_id
+                if self.runtime_binding is not None
+                else "native-tauri-embedded-webdriver"
+            ),
             "journey": "reinstall-24-word-recovery-restore",
             "testedCommit": self.tested_commit,
             "testedWorkspaceDigest": self.workspace_digest,
             "stationLive": version,
+            "sourceIdentity": source_identity,
             "launchOrder": order,
             "conversationId": conversation_id,
             "steps": self.steps,
+            "cleanup": cleanup,
             "clients": {
                 actor: {
                     "ptid": self.ptids[actor],
@@ -659,5 +662,19 @@ class NativeRecoveryGate(AcceptanceGate):
         }
 
 
+def main() -> int:
+    runtime = selected_runtime()
+    gate = (
+        NativeRecoveryGate()
+        if runtime is None
+        else NativeRecoveryGate(
+            manifest=runtime[0],
+            actor_manifest=runtime[1],
+            runtime_binding=runtime[2],
+        )
+    )
+    return gate.execute()
+
+
 if __name__ == "__main__":
-    raise SystemExit(NativeRecoveryGate().execute())
+    raise SystemExit(main())

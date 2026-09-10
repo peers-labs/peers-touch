@@ -64,4 +64,3 @@ export type Profile = Message<"peers_touch.model.core.v1.Profile"> & {
  */
 export const ProfileSchema: GenMessage<Profile> = /*@__PURE__*/
   messageDesc(file_domain_core_core, 1);
-

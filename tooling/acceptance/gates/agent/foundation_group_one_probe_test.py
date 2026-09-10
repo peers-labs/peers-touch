@@ -15,7 +15,14 @@ from tooling.acceptance.gates.agent.foundation_group_one_probe import (
     group_one_tuples,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
+    evaluate_base_attachment_rejected,
+    evaluate_base_approval_expired,
+    evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
+    evaluate_base_cancelled,
+    evaluate_base_context_overflow,
+    evaluate_base_credential_missing,
+    evaluate_base_duplicate_conflict,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -23,13 +30,22 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f06,
     evaluate_as_f07,
     evaluate_as_f10,
+    evaluate_as_f12,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
+    valid_attachment_rejected_capture,
+    valid_approval_expired_capture,
+    valid_approval_denied_capture,
     valid_active_mutation_conflict_capture,
+    valid_cancelled_capture,
+    valid_context_overflow_capture,
+    valid_credential_missing_capture,
+    valid_duplicate_conflict_capture,
     valid_as_f04_capture,
     valid_as_f05_capture,
     valid_as_f06_capture,
     valid_as_f07_capture,
+    valid_as_f12_capture,
 )
 
 
@@ -51,8 +67,78 @@ class RecordingHarnessClient:
         return {"locale": "wrong" if self.reject_locale else locale}
 
 
+def typed_runtime_role(
+    facts: dict[str, object],
+) -> dict[str, object]:
+    runtime_event = facts["runtimeEvent"]
+    assert isinstance(runtime_event, dict)
+    role = {
+        "eventId": runtime_event["eventId"],
+        "sequence": runtime_event["sequence"],
+        "eventType": runtime_event["eventType"],
+        "occurredAt": runtime_event["observedAt"],
+        "streamGeneration": runtime_event["streamGeneration"],
+        "streamIdHash": runtime_event["streamIdHash"],
+        "conversationIdHash": runtime_event["conversationIdHash"],
+        "payloadHash": runtime_event["payloadHash"],
+        "errorType": runtime_event["errorType"],
+    }
+    for key in (
+        "sourceTransport",
+        "sourcePtidHash",
+        "sourceConversationId",
+        "sourceTurnId",
+        "sourceSequence",
+        "sourceEventType",
+    ):
+        if key in runtime_event:
+            role[key] = runtime_event[key]
+    return role
+
+
 def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, Any]:
     result = capture(probe)
+    if probe.cell == "BASE-DUPLICATE_CONFLICT":
+        facts = valid_duplicate_conflict_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_duplicate_conflict(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        result["runtimeAttestation"]["actorIdentityHash"] = (
+            facts["runtimeEvent"]["sourcePtidHash"]
+        )
+        return result
+    if probe.cell == "BASE-CREDENTIAL_MISSING":
+        facts = valid_credential_missing_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_credential_missing(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        result["runtimeAttestation"]["actorIdentityHash"] = (
+            facts["runtimeEvent"]["sourcePtidHash"]
+        )
+        return result
+    if probe.cell == "BASE-CANCELLED":
+        facts = valid_cancelled_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_cancelled(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        return result
+    if probe.cell == "BASE-ATTACHMENT_REJECTED":
+        facts = valid_attachment_rejected_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_attachment_rejected(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        return result
+    if probe.cell == "BASE-CONTEXT_OVERFLOW":
+        facts = valid_context_overflow_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_context_overflow(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        return result
+    if probe.cell == "BASE-APPROVAL_EXPIRED":
+        facts = valid_approval_expired_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_approval_expired(facts)
+        return result
     if probe.cell == "AS-F03":
         facts = {
             "events": [
@@ -111,6 +197,16 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
                 "stationStatus": "completed",
                 "receiverStatus": "completed",
             },
+            "toolIsolation": {
+                "disabledBindingCount": 1,
+                "readyCapabilityCount": 0,
+                "originalReadyCapabilityCount": 1,
+                "originalReadyCapabilityHash": "f" * 64,
+                "restoredBindingCount": 1,
+                "restoredReadyCapabilityCount": 1,
+                "restoredReadyCapabilityHash": "f" * 64,
+                "restorationVerified": True,
+            },
             "capabilitySession": {
                 "platform": probe.platform,
                 "sessionId": "session-1",
@@ -160,6 +256,20 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
         result["assertions"] = evaluate_as_f10(
             facts,
             platform=probe.platform,
+        )
+        return result
+    if probe.cell == "AS-F12":
+        facts = valid_as_f12_capture(
+            probe.platform,
+            probe.locale,
+            probe.sample_id,
+        )
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_as_f12(
+            facts,
+            platform=probe.platform,
+            locale=probe.locale,
+            sample_id=probe.sample_id,
         )
         return result
     if probe.cell != "AS-F02":
@@ -221,6 +331,105 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
 
 
 class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
+    def test_attachment_rejected_routes_to_independent_oracle(self) -> None:
+        facts = valid_attachment_rejected_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_attachment_rejected(facts),
+            "runtime-events": typed_runtime_role(facts),
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-ATTACHMENT_REJECTED",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "zeroSideEffect": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-ATTACHMENT_REJECTED assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_attachment_rejected_rejects_baseline_runtime_event(self) -> None:
+        facts = valid_attachment_rejected_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_attachment_rejected(facts),
+            "runtime-events": {
+                **typed_runtime_role(facts),
+                "eventType": "done",
+            },
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-ATTACHMENT_REJECTED",
+            sample_id="sample-001",
+        )
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "runtime-events role does not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_approval_expired_routes_to_independent_oracle(self) -> None:
+        facts = valid_approval_expired_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_approval_expired(facts),
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-APPROVAL_EXPIRED",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "expiredDecisionImmutable": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-APPROVAL_EXPIRED assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_approval_denied_routes_to_independent_oracle(self) -> None:
+        facts = valid_approval_denied_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_approval_denied(facts),
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-APPROVAL_DENIED",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "zeroSideEffect": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-APPROVAL_DENIED assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
     def test_active_mutation_conflict_routes_to_independent_oracle(self) -> None:
         facts = valid_active_mutation_conflict_capture()
         capture_value = {
@@ -243,6 +452,178 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneProbeError,
             "BASE-ACTIVE_MUTATION_CONFLICT assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_cancelled_routes_to_independent_oracle(self) -> None:
+        facts = valid_cancelled_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_cancelled(facts),
+            "runtime-events": typed_runtime_role(facts),
+            "runtimeAttestation": {
+                "actorIdentityHash": facts["runtimeEvent"]["sourcePtidHash"],
+            },
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-CANCELLED",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "zeroLateSuccess": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-CANCELLED assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_context_overflow_routes_to_independent_oracle(self) -> None:
+        facts = valid_context_overflow_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_context_overflow(facts),
+            "runtime-events": typed_runtime_role(facts),
+            "runtimeAttestation": {
+                "actorIdentityHash": facts["runtimeEvent"]["sourcePtidHash"],
+            },
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-CONTEXT_OVERFLOW",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "zeroPersistenceAndProvider": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-CONTEXT_OVERFLOW assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_duplicate_conflict_routes_to_independent_oracle(self) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-DUPLICATE_CONFLICT",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "zeroNewRows": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-DUPLICATE_CONFLICT assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_duplicate_conflict_rejects_runtime_role_identity_drift(
+        self,
+    ) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-DUPLICATE_CONFLICT",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+        capture_value["runtime-events"]["sourceConversationId"] = (
+            "conversation-forged"
+        )
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "runtime-events role does not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_duplicate_conflict_rejects_runtime_actor_drift(self) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-DUPLICATE_CONFLICT",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+        capture_value["runtimeAttestation"]["actorIdentityHash"] = "0" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "runtime source actor does not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_credential_missing_routes_to_independent_oracle(self) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-CREDENTIAL_MISSING",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "zeroProviderCall": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-CREDENTIAL_MISSING assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_credential_missing_rejects_runtime_role_identity_drift(
+        self,
+    ) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-CREDENTIAL_MISSING",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+        capture_value["runtime-events"]["sourceConversationId"] = (
+            "conversation-forged"
+        )
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "runtime-events role does not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_credential_missing_rejects_runtime_actor_drift(self) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-CREDENTIAL_MISSING",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+        capture_value["runtimeAttestation"]["actorIdentityHash"] = "f" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "runtime source actor does not match",
         ):
             assert_group_one_capture(probe, capture_value)
 
@@ -332,6 +713,35 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
             "AS-F10 assertions do not match production scenario facts",
         ):
             runner.collect(mismatched)
+
+    def test_as_f12_rejects_renderer_assertions_not_derived_from_facts(
+        self,
+    ) -> None:
+        facts = valid_as_f12_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": {
+                **evaluate_as_f12(
+                    facts,
+                    platform="desktop_app",
+                    locale="en",
+                    sample_id="sample-001",
+                ),
+                "noCrossTopicReferences": False,
+            },
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="desktop_app",
+            locale="en",
+            cell="AS-F12",
+            sample_id="sample-001",
+        )
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "AS-F12 assertions do not match production scenario facts",
+        ):
+            assert_group_one_capture(probe, capture_value)
 
     def test_as_f05_rejects_assertions_not_derived_from_facts(self) -> None:
         runner = FoundationGroupOneProbeRunner(

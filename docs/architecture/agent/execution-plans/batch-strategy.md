@@ -43,7 +43,7 @@ Execution plan: `execution-plans/p0-core-chat-loop.md`
 
 | # | Module | Topology Source | Depends On |
 |---|--------|----------------|------------|
-| 1 | **Tool Execution Runtime** | `store/tool/slices/builtin` (DALL-E, web browse, file operations) + `store/chat/slices/builtinTool` | P0 streaming (tool_call/tool_result events) |
+| 1 | **Tool Execution Runtime** | `store/tool/slices/builtin` (web browse, file operations; no image/video generation) + `store/chat/slices/builtinTool` | P0 streaming (tool_call/tool_result events) |
 | 2 | **MCP Plugin System** | `store/tool/slices/mcpStore` + `features/MCP` (MCPServerList, MCPToolList, MCPServerModal) | Tool runtime |
 | 3 | **Knowledge Base** | `store/library` (CRUD, content, ragEval) + `store/file` (upload, chunking) + `store/agent/slices/knowledge` | P0 agent config |
 | 4 | **User Memory** | `store/userMemory` (identity, activity, context, experience, preference, agent-specific) | P0 conversation lifecycle |
@@ -73,8 +73,8 @@ Tools are the #1 capability gap vs LobeHub — without tools, the agent is a tex
 |---|--------|----------------|------------|
 | 1 | **Markdown Rendering** | `features/Conversation/Markdown/plugins/` (18 plugins: code, mermaid, math, table, thinking, image, video, search, artifact, todo, lobeArtifact, rehypeFootnotes, etc.) | P0 message display |
 | 2 | **TTS / STT** | `store/chat/slices/tts` + `features/ChatInput/ActionBar/STT` | P0 message + audio infrastructure |
-| 3 | **Image Generation** | `store/image` (createImage, generationBatch, generationConfig, generationTopic) | P1 tool runtime (DALL-E built-in) |
-| 4 | **Video Generation** | `store/video` (createVideo, generationBatch, config, topic) | P1 tool runtime |
+| 3 | **Image Rendering Only** | Markdown/media rendering; Peers-Touch generation is unsupported | P0 message display |
+| 4 | **Video Rendering Only** | Markdown/media rendering; Peers-Touch generation is unsupported and any future generation product belongs to a separate project | P0 message display |
 | 5 | **Translation** | `store/chat/slices/translate` | P0 message actions |
 | 6 | **Message Forward / Export** | `store/chat/slices/forward` + `features/MessageForward` | P0 message management |
 | 7 | **Task Management** | `store/task` (config, detail, lifecycle, list) + `features/AgentTasks` | P0 session management |
@@ -84,7 +84,10 @@ Tools are the #1 capability gap vs LobeHub — without tools, the agent is a tex
 
 ### Priority Rationale
 
-Markdown rendering is the highest-impact visual quality improvement. TTS/Image/Video add multimodal capability. The rest are productivity features that improve daily usage but don't block core functionality.
+Markdown rendering is the highest-impact visual quality improvement. TTS/STT
+may add local audio capability; image/video generation is not a Peers-Touch
+product capability. The rest are productivity features that improve daily
+usage but do not block core functionality.
 
 ---
 

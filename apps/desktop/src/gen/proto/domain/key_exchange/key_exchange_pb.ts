@@ -2,284 +2,303 @@
 // @generated from file domain/key_exchange/key_exchange.proto (package peers_touch.model.key_exchange.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { ActorDeviceRef, ActorRef } from "../actor/actor_pb";
+import { file_domain_actor_actor } from "../actor/actor_pb";
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file domain/key_exchange/key_exchange.proto.
  */
 export const file_domain_key_exchange_key_exchange: GenFile = /*@__PURE__*/
-  fileDesc("CiZkb21haW4va2V5X2V4Y2hhbmdlL2tleV9leGNoYW5nZS5wcm90bxIhcGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxIqwBChZVcGxvYWRLZXlCdW5kbGVSZXF1ZXN0Eg4KBmlrX3B1YhgBIAEoCRIOCgZzcGtfaWQYAiABKAUSDwoHc3BrX3B1YhgDIAEoCRIPCgdzcGtfc2lnGAQgASgJEg8KB29wa19pZHMYBSADKAUSEAoIb3BrX3B1YnMYBiADKAkSEQoJZGV2aWNlX2lkGAcgASgJEhoKEnN1cHBvcnRlZF92ZXJzaW9ucxgIIAMoDSIZChdVcGxvYWRLZXlCdW5kbGVSZXNwb25zZSLHAQoJS2V5QnVuZGxlEgwKBHB0aWQYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEg4KBmlrX3B1YhgDIAEoCRIPCgdzcGtfcHViGAQgASgJEg8KB3Nwa19zaWcYBSABKAkSDAoEb3BrcxgGIAMoCRIcChRwdWJsaXNoZWRfYXRfdW5peF9tcxgHIAEoAxIaChJzdXBwb3J0ZWRfdmVyc2lvbnMYCCADKA0SDgoGc3BrX2lkGAkgASgFEg8KB29wa19pZHMYCiADKAUiVgoVRmV0Y2hLZXlCdW5kbGVSZXF1ZXN0EgwKBHB0aWQYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhwKFGhvbWVfc3RhdGlvbl9wZWVyX2lkGAMgASgJIlcKFkZldGNoS2V5QnVuZGxlUmVzcG9uc2USPQoHYnVuZGxlcxgBIAMoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLmtleV9leGNoYW5nZS52MS5LZXlCdW5kbGUiTAoUUmVwbGVuaXNoT3Brc1JlcXVlc3QSDwoHb3BrX2lkcxgBIAMoBRIQCghvcGtfcHVicxgCIAMoCRIRCglkZXZpY2VfaWQYAyABKAkiFwoVUmVwbGVuaXNoT3Brc1Jlc3BvbnNlIiQKD09wa0NvdW50UmVxdWVzdBIRCglkZXZpY2VfaWQYASABKAkiIQoQT3BrQ291bnRSZXNwb25zZRINCgVjb3VudBgBIAEoA0JSWlBnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2tleV9leGNoYW5nZS9tb2RlbDttb2RlbGIGcHJvdG8z");
+  fileDesc("CiZkb21haW4va2V5X2V4Y2hhbmdlL2tleV9leGNoYW5nZS5wcm90bxIhcGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxIjkKE0RpcmVjdE9uZVRpbWVQcmVLZXkSDgoGa2V5X2lkGAEgASgFEhIKCnB1YmxpY19rZXkYAiABKAki2AIKD0RpcmVjdEtleUJ1bmRsZRI6CgZkZXZpY2UYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvckRldmljZVJlZhIbChNpZGVudGl0eV9rZXlfcHVibGljGAIgASgJEhkKEXNpZ25lZF9wcmVfa2V5X2lkGAMgASgFEh0KFXNpZ25lZF9wcmVfa2V5X3B1YmxpYxgEIAEoCRIgChhzaWduZWRfcHJlX2tleV9zaWduYXR1cmUYBSABKAkSUQoRb25lX3RpbWVfcHJlX2tleXMYBiADKAsyNi5wZWVyc190b3VjaC5tb2RlbC5rZXlfZXhjaGFuZ2UudjEuRGlyZWN0T25lVGltZVByZUtleRIcChRwdWJsaXNoZWRfYXRfdW5peF9tcxgHIAEoAxIfChdzdXBwb3J0ZWRfd2lyZV92ZXJzaW9ucxgIIAMoDSLHAgocVXBsb2FkRGlyZWN0S2V5QnVuZGxlUmVxdWVzdBI6CgZkZXZpY2UYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvckRldmljZVJlZhIbChNpZGVudGl0eV9rZXlfcHVibGljGAIgASgJEhkKEXNpZ25lZF9wcmVfa2V5X2lkGAMgASgFEh0KFXNpZ25lZF9wcmVfa2V5X3B1YmxpYxgEIAEoCRIgChhzaWduZWRfcHJlX2tleV9zaWduYXR1cmUYBSABKAkSUQoRb25lX3RpbWVfcHJlX2tleXMYBiADKAsyNi5wZWVyc190b3VjaC5tb2RlbC5rZXlfZXhjaGFuZ2UudjEuRGlyZWN0T25lVGltZVByZUtleRIfChdzdXBwb3J0ZWRfd2lyZV92ZXJzaW9ucxgHIAMoDSIfCh1VcGxvYWREaXJlY3RLZXlCdW5kbGVSZXNwb25zZSLeAQocRmV0Y2hEaXJlY3RLZXlCdW5kbGVzUmVxdWVzdBIzCgVhY3RvchgBIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yUmVmEhgKEHRhcmdldF9kZXZpY2VfaWQYAiABKAkSHAoUaG9tZV9zdGF0aW9uX3BlZXJfaWQYAyABKAkSEgoKcmVxdWVzdF9pZBgEIAEoCRI9CglyZXF1ZXN0ZXIYBSABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvckRldmljZVJlZiJkCh1GZXRjaERpcmVjdEtleUJ1bmRsZXNSZXNwb25zZRJDCgdidW5kbGVzGAEgAygLMjIucGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxLkRpcmVjdEtleUJ1bmRsZSKeAQolRmV0Y2hGZWRlcmF0ZWREaXJlY3RLZXlCdW5kbGVzUmVxdWVzdBJQCgdyZXF1ZXN0GAEgASgLMj8ucGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxLkZldGNoRGlyZWN0S2V5QnVuZGxlc1JlcXVlc3QSIwobc291cmNlX2hvbWVfc3RhdGlvbl9wZWVyX2lkGAIgASgJInwKJkZldGNoRmVkZXJhdGVkRGlyZWN0S2V5QnVuZGxlc1Jlc3BvbnNlElIKCHJlc3BvbnNlGAEgASgLMkAucGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxLkZldGNoRGlyZWN0S2V5QnVuZGxlc1Jlc3BvbnNlIrUBCiRSZXBsZW5pc2hEaXJlY3RPbmVUaW1lUHJlS2V5c1JlcXVlc3QSOgoGZGV2aWNlGAEgASgLMioucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JEZXZpY2VSZWYSUQoRb25lX3RpbWVfcHJlX2tleXMYAiADKAsyNi5wZWVyc190b3VjaC5tb2RlbC5rZXlfZXhjaGFuZ2UudjEuRGlyZWN0T25lVGltZVByZUtleSInCiVSZXBsZW5pc2hEaXJlY3RPbmVUaW1lUHJlS2V5c1Jlc3BvbnNlIl4KIENvdW50RGlyZWN0T25lVGltZVByZUtleXNSZXF1ZXN0EjoKBmRldmljZRgBIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yRGV2aWNlUmVmIjIKIUNvdW50RGlyZWN0T25lVGltZVByZUtleXNSZXNwb25zZRINCgVjb3VudBgBIAEoAyKbAQoYTWxzS2V5UGFja2FnZVJlc2VydmF0aW9uEjoKBnRhcmdldBgBIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yRGV2aWNlUmVmEhIKCnBhY2thZ2VfaWQYAiABKAkSEwoLa2V5X3BhY2thZ2UYAyABKAwSGgoSa2V5X3BhY2thZ2Vfc2hhMjU2GAQgASgMIm0KGlVwbG9hZE1sc0tleVBhY2thZ2VSZXF1ZXN0EjoKBmRldmljZRgBIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yRGV2aWNlUmVmEhMKC2tleV9wYWNrYWdlGAIgASgMIk0KG1VwbG9hZE1sc0tleVBhY2thZ2VSZXNwb25zZRISCgpwYWNrYWdlX2lkGAEgASgJEhoKEmtleV9wYWNrYWdlX3NoYTI1NhgCIAEoDCLBAQoZRmV0Y2hNbHNLZXlQYWNrYWdlUmVxdWVzdBIzCgVhY3RvchgBIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yUmVmEhwKFGhvbWVfc3RhdGlvbl9wZWVyX2lkGAIgASgJEhIKCnJlcXVlc3RfaWQYAyABKAkSPQoJcmVxdWVzdGVyGAQgASgLMioucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JEZXZpY2VSZWYinwEKGkZldGNoTWxzS2V5UGFja2FnZVJlc3BvbnNlElAKC3Jlc2VydmF0aW9uGAEgASgLMjsucGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxLk1sc0tleVBhY2thZ2VSZXNlcnZhdGlvbhIRCglhdmFpbGFibGUYAiABKAgSHAoUaG9tZV9zdGF0aW9uX3BlZXJfaWQYAyABKAkimAEKIkZldGNoRmVkZXJhdGVkTWxzS2V5UGFja2FnZVJlcXVlc3QSTQoHcmVxdWVzdBgBIAEoCzI8LnBlZXJzX3RvdWNoLm1vZGVsLmtleV9leGNoYW5nZS52MS5GZXRjaE1sc0tleVBhY2thZ2VSZXF1ZXN0EiMKG3NvdXJjZV9ob21lX3N0YXRpb25fcGVlcl9pZBgCIAEoCSJ2CiNGZXRjaEZlZGVyYXRlZE1sc0tleVBhY2thZ2VSZXNwb25zZRJPCghyZXNwb25zZRgBIAEoCzI9LnBlZXJzX3RvdWNoLm1vZGVsLmtleV9leGNoYW5nZS52MS5GZXRjaE1sc0tleVBhY2thZ2VSZXNwb25zZSJYChpDb3VudE1sc0tleVBhY2thZ2VzUmVxdWVzdBI6CgZkZXZpY2UYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvckRldmljZVJlZiIsChtDb3VudE1sc0tleVBhY2thZ2VzUmVzcG9uc2USDQoFY291bnQYASABKAMi3gEKGUNsYWltTWxzS2V5UGFja2FnZVJlcXVlc3QSGQoRYXV0aG9yaXR5X3BsYW5faWQYASABKAkSIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgCIAEoCRI6CgZ0YXJnZXQYAyABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvckRldmljZVJlZhIzCg9wbGFuX2V4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnJlcXVlc3RfaWQYBSABKAkiqwEKGkNsYWltTWxzS2V5UGFja2FnZVJlc3BvbnNlElAKC3Jlc2VydmF0aW9uGAEgASgLMjsucGVlcnNfdG91Y2gubW9kZWwua2V5X2V4Y2hhbmdlLnYxLk1sc0tleVBhY2thZ2VSZXNlcnZhdGlvbhIcChRob21lX3N0YXRpb25fcGVlcl9pZBgCIAEoCRIdChVpcnJldmVyc2libHlfY29uc3VtZWQYAyABKAgingIKHFNlbmREaXJlY3RLZXlFeGNoYW5nZVJlcXVlc3QSPQoJcmVjaXBpZW50GAEgASgLMioucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JEZXZpY2VSZWYSJgoecmVjaXBpZW50X2hvbWVfc3RhdGlvbl9wZWVyX2lkGAIgASgJEhIKCnNlc3Npb25faWQYAyABKAkSTQoEa2luZBgEIAEoDjI/LnBlZXJzX3RvdWNoLm1vZGVsLmtleV9leGNoYW5nZS52MS5EaXJlY3RLZXlFeGNoYW5nZVBheWxvYWRLaW5kEhsKE29wYXF1ZV9rZXlfbWF0ZXJpYWwYBSABKAwSFwoPY29udmVyc2F0aW9uX2lkGAYgASgJIjQKHVNlbmREaXJlY3RLZXlFeGNoYW5nZVJlc3BvbnNlEhMKC2VudmVsb3BlX2lkGAEgASgJIoUDChlEaXJlY3RLZXlFeGNoYW5nZURlbGl2ZXJ5EhMKC2VudmVsb3BlX2lkGAEgASgJEjoKBnNlbmRlchgCIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yRGV2aWNlUmVmEj0KCXJlY2lwaWVudBgDIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yRGV2aWNlUmVmEiYKHnJlY2lwaWVudF9ob21lX3N0YXRpb25fcGVlcl9pZBgEIAEoCRISCgpzZXNzaW9uX2lkGAUgASgJEk0KBGtpbmQYBiABKA4yPy5wZWVyc190b3VjaC5tb2RlbC5rZXlfZXhjaGFuZ2UudjEuRGlyZWN0S2V5RXhjaGFuZ2VQYXlsb2FkS2luZBIbChNvcGFxdWVfa2V5X21hdGVyaWFsGAcgASgMEhcKD2NvbnZlcnNhdGlvbl9pZBgIIAEoCRIXCg9pZGVtcG90ZW5jeV9rZXkYCSABKAkq8wEKHERpcmVjdEtleUV4Y2hhbmdlUGF5bG9hZEtpbmQSMAosRElSRUNUX0tFWV9FWENIQU5HRV9QQVlMT0FEX0tJTkRfVU5TUEVDSUZJRUQQABIyCi5ESVJFQ1RfS0VZX0VYQ0hBTkdFX1BBWUxPQURfS0lORF9QUkVLRVlfQlVORExFEAESNAowRElSRUNUX0tFWV9FWENIQU5HRV9QQVlMT0FEX0tJTkRfSU5JVElBTF9NRVNTQUdFEAISNwozRElSRUNUX0tFWV9FWENIQU5HRV9QQVlMT0FEX0tJTkRfUkFUQ0hFVF9LRVlfVVBEQVRFEANCUlpQZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9rZXlfZXhjaGFuZ2UvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_domain_actor_actor, file_google_protobuf_timestamp]);
 
 /**
- * X3DH key bundle upload — base64-encoded public keys.
- *
- * @generated from message peers_touch.model.key_exchange.v1.UploadKeyBundleRequest
+ * @generated from message peers_touch.model.key_exchange.v1.DirectOneTimePreKey
  */
-export type UploadKeyBundleRequest = Message<"peers_touch.model.key_exchange.v1.UploadKeyBundleRequest"> & {
+export type DirectOneTimePreKey = Message<"peers_touch.model.key_exchange.v1.DirectOneTimePreKey"> & {
   /**
-   * @generated from field: string ik_pub = 1;
+   * @generated from field: int32 key_id = 1;
    */
-  ikPub: string;
+  keyId: number;
 
   /**
-   * @generated from field: int32 spk_id = 2;
+   * @generated from field: string public_key = 2;
    */
-  spkId: number;
-
-  /**
-   * @generated from field: string spk_pub = 3;
-   */
-  spkPub: string;
-
-  /**
-   * @generated from field: string spk_sig = 4;
-   */
-  spkSig: string;
-
-  /**
-   * @generated from field: repeated int32 opk_ids = 5;
-   */
-  opkIds: number[];
-
-  /**
-   * @generated from field: repeated string opk_pubs = 6;
-   */
-  opkPubs: string[];
-
-  /**
-   * Opaque per-install identifier. Empty => server stores as "legacy".
-   *
-   * @generated from field: string device_id = 7;
-   */
-  deviceId: string;
-
-  /**
-   * Supported encrypted payload wire versions. [0] = legacy chain-only,
-   * [0, 1] = Double Ratchet capable. Empty uploads are treated as [0]
-   * for backward compatibility.
-   *
-   * @generated from field: repeated uint32 supported_versions = 8;
-   */
-  supportedVersions: number[];
+  publicKey: string;
 };
 
 /**
- * Describes the message peers_touch.model.key_exchange.v1.UploadKeyBundleRequest.
- * Use `create(UploadKeyBundleRequestSchema)` to create a new message.
+ * Describes the message peers_touch.model.key_exchange.v1.DirectOneTimePreKey.
+ * Use `create(DirectOneTimePreKeySchema)` to create a new message.
  */
-export const UploadKeyBundleRequestSchema: GenMessage<UploadKeyBundleRequest> = /*@__PURE__*/
+export const DirectOneTimePreKeySchema: GenMessage<DirectOneTimePreKey> = /*@__PURE__*/
   messageDesc(file_domain_key_exchange_key_exchange, 0);
 
 /**
- * @generated from message peers_touch.model.key_exchange.v1.UploadKeyBundleResponse
+ * @generated from message peers_touch.model.key_exchange.v1.DirectKeyBundle
  */
-export type UploadKeyBundleResponse = Message<"peers_touch.model.key_exchange.v1.UploadKeyBundleResponse"> & {
-};
-
-/**
- * Describes the message peers_touch.model.key_exchange.v1.UploadKeyBundleResponse.
- * Use `create(UploadKeyBundleResponseSchema)` to create a new message.
- */
-export const UploadKeyBundleResponseSchema: GenMessage<UploadKeyBundleResponse> = /*@__PURE__*/
-  messageDesc(file_domain_key_exchange_key_exchange, 1);
-
-/**
- * One logical device publish for a PTID (may share the PTID across installs).
- *
- * @generated from message peers_touch.model.key_exchange.v1.KeyBundle
- */
-export type KeyBundle = Message<"peers_touch.model.key_exchange.v1.KeyBundle"> & {
+export type DirectKeyBundle = Message<"peers_touch.model.key_exchange.v1.DirectKeyBundle"> & {
   /**
-   * @generated from field: string ptid = 1;
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef device = 1;
    */
-  ptid: string;
+  device?: ActorDeviceRef | undefined;
 
   /**
-   * Stable per-install id from the publisher; empty string means legacy row
-   * (server key "legacy" is mapped to "").
-   *
-   * @generated from field: string device_id = 2;
+   * @generated from field: string identity_key_public = 2;
    */
-  deviceId: string;
+  identityKeyPublic: string;
 
   /**
-   * Ed25519 public, base64
-   *
-   * @generated from field: string ik_pub = 3;
+   * @generated from field: int32 signed_pre_key_id = 3;
    */
-  ikPub: string;
+  signedPreKeyId: number;
 
   /**
-   * @generated from field: string spk_pub = 4;
+   * @generated from field: string signed_pre_key_public = 4;
    */
-  spkPub: string;
+  signedPreKeyPublic: string;
 
   /**
-   * @generated from field: string spk_sig = 5;
+   * @generated from field: string signed_pre_key_signature = 5;
    */
-  spkSig: string;
+  signedPreKeySignature: string;
 
   /**
-   * One-time prekey pubs consumed for this fetch (base64), newest policy via server.
-   *
-   * @generated from field: repeated string opks = 6;
+   * @generated from field: repeated peers_touch.model.key_exchange.v1.DirectOneTimePreKey one_time_pre_keys = 6;
    */
-  opks: string[];
+  oneTimePreKeys: DirectOneTimePreKey[];
 
   /**
-   * server stamp (identity upsert time)
-   *
    * @generated from field: int64 published_at_unix_ms = 7;
    */
   publishedAtUnixMs: bigint;
 
   /**
-   * @generated from field: repeated uint32 supported_versions = 8;
+   * @generated from field: repeated uint32 supported_wire_versions = 8;
    */
-  supportedVersions: number[];
-
-  /**
-   * @generated from field: int32 spk_id = 9;
-   */
-  spkId: number;
-
-  /**
-   * @generated from field: repeated int32 opk_ids = 10;
-   */
-  opkIds: number[];
+  supportedWireVersions: number[];
 };
 
 /**
- * Describes the message peers_touch.model.key_exchange.v1.KeyBundle.
- * Use `create(KeyBundleSchema)` to create a new message.
+ * Describes the message peers_touch.model.key_exchange.v1.DirectKeyBundle.
+ * Use `create(DirectKeyBundleSchema)` to create a new message.
  */
-export const KeyBundleSchema: GenMessage<KeyBundle> = /*@__PURE__*/
+export const DirectKeyBundleSchema: GenMessage<DirectKeyBundle> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 1);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest
+ */
+export type UploadDirectKeyBundleRequest = Message<"peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+   */
+  device?: ActorDeviceRef | undefined;
+
+  /**
+   * @generated from field: string identity_key_public = 2;
+   */
+  identityKeyPublic: string;
+
+  /**
+   * @generated from field: int32 signed_pre_key_id = 3;
+   */
+  signedPreKeyId: number;
+
+  /**
+   * @generated from field: string signed_pre_key_public = 4;
+   */
+  signedPreKeyPublic: string;
+
+  /**
+   * @generated from field: string signed_pre_key_signature = 5;
+   */
+  signedPreKeySignature: string;
+
+  /**
+   * @generated from field: repeated peers_touch.model.key_exchange.v1.DirectOneTimePreKey one_time_pre_keys = 6;
+   */
+  oneTimePreKeys: DirectOneTimePreKey[];
+
+  /**
+   * @generated from field: repeated uint32 supported_wire_versions = 7;
+   */
+  supportedWireVersions: number[];
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest.
+ * Use `create(UploadDirectKeyBundleRequestSchema)` to create a new message.
+ */
+export const UploadDirectKeyBundleRequestSchema: GenMessage<UploadDirectKeyBundleRequest> = /*@__PURE__*/
   messageDesc(file_domain_key_exchange_key_exchange, 2);
 
 /**
- * Fetch another actor's key bundles by PTID.
- *
- * @generated from message peers_touch.model.key_exchange.v1.FetchKeyBundleRequest
+ * @generated from message peers_touch.model.key_exchange.v1.UploadDirectKeyBundleResponse
  */
-export type FetchKeyBundleRequest = Message<"peers_touch.model.key_exchange.v1.FetchKeyBundleRequest"> & {
-  /**
-   * @generated from field: string ptid = 1;
-   */
-  ptid: string;
-
-  /**
-   * When empty, return all bundles for the PTID. When set, only that device_id
-   * (after server-side normalization matching upload).
-   *
-   * @generated from field: string device_id = 2;
-   */
-  deviceId: string;
-
-  /**
-   * Optional Station peer id for federated lookup. When present and different
-   * from the local Station, the serving Station relay-forwards the request to
-   * the actor's home Station under a peer-JWT protected fetch route.
-   *
-   * @generated from field: string home_station_peer_id = 3;
-   */
-  homeStationPeerId: string;
+export type UploadDirectKeyBundleResponse = Message<"peers_touch.model.key_exchange.v1.UploadDirectKeyBundleResponse"> & {
 };
 
 /**
- * Describes the message peers_touch.model.key_exchange.v1.FetchKeyBundleRequest.
- * Use `create(FetchKeyBundleRequestSchema)` to create a new message.
+ * Describes the message peers_touch.model.key_exchange.v1.UploadDirectKeyBundleResponse.
+ * Use `create(UploadDirectKeyBundleResponseSchema)` to create a new message.
  */
-export const FetchKeyBundleRequestSchema: GenMessage<FetchKeyBundleRequest> = /*@__PURE__*/
+export const UploadDirectKeyBundleResponseSchema: GenMessage<UploadDirectKeyBundleResponse> = /*@__PURE__*/
   messageDesc(file_domain_key_exchange_key_exchange, 3);
 
 /**
- * @generated from message peers_touch.model.key_exchange.v1.FetchKeyBundleResponse
+ * @generated from message peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest
  */
-export type FetchKeyBundleResponse = Message<"peers_touch.model.key_exchange.v1.FetchKeyBundleResponse"> & {
+export type FetchDirectKeyBundlesRequest = Message<"peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest"> & {
   /**
-   * @generated from field: repeated peers_touch.model.key_exchange.v1.KeyBundle bundles = 1;
+   * @generated from field: peers_touch.model.actor.v1.ActorRef actor = 1;
    */
-  bundles: KeyBundle[];
+  actor?: ActorRef | undefined;
+
+  /**
+   * @generated from field: string target_device_id = 2;
+   */
+  targetDeviceId: string;
+
+  /**
+   * @generated from field: string home_station_peer_id = 3;
+   */
+  homeStationPeerId: string;
+
+  /**
+   * @generated from field: string request_id = 4;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef requester = 5;
+   */
+  requester?: ActorDeviceRef | undefined;
 };
 
 /**
- * Describes the message peers_touch.model.key_exchange.v1.FetchKeyBundleResponse.
- * Use `create(FetchKeyBundleResponseSchema)` to create a new message.
+ * Describes the message peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest.
+ * Use `create(FetchDirectKeyBundlesRequestSchema)` to create a new message.
  */
-export const FetchKeyBundleResponseSchema: GenMessage<FetchKeyBundleResponse> = /*@__PURE__*/
+export const FetchDirectKeyBundlesRequestSchema: GenMessage<FetchDirectKeyBundlesRequest> = /*@__PURE__*/
   messageDesc(file_domain_key_exchange_key_exchange, 4);
 
 /**
- * Replenish one-time prekeys.
- *
- * @generated from message peers_touch.model.key_exchange.v1.ReplenishOpksRequest
+ * @generated from message peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse
  */
-export type ReplenishOpksRequest = Message<"peers_touch.model.key_exchange.v1.ReplenishOpksRequest"> & {
+export type FetchDirectKeyBundlesResponse = Message<"peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse"> & {
   /**
-   * @generated from field: repeated int32 opk_ids = 1;
+   * @generated from field: repeated peers_touch.model.key_exchange.v1.DirectKeyBundle bundles = 1;
    */
-  opkIds: number[];
-
-  /**
-   * @generated from field: repeated string opk_pubs = 2;
-   */
-  opkPubs: string[];
-
-  /**
-   * Targets the same device row as uploads; empty => legacy.
-   *
-   * @generated from field: string device_id = 3;
-   */
-  deviceId: string;
+  bundles: DirectKeyBundle[];
 };
 
 /**
- * Describes the message peers_touch.model.key_exchange.v1.ReplenishOpksRequest.
- * Use `create(ReplenishOpksRequestSchema)` to create a new message.
+ * Describes the message peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse.
+ * Use `create(FetchDirectKeyBundlesResponseSchema)` to create a new message.
  */
-export const ReplenishOpksRequestSchema: GenMessage<ReplenishOpksRequest> = /*@__PURE__*/
+export const FetchDirectKeyBundlesResponseSchema: GenMessage<FetchDirectKeyBundlesResponse> = /*@__PURE__*/
   messageDesc(file_domain_key_exchange_key_exchange, 5);
 
 /**
- * @generated from message peers_touch.model.key_exchange.v1.ReplenishOpksResponse
+ * @generated from message peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesRequest
  */
-export type ReplenishOpksResponse = Message<"peers_touch.model.key_exchange.v1.ReplenishOpksResponse"> & {
+export type FetchFederatedDirectKeyBundlesRequest = Message<"peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesRequest request = 1;
+   */
+  request?: FetchDirectKeyBundlesRequest | undefined;
+
+  /**
+   * @generated from field: string source_home_station_peer_id = 2;
+   */
+  sourceHomeStationPeerId: string;
 };
 
 /**
- * Describes the message peers_touch.model.key_exchange.v1.ReplenishOpksResponse.
- * Use `create(ReplenishOpksResponseSchema)` to create a new message.
+ * Describes the message peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesRequest.
+ * Use `create(FetchFederatedDirectKeyBundlesRequestSchema)` to create a new message.
  */
-export const ReplenishOpksResponseSchema: GenMessage<ReplenishOpksResponse> = /*@__PURE__*/
+export const FetchFederatedDirectKeyBundlesRequestSchema: GenMessage<FetchFederatedDirectKeyBundlesRequest> = /*@__PURE__*/
   messageDesc(file_domain_key_exchange_key_exchange, 6);
 
 /**
- * Count remaining one-time prekeys.
- *
- * @generated from message peers_touch.model.key_exchange.v1.OpkCountRequest
+ * @generated from message peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesResponse
  */
-export type OpkCountRequest = Message<"peers_touch.model.key_exchange.v1.OpkCountRequest"> & {
+export type FetchFederatedDirectKeyBundlesResponse = Message<"peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesResponse"> & {
   /**
-   * empty => legacy bucket for this PTID.
-   *
-   * @generated from field: string device_id = 1;
+   * @generated from field: peers_touch.model.key_exchange.v1.FetchDirectKeyBundlesResponse response = 1;
    */
-  deviceId: string;
+  response?: FetchDirectKeyBundlesResponse | undefined;
 };
 
 /**
- * Describes the message peers_touch.model.key_exchange.v1.OpkCountRequest.
- * Use `create(OpkCountRequestSchema)` to create a new message.
+ * Describes the message peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesResponse.
+ * Use `create(FetchFederatedDirectKeyBundlesResponseSchema)` to create a new message.
  */
-export const OpkCountRequestSchema: GenMessage<OpkCountRequest> = /*@__PURE__*/
+export const FetchFederatedDirectKeyBundlesResponseSchema: GenMessage<FetchFederatedDirectKeyBundlesResponse> = /*@__PURE__*/
   messageDesc(file_domain_key_exchange_key_exchange, 7);
 
 /**
- * @generated from message peers_touch.model.key_exchange.v1.OpkCountResponse
+ * @generated from message peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest
  */
-export type OpkCountResponse = Message<"peers_touch.model.key_exchange.v1.OpkCountResponse"> & {
+export type ReplenishDirectOneTimePreKeysRequest = Message<"peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+   */
+  device?: ActorDeviceRef | undefined;
+
+  /**
+   * @generated from field: repeated peers_touch.model.key_exchange.v1.DirectOneTimePreKey one_time_pre_keys = 2;
+   */
+  oneTimePreKeys: DirectOneTimePreKey[];
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysRequest.
+ * Use `create(ReplenishDirectOneTimePreKeysRequestSchema)` to create a new message.
+ */
+export const ReplenishDirectOneTimePreKeysRequestSchema: GenMessage<ReplenishDirectOneTimePreKeysRequest> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 8);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysResponse
+ */
+export type ReplenishDirectOneTimePreKeysResponse = Message<"peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysResponse"> & {
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.ReplenishDirectOneTimePreKeysResponse.
+ * Use `create(ReplenishDirectOneTimePreKeysResponseSchema)` to create a new message.
+ */
+export const ReplenishDirectOneTimePreKeysResponseSchema: GenMessage<ReplenishDirectOneTimePreKeysResponse> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 9);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysRequest
+ */
+export type CountDirectOneTimePreKeysRequest = Message<"peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+   */
+  device?: ActorDeviceRef | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysRequest.
+ * Use `create(CountDirectOneTimePreKeysRequestSchema)` to create a new message.
+ */
+export const CountDirectOneTimePreKeysRequestSchema: GenMessage<CountDirectOneTimePreKeysRequest> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 10);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysResponse
+ */
+export type CountDirectOneTimePreKeysResponse = Message<"peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysResponse"> & {
   /**
    * @generated from field: int64 count = 1;
    */
@@ -287,9 +306,430 @@ export type OpkCountResponse = Message<"peers_touch.model.key_exchange.v1.OpkCou
 };
 
 /**
- * Describes the message peers_touch.model.key_exchange.v1.OpkCountResponse.
- * Use `create(OpkCountResponseSchema)` to create a new message.
+ * Describes the message peers_touch.model.key_exchange.v1.CountDirectOneTimePreKeysResponse.
+ * Use `create(CountDirectOneTimePreKeysResponseSchema)` to create a new message.
  */
-export const OpkCountResponseSchema: GenMessage<OpkCountResponse> = /*@__PURE__*/
-  messageDesc(file_domain_key_exchange_key_exchange, 8);
+export const CountDirectOneTimePreKeysResponseSchema: GenMessage<CountDirectOneTimePreKeysResponse> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 11);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
+ */
+export type MlsKeyPackageReservation = Message<"peers_touch.model.key_exchange.v1.MlsKeyPackageReservation"> & {
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef target = 1;
+   */
+  target?: ActorDeviceRef | undefined;
+
+  /**
+   * @generated from field: string package_id = 2;
+   */
+  packageId: string;
+
+  /**
+   * @generated from field: bytes key_package = 3;
+   */
+  keyPackage: Uint8Array;
+
+  /**
+   * @generated from field: bytes key_package_sha256 = 4;
+   */
+  keyPackageSha256: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.MlsKeyPackageReservation.
+ * Use `create(MlsKeyPackageReservationSchema)` to create a new message.
+ */
+export const MlsKeyPackageReservationSchema: GenMessage<MlsKeyPackageReservation> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 12);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.UploadMlsKeyPackageRequest
+ */
+export type UploadMlsKeyPackageRequest = Message<"peers_touch.model.key_exchange.v1.UploadMlsKeyPackageRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+   */
+  device?: ActorDeviceRef | undefined;
+
+  /**
+   * @generated from field: bytes key_package = 2;
+   */
+  keyPackage: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.UploadMlsKeyPackageRequest.
+ * Use `create(UploadMlsKeyPackageRequestSchema)` to create a new message.
+ */
+export const UploadMlsKeyPackageRequestSchema: GenMessage<UploadMlsKeyPackageRequest> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 13);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.UploadMlsKeyPackageResponse
+ */
+export type UploadMlsKeyPackageResponse = Message<"peers_touch.model.key_exchange.v1.UploadMlsKeyPackageResponse"> & {
+  /**
+   * @generated from field: string package_id = 1;
+   */
+  packageId: string;
+
+  /**
+   * @generated from field: bytes key_package_sha256 = 2;
+   */
+  keyPackageSha256: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.UploadMlsKeyPackageResponse.
+ * Use `create(UploadMlsKeyPackageResponseSchema)` to create a new message.
+ */
+export const UploadMlsKeyPackageResponseSchema: GenMessage<UploadMlsKeyPackageResponse> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 14);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest
+ */
+export type FetchMlsKeyPackageRequest = Message<"peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef actor = 1;
+   */
+  actor?: ActorRef | undefined;
+
+  /**
+   * @generated from field: string home_station_peer_id = 2;
+   */
+  homeStationPeerId: string;
+
+  /**
+   * @generated from field: string request_id = 3;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef requester = 4;
+   */
+  requester?: ActorDeviceRef | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest.
+ * Use `create(FetchMlsKeyPackageRequestSchema)` to create a new message.
+ */
+export const FetchMlsKeyPackageRequestSchema: GenMessage<FetchMlsKeyPackageRequest> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 15);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse
+ */
+export type FetchMlsKeyPackageResponse = Message<"peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.key_exchange.v1.MlsKeyPackageReservation reservation = 1;
+   */
+  reservation?: MlsKeyPackageReservation | undefined;
+
+  /**
+   * @generated from field: bool available = 2;
+   */
+  available: boolean;
+
+  /**
+   * @generated from field: string home_station_peer_id = 3;
+   */
+  homeStationPeerId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse.
+ * Use `create(FetchMlsKeyPackageResponseSchema)` to create a new message.
+ */
+export const FetchMlsKeyPackageResponseSchema: GenMessage<FetchMlsKeyPackageResponse> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 16);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageRequest
+ */
+export type FetchFederatedMlsKeyPackageRequest = Message<"peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageRequest request = 1;
+   */
+  request?: FetchMlsKeyPackageRequest | undefined;
+
+  /**
+   * @generated from field: string source_home_station_peer_id = 2;
+   */
+  sourceHomeStationPeerId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageRequest.
+ * Use `create(FetchFederatedMlsKeyPackageRequestSchema)` to create a new message.
+ */
+export const FetchFederatedMlsKeyPackageRequestSchema: GenMessage<FetchFederatedMlsKeyPackageRequest> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 17);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageResponse
+ */
+export type FetchFederatedMlsKeyPackageResponse = Message<"peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.key_exchange.v1.FetchMlsKeyPackageResponse response = 1;
+   */
+  response?: FetchMlsKeyPackageResponse | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageResponse.
+ * Use `create(FetchFederatedMlsKeyPackageResponseSchema)` to create a new message.
+ */
+export const FetchFederatedMlsKeyPackageResponseSchema: GenMessage<FetchFederatedMlsKeyPackageResponse> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 18);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.CountMlsKeyPackagesRequest
+ */
+export type CountMlsKeyPackagesRequest = Message<"peers_touch.model.key_exchange.v1.CountMlsKeyPackagesRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef device = 1;
+   */
+  device?: ActorDeviceRef | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.CountMlsKeyPackagesRequest.
+ * Use `create(CountMlsKeyPackagesRequestSchema)` to create a new message.
+ */
+export const CountMlsKeyPackagesRequestSchema: GenMessage<CountMlsKeyPackagesRequest> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 19);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.CountMlsKeyPackagesResponse
+ */
+export type CountMlsKeyPackagesResponse = Message<"peers_touch.model.key_exchange.v1.CountMlsKeyPackagesResponse"> & {
+  /**
+   * @generated from field: int64 count = 1;
+   */
+  count: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.CountMlsKeyPackagesResponse.
+ * Use `create(CountMlsKeyPackagesResponseSchema)` to create a new message.
+ */
+export const CountMlsKeyPackagesResponseSchema: GenMessage<CountMlsKeyPackagesResponse> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 20);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest
+ */
+export type ClaimMlsKeyPackageRequest = Message<"peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest"> & {
+  /**
+   * @generated from field: string authority_plan_id = 1;
+   */
+  authorityPlanId: string;
+
+  /**
+   * @generated from field: string authority_station_peer_id = 2;
+   */
+  authorityStationPeerId: string;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef target = 3;
+   */
+  target?: ActorDeviceRef | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp plan_expires_at = 4;
+   */
+  planExpiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string request_id = 5;
+   */
+  requestId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageRequest.
+ * Use `create(ClaimMlsKeyPackageRequestSchema)` to create a new message.
+ */
+export const ClaimMlsKeyPackageRequestSchema: GenMessage<ClaimMlsKeyPackageRequest> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 21);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageResponse
+ */
+export type ClaimMlsKeyPackageResponse = Message<"peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.key_exchange.v1.MlsKeyPackageReservation reservation = 1;
+   */
+  reservation?: MlsKeyPackageReservation | undefined;
+
+  /**
+   * @generated from field: string home_station_peer_id = 2;
+   */
+  homeStationPeerId: string;
+
+  /**
+   * @generated from field: bool irreversibly_consumed = 3;
+   */
+  irreversiblyConsumed: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.ClaimMlsKeyPackageResponse.
+ * Use `create(ClaimMlsKeyPackageResponseSchema)` to create a new message.
+ */
+export const ClaimMlsKeyPackageResponseSchema: GenMessage<ClaimMlsKeyPackageResponse> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 22);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest
+ */
+export type SendDirectKeyExchangeRequest = Message<"peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef recipient = 1;
+   */
+  recipient?: ActorDeviceRef | undefined;
+
+  /**
+   * @generated from field: string recipient_home_station_peer_id = 2;
+   */
+  recipientHomeStationPeerId: string;
+
+  /**
+   * @generated from field: string session_id = 3;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind kind = 4;
+   */
+  kind: DirectKeyExchangePayloadKind;
+
+  /**
+   * @generated from field: bytes opaque_key_material = 5;
+   */
+  opaqueKeyMaterial: Uint8Array;
+
+  /**
+   * @generated from field: string conversation_id = 6;
+   */
+  conversationId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.SendDirectKeyExchangeRequest.
+ * Use `create(SendDirectKeyExchangeRequestSchema)` to create a new message.
+ */
+export const SendDirectKeyExchangeRequestSchema: GenMessage<SendDirectKeyExchangeRequest> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 23);
+
+/**
+ * @generated from message peers_touch.model.key_exchange.v1.SendDirectKeyExchangeResponse
+ */
+export type SendDirectKeyExchangeResponse = Message<"peers_touch.model.key_exchange.v1.SendDirectKeyExchangeResponse"> & {
+  /**
+   * @generated from field: string envelope_id = 1;
+   */
+  envelopeId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.SendDirectKeyExchangeResponse.
+ * Use `create(SendDirectKeyExchangeResponseSchema)` to create a new message.
+ */
+export const SendDirectKeyExchangeResponseSchema: GenMessage<SendDirectKeyExchangeResponse> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 24);
+
+/**
+ * Canonical Device Inbox payload for one endpoint-targeted Direct key exchange.
+ *
+ * @generated from message peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery
+ */
+export type DirectKeyExchangeDelivery = Message<"peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery"> & {
+  /**
+   * @generated from field: string envelope_id = 1;
+   */
+  envelopeId: string;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef sender = 2;
+   */
+  sender?: ActorDeviceRef | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef recipient = 3;
+   */
+  recipient?: ActorDeviceRef | undefined;
+
+  /**
+   * @generated from field: string recipient_home_station_peer_id = 4;
+   */
+  recipientHomeStationPeerId: string;
+
+  /**
+   * @generated from field: string session_id = 5;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind kind = 6;
+   */
+  kind: DirectKeyExchangePayloadKind;
+
+  /**
+   * @generated from field: bytes opaque_key_material = 7;
+   */
+  opaqueKeyMaterial: Uint8Array;
+
+  /**
+   * @generated from field: string conversation_id = 8;
+   */
+  conversationId: string;
+
+  /**
+   * @generated from field: string idempotency_key = 9;
+   */
+  idempotencyKey: string;
+};
+
+/**
+ * Describes the message peers_touch.model.key_exchange.v1.DirectKeyExchangeDelivery.
+ * Use `create(DirectKeyExchangeDeliverySchema)` to create a new message.
+ */
+export const DirectKeyExchangeDeliverySchema: GenMessage<DirectKeyExchangeDelivery> = /*@__PURE__*/
+  messageDesc(file_domain_key_exchange_key_exchange, 25);
+
+/**
+ * @generated from enum peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind
+ */
+export enum DirectKeyExchangePayloadKind {
+  /**
+   * @generated from enum value: DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_PREKEY_BUNDLE = 1;
+   */
+  PREKEY_BUNDLE = 1,
+
+  /**
+   * @generated from enum value: DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_INITIAL_MESSAGE = 2;
+   */
+  INITIAL_MESSAGE = 2,
+
+  /**
+   * @generated from enum value: DIRECT_KEY_EXCHANGE_PAYLOAD_KIND_RATCHET_KEY_UPDATE = 3;
+   */
+  RATCHET_KEY_UPDATE = 3,
+}
+
+/**
+ * Describes the enum peers_touch.model.key_exchange.v1.DirectKeyExchangePayloadKind.
+ */
+export const DirectKeyExchangePayloadKindSchema: GenEnum<DirectKeyExchangePayloadKind> = /*@__PURE__*/
+  enumDesc(file_domain_key_exchange_key_exchange, 0);
 

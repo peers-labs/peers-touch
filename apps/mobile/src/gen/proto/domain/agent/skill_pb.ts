@@ -532,4 +532,3 @@ export type PatchSkillResponse = Message<"peers_touch.model.agent.v1.PatchSkillR
  */
 export const PatchSkillResponseSchema: GenMessage<PatchSkillResponse> = /*@__PURE__*/
   messageDesc(file_domain_agent_skill, 15);
-

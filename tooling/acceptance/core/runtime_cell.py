@@ -644,6 +644,20 @@ class RuntimeCellManifest:
             raise ProvisioningError(
                 f"runtime cell {self.cell_id}: display geometry is invalid"
             )
+        if contract.display.fixed_geometry:
+            expected_width, expected_height = (
+                int(part)
+                for part in contract.display.fixed_geometry.split("x", 1)
+            )
+            if (
+                self.display.width != expected_width
+                or self.display.height != expected_height
+            ):
+                raise ProvisioningError(
+                    f"runtime cell {self.cell_id}: display geometry "
+                    f"{self.display.width}x{self.display.height} does not "
+                    f"match required {contract.display.fixed_geometry}"
+                )
         if contract.transport.kind == "ssh":
             for name, port in (
                 ("webdriverLocalPort", self.transport.webdriver_local_port),

@@ -1,4 +1,4 @@
-import { Copy, Pencil, Trash2, RefreshCw, RotateCcw, GitBranch, ChevronRight, Eraser, Languages, MessageSquareMore, Volume2, Download, Forward } from 'lucide-react';
+import { Copy, Pencil, Trash2, RefreshCw, RotateCcw, GitBranch, ChevronRight, Eraser, Languages, MessageSquareMore, Volume2, Download, Forward, Activity } from 'lucide-react';
 import type { MessageActionDef, MessageActionContext } from './types';
 import { isActiveOperation } from '../../../store/streaming';
 
@@ -85,6 +85,7 @@ function buildAssistantActions(ctx: MessageActionContext): { primary: MessageAct
     menu: [
       { key: 'branch', label: 'chat.message.action.branch', icon: GitBranch, onClick: ctx.onBranch },
       { key: 'thread', label: 'chat.message.action.thread', icon: MessageSquareMore, onClick: ctx.onThread },
+      { key: 'turnDetails', label: 'chat.message.action.turnDetails', icon: Activity, onClick: ctx.onTurnDetails ?? (() => {}), hidden: !ctx.message.turnId || !ctx.onTurnDetails },
       { key: 'continue', label: 'chat.message.action.continue', icon: ChevronRight, onClick: ctx.onContinue },
       { key: 'translate', label: 'chat.message.action.translate', icon: Languages, onClick: ctx.onTranslate },
       { key: 'export', label: 'chat.message.action.export', icon: Download, onClick: ctx.onExport },
@@ -96,6 +97,16 @@ function buildAssistantActions(ctx: MessageActionContext): { primary: MessageAct
 }
 
 function buildAssistantErrorActions(ctx: MessageActionContext): { primary: MessageActionDef[]; menu: MessageActionDef[] } {
+  if (ctx.message.typedError?.retryable === false) {
+    return {
+      primary: [
+        { key: 'delete', label: 'chat.message.action.delete', icon: Trash2, danger: true, onClick: ctx.onDelete },
+      ],
+      menu: [
+        { key: 'copy', label: 'chat.message.action.copy', icon: Copy, onClick: ctx.onCopy, hidden: !ctx.message.content },
+      ],
+    };
+  }
   return {
     primary: [
       { key: 'retry', label: 'chat.message.action.retry', icon: RotateCcw, onClick: ctx.onRetry },

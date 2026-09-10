@@ -186,6 +186,8 @@
 - Station 与 Desktop 边界：`architecture/boundaries/station-desktop-scope-boundary.md`
 - Desktop 运行时关系：`architecture/runtime/desktop-runtime-architecture.md`
 - 统一 Handler 架构：`architecture/runtime/unified-handler-architecture.md`
+- Service API capability ownership：`architecture/api-ownership/README.md`
+  （active；已接受统一业务 API owner、公开路由、真源存储与机械防重复 Gate）
 - 统一存储架构：`architecture/storage/unified-runtime-storage-architecture.md`
 - 大前端运行时架构：`architecture/frontend-runtime/README.md`
 - i18n 架构：`architecture/i18n/i18n-architecture.md`
@@ -194,7 +196,13 @@
 - 语音 / 视频通话架构：`architecture/realtime/voice-video-calls.md`
 - Chat 端到端加密、设备级投递与恢复：`architecture/encryption/README.md`
 - 服务协调（Relay/Station/Desktop/Mobile 依赖 DAG 与凭据契约）：`architecture/service-coordination.md`
-- 联邦 IM 架构：`architecture/federated-im/README.md`（draft；定义跨 Station 群/私聊 IM 的 group authority、事件日志、Sender Key、离线恢复与家庭 Station 压测边界）
+- 联邦 IM 历史架构：`architecture/federated-im/README.md`（superseded；保留
+  consolidation 前的决策与实现证据，当前 Chat 架构以 Messaging Platform 和
+  API Ownership 为准）
+- Messaging Platform：`architecture/messaging-platform/README.md`（active；Device
+  Messaging Engine、Conversation authority、ordered device delivery 与 recovery；
+  Conversation 是唯一 Chat 入口，Device、Inbox、Recovery、Key Exchange 与
+  Federation API 由各自资源 owner 暴露；CA-HC hard-cut plan 已批准）
 - 双端社交 Runtime 架构：`architecture/social-runtime/README.md`
 - Mobile Shell 产品与跨运行时架构：`architecture/mobile/README.md`
   （active；W2-E2 physical OAuth proof amendment 见

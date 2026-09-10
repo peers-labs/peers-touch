@@ -3,17 +3,20 @@ package social
 import (
 	"context"
 	"fmt"
+	"math"
+	nethttp "net/http"
 	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
-	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Route constants. The legacy `/api/v1/social/posts*` routes are
@@ -80,6 +83,7 @@ const (
 func (s *subServer) Handlers() []server.Handler {
 	cw := s.commonWrapper
 	jw := s.jwtWrapper
+	deviceIDWrapper := serverwrapper.DeviceID()
 
 	return []server.Handler{
 		// Moments / Posts (write)
@@ -136,9 +140,9 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-list-circle-members", routeSocialCircleMember, server.GET, s.handleListCircleMembers, cw, jw),
 
 		// Friend Requests
-		server.NewTypedHandler("social-send-friend-request", routeSocialFriendRequestSend, server.POST, s.handleSendFriendRequest, cw, jw),
-		server.NewTypedHandler("social-accept-friend-request", routeSocialFriendRequestAccept, server.POST, s.handleAcceptFriendRequest, cw, jw),
-		server.NewTypedHandler("social-reject-friend-request", routeSocialFriendRequestReject, server.POST, s.handleRejectFriendRequest, cw, jw),
+		server.NewTypedHandler("social-send-friend-request", routeSocialFriendRequestSend, server.POST, s.handleSendFriendRequest, cw, deviceIDWrapper, jw),
+		server.NewTypedHandler("social-accept-friend-request", routeSocialFriendRequestAccept, server.POST, s.handleAcceptFriendRequest, cw, deviceIDWrapper, jw),
+		server.NewTypedHandler("social-reject-friend-request", routeSocialFriendRequestReject, server.POST, s.handleRejectFriendRequest, cw, deviceIDWrapper, jw),
 		server.NewTypedHandler("social-list-friend-requests", routeSocialFriendRequests, server.GET, s.handleListFriendRequests, cw, jw),
 	}
 }
@@ -820,84 +824,320 @@ func audienceFromLegacyVisibility(v model.PostVisibility) *model.Audience {
 
 // --- Friend Request handlers -------------------------------------------------
 
-func (s *subServer) handleSendFriendRequest(ctx context.Context, req *chat.SendFriendRequestRequest) (*chat.SendFriendRequestResponse, error) {
-	actorPTID, ok := getActorPTID(ctx)
-	if !ok {
-		return nil, server.Unauthorized("authentication required")
-	}
-	if req.ReceiverPtid == "" {
-		return nil, server.BadRequest("receiver_ptid is required")
-	}
-	fr, err := s.friendRequestSvc.SendFriendRequest(ctx, actorPTID, req.ReceiverPtid, req.Message)
-	if err != nil {
-		switch err {
-		case application.ErrFriendRequestSelf:
-			return nil, server.BadRequest(err.Error())
-		case application.ErrFriendRequestBlocked:
-			return nil, server.Forbidden(err.Error())
-		case application.ErrAlreadyFriends:
-			return nil, server.BadRequest(err.Error())
-		default:
-			return nil, server.InternalErrorWithCause("failed to send friend request", err)
-		}
-	}
-	return &chat.SendFriendRequestResponse{Request: fr}, nil
+type federatedFriendRequestAPI interface {
+	SubmitFriendRequestCommand(
+		context.Context,
+		*model.FriendRequestCommand,
+	) (application.SubmitFriendRequestCommandResult, error)
+	ListFriendRequestProjections(
+		context.Context,
+		string,
+		model.FriendRequestState,
+		int32,
+		int32,
+	) ([]domain.FriendRequestProjection, int64, error)
 }
 
-func (s *subServer) handleAcceptFriendRequest(ctx context.Context, req *chat.AcceptFriendRequestRequest) (*chat.AcceptFriendRequestResponse, error) {
-	actorPTID, ok := getActorPTID(ctx)
-	if !ok {
-		return nil, server.Unauthorized("authentication required")
-	}
-	if req.RequestId == "" {
-		return nil, server.BadRequest("request_id is required")
-	}
-	fr, err := s.friendRequestSvc.AcceptFriendRequest(ctx, actorPTID, req.RequestId)
+func (s *subServer) handleSendFriendRequest(
+	ctx context.Context,
+	req *model.SendSocialFriendRequestRequest,
+) (*model.SendSocialFriendRequestResponse, error) {
+	actorPTID, deviceID, api, err := s.authenticatedFriendRequestAPI(ctx)
 	if err != nil {
-		switch err {
-		case application.ErrFriendRequestNotFound:
-			return nil, server.NotFound(err.Error())
-		case application.ErrNotRequestReceiver:
-			return nil, server.Forbidden(err.Error())
-		case application.ErrFriendRequestBlocked:
-			return nil, server.Forbidden(err.Error())
-		default:
-			return nil, server.InternalErrorWithCause("failed to accept friend request", err)
-		}
+		return nil, err
 	}
-	return &chat.AcceptFriendRequestResponse{Request: fr}, nil
+
+	projection, err := submitFriendRequestCommand(
+		ctx,
+		actorPTID,
+		deviceID,
+		req.GetCommand(),
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		api,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &model.SendSocialFriendRequestResponse{
+		Request: socialFriendRequestFromProjection(projection),
+	}, nil
 }
 
-func (s *subServer) handleRejectFriendRequest(ctx context.Context, req *chat.RejectFriendRequestRequest) (*chat.RejectFriendRequestResponse, error) {
-	actorPTID, ok := getActorPTID(ctx)
-	if !ok {
-		return nil, server.Unauthorized("authentication required")
-	}
-	if req.RequestId == "" {
-		return nil, server.BadRequest("request_id is required")
-	}
-	fr, err := s.friendRequestSvc.RejectFriendRequest(ctx, actorPTID, req.RequestId)
+func (s *subServer) handleAcceptFriendRequest(
+	ctx context.Context,
+	req *model.AcceptSocialFriendRequestRequest,
+) (*model.AcceptSocialFriendRequestResponse, error) {
+	actorPTID, deviceID, api, err := s.authenticatedFriendRequestAPI(ctx)
 	if err != nil {
-		switch err {
-		case application.ErrFriendRequestNotFound:
-			return nil, server.NotFound(err.Error())
-		case application.ErrNotRequestReceiver:
-			return nil, server.Forbidden(err.Error())
-		default:
-			return nil, server.InternalErrorWithCause("failed to reject friend request", err)
-		}
+		return nil, err
 	}
-	return &chat.RejectFriendRequestResponse{Request: fr}, nil
+
+	projection, err := submitFriendRequestCommand(
+		ctx,
+		actorPTID,
+		deviceID,
+		req.GetCommand(),
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_ACCEPT,
+		api,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &model.AcceptSocialFriendRequestResponse{
+		Request: socialFriendRequestFromProjection(projection),
+	}, nil
 }
 
-func (s *subServer) handleListFriendRequests(ctx context.Context, req *chat.ListFriendRequestsRequest) (*chat.ListFriendRequestsResponse, error) {
+func (s *subServer) handleRejectFriendRequest(
+	ctx context.Context,
+	req *model.RejectSocialFriendRequestRequest,
+) (*model.RejectSocialFriendRequestResponse, error) {
+	actorPTID, deviceID, api, err := s.authenticatedFriendRequestAPI(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	projection, err := submitFriendRequestCommand(
+		ctx,
+		actorPTID,
+		deviceID,
+		req.GetCommand(),
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_REJECT,
+		api,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &model.RejectSocialFriendRequestResponse{
+		Request: socialFriendRequestFromProjection(projection),
+	}, nil
+}
+
+func (s *subServer) handleListFriendRequests(
+	ctx context.Context,
+	req *model.ListSocialFriendRequestsRequest,
+) (*model.ListSocialFriendRequestsResponse, error) {
 	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	requests, total, err := s.friendRequestSvc.ListFriendRequests(ctx, actorPTID, int32(req.Status), int(req.Limit), int(req.Offset))
+	api, err := s.canonicalFriendRequestAPI()
 	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to list friend requests", err)
+		return nil, err
 	}
-	return &chat.ListFriendRequestsResponse{Requests: requests, Total: int32(total)}, nil
+
+	return handleListFriendRequestsWithAPI(ctx, actorPTID, req, api)
+}
+
+func handleListFriendRequestsWithAPI(
+	ctx context.Context,
+	actorPTID string,
+	req *model.ListSocialFriendRequestsRequest,
+	api federatedFriendRequestAPI,
+) (*model.ListSocialFriendRequestsResponse, error) {
+	if req == nil {
+		return nil, server.BadRequest("request body is required")
+	}
+
+	projections, total, err := api.ListFriendRequestProjections(
+		ctx,
+		actorPTID,
+		req.GetState(),
+		req.GetLimit(),
+		req.GetOffset(),
+	)
+	if err != nil {
+		return nil, mapFederatedFriendRequestError(
+			ctx,
+			"list Friend Requests",
+			err,
+		)
+	}
+	if total > math.MaxInt32 {
+		return nil, server.InternalErrorWithCause(
+			"Friend Request projection count exceeds the public API range",
+			fmt.Errorf("projection count %d exceeds int32", total),
+		)
+	}
+	requests := make([]*model.SocialFriendRequest, 0, len(projections))
+	for _, projection := range projections {
+		request := socialFriendRequestFromProjection(projection)
+		if request == nil {
+			return nil, server.InternalError(
+				"Friend Request projection is missing its request identity",
+			)
+		}
+		requests = append(requests, request)
+	}
+	return &model.ListSocialFriendRequestsResponse{
+		Requests: requests,
+		Total:    int32(total),
+	}, nil
+}
+
+func (s *subServer) canonicalFriendRequestAPI() (
+	federatedFriendRequestAPI,
+	error,
+) {
+	if s == nil || s.federatedFriendRequestSvc == nil {
+		return nil, server.InternalError(
+			"federated Friend Request service is not initialized",
+		)
+	}
+	return s.federatedFriendRequestSvc, nil
+}
+
+func (s *subServer) authenticatedFriendRequestAPI(
+	ctx context.Context,
+) (string, string, federatedFriendRequestAPI, error) {
+	actorPTID, ok := getActorPTID(ctx)
+	if !ok {
+		return "", "", nil, server.Unauthorized(
+			"authenticated Friend Request actor required",
+		)
+	}
+	deviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
+	if deviceID == "" {
+		return "", "", nil, server.Unauthorized(
+			"authenticated Friend Request device required",
+		)
+	}
+	api, err := s.canonicalFriendRequestAPI()
+	if err != nil {
+		return "", "", nil, err
+	}
+	return strings.TrimSpace(actorPTID), deviceID, api, nil
+}
+
+func submitFriendRequestCommand(
+	ctx context.Context,
+	authenticatedActorPTID string,
+	authenticatedDeviceID string,
+	command *model.FriendRequestCommand,
+	expectedAction model.FriendRequestAction,
+	api federatedFriendRequestAPI,
+) (domain.FriendRequestProjection, error) {
+	if api == nil {
+		return domain.FriendRequestProjection{}, server.InternalError(
+			"federated Friend Request service is not initialized",
+		)
+	}
+	if strings.TrimSpace(authenticatedActorPTID) == "" ||
+		strings.TrimSpace(authenticatedDeviceID) == "" {
+		return domain.FriendRequestProjection{}, server.Unauthorized(
+			"authenticated Friend Request actor and device required",
+		)
+	}
+	if command == nil || command.GetBody() == nil {
+		return domain.FriendRequestProjection{}, server.BadRequest(
+			"command.body is required",
+		)
+	}
+	body := command.GetBody()
+	if body.GetAction() != expectedAction {
+		return domain.FriendRequestProjection{}, server.BadRequest(
+			"command action does not match the Friend Request endpoint",
+		)
+	}
+	authorizingDevice := body.GetAuthorizingDevice()
+	if authorizingDevice == nil || authorizingDevice.GetActor() == nil {
+		return domain.FriendRequestProjection{}, server.BadRequest(
+			"command.body.authorizing_device is required",
+		)
+	}
+	if authorizingDevice.GetActor().GetPtid() != authenticatedActorPTID ||
+		authorizingDevice.GetDeviceId() != authenticatedDeviceID {
+		return domain.FriendRequestProjection{}, server.Forbidden(
+			"command authorizing device does not match the authenticated actor and device",
+		)
+	}
+
+	result, err := api.SubmitFriendRequestCommand(ctx, command)
+	if err != nil {
+		return domain.FriendRequestProjection{}, mapFederatedFriendRequestError(
+			ctx,
+			"submit Friend Request command",
+			err,
+		)
+	}
+	return result.Projection, nil
+}
+
+func socialFriendRequestFromProjection(
+	projection domain.FriendRequestProjection,
+) *model.SocialFriendRequest {
+	if projection.RequestID == "" {
+		return nil
+	}
+
+	request := &model.SocialFriendRequest{
+		RequestId:                 projection.RequestID,
+		Sender:                    projection.Sender,
+		Receiver:                  projection.Receiver,
+		Message:                   projection.Message,
+		State:                     projection.State,
+		FederationId:              projection.FederationID,
+		SenderHomeStationPeerId:   projection.SenderHomeStationPeerID,
+		ReceiverHomeStationPeerId: projection.ReceiverHomeStationPeerID,
+	}
+	if !projection.CreatedAt.IsZero() {
+		request.CreatedAt = timestamppb.New(projection.CreatedAt.UTC())
+	}
+	if projection.RespondedAt != nil {
+		request.RespondedAt = timestamppb.New(projection.RespondedAt.UTC())
+	}
+	return request
+}
+
+func mapFederatedFriendRequestError(
+	ctx context.Context,
+	operation string,
+	err error,
+) error {
+	if err == nil {
+		return nil
+	}
+
+	logger.Warnf(ctx, "%s failed: %v", operation, err)
+	switch domain.FederationErrorCodeOf(err) {
+	case domain.FederationErrorInvalidArgument:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusBadRequest,
+			"invalid Friend Request operation",
+			err,
+		)
+	case domain.FederationErrorUnauthorized,
+		domain.FederationErrorInvalidSignature,
+		domain.FederationErrorBlocked:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusForbidden,
+			"Friend Request operation is not authorized",
+			err,
+		)
+	case domain.FederationErrorNotFound:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusNotFound,
+			"Friend Request was not found",
+			err,
+		)
+	case domain.FederationErrorAlreadyFriends,
+		domain.FederationErrorStateConflict,
+		domain.FederationErrorIdempotencyConflict:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusConflict,
+			"Friend Request conflicts with current state",
+			err,
+		)
+	case domain.FederationErrorIdentityUnavailable:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusServiceUnavailable,
+			"Friend Request identity is temporarily unavailable",
+			err,
+		)
+	default:
+		return server.InternalErrorWithCause(
+			"Friend Request operation failed",
+			err,
+		)
+	}
 }

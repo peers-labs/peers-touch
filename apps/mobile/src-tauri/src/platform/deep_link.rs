@@ -2,6 +2,8 @@ use tauri::{App, AppHandle, Manager, Runtime};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 use crate::error::MobileResult;
+use crate::platform::background_bridge;
+use crate::platform::lifecycle_bridge::NativeLifecycleSource;
 use crate::platform::native_events;
 use crate::platform::secure_storage::SecureStorage;
 use crate::runtime::oauth::OAuthCoordinator;
@@ -14,24 +16,53 @@ pub fn install<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::E
     let warm_app = app.handle().clone();
     app.deep_link().on_open_url(move |event| {
         for url in event.urls() {
-            dispatch_callback(&warm_app, url);
+            dispatch_deep_link(&warm_app, url);
         }
     });
 
     if let Some(urls) = app.deep_link().get_current()? {
         for url in urls {
-            dispatch_callback(app.handle(), url);
+            dispatch_deep_link(app.handle(), url);
         }
     }
 
     Ok(())
 }
 
-fn dispatch_callback<R: Runtime>(app: &AppHandle<R>, url: tauri::Url) {
+/// Route incoming deep links to the appropriate handler.
+///
+/// OAuth callbacks are processed by the OAuth coordinator.
+/// All other deep links are emitted as native events to the TS layer
+/// and trigger a lifecycle generation advance for proper ordering.
+fn dispatch_deep_link<R: Runtime>(app: &AppHandle<R>, url: tauri::Url) {
+    if is_oauth_callback(&url) {
+        dispatch_oauth_callback(app, url);
+    } else {
+        dispatch_general_deep_link(app, url);
+    }
+}
+
+fn dispatch_oauth_callback<R: Runtime>(app: &AppHandle<R>, url: tauri::Url) {
     if let Err(error) = handle_native_callback(app, url) {
         let _ = native_events::emit_native_event_error(
             app,
             "route-oauth-deep-link",
+            &error.to_string(),
+        );
+    }
+}
+
+/// Handle non-OAuth deep links.
+///
+/// Emits a wakeup in the current generation and routes the URL to the TS layer.
+/// The native foreground callback remains the sole owner of resume generation.
+fn dispatch_general_deep_link<R: Runtime>(app: &AppHandle<R>, url: tauri::Url) {
+    background_bridge::handle_native_wakeup(app, NativeLifecycleSource::DeepLinkActivation);
+
+    if let Err(error) = native_events::emit_deep_link(app, url.to_string()) {
+        let _ = native_events::emit_native_event_error(
+            app,
+            "route-general-deep-link",
             &error.to_string(),
         );
     }

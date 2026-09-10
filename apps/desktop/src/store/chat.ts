@@ -7,12 +7,16 @@ import {
   type Session,
   type StreamEvent,
   type AgentAttachmentRefInput,
+  type AgentTypedErrorPayload,
+  type AgentTurnStreamError,
   type AgentTurnQueueListOutput,
+  type AgentRuntimeBudgetInput,
 } from '../services/desktop_api';
 import { agentService } from '../services/agent-service';
 import { useAgentStore } from './agent';
+import { useAgentCapabilityStore } from './agentCapabilities';
 import { useAgentTopicStore } from './agentTopics';
-import { currentAuthenticatedActorId } from './session';
+import { currentAuthenticatedActorPtid } from './session';
 import {
   conversationIdFromAgentDraftKey,
   createAgentDraftKey,
@@ -24,6 +28,7 @@ import type { CachedAgentConversation, CachedAgentMessage } from '@peers-touch/c
 import type { AgentTurnSnapshotReloadResult } from '../runtimes/chatRuntime';
 import {
   reduceStreamEvent,
+  projectAgentTypedError,
   createOperation,
   completeOperation,
   failOperation,
@@ -36,7 +41,7 @@ import {
 export { useAgentStore } from './agent';
 export type { Session } from '../services/desktop_api';
 
-export type ToolCallStatus = 'queued' | 'approval_required' | 'approved' | 'denied' | 'pending' | 'success' | 'error' | 'cancelled';
+export type ToolCallStatus = 'queued' | 'approval_required' | 'approved' | 'denied' | 'pending' | 'success' | 'error' | 'cancelled' | 'expired';
 export type DelegationTaskStatus = 'completed' | 'failed' | 'timeout' | 'unknown';
 
 export interface DelegationTaskInfo {
@@ -110,7 +115,28 @@ export interface ChatComposerAttachment {
 
 export interface AgentSendLifecycle {
   onAccepted?: () => void;
-  onRejected?: () => void;
+  onRejected?: (error?: AgentTypedErrorPayload) => void;
+  requestedBudget?: AgentRuntimeBudgetInput;
+  clientIdempotencyKey?: string;
+}
+
+export type BudgetExhaustionKind =
+  | 'tool_calls'
+  | 'wall_time'
+  | 'attempts'
+  | 'agent_steps'
+  | 'input_tokens'
+  | 'output_tokens'
+  | 'attachments'
+  | 'cost'
+  | 'unknown';
+
+export interface BudgetNotice {
+  kind: BudgetExhaustionKind;
+  reason: string;
+  limit?: string;
+  consumed?: string;
+  localeKey: string;
 }
 
 export interface RecoveredTurnTerminal {
@@ -120,9 +146,14 @@ export interface RecoveredTurnTerminal {
 }
 
 export interface ErrorResolutionAction {
-  type: 'reauthCli' | 'openProviderSettings' | 'checkConnection';
+  type:
+    | 'reauthCli'
+    | 'openProviderSettings'
+    | 'checkConnection'
+    | 'openOriginal';
   cliId?: string;
   providerId?: string;
+  existingCommandId?: string;
   label: string;
 }
 
@@ -144,6 +175,7 @@ export interface ChatMessage {
   error?: string;
   cancelled?: boolean;
   terminalStatus?: 'completed' | 'failed' | 'cancelled' | 'interrupted';
+  typedError?: AgentTypedErrorPayload;
   errorDetail?: string;
   resolution?: ErrorResolutionAction | null;
   providerId?: string;
@@ -160,7 +192,64 @@ export interface ChatMessage {
   queued?: boolean;
   queueEntryId?: string;
   queuePosition?: number;
+  budgetNotice?: BudgetNotice;
 }
+
+// #region debug-point A-B:foundation-approval-receiver
+function reportFoundationApprovalReceiverDebug(
+  stage: string,
+  messages: readonly ChatMessage[],
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7782/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-approval-receiver',
+      runId: 'post-fix',
+      hypothesisId: 'A-B',
+      location: 'chat.ts:syncMessages',
+      msg: `[DEBUG] ${stage}`,
+      data: {
+        messageCount: messages.length,
+        toolCallCount: messages.reduce(
+          (count, message) => count + (message.toolCalls?.length ?? 0),
+          0,
+        ),
+        pendingToolCallCount: messages.reduce(
+          (count, message) => count + (
+            message.toolCalls?.filter((toolCall) => toolCall.pending).length
+            ?? 0
+          ),
+          0,
+        ),
+      },
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
+// #region debug-point A-E:approval-expiry-retry
+function reportApprovalExpiryRetryDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown>,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'approval-expiry-retry',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'chat.ts:retryMessage',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
 
 const agentChatCache = getDesktopAgentChatCache();
 
@@ -174,8 +263,6 @@ function cachedConversationToSession(conversation: CachedAgentConversation): Ses
     model_override: conversation.modelName,
     created_at: conversation.createdAt,
     updated_at: conversation.updatedAt,
-    version: conversation.version,
-    active_branch_message_id: conversation.activeBranchMessageId,
   };
 }
 
@@ -184,6 +271,17 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
   const terminalStatus = (
     ['completed', 'failed', 'cancelled', 'interrupted'] as const
   ).find((status) => status === persistedStatus);
+  let typedError: AgentTypedErrorPayload | undefined;
+  if (message.errorJson) {
+    try {
+      const parsed = JSON.parse(message.errorJson);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        typedError = projectAgentTypedError(parsed as Record<string, unknown>);
+      }
+    } catch {
+      typedError = undefined;
+    }
+  }
   const chatMessage: ChatMessage = {
     id: message.messageId,
     role: message.role,
@@ -193,6 +291,8 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
     timestamp: new Date(message.createdAt).getTime(),
     model: message.modelName,
     turnId: message.turnId,
+    error: typedError?.locale_key,
+    typedError,
     attachments: message.attachments?.map((attachment) => ({
       cid: attachment.objectRef,
       filename: attachment.filename,
@@ -239,11 +339,15 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
         decision_id?: string;
         decision_revision?: number;
         payload_hash?: string;
+        function?: {
+          name?: string;
+          arguments?: string;
+        };
       }>;
       chatMessage.toolCalls = parsed.map((toolCall) => ({
         id: toolCall.id || toolCall.name || '',
-        name: toolCall.name || 'tool',
-        args: toolCall.args,
+        name: toolCall.name || toolCall.function?.name || 'tool',
+        args: toolCall.args ?? toolCall.function?.arguments,
         result: toolCall.result,
         pending: toolCall.status === 'approval_required' ||
           toolCall.status === 'approved' ||
@@ -292,6 +396,16 @@ function foldToolMessages(messages: ChatMessage[]): ChatMessage[] {
   return folded;
 }
 
+function reconcileToolMessages(messages: ChatMessage[]): ChatMessage[] {
+  const folded = foldToolMessages(messages);
+  void toolRuntime.reconcileMessages(folded).catch((error) => {
+    log.warn('chat', 'Failed to reconcile ToolCall projections', {
+      error: String(error),
+    });
+  });
+  return folded;
+}
+
 function isOptimisticMessageId(id: string): boolean {
   return id.startsWith('temp-');
 }
@@ -312,8 +426,10 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     || source.operation
     || source.replacementOf
     || source.replacedBy
+    || source.typedError
     || source.errorDetail
-    || source.resolution;
+    || source.resolution
+    || source.budgetNotice;
   const merged = hasCot ? {
     ...target,
     toolCalls: target.toolCalls ?? source.toolCalls,
@@ -327,10 +443,13 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     replacementOf: target.replacementOf ?? source.replacementOf,
     replacedBy: target.replacedBy ?? source.replacedBy,
     error: targetOwnsTerminal ? target.error : target.error ?? source.error,
+    typedError:
+      targetOwnsTerminal ? target.typedError : target.typedError ?? source.typedError,
     errorDetail:
       targetOwnsTerminal ? target.errorDetail : target.errorDetail ?? source.errorDetail,
     resolution:
       targetOwnsTerminal ? target.resolution : target.resolution ?? source.resolution,
+    budgetNotice: target.budgetNotice ?? source.budgetNotice,
   } : target;
   if (!source.terminalStatus || targetOwnsTerminal) return merged;
   return {
@@ -532,6 +651,7 @@ interface ChatState {
   // draft WITHOUT sending, aligning with LobeHub `fillInputMessage`. ChatInput consumes
   // the pending value, writes it into its draft, focuses, and clears the request.
   composerFill: { text: string; nonce: number } | null;
+  composerFocusNonce: number;
 
   loadSessions: () => Promise<void>;
   mergeSessions: (sessions: Session[]) => void;
@@ -576,12 +696,16 @@ interface ChatState {
   setWideScreen: (wide: boolean) => void;
   fillComposer: (text: string) => void;
   consumeComposerFill: () => void;
+  requestComposerFocus: () => void;
+  consumeComposerFocus: () => void;
   toggleSessionMemory: (sessionKey?: string) => void;
   isMemoryDisabled: (sessionKey?: string) => boolean;
   loadPreferences: () => Promise<void>;
 }
 
 let messageCounter = 0;
+const pendingMessageRetries = new Map<string, Promise<void>>();
+
 function tempId() {
   return `temp-${Date.now()}-${messageCounter++}`;
 }
@@ -633,16 +757,24 @@ function buildAgentTurnInput(
   agentId: string,
   userInput: string,
   attachments: ChatComposerAttachment[],
+  requestedBudget?: AgentRuntimeBudgetInput,
+  clientIdempotencyKey?: string,
 ) {
   const agentState = useAgentStore.getState();
   const agent = agentState.agents.find((a) => a.id === agentId);
+  const clientCapabilitySessionId = useAgentCapabilityStore
+    .getState()
+    .readinessByAgentId[agentId]
+    ?.selectedClientSessionId;
   return {
-    client_idempotency_key: tempId(),
+    client_idempotency_key: clientIdempotencyKey || tempId(),
     conversation_id: conversationId,
     agent_id: agentId,
     user_input: userInput,
     provider: agent?.provider || undefined,
     model: agent?.model || undefined,
+    requested_budget: requestedBudget,
+    client_capability_session_id: clientCapabilitySessionId,
     attachments: attachments
       .map((item) => item.attachment)
       .filter((item): item is AgentAttachmentRefInput => Boolean(item)),
@@ -727,6 +859,49 @@ function setBuffer(
 function clearBuffer(buffers: Record<string, ChatMessage[]>, sessionKey: string): Record<string, ChatMessage[]> {
   if (!buffers[sessionKey]) return buffers;
   const next = { ...buffers };
+  delete next[sessionKey];
+  return next;
+}
+
+export function shouldUseSessionBuffer(operation?: ChatOperation): boolean {
+  return isActiveOperation(operation)
+    || isPreAdmissionFailure(operation);
+}
+
+function isPreAdmissionFailure(
+  operation?: ChatOperation,
+): operation is ChatOperation {
+  return operation?.status === 'failed' && !operation.turnId;
+}
+
+function discardPreAdmissionFailureMessages(
+  messages: ChatMessage[],
+  operation?: ChatOperation,
+  targetMessageId?: string,
+): ChatMessage[] {
+  if (!isPreAdmissionFailure(operation)) return messages;
+  const assistantIndex = messages.findIndex(
+    (message) => message.id === operation.assistantMessageId,
+  );
+  if (assistantIndex < 0) return messages;
+  const optimisticIds = new Set([operation.assistantMessageId]);
+  const precedingMessage = messages[assistantIndex - 1];
+  if (
+    precedingMessage?.role === 'user'
+    && isOptimisticMessageId(precedingMessage.id)
+  ) {
+    optimisticIds.add(precedingMessage.id);
+  }
+  if (targetMessageId && !optimisticIds.has(targetMessageId)) return messages;
+  return messages.filter((message) => !optimisticIds.has(message.id));
+}
+
+function removeOperation(
+  operations: Record<string, ChatOperation>,
+  sessionKey: string,
+): Record<string, ChatOperation> {
+  if (!operations[sessionKey]) return operations;
+  const next = { ...operations };
   delete next[sessionKey];
   return next;
 }
@@ -854,6 +1029,19 @@ export function applyOperationEventIdentity(
   };
 }
 
+export function isMessageRetryBlocked(
+  isStreaming: boolean,
+  operation: ChatOperation | undefined,
+  sourceTurnId: string | undefined,
+): boolean {
+  if (!isStreaming) return false;
+  return (
+    operation?.runState !== 'recovery_failed'
+    || !sourceTurnId
+    || operation.turnId !== sourceTurnId
+  );
+}
+
 async function loadSessionMessages(
   key: string,
   get: () => ChatState,
@@ -862,13 +1050,17 @@ async function loadSessionMessages(
   try {
     const cached = await agentChatCache.getMessages(key);
     if (get().currentSessionKey !== key) return;
-    const cachedMessages = foldToolMessages(cached.map(cachedMessageToChatMessage));
+    const cachedMessages = reconcileToolMessages(
+      cached.map(cachedMessageToChatMessage),
+    );
     set({ messages: mergeServerMessages(get().messages, cachedMessages) });
     void agentChatCache
       .syncConversation(key)
       .then((synced) => {
         if (get().currentSessionKey !== key) return;
-        const serverMessages = foldToolMessages(synced.map(cachedMessageToChatMessage));
+        const serverMessages = reconcileToolMessages(
+          synced.map(cachedMessageToChatMessage),
+        );
         set({ messages: mergeServerMessages(get().messages, serverMessages) });
       })
       .catch((syncError) => {
@@ -896,6 +1088,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   wideScreen: false,
   composerFill: null,
+  composerFocusNonce: 0,
 
   reset: () => {
     for (const operation of Object.values(get().operations)) {
@@ -917,6 +1110,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       draftPromotions: {},
       readinessErrorKey: null,
       composerFill: null,
+      composerFocusNonce: 0,
     });
   },
 
@@ -973,10 +1167,12 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     log.info('chat', 'Selecting session', { key });
     if (key === get().currentSessionKey) return;
     const liveOp = get().operations[key];
-    // Only adopt a buffered message list while a stream is actively running for
-    // this session. A buffer with no live operation is stale (e.g. left behind
-    // after an error) and must not short-circuit loading persisted history.
-    const liveBuffer = isActiveOperation(liveOp) ? get().sessionBuffers[key] : undefined;
+    // Adopt active streams and local pre-admission rejections. Rejections have
+    // no Station message to reload, so their recovery surface remains local to
+    // the conversation until the user retries, deletes, or resolves it.
+    const liveBuffer = shouldUseSessionBuffer(liveOp)
+      ? get().sessionBuffers[key]
+      : undefined;
     set({
       currentSessionKey: key,
       messages: liveBuffer ?? [],
@@ -1056,18 +1252,28 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   syncMessages: async () => {
     log.debug('chat', 'Syncing messages', { key: get().currentSessionKey });
-    const { currentSessionKey, messages: currentMessages } = get();
+    const { currentSessionKey } = get();
+    reportFoundationApprovalReceiverDebug(
+      'authoritative-sync-start',
+      get().messages,
+    );
 
     try {
       if (isAgentDraftKey(currentSessionKey)) {
         return;
       }
-      const synced = await agentChatCache.syncConversation(currentSessionKey);
+      const synced = await agentChatCache.refreshConversation(currentSessionKey);
       if (get().currentSessionKey !== currentSessionKey) return;
-      const serverMessages = foldToolMessages(synced.map(cachedMessageToChatMessage));
+      const serverMessages = reconcileToolMessages(
+        synced.map(cachedMessageToChatMessage),
+      );
 
-      const merged = mergeServerMessages(currentMessages, serverMessages);
+      const merged = mergeServerMessages(get().messages, serverMessages);
       set({ messages: merged });
+      reportFoundationApprovalReceiverDebug(
+        'authoritative-sync-complete',
+        merged,
+      );
     } catch (error) {
       log.warn('chat', 'Failed to sync messages; keeping current view', { error: String(error) });
     }
@@ -1167,7 +1373,9 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     }
     const operation = get().operations[conversationId];
     if (operation?.turnId !== turnId) return;
-    const serverMessages = foldToolMessages(synced.map(cachedMessageToChatMessage));
+    const serverMessages = reconcileToolMessages(
+      synced.map(cachedMessageToChatMessage),
+    );
     const reconcileMessages = (messages: ChatMessage[]) => {
       const merged = mergeServerMessages(messages, serverMessages);
       if (!terminal) return merged;
@@ -1318,6 +1526,8 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         agentId,
         content,
         attachments,
+        lifecycle?.requestedBudget,
+        lifecycle?.clientIdempotencyKey,
       ),
       (event: StreamEvent) => {
         if (event.event !== 'error') notifyAccepted();
@@ -1441,31 +1651,43 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         void get().syncMessages();
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
-      (err: Error & { resolution?: ErrorResolutionAction; errorDetail?: string; providerId?: string }) => {
-        if (!acceptedByStation) lifecycle?.onRejected?.();
+      (err: AgentTurnStreamError) => {
+        if (!acceptedByStation) lifecycle?.onRejected?.(err.typedError);
         log.error('chat', 'Send message failed', { error: err.message });
+        const resolution = err.resolution as ErrorResolutionAction | undefined;
         set((state) => {
           const isCurrent = state.currentSessionKey === resolvedSessionKey;
           const applyError = (m: ChatMessage): ChatMessage => {
             if (m.id !== assistantId) return m;
-            if (err.resolution) {
+            if (resolution) {
               return {
                 ...m,
                 error: err.message,
+                typedError: err.typedError ?? m.typedError,
                 errorDetail: err.errorDetail || m.errorDetail,
-                resolution: err.resolution,
+                resolution,
                 providerId: err.providerId || m.providerId,
                 loading: false,
               };
             }
-            return { ...m, error: presentChatRuntimeError(err.message), loading: false };
+            return {
+              ...m,
+              error: presentChatRuntimeError(err.message),
+              typedError: err.typedError ?? m.typedError,
+              loading: false,
+            };
           };
           return {
             messages: isCurrent ? state.messages.map(applyError) : state.messages,
-            // The stream has terminated; drop the live buffer so a later
-            // selectSession reloads persisted history instead of adopting a
-            // stale in-memory list.
-            sessionBuffers: clearBuffer(state.sessionBuffers, resolvedSessionKey),
+            // Pre-admission rejection has no Station message to reload, so its
+            // editable draft and recovery surface remain conversation-scoped.
+            sessionBuffers: acceptedByStation
+              ? clearBuffer(state.sessionBuffers, resolvedSessionKey)
+              : setBuffer(
+                  state.sessionBuffers,
+                  resolvedSessionKey,
+                  (messages) => messages.map(applyError),
+                ),
             isStreaming: isCurrent ? false : state.isStreaming,
             streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
             abortController: isCurrent ? null : state.abortController,
@@ -1474,11 +1696,15 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         });
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
-      currentAuthenticatedActorId() || '',
+      currentAuthenticatedActorPtid() || '',
     );
 
     set((state) => {
-      const baseMessages = [...state.messages, userMsg, assistantMsg];
+      const retainedMessages = discardPreAdmissionFailureMessages(
+        state.messages,
+        state.operations[currentSessionKey],
+      );
+      const baseMessages = [...retainedMessages, userMsg, assistantMsg];
       return {
         messages: baseMessages,
         isStreaming: true,
@@ -1515,20 +1741,102 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     await get().loadSessions();
   },
 
-  retryMessage: async (messageId: string) => {
+  retryMessage: (messageId: string) => {
     const { currentSessionKey, messages, isStreaming } = get();
-    if (isStreaming) return;
     const source = messages.find((message) => message.id === messageId);
-    if (!source?.turnId) return;
-    const version = await stationConversationVersion(currentSessionKey);
-    await api.retryAgentTurn({
-      conversation_id: currentSessionKey,
-      source_turn_id: source.turnId,
-      client_idempotency_key: tempId(),
-      expected_conversation_version: version,
+    const sourceTurnId = source?.turnId;
+    const operation = get().operations[currentSessionKey];
+    const retryBlocked = isMessageRetryBlocked(
+      isStreaming,
+      operation,
+      sourceTurnId,
+    );
+    const retryKey = `${currentSessionKey}:${messageId}`;
+    const pending = pendingMessageRetries.get(retryKey);
+
+    // #region debug-point A-B-E:retry-entry
+    reportApprovalExpiryRetryDebug('A-B-E', 'retry-entry', {
+      isStreaming,
+      sourcePresent: Boolean(source),
+      sourceTurnPresent: Boolean(sourceTurnId),
+      sourceTerminalStatus: source?.terminalStatus ?? null,
+      sourceLoading: source?.loading === true,
+      operationPresent: Boolean(operation),
+      operationRunState: operation?.runState ?? null,
+      operationTurnMatchesSource:
+        Boolean(sourceTurnId) && operation?.turnId === sourceTurnId,
+      retryBlocked,
+      pendingRetryPresent: Boolean(pending),
     });
-    await get().syncMessages();
-    await get().loadSessions();
+    // #endregion
+
+    if (retryBlocked) {
+      // #region debug-point A:streaming-guard
+      reportApprovalExpiryRetryDebug('A', 'retry-skipped-streaming', {});
+      // #endregion
+      return Promise.resolve();
+    }
+    if (!sourceTurnId) {
+      // #region debug-point B:source-guard
+      reportApprovalExpiryRetryDebug('B', 'retry-skipped-source', {
+        sourcePresent: Boolean(source),
+      });
+      // #endregion
+      return Promise.resolve();
+    }
+
+    if (pending) {
+      // #region debug-point E:single-flight
+      reportApprovalExpiryRetryDebug('E', 'retry-single-flight-reused', {});
+      // #endregion
+      return pending;
+    }
+
+    const request = (async () => {
+      try {
+        const version = await stationConversationVersion(currentSessionKey);
+        // #region debug-point C:retry-api-start
+        reportApprovalExpiryRetryDebug('C', 'retry-api-start', {
+          conversationVersionPresent: Number.isInteger(version) && version > 0,
+        });
+        // #endregion
+        const response = await api.retryAgentTurn({
+          conversation_id: currentSessionKey,
+          source_turn_id: sourceTurnId,
+          client_idempotency_key: tempId(),
+          expected_conversation_version: version,
+        });
+        // #region debug-point D:retry-api-complete
+        reportApprovalExpiryRetryDebug('D', 'retry-api-complete', {
+          hasTurn: Boolean(response.turn),
+          hasAttempt: Boolean(response.attempt),
+          hasConversation: Boolean(response.conversation),
+          turnStatus: (
+            response.turn && typeof response.turn === 'object'
+              ? String((response.turn as Record<string, unknown>).status ?? '')
+              : ''
+          ),
+        });
+        // #endregion
+        if (get().currentSessionKey === currentSessionKey) {
+          await get().syncMessages();
+        }
+        await get().loadSessions();
+      } catch (error) {
+        const stableCode = String(error).match(/\b(?:AGENT|TOOL)_[A-Z0-9_]+\b/)?.[0] ?? null;
+        // #region debug-point C:retry-api-error
+        reportApprovalExpiryRetryDebug('C', 'retry-api-error', {
+          errorName: error instanceof Error ? error.name : typeof error,
+          stableCode,
+        });
+        // #endregion
+        throw error;
+      }
+    })().finally(() => {
+      pendingMessageRetries.delete(retryKey);
+    });
+    pendingMessageRetries.set(retryKey, request);
+    return request;
   },
 
   deleteAndRegenerateMessage: async (messageId: string) => {
@@ -1574,8 +1882,23 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   },
 
   deleteMessage: async (id: string) => {
-    if (id.startsWith('temp-')) return;
     const { currentSessionKey } = get();
+    if (isOptimisticMessageId(id)) {
+      set((state) => {
+        const messages = discardPreAdmissionFailureMessages(
+          state.messages,
+          state.operations[currentSessionKey],
+          id,
+        );
+        if (messages === state.messages) return state;
+        return {
+          messages,
+          operations: removeOperation(state.operations, currentSessionKey),
+          sessionBuffers: clearBuffer(state.sessionBuffers, currentSessionKey),
+        };
+      });
+      return;
+    }
     const version = await stationConversationVersion(currentSessionKey);
     await api.tombstoneAgentMessage({
       conversation_id: currentSessionKey,
@@ -1667,6 +1990,16 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   consumeComposerFill: () => {
     set({ composerFill: null });
+  },
+
+  requestComposerFocus: () => {
+    set((state) => ({
+      composerFocusNonce: state.composerFocusNonce + 1,
+    }));
+  },
+
+  consumeComposerFocus: () => {
+    set({ composerFocusNonce: 0 });
   },
 
   toggleSessionMemory: (sessionKey?: string) => {

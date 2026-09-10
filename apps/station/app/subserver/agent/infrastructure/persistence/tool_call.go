@@ -208,6 +208,8 @@ type ToolBatch struct {
 	Iteration           uint32     `gorm:"not null;uniqueIndex:idx_tool_batch_identity,priority:3"`
 	MaxRetries          uint32     `gorm:"not null"`
 	ContextWindowSize   uint32     `gorm:"not null"`
+	DelegationDepth     uint32     `gorm:"not null;default:0"`
+	RestrictedToolsJSON []byte     `gorm:"type:jsonb;column:restricted_tools_json"`
 	TaskID              string     `gorm:"not null;type:varchar(64);default:''"`
 	StepID              string     `gorm:"not null;type:varchar(64);default:''"`
 	CapabilitySessionID string     `gorm:"not null;type:varchar(64);default:''"`

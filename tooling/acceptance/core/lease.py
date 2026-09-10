@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import fcntl
 import json
 import os
 import re
@@ -9,11 +8,16 @@ import selectors
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
-from typing import IO, Sequence
+from typing import IO, TYPE_CHECKING, Sequence
 
 from .provisioning import utc_now
+from tooling.acceptance.remote_platform import RemotePlatform
+
+if TYPE_CHECKING:
+    from tooling.acceptance.transports.ssh import SshTransport
 
 
 class ProfileLeaseUnavailable(RuntimeError):
@@ -44,10 +48,46 @@ def lease_path(resource: str) -> Path:
     root = Path(
         os.environ.get(
             "PT_PROFILE_LEASE_DIR",
-            "/tmp/peers-touch-profile-leases",
+            str(Path(tempfile.gettempdir()) / "peers-touch-profile-leases"),
         )
     )
     return root / f"{normalize_lease_resource(resource)}.lock"
+
+
+def _try_file_lock(handle: IO[str]) -> bool:
+    if os.name == "nt":
+        import msvcrt
+
+        if os.fstat(handle.fileno()).st_size == 0:
+            handle.write("\0")
+            handle.flush()
+        handle.seek(0)
+        try:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            return False
+        return True
+
+    import fcntl
+
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return False
+    return True
+
+
+def _unlock_file(handle: IO[str]) -> None:
+    if os.name == "nt":
+        import msvcrt
+
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        return
+
+    import fcntl
+
+    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 class ProfileLease:
@@ -61,11 +101,10 @@ class ProfileLease:
         if self._handle is not None:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        handle = self.path.open("a+", encoding="utf-8")
-        try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            handle.seek(0)
+        self.path.touch(exist_ok=True)
+        handle = self.path.open("r+", encoding="utf-8")
+        if not _try_file_lock(handle):
+            handle.seek(1 if os.name == "nt" else 0)
             try:
                 metadata = json.load(handle)
             except (json.JSONDecodeError, OSError):
@@ -74,10 +113,9 @@ class ProfileLease:
             raise ProfileLeaseUnavailable(
                 self.resource,
                 str(metadata.get("owner") or ""),
-            ) from error
+            )
 
-        handle.seek(0)
-        handle.truncate()
+        handle.seek(1 if os.name == "nt" else 0)
         json.dump(
             {
                 "resource": self.resource,
@@ -89,6 +127,7 @@ class ProfileLease:
             sort_keys=True,
         )
         handle.write("\n")
+        handle.truncate()
         handle.flush()
         os.fsync(handle.fileno())
         self._handle = handle
@@ -99,7 +138,7 @@ class ProfileLease:
             return
         self._handle = None
         try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            _unlock_file(handle)
         finally:
             handle.close()
 
@@ -118,42 +157,126 @@ class ProfileLease:
             pass
 
 
-def _remote_git_source_lease_script(
-    deploy_path: str,
-    owner: str,
-) -> str:
-    relative_path = Path(deploy_path.strip())
-    if (
-        not deploy_path.strip()
-        or relative_path.is_absolute()
-        or ".." in relative_path.parts
-    ):
-        raise ValueError(
-            "remote deployment path must be relative to the remote home"
+def _remote_git_source_lease_payload(resource: str) -> tuple[str, str]:
+    normalized_resource = normalize_lease_resource(resource)
+    python_script = "\n".join(
+        (
+            "import os",
+            "import pathlib",
+            "import signal",
+            "import sys",
+            "",
+            "if os.name == 'nt':",
+            "    import msvcrt",
+            "",
+            "    def try_lock(handle):",
+            "        if os.fstat(handle.fileno()).st_size == 0:",
+            "            handle.write('\\0')",
+            "            handle.flush()",
+            "        handle.seek(0)",
+            "        try:",
+            "            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)",
+            "        except OSError:",
+            "            return False",
+            "        return True",
+            "",
+            "    def unlock(handle):",
+            "        handle.seek(0)",
+            "        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)",
+            "else:",
+            "    import fcntl",
+            "",
+            "    def try_lock(handle):",
+            "        try:",
+            "            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)",
+            "        except BlockingIOError:",
+            "            return False",
+            "        return True",
+            "",
+            "    def unlock(handle):",
+            "        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)",
+            "",
+            "def read_owner(handle):",
+            "    handle.seek(1 if os.name == 'nt' else 0)",
+            "    return handle.readline().strip('\\0\\r\\n')",
+            "",
+            "def write_owner(handle, owner):",
+            "    handle.seek(1 if os.name == 'nt' else 0)",
+            "    handle.write(owner + '\\n')",
+            "    handle.truncate()",
+            "    handle.flush()",
+            "    os.fsync(handle.fileno())",
+            "",
+            "lock_root = pathlib.Path.home() / '.cache/peers-touch/source-leases'",
+            "lock_root.mkdir(parents=True, exist_ok=True)",
+            "lease_path = lock_root / (sys.argv[1] + '.lock')",
+            "lease_path.touch(exist_ok=True)",
+            "lease = lease_path.open('r+', encoding='utf-8')",
+            "if not try_lock(lease):",
+            "    current_owner = read_owner(lease)",
+            "    print(f'BLOCKED:lease-held:{current_owner}', flush=True)",
+            "    raise SystemExit(73)",
+            "write_owner(lease, sys.argv[2])",
+            "",
+            "def stop(*_args):",
+            "    raise SystemExit(0)",
+            "",
+            "for name in ('SIGHUP', 'SIGINT', 'SIGTERM'):",
+            "    signum = getattr(signal, name, None)",
+            "    if signum is not None:",
+            "        signal.signal(signum, stop)",
+            "try:",
+            "    print('READY', flush=True)",
+            "    sys.stdin.readline()",
+            "finally:",
+            "    unlock(lease)",
         )
-    normalized_path = relative_path.as_posix()
+    )
+    return python_script, normalized_resource
+
+
+def _remote_git_source_lease_script(resource: str, owner: str) -> str:
+    python_script, normalized_resource = _remote_git_source_lease_payload(
+        resource
+    )
+    return "exec " + shlex.join(
+        ["python3", "-c", python_script, normalized_resource, owner]
+    )
+
+
+def _remote_git_source_lease_argv(
+    resource: str,
+    owner: str,
+    remote_platform: RemotePlatform,
+) -> list[str]:
+    if remote_platform == RemotePlatform.POSIX:
+        raise ValueError("POSIX remote leases use the shell-preserving command")
+    python_script, normalized_resource = _remote_git_source_lease_payload(
+        resource
+    )
+    return ["python", "-c", python_script, normalized_resource, owner]
+
+
+def _persistent_remote_git_source_lease_script(
+    resource: str,
+    owner: str,
+    expires_at_epoch: int,
+) -> str:
+    normalized_resource = normalize_lease_resource(resource)
     python_script = "\n".join(
         (
             "import fcntl",
             "import os",
             "import pathlib",
             "import signal",
-            "import subprocess",
             "import sys",
+            "import time",
             "",
-            "repo = pathlib.Path.home() / sys.argv[1].strip('/')",
-            "identity = subprocess.run(",
-            "    ['git', '-C', str(repo), 'rev-parse', '--absolute-git-dir'],",
-            "    capture_output=True,",
-            "    text=True,",
-            ")",
-            "if identity.returncode != 0:",
-            "    print('BLOCKED:not-a-git-worktree', flush=True)",
-            "    raise SystemExit(72)",
-            "git_dir = pathlib.Path(identity.stdout.strip())",
-            "lease_path = git_dir / 'acceptance-profile.lock'",
-            "index_path = git_dir / 'index.lock'",
-            "lease = lease_path.open('a+', encoding='utf-8')",
+            "lock_root = pathlib.Path.home() / '.cache/peers-touch/source-leases'",
+            "lock_root.mkdir(parents=True, exist_ok=True)",
+            "lease_path = lock_root / (sys.argv[2] + '.lock')",
+            "lease_path.touch(exist_ok=True)",
+            "lease = lease_path.open('r+', encoding='utf-8')",
             "try:",
             "    fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)",
             "except BlockingIOError:",
@@ -161,40 +284,96 @@ def _remote_git_source_lease_script(
             "    current_owner = lease.readline().strip()",
             "    print(f'BLOCKED:lease-held:{current_owner}', flush=True)",
             "    raise SystemExit(73)",
-            "lease.seek(0)",
-            "lease.truncate()",
-            "lease.write(sys.argv[2] + '\\n')",
-            "lease.flush()",
-            "os.fsync(lease.fileno())",
+            "child_pid = os.fork()",
+            "if child_pid:",
+            "    lease.seek(0)",
+            "    lease.truncate()",
+            "    lease.write(sys.argv[1] + '\\n' + str(child_pid) + '\\n')",
+            "    lease.flush()",
+            "    os.fsync(lease.fileno())",
+            "    print(f'READY:{child_pid}', flush=True)",
+            "    os._exit(0)",
+            "os.setsid()",
+            "devnull = os.open('/dev/null', os.O_RDWR)",
+            "for descriptor in (0, 1, 2):",
+            "    os.dup2(devnull, descriptor)",
+            "expires_at = int(sys.argv[3])",
             "try:",
-            "    index_fd = os.open(",
-            "        index_path,",
-            "        os.O_CREAT | os.O_EXCL | os.O_WRONLY,",
-            "        0o600,",
-            "    )",
-            "except FileExistsError:",
-            "    print('BLOCKED:index-lock-exists', flush=True)",
-            "    raise SystemExit(74)",
-            "os.close(index_fd)",
-            "",
-            "def stop(*_args):",
-            "    raise SystemExit(0)",
-            "",
-            "for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):",
-            "    signal.signal(signum, stop)",
-            "try:",
-            "    print('READY', flush=True)",
-            "    sys.stdin.readline()",
+            "    while time.time() < expires_at:",
+            "        time.sleep(1)",
             "finally:",
-            "    try:",
-            "        index_path.unlink()",
-            "    except FileNotFoundError:",
-            "        pass",
+            "    fcntl.flock(lease.fileno(), fcntl.LOCK_UN)",
         )
     )
-    return (
-        f"exec python3 -c {shlex.quote(python_script)} "
-        f"{shlex.quote(normalized_path)} {shlex.quote(owner)}"
+    return "exec " + shlex.join(
+        [
+            "python3",
+            "-c",
+            python_script,
+            owner,
+            normalized_resource,
+            str(expires_at_epoch),
+        ]
+    )
+
+
+def _persistent_remote_git_source_lease_release_script(
+    resource: str,
+    owner: str,
+) -> str:
+    normalized_resource = normalize_lease_resource(resource)
+    python_script = "\n".join(
+        (
+            "import fcntl",
+            "import os",
+            "import pathlib",
+            "import signal",
+            "import sys",
+            "import time",
+            "",
+            "lease_path = pathlib.Path.home() / '.cache/peers-touch/source-leases' / (sys.argv[2] + '.lock')",
+            "if not lease_path.exists():",
+            "    raise SystemExit(0)",
+            "lease = lease_path.open('r+', encoding='utf-8')",
+            "try:",
+            "    fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)",
+            "    lease.seek(0)",
+            "    lease.truncate()",
+            "    lease.flush()",
+            "    os.fsync(lease.fileno())",
+            "    fcntl.flock(lease.fileno(), fcntl.LOCK_UN)",
+            "    print('RELEASED', flush=True)",
+            "    raise SystemExit(0)",
+            "except BlockingIOError:",
+            "    pass",
+            "lease.seek(0)",
+            "lines = lease.read().splitlines()",
+            "current_owner = lines[0] if lines else ''",
+            "if current_owner != sys.argv[1]:",
+            "    print(f'BLOCKED:lease-owner-mismatch:{current_owner}', flush=True)",
+            "    raise SystemExit(73)",
+            "pid = int(lines[1]) if len(lines) > 1 and lines[1].isdigit() else 0",
+            "if pid:",
+            "    os.kill(pid, signal.SIGTERM)",
+            "deadline = time.monotonic() + 10",
+            "while time.monotonic() < deadline:",
+            "    try:",
+            "        fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)",
+            "        lease.seek(0)",
+            "        lease.truncate()",
+            "        lease.flush()",
+            "        os.fsync(lease.fileno())",
+            "        fcntl.flock(lease.fileno(), fcntl.LOCK_UN)",
+            "        print('RELEASED', flush=True)",
+            "        raise SystemExit(0)",
+            "    except BlockingIOError:",
+            "        time.sleep(0.1)",
+            "print('BLOCKED:lease-release-timeout', flush=True)",
+            "raise SystemExit(73)",
+        )
+    )
+    return "exec " + shlex.join(
+        ["python3", "-c", python_script, owner, normalized_resource]
     )
 
 
@@ -207,36 +386,71 @@ class RemoteGitSourceLease:
         host: str,
         user: str,
         deploy_path: str,
+        port: int = 22,
+        known_hosts_file: str = "",
         acquire_timeout: float = 15,
+        persistent: bool = False,
+        expires_at_epoch: int = 0,
+        remote_platform: RemotePlatform = RemotePlatform.POSIX,
     ) -> None:
+        from tooling.acceptance.transports.ssh import SshTarget, SshTransport
+
         self.resource = normalize_lease_resource(resource)
         self.owner = owner.strip() or "unknown"
         self.host = host.strip()
         self.user = user.strip()
         self.deploy_path = deploy_path.strip()
+        self.port = port
+        self.known_hosts_file = known_hosts_file.strip()
         self.acquire_timeout = acquire_timeout
-        self._process: subprocess.Popen[str] | None = None
+        self.persistent = persistent
+        self.expires_at_epoch = expires_at_epoch
+        self.remote_platform = remote_platform
         if not self.host or not self.user or not self.deploy_path:
             raise ValueError(
                 "remote source lease requires host, user, and deploy path"
             )
+        self.transport = SshTransport(
+            SshTarget(
+                host=self.host,
+                user=self.user,
+                port=port,
+                known_hosts_file=known_hosts_file,
+                remote_platform=remote_platform,
+            )
+        )
+        self._process: subprocess.Popen[str] | None = None
+        self._acquired = False
 
     def _command(self) -> list[str]:
-        return [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "ConnectionAttempts=1",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"{self.user}@{self.host}",
-            _remote_git_source_lease_script(
-                self.deploy_path,
+        if self.persistent:
+            if self.remote_platform != RemotePlatform.POSIX:
+                raise ValueError(
+                    "persistent Windows source leases are owned by "
+                    "the runtime-cell broker"
+                )
+            remote_command = _persistent_remote_git_source_lease_script(
+                self.resource,
                 self.owner,
-            ),
+                self.expires_at_epoch,
+            )
+        elif self.remote_platform == RemotePlatform.POSIX:
+            remote_command = _remote_git_source_lease_script(
+                self.resource,
+                self.owner,
+            )
+        else:
+            remote_command = self.transport.render_remote_argv(
+                _remote_git_source_lease_argv(
+                    self.resource,
+                    self.owner,
+                    self.remote_platform,
+                )
+            )
+        return [
+            *self.transport.command_prefix(),
+            self.transport.target.destination,
+            remote_command,
         ]
 
     @staticmethod
@@ -258,8 +472,12 @@ class RemoteGitSourceLease:
                 process.wait(timeout=5)
 
     def acquire(self) -> None:
-        if self._process is not None:
+        if self._process is not None or self._acquired:
             return
+        if self.persistent and self.expires_at_epoch <= int(time.time()):
+            raise ValueError(
+                "persistent remote source lease requires a future expiry"
+            )
         try:
             process = subprocess.Popen(
                 self._command(),
@@ -297,9 +515,20 @@ class RemoteGitSourceLease:
         finally:
             selector.close()
 
-        if response == "READY" and process.poll() is None:
+        if response == "READY" and process.poll() is None and not self.persistent:
             self._process = process
+            self._acquired = True
             return
+        if self.persistent and response.startswith("READY:"):
+            try:
+                int(response.removeprefix("READY:"))
+                returncode = process.wait(timeout=10)
+            except (ValueError, subprocess.TimeoutExpired):
+                returncode = -1
+            if returncode == 0:
+                self._close_streams(process)
+                self._acquired = True
+                return
 
         self._stop_process(process)
         stderr = (
@@ -322,11 +551,44 @@ class RemoteGitSourceLease:
             detail = "deployment path is not a Git worktree"
         raise RemoteGitSourceLeaseUnavailable(self.resource, detail)
 
+    def attach_persistent(self) -> None:
+        if not self.persistent:
+            raise ValueError(
+                "only persistent remote source leases can be attached"
+            )
+        self._acquired = True
+
     def release(self) -> None:
+        if self.persistent:
+            if not self._acquired:
+                return
+            completed = subprocess.run(
+                [
+                    *self.transport.command_prefix(),
+                    self.transport.target.destination,
+                    _persistent_remote_git_source_lease_release_script(
+                        self.resource,
+                        self.owner,
+                    ),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if completed.returncode != 0:
+                detail = completed.stdout.strip() or completed.stderr.strip()
+                raise RuntimeError(
+                    f"remote source lease {self.resource!r} cleanup failed: "
+                    f"{detail or f'exit {completed.returncode}'}"
+                )
+            self._acquired = False
+            return
         process = self._process
         if process is None:
             return
         self._process = None
+        self._acquired = False
         exited_early = process.poll() is not None
         if process.stdin is not None and not process.stdin.closed:
             process.stdin.close()
@@ -363,6 +625,8 @@ class RemoteGitSourceLease:
         self.release()
 
     def __del__(self) -> None:
+        if self.persistent:
+            return
         try:
             self.release()
         except Exception:

@@ -35,6 +35,10 @@ MESSAGE_ACTION_OVERLAY = (
     ROOT
     / "apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx"
 )
+MESSAGE_TIMELINE = (
+    ROOT
+    / "apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx"
+)
 MESSAGE_ROW = ROOT / "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
 MESSAGE_CONTENT = (
     ROOT / "apps/desktop/src/components/chat/message/ChatMessageContent.tsx"
@@ -118,6 +122,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.message_action_overlay = MESSAGE_ACTION_OVERLAY.read_text(
             encoding="utf-8"
         )
+        self.message_timeline = MESSAGE_TIMELINE.read_text(encoding="utf-8")
         self.message_row = MESSAGE_ROW.read_text(encoding="utf-8")
         self.message_content = MESSAGE_CONTENT.read_text(encoding="utf-8")
         self.home_station_provisioner = HOME_STATION_PROVISIONER.read_text(
@@ -134,6 +139,20 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.http_gateway = HTTP_GATEWAY.read_text(encoding="utf-8")
         self.tree = ast.parse(self.source)
 
+    def test_client_specs_are_keyed_by_stable_client_id(self) -> None:
+        self.assertIn('str(client.get("id")): client', self.source)
+        self.assertNotIn('str(client.get("actor")): client', self.source)
+
+    def test_entrypoint_injects_runtime_manifest_into_binding(self) -> None:
+        resolution = self.entry.index("resolve_native_desktop_runtime(")
+        injection = self.entry.index(
+            "runtime_binding.set_runtime_manifest(manifest)"
+        )
+        construction = self.entry.index("super().__init__(")
+
+        self.assertLess(resolution, injection)
+        self.assertLess(injection, construction)
+
     def source_identity_gate(
         self,
         runtime_binding: SyntheticLinuxRuntimeBinding,
@@ -145,17 +164,42 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                 "workspaceDigest": "clean",
             },
             "services": {
-                "station": {
+                "station-four": {
                     "kind": "station",
-                    "endpoint": "http://station",
+                    "endpoint": "http://station-four",
+                    "liveCommit": "commit-a",
+                    "workspaceDigest": "clean",
+                    "protocolDigest": "f" * 64,
+                },
+                "station-five": {
+                    "kind": "station",
+                    "endpoint": "http://station-five",
                     "liveCommit": "commit-a",
                     "workspaceDigest": "clean",
                     "protocolDigest": "f" * 64,
                 },
             },
+            "clients": [
+                {
+                    "id": actor,
+                    "actor": actor,
+                    "runtime": "native-tauri",
+                    "required_service_roles": ["station"],
+                    "service_bindings": {
+                        "station": {
+                            "service_id": service_id,
+                            "required_kind": "station",
+                        },
+                    },
+                }
+                for actor, service_id in (
+                    ("alice", "station-four"),
+                    ("bob", "station-five"),
+                )
+            ],
         }
         gate.runtime_binding = runtime_binding
-        gate.station_url = "http://station"
+        gate.station_url = "http://station-four"
         gate.report = new_report(gate.gate_id)
         return gate
 
@@ -206,7 +250,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
     def test_source_identity_rejects_malformed_station_protocol_digest(self) -> None:
         binding = SyntheticLinuxRuntimeBinding()
         gate = self.source_identity_gate(binding)
-        gate.manifest["services"]["station"]["protocolDigest"] = "not-a-digest"
+        gate.manifest["services"]["station-four"]["protocolDigest"] = (
+            "not-a-digest"
+        )
 
         with self.assertRaisesRegex(
             GateError,
@@ -653,6 +699,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         launch_source = ast.get_source_segment(self.source, launch_actor) or ""
         self.assertNotIn("station.auth_logout()", launch_source)
+        self.assertIn(
+            "script_timeout=NATIVE_ACTOR_LOGIN_TIMEOUT_SECONDS",
+            launch_source,
+        )
+        self.assertIn(
+            "NATIVE_ACTOR_LOGIN_TIMEOUT_SECONDS = 60",
+            self.source,
+        )
 
     def test_claimed_actions_cannot_use_store_or_command_bypasses(self) -> None:
         for forbidden in (
@@ -752,6 +806,13 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source.index("arguments[0].scrollIntoView({"),
             click_source.index("target = client.driver.execute_script("),
         )
+        self.assertIn("if focus_target:", click_source)
+        self.assertLess(
+            click_source.index(
+                '"arguments[0].focus({ preventScroll: true });"'
+            ),
+            click_source.index("target = client.driver.execute_script("),
+        )
         self.assertLess(
             click_source.index("target = client.driver.execute_script("),
             click_source.index("probe_id = self.install_native_input_probe("),
@@ -770,19 +831,24 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source,
         )
         self.assertIn(
-            "content_origin = self.native_adapter.content_origin(",
+            "content_origin = native_origin or self.native_content_origin(client)",
             click_source,
         )
         self.assertLess(
             click_source.index(
-                "content_origin = self.native_adapter.content_origin("
+                "content_origin = native_origin or self.native_content_origin(client)"
             ),
+            click_source.index("current_target = client.driver.execute_script("),
+        )
+        self.assertLess(
+            click_source.index("current_target = client.driver.execute_script("),
             click_source.index("probe_id = self.install_native_input_probe("),
         )
         self.assertLess(
             click_source.index("probe_id = self.install_native_input_probe("),
             click_source.index(
-                "self.native_adapter.post_mouse(\n"
+                "self.native_adapter.post_mouse_to_process(\n"
+                "                process_id,\n"
                 "                (\n"
                 "                    MouseAction.MOVE,\n"
                 "                    MouseAction.LEFT_DOWN,\n"
@@ -791,7 +857,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             ),
         )
         self.assertEqual(
-            click_source.count("self.native_adapter.post_mouse("),
+            click_source.count("self.native_adapter.post_mouse_to_process("),
             1,
         )
         self.assertNotIn(
@@ -821,9 +887,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn("selector=selector,", click_source)
         self.assertIn(
-            'expected_point=(float(target["x"]), float(target["y"]))',
+            'float(current_target["x"]),',
             click_source,
         )
+        self.assertIn('float(current_target["y"]),', click_source)
         self.assertIn("let deliveredPoint = null;", self.source)
         self.assertIn("const mutations = [];", self.source)
         self.assertIn("reactionStates: inspectReactionStates()", self.source)
@@ -875,19 +942,23 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         activation_index = focus_source.index(
             "self.native_adapter.activate_process(client.process_id)"
         )
-        focus_wait_index = focus_source.index(
+        point_ownership_wait_index = focus_source.index(
             "lambda _: actor_window_owns_point()",
+        )
+        fallback_document_focus_index = focus_source.index(
+            "lambda driver: bool(\n"
+            '                    driver.execute_script("return document.hasFocus()")',
             activation_index,
         )
         focus_down_index = focus_source.index(
-            "(MouseAction.LEFT_DOWN,)",
-            focus_wait_index,
+            "MouseAction.LEFT_DOWN,",
+            fallback_document_focus_index,
         )
         focus_up_index = focus_source.index(
-            "(MouseAction.LEFT_UP,)",
+            "MouseAction.LEFT_UP,",
             focus_down_index,
         )
-        document_focus_index = focus_source.index(
+        click_document_focus_index = focus_source.index(
             'lambda driver: bool(driver.execute_script("return document.hasFocus()"))',
             focus_up_index,
         )
@@ -929,10 +1000,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '"before-activation"',
             focus_source,
         )
-        self.assertIn(
-            '"after-cooperative-request"',
-            focus_source,
-        )
+        self.assertNotIn('"after-cooperative-request"', focus_source)
         self.assertIn(
             '"cooperative-timeout"',
             focus_source,
@@ -941,14 +1009,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '"before-fallback-activation"',
             focus_source,
         )
-        self.assertIn(
-            '"after-fallback-activation"',
-            focus_source,
-        )
+        self.assertNotIn('"after-fallback-activation"', focus_source)
         self.assertIn(
             '"point-ownership-timeout"',
             focus_source,
         )
+        self.assertIn('"fallback-focus-timeout"', focus_source)
         self.assertIn(
             "except TimeoutException:",
             focus_source,
@@ -960,10 +1026,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertLess(recovery_index, cooperative_index)
         self.assertLess(cooperative_index, activation_index)
         self.assertLess(recovery_index, activation_index)
-        self.assertLess(activation_index, focus_wait_index)
-        self.assertLess(focus_wait_index, focus_down_index)
+        self.assertLess(point_ownership_wait_index, activation_index)
+        self.assertLess(activation_index, fallback_document_focus_index)
+        self.assertLess(fallback_document_focus_index, focus_down_index)
         self.assertLess(focus_down_index, focus_up_index)
-        self.assertLess(focus_up_index, document_focus_index)
+        self.assertLess(focus_up_index, click_document_focus_index)
         self.assertIn(
             "self.native_adapter.window_stack_at_point(",
             focus_source,
@@ -1073,6 +1140,84 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertNotIn("onPointerEnter={() => {", self.message_action_overlay)
         self.assertNotIn("onPointerLeave={() => {", self.message_action_overlay)
 
+    def test_message_action_click_stays_scoped_after_native_hover(self) -> None:
+        action_start = self.source.index(
+            "    def click_message_action("
+        )
+        action_end = self.source.index(
+            "    def composer_send(",
+            action_start,
+        )
+        action_source = self.source[action_start:action_end]
+
+        self.assertIn(
+            "client = self.focus_actor_window(actor)",
+            action_source,
+        )
+        self.assertIn(
+            "native_origin = self.native_content_origin(client)",
+            action_source,
+        )
+        self.assertIn(
+            "toolbar = self.hover_message(actor, message_id)",
+            action_source,
+        )
+        self.assertIn(
+            "element = toolbar.find_element(",
+            action_source,
+        )
+        self.assertIn(
+            "selector = MESSAGE_ACTION_SELECTORS.get(action)",
+            action_source,
+        )
+        self.assertIn(
+            'raise GateError(f"unsupported message action: {action}")',
+            action_source,
+        )
+        self.assertIn(
+            "return self._click_focused_element(\n"
+            "            client,\n"
+            "            element,\n"
+            "            native_origin=native_origin,\n"
+            "            focus_target=False,\n"
+            "        )",
+            action_source,
+        )
+        self.assertNotIn("self.click(", action_source)
+        self.assertLess(
+            action_source.index("native_origin = self.native_content_origin(client)"),
+            action_source.index("toolbar = self.hover_message(actor, message_id)"),
+        )
+
+        transcript_start = self.source.index(
+            "    def prove_transcript_thread("
+        )
+        transcript_end = self.source.index(
+            "    def overlay_geometry(",
+            transcript_start,
+        )
+        transcript_source = self.source[transcript_start:transcript_end]
+        self.assertIn(
+            'self.click_message_action("alice", str(bob_root["id"]), "reply")',
+            transcript_source,
+        )
+        self.assertIn(
+            'self.click_message_action("alice", str(bob_root["id"]), "thread")',
+            transcript_source,
+        )
+        self.assertNotIn(
+            'self.click("alice", \'[data-message-action=',
+            transcript_source,
+        )
+
+    def test_message_actions_are_owned_by_the_conversation_pane_overlay(self) -> None:
+        self.assertIn("<ChatMessageActionOverlay", self.message_timeline)
+        self.assertIn("onActionTargetChange={activateActions}", self.message_timeline)
+        self.assertIn("data-message-action-overlay-host", self.chat_message_area)
+        self.assertIn("ref={messageActionAnchorRef}", self.message_row)
+        self.assertNotIn("function HoverActions(", self.message_row)
+        self.assertNotIn("msg-hover-actions", self.message_row)
+
     def test_acceptance_window_owns_the_native_overlay_level(self) -> None:
         self.assertIn('feature = "acceptance-webdriver"', self.desktop_main)
         self.assertIn("target_os = \"macos\"", self.desktop_main)
@@ -1170,6 +1315,41 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "runtime-log-audit",
         ):
             self.assertIn(required, self.source)
+
+    def test_group_creation_waits_for_committed_selection_before_submit(self) -> None:
+        start = self.source.index("    def open_group_through_ui(")
+        end = self.source.index("    def transcript(", start)
+        group_journey = self.source[start:end]
+
+        contact_click = group_journey.index(
+            'self.click(\n            "alice",\n            contact_selector,'
+        )
+        selected_wait = group_journey.index(
+            '"Alice selected Bob for group creation"'
+        )
+        enabled_wait = group_journey.index(
+            '"Alice enabled group creation submit"'
+        )
+        submit_click = group_journey.index(
+            'self.click("alice", submit_selector)'
+        )
+
+        self.assertLess(contact_click, selected_wait)
+        self.assertLess(selected_wait, enabled_wait)
+        self.assertLess(enabled_wait, submit_click)
+        self.assertIn(
+            'contact.get_attribute("aria-pressed") == "true"',
+            group_journey,
+        )
+        self.assertIn("submit.is_enabled()", group_journey)
+        self.assertIn(
+            'self.save_screenshot(client, "alice-group-create-failed")',
+            group_journey,
+        )
+        self.assertIn(
+            'self.save_dom(client, "alice-group-create-failed")',
+            group_journey,
+        )
 
     def test_second_device_and_clear_cursor_are_real_runtime_paths(self) -> None:
         self.assertIn(
@@ -1372,17 +1552,28 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
         self.assertIn("def native_app_baseline_ready(", self.source)
+        self.assertIn(
+            "control = self.native_adapter.activate_and_focused_control(",
+            self.source,
+        )
         self.assertIn("control.window_count >= 1", self.source)
         self.assertIn("control.main_window", self.source)
         self.assertIn("control.frontmost", self.source)
         self.assertIn('control.kind != "application-dialog"', self.source)
         self.assertIn('return {"selected": True, "control": control}', self.source)
         self.assertIn(
-            "NativeKey.A,\n"
+            "self.native_adapter.post_key_to_process(\n"
+            "            client.process_id or 0,\n"
+            "            NativeKey.A,\n"
             "            modifiers=(NativeModifier.PRIMARY,),",
             self.source,
         )
-        self.assertIn("NativeKey.DELETE, private_source=True", self.source)
+        self.assertIn(
+            "client.process_id or 0,\n"
+            "            NativeKey.DELETE,\n"
+            "            private_source=True,",
+            self.source,
+        )
         self.assertIn('control.value == ""', self.source)
         self.assertIn(
             "poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS",
@@ -1395,7 +1586,17 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn('control.value == str(selected_path)', self.source)
         self.assertIn(
-            "self.native_adapter.reveal_file_chooser_location()",
+            "revealed_control = "
+            "self.native_adapter.reveal_file_chooser_location_to_process(",
+            self.source,
+        )
+        self.assertIn("if revealed_control is None:", self.source)
+        self.assertIn(
+            'elif revealed_control.kind != "text-field":',
+            self.source,
+        )
+        self.assertIn(
+            "Native file chooser reveal returned an invalid control",
             self.source,
         )
         self.assertNotIn(
@@ -1404,7 +1605,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
         self.assertIn(
-            "NativeKey.V,\n"
+            "self.native_adapter.post_key_to_process(\n"
+            "                client.process_id or 0,\n"
+            "                NativeKey.V,\n"
             "                modifiers=(NativeModifier.PRIMARY,),",
             self.source,
         )
@@ -1605,11 +1808,19 @@ class NativeProductClosureStaticTests(unittest.TestCase):
     def test_reaction_fault_transport_is_ready_before_alice_login(self) -> None:
         self.assertIn("self.reaction_proxy.start()", self.source)
         self.assertIn(
-            "self.runtime_binding.expose_orchestrator_endpoint(",
+            "self.runtime_binding.create_transport_override(",
             self.source,
         )
-        self.assertIn("actor_station_url = (", self.source)
-        self.assertIn("self.reaction_endpoint_url", self.source)
+        self.assertIn(
+            "self.runtime_binding.apply_transport_override(",
+            self.source,
+        )
+        self.assertIn(
+            "self.runtime_binding.clear_transport_override(",
+            self.source,
+        )
+        self.assertNotIn("expose_orchestrator_endpoint(", self.source)
+        self.assertNotIn("reaction_endpoint_url", self.source)
         self.assertNotIn(
             '"PEERS_STATION_URL"', self.source,
             "D-18: Station URL must not be injected by runners",
@@ -1627,8 +1838,17 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertLess(
             self.source.index("self.reaction_proxy.start()"),
             self.source.index(
-                "self.runtime_binding.expose_orchestrator_endpoint("
+                "self.runtime_binding.create_transport_override("
             ),
+        )
+        launch_start = self.source.index("    def launch_actor(")
+        launch_end = self.source.index("\n    def ", launch_start + 8)
+        launch_source = self.source[launch_start:launch_end]
+        self.assertLess(
+            launch_source.index(
+                "self.runtime_binding.apply_transport_override("
+            ),
+            launch_source.index('"loginWithPassword"'),
         )
 
     def test_runtime_endpoint_releases_before_local_proxy(self) -> None:
@@ -1766,12 +1986,16 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         launch_end = self.source.index("    def restart_actor(", launch_start)
         launch_source = self.source[launch_start:launch_end]
         self.assertLess(
+            launch_source.index(
+                "self.runtime_binding.create_bound_session("
+            ),
             launch_source.index("self.runtime_instances.append(client)"),
-            launch_source.index("client.start()"),
         )
         self.assertLess(
             launch_source.index("self.runtime_launches.append(attempt)"),
-            launch_source.index("client.start()"),
+            launch_source.index(
+                "self.client_lifecycles.mark_live(client)"
+            ),
         )
         cleanup_start = self.source.index("    def cleanup_clients(")
         cleanup_end = self.source.index("    def run(", cleanup_start)
@@ -1791,6 +2015,32 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             'self.step("runtime.logs.clean"',
             self.source,
         )
+
+    def test_product_failure_remains_primary_when_cleanup_also_fails(self) -> None:
+        gate = object.__new__(NativeProductClosureGate)
+        gate.steps = []
+        gate.report = new_report(gate.gate_id)
+
+        with self.assertRaisesRegex(GateError, "group timed out"):
+            gate.step(
+                "group.create.ui",
+                lambda: (_ for _ in ()).throw(GateError("group timed out")),
+            )
+
+        self.assertEqual(gate.report.runtime["firstFailedStep"], "group.create.ui")
+        self.assertEqual(
+            gate.report.runtime["steps"],
+            [{
+                "step": "group.create.ui",
+                "status": "fail",
+                "error": "group timed out",
+            }],
+        )
+        self.assertIn(
+            "cleanup = cleanup_preserving_primary_failure(",
+            self.source,
+        )
+        self.assertIn('self.report.runtime["cleanup"] = result', self.source)
 
     def test_group_creation_waits_for_exact_projected_state_once(self) -> None:
         self.assertIn(
@@ -1819,7 +2069,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.http_gateway.index('"messaging_create_group" => {'):
             self.http_gateway.index('"messaging_membership_transition" => {')
         ]
-        self.assertIn('.get("conversation_id")', browser_group_create)
+        self.assertIn(
+            "parse_args::<",
+            browser_group_create,
+        )
+        self.assertIn(
+            "MessagingCreateGroupInput",
+            browser_group_create,
+        )
+        self.assertIn(
+            "messaging_create_group_with_engine(",
+            browser_group_create,
+        )
         self.assertNotIn("ulid::Ulid::new()", browser_group_create)
 
     def test_conversation_pane_stays_inside_the_native_viewport(self) -> None:
@@ -1865,7 +2126,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '"group-create", ("alice",)',
             '"group-open", ("alice", "bob")',
             '"thread", ("alice",)',
-            '"reaction-picker", (actor,)',
             '"reaction-error", ("alice",)',
             '"identity", ("alice", "bob")',
             '"background-picker", (actor,)',
@@ -1885,6 +2145,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                 f"self.capture_visible_localization({checkpoint})",
                 self.source,
             )
+        self.assertIn(
+            'self.localization_checks.setdefault("reaction-picker", {})[actor] = []',
+            self.source,
+        )
         self.assertIn(
             'self.step("localization.visible", self.prove_visible_localization)',
             self.source,
@@ -1915,6 +2179,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "data-chat-search-result-peer-ptid={conversation.peerPtid || ''}",
             self.chat_search_dropdown,
         )
+        self.assertIn("const profile = peerProfiles[peerId];", self.chat_session_list)
+        self.assertIn("|| profile?.display_name", self.chat_session_list)
+        self.assertIn("|| profile?.username", self.chat_session_list)
+        self.assertIn("|| peerId;", self.chat_session_list)
         self.assertIn(
             'data-chat-search-result-peer-ptid="{peer_ptid}"',
             self.source,
@@ -1981,7 +2249,33 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn('aria-haspopup="dialog"', self.message_action_overlay)
 
-    def test_keyboard_navigation_waits_for_native_focus_transition(self) -> None:
+    def test_toolbar_initial_focus_is_one_shot_per_activation(self) -> None:
+        focus_ref = self.message_action_overlay.index(
+            "const focusedActivationRef = useRef<MessageActionTarget | null>(null);"
+        )
+        focus_effect = self.message_action_overlay.index(
+            "if (!target?.requestFocus || !geometry || pickerOpen) return;",
+            focus_ref,
+        )
+        activation_guard = self.message_action_overlay.index(
+            "if (focusedActivationRef.current === target) return;",
+            focus_effect,
+        )
+        activation_mark = self.message_action_overlay.index(
+            "focusedActivationRef.current = target;",
+            activation_guard,
+        )
+        toolbar_focus = self.message_action_overlay.index(
+            "surfaceRef.current?.querySelector<HTMLButtonElement>"
+            "('[data-message-action]')?.focus();",
+            activation_mark,
+        )
+
+        self.assertLess(focus_effect, activation_guard)
+        self.assertLess(activation_guard, activation_mark)
+        self.assertLess(activation_mark, toolbar_focus)
+
+    def test_keyboard_navigation_uses_one_target_bound_sequence(self) -> None:
         keyboard_path_start = self.source.index(
             "def prove_keyboard_reaction_picker(",
         )
@@ -1990,17 +2284,75 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             keyboard_path_start,
         )
         keyboard_path = self.source[keyboard_path_start:keyboard_path_end]
-        tab_post = keyboard_path.index(
-            "self.native_adapter.post_key("
-            "NativeKey.TAB, private_source=True)"
+        row_focus = keyboard_path.index(
+            '"arguments[0].focus({ preventScroll: true });"'
         )
-        focus_wait = keyboard_path.index(
-            "WebDriverWait(client.driver, 5).until(",
-            tab_post,
+        row_focus_wait = keyboard_path.index(
+            "return document.activeElement === row && Boolean(toolbar);",
+            row_focus,
         )
-        changed_focus = keyboard_path.index("!= action", focus_wait)
-        self.assertLess(tab_post, focus_wait)
-        self.assertLess(focus_wait, changed_focus)
+        sequence_post = keyboard_path.index(
+            "self.native_adapter.post_key_sequence_to_process(\n"
+            "            process_id,\n"
+            "            (",
+            row_focus_wait,
+        )
+        sequence_keys = keyboard_path.index(
+            "NativeKey.ENTER,\n"
+            "                NativeKey.TAB,\n"
+            "                NativeKey.ENTER,",
+            sequence_post,
+        )
+        picker_wait = keyboard_path.index(
+            "WebDriverWait(client.driver, 15).until(",
+            sequence_keys,
+        )
+        self.assertNotIn("self.click_element(actor, row)", keyboard_path)
+        self.assertLess(row_focus, row_focus_wait)
+        self.assertLess(row_focus_wait, sequence_post)
+        self.assertLess(sequence_post, sequence_keys)
+        self.assertLess(sequence_keys, picker_wait)
+        self.assertIn(
+            "interval_seconds=NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS",
+            keyboard_path,
+        )
+        self.assertNotIn("self.native_adapter.post_key(", keyboard_path)
+        self.assertNotIn(
+            "self.native_adapter.post_key_to_process(",
+            keyboard_path,
+        )
+
+    def test_reaction_selection_uses_atomic_native_keyboard_sequences(self) -> None:
+        selection_start = self.source.index(
+            "def prove_keyboard_reaction_picker(",
+        )
+        selection_end = self.source.index(
+            "def reaction_visible(",
+            selection_start,
+        )
+        selection_source = self.source[selection_start:selection_end]
+        reaction_start = self.source.index("def prove_reaction(")
+        reaction_end = self.source.index(
+            "def prove_identity_station(",
+            reaction_start,
+        )
+        reaction_source = self.source[reaction_start:reaction_end]
+
+        self.assertIn(
+            "NativeKey.ENTER,\n"
+            "                NativeKey.TAB,\n"
+            "                NativeKey.ENTER,\n"
+            "                NativeKey.ENTER,",
+            selection_source,
+        )
+        self.assertIn("reaction_picker_localized", selection_source)
+        self.assertIn("return str(selected_emoji)", selection_source)
+        self.assertEqual(
+            reaction_source.count(
+                "self.prove_keyboard_reaction_picker("
+            ),
+            2,
+        )
 
     def test_reaction_connection_loss_proves_automatic_exact_retry(self) -> None:
         reaction_start = self.source.index("def prove_reaction(")
@@ -2021,9 +2373,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("len(command_hashes) < 2", reaction_source)
         self.assertIn("len(set(command_hashes)) != 1", reaction_source)
         self.assertIn(
-            'forwarded_paths.get("/messaging/command/submit")',
+            'forwarded_paths.get("/conversation/command")',
             reaction_source,
         )
+        self.assertNotIn('forwarded_paths.get("/messaging/', reaction_source)
         self.assertNotIn(
             "f'[data-message-reaction-retry=\"{message_id}\"]'",
             reaction_source,

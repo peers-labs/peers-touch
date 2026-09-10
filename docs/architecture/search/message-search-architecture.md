@@ -2,6 +2,12 @@
 
 > Full-text message search for Peers-Touch chat with user isolation and E2E encryption compatibility.
 > Defines search model, indexing strategy, user isolation, encryption interaction, and implementation plan per layer.
+>
+> Conversation is the sole Station Chat business entry point under
+> `/conversation/*`. Device, Inbox, Recovery, Key Exchange, and Federation
+> expose `/device/*`, `/device/inbox/*`, `/recovery/*`, `/key-exchange/*`, and
+> peer-only `/federation/*`; search does not introduce a Station Messaging
+> facade or a chat-type-specific API family.
 
 ---
 
@@ -31,8 +37,7 @@ This document does not define:
 
 | Layer | Search Capability | Issues |
 |-------|------------------|--------|
-| Station group_chat | `LIKE '%query%'` on PostgreSQL | No index, O(n) scan, no relevance ranking |
-| Station friend_chat | **None** | No search endpoint exists |
+| Station Conversation | Conversation-scoped reads | Full-text indexing and one canonical search contract remain to be completed |
 | Station frame | Stubbed `HandleSearchMessages` (returns empty) | Not implemented |
 | Desktop Rust | SQLCipher FTS5 on `chat_messages_fts` | Exists but **not wired** to TS UI |
 | Desktop TS | No search UI for messages | — |
@@ -125,27 +130,19 @@ User isolation is enforced at **every layer** through different mechanisms:
 
 ### 4.2 Station-Side Isolation Rules
 
-**friend_chat search:**
+**Conversation search:**
 ```sql
--- User can only search sessions they participate in
-SELECT m.* FROM friend_messages m
-JOIN friend_sessions s ON m.session_ulid = s.ulid
-WHERE (s.participant_a_did = $actor_did OR s.participant_b_did = $actor_did)
+-- User can only search conversations in which they are an active member.
+SELECT m.* FROM conversation_messages m
+JOIN conversation_members member ON m.conversation_id = member.conversation_id
+WHERE member.actor_did = $actor_did
   AND to_tsvector('simple', m.content) @@ plainto_tsquery('simple', $query)
 ORDER BY ts_rank(to_tsvector('simple', m.content), plainto_tsquery('simple', $query)) DESC
 LIMIT $limit;
 ```
 
-**group_chat search:**
-```sql
--- User can only search groups they are a member of
-SELECT m.* FROM group_messages m
-JOIN group_members mem ON m.group_ulid = mem.group_ulid
-WHERE mem.actor_did = $actor_did
-  AND to_tsvector('simple', m.content) @@ plainto_tsquery('simple', $query)
-ORDER BY ts_rank(to_tsvector('simple', m.content), plainto_tsquery('simple', $query)) DESC
-LIMIT $limit;
-```
+Direct and Group are Conversation kinds. They share this membership guard and
+must not create parallel search handlers or route families.
 
 ### 4.3 Desktop-Side Isolation Rules
 
@@ -160,49 +157,39 @@ LIMIT $limit;
 
 ### 5.1 PostgreSQL FTS Setup
 
-**Migration for friend_chat messages:**
+**Migration for Conversation messages:**
 
 ```sql
 -- Add tsvector column with GIN index
-ALTER TABLE friend_message_models
+ALTER TABLE conversation_messages
   ADD COLUMN content_tsv tsvector
   GENERATED ALWAYS AS (to_tsvector('simple', coalesce(content, ''))) STORED;
 
-CREATE INDEX idx_friend_messages_fts ON friend_message_models USING GIN (content_tsv);
-```
-
-**Migration for group messages:**
-
-```sql
-ALTER TABLE group_message_models
-  ADD COLUMN content_tsv tsvector
-  GENERATED ALWAYS AS (to_tsvector('simple', coalesce(content, ''))) STORED;
-
-CREATE INDEX idx_group_messages_fts ON group_message_models USING GIN (content_tsv);
+CREATE INDEX idx_conversation_messages_fts ON conversation_messages USING GIN (content_tsv);
 ```
 
 **Language configuration**: Use `'simple'` config for language-agnostic tokenization (supports English, Chinese, etc. without stemming). For CJK-specific tokenization, add `pg_bigm` or `zhparser` extension later.
 
-### 5.2 Friend Chat Search Endpoint
+### 5.2 Conversation Search Endpoint
 
-**New handler in `friend_chat/handler.go`:**
+**Handler in the Conversation interface layer:**
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/friend-chat/messages/search` | Search messages across all friend sessions |
+| GET | `/conversation/messages/search` | Search messages across authorized Direct and Group Conversations |
 
 **Proto:**
 
 ```protobuf
-message SearchFriendMessagesRequest {
+message SearchConversationMessagesRequest {
   string query = 1;
-  string session_ulid = 2;  // optional: scope to one session
+  string conversation_id = 2;  // optional: scope to one Conversation
   int32 limit = 3;
   int32 offset = 4;
 }
 
-message SearchFriendMessagesResponse {
-  repeated FriendChatMessage messages = 1;
+message SearchConversationMessagesResponse {
+  repeated ConversationMessage messages = 1;
   int32 total = 2;
 }
 ```
@@ -210,14 +197,14 @@ message SearchFriendMessagesResponse {
 **Repo implementation:**
 
 ```go
-func (r *GormRepo) SearchMessages(actorDID, query, sessionUlid string, limit, offset int) ([]domain.Message, int, error) {
-    base := r.db.Model(&MessageModel{}).
-        Joins("JOIN session_models ON message_models.session_ulid = session_models.ulid").
-        Where("(session_models.participant_a_did = ? OR session_models.participant_b_did = ?)", actorDID, actorDID).
-        Where("message_models.content_tsv @@ plainto_tsquery('simple', ?)", query)
+func (r *ConversationRepository) SearchMessages(actorDID, query, conversationID string, limit, offset int) ([]domain.Message, int, error) {
+    base := r.db.Model(&ConversationMessageModel{}).
+        Joins("JOIN conversation_members ON conversation_messages.conversation_id = conversation_members.conversation_id").
+        Where("conversation_members.actor_did = ?", actorDID).
+        Where("conversation_messages.content_tsv @@ plainto_tsquery('simple', ?)", query)
 
-    if sessionUlid != "" {
-        base = base.Where("message_models.session_ulid = ?", sessionUlid)
+    if conversationID != "" {
+        base = base.Where("conversation_messages.conversation_id = ?", conversationID)
     }
 
     var total int64
@@ -230,18 +217,11 @@ func (r *GormRepo) SearchMessages(actorDID, query, sessionUlid string, limit, of
 }
 ```
 
-### 5.3 Upgrade Group Chat Search
+### 5.3 Conversation Kind Filtering
 
-Replace `LIKE` with `tsvector`:
-
-```go
-// Before (O(n) scan)
-s.db.Where("group_ulid = ? AND content LIKE ?", groupID, "%"+query+"%")
-
-// After (GIN index, ranked)
-s.db.Where("group_ulid = ? AND content_tsv @@ plainto_tsquery('simple', ?)", groupID, query).
-    Order("ts_rank(content_tsv, plainto_tsquery('simple', ?)) DESC", query)
-```
+An optional Conversation kind filter may narrow the same query to Direct or
+Group. It remains a field on the Conversation search contract, not another
+handler, repository, or public route family.
 
 ---
 
@@ -254,7 +234,7 @@ The `local_chat_store.rs` already has:
 - `chat_messages` table with `scope`, `conversation_id`, `message_id`, `sender_did`, `content`, `sent_at`
 - `chat_messages_fts` FTS5 virtual table indexing `content`
 - `search_local()` function using `MATCH`
-- `ingest_friend_messages()` and `ingest_group_messages()` that populate the local cache
+- Conversation ingestion paths that populate the local cache for Direct and Group kinds
 
 ### 6.2 What Needs Wiring
 
@@ -284,21 +264,22 @@ chatSearchLocal: (query: string, scope?: string, limit?: number) =>
 
 ### 6.3 Message Sync for Local Index
 
-Messages are ingested into the local store via `ingest_friend_messages` / `ingest_group_messages` (called after `friend_chat_list_messages` and `group_chat_send_message`). This already happens in the Tauri commands.
+Messages are ingested into the local store after canonical Conversation reads
+and commands. Direct and Group adapters may project different UI shapes, but
+they consume the same Conversation business API.
 
 For comprehensive local search, we need a **background sync** that fetches all historical messages:
 
 ```
 On login / periodic:
-  1. For each friend session:
+  1. For each Conversation:
      - Get local sync cursor
-     - Fetch messages from Station since cursor (paginated)
+     - Fetch messages from Station Conversation since cursor (paginated)
      - Ingest into local store
      - Update cursor
-  2. Same for each group
 ```
 
-This is already partially implemented via `friend_chat_background_sync` Tauri command.
+The runtime owns this background sync; pages do not create a second refresh path.
 
 ### 6.4 E2E Integration
 
@@ -390,19 +371,18 @@ interface SearchResult {
 - [ ] Wire in-conversation search button
 - [ ] Test with existing local message cache
 
-### Phase 2: Station FTS Upgrade (Week 2)
+### Phase 2: Station Conversation FTS Upgrade (Week 2)
 
-- [ ] Add `content_tsv` generated column + GIN index to friend_chat messages
-- [ ] Add `content_tsv` + GIN index to group_chat messages
-- [ ] Add `SearchMessages` to friend_chat repo/service/handler
-- [ ] Upgrade group_chat search from LIKE to tsvector
+- [ ] Add one `content_tsv` generated column + GIN index to Conversation messages
+- [ ] Add `SearchMessages` to Conversation repository/application/interface layers
+- [ ] Enforce Conversation membership and optional kind filtering in one query path
 - [ ] Add Rust Tauri commands for remote search
 - [ ] Wire remote search as fallback in TS store
 
 ### Phase 3: Background Sync (Week 3)
 
-- [ ] Ensure `friend_chat_background_sync` covers all sessions
-- [ ] Add equivalent for group chat
+- [ ] Ensure Conversation background sync covers every authorized Conversation
+- [ ] Preserve Direct and Group kind projections without separate Station APIs
 - [ ] Sync on login + periodic (every 5 minutes)
 - [ ] Progress indicator for initial sync
 

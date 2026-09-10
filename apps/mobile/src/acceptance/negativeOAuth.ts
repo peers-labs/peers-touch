@@ -54,11 +54,11 @@ export async function submitNegativeOAuthCallback(
 }
 
 export async function purgeNativeOAuth(
-  input: OAuthPurgeInput,
+  input?: OAuthPurgeInput,
 ): Promise<OAuthPurgeOutput> {
   const result = await invoke<unknown>(
     'oauth_logout_purge',
-    { input },
+    { input: input ?? null },
   );
   return sanitizeOAuthPurgeOutput(result);
 }

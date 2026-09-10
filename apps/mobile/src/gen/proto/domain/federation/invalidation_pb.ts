@@ -139,4 +139,3 @@ export enum FederationInvalidation_Reason {
  */
 export const FederationInvalidation_ReasonSchema: GenEnum<FederationInvalidation_Reason> = /*@__PURE__*/
   enumDesc(file_domain_federation_invalidation, 0, 0);
-

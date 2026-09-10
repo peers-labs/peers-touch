@@ -112,7 +112,7 @@ func revisionConversationToProto(conversation *domain.Conversation) *model.Conve
 	return &model.Conversation{
 		ConversationId:        conversation.ConversationID,
 		AgentId:               conversation.AgentID,
-		Ptid:                  conversation.Ptid,
+		ActorPtid:             conversation.ActorPTID,
 		Title:                 conversation.Title,
 		Description:           conversation.Description,
 		ProviderId:            conversation.ProviderID,

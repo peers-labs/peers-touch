@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import socket
+import socketserver
 import tempfile
+import threading
 import unittest
+import urllib.request
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -11,6 +15,143 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationRuntimeClient,
     FoundationRuntimePair,
 )
+from tooling.acceptance.gates.agent.tcp_fault_proxy import (
+    TcpFaultProxy,
+    TcpFaultProxyCutController,
+    TcpFaultProxyError,
+)
+
+
+class _EchoHandler(socketserver.BaseRequestHandler):
+    def handle(self) -> None:
+        while True:
+            data = self.request.recv(4096)
+            if not data:
+                return
+            self.request.sendall(data)
+
+
+class TcpFaultProxyTest(unittest.TestCase):
+    def test_rejects_https_to_preserve_tls_endpoint_identity(self) -> None:
+        with self.assertRaisesRegex(
+            TcpFaultProxyError,
+            "requires an HTTP Station URL",
+        ):
+            TcpFaultProxy.from_url("https://station.example")
+
+    def test_cut_restore_and_close_control_real_tcp_path(self) -> None:
+        server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _EchoHandler)
+        server.daemon_threads = True
+        server_thread = threading.Thread(
+            target=server.serve_forever,
+            daemon=True,
+        )
+        server_thread.start()
+        proxy = TcpFaultProxy(
+            "127.0.0.1",
+            int(server.server_address[1]),
+            scheme="http",
+        )
+        proxy.start()
+
+        try:
+            with socket.create_connection(
+                ("127.0.0.1", proxy.port),
+                timeout=2,
+            ) as client:
+                client.settimeout(2)
+                client.sendall(b"before-cut")
+                self.assertEqual(client.recv(64), b"before-cut")
+                proxy.cut()
+                try:
+                    client.sendall(b"after-cut")
+                    self.assertNotEqual(client.recv(64), b"after-cut")
+                except OSError:
+                    pass
+
+            proxy.restore()
+            with socket.create_connection(
+                ("127.0.0.1", proxy.port),
+                timeout=2,
+            ) as client:
+                client.settimeout(2)
+                client.sendall(b"after-restore")
+                self.assertEqual(client.recv(64), b"after-restore")
+        finally:
+            proxy.close()
+            server.shutdown()
+            server.server_close()
+            server_thread.join(timeout=2)
+
+        with socket.socket() as probe:
+            self.assertNotEqual(
+                probe.connect_ex(("127.0.0.1", proxy.port)),
+                0,
+            )
+
+    def test_cut_rejects_connection_that_was_dialing_before_restore(self) -> None:
+        connect_started = threading.Event()
+        release_connect = threading.Event()
+        proxy_side, upstream_side = socket.socketpair()
+        upstream_side.settimeout(2)
+
+        def connect_upstream(
+            _address: tuple[str, int],
+            timeout: float,
+        ) -> socket.socket:
+            self.assertEqual(timeout, 10)
+            connect_started.set()
+            self.assertTrue(release_connect.wait(timeout=2))
+            return proxy_side
+
+        proxy = TcpFaultProxy("127.0.0.1", 1, scheme="http")
+        proxy.start()
+        downstream = socket.socket()
+        downstream.settimeout(2)
+        try:
+            with patch(
+                "tooling.acceptance.gates.agent.tcp_fault_proxy."
+                "socket.create_connection",
+                side_effect=connect_upstream,
+            ):
+                downstream.connect(("127.0.0.1", proxy.port))
+                self.assertTrue(connect_started.wait(timeout=2))
+                proxy.cut()
+                proxy.restore()
+                release_connect.set()
+                self.assertEqual(upstream_side.recv(1), b"")
+        finally:
+            release_connect.set()
+            downstream.close()
+            proxy_side.close()
+            upstream_side.close()
+            proxy.close()
+
+    def test_cut_controller_acknowledges_completed_proxy_cut(self) -> None:
+        proxy = TcpFaultProxy("127.0.0.1", 1, scheme="http")
+        controller = TcpFaultProxyCutController(proxy)
+        proxy.start()
+        controller.start()
+
+        try:
+            with patch.object(proxy, "cut") as cut:
+                request = urllib.request.Request(
+                    controller.cut_url,
+                    method="POST",
+                )
+                with urllib.request.urlopen(request, timeout=2) as response:
+                    self.assertEqual(response.status, 204)
+                cut.assert_called_once_with()
+        finally:
+            controller.close()
+            proxy.close()
+
+        self.assertFalse(controller.is_alive)
+        with socket.socket() as probe:
+            self.assertNotEqual(
+                probe.connect_ex(("127.0.0.1", controller.port)),
+                0,
+            )
 
 
 class FoundationClientSpecTest(unittest.TestCase):
@@ -38,6 +179,16 @@ class FoundationClientSpecTest(unittest.TestCase):
             (browser.make_target, browser.surface),
             ("desktop-web", "browser"),
         )
+        self.assertEqual(
+            native.cargo_target_dir,
+            root.resolve()
+            / ".local"
+            / "acceptance"
+            / "cargo-target"
+            / "agent-v2"
+            / "native-tauri",
+        )
+        self.assertNotEqual(native.cargo_target_dir, browser.cargo_target_dir)
 
     def test_rejects_unknown_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -52,17 +203,35 @@ class FoundationClientSpecTest(unittest.TestCase):
             root = Path(directory)
             client = FoundationRuntimeClient(
                 self.spec(root, "browser"),
-                station_url="https://station.example/",
+                station_url="http://station.example/",
                 profile_env={"PT_STATION_DEPLOY_ENV": "station-1"},
             )
             environment = client.launch_environment()
+
+            self.assertFalse(hasattr(client, "station_url"))
+            self.assertTrue(
+                environment["PEERS_STATION_URL"].startswith(
+                    "http://127.0.0.1:",
+                )
+            )
+            client.stop()
 
         self.assertEqual(environment["PT_DEV_PROFILE"], "one")
         self.assertEqual(environment["PT_PROFILE"], "foundation-browser")
         self.assertEqual(environment["GATEWAY_PORT"], "23030")
         self.assertEqual(environment["WEB_PORT"], "23210")
-        self.assertEqual(environment["PEERS_STATION_URL"], "https://station.example")
         self.assertEqual(environment["PT_DESKTOP_E2E"], "true")
+        self.assertEqual(
+            environment["CARGO_TARGET_DIR"],
+            str(
+                root.resolve()
+                / ".local"
+                / "acceptance"
+                / "cargo-target"
+                / "agent-v2"
+                / "browser"
+            ),
+        )
         self.assertEqual(
             environment["PEERS_ACTOR_IDENTITY_ROOT"],
             str(root / "actor-identity"),
@@ -92,11 +261,12 @@ class FoundationClientSpecTest(unittest.TestCase):
             }
             pair = FoundationRuntimePair.from_manifest(
                 {
-                    "station": {"url": "https://station.example"},
+                    "station": {"url": "http://station.example"},
                     "clients": [native, browser],
                 },
                 profile_env={},
             )
+            pair.stop()
 
         self.assertEqual(pair.native.spec.runtime, "native-tauri")
         self.assertEqual(pair.browser.spec.runtime, "browser")
@@ -104,6 +274,123 @@ class FoundationClientSpecTest(unittest.TestCase):
             pair.native.actor_identity_root,
             pair.browser.actor_identity_root,
         )
+
+    def test_start_failure_releases_fault_proxy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "browser"),
+                station_url="http://station.example",
+                profile_env={},
+            )
+            proxy_port = client._station_proxy.port
+            control_port = client._fault_controller.port
+            with (
+                patch.object(
+                    client,
+                    "_write_runtime_profile",
+                    side_effect=RuntimeError("profile failed"),
+                ),
+                patch.object(
+                    client,
+                    "_stop_runtime",
+                    return_value={"status": "clean", "failures": []},
+                ) as stop_runtime,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "profile failed"):
+                    client.start()
+
+            stop_runtime.assert_called_once_with(
+                logout=False,
+                remove_storage=True,
+            )
+            self.assertFalse(client._station_proxy.is_alive)
+            self.assertFalse(client._fault_controller.is_alive)
+            with socket.socket() as probe:
+                self.assertNotEqual(
+                    probe.connect_ex(("127.0.0.1", proxy_port)),
+                    0,
+                )
+            with socket.socket() as probe:
+                self.assertNotEqual(
+                    probe.connect_ex(("127.0.0.1", control_port)),
+                    0,
+                )
+
+    def test_start_rollback_error_still_releases_fault_proxy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "browser"),
+                station_url="http://station.example",
+                profile_env={},
+            )
+            proxy_port = client._station_proxy.port
+            control_port = client._fault_controller.port
+            with (
+                patch.object(
+                    client,
+                    "_write_runtime_profile",
+                    side_effect=RuntimeError("profile failed"),
+                ),
+                patch.object(
+                    client,
+                    "_stop_runtime",
+                    side_effect=RuntimeError("rollback failed"),
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    FoundationClientError,
+                    "rollback failed",
+                ):
+                    client.start()
+
+            self.assertFalse(client._station_proxy.is_alive)
+            self.assertFalse(client._fault_controller.is_alive)
+            with socket.socket() as probe:
+                self.assertNotEqual(
+                    probe.connect_ex(("127.0.0.1", proxy_port)),
+                    0,
+                )
+            with socket.socket() as probe:
+                self.assertNotEqual(
+                    probe.connect_ex(("127.0.0.1", control_port)),
+                    0,
+                )
+
+    def test_stop_runtime_error_still_releases_fault_proxy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "browser"),
+                station_url="http://station.example",
+                profile_env={},
+            )
+            client._station_proxy.start()
+            client._fault_controller.start()
+            proxy_port = client._station_proxy.port
+            control_port = client._fault_controller.port
+            with patch.object(
+                client,
+                "_stop_runtime",
+                side_effect=RuntimeError("runtime cleanup failed"),
+            ):
+                result = client.stop()
+
+            self.assertEqual(result["status"], "failed")
+            self.assertIn(
+                "runtime cleanup: runtime cleanup failed",
+                result["failures"],
+            )
+            self.assertFalse(client._station_proxy.is_alive)
+            self.assertFalse(client._fault_controller.is_alive)
+            with socket.socket() as probe:
+                self.assertNotEqual(
+                    probe.connect_ex(("127.0.0.1", proxy_port)),
+                    0,
+                )
+            with socket.socket() as probe:
+                self.assertNotEqual(
+                    probe.connect_ex(("127.0.0.1", control_port)),
+                    0,
+                )
 
     def test_runtime_pair_rejects_missing_browser_client(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -123,7 +410,7 @@ class FoundationClientSpecTest(unittest.TestCase):
             ):
                 FoundationRuntimePair.from_manifest(
                     {
-                        "station": {"url": "https://station.example"},
+                        "station": {"url": "http://station.example"},
                         "clients": [native],
                     },
                     profile_env={},
@@ -134,7 +421,7 @@ class FoundationClientSpecTest(unittest.TestCase):
             root = Path(directory)
             client = FoundationRuntimeClient(
                 self.spec(root, "browser"),
-                station_url="https://station.example",
+                station_url="http://station.example",
                 profile_env={},
             )
             with (
@@ -146,6 +433,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 patch.object(client, "start") as start,
             ):
                 client.restart()
+            client.stop()
 
         stop_runtime.assert_called_once_with(
             logout=False,
@@ -157,7 +445,7 @@ class FoundationClientSpecTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
                 self.spec(Path(directory), "native-tauri"),
-                station_url="https://station.example",
+                station_url="http://station.example",
                 profile_env={},
             )
             client.driver = object()
@@ -175,6 +463,37 @@ class FoundationClientSpecTest(unittest.TestCase):
                         "foundationF06DurableReload",
                         {"scenarioKey": "browser|en|AS-F06|sample-001"},
                     )
+            client.driver = None
+            client.stop()
+
+    def test_f06_prepare_injects_private_fault_control_endpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "browser"),
+                station_url="http://station.example",
+                profile_env={},
+            )
+            with patch.object(
+                client,
+                "harness",
+                return_value={"conversationId": "c1", "turnId": "t1"},
+            ) as harness:
+                result = client.prepare_foundation_f06(
+                    {"scenarioKey": "browser|en|AS-F06|sample-001"},
+                    timeout=300,
+                )
+
+            self.assertEqual(result["turnId"], "t1")
+            payload = harness.call_args.args[1]
+            self.assertEqual(
+                payload["faultControlUrl"],
+                client._fault_controller.cut_url,
+            )
+            self.assertNotEqual(
+                payload["faultControlUrl"],
+                client._station_url,
+            )
+            client.stop()
 
     def test_runtime_pair_releases_shared_actor_identity_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -199,7 +518,7 @@ class FoundationClientSpecTest(unittest.TestCase):
             }
             pair = FoundationRuntimePair.from_manifest(
                 {
-                    "station": {"url": "https://station.example"},
+                    "station": {"url": "http://station.example"},
                     "clients": [native, browser],
                 },
                 profile_env={},
@@ -225,7 +544,7 @@ class FoundationClientSpecTest(unittest.TestCase):
             journal.write_text("retained", encoding="utf-8")
             client = FoundationRuntimeClient(
                 spec,
-                station_url="https://station.example",
+                station_url="http://station.example",
                 profile_env={},
             )
 

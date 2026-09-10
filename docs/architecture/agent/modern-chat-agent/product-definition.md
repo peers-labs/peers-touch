@@ -2,7 +2,7 @@
 
 > **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-27
+> **Created**: 2026-07-30 | **Updated**: 2026-09-08
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -130,7 +130,7 @@ scenario and Station readback pass.
 | MCA-P11 | Client portability | required | Desktop now and future Mobile share outcomes without pretending device parity |
 | MCA-P12 | Stateful external Agent runtime | optional-advertised | When enabled, runtime/device/session constraints and reset are explicit |
 | MCA-P13 | Generated artifacts | optional-advertised | When enabled, substantial output has a durable preview/export surface |
-| MCA-P14 | Advanced generation and commercial distribution | deferred | Server-side audio/video generation, commercial marketplace/community, and public sharing are outside the V2 claim |
+| MCA-P14 | Advanced generation and commercial distribution | mixed unsupported/deferred | Image and video generation are unsupported in Peers-Touch; server-side audio generation, commercial marketplace/community, and public sharing remain deferred |
 | MCA-P15 | Multi-Agent collaboration | deferred | Begins only after single-Agent readiness passes |
 
 `optional-advertised` means the product may ship without the capability, but it
@@ -156,7 +156,8 @@ ledger. The brain-map node remains the status source for each mapped capability.
 V2 scope dispositions:
 
 - `G1 Image Generation`: unsupported.
-- `G2 Video Generation`: deferred.
+- `G2 Video Generation`: unsupported in Peers-Touch; any future video product
+  requires a separate project and product contract.
 - `G3b` server-side TTS and other audio generation: deferred.
 - Existing `G3a` client read-aloud remains supported without expanding the
   audio-generation claim.
@@ -204,7 +205,7 @@ V2 scope dispositions:
 | Mobile claim | Contract compatibility is required now; Mobile UI delivery is deferred | 2026-07-30 | APPROVED |
 | V2 Home depth | Include pinned/favorite, Station recents, Agent/model readiness, Chat/Task composer, Brief/Needs You, Task state, Connector/Tool readiness, and recovery; exclude promotion, commercial recommendation, Community, and generation entry points | 2026-08-17 | APPROVED |
 | V2 Evaluation | User-visible Evaluation Lab is required; Station owns benchmark, dataset, test-case, run, result, and metrics truth | 2026-08-17 | APPROVED |
-| V2 generation scope | Image generation is unsupported; video and server-side audio generation are deferred | 2026-08-17 | APPROVED |
+| V2 generation scope | Image and video generation are unsupported in Peers-Touch; any future video capability belongs to a separate project. Server-side audio generation remains deferred | 2026-09-08 | APPROVED |
 | V2 platform claim | Desktop is the complete delivery; Browser preserves Station-backed outcomes with explicit device-capability degradation; Mobile contract compatibility is required while Mobile UI remains deferred | 2026-08-17 | APPROVED |
 | Direct Model thinking mode | Agent default and per-Turn override use `auto / enabled / disabled`; default is `auto`; reasoning effort remains an independent control | 2026-08-27 | APPROVED |
 

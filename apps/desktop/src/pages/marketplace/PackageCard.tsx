@@ -87,7 +87,7 @@ export const MarketplacePackageCard = memo<PackageCardProps>(({
               whiteSpace: 'nowrap',
             }}
           >
-            {entry.publisher || entry.author || t('agent.marketplace.unknownPublisher')}
+            {entry.author || t('agent.marketplace.unknownPublisher')}
           </span>
         </Flexbox>
         <Tag style={{ margin: 0 }}>

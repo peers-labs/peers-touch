@@ -2,130 +2,528 @@ package key_exchange
 
 import (
 	"context"
-	"io"
+	"errors"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
+	"time"
 
-	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	kemodel "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model"
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
-	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
-	"google.golang.org/protobuf/encoding/protojson"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func TestFetchFederatedKeyBundleUsesRelayAndPeerJWT(t *testing.T) {
-	registerKeyExchangeFederationScope()
-	nativefed.ClearRelayClient()
-	defer nativefed.ClearRelayClient()
+const (
+	keyExchangeTestPTID     = "ptid:v1:actor:peers:p:alice:fingerprint"
+	keyExchangeTestDeviceID = "alice-device"
+)
 
-	var sawRelayAuth string
-	var sawPeerAuth string
-	var sawPath string
-	var sawRequest kemodel.FetchKeyBundleRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sawRelayAuth = r.Header.Get("Authorization")
-		sawPeerAuth = r.Header.Get(nativefed.ForwardAuthorizationHeader)
-		sawPath = r.URL.Path
-		if err := protojson.Unmarshal(readKeyExchangeTestBody(t, r), &sawRequest); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-		resp, err := protojson.Marshal(&kemodel.FetchKeyBundleResponse{
-			Bundles: []*kemodel.KeyBundle{{
-				Ptid:              "bob",
-				DeviceId:          "bob-device-1",
-				IkPub:             "aWstcHVi",
-				SpkPub:            "c3BrLXB1Yg==",
-				SpkSig:            "c3BrLXNpZw==",
-				Opks:              []string{"b3Br"},
-				PublishedAtUnixMs: 123,
-				SupportedVersions: []uint32{0, 1},
-			}},
-		})
-		if err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(resp)
-	}))
-	defer server.Close()
-	nativefed.RegisterRelayClient(keyExchangeTestRelayClient{baseURL: server.URL, token: "relay-token"})
-
-	sub := &subServer{
-		localStationID: "station-a",
-		keyCache:       authfed.NewKeyCache(authfed.NewInMemoryKeyStore(), authfed.WithRecheckTTL(0)),
-	}
-	resp, err := sub.fetchFederatedKeyBundle(context.Background(), "station-b", &kemodel.FetchKeyBundleRequest{
-		Ptid:              "bob",
-		DeviceId:          "bob-device-1",
-		HomeStationPeerId: "station-b",
-	})
-	if err != nil {
-		t.Fatalf("fetchFederatedKeyBundle: %v", err)
-	}
-	if len(resp.GetBundles()) != 1 || resp.GetBundles()[0].GetPtid() != "bob" {
-		t.Fatalf("unexpected response: %+v", resp)
-	}
-	if sawPath != "/relay/forward/station-b/key-exchange/keys/bundle/federated-fetch" {
-		t.Fatalf("unexpected relay path: %s", sawPath)
-	}
-	if sawRelayAuth != "Bearer relay-token" {
-		t.Fatalf("expected relay Authorization header, got %q", sawRelayAuth)
-	}
-	if !strings.HasPrefix(sawPeerAuth, "Bearer ") {
-		t.Fatalf("expected forwarded peer auth header, got %q", sawPeerAuth)
-	}
-	if sawRequest.GetPtid() != "bob" || sawRequest.GetDeviceId() != "bob-device-1" || sawRequest.GetHomeStationPeerId() != "" {
-		t.Fatalf("unexpected forwarded request: %+v", &sawRequest)
-	}
+type recordingCanonicalAPI struct {
+	sendActorPTID string
+	sendDeviceID  string
+	sendRequest   *kemodel.SendDirectKeyExchangeRequest
+	sendCalls     int
 }
 
-func TestCurrentLocalStationIDPrefersLateRuntimeIdentityOverInitFallback(t *testing.T) {
-	livePeerID, err := peer.Decode("12D3KooWPMCXa3uQJf47nmcyZ9sJYs2PJ3u9gY6dgLpPF4paRPp6")
-	if err != nil {
-		t.Fatalf("decode peer id: %v", err)
-	}
-	nativefed.SetLocalStationPeerID(livePeerID)
-	defer nativefed.SetLocalStationPeerID("")
-
-	sub := &subServer{localStationID: keyExchangeFallbackLocalStation}
-	if got := sub.currentLocalStationID(); got != livePeerID.String() {
-		t.Fatalf("expected live station identity, got %q", got)
-	}
+func (*recordingCanonicalAPI) UploadDirectKeyBundle(
+	context.Context,
+	string,
+	string,
+	*kemodel.UploadDirectKeyBundleRequest,
+) (*kemodel.UploadDirectKeyBundleResponse, error) {
+	return &kemodel.UploadDirectKeyBundleResponse{}, nil
 }
 
-func TestSelectAuthenticatedDeviceID(t *testing.T) {
-	if _, err := selectAuthenticatedDeviceID("", "device-1"); err == nil {
-		t.Fatal("missing authenticated X-Device-ID must be rejected")
-	}
-	if _, err := selectAuthenticatedDeviceID("device-1", "device-2"); err == nil {
-		t.Fatal("mismatched request device must be rejected")
-	}
-	if got, err := selectAuthenticatedDeviceID(" device-1 ", "device-1"); err != nil || got != "device-1" {
-		t.Fatalf("authenticated device = %q, err = %v", got, err)
-	}
-	if got, err := selectAuthenticatedDeviceID("device-1", ""); err != nil || got != "device-1" {
-		t.Fatalf("header-only authenticated device = %q, err = %v", got, err)
-	}
+func (*recordingCanonicalAPI) FetchDirectKeyBundles(
+	context.Context,
+	string,
+	string,
+	*kemodel.FetchDirectKeyBundlesRequest,
+) (*kemodel.FetchDirectKeyBundlesResponse, error) {
+	return &kemodel.FetchDirectKeyBundlesResponse{}, nil
 }
 
-type keyExchangeTestRelayClient struct {
-	baseURL string
-	token   string
+func (*recordingCanonicalAPI) FetchDirectKeyBundlesForPeer(
+	context.Context,
+	*kemodel.FetchDirectKeyBundlesRequest,
+) (*kemodel.FetchDirectKeyBundlesResponse, error) {
+	return &kemodel.FetchDirectKeyBundlesResponse{}, nil
 }
 
-func (h keyExchangeTestRelayClient) BaseURL() string { return h.baseURL }
-func (h keyExchangeTestRelayClient) Token() string   { return h.token }
-func (h keyExchangeTestRelayClient) Publish(context.Context, string, []byte) error {
+func (*recordingCanonicalAPI) ReplenishDirectOneTimePreKeys(
+	context.Context,
+	string,
+	string,
+	*kemodel.ReplenishDirectOneTimePreKeysRequest,
+) (*kemodel.ReplenishDirectOneTimePreKeysResponse, error) {
+	return &kemodel.ReplenishDirectOneTimePreKeysResponse{}, nil
+}
+
+func (*recordingCanonicalAPI) CountDirectOneTimePreKeys(
+	context.Context,
+	string,
+	string,
+	*kemodel.CountDirectOneTimePreKeysRequest,
+) (*kemodel.CountDirectOneTimePreKeysResponse, error) {
+	return &kemodel.CountDirectOneTimePreKeysResponse{}, nil
+}
+
+func (*recordingCanonicalAPI) UploadMLSKeyPackage(
+	context.Context,
+	string,
+	string,
+	*kemodel.UploadMlsKeyPackageRequest,
+) (*kemodel.UploadMlsKeyPackageResponse, error) {
+	return &kemodel.UploadMlsKeyPackageResponse{}, nil
+}
+
+func (*recordingCanonicalAPI) FetchMLSKeyPackage(
+	context.Context,
+	string,
+	string,
+	*kemodel.FetchMlsKeyPackageRequest,
+) (*kemodel.FetchMlsKeyPackageResponse, error) {
+	return &kemodel.FetchMlsKeyPackageResponse{}, nil
+}
+
+func (*recordingCanonicalAPI) FetchMLSKeyPackageForPeer(
+	context.Context,
+	*kemodel.FetchMlsKeyPackageRequest,
+) (*kemodel.FetchMlsKeyPackageResponse, error) {
+	return &kemodel.FetchMlsKeyPackageResponse{}, nil
+}
+
+func (*recordingCanonicalAPI) CountMLSKeyPackages(
+	context.Context,
+	string,
+	string,
+	*kemodel.CountMlsKeyPackagesRequest,
+) (*kemodel.CountMlsKeyPackagesResponse, error) {
+	return &kemodel.CountMlsKeyPackagesResponse{}, nil
+}
+
+func (*recordingCanonicalAPI) ClaimMLSKeyPackage(
+	context.Context,
+	string,
+	*kemodel.ClaimMlsKeyPackageRequest,
+) (*kemodel.ClaimMlsKeyPackageResponse, error) {
+	return &kemodel.ClaimMlsKeyPackageResponse{}, nil
+}
+
+func (a *recordingCanonicalAPI) SendDirectKeyExchange(
+	_ context.Context,
+	actorPTID string,
+	deviceID string,
+	request *kemodel.SendDirectKeyExchangeRequest,
+) (*kemodel.SendDirectKeyExchangeResponse, error) {
+	a.sendActorPTID = actorPTID
+	a.sendDeviceID = deviceID
+	a.sendRequest = proto.Clone(request).(*kemodel.SendDirectKeyExchangeRequest)
+	a.sendCalls++
+
+	return &kemodel.SendDirectKeyExchangeResponse{
+		EnvelopeId: "envelope-1",
+	}, nil
+}
+
+type keyExchangeTestRequest struct {
+	headers map[string]string
+	method  server.Method
+	path    string
+	body    []byte
+}
+
+func (r keyExchangeTestRequest) Context() context.Context  { return context.Background() }
+func (r keyExchangeTestRequest) Header() map[string]string { return r.headers }
+func (r keyExchangeTestRequest) Method() server.Method     { return r.method }
+func (r keyExchangeTestRequest) Path() string              { return r.path }
+func (r keyExchangeTestRequest) Body() []byte              { return r.body }
+
+type keyExchangeTestResponse struct {
+	headers map[string]string
+	status  int
+	body    []byte
+}
+
+func (r *keyExchangeTestResponse) Header() map[string]string {
+	return r.headers
+}
+
+func (r *keyExchangeTestResponse) SetHeader(key string, value string) {
+	r.headers[key] = value
+}
+
+func (r *keyExchangeTestResponse) Write(body []byte) (int, error) {
+	r.body = append(r.body, body...)
+	return len(body), nil
+}
+
+func (*keyExchangeTestResponse) Flush() error {
 	return nil
 }
 
-func readKeyExchangeTestBody(t *testing.T, r *http.Request) []byte {
-	t.Helper()
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		t.Fatalf("read request body: %v", err)
-	}
-	return body
+func (r *keyExchangeTestResponse) WriteHeader(status int) {
+	r.status = status
 }
+
+func (r *keyExchangeTestResponse) Status() int {
+	return r.status
+}
+
+func TestKeyExchangeHandlersRegisterOnlyCanonicalOwnerRoutes(t *testing.T) {
+	jwtWrapper := keyExchangeTestJWTWrapper()
+	subserver := &subServer{
+		api:        &recordingCanonicalAPI{},
+		jwtWrapper: jwtWrapper,
+	}
+
+	expected := []struct {
+		name   string
+		path   string
+		method server.Method
+	}{
+		{"key-exchange-direct-bundle-upload", uploadDirectKeyBundlePath, server.POST},
+		{"key-exchange-direct-bundle-fetch", fetchDirectKeyBundlesPath, server.POST},
+		{"key-exchange-direct-prekeys-replenish", replenishDirectOneTimePreKeysPath, server.POST},
+		{"key-exchange-direct-prekeys-count", countDirectOneTimePreKeysPath, server.GET},
+		{"key-exchange-mls-key-package-upload", uploadMLSKeyPackagePath, server.POST},
+		{"key-exchange-mls-key-package-fetch", fetchMLSKeyPackagePath, server.POST},
+		{"key-exchange-mls-key-package-count", countMLSKeyPackagesPath, server.GET},
+		{"key-exchange-dkx-send", sendDirectKeyExchangePath, server.POST},
+	}
+
+	handlers := subserver.Handlers()
+	if len(handlers) != len(expected) {
+		t.Fatalf("handler count = %d, want %d", len(handlers), len(expected))
+	}
+	for index, want := range expected {
+		got := handlers[index]
+		if got.Name() != want.name ||
+			got.Path() != want.path ||
+			got.Method() != want.method ||
+			len(got.Wrappers()) != 3 {
+			t.Fatalf(
+				"handler[%d] = name:%q path:%q method:%s wrappers:%d, want %+v",
+				index,
+				got.Name(),
+				got.Path(),
+				got.Method(),
+				len(got.Wrappers()),
+				want,
+			)
+		}
+	}
+
+	forbiddenPath := "/key-exchange/keys/bundle/" + "federated-" + "fetch"
+	for _, handler := range handlers {
+		if handler.Path() == forbiddenPath {
+			t.Fatalf("legacy federated Direct bundle route remains registered")
+		}
+	}
+}
+
+func TestKeyExchangeFederationRoutesAndClaimsAreOperationSpecific(t *testing.T) {
+	if FederationDirectKeyBundlesFetchRoute !=
+		"/federation/key-exchange/keys/bundle/fetch" ||
+		FederationMLSKeyPackageFetchRoute !=
+			"/federation/key-exchange/mls/key-package/fetch" ||
+		FederationMLSKeyPackageClaimRoute !=
+			"/federation/key-exchange/mls-key-package/claim" {
+		t.Fatal("Key Exchange peer route constants do not match the ownership registry")
+	}
+
+	requester := &actormodel.ActorDeviceRef{
+		Actor:    &actormodel.ActorRef{Ptid: keyExchangeTestPTID},
+		DeviceId: keyExchangeTestDeviceID,
+	}
+	directRequest := &kemodel.FetchDirectKeyBundlesRequest{
+		Actor:             &actormodel.ActorRef{Ptid: "ptid:bob"},
+		TargetDeviceId:    "bob-device",
+		HomeStationPeerId: "station-target",
+		RequestId:         "direct-peer-request",
+		Requester:         requester,
+	}
+	directClaims := &authfed.VerifiedClaims{
+		Scope:    FederationDirectKeyBundlesFetchScope,
+		Issuer:   "station-source",
+		Audience: "station-target",
+		Subject:  "station-source",
+		Custom: map[string]string{
+			keyExchangeClaimActorPTID:       "ptid:bob",
+			keyExchangeClaimDeviceID:        "bob-device",
+			keyExchangeClaimRequestID:       "direct-peer-request",
+			keyExchangeClaimRequesterPTID:   keyExchangeTestPTID,
+			keyExchangeClaimRequesterDevice: keyExchangeTestDeviceID,
+			keyExchangeClaimSourceStationID: "station-source",
+			keyExchangeClaimTargetStationID: "station-target",
+		},
+	}
+	if err := ValidateDirectFetchPeerClaims(
+		directClaims,
+		directRequest,
+	); err != nil {
+		t.Fatalf("validate Direct fetch claims: %v", err)
+	}
+	wrongDirectScope := *directClaims
+	wrongDirectScope.Scope = FederationMLSKeyPackageFetchScope
+	if err := ValidateDirectFetchPeerClaims(
+		&wrongDirectScope,
+		directRequest,
+	); err == nil {
+		t.Fatal("Direct fetch accepted the MLS fetch scope")
+	}
+
+	mlsRequest := &kemodel.FetchMlsKeyPackageRequest{
+		Actor:             &actormodel.ActorRef{Ptid: "ptid:bob"},
+		HomeStationPeerId: "station-target",
+		RequestId:         "mls-peer-request",
+		Requester:         requester,
+	}
+	mlsClaims := &authfed.VerifiedClaims{
+		Scope:    FederationMLSKeyPackageFetchScope,
+		Issuer:   "station-source",
+		Audience: "station-target",
+		Subject:  "station-source",
+		Custom: map[string]string{
+			keyExchangeClaimActorPTID:       "ptid:bob",
+			keyExchangeClaimRequestID:       "mls-peer-request",
+			keyExchangeClaimRequesterPTID:   keyExchangeTestPTID,
+			keyExchangeClaimRequesterDevice: keyExchangeTestDeviceID,
+			keyExchangeClaimSourceStationID: "station-source",
+			keyExchangeClaimTargetStationID: "station-target",
+		},
+	}
+	if err := ValidateMLSFetchPeerClaims(mlsClaims, mlsRequest); err != nil {
+		t.Fatalf("validate MLS fetch claims: %v", err)
+	}
+	wrongRequester := *mlsClaims
+	wrongRequester.Custom = make(map[string]string, len(mlsClaims.Custom))
+	for key, value := range mlsClaims.Custom {
+		wrongRequester.Custom[key] = value
+	}
+	wrongRequester.Custom[keyExchangeClaimRequesterDevice] = "other-device"
+	if err := ValidateMLSFetchPeerClaims(
+		&wrongRequester,
+		mlsRequest,
+	); err == nil {
+		t.Fatal("MLS fetch accepted claims for a different requester")
+	}
+
+	expiresAt := time.Unix(1_800_000_000, 0).UTC()
+	claimRequest := &kemodel.ClaimMlsKeyPackageRequest{
+		AuthorityPlanId:        "authority-plan",
+		AuthorityStationPeerId: "station-source",
+		Target: &actormodel.ActorDeviceRef{
+			Actor:    &actormodel.ActorRef{Ptid: "ptid:bob"},
+			DeviceId: "bob-device",
+		},
+		PlanExpiresAt: timestamppb.New(expiresAt),
+		RequestId:     "claim-peer-request",
+	}
+	claimClaims := &authfed.VerifiedClaims{
+		Scope:    FederationMLSKeyPackageClaimScope,
+		Issuer:   "station-source",
+		Audience: "station-target",
+		Subject:  "station-source",
+		Custom: map[string]string{
+			keyExchangeClaimAuthorityPlan:   "authority-plan",
+			keyExchangeClaimActorPTID:       "ptid:bob",
+			keyExchangeClaimDeviceID:        "bob-device",
+			keyExchangeClaimRequestID:       "claim-peer-request",
+			keyExchangeClaimPlanExpiresAt:   expiresAt.Format(time.RFC3339Nano),
+			keyExchangeClaimSourceStationID: "station-source",
+			keyExchangeClaimTargetStationID: "station-target",
+		},
+	}
+	if err := ValidateMLSClaimPeerClaims(claimClaims, claimRequest); err != nil {
+		t.Fatalf("validate MLS claim claims: %v", err)
+	}
+	wrongClaimScope := *claimClaims
+	wrongClaimScope.Scope = FederationMLSKeyPackageFetchScope
+	if err := ValidateMLSClaimPeerClaims(
+		&wrongClaimScope,
+		claimRequest,
+	); err == nil {
+		t.Fatal("MLS claim accepted the MLS fetch scope")
+	}
+}
+
+func TestKeyExchangeHandlerBindsCanonicalActorAndDevice(t *testing.T) {
+	api := &recordingCanonicalAPI{}
+	jwtWrapper := keyExchangeTestJWTWrapper()
+	subserver := &subServer{
+		api:        api,
+		jwtWrapper: jwtWrapper,
+	}
+	request := &kemodel.SendDirectKeyExchangeRequest{
+		SessionId: "session-1",
+	}
+	body, err := proto.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	response := executeKeyExchangeHandler(
+		t,
+		findKeyExchangeHandler(t, subserver.Handlers(), sendDirectKeyExchangePath),
+		keyExchangeTestRequest{
+			headers: map[string]string{
+				"Authorization": "Bearer test",
+				"Content-Type":  "application/protobuf",
+				"X-Device-ID":   keyExchangeTestDeviceID,
+			},
+			method: server.POST,
+			path:   sendDirectKeyExchangePath,
+			body:   body,
+		},
+	)
+	if response.status != http.StatusOK {
+		t.Fatalf("send status = %d, body=%x", response.status, response.body)
+	}
+	if api.sendCalls != 1 ||
+		api.sendActorPTID != keyExchangeTestPTID ||
+		api.sendDeviceID != keyExchangeTestDeviceID ||
+		api.sendRequest.GetSessionId() != request.GetSessionId() {
+		t.Fatalf(
+			"canonical API call = actor:%q device:%q request:%+v calls:%d",
+			api.sendActorPTID,
+			api.sendDeviceID,
+			api.sendRequest,
+			api.sendCalls,
+		)
+	}
+}
+
+func TestKeyExchangeHandlerRejectsMissingAuthenticatedDevice(t *testing.T) {
+	api := &recordingCanonicalAPI{}
+	jwtWrapper := keyExchangeTestJWTWrapper()
+	subserver := &subServer{
+		api:        api,
+		jwtWrapper: jwtWrapper,
+	}
+	body, err := proto.Marshal(&kemodel.SendDirectKeyExchangeRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	response := executeKeyExchangeHandler(
+		t,
+		findKeyExchangeHandler(t, subserver.Handlers(), sendDirectKeyExchangePath),
+		keyExchangeTestRequest{
+			headers: map[string]string{
+				"Authorization": "Bearer test",
+				"Content-Type":  "application/protobuf",
+			},
+			method: server.POST,
+			path:   sendDirectKeyExchangePath,
+			body:   body,
+		},
+	)
+	if response.status != http.StatusUnauthorized {
+		t.Fatalf(
+			"missing-device status = %d, want %d",
+			response.status,
+			http.StatusUnauthorized,
+		)
+	}
+	if api.sendCalls != 0 {
+		t.Fatalf("missing-device request reached canonical API %d times", api.sendCalls)
+	}
+}
+
+func TestMapCanonicalErrorPreservesFailureClass(t *testing.T) {
+	tests := []struct {
+		code   domain.ErrorCode
+		status int
+	}{
+		{domain.ErrorCodeInvalidArgument, http.StatusBadRequest},
+		{domain.ErrorCodeUnauthorized, http.StatusForbidden},
+		{domain.ErrorCodeNotFound, http.StatusNotFound},
+		{domain.ErrorCodeConflict, http.StatusConflict},
+		{domain.ErrorCodeStaleMaterial, http.StatusConflict},
+		{domain.ErrorCodePlanExpired, http.StatusConflict},
+		{domain.ErrorCodePayloadTooLarge, http.StatusRequestEntityTooLarge},
+		{domain.ErrorCodeDependency, http.StatusServiceUnavailable},
+		{domain.ErrorCodeInternal, http.StatusInternalServerError},
+	}
+	for _, test := range tests {
+		t.Run(string(test.code), func(t *testing.T) {
+			mapped := mapCanonicalError(
+				context.Background(),
+				"test Key Exchange operation",
+				domain.NewError(test.code, "test", "field", "failed"),
+			)
+			var handlerError *server.HandlerError
+			if !errors.As(mapped, &handlerError) {
+				t.Fatalf("mapped error = %T, want *server.HandlerError", mapped)
+			}
+			if handlerError.Code != test.status {
+				t.Fatalf(
+					"mapped status = %d, want %d",
+					handlerError.Code,
+					test.status,
+				)
+			}
+		})
+	}
+}
+
+func keyExchangeTestJWTWrapper() server.Wrapper {
+	return func(next server.EndpointHandler) server.EndpointHandler {
+		return func(
+			ctx context.Context,
+			request server.Request,
+			response server.Response,
+		) error {
+			return next(
+				coreauth.WithSubject(ctx, &coreauth.Subject{
+					ID: keyExchangeTestPTID,
+				}),
+				request,
+				response,
+			)
+		}
+	}
+}
+
+func findKeyExchangeHandler(
+	t *testing.T,
+	handlers []server.Handler,
+	path string,
+) server.Handler {
+	t.Helper()
+	for _, handler := range handlers {
+		if handler.Path() == path {
+			return handler
+		}
+	}
+	t.Fatalf("Key Exchange handler %q was not registered", path)
+
+	return nil
+}
+
+func executeKeyExchangeHandler(
+	t *testing.T,
+	handler server.Handler,
+	request keyExchangeTestRequest,
+) *keyExchangeTestResponse {
+	t.Helper()
+	endpoint := handler.Handler()
+	for _, wrapper := range handler.Wrappers() {
+		endpoint = wrapper(endpoint)
+	}
+	response := &keyExchangeTestResponse{headers: map[string]string{}}
+	if err := endpoint(context.Background(), request, response); err != nil {
+		t.Fatalf("execute %s %s: %v", handler.Method(), handler.Path(), err)
+	}
+
+	return response
+}
+
+var _ canonicalAPI = (*recordingCanonicalAPI)(nil)
+var _ server.Request = keyExchangeTestRequest{}
+var _ server.Response = (*keyExchangeTestResponse)(nil)

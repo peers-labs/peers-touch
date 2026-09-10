@@ -13,8 +13,8 @@
 |---|--------|----|----|----|----|----|----|
 | 1 | Markdown Rendering | ✅ | ✅ | ✅ | ✅ | ✅ | |
 | 2 | TTS / STT | | | | | | |
-| 3 | Image Generation | | | | | | |
-| 4 | Video Generation | | | | | | |
+| 3 | Image Rendering Only | ✅ | ✅ | ✅ | ✅ | ✅ | Generation unsupported |
+| 4 | Video Rendering Only | ✅ | ✅ | ✅ | ✅ | ✅ | Generation unsupported |
 | 5 | Translation | | | | | | |
 | 6 | Message Forward / Export | | | | | | |
 | 7 | Task Management | | | | | | |
@@ -62,30 +62,26 @@
 
 ---
 
-### M3: Image Generation ✅
+### M3: Image Rendering Only ✅
 
 **Topology source**: `store/image` (createImage, generationBatch, generationConfig, generationTopic)
 
 **Scope**:
 - Rendering: Markdown image gallery enabled via `enableImageGallery: true` ✅
-- Tool registration (DALL-E as built-in tool) — deferred to P3 (provider integration)
-- Generation config UI — deferred to P3
-- Batch generation — deferred to P3
-
-**Depends on**: P1 tool runtime (DALL-E as built-in tool)
+- Image generation tool, provider integration, configuration, and batching —
+  rejected for Peers-Touch; generic image rendering remains in scope.
 
 ---
 
-### M4: Video Generation ✅
+### M4: Video Rendering Only ✅
 
 **Topology source**: `store/video` (createVideo, generationBatch, config, topic)
 
 **Scope**:
 - Rendering: Markdown handles video embeds via standard HTML5 video ✅
-- Video gen tool registration — deferred to P3 (provider integration)
-- Config UI / queue / player — deferred to P3
-
-**Depends on**: P1 tool runtime
+- Video generation tool, provider integration, config UI, and generation queue
+  are rejected for Peers-Touch. Any future video-generation product belongs to
+  a separate project.
 
 ---
 
@@ -205,8 +201,8 @@ Independent (can parallelize):
 
 Sequential:
   M2 TTS/STT               ← needs audio infrastructure design
-  M3 Image Generation      ← needs tool runtime wired
-  M4 Video Generation      ← after M3 (same pattern)
+  M3 Image Rendering       ← generic external-media rendering only
+  M4 Video Rendering       ← generic external-media rendering only
   M6 Message Forward       ← after M1 (needs markdown export)
   M7 Task Management       ← larger scope, independent
   M9 Thread                ← needs Portal done (P1-M5 ✅)

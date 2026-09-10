@@ -55,7 +55,7 @@ func LoadAuthorizedCapabilitySet(
 		Joins("JOIN agent_turns AS turns ON turns.id = attempts.turn_id").
 		Joins("JOIN agent_conversations AS conversations ON conversations.id = turns.conversation_id").
 		Where(
-			"attempts.id = ? AND attempts.turn_id = ? AND turns.agent_id = ? AND conversations.ptid = ? AND conversations.agent_id = ?",
+			"attempts.id = ? AND attempts.turn_id = ? AND turns.agent_id = ? AND conversations.actor_ptid = ? AND conversations.agent_id = ?",
 			config.AttemptID,
 			config.TurnID,
 			config.AgentID,

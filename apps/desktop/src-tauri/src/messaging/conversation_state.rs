@@ -5,7 +5,7 @@ use super::{
 };
 use crate::model::chat::{
     conversation_event, ConversationStateMarker, CryptoEndpoint, DeviceConsumptionReceipt,
-    DeviceQueueItem, MemberRole, PreparedEndpointPayloadKind,
+    DurableDeviceInboxItem, MemberRole, PreparedEndpointPayloadKind,
 };
 use prost::Message;
 use std::sync::Arc;
@@ -32,7 +32,7 @@ impl ConversationStateProcessor {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -71,28 +71,35 @@ impl ConversationStateProcessor {
             Some(conversation_event::Payload::ConversationCreated(created)) => created,
             _ => return Err("messaging conversation-state event is unsupported".to_string()),
         };
+        let post_state = created
+            .post_state
+            .as_ref()
+            .filter(|state| !state.federation_id.trim().is_empty())
+            .ok_or_else(|| {
+                "messaging conversation-state Federation projection is missing".to_string()
+            })?;
         if !created
-            .member_ptids
-            .binary_search(&self.endpoint.ptid)
-            .is_ok()
+            .members
+            .iter()
+            .any(|member| member.ptid == self.endpoint.ptid)
         {
             return Err("messaging recipient is not a conversation member".to_string());
         }
         let members = created
-            .member_ptids
+            .members
             .iter()
-            .map(|ptid| ConversationMemberProjection {
-                ptid: ptid.clone(),
-                role: if ptid == &created.owner_ptid {
-                    MemberRole::Owner as i32
-                } else {
-                    MemberRole::Member as i32
+            .map(|member| ConversationMemberProjection {
+                ptid: member.ptid.clone(),
+                role: match member.role.as_str() {
+                    "owner" => MemberRole::Owner as i32,
+                    _ => MemberRole::Member as i32,
                 },
             })
             .collect();
         let projection = ConversationProjection {
             conversation_id: event.conversation_id.clone(),
-            authority_station_id: event.authority_station_id.clone(),
+            authority_station_id: event.authority_station_peer_id.clone(),
+            federation_id: post_state.federation_id.clone(),
             kind: created.kind,
             name: created.name.clone(),
             owner_ptid: created.owner_ptid.clone(),
@@ -143,7 +150,7 @@ impl ConversationStateProcessor {
 }
 
 impl ClaimedItemConsumer for ConversationStateProcessor {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }
@@ -153,9 +160,10 @@ mod tests {
     use super::super::verification::delivery_commitment;
     use super::*;
     use crate::model::chat::{
-        ConversationCreatedFact, ConversationEvent, ConversationKind, DeviceEventDelivery,
-        DeviceQueuePayloadType,
+        ConversationAuthorityMember, ConversationAuthoritySnapshot, ConversationCreatedFact,
+        ConversationEvent, ConversationKind, DeviceEventDelivery, DeviceInboxPayloadType,
     };
+    use messaging_core::proto::actor_device_ref;
     use sha2::{Digest, Sha256};
 
     fn now() -> i64 {
@@ -190,13 +198,44 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 1,
             mls_epoch: 0,
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::ConversationCreated(
                 ConversationCreatedFact {
                     kind: ConversationKind::Direct as i32,
                     name: String::new(),
                     owner_ptid: "ptid:alice".to_string(),
-                    member_ptids: vec!["ptid:alice".to_string(), "ptid:bob".to_string()],
+                    members: vec![
+                        ConversationAuthorityMember {
+                            ptid: "ptid:alice".to_string(),
+                            role: "member".to_string(),
+                            home_station_peer_id: "station-local".to_string(),
+                        },
+                        ConversationAuthorityMember {
+                            ptid: "ptid:bob".to_string(),
+                            role: "member".to_string(),
+                            home_station_peer_id: "station-remote".to_string(),
+                        },
+                    ],
+                    post_state: Some(ConversationAuthoritySnapshot {
+                        kind: ConversationKind::Direct as i32,
+                        name: String::new(),
+                        owner_ptid: "ptid:alice".to_string(),
+                        active_members: vec![
+                            ConversationAuthorityMember {
+                                ptid: "ptid:alice".to_string(),
+                                role: "member".to_string(),
+                                home_station_peer_id: "station-local".to_string(),
+                            },
+                            ConversationAuthorityMember {
+                                ptid: "ptid:bob".to_string(),
+                                role: "member".to_string(),
+                                home_station_peer_id: "station-remote".to_string(),
+                            },
+                        ],
+                        federation_id: "federation-1".to_string(),
+                        membership_epoch: 1,
+                        ..Default::default()
+                    }),
                 },
             )),
         };
@@ -220,14 +259,14 @@ mod tests {
             sender_actor_identity_public_key: vec![1; 32],
         };
         let opaque_payload = delivery.encode_to_vec();
-        let item = DeviceQueueItem {
+        let item = DurableDeviceInboxItem {
             item_id: "item-created-1".to_string(),
-            recipient: Some(endpoint.clone()),
+            recipient: Some(actor_device_ref(&endpoint.ptid, &endpoint.device_id)),
             lane_sequence: 1,
             event_id: marker.event_id,
             conversation_id: marker.conversation_id,
             idempotency_key: "event:created:direct-1".to_string(),
-            payload_type: DeviceQueuePayloadType::ConversationEvent as i32,
+            payload_type: DeviceInboxPayloadType::ConversationEvent as i32,
             opaque_payload: opaque_payload.clone(),
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
             ..Default::default()
@@ -245,6 +284,7 @@ mod tests {
         processor.consume(&item, 1).unwrap();
         let projections = store.conversation_projections().unwrap();
         assert_eq!(projections.len(), 1);
+        assert_eq!(projections[0].federation_id, "federation-1");
         assert_eq!(
             projections[0]
                 .members
@@ -252,7 +292,7 @@ mod tests {
                 .map(|member| (member.ptid.clone(), member.role))
                 .collect::<Vec<_>>(),
             vec![
-                ("ptid:alice".to_string(), MemberRole::Owner as i32),
+                ("ptid:alice".to_string(), MemberRole::Member as i32),
                 ("ptid:bob".to_string(), MemberRole::Member as i32),
             ]
         );

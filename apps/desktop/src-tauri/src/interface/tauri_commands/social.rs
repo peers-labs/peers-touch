@@ -20,6 +20,7 @@
 // returns Unauthorized early when the session token is missing.
 
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::application::session_resolver;
 use crate::contracts::{
@@ -38,9 +39,14 @@ use crate::infrastructure::station_client;
 use crate::model;
 use crate::state::AppState;
 
+use ed25519_dalek::Signer as _;
 use prost::Message;
 use reqwest::Method;
 use tauri::{State, Window};
+use ulid::Ulid;
+
+const FRIEND_REQUEST_COMMAND_FORMAT_VERSION: u32 = 1;
+const FRIEND_REQUEST_COMMAND_LIFETIME_SECONDS: i64 = 300;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,11 +68,180 @@ fn token_from_state_proto(
     Ok(token)
 }
 
+fn friend_request_session(
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> Result<(String, String, String), AppResult<Vec<u8>>> {
+    let session = state
+        .sessions
+        .get(window.label())
+        .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))?;
+    if session.account_id.trim().is_empty()
+        || session.actor.ptid.trim().is_empty()
+        || session.jwt.trim().is_empty()
+    {
+        return Err(AppResult::fail(
+            ErrorCode::Unauthorized,
+            "authenticated session is incomplete",
+            None,
+        ));
+    }
+    Ok((session.account_id, session.actor.ptid, session.jwt))
+}
+
 fn station_error_proto(
     err: station_client::StationClientError,
     context: &str,
 ) -> AppResult<Vec<u8>> {
     err.into_app_result(context)
+}
+
+pub(crate) struct FriendRequestCommandInput {
+    pub request_id: String,
+    pub action: model::social::FriendRequestAction,
+    pub sender_ptid: String,
+    pub receiver_ptid: String,
+    pub sender_home_station_peer_id: String,
+    pub receiver_home_station_peer_id: String,
+    pub message: String,
+    pub federation_id: String,
+}
+
+pub(crate) fn sign_friend_request_command(
+    state: &AppState,
+    account_id: &str,
+    authenticated_ptid: &str,
+    input: FriendRequestCommandInput,
+) -> Result<model::social::FriendRequestCommand, String> {
+    if account_id.trim().is_empty()
+        || authenticated_ptid.trim().is_empty()
+        || input.request_id.trim().is_empty()
+        || input.sender_ptid.trim().is_empty()
+        || input.receiver_ptid.trim().is_empty()
+        || input.sender_home_station_peer_id.trim().is_empty()
+        || input.receiver_home_station_peer_id.trim().is_empty()
+        || input.federation_id.trim().is_empty()
+        || input.sender_ptid == input.receiver_ptid
+    {
+        return Err("friend request command identity is incomplete".to_string());
+    }
+    let local_station_peer_id = station_client::active_station_peer_id()
+        .ok_or_else(|| "friend request command requires the active Station peer ID".to_string())?;
+    let expected_author = match input.action {
+        model::social::FriendRequestAction::Send => {
+            if input.sender_home_station_peer_id != local_station_peer_id {
+                return Err(
+                    "friend request SEND sender Home Station does not match the active Station"
+                        .to_string(),
+                );
+            }
+            input.sender_ptid.as_str()
+        }
+        model::social::FriendRequestAction::Accept | model::social::FriendRequestAction::Reject => {
+            if input.receiver_home_station_peer_id != local_station_peer_id {
+                return Err(
+                    "friend request mutation receiver Home Station does not match the active Station"
+                        .to_string(),
+                );
+            }
+            input.receiver_ptid.as_str()
+        }
+        model::social::FriendRequestAction::Unspecified => {
+            return Err("friend request command action is required".to_string());
+        }
+    };
+    if expected_author != authenticated_ptid {
+        return Err("friend request command actor does not match the active session".to_string());
+    }
+
+    let engine = state
+        .messaging_engines
+        .get(account_id)?
+        .ok_or_else(|| "friend request command requires an active messaging engine".to_string())?;
+    if engine.endpoint().ptid != authenticated_ptid {
+        return Err("friend request command engine identity mismatch".to_string());
+    }
+    if engine.store().pending_device_enrollment()?.is_some() {
+        return Err("friend request command requires an enrolled device identity".to_string());
+    }
+    let (signing_key_id, signing_key) = engine.device_signing_identity()?.ok_or_else(|| {
+        "friend request command device signing identity is unavailable".to_string()
+    })?;
+
+    let now_seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "friend request command clock is before the Unix epoch".to_string())?
+        .as_secs()
+        .try_into()
+        .map_err(|_| "friend request command timestamp exceeds i64".to_string())?;
+    let body = model::social::FriendRequestCommandBody {
+        format_version: FRIEND_REQUEST_COMMAND_FORMAT_VERSION,
+        command_id: format!(
+            "friend-request:{}:{}",
+            input.action.as_str_name().to_ascii_lowercase(),
+            input.request_id
+        ),
+        request_id: input.request_id,
+        action: input.action as i32,
+        sender: Some(person_actor_ref(input.sender_ptid)),
+        receiver: Some(person_actor_ref(input.receiver_ptid)),
+        sender_home_station_peer_id: input.sender_home_station_peer_id,
+        receiver_home_station_peer_id: input.receiver_home_station_peer_id,
+        message: input.message.trim().to_string(),
+        observed_request_state: match input.action {
+            model::social::FriendRequestAction::Send => {
+                model::social::FriendRequestState::Unspecified as i32
+            }
+            model::social::FriendRequestAction::Accept
+            | model::social::FriendRequestAction::Reject => {
+                model::social::FriendRequestState::Pending as i32
+            }
+            model::social::FriendRequestAction::Unspecified => unreachable!(),
+        },
+        created_at: Some(prost_types::Timestamp {
+            seconds: now_seconds,
+            nanos: 0,
+        }),
+        expires_at: Some(prost_types::Timestamp {
+            seconds: now_seconds.saturating_add(FRIEND_REQUEST_COMMAND_LIFETIME_SECONDS),
+            nanos: 0,
+        }),
+        authorizing_device: Some(model::actor::ActorDeviceRef {
+            actor: Some(person_actor_ref(authenticated_ptid.to_string())),
+            device_id: engine.endpoint().device_id.clone(),
+        }),
+        federation_id: input.federation_id,
+    };
+    let signing_input = model::social::FriendRequestCommandSigningInput {
+        body: Some(body.clone()),
+        signing_key_id: signing_key_id.clone(),
+    };
+    let signature = signing_key.sign(&signing_input.encode_to_vec());
+    Ok(model::social::FriendRequestCommand {
+        body: Some(body),
+        signing_key_id,
+        actor_device_signature: signature.to_bytes().to_vec(),
+    })
+}
+
+pub(crate) fn friend_request_command_device_id(
+    command: &model::social::FriendRequestCommand,
+) -> Result<&str, String> {
+    command
+        .body
+        .as_ref()
+        .and_then(|body| body.authorizing_device.as_ref())
+        .map(|device| device.device_id.as_str())
+        .filter(|device_id| !device_id.trim().is_empty())
+        .ok_or_else(|| "friend request command authorizing device is unavailable".to_string())
+}
+
+fn person_actor_ref(ptid: String) -> model::actor::ActorRef {
+    model::actor::ActorRef {
+        ptid,
+        kind: model::actor::ActorKind::Person as i32,
+        ..Default::default()
+    }
 }
 
 /// Convenience: fetch a JSON-or-proto path with no body and decode the
@@ -941,19 +1116,65 @@ pub fn social_friend_request_send(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
-        Ok(t) => t,
+    let (account_id, actor_ptid, token) = match friend_request_session(&state, &window) {
+        Ok(session) => session,
         Err(e) => return e,
     };
-    if input.receiver_ptid.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "receiver_ptid is required", None);
+    if input.receiver_ptid.trim().is_empty()
+        || input.receiver_home_station_peer_id.trim().is_empty()
+        || input.federation_id.trim().is_empty()
+    {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "receiver_ptid, receiver_home_station_peer_id, and federation_id are required",
+            None,
+        );
     }
-    let req = model::chat::SendFriendRequestRequest {
-        receiver_ptid: input.receiver_ptid,
-        message: input.message.unwrap_or_default(),
+    let sender_home_station_peer_id = match station_client::active_station_peer_id() {
+        Some(peer_id) => peer_id,
+        None => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "active Station peer ID is unavailable",
+                None,
+            );
+        }
     };
-    let resp: model::chat::SendFriendRequestResponse =
-        match post_proto("/api/v1/social/friend-request/send", &token, &req) {
+    let request_id = Ulid::new().to_string();
+    let command = match sign_friend_request_command(
+        state.inner(),
+        &account_id,
+        &actor_ptid,
+        FriendRequestCommandInput {
+            request_id,
+            action: model::social::FriendRequestAction::Send,
+            sender_ptid: actor_ptid.clone(),
+            receiver_ptid: input.receiver_ptid,
+            sender_home_station_peer_id,
+            receiver_home_station_peer_id: input.receiver_home_station_peer_id,
+            message: input.message.unwrap_or_default(),
+            federation_id: input.federation_id,
+        },
+    ) {
+        Ok(command) => command,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let device_id = match friend_request_command_device_id(&command) {
+        Ok(device_id) => device_id.to_string(),
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let req = model::social::SendSocialFriendRequestRequest {
+        command: Some(command),
+    };
+    let resp: model::social::SendSocialFriendRequestResponse =
+        match station_client::request_proto_for_device(
+            Method::POST,
+            "/api/v1/social/friend-request/send",
+            &token,
+            None,
+            Some(&req),
+            &device_id,
+        ) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "send friend request failed"),
         };
@@ -966,18 +1187,65 @@ pub fn social_friend_request_accept(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
-        Ok(t) => t,
+    let (account_id, actor_ptid, token) = match friend_request_session(&state, &window) {
+        Ok(session) => session,
         Err(e) => return e,
     };
-    if input.request_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "request_id is required", None);
+    if input.request_id.trim().is_empty()
+        || input.sender_ptid.trim().is_empty()
+        || input.sender_home_station_peer_id.trim().is_empty()
+        || input.federation_id.trim().is_empty()
+    {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "friend request acceptance context is incomplete",
+            None,
+        );
     }
-    let req = model::chat::AcceptFriendRequestRequest {
-        request_id: input.request_id,
+    let receiver_home_station_peer_id = match station_client::active_station_peer_id() {
+        Some(peer_id) => peer_id,
+        None => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "active Station peer ID is unavailable",
+                None,
+            );
+        }
     };
-    let resp: model::chat::AcceptFriendRequestResponse =
-        match post_proto("/api/v1/social/friend-request/accept", &token, &req) {
+    let command = match sign_friend_request_command(
+        state.inner(),
+        &account_id,
+        &actor_ptid,
+        FriendRequestCommandInput {
+            request_id: input.request_id,
+            action: model::social::FriendRequestAction::Accept,
+            sender_ptid: input.sender_ptid,
+            receiver_ptid: actor_ptid.clone(),
+            sender_home_station_peer_id: input.sender_home_station_peer_id,
+            receiver_home_station_peer_id,
+            message: input.message.unwrap_or_default(),
+            federation_id: input.federation_id,
+        },
+    ) {
+        Ok(command) => command,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let device_id = match friend_request_command_device_id(&command) {
+        Ok(device_id) => device_id.to_string(),
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let req = model::social::AcceptSocialFriendRequestRequest {
+        command: Some(command),
+    };
+    let resp: model::social::AcceptSocialFriendRequestResponse =
+        match station_client::request_proto_for_device(
+            Method::POST,
+            "/api/v1/social/friend-request/accept",
+            &token,
+            None,
+            Some(&req),
+            &device_id,
+        ) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "accept friend request failed"),
         };
@@ -990,18 +1258,65 @@ pub fn social_friend_request_reject(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
-    let token = match token_from_state_proto(&state, &window) {
-        Ok(t) => t,
+    let (account_id, actor_ptid, token) = match friend_request_session(&state, &window) {
+        Ok(session) => session,
         Err(e) => return e,
     };
-    if input.request_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "request_id is required", None);
+    if input.request_id.trim().is_empty()
+        || input.sender_ptid.trim().is_empty()
+        || input.sender_home_station_peer_id.trim().is_empty()
+        || input.federation_id.trim().is_empty()
+    {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "friend request rejection context is incomplete",
+            None,
+        );
     }
-    let req = model::chat::RejectFriendRequestRequest {
-        request_id: input.request_id,
+    let receiver_home_station_peer_id = match station_client::active_station_peer_id() {
+        Some(peer_id) => peer_id,
+        None => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "active Station peer ID is unavailable",
+                None,
+            );
+        }
     };
-    let resp: model::chat::RejectFriendRequestResponse =
-        match post_proto("/api/v1/social/friend-request/reject", &token, &req) {
+    let command = match sign_friend_request_command(
+        state.inner(),
+        &account_id,
+        &actor_ptid,
+        FriendRequestCommandInput {
+            request_id: input.request_id,
+            action: model::social::FriendRequestAction::Reject,
+            sender_ptid: input.sender_ptid,
+            receiver_ptid: actor_ptid.clone(),
+            sender_home_station_peer_id: input.sender_home_station_peer_id,
+            receiver_home_station_peer_id,
+            message: input.message.unwrap_or_default(),
+            federation_id: input.federation_id,
+        },
+    ) {
+        Ok(command) => command,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let device_id = match friend_request_command_device_id(&command) {
+        Ok(device_id) => device_id.to_string(),
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let req = model::social::RejectSocialFriendRequestRequest {
+        command: Some(command),
+    };
+    let resp: model::social::RejectSocialFriendRequestResponse =
+        match station_client::request_proto_for_device(
+            Method::POST,
+            "/api/v1/social/friend-request/reject",
+            &token,
+            None,
+            Some(&req),
+            &device_id,
+        ) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "reject friend request failed"),
         };
@@ -1020,11 +1335,11 @@ pub fn social_friend_request_list(
     };
     let mut query = Vec::new();
     if let Some(status) = input.status {
-        query.push(("status", status.to_string()));
+        query.push(("state", status.to_string()));
     }
     query.push(("limit", input.limit.unwrap_or(50).clamp(1, 200).to_string()));
     query.push(("offset", input.offset.unwrap_or(0).to_string()));
-    let resp: model::chat::ListFriendRequestsResponse =
+    let resp: model::social::ListSocialFriendRequestsResponse =
         match get_proto("/api/v1/social/friend-requests", &token, Some(&query)) {
             Ok(r) => r,
             Err(e) => return station_error_proto(e, "list friend requests failed"),

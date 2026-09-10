@@ -56,6 +56,38 @@ describe('message action registry', () => {
     expect(primary.map((a) => a.key)).toEqual(['retry', 'delete']);
   });
 
+  it('does not retry a non-retryable typed error', () => {
+    const onDelete = vi.fn();
+    const ctx = createContext({
+      message: {
+        id: 'msg-1',
+        role: 'assistant',
+        content: '',
+        error: 'agent.errors.contextOverflow',
+        typedError: {
+          error: 'agent.errors.contextOverflow',
+          error_type: 'CONTEXT_OVERFLOW',
+          locale_key: 'agent.errors.contextOverflow',
+          retryable: false,
+          terminal: true,
+          details: {
+            limit_tokens: '128',
+            actual_tokens: '129',
+          },
+        },
+        timestamp: Date.now(),
+      } as ChatMessage,
+      onDelete,
+    });
+
+    const { primary, menu } = buildMessageActions(ctx);
+
+    expect(primary.map((action) => action.key)).toEqual(['delete']);
+    expect(menu.map((action) => action.key)).toEqual(['copy']);
+    primary[0]?.onClick();
+    expect(onDelete).toHaveBeenCalledTimes(1);
+  });
+
   it('exposes retry and durable reload when recovery failed', () => {
     const ctx = createContext({
       message: {

@@ -52,7 +52,6 @@ export function selectActiveCapabilitySession(
       Boolean(session.session_id)
       && capabilitySessionExpiresAtMs(session) > nowMs,
   );
-  if (active.length === 1) return active[0];
 
   const preferredPlatform = browserShell
     ? 'CLIENT_PLATFORM_BROWSER'

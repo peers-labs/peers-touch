@@ -67,7 +67,14 @@ go test ./...
 
 - Keep transport-independent business logic in service/application layer.
 - Keep API/contracts explicit and version-safe.
-- Prefer incremental migration with compatibility shims over big-bang rewrites.
+- Assign public APIs to resource owners. Conversation `/conversation/*` is the
+  sole Chat entry point; Device, Inbox, Recovery, Key Exchange, and Federation
+  expose `/device/*`, `/device/inbox/*`, `/recovery/*`, `/key-exchange/*`, and
+  peer-only `/federation/*`. Device Messaging Engine is an internal
+  Desktop/Mobile runtime term, not a public namespace.
+- Prefer bounded atomic cutovers. A compatibility path is allowed only by an
+  explicit accepted architecture decision with one owner, a removal trigger, and a
+  fail-closed deletion Gate; permanent shims and parallel truth owners are forbidden.
 
 ---
 

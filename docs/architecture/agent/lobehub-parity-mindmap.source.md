@@ -2,6 +2,7 @@
 
 > **Status**: active
 > **Created**: 2026-08-15
+> **Updated**: 2026-09-08
 > **Owner**: Peers-Touch Agent Team
 > **Purpose**: 单总根、双产品镜像的 Agent 能力对比脑图的**可解析落盘源**。
 > 每个节点携带：文本 + 状态标签 + 双侧源码引用。供 reviewer agent 做节点级审计，以及导出 SVG/mermaid 渲染。
@@ -205,7 +206,7 @@ mindmap
 | # | 对齐 | 操作节点 | Peers 状态 | Peers 源码锚点 | Lobe 状态 | Lobe 源码锚点 | 范围决策 |
 |---|---|---|---|---|---|---|---|
 | G1 | ⛔  Image Generation | 长期不支持 | 无 store / page；Owner 2026-08-17 决定长期不纳入 Peers Chat Agent 产品，不保留空入口或完成度债务 | 已闭环 | `store/image/slices/*`（`createImage`/generationBatch/generationConfig） | 明确不采用 |
-| G2 | ⏸  Video Generation | 缺失 | 无 store / page；Owner 2026-08-17 决定当前 V2 不做音视频生成，后续如重新立项需重新经过 PRODUCT gate | 已闭环 | `store/video/slices/*`（`createVideo`/`recreateVideo`） | 后续阶段 |
+| G2 | ⛔  Video Generation | 长期不支持 | 无 store / page；Owner 2026-09-08 明确决定与 G1 相同，不纳入 Peers-Touch Agent 产品，也不保留未来阶段入口；如需视频生成，应由其它项目独立立项 | 已闭环 | `store/video/slices/*`（`createVideo`/`recreateVideo`） | 明确不采用 |
 | G3a | ✅  TTS 朗读（客户端 read-aloud） | 已闭环 | `store/tts.ts#L51`（`speak`）/`#L108`（`getSynthesis`→`window.speechSynthesis`），Web Speech API；UI `modules/tts/index.tsx#L75`（`getVoices`） | 已闭环 | `store/chat/slices/tts/action.ts#L24`（`updateMessageTTS` 落库播放） | 当前闭环 |
 | G3b | ⏸  TTS 服务端合成（synthesis） | 代码存在未接线 | `src-tauri/src/application/tts/mod.rs#L16-22`：`tts_synthesize` 返回 stub `data:audio/wav;base64,`（空）；命令注册 `main.rs#L476`，无真实合成；Owner 2026-08-17 决定当前 V2 不新增音视频生成能力 | 已闭环 | `store/file/slices/tts`（`uploadTTSByArrayBuffers`） | 后续阶段 |
 
@@ -223,7 +224,8 @@ mindmap
 
 ## 3. 候选待确认（是否作为产品能力尚未拍板）
 
-当前无候选节点。P3/E1 已进入 V2 required，G2/G3b 已明确 deferred。
+当前无候选节点。P3/E1 已进入 V2 required，G3b 已明确 deferred；G2 与 G1
+均为 Peers-Touch 明确不采用的生成能力。
 
 ---
 
@@ -234,7 +236,7 @@ mindmap
 | localstorage-migration | 工程债 | 明确不采用 | 属技术迁移，非产品能力 |
 | custom-plugins（独立 HTTP endpoint + localStorage 凭证） | 重复能力 | 合并进 `Tool + MCP + Connector` | 避免重复与本地凭证存储 |
 | Image Generation（G1） | 非目标能力 | 长期不支持 | Chat Agent 产品不承诺图片生成；Owner 2026-08-17 明确不做 |
-| Video Generation（G2） | 当前阶段延后 | 后续阶段 | Owner 2026-08-17 决定当前 V2 不做视频生成；不计入当前 readiness claim |
+| Video Generation（G2） | 非目标能力 | 长期不支持 | Owner 2026-09-08 明确决定与 G1 相同，不属于 Peers-Touch；未来如需要，由其它项目独立立项 |
 | TTS 服务端合成（G3b） | 当前阶段延后 | 后续阶段 | Owner 2026-08-17 决定当前 V2 不新增音视频生成能力；G3a 客户端朗读继续保留 |
 | LobeHub 客户端 Agent Loop（`agents/transports/Client*`） | 架构分歧 | 架构不同 | Peers 由 Station 持有 Turn 状态机 |
 | LobeHub Cloud Gateway / WebSocket 拓扑 | 架构分歧 | 架构不同 | Peers 用 Station SSE + durable event + cursor replay |
@@ -257,7 +259,7 @@ mindmap
 
 - **能力域**：8（对话运行时 / Agent 配置 / 多 Agent·编排 / 输入与内容 / 资源与页面 / 观测与评估 / 生成能力 / 扩展生态）
 - **操作节点总数**：**45**（R1–R16=16、C1–C7=7、O1–O3=3、I1–I4=4、P1–P3=3、E1–E3=3、G1·G2·G3a·G3b=4、X1–X5=5）
-- **状态分布（Peers 侧 · 对齐 icon）**：✅ 已对齐 39 · 🟨 当前阶段必做 2（P3/E1）· ⬜ 候选 0 · ⏸ 后续阶段 2（G2/G3b）· ⛔ 2（X2/G1）= 45。历史证据分布（落地前基线）：已闭环 23 · 部分闭环 12 · 代码存在未接线 7 · 缺失 3 · 未证实 0，随落地推进逐步转 ✅。
+- **状态分布（Peers 侧 · 对齐 icon）**：✅ 已对齐 39 · 🟨 当前阶段必做 2（P3/E1）· ⬜ 候选 0 · ⏸ 后续阶段 1（G3b）· ⛔ 3（X2/G1/G2）= 45。历史证据分布（落地前基线）：已闭环 23 · 部分闭环 12 · 代码存在未接线 7 · 缺失 3 · 未证实 0，随落地推进逐步转 ✅。
 - 历史口径演变：初版「87 操作 / 8 未证实」（旧 widget）→ 二版 40 节点（补 Skill 拆 TTS）→ **三版 45 节点**（补 R12–R16 message action bar 操作），均已作废旧值，以本表 45 / 0 为准。
 
 ---

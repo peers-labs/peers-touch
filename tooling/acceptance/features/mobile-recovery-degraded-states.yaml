@@ -2,7 +2,12 @@
   "id": "mobile-recovery-degraded-states",
   "status": "active",
   "product_area": "mobile",
-  "owners": ["apps/mobile/src/app/**", "apps/mobile/src/components/**", "packages/locales/**"],
+  "owners": [
+    "apps/mobile/src/app/**",
+    "apps/mobile/src/components/**",
+    "apps/mobile/src/runtimes/recoveryProjection.ts",
+    "packages/locales/**"
+  ],
   "truth_sources": ["runtime readiness projections", "command ledger projection", "Station/session validation"],
   "visible_surfaces": [{"type": "mobile", "state": "recovery-overlay"}],
   "required_gates": ["mobile-native-recovery-e2e", "mobile-native-recovery-ui-e2e"],

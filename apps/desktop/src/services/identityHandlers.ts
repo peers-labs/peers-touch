@@ -13,7 +13,12 @@ import { toolRuntime } from '../runtimes/toolRuntime';
 import { createDesktopClientStorageRuntime } from '../storage/desktopClientStorage';
 
 registerIdentityHandler('close-browser-capability-session', async (payload) => {
-  if (payload.reason === 'logout' || payload.reason === 'revoked') {
+  const currentActorPtid = useSessionStore.getState().currentUser?.actorPtid ?? null;
+  if (
+    payload.reason === 'logout'
+    || payload.reason === 'revoked'
+    || currentActorPtid !== payload.actorPtid
+  ) {
     await closeBrowserCapabilitySession();
   }
 });
@@ -46,7 +51,12 @@ registerIdentityHandler('clear-client-storage-caches', async (payload) => {
 });
 
 registerIdentityHandler('refresh-current-session', async (payload) => {
-  if (payload.reason === 'logout' || payload.reason === 'revoked' || payload.reason === 'switch') {
+  if (
+    payload.reason === 'logout'
+    || payload.reason === 'revoked'
+    || payload.reason === 'switch'
+    || useSessionStore.getState().authenticated
+  ) {
     return;
   }
   try {

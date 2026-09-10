@@ -7,9 +7,15 @@ import type {
 import type {
   MobilePublicProjection,
   PublicAccessDecision,
+  PublicMessagingProjection,
   PublicOAuthProjection,
   PublicStationEntry,
 } from './contracts';
+import type {
+  MessagingConversationProjection,
+  MessagingMessageProjection,
+  MessagingRuntimeStatus,
+} from '../services/mobileCommands';
 
 export function sanitizeStationRegistry(
   registry: StoredStationRegistry,
@@ -80,6 +86,82 @@ export function sanitizeMobileProjection(input: {
     },
     oauth: sanitizeOAuthProjection(input.oauth),
   };
+}
+
+export function sanitizeMessagingProjection(input: {
+  runtime: MessagingRuntimeStatus;
+  conversations: MessagingConversationProjection[];
+  messages: Record<string, MessagingMessageProjection[]>;
+}): PublicMessagingProjection {
+  return {
+    runtime: {
+      active: input.runtime.active,
+      profileId: input.runtime.profileId,
+      stationPeerId: input.runtime.stationPeerId,
+      actorPtid: input.runtime.actorPtid,
+      deviceId: input.runtime.deviceId,
+      deviceEnrolled: input.runtime.deviceEnrolled,
+      laneSequence: input.runtime.laneSequence,
+      consumerEpoch: input.runtime.consumerEpoch,
+      conversationCount: input.runtime.conversationCount,
+      activationGeneration: input.runtime.activationGeneration,
+      workerPhase: input.runtime.workerPhase,
+    },
+    conversations: input.conversations.map((conversation) => ({
+      conversationId: conversation.conversationId,
+      authorityStationId: conversation.authorityStationId,
+      federationId: conversation.federationId,
+      kind: conversation.kind,
+      name: conversation.name,
+      ownerPtid: conversation.ownerPtid,
+      memberPtids: [...conversation.memberPtids],
+      membershipEpoch: conversation.membershipEpoch,
+      mlsEpoch: conversation.mlsEpoch,
+      active: conversation.active,
+      updatedAtUnixMs: conversation.updatedAtUnixMs,
+    })),
+    messages: Object.fromEntries(
+      Object.entries(input.messages).map(([conversationId, messages]) => [
+        conversationId,
+        sanitizeMessagingMessages(messages),
+      ]),
+    ),
+  };
+}
+
+export function sanitizeMessagingMessages(
+  messages: MessagingMessageProjection[],
+): PublicMessagingProjection['messages'][string] {
+  return messages.map((message) => ({
+    eventId: message.eventId,
+    eventSequence: message.eventSequence,
+    messageId: message.messageId,
+    senderPtid: message.senderPtid,
+    state: message.state,
+    timestampUnixMs: message.timestampUnixMs,
+    replyToMessageId: message.replyToMessageId,
+    threadRootMessageId: message.threadRootMessageId,
+    editedText: message.editedText,
+    editedAtUnixMs: message.editedAtUnixMs,
+    retracted: message.retracted,
+    reactions: message.reactions.map((reaction) => ({
+      actorPtid: reaction.actorPtid,
+      reaction: reaction.reaction,
+      createdAtUnixMs: reaction.createdAtUnixMs,
+    })),
+    pinnedByPtid: message.pinnedByPtid,
+    pinnedAtUnixMs: message.pinnedAtUnixMs,
+    readByPtids: [...message.readByPtids],
+    plaintext: message.plaintext,
+    attachments: message.attachments.map((attachment) => ({
+      attachmentId: attachment.attachmentId,
+      filename: attachment.filename,
+      mimeType: attachment.mimeType,
+      plaintextSize: attachment.plaintextSize,
+      ciphertextSize: attachment.ciphertextSize,
+      availabilityState: attachment.availabilityState,
+    })),
+  }));
 }
 
 function toPublicStationEntry(

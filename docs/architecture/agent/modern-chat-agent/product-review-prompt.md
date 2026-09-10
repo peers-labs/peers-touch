@@ -39,7 +39,9 @@ a disposition or feasibility claim is uncertain.
   required.
 - User-visible Evaluation Lab is required.
 - Image generation is unsupported.
-- Video and server-side audio generation are deferred.
+- Video generation is unsupported in Peers-Touch, like image generation; any
+  future video capability belongs to a separate project. Server-side audio
+  generation remains deferred.
 - Desktop is the complete delivery target.
 - Browser preserves the same Station-backed business outcomes with explicit
   device-capability degradation.

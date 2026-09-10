@@ -285,7 +285,7 @@ func (s *CapabilityAuthorityService) ListBindings(
 	}
 	var agent persistence.Agent
 	if err := s.db.WithContext(ctx).
-		Where("id = ? AND owner_actor_id = ?", agentID, ptid).
+		Where("id = ? AND owner_actor_ptid = ?", agentID, ptid).
 		First(&agent).Error; err != nil {
 		return nil, capabilityRecordError("owned agent", err)
 	}
@@ -576,7 +576,7 @@ func (s *CapabilityAuthorityService) upsertBinding(
 		return nil, capabilityInvalid("approval_policy is required")
 	}
 	var agent persistence.Agent
-	if err := tx.Where("id = ? AND owner_actor_id = ?", agentID, ptid).First(&agent).Error; err != nil {
+	if err := tx.Where("id = ? AND owner_actor_ptid = ?", agentID, ptid).First(&agent).Error; err != nil {
 		return nil, capabilityRecordError("owned agent", err)
 	}
 	if uint64(agent.Version) != input.GetExpectedAgentVersion() {
@@ -867,7 +867,7 @@ func (s *CapabilityAuthorityService) publishBindingInvalidation(
 		EventID:    generateID("event"),
 		EventType:  string(domain.EventTypeAgentAuthorityInvalidated),
 		OccurredAt: s.now(),
-		ActorID:    binding.GetPtid(),
+		ActorPTID:  binding.GetPtid(),
 		Payload:    payload,
 		Metadata: map[string]string{
 			"agent_id":   binding.GetAgentId(),
@@ -889,10 +889,10 @@ func (s *CapabilityAuthorityService) publishManifestInvalidations(
 	}
 	var agents []persistence.Agent
 	query := s.db.WithContext(ctx).
-		Select("id", "owner_actor_id", "version").
+		Select("id", "owner_actor_ptid", "version").
 		Model(&persistence.Agent{})
 	if ownerPtid := strings.TrimSpace(manifest.GetOwnerPtid()); ownerPtid != "" {
-		query = query.Where("owner_actor_id = ?", ownerPtid)
+		query = query.Where("owner_actor_ptid = ?", ownerPtid)
 	}
 	if err := query.Find(&agents).Error; err != nil {
 		logger.Errorf(
@@ -916,7 +916,7 @@ func (s *CapabilityAuthorityService) publishManifestInvalidations(
 			EventID:    generateID("event"),
 			EventType:  string(domain.EventTypeAgentAuthorityInvalidated),
 			OccurredAt: s.now(),
-			ActorID:    agents[i].OwnerActorID,
+			ActorPTID:  agents[i].OwnerActorPTID,
 			Payload:    payload,
 			Metadata: map[string]string{
 				"agent_id":           agents[i].ID,
@@ -927,7 +927,7 @@ func (s *CapabilityAuthorityService) publishManifestInvalidations(
 			logger.Errorf(
 				ctx,
 				"failed to publish capability catalog invalidation: actor_id=%s agent_id=%s capability_id=%s capability_version=%s err=%v",
-				agents[i].OwnerActorID,
+				agents[i].OwnerActorPTID,
 				agents[i].ID,
 				manifest.GetCapabilityId(),
 				manifest.GetVersion(),

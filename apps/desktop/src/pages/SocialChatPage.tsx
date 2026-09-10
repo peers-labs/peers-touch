@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Tooltip } from 'antd';
@@ -10,8 +10,18 @@ import { ChatMessageArea } from '../components/chat/ChatMessageArea';
 import { ChatDetailPanel } from '../components/chat/ChatDetailPanel';
 import { ChatThreadPanel } from '../components/chat/ChatThreadPanel';
 import { CallSurface } from '../components/chat/CallSurface';
-import type { ContactSelection } from '../components/chat/contactSelection';
+import {
+  beginDirectConversationOpen,
+  failDirectConversationOpen,
+  findContactConversation,
+  type ContactSelection,
+  type DirectConversationOpenIntent,
+  type FriendContactSelection,
+} from '../components/chat/contactSelection';
 import { api } from '../services/desktop_api';
+import { mapChatError } from '../services/errorMappings/chatErrorMapping';
+import { presentError } from '../services/errorPresenter';
+import { imServiceV1 } from '../services/im-service';
 import { scheduleIdle } from '../kernel/boot';
 import { useActiveSocialChatSlice } from '../components/chat/useActiveSocialChatStore';
 import { log } from '../utils/logger';
@@ -24,6 +34,12 @@ interface OwnedContactSelection {
   actorPtid: string;
   contact: ContactSelection;
 }
+
+// #region debug-point A-C:cross-station-direct-open
+function reportDirectOpenDebug(detail: Record<string, unknown>): void {
+  window.dispatchEvent(new CustomEvent('pt:direct-open-debug', { detail }));
+}
+// #endregion
 
 // Page contract:
 //   • All projection state (sessions, groups, friend requests, conversation
@@ -49,6 +65,11 @@ export function SocialChatPage() {
     activeSessionUlid,
     activeTab,
     currentUserPtid,
+    getIMConversations,
+    loadSessions,
+    restoreConversation,
+    selectGroup,
+    selectSession,
   } = useActiveSocialChatSlice((state) => ({
     showDetail: state.showDetail,
     openThreadRootUlid: state.openThreadRootUlid,
@@ -57,6 +78,11 @@ export function SocialChatPage() {
     activeSessionUlid: state.activeSessionUlid,
     activeTab: state.activeTab,
     currentUserPtid: state.currentUserPtid,
+    getIMConversations: state.getIMConversations,
+    loadSessions: state.loadSessions,
+    restoreConversation: state.restoreConversation,
+    selectGroup: state.selectGroup,
+    selectSession: state.selectSession,
   }));
 
   // --- Refs for values used inside effects without re-triggering subscriptions ---
@@ -82,9 +108,97 @@ export function SocialChatPage() {
 
   const [subPage, setSubPage] = useState<ChatSubPage>('chats');
   const [ownedContactSelection, setOwnedContactSelection] = useState<OwnedContactSelection | null>(null);
+  const [directOpenIntent, setDirectOpenIntent] = useState<DirectConversationOpenIntent | null>(null);
+  const directOpenGenerationRef = useRef(0);
   const selectedContact = ownedContactSelection?.actorPtid === currentUserPtid
     ? ownedContactSelection.contact
     : null;
+
+  const cancelDirectOpenIntent = useCallback(() => {
+    directOpenGenerationRef.current += 1;
+    setDirectOpenIntent(null);
+  }, []);
+
+  const openDirectConversation = useCallback((contact: FriendContactSelection) => {
+    const requestGeneration = ++directOpenGenerationRef.current;
+    const existing = findContactConversation(contact, getIMConversations());
+    if (existing) {
+      setDirectOpenIntent(null);
+      selectSession(existing.id);
+      restoreConversation('friend', existing.id);
+      setSubPage('chats');
+      return;
+    }
+
+    const intent = beginDirectConversationOpen(contact);
+    setDirectOpenIntent(intent);
+    setSubPage('chats');
+
+    // #region debug-point C:cross-station-direct-open
+    reportDirectOpenDebug({
+      kind: 'create-direct-start',
+      peerPtid: contact.peerPtid,
+      federationId: contact.federationId,
+    });
+    // #endregion
+
+    void imServiceV1.messaging.createDirect({
+      peerPtid: contact.peerPtid,
+      federationId: contact.federationId,
+    }).then((conversation) => {
+      if (directOpenGenerationRef.current !== requestGeneration) return;
+      reportDirectOpenDebug({
+        kind: 'create-direct-success',
+        conversationId: conversation.conversationId,
+      });
+      selectSession(conversation.conversationId);
+      restoreConversation('friend', conversation.conversationId);
+      setDirectOpenIntent(null);
+      loadSessions().catch((error) => {
+        log.warn('socialChatPage', 'background loadSessions after createDirect failed', {
+          conversationId: conversation.conversationId,
+          error,
+        });
+      });
+    }).catch((error) => {
+      if (directOpenGenerationRef.current !== requestGeneration) return;
+      reportDirectOpenDebug({
+        kind: 'create-direct-failure',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      const presentation = presentError(error, {
+        mode: 'inline',
+        mapper: mapChatError,
+        context: { operation: 'conversationAction' },
+      });
+      setDirectOpenIntent((current) => (
+        current?.peerPtid === contact.peerPtid
+          ? failDirectConversationOpen(current, presentation)
+          : current
+      ));
+    });
+  }, [
+    getIMConversations,
+    loadSessions,
+    restoreConversation,
+    selectSession,
+  ]);
+
+  const handleContactMessage = useCallback((contact: ContactSelection) => {
+    if (contact.kind === 'group') {
+      cancelDirectOpenIntent();
+      selectGroup(contact.conversationId);
+      restoreConversation('group', contact.conversationId);
+      setSubPage('chats');
+      return;
+    }
+    openDirectConversation(contact);
+  }, [
+    cancelDirectOpenIntent,
+    openDirectConversation,
+    restoreConversation,
+    selectGroup,
+  ]);
 
   // Lazy-mount contacts panel: only create on first visit, then keep
   // alive. Pre-warm during the first idle window so the contacts tab
@@ -234,7 +348,10 @@ export function SocialChatPage() {
         data-chat-conversation-list-shell
         style={{ display: subPage === 'chats' ? 'contents' : 'none' }}
       >
-        <ChatSessionList />
+        <ChatSessionList
+          onConversationSelected={cancelDirectOpenIntent}
+          onOpenDirect={openDirectConversation}
+        />
       </div>
       {contactsMounted && (
         <div style={{ display: subPage === 'contacts' ? 'contents' : 'none' }}>
@@ -245,9 +362,7 @@ export function SocialChatPage() {
             }}
             onStartChat={(contact) => {
               setOwnedContactSelection({ actorPtid: currentUserPtid || '', contact });
-              if (contact.conversationId) {
-                setSubPage('chats');
-              }
+              handleContactMessage(contact);
             }}
           />
         </div>
@@ -256,13 +371,30 @@ export function SocialChatPage() {
       {/* Right area: the active sub-page owns its own content semantics. */}
       {subPage === 'chats' ? (
         <>
-          <ChatMessageArea />
+          <ChatMessageArea
+            directOpenIntent={directOpenIntent}
+            onRetryDirectOpen={() => {
+              if (!directOpenIntent) return;
+              openDirectConversation({
+                kind: 'friend',
+                peerPtid: directOpenIntent.peerPtid,
+                federationId: directOpenIntent.federationId,
+                displayName: directOpenIntent.displayName,
+                avatar: directOpenIntent.avatar,
+              });
+            }}
+          />
           {openThreadRootUlid ? <ChatThreadPanel /> : showDetail && <ChatDetailPanel />}
         </>
       ) : (
         <ChatContactsDetailPanel
           selectedContact={selectedContact}
-          onMessage={() => setSubPage('chats')}
+          openingPeerPtid={
+            directOpenIntent?.phase === 'creating'
+              ? directOpenIntent.peerPtid
+              : undefined
+          }
+          onMessage={handleContactMessage}
         />
       )}
       {/* Voice / video call surface — page-level so a ringing call

@@ -291,7 +291,7 @@ impl OAuthCoordinator {
     pub async fn logout_purge(
         &self,
         storage: &SecureStorage,
-        scope: OAuthScopeIntent,
+        scope: Option<OAuthScopeIntent>,
     ) -> MobileResult<OAuthPurgeProjection> {
         self.logout_purge_inner(storage, scope).await
     }
@@ -299,49 +299,55 @@ impl OAuthCoordinator {
     async fn logout_purge_inner<S: SecretStore>(
         &self,
         storage: &S,
-        scope: OAuthScopeIntent,
+        scope: Option<OAuthScopeIntent>,
     ) -> MobileResult<OAuthPurgeProjection> {
         let _operation = self.begin_operation()?;
-        let scope = ValidatedScope::new(scope)?;
+        let scope = scope.map(ValidatedScope::new).transpose()?;
         let identity = load_optional_identity(storage)?;
         let active_attempt = read_active_attempt(storage)?;
         let attempt_storage_key = active_attempt
             .as_ref()
             .map(|attempt| attempt.storage_key.clone())
             .or_else(|| {
-                identity.as_ref().map(|identity| {
-                    scoped_key(
-                        ATTEMPT_KEY_PREFIX,
-                        &scope.station_peer_id,
-                        &identity.device_id,
-                        identity.generation,
-                    )
-                })
+                scope
+                    .as_ref()
+                    .zip(identity.as_ref())
+                    .map(|(scope, identity)| {
+                        scoped_key(
+                            ATTEMPT_KEY_PREFIX,
+                            &scope.station_peer_id,
+                            &identity.device_id,
+                            identity.generation,
+                        )
+                    })
             });
-        if let Some(attempt) = active_attempt.as_ref() {
-            ensure_scope_matches(storage, attempt, &scope)?;
+        if let (Some(attempt), Some(scope)) = (active_attempt.as_ref(), scope.as_ref()) {
+            ensure_scope_matches(storage, attempt, scope)?;
         }
         let current_session_key = storage
             .get_secret(CURRENT_SESSION_INDEX_KEY)?
             .map(|key| clean_required(key, "currentSessionStorageKey"))
             .transpose()?
             .or_else(|| {
-                identity.as_ref().map(|identity| {
-                    scoped_key(
-                        SESSION_KEY_PREFIX,
-                        &scope.station_peer_id,
-                        &identity.device_id,
-                        identity.generation,
-                    )
-                })
+                scope
+                    .as_ref()
+                    .zip(identity.as_ref())
+                    .map(|(scope, identity)| {
+                        scoped_key(
+                            SESSION_KEY_PREFIX,
+                            &scope.station_peer_id,
+                            &identity.device_id,
+                            identity.generation,
+                        )
+                    })
             });
         let active_session = current_session_key
             .as_deref()
             .map(|key| read_json(storage, key))
             .transpose()?
             .flatten();
-        if let Some(session) = active_session.as_ref() {
-            ensure_session_scope_matches(session, identity.as_ref(), &scope)?;
+        if let (Some(session), Some(scope)) = (active_session.as_ref(), scope.as_ref()) {
+            ensure_session_scope_matches(session, identity.as_ref(), scope)?;
         }
 
         let station_revocation = match active_attempt {
@@ -2318,10 +2324,10 @@ mod tests {
         let coordinator = OAuthCoordinator::new().expect("coordinator");
         let result = tauri::async_runtime::block_on(coordinator.logout_purge_inner(
             &storage,
-            OAuthScopeIntent {
+            Some(OAuthScopeIntent {
                 station_origin: "https://station.example".to_string(),
                 station_peer_id: "12D3KooWStation".to_string(),
-            },
+            }),
         ))
         .expect("purge");
 
@@ -2340,5 +2346,20 @@ mod tests {
         assert!(!serialized.contains("refresh-secret"));
         assert!(!serialized.contains("session"));
         assert!(!serialized.contains("did:peers:actor"));
+    }
+
+    #[test]
+    fn logout_purge_proves_empty_native_state_without_a_station_scope() {
+        let storage = MemoryStore::default();
+        let coordinator = OAuthCoordinator::new().expect("coordinator");
+
+        let result = tauri::async_runtime::block_on(coordinator.logout_purge_inner(&storage, None))
+            .expect("scope-free purge");
+
+        assert_eq!(
+            result.station_revocation,
+            OAuthStationRevocation::NotRequired
+        );
+        assert!(result.secure_storage.all_absent());
     }
 }

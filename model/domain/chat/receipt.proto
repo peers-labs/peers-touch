@@ -7,12 +7,6 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
 
-enum MessagingReceiptKind {
-  MESSAGING_RECEIPT_KIND_UNSPECIFIED = 0;
-  MESSAGING_RECEIPT_KIND_DEVICE_CONSUMED = 1;
-  MESSAGING_RECEIPT_KIND_ACTOR_READ = 2;
-}
-
 message DeviceConsumptionReceipt {
   string receipt_id = 1;
   string conversation_id = 2;
@@ -31,14 +25,6 @@ message ActorReadCursor {
   google.protobuf.Timestamp updated_at = 4;
 }
 
-message SubmitMessagingReceiptRequest {
-  MessagingReceiptKind kind = 1;
-  DeviceConsumptionReceipt device_consumed = 2;
-  ActorReadCursor actor_read = 3;
-}
-
-message SubmitMessagingReceiptResponse {}
-
 message MessageDeliveryAggregate {
   string conversation_id = 1;
   string event_id = 2;
@@ -49,4 +35,20 @@ message MessageDeliveryAggregate {
   bool delivered = 7;
   bool fully_delivered = 8;
   bool read = 9;
+}
+
+message SubmitConversationReadCursorRequest {
+  ActorReadCursor cursor = 1;
+}
+
+message SubmitConversationReadCursorResponse {
+  ActorReadCursor cursor = 1;
+}
+
+message SubmitConversationDeliveryReceiptRequest {
+  DeviceConsumptionReceipt receipt = 1;
+}
+
+message SubmitConversationDeliveryReceiptResponse {
+  MessageDeliveryAggregate delivery = 1;
 }

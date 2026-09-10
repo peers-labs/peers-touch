@@ -18,7 +18,8 @@ import {
 
 import { FriendMessageStatus, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
-import type { CommittedConversationEvent } from '../gen/proto/domain/chat/conversation_pb';
+import type { ConversationEvent } from '../gen/proto/domain/chat/event_pb';
+import type { MessagingConversationProjection } from '../services/im-service-contract';
 
 export interface MessagePreview {
   content: string;
@@ -29,6 +30,8 @@ export interface MessagePreview {
 export interface DesktopUnifiedConversationLike {
   type: 'friend' | 'group';
   ulid: string;
+  authorityStationId?: string;
+  federationId?: string;
   name: string;
   avatar?: string;
   lastActivity: Date;
@@ -52,6 +55,26 @@ export interface ConversationLocalState {
   backgroundImage?: string;
 }
 
+export type GroupSecurityState =
+  | 'idle'
+  | 'establishing'
+  | 'ready'
+  | 'crypto-desynced'
+  | 'error';
+
+export function projectGroupSecurityState(
+  status: NonNullable<MessagingConversationProjection['mlsStatus']>,
+): Exclude<GroupSecurityState, 'error'> {
+  switch (status) {
+    case 'active':
+      return 'ready';
+    case 'crypto_desynced':
+      return 'crypto-desynced';
+    default:
+      return status;
+  }
+}
+
 export const CHAT_BACKGROUND_OPTIONS = ['default', 'paper', 'mint', 'dusk', 'calm', 'graphite'] as const;
 export type ChatBackgroundId = (typeof CHAT_BACKGROUND_OPTIONS)[number];
 
@@ -68,31 +91,29 @@ type SequencedSocialMessage = SocialMessage & { groupSeq?: bigint };
 
 export function projectConversationMessageEvents(
   kind: 'friend' | 'group',
-  events: readonly CommittedConversationEvent[],
+  events: readonly ConversationEvent[],
 ): SocialMessage[] {
   const messages = new Map<string, SequencedSocialMessage>();
 
-  for (const event of [...events].sort((a, b) => Number(a.groupSeq - b.groupSeq))) {
+  for (const event of [...events].sort((a, b) => Number(a.sequence - b.sequence))) {
     switch (event.payload.case) {
       case 'messageCommitted': {
         const payload = event.payload.value;
         const common = {
           ulid: payload.messageId,
-          senderPtid: payload.senderPtid,
-          type: payload.contentType as number,
+          senderPtid: payload.sender?.ptid ?? '',
+          type: payload.contentKind as number,
           content: '',
           attachments: [],
           replyToUlid: payload.replyToMessageId,
           threadRootUlid: payload.threadRootMessageId,
-          sentAt: payload.clientTs ?? event.committedAt,
+          sentAt: payload.clientTimestamp ?? event.committedAt,
           createdAt: event.committedAt,
           updatedAt: event.committedAt,
-          encryptedPayload: kind === 'group'
-            ? payload.groupEncryptedPayload
-            : new Uint8Array(),
+          encryptedPayload: new Uint8Array(),
           recalled: false,
           editedAt: undefined,
-          groupSeq: event.groupSeq,
+          groupSeq: event.sequence,
         };
         const message = kind === 'friend'
           ? {
@@ -121,9 +142,6 @@ export function projectConversationMessageEvents(
           messages.set(payload.messageId, {
             ...current,
             content: '',
-            encryptedPayload: kind === 'group'
-              ? payload.groupEncryptedPayload
-              : new Uint8Array(),
             editedAt: payload.editedAt ?? event.committedAt,
             updatedAt: payload.editedAt ?? event.committedAt,
           } as SequencedSocialMessage);
@@ -160,6 +178,8 @@ export function messageGroupSeq(message: SocialMessage): number {
 }
 
 export type DesktopIMConversationProjection = IMConversationProjection & {
+  authorityStationId?: string;
+  federationId?: string;
   peerPtid?: string;
   memberCount?: number;
 };
@@ -172,6 +192,7 @@ export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike>
   replyToUlid?: string;
   threadRootUlid?: string;
   readByPtids: string[];
+  eventSequence: number;
 };
 
 export interface DesktopIMSenderProfileProjection {
@@ -278,6 +299,8 @@ export function projectDesktopIMConversation(conversation: DesktopUnifiedConvers
   });
   return {
     ...projection,
+    authorityStationId: conversation.authorityStationId ?? '',
+    federationId: conversation.federationId ?? '',
     peerPtid: conversation.peerPtid,
     memberCount: conversation.memberCount,
   };
@@ -313,6 +336,7 @@ export function projectDesktopIMMessage(
     replyToUlid: projection.replyToId,
     threadRootUlid: projection.threadRootId,
     readByPtids: (message as { readByPtids?: string[] }).readByPtids ?? [],
+    eventSequence: messageGroupSeq(message),
   };
 }
 
@@ -324,6 +348,12 @@ export function projectDesktopIMMessages(
   return messages
     .map((message) => projectDesktopIMMessage(kind, conversationId, message))
     .sort((a, b) => {
+      if (a.eventSequence > 0 && b.eventSequence > 0) {
+        const sequenceDelta = a.eventSequence - b.eventSequence;
+        if (sequenceDelta !== 0) return sequenceDelta;
+      } else if (a.eventSequence > 0 || b.eventSequence > 0) {
+        return a.eventSequence > 0 ? -1 : 1;
+      }
       const timestampDelta = a.sentAtMs - b.sentAtMs;
       if (timestampDelta !== 0) return timestampDelta;
       return a.id.localeCompare(b.id);

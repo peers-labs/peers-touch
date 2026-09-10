@@ -70,6 +70,7 @@ export type TurnStreamEventType =
   | 'conversation_created'
   | 'queued'
   | 'admission_replayed'
+  | 'budget_exhausted'
   | 'error'
   | 'cancelled'
   | 'connection_lost'
@@ -141,8 +142,19 @@ export interface ConversationCreatedPayload {
 export interface ErrorEventPayload {
   error: string;
   type?: string;
+  error_type?: string;
+  locale_key?: string;
+  retryable?: boolean;
+  terminal?: boolean;
+  details?: Record<string, string>;
   turnId?: string;
   conversationId?: string;
+}
+
+export interface CancelledEventPayload {
+  reason: string;
+  outcome_error?: ErrorEventPayload;
+  outcomeError?: ErrorEventPayload;
 }
 
 export interface DoneEventPayload {
@@ -171,6 +183,7 @@ export type TurnStreamEventPayload =
   | ImageEventPayload
   | ConversationCreatedPayload
   | ErrorEventPayload
+  | CancelledEventPayload
   | DoneEventPayload
   | CatchupDoneEventPayload;
 

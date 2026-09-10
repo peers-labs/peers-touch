@@ -7,6 +7,9 @@ export interface FriendRequestData {
   id: string;
   senderPtid: string;
   receiverPtid: string;
+  federationId: string;
+  senderHomeStationPeerId: string;
+  receiverHomeStationPeerId: string;
   status: number;
   message: string;
   createdAt: string;
@@ -56,10 +59,19 @@ export function friendRequestProfileDids(
 export function normalizeFriendRequestData(raw: unknown): FriendRequestData {
   const record = recordFromUnknown(raw);
   return {
-    id: stringValue(record.id, record.Id),
-    senderPtid: stringValue(record.senderPtid),
-    receiverPtid: stringValue(record.receiverPtid),
-    status: numberValue(record.status),
+    id: stringValue(record.requestId, record.request_id),
+    senderPtid: actorPtid(record.sender),
+    receiverPtid: actorPtid(record.receiver),
+    federationId: stringValue(record.federationId, record.federation_id),
+    senderHomeStationPeerId: stringValue(
+      record.senderHomeStationPeerId,
+      record.sender_home_station_peer_id,
+    ),
+    receiverHomeStationPeerId: stringValue(
+      record.receiverHomeStationPeerId,
+      record.receiver_home_station_peer_id,
+    ),
+    status: numberValue(record.state),
     message: stringValue(record.message),
     createdAt: stringValue(record.createdAt, record.created_at),
     respondedAt: stringValue(record.respondedAt, record.responded_at),
@@ -68,6 +80,11 @@ export function normalizeFriendRequestData(raw: unknown): FriendRequestData {
     receiverDisplayName: stringValue(record.receiverDisplayName, record.receiver_display_name),
     receiverAvatar: stringValue(record.receiverAvatar, record.receiver_avatar),
   };
+}
+
+function actorPtid(value: unknown): string {
+  const actor = recordFromUnknown(value);
+  return stringValue(actor.ptid);
 }
 
 function recordFromUnknown(value: unknown): RawRecord {

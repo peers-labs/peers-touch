@@ -3,6 +3,7 @@ syntax = "proto3";
 package peers_touch.model.chat.v1;
 
 import "domain/chat/attachment.proto";
+import "domain/chat/conversation.proto";
 import "domain/chat/endpoint.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -76,6 +77,7 @@ message UpdateConversationIntent {
   optional string description = 2;
   optional string avatar_object_id = 3;
   optional uint32 disappear_timer_seconds = 4;
+  optional GroupVisibilityV1 visibility = 5;
 }
 
 enum MessagingMembershipAction {
@@ -92,7 +94,8 @@ message MessagingMembershipChangeIntent {
   MessagingMembershipAction action = 1;
   string ptid = 2;
   string device_id = 3;
-  string home_station_id = 4;
+  reserved 4;
+  reserved "home_station_id";
   string role = 5;
 }
 
@@ -110,6 +113,8 @@ message MembershipTransitionIntent {
   bytes authority_plan_sha256 = 11;
 }
 
+message DissolveConversationIntent {}
+
 // Durable client intent. The exact deterministic bytes are replayed until the
 // authority returns a terminal result.
 message ChatCommand {
@@ -120,7 +125,7 @@ message ChatCommand {
   int64 observed_mls_epoch = 5;
   google.protobuf.Timestamp client_timestamp = 6;
   bytes delivery_plan_sha256 = 7;
-  string authority_station_id = 8;
+  string authority_station_peer_id = 8;
 
   oneof payload {
     SendMessageIntent send_message = 20;
@@ -130,5 +135,42 @@ message ChatCommand {
     PinMessageIntent pin_message = 24;
     UpdateConversationIntent update_conversation = 25;
     MembershipTransitionIntent membership_transition = 26;
+    DissolveConversationIntent dissolve_conversation = 27;
   }
+}
+
+// The only remote durable command wrapper. command_id is both the proposal
+// identity and the authority idempotency identity.
+message ConversationCommandProposal {
+  uint32 version = 1;
+  string federation_id = 2;
+  string authority_station_peer_id = 3;
+  int64 authority_epoch = 4;
+  string home_station_peer_id = 5;
+  string actor_ptid = 6;
+  string actor_device_id = 7;
+  string actor_signing_key_id = 8;
+  ChatCommand command = 9;
+  bytes command_sha256 = 10;
+  bytes actor_signature = 11;
+  int64 created_at_unix_ms = 12;
+  int64 expires_at_unix_ms = 13;
+}
+
+// Exact deterministic protobuf input signed by the actor device.
+message ConversationCommandProposalSigningInput {
+  uint32 version = 1;
+  string federation_id = 2;
+  string authority_station_peer_id = 3;
+  int64 authority_epoch = 4;
+  string home_station_peer_id = 5;
+  string conversation_id = 6;
+  string command_id = 7;
+  ConversationCommandKind command_kind = 8;
+  string actor_ptid = 9;
+  string actor_device_id = 10;
+  string actor_signing_key_id = 11;
+  bytes command_sha256 = 12;
+  int64 created_at_unix_ms = 13;
+  int64 expires_at_unix_ms = 14;
 }

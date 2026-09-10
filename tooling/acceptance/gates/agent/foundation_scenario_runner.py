@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -66,6 +67,7 @@ from tooling.acceptance.gates.agent.foundation_non_advertisement_adapter import 
     NonAdvertisementProbeInput,
 )
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
+    FoundationClientSpec,
     FoundationRuntimeClient,
     FoundationRuntimePair,
 )
@@ -78,7 +80,59 @@ class ScenarioRunnerError(RuntimeError):
 DIRECT_PROBE_TIMEOUT_SECONDS = {
     "AS-F04": 900,
     "AS-F07": 900,
+    "BASE-APPROVAL_EXPIRED": 1200,
 }
+
+RESTORE_IDENTITY_STATES = frozenset(
+    {
+        "onboarding",
+        "resuming",
+        "ready",
+    }
+)
+RESTORE_IDENTITY_PHASES = frozenset(
+    {
+        "booting",
+        "checkingLaunchContext",
+        "resolvingSession",
+        "accessGateChainPending",
+        "loggingOut",
+        "accountGate",
+        "pinGate",
+        "pinRecoveryAuthenticating",
+        "pinRecoveryPendingPin",
+        "authenticatedPendingCompletion",
+        "authenticated",
+        "revoked",
+    }
+)
+RESTORE_IDENTITY_REASONS = frozenset(
+    {
+        "cold_launch",
+        "renderer_reload",
+        "applet_launch",
+        "cold_policy",
+        "pin_required",
+        "session_missing",
+        "restore_failed",
+        "revoked",
+        "logout",
+    }
+)
+RESTORE_ERROR_CODES = (
+    "UNAUTHORIZED",
+    "FORBIDDEN",
+    "INVALID_ARGUMENT",
+    "INTERNAL_ERROR",
+)
+RESTORE_ERROR_REASONS = (
+    "session_missing",
+    "pin_required",
+    "actor_ptid_mismatch",
+    "takeover_failed",
+    "restore_failed",
+    "session_revoked",
+)
 
 
 def _agent_provider_config(profile_env: Mapping[str, str]) -> dict[str, str]:
@@ -167,10 +221,11 @@ def _load_profile_env(manifest: dict[str, Any]) -> dict[str, str]:
 
 def _build_client_manifest(runtime_manifest: dict[str, Any]) -> dict[str, Any]:
     """Build the client manifest consumed by FoundationRuntimePair.from_manifest."""
-    station = runtime_manifest.get("station")
-    if not isinstance(station, Mapping) or not station.get("url"):
+    services = runtime_manifest.get("services")
+    station = services.get("station") if isinstance(services, Mapping) else None
+    if not isinstance(station, Mapping) or not station.get("endpoint"):
         raise ScenarioRunnerError(
-            "runtime manifest must contain station.url"
+            "runtime manifest must contain services.station.endpoint"
         )
     clients = runtime_manifest.get("clients")
     if not isinstance(clients, list):
@@ -178,7 +233,7 @@ def _build_client_manifest(runtime_manifest: dict[str, Any]) -> dict[str, Any]:
             "runtime manifest must contain a clients array"
         )
     return {
-        "station": station,
+        "station": {"url": station["endpoint"]},
         "clients": clients,
     }
 
@@ -187,6 +242,7 @@ def _make_direct_probe(
     client: Any,
     *,
     f06_coordinator: "FoundationF06Coordinator | None" = None,
+    f12_coordinator: "FoundationF12Coordinator | None" = None,
 ) -> "Callable[[DirectRuntimeProbeInput], Mapping[str, Any]]":
     """Create a direct-runtime probe that executes via WebDriver harness.
 
@@ -201,6 +257,12 @@ def _make_direct_probe(
                     "AS-F06 direct probe requires restart orchestration"
                 )
             return f06_coordinator.capture(probe_input)
+        if probe_input.cell == "AS-F12":
+            if f12_coordinator is None:
+                raise ScenarioRunnerError(
+                    "AS-F12 direct probe requires restart orchestration"
+                )
+            return f12_coordinator.capture(probe_input)
         locale = client.harness(
             "setFoundationLocale",
             {"locale": probe_input.locale},
@@ -300,22 +362,69 @@ class FoundationF06Coordinator:
                 f"{self._scenario_key(probe_input)}"
             )
 
+    def _restore_capability_isolation(
+        self,
+        client: Any,
+        probe_input: DirectRuntimeProbeInput,
+        operation_deadline: float,
+    ) -> None:
+        remaining = operation_deadline - time.monotonic()
+        if remaining <= 0:
+            raise ScenarioRunnerError(
+                "AS-F06 Station restart deadline expired "
+                "during capability-isolation restoration"
+            )
+        scenario_key = self._scenario_key(probe_input)
+        result = client.harness(
+            "foundationF06RestoreCapabilityIsolation",
+            {"scenarioKey": scenario_key},
+            timeout=remaining,
+        )
+        if (
+            not isinstance(result, Mapping)
+            or result.get("scenarioKey") != scenario_key
+        ):
+            raise ScenarioRunnerError(
+                f"AS-F06 capability-isolation restoration returned invalid "
+                f"scope for {scenario_key}"
+            )
+        validation_error = _capability_isolation_restoration_error(
+            probe_input.platform,
+            result.get("toolIsolation"),
+            allow_empty=True,
+        )
+        if validation_error:
+            raise ScenarioRunnerError(
+                f"AS-F06 capability-isolation restoration failed for "
+                f"{scenario_key}: {validation_error}"
+            )
+
     def _cleanup_prepared(
         self,
-        prepared: list[tuple[DirectRuntimeProbeInput, Mapping[str, Any]]],
+        prepared: list[
+            tuple[DirectRuntimeProbeInput, Mapping[str, Any] | None]
+        ],
     ) -> list[str]:
         errors: list[str] = []
         for probe_input, handoff in reversed(prepared):
             scenario_key = self._scenario_key(probe_input)
+            conversation_id = (
+                str(handoff.get("conversationId") or "")
+                if handoff is not None
+                else ""
+            )
+            turn_id = (
+                str(handoff.get("turnId") or "")
+                if handoff is not None
+                else ""
+            )
             try:
                 result = self._client(probe_input.platform).harness(
                     "foundationF06Cleanup",
                     {
                         "scenarioKey": scenario_key,
-                        "conversationId": str(
-                            handoff.get("conversationId") or ""
-                        ),
-                        "turnId": str(handoff.get("turnId") or ""),
+                        "conversationId": conversation_id,
+                        "turnId": turn_id,
                     },
                     timeout=60,
                 )
@@ -341,7 +450,12 @@ class FoundationF06Coordinator:
             except BaseException as error:
                 errors.append(f"{platform} cleanup restart: {error}")
         try:
-            _authenticate_clients(self._runtime_pair, self._profile_env)
+            _authenticate_clients(
+                self._runtime_pair,
+                self._profile_env,
+                require_existing_session=True,
+                recovery_boundary="cleanup-restart",
+            )
         except BaseException as error:
             errors.append(f"cleanup authentication: {error}")
         return errors
@@ -363,33 +477,57 @@ class FoundationF06Coordinator:
             )
 
         prepared: list[
-            tuple[DirectRuntimeProbeInput, Mapping[str, Any]]
+            tuple[DirectRuntimeProbeInput, Mapping[str, Any] | None]
         ] = []
         primary_error: BaseException | None = None
         try:
             for probe_input in f06_inputs:
                 client = self._client(probe_input.platform)
                 self._set_locale(client, probe_input)
-                handoff = client.harness(
-                    "foundationF06Prepare",
-                    {
-                        "scenarioKey": self._scenario_key(probe_input),
-                        "platform": probe_input.platform,
-                        "locale": probe_input.locale,
-                        "sampleId": probe_input.sample_id,
-                    },
-                    timeout=300,
-                )
-                if (
-                    not isinstance(handoff, Mapping)
-                    or not str(handoff.get("conversationId") or "")
-                    or not str(handoff.get("turnId") or "")
-                ):
-                    raise ScenarioRunnerError(
-                        f"AS-F06 prepare returned invalid evidence for "
-                        f"{self._scenario_key(probe_input)}"
+                prepared_index = len(prepared)
+                prepared.append((probe_input, None))
+                try:
+                    handoff = client.prepare_foundation_f06(
+                        {
+                            "scenarioKey": self._scenario_key(probe_input),
+                            "platform": probe_input.platform,
+                            "locale": probe_input.locale,
+                            "sampleId": probe_input.sample_id,
+                        },
+                        timeout=300,
                     )
-                prepared.append((probe_input, handoff))
+                    prepared[prepared_index] = (
+                        probe_input,
+                        handoff if isinstance(handoff, Mapping) else None,
+                    )
+                    if (
+                        not isinstance(handoff, Mapping)
+                        or not str(handoff.get("conversationId") or "")
+                        or not str(handoff.get("turnId") or "")
+                    ):
+                        raise ScenarioRunnerError(
+                            f"AS-F06 prepare returned invalid evidence for "
+                            f"{self._scenario_key(probe_input)}"
+                        )
+                    finalized_handoff = client.harness(
+                        "foundationF06FinalizePreparation",
+                        {"scenarioKey": self._scenario_key(probe_input)},
+                        timeout=60,
+                    )
+                    if (
+                        not isinstance(finalized_handoff, Mapping)
+                        or finalized_handoff.get("conversationId")
+                        != handoff.get("conversationId")
+                        or finalized_handoff.get("turnId")
+                        != handoff.get("turnId")
+                    ):
+                        raise ScenarioRunnerError(
+                            f"AS-F06 finalized handoff is invalid for "
+                            f"{self._scenario_key(probe_input)}"
+                        )
+                except BaseException:
+                    client.restore_station_transport()
+                    raise
                 self._execute_active(probe_input)
         except BaseException as error:
             primary_error = error
@@ -416,6 +554,7 @@ class FoundationF06Coordinator:
         probe_input: DirectRuntimeProbeInput,
     ) -> None:
         durable_reload_evidence: Mapping[str, Any] | None = None
+        transport_restored = False
 
         def observe_recovery_failures(outage_deadline: float) -> None:
             remaining = outage_deadline - time.monotonic()
@@ -444,14 +583,22 @@ class FoundationF06Coordinator:
                 )
 
         def exercise_durable_reloads(operation_deadline: float) -> None:
-            nonlocal durable_reload_evidence
+            nonlocal durable_reload_evidence, transport_restored
             client = self._client(probe_input.platform)
+            client.restore_station_transport()
+            transport_restored = True
             _authenticate_clients(
                 self._runtime_pair,
                 self._profile_env,
                 clients=(client,),
                 require_existing_session=True,
                 session_deadline=operation_deadline,
+                recovery_boundary="station-restart",
+            )
+            self._restore_capability_isolation(
+                client,
+                probe_input,
+                operation_deadline,
             )
             remaining = operation_deadline - time.monotonic()
             if remaining <= 0:
@@ -495,13 +642,17 @@ class FoundationF06Coordinator:
                 )
             durable_reload_evidence = dict(result)
 
-        station_restart = restart_foundation_station(
-            self._runtime_manifest,
-            repo_root=REPO_ROOT,
-            during_outage=observe_recovery_failures,
-            after_restart=exercise_durable_reloads,
-        )
         client = self._client(probe_input.platform)
+        try:
+            station_restart = restart_foundation_station(
+                self._runtime_manifest,
+                repo_root=REPO_ROOT,
+                during_outage=observe_recovery_failures,
+                after_restart=exercise_durable_reloads,
+            )
+        finally:
+            if not transport_restored:
+                client.restore_station_transport()
         client.restart()
         client_reloads = {probe_input.platform: True}
         _authenticate_clients(
@@ -509,6 +660,7 @@ class FoundationF06Coordinator:
             self._profile_env,
             clients=(client,),
             require_existing_session=True,
+            recovery_boundary="client-restart",
         )
         if durable_reload_evidence is None:
             raise ScenarioRunnerError(
@@ -558,6 +710,224 @@ class FoundationF06Coordinator:
                 f"AS-F06 tuple was not prepared: "
                 f"{self._scenario_key(probe_input)}"
             )
+        return capture
+
+
+class FoundationF12Coordinator:
+    """Close every AS-F12 tuple around its own source-bound restart."""
+
+    def __init__(
+        self,
+        runtime_pair: FoundationRuntimePair,
+        runtime_manifest: Mapping[str, Any],
+        profile_env: Mapping[str, str],
+    ) -> None:
+        self._runtime_pair = runtime_pair
+        self._runtime_manifest = runtime_manifest
+        self._profile_env = dict(profile_env)
+        self._captures: dict[tuple[str, str, str, str], Mapping[str, Any]] = {}
+
+    @staticmethod
+    def _capture_key(
+        probe_input: DirectRuntimeProbeInput,
+    ) -> tuple[str, str, str, str]:
+        return (
+            probe_input.platform,
+            probe_input.locale,
+            probe_input.cell,
+            probe_input.sample_id,
+        )
+
+    @staticmethod
+    def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
+        return "|".join(
+            (
+                probe_input.platform,
+                probe_input.locale,
+                probe_input.cell,
+                probe_input.sample_id,
+            )
+        )
+
+    def _client(self, platform: str) -> Any:
+        if platform == "desktop_app":
+            return self._runtime_pair.native
+        if platform == "browser":
+            return self._runtime_pair.browser
+        raise ScenarioRunnerError(
+            f"AS-F12 has no direct client for platform {platform}"
+        )
+
+    def _set_locale(
+        self,
+        client: Any,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> None:
+        result = client.harness(
+            "setFoundationLocale",
+            {"locale": probe_input.locale},
+            timeout=30,
+        )
+        if (
+            not isinstance(result, Mapping)
+            or result.get("locale") != probe_input.locale
+        ):
+            raise ScenarioRunnerError(
+                f"AS-F12 locale did not converge for "
+                f"{self._scenario_key(probe_input)}"
+            )
+
+    def _cleanup(
+        self,
+        client: Any,
+        *,
+        scenario_key: str,
+        conversation_ids: tuple[str, str],
+    ) -> None:
+        result = client.harness(
+            "foundationF12Cleanup",
+            {
+                "scenarioKey": scenario_key,
+                "conversationIds": list(conversation_ids),
+            },
+            timeout=60,
+        )
+        if (
+            not isinstance(result, Mapping)
+            or result.get("cleanupComplete") is not True
+            or result.get("handoffCleared") is not True
+        ):
+            raise ScenarioRunnerError(
+                f"AS-F12 cleanup proof is invalid for "
+                f"{scenario_key}: {result!r}"
+            )
+
+    def _execute_active(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        client = self._client(probe_input.platform)
+        scenario_key = self._scenario_key(probe_input)
+        prepared = False
+        conversation_ids: tuple[str, str] = ("", "")
+        result: Mapping[str, Any] | None = None
+        primary_error: BaseException | None = None
+        try:
+            self._set_locale(client, probe_input)
+            preparation = client.harness(
+                "foundationF12Prepare",
+                {
+                    "scenarioKey": scenario_key,
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "sampleId": probe_input.sample_id,
+                },
+                timeout=300,
+            )
+            candidate_conversation_ids = (
+                preparation.get("conversationIds")
+                if isinstance(preparation, Mapping)
+                else None
+            )
+            if (
+                not isinstance(preparation, Mapping)
+                or preparation.get("scenarioKey") != scenario_key
+                or not isinstance(candidate_conversation_ids, list)
+                or len(candidate_conversation_ids) != 2
+                or any(
+                    not isinstance(value, str) or not value
+                    for value in candidate_conversation_ids
+                )
+                or len(set(candidate_conversation_ids)) != 2
+                or preparation.get("primaryConversationId")
+                != candidate_conversation_ids[0]
+                or not isinstance(preparation.get("primaryTurnId"), str)
+                or not preparation.get("primaryTurnId")
+            ):
+                raise ScenarioRunnerError(
+                    f"AS-F12 prepare returned invalid evidence for "
+                    f"{scenario_key}: {preparation!r}"
+                )
+            prepared = True
+            conversation_ids = (
+                candidate_conversation_ids[0],
+                candidate_conversation_ids[1],
+            )
+
+            station_restart = restart_foundation_station(
+                self._runtime_manifest,
+                repo_root=REPO_ROOT,
+            )
+            client.restart()
+            _authenticate_clients(
+                self._runtime_pair,
+                self._profile_env,
+                clients=(client,),
+                require_existing_session=True,
+                recovery_boundary="as-f12-client-restart",
+            )
+            restart_evidence = {
+                **station_restart,
+                "clientReloads": {probe_input.platform: True},
+                "owningPlatform": probe_input.platform,
+                "existingSessionRestored": True,
+            }
+            candidate_result = client.harness(
+                "foundationDirectProbe",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "cell": "AS-F12",
+                    "sampleId": probe_input.sample_id,
+                    "scenarioKey": scenario_key,
+                    "stationRestart": restart_evidence,
+                },
+                timeout=300,
+            )
+            if not isinstance(candidate_result, Mapping):
+                raise ScenarioRunnerError(
+                    f"AS-F12 direct probe returned invalid evidence for "
+                    f"{scenario_key}"
+                )
+            result = dict(candidate_result)
+            assert_group_one_capture(probe_input, result)
+            return result
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            cleanup = result.get("cleanup") if isinstance(result, Mapping) else None
+            cleanup_is_clean = (
+                isinstance(cleanup, Mapping)
+                and cleanup.get("status") == "clean"
+            )
+            if prepared and not cleanup_is_clean:
+                try:
+                    self._cleanup(
+                        client,
+                        scenario_key=scenario_key,
+                        conversation_ids=conversation_ids,
+                    )
+                except BaseException as cleanup_error:
+                    if primary_error is not None:
+                        raise ScenarioRunnerError(
+                            f"{primary_error}; CLEANUP_FAILED: {cleanup_error}"
+                        ) from primary_error
+                    raise
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        if probe_input.cell != "AS-F12":
+            raise ScenarioRunnerError(
+                f"AS-F12 coordinator received {probe_input.cell}"
+            )
+        capture_key = self._capture_key(probe_input)
+        capture = self._captures.get(capture_key)
+        if capture is None:
+            capture = dict(self._execute_active(probe_input))
+            self._captures[capture_key] = capture
         return capture
 
 
@@ -618,7 +988,7 @@ def _extract_machine_id(runtime_manifest: dict[str, Any]) -> str:
     return _socket.gethostname()
 
 
-def _warm_up_client(client: "FoundationRuntimeClient") -> None:
+def _warm_up_client(client: "FoundationRuntimeClient") -> bool:
     """Wait for Rust backend readiness before attempting login.
 
     After harness_ready confirms the web layer is mounted, the Rust/Tauri
@@ -642,14 +1012,107 @@ def _warm_up_client(client: "FoundationRuntimeClient") -> None:
                 timeout=probe_timeout,
             )
             if isinstance(result, Mapping) and result.get("ready"):
-                return
+                return True
         except Exception:
             pass
         if attempt < max_attempts:
             _time.sleep(retry_interval)
 
-    # Final warm-up failure is not terminal here. The caller's next login or
-    # existing-session probe reports the operation-specific failure.
+    return False
+
+
+def _restore_failure_diagnostic(
+    *,
+    recovery_boundary: str,
+    poll_count: int,
+    session_state: Mapping[str, Any] | None,
+    last_error: BaseException | None,
+) -> str:
+    """Return bounded restore diagnostics without actor or credential values."""
+    identity_state = (
+        session_state.get("identityState")
+        if isinstance(session_state, Mapping)
+        else None
+    )
+    safe_identity_state = (
+        identity_state
+        if isinstance(identity_state, str)
+        and identity_state in RESTORE_IDENTITY_STATES
+        else "unknown"
+    )
+    identity_phase = (
+        session_state.get("identityPhase")
+        if isinstance(session_state, Mapping)
+        else None
+    )
+    safe_identity_phase = (
+        identity_phase
+        if isinstance(identity_phase, str)
+        and identity_phase in RESTORE_IDENTITY_PHASES
+        else "unknown"
+    )
+    identity_reason = (
+        session_state.get("identityReason")
+        if isinstance(session_state, Mapping)
+        else None
+    )
+    safe_identity_reason = (
+        identity_reason
+        if isinstance(identity_reason, str)
+        and identity_reason in RESTORE_IDENTITY_REASONS
+        else None
+    )
+    authenticated = (
+        session_state.get("authenticated")
+        if isinstance(session_state, Mapping)
+        and isinstance(session_state.get("authenticated"), bool)
+        else None
+    )
+    actor_present = (
+        isinstance(session_state.get("actorId"), str)
+        and bool(session_state.get("actorId"))
+        if isinstance(session_state, Mapping)
+        else False
+    )
+
+    error_texts: list[str] = []
+    error = last_error
+    for _ in range(4):
+        if error is None:
+            break
+        error_texts.append(str(error).lower())
+        error = error.__cause__
+    combined_error = " ".join(error_texts)
+    error_code = next(
+        (code for code in RESTORE_ERROR_CODES if code.lower() in combined_error),
+        None,
+    )
+    error_reason = next(
+        (
+            reason
+            for reason in RESTORE_ERROR_REASONS
+            if reason in combined_error
+            or reason.replace("_", " ") in combined_error
+        ),
+        None,
+    )
+
+    return json.dumps(
+        {
+            "actorPresent": actor_present,
+            "authenticated": authenticated,
+            "errorCode": error_code,
+            "errorReason": error_reason,
+            "errorType": type(last_error).__name__ if last_error else None,
+            "identityPhase": safe_identity_phase,
+            "identityReason": safe_identity_reason,
+            "identityState": safe_identity_state,
+            "pollCount": poll_count,
+            "recoveryBoundary": recovery_boundary,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 def _authenticate_clients(
@@ -659,6 +1122,7 @@ def _authenticate_clients(
     clients: tuple[FoundationRuntimeClient, ...] | None = None,
     require_existing_session: bool = False,
     session_deadline: float | None = None,
+    recovery_boundary: str = "session-recovery",
 ) -> None:
     """Prepare authenticated clients without masking recovery failures.
 
@@ -674,17 +1138,26 @@ def _authenticate_clients(
 
     for client in selected_clients:
         # Step 0: Warm-up — wait for Rust backend to finish initializing
-        _warm_up_client(client)
+        if not _warm_up_client(client):
+            client.restart()
+            if not _warm_up_client(client):
+                raise ScenarioRunnerError(
+                    f"{client.spec.runtime} client session remained unavailable "
+                    "after bounded restart"
+                )
 
-        # Step 1: Initial setup may log in. Recovery paths must instead prove
-        # the original session survived Station or client restart.
+        # Step 1: Initial setup drives the production Station selection commands
+        # before login. Recovery paths preserve and prove the original binding.
         if require_existing_session:
             restore_deadline = min(
                 session_deadline or time.monotonic() + 120,
                 time.monotonic() + 120,
             )
             session_state: Mapping[str, Any] | None = None
+            last_error: BaseException | None = None
+            poll_count = 0
             while time.monotonic() < restore_deadline:
+                poll_count += 1
                 try:
                     candidate = client.harness(
                         "getRuntimeSnapshot",
@@ -694,7 +1167,9 @@ def _authenticate_clients(
                             max(1, restore_deadline - time.monotonic()),
                         ),
                     )
-                except Exception:
+                    last_error = None
+                except Exception as error:
+                    last_error = error
                     candidate = None
                 if isinstance(candidate, Mapping):
                     session_state = candidate
@@ -709,8 +1184,6 @@ def _authenticate_clients(
                 if remaining <= 0:
                     break
                 time.sleep(min(1.0, remaining))
-            else:
-                session_state = None
             if (
                 not isinstance(session_state, Mapping)
                 or session_state.get("authenticated") is not True
@@ -718,10 +1191,25 @@ def _authenticate_clients(
                 or not isinstance(session_state.get("actorId"), str)
                 or not session_state.get("actorId")
             ):
+                diagnostic = _restore_failure_diagnostic(
+                    recovery_boundary=recovery_boundary,
+                    poll_count=poll_count,
+                    session_state=session_state,
+                    last_error=last_error,
+                )
                 raise ScenarioRunnerError(
-                    f"{client.spec.runtime} existing session was not restored"
+                    f"{client.spec.runtime} existing session was not restored: "
+                    f"{diagnostic}"
                 )
         else:
+            source_station_url = (
+                profile_env.get("PT_STATION_URL", "").strip().rstrip("/")
+            )
+            if not source_station_url:
+                raise ScenarioRunnerError(
+                    "active profile is missing PT_STATION_URL"
+                )
+            client.configure_station(timeout=60)
             login_result = client.harness(
                 "loginWithPassword",
                 {"account": account, "password": password},
@@ -847,6 +1335,47 @@ def _authenticate_clients(
             )
 
 
+def _capability_isolation_restoration_error(
+    runtime: str,
+    restoration: Any,
+    *,
+    allow_empty: bool,
+) -> str | None:
+    if not isinstance(restoration, Mapping):
+        return f"{runtime} capability isolation restoration is missing"
+
+    def exact_int(name: str) -> int | None:
+        value = restoration.get(name)
+        return value if type(value) is int else None
+
+    disabled = exact_int("disabledBindingCount")
+    isolated_ready = exact_int("readyCapabilityCount")
+    original_ready = exact_int("originalReadyCapabilityCount")
+    restored_bindings = exact_int("restoredBindingCount")
+    restored_ready = exact_int("restoredReadyCapabilityCount")
+    original_hash = restoration.get("originalReadyCapabilityHash")
+    restored_hash = restoration.get("restoredReadyCapabilityHash")
+    valid = (
+        disabled is not None
+        and (disabled >= 0 if allow_empty else disabled > 0)
+        and isolated_ready == 0
+        and original_ready is not None
+        and original_ready >= 0
+        and (disabled > 0 or original_ready == 0)
+        and restored_bindings == disabled
+        and restored_ready == original_ready
+        and isinstance(original_hash, str)
+        and re.fullmatch(r"[0-9a-f]{64}", original_hash) is not None
+        and restored_hash == original_hash
+        and restoration.get("restorationVerified") is True
+    )
+    return (
+        None
+        if valid
+        else f"{runtime} capability isolation restoration was not verified"
+    )
+
+
 def _restore_capability_isolation_for_cleanup(
     runtime_pair: FoundationRuntimePair,
     profile_env: Mapping[str, str],
@@ -878,37 +1407,10 @@ def _restore_capability_isolation_for_cleanup(
                 else f"{runtime} capability isolation restore returned "
                 "contradictory evidence"
             )
-        if not isinstance(restoration, Mapping):
-            return f"{runtime} capability isolation restoration is missing"
-
-        def exact_int(name: str) -> int | None:
-            value = restoration.get(name)
-            return value if type(value) is int else None
-
-        disabled = exact_int("disabledBindingCount")
-        isolated_ready = exact_int("readyCapabilityCount")
-        original_ready = exact_int("originalReadyCapabilityCount")
-        restored_bindings = exact_int("restoredBindingCount")
-        restored_ready = exact_int("restoredReadyCapabilityCount")
-        original_hash = restoration.get("originalReadyCapabilityHash")
-        restored_hash = restoration.get("restoredReadyCapabilityHash")
-        valid = (
-            disabled is not None
-            and disabled > 0
-            and isolated_ready == 0
-            and original_ready is not None
-            and original_ready >= 0
-            and restored_bindings == disabled
-            and restored_ready == original_ready
-            and isinstance(original_hash, str)
-            and re.fullmatch(r"[0-9a-f]{64}", original_hash) is not None
-            and restored_hash == original_hash
-            and restoration.get("restorationVerified") is True
-        )
-        return (
-            None
-            if valid
-            else f"{runtime} capability isolation restoration was not verified"
+        return _capability_isolation_restoration_error(
+            runtime,
+            restoration,
+            allow_empty=False,
         )
 
     errors: list[str] = []
@@ -961,20 +1463,45 @@ def _restore_capability_isolation_for_cleanup(
     return errors
 
 
-def run_scenario(*, dry_run: bool = False) -> Path:
+def run_scenario(*, dry_run: bool = False) -> Path | None:
     """Execute Phase 1: produce the Foundation candidate manifest.
 
-    Returns the absolute path to the candidate manifest JSON.
+    Returns the candidate path, or None for configuration-only validation.
     """
     # --- Load provisioned environment ---
     runtime_manifest = _load_runtime_manifest()
     profile_env = _load_profile_env(runtime_manifest)
     client_manifest = _build_client_manifest(runtime_manifest)
-    startup_timeout = float(
-        os.environ.get("PT_FOUNDATION_STARTUP_TIMEOUT", "900")
-    )
+    raw_startup_timeout = os.environ.get("PT_FOUNDATION_STARTUP_TIMEOUT", "900")
+    try:
+        startup_timeout = float(raw_startup_timeout)
+    except ValueError as error:
+        raise ScenarioRunnerError(
+            "PT_FOUNDATION_STARTUP_TIMEOUT must be positive and finite"
+        ) from error
+    if not math.isfinite(startup_timeout) or startup_timeout <= 0:
+        raise ScenarioRunnerError(
+            "PT_FOUNDATION_STARTUP_TIMEOUT must be positive and finite"
+        )
     station_profile = _extract_station_profile(runtime_manifest)
     machine = _extract_machine_id(runtime_manifest)
+
+    if dry_run:
+        # RuntimePair construction binds proxy sockets, even before start().
+        clients = client_manifest["clients"]
+        if (
+            len(clients) != 2
+            or any(not isinstance(client, Mapping) for client in clients)
+            or {client.get("runtime") for client in clients}
+            != {"native-tauri", "browser"}
+        ):
+            raise ScenarioRunnerError(
+                "Foundation runtime manifest requires Native and Browser clients"
+            )
+        for client in clients:
+            FoundationClientSpec.from_mapping(client)
+        _agent_provider_config(profile_env)
+        return None
 
     # --- Provision Evidence Store run ---
     store = EvidenceStore.from_environment(
@@ -1004,12 +1531,18 @@ def run_scenario(*, dry_run: bool = False) -> Path:
             runtime_manifest,
             profile_env,
         )
+        f12_coordinator = FoundationF12Coordinator(
+            runtime_pair,
+            runtime_manifest,
+            profile_env,
+        )
 
         # 1. Desktop native adapter: real WebDriver probe through native client.
         desktop_native_adapter = DirectRuntimeFoundationAdapter(
             _make_direct_probe(
                 runtime_pair.native,
                 f06_coordinator=f06_coordinator,
+                f12_coordinator=f12_coordinator,
             )
         )
 
@@ -1018,6 +1551,7 @@ def run_scenario(*, dry_run: bool = False) -> Path:
             _make_direct_probe(
                 runtime_pair.browser,
                 f06_coordinator=f06_coordinator,
+                f12_coordinator=f12_coordinator,
             )
         )
 
@@ -1113,6 +1647,13 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+
+    if args.dry_run:
+        sys.stdout.write(
+            "Foundation configuration valid; no scenarios executed; "
+            "no candidate manifest produced.\n"
+        )
+        return 0
 
     # Output the candidate manifest path to stdout for downstream consumption.
     # The acceptance-run.py framework and agent_v2_gate.py validator read this

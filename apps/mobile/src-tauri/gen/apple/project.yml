@@ -54,7 +54,10 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 0.1.0
         CFBundleVersion: 0.1.0
+        NSCameraUsageDescription: Peers needs camera access when you choose to capture media.
         NSLocalNetworkUsageDescription: Peers Touch needs local network access to connect to your Station.
+        NSMicrophoneUsageDescription: Peers needs microphone access when you choose to record audio.
+        NSPhotoLibraryUsageDescription: Peers needs photo library access when you choose media to share.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
           NSAllowsArbitraryLoadsInWebContent: true

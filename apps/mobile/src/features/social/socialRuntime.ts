@@ -4,12 +4,15 @@ import {
   type SocialHostEvent,
   type SocialHostEventKind,
 } from '@peers-touch/client-chat-core';
-import type { GroupE2eeRuntimeController } from '../group/groupE2eeRuntime';
 import type { GroupState } from '../group/groupStore';
-import { isSenderKeyDistributionMessage } from './socialProjection';
+import {
+  MOBILE_MESSAGING_RUNTIME_ERROR_EVENT,
+  wakeActiveMessagingSession,
+} from '../../runtimes/messagingRuntime';
 import type { SocialState } from './socialStore';
+import { useSocialStore } from './socialStore';
 import { startRealtimeStream } from './socialRealtime';
-import type { FriendChatMessage } from './socialTypes';
+import { readableErrorMessage } from './socialTypes';
 import type { GroupMembershipKind } from './socialWire';
 
 const RECONCILE_INTERVAL_MS = 30000;
@@ -22,6 +25,7 @@ const PRESENCE_HEARTBEAT_INTERVAL_MS = 30000;
 
 export interface SocialRuntimeController {
   teardown: () => void;
+  drain: () => Promise<void>;
 }
 
 export type SocialRuntimeExternalEventKind = SocialHostEventKind;
@@ -38,19 +42,113 @@ export function dispatchSocialRuntimeExternalEvent(event: SocialRuntimeExternalE
   activeRuntime?.dispatchExternalEvent(event);
 }
 
+export interface SocialRuntimePublicProjection {
+  active: boolean;
+  activeSessionUlid: string | null;
+  friendRequests: Array<{
+    requestId: string;
+    federationId: string;
+    senderPtid: string;
+    receiverPtid: string;
+    senderHomeStationPeerId: string;
+    receiverHomeStationPeerId: string;
+    status: number;
+  }>;
+  typingPeers: Record<string, Record<string, {
+    typing: boolean;
+    lastUpdate: number;
+  }>>;
+  peerOnline: Record<string, boolean>;
+  lastReconcileAt: number | null;
+}
+
+export function readSocialRuntimeProjection(): SocialRuntimePublicProjection {
+  const state = useSocialStore.getState();
+  return {
+    active: activeRuntime !== null,
+    activeSessionUlid: state.activeSessionUlid,
+    friendRequests: state.friendRequests.map((request) => ({
+      requestId: request.requestId || request.id || '',
+      federationId: request.federationId,
+      senderPtid: request.senderPtid,
+      receiverPtid: request.receiverPtid,
+      senderHomeStationPeerId: request.senderHomeStationPeerId,
+      receiverHomeStationPeerId: request.receiverHomeStationPeerId,
+      status: request.status,
+    })),
+    typingPeers: Object.fromEntries(
+      Object.entries(state.typingPeers).map(([conversationId, peers]) => [
+        conversationId,
+        Object.fromEntries(
+          Object.entries(peers).map(([ptid, entry]) => [
+            ptid,
+            {
+              typing: entry.typing,
+              lastUpdate: entry.lastUpdate,
+            },
+          ]),
+        ),
+      ]),
+    ),
+    peerOnline: { ...state.peerOnline },
+    lastReconcileAt: state.lastReconcileAt,
+  };
+}
+
+export async function sendSocialFriendRequest(
+  receiverPtid: string,
+  receiverHomeStationPeerId: string,
+  federationId: string,
+  message?: string,
+): Promise<SocialRuntimePublicProjection> {
+  requireActiveSocialRuntime();
+  await useSocialStore.getState().sendFriendRequest(
+    receiverPtid,
+    receiverHomeStationPeerId,
+    federationId,
+    message,
+  );
+  return readSocialRuntimeProjection();
+}
+
+export async function acceptSocialFriendRequest(
+  requestId: string,
+): Promise<SocialRuntimePublicProjection> {
+  requireActiveSocialRuntime();
+  await useSocialStore.getState().acceptFriendRequest(requestId);
+  return readSocialRuntimeProjection();
+}
+
+export async function reconcileSocialRuntime(): Promise<SocialRuntimePublicProjection> {
+  requireActiveSocialRuntime();
+  await useSocialStore.getState().reconcile();
+  return readSocialRuntimeProjection();
+}
+
+function requireActiveSocialRuntime(): void {
+  if (!activeRuntime) throw new Error('mobile.social.runtimeUnavailable');
+}
+
 export function startSocialRuntime(
   session: MobileAuthSession,
   store: SocialState,
   groupStore?: GroupState,
-  groupE2eeRuntime?: GroupE2eeRuntimeController,
 ): SocialRuntimeController {
   let cancelled = false;
   let externalReconcileTimer: number | null = null;
   const abortController = new AbortController();
+  const pendingOperations = new Set<Promise<unknown>>();
+  const track = <T,>(operation: () => Promise<T>): Promise<T> => {
+    const pending = operation().finally(() => {
+      pendingOperations.delete(pending);
+    });
+    pendingOperations.add(pending);
+    return pending;
+  };
 
-  store.reconcile();
+  void track(() => store.reconcile());
   const reconcileTimer = window.setInterval(() => {
-    if (!cancelled) store.reconcile();
+    if (!cancelled) void track(() => store.reconcile());
   }, RECONCILE_INTERVAL_MS);
   const typingSweepTimer = window.setInterval(() => {
     store.sweepTypingPeers(Date.now() - TYPING_TTL_MS);
@@ -61,54 +159,72 @@ export function startSocialRuntime(
     if (!cancelled) void postPresence(session, '/presence/heartbeat', 'heartbeat');
   }, PRESENCE_HEARTBEAT_INTERVAL_MS);
   const realtimeHandlers: Parameters<typeof startRealtimeStream>[2] = {
-    onMessage: (sessionUlid, message) => {
-      if (isSenderKeyDistributionMessage(message)) {
-        void routeSkdmControlMessage(store, groupE2eeRuntime, message);
-        return;
-      }
-      void store.ingestRealtimeMessage(sessionUlid, message);
+    onMessage: wakeMessaging,
+    onGroupMessage: wakeMessaging,
+    onReceipt: wakeMessaging,
+    onMutation: wakeMessaging,
+    onTyping: (...args) => {
+      if (!cancelled) store.applyTypingState(...args);
     },
-    onGroupMessage: (groupUlid, message) => {
-      if (!groupStore) return;
-      void groupStore.ingestRealtimeMessage(groupUlid, message).then(() => groupE2eeRuntime?.repairEncryptedMessages());
+    onPresence: (...args) => {
+      if (!cancelled) store.setPeerOnline(...args);
     },
-    onReceipt: store.applyMessageReceipt,
-    onMutation: (sessionUlid, messageUlid, kind, payload) => {
-      store.applyMessageMutation(sessionUlid, messageUlid, kind, payload);
-      groupStore?.applyMessageMutation(sessionUlid, messageUlid, kind, payload);
-    },
-    onTyping: store.applyTypingState,
-    onPresence: store.setPeerOnline,
     onGroupMembership: (groupUlid, actorPtid, kind) => {
-      void routeGroupMembershipChange(groupStore, groupE2eeRuntime, groupUlid, actorPtid, kind);
+      if (!cancelled) {
+        void track(
+          () => routeGroupMembershipChange(
+            groupStore,
+            groupUlid,
+            actorPtid,
+            kind,
+          ),
+        );
+      }
     },
     onSettingsChanged: (conversationKind, containerUlid) => {
+      if (cancelled) return;
       if (conversationKind === 'friend') {
-        void store.loadConversationSettings(containerUlid);
+        void track(() => store.loadConversationSettings(containerUlid));
       } else {
-        void groupStore?.loadSettings(containerUlid);
+        void track(
+          () => groupStore?.loadSettings(containerUlid) ?? Promise.resolve(),
+        );
       }
     },
     onResync: () => {
-      void store.reconcile();
-      void groupStore?.reconcile();
+      if (cancelled) return;
+      wakeMessaging();
+      void track(() => store.reconcile());
+      void track(() => groupStore?.reconcile() ?? Promise.resolve());
     },
   };
-  void superviseRealtimeStream(session, abortController.signal, store, groupStore, groupE2eeRuntime, realtimeHandlers);
+  void track(
+    () => superviseRealtimeStream(
+      session,
+      abortController.signal,
+      store,
+      groupStore,
+      realtimeHandlers,
+    ),
+  );
 
   const runtimeRef: ActiveSocialRuntime = {
     sessionKey: store.sessionKey,
     dispatchExternalEvent: (event) => {
       if (cancelled) return;
 
-      if (event.sessionUlid) void store.loadMessages(event.sessionUlid);
-      if (socialHostEventTargetsNotifications(event)) void store.refreshNotifications();
-      void reconcileActiveThreads(store, groupStore, groupE2eeRuntime);
+      if (event.sessionUlid) {
+        void track(() => store.loadMessages(event.sessionUlid!));
+      }
+      if (socialHostEventTargetsNotifications(event)) {
+        void track(() => store.refreshNotifications());
+      }
+      void track(() => reconcileActiveThreads(store, groupStore));
 
       if (externalReconcileTimer) return;
       externalReconcileTimer = window.setTimeout(() => {
         externalReconcileTimer = null;
-        if (!cancelled) void store.reconcile();
+        if (!cancelled) void track(() => store.reconcile());
       }, EXTERNAL_RECONCILE_DEBOUNCE_MS);
     },
   };
@@ -124,6 +240,9 @@ export function startSocialRuntime(
       void postPresence(session, '/presence/offline', 'runtime_teardown');
       abortController.abort();
       if (activeRuntime === runtimeRef) activeRuntime = null;
+    },
+    drain: async () => {
+      await Promise.allSettled([...pendingOperations]);
     },
   };
 }
@@ -149,7 +268,6 @@ async function superviseRealtimeStream(
   signal: AbortSignal,
   store: SocialState,
   groupStore: GroupState | undefined,
-  groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
   handlers: Parameters<typeof startRealtimeStream>[2],
 ) {
   let reconnectDelay = REALTIME_RECONNECT_BASE_MS;
@@ -162,7 +280,7 @@ async function superviseRealtimeStream(
 	}
 
     if (signal.aborted) return;
-    await reconcileActiveThreads(store, groupStore, groupE2eeRuntime);
+    await reconcileActiveThreads(store, groupStore);
     await delay(reconnectDelay, signal);
     reconnectDelay = Math.min(reconnectDelay * 2, REALTIME_RECONNECT_MAX_MS);
   }
@@ -171,11 +289,10 @@ async function superviseRealtimeStream(
 async function reconcileActiveThreads(
   store: SocialState,
   groupStore: GroupState | undefined,
-  groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
 ) {
   await Promise.allSettled([
     store.reconcileActiveSessionMessages(),
-    groupStore?.reconcileActiveGroupMessages().then(() => groupE2eeRuntime?.repairEncryptedMessages()),
+    groupStore?.reconcileActiveGroupMessages(),
   ]);
 }
 
@@ -194,21 +311,10 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-async function routeSkdmControlMessage(
-  store: SocialState,
-  groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
-  message: FriendChatMessage,
-) {
-  if (!groupE2eeRuntime || message.senderPtid === store.currentUserPtid) return;
-  const skdmBytes = skdmPayloadBytes(message);
-  await groupE2eeRuntime.consumeSkdmControlMessage(message.senderPtid, skdmBytes);
-}
-
 async function routeGroupMembershipChange(
   groupStore: GroupState | undefined,
-  groupE2eeRuntime: GroupE2eeRuntimeController | undefined,
   groupUlid: string,
-  actorPtid: string,
+  _actorPtid: string,
   kind: GroupMembershipKind,
 ) {
   try {
@@ -217,27 +323,18 @@ async function routeGroupMembershipChange(
       await groupStore.selectGroup(null);
     }
     if (kind !== 'DISSOLVED' && groupStore?.activeGroupUlid === groupUlid) await groupStore.loadMembers(groupUlid);
-    if (kind === 'REMOVED' || kind === 'LEFT' || kind === 'TRANSFERRED') {
-      await groupE2eeRuntime?.rotateAfterMembershipChange(groupUlid, actorPtid);
-    }
   } catch {
-    // Group store and E2EE runtime persist their own domain errors.
+    // Group store persists its domain error.
   }
 }
 
-function skdmPayloadBytes(message: FriendChatMessage): Uint8Array {
-  if (message.encryptedPayload?.byteLength) return message.encryptedPayload;
-  if (message.content.trim()) return base64ToBytes(message.content.trim());
-  return new Uint8Array();
-}
-
-function base64ToBytes(value: string): Uint8Array {
-  try {
-    const binary = window.atob(value);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-    return bytes;
-  } catch {
-    return new Uint8Array();
-  }
+function wakeMessaging(): void {
+  void wakeActiveMessagingSession().catch((error) => {
+    window.dispatchEvent(new CustomEvent(MOBILE_MESSAGING_RUNTIME_ERROR_EVENT, {
+      detail: {
+        operation: 'social-realtime-wake',
+        message: readableErrorMessage(error),
+      },
+    }));
+  });
 }

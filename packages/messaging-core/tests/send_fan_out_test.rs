@@ -83,6 +83,8 @@ fn direct_fan_out_encrypts_for_multiple_peers() {
         message_id: "msg-1",
         conversation_id: "conv-1",
         plaintext: "hello group",
+        reply_to_message_id: "",
+        thread_root_message_id: "",
         attachments: &[],
         client_timestamp_unix_ms: 200,
     };

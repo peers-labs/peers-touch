@@ -1,11 +1,15 @@
 # Messaging Platform — 独立评审提示
 
-> **Status**: active
+> **Status**: superseded by the approved
+> [`../../api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md`](../../api-ownership/execution-plans/20260906-conversation-authority-hard-cut.md)
 > **Version**: v1.1
 > **Created**: 2026-08-08 | **Updated**: 2026-08-10
 > **Owner**: Messaging Platform Team
 
 ---
+
+This prompt is retained as pre-consolidation review history. It must not be used
+to select a public Messaging route or Station Messaging authority.
 
 你是 Peers-Touch Messaging Platform 的独立产品、架构和执行计划评审者。请直接读取：
 

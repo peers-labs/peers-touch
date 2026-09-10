@@ -11,7 +11,7 @@
 
 ---
 
-## Context Anchor
+## Historical Completion Snapshot
 
 | Field | Current value |
 |---|---|

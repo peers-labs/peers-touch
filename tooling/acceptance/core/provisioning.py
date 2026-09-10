@@ -23,6 +23,7 @@ CLIENT_BINDING_ERROR_CODES = {
     "MISSING_REQUIRED_BINDING": 20104,
     "UNEXPECTED_BINDING_ROLE": 20105,
     "ENDPOINT_COPY_DETECTED": 20106,
+    "TRANSPORT_OVERRIDE_MISMATCH": 20107,
     "BINDING_PROOF_ABSENT": 20201,
     "LAUNCH_IDENTITY_MISMATCH": 20202,
     "UNREGISTERED_PROOF_MECHANISM": 20203,
@@ -1291,4 +1292,96 @@ def verify_client_binding_observation(
         proof_mechanism=proof_mechanism,
         verifier_id=verifier_id,
         verifier_source_digest=verifier_source_digest,
+    )
+
+
+def persist_client_binding_observation(
+    manifest: dict[str, Any],
+    *,
+    evidence_run_id: str,
+    client_id: str,
+    binding_role: str,
+    launch_generation: int,
+    client_runtime_identity: ClientRuntimeIdentity,
+    observed_runtime_identity: str,
+    proof_mechanism: str,
+    registered_mechanisms: frozenset[str],
+    verifier_id: str,
+    verifier_source_digest: str,
+) -> tuple[BindingProofRecord, dict[str, Any]]:
+    from ._paths import REPO_ROOT
+    from .evidence_store import ArtifactSession
+
+    proof = verify_client_binding_observation(
+        manifest,
+        evidence_run_id=evidence_run_id,
+        client_id=client_id,
+        binding_role=binding_role,
+        launch_generation=launch_generation,
+        client_runtime_identity=client_runtime_identity,
+        observed_runtime_identity=observed_runtime_identity,
+        proof_mechanism=proof_mechanism,
+        registered_mechanisms=registered_mechanisms,
+        verifier_id=verifier_id,
+        verifier_source_digest=verifier_source_digest,
+    )
+    relative_path = (
+        f"runtime/client-bindings/{client_id}/"
+        f"generation-{launch_generation}/{binding_role}.json"
+    )
+    reference = ArtifactSession(
+        repo_root=REPO_ROOT,
+        gate_id=str(manifest.get("gateId") or ""),
+    ).write_json(
+        relative_path,
+        proof.to_dict(),
+        role=(
+            f"client-binding-proof:{client_id}:"
+            f"{launch_generation}:{binding_role}"
+        ),
+    )
+    return proof, reference.to_dict()
+
+
+def validate_binding_proof_closure(
+    manifest: dict[str, Any],
+    *,
+    allocated_generations: dict[str, int],
+    proofs: tuple[BindingProofRecord, ...],
+) -> None:
+    clients = _validate_loaded_runtime_clients(manifest)
+    expected = {
+        (client_id, generation, role)
+        for client_id, generation_count in allocated_generations.items()
+        for generation in range(1, generation_count + 1)
+        for role in clients[client_id]["required_service_roles"]
+    }
+    actual = {
+        (proof.client_id, proof.launch_generation, proof.binding_role)
+        for proof in proofs
+        if proof.verification_status == "VERIFIED"
+    }
+    if actual == expected and len(actual) == len(proofs):
+        return
+    missing = sorted(expected - actual)
+    extra = sorted(actual - expected)
+    duplicate_count = len(proofs) - len(actual)
+    client_id, generation, role = (
+        missing[0]
+        if missing
+        else extra[0]
+        if extra
+        else ("", 0, "")
+    )
+    raise _client_binding_error(
+        "BINDING_PROOF_ABSENT",
+        client_id=client_id,
+        binding_role=role,
+        detail=(
+            "binding proof closure mismatch: "
+            f"generation={generation}, missing={missing}, extra={extra}, "
+            f"duplicates={duplicate_count}"
+        ),
+        stage="post-launch",
+        result="UNPROVEN",
     )

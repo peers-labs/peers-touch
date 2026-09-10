@@ -60,3 +60,84 @@ but its sequence had not yet been acknowledged by the recovery owner. The
 minimal correction waits when no text event is at or below the acknowledged
 cursor; it retains the fail-closed empty-prefix check once an acknowledged text
 event exists. Instrumentation remains active for post-fix comparison.
+
+## Replay Cursor Comparison Follow-Up
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| I | The observed `REPLAYING` transition cursor is always the cursor sent in the original replay request. | Rejected | Exact-source run `20260907T153830485835Z-c4bbc331c8137f7b8c111e8cb3eb00cb` recorded `afterCursor=22` while the client retained source-bound replay delivery `22`; the separate Station readback from `22` therefore began at `23`. |
+| J | The frozen post-cut handoff cursor remains the authoritative original replay boundary. | Rejected by follow-up | Runtime instrumentation showed the original request cursor can be `3` while the post-cut cursor advances to `34`; one mutable field had represented both boundaries. |
+| K | Wire sequence values may be numeric strings even though normalized delivery identity is numeric. | Confirmed contract risk | `createAgentTurnSourceDelivery` accepts numeric and string `seq` values; the Python oracle previously compared the raw value to the normalized integer without conversion. |
+
+- The first correction kept the required `REPLAYING` phase observation and
+  used `handoff.acknowledgedCursor` for independent Station replay. The
+  follow-up evidence below supersedes that boundary choice.
+- The independent oracle converts only a valid positive integer or digit string
+  before comparing sequence identity; exact raw-payload hashes remain required.
+- Focused `183/183` and full `330/330` Agent Acceptance tests plus Desktop check
+  and `git diff --check` pass.
+- Runtime proof remains pending. Keep this session and its instrumentation open.
+
+## Replay Request Cursor Follow-Up
+
+- Exact-source run
+  `20260907T161810060757Z-aaa9b164cc9d9a8d6d5e7fd730bc175a`
+  on `b5b3fe8209b74926ebaa996147680124ae7e986d` reproduced Browser English
+  AS-F06 with client replay deliveries `12..183` and independent Station
+  readback `13..183` when `afterCursor=12`.
+- The controlled diagnostic run
+  `20260907T163617263286Z-4fc7227e804a51714f2b1b842acef785`
+  crossed AS-F06 and later failed at Browser English `BASE-CANCELLED`.
+  Debug log lines 1-12 record four AS-F06 preparations. All four original
+  replay requests used cursor `3`; the post-cut acknowledged cursor advanced
+  to `34` and `33` in two samples and remained `3` in two samples.
+- Hypothesis J is rejected. `handoff.acknowledgedCursor` is the post-cut
+  projection cursor, not an immutable record of the original replay request.
+  The same field was initialized from the request cursor and then overwritten
+  after the transport cut, so its meaning depended on callback timing.
+- The correction splits immutable `replayRequestCursor` from post-cut
+  `acknowledgedCursor`. Replay recording uses the request cursor so the source
+  capture cannot lose early replay deliveries; prefix, duplicate/out-of-order,
+  mutation checks, final source filtering, and independent Station readback use
+  the post-cut cursor.
+- Exact-source post-fix run
+  `20260907T172801175343Z-6a6fe1f36eb79e4cea37a95e5bc97c16`
+  on `2d19ace85b4104b15a6dad8be60d16a3848b9699` reproduced the opposite
+  boundary error under a larger cursor advance: request cursor `3`, post-cut
+  cursor `37`, client deliveries `38..139`, and Station readback from
+  `afterCursor=3` returning `4..139`. This proves the source capture must retain
+  all request replay while the final parity comparison must filter both sides
+  to the post-cut acknowledged boundary.
+- The final local correction requires
+  `replayRequestCursor <= acknowledgedCursor == afterCursor`, filters captured
+  source deliveries to `sequence > acknowledgedCursor`, and compares them with
+  Station's exclusive readback from the same acknowledged cursor. Exact
+  raw-payload hash and source-identity equality remain mandatory.
+- Runtime post-fix proof remains pending. Keep this session and all
+  instrumentation open.
+
+## Replay Completion Boundary Follow-Up
+
+- Exact-source run
+  `20260907T175903309291Z-bbb13892aeae6e86ab4686cb5db3f0b9`
+  on `ea6987d749461e2dd4c070db692921a41e718ba1` reproduced a forced
+  recovery-failure sample with request cursor `3`, post-cut cursor `30`,
+  client replay deliveries `31..136`, and Station events `31..166`.
+- The client replay segment ended before the Station terminal tail because the
+  scenario deliberately exhausts reconnect, then performs authoritative
+  snapshot recovery. Comparing the client segment against an unbounded Station
+  tail therefore mixed replay parity with later snapshot-owned settlement.
+- The same run showed `RECONCILING` and `CONNECTED` were not preserved in the
+  handoff across the client restart even though
+  `reloadAgentTurnSnapshot` executes both production transitions before
+  applying the terminal snapshot.
+- The final local correction records those two actual store transitions with a
+  scoped subscriber around durable reload and carries them through the
+  coordinator. Replay parity now declares `throughCursor`, compares exact raw
+  source payloads against Station only through that observed cursor, and leaves
+  the later terminal tail to the existing source-bound snapshot equality
+  assertion.
+- Local verification passes focused `162/162`, full `330/330` Agent
+  Acceptance tests, Desktop check, all `583` Desktop tests with one unrelated
+  environment-dependent skip, Desktop production build, Python compilation,
+  and `git diff --check`. Runtime proof remains pending.

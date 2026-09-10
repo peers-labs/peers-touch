@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -38,14 +39,14 @@ func TestAttachmentAdmissionAcceptsActorPrivateObject(t *testing.T) {
 	now := time.Date(2026, time.August, 28, 12, 0, 0, 0, time.UTC)
 	objectExpiry := now.Add(time.Hour)
 	reader := &attachmentMetadataReaderStub{meta: &ossmodel.FileMeta{
-		Key:          "cas/01/object",
-		Name:         "diagram.png",
-		Size:         int64(len(attachmentTestBody)),
-		Mime:         "image/png",
-		Sha256:       attachmentTestChecksum,
-		OwnerActorID: "actor-1",
-		Visibility:   ossmodel.VisibilityPrivate,
-		ExpiresAt:    &objectExpiry,
+		Key:        "cas/01/object",
+		Name:       "diagram.png",
+		Size:       int64(len(attachmentTestBody)),
+		Mime:       "image/png",
+		Sha256:     attachmentTestChecksum,
+		OwnerPTID:  "actor-1",
+		Visibility: ossmodel.VisibilityPrivate,
+		ExpiresAt:  &objectExpiry,
 	}, body: attachmentTestBody}
 	admission := NewAttachmentAdmissionService(reader)
 	admission.now = func() time.Time { return now }
@@ -101,18 +102,50 @@ func TestAttachmentAdmissionRejectsBeforeObjectUseWhenCountExceedsCapability(t *
 	}
 }
 
+func TestAttachmentAdmissionRejectionIncludesSafeTypedDetails(t *testing.T) {
+	now := time.Now().UTC()
+	admission := NewAttachmentAdmissionService(&attachmentMetadataReaderStub{
+		err: errors.New("storage backend detail"),
+	})
+	admission.now = func() time.Time { return now }
+
+	_, err := admission.Admit(
+		context.Background(),
+		"actor-1",
+		"conversation-1",
+		[]*model.AgentAttachmentRef{validAttachment(now)},
+		attachmentCapabilities(true, true, 4, 1024),
+		nil,
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) || bizErr.Payload == nil {
+		t.Fatalf("attachment rejection lost typed payload: %T %v", err, err)
+	}
+	details := bizErr.Payload.GetDetails()
+	if bizErr.Code != errcode.AgentAttachmentRejected ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentAttachmentRejected) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentAttachmentRejectedLocaleKey ||
+		bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		len(details) != 2 ||
+		details["attachment_id"] != "attachment-1" ||
+		details["reason_code"] != "attachment_object_is_unavailable" {
+		t.Fatalf("unexpected typed attachment rejection: %+v", bizErr.Payload)
+	}
+}
+
 func TestAttachmentAdmissionRejectsInvalidAuthorityAndMetadata(t *testing.T) {
 	now := time.Date(2026, time.August, 28, 12, 0, 0, 0, time.UTC)
 	future := now.Add(time.Hour)
 	baseMeta := ossmodel.FileMeta{
-		Key:          "cas/01/object",
-		Name:         "diagram.png",
-		Size:         int64(len(attachmentTestBody)),
-		Mime:         "image/png",
-		Sha256:       attachmentTestChecksum,
-		OwnerActorID: "actor-1",
-		Visibility:   ossmodel.VisibilityPrivate,
-		ExpiresAt:    &future,
+		Key:        "cas/01/object",
+		Name:       "diagram.png",
+		Size:       int64(len(attachmentTestBody)),
+		Mime:       "image/png",
+		Sha256:     attachmentTestChecksum,
+		OwnerPTID:  "actor-1",
+		Visibility: ossmodel.VisibilityPrivate,
+		ExpiresAt:  &future,
 	}
 
 	tests := []struct {
@@ -121,7 +154,7 @@ func TestAttachmentAdmissionRejectsInvalidAuthorityAndMetadata(t *testing.T) {
 		mutateMeta func(*ossmodel.FileMeta)
 		caps       *model.RuntimeCapabilitySnapshot
 	}{
-		{name: "foreign owner", mutateMeta: func(meta *ossmodel.FileMeta) { meta.OwnerActorID = "actor-2" }},
+		{name: "foreign owner", mutateMeta: func(meta *ossmodel.FileMeta) { meta.OwnerPTID = "actor-2" }},
 		{name: "non-private object", mutateMeta: func(meta *ossmodel.FileMeta) { meta.Visibility = ossmodel.VisibilityPublic }},
 		{name: "expired object", mutateMeta: func(meta *ossmodel.FileMeta) {
 			expired := now.Add(-time.Second)
@@ -185,14 +218,14 @@ func TestAttachmentAdmissionRecordsExplicitModelOmission(t *testing.T) {
 	objectExpiry := now.Add(time.Hour)
 	admission := NewAttachmentAdmissionService(&attachmentMetadataReaderStub{
 		meta: &ossmodel.FileMeta{
-			Key:          "cas/01/object",
-			Name:         "diagram.png",
-			Size:         int64(len(attachmentTestBody)),
-			Mime:         "image/png",
-			Sha256:       attachmentTestChecksum,
-			OwnerActorID: "actor-1",
-			Visibility:   ossmodel.VisibilityPrivate,
-			ExpiresAt:    &objectExpiry,
+			Key:        "cas/01/object",
+			Name:       "diagram.png",
+			Size:       int64(len(attachmentTestBody)),
+			Mime:       "image/png",
+			Sha256:     attachmentTestChecksum,
+			OwnerPTID:  "actor-1",
+			Visibility: ossmodel.VisibilityPrivate,
+			ExpiresAt:  &objectExpiry,
 		},
 		body: attachmentTestBody,
 	})
@@ -225,14 +258,14 @@ func TestAttachmentAdmissionRejectsSpoofedMimeContent(t *testing.T) {
 	objectExpiry := now.Add(time.Hour)
 	admission := NewAttachmentAdmissionService(&attachmentMetadataReaderStub{
 		meta: &ossmodel.FileMeta{
-			Key:          "cas/01/object",
-			Name:         "spoofed.png",
-			Size:         int64(len(body)),
-			Mime:         "image/png",
-			Sha256:       checksum,
-			OwnerActorID: "actor-1",
-			Visibility:   ossmodel.VisibilityPrivate,
-			ExpiresAt:    &objectExpiry,
+			Key:        "cas/01/object",
+			Name:       "spoofed.png",
+			Size:       int64(len(body)),
+			Mime:       "image/png",
+			Sha256:     checksum,
+			OwnerPTID:  "actor-1",
+			Visibility: ossmodel.VisibilityPrivate,
+			ExpiresAt:  &objectExpiry,
 		},
 		body: body,
 	})

@@ -21,8 +21,11 @@ export interface SocialTimestamp {
 export interface FriendRequest {
   id?: string;
   requestId: string;
+  federationId: string;
   senderPtid: string;
   receiverPtid: string;
+  senderHomeStationPeerId: string;
+  receiverHomeStationPeerId: string;
   status: number;
   message: string;
   createdAt?: SocialTimestamp;
@@ -55,6 +58,8 @@ export interface FriendChatSession {
 
 export interface FriendChatMessage {
   ulid: string;
+  eventSequence?: number;
+  messagingState?: string;
   sessionUlid: string;
   senderPtid: string;
   receiverPtid: string;
@@ -89,6 +94,7 @@ export interface FriendMessageAttachment {
   ciphertextSha256B64?: string;
   plaintextSize?: number;
   ciphertextSize?: number;
+  availabilityState?: 'remote' | 'local';
 }
 
 export interface SocialNotification {
@@ -136,6 +142,8 @@ export interface TypingEntry {
 export interface ActorSearchResult {
   id: string;
   ptid: string;
+  federationId: string;
+  homeStationPeerId: string;
   username: string;
   displayName: string;
   avatar: string;
@@ -179,10 +187,14 @@ export interface PeerProfile {
 }
 
 export interface FederationResolveView {
+  federationId?: string;
+  federation_id?: string;
   federatedHandle?: string;
   federated_handle?: string;
   homeStationDomain?: string;
   home_station_domain?: string;
+  homeStationPeerId?: string;
+  home_station_peer_id?: string;
   fromCache?: boolean;
   from_cache?: boolean;
   isLocal?: boolean;

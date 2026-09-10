@@ -8,40 +8,24 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestMigrateIdentitySchemaPreservesFriendData(t *testing.T) {
+func TestMigrateIdentitySchemaPreservesFriendshipData(t *testing.T) {
 	rds := openSocialMigrationDB(t, "social_friend_data")
 	execSocialMigrationSQL(t, rds,
-		`CREATE TABLE friend_chat_friend_requests (
-			id INTEGER PRIMARY KEY,
-			request_id TEXT,
-			sender_did TEXT,
-			receiver_did TEXT
-		)`,
 		`CREATE TABLE friend_chat_friendships (
 			id INTEGER PRIMARY KEY,
 			actor_did TEXT,
 			peer_did TEXT,
 			status INTEGER
 		)`,
-		`INSERT INTO friend_chat_friend_requests
-			(id, request_id, sender_did, receiver_did)
-		 VALUES (41, 'request-1', 'ptid:alice', 'ptid:bob')`,
 		`INSERT INTO friend_chat_friendships
 			(id, actor_did, peer_did, status)
 		 VALUES (73, 'ptid:alice', 'ptid:bob', 1)`,
 	)
 
-	if err := migrateSocialIdentityColumns(rds); err != nil {
+	if err := MigrateIdentitySchema(rds); err != nil {
 		t.Fatalf("migrate social identity schema: %v", err)
 	}
 
-	assertSocialIdentityRow(
-		t,
-		rds,
-		"friend_chat_friend_requests",
-		41,
-		map[string]string{"sender_ptid": "ptid:alice", "receiver_ptid": "ptid:bob"},
-	)
 	assertSocialIdentityRow(
 		t,
 		rds,
@@ -53,8 +37,6 @@ func TestMigrateIdentitySchemaPreservesFriendData(t *testing.T) {
 		table  string
 		column string
 	}{
-		{table: "friend_chat_friend_requests", column: "sender_did"},
-		{table: "friend_chat_friend_requests", column: "receiver_did"},
 		{table: "friend_chat_friendships", column: "actor_did"},
 		{table: "friend_chat_friendships", column: "peer_did"},
 	} {
@@ -64,23 +46,15 @@ func TestMigrateIdentitySchemaPreservesFriendData(t *testing.T) {
 	}
 }
 
-func TestMigrateIdentitySchemaRollsBackAllFriendColumnsOnConflict(t *testing.T) {
+func TestMigrateIdentitySchemaRollsBackFriendshipColumnsOnConflict(t *testing.T) {
 	rds := openSocialMigrationDB(t, "social_friend_rollback")
 	execSocialMigrationSQL(t, rds,
-		`CREATE TABLE friend_chat_friend_requests (
-			id INTEGER PRIMARY KEY,
-			sender_did TEXT,
-			receiver_did TEXT
-		)`,
 		`CREATE TABLE friend_chat_friendships (
 			id INTEGER PRIMARY KEY,
 			actor_did TEXT,
 			peer_did TEXT,
 			peer_ptid TEXT
 		)`,
-		`INSERT INTO friend_chat_friend_requests
-			(id, sender_did, receiver_did)
-		 VALUES (1, 'ptid:alice', 'ptid:bob')`,
 		`INSERT INTO friend_chat_friendships
 			(id, actor_did, peer_did, peer_ptid)
 		 VALUES (1, 'ptid:alice', 'ptid:bob', 'ptid:mallory')`,
@@ -94,8 +68,6 @@ func TestMigrateIdentitySchemaRollsBackAllFriendColumnsOnConflict(t *testing.T) 
 		table  string
 		column string
 	}{
-		{table: "friend_chat_friend_requests", column: "sender_did"},
-		{table: "friend_chat_friend_requests", column: "receiver_did"},
 		{table: "friend_chat_friendships", column: "actor_did"},
 		{table: "friend_chat_friendships", column: "peer_did"},
 	} {

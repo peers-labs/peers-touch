@@ -1,8 +1,14 @@
 # Mobile Group E2EE Domain Execution Plan
 
-> Status: active plan  
-> Date: 2026-06-03  
+> Status: superseded by MP-D16 / MP-W09 on 2026-09-04
+> Date: 2026-06-03
 > Scope: `apps/mobile/src/features/group/`, `apps/mobile/src-tauri/`, generated chat proto, social runtime integration
+
+This document is retained as historical execution context. The current
+architecture assigns Direct and Group protocol ownership to
+`packages/messaging-core/`; Mobile now provides only platform adapters and
+projection/rendering integration. The Sender Keys implementation described
+below has been removed.
 
 ## 1. 真实目标
 

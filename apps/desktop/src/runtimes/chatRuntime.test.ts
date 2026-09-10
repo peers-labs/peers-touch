@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   }>,
   replayOnEvents: [] as Array<(event: StreamEvent) => void>,
   replayOnErrors: [] as Array<(error: Error) => void>,
-  sessionUser: null as { actorId: string; ptid?: string } | null,
   subscribers: new Map<string, Set<(payload: unknown) => void>>(),
 }));
 
@@ -89,12 +88,6 @@ vi.mock('../store/chat', () => ({
       applyRecoveredTurnEvent: mocks.applyRecoveredTurnEvent,
       reconcileRecoveredTurn: mocks.reconcileRecoveredTurn,
     }),
-  },
-}));
-
-vi.mock('../store/session', () => ({
-  useSessionStore: {
-    getState: () => ({ currentUser: mocks.sessionUser }),
   },
 }));
 
@@ -177,7 +170,6 @@ describe('chatRuntime Agent turn recovery', () => {
     mocks.replayInputs.length = 0;
     mocks.replayOnEvents.length = 0;
     mocks.replayOnErrors.length = 0;
-    mocks.sessionUser = null;
     mocks.subscribers.clear();
     chatRuntime.install();
   });
@@ -253,6 +245,29 @@ describe('chatRuntime Agent turn recovery', () => {
     });
 
     expect(mocks.replayOnEvents).toHaveLength(1);
+  });
+
+  it('leaves a live connected turn under its stream owner during periodic reconcile', async () => {
+    mocks.readValue.mockResolvedValueOnce({});
+    await chatRuntime.bootstrap('ptid:person:alice');
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      streamId: 'stream-1',
+      streamGeneration: 10,
+      ptid: 'ptid:person:alice',
+      conversationId: 'conversation-1',
+      agentId: 'agent-1',
+      event: 'connected',
+      data: { turnId: 'turn-1', seq: 1 },
+      timestampMs: 500,
+    });
+
+    await chatRuntime.reconcile?.('periodic');
+
+    expect(mocks.replayInputs).toHaveLength(0);
+    expect(useAgentTurnRecoveryStore.getState().active['conversation-1']).toMatchObject({
+      phase: 'CONNECTED',
+      recoveryEpoch: 0,
+    });
   });
 
   it('flushes the current recovery phase before a client restart', async () => {
@@ -510,6 +525,42 @@ describe('chatRuntime Agent turn recovery', () => {
     );
   });
 
+  it('preserves the live cancellation reason during terminal reconciliation', async () => {
+    mocks.readValue.mockResolvedValueOnce({ 'conversation-1': activeTurn() });
+    await chatRuntime.bootstrap('ptid:person:alice');
+
+    mocks.replayOnEvents[0]({
+      event: 'catchup_done',
+      data: {
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        seq: 4,
+      },
+    });
+    mocks.replayOnEvents[0]({
+      event: 'cancelled',
+      data: {
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        seq: 5,
+        reason: 'cancelled_by_user',
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(useAgentTurnRecoveryStore.getState().active).toEqual({});
+      expect(mocks.replayControllers[0].signal.aborted).toBe(true);
+    });
+    expect(mocks.reconcileRecoveredTurn).toHaveBeenCalledWith(
+      'conversation-1',
+      'turn-1',
+      {
+        status: 'cancelled',
+        reason: 'cancelled_by_user',
+      },
+    );
+  });
+
   it('rejects a late stream event from a different authenticated actor', async () => {
     mocks.readValue.mockResolvedValueOnce({});
     await chatRuntime.bootstrap('ptid:person:alice');
@@ -530,13 +581,9 @@ describe('chatRuntime Agent turn recovery', () => {
     expect(mocks.applyRecoveredTurnEvent).not.toHaveBeenCalled();
   });
 
-  it('uses canonical PTID when the session also carries an internal actor id', async () => {
-    mocks.sessionUser = {
-      actorId: 'internal-actor-42',
-      ptid: 'ptid:person:alice',
-    };
+  it('uses the canonical PTID supplied by the runtime kernel', async () => {
     mocks.readValue.mockResolvedValueOnce({});
-    await chatRuntime.bootstrap('internal-actor-42');
+    await chatRuntime.bootstrap('ptid:person:alice');
 
     eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
       streamId: 'stream-ptid',

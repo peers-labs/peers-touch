@@ -292,11 +292,10 @@ pub fn oss_upload_local_file(
     )
 }
 
-fn upload_attachment_bytes(
+fn upload_agent_attachment_bytes_impl(
     input: OssUploadAttachmentBytesInput,
     state: &Arc<AppState>,
     window: &Window,
-    consumer: &str,
 ) -> AppResult<StubPayload> {
     let token = match require_token(state, window) {
         Ok(t) => t,
@@ -306,12 +305,11 @@ fn upload_attachment_bytes(
         return AppResult::fail(ErrorCode::InvalidArgument, "bytes is required", None);
     }
     let filename = safe_temp_filename(input.filename.as_str());
-    let temp_path =
-        std::env::temp_dir().join(format!("peers-{consumer}-{}-{filename}", Ulid::new()));
+    let temp_path = std::env::temp_dir().join(format!("peers-agent-{}-{filename}", Ulid::new()));
     if let Err(error) = std::fs::write(&temp_path, input.bytes) {
         return AppResult::fail(
             ErrorCode::InternalError,
-            format!("write temp {consumer} attachment: {error}"),
+            format!("write temp Agent attachment: {error}"),
             None,
         );
     }
@@ -321,27 +319,12 @@ fn upload_attachment_bytes(
     let result = application_oss::upload_agent_attachment(
         temp_path.to_string_lossy().as_ref(),
         &token,
-        consumer,
-        bucket,
-        visibility,
-        chat_sid,
-        if mime_override.is_empty() {
-            None
-        } else {
-            Some(mime_override)
-        },
+        &input.conversation_id,
+        &filename,
+        mime_override,
     );
     cleanup.remove_now();
     result
-}
-
-#[tauri::command]
-pub fn oss_upload_attachment_bytes(
-    input: OssUploadAttachmentBytesInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    upload_attachment_bytes(input, state.inner(), &window, "local_file_bytes")
 }
 
 #[tauri::command]
@@ -350,7 +333,7 @@ pub fn oss_upload_agent_attachment_bytes(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    upload_attachment_bytes(input, state.inner(), &window, "agent")
+    upload_agent_attachment_bytes_impl(input, state.inner(), &window)
 }
 
 #[cfg(target_os = "macos")]

@@ -43,6 +43,7 @@ interface SessionStore {
   accessSubmitLogin: (attemptId: string, account: string, password: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
+  activateAuthenticatedSession: (response: AuthSessionResponse) => void;
   activateAppletLaunchSession: (user: CurrentUser) => void;
   /** Update the current actor profile projection after identity reconciliation. */
   updateProfile: (profile: Partial<Pick<CurrentUser, 'name' | 'email' | 'avatarUrl'>>) => void;
@@ -78,6 +79,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
   loginWithPassword: async (account, password) => {
     markLocalIdentityAction();
     const resp = await api.authLogin({ account, password });
+    get().activateAuthenticatedSession(resp);
     await runIdentityPipeline({
       reason: 'login',
       actorPtid: resp.actor_ptid ?? null,
@@ -98,6 +100,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
   accessSubmitLogin: async (attemptId, account, password) => {
     markLocalIdentityAction();
     const resp = await api.accessSubmitLogin({ attempt_id: attemptId, account, password });
+    get().activateAuthenticatedSession(resp);
     await runIdentityPipeline({
       reason: 'login',
       actorPtid: resp.actor_ptid ?? null,
@@ -108,6 +111,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
   loginWithOAuth: async (_providerId: string) => {
     markLocalIdentityAction();
     const resp = await api.ensureStationSession();
+    get().activateAuthenticatedSession(resp);
     const method = (resp.login_method as string) || 'oauth';
     await runIdentityPipeline({
       reason: 'oauth_bridge',
@@ -136,21 +140,31 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
 
   logout: async () => {
     markLocalIdentityAction();
-    try {
-      await api.realtimeStreamStop();
-    } catch {
-      // noop
-    }
+    let cleanupError: unknown;
     try {
       await api.authLogout();
-    } catch {
-      // Best-effort: if the session is already expired/revoked, still clear local state.
+    } catch (error) {
+      cleanupError = error;
     }
     await runIdentityPipeline({
       reason: 'logout',
       actorPtid: null,
       loginMethod: null,
     });
+    if (cleanupError) {
+      throw cleanupError;
+    }
+  },
+
+  activateAuthenticatedSession: (response) => {
+    const method = response.login_method || 'password';
+    const isOAuth = method !== 'password';
+    const user = userFromAuthResponse(
+      response,
+      isOAuth ? 'oauth' : 'password',
+      isOAuth ? method : undefined,
+    );
+    set({ currentUser: user, authenticated: Boolean(user), restoring: false });
   },
 
   activateAppletLaunchSession: (user) => {

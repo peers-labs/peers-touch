@@ -82,11 +82,16 @@ never belongs in the repository source tree.
     "delta_review": "no invariant violation found"
   },
   "tests": {
-    "run": ["go test ./app/subserver/messaging/..."],
+    "run": ["go test ./app/subserver/conversation/..."],
     "not_run": ["Desktop Tauri build"]
   }
 }
 ```
+
+For Chat, quality evidence treats Conversation `/conversation/*` as the sole
+entry point. Device, Inbox, Recovery, Key Exchange, and Federation evidence must
+name their resource-owner APIs. Device Messaging Engine remains valid only as
+Desktop/Mobile runtime terminology.
 
 The evidence plan is not an approval. It is the input to agent review.
 

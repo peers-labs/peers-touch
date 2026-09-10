@@ -4,35 +4,42 @@
   "product_area": "chat",
   "owners": [
     "model/domain/chat/**",
-    "apps/station/app/subserver/messaging/**",
+    "model/domain/actor/actor.proto",
+    "model/domain/key_exchange/key_exchange.proto",
+    "model/domain/recovery/recovery.proto",
     "apps/station/app/subserver/conversation/**",
-    "apps/station/app/subserver/envelope/**"
+    "apps/station/app/subserver/actor_identity/**",
+    "apps/station/app/subserver/key_exchange/**",
+    "apps/station/app/subserver/recovery/**",
+    "apps/station/frame/core/federation/**"
   ],
   "truth_sources": [
     "model/domain/chat/*.proto",
-    "messaging device registry",
+    "Actor Device directory",
     "conversation event log",
-    "per-device messaging queue"
+    "per-device Device Inbox"
   ],
   "visible_surfaces": [
-    {"type": "api", "route": "/messaging/conversation/direct"},
-    {"type": "api", "route": "/messaging/conversation/list"},
-    {"type": "api", "route": "/messaging/command/submit"},
-    {"type": "api", "route": "/messaging/queue/claim"},
-    {"type": "api", "route": "/messaging/queue/ack"}
+    {"type": "api", "route": "/conversation/direct"},
+    {"type": "api", "route": "/conversation/list"},
+    {"type": "api", "route": "/conversation/command"},
+    {"type": "api", "route": "/device/inbox/claim"},
+    {"type": "api", "route": "/device/inbox/ack"}
   ],
-  "required_gates": ["proto-build", "station-messaging-unit", "messaging-platform-contract"],
+  "required_gates": ["proto-build", "station-api-ownership", "station-messaging-unit", "messaging-platform-contract"],
   "acceptance": {
     "service": [
       "chat proto sources regenerate derived contracts",
-      "messaging, conversation, and envelope package tests pass",
-      "the messaging platform contract preserves device, queue, conversation, and crypto ownership"
+      "Station governed routes match the API capability ownership registry",
+      "canonical Conversation and shared Federation package tests pass",
+      "the messaging platform contract preserves canonical resource routes and client crypto ownership"
     ],
     "visible": [
       "chat API contracts remain compatible with the Desktop messaging engine"
     ]
   },
   "negative": [
+    "Conversation must remain the sole public Chat route owner",
     "removed friend-chat and group-chat Station routes must not reappear",
     "Station must not accept plaintext as a substitute for client-prepared encrypted payloads",
     "chat messages must not be stored as Federation governance truth",

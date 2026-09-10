@@ -43,6 +43,7 @@ pub(crate) fn actor_search_item_to_json(actor: &model::actor::Actor) -> serde_js
         "displayName": actor.display_name,
         "email": actor.email,
         "avatar": actor.avatar,
+        "homeStationPeerId": actor.home_station_peer_id,
     })
 }
 
@@ -147,9 +148,7 @@ mod tests {
         let value = actor_search_item_to_json(&actor);
 
         assert_eq!(
-            value
-                .get("actorPtid")
-                .and_then(serde_json::Value::as_str),
+            value.get("actorPtid").and_then(serde_json::Value::as_str),
             Some("ptid:v1:actor:peers:p:alice:fingerprint")
         );
         assert!(value.get("id").is_none());

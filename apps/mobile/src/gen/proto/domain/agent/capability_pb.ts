@@ -2883,4 +2883,3 @@ export enum KnowledgeResourceAvailability {
  */
 export const KnowledgeResourceAvailabilitySchema: GenEnum<KnowledgeResourceAvailability> = /*@__PURE__*/
   enumDesc(file_domain_agent_capability, 12);
-

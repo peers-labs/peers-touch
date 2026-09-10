@@ -43,14 +43,13 @@ describe('selectActiveCapabilitySession', () => {
       .toBe('desktop-session');
   });
 
-  it('uses the only active session even when its platform differs', () => {
+  it('does not fall back to the only active session from another platform', () => {
     const sessions = [
       session('expired-browser', 'CLIENT_PLATFORM_BROWSER', 900),
       session('desktop-session', 'CLIENT_PLATFORM_DESKTOP', 2_000),
     ];
 
-    expect(selectActiveCapabilitySession(sessions, true, nowMs)?.session_id)
-      .toBe('desktop-session');
+    expect(selectActiveCapabilitySession(sessions, true, nowMs)).toBeUndefined();
   });
 
   it('rejects expired sessions and does not guess across multiple platforms', () => {

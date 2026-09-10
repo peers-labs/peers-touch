@@ -9,12 +9,10 @@ pub const SESSION_KICKED_EVENT: &str = "auth:session-kicked";
 
 fn is_current_session_token(state: &AppState, rejected_token: &str) -> bool {
     state
-        .session
-        .lock()
-        .ok()
-        .and_then(|session| session.token.clone())
-        .as_deref()
-        == Some(rejected_token)
+        .sessions
+        .snapshot_all()
+        .iter()
+        .any(|session| session.jwt == rejected_token)
 }
 
 pub fn emit_if_session_revoked(
@@ -91,7 +89,16 @@ mod tests {
             },
             I18nService::new(&config_dir),
         );
-        state.session.lock().expect("session should lock").token = token.map(str::to_string);
+        if let Some(token) = token {
+            state
+                .sessions
+                .bind(crate::domain::identity::ActiveSession::new(
+                    "main",
+                    format!("account-{name}"),
+                    crate::domain::identity::ActorRef::new_person(format!("ptid:test:{name}")),
+                    token,
+                ));
+        }
         state
     }
 

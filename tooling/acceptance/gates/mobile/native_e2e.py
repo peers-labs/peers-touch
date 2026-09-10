@@ -45,8 +45,6 @@ from tooling.acceptance.gates.mobile.proof_contracts import (
     validate_artifact_roles,
     validate_contract_payload,
 )
-
-
 SCENARIO_GATES = {
     "access": "mobile-native-access-e2e",
     "lifecycle": "mobile-native-lifecycle-e2e",
@@ -57,6 +55,63 @@ SCENARIO_GATES = {
     "moments": "mobile-native-moments-e2e",
     "settings": "mobile-native-settings-e2e",
     "platform": "mobile-native-platform-e2e",
+}
+SCENARIO_METADATA = {
+    "access": {
+        "phase": "W2-E Native Acceptance",
+        "bom": ["W2-E"],
+        "spec": ["MS-D14", "MS-AG03"],
+        "observed": [
+            "physical iOS and Android Access Gate and OAuth variants",
+        ],
+        "unproven": [],
+    },
+    "lifecycle": {
+        "phase": "W9-C Physical Lifecycle",
+        "bom": ["W3", "W7-C", "W7-D"],
+        "spec": ["MS-AG02", "MS-AG05"],
+        "observed": [
+            "physical iOS and Android OS background/foreground delivery with canonical runtime-graph readback",
+        ],
+        "unproven": [
+            "secure-storage deletion failure",
+            "physical Station and actor switching",
+            "W5 event-ingress reconciliation",
+        ],
+    },
+    "platform": {
+        "phase": "W7 Native Platform",
+        "bom": ["W7-C", "W7-D"],
+        "spec": ["MS-AG07", "MS-AG08", "MS-AG11"],
+        "observed": [
+            "physical iOS and Android permission and network port behavior",
+            "physical native accessibility trees, screenshots, and WebView DOM",
+        ],
+        "unproven": [
+            "VoiceOver and TalkBack assisted traversal",
+            "maximum text size, reduced motion, and longest-locale matrix",
+            "MS-AG07 populated-workload P50/P95/P99 thresholds",
+        ],
+    },
+}
+LIFECYCLE_CYCLES = 20
+PLATFORM_PERMISSION_KINDS = (
+    "camera",
+    "microphone",
+    "storage",
+    "notifications",
+)
+VALID_LAUNCH_STATES = {
+    "app-boot",
+    "station-selection",
+    "station-handshake",
+    "access-gate-chain",
+    "runtime-critical",
+    "shell",
+    "station-change",
+    "logout",
+    "background",
+    "resume",
 }
 
 ACCESS_ASSIGNMENTS = {
@@ -116,6 +171,77 @@ class MobileNativeBlocked(GateError):
         self.reason = reason
         self.resource = resource
         self.evidence_gaps = list(evidence_gaps or [])
+
+
+def validate_lifecycle_snapshot(
+    value: Any,
+    *,
+    expected_phase: str,
+    minimum_generation: int = 0,
+    expected_boot_order: list[str] | None = None,
+) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != {
+        "phase",
+        "launchState",
+        "generation",
+        "bootOrder",
+        "runtimes",
+        "errorKey",
+    }:
+        raise GateError("Mobile lifecycle snapshot has an invalid shape")
+    if value["phase"] != expected_phase:
+        raise GateError(
+            "Mobile lifecycle phase mismatch: "
+            f"expected {expected_phase}, got {value['phase']!r}"
+        )
+    if value["launchState"] not in VALID_LAUNCH_STATES:
+        raise GateError("Mobile lifecycle launch state is invalid")
+    generation = value["generation"]
+    if (
+        not isinstance(generation, int)
+        or isinstance(generation, bool)
+        or generation < minimum_generation
+    ):
+        raise GateError("Mobile lifecycle generation is invalid or stale")
+    boot_order = value["bootOrder"]
+    runtimes = value["runtimes"]
+    if (
+        not isinstance(boot_order, list)
+        or not boot_order
+        or any(not isinstance(item, str) or not item for item in boot_order)
+        or not isinstance(runtimes, list)
+    ):
+        raise GateError("Mobile lifecycle runtime graph is incomplete")
+    if expected_boot_order is not None and boot_order != expected_boot_order:
+        raise GateError("Mobile lifecycle boot order changed")
+    expected_status = (
+        "suspended" if expected_phase == "SUSPENDED" else "ready"
+    )
+    runtime_ids: list[str] = []
+    for runtime in runtimes:
+        if not isinstance(runtime, Mapping) or set(runtime) != {
+            "id",
+            "status",
+            "errorKey",
+        }:
+            raise GateError("Mobile lifecycle runtime snapshot is invalid")
+        runtime_id = runtime["id"]
+        if not isinstance(runtime_id, str) or not runtime_id:
+            raise GateError("Mobile lifecycle runtime identity is invalid")
+        if (
+            runtime["status"] != expected_status
+            or runtime["errorKey"] is not None
+        ):
+            raise GateError(
+                f"Mobile lifecycle runtime {runtime_id!r} "
+                f"is not {expected_status}"
+            )
+        runtime_ids.append(runtime_id)
+    if runtime_ids != boot_order or len(set(runtime_ids)) != len(runtime_ids):
+        raise GateError("Mobile lifecycle runtime order is inconsistent")
+    if value["errorKey"] is not None:
+        raise GateError("Mobile lifecycle snapshot contains a transition error")
+    return dict(value)
 
 
 @dataclass(frozen=True)
@@ -549,6 +675,7 @@ def _artifact_ref(
     expected_path: str,
     expected_run_id: str,
     expected_workspace_id: str,
+    expected_gate_id: str = GATE_ID,
 ) -> ArtifactRef:
     raw_reference = owner.get(name)
     if not isinstance(raw_reference, Mapping):
@@ -565,7 +692,7 @@ def _artifact_ref(
         ) from error
     if (
         reference.workspace_id != expected_workspace_id
-        or reference.gate_id != GATE_ID
+        or reference.gate_id != expected_gate_id
         or reference.run_id != expected_run_id
         or reference.path != expected_path
         or reference.media_type != "application/json"
@@ -1083,15 +1210,20 @@ class MobileNativeGate(AcceptanceGate):
             result: dict[str, Any]
             final_inputs_written = False
             try:
-                if self.scenario != "access":
+                if self.scenario == "access":
+                    result = self._run_access(artifacts)
+                    self._write_final_judgment_inputs(artifacts, result)
+                    final_inputs_written = True
+                    self._validate_final_artifact_roles(artifacts)
+                elif self.scenario == "lifecycle":
+                    result = self._run_lifecycle(artifacts)
+                elif self.scenario == "platform":
+                    result = self._run_platform(artifacts)
+                else:
                     raise MobileNativeBlocked(
                         f"Mobile native scenario {self.scenario!r} is not implemented",
                         f"mobile-scenario:{self.scenario}",
                     )
-                result = self._run_access(artifacts)
-                self._write_final_judgment_inputs(artifacts, result)
-                final_inputs_written = True
-                self._validate_final_artifact_roles(artifacts)
                 result.update(
                     {
                         "status": "PASS",
@@ -1105,20 +1237,13 @@ class MobileNativeGate(AcceptanceGate):
                 exit_code = 0
             except MobileNativeBlocked as error:
                 status = "BLOCKED"
-                result = {
-                    "artifactKind": "mobile-native-gate-result",
-                    "gate": self.gate_id,
-                    "scenario": self.scenario,
-                    "status": "BLOCKED",
-                    "completionStatus": "BLOCKED",
-                    "proofStatus": "UNPROVEN",
+                result = self._result_base("BLOCKED")
+                result.update(
+                    {
                     "blockedReason": error.reason,
                     "blockedResource": error.resource,
-                    "sourcePhase": "W2-E Native Acceptance",
-                    "sourceBom": ["W2-E"],
-                    "sourceSpec": ["MS-D14", "MS-AG03"],
-                    "sourceGate": self.gate_id,
-                }
+                    }
+                )
                 if error.evidence_gaps:
                     result["evidenceGaps"] = error.evidence_gaps
                 completion_status = "BLOCKED"
@@ -1130,24 +1255,17 @@ class MobileNativeGate(AcceptanceGate):
                 ProofContractError,
                 ProvisioningError,
             ) as error:
-                result = {
-                    "artifactKind": "mobile-native-gate-result",
-                    "gate": self.gate_id,
-                    "scenario": self.scenario,
-                    "status": "FAIL",
-                    "completionStatus": "PARTIAL",
-                    "proofStatus": "UNPROVEN",
-                    "reason": str(error),
-                    "sourcePhase": "W2-E Native Acceptance",
-                    "sourceBom": ["W2-E"],
-                    "sourceSpec": ["MS-D14", "MS-AG03"],
-                    "sourceGate": self.gate_id,
-                }
+                result = self._result_base("FAIL")
+                result["reason"] = str(error)
                 exit_code = 1
             if self.scenario == "access":
                 result["variantLedger"] = self.access_variant_ledger.as_dict()
-            if not final_inputs_written:
+            if self.scenario == "access" and not final_inputs_written:
                 self._write_final_judgment_inputs(artifacts, result)
+            artifacts.write_json(
+                "reports/mobile-native-gate-report.json",
+                result,
+            )
             artifacts.complete(
                 status=status,
                 completion_status=completion_status,
@@ -1171,6 +1289,39 @@ class MobileNativeGate(AcceptanceGate):
                 f"{result.get('blockedReason') or result.get('reason')}\n"
             )
         return exit_code
+
+    def _result_base(self, status: str) -> dict[str, Any]:
+        metadata = SCENARIO_METADATA[self.scenario]
+        return {
+            "artifactKind": "acceptance-gate-evidence-report",
+            "gateId": self.gate_id,
+            "gate": self.gate_id,
+            "scenario": self.scenario,
+            "environment": "mobile-native",
+            "runtimeCell": "ios-and-android-physical",
+            "status": status,
+            "completionStatus": (
+                "DONE"
+                if status == "PASS"
+                else "BLOCKED"
+                if status == "BLOCKED"
+                else "PARTIAL"
+            ),
+            "proofStatus": "PROVEN" if status == "PASS" else "UNPROVEN",
+            "phase": metadata["phase"],
+            "bom": list(metadata["bom"]),
+            "spec": list(metadata["spec"]),
+            "observedScope": (
+                list(metadata["observed"]) if status == "PASS" else []
+            ),
+            "unprovenScope": list(metadata["unproven"]),
+            "physicalDeviceClaimed": status == "PASS",
+            "sampleEmissionAllowed": status == "PASS",
+            "sourcePhase": metadata["phase"],
+            "sourceBom": list(metadata["bom"]),
+            "sourceSpec": list(metadata["spec"]),
+            "sourceGate": self.gate_id,
+        }
 
     def _write_final_judgment_inputs(
         self,
@@ -1262,6 +1413,300 @@ class MobileNativeGate(AcceptanceGate):
             expected_gate_id=self.gate_id,
             expected_workspace_id=artifacts.store.workspace_id,
         )
+
+    def _start_device_scenario_sessions(
+        self,
+        artifacts: ArtifactSession,
+        manifest: Mapping[str, Any],
+    ) -> dict[str, AppiumSession]:
+        if self.capability_client is None:
+            raise MobileNativeBlocked(
+                "Mobile native Gate requires the Appium launch capability",
+                "mobile-runtime:ephemeral-launch-context",
+            )
+        resources = _required_object(
+            manifest,
+            "mobileNative",
+            "Mobile runtime manifest",
+        )
+        if resources.get("scenario") != self.scenario:
+            raise MobileNativeBlocked(
+                "Mobile runtime manifest scenario does not match the Gate",
+                "mobile-runtime:scenario",
+            )
+        source = _required_object(
+            resources,
+            "sourceArtifacts",
+            "Mobile runtime manifest",
+        )
+        applications = _required_object(
+            source,
+            "applications",
+            "Mobile source artifacts",
+        )
+        source_clients = _required_object(
+            source,
+            "clients",
+            "Mobile source artifacts",
+        )
+        clients = _required_object(
+            resources,
+            "clients",
+            "Mobile runtime manifest",
+        )
+        if set(clients) != set(source_clients) or len(clients) != 2:
+            raise MobileNativeBlocked(
+                "Mobile physical scenario requires exactly one client per platform",
+                "mobile-runtime:scenario-clients",
+            )
+        platforms = {
+            _required_text(client, "platform", f"Mobile client {client_id}")
+            for client_id, client in clients.items()
+        }
+        if platforms != {"ios", "android"}:
+            raise MobileNativeBlocked(
+                "Mobile physical scenario requires iOS and Android clients",
+                "mobile-runtime:scenario-platforms",
+            )
+        harness = _required_object(
+            resources,
+            "harness",
+            "Mobile runtime manifest",
+        )
+        required_actions = harness.get("requiredActions")
+        if not isinstance(required_actions, list) or any(
+            not isinstance(action, str) or not action
+            for action in required_actions
+        ):
+            raise MobileNativeBlocked(
+                "Mobile runtime manifest has invalid Harness actions",
+                "mobile-runtime:harness-actions",
+            )
+
+        sessions: dict[str, AppiumSession] = {}
+        for client_id, client in clients.items():
+            platform = _required_text(
+                client,
+                "platform",
+                f"Mobile client {client_id}",
+            )
+            application = _required_object(
+                applications,
+                platform,
+                f"Mobile source application {platform}",
+            )
+            source_client = _required_object(
+                source_clients,
+                client_id,
+                f"Mobile source client {client_id}",
+            )
+            build_ref = _artifact_ref(
+                application,
+                "buildAttestation",
+                expected_path=f"runtime/mobile/builds/{platform}.json",
+                expected_run_id=artifacts.run_id,
+                expected_workspace_id=artifacts.store.workspace_id,
+                expected_gate_id=self.gate_id,
+            )
+            physical_device_ref = _artifact_ref(
+                source_client,
+                "physicalDeviceLease",
+                expected_path=(
+                    f"runtime/mobile/leases/devices/{client_id}.json"
+                ),
+                expected_run_id=artifacts.run_id,
+                expected_workspace_id=artifacts.store.workspace_id,
+                expected_gate_id=self.gate_id,
+            )
+            callback_scheme = _required_text(
+                _required_object(
+                    resources["applications"],
+                    platform,
+                    f"Mobile application {platform}",
+                ),
+                "callbackScheme",
+                f"Mobile application {platform}",
+            )
+            session = AppiumSession(
+                self.capability_client,  # type: ignore[arg-type]
+                client_id=client_id,
+                platform=platform,
+                physical_device_lease=physical_device_ref,
+                build_attestation=build_ref,
+                callback_scheme=callback_scheme,
+                gate_id=self.gate_id,
+            )
+            try:
+                session.start()
+                session.wait_for_ready()
+                session.switch_to_native()
+                session.verify_installed_build_identity(
+                    session.fresh_install_trace
+                )
+                session.switch_to_app_webview()
+                session.require_harness(required_actions)
+            except DriverError as error:
+                raise MobileNativeBlocked(
+                    f"Mobile client {client_id!r} failed physical preflight",
+                    f"mobile-runtime:physical-client:{client_id}",
+                ) from error
+            self._record_lifecycle(client_id, "physical-harness-ready")
+            sessions[client_id] = session
+
+        source_identity = _required_object(
+            manifest,
+            "source",
+            "Mobile runtime manifest",
+        )
+        artifacts.write_json(
+            f"mobile/{self.scenario}/source-identity.json",
+            {
+                "artifactKind": "mobile-native-scenario-source-identity",
+                "gateId": self.gate_id,
+                "scenario": self.scenario,
+                "source": source_identity,
+                "builds": {
+                    platform: application["buildAttestation"]
+                    for platform, application in applications.items()
+                },
+            },
+            role=f"mobile-native-{self.scenario}-source-identity",
+        )
+        return sessions
+
+    def _run_lifecycle(self, artifacts: ArtifactSession) -> dict[str, Any]:
+        manifest = self._load_manifest()
+        sessions = self._start_device_scenario_sessions(artifacts, manifest)
+        clients: dict[str, Any] = {}
+        for client_id, session in sessions.items():
+            initial = validate_lifecycle_snapshot(
+                session.call_action("lifecycle.snapshot"),
+                expected_phase="ACTIVE",
+            )
+            previous = initial
+            cycles: list[dict[str, int]] = []
+            for cycle in range(LIFECYCLE_CYCLES):
+                session.switch_to_native()
+                session.background_app(1.0)
+                session.switch_to_app_webview()
+                resumed = validate_lifecycle_snapshot(
+                    session.call_action("lifecycle.snapshot"),
+                    expected_phase="ACTIVE",
+                    minimum_generation=int(previous["generation"]) + 1,
+                    expected_boot_order=list(initial["bootOrder"]),
+                )
+                cycles.append(
+                    {
+                        "cycle": cycle + 1,
+                        "resumedGeneration": int(resumed["generation"]),
+                    }
+                )
+                previous = resumed
+            restart = session.call_action("lifecycle.restart")
+            if restart != {"requested": True, "scope": "webview"}:
+                raise GateError("lifecycle.restart returned invalid data")
+            restarted = validate_lifecycle_snapshot(
+                session.call_action("lifecycle.snapshot"),
+                expected_phase="ACTIVE",
+                minimum_generation=int(previous["generation"]) + 1,
+                expected_boot_order=list(initial["bootOrder"]),
+            )
+            session.switch_to_native()
+            accessibility = session.capture_native_accessibility()
+            screenshot = session.capture_screenshot("lifecycle-final")
+            session.switch_to_app_webview()
+            dom = session.capture_web_dom("lifecycle-final")
+            clients[client_id] = {
+                "platform": session.platform,
+                "initial": initial,
+                "cycles": cycles,
+                "restarted": restarted,
+                "accessibility": accessibility.to_dict(),
+                "screenshot": screenshot.to_dict(),
+                "dom": dom.to_dict(),
+            }
+        return {**self._result_base("PASS"), "clients": clients}
+
+    def _run_platform(self, artifacts: ArtifactSession) -> dict[str, Any]:
+        manifest = self._load_manifest()
+        sessions = self._start_device_scenario_sessions(artifacts, manifest)
+        clients: dict[str, Any] = {}
+        for client_id, session in sessions.items():
+            started = time.monotonic()
+            inventory = session.call_action("platform.permission.checkAll")
+            if not isinstance(inventory, list):
+                raise GateError("platform permission inventory is invalid")
+            by_kind = {
+                item.get("kind"): dict(item)
+                for item in inventory
+                if isinstance(item, Mapping)
+            }
+            if set(by_kind) != set(PLATFORM_PERMISSION_KINDS):
+                raise GateError("platform permission inventory is incomplete")
+            permissions: dict[str, Any] = {}
+            for kind in PLATFORM_PERMISSION_KINDS:
+                before = session.call_action(
+                    "platform.permission.check",
+                    {"kind": kind},
+                )
+                if not isinstance(before, Mapping):
+                    raise GateError(
+                        f"platform permission {kind!r} check is invalid"
+                    )
+                requested: Mapping[str, Any] | None = None
+                if before.get("canRequest") is True:
+                    value = session.call_action(
+                        "platform.permission.request",
+                        {"kind": kind},
+                    )
+                    if not isinstance(value, Mapping):
+                        raise GateError(
+                            f"platform permission {kind!r} request is invalid"
+                        )
+                    requested = value
+                after = session.call_action(
+                    "platform.permission.check",
+                    {"kind": kind},
+                )
+                if (
+                    not isinstance(after, Mapping)
+                    or after.get("kind") != kind
+                    or after.get("status") != "granted"
+                ):
+                    raise MobileNativeBlocked(
+                        f"Platform permission {kind!r} has no physical result",
+                        f"mobile-runtime:permission:{client_id}:{kind}",
+                    )
+                permissions[kind] = {
+                    "before": dict(before),
+                    "request": dict(requested) if requested else None,
+                    "after": dict(after),
+                }
+            network = session.call_action("platform.network.read")
+            if not isinstance(network, Mapping):
+                raise GateError("platform network readback is invalid")
+            lifecycle = validate_lifecycle_snapshot(
+                session.call_action("lifecycle.snapshot"),
+                expected_phase="ACTIVE",
+            )
+            session.switch_to_native()
+            accessibility = session.capture_native_accessibility()
+            screenshot = session.capture_screenshot("platform-final")
+            session.switch_to_app_webview()
+            dom = session.capture_web_dom("platform-final")
+            clients[client_id] = {
+                "platform": session.platform,
+                "permissions": permissions,
+                "network": dict(network),
+                "lifecycle": lifecycle,
+                "diagnosticElapsedMs": round(
+                    (time.monotonic() - started) * 1000
+                ),
+                "accessibility": accessibility.to_dict(),
+                "screenshot": screenshot.to_dict(),
+                "dom": dom.to_dict(),
+            }
+        return {**self._result_base("PASS"), "clients": clients}
 
     def _run_access(self, artifacts: ArtifactSession) -> dict[str, Any]:
         manifest = self._load_manifest()
@@ -1416,13 +1861,7 @@ class MobileNativeGate(AcceptanceGate):
         finally:
             self._purge_native_oauth(artifacts, sessions)
         return {
-            "artifactKind": "mobile-native-gate-result",
-            "gate": self.gate_id,
-            "scenario": "access",
-            "sourcePhase": "W2-E Native Acceptance",
-            "sourceBom": ["W2-E"],
-            "sourceSpec": ["MS-D14", "MS-AG03"],
-            "sourceGate": "mobile-native-access-e2e",
+            **self._result_base("PASS"),
             "clients": sorted(sessions),
             "providers": sorted(set(CLIENT_PROVIDER.values())),
         }
@@ -1781,9 +2220,18 @@ class MobileNativeGate(AcceptanceGate):
             )
         try:
             manifest = load_runtime_manifest(Path(manifest_path), self.gate_id)
-            require_runtime_service(manifest, "station-primary", "station")
-            require_runtime_service(manifest, "station-secondary", "station")
-            require_runtime_service(manifest, "relay", "relay")
+            if self.scenario == "access":
+                require_runtime_service(manifest, "station-primary", "station")
+                require_runtime_service(manifest, "station-secondary", "station")
+                require_runtime_service(manifest, "relay", "relay")
+            elif (
+                manifest.get("services") != {}
+                or manifest.get("credentialRefs") != []
+                or "actorManifest" in manifest
+            ):
+                raise ProvisioningError(
+                    "non-access Mobile scenario inherited access resources"
+                )
         except ProvisioningError as error:
             raise MobileNativeBlocked(
                 str(error),

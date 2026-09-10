@@ -168,6 +168,86 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-CANCELLED": frozenset(
+        {
+            "typedCancellationProjected",
+            "localizedCancellationVisible",
+            "cancelledPersisted",
+            "exactlyOneAuthoritativeTerminal",
+            "zeroLateSuccess",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
+    "BASE-CONTEXT_OVERFLOW": frozenset(
+        {
+            "typedContextOverflow",
+            "localizedRecoveryVisible",
+            "rejectedDraftPreserved",
+            "reduceContextExecuted",
+            "stationStateUnchanged",
+            "zeroPersistenceAndProvider",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
+    "BASE-DUPLICATE_CONFLICT": frozenset(
+        {
+            "typedDuplicateConflictProjected",
+            "localizedRecoveryVisible",
+            "openOriginalExecuted",
+            "originalCommandPreserved",
+            "zeroNewRows",
+            "zeroProviderCall",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
+    "BASE-CREDENTIAL_MISSING": frozenset(
+        {
+            "typedProviderConfigMissing",
+            "localizedRecoveryVisible",
+            "configureProviderExecuted",
+            "providerConfigAbsentAtAdmission",
+            "stationStateUnchanged",
+            "zeroProviderCall",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
+    "BASE-APPROVAL_DENIED": frozenset(
+        {
+            "typedDenialProjected",
+            "localizedRecoveryVisible",
+            "denialPersisted",
+            "zeroSideEffect",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
+    "BASE-APPROVAL_EXPIRED": frozenset(
+        {
+            "typedExpiryProjected",
+            "localizedRecoveryVisible",
+            "expiredDecisionImmutable",
+            "requestAgainCreatedOneAttempt",
+            "zeroSideEffect",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
+    "BASE-ATTACHMENT_REJECTED": frozenset(
+        {
+            "typedAttachmentRejected",
+            "localizedRemovalVisible",
+            "rejectedDraftPreserved",
+            "removeAttachmentExecuted",
+            "stationStateUnchanged",
+            "zeroSideEffect",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
 }
 
 

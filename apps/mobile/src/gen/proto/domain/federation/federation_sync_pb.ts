@@ -111,4 +111,3 @@ export enum SyncStatus {
  */
 export const SyncStatusSchema: GenEnum<SyncStatus> = /*@__PURE__*/
   enumDesc(file_domain_federation_federation_sync, 0);
-

@@ -2,11 +2,8 @@ use super::{
     ActorReadReceiveCommit, ClaimedItemConsumer, DeliveryReceiptReceiveCommit, EngineEndpoint,
     MessagingStore,
 };
-use crate::model::chat::{
-    ActorReadCursor, DeviceQueueItem, DeviceQueuePayloadType, MessageReceipt, ReceiptType,
-};
-use prost::Message;
-use sha2::{Digest, Sha256};
+use crate::model::chat::DurableDeviceInboxItem;
+use messaging_core::inbox::{decode_device_receipt_payload, DeviceReceiptPayload};
 use std::sync::Arc;
 
 pub struct DeliveryReceiptProcessor {
@@ -33,7 +30,7 @@ impl DeliveryReceiptProcessor {
         })
     }
 
-    fn process(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -51,75 +48,41 @@ impl DeliveryReceiptProcessor {
         {
             return Ok(());
         }
-        if DeviceQueuePayloadType::try_from(item.payload_type).ok()
-            != Some(DeviceQueuePayloadType::DeviceReceipt)
-        {
-            return Err("messaging delivery receipt queue type is invalid".to_string());
-        }
-        let recipient = item
-            .recipient
-            .as_ref()
-            .ok_or_else(|| "messaging delivery receipt recipient is missing".to_string())?;
-        if recipient.ptid != self.endpoint.ptid || recipient.device_id != self.endpoint.device_id {
-            return Err("messaging delivery receipt endpoint mismatch".to_string());
-        }
-        if item.payload_sha256.len() != 32
-            || Sha256::digest(&item.opaque_payload).as_slice() != item.payload_sha256
-        {
-            return Err("messaging delivery receipt payload hash mismatch".to_string());
-        }
-        if item.event_id.starts_with("read:") {
-            let cursor = ActorReadCursor::decode(item.opaque_payload.as_slice())
-                .map_err(|error| format!("decode messaging actor read cursor: {error}"))?;
-            if cursor.conversation_id != item.conversation_id
-                || cursor.reader_ptid.is_empty()
-                || cursor.reader_ptid == self.endpoint.ptid
-                || cursor.last_read_sequence <= 0
-            {
-                return Err("messaging actor read cursor payload is invalid".to_string());
+        match decode_device_receipt_payload(item, &self.endpoint.ptid, &self.endpoint.device_id)? {
+            DeviceReceiptPayload::ActorReadCursor(cursor) => {
+                self.store
+                    .commit_actor_read_cursor(&ActorReadReceiveCommit {
+                        item_id: &item.item_id,
+                        event_id: &item.event_id,
+                        conversation_id: &cursor.conversation_id,
+                        reader_ptid: &cursor.reader_ptid,
+                        last_read_sequence: cursor.last_read_sequence,
+                        lane_sequence: item.lane_sequence,
+                        consumer_epoch,
+                        payload_sha256: &item.payload_sha256,
+                        consumed_at_unix_ms: now,
+                    })?;
             }
-            self.store
-                .commit_actor_read_cursor(&ActorReadReceiveCommit {
-                    item_id: &item.item_id,
-                    event_id: &item.event_id,
-                    conversation_id: &cursor.conversation_id,
-                    reader_ptid: &cursor.reader_ptid,
-                    last_read_sequence: cursor.last_read_sequence,
-                    lane_sequence: item.lane_sequence,
-                    consumer_epoch,
-                    payload_sha256: &item.payload_sha256,
-                    consumed_at_unix_ms: now,
-                })?;
-            return Ok(());
+            DeviceReceiptPayload::MessageReceipt(receipt) => {
+                self.store
+                    .commit_delivery_receipt(&DeliveryReceiptReceiveCommit {
+                        item_id: &item.item_id,
+                        message_id: &receipt.message_id,
+                        conversation_id: &receipt.conversation_id,
+                        lane_sequence: item.lane_sequence,
+                        consumer_epoch,
+                        payload_sha256: &item.payload_sha256,
+                        delivery_state: "delivered",
+                        consumed_at_unix_ms: now,
+                    })?;
+            }
         }
-        let receipt = MessageReceipt::decode(item.opaque_payload.as_slice())
-            .map_err(|error| format!("decode messaging delivery receipt: {error}"))?;
-        if receipt.receipt_type != ReceiptType::Delivered as i32
-            || receipt.conversation_id != item.conversation_id
-            || receipt.message_id != item.event_id
-            || receipt.ptid.is_empty()
-            || receipt.device_id.is_empty()
-            || receipt.ptid == self.endpoint.ptid
-        {
-            return Err("messaging delivery receipt payload is invalid".to_string());
-        }
-        self.store
-            .commit_delivery_receipt(&DeliveryReceiptReceiveCommit {
-                item_id: &item.item_id,
-                message_id: &receipt.message_id,
-                conversation_id: &receipt.conversation_id,
-                lane_sequence: item.lane_sequence,
-                consumer_epoch,
-                payload_sha256: &item.payload_sha256,
-                delivery_state: "delivered",
-                consumed_at_unix_ms: now,
-            })?;
         Ok(())
     }
 }
 
 impl ClaimedItemConsumer for DeliveryReceiptProcessor {
-    fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
         self.process(item, consumer_epoch)
     }
 }
@@ -127,7 +90,12 @@ impl ClaimedItemConsumer for DeliveryReceiptProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::chat::CryptoEndpoint;
+    use crate::model::chat::{
+        ActorReadCursor, DeviceInboxPayloadType, MessageReceipt, ReceiptType,
+    };
+    use messaging_core::proto::actor_device_ref;
+    use prost::Message;
+    use sha2::{Digest, Sha256};
 
     fn now() -> i64 {
         1_700_000_000_000
@@ -149,7 +117,7 @@ mod tests {
         sender_ptid: &str,
         recipient_ptid: &str,
         receipt_type: ReceiptType,
-    ) -> DeviceQueueItem {
+    ) -> DurableDeviceInboxItem {
         let receipt = MessageReceipt {
             conversation_id: "conversation-1".to_string(),
             message_id: "message-1".to_string(),
@@ -159,23 +127,20 @@ mod tests {
             ts: None,
         };
         let payload = receipt.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: "receipt-item-1".to_string(),
-            recipient: Some(CryptoEndpoint {
-                ptid: recipient_ptid.to_string(),
-                device_id: "alice-device".to_string(),
-            }),
+            recipient: Some(actor_device_ref(recipient_ptid, "alice-device")),
             lane_sequence: 1,
             event_id: "message-1".to_string(),
             conversation_id: "conversation-1".to_string(),
-            payload_type: DeviceQueuePayloadType::DeviceReceipt as i32,
+            payload_type: DeviceInboxPayloadType::DeviceReceipt as i32,
             payload_sha256: Sha256::digest(&payload).to_vec(),
             opaque_payload: payload,
-            ..DeviceQueueItem::default()
+            ..DurableDeviceInboxItem::default()
         }
     }
 
-    fn actor_read_item(reader_ptid: &str, sequence: i64) -> DeviceQueueItem {
+    fn actor_read_item(reader_ptid: &str, sequence: i64) -> DurableDeviceInboxItem {
         let cursor = ActorReadCursor {
             conversation_id: "conversation-1".to_string(),
             reader_ptid: reader_ptid.to_string(),
@@ -183,19 +148,16 @@ mod tests {
             updated_at: None,
         };
         let payload = cursor.encode_to_vec();
-        DeviceQueueItem {
+        DurableDeviceInboxItem {
             item_id: "read-item-1".to_string(),
-            recipient: Some(CryptoEndpoint {
-                ptid: "ptid:alice".to_string(),
-                device_id: "alice-device".to_string(),
-            }),
+            recipient: Some(actor_device_ref("ptid:alice", "alice-device")),
             lane_sequence: 1,
-            event_id: format!("read:{reader_ptid}:{sequence}"),
+            event_id: hex::encode(Sha256::digest(&payload)),
             conversation_id: "conversation-1".to_string(),
-            payload_type: DeviceQueuePayloadType::DeviceReceipt as i32,
+            payload_type: DeviceInboxPayloadType::DeviceReceipt as i32,
             payload_sha256: Sha256::digest(&payload).to_vec(),
             opaque_payload: payload,
-            ..DeviceQueueItem::default()
+            ..DurableDeviceInboxItem::default()
         }
     }
 
@@ -272,6 +234,23 @@ mod tests {
             .consumption_marker_matches(&item.item_id, &item.payload_sha256)
             .unwrap());
         processor.consume(&item, 3).unwrap();
+    }
+
+    #[test]
+    fn rejects_legacy_read_cursor_event_identity() {
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        insert_projection(&store, "delivered");
+        let processor = processor(store);
+        let mut item = actor_read_item("ptid:bob", 7);
+        item.event_id = "read:ptid:bob:7".to_string();
+
+        assert!(
+            processor
+                .consume(&item, 3)
+                .unwrap_err()
+                .starts_with("decode messaging delivery receipt:"),
+            "legacy read-cursor identity was accepted"
+        );
     }
 
     #[test]

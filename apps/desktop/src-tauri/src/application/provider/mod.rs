@@ -100,27 +100,27 @@ pub fn provider_update(
         return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
     }
 
-    if let Some(api_key) = input
+    let api_key = input
         .key_vaults
         .as_deref()
         .and_then(parse_key_vault_api_key)
-    {
-        if !api_key.is_empty() {
-            let _ = station_api::set_credential(token, id, &api_key);
-        }
-    }
+        .filter(|api_key| !api_key.is_empty());
 
     let resp = match station_api::update_provider_full(
         token,
         id,
         input.enabled,
         input.config_json.as_deref(),
-        input.key_vaults.as_deref(),
         input.version,
     ) {
         Ok(v) => v,
         Err(e) => return station_error_to_result(e),
     };
+    if let Some(api_key) = api_key {
+        if let Err(error) = station_api::set_credential(token, id, &api_key) {
+            return station_error_to_result(error);
+        }
+    }
     success_payload("provider_update", resp)
 }
 

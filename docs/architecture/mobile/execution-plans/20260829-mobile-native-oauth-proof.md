@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-29 | **Updated**: 2026-08-30
+> **Created**: 2026-08-29 | **Updated**: 2026-09-09
 > **Owner**: Mobile Architecture Team
 
 ***
@@ -2121,9 +2121,12 @@ The plan is not one TRAE Goal:
 W2-E2-B remediation is closed by the 2026-08-30 evidence in §14.2. W2-E2-C
 and W2-E2-FREEZE remain complete. D-18 is closed. W2-E2-D is blocked by the
 accepted D-19 architecture with active Infra landing and remaining E2-5 review
-remediation. No Slice starts its successor automatically;
-`pt-trae-goal-orchestrator NEXT` re-reads this table and selects one
-dependency-ready Slice.
+remediation. A bounded adaptive Goal may drain multiple dependency-ready Slices
+from this table, park a blocked Slice, and continue an independent ready Slice
+without crossing the plan's stage or ownership boundaries.
+`pt-trae-goal-orchestrator NEXT` is used only after the current Goal reaches
+its completion or hard-boundary cut and rereads this table before selecting a
+successor.
 
 Within W2-E2-B, one integrator owns
 `tooling/acceptance/provisioners/mobile_native.py`: E2-1 contributes only build
@@ -2336,6 +2339,6 @@ A5-7 environment          = SKIPPED (no runtime changes needed for source-side c
 A5-8 client contracts     = SKIPPED (no Rust/TS surface change)
 A5-9 Rust commands        = SKIPPED (no command surface change)
 A5-10 focused tests       = DONE (11 adversarial tests)
-A5-11 main plan update    = NOT STARTED
-E2-5 atomic cutover       = IN PROGRESS (source-side closure complete)
+A5-11 main plan update    = DONE
+E2-5 atomic cutover       = DONE (source-side closure complete, main plan updated)
 ```

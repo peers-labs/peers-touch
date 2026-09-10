@@ -86,7 +86,7 @@ func validateRevisionRequest(request RevisionRequest) error {
 func loadOwnedConversationTx(tx *gorm.DB, request RevisionRequest) (*persistence.Conversation, error) {
 	var conversation persistence.Conversation
 	if err := tx.Where(
-		"id = ? AND ptid = ? AND status != ?",
+		"id = ? AND actor_ptid = ? AND status != ?",
 		request.ConversationID,
 		request.Ptid,
 		"deleted",
@@ -551,7 +551,7 @@ func (s *RevisionService) admitAndExecute(
 			}
 		}
 		result := tx.Model(&persistence.Conversation{}).
-			Where("id = ? AND ptid = ? AND version = ?", request.ConversationID, request.Ptid, request.ExpectedConversationVersion).
+			Where("id = ? AND actor_ptid = ? AND version = ?", request.ConversationID, request.Ptid, request.ExpectedConversationVersion).
 			Updates(updates)
 		if result.Error != nil {
 			return result.Error
@@ -620,6 +620,11 @@ func (s *RevisionService) mutateConversationOnly(
 		).First(&message).Error; err != nil {
 			return errcode.New(errcode.AgentNotFound, http.StatusNotFound, "message not found", err)
 		}
+		eventTurnID := strings.TrimSpace(revisionStringValue(message.TurnID))
+		if eventTurnID == "" {
+			return errcode.New(errcode.AgentInvalidSourceState, http.StatusConflict,
+				"revision source message has no owning turn", nil)
+		}
 		now := time.Now()
 		updates := map[string]interface{}{
 			"version":    gorm.Expr("version + 1"),
@@ -667,7 +672,7 @@ func (s *RevisionService) mutateConversationOnly(
 			}
 		}
 		result := tx.Model(&persistence.Conversation{}).
-			Where("id = ? AND ptid = ? AND version = ?", request.ConversationID, request.Ptid, request.ExpectedConversationVersion).
+			Where("id = ? AND actor_ptid = ? AND version = ?", request.ConversationID, request.Ptid, request.ExpectedConversationVersion).
 			Updates(updates)
 		if result.Error != nil {
 			return result.Error
@@ -678,7 +683,10 @@ func (s *RevisionService) mutateConversationOnly(
 		if err := storeRevisionAdmissionTx(tx, kind, request, admission); err != nil {
 			return err
 		}
-		return storeRevisionEventTx(tx, kind, request, admission)
+		eventAdmission := admission
+		eventAdmission.TurnID = eventTurnID
+		eventAdmission.MessageID = message.ID
+		return storeRevisionEventTx(tx, kind, request, eventAdmission)
 	})
 	if err != nil {
 		return nil, err

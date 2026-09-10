@@ -65,8 +65,7 @@ func (s *CredentialPoolService) Lease(
 	}
 
 	if len(rows) == 0 {
-		return nil, errcode.New(errcode.AgentCredentialFailed, http.StatusNotFound,
-			fmt.Sprintf("no credentials registered for provider %q", provider), nil)
+		return nil, errcode.NewProviderCredentialMissing(provider)
 	}
 
 	now := time.Now()

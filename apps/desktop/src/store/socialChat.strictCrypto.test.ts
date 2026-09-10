@@ -73,7 +73,9 @@ describe('strict chat encryption source contract', () => {
     expect(appRuntimeSource).not.toContain('registerRuntime(imRuntime)');
     expect(appRuntimeSource).not.toContain('teardownRuntime(cryptoRuntime.id)');
     expect(appRuntimeSource).not.toContain('teardownRuntime(imRuntime.id)');
-    expect(imServiceSource).toContain('recipient_device_id: recipientDeviceId');
+    expect(imServiceSource).not.toContain('recipient_device_id: recipientDeviceId');
+    expect(imServiceSource).not.toContain('const dkxService');
+    expect(imServiceSource).not.toContain('const envelopeService');
     expect(socialChatSource).not.toContain('establishSession:');
     expect(socialChatSource).not.toContain('api.drEncrypt');
     expect(socialChatSource).not.toContain('api.drDecrypt');
@@ -99,21 +101,39 @@ describe('strict chat encryption source contract', () => {
     expect(socialChatSource).not.toContain('content: plaintextB64');
   });
 
-  it('advertises and accepts only Double Ratchet version 1', () => {
-    const cryptoServiceSource = readFileSync(new URL('../services/crypto-service.ts', import.meta.url), 'utf8');
-    expect(cryptoServiceSource).toContain('supported_versions');
+  it('advertises Direct version 1 only through the Engine key-exchange path', () => {
     expect(socialChatSource).not.toContain('cryptoDrEnabled');
     expect(featureFlagsSource).not.toContain('cryptoDrEnabled');
-    expect(rustCryptoSource).toContain('if negotiated_version != 1');
-    expect(rustKeyExchangeSource).toContain('supported_versions: vec![1]');
-    expect(rustGatewaySource).toContain('supported_versions: vec![1]');
+    expect(rustKeyExchangeSource).toContain('supported_wire_versions: vec![1]');
+    expect(rustGatewaySource).toContain('supported_wire_versions: vec![1]');
   });
 
-  it('does not expose legacy crypto commands or delete history during startup', () => {
-    for (const source of [rustCryptoSource, rustMainSource]) {
-      expect(source).not.toContain('crypto_encrypt_message');
-      expect(source).not.toContain('crypto_decrypt_message');
+  it('does not expose the superseded raw Direct command or persistence owner', () => {
+    const retiredCommands = [
+      'crypto_generate_identity',
+      'crypto_get_identity',
+      'crypto_get_fingerprint',
+      'crypto_generate_key_bundle',
+      'crypto_init_session',
+      'crypto_accept_session',
+      'crypto_session_status',
+      'crypto_mark_session_ready',
+      'crypto_list_sessions',
+      'crypto_list_sessions_for_peer',
+      'crypto_encrypt',
+      'crypto_decrypt',
+      'dr_encrypt',
+      'dr_decrypt',
+    ];
+    for (const command of retiredCommands) {
+      expect(rustCryptoSource).not.toContain(`pub fn ${command}(`);
+      expect(rustMainSource).not.toContain(`crypto::${command}`);
+      expect(rustGatewaySource).not.toContain(`"${command}" =>`);
     }
+    expect(localChatStoreSource).not.toContain('CREATE TABLE IF NOT EXISTS direct_sessions');
+    expect(localChatStoreSource).not.toContain('CREATE TABLE IF NOT EXISTS crypto_sessions');
+    expect(localChatStoreSource).not.toContain('pub fn save_direct_session');
+    expect(localChatStoreSource).toContain('DROP TABLE IF EXISTS direct_sessions');
     expect(rustMainSource).not.toContain('conversation_send_encrypted');
     expect(rustMainSource).not.toContain('conversation_decrypt_message');
     expect(localChatStoreSource).not.toContain('wipe_legacy_group_plaintext');

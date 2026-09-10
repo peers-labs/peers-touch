@@ -5,6 +5,7 @@ export type PortalView =
   | { type: 'artifacts'; messageId?: string }
   | { type: 'artifactDetail'; artifact: MessageArtifact }
   | { type: 'toolDetail'; messageId: string; toolCallId: string }
+  | { type: 'turnDetails'; messageId: string; turnId: string }
   | { type: 'thread'; sessionKey: string; sourceMessageId: string }
   | { type: 'topicComments'; topicKey: string }
   | { type: 'workingFiles'; sessionKey: string }
@@ -21,6 +22,7 @@ interface PortalActions {
   openArtifact: (artifact: MessageArtifact) => void;
   openArtifacts: (messageId?: string) => void;
   openToolDetail: (messageId: string, toolCallId: string) => void;
+  openTurnDetails: (messageId: string, turnId: string) => void;
   openThread: (sessionKey: string, sourceMessageId: string) => void;
   openTopicComments: (topicKey: string) => void;
   openWorkingFiles: (sessionKey: string) => void;
@@ -61,6 +63,10 @@ export const usePortalStore = createDesktopStore<PortalState & PortalActions>(
 
       openToolDetail: (messageId: string, toolCallId: string) => {
         pushPortalView({ type: 'toolDetail', messageId, toolCallId });
+      },
+
+      openTurnDetails: (messageId: string, turnId: string) => {
+        pushPortalView({ type: 'turnDetails', messageId, turnId });
       },
 
       openThread: (sessionKey: string, sourceMessageId: string) => {
