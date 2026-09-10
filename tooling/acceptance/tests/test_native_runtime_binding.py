@@ -4,7 +4,7 @@ import base64
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import (
     AppLaunchMetadata,
@@ -309,6 +309,29 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         self.assertEqual(
             binding.native_file_sha256("alice", staged),
             "b" * 64,
+        )
+
+    def test_windows_clipboard_write_retries_one_broker_failure(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            r"C:\acceptance\actors\alice\fixture.png"
+        )
+        lifecycle.execute_adapter = Mock(
+            side_effect=[DriverError("broker timeout"), {}],
+        )
+        binding = WindowsNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+
+        binding.native_adapter.write_clipboard(b"replacement")
+
+        self.assertEqual(lifecycle.execute_adapter.call_count, 2)
+        lifecycle.execute_adapter.assert_called_with(
+            "write_clipboard",
+            {
+                "content": base64.b64encode(b"replacement").decode("ascii"),
+            },
         )
 
     def test_remote_binding_delegates_session_endpoint_and_cleanup(self) -> None:

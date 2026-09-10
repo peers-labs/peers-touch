@@ -819,10 +819,15 @@ class RemoteNativeDesktopAdapter(NativeDesktopAdapter):
         return self._content("read_clipboard", {})
 
     def write_clipboard(self, value: bytes) -> None:
-        self._execute(
-            "write_clipboard",
-            {"content": base64.b64encode(value).decode("ascii")},
-        )
+        payload = {"content": base64.b64encode(value).decode("ascii")}
+        attempts = 2 if self._platform == "win32" else 1
+        for attempt in range(attempts):
+            try:
+                self._execute("write_clipboard", payload)
+                return
+            except DriverError:
+                if attempt + 1 == attempts:
+                    raise
 
     def _content(
         self,
