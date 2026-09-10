@@ -163,6 +163,13 @@ def _normalized_windows_path(path: str) -> PureWindowsPath:
     return PureWindowsPath(normalized)
 
 
+def _windows_verbatim_path(path: str) -> str:
+    normalized = str(_normalized_windows_path(path))
+    if normalized.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + normalized[2:]
+    return "\\\\?\\" + normalized
+
+
 def _windows_path_is_descendant(path: str, root: str) -> bool:
     candidate = _normalized_windows_path(path)
     parent = _normalized_windows_path(root)
@@ -1036,6 +1043,7 @@ class NativeDesktopWindowsProvisioner:
             raise ProvisioningError(
                 "Windows runtime-cell file is outside actor root"
             )
+        io_path = _windows_verbatim_path(str(candidate))
         completed = self.transport.run_argv(
             (
                 "powershell.exe",
@@ -1044,7 +1052,7 @@ class NativeDesktopWindowsProvisioner:
                 "-Command",
                 (
                     "(Get-FileHash -Algorithm SHA256 -LiteralPath "
-                    f"'{str(candidate).replace(chr(39), chr(39) * 2)}').Hash"
+                    f"'{io_path.replace(chr(39), chr(39) * 2)}').Hash"
                 ),
             ),
             timeout=15,

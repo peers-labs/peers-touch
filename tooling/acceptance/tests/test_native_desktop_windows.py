@@ -25,6 +25,7 @@ from tooling.acceptance.provisioners.native_desktop_windows import (
     _normalized_windows_path,
     _screenshot_probe_geometry,
     _windows_path_is_descendant,
+    _windows_verbatim_path,
 )
 from tooling.acceptance.transports.ssh import RemotePlatform
 
@@ -67,6 +68,24 @@ class _BrokerTransport:
         )
 
 
+class _DigestTransport:
+    def __init__(self) -> None:
+        self.commands: list[tuple[str, ...]] = []
+
+    def run_argv(
+        self,
+        command: tuple[str, ...],
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        self.commands.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=("a" * 64) + "\n",
+            stderr="",
+        )
+
+
 class WindowsCellProfileTest(unittest.TestCase):
     def test_windows_path_ownership_accepts_verbatim_descendant(self) -> None:
         root = (
@@ -85,12 +104,36 @@ class WindowsCellProfileTest(unittest.TestCase):
             Path(root, "storage", "attachment-cache", "attachment-1"),
         )
         self.assertTrue(_windows_path_is_descendant(candidate, root))
+        self.assertEqual(_windows_verbatim_path(candidate), candidate)
+        self.assertEqual(_windows_verbatim_path(root), rf"\\?\{root}")
         self.assertFalse(
             _windows_path_is_descendant(
                 candidate,
                 root.replace(r"\bob", r"\alice"),
             )
         )
+
+    def test_actor_file_digest_reads_long_path_with_verbatim_prefix(self) -> None:
+        provisioner = NativeDesktopWindowsProvisioner.__new__(
+            NativeDesktopWindowsProvisioner
+        )
+        transport = _DigestTransport()
+        provisioner.transport = transport
+        provisioner._require_state = Mock(
+            return_value={
+                "brokerRoot": r"C:\runtime",
+                "runId": "run-1",
+            }
+        )
+        provisioner._active_actor = Mock(return_value="bob")
+        path = (
+            r"C:\runtime\actors\run-1\bob\storage"
+            + (r"\long-segment" * 30)
+            + r"\attachment-1"
+        )
+
+        self.assertEqual(provisioner.actor_file_sha256("bob", path), "a" * 64)
+        self.assertIn(r"\\?\C:\runtime", transport.commands[0][-1])
 
     def test_provisioner_registry_imports_in_fresh_process(self) -> None:
         completed = subprocess.run(
