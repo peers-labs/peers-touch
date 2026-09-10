@@ -1,0 +1,7 @@
+# Protected finalizer digests bind exact tracked bytes across host platforms.
+tooling/acceptance/gates/mobile/__init__.py text eol=lf
+tooling/acceptance/gates/mobile/cleanup_evidence_finalizer.py text eol=lf
+tooling/acceptance/gates/mobile/cleanup_evidence_roles.py text eol=lf
+tooling/acceptance/gates/mobile/finalizer-baseline.json text eol=lf
+tooling/acceptance/gates/mobile/finalizer-registry.json text eol=lf
+tooling/acceptance/gates/mobile/proof-contract.schema.json text eol=lf

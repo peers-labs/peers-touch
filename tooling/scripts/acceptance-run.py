@@ -705,7 +705,7 @@ def load_plan(
         reference = store.latest_artifact_ref("acceptance-plan", "plan")
     except Exception:
         subprocess.run(
-            ["python3", "tooling/scripts/acceptance-plan.py"],
+            [sys.executable, "tooling/scripts/acceptance-plan.py"],
             cwd=REPO_ROOT,
             check=True,
             env={
@@ -1982,6 +1982,8 @@ def main() -> int:
                                 command,
                                 shell=True,
                                 text=True,
+                                encoding="utf-8",
+                                errors="replace",
                                 capture_output=True,
                                 timeout=timeout,
                                 env=gate_env,
@@ -1994,9 +1996,13 @@ def main() -> int:
                         stdout = error.stdout or ""
                         stderr = error.stderr or ""
                         output_text = (
-                            stdout.decode() if isinstance(stdout, bytes) else stdout
+                            stdout.decode("utf-8", errors="replace")
+                            if isinstance(stdout, bytes)
+                            else stdout
                         ) + (
-                            stderr.decode() if isinstance(stderr, bytes) else stderr
+                            stderr.decode("utf-8", errors="replace")
+                            if isinstance(stderr, bytes)
+                            else stderr
                         )
                         output_text += f"\nGate timed out after {timeout} seconds\n"
                     except Exception as error:

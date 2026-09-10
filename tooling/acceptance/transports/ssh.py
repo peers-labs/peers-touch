@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 import shlex
@@ -171,16 +172,23 @@ class SshTransport:
     def render_remote_argv(self, argv: Sequence[str]) -> str:
         if self.target.remote_platform == RemotePlatform.POSIX:
             return shlex.join(str(argument) for argument in argv)
-        arguments = " ".join(
-            "'" + str(argument).replace("'", "''") + "'"
-            for argument in argv
+        encoded_argv = base64.b64encode(
+            json.dumps(
+                [str(argument) for argument in argv],
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).decode("ascii")
+        bootstrap = (
+            "import base64,json,subprocess,sys;"
+            "argv=json.loads(base64.b64decode(sys.argv[1]));"
+            "raise SystemExit(subprocess.run(argv).returncode)"
         )
         script = (
             "$ErrorActionPreference='Stop'; "
             "$utf8=[System.Text.UTF8Encoding]::new($false); "
             "$OutputEncoding=$utf8; "
             "[Console]::OutputEncoding=$utf8; "
-            f"& {arguments}; "
+            f"& 'python' '-c' '{bootstrap}' '{encoded_argv}'; "
             "if ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }"
         )
         encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")

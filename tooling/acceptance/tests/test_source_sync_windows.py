@@ -84,7 +84,11 @@ class WindowsSourceSyncTests(unittest.TestCase):
             synchronizer.transport.target.remote_platform,
             RemotePlatform.WINDOWS,
         )
-        self.assertEqual(run_argv.call_args.args[0][0], "python")
+        self.assertEqual(run_argv.call_args.args[0][0:2], ["python", "-"])
+        self.assertEqual(
+            run_argv.call_args.kwargs["input_text"],
+            _remote_checkout_script(),
+        )
         self.assertEqual(result.remote_commit, "a" * 40)
         self.assertTrue(result.remote_checkout_clean)
 

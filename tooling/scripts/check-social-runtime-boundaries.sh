@@ -23,7 +23,7 @@ check_pattern() {
   local matches
   matches=$(
     grep -R -n -E "$pattern" "${paths[@]}" --include='*.ts' --include='*.tsx' 2>/dev/null \
-      | grep -v -E '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' \
+      | grep -v -E ':[0-9]+:[[:space:]]*(//|\*)' \
       || true
   )
   if [[ -n "$matches" ]]; then

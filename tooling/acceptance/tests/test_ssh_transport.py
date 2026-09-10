@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -28,16 +29,20 @@ class SshTransportRenderingTest(unittest.TestCase):
                 remote_platform=RemotePlatform.WINDOWS,
             )
         )
-        rendered = transport.render_remote_argv(
-            ("tool.exe", "a b", "x'y", "$value; & echo")
-        )
+        argv = ("tool.exe", "a b", "x'y", 'quoted"value', "$value; & echo")
+        rendered = transport.render_remote_argv(argv)
         prefix = "powershell.exe -NoProfile -NonInteractive -EncodedCommand "
         self.assertTrue(rendered.startswith(prefix))
         decoded = base64.b64decode(
             rendered.removeprefix(prefix)
         ).decode("utf-16le")
         self.assertIn("[Console]::OutputEncoding=$utf8", decoded)
-        self.assertIn("& 'tool.exe' 'a b' 'x''y' '$value; & echo'", decoded)
+        encoded_argv = base64.b64encode(
+            json.dumps(list(argv), ensure_ascii=False).encode("utf-8")
+        ).decode("ascii")
+        self.assertIn(f"'{encoded_argv}'", decoded)
+        self.assertIn("argv=json.loads(base64.b64decode(sys.argv[1]))", decoded)
+        self.assertIn("subprocess.run(argv)", decoded)
         self.assertIn("$LASTEXITCODE", decoded)
 
     def test_windows_path_validation_is_fail_closed(self) -> None:
