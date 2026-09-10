@@ -10,6 +10,7 @@ activation:
 governed_prefixes:
   - /conversation/
   - /messaging/
+  - /envelope/
   - /device/
   - /recovery/
   - /key-exchange/
@@ -142,6 +143,10 @@ capabilities:
       - peers_touch.model.chat.v1.SubmitMessagingCommandResponse
       - peers_touch.model.chat.v1.SubmitConversationCommandProposalRequest
       - peers_touch.model.chat.v1.SubmitConversationCommandProposalResponse
+      - peers_touch.model.chat.v1.ForwardConversationCommandProposalRequest
+      - peers_touch.model.chat.v1.ForwardConversationCommandProposalResponse
+      - peers_touch.model.chat.v1.ConversationCommand
+      - peers_touch.model.chat.v1.CommittedConversationEvent
 
   - id: chat.group.genesis.prepare
     domain_owner: station.conversation
@@ -565,7 +570,10 @@ capabilities:
     truth_stores: [conversation_member_settings]
     allowed_dependencies: [conversation.membership.read]
     forbidden_aliases: []
-    superseded_symbols: []
+    superseded_symbols:
+      - peers_touch.model.chat.v1.GetMessagingMemberSettingsRequest
+      - peers_touch.model.chat.v1.GetMessagingMemberSettingsResponse
+      - peers_touch.model.chat.v1.MessagingMemberSettings
 
   - id: chat.member_settings.update
     domain_owner: station.conversation
@@ -577,7 +585,9 @@ capabilities:
     truth_stores: [conversation_member_settings]
     allowed_dependencies: [conversation.membership.read, conversation.realtime.publish]
     forbidden_aliases: []
-    superseded_symbols: []
+    superseded_symbols:
+      - peers_touch.model.chat.v1.UpdateMessagingMemberSettingsRequest
+      - peers_touch.model.chat.v1.UpdateMessagingMemberSettingsResponse
 
   - id: chat.typing.submit
     domain_owner: station.conversation
@@ -657,7 +667,7 @@ capabilities:
     canonical_route: { method: POST, path: /key-exchange/keys/bundle }
     request_proto: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleRequest
     response_proto: peers_touch.model.key_exchange.v1.UploadDirectKeyBundleResponse
-    truth_stores: [key_exchange_identity_keys, key_exchange_signed_pre_keys, key_exchange_one_time_pre_keys]
+    truth_stores: [key_exchange_identity_keys, key_exchange_signed_pre_keys, key_exchange_one_time_pre_keys, key_exchange_direct_fetch_receipts]
     allowed_dependencies: [actor.device_directory.read]
     forbidden_aliases: []
     superseded_symbols:
@@ -714,7 +724,7 @@ capabilities:
     canonical_route: { method: POST, path: /key-exchange/mls/key-package/upload }
     request_proto: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageRequest
     response_proto: peers_touch.model.key_exchange.v1.UploadMlsKeyPackageResponse
-    truth_stores: [mls_key_packages]
+    truth_stores: [mls_key_packages, key_exchange_mls_fetch_receipts]
     allowed_dependencies: [actor.device_directory.read]
     forbidden_aliases: []
     superseded_symbols:
@@ -880,15 +890,27 @@ capabilities:
       - peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageRequest
       - peers_touch.model.chat.v1.ClaimFederatedMlsKeyPackageResponse
 
-  - id: federation.conversation.command_proposal.forward
+  - id: federation.key_exchange.direct_bundle.fetch
     domain_owner: station.federation
-    truth_owner: conversation.authority
+    truth_owner: key_exchange.direct_public_material
     exposure: peer
-    canonical_route: { method: POST, path: /federation/conversation/command-proposal }
-    request_proto: peers_touch.model.chat.v1.ForwardConversationCommandProposalRequest
-    response_proto: peers_touch.model.chat.v1.ForwardConversationCommandProposalResponse
-    truth_stores: [conversations, conversation_events, conversation_command_receipts]
-    allowed_dependencies: [federation.auth.verify, conversation.command.submit]
+    canonical_route: { method: POST, path: /federation/key-exchange/keys/bundle/fetch }
+    request_proto: peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesRequest
+    response_proto: peers_touch.model.key_exchange.v1.FetchFederatedDirectKeyBundlesResponse
+    truth_stores: [key_exchange_identity_keys, key_exchange_signed_pre_keys, key_exchange_one_time_pre_keys, key_exchange_direct_fetch_receipts]
+    allowed_dependencies: [federation.auth.verify, key_exchange.direct_bundle.fetch]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.key_exchange.mls_key_package.fetch
+    domain_owner: station.federation
+    truth_owner: key_exchange.mls_public_material
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/key-exchange/mls/key-package/fetch }
+    request_proto: peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageRequest
+    response_proto: peers_touch.model.key_exchange.v1.FetchFederatedMlsKeyPackageResponse
+    truth_stores: [mls_key_packages, key_exchange_mls_fetch_receipts]
+    allowed_dependencies: [federation.auth.verify, key_exchange.mls_key_package.fetch]
     forbidden_aliases: []
     superseded_symbols: []
 
@@ -916,6 +938,23 @@ capabilities:
     forbidden_aliases: []
     superseded_symbols: []
 
+  - id: federation.conversation.follower_events.read
+    domain_owner: station.federation
+    truth_owner: conversation.authority
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/conversation/follower/events }
+    request_proto: peers_touch.model.chat.v1.GetConversationFollowerEventsRequest
+    response_proto: peers_touch.model.chat.v1.ConversationFollowerEventsPage
+    truth_stores: [conversation_events, conversation_event_projection_grants]
+    allowed_dependencies: [federation.auth.verify, conversation.events.read]
+    forbidden_aliases: []
+    superseded_symbols:
+      - peers_touch.model.chat.v1.GetMessagingFollowerEventsRequest
+      - peers_touch.model.chat.v1.MessagingEventProjectionGrant
+      - peers_touch.model.chat.v1.MessagingFollowerEventsPage
+      - peers_touch.model.chat.v1.MessagingFollowerEventsPageSigningInput
+      - peers_touch.model.chat.v1.MessagingFollowerProjection
+
   - id: federation.conversation.events.sync
     domain_owner: station.federation
     truth_owner: conversation.authority
@@ -929,6 +968,10 @@ capabilities:
     superseded_symbols: []
 
 target_absent_routes:
+  - { method: POST, path: /envelope/submit }
+  - { method: POST, path: /envelope/ack }
+  - { method: GET, path: /envelope/resume }
+  - { method: POST, path: /envelope/federation/deliver }
   - { method: GET, path: /conversation/command-proposal/result }
   - { method: GET, path: /conversation/identity }
   - { method: POST, path: /conversation/command-proposal }
@@ -948,11 +991,20 @@ target_absent_routes:
   - { method: POST, path: /key-exchange/keys/bundle/federated-fetch }
   - { method: POST, path: /messaging/federation/deliver }
   - { method: POST, path: /conversation/federation/command-proposal }
+  - { method: POST, path: /federation/conversation/command-proposal }
 
 target_absent_prefixes:
   - /messaging/
+  - /envelope/
 
 target_absent_truth_stores:
+  - envelope_outbox
+  - envelope_inbox
+  - envelope_idempotency
+  - conversation_follower_member_devices
+  - conversation_follower_buffer
+  - conversation_follower_applied_events
+  - conversation_follower_projection
   - messaging_conversations
   - messaging_conversation_members
   - messaging_conversation_member_devices
@@ -961,6 +1013,7 @@ target_absent_truth_stores:
   - messaging_authority_plans
   - messaging_recovery_revisions
   - messaging_federation_inbox
+  - conversation_command_proposals
   - messaging_federation_outbox
   - messaging_endpoint_directory_versions
   - messaging_read_cursors

@@ -17,6 +17,7 @@ const (
 	PayloadKindSocialFriendRequestCommand   = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_COMMAND
 	PayloadKindSocialFriendRequestEvent     = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_EVENT
 	PayloadKindSocialFriendRequestResult    = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_RESULT
+	PayloadKindConversationDeliveryReceipt  = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DELIVERY_RECEIPT
 
 	DispositionUnspecified         = federationmodel.FederatedDomainFrameDisposition_FEDERATED_DOMAIN_FRAME_DISPOSITION_UNSPECIFIED
 	DispositionAccepted            = federationmodel.FederatedDomainFrameDisposition_FEDERATED_DOMAIN_FRAME_DISPOSITION_ACCEPTED

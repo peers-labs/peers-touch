@@ -9,15 +9,16 @@ use crate::contracts::{
 };
 use crate::inbox::ClaimedItemConsumer;
 use crate::proto::chat::{
-    conversation_event, ConversationAuthoritySnapshot, ConversationEvent,
+    conversation_event, ConversationAuthoritySnapshot, ConversationCreatedFact, ConversationEvent,
     CryptoEndpoint as ProtoCryptoEndpoint, DeviceConsumptionReceipt, DurableDeviceInboxItem,
-    MemberRole, MembershipTransitionChange, MembershipTransitionCommittedFact,
-    MessagingMembershipAction, MlsQueuePayload, MlsQueuePayloadKind, MlsRetirementMarker,
-    PreparedEndpointPayloadKind, PublicEventMarker,
+    MemberRole, MembershipTransitionAction, MembershipTransitionChange,
+    MembershipTransitionCommittedFact, MessagingMembershipAction, MlsQueuePayload,
+    MlsQueuePayloadKind, MlsRetirementMarker, PreparedEndpointPayloadKind, PublicEventMarker,
 };
 use crate::store::MlsInboundRepository;
 use prost::Message;
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 pub struct MlsApplicationProcessor<R: MlsInboundRepository> {
@@ -248,7 +249,6 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
             .event
             .as_ref()
             .ok_or_else(|| "messaging MLS transition has no authority event".to_string())?;
-        let transition = transition_fact(event)?;
         let payload = MlsQueuePayload::decode(delivery.endpoint_payload.as_slice())
             .map_err(|_| "messaging MLS queue payload is invalid".to_string())?;
         let queue_kind = MlsQueuePayloadKind::try_from(payload.kind)
@@ -260,51 +260,104 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
         };
         if queue_kind != expected_kind
             || payload.conversation_id != event.conversation_id
-            || payload.transition_id != transition.transition_id
+            || payload.transition_id.trim().is_empty()
             || payload.event_id != event.event_id
             || payload.authority_sequence != event.sequence
-            || payload.from_membership_epoch != transition.from_membership_epoch
-            || payload.to_membership_epoch != transition.to_membership_epoch
-            || payload.from_mls_epoch != transition.from_mls_epoch
-            || payload.to_mls_epoch != transition.to_mls_epoch
             || payload.recipient.as_ref() != Some(&proto_endpoint(&self.endpoint))
             || payload.payload_sha256.len() != 32
             || Sha256::digest(&payload.opaque_mls_bytes).as_slice() != payload.payload_sha256
         {
             return Err("messaging MLS transition binding mismatch".to_string());
         }
-        validate_authority_snapshot(event, transition.post_state.as_ref())?;
-
-        let join_projection = if queue_kind == MlsQueuePayloadKind::Welcome {
-            let (local_sequence, _) = self.store.authority_head(&event.conversation_id)?;
-            if local_sequence == 0
-                || self
-                    .store
-                    .has_mls_retired_checkpoint(&event.conversation_id)?
-            {
-                Some(join_checkpoint_projection(
-                    event,
-                    transition,
-                    &self.endpoint,
-                    now,
-                )?)
-            } else {
-                None
+        let (
+            transition_id,
+            from_membership_epoch,
+            to_membership_epoch,
+            from_mls_epoch,
+            to_mls_epoch,
+            changes,
+            join_projection,
+            genesis,
+        ) = match event.payload.as_ref() {
+            Some(conversation_event::Payload::MembershipTransitionCommitted(transition)) => {
+                if payload.transition_id != transition.transition_id
+                    || payload.from_membership_epoch != transition.from_membership_epoch
+                    || payload.to_membership_epoch != transition.to_membership_epoch
+                    || payload.from_mls_epoch != transition.from_mls_epoch
+                    || payload.to_mls_epoch != transition.to_mls_epoch
+                {
+                    return Err("messaging MLS transition binding mismatch".to_string());
+                }
+                validate_authority_snapshot(event, transition.post_state.as_ref())?;
+                let join_projection = if queue_kind == MlsQueuePayloadKind::Welcome {
+                    let (local_sequence, _) = self.store.authority_head(&event.conversation_id)?;
+                    if local_sequence == 0
+                        || self
+                            .store
+                            .has_mls_retired_checkpoint(&event.conversation_id)?
+                    {
+                        Some(join_checkpoint_projection(
+                            event,
+                            transition,
+                            &self.endpoint,
+                            now,
+                        )?)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let changes = transition
+                    .changes
+                    .iter()
+                    .map(|change| MembershipTransitionChange {
+                        ptid: change.ptid.clone(),
+                        actor_home_station_peer_id: change.home_station_peer_id.clone(),
+                        action: change.action,
+                        role: MemberRole::Unspecified as i32,
+                        device_id: change.device_id.clone(),
+                    })
+                    .collect::<Vec<_>>();
+                (
+                    transition.transition_id.clone(),
+                    transition.from_membership_epoch,
+                    transition.to_membership_epoch,
+                    transition.from_mls_epoch,
+                    transition.to_mls_epoch,
+                    changes,
+                    join_projection,
+                    false,
+                )
             }
-        } else {
-            None
+            Some(conversation_event::Payload::ConversationCreated(created)) => {
+                if queue_kind != MlsQueuePayloadKind::Welcome
+                    || payload.from_membership_epoch != 0
+                    || payload.to_membership_epoch != event.membership_epoch
+                    || payload.from_mls_epoch != 0
+                    || payload.to_mls_epoch != event.mls_epoch
+                {
+                    return Err("messaging MLS genesis delivery binding mismatch".to_string());
+                }
+                let projection =
+                    group_genesis_projection(event, created, &self.endpoint, now, false)?;
+                let snapshot = created
+                    .post_state
+                    .as_ref()
+                    .ok_or_else(|| "messaging MLS genesis has no authority snapshot".to_string())?;
+                (
+                    payload.transition_id.clone(),
+                    payload.from_membership_epoch,
+                    payload.to_membership_epoch,
+                    payload.from_mls_epoch,
+                    payload.to_mls_epoch,
+                    group_genesis_changes(snapshot)?,
+                    Some(projection),
+                    true,
+                )
+            }
+            _ => return Err("messaging MLS delivery has no transition fact".to_string()),
         };
-        let changes = transition
-            .changes
-            .iter()
-            .map(|change| MembershipTransitionChange {
-                ptid: change.ptid.clone(),
-                actor_home_station_peer_id: change.home_station_id.clone(),
-                action: change.action,
-                role: MemberRole::Unspecified as i32,
-                device_id: change.device_id.clone(),
-            })
-            .collect::<Vec<_>>();
         let prepared: MlsPreparedReceive = match queue_kind {
             MlsQueuePayloadKind::Commit => {
                 if !self.manager.has_session(&event.conversation_id) {
@@ -320,11 +373,19 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
                 if let Some(provider_pool) = self.store.load_mls_join_provider_pool()? {
                     self.manager.import_pending_join_providers(&provider_pool)?;
                 }
-                self.manager.prepare_received_welcome(
-                    &event.conversation_id,
-                    &payload.opaque_mls_bytes,
-                    &changes,
-                )?
+                if genesis {
+                    self.manager.prepare_received_genesis_welcome(
+                        &event.conversation_id,
+                        &payload.opaque_mls_bytes,
+                        &changes,
+                    )?
+                } else {
+                    self.manager.prepare_received_welcome(
+                        &event.conversation_id,
+                        &payload.opaque_mls_bytes,
+                        &changes,
+                    )?
+                }
             }
             _ => return Err("messaging MLS transition kind is unsupported".to_string()),
         };
@@ -342,14 +403,14 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
                 payload_sha256: &item.payload_sha256,
                 event_hash: &event.event_hash,
                 previous_event_hash: &event.previous_hash,
-                transition_id: &transition.transition_id,
+                transition_id: &transition_id,
                 transition_kind: payload.kind,
                 session_state: &prepared.session_state,
                 provider_pool_state: prepared.provider_pool_state.as_deref(),
-                from_membership_epoch: transition.from_membership_epoch,
-                to_membership_epoch: transition.to_membership_epoch,
-                from_mls_epoch: transition.from_mls_epoch,
-                to_mls_epoch: transition.to_mls_epoch,
+                from_membership_epoch,
+                to_membership_epoch,
+                from_mls_epoch,
+                to_mls_epoch,
                 join_projection: join_projection.as_ref(),
                 receipt_id: &receipt.receipt_id,
                 receipt_bytes: &receipt_bytes,
@@ -421,13 +482,14 @@ impl<R: MlsInboundRepository> MlsSenderTransitionProcessor<R> {
             .event
             .as_ref()
             .ok_or_else(|| "messaging MLS sender event is missing".to_string())?;
-        let transition = transition_fact(event)?;
         let marker = PublicEventMarker::decode(delivery.endpoint_payload.as_slice())
             .map_err(|_| "messaging MLS sender marker is invalid".to_string())?;
+        let local_endpoint = proto_endpoint(&self.endpoint);
         if marker.conversation_id != event.conversation_id
             || marker.event_id != event.event_id
             || marker.command_id != event.command_id
-            || marker.sending_endpoint.as_ref() != Some(&proto_endpoint(&self.endpoint))
+            || marker.sending_endpoint.as_ref() != Some(&local_endpoint)
+            || event.actor.as_ref() != Some(&local_endpoint)
         {
             return Err("messaging MLS sender marker binding mismatch".to_string());
         }
@@ -435,15 +497,41 @@ impl<R: MlsInboundRepository> MlsSenderTransitionProcessor<R> {
             .store
             .pending_mls_transition(&event.conversation_id)?
             .ok_or_else(|| "messaging MLS sender pending transition is unavailable".to_string())?;
-        if pending.transition_id != transition.transition_id
-            || pending.command_id != event.command_id
-        {
+        if pending.command_id != event.command_id {
             return Err("messaging MLS sender pending transition mismatch".to_string());
         }
+        let (genesis_projection, genesis_snapshot) = match event.payload.as_ref() {
+            Some(conversation_event::Payload::MembershipTransitionCommitted(transition)) => {
+                if pending.transition_id != transition.transition_id {
+                    return Err("messaging MLS sender pending transition mismatch".to_string());
+                }
+                (None, None)
+            }
+            Some(conversation_event::Payload::ConversationCreated(created)) => {
+                let snapshot = created
+                    .post_state
+                    .as_ref()
+                    .ok_or_else(|| "messaging MLS genesis has no authority snapshot".to_string())?;
+                (
+                    Some(group_genesis_projection(
+                        event,
+                        created,
+                        &self.endpoint,
+                        now,
+                        true,
+                    )?),
+                    Some(snapshot),
+                )
+            }
+            _ => return Err("messaging MLS delivery has no transition fact".to_string()),
+        };
         let prepared_manager = MlsGroupManager::with_actor_identity(self.manager.actor_identity());
         prepared_manager.import_pending_transition(&event.conversation_id, &pending.state)?;
         prepared_manager
-            .accept_pending_transition(&event.conversation_id, &transition.transition_id)?;
+            .accept_pending_transition(&event.conversation_id, &pending.transition_id)?;
+        if let Some(snapshot) = genesis_snapshot {
+            validate_group_genesis_session(&prepared_manager, &event.conversation_id, snapshot)?;
+        }
         let session_state = prepared_manager.export_session_state(&event.conversation_id)?;
         let receipt = consumption_receipt(item, event, &self.endpoint, now);
         let receipt_bytes = receipt.encode_to_vec();
@@ -454,7 +542,7 @@ impl<R: MlsInboundRepository> MlsSenderTransitionProcessor<R> {
                     event_id: &event.event_id,
                     conversation_id: &event.conversation_id,
                     command_id: &event.command_id,
-                    transition_id: &transition.transition_id,
+                    transition_id: &pending.transition_id,
                     event_sequence: event.sequence,
                     lane_sequence: item.lane_sequence,
                     consumer_epoch,
@@ -464,6 +552,7 @@ impl<R: MlsInboundRepository> MlsSenderTransitionProcessor<R> {
                     session_state: &session_state,
                     membership_epoch: event.membership_epoch,
                     mls_epoch: event.mls_epoch,
+                    genesis_projection: genesis_projection.as_ref(),
                     receipt_id: &receipt.receipt_id,
                     receipt_bytes: &receipt_bytes,
                     consumed_at_unix_ms: now,
@@ -615,6 +704,7 @@ pub fn validate_authority_snapshot(
     let snapshot =
         snapshot.ok_or_else(|| "messaging MLS transition has no authority snapshot".to_string())?;
     if snapshot.kind != crate::proto::chat::ConversationKind::Group as i32
+        || snapshot.federation_id.trim().is_empty()
         || snapshot.owner_ptid.trim().is_empty()
         || snapshot.membership_epoch != event.membership_epoch
         || snapshot.mls_epoch != event.mls_epoch
@@ -628,6 +718,7 @@ pub fn validate_authority_snapshot(
     for member in &snapshot.active_members {
         let role = authority_member_role(&member.role)?;
         if member.ptid.trim().is_empty()
+            || member.home_station_peer_id.trim().is_empty()
             || previous_member.is_some_and(|value: &str| value >= member.ptid.as_str())
             || (member.ptid == snapshot.owner_ptid) != (role == MemberRole::Owner)
         {
@@ -668,7 +759,8 @@ pub fn authority_snapshot_projection(
     validate_authority_snapshot(event, Some(snapshot))?;
     Ok(MlsConversationProjection {
         conversation_id: event.conversation_id.clone(),
-        authority_station_id: event.authority_station_id.clone(),
+        authority_station_id: event.authority_station_peer_id.clone(),
+        federation_id: snapshot.federation_id.clone(),
         kind: snapshot.kind,
         name: snapshot.name.clone(),
         owner_ptid: snapshot.owner_ptid.clone(),
@@ -719,6 +811,109 @@ fn join_checkpoint_projection(
         return Err("messaging MLS Welcome is not a local join checkpoint".to_string());
     }
     authority_snapshot_projection(event, snapshot, now)
+}
+
+fn group_genesis_projection(
+    event: &ConversationEvent,
+    created: &ConversationCreatedFact,
+    endpoint: &CryptoEndpoint,
+    now: i64,
+    require_local_owner: bool,
+) -> Result<MlsConversationProjection, String> {
+    let snapshot = created
+        .post_state
+        .as_ref()
+        .ok_or_else(|| "messaging MLS genesis has no authority snapshot".to_string())?;
+    validate_authority_snapshot(event, Some(snapshot))?;
+    let actor = event
+        .actor
+        .as_ref()
+        .ok_or_else(|| "messaging MLS genesis has no authority actor".to_string())?;
+    let owner_home_station = snapshot
+        .active_members
+        .iter()
+        .find(|member| member.ptid == snapshot.owner_ptid)
+        .map(|member| member.home_station_peer_id.as_str())
+        .ok_or_else(|| "messaging MLS genesis owner is unavailable".to_string())?;
+    let local_endpoint = proto_endpoint(endpoint);
+    if event.sequence != 1
+        || !event.previous_hash.is_empty()
+        || event.membership_epoch != 1
+        || event.mls_epoch != 1
+        || created.kind != crate::proto::chat::ConversationKind::Group as i32
+        || created.kind != snapshot.kind
+        || created.name != snapshot.name
+        || created.owner_ptid != snapshot.owner_ptid
+        || created.members != snapshot.active_members
+        || actor.ptid != created.owner_ptid
+        || event.authority_station_peer_id != owner_home_station
+        || !snapshot
+            .active_endpoints
+            .iter()
+            .any(|candidate| candidate == actor)
+        || !snapshot
+            .active_members
+            .iter()
+            .any(|member| member.ptid == endpoint.ptid)
+        || !snapshot
+            .active_endpoints
+            .iter()
+            .any(|candidate| candidate == &local_endpoint)
+        || require_local_owner && actor != &local_endpoint
+    {
+        return Err("messaging MLS genesis authority binding mismatch".to_string());
+    }
+    authority_snapshot_projection(event, snapshot, now)
+}
+
+fn group_genesis_changes(
+    snapshot: &ConversationAuthoritySnapshot,
+) -> Result<Vec<MembershipTransitionChange>, String> {
+    let mut seen_actors = HashSet::new();
+    snapshot
+        .active_endpoints
+        .iter()
+        .map(|endpoint| {
+            let member = snapshot
+                .active_members
+                .iter()
+                .find(|member| member.ptid == endpoint.ptid)
+                .ok_or_else(|| "messaging MLS genesis endpoint has no member".to_string())?;
+            Ok(MembershipTransitionChange {
+                ptid: endpoint.ptid.clone(),
+                actor_home_station_peer_id: member.home_station_peer_id.clone(),
+                action: if seen_actors.insert(endpoint.ptid.clone()) {
+                    MembershipTransitionAction::Add as i32
+                } else {
+                    MembershipTransitionAction::AddDevice as i32
+                },
+                role: authority_member_role(&member.role)? as i32,
+                device_id: endpoint.device_id.clone(),
+            })
+        })
+        .collect()
+}
+
+fn validate_group_genesis_session(
+    manager: &MlsGroupManager,
+    conversation_id: &str,
+    snapshot: &ConversationAuthoritySnapshot,
+) -> Result<(), String> {
+    let head = manager.public_head(conversation_id)?;
+    let expected = snapshot
+        .active_endpoints
+        .iter()
+        .map(|endpoint| (endpoint.ptid.clone(), endpoint.device_id.clone()))
+        .collect::<HashSet<_>>();
+    let actual = head
+        .members
+        .iter()
+        .map(|member| (member.ptid.clone(), member.device_id.clone()))
+        .collect::<HashSet<_>>();
+    if head.mls_epoch != snapshot.mls_epoch as u64 || actual != expected {
+        return Err("messaging MLS genesis state does not match authority snapshot".to_string());
+    }
+    Ok(())
 }
 
 fn authority_member_role(role: &str) -> Result<MemberRole, String> {
@@ -825,11 +1020,13 @@ mod tests {
     use crate::mls::group_genesis::GroupGenesisPreparer;
     use crate::mls::test_support::TestMlsRepository;
     use crate::proto::chat::{
-        chat_command, ConversationAuthorityMember, ConversationKind, DeviceEventDelivery,
-        DeviceInboxPayloadType, MembershipTransitionCommittedFact, MessageCommittedFact,
-        MessagingContentKind, MessagingMembershipChangeCommitted, PrepareConversationGroupResponse,
+        ConversationAuthorityMember, ConversationCreatedFact, ConversationKind,
+        DeviceEventDelivery, DeviceInboxPayloadType, MembershipTransitionCommittedFact,
+        MessageCommittedFact, MessagingContentKind, MessagingMembershipChangeCommitted,
+        PrepareConversationGroupResponse,
     };
     use crate::proto::key_exchange::MlsKeyPackageReservation;
+    use crate::proto::{actor_device_from_chat_endpoint, actor_device_ref};
 
     fn now() -> i64 {
         100
@@ -851,18 +1048,19 @@ mod tests {
                 ConversationAuthorityMember {
                     ptid: "ptid:alice".to_string(),
                     role: "owner".to_string(),
-                    home_station_id: "station-a".to_string(),
+                    home_station_peer_id: "station-local".to_string(),
                 },
                 ConversationAuthorityMember {
                     ptid: "ptid:bob".to_string(),
                     role: "member".to_string(),
-                    home_station_id: "station-b".to_string(),
+                    home_station_peer_id: "station-remote".to_string(),
                 },
             ],
             active_endpoints: vec![
                 proto_endpoint(&endpoint("ptid:alice", "alice-device")),
                 proto_endpoint(&endpoint("ptid:bob", "bob-device")),
             ],
+            federation_id: "federation-1".to_string(),
             membership_epoch,
             mls_epoch,
             ..Default::default()
@@ -887,7 +1085,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 1,
             mls_epoch: 1,
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MessageCommitted(
                 MessageCommittedFact {
                     message_id: "message-1".to_string(),
@@ -919,9 +1117,7 @@ mod tests {
         let opaque_payload = delivery.encode_to_vec();
         DurableDeviceInboxItem {
             item_id: "item-1".to_string(),
-            recipient: Some(crate::proto::actor_device_ref_from_crypto_endpoint(
-                &recipient,
-            )),
+            recipient: Some(actor_device_from_chat_endpoint(&recipient)),
             lane_sequence: 1,
             event_id: "event-1".to_string(),
             conversation_id: "group-1".to_string(),
@@ -932,7 +1128,7 @@ mod tests {
         }
     }
 
-    fn welcome_queue_item(
+    fn genesis_welcome_queue_item(
         transition_id: &str,
         welcome_bytes: Vec<u8>,
     ) -> DurableDeviceInboxItem {
@@ -943,7 +1139,7 @@ mod tests {
             conversation_id: "group-welcome".to_string(),
             transition_id: transition_id.to_string(),
             event_id: "welcome-event-1".to_string(),
-            authority_sequence: 6,
+            authority_sequence: 1,
             from_membership_epoch: 0,
             to_membership_epoch: 1,
             from_mls_epoch: 0,
@@ -957,10 +1153,10 @@ mod tests {
         let mut event = ConversationEvent {
             event_id: "welcome-event-1".to_string(),
             conversation_id: "group-welcome".to_string(),
-            sequence: 6,
+            sequence: 1,
             command_id: "welcome-command-1".to_string(),
             actor: Some(proto_endpoint(&endpoint("ptid:alice", "alice-device"))),
-            previous_hash: vec![9; 32],
+            previous_hash: Vec::new(),
             event_hash: Vec::new(),
             committed_at: Some(prost_types::Timestamp {
                 seconds: 0,
@@ -969,25 +1165,17 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 1,
             mls_epoch: 1,
-            authority_station_id: "station-local".to_string(),
-            payload: Some(conversation_event::Payload::MembershipTransitionCommitted(
-                MembershipTransitionCommittedFact {
-                    transition_id: transition_id.to_string(),
-                    from_membership_epoch: 0,
-                    to_membership_epoch: 1,
-                    from_mls_epoch: 0,
-                    to_mls_epoch: 1,
-                    changes: vec![MessagingMembershipChangeCommitted {
-                        action: MessagingMembershipAction::AddActor as i32,
-                        ptid: "ptid:bob".to_string(),
-                        device_id: "bob-device".to_string(),
-                        home_station_id: "station-b".to_string(),
-                        role: "member".to_string(),
-                    }],
-                    post_state: Some(authority_snapshot(1, 1)),
-                    ..Default::default()
-                },
-            )),
+            authority_station_peer_id: "station-local".to_string(),
+            payload: Some(conversation_event::Payload::ConversationCreated({
+                let snapshot = authority_snapshot(1, 1);
+                ConversationCreatedFact {
+                    kind: snapshot.kind,
+                    name: snapshot.name.clone(),
+                    owner_ptid: snapshot.owner_ptid.clone(),
+                    members: snapshot.active_members.clone(),
+                    post_state: Some(snapshot),
+                }
+            })),
         };
         let commitment = delivery_commitment(
             &event.conversation_id,
@@ -1011,9 +1199,7 @@ mod tests {
         let opaque_payload = delivery.encode_to_vec();
         DurableDeviceInboxItem {
             item_id: "welcome-item-1".to_string(),
-            recipient: Some(crate::proto::actor_device_ref_from_crypto_endpoint(
-                &recipient,
-            )),
+            recipient: Some(actor_device_from_chat_endpoint(&recipient)),
             lane_sequence: 1,
             event_id: "welcome-event-1".to_string(),
             conversation_id: "group-welcome".to_string(),
@@ -1066,7 +1252,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 2,
             mls_epoch: 2,
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MembershipTransitionCommitted(
                 MembershipTransitionCommittedFact {
                     transition_id: transition_id.to_string(),
@@ -1102,9 +1288,7 @@ mod tests {
         let opaque_payload = delivery.encode_to_vec();
         DurableDeviceInboxItem {
             item_id: item_id.to_string(),
-            recipient: Some(crate::proto::actor_device_ref_from_crypto_endpoint(
-                &recipient,
-            )),
+            recipient: Some(actor_device_from_chat_endpoint(&recipient)),
             lane_sequence: 1,
             event_id: event_id.to_string(),
             conversation_id: conversation_id.to_string(),
@@ -1140,7 +1324,7 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 7,
             mls_epoch: 7,
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             payload: Some(conversation_event::Payload::MembershipTransitionCommitted(
                 MembershipTransitionCommittedFact {
                     transition_id: "transition-12".to_string(),
@@ -1164,18 +1348,19 @@ mod tests {
                             ConversationAuthorityMember {
                                 ptid: "ptid:alice".to_string(),
                                 role: "owner".to_string(),
-                                home_station_id: "station-local".to_string(),
+                                home_station_peer_id: "station-local".to_string(),
                             },
                             ConversationAuthorityMember {
                                 ptid: "ptid:carol".to_string(),
                                 role: "member".to_string(),
-                                home_station_id: "station-c".to_string(),
+                                home_station_peer_id: "station-c".to_string(),
                             },
                         ],
                         active_endpoints: vec![
                             proto_endpoint(&endpoint("ptid:alice", "alice-device")),
                             proto_endpoint(&endpoint("ptid:carol", "carol-device-1")),
                         ],
+                        federation_id: "federation-1".to_string(),
                         membership_epoch: 7,
                         mls_epoch: 7,
                         ..Default::default()
@@ -1196,7 +1381,7 @@ mod tests {
         event.event_hash = Sha256::digest(event.encode_to_vec()).to_vec();
         let delivery = DeviceEventDelivery {
             event: Some(event),
-            recipient: Some(local.clone()),
+            recipient: Some(local),
             payload_kind: PreparedEndpointPayloadKind::MlsRetirement as i32,
             endpoint_payload,
             endpoint_payload_sha256,
@@ -1206,7 +1391,10 @@ mod tests {
         let opaque_payload = delivery.encode_to_vec();
         DurableDeviceInboxItem {
             item_id: "item-12".to_string(),
-            recipient: Some(crate::proto::actor_device_ref_from_crypto_endpoint(&local)),
+            recipient: delivery
+                .recipient
+                .as_ref()
+                .map(actor_device_from_chat_endpoint),
             lane_sequence: 1,
             event_id: "event-12".to_string(),
             conversation_id: "group-1".to_string(),
@@ -1224,7 +1412,7 @@ mod tests {
         snapshot.active_members[1].role = "admin".to_string();
         let event = ConversationEvent {
             conversation_id: "group-role-projection".to_string(),
-            authority_station_id: "station-local".to_string(),
+            authority_station_peer_id: "station-local".to_string(),
             membership_epoch: 3,
             mls_epoch: 4,
             ..Default::default()
@@ -1232,6 +1420,7 @@ mod tests {
 
         let projection = authority_snapshot_projection(&event, &snapshot, 100).unwrap();
 
+        assert_eq!(projection.federation_id, "federation-1");
         assert_eq!(
             projection
                 .members
@@ -1295,7 +1484,7 @@ mod tests {
     }
 
     #[test]
-    fn openmls_welcome_queue_consume_is_atomic_restart_replay_safe_and_fork_protected() {
+    fn group_genesis_welcome_consume_is_atomic_restart_replay_safe_and_fork_protected() {
         let alice = Arc::new(MlsGroupManager::new());
         let bob = Arc::new(MlsGroupManager::new());
         alice
@@ -1324,7 +1513,8 @@ mod tests {
             now,
         )
         .unwrap();
-        let item = welcome_queue_item(&created.transition_id, created.welcome_bytes.clone());
+        let item =
+            genesis_welcome_queue_item(&created.transition_id, created.welcome_bytes.clone());
 
         let mut mismatched_item = item.clone();
         mismatched_item.item_id = "welcome-item-mismatch".to_string();
@@ -1351,7 +1541,7 @@ mod tests {
             MlsInboundRepository::authority_head(store.as_ref(), "group-welcome")
                 .unwrap()
                 .0,
-            6
+            1
         );
         assert_eq!(store.conversations().len(), 1);
 
@@ -1470,7 +1660,7 @@ mod tests {
                         action: MessagingMembershipAction::AddActor as i32,
                         ptid: "ptid:charlie".to_string(),
                         device_id: "charlie-device".to_string(),
-                        home_station_id: "station-c".to_string(),
+                        home_station_peer_id: "station-c".to_string(),
                         role: "member".to_string(),
                     },
                 ),
@@ -1566,7 +1756,7 @@ mod tests {
                         action: MessagingMembershipAction::RemoveDevice as i32,
                         ptid: "ptid:bob".to_string(),
                         device_id: "bob-device-2".to_string(),
-                        home_station_id: "station-b".to_string(),
+                        home_station_peer_id: "station-b".to_string(),
                         role: "member".to_string(),
                     },
                 ),
@@ -1601,9 +1791,7 @@ mod tests {
 
     #[test]
     fn sender_marker_commits_prepared_genesis_before_installing_live_session() {
-        let store = Arc::new(TestMlsRepository::new(1, vec![7; 32]));
-        store.install_conversation("group-1", 0, 0);
-        store.install_authority_head("group-1", 1, vec![7; 32]);
+        let store = Arc::new(TestMlsRepository::new(0, Vec::new()));
         let alice = Arc::new(MlsGroupManager::new());
         let bob = MlsGroupManager::new();
         alice
@@ -1621,18 +1809,11 @@ mod tests {
             }),
             authority_station_peer_id: "station-local".to_string(),
             prospective_endpoints: vec![
-                crate::proto::actor_device_ref_from_crypto_endpoint(&proto_endpoint(
-                    &local_endpoint,
-                )),
-                crate::proto::actor_device_ref_from_crypto_endpoint(&proto_endpoint(&endpoint(
-                    "ptid:bob",
-                    "bob-device",
-                ))),
+                actor_device_ref(&local_endpoint.ptid, &local_endpoint.device_id),
+                actor_device_ref("ptid:bob", "bob-device"),
             ],
             reserved_key_packages: vec![MlsKeyPackageReservation {
-                target: Some(crate::proto::actor_device_ref_from_crypto_endpoint(
-                    &proto_endpoint(&endpoint("ptid:bob", "bob-device")),
-                )),
+                target: Some(actor_device_ref("ptid:bob", "bob-device")),
                 package_id: "package-1".to_string(),
                 key_package_sha256: Sha256::digest(&bob_key_package).to_vec(),
                 key_package: bob_key_package,
@@ -1648,25 +1829,21 @@ mod tests {
         .unwrap()
         .prepare(&plan, "group-1", 100)
         .unwrap();
-        let transition = match command.payload.as_ref().unwrap() {
-            chat_command::Payload::MembershipTransition(transition) => transition,
-            _ => panic!("expected transition"),
-        };
         let marker = PublicEventMarker {
             conversation_id: "group-1".to_string(),
-            event_id: "event-2".to_string(),
+            event_id: "event-1".to_string(),
             command_id: command.command_id.clone(),
             sending_endpoint: Some(proto_endpoint(&local_endpoint)),
         };
         let endpoint_payload = marker.encode_to_vec();
         let endpoint_payload_sha256 = Sha256::digest(&endpoint_payload).to_vec();
         let mut event = ConversationEvent {
-            event_id: "event-2".to_string(),
+            event_id: "event-1".to_string(),
             conversation_id: "group-1".to_string(),
-            sequence: 2,
+            sequence: 1,
             command_id: command.command_id.clone(),
             actor: Some(proto_endpoint(&local_endpoint)),
-            previous_hash: vec![7; 32],
+            previous_hash: Vec::new(),
             event_hash: Vec::new(),
             committed_at: Some(prost_types::Timestamp {
                 seconds: 1,
@@ -1675,30 +1852,17 @@ mod tests {
             delivery_commitments: Vec::new(),
             membership_epoch: 1,
             mls_epoch: 1,
-            authority_station_id: "station-local".to_string(),
-            payload: Some(conversation_event::Payload::MembershipTransitionCommitted(
-                MembershipTransitionCommittedFact {
-                    transition_id: transition.transition_id.clone(),
-                    from_membership_epoch: 0,
-                    to_membership_epoch: 1,
-                    from_mls_epoch: 0,
-                    to_mls_epoch: 1,
-                    changes: transition
-                        .changes
-                        .iter()
-                        .map(|change| MessagingMembershipChangeCommitted {
-                            action: change.action,
-                            ptid: change.ptid.clone(),
-                            device_id: change.device_id.clone(),
-                            home_station_id: change.home_station_id.clone(),
-                            role: change.role.clone(),
-                        })
-                        .collect(),
-                    mls_commit_sha256: transition.mls_commit_sha256.clone(),
-                    leave_intent_id: String::new(),
-                    post_state: None,
-                },
-            )),
+            authority_station_peer_id: "station-local".to_string(),
+            payload: Some(conversation_event::Payload::ConversationCreated({
+                let snapshot = authority_snapshot(1, 1);
+                ConversationCreatedFact {
+                    kind: snapshot.kind,
+                    name: snapshot.name.clone(),
+                    owner_ptid: snapshot.owner_ptid.clone(),
+                    members: snapshot.active_members.clone(),
+                    post_state: Some(snapshot),
+                }
+            })),
         };
         let commitment = delivery_commitment(
             &event.conversation_id,
@@ -1721,14 +1885,15 @@ mod tests {
         };
         let opaque_payload = delivery.encode_to_vec();
         let item = DurableDeviceInboxItem {
-            item_id: "item-2".to_string(),
-            recipient: Some(crate::proto::actor_device_ref_from_crypto_endpoint(
-                &proto_endpoint(&local_endpoint),
+            item_id: "item-1".to_string(),
+            recipient: Some(actor_device_ref(
+                &local_endpoint.ptid,
+                &local_endpoint.device_id,
             )),
             lane_sequence: 1,
-            event_id: "event-2".to_string(),
+            event_id: "event-1".to_string(),
             conversation_id: "group-1".to_string(),
-            idempotency_key: "event:event-2".to_string(),
+            idempotency_key: "event:event-1".to_string(),
             payload_type: DeviceInboxPayloadType::ConversationEvent as i32,
             opaque_payload: opaque_payload.clone(),
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
@@ -1739,6 +1904,7 @@ mod tests {
                 .unwrap();
 
         processor.consume(&item, 1).unwrap();
+        processor.consume(&item, 2).unwrap();
 
         assert!(alice.has_session("group-1"));
         assert!(
@@ -1750,9 +1916,23 @@ mod tests {
             MlsInboundRepository::authority_head(store.as_ref(), "group-1")
                 .unwrap()
                 .0,
-            2
+            1
         );
-        assert_eq!(store.conversations()[0].mls_epoch, 1);
+        let projection = &store.conversations()[0];
+        assert_eq!(projection.name, "Test group");
+        assert_eq!(projection.owner_ptid, "ptid:alice");
+        assert_eq!(projection.mls_epoch, 1);
+        assert_eq!(
+            projection
+                .members
+                .iter()
+                .map(|member| (member.ptid.as_str(), member.role))
+                .collect::<Vec<_>>(),
+            vec![
+                ("ptid:alice", MemberRole::Owner as i32),
+                ("ptid:bob", MemberRole::Member as i32),
+            ]
+        );
     }
 
     #[test]

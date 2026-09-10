@@ -1300,10 +1300,7 @@ class RunHandle:
                 raise EvidenceConflict("artifacts can only be written to an active run")
             normalized, target = self._target(relative_path)
             if (
-                redact_text_with_values(
-                    normalized,
-                    self._redaction_values,
-                )
+                redact_text_with_values(normalized, self._redaction_values)
                 != normalized
             ):
                 raise EvidenceManifestInvalid(
@@ -1381,11 +1378,9 @@ class RunHandle:
             secret_scan = raw_result.pop("secretScan", None)
             redacted_secret_scan = (
                 canonical_secret_scan(secret_scan, self._redaction_values)
-                if isinstance(secret_scan, Mapping)
+                if secret_scan is not None
                 else None
             )
-            if secret_scan is not None and redacted_secret_scan is None:
-                raise EvidenceManifestInvalid("secretScan must be an object")
             redacted_result = redact_value_with_values(
                 raw_result,
                 self._redaction_values,

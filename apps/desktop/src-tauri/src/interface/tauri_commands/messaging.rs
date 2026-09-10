@@ -1,9 +1,12 @@
 use crate::error::{AppResult, ErrorCode};
 use crate::messaging::CommandDispatchProgress;
 use crate::model::chat::{
-    ConversationKind, MemberStatus, MessagingMembershipAction, MlsLeaveIntent,
+    ConversationKind, GetMemberSettingsRequest, GetMemberSettingsResponse, MemberSettings,
+    MemberStatus, MessagingMembershipAction, MlsLeaveIntent, UpdateMemberSettingsRequest,
+    UpdateMemberSettingsResponse,
 };
 use crate::state::AppState;
+use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::Path;
@@ -50,6 +53,29 @@ pub struct MessagingListMessagesInput {
 pub struct MessagingListThreadMessagesInput {
     pub conversation_id: String,
     pub thread_root_message_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingThreadCountsInput {
+    pub conversation_id: String,
+    pub root_message_ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MemberSettingsInput {
+    pub conversation_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingUpdateMemberSettingsInput {
+    pub conversation_id: String,
+    pub nickname: Option<String>,
+    pub muted: Option<bool>,
+    pub alert_enabled: Option<bool>,
+    pub pinned: Option<bool>,
+    pub background: Option<String>,
+    pub background_image: Option<String>,
+    pub cleared_at_unix_ms: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -134,6 +160,7 @@ fn attachment_mime_type(path: &std::path::Path) -> &'static str {
 #[derive(Debug, Deserialize)]
 pub struct MessagingCreateDirectInput {
     pub peer_ptid: String,
+    pub federation_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -141,6 +168,7 @@ pub struct MessagingCreateGroupInput {
     pub conversation_id: String,
     pub name: String,
     pub member_ptids: Vec<String>,
+    pub federation_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -273,6 +301,7 @@ pub(crate) fn conversation_projection_json(
     Ok(json!({
         "conversation_id": conversation.conversation_id,
         "authority_station_id": conversation.authority_station_id,
+        "federation_id": conversation.federation_id,
         "kind": conversation.kind,
         "name": conversation.name,
         "owner_ptid": conversation.owner_ptid,
@@ -309,6 +338,153 @@ pub(crate) fn command_status_json(
             None,
         ),
         Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    }
+}
+
+fn member_settings_json(settings: &MemberSettings) -> Value {
+    json!({
+        "nickname": settings.nickname,
+        "muted": settings.muted,
+        "alertEnabled": settings.alert_enabled,
+        "pinned": settings.pinned,
+        "background": settings.background,
+        "backgroundImage": settings.background_image,
+        "clearedAtUnixMs": settings.cleared_at_ms,
+    })
+}
+
+pub(crate) fn messaging_thread_counts_result(
+    engine: &crate::messaging::MessagingEngine,
+    input: &MessagingThreadCountsInput,
+) -> AppResult<Value> {
+    if input.conversation_id.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id is required",
+            None,
+        );
+    }
+    match engine.thread_counts(&input.conversation_id, &input.root_message_ids) {
+        Ok(counts) => AppResult::success(json!({
+            "counts": counts.into_iter().map(|count| json!({
+                "rootUlid": count.root_message_id,
+                "replyCount": count.reply_count,
+                "latestReplyUlid": count.latest_reply_id,
+                "latestReplyAt": count.latest_reply_at_unix_ms,
+                "unreadCount": count.unread_count,
+            })).collect::<Vec<_>>()
+        })),
+        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    }
+}
+
+pub(crate) fn messaging_get_member_settings_result(
+    token: &str,
+    engine: &crate::messaging::MessagingEngine,
+    input: &MemberSettingsInput,
+) -> AppResult<Value> {
+    if input.conversation_id.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id is required",
+            None,
+        );
+    }
+    let query = [("conversation_id", input.conversation_id.clone())];
+    let response = match crate::infrastructure::station_client::request_proto_for_device::<
+        GetMemberSettingsRequest,
+        GetMemberSettingsResponse,
+    >(
+        Method::GET,
+        "/conversation/member/settings",
+        token,
+        Some(&query),
+        None,
+        &engine.endpoint().device_id,
+    ) {
+        Ok(response) => response,
+        Err(error) => return error.into_app_result("get messaging member settings failed"),
+    };
+    match response.settings {
+        Some(settings) => AppResult::success(member_settings_json(&settings)),
+        None => AppResult::fail(
+            ErrorCode::InternalError,
+            "messaging member settings response is missing settings",
+            None,
+        ),
+    }
+}
+
+pub(crate) fn messaging_update_member_settings_result(
+    token: &str,
+    engine: &crate::messaging::MessagingEngine,
+    input: MessagingUpdateMemberSettingsInput,
+) -> AppResult<Value> {
+    if input.conversation_id.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id is required",
+            None,
+        );
+    }
+    let query = [("conversation_id", input.conversation_id.clone())];
+    let current = match crate::infrastructure::station_client::request_proto_for_device::<
+        GetMemberSettingsRequest,
+        GetMemberSettingsResponse,
+    >(
+        Method::GET,
+        "/conversation/member/settings",
+        token,
+        Some(&query),
+        None,
+        &engine.endpoint().device_id,
+    ) {
+        Ok(response) => match response.settings {
+            Some(settings) => settings,
+            None => {
+                return AppResult::fail(
+                    ErrorCode::InternalError,
+                    "messaging member settings response is missing settings",
+                    None,
+                );
+            }
+        },
+        Err(error) => return error.into_app_result("get messaging member settings failed"),
+    };
+    let settings = MemberSettings {
+        nickname: input.nickname.unwrap_or(current.nickname),
+        muted: input.muted.unwrap_or(current.muted),
+        alert_enabled: input.alert_enabled.unwrap_or(current.alert_enabled),
+        pinned: input.pinned.unwrap_or(current.pinned),
+        background: input.background.unwrap_or(current.background),
+        cleared_at_ms: input.cleared_at_unix_ms.unwrap_or(current.cleared_at_ms),
+        background_image: input.background_image.unwrap_or(current.background_image),
+    };
+    let response = match crate::infrastructure::station_client::request_proto_for_device::<
+        UpdateMemberSettingsRequest,
+        UpdateMemberSettingsResponse,
+    >(
+        Method::PUT,
+        "/conversation/member/settings",
+        token,
+        None,
+        Some(&UpdateMemberSettingsRequest {
+            conversation_id: input.conversation_id,
+            settings: Some(settings.clone()),
+        }),
+        &engine.endpoint().device_id,
+    ) {
+        Ok(response) => response,
+        Err(error) => return error.into_app_result("update messaging member settings failed"),
+    };
+    if response.success {
+        AppResult::success(member_settings_json(&settings))
+    } else {
+        AppResult::fail(
+            ErrorCode::InternalError,
+            "messaging member settings update was not applied",
+            None,
+        )
     }
 }
 
@@ -614,17 +790,22 @@ pub fn messaging_create_direct(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    if input.peer_ptid.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "peer_ptid is required", None);
+    if input.peer_ptid.trim().is_empty() || input.federation_id.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "peer_ptid and federation_id are required",
+            None,
+        );
     }
     let (account_id, token, engine) = match active_engine(state.inner(), &window) {
         Ok(value) => value,
         Err(error) => return error,
     };
-    let conversation_id = match engine.create_direct_conversation(&token, &input.peer_ptid) {
-        Ok(conversation_id) => conversation_id,
-        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
-    };
+    let conversation_id =
+        match engine.create_direct_conversation(&token, &input.peer_ptid, &input.federation_id) {
+            Ok(conversation_id) => conversation_id,
+            Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+        };
     if let Err(error) = engine.drain_once(&token, 100) {
         return AppResult::fail(ErrorCode::InternalError, error, None);
     }
@@ -793,10 +974,11 @@ pub(crate) fn messaging_create_group_with_engine(
     if input.conversation_id.trim().is_empty()
         || input.name.trim().is_empty()
         || input.member_ptids.is_empty()
+        || input.federation_id.trim().is_empty()
     {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            "conversation_id, name, and members are required",
+            "conversation_id, name, members, and federation_id are required",
             None,
         );
     }
@@ -805,6 +987,7 @@ pub(crate) fn messaging_create_group_with_engine(
         &input.conversation_id,
         &input.name,
         &input.member_ptids,
+        &input.federation_id,
     ) {
         Ok(prepared) => prepared,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
@@ -1439,6 +1622,45 @@ pub fn messaging_list_thread_messages(
 }
 
 #[tauri::command]
+pub fn messaging_thread_counts(
+    input: MessagingThreadCountsInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    messaging_thread_counts_result(&engine, &input)
+}
+
+#[tauri::command]
+pub fn messaging_get_member_settings(
+    input: MemberSettingsInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (_, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    messaging_get_member_settings_result(&token, &engine, &input)
+}
+
+#[tauri::command]
+pub fn messaging_update_member_settings(
+    input: MessagingUpdateMemberSettingsInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (_, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    messaging_update_member_settings_result(&token, &engine, input)
+}
+
+#[tauri::command]
 pub async fn messaging_open_attachment(
     input: MessagingOpenAttachmentInput,
     state: State<'_, Arc<AppState>>,
@@ -1544,9 +1766,9 @@ pub fn messaging_search_messages(
 mod tests {
     #[cfg(feature = "acceptance-webdriver")]
     use super::require_acceptance_actor;
-    use super::{conversation_member_json, group_creation_state};
+    use super::{conversation_member_json, group_creation_state, member_settings_json};
     use crate::messaging::CommandDispatchProgress;
-    use crate::model::chat::{MemberRole, MemberStatus};
+    use crate::model::chat::{MemberRole, MemberSettings, MemberStatus};
 
     #[test]
     fn group_creation_only_reports_projected_for_its_own_consumed_command() {
@@ -1625,6 +1847,26 @@ mod tests {
             },
         );
         assert_eq!(admin["role"], MemberRole::Admin as i32);
+    }
+
+    #[test]
+    fn member_settings_projection_preserves_typed_station_fields() {
+        let settings = member_settings_json(&MemberSettings {
+            nickname: "Alias".to_string(),
+            muted: true,
+            alert_enabled: false,
+            pinned: true,
+            background: "mint".to_string(),
+            cleared_at_ms: 42,
+            background_image: "oss://station/background".to_string(),
+        });
+        assert_eq!(settings["nickname"], "Alias");
+        assert_eq!(settings["muted"], true);
+        assert_eq!(settings["alertEnabled"], false);
+        assert_eq!(settings["pinned"], true);
+        assert_eq!(settings["background"], "mint");
+        assert_eq!(settings["clearedAtUnixMs"], 42);
+        assert_eq!(settings["backgroundImage"], "oss://station/background");
     }
 
     #[cfg(feature = "acceptance-webdriver")]

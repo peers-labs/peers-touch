@@ -433,7 +433,7 @@ func (s *ChatTaskService) settleInterruptedChatStep(
 		}
 		var conversation persistence.Conversation
 		if err := tx.Where(
-			"id = ? AND ptid = ?",
+			"id = ? AND actor_ptid = ?",
 			task.ConversationID,
 			task.OwnerActorPTID,
 		).First(&conversation).Error; err != nil {

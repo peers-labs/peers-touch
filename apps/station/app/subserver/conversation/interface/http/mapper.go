@@ -28,10 +28,10 @@ func MapSubmitCommand(
 	plan *entity.AuthorityPlan,
 	now time.Time,
 ) (command.SubmitRequest, error) {
-	if request == nil || request.Command == nil {
+	if request == nil || request.GetCommand() == nil {
 		return command.SubmitRequest{}, invalid("interface.map_submit_command", "command", "is required")
 	}
-	wire := request.Command
+	wire := request.GetCommand()
 	if wire.Sender == nil ||
 		wire.Sender.Ptid != authenticated.PTID ||
 		wire.Sender.DeviceId != authenticated.DeviceID {
@@ -44,11 +44,11 @@ func MapSubmitCommand(
 	}
 	if preparation.Kind.Validate() != nil ||
 		preparation.AuthorityStation == "" ||
-		wire.AuthorityStationId != string(preparation.AuthorityStation) {
+		wire.AuthorityStationPeerId != string(preparation.AuthorityStation) {
 		return command.SubmitRequest{}, conversationdomain.NewError(
 			conversationdomain.ErrorCodeStaleAuthorityHead,
 			"interface.map_submit_command",
-			"authority_station_id",
+			"authority_station_peer_id",
 			"does not match the prepared Conversation authority",
 		)
 	}
@@ -199,7 +199,7 @@ func MapSubmitCommand(
 			FromMembership:    valueobject.Epoch(payload.MembershipTransition.GetFromMembershipEpoch()),
 			FromMLS:           valueobject.Epoch(payload.MembershipTransition.GetFromMlsEpoch()),
 			ToMLS:             valueobject.Epoch(payload.MembershipTransition.GetToMlsEpoch()),
-			Changes:           mapMembershipChanges(payload.MembershipTransition.GetChanges()),
+			Changes:           append([]entity.MembershipChange(nil), plan.Changes...),
 			PreEndpoints:      append([]valueobject.Endpoint(nil), plan.PreEndpoints...),
 			PostEndpoints:     append([]valueobject.Endpoint(nil), plan.PostEndpoints...),
 			LeaveIntentID:     payload.MembershipTransition.GetLeaveIntentId(),
@@ -221,17 +221,17 @@ func MapSubmitCommand(
 
 func MapEvent(record domainevent.Record) (*chat.ConversationEvent, error) {
 	wire := &chat.ConversationEvent{
-		EventId:            string(record.ID),
-		ConversationId:     string(record.ConversationID),
-		Sequence:           int64(record.Sequence),
-		CommandId:          string(record.CommandID),
-		Actor:              endpointToProto(record.Actor),
-		PreviousHash:       optionalHashBytes(record.PreviousHash),
-		EventHash:          record.Hash.Bytes(),
-		CommittedAt:        timestamppb.New(record.CommittedAt),
-		MembershipEpoch:    int64(record.MembershipEpoch),
-		MlsEpoch:           int64(record.MLSEpoch),
-		AuthorityStationId: string(record.AuthorityStation),
+		EventId:                string(record.ID),
+		ConversationId:         string(record.ConversationID),
+		Sequence:               int64(record.Sequence),
+		CommandId:              string(record.CommandID),
+		Actor:                  endpointToProto(record.Actor),
+		PreviousHash:           optionalHashBytes(record.PreviousHash),
+		EventHash:              record.Hash.Bytes(),
+		CommittedAt:            timestamppb.New(record.CommittedAt),
+		MembershipEpoch:        int64(record.MembershipEpoch),
+		MlsEpoch:               int64(record.MLSEpoch),
+		AuthorityStationPeerId: string(record.AuthorityStation),
 	}
 	for _, commitment := range record.DeliveryCommitments {
 		wire.DeliveryCommitments = append(wire.DeliveryCommitments, commitment.Bytes())
@@ -248,17 +248,17 @@ func MapEvent(record domainevent.Record) (*chat.ConversationEvent, error) {
 		if created == nil {
 			return nil, invalid("interface.map_event", "fact", "creation fact is missing")
 		}
-		members := make([]string, 0, len(created.Members))
-		for _, member := range created.Members {
-			members = append(members, string(member))
+		postState := mapConversationState(record.Fact.PostState)
+		if postState == nil {
+			return nil, invalid("interface.map_event", "post_state", "creation state is missing")
 		}
 		wire.Payload = &chat.ConversationEvent_ConversationCreated{
 			ConversationCreated: &chat.ConversationCreatedFact{
-				Kind:        conversationKindToProto(created.Kind),
-				Name:        created.Name,
-				OwnerPtid:   string(created.Owner),
-				MemberPtids: members,
-				PostState:   mapConversationState(record.Fact.PostState),
+				Kind:      conversationKindToProto(created.Kind),
+				Name:      created.Name,
+				OwnerPtid: string(created.Owner),
+				Members:   postState.ActiveMembers,
+				PostState: postState,
 			},
 		}
 	case domainevent.KindMessageCommitted:
@@ -349,7 +349,7 @@ func MapEvent(record domainevent.Record) (*chat.ConversationEvent, error) {
 				ToMembershipEpoch:   int64(record.MembershipEpoch),
 				FromMlsEpoch:        intent.GetFromMlsEpoch(),
 				ToMlsEpoch:          intent.GetToMlsEpoch(),
-				Changes:             mapCommittedChanges(intent.GetChanges()),
+				Changes:             mapCommittedChanges(record.Fact.MembershipChanges),
 				MlsCommitSha256:     intent.GetMlsCommitSha256(),
 				LeaveIntentId:       intent.GetLeaveIntentId(),
 				PostState:           mapConversationState(record.Fact.PostState),
@@ -658,6 +658,12 @@ func mapMembershipDeliveries(
 				valueobject.DeliveryKindMLSRetirement,
 				payload,
 			))
+		case endpoint == sender:
+			delivery, err := publicDelivery(command, endpoint)
+			if err != nil {
+				return nil, err
+			}
+			deliveries = append(deliveries, delivery)
 		case containsEndpoint(added, endpoint):
 			welcome := welcomeByEndpoint[endpoint.Key()]
 			if welcome == nil {
@@ -689,12 +695,6 @@ func mapMembershipDeliveries(
 				payload,
 			))
 			delete(welcomeByEndpoint, endpoint.Key())
-		case endpoint == sender:
-			delivery, err := publicDelivery(command, endpoint)
-			if err != nil {
-				return nil, err
-			}
-			deliveries = append(deliveries, delivery)
 		case containsEndpoint(post, endpoint):
 			payload, err := wrapMlsTransitionPayload(
 				chat.MlsQueuePayloadKind_MLS_QUEUE_PAYLOAD_KIND_COMMIT,
@@ -846,60 +846,38 @@ func deliverySetMismatch(operation string, field string, message string) error {
 	)
 }
 
-func mapMembershipChanges(
-	changes []*chat.MessagingMembershipChangeIntent,
-) []entity.MembershipChange {
-	mapped := make([]entity.MembershipChange, 0, len(changes))
-	for _, change := range changes {
-		if change == nil {
-			continue
-		}
-		mapped = append(mapped, entity.MembershipChange{
-			Action:      membershipAction(change.Action),
-			Actor:       valueobject.PTID(change.Ptid),
-			Device:      valueobject.DeviceID(change.DeviceId),
-			HomeStation: valueobject.StationID(change.HomeStationId),
-			Role:        valueobject.MemberRole(change.Role),
-		})
-	}
-	return mapped
-}
-
 func mapCommittedChanges(
-	changes []*chat.MessagingMembershipChangeIntent,
+	changes []entity.MembershipChange,
 ) []*chat.MessagingMembershipChangeCommitted {
 	mapped := make([]*chat.MessagingMembershipChangeCommitted, 0, len(changes))
 	for _, change := range changes {
-		if change == nil {
-			continue
-		}
 		mapped = append(mapped, &chat.MessagingMembershipChangeCommitted{
-			Action:        change.Action,
-			Ptid:          change.Ptid,
-			DeviceId:      change.DeviceId,
-			HomeStationId: change.HomeStationId,
-			Role:          change.Role,
+			Action:            membershipActionToProto(change.Action),
+			Ptid:              string(change.Actor),
+			DeviceId:          string(change.Device),
+			HomeStationPeerId: string(change.HomeStation),
+			Role:              string(change.Role),
 		})
 	}
 	return mapped
 }
 
-func membershipAction(action chat.MessagingMembershipAction) entity.MembershipAction {
+func membershipActionToProto(action entity.MembershipAction) chat.MessagingMembershipAction {
 	switch action {
-	case chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_ADD_ACTOR:
-		return entity.MembershipActionAddActor
-	case chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_REMOVE_ACTOR:
-		return entity.MembershipActionRemoveActor
-	case chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_LEAVE:
-		return entity.MembershipActionLeave
-	case chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_CHANGE_ROLE:
-		return entity.MembershipActionChangeRole
-	case chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_ADD_DEVICE:
-		return entity.MembershipActionAddDevice
-	case chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_REMOVE_DEVICE:
-		return entity.MembershipActionRemoveDevice
+	case entity.MembershipActionAddActor:
+		return chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_ADD_ACTOR
+	case entity.MembershipActionRemoveActor:
+		return chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_REMOVE_ACTOR
+	case entity.MembershipActionLeave:
+		return chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_LEAVE
+	case entity.MembershipActionChangeRole:
+		return chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_CHANGE_ROLE
+	case entity.MembershipActionAddDevice:
+		return chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_ADD_DEVICE
+	case entity.MembershipActionRemoveDevice:
+		return chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_REMOVE_DEVICE
 	default:
-		return ""
+		return chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_UNSPECIFIED
 	}
 }
 
@@ -999,9 +977,9 @@ func mapConversationState(
 	members := make([]*chat.ConversationAuthorityMember, 0, len(state.ActiveMembers))
 	for _, member := range state.ActiveMembers {
 		members = append(members, &chat.ConversationAuthorityMember{
-			Ptid:          string(member.Actor),
-			Role:          string(member.Role),
-			HomeStationId: string(member.HomeStation),
+			Ptid:              string(member.Actor),
+			Role:              string(member.Role),
+			HomeStationPeerId: string(member.HomeStation),
 		})
 	}
 	endpoints := make([]*chat.CryptoEndpoint, 0, len(state.ActiveEndpoints))
@@ -1015,8 +993,8 @@ func mapConversationState(
 	)
 	for _, device := range state.ActiveDevices {
 		endpointRoutes = append(endpointRoutes, &chat.ConversationAuthorityEndpoint{
-			Endpoint:      endpointToProto(device.Endpoint),
-			HomeStationId: string(device.HomeStation),
+			Endpoint:          endpointToProto(device.Endpoint),
+			HomeStationPeerId: string(device.HomeStation),
 		})
 	}
 	return &chat.ConversationAuthoritySnapshot{

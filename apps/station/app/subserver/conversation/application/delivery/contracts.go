@@ -213,6 +213,8 @@ func PayloadTypeFromIntent(kind ports.DeviceInboxPayloadKind) (PayloadType, erro
 	switch kind {
 	case ports.DeviceInboxPayloadConversationEvent:
 		return PayloadTypeConversationEvent, nil
+	case ports.DeviceInboxPayloadCommandResult:
+		return PayloadTypeCommandResult, nil
 	case ports.DeviceInboxPayloadDeviceReceipt:
 		return PayloadTypeDeviceReceipt, nil
 	default:

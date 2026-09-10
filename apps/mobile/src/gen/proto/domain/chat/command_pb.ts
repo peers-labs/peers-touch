@@ -6,7 +6,7 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { EncryptedObjectDescriptor } from "./attachment_pb";
 import { file_domain_chat_attachment } from "./attachment_pb";
-import type { GroupVisibilityV1 } from "./conversation_pb";
+import type { ConversationCommandKind, GroupVisibilityV1 } from "./conversation_pb";
 import { file_domain_chat_conversation } from "./conversation_pb";
 import type { CryptoEndpoint } from "./endpoint_pb";
 import { file_domain_chat_endpoint } from "./endpoint_pb";
@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/chat/command.proto.
  */
 export const file_domain_chat_command: GenFile = /*@__PURE__*/
-  fileDesc("Chlkb21haW4vY2hhdC9jb21tYW5kLnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxIs0BChdQcmVwYXJlZEVuZHBvaW50UGF5bG9hZBI8CglyZWNpcGllbnQYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNyeXB0b0VuZHBvaW50EkQKBGtpbmQYAiABKA4yNi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlByZXBhcmVkRW5kcG9pbnRQYXlsb2FkS2luZBIWCg5vcGFxdWVfcGF5bG9hZBgDIAEoDBIWCg5wYXlsb2FkX3NoYTI1NhgEIAEoDCKMAwoRU2VuZE1lc3NhZ2VJbnRlbnQSEgoKbWVzc2FnZV9pZBgBIAEoCRJFCgxjb250ZW50X2tpbmQYAiABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2luZ0NvbnRlbnRLaW5kEhsKE3JlcGx5X3RvX21lc3NhZ2VfaWQYAyABKAkSHgoWdGhyZWFkX3Jvb3RfbWVzc2FnZV9pZBgEIAEoCRJJCgthdHRhY2htZW50cxgFIAMoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRW5jcnlwdGVkT2JqZWN0RGVzY3JpcHRvchJLCg9kaXJlY3RfcGF5bG9hZHMYBiADKAsyMi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlByZXBhcmVkRW5kcG9pbnRQYXlsb2FkEh8KF21sc19hcHBsaWNhdGlvbl9wYXlsb2FkGAcgASgMEiYKHm1sc19hcHBsaWNhdGlvbl9wYXlsb2FkX3NoYTI1NhgIIAEoDCK9AQoRRWRpdE1lc3NhZ2VJbnRlbnQSEgoKbWVzc2FnZV9pZBgBIAEoCRJLCg9kaXJlY3RfcGF5bG9hZHMYAiADKAsyMi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlByZXBhcmVkRW5kcG9pbnRQYXlsb2FkEh8KF21sc19hcHBsaWNhdGlvbl9wYXlsb2FkGAMgASgMEiYKHm1sc19hcHBsaWNhdGlvbl9wYXlsb2FkX3NoYTI1NhgEIAEoDCIqChRSZXRyYWN0TWVzc2FnZUludGVudBISCgptZXNzYWdlX2lkGAEgASgJIkYKDlJlYWN0aW9uSW50ZW50EhIKCm1lc3NhZ2VfaWQYASABKAkSEAoIcmVhY3Rpb24YAiABKAkSDgoGcmVtb3ZlGAMgASgIIjYKEFBpbk1lc3NhZ2VJbnRlbnQSEgoKbWVzc2FnZV9pZBgBIAEoCRIOCgZyZW1vdmUYAiABKAgirAIKGFVwZGF0ZUNvbnZlcnNhdGlvbkludGVudBIRCgRuYW1lGAEgASgJSACIAQESGAoLZGVzY3JpcHRpb24YAiABKAlIAYgBARIdChBhdmF0YXJfb2JqZWN0X2lkGAMgASgJSAKIAQESJAoXZGlzYXBwZWFyX3RpbWVyX3NlY29uZHMYBCABKA1IA4gBARJFCgp2aXNpYmlsaXR5GAUgASgOMiwucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cFZpc2liaWxpdHlWMUgEiAEBQgcKBV9uYW1lQg4KDF9kZXNjcmlwdGlvbkITChFfYXZhdGFyX29iamVjdF9pZEIaChhfZGlzYXBwZWFyX3RpbWVyX3NlY29uZHNCDQoLX3Zpc2liaWxpdHkirwEKH01lc3NhZ2luZ01lbWJlcnNoaXBDaGFuZ2VJbnRlbnQSRAoGYWN0aW9uGAEgASgOMjQucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5NZXNzYWdpbmdNZW1iZXJzaGlwQWN0aW9uEgwKBHB0aWQYAiABKAkSEQoJZGV2aWNlX2lkGAMgASgJEhcKD2hvbWVfc3RhdGlvbl9pZBgEIAEoCRIMCgRyb2xlGAUgASgJIp0DChpNZW1iZXJzaGlwVHJhbnNpdGlvbkludGVudBIVCg10cmFuc2l0aW9uX2lkGAEgASgJEh0KFWZyb21fbWVtYmVyc2hpcF9lcG9jaBgCIAEoAxIWCg5mcm9tX21sc19lcG9jaBgDIAEoAxIUCgx0b19tbHNfZXBvY2gYBCABKAMSSwoHY2hhbmdlcxgFIAMoCzI6LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuTWVzc2FnaW5nTWVtYmVyc2hpcENoYW5nZUludGVudBISCgptbHNfY29tbWl0GAYgASgMEhkKEW1sc19jb21taXRfc2hhMjU2GAcgASgMEkwKEHdlbGNvbWVfcGF5bG9hZHMYCCADKAsyMi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlByZXBhcmVkRW5kcG9pbnRQYXlsb2FkEhcKD2xlYXZlX2ludGVudF9pZBgJIAEoCRIZChFhdXRob3JpdHlfcGxhbl9pZBgKIAEoCRIdChVhdXRob3JpdHlfcGxhbl9zaGEyNTYYCyABKAwiHAoaRGlzc29sdmVDb252ZXJzYXRpb25JbnRlbnQikAcKC0NoYXRDb21tYW5kEhIKCmNvbW1hbmRfaWQYASABKAkSFwoPY29udmVyc2F0aW9uX2lkGAIgASgJEjkKBnNlbmRlchgDIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ3J5cHRvRW5kcG9pbnQSIQoZb2JzZXJ2ZWRfbWVtYmVyc2hpcF9lcG9jaBgEIAEoAxIaChJvYnNlcnZlZF9tbHNfZXBvY2gYBSABKAMSNAoQY2xpZW50X3RpbWVzdGFtcBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASHAoUZGVsaXZlcnlfcGxhbl9zaGEyNTYYByABKAwSHAoUYXV0aG9yaXR5X3N0YXRpb25faWQYCCABKAkSRAoMc2VuZF9tZXNzYWdlGBQgASgLMiwucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5TZW5kTWVzc2FnZUludGVudEgAEkQKDGVkaXRfbWVzc2FnZRgVIAEoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRWRpdE1lc3NhZ2VJbnRlbnRIABJKCg9yZXRyYWN0X21lc3NhZ2UYFiABKAsyLy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlJldHJhY3RNZXNzYWdlSW50ZW50SAASPQoIcmVhY3Rpb24YFyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlJlYWN0aW9uSW50ZW50SAASQgoLcGluX21lc3NhZ2UYGCABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlBpbk1lc3NhZ2VJbnRlbnRIABJSChN1cGRhdGVfY29udmVyc2F0aW9uGBkgASgLMjMucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5VcGRhdGVDb252ZXJzYXRpb25JbnRlbnRIABJWChVtZW1iZXJzaGlwX3RyYW5zaXRpb24YGiABKAsyNS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lbWJlcnNoaXBUcmFuc2l0aW9uSW50ZW50SAASVgoVZGlzc29sdmVfY29udmVyc2F0aW9uGBsgASgLMjUucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5EaXNzb2x2ZUNvbnZlcnNhdGlvbkludGVudEgAQgkKB3BheWxvYWQqiQIKFE1lc3NhZ2luZ0NvbnRlbnRLaW5kEiYKIk1FU1NBR0lOR19DT05URU5UX0tJTkRfVU5TUEVDSUZJRUQQABIfChtNRVNTQUdJTkdfQ09OVEVOVF9LSU5EX1RFWFQQARIgChxNRVNTQUdJTkdfQ09OVEVOVF9LSU5EX0lNQUdFEAISHwobTUVTU0FHSU5HX0NPTlRFTlRfS0lORF9GSUxFEAMSIAocTUVTU0FHSU5HX0NPTlRFTlRfS0lORF9BVURJTxAEEiAKHE1FU1NBR0lOR19DT05URU5UX0tJTkRfVklERU8QBRIhCh1NRVNTQUdJTkdfQ09OVEVOVF9LSU5EX1NZU1RFTRAGKrEDChtQcmVwYXJlZEVuZHBvaW50UGF5bG9hZEtpbmQSLgoqUFJFUEFSRURfRU5EUE9JTlRfUEFZTE9BRF9LSU5EX1VOU1BFQ0lGSUVEEAASNAowUFJFUEFSRURfRU5EUE9JTlRfUEFZTE9BRF9LSU5EX0RJUkVDVF9DSVBIRVJURVhUEAESMgouUFJFUEFSRURfRU5EUE9JTlRfUEFZTE9BRF9LSU5EX01MU19BUFBMSUNBVElPThACEi0KKVBSRVBBUkVEX0VORFBPSU5UX1BBWUxPQURfS0lORF9NTFNfQ09NTUlUEAMSLgoqUFJFUEFSRURfRU5EUE9JTlRfUEFZTE9BRF9LSU5EX01MU19XRUxDT01FEAQSLworUFJFUEFSRURfRU5EUE9JTlRfUEFZTE9BRF9LSU5EX1BVQkxJQ19FVkVOVBAFEjUKMVBSRVBBUkVEX0VORFBPSU5UX1BBWUxPQURfS0lORF9DT05WRVJTQVRJT05fU1RBVEUQBhIxCi1QUkVQQVJFRF9FTkRQT0lOVF9QQVlMT0FEX0tJTkRfTUxTX1JFVElSRU1FTlQQByrQAgoZTWVzc2FnaW5nTWVtYmVyc2hpcEFjdGlvbhIrCidNRVNTQUdJTkdfTUVNQkVSU0hJUF9BQ1RJT05fVU5TUEVDSUZJRUQQABIpCiVNRVNTQUdJTkdfTUVNQkVSU0hJUF9BQ1RJT05fQUREX0FDVE9SEAESLAooTUVTU0FHSU5HX01FTUJFUlNISVBfQUNUSU9OX1JFTU9WRV9BQ1RPUhACEiUKIU1FU1NBR0lOR19NRU1CRVJTSElQX0FDVElPTl9MRUFWRRADEisKJ01FU1NBR0lOR19NRU1CRVJTSElQX0FDVElPTl9DSEFOR0VfUk9MRRAEEioKJk1FU1NBR0lOR19NRU1CRVJTSElQX0FDVElPTl9BRERfREVWSUNFEAUSLQopTUVTU0FHSU5HX01FTUJFUlNISVBfQUNUSU9OX1JFTU9WRV9ERVZJQ0UQBkJHWkVnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9jaGF0O2NoYXRiBnByb3RvMw", [file_domain_chat_attachment, file_domain_chat_conversation, file_domain_chat_endpoint, file_google_protobuf_timestamp]);
+  fileDesc("Chlkb21haW4vY2hhdC9jb21tYW5kLnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxIs0BChdQcmVwYXJlZEVuZHBvaW50UGF5bG9hZBI8CglyZWNpcGllbnQYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNyeXB0b0VuZHBvaW50EkQKBGtpbmQYAiABKA4yNi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlByZXBhcmVkRW5kcG9pbnRQYXlsb2FkS2luZBIWCg5vcGFxdWVfcGF5bG9hZBgDIAEoDBIWCg5wYXlsb2FkX3NoYTI1NhgEIAEoDCKMAwoRU2VuZE1lc3NhZ2VJbnRlbnQSEgoKbWVzc2FnZV9pZBgBIAEoCRJFCgxjb250ZW50X2tpbmQYAiABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2luZ0NvbnRlbnRLaW5kEhsKE3JlcGx5X3RvX21lc3NhZ2VfaWQYAyABKAkSHgoWdGhyZWFkX3Jvb3RfbWVzc2FnZV9pZBgEIAEoCRJJCgthdHRhY2htZW50cxgFIAMoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRW5jcnlwdGVkT2JqZWN0RGVzY3JpcHRvchJLCg9kaXJlY3RfcGF5bG9hZHMYBiADKAsyMi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlByZXBhcmVkRW5kcG9pbnRQYXlsb2FkEh8KF21sc19hcHBsaWNhdGlvbl9wYXlsb2FkGAcgASgMEiYKHm1sc19hcHBsaWNhdGlvbl9wYXlsb2FkX3NoYTI1NhgIIAEoDCK9AQoRRWRpdE1lc3NhZ2VJbnRlbnQSEgoKbWVzc2FnZV9pZBgBIAEoCRJLCg9kaXJlY3RfcGF5bG9hZHMYAiADKAsyMi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlByZXBhcmVkRW5kcG9pbnRQYXlsb2FkEh8KF21sc19hcHBsaWNhdGlvbl9wYXlsb2FkGAMgASgMEiYKHm1sc19hcHBsaWNhdGlvbl9wYXlsb2FkX3NoYTI1NhgEIAEoDCIqChRSZXRyYWN0TWVzc2FnZUludGVudBISCgptZXNzYWdlX2lkGAEgASgJIkYKDlJlYWN0aW9uSW50ZW50EhIKCm1lc3NhZ2VfaWQYASABKAkSEAoIcmVhY3Rpb24YAiABKAkSDgoGcmVtb3ZlGAMgASgIIjYKEFBpbk1lc3NhZ2VJbnRlbnQSEgoKbWVzc2FnZV9pZBgBIAEoCRIOCgZyZW1vdmUYAiABKAgirAIKGFVwZGF0ZUNvbnZlcnNhdGlvbkludGVudBIRCgRuYW1lGAEgASgJSACIAQESGAoLZGVzY3JpcHRpb24YAiABKAlIAYgBARIdChBhdmF0YXJfb2JqZWN0X2lkGAMgASgJSAKIAQESJAoXZGlzYXBwZWFyX3RpbWVyX3NlY29uZHMYBCABKA1IA4gBARJFCgp2aXNpYmlsaXR5GAUgASgOMiwucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Hcm91cFZpc2liaWxpdHlWMUgEiAEBQgcKBV9uYW1lQg4KDF9kZXNjcmlwdGlvbkITChFfYXZhdGFyX29iamVjdF9pZEIaChhfZGlzYXBwZWFyX3RpbWVyX3NlY29uZHNCDQoLX3Zpc2liaWxpdHkirQEKH01lc3NhZ2luZ01lbWJlcnNoaXBDaGFuZ2VJbnRlbnQSRAoGYWN0aW9uGAEgASgOMjQucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5NZXNzYWdpbmdNZW1iZXJzaGlwQWN0aW9uEgwKBHB0aWQYAiABKAkSEQoJZGV2aWNlX2lkGAMgASgJEgwKBHJvbGUYBSABKAlKBAgEEAVSD2hvbWVfc3RhdGlvbl9pZCKdAwoaTWVtYmVyc2hpcFRyYW5zaXRpb25JbnRlbnQSFQoNdHJhbnNpdGlvbl9pZBgBIAEoCRIdChVmcm9tX21lbWJlcnNoaXBfZXBvY2gYAiABKAMSFgoOZnJvbV9tbHNfZXBvY2gYAyABKAMSFAoMdG9fbWxzX2Vwb2NoGAQgASgDEksKB2NoYW5nZXMYBSADKAsyOi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2luZ01lbWJlcnNoaXBDaGFuZ2VJbnRlbnQSEgoKbWxzX2NvbW1pdBgGIAEoDBIZChFtbHNfY29tbWl0X3NoYTI1NhgHIAEoDBJMChB3ZWxjb21lX3BheWxvYWRzGAggAygLMjIucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5QcmVwYXJlZEVuZHBvaW50UGF5bG9hZBIXCg9sZWF2ZV9pbnRlbnRfaWQYCSABKAkSGQoRYXV0aG9yaXR5X3BsYW5faWQYCiABKAkSHQoVYXV0aG9yaXR5X3BsYW5fc2hhMjU2GAsgASgMIhwKGkRpc3NvbHZlQ29udmVyc2F0aW9uSW50ZW50IpUHCgtDaGF0Q29tbWFuZBISCgpjb21tYW5kX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRI5CgZzZW5kZXIYAyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNyeXB0b0VuZHBvaW50EiEKGW9ic2VydmVkX21lbWJlcnNoaXBfZXBvY2gYBCABKAMSGgoSb2JzZXJ2ZWRfbWxzX2Vwb2NoGAUgASgDEjQKEGNsaWVudF90aW1lc3RhbXAYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhwKFGRlbGl2ZXJ5X3BsYW5fc2hhMjU2GAcgASgMEiEKGWF1dGhvcml0eV9zdGF0aW9uX3BlZXJfaWQYCCABKAkSRAoMc2VuZF9tZXNzYWdlGBQgASgLMiwucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5TZW5kTWVzc2FnZUludGVudEgAEkQKDGVkaXRfbWVzc2FnZRgVIAEoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRWRpdE1lc3NhZ2VJbnRlbnRIABJKCg9yZXRyYWN0X21lc3NhZ2UYFiABKAsyLy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlJldHJhY3RNZXNzYWdlSW50ZW50SAASPQoIcmVhY3Rpb24YFyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlJlYWN0aW9uSW50ZW50SAASQgoLcGluX21lc3NhZ2UYGCABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLlBpbk1lc3NhZ2VJbnRlbnRIABJSChN1cGRhdGVfY29udmVyc2F0aW9uGBkgASgLMjMucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5VcGRhdGVDb252ZXJzYXRpb25JbnRlbnRIABJWChVtZW1iZXJzaGlwX3RyYW5zaXRpb24YGiABKAsyNS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lbWJlcnNoaXBUcmFuc2l0aW9uSW50ZW50SAASVgoVZGlzc29sdmVfY29udmVyc2F0aW9uGBsgASgLMjUucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5EaXNzb2x2ZUNvbnZlcnNhdGlvbkludGVudEgAQgkKB3BheWxvYWQijAMKG0NvbnZlcnNhdGlvbkNvbW1hbmRQcm9wb3NhbBIPCgd2ZXJzaW9uGAEgASgNEhUKDWZlZGVyYXRpb25faWQYAiABKAkSIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgDIAEoCRIXCg9hdXRob3JpdHlfZXBvY2gYBCABKAMSHAoUaG9tZV9zdGF0aW9uX3BlZXJfaWQYBSABKAkSEgoKYWN0b3JfcHRpZBgGIAEoCRIXCg9hY3Rvcl9kZXZpY2VfaWQYByABKAkSHAoUYWN0b3Jfc2lnbmluZ19rZXlfaWQYCCABKAkSNwoHY29tbWFuZBgJIAEoCzImLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQ2hhdENvbW1hbmQSFgoOY29tbWFuZF9zaGEyNTYYCiABKAwSFwoPYWN0b3Jfc2lnbmF0dXJlGAsgASgMEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgMIAEoAxIaChJleHBpcmVzX2F0X3VuaXhfbXMYDSABKAMivQMKJ0NvbnZlcnNhdGlvbkNvbW1hbmRQcm9wb3NhbFNpZ25pbmdJbnB1dBIPCgd2ZXJzaW9uGAEgASgNEhUKDWZlZGVyYXRpb25faWQYAiABKAkSIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgDIAEoCRIXCg9hdXRob3JpdHlfZXBvY2gYBCABKAMSHAoUaG9tZV9zdGF0aW9uX3BlZXJfaWQYBSABKAkSFwoPY29udmVyc2F0aW9uX2lkGAYgASgJEhIKCmNvbW1hbmRfaWQYByABKAkSSAoMY29tbWFuZF9raW5kGAggASgOMjIucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5Db252ZXJzYXRpb25Db21tYW5kS2luZBISCgphY3Rvcl9wdGlkGAkgASgJEhcKD2FjdG9yX2RldmljZV9pZBgKIAEoCRIcChRhY3Rvcl9zaWduaW5nX2tleV9pZBgLIAEoCRIWCg5jb21tYW5kX3NoYTI1NhgMIAEoDBIaChJjcmVhdGVkX2F0X3VuaXhfbXMYDSABKAMSGgoSZXhwaXJlc19hdF91bml4X21zGA4gASgDKokCChRNZXNzYWdpbmdDb250ZW50S2luZBImCiJNRVNTQUdJTkdfQ09OVEVOVF9LSU5EX1VOU1BFQ0lGSUVEEAASHwobTUVTU0FHSU5HX0NPTlRFTlRfS0lORF9URVhUEAESIAocTUVTU0FHSU5HX0NPTlRFTlRfS0lORF9JTUFHRRACEh8KG01FU1NBR0lOR19DT05URU5UX0tJTkRfRklMRRADEiAKHE1FU1NBR0lOR19DT05URU5UX0tJTkRfQVVESU8QBBIgChxNRVNTQUdJTkdfQ09OVEVOVF9LSU5EX1ZJREVPEAUSIQodTUVTU0FHSU5HX0NPTlRFTlRfS0lORF9TWVNURU0QBiqxAwobUHJlcGFyZWRFbmRwb2ludFBheWxvYWRLaW5kEi4KKlBSRVBBUkVEX0VORFBPSU5UX1BBWUxPQURfS0lORF9VTlNQRUNJRklFRBAAEjQKMFBSRVBBUkVEX0VORFBPSU5UX1BBWUxPQURfS0lORF9ESVJFQ1RfQ0lQSEVSVEVYVBABEjIKLlBSRVBBUkVEX0VORFBPSU5UX1BBWUxPQURfS0lORF9NTFNfQVBQTElDQVRJT04QAhItCilQUkVQQVJFRF9FTkRQT0lOVF9QQVlMT0FEX0tJTkRfTUxTX0NPTU1JVBADEi4KKlBSRVBBUkVEX0VORFBPSU5UX1BBWUxPQURfS0lORF9NTFNfV0VMQ09NRRAEEi8KK1BSRVBBUkVEX0VORFBPSU5UX1BBWUxPQURfS0lORF9QVUJMSUNfRVZFTlQQBRI1CjFQUkVQQVJFRF9FTkRQT0lOVF9QQVlMT0FEX0tJTkRfQ09OVkVSU0FUSU9OX1NUQVRFEAYSMQotUFJFUEFSRURfRU5EUE9JTlRfUEFZTE9BRF9LSU5EX01MU19SRVRJUkVNRU5UEAcq0AIKGU1lc3NhZ2luZ01lbWJlcnNoaXBBY3Rpb24SKwonTUVTU0FHSU5HX01FTUJFUlNISVBfQUNUSU9OX1VOU1BFQ0lGSUVEEAASKQolTUVTU0FHSU5HX01FTUJFUlNISVBfQUNUSU9OX0FERF9BQ1RPUhABEiwKKE1FU1NBR0lOR19NRU1CRVJTSElQX0FDVElPTl9SRU1PVkVfQUNUT1IQAhIlCiFNRVNTQUdJTkdfTUVNQkVSU0hJUF9BQ1RJT05fTEVBVkUQAxIrCidNRVNTQUdJTkdfTUVNQkVSU0hJUF9BQ1RJT05fQ0hBTkdFX1JPTEUQBBIqCiZNRVNTQUdJTkdfTUVNQkVSU0hJUF9BQ1RJT05fQUREX0RFVklDRRAFEi0KKU1FU1NBR0lOR19NRU1CRVJTSElQX0FDVElPTl9SRU1PVkVfREVWSUNFEAZCR1pFZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvY2hhdDtjaGF0YgZwcm90bzM", [file_domain_chat_attachment, file_domain_chat_conversation, file_domain_chat_endpoint, file_google_protobuf_timestamp]);
 
 /**
  * A command payload prepared for exactly one endpoint. The authority validates
@@ -262,11 +262,6 @@ export type MessagingMembershipChangeIntent = Message<"peers_touch.model.chat.v1
   deviceId: string;
 
   /**
-   * @generated from field: string home_station_id = 4;
-   */
-  homeStationId: string;
-
-  /**
    * @generated from field: string role = 5;
    */
   role: string;
@@ -402,9 +397,9 @@ export type ChatCommand = Message<"peers_touch.model.chat.v1.ChatCommand"> & {
   deliveryPlanSha256: Uint8Array;
 
   /**
-   * @generated from field: string authority_station_id = 8;
+   * @generated from field: string authority_station_peer_id = 8;
    */
-  authorityStationId: string;
+  authorityStationPeerId: string;
 
   /**
    * @generated from oneof peers_touch.model.chat.v1.ChatCommand.payload
@@ -466,6 +461,170 @@ export type ChatCommand = Message<"peers_touch.model.chat.v1.ChatCommand"> & {
  */
 export const ChatCommandSchema: GenMessage<ChatCommand> = /*@__PURE__*/
   messageDesc(file_domain_chat_command, 10);
+
+/**
+ * The only remote durable command wrapper. command_id is both the proposal
+ * identity and the authority idempotency identity.
+ *
+ * @generated from message peers_touch.model.chat.v1.ConversationCommandProposal
+ */
+export type ConversationCommandProposal = Message<"peers_touch.model.chat.v1.ConversationCommandProposal"> & {
+  /**
+   * @generated from field: uint32 version = 1;
+   */
+  version: number;
+
+  /**
+   * @generated from field: string federation_id = 2;
+   */
+  federationId: string;
+
+  /**
+   * @generated from field: string authority_station_peer_id = 3;
+   */
+  authorityStationPeerId: string;
+
+  /**
+   * @generated from field: int64 authority_epoch = 4;
+   */
+  authorityEpoch: bigint;
+
+  /**
+   * @generated from field: string home_station_peer_id = 5;
+   */
+  homeStationPeerId: string;
+
+  /**
+   * @generated from field: string actor_ptid = 6;
+   */
+  actorPtid: string;
+
+  /**
+   * @generated from field: string actor_device_id = 7;
+   */
+  actorDeviceId: string;
+
+  /**
+   * @generated from field: string actor_signing_key_id = 8;
+   */
+  actorSigningKeyId: string;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.ChatCommand command = 9;
+   */
+  command?: ChatCommand | undefined;
+
+  /**
+   * @generated from field: bytes command_sha256 = 10;
+   */
+  commandSha256: Uint8Array;
+
+  /**
+   * @generated from field: bytes actor_signature = 11;
+   */
+  actorSignature: Uint8Array;
+
+  /**
+   * @generated from field: int64 created_at_unix_ms = 12;
+   */
+  createdAtUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 expires_at_unix_ms = 13;
+   */
+  expiresAtUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.ConversationCommandProposal.
+ * Use `create(ConversationCommandProposalSchema)` to create a new message.
+ */
+export const ConversationCommandProposalSchema: GenMessage<ConversationCommandProposal> = /*@__PURE__*/
+  messageDesc(file_domain_chat_command, 11);
+
+/**
+ * Exact deterministic protobuf input signed by the actor device.
+ *
+ * @generated from message peers_touch.model.chat.v1.ConversationCommandProposalSigningInput
+ */
+export type ConversationCommandProposalSigningInput = Message<"peers_touch.model.chat.v1.ConversationCommandProposalSigningInput"> & {
+  /**
+   * @generated from field: uint32 version = 1;
+   */
+  version: number;
+
+  /**
+   * @generated from field: string federation_id = 2;
+   */
+  federationId: string;
+
+  /**
+   * @generated from field: string authority_station_peer_id = 3;
+   */
+  authorityStationPeerId: string;
+
+  /**
+   * @generated from field: int64 authority_epoch = 4;
+   */
+  authorityEpoch: bigint;
+
+  /**
+   * @generated from field: string home_station_peer_id = 5;
+   */
+  homeStationPeerId: string;
+
+  /**
+   * @generated from field: string conversation_id = 6;
+   */
+  conversationId: string;
+
+  /**
+   * @generated from field: string command_id = 7;
+   */
+  commandId: string;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.ConversationCommandKind command_kind = 8;
+   */
+  commandKind: ConversationCommandKind;
+
+  /**
+   * @generated from field: string actor_ptid = 9;
+   */
+  actorPtid: string;
+
+  /**
+   * @generated from field: string actor_device_id = 10;
+   */
+  actorDeviceId: string;
+
+  /**
+   * @generated from field: string actor_signing_key_id = 11;
+   */
+  actorSigningKeyId: string;
+
+  /**
+   * @generated from field: bytes command_sha256 = 12;
+   */
+  commandSha256: Uint8Array;
+
+  /**
+   * @generated from field: int64 created_at_unix_ms = 13;
+   */
+  createdAtUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 expires_at_unix_ms = 14;
+   */
+  expiresAtUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.ConversationCommandProposalSigningInput.
+ * Use `create(ConversationCommandProposalSigningInputSchema)` to create a new message.
+ */
+export const ConversationCommandProposalSigningInputSchema: GenMessage<ConversationCommandProposalSigningInput> = /*@__PURE__*/
+  messageDesc(file_domain_chat_command, 12);
 
 /**
  * @generated from enum peers_touch.model.chat.v1.MessagingContentKind

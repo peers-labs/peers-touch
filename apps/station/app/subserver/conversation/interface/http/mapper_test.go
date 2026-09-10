@@ -32,7 +32,7 @@ func TestMapSubmitCommandBindsAuthenticatedEndpointAndDeliverySet(t *testing.T) 
 		ObservedMlsEpoch:        1,
 		ClientTimestamp:         timestamppb.New(now),
 		DeliveryPlanSha256:      planHash.Bytes(),
-		AuthorityStationId:      "station-a",
+		AuthorityStationPeerId:  "station-a",
 		Payload: &chat.ChatCommand_SendMessage{
 			SendMessage: &chat.SendMessageIntent{
 				MessageId: "message-1",
@@ -50,7 +50,7 @@ func TestMapSubmitCommandBindsAuthenticatedEndpointAndDeliverySet(t *testing.T) 
 			PTID:     string(alice.Actor),
 			DeviceID: string(alice.Device),
 		},
-		&chat.SubmitConversationAuthorityCommandRequest{Command: wire},
+		localCommandRequest(wire),
 		aggregate.CommandPreparation{
 			Kind:             valueobject.ConversationKindDirect,
 			AuthorityStation: "station-a",
@@ -100,7 +100,7 @@ func TestMapSubmitCommandBindsAuthenticatedEndpointAndDeliverySet(t *testing.T) 
 
 	if _, err := conversationhttp.MapSubmitCommand(
 		conversationhttp.AuthenticatedActor{PTID: "ptid:mallory", DeviceID: "mallory-1"},
-		&chat.SubmitConversationAuthorityCommandRequest{Command: wire},
+		localCommandRequest(wire),
 		aggregate.CommandPreparation{},
 		nil,
 		now,
@@ -116,7 +116,7 @@ func TestMapSubmitCommandBindsAuthenticatedEndpointAndDeliverySet(t *testing.T) 
 				PTID:     string(alice.Actor),
 				DeviceID: string(alice.Device),
 			},
-			&chat.SubmitConversationAuthorityCommandRequest{Command: tampered},
+			localCommandRequest(tampered),
 			aggregate.CommandPreparation{
 				Kind:              valueobject.ConversationKindDirect,
 				AuthorityStation:  "station-a",
@@ -142,7 +142,7 @@ func TestMapSubmitCommandBindsAuthenticatedEndpointAndDeliverySet(t *testing.T) 
 				PTID:     string(alice.Actor),
 				DeviceID: string(alice.Device),
 			},
-			&chat.SubmitConversationAuthorityCommandRequest{Command: duplicate},
+			localCommandRequest(duplicate),
 			aggregate.CommandPreparation{
 				Kind:              valueobject.ConversationKindDirect,
 				AuthorityStation:  "station-a",
@@ -168,7 +168,7 @@ func TestMapSubmitCommandBindsAuthenticatedEndpointAndDeliverySet(t *testing.T) 
 				PTID:     string(alice.Actor),
 				DeviceID: string(alice.Device),
 			},
-			&chat.SubmitConversationAuthorityCommandRequest{Command: groupPayload},
+			localCommandRequest(groupPayload),
 			aggregate.CommandPreparation{
 				Kind:              valueobject.ConversationKindDirect,
 				AuthorityStation:  "station-a",
@@ -187,7 +187,7 @@ func TestMapSubmitCommandBindsAuthenticatedEndpointAndDeliverySet(t *testing.T) 
 				PTID:     string(alice.Actor),
 				DeviceID: string(alice.Device),
 			},
-			&chat.SubmitConversationAuthorityCommandRequest{Command: wire},
+			localCommandRequest(wire),
 			aggregate.CommandPreparation{
 				Kind:              valueobject.ConversationKindGroup,
 				AuthorityStation:  "station-a",
@@ -204,13 +204,13 @@ func TestMapSubmitCommandBindsAuthenticatedEndpointAndDeliverySet(t *testing.T) 
 
 	t.Run("rejects a mismatched authority Station", func(t *testing.T) {
 		mismatched := proto.Clone(wire).(*chat.ChatCommand)
-		mismatched.AuthorityStationId = "station-b"
+		mismatched.AuthorityStationPeerId = "station-b"
 		_, err := conversationhttp.MapSubmitCommand(
 			conversationhttp.AuthenticatedActor{
 				PTID:     string(alice.Actor),
 				DeviceID: string(alice.Device),
 			},
-			&chat.SubmitConversationAuthorityCommandRequest{Command: mismatched},
+			localCommandRequest(mismatched),
 			aggregate.CommandPreparation{
 				Kind:              valueobject.ConversationKindDirect,
 				AuthorityStation:  "station-a",
@@ -226,6 +226,26 @@ func TestMapSubmitCommandBindsAuthenticatedEndpointAndDeliverySet(t *testing.T) 
 	})
 }
 
+func TestMapSubmitCommandRejectsProposalSubmission(t *testing.T) {
+	_, err := conversationhttp.MapSubmitCommand(
+		conversationhttp.AuthenticatedActor{
+			PTID:     "ptid:alice",
+			DeviceID: "alice-1",
+		},
+		&chat.SubmitConversationAuthorityCommandRequest{
+			Submission: &chat.SubmitConversationAuthorityCommandRequest_Proposal{
+				Proposal: &chat.ConversationCommandProposal{},
+			},
+		},
+		aggregate.CommandPreparation{},
+		nil,
+		time.Date(2026, time.September, 7, 12, 0, 0, 0, time.UTC),
+	)
+	if !conversationdomain.IsCode(err, conversationdomain.ErrorCodeInvalidArgument) {
+		t.Fatalf("proposal submission error = %v", err)
+	}
+}
+
 func TestMapDissolveCommandAndEvent(t *testing.T) {
 	now := time.Date(2026, time.September, 6, 13, 30, 0, 0, time.UTC)
 	owner := valueobject.Endpoint{Actor: "ptid:owner", Device: "owner-1"}
@@ -239,7 +259,7 @@ func TestMapDissolveCommandAndEvent(t *testing.T) {
 		ObservedMlsEpoch:        3,
 		ClientTimestamp:         timestamppb.New(now),
 		DeliveryPlanSha256:      planHash.Bytes(),
-		AuthorityStationId:      "station-a",
+		AuthorityStationPeerId:  "station-a",
 		Payload: &chat.ChatCommand_DissolveConversation{
 			DissolveConversation: &chat.DissolveConversationIntent{},
 		},
@@ -249,7 +269,7 @@ func TestMapDissolveCommandAndEvent(t *testing.T) {
 			PTID:     string(owner.Actor),
 			DeviceID: string(owner.Device),
 		},
-		&chat.SubmitConversationAuthorityCommandRequest{Command: wire},
+		localCommandRequest(wire),
 		aggregate.CommandPreparation{
 			Kind:              valueobject.ConversationKindGroup,
 			AuthorityStation:  "station-a",
@@ -332,7 +352,7 @@ func TestMapMembershipCommandUsesCanonicalEndpointPayloads(t *testing.T) {
 		ObservedMlsEpoch:        2,
 		ClientTimestamp:         timestamppb.New(now),
 		DeliveryPlanSha256:      planHash.Bytes(),
-		AuthorityStationId:      "station-a",
+		AuthorityStationPeerId:  "station-a",
 		Payload: &chat.ChatCommand_MembershipTransition{
 			MembershipTransition: &chat.MembershipTransitionIntent{
 				TransitionId:        "transition-1",
@@ -357,7 +377,7 @@ func TestMapMembershipCommandUsesCanonicalEndpointPayloads(t *testing.T) {
 			PTID:     string(owner.Actor),
 			DeviceID: string(owner.Device),
 		},
-		&chat.SubmitConversationAuthorityCommandRequest{Command: wire},
+		localCommandRequest(wire),
 		aggregate.CommandPreparation{
 			Kind:             valueobject.ConversationKindGroup,
 			AuthorityStation: "station-a",
@@ -406,6 +426,55 @@ func TestMapMembershipCommandUsesCanonicalEndpointPayloads(t *testing.T) {
 		}
 	}
 
+	t.Run("genesis sender receives public marker without welcome", func(t *testing.T) {
+		genesisPlan := plan
+		genesisPlan.AuthorityHead = valueobject.AuthorityHead{}
+		genesisPlan.PreEndpoints = nil
+		genesisPlan.PostEndpoints = []valueobject.Endpoint{owner, added}
+		genesisPlan.AddedEndpoints = []valueobject.Endpoint{owner, added}
+
+		genesis := proto.Clone(wire).(*chat.ChatCommand)
+		genesis.ObservedMembershipEpoch = 0
+		genesis.ObservedMlsEpoch = 0
+		genesis.GetMembershipTransition().FromMembershipEpoch = 0
+		genesis.GetMembershipTransition().FromMlsEpoch = 0
+		genesis.GetMembershipTransition().ToMlsEpoch = 1
+
+		mapped, err := conversationhttp.MapSubmitCommand(
+			conversationhttp.AuthenticatedActor{
+				PTID:     string(owner.Actor),
+				DeviceID: string(owner.Device),
+			},
+			localCommandRequest(genesis),
+			aggregate.CommandPreparation{
+				Kind:             valueobject.ConversationKindGroup,
+				AuthorityStation: "station-a",
+			},
+			&genesisPlan,
+			now,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(mapped.Command.Deliveries) != 2 {
+			t.Fatalf("genesis deliveries = %+v", mapped.Command.Deliveries)
+		}
+		for _, delivery := range mapped.Command.Deliveries {
+			switch delivery.Recipient {
+			case owner:
+				if delivery.Kind != valueobject.DeliveryKindPublicEvent {
+					t.Fatalf("genesis sender delivery = %+v", delivery)
+				}
+			case added:
+				if delivery.Kind != valueobject.DeliveryKindMLSWelcome {
+					t.Fatalf("genesis added endpoint delivery = %+v", delivery)
+				}
+			default:
+				t.Fatalf("unexpected genesis delivery = %+v", delivery)
+			}
+		}
+	})
+
 	t.Run("removed sender receives retirement instead of public marker", func(t *testing.T) {
 		selfRemovalPlan := plan
 		selfRemovalPlan.Changes = []entity.MembershipChange{{
@@ -420,10 +489,9 @@ func TestMapMembershipCommandUsesCanonicalEndpointPayloads(t *testing.T) {
 
 		selfRemoval := proto.Clone(wire).(*chat.ChatCommand)
 		selfRemoval.GetMembershipTransition().Changes = []*chat.MessagingMembershipChangeIntent{{
-			Action:        chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_REMOVE_DEVICE,
-			Ptid:          string(owner.Actor),
-			DeviceId:      string(owner.Device),
-			HomeStationId: "station-a",
+			Action:   chat.MessagingMembershipAction_MESSAGING_MEMBERSHIP_ACTION_REMOVE_DEVICE,
+			Ptid:     string(owner.Actor),
+			DeviceId: string(owner.Device),
 		}}
 		selfRemoval.GetMembershipTransition().WelcomePayloads = nil
 
@@ -432,7 +500,7 @@ func TestMapMembershipCommandUsesCanonicalEndpointPayloads(t *testing.T) {
 				PTID:     string(owner.Actor),
 				DeviceID: string(owner.Device),
 			},
-			&chat.SubmitConversationAuthorityCommandRequest{Command: selfRemoval},
+			localCommandRequest(selfRemoval),
 			aggregate.CommandPreparation{
 				Kind:             valueobject.ConversationKindGroup,
 				AuthorityStation: "station-a",
@@ -458,7 +526,7 @@ func TestMapMembershipCommandUsesCanonicalEndpointPayloads(t *testing.T) {
 			PTID:     string(owner.Actor),
 			DeviceID: string(owner.Device),
 		},
-		&chat.SubmitConversationAuthorityCommandRequest{Command: tampered},
+		localCommandRequest(tampered),
 		aggregate.CommandPreparation{
 			Kind:             valueobject.ConversationKindGroup,
 			AuthorityStation: "station-a",
@@ -477,7 +545,7 @@ func TestMapMembershipCommandUsesCanonicalEndpointPayloads(t *testing.T) {
 			PTID:     string(owner.Actor),
 			DeviceID: string(owner.Device),
 		},
-		&chat.SubmitConversationAuthorityCommandRequest{Command: tamperedPlan},
+		localCommandRequest(tamperedPlan),
 		aggregate.CommandPreparation{
 			Kind:             valueobject.ConversationKindGroup,
 			AuthorityStation: "station-a",
@@ -765,5 +833,15 @@ func endpointProto(endpoint valueobject.Endpoint) *chat.CryptoEndpoint {
 	return &chat.CryptoEndpoint{
 		Ptid:     string(endpoint.Actor),
 		DeviceId: string(endpoint.Device),
+	}
+}
+
+func localCommandRequest(
+	command *chat.ChatCommand,
+) *chat.SubmitConversationAuthorityCommandRequest {
+	return &chat.SubmitConversationAuthorityCommandRequest{
+		Submission: &chat.SubmitConversationAuthorityCommandRequest_Command{
+			Command: command,
+		},
 	}
 }

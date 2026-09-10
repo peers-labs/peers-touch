@@ -36,6 +36,8 @@ GATE_ROLES = {
     "chat-native-multi-device-e2e": ("alice", "bob"),
     "chat-native-recovery-e2e": ("alice", "bob"),
     "chat-native-group-mls-e2e": ("alice", "bob", "charlie"),
+    "chat-native-product-closure-e2e": ("alice", "bob"),
+    "chat-contact-message-resilience-e2e": ("alice", "bob"),
 }
 
 AGENT_V2_FOUNDATION_GATE = "agent-v2-kernel-foundation-e2e"
@@ -59,6 +61,8 @@ CLIENT_ROLES = {
     "chat-native-multi-device-e2e": ("alice", "bob1", "bob2"),
     "chat-native-recovery-e2e": ("alice", "bob"),
     "chat-native-group-mls-e2e": ("alice", "bob", "charlie"),
+    "chat-native-product-closure-e2e": ("alice", "bob", "alice2"),
+    "chat-contact-message-resilience-e2e": ("alice",),
 }
 
 
@@ -90,6 +94,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         self,
         gate_id: str,
         run_id: str,
+        slot: int,
     ) -> tuple[ClientRuntime, ...]:
         roles = CLIENT_ROLES.get(gate_id)
         if roles is None:
@@ -98,15 +103,29 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 resource=f"gate-environment:{gate_id}",
             )
         worktrees = [REPO_ROOT] * len(roles)
+        contract_clients = {client.id: client for client in self.contract.clients}
+        if contract_clients:
+            missing_clients = sorted(set(roles) - set(contract_clients))
+            if missing_clients:
+                raise BlockedError(
+                    reason=(
+                        "Environment contract has no allocation for clients: "
+                        f"{', '.join(missing_clients)}"
+                    ),
+                    resource=f"gate-environment:{gate_id}",
+                )
 
-        slot = int(os.environ.get("PT_DEV_SLOT", "0"))
         gateway_base = 3330 + slot * 100
         renderer_base = 3510 + slot * 100
         webdriver_base = 4445 + slot * 10
         run_root = Path(f"/tmp/pt-chat-native-{run_id}-{gate_id}")
         clients = tuple(
             ClientRuntime(
-                actor=role,
+                actor=(
+                    contract_clients[role].actor
+                    if contract_clients
+                    else role
+                ),
                 runtime="native-tauri",
                 worktree=str(worktree),
                 gateway_port=gateway_base + index,
@@ -114,6 +133,17 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 webdriver_port=webdriver_base + index,
                 profile=f"chat-native-{role}",
                 storage_root=str(run_root / role / "storage"),
+                id=role if contract_clients else "",
+                required_service_roles=(
+                    contract_clients[role].required_service_roles
+                    if contract_clients
+                    else ()
+                ),
+                service_bindings=(
+                    contract_clients[role].service_bindings
+                    if contract_clients
+                    else {}
+                ),
             )
             for index, (role, worktree) in enumerate(zip(roles, worktrees))
         )
@@ -723,7 +753,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 credential_ref=credential_refs[0] if credential_refs else "",
                 reset_authorized=reset_authorized,
             )
-            clients = self._clients(gate_id, manifest.run_id)
+            clients = self._clients(gate_id, manifest.run_id, slot)
             manifest = dataclasses.replace(
                 manifest,
                 actor_manifest_ref=actor_ref,

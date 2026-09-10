@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-09
-covered_docs_hash: 7302856467be4229ff52e129db97fd2d63def579bf3cf3d2f2bd1b466a6a6a5d
+covered_docs_hash: ff3bea87e0b21dab8559301bbf14a6cc50730e788890dc821182907db1d2a73f
 
 covered_docs:
   - AGENTS.md
@@ -156,3 +156,10 @@ review skill and fixtures remain sufficient.
 The Mobile Acceptance coverage update adds lifecycle and native-platform
 surfaces while preserving the existing rule that unrun physical or destructive
 Gates remain explicitly `UNPROVEN`.
+
+## 2026-09-10 Review
+
+The Conversation Authority and native Desktop runtime-cell consolidation
+strengthens existing ownership, exact-source, platform identity, and cleanup
+requirements. The review skill already covers those checks, so no workflow or
+fixture change is required.

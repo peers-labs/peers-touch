@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import os
+import secrets
 import shutil
 import socket
 import subprocess
@@ -10,14 +12,19 @@ import sys
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Mapping, Protocol, Sequence
+from pathlib import Path, PureWindowsPath
+from typing import Any, Mapping, Protocol, Sequence, cast
 
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.errors import ClientBindingError, DriverError
 from tooling.acceptance.core.provisioning import (
+    BindingProofRecord,
+    ClientRuntimeIdentity,
+    persist_client_binding_observation,
     require_runtime_client_service,
+    validate_binding_proof_closure,
 )
+from tooling.acceptance.core.runtime_cell import RuntimeCellLifecycle
 from tooling.acceptance.drivers.native.base import (
     MouseAction,
     NativeControlSnapshot,
@@ -33,6 +40,7 @@ from tooling.acceptance.drivers.tauri import (
     TauriSession,
     find_app_binary,
 )
+from tooling.acceptance.drivers.station import StationDriver
 
 
 def _file_sha256(path: Path) -> str:
@@ -43,7 +51,9 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-class LinuxRuntimeCell(Protocol):
+class RemoteNativeRuntimeCellLifecycle(RuntimeCellLifecycle, Protocol):
+    """Runtime-cell operations required by a remote Native Desktop binding."""
+
     def validate_binding(
         self,
         gate_id: str,
@@ -112,16 +122,24 @@ class LinuxRuntimeCell(Protocol):
 
 
 @dataclass(frozen=True)
-class RuntimeEndpoint:
-    url: str
-    lease_id: str
-
-
-@dataclass(frozen=True)
 class NativeLaunchOptions:
     window_slot: int = 0
     window_count: int = 1
     restore_session: bool = False
+
+
+@dataclass(frozen=True)
+class TransportOverrideHandle:
+    _token: str
+
+
+@dataclass(frozen=True)
+class _TransportOverride:
+    client_id: str
+    binding_role: str
+    service_id: str
+    endpoint: str
+    endpoint_lease_id: str
 
 
 class NativeDesktopRuntimeBinding(ABC):
@@ -130,13 +148,32 @@ class NativeDesktopRuntimeBinding(ABC):
     def __init__(self) -> None:
         self._generation_counters: dict[str, int] = {}
         self._proof_refs: list[dict[str, Any]] = []
+        self._proof_records: list[BindingProofRecord] = []
         self._runtime_manifest: dict[str, Any] | None = None
+        self._sessions_by_client: dict[str, TauriSession] = {}
+        self._transport_overrides: dict[str, _TransportOverride] = {}
 
     def set_runtime_manifest(self, manifest: dict[str, Any]) -> None:
+        if self._runtime_manifest is not None:
+            raise DriverError("Runtime Binding manifest is already set")
         self._runtime_manifest = manifest
 
     def proof_refs(self) -> tuple[dict[str, Any], ...]:
         return tuple(self._proof_refs)
+
+    def binding_proof_evidence(self) -> dict[str, Any]:
+        if self._runtime_manifest is None:
+            raise DriverError("Runtime Binding manifest is not set")
+        validate_binding_proof_closure(
+            self._runtime_manifest,
+            allocated_generations=dict(self._generation_counters),
+            proofs=tuple(self._proof_records),
+        )
+        return {
+            "proofRefs": list(self._proof_refs),
+            "allocatedGenerations": dict(self._generation_counters),
+            "proofCount": len(self._proof_records),
+        }
 
     def create_bound_session(
         self,
@@ -148,20 +185,6 @@ class NativeDesktopRuntimeBinding(ABC):
                 "Runtime Binding requires a manifest before create_bound_session"
             )
         options = launch_options or NativeLaunchOptions()
-        service_id, service = require_runtime_client_service(
-            self._runtime_manifest,
-            client_id,
-            "station",
-        )
-        station_url = str(service.get("endpoint") or "")
-        if not station_url:
-            raise DriverError(
-                f"bound service {service_id!r} has no endpoint"
-            )
-
-        generation = self._generation_counters.get(client_id, 0) + 1
-        self._generation_counters[client_id] = generation
-
         clients = self._runtime_manifest.get("clients") or []
         client_spec: dict[str, Any] = {}
         for raw_client in clients:
@@ -172,19 +195,307 @@ class NativeDesktopRuntimeBinding(ABC):
             raise DriverError(
                 f"client {client_id!r} not found in runtime manifest"
             )
+        required_roles = client_spec.get("required_service_roles")
+        if not isinstance(required_roles, list):
+            raise DriverError(
+                f"client {client_id!r} has no required service roles"
+            )
+        station_service_id, station_service = require_runtime_client_service(
+            self._runtime_manifest,
+            client_id,
+            "station",
+        )
+        station_url = str(station_service.get("endpoint") or "")
+        if not station_url:
+            raise DriverError(
+                f"bound service {station_service_id!r} has no endpoint"
+            )
 
         environment = {
-            "PEERS_STATION_URL": station_url,
             "PT_ACCEPTANCE_WINDOW_SLOT": str(options.window_slot),
             "PT_ACCEPTANCE_WINDOW_COUNT": str(options.window_count),
         }
 
-        session = self.create_session(
-            client_spec.get("actor") or client_id,
+        session = self._create_session(
+            client_id,
             client_spec,
             environment,
         )
-        return session
+        generation = self._generation_counters.get(client_id, 0) + 1
+        self._generation_counters[client_id] = generation
+        try:
+            session.start()
+            session.wait_for_acceptance_harness(30)
+            self._configure_session_station(session, station_url)
+            runtime_identity = self._client_runtime_identity(
+                client_id,
+                generation,
+                session,
+            )
+            for binding_role in required_roles:
+                observed_identity = self._observe_live_service_identity(
+                    session,
+                    client_id=client_id,
+                    binding_role=str(binding_role),
+                )
+                proof, reference = persist_client_binding_observation(
+                    self._runtime_manifest,
+                    evidence_run_id=os.environ.get(
+                        "PT_ACCEPTANCE_RUN_ID",
+                        "",
+                    ),
+                    client_id=client_id,
+                    binding_role=str(binding_role),
+                    launch_generation=generation,
+                    client_runtime_identity=runtime_identity,
+                    observed_runtime_identity=observed_identity,
+                    proof_mechanism="native-tauri-peer-id-check",
+                    registered_mechanisms=frozenset(
+                        {"native-tauri-peer-id-check"}
+                    ),
+                    verifier_id="core-client-binding",
+                    verifier_source_digest=_file_sha256(
+                        REPO_ROOT
+                        / "tooling"
+                        / "acceptance"
+                        / "core"
+                        / "provisioning.py"
+                    ),
+                )
+                self._proof_records.append(proof)
+                self._proof_refs.append(reference)
+            self._sessions_by_client[client_id] = session
+            return session
+        except Exception:
+            session.stop()
+            raise
+
+    def create_transport_override(
+        self,
+        client_id: str,
+        binding_role: str,
+        local_endpoint: str,
+    ) -> TransportOverrideHandle:
+        if self._runtime_manifest is None:
+            raise DriverError("Runtime Binding manifest is not set")
+        service_id, _ = require_runtime_client_service(
+            self._runtime_manifest,
+            client_id,
+            binding_role,
+        )
+        endpoint, endpoint_lease_id = self._expose_transport_endpoint(
+            local_endpoint
+        )
+        token = secrets.token_hex(32)
+        self._transport_overrides[token] = _TransportOverride(
+            client_id=client_id,
+            binding_role=binding_role,
+            service_id=service_id,
+            endpoint=endpoint,
+            endpoint_lease_id=endpoint_lease_id,
+        )
+        return TransportOverrideHandle(token)
+
+    def apply_transport_override(
+        self,
+        client_id: str,
+        binding_role: str,
+        handle: TransportOverrideHandle,
+    ) -> None:
+        override = self._require_transport_override(
+            client_id,
+            binding_role,
+            handle,
+        )
+        session = self._sessions_by_client.get(client_id)
+        if session is None or not session.is_alive():
+            raise self._transport_override_error(
+                client_id,
+                binding_role,
+                "bound client session is not live",
+            )
+        self._configure_session_station(session, override.endpoint)
+
+    def clear_transport_override(
+        self,
+        client_id: str,
+        binding_role: str,
+        handle: TransportOverrideHandle,
+    ) -> None:
+        override = self._require_transport_override(
+            client_id,
+            binding_role,
+            handle,
+        )
+        if self._runtime_manifest is None:
+            raise DriverError("Runtime Binding manifest is not set")
+        _, service = require_runtime_client_service(
+            self._runtime_manifest,
+            client_id,
+            binding_role,
+        )
+        session = self._sessions_by_client.get(client_id)
+        if session is not None and session.is_alive():
+            self._configure_session_station(
+                session,
+                str(service.get("endpoint") or ""),
+            )
+        self._transport_overrides.pop(handle._token, None)
+        self._release_transport_endpoint(override.endpoint_lease_id)
+
+    def _require_transport_override(
+        self,
+        client_id: str,
+        binding_role: str,
+        handle: TransportOverrideHandle,
+    ) -> _TransportOverride:
+        if not isinstance(handle, TransportOverrideHandle):
+            raise self._transport_override_error(
+                client_id,
+                binding_role,
+                "transport override handle has invalid type",
+            )
+        override = self._transport_overrides.get(handle._token)
+        if override is None:
+            raise self._transport_override_error(
+                client_id,
+                binding_role,
+                "transport override handle is unknown or released",
+            )
+        if self._runtime_manifest is None:
+            raise DriverError("Runtime Binding manifest is not set")
+        service_id, _ = require_runtime_client_service(
+            self._runtime_manifest,
+            client_id,
+            binding_role,
+        )
+        if (
+            override.client_id != client_id
+            or override.binding_role != binding_role
+            or override.service_id != service_id
+        ):
+            raise self._transport_override_error(
+                client_id,
+                binding_role,
+                "transport override scope does not match client binding",
+            )
+        return override
+
+    @staticmethod
+    def _transport_override_error(
+        client_id: str,
+        binding_role: str,
+        detail: str,
+    ) -> ClientBindingError:
+        return ClientBindingError(
+            code="TRANSPORT_OVERRIDE_MISMATCH",
+            numeric_code=20107,
+            stage="runtime",
+            client_id=client_id,
+            binding_role=binding_role,
+            detail=detail,
+            result="BLOCKED",
+        )
+
+    @staticmethod
+    def _configure_session_station(
+        session: TauriSession,
+        station_url: str,
+    ) -> None:
+        if not station_url:
+            raise DriverError("Runtime Binding Station endpoint is empty")
+        with StationDriver(
+            f"http://127.0.0.1:{session.gateway_port}"
+        ) as station:
+            station.station_add(station_url)
+            station.station_set_active(station_url)
+
+    def _observe_live_service_identity(
+        self,
+        session: TauriSession,
+        *,
+        client_id: str,
+        binding_role: str,
+    ) -> str:
+        if self._runtime_manifest is None:
+            raise DriverError("Runtime Binding manifest is not set")
+        _, service = require_runtime_client_service(
+            self._runtime_manifest,
+            client_id,
+            binding_role,
+        )
+        expected_url = str(service.get("endpoint") or "").rstrip("/")
+        deadline = time.monotonic() + 30
+        latest: Any = None
+        while time.monotonic() < deadline:
+            with StationDriver(
+                f"http://127.0.0.1:{session.gateway_port}"
+            ) as station:
+                latest = station.station_list()
+            status = latest.get("status") if isinstance(latest, dict) else None
+            try:
+                state = json.loads(status) if isinstance(status, str) else {}
+            except json.JSONDecodeError:
+                state = {}
+            active_url = str(state.get("active_url") or "").rstrip("/")
+            entries = state.get("entries")
+            if active_url == expected_url and isinstance(entries, list):
+                for entry in entries:
+                    if (
+                        isinstance(entry, dict)
+                        and str(entry.get("url") or "").rstrip("/")
+                        == expected_url
+                        and entry.get("online") is True
+                    ):
+                        peer_id = str(
+                            entry.get("peer_id")
+                            or entry.get("peerId")
+                            or ""
+                        )
+                        if peer_id:
+                            return peer_id
+            time.sleep(0.1)
+        raise ClientBindingError(
+            code="BINDING_PROOF_ABSENT",
+            numeric_code=20201,
+            stage="post-launch",
+            client_id=client_id,
+            binding_role=binding_role,
+            detail=(
+                "running client did not expose a live bound Station identity; "
+                f"last station_list={latest!r}"
+            ),
+            result="UNPROVEN",
+        )
+
+    def _client_runtime_identity(
+        self,
+        client_id: str,
+        generation: int,
+        session: TauriSession,
+    ) -> ClientRuntimeIdentity:
+        payload = {
+            "cellId": self.cell_id,
+            "clientId": client_id,
+            "launchGeneration": generation,
+            "processId": session.process_id,
+            "webdriverPort": session.port,
+            "gatewayPort": session.gateway_port,
+            "profile": session.profile,
+            "storageRoot": session.storage_root,
+        }
+        digest = hashlib.sha256(
+            json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        return ClientRuntimeIdentity(
+            runtime="native-tauri",
+            instance_id=f"{client_id}-generation-{generation}",
+            identity_digest=digest,
+        )
 
     @property
     @abstractmethod
@@ -197,7 +508,7 @@ class NativeDesktopRuntimeBinding(ABC):
         ...
 
     @abstractmethod
-    def create_session(
+    def _create_session(
         self,
         client_role: str,
         client_spec: Mapping[str, Any],
@@ -206,7 +517,11 @@ class NativeDesktopRuntimeBinding(ABC):
         ...
 
     @abstractmethod
-    def expose_orchestrator_endpoint(self, url: str) -> RuntimeEndpoint:
+    def _expose_transport_endpoint(self, url: str) -> tuple[str, str]:
+        ...
+
+    @abstractmethod
+    def _release_transport_endpoint(self, endpoint_lease_id: str) -> None:
         ...
 
     @abstractmethod
@@ -261,13 +576,18 @@ class NativeDesktopRuntimeBinding(ABC):
         ...
 
 
-class RemoteLinuxNativeDesktopAdapter(NativeDesktopAdapter):
-    def __init__(self, cell: LinuxRuntimeCell) -> None:
+class RemoteNativeDesktopAdapter(NativeDesktopAdapter):
+    def __init__(
+        self,
+        cell: RemoteNativeRuntimeCellLifecycle,
+        platform: str,
+    ) -> None:
         self._cell = cell
+        self._platform = platform
 
     @property
     def platform(self) -> str:
-        return "linux"
+        return self._platform
 
     def activate_process(self, process_id: int) -> None:
         self._execute("activate_process", {"processId": process_id})
@@ -280,6 +600,24 @@ class RemoteLinuxNativeDesktopAdapter(NativeDesktopAdapter):
         self._execute(
             "post_mouse",
             {
+                "actions": [action.value for action in actions],
+                "point": list(point),
+            },
+        )
+
+    def post_mouse_to_process(
+        self,
+        process_id: int,
+        actions: tuple[MouseAction, ...],
+        point: tuple[float, float],
+    ) -> None:
+        if self._platform != "win32":
+            super().post_mouse_to_process(process_id, actions, point)
+            return
+        self._execute(
+            "post_mouse_to_process",
+            {
+                "processId": process_id,
                 "actions": [action.value for action in actions],
                 "point": list(point),
             },
@@ -303,14 +641,79 @@ class RemoteLinuxNativeDesktopAdapter(NativeDesktopAdapter):
             },
         )
 
+    def post_key_to_process(
+        self,
+        process_id: int,
+        key: NativeKey,
+        *,
+        modifiers: tuple[NativeModifier, ...] = (),
+        text: str = "",
+        private_source: bool = False,
+    ) -> None:
+        if self._platform != "win32":
+            super().post_key_to_process(
+                process_id,
+                key,
+                modifiers=modifiers,
+                text=text,
+                private_source=private_source,
+            )
+            return
+        self._execute(
+            "post_key_to_process",
+            {
+                "processId": process_id,
+                "key": key.value,
+                "modifiers": [modifier.value for modifier in modifiers],
+                "text": text,
+                "privateSource": private_source,
+            },
+        )
+
+    def post_key_sequence_to_process(
+        self,
+        process_id: int,
+        keys: tuple[NativeKey, ...],
+        *,
+        interval_seconds: float = 0.1,
+        private_source: bool = False,
+    ) -> None:
+        if self._platform != "win32":
+            super().post_key_sequence_to_process(
+                process_id,
+                keys,
+                interval_seconds=interval_seconds,
+                private_source=private_source,
+            )
+            return
+        self._execute(
+            "post_key_sequence_to_process",
+            {
+                "processId": process_id,
+                "keys": [key.value for key in keys],
+                "intervalSeconds": interval_seconds,
+                "privateSource": private_source,
+            },
+        )
+
     def reveal_file_chooser_location(self) -> None:
         self._execute("reveal_file_chooser_location", {})
 
-    def focused_control(self, process_id: int) -> NativeControlSnapshot:
-        payload = self._execute(
-            "focused_control",
-            {"processId": process_id},
+    def reveal_file_chooser_location_to_process(
+        self,
+        process_id: int,
+    ) -> NativeControlSnapshot | None:
+        if self._platform != "win32":
+            return super().reveal_file_chooser_location_to_process(process_id)
+        return self._control_snapshot(
+            self._execute(
+                "reveal_file_chooser_location_to_process",
+                {"processId": process_id},
+            )
         )
+
+    @staticmethod
+    def _control_snapshot(payload: dict[str, Any]) -> NativeControlSnapshot:
         return NativeControlSnapshot(
             kind=str(payload.get("kind") or "unknown"),
             title=str(payload.get("title") or ""),
@@ -326,6 +729,26 @@ class RemoteLinuxNativeDesktopAdapter(NativeDesktopAdapter):
             platform_role=str(payload.get("platformRole") or ""),
             platform_subrole=str(payload.get("platformSubrole") or ""),
             error=str(payload.get("error") or ""),
+        )
+
+    def focused_control(self, process_id: int) -> NativeControlSnapshot:
+        payload = self._execute(
+            "focused_control",
+            {"processId": process_id},
+        )
+        return self._control_snapshot(payload)
+
+    def activate_and_focused_control(
+        self,
+        process_id: int,
+    ) -> NativeControlSnapshot:
+        if self._platform != "win32":
+            return super().activate_and_focused_control(process_id)
+        return self._control_snapshot(
+            self._execute(
+                "activate_process",
+                {"processId": process_id},
+            )
         )
 
     def window_stack_at_point(
@@ -389,7 +812,7 @@ class RemoteLinuxNativeDesktopAdapter(NativeDesktopAdapter):
         path.write_bytes(content)
         if not content:
             raise DriverError(
-                "remote Linux Native screenshot returned empty content"
+                f"remote {self._platform} Native screenshot returned empty content"
             )
 
     def read_clipboard(self) -> bytes:
@@ -409,13 +832,13 @@ class RemoteLinuxNativeDesktopAdapter(NativeDesktopAdapter):
         encoded = self._execute(operation, payload).get("content")
         if not isinstance(encoded, str):
             raise DriverError(
-                f"remote Linux Native {operation} omitted content"
+                f"remote {self._platform} Native {operation} omitted content"
             )
         try:
             return base64.b64decode(encoded, validate=True)
         except ValueError as error:
             raise DriverError(
-                f"remote Linux Native {operation} returned invalid content"
+                f"remote {self._platform} Native {operation} returned invalid content"
             ) from error
 
     def _execute(
@@ -429,38 +852,48 @@ class RemoteLinuxNativeDesktopAdapter(NativeDesktopAdapter):
             raise
         except Exception as error:
             raise DriverError(
-                f"remote Linux Native {operation} failed: {error}"
+                f"remote {self._platform} Native {operation} failed: {error}"
             ) from error
 
 
-class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
+class RemoteNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
     def __init__(
         self,
+        cell_id: str,
+        adapter_platform: str,
         gate_id: str,
         source_commit: str,
-        cell: LinuxRuntimeCell | None = None,
+        cell: RemoteNativeRuntimeCellLifecycle | None = None,
     ) -> None:
         super().__init__()
         if cell is None:
-            from tooling.acceptance.provisioners.native_desktop_linux import (
-                NativeDesktopLinuxProvisioner,
+            from tooling.acceptance.provisioners import (
+                get_runtime_cell_lifecycle,
             )
 
-            cell = NativeDesktopLinuxProvisioner()
+            cell = cast(
+                RemoteNativeRuntimeCellLifecycle,
+                get_runtime_cell_lifecycle(cell_id),
+            )
         cell.validate_binding(gate_id, source_commit)
+        self._cell_id = cell_id
+        self._adapter_platform = adapter_platform
         self._cell = cell
-        self._native_adapter = RemoteLinuxNativeDesktopAdapter(cell)
+        self._native_adapter = RemoteNativeDesktopAdapter(
+            cell,
+            adapter_platform,
+        )
         self._endpoint_ids: list[str] = []
 
     @property
     def cell_id(self) -> str:
-        return "desktop-linux-native"
+        return self._cell_id
 
     @property
     def native_adapter(self) -> NativeDesktopAdapter:
         return self._native_adapter
 
-    def create_session(
+    def _create_session(
         self,
         client_role: str,
         client_spec: Mapping[str, Any],
@@ -473,17 +906,22 @@ class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
         )
         return TauriSession(launcher)
 
-    def expose_orchestrator_endpoint(self, url: str) -> RuntimeEndpoint:
+    def _expose_transport_endpoint(self, url: str) -> tuple[str, str]:
         endpoint_id = f"orchestrator-endpoint-{len(self._endpoint_ids) + 1}"
         exposed = self._cell.expose_orchestrator_endpoint(endpoint_id, url)
         exposed_id = str(exposed.get("endpointId") or "")
         exposed_url = str(exposed.get("url") or "")
         if exposed_id != endpoint_id or not exposed_url:
             raise DriverError(
-                "Linux runtime-cell returned an invalid endpoint lease"
+                f"{self.cell_id} returned an invalid endpoint lease"
             )
         self._endpoint_ids.append(endpoint_id)
-        return RuntimeEndpoint(url=exposed_url, lease_id=endpoint_id)
+        return exposed_url, endpoint_id
+
+    def _release_transport_endpoint(self, endpoint_lease_id: str) -> None:
+        self._cell.release_endpoint(endpoint_lease_id)
+        if endpoint_lease_id in self._endpoint_ids:
+            self._endpoint_ids.remove(endpoint_lease_id)
 
     def stage_native_file(
         self,
@@ -492,9 +930,14 @@ class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
     ) -> Path:
         staged = self._cell.stage_actor_file(actor, source)
         path = Path(staged)
-        if not path.is_absolute():
+        is_absolute = (
+            PureWindowsPath(staged).is_absolute()
+            if self._adapter_platform == "win32"
+            else path.is_absolute()
+        )
+        if not is_absolute:
             raise DriverError(
-                "Linux runtime-cell returned a relative staged file path"
+                f"{self.cell_id} returned a relative staged file path"
             )
         return path
 
@@ -540,6 +983,8 @@ class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
         client_specs: Mapping[str, Mapping[str, Any]],
     ) -> dict[str, Any]:
         del client_specs
+        self._transport_overrides.clear()
+        self._sessions_by_client.clear()
         endpoint_releases: list[dict[str, Any]] = []
         endpoint_errors: list[dict[str, str]] = []
         for endpoint_id in reversed(self._endpoint_ids):
@@ -581,6 +1026,38 @@ class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
         }
 
 
+class LinuxNativeDesktopRuntimeBinding(RemoteNativeDesktopRuntimeBinding):
+    def __init__(
+        self,
+        gate_id: str,
+        source_commit: str,
+        cell: RemoteNativeRuntimeCellLifecycle | None = None,
+    ) -> None:
+        super().__init__(
+            "desktop-linux-native",
+            "linux",
+            gate_id,
+            source_commit,
+            cell,
+        )
+
+
+class WindowsNativeDesktopRuntimeBinding(RemoteNativeDesktopRuntimeBinding):
+    def __init__(
+        self,
+        gate_id: str,
+        source_commit: str,
+        cell: RemoteNativeRuntimeCellLifecycle | None = None,
+    ) -> None:
+        super().__init__(
+            "desktop-windows-native",
+            "win32",
+            gate_id,
+            source_commit,
+            cell,
+        )
+
+
 class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
     def __init__(self) -> None:
         super().__init__()
@@ -603,7 +1080,7 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
     def native_adapter(self) -> NativeDesktopAdapter:
         return self._native_adapter
 
-    def create_session(
+    def _create_session(
         self,
         client_role: str,
         client_spec: Mapping[str, Any],
@@ -621,8 +1098,11 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             )
         )
 
-    def expose_orchestrator_endpoint(self, url: str) -> RuntimeEndpoint:
-        return RuntimeEndpoint(url=url, lease_id="local-direct")
+    def _expose_transport_endpoint(self, url: str) -> tuple[str, str]:
+        return url, f"local-direct-{secrets.token_hex(8)}"
+
+    def _release_transport_endpoint(self, endpoint_lease_id: str) -> None:
+        del endpoint_lease_id
 
     def stage_native_file(
         self,
@@ -776,6 +1256,8 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
         sessions: Sequence[TauriSession],
         client_specs: Mapping[str, Mapping[str, Any]],
     ) -> dict[str, Any]:
+        self._transport_overrides.clear()
+        self._sessions_by_client.clear()
         ports = sorted(
             {
                 int(spec[field])
@@ -948,7 +1430,8 @@ def resolve_native_desktop_runtime(
             source_commit,
         )
     if cell_id == "desktop-windows-native":
-        raise DriverError(
-            "desktop-windows-native runtime binding is not implemented"
+        return WindowsNativeDesktopRuntimeBinding(
+            gate_id,
+            source_commit,
         )
     raise DriverError(f"unknown Native Desktop runtime cell {cell_id!r}")

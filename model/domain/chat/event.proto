@@ -57,27 +57,29 @@ message ConversationCreatedFact {
   ConversationKind kind = 1;
   string name = 2;
   string owner_ptid = 3;
-  repeated string member_ptids = 4;
-  ConversationAuthoritySnapshot post_state = 5;
+  reserved 4;
+  reserved "member_ptids";
+  repeated ConversationAuthorityMember members = 5;
+  ConversationAuthoritySnapshot post_state = 6;
 }
 
 message MessagingMembershipChangeCommitted {
   MessagingMembershipAction action = 1;
   string ptid = 2;
   string device_id = 3;
-  string home_station_id = 4;
+  string home_station_peer_id = 4;
   string role = 5;
 }
 
 message ConversationAuthorityMember {
   string ptid = 1;
   string role = 2;
-  string home_station_id = 3;
+  string home_station_peer_id = 3;
 }
 
 message ConversationAuthorityEndpoint {
   CryptoEndpoint endpoint = 1;
-  string home_station_id = 2;
+  string home_station_peer_id = 2;
 }
 
 // Complete public state after one membership transition. It is embedded in
@@ -154,7 +156,7 @@ message ConversationEvent {
   repeated bytes delivery_commitments = 9;
   int64 membership_epoch = 10;
   int64 mls_epoch = 11;
-  string authority_station_id = 12;
+  string authority_station_peer_id = 12;
 
   oneof payload {
     MessageCommittedFact message_committed = 20;
@@ -167,6 +169,27 @@ message ConversationEvent {
     ConversationCreatedFact conversation_created = 27;
     ConversationDissolvedFact conversation_dissolved = 28;
   }
+}
+
+message ConversationCommandProposalResult {
+  string command_id = 1;
+  bool accepted = 2;
+  ConversationEvent event = 3;
+  reserved "committed_event";
+  ConversationCommandRejectCode reject_code = 4;
+  bool retryable = 5;
+  int64 retry_after_unix_ms = 6;
+  int64 required_membership_epoch = 7;
+  int64 required_mls_epoch = 8;
+  int64 authority_sequence = 9;
+  bytes authority_event_hash = 10;
+}
+
+message ConversationCommandResultDelivery {
+  string conversation_id = 1;
+  string command_id = 2;
+  ConversationCommandSubmissionState state = 3;
+  ConversationCommandProposalResult result = 4;
 }
 
 // One authority event plus exactly one endpoint-private payload. The queue

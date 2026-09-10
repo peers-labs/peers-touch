@@ -3,9 +3,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const commandMock = vi.hoisted(() => vi.fn());
+const friendRequestSendMock = vi.hoisted(() => vi.fn());
+const friendRequestAcceptMock = vi.hoisted(() => vi.fn());
+const friendRequestRejectMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./gatewayTypes', () => ({
   createGatewayTransport: () => ({ command: commandMock }),
+}));
+vi.mock('../mobileCommands', () => ({
+  socialFriendRequestSend: friendRequestSendMock,
+  socialFriendRequestAccept: friendRequestAcceptMock,
+  socialFriendRequestReject: friendRequestRejectMock,
 }));
 
 import type { MobileAuthSession } from '../../features/auth/authSession';
@@ -25,37 +33,51 @@ beforeEach(() => {
 });
 
 describe('createSocialGateway Friend Request routes', () => {
-  it('maps Friend Request operations to the Station Social owner', async () => {
+  it('routes Friend Request writes through the Mobile Rust signer', async () => {
     commandMock.mockResolvedValue({ ok: true, data: {} });
+    friendRequestSendMock.mockResolvedValue({});
+    friendRequestAcceptMock.mockResolvedValue({});
+    friendRequestRejectMock.mockResolvedValue({});
     const gateway = createSocialGateway(session);
+    const request = {
+      requestId: 'request-id',
+      federationId: 'federation-1',
+      senderPtid: 'ptid:alice',
+      receiverPtid: 'ptid:bob',
+      senderHomeStationPeerId: 'station-a',
+      receiverHomeStationPeerId: 'station-peer',
+    };
 
     await gateway.listFriendRequests(2, 25, 5);
-    await gateway.sendFriendRequest('bob', 'hello');
-    await gateway.acceptFriendRequest('accept-id');
-    await gateway.rejectFriendRequest('reject-id');
+    await gateway.sendFriendRequest('ptid:bob', 'station-b', 'federation-1', 'hello');
+    await gateway.acceptFriendRequest(request);
+    await gateway.rejectFriendRequest(request);
 
     expect(commandMock.mock.calls.map(([request]) => request)).toEqual([
       {
         method: 'GET',
         path: '/api/v1/social/friend-requests',
-        query: { status: 2, limit: 25, offset: 5 },
-      },
-      {
-        method: 'POST',
-        path: '/api/v1/social/friend-request/send',
-        body: { receiver_ptid: 'bob', message: 'hello' },
-      },
-      {
-        method: 'POST',
-        path: '/api/v1/social/friend-request/accept',
-        body: { request_id: 'accept-id' },
-      },
-      {
-        method: 'POST',
-        path: '/api/v1/social/friend-request/reject',
-        body: { request_id: 'reject-id' },
+        query: { state: 2, limit: 25, offset: 5 },
       },
     ]);
+    expect(friendRequestSendMock).toHaveBeenCalledWith({
+      stationPeerId: 'station-peer',
+      actorPtid: 'alice',
+      receiverPtid: 'ptid:bob',
+      receiverHomeStationPeerId: 'station-b',
+      federationId: 'federation-1',
+      message: 'hello',
+    });
+    expect(friendRequestAcceptMock).toHaveBeenCalledWith({
+      stationPeerId: 'station-peer',
+      actorPtid: 'alice',
+      ...request,
+    });
+    expect(friendRequestRejectMock).toHaveBeenCalledWith({
+      stationPeerId: 'station-peer',
+      actorPtid: 'alice',
+      ...request,
+    });
   });
 
   it('uses the canonical Conversation member settings routes and readback', async () => {

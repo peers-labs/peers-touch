@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 
+from tooling.acceptance.core import GateError
+from tooling.acceptance.gates.chat.contact_message_resilience_runner import (
+    ContactMessageResilienceGate,
+)
 from tooling.acceptance.gates.chat.native_interactions_runner import (
+    NativeInteractionsGate,
     station_mutation_fingerprint,
 )
 
@@ -63,6 +69,9 @@ class NativeInteractionContractsTest(unittest.TestCase):
         row = self.source(
             "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
         )
+        overlay = self.source(
+            "apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx"
+        )
         area = self.source("apps/desktop/src/components/chat/ChatMessageArea.tsx")
         thread = self.source("apps/desktop/src/components/chat/ChatThreadPanel.tsx")
         for selector in (
@@ -70,6 +79,9 @@ class NativeInteractionContractsTest(unittest.TestCase):
             'data-message-action="retract"',
             'data-message-action="reaction"',
             'data-message-action="pin"',
+        ):
+            self.assertIn(selector, overlay)
+        for selector in (
             "data-message-edited=",
             "data-message-retracted=",
             "data-message-reply-to=",
@@ -147,7 +159,9 @@ class NativeInteractionContractsTest(unittest.TestCase):
             "selected runtime cell requires injected runtime resources",
             "runtime_binding.cell_id != selected_cell",
             "self.runtime_binding.create_bound_session(",
-            "self.runtime_binding.expose_orchestrator_endpoint(proxy.url).url",
+            "self.runtime_binding.create_transport_override(",
+            "self.runtime_binding.apply_transport_override(",
+            "self.runtime_binding.clear_transport_override(",
             "native_runtime_source_identity(",
             "self.runtime_binding.finalize_cleanup(",
             'bool(cleanup.get("processesReleased"))',
@@ -155,17 +169,8 @@ class NativeInteractionContractsTest(unittest.TestCase):
             '"hydrateActiveActor"',
         ):
             self.assertIn(required, source)
-        self.assertIn(
-            "if self.runtime_binding is None:\n"
-            "            return start_authenticated_client(",
-            source,
-        )
-        self.assertIn(
-            "if self.runtime_binding is None:\n"
-            "            try:\n"
-            "                acceptance_station_environment(self.station_url)",
-            source,
-        )
+        self.assertNotIn("expose_orchestrator_endpoint(", source)
+        self.assertNotIn("start_authenticated_client(", source)
 
     def test_selected_runtime_rejects_uninjected_gate_construction(self) -> None:
         previous = os.environ.get("PT_ACCEPTANCE_RUNTIME_CELL")
@@ -262,14 +267,14 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertNotIn("CancelPendingMessagingCommand", source)
         self.assertNotIn("cancel_pending", source)
 
-    def test_timeout_retry_uses_profile_three_fault_proxy(self) -> None:
+    def test_timeout_retry_uses_disposable_station_fault_proxy(self) -> None:
         runner = self.source(
             "tooling/acceptance/gates/chat/native_interactions_runner.py"
         )
         proxy = self.source(
             "tooling/acceptance/fixtures/chat_submit_fault_proxy.py"
         )
-        self.assertIn("ProfileThreeSubmitFaultProxy", runner)
+        self.assertIn("AcceptanceStationSubmitFaultProxy", runner)
         self.assertIn("arm_connection_loss", runner)
         self.assertNotIn('"messaging_dispatch"', runner)
         self.assertNotIn('"messaging_drain"', runner)
@@ -278,12 +283,15 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn('"engineInteractionSnapshot"', runner)
         self.assertIn('"retry_wait"', runner)
         self.assertIn("receiverVisibleCount", runner)
-        self.assertIn('SUBMIT_PATH = "/conversation/command"', proxy)
+        self.assertIn(
+            'CONVERSATION_COMMAND_PATH = "/conversation/command"',
+            proxy,
+        )
         self.assertNotIn('"/messaging/', proxy)
         self.assertIn("acceptance_station_environment(station_url)", proxy)
         self.assertIn("requestSha256", proxy)
         self.assertIn("commandSha256", proxy)
-        self.assertIn("_submit_command_bytes", proxy)
+        self.assertIn("_authority_command_bytes", proxy)
         self.assertNotIn("localhost:18080", proxy)
 
     def test_native_interactions_use_window_owned_membership_and_engine(self) -> None:
@@ -308,13 +316,17 @@ class NativeInteractionContractsTest(unittest.TestCase):
         fixture = self.source(
             "tooling/acceptance/fixtures/chat_native_reset.py"
         )
-        self.assertIn("restart_profile_three_station", runner)
+        self.assertIn("restart_acceptance_station", runner)
         self.assertNotIn('"station-restart"', runner)
         self.assertIn("CHAT_ACCEPTANCE_ALLOW_STATION_RESTART", fixture)
         self.assertIn("docker restart", fixture)
         self.assertIn(".State.StartedAt", fixture)
         self.assertIn("parsed_url.hostname != host", fixture)
-        self.assertIn("parsed_url.port != 18080", fixture)
+        self.assertIn("parsed_url.port != expected.port", fixture)
+        self.assertIn("PT_ACCEPTANCE_DISPOSABLE", fixture)
+        self.assertIn("PT_ACCEPTANCE_COMPOSE_PROJECT", fixture)
+        self.assertIn("PT_ACCEPTANCE_POSTGRES_VOLUME", fixture)
+        self.assertIn("verify_disposable_station_runtime", fixture)
         self.assertIn("beforeCommit", fixture)
         self.assertIn("afterCommit", fixture)
         self.assertIn("lane_row.next_sequence + 1", fixture)
@@ -383,30 +395,63 @@ class ContactMessageResilienceTest(unittest.TestCase):
     def source(self, path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
 
-    def test_message_button_navigates_before_create_direct_resolves(self) -> None:
-        src = self.source(
+    def test_message_button_opens_peer_bound_recovery_surface(self) -> None:
+        contacts = self.source(
             "apps/desktop/src/components/chat/ChatContactsDetailPanel.tsx"
         )
-        create_direct_pos = src.find("createDirect(peerPtid)")
+        page = self.source("apps/desktop/src/pages/SocialChatPage.tsx")
+        area = self.source(
+            "apps/desktop/src/components/chat/ChatMessageArea.tsx"
+        )
+        runner = self.source(
+            "tooling/acceptance/gates/chat/contact_message_resilience_runner.py"
+        )
+
+        self.assertIn("onMessage(selectedContact)", contacts)
+        self.assertNotIn("messaging.createDirect", contacts)
+
+        intent_pos = page.find("setDirectOpenIntent(intent)")
+        create_direct_pos = page.find(
+            "imServiceV1.messaging.createDirect({"
+        )
+        navigation_pos = page.find("setSubPage('chats')", intent_pos)
         self.assertGreater(
             create_direct_pos, 0,
-            "handleMessage must call imServiceV1.messaging.createDirect",
+            "SocialChatPage must own the Direct-open command lifecycle",
         )
-        set_opening_pos = src.rfind("setOpeningConversation(true)", 0, create_direct_pos)
-        on_message_before_create = src.rfind("onMessage()", set_opening_pos, create_direct_pos)
         self.assertGreater(
-            on_message_before_create, set_opening_pos,
-            "onMessage() must be called BEFORE createDirect resolves; "
-            "navigation must not be blocked by async API failure",
+            intent_pos, 0,
+            "peer-bound intent must be published before the command starts",
         )
-        try_block_start = src.find("try {", on_message_before_create)
-        self.assertGreater(try_block_start, on_message_before_create)
-        self.assertGreater(create_direct_pos, try_block_start)
-        catch_block = src.find("} catch", create_direct_pos)
-        self.assertGreater(catch_block, create_direct_pos)
+        self.assertGreater(navigation_pos, intent_pos)
+        self.assertGreater(create_direct_pos, navigation_pos)
+        create_direct_end = page.find("}).then((conversation)", create_direct_pos)
+        self.assertGreater(create_direct_end, create_direct_pos)
         self.assertIn(
-            "presentError", src[create_direct_pos:catch_block + 200],
-            "errors must be presented within the already-open chat view",
+            "peerPtid: contact.peerPtid",
+            page[create_direct_pos:create_direct_end],
+        )
+        self.assertIn(
+            "federationId: contact.federationId",
+            page[create_direct_pos:create_direct_end],
+        )
+        self.assertIn("mode: 'inline'", page)
+        self.assertIn("failDirectConversationOpen", page)
+
+        for selector in (
+            "data-chat-conversation-intent=",
+            "data-chat-conversation-intent-state=",
+            "data-chat-conversation-intent-error=",
+            "data-chat-conversation-intent-retry",
+        ):
+            self.assertIn(selector, area)
+
+        self.assertIn("peer_bound_conversation_intent_visible", runner)
+        self.assertIn("error_displayed_in_peer_bound_view", runner)
+        self.assertIn("conversation_retry_visible", runner)
+        self.assertNotIn(
+            "self._chats_subpage_active() or self._chat_area_visible()",
+            runner,
         )
 
     def test_runner_binds_selected_runtime_cell(self) -> None:
@@ -419,7 +464,9 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "selected runtime cell requires injected runtime resources",
             "runtime_binding.cell_id != selected_cell",
             "self.runtime_binding.create_bound_session(",
-            "self.runtime_binding.expose_orchestrator_endpoint(",
+            "self.runtime_binding.create_transport_override(",
+            "self.runtime_binding.apply_transport_override(",
+            "self.runtime_binding.clear_transport_override(",
             "native_runtime_source_identity(",
             "self.runtime_binding.finalize_cleanup(",
             'bool(cleanup.get("processesReleased"))',
@@ -427,29 +474,27 @@ class ContactMessageResilienceTest(unittest.TestCase):
             '"hydrateActiveActor"',
         ):
             self.assertIn(required, source)
-        self.assertIn(
-            "if self.runtime_binding is None:\n"
-            "            return start_authenticated_client(",
-            source,
-        )
-        self.assertIn(
-            "if self.runtime_binding is None:\n"
-            "            try:\n"
-            "                acceptance_station_environment(self.station_url)",
-            source,
-        )
+        self.assertNotIn("expose_orchestrator_endpoint(", source)
+        self.assertNotIn("start_authenticated_client(", source)
 
 
     def test_engine_has_stale_enrollment_recovery(self) -> None:
         src = self.source("apps/desktop/src-tauri/src/messaging/engine.rs")
+        enrollment = self.source(
+            "packages/messaging-core/src/identity/enrollment.rs"
+        )
         self.assertIn(
             "recover_stale_enrollment", src,
             "engine must provide recover_stale_enrollment for endpoint-not-active recovery",
         )
         self.assertIn(
-            "endpoint is not active", src,
-            "engine must detect 'endpoint is not active' Station errors",
+            "is_stale_endpoint_error", src,
+            "engine must delegate stale endpoint detection to the portable owner",
         )
+        helper = enrollment.find("pub fn is_stale_endpoint_error")
+        self.assertGreater(helper, 0)
+        self.assertIn("endpoint is not active", enrollment[helper:helper + 400])
+        self.assertIn("station returned 403", enrollment[helper:helper + 400])
         create_direct = src.find("fn create_direct_conversation")
         self.assertGreater(create_direct, 0)
 
@@ -459,10 +504,10 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "create_direct_conversation must delegate to try_create_direct_conversation",
         )
 
-        guard = src.find("endpoint is not active", first_attempt)
+        guard = src.find("is_stale_endpoint_error", first_attempt)
         self.assertGreater(
             guard, first_attempt,
-            "recovery must be guarded by 'endpoint is not active' error match",
+            "recovery must be guarded by is_stale_endpoint_error",
         )
 
         recovery = src.find("recover_stale_enrollment", guard)
@@ -481,11 +526,17 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "try_create_direct_conversation must be RETRIED after re-enrollment; "
             "without the retry the recovery has no effect",
         )
+        recovery_block = src[recovery:enroll]
+        self.assertNotIn(
+            "if self.recover_stale_enrollment",
+            recovery_block,
+            "pending enrollment must proceed even when reset was already pending",
+        )
 
         non_matching_arm = src.find("Err(error) => Err(error)", retry)
         self.assertGreater(
             non_matching_arm, 0,
-            "non-'endpoint is not active' errors must pass through without recovery",
+            "non-stale-endpoint errors must pass through without recovery",
         )
 
     def test_store_has_reset_device_enrollment(self) -> None:
@@ -513,10 +564,6 @@ class ContactMessageResilienceTest(unittest.TestCase):
     def test_lifecycle_recovers_stale_enrollment(self) -> None:
         src = self.source("apps/desktop/src-tauri/src/messaging/lifecycle.rs")
         self.assertIn(
-            "endpoint is not active", src,
-            "lifecycle must detect 'endpoint is not active' in cycle failures",
-        )
-        self.assertIn(
             "recover_stale_enrollment", src,
             "lifecycle must call engine.recover_stale_enrollment on stale endpoint errors",
         )
@@ -536,6 +583,11 @@ class ContactMessageResilienceTest(unittest.TestCase):
             err_return, recovery,
             "the cycle error must still be propagated as Err(combined) after "
             "attempting recovery; recovery is a side-effect, not a success override",
+        )
+        self.assertNotIn(
+            'combined.contains("endpoint is not active")',
+            src,
+            "lifecycle must delegate stale-endpoint classification to the engine",
         )
 
     def test_contact_double_click_starts_chat(self) -> None:
@@ -682,79 +734,27 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "ChatMessageArea must restore the incoming conversation draft after saving",
         )
 
-    def test_station_member_index_repair_is_idempotent_and_correct(self) -> None:
-        src = self.source(
-            "apps/station/app/subserver/conversation/repository.go"
+    def test_station_member_schema_uses_canonical_composite_identity(self) -> None:
+        models = self.source(
+            "apps/station/app/subserver/conversation/infrastructure/persistence/models.go"
         )
         self.assertIn(
-            "func repairMemberIndex", src,
-            "repository must provide repairMemberIndex to migrate the legacy "
-            "actor_did index to ptid-based index",
-        )
-
-        self.assertIn(
-            'columns[1].ColumnName != "ptid"', src,
-            "repairMemberIndex must repair every non-PTID member index shape",
-        )
-
-        early_return = src.find("len(columns) == 0")
-        self.assertGreater(
-            early_return, 0,
-            "repairMemberIndex must return early when the index does not exist "
-            "(fresh install), avoiding unnecessary DDL",
-        )
-
-        drop_old = src.find("DROP INDEX IF EXISTS idx_member_conv_actor")
-        create_new = src.find(
-            "CREATE UNIQUE INDEX idx_member_conv_actor",
-            drop_old,
-        )
-        self.assertGreater(
-            drop_old, 0,
-            "repair must DROP the legacy index before creating the new one",
-        )
-        self.assertGreater(
-            create_new, drop_old,
-            "repair must CREATE the new unique index after dropping the old one",
+            'ConversationID string `gorm:"column:conversation_id;size:128;primaryKey"`',
+            models,
         )
         self.assertIn(
-            "(conversation_id, ptid)",
-            src[create_new:create_new + 200],
-            "new idx_member_conv_actor must be on (conversation_id, ptid)",
+            'PTID           string `gorm:"column:ptid;size:255;primaryKey;index"`',
+            models,
         )
-
-        drop_secondary = src.find(
-            "DROP INDEX IF EXISTS idx_member_actor", create_new,
-        )
-        create_secondary = src.find(
-            "CREATE INDEX idx_member_actor", drop_secondary,
-        )
-        self.assertGreater(
-            drop_secondary, create_new,
-            "repair must also DROP the legacy idx_member_actor secondary index",
-        )
-        self.assertGreater(
-            create_secondary, drop_secondary,
-            "repair must CREATE the replacement idx_member_actor on (ptid)",
+        composition = self.source(
+            "apps/station/app/subserver/conversation/production_composition.go"
         )
         self.assertIn(
-            "(ptid)", src[create_secondary:create_secondary + 100],
-            "replacement idx_member_actor must be on (ptid)",
+            "&persistence.ConversationMemberModel{}",
+            composition,
+            "production composition must migrate the canonical member model",
         )
-
-        subserver = self.source(
-            "apps/station/app/subserver/conversation/subserver.go"
-        )
-        self.assertIn(
-            "repairMemberIndex(rds)", subserver,
-            "subserver Init must call repairMemberIndex during startup",
-        )
-        init_pos = subserver.find("func (s *subServer) Init")
-        call_pos = subserver.find("repairMemberIndex(rds)", init_pos)
-        self.assertGreater(
-            call_pos, init_pos,
-            "repairMemberIndex must be called within the Init function",
-        )
+        self.assertNotIn("repairMemberIndex", composition)
 
     def test_toast_host_is_mounted_at_app_root(self) -> None:
         src = self.source("apps/desktop/src/main.tsx")

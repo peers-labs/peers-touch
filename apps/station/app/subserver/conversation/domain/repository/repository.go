@@ -235,6 +235,11 @@ type FollowerRepository interface {
 		conversationID valueobject.ConversationID,
 	) (FollowerProjection, error)
 	ListByActor(ctx context.Context, actor valueobject.PTID) ([]FollowerProjection, error)
+	ListByStatus(
+		ctx context.Context,
+		status FollowerStatus,
+		limit int,
+	) ([]FollowerProjection, error)
 	Apply(ctx context.Context, projection FollowerProjection, event domainevent.Record) error
 	Buffer(ctx context.Context, event domainevent.Record) error
 	GetBuffered(

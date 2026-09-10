@@ -1,6 +1,7 @@
 mod attachment;
 mod attachment_transfer;
 mod command_outbox;
+mod command_result;
 mod consumer;
 mod conversation_state;
 mod direct;
@@ -84,6 +85,7 @@ pub use command_outbox::{
     CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy, CommandSubmitFailure,
     CommandTransport,
 };
+pub use command_result::CommandResultProcessor;
 pub use consumer::MessagingItemConsumer;
 pub use conversation_state::ConversationStateProcessor;
 pub use direct::DirectMessageProcessor;
@@ -124,14 +126,14 @@ pub use recovery::{
 pub use send::{DirectSessionBootstrap, EditTextIntent, SendPreparer, SendTextIntent};
 pub use store::{
     ActorReadReceiveCommit, AttachmentDownloadProjection, CommandOutboxEntry,
-    CommandStatusProjection, ConversationMemberProjection, ConversationMessageProjection,
-    ConversationProjection, ConversationStateReceiveCommit, DeliveryReceiptOutboxEntry,
-    DeliveryReceiptReceiveCommit, DirectEditCommit, DirectReceiveCommit, DirectSendCommit,
-    InteractionCommandCommit, MessageProjection, MessagingStore, MlsReceiveCommit,
-    MlsRetirementReceiveCommit, MlsSendCommit, MlsSenderTransitionReceiveCommit,
-    MlsTransitionReceiveCommit, PendingAttachmentUpload, PendingMembershipIntent,
-    PendingMessageDraft, PendingMlsTransitionState, PendingSenderProjection,
-    PublicEventReceiveCommit, ReceiveCommitResult,
+    CommandResultDisposition, CommandResultReceiveCommit, CommandStatusProjection,
+    ConversationMemberProjection, ConversationMessageProjection, ConversationProjection,
+    ConversationStateReceiveCommit, DeliveryReceiptReceiveCommit, DirectEditCommit,
+    DirectReceiveCommit, DirectSendCommit, InteractionCommandCommit, MessageProjection,
+    MessagingStore, MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit,
+    MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, PendingAttachmentUpload,
+    PendingMembershipIntent, PendingMessageDraft, PendingMlsTransitionState,
+    PendingSenderProjection, PublicEventReceiveCommit, ReceiveCommitResult, ThreadCountProjection,
 };
 pub use transport::{
     StationCommandTransport, StationDeliveryReceiptTransport, StationDeviceTransport,
