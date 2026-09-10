@@ -251,7 +251,7 @@ Parallel policy:
 | W0 Contract/Evidence/Gates | complete | Owner EXECUTE approval received; W0 verification and completion audit PASS |
 | F1 Agent/Conversation Authority | complete | W0 complete |
 | F2 Runtime/Stream/Capability/Portability | implementation checks complete: Q4 C06 and Q5/Q6 C10 source closures pass; product proof remains pending G-F | F1 |
-| F3 Context/Resource Intelligence | C04 core and C08 product source complete; exact-source C08 run `20260910T172812081259Z-ebfc1012506f229d31270592d50e0d52` on `0db2aff82` is `DONE / PROVEN` with 19/19 assertions | F2 |
+| F3 Context/Resource Intelligence | C04 core and C08 product source complete; exact-source C08 run `20260910T185939301238Z-7e4f05f12a702632660e732aee6c476f` on `d18a40cb4` is `DONE / PROVEN` with 19/19 assertions | F2 |
 | F4 Tool Policy/Observability | G1-A through G1-F and pre-W1 G1-XR diagnostic complete through AS-F03; post-W8a G-F pending | F2 + accepted D19A/D19B/D19C |
 | W1 Capability Authority | implementation checks complete; product proof UNPROVEN until W9 Gate | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
 | W2 Home Projection | pending | G-F complete 419-cell Foundation Gate |
@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / active remediation; checkpoint `7485d1c224065a789f521f6531c2701c6083fda5` aligns the completed `BASE-EXECUTOR_UNAVAILABLE` Station/Web/Rust/Acceptance vertical with the canonical matrix ID, and exact-source focused Desktop/Browser tuples pass 9/9 with clean cleanup; C08 is `DONE / PROVEN` on `0db2aff82`; unchanged Gate run `20260910T174705841217Z-b9f6cba8654841d5a809bc1953da3f1f` crossed all four AS-F06 tuples before the Browser BFF was automatically terminated during AS-F07; the source-owned headless lifetime and process-group cleanup corrections await checkpoint proof | W8a |
+| G-F Complete Foundation Gate | partial / externally blocked; checkpoint `7485d1c224065a789f521f6531c2701c6083fda5` aligns the completed `BASE-EXECUTOR_UNAVAILABLE` Station/Web/Rust/Acceptance vertical with the canonical matrix ID, and exact-source focused Desktop/Browser tuples pass 9/9 with clean cleanup; C08 is `DONE / PROVEN` on `d18a40cb4`; post-fix Gate run `20260910T190158567694Z-34c18f11a6fe5ecfb85225d8e5125909` proves the Browser lifetime correction, all four AS-F06 tuples, and complete cleanup, then stops at the external Ark provider deadline in AS-F07 first regenerate | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -6961,6 +6961,26 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   formatting check, Python compilation, and `git diff --check` pass. No
   provider, timeout, tuple, assertion, or product semantic changed.
   Exact-source C08 and unchanged 419-cell post-fix proof remain pending.
+- Checkpoint `d18a40cb48dce01f97285e581eb1409a422417a9` was deployed
+  exact-source to `chat-native-disposable`. C08 run
+  `20260910T185939301238Z-7e4f05f12a702632660e732aee6c476f`
+  completed `DONE / PROVEN` with `19/19` assertions. Unchanged Foundation run
+  `20260910T190158567694Z-34c18f11a6fe5ecfb85225d8e5125909`
+  then crossed all four AS-F06 tuples and kept the restarted Browser BFF alive
+  beyond the previous five-minute automatic-termination boundary.
+- Browser English AS-F07 cancelled its source Turn, completed retry after
+  `111.426s`, and completed the baseline Turn. First regenerate reached the
+  full `300.395s` operation boundary and returned HTTP `422`. Remote Station
+  evidence records provider attempt deadlines at 120 and 240 seconds, final
+  `wall_time_exhausted`, and `/turn/regenerate` returning `422` after
+  `5m0.020s`.
+- Inner cleanup preserved the full redacted `FoundationCandidateError` chain
+  and released both clients, both fault transports, all six client ports,
+  storage, and actor identity. Outer Provisioner cleanup completed
+  `DONE / PROVEN / passed`. The source-owned Browser lifetime, process-group
+  cleanup, and failure-preservation defects are closed. Foundation/G-F remain
+  `PARTIAL / UNPROVEN` only because the unchanged AS-F07 provider-backed
+  sequence did not complete; no source-authorized substitute exists.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

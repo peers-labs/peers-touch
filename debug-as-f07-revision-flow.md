@@ -526,3 +526,28 @@ or raw tokens.
   ownership through cleanup, and stores a credential-redacted primary
   exception chain alongside cleanup failures. Post-fix exact-source C08 and
   full Foundation proof remain pending.
+
+### Post-Fix Runtime Comparison
+
+- Checkpoint `d18a40cb48dce01f97285e581eb1409a422417a9` was deployed
+  exact-source. C08 run
+  `20260910T185939301238Z-7e4f05f12a702632660e732aee6c476f`
+  completed `DONE / PROVEN` with `19/19` assertions.
+- Foundation run
+  `20260910T190158567694Z-34c18f11a6fe5ecfb85225d8e5125909`
+  kept the restarted Browser BFF alive beyond the former five-minute
+  automatic-termination boundary. The retry completed after `111.426s`, the
+  baseline completed, and first regenerate remained connected for its full
+  `300.395s` operation.
+- First regenerate returned HTTP `422`. Remote Station logs show provider
+  attempt deadlines at `19:20:40Z` and `19:22:40Z`, a final deadline at
+  `19:23:40Z`, terminal reason `wall_time_exhausted`, and the HTTP response
+  after `5m0.020s`. This is the established external Ark boundary, not the
+  fixed Browser lifetime path.
+- Final runtime cleanup is fully clean for Browser and Native: both clients,
+  both fault transports, all six client ports, both storage roots, and actor
+  identity were released. The inner sidecar preserves the redacted
+  `FoundationCandidateError -> FoundationClientError -> GateError` chain.
+- The headless lifetime, process-group cleanup, and failure-preservation fixes
+  are runtime-confirmed. The 419-cell Gate remains `PARTIAL / UNPROVEN`
+  because AS-F07 first regenerate did not complete.

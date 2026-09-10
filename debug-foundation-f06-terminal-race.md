@@ -66,6 +66,20 @@
 - Every tuple had one text event and three durable events at the request
   boundary. No terminal-before-cut event or cleanup-locator failure was
   emitted. The run later failed independently during Browser AS-F07.
+- Post-fix run
+  `20260910T190158567694Z-34c18f11a6fe5ecfb85225d8e5125909`
+  on `d18a40cb48dce01f97285e581eb1409a422417a9` again crossed all
+  four tuples:
+  - Browser English: request at 1977 ms, acknowledgement at 1980 ms.
+  - Browser Simplified Chinese: request at 1871 ms, acknowledgement at
+    1889 ms.
+  - Desktop English: request at 1346 ms, acknowledgement at 1406 ms.
+  - Desktop Simplified Chinese: request at 2150 ms, acknowledgement at
+    2190 ms.
+- All four scenario cleanups deleted their conversation, cleared handoff and
+  recovery state, and reported `cleanupComplete=true`. Final runtime cleanup
+  released both clients, both fault transports, all six client ports, storage,
+  and actor identity.
 
 ## Verification Conclusion
 The exact-source run rejected hypotheses A through D as current owner-layer
