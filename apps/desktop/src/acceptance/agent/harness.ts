@@ -13795,6 +13795,52 @@ function evaluateF12(ctx: DirectCellAssertionContext): Record<string, boolean | 
     facts.toolIsolation,
     'foundationF12ToolIsolation',
   );
+  const referenceDiagnostics = (
+    messages: Record<string, unknown>[],
+    messageIds: Set<string>,
+    conversationId: string,
+  ) => ({
+    wrongConversationCount: messages.filter((message) =>
+      message.conversationId !== conversationId).length,
+    missingParentCount: messages.filter((message) =>
+      Boolean(message.parentMessageId)
+      && !messageIds.has(String(message.parentMessageId))).length,
+    missingReplacementCount: messages.filter((message) =>
+      Boolean(message.replacesMessageId)
+      && !messageIds.has(String(message.replacesMessageId))).length,
+  });
+  const alphaReferenceDiagnostics = referenceDiagnostics(
+    alphaMessages,
+    alphaMessageIds,
+    String(alphaConversation.conversationId),
+  );
+  const betaReferenceDiagnostics = referenceDiagnostics(
+    betaMessages,
+    betaMessageIds,
+    String(betaConversation.conversationId),
+  );
+  // #region debug-point F-K:as-f12-cross-topic
+  void reportFoundationF12ProjectionDebug('F-K', 'cross-topic-checks', {
+    alphaForeignFactHidden: alphaReceiver.foreignFactVisible === false,
+    alphaOwnFactVisible: alphaReceiver.ownFactVisible === true,
+    alphaReferencesOwned: referencesStayWithin(
+      alphaMessages,
+      alphaMessageIds,
+      String(alphaConversation.conversationId),
+    ),
+    alphaRuntimeMatches: runtimeMatches(alpha),
+    alphaReferenceDiagnostics,
+    betaForeignFactHidden: betaReceiver.foreignFactVisible === false,
+    betaOwnFactVisible: betaReceiver.ownFactVisible === true,
+    betaReferencesOwned: referencesStayWithin(
+      betaMessages,
+      betaMessageIds,
+      String(betaConversation.conversationId),
+    ),
+    betaRuntimeMatches: runtimeMatches(beta),
+    betaReferenceDiagnostics,
+  });
+  // #endregion
 
   return {
     twoTopicsDistinct:

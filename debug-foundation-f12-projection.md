@@ -49,3 +49,17 @@ and serializes per-conversation writes. Desktop `syncMessages` and periodic
 `agent-topic` reconciliation now use that path. Package, Desktop, and focused
 Foundation checks pass; exact-source runtime verification is pending. Keep this
 debug session open until the rerun proves AS-F12.
+
+## 2026-09-10 Cross-Topic Isolation Follow-Up
+
+- Exact-source run
+  `20260910T063541600785Z-66f9f64175626498fe1e0a22aa0845b7`
+  reached Browser `AS-F12 / en / single / sample-001`.
+- Restart, payload/hash equality, branch selection, runtime binding, scope, and
+  source-restart diagnostics all passed.
+- Only `noCrossTopicReferences` failed; cleanup passed.
+- The combined assertion currently hides whether the failure is message
+  reference ownership, own/foreign fact visibility, or runtime matching.
+- Next instrumentation reports only those subcondition booleans and invalid
+  reference counts. It does not report message, topic, conversation, Turn,
+  branch, runtime, or fact values.

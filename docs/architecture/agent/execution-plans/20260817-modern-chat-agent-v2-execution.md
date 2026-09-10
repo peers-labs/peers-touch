@@ -1325,6 +1325,18 @@ and zero local-path leakage.
   Turn submission and SSE lifecycle instrumentation to distinguish transport,
   terminal-event, provider, and capability-session ownership. It does not
   change timeout, tuple order/count, assertion, retry, or product behavior.
+- **Pre-AS-F05 F12 isolation diagnostic (2026-09-10)**: instrumentation
+  checkpoint `46a17197824480620f86d33e74f0da6efa520ad1` did not reach
+  AS-F05. Run
+  `20260910T063541600785Z-66f9f64175626498fe1e0a22aa0845b7`
+  failed only `noCrossTopicReferences` in Browser `AS-F12 / en / single /
+  sample-001`; restart identity, payload/hash equality, branch restoration,
+  runtime binding, scope, and source-restart diagnostics passed, as did
+  cleanup. The existing `foundation-f12-projection` session therefore adds
+  only per-subcondition booleans and invalid-reference counts for message
+  ownership, own/foreign fact visibility, and runtime matching. No topic,
+  message, conversation, Turn, branch, fact, or runtime identity is logged,
+  and the F12 assertion remains unchanged.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error
