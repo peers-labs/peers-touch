@@ -22,7 +22,9 @@ from tooling.acceptance.provisioners.native_desktop_windows import (
     NativeDesktopWindowsProvisioner,
     WindowsCellProfile,
     _json_output,
+    _normalized_windows_path,
     _screenshot_probe_geometry,
+    _windows_path_is_descendant,
 )
 from tooling.acceptance.transports.ssh import RemotePlatform
 
@@ -66,6 +68,30 @@ class _BrokerTransport:
 
 
 class WindowsCellProfileTest(unittest.TestCase):
+    def test_windows_path_ownership_accepts_verbatim_descendant(self) -> None:
+        root = (
+            r"C:\Users\Administrator\AppData\Local\PeersTouch"
+            r"\AcceptanceCells\desktop-windows-native\actors"
+            r"\run-1\bob"
+        )
+        candidate = (
+            r"\\?\C:\Users\Administrator\AppData\Local\PeersTouch"
+            r"\AcceptanceCells\desktop-windows-native\actors"
+            r"\run-1\bob\storage\attachment-cache\attachment-1"
+        )
+
+        self.assertEqual(
+            _normalized_windows_path(candidate),
+            Path(root, "storage", "attachment-cache", "attachment-1"),
+        )
+        self.assertTrue(_windows_path_is_descendant(candidate, root))
+        self.assertFalse(
+            _windows_path_is_descendant(
+                candidate,
+                root.replace(r"\bob", r"\alice"),
+            )
+        )
+
     def test_provisioner_registry_imports_in_fresh_process(self) -> None:
         completed = subprocess.run(
             [

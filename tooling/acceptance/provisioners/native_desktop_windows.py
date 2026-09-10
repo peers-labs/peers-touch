@@ -154,6 +154,21 @@ def _windows_join(root: str, *parts: str) -> str:
     return str(PureWindowsPath(root, *parts))
 
 
+def _normalized_windows_path(path: str) -> PureWindowsPath:
+    normalized = str(PureWindowsPath(path))
+    if normalized.startswith("\\\\?\\UNC\\"):
+        normalized = "\\\\" + normalized[8:]
+    elif normalized.startswith("\\\\?\\"):
+        normalized = normalized[4:]
+    return PureWindowsPath(normalized)
+
+
+def _windows_path_is_descendant(path: str, root: str) -> bool:
+    candidate = _normalized_windows_path(path)
+    parent = _normalized_windows_path(root)
+    return candidate != parent and parent in candidate.parents
+
+
 def _json_output(
     completed: subprocess.CompletedProcess[str],
     operation: str,
@@ -998,18 +1013,25 @@ class NativeDesktopWindowsProvisioner:
     def actor_file_sha256(self, actor: str, path: str) -> str:
         state = self._require_state()
         normalized = self._active_actor(actor)
-        candidate = PureWindowsPath(path)
-        actor_root = PureWindowsPath(
-            _windows_join(
-                str(state["brokerRoot"]),
-                "actors",
-                normalized,
-            )
+        candidate = _normalized_windows_path(path)
+        fixture_root = _windows_join(
+            str(state["brokerRoot"]),
+            "actors",
+            normalized,
+            "fixtures",
+        )
+        runtime_actor_root = _windows_join(
+            str(state["brokerRoot"]),
+            "actors",
+            str(state["runId"]),
+            normalized,
         )
         if (
             not candidate.is_absolute()
-            or candidate == actor_root
-            or actor_root not in candidate.parents
+            or not any(
+                _windows_path_is_descendant(str(candidate), root)
+                for root in (fixture_root, runtime_actor_root)
+            )
         ):
             raise ProvisioningError(
                 "Windows runtime-cell file is outside actor root"
