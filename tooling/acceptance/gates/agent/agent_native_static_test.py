@@ -136,10 +136,11 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
 
     def test_runner_uses_canonical_tauri_driver(self) -> None:
         self.assertIn(
-            "from tooling.acceptance.drivers.tauri import TauriDriver",
+            "from tooling.acceptance.drivers.tauri import LocalTauriLauncher, TauriSession",
             self.source,
         )
-        self.assertIn("self.tauri_driver = TauriDriver(", self.source)
+        self.assertIn("self.tauri_driver = TauriSession(", self.source)
+        self.assertIn("LocalTauriLauncher(", self.source)
         self.assertNotIn('["make", "desktop"]', self.source)
         self.assertNotIn("subprocess.Popen", self.source)
         self.assertIn("PT_DESKTOP_E2E", self.source)
@@ -352,7 +353,7 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
     def test_runner_delegates_selenium_ownership_to_tauri_driver(self) -> None:
         self.assertNotIn("from selenium", self.source)
         self.assertNotIn("webdriver.Remote", self.source)
-        self.assertIn("TauriDriver", self.source)
+        self.assertIn("TauriSession", self.source)
 
 
 class AgentHarnessStaticTest(unittest.TestCase):

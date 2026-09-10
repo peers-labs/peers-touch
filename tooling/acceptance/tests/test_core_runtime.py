@@ -31,7 +31,7 @@ from tooling.acceptance.core import (
     REPO_ROOT as CORE_REPO_ROOT,
 )
 from tooling.acceptance.core.redaction import REDACTED
-from tooling.acceptance.drivers.tauri import TauriDriver
+from tooling.acceptance.drivers.tauri import LocalTauriLauncher, TauriDriver
 
 
 class MockDriver(DomDriver):
@@ -409,7 +409,7 @@ class TauriDriverAttachTests(unittest.TestCase):
     def test_launch_writes_to_caller_owned_log_path(self):
         with tempfile.TemporaryDirectory() as directory:
             log_path = Path(directory) / "runtime" / "desktop.log"
-            driver = TauriDriver(
+            launcher = LocalTauriLauncher(
                 app_binary="/tmp/synthetic-acceptance-binary",
                 port=4555,
                 gateway_port=4556,
@@ -425,22 +425,20 @@ class TauriDriverAttachTests(unittest.TestCase):
             ) as popen, patch(
                 "tooling.acceptance.drivers.tauri.time.sleep",
             ):
-                driver._launch_app()
+                launcher.start()
 
-            self.assertEqual(driver.log_path, log_path)
+            self.assertEqual(launcher.log_path, log_path)
             self.assertEqual(
                 Path(popen.call_args.kwargs["stdout"].name),
                 log_path,
             )
             process.poll.return_value = 0
-            driver.stop()
+            launcher.stop()
             self.assertTrue(log_path.is_file())
 
     def test_connect_attaches_without_launching_or_owning_a_process(self):
         driver = TauriDriver(
-            app_binary="/tmp/not-launched",
             port=4555,
-            storage_root="/tmp/external-storage",
         )
         session = MagicMock()
 
@@ -456,8 +454,8 @@ class TauriDriverAttachTests(unittest.TestCase):
         ):
             self.assertIs(driver.connect(timeout=7), session)
 
-        wait.assert_called_once_with(4555, 7)
-        self.assertIsNone(driver._process)
+        wait.assert_called_once_with("127.0.0.1", 4555, 7)
+        self.assertFalse(hasattr(driver, "_process"))
         driver.stop()
         session.quit.assert_called_once()
 

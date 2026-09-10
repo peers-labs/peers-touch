@@ -1301,6 +1301,17 @@ and zero local-path leakage.
   add a regression excluding non-protocol Station TypeScript. This is
   Acceptance Infra only: C08/G-F assertions, timeouts, runtime cells, product
   semantics, and proof state remain unchanged and `UNPROVEN`.
+- **C08 launcher/session remediation (2026-09-10)**: clean checkpoint
+  `03c895e0c40402f8a29a22aa9e086eb40ae5adac` restored exact local/remote
+  protocol-digest parity and C08 run
+  `20260910T054309187739Z-91c78d39bad933eb55820ac65650cf05`
+  reached `FIXTURE_READY`. The Gate then failed before native launch because
+  `native_agent_runner.py` still passed process, profile, storage, and gateway
+  arguments to the attach-only `TauriDriver` after the accepted D-13
+  launcher/session split. The dependency-ready correction is to restore the
+  existing caller-owned log path on `LocalTauriLauncher` and compose
+  `TauriSession(LocalTauriLauncher(...))` in the business runner. This changes
+  no C08 assertion, timeout, runtime cell, or product behavior.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

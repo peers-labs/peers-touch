@@ -22,10 +22,10 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | Exact-source checkpoint, C08 product proof, and G-F Foundation proof |
-| Current step | Checkpoint `ead122653` is healthy on `chat-native-disposable` after approved database recreation；C08 preflight exposed and the current candidate fixes local/remote protocol-artifact enumeration drift |
+| Current step | Checkpoint `03c895e0c` restored exact protocol attestation and reached C08 `FIXTURE_READY`；the current candidate repairs the stale native Agent launcher/session composition exposed next |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Disposable PostgreSQL recreation and exact-source Station recovery；live build `ead122653e3b` is ready，driver smoke passes，and local/remote protocol digests now match in focused verification |
-| Current action | Complete Infra self-checks and create a clean checkpoint for the protocol-attestation remediation |
+| Last completed | C08 run `20260910T054309187739Z-91c78d39bad933eb55820ac65650cf05` proved source attestation and Fixture readiness before failing on the stale `TauriDriver` constructor path；135 focused launcher/Core/Agent tests now pass |
+| Current action | Create a clean checkpoint for the launcher/session remediation and redeploy that exact source |
 | Next action | Deploy the new exact source with `make station`，rerun current-source C08，then run the unchanged 419-cell G-F Gate |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
@@ -33,9 +33,9 @@
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | C08 run `20260910T052534864517Z-98e42e981668a2f3cd5fe5e0d9cba987` stopped before Fixture mutation because remote attestation over-selected 21 ordinary Station Dashboard TypeScript files；the root-cause candidate is locally verified but requires a clean checkpoint and redeploy. The unrelated stale `acceptance-runtime-provisioning-self` Fixture expectation remains parked outside this Slice |
+| Blockers | No current C08 source blocker after the launcher/session candidate. The unrelated stale `acceptance-runtime-provisioning-self` Fixture expectation and uptime-sensitive launch-context test remain parked outside this Slice；C08 and G-F are still `UNPROVEN` pending clean exact-source Gates |
 | Decisions required | none |
-| Evidence | G-FE1 source checks remain passed；Station `ead122653e3b` is healthy；Acceptance driver smoke passes；protocol digest parity is `8f9daf1c...` on local and remote source；19 attestation/Fixture owner tests plus Infra boundary、quality-evidence、validator and diff checks pass；C08 and G-F product evidence remain `UNPROVEN` |
+| Evidence | G-FE1 source checks remain passed；Station `03c895e0c404` is healthy；driver smoke passes；protocol digest parity is `8f9daf1c...`；135 focused launcher/Core/Agent tests plus Infra boundary、quality-evidence、validator and diff checks pass；C08 and G-F product evidence remain `UNPROVEN` |
 | Last updated | 2026-09-10 |
 
 ---
