@@ -1287,6 +1287,20 @@ and zero local-path leakage.
   `local-desktop-gateway` Fixture expectation is stale against the current
   environment contract. This unrelated Acceptance Infra repair remains outside
   G-FE1 and is not used as product proof.
+- **Exact-source protocol attestation remediation (2026-09-10)**: after the
+  approved disposable PostgreSQL volume was recreated, Station checkpoint
+  `ead122653e3b1fd29170a7c8adf5a848255d57ce` became healthy and source-clean.
+  Current-source C08 run
+  `20260910T052534864517Z-98e42e981668a2f3cd5fe5e0d9cba987` then stopped at
+  `source-identity:proto` before Fixture mutation. Local attestation selected
+  only tracked Proto/generated bindings, while the remote adapter additionally
+  selected 21 ordinary Station Dashboard TypeScript files under
+  `apps/station`. The accepted D-07/D-08 source-identity contract already
+  requires one protocol artifact set, so the dependency-ready remediation is
+  to make the remote adapter consume the same exact pathspec set as Core and
+  add a regression excluding non-protocol Station TypeScript. This is
+  Acceptance Infra only: C08/G-F assertions, timeouts, runtime cells, product
+  semantics, and proof state remain unchanged and `UNPROVEN`.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

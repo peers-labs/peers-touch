@@ -18,6 +18,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tooling.acceptance.core.attestation import (
+    PROTOCOL_SOURCE_PATHS,
     produce_station_attestation,
     source_proto_digest,
     source_workspace_digest,
@@ -69,10 +70,19 @@ class StationAttestationOwnerTests(unittest.TestCase):
                     root
                     / "apps/desktop/src/gen/proto/domain/test_pb.ts"
                 )
+                station_dashboard = (
+                    root
+                    / "apps/station/app/subserver/dashboard/web/src/api/client.ts"
+                )
                 proto.parent.mkdir(parents=True)
                 generated.parent.mkdir(parents=True)
+                station_dashboard.parent.mkdir(parents=True)
                 proto.write_text("syntax = \"proto3\";\n", encoding="utf-8")
                 generated.write_text("// generated\n", encoding="utf-8")
+                station_dashboard.write_text(
+                    "// not a protocol artifact\n",
+                    encoding="utf-8",
+                )
                 subprocess.run(
                     ["git", "add", "model", "apps"],
                     cwd=root,
@@ -85,6 +95,12 @@ class StationAttestationOwnerTests(unittest.TestCase):
                     capture_output=True,
                 )
                 baseline = source_proto_digest(root)
+
+                station_dashboard.write_text(
+                    "// ordinary Station TypeScript changed\n",
+                    encoding="utf-8",
+                )
+                self.assertEqual(source_proto_digest(root), baseline)
 
                 untracked = (
                     root
@@ -164,9 +180,9 @@ class StationAttestationOwnerTests(unittest.TestCase):
         self.assertIn("\\.bare\\.git\\/", remote_command)
         self.assertIn("subprocess.check_output", remote_command)
         self.assertIn("ls-files", remote_command)
-        self.assertIn("model/domain", remote_command)
-        self.assertIn("apps/desktop/src/gen/proto", remote_command)
-        self.assertIn("apps/station", remote_command)
+        for pathspec in PROTOCOL_SOURCE_PATHS:
+            self.assertIn(pathspec, remote_command)
+        self.assertNotIn("x.endswith(b'.ts')", remote_command)
         self.assertNotIn("apps/mobile/ios", remote_command)
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertNotIn("StrictHostKeyChecking=no", command)

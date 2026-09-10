@@ -22,20 +22,20 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | Exact-source checkpoint, C08 product proof, and G-F Foundation proof |
-| Current step | Checkpoint `ff7bfa9f8` implements the planned `BASE-EXECUTOR-UNAVAILABLE` vertical with local gates passing；current-source C08 and G-F remain pending exact-source proof |
+| Current step | Checkpoint `ead122653` is healthy on `chat-native-disposable` after approved database recreation；C08 preflight exposed and the current candidate fixes local/remote protocol-artifact enumeration drift |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | G-FE1 source checkpoint `ff7bfa9f8`；Station/Web/Rust/Acceptance source checks pass without claiming product proof |
-| Current action | Commit synchronized plan state，activate `chat-native-disposable`，and verify the exact checkpoint runtime |
-| Next action | Deploy exact source with `make station`，run current-source C08 first，then run the unchanged 419-cell G-F Gate |
+| Last completed | Disposable PostgreSQL recreation and exact-source Station recovery；live build `ead122653e3b` is ready，driver smoke passes，and local/remote protocol digests now match in focused verification |
+| Current action | Complete Infra self-checks and create a clean checkpoint for the protocol-attestation remediation |
+| Next action | Deploy the new exact source with `make station`，rerun current-source C08，then run the unchanged 419-cell G-F Gate |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | No G-FE1 source blocker. The broad Acceptance plan exposes one unrelated stale `acceptance-runtime-provisioning-self` Fixture expectation，parked outside this Slice；Foundation and downstream work remain `PARTIAL / UNPROVEN` until exact-source Gates pass |
+| Blockers | C08 run `20260910T052534864517Z-98e42e981668a2f3cd5fe5e0d9cba987` stopped before Fixture mutation because remote attestation over-selected 21 ordinary Station Dashboard TypeScript files；the root-cause candidate is locally verified but requires a clean checkpoint and redeploy. The unrelated stale `acceptance-runtime-provisioning-self` Fixture expectation remains parked outside this Slice |
 | Decisions required | none |
-| Evidence | Source checkpoint `ff7bfa9f8` passes Station executor-unavailable regression、Desktop check/590 tests/build、Rust check、280 Foundation/static tests、Agent Domain structural validation、locale/hard/diff checks；C08 and G-F product evidence are not current-source yet |
+| Evidence | G-FE1 source checks remain passed；Station `ead122653e3b` is healthy；Acceptance driver smoke passes；protocol digest parity is `8f9daf1c...` on local and remote source；19 attestation/Fixture owner tests plus Infra boundary、quality-evidence、validator and diff checks pass；C08 and G-F product evidence remain `UNPROVEN` |
 | Last updated | 2026-09-10 |
 
 ---
