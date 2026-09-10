@@ -9823,13 +9823,82 @@ async function runFoundationF07Scenario(input: {
     'foundationF07OriginalEvidenceBefore',
   );
 
-  const firstRegenerate = evidenceRecord(
-    await api.regenerateAgentTurn({
+  // #region debug-point Y-AB:as-f07-regenerate-failure
+  const reportRegenerateFailure = async (
+    operation: 'first' | 'second',
+    expectedConversationVersion: number,
+    operationStartedAt: number,
+    error: unknown,
+  ) => {
+    const codedError = error as {
+      code?: unknown;
+      details?: {
+        body?: unknown;
+        reason?: unknown;
+        status?: unknown;
+      };
+    };
+    const responseBody = typeof codedError.details?.body === 'string'
+      ? codedError.details.body
+      : '';
+    let stationError: Record<string, unknown> = {};
+    try {
+      stationError = responseBody
+        ? evidenceRecord(
+            JSON.parse(responseBody),
+            'foundationF07RegenerateErrorBody',
+          )
+        : {};
+    } catch {
+      stationError = {};
+    }
+    await reportFoundationF07Debug('Y-AB', 'regenerate-failed', {
+      operation,
+      elapsedMs: performance.now() - scenarioStartedAt,
+      operationElapsedMs: performance.now() - operationStartedAt,
+      expectedConversationVersion,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorCode: typeof codedError.code === 'string' ? codedError.code : '',
+      httpStatus: Number(codedError.details?.status ?? 0),
+      stationErrorCode: String(
+        evidenceField(stationError, 'errorCode', 'error_code') ?? '',
+      ),
+      stationErrorMessage: String(stationError.message ?? ''),
+      errorReason: typeof codedError.details?.reason === 'string'
+        ? codedError.details.reason
+        : '',
+    });
+  };
+  // #endregion
+
+  const firstRegenerateStartedAt = performance.now();
+  await reportFoundationF07Debug('Y-AB', 'regenerate-started', {
+    operation: 'first',
+    elapsedMs: firstRegenerateStartedAt - scenarioStartedAt,
+    expectedConversationVersion: sourceReadback.conversation.version,
+  });
+  let firstRegenerateValue: Awaited<
+    ReturnType<typeof api.regenerateAgentTurn>
+  >;
+  try {
+    firstRegenerateValue = await api.regenerateAgentTurn({
       conversation_id: conversation.conversation_id,
       source_assistant_message_id: sourceAssistant.messageId,
       client_idempotency_key: crypto.randomUUID(),
       expected_conversation_version: sourceReadback.conversation.version,
-    }),
+    });
+  } catch (error) {
+    await reportRegenerateFailure(
+      'first',
+      sourceReadback.conversation.version,
+      firstRegenerateStartedAt,
+      error,
+    );
+    throw error;
+  }
+  const firstRegenerate = evidenceRecord(
+    firstRegenerateValue,
     'foundationF07FirstRegenerate',
   );
   const firstRegenerateMessage = await foundationRevisionMessageFact(
@@ -9839,14 +9908,41 @@ async function runFoundationF07Scenario(input: {
   const afterFirstRegenerate = await api.getAgentConversation(
     conversation.conversation_id,
   );
+  await reportFoundationF07Debug('Y-AB', 'regenerate-finished', {
+    operation: 'first',
+    elapsedMs: performance.now() - scenarioStartedAt,
+    operationElapsedMs: performance.now() - firstRegenerateStartedAt,
+    conversationVersion: afterFirstRegenerate.version,
+    messagePresent: Boolean(firstRegenerateMessage.messageId),
+  });
 
-  const secondRegenerate = evidenceRecord(
-    await api.regenerateAgentTurn({
+  const secondRegenerateStartedAt = performance.now();
+  await reportFoundationF07Debug('Y-AB', 'regenerate-started', {
+    operation: 'second',
+    elapsedMs: secondRegenerateStartedAt - scenarioStartedAt,
+    expectedConversationVersion: afterFirstRegenerate.version,
+  });
+  let secondRegenerateValue: Awaited<
+    ReturnType<typeof api.regenerateAgentTurn>
+  >;
+  try {
+    secondRegenerateValue = await api.regenerateAgentTurn({
       conversation_id: conversation.conversation_id,
       source_assistant_message_id: sourceAssistant.messageId,
       client_idempotency_key: crypto.randomUUID(),
       expected_conversation_version: afterFirstRegenerate.version,
-    }),
+    });
+  } catch (error) {
+    await reportRegenerateFailure(
+      'second',
+      afterFirstRegenerate.version,
+      secondRegenerateStartedAt,
+      error,
+    );
+    throw error;
+  }
+  const secondRegenerate = evidenceRecord(
+    secondRegenerateValue,
     'foundationF07SecondRegenerate',
   );
   const secondRegenerateMessage = await foundationRevisionMessageFact(
@@ -9856,6 +9952,13 @@ async function runFoundationF07Scenario(input: {
   const afterSecondRegenerate = await api.getAgentConversation(
     conversation.conversation_id,
   );
+  await reportFoundationF07Debug('Y-AB', 'regenerate-finished', {
+    operation: 'second',
+    elapsedMs: performance.now() - scenarioStartedAt,
+    operationElapsedMs: performance.now() - secondRegenerateStartedAt,
+    conversationVersion: afterSecondRegenerate.version,
+    messagePresent: Boolean(secondRegenerateMessage.messageId),
+  });
   reportFoundationF07Debug('D', 'regenerations-finished', {
     elapsedMs: performance.now() - scenarioStartedAt,
     firstMessagePresent: Boolean(firstRegenerateMessage.messageId),

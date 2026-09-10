@@ -416,3 +416,30 @@ or raw tokens.
   rejected for this run, so no branch behavior change is justified.
 - The first subsequent failure was the planned unimplemented
   `BASE-CREDENTIAL_MISSING` direct-runtime group.
+
+## 2026-09-10 Regenerate Failure Follow-Up
+
+- Exact-source run
+  `20260910T105541369036Z-1f220b18101ff9100657ba89c3fdf2f6`
+  on `7485d1c224065a789f521f6531c2701c6083fda5` passed the
+  cancellation and retry portions of Browser English AS-F07. The retained
+  checkpoints show authoritative `cancelled` response and stream terminal,
+  followed by retry completion after 103.952 seconds with attempt count
+  increasing from one to two.
+- The same run then failed with `agent_regenerate_turn failed` before
+  `regenerations-finished`. Provisioner cleanup completed
+  `DONE / PROVEN / passed`, released both client runtimes and all six ports,
+  and removed the isolated storage root.
+- Existing instrumentation cannot distinguish the first regenerate from the
+  second, nor expose the typed transport status, Station error code, or
+  business rejection reason. The next instrumentation records those redacted
+  fields before rethrowing the unchanged error.
+
+### Current Regenerate Hypotheses
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| Y | The first regenerate reaches Station but its provider-backed execution fails or times out. | Medium | Low | `operation=first`, non-conflict status or internal/provider error, no first success checkpoint. |
+| Z | The first regenerate succeeds and the second uses a stale conversation version. | Medium | Low | First success checkpoint, then `operation=second` with HTTP 409 / `VERSION_CONFLICT`. |
+| AA | Retry completion leaves the source assistant or active branch in a state that regeneration rejects. | Medium | Low | First regenerate fails with a typed invalid-source/state error while the submitted version matches the pre-call readback. |
+| AB | Desktop error adaptation hides an otherwise typed Station response. | High | Low | `errorMessage=agent_regenerate_turn failed` while `details.body` contains a more specific Station code/message. |
