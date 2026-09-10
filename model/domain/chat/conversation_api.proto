@@ -7,7 +7,6 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 import "domain/actor/actor.proto";
 import "domain/chat/command.proto";
 import "domain/chat/conversation.proto";
-import "domain/chat/envelope.proto";
 import "domain/chat/event.proto";
 import "domain/key_exchange/key_exchange.proto";
 import "google/protobuf/timestamp.proto";
@@ -16,47 +15,36 @@ import "google/protobuf/timestamp.proto";
 // Conversation Subserver API Messages
 //
 // Service-layer request/response types for the unified conversation HTTP API.
-// All domain types (Conversation, ConversationMember, ConversationCommand,
-// CommittedConversationEvent, etc.) are defined in conversation.proto.
+// All domain types (Conversation, ConversationMember, ChatCommand,
+// ConversationEvent, etc.) are defined in the domain Chat proto set.
 // ============================================================================
-
-message DeviceInfoView {
-  string device_id = 1;
-  string label = 2;
-  string created_at = 3;
-  bool revoked = 4;
-}
-
-message GetConversationIdentityRequest {}
-
-message GetConversationIdentityResponse {
-  string ptid = 1;
-}
 
 // --- Conversation Management ---
 
 message CreateDirectConversationRequest {
   string peer_ptid = 1;
-  string peer_station_peer_id = 2;
+  reserved 2;
+  reserved "peer_station_peer_id";
+  string federation_id = 3;
+  peers_touch.model.actor.v1.ActorDeviceRef creator = 4;
+  string command_id = 5;
 }
 
 message CreateDirectConversationResponse {
   Conversation conversation = 1;
+  ConversationEvent event = 2;
 }
 
 message CreateGroupConversationRequest {
-  string name = 1;
-  MembershipTransitionCommand genesis_transition = 3;
-  string federation_id = 4;
-  string conversation_id = 5;
-
-  reserved 2;
-  reserved "members";
+  reserved 1, 2, 3, 4, 5;
+  reserved "name", "members", "genesis_transition", "federation_id", "conversation_id";
+  ChatCommand command = 6;
 }
 
 message CreateGroupConversationResponse {
   Conversation conversation = 1;
-  CommittedConversationEvent transition_event = 2;
+  ConversationEvent event = 2;
+  reserved "transition_event";
 }
 
 message GetConversationRequest {
@@ -91,16 +79,11 @@ message GetConversationMembersResponse {
 
 // --- Commands & Events ---
 
-message SubmitConversationCommandRequest {
-  ConversationCommand command = 1;
-}
-
-message SubmitConversationCommandResponse {
-  CommittedConversationEvent event = 1;
-}
-
 message SubmitConversationAuthorityCommandRequest {
-  ChatCommand command = 1;
+  oneof submission {
+    ChatCommand command = 1;
+    ConversationCommandProposal proposal = 2;
+  }
 }
 
 message SubmitConversationAuthorityCommandResponse {
@@ -144,6 +127,7 @@ message PrepareConversationGroupRequest {
   string name = 2;
   repeated peers_touch.model.actor.v1.ActorRef members = 3;
   peers_touch.model.actor.v1.ActorDeviceRef creator = 4;
+  string federation_id = 5;
 }
 
 message PrepareConversationGroupResponse {
@@ -204,38 +188,6 @@ message SubmitConversationTypingResponse {
   google.protobuf.Timestamp expires_at = 2;
 }
 
-message SubmitConversationCommandProposalRequest {
-  ConversationCommandProposal proposal = 1;
-}
-
-message SubmitConversationCommandProposalResponse {
-  string conversation_id = 1;
-  string command_id = 2;
-  ConversationCommandSubmissionState state = 3;
-  ConversationCommandProposalResult result = 4;
-}
-
-message ForwardConversationCommandProposalRequest {
-  ConversationCommandProposal proposal = 1;
-}
-
-message ForwardConversationCommandProposalResponse {
-  ConversationCommandProposalResult result = 1;
-}
-
-message GetConversationCommandProposalResultRequest {
-  string conversation_id = 1;
-  string command_id = 2;
-}
-
-message GetConversationCommandProposalResultResponse {
-  string conversation_id = 1;
-  string command_id = 2;
-  ConversationCommandSubmissionState state = 3;
-  ConversationCommandProposalResult result = 4;
-  int64 next_retry_at_unix_ms = 5;
-}
-
 message SubmitMlsLeaveIntentRequest {
   MlsLeaveIntent intent = 1;
 }
@@ -270,15 +222,6 @@ message ListFederatedMlsLeaveIntentsResponse {
   repeated MlsLeaveIntent intents = 1;
 }
 
-message SubmitConversationReceiptRequest {
-  string conversation_id = 1;
-  string message_id = 2;
-  string device_id = 3;
-  ReceiptType receipt_type = 4;
-}
-
-message SubmitConversationReceiptResponse {}
-
 message ListConversationEventsRequest {
   string conversation_id = 1;
   int64 after_seq = 2;
@@ -286,7 +229,7 @@ message ListConversationEventsRequest {
 }
 
 message ListConversationEventsResponse {
-  repeated CommittedConversationEvent events = 1;
+  repeated ConversationEvent events = 1;
 }
 
 message SyncAuthorityConversationEventsRequest {
@@ -298,74 +241,7 @@ message SyncAuthorityConversationEventsRequest {
 }
 
 message SyncAuthorityConversationEventsResponse {
-  repeated CommittedConversationEvent events = 1;
-}
-
-// --- KeyPackage ---
-
-message UploadKeyPackageRequest {
-  string device_id = 1;
-  bytes data = 2;
-}
-
-message UploadKeyPackageResponse {}
-
-message FetchKeyPackageRequest {
-  string ptid = 1;
-  string home_station_peer_id = 2;
-}
-
-message FetchKeyPackageResponse {
-  bytes data = 1;
-  bool available = 2;
-  string device_id = 3;
-  string home_station_peer_id = 4;
-}
-
-message CountKeyPackagesRequest {}
-
-message CountKeyPackagesResponse {
-  int64 count = 1;
-}
-
-// --- Device Management ---
-
-message RegisterDeviceRequest {
-  string device_id = 1;
-  string label = 2;
-  bytes public_key = 3;
-  string signing_key_id = 4;
-  int64 profile_version = 5;
-}
-
-message RegisterDeviceResponse {}
-
-message ListDevicesRequest {}
-
-message ListDevicesResponse {
-  repeated DeviceInfoView devices = 1;
-}
-
-message RevokeDeviceRequest {
-  string device_id = 1;
-}
-
-message RevokeDeviceResponse {}
-
-// --- Direct Key Exchange ---
-
-message SendDkxRequest {
-  string recipient_ptid = 1;
-  string recipient_device_id = 2;
-  string recipient_station_peer_id = 3;
-  string session_id = 4;
-  DirectKeyExchangeKind kind = 5;
-  bytes opaque_key_material = 6;
-  string conversation_id = 7;
-}
-
-message SendDkxResponse {
-  string envelope_id = 1;
+  repeated ConversationEvent events = 1;
 }
 
 // --- Unified Message Queries ---
@@ -377,7 +253,7 @@ message ListConversationMessagesRequest {
 }
 
 message ListConversationMessagesResponse {
-  repeated CommittedConversationEvent events = 1;
+  repeated ConversationEvent events = 1;
   bool has_more = 2;
 }
 
@@ -389,7 +265,7 @@ message ListThreadMessagesRequest {
 }
 
 message ListThreadMessagesResponse {
-  repeated CommittedConversationEvent events = 1;
+  repeated ConversationEvent events = 1;
   bool has_more = 2;
 }
 

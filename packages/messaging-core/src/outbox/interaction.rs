@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use prost::Message;
 
+use crate::proto::actor_device_ptid;
 use crate::proto::chat::{
     chat_command, ChatCommand, CryptoEndpoint, PinMessageIntent,
     PrepareConversationCommandResponse, ReactionIntent, RetractMessageIntent,
 };
-use crate::proto::crypto_endpoints_from_actor_device_refs;
 
 pub enum MetadataInteraction<'a> {
     Retract,
@@ -79,19 +79,22 @@ impl<R: MetadataInteractionRepository> MetadataInteractionPreparer<R> {
         {
             return Err("messaging interaction context is incomplete".to_string());
         }
-        let required_endpoints = crypto_endpoints_from_actor_device_refs(&plan.required_endpoints)
-            .ok_or_else(|| "messaging interaction plan has incomplete endpoint".to_string())?;
         let mut previous_endpoint: Option<(&str, &str)> = None;
         let mut local_endpoint_count = 0;
-        for endpoint in &required_endpoints {
-            let endpoint_key = (endpoint.ptid.as_str(), endpoint.device_id.as_str());
+        for endpoint in &plan.required_endpoints {
+            let endpoint_ptid = actor_device_ptid(endpoint)?;
+            if endpoint.device_id.trim().is_empty() {
+                return Err("messaging interaction plan has incomplete endpoint".to_string());
+            }
+            let endpoint_key = (endpoint_ptid, endpoint.device_id.as_str());
             if previous_endpoint.is_some_and(|previous| previous >= endpoint_key) {
                 return Err(
                     "messaging interaction plan endpoints are not strictly sorted".to_string(),
                 );
             }
             previous_endpoint = Some(endpoint_key);
-            if endpoint == &self.endpoint {
+            if endpoint_ptid == self.endpoint.ptid && endpoint.device_id == self.endpoint.device_id
+            {
                 local_endpoint_count += 1;
             }
         }
@@ -154,7 +157,7 @@ impl<R: MetadataInteractionRepository> MetadataInteractionPreparer<R> {
                 nanos: (now_unix_ms.rem_euclid(1_000) * 1_000_000) as i32,
             }),
             delivery_plan_sha256: plan.delivery_plan_sha256.clone(),
-            authority_station_id: plan.authority_station_peer_id.clone(),
+            authority_station_peer_id: plan.authority_station_peer_id.clone(),
             payload: Some(payload),
         };
         self.repository
@@ -178,6 +181,7 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
+    use crate::proto::actor_device_ref;
     use crate::proto::chat::chat_command;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -241,8 +245,8 @@ mod tests {
             delivery_plan_sha256: vec![9; 32],
             authority_station_peer_id: "station-authority".to_string(),
             required_endpoints: vec![
-                crate::proto::actor_device_ref_from_parts("ptid:alice", "alice-device"),
-                crate::proto::actor_device_ref_from_parts("ptid:bob", "bob-device"),
+                actor_device_ref("ptid:alice", "alice-device"),
+                actor_device_ref("ptid:bob", "bob-device"),
             ],
             ..Default::default()
         }

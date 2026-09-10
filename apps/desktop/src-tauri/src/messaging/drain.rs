@@ -1,9 +1,9 @@
-use super::actor_device_parts;
 use crate::model::chat::{
     AcknowledgeDeviceInboxItemRequest, ClaimDeviceInboxRequest, ClaimDeviceInboxResponse,
     DurableDeviceInboxItem,
 };
 use messaging_core::proto::actor::ActorDeviceRef;
+use messaging_core::proto::actor_device_ptid;
 use std::sync::Arc;
 
 pub type AcknowledgedItemObserver = Arc<dyn Fn(&DurableDeviceInboxItem) + Send + Sync>;
@@ -52,7 +52,8 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
         consumer_id: String,
         batch_limit: u32,
     ) -> Result<Self, String> {
-        if actor_device_parts(&device).is_none()
+        if actor_device_ptid(&device).is_err()
+            || device.device_id.trim().is_empty()
             || consumer_id.trim().is_empty()
             || batch_limit == 0
             || batch_limit > 100
@@ -140,7 +141,12 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use messaging_core::proto::actor_device_ref;
     use std::cell::RefCell;
+
+    fn device() -> ActorDeviceRef {
+        actor_device_ref("ptid:alice", "device-1")
+    }
 
     struct Transport {
         items: Vec<DurableDeviceInboxItem>,
@@ -217,7 +223,7 @@ mod tests {
                 fail_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
-            crate::messaging::actor_device_ref("ptid:alice", "device-1"),
+            device(),
             "consumer-1".to_string(),
             10,
         )
@@ -255,7 +261,7 @@ mod tests {
                 fail_at: Some(1),
                 consumed: RefCell::new(Vec::new()),
             },
-            crate::messaging::actor_device_ref("ptid:alice", "device-1"),
+            device(),
             "consumer-1".to_string(),
             10,
         )
@@ -284,7 +290,7 @@ mod tests {
                 fail_at: Some(2),
                 consumed: RefCell::new(Vec::new()),
             },
-            crate::messaging::actor_device_ref("ptid:alice", "device-1"),
+            device(),
             "consumer-1".to_string(),
             10,
         )
@@ -309,7 +315,7 @@ mod tests {
                 fail_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
-            crate::messaging::actor_device_ref("ptid:alice", "device-1"),
+            device(),
             "consumer-after-restart".to_string(),
             10,
         )
@@ -333,7 +339,7 @@ mod tests {
                 fail_at: None,
                 consumed: RefCell::new(Vec::new()),
             },
-            crate::messaging::actor_device_ref("ptid:alice", "device-1"),
+            device(),
             "consumer-1".to_string(),
             10,
         )

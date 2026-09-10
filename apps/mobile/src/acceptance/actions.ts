@@ -341,6 +341,10 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     return messagingCreateDirect({
       ...account,
       peerPtid: requirePtid(input?.peerPtid, 'messaging.createDirect.peerPtid'),
+      federationId: requireString(
+        input?.federationId,
+        'messaging.createDirect.federationId',
+      ),
     });
   },
 
@@ -356,6 +360,10 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       memberPtids: requirePtidList(
         input?.memberPtids,
         'messaging.createGroup.memberPtids',
+      ),
+      federationId: requireString(
+        input?.federationId,
+        'messaging.createGroup.federationId',
       ),
     });
   },
@@ -557,6 +565,11 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'social.request.send': async (input) => sendSocialFriendRequest(
     requirePtid(input?.receiverPtid, 'social.request.send.receiverPtid'),
+    requireString(
+      input?.receiverHomeStationPeerId,
+      'social.request.send.receiverHomeStationPeerId',
+    ),
+    requireString(input?.federationId, 'social.request.send.federationId'),
     input?.message?.trim() || undefined,
   ),
 

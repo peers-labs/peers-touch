@@ -1,6 +1,6 @@
 use super::group::MlsGroupManager;
 use crate::contracts::CryptoEndpoint;
-use crate::proto::actor_device_ref_from_parts;
+use crate::proto::actor_device_ref;
 use crate::proto::key_exchange::UploadMlsKeyPackageRequest;
 use crate::store::MlsKeyPackageRepository;
 use std::sync::Arc;
@@ -43,7 +43,7 @@ impl<R: MlsKeyPackageRepository> MlsKeyPackagePublisher<R> {
         }
         for package in self.store.pending_mls_key_packages()? {
             transport.upload(&UploadMlsKeyPackageRequest {
-                device: Some(actor_device_ref_from_parts(
+                device: Some(actor_device_ref(
                     &self.endpoint.ptid,
                     &self.endpoint.device_id,
                 )),
@@ -87,6 +87,7 @@ mod tests {
     use crate::contracts::PendingMlsKeyPackage;
     use crate::crypto::identity::IdentityKeyPair;
     use crate::identity::generate_fresh_device_identity;
+    use crate::proto::actor_device_ptid;
     use sha2::{Digest, Sha256};
     use std::sync::Mutex;
 
@@ -216,14 +217,14 @@ mod tests {
     ) {
         let identity = IdentityKeyPair::from_seed(&seed);
         let fresh = generate_fresh_device_identity("ptid:alice", identity.seed_bytes(), 1).unwrap();
-        let device_id = fresh
+        let certificate_device = fresh
             .enrollment
             .certificate
             .device
             .as_ref()
-            .unwrap()
-            .device_id
-            .clone();
+            .expect("fresh identity must include a device");
+        assert_eq!(actor_device_ptid(certificate_device).unwrap(), "ptid:alice");
+        let device_id = certificate_device.device_id.clone();
         let manager = Arc::new(MlsGroupManager::new());
         manager
             .actor_identity()

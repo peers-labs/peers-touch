@@ -4,7 +4,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Tooltip, toast } from '@lobehub/ui';
 import { Empty, Spin, theme, Typography } from 'antd';
 import {
-  Inbox, Phone, Video, MoreHorizontal,
+  Inbox, Phone, RadioTower, RefreshCw, Video, MoreHorizontal,
   Lock,
 } from 'lucide-react';
 import {
@@ -29,16 +29,31 @@ import {
   messageTimestampMs,
   replyPreviewForMessage,
 } from './message/chatMessageModel';
+import { ChatMessageTimeline } from './message/ChatMessageTimeline';
 import {
-  ChatMessageTimeline,
   loadedThreadReplyCount,
-} from './message/ChatMessageTimeline';
+  loadedThreadReplyIds,
+} from './message/chatMessageThreadStats';
+import {
+  beginMessageReactionMutation,
+  messageReactionProjectionMatches,
+  reactionMutationForProjection,
+  visibleMessageReactions,
+  type MessageReactionMutation,
+} from './message/messageReactionState';
 import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
 import { ForwardPickerModal } from './ForwardPickerModal';
 import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
+import type { DirectConversationOpenIntent } from './contactSelection';
 
 const { Text } = Typography;
+const REACTION_PROJECTION_TIMEOUT_MS = 8_000;
+
+interface ChatMessageAreaProps {
+  directOpenIntent: DirectConversationOpenIntent | null;
+  onRetryDirectOpen: () => void;
+}
 
 function chatBackgroundCss(
   background: string | undefined,
@@ -65,7 +80,10 @@ function chatBackgroundCss(
   }
 }
 
-export function ChatMessageArea() {
+export function ChatMessageArea({
+  directOpenIntent,
+  onRetryDirectOpen,
+}: ChatMessageAreaProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
@@ -147,9 +165,14 @@ export function ChatMessageArea() {
   const [deletingMessage, setDeletingMessage] = useState(false);
   const [forwardTarget, setForwardTarget] = useState<ChatMessage | null>(null);
   const [composerError, setComposerError] = useState<PresentedError | null>(null);
+  const [reactionMutations, setReactionMutations] = useState<Record<string, MessageReactionMutation>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const actionOverlayHostRef = useRef<HTMLDivElement>(null);
   const prependRestoreRef = useRef<{ previousHeight: number } | null>(null);
+  const reactionRequestIdRef = useRef(0);
+  const reactionsRef = useRef(reactions);
+  const reactionTimeoutsRef = useRef<Map<string, number>>(new Map());
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const directSecurityState = useCryptoStore((state) => (
@@ -166,6 +189,7 @@ export function ChatMessageArea() {
   const activeBackgroundImageUrl = useOssAttachmentUrl(activeLocalState?.backgroundImage || undefined);
 
   const currentName = activeConversation?.title || '';
+  const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
 
   const subtitle = (() => {
     if (activeTab === 'friend') return '';
@@ -255,6 +279,17 @@ export function ChatMessageArea() {
     const openSearch = () => setShowSearch(true);
     window.addEventListener('peers-chat:open-search', openSearch);
     return () => window.removeEventListener('peers-chat:open-search', openSearch);
+  }, []);
+
+  useEffect(() => {
+    reactionsRef.current = reactions;
+  }, [reactions]);
+
+  useEffect(() => () => {
+    for (const timeout of reactionTimeoutsRef.current.values()) {
+      window.clearTimeout(timeout);
+    }
+    reactionTimeoutsRef.current.clear();
   }, []);
 
   // ---- Typing-state outbound pulses --------------------------------
@@ -504,6 +539,107 @@ export function ChatMessageArea() {
     }
   };
 
+  const handleReaction = async (message: ChatMessage, emoji: string) => {
+    if (!activeUlid || !currentUserPtid) return;
+    const currentMutation = reactionMutations[message.ulid];
+    const currentMutationConverged = Boolean(
+      currentMutation
+      && currentMutation.phase !== 'pending'
+      && messageReactionProjectionMatches(
+        reactions[message.ulid] ?? [],
+        currentUserPtid,
+        currentMutation,
+      ),
+    );
+    if (
+      currentMutation
+      && currentMutation.phase !== 'error'
+      && !currentMutationConverged
+    ) {
+      return;
+    }
+
+    const requestId = ++reactionRequestIdRef.current;
+    const mutation = beginMessageReactionMutation(
+      reactions[message.ulid] ?? [],
+      currentUserPtid,
+      emoji,
+      requestId,
+    );
+    const existingTimeout = reactionTimeoutsRef.current.get(message.ulid);
+    if (existingTimeout !== undefined) window.clearTimeout(existingTimeout);
+    reactionTimeoutsRef.current.delete(message.ulid);
+    setReactionMutations(current => ({ ...current, [message.ulid]: mutation }));
+
+    try {
+      await reactToMessage(activeUlid, message.ulid, emoji, mutation.remove);
+      setReactionMutations((current) => {
+        const activeMutation = current[message.ulid];
+        if (!activeMutation || activeMutation.requestId !== requestId) return current;
+        return {
+          ...current,
+          [message.ulid]: {
+            ...activeMutation,
+            phase: 'awaiting-projection',
+          },
+        };
+      });
+      const timeout = window.setTimeout(() => {
+        setReactionMutations((current) => {
+          const activeMutation = current[message.ulid];
+          if (
+            !activeMutation
+            || activeMutation.requestId !== requestId
+            || activeMutation.phase !== 'awaiting-projection'
+          ) {
+            return current;
+          }
+          if (messageReactionProjectionMatches(
+            reactionsRef.current[message.ulid] ?? [],
+            currentUserPtid,
+            activeMutation,
+          )) {
+            const next = { ...current };
+            delete next[message.ulid];
+            return next;
+          }
+          return {
+            ...current,
+            [message.ulid]: {
+              ...activeMutation,
+              phase: 'error',
+            },
+          };
+        });
+        reactionTimeoutsRef.current.delete(message.ulid);
+      }, REACTION_PROJECTION_TIMEOUT_MS);
+      reactionTimeoutsRef.current.set(message.ulid, timeout);
+    } catch (error) {
+      log.error('chat', 'message reaction failed', {
+        conversationId: activeUlid,
+        messageId: message.ulid,
+        error,
+      });
+      setReactionMutations((current) => {
+        const activeMutation = current[message.ulid];
+        if (!activeMutation || activeMutation.requestId !== requestId) return current;
+        return {
+          ...current,
+          [message.ulid]: {
+            ...activeMutation,
+            phase: 'error',
+          },
+        };
+      });
+    }
+  };
+
+  const retryReaction = (message: ChatMessage) => {
+    const mutation = reactionMutations[message.ulid];
+    if (!mutation || mutation.phase !== 'error') return;
+    void handleReaction(message, mutation.emoji);
+  };
+
   const confirmDeleteMessage = (target: ChatMessage) => {
     if (!activeUlid) return;
     setDeleteTarget(target);
@@ -569,6 +705,89 @@ export function ChatMessageArea() {
     });
   };
 
+  if (!activeUlid && directOpenIntent) {
+    return (
+      <Flexbox
+        data-chat-conversation-intent={directOpenIntent.peerPtid}
+        data-chat-conversation-intent-state={directOpenIntent.phase}
+        flex={1}
+        style={{
+          height: '100%',
+          minWidth: 0,
+          background: token.colorBgLayout,
+        }}
+      >
+        <Flexbox
+          horizontal
+          align="center"
+          style={{
+            height: 64,
+            padding: '0 18px',
+            borderBottom: `1px solid ${token.colorBorderSecondary}`,
+            background: token.colorBgContainer,
+            flexShrink: 0,
+          }}
+        >
+          <Text strong style={{ fontSize: 14 }}>
+            {directOpenIntent.displayName}
+          </Text>
+        </Flexbox>
+
+        <Flexbox
+          flex={1}
+          align="center"
+          justify="center"
+          gap={12}
+          aria-live="polite"
+          style={{ padding: 24 }}
+        >
+          {directOpenIntent.phase === 'creating' ? (
+            <>
+              <Spin size="small" />
+              <Text type="secondary">
+                {t('common.state.loading', { ns: 'common' })}
+              </Text>
+            </>
+          ) : (
+            <Flexbox
+              data-chat-conversation-intent-error={directOpenIntent.error.code}
+              gap={10}
+              style={{ width: 'min(420px, 100%)' }}
+            >
+              <PresentedErrorAlert error={directOpenIntent.error} />
+              {directOpenIntent.error.recoverable && (
+                <Button
+                  data-chat-conversation-intent-retry
+                  icon={<RefreshCw size={14} />}
+                  onClick={onRetryDirectOpen}
+                >
+                  {t('chat.message.action.retry')}
+                </Button>
+              )}
+            </Flexbox>
+          )}
+        </Flexbox>
+
+        <ChatComposer
+          activeConversationId=""
+          disabled
+          editing={false}
+          surfaceBackground={token.colorBgContainer}
+          value={inputValue}
+          onChange={handleInputChange}
+          onBlurInput={stopTypingPulse}
+          onCancelEdit={cancelEdit}
+          onCancelReply={() => setReplyToUlid(null)}
+          onSend={handleSend}
+          replyPreview={replyingPreview}
+          replyPreviewKey={replyToUlid}
+          sending={false}
+          capabilities={CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN}
+        />
+      </Flexbox>
+    );
+  }
+
   if (!activeUlid) {
     return (
       <Flexbox flex={1} align="center" justify="center" gap={12} style={{ background: token.colorBgContainer }}>
@@ -601,14 +820,17 @@ export function ChatMessageArea() {
 
   return (
     <Flexbox
+      data-chat-conversation-pane={activeUlid}
       data-session-security={activeTab === 'friend' ? directSecurityState : undefined}
       data-group-security={activeTab === 'group' ? groupSecurityState[activeUlid] || 'unknown' : undefined}
       data-chat-typing={peerIsTyping ? 'active' : 'inactive'}
+      data-chat-background={activeBackground || 'default'}
+      data-chat-background-image={activeLocalState?.backgroundImage || ''}
       flex={1}
       gap={0}
       style={{
         height: '100%',
-        minWidth: 380,
+        minWidth: 0,
         background: token.colorBgLayout,
         position: 'relative',
         overflow: 'hidden',
@@ -663,6 +885,40 @@ export function ChatMessageArea() {
                     <Lock size={13} style={{ color: token.colorTextTertiary, marginLeft: 2 }} />
                   </Tooltip>
                 )}
+                <span
+                  data-chat-station="authority"
+                  data-chat-station-id={authorityStationId}
+                  data-chat-station-state={authorityStationId ? 'available' : 'unavailable'}
+                  title={authorityStationId || t('chat.social.detail.authorityStationUnavailable')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    minWidth: 0,
+                    maxWidth: 'min(180px, 24vw)',
+                    padding: '1px 6px',
+                    borderRadius: 999,
+                    background: token.colorFillQuaternary,
+                    color: token.colorTextTertiary,
+                    fontSize: 10,
+                    lineHeight: '16px',
+                    flexShrink: 1,
+                  }}
+                >
+                  <RadioTower aria-hidden="true" size={11} style={{ flexShrink: 0 }} />
+                  <span
+                    style={{
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {authorityStationId
+                      ? `${t('chat.social.findPeople.scopeStation')} · ${authorityStationId}`
+                      : t('chat.social.detail.authorityStationUnavailable')}
+                  </span>
+                </span>
               </Flexbox>
               {headerSubtitle && (
                 <Text type="secondary" style={{ fontSize: 12 }}>
@@ -741,6 +997,7 @@ export function ChatMessageArea() {
           </Flexbox>
         ) : (
           <ChatMessageTimeline
+            actionOverlayHostRef={actionOverlayHostRef}
             activeConversationId={activeUlid}
             activeKind={activeKind}
             currentUserPtid={currentUserPtid}
@@ -757,24 +1014,42 @@ export function ChatMessageArea() {
               if (!activeUlid) return;
               pinMessage(activeUlid, msg.ulid, Boolean(pinnedMessages[msg.ulid]));
             }}
-            onReact={(msg) => {
-              if (!activeUlid) return;
-              const remove = (reactions[msg.ulid] ?? []).some(
-                reaction => reaction.actorPtid === currentUserPtid && reaction.emoji === '👍',
-              );
-              reactToMessage(activeUlid, msg.ulid, '👍', remove);
+            onReact={(message, emoji) => {
+              void handleReaction(message, emoji);
             }}
             onRecall={handleRecall}
             onReply={(messageUlid) => {
               setEditingUlid(null);
               setReplyToUlid(messageUlid);
             }}
-            resolveReactions={(message) => reactions[message.ulid] ?? []}
+            onRetryReaction={retryReaction}
+            reactionMutationFor={(message) => {
+              const mutation = reactionMutationForProjection(
+                reactions[message.ulid] ?? [],
+                currentUserPtid,
+                reactionMutations[message.ulid],
+              );
+              return mutation
+                ? { emoji: mutation.emoji, phase: mutation.phase }
+                : undefined;
+            }}
+            resolveReactions={(message) => [
+              ...visibleMessageReactions(
+                reactions[message.ulid] ?? [],
+                reactionMutationForProjection(
+                  reactions[message.ulid] ?? [],
+                  currentUserPtid,
+                  reactionMutations[message.ulid],
+                ),
+              ),
+            ]}
             resolveThreadStats={(message) => {
               const threadKey = socialThreadKey(activeKind, activeUlid, message.ulid);
               const threadSummary = threadCounts[threadKey];
+              const replyIds = loadedThreadReplyIds(currentMessages, message.ulid);
               return {
-                replyCount: threadSummary?.replyCount ?? loadedThreadReplyCount(currentMessages, message.ulid),
+                replyCount: loadedThreadReplyCount(currentMessages, message.ulid),
+                replyIds,
                 previewMessages: threadPreviewMessagesForRoot(message.ulid),
                 unreadCount: threadSummary?.unreadCount ?? 0,
               };
@@ -824,6 +1099,19 @@ export function ChatMessageArea() {
         conversations={getIMConversations()}
         onCancel={() => setForwardTarget(null)}
         onSelect={handleForwardSelect}
+      />
+
+      <div
+        ref={actionOverlayHostRef}
+        data-message-action-overlay-host
+        aria-hidden={!activeUlid}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          overflow: 'hidden',
+          pointerEvents: 'none',
+          zIndex: 20,
+        }}
       />
     </Flexbox>
   );

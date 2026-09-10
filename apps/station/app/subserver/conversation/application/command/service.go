@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
@@ -80,20 +81,39 @@ func NewService(
 	}, nil
 }
 
+// BindUnitOfWork returns the same application service over an already-bound
+// transaction view. This lets the shared Federation inbox own the outer
+// transaction while Conversation retains all command invariants.
+func (s *Service) BindUnitOfWork(unitOfWork ports.UnitOfWork) (*Service, error) {
+	if s == nil || unitOfWork == nil {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"application.bind_command_service",
+			"unit_of_work",
+			"is required",
+		)
+	}
+	bound := *s
+	bound.unitOfWork = unitOfWork
+
+	return &bound, nil
+}
+
 type CreateDirectRequest struct {
 	Creator           valueobject.Endpoint
 	Peer              valueobject.PTID
 	FederationID      valueobject.FederationID
 	AuthorityEpoch    valueobject.AuthorityEpoch
 	CommandID         valueobject.CommandID
+	VerifiedRoutes    []ports.EndpointRoute
 	ExactCommandBytes []byte
 }
 
 type CreateGroupRequest struct {
 	ConversationID    valueobject.ConversationID
-	Name              string
 	Owner             valueobject.Endpoint
-	Members           []valueobject.PTID
+	VerifiedRoutes    []ports.EndpointRoute
+	ManifestStateHash valueobject.Hash
 	CommandID         valueobject.CommandID
 	AuthorityPlanID   valueobject.PlanID
 	AuthorityPlanHash valueobject.Hash
@@ -106,6 +126,7 @@ type SubmitRequest struct {
 	Membership        *aggregate.MembershipTransition
 	Settings          *valueobject.SettingsPatch
 	Dissolve          bool
+	VerifiedRoutes    []ports.EndpointRoute
 	AuthorityPlanID   valueobject.PlanID
 	AuthorityPlanHash valueobject.Hash
 	ExactCommandBytes []byte
@@ -157,21 +178,34 @@ type PrepareMembershipRequest struct {
 	TTL            time.Duration
 }
 
+type PrepareCommandRequest struct {
+	ConversationID    valueobject.ConversationID
+	Sender            valueobject.Endpoint
+	SenderHomeStation valueobject.StationID
+	VerifiedRoutes    []ports.EndpointRoute
+}
+
 type PrepareGroupRequest struct {
-	ConversationID valueobject.ConversationID
-	FederationID   valueobject.FederationID
-	AuthorityEpoch valueobject.AuthorityEpoch
-	Name           string
-	Owner          valueobject.Endpoint
-	Members        []valueobject.PTID
-	TTL            time.Duration
+	ConversationID    valueobject.ConversationID
+	FederationID      valueobject.FederationID
+	AuthorityEpoch    valueobject.AuthorityEpoch
+	Name              string
+	Owner             valueobject.Endpoint
+	Members           []valueobject.PTID
+	VerifiedRoutes    []ports.EndpointRoute
+	ManifestSetHash   valueobject.Hash
+	ManifestStateHash valueobject.Hash
+	TTL               time.Duration
 }
 
 func (s *Service) PrepareGroup(
 	ctx context.Context,
 	request PrepareGroupRequest,
 ) (entity.AuthorityPlan, error) {
-	if request.ConversationID == "" || request.Owner.Validate() != nil {
+	if request.ConversationID == "" ||
+		request.Owner.Validate() != nil ||
+		request.ManifestSetHash.IsZero() ||
+		request.ManifestStateHash.IsZero() {
 		return entity.AuthorityPlan{}, invalid(
 			"application.prepare_group",
 			"request",
@@ -208,28 +242,56 @@ func (s *Service) PrepareGroup(
 		} else if !conversationdomain.IsCode(err, conversationdomain.ErrorCodeNotFound) {
 			return err
 		}
-		routes, err := resolveActorRoutes(ctx, transaction.Identity, actors)
+		routes, err := canonicalActorRoutes(request.VerifiedRoutes, actors)
 		if err != nil {
 			return err
 		}
-		if !routeSetContains(routes, request.Owner) {
+		ownerActive, err := transaction.Identity.IsActive(ctx, request.Owner)
+		if err != nil {
+			return err
+		}
+		if !ownerActive {
 			return unauthorized("application.prepare_group", "owner device is not active")
+		}
+		if !routeSetContains(routes, request.Owner) {
+			return unauthorized(
+				"application.prepare_group",
+				"owner is absent from the verified endpoint routes",
+			)
+		}
+		for _, station := range routeStations(routes) {
+			federationActive, federationErr := transaction.Federation.IsActiveStation(
+				ctx,
+				request.FederationID,
+				station,
+			)
+			if federationErr != nil {
+				return federationErr
+			}
+			if !federationActive {
+				return conversationdomain.NewError(
+					conversationdomain.ErrorCodeFederationInactive,
+					"application.prepare_group",
+					"home_station",
+					"is not an active Federation Station",
+				)
+			}
 		}
 		postEndpoints := endpointsFromRoutes(routes)
 		changes := genesisMembershipChanges(actors, request.Owner.Actor, routes)
 		now := s.clock.Now()
 		expiresAt := now.Add(ttl)
 		planID := s.idGenerator.NewPlanID()
-		reservationEndpoints := make([]valueobject.Endpoint, 0, len(postEndpoints)-1)
-		for _, endpoint := range postEndpoints {
-			if endpoint != request.Owner {
-				reservationEndpoints = append(reservationEndpoints, endpoint)
+		reservationRoutes := make([]ports.EndpointRoute, 0, len(routes)-1)
+		for _, route := range routes {
+			if route.Endpoint != request.Owner {
+				reservationRoutes = append(reservationRoutes, route)
 			}
 		}
 		reservations, err := transaction.KeyPackageReservations.Reserve(
 			ctx,
 			planID,
-			reservationEndpoints,
+			reservationRoutes,
 			expiresAt,
 		)
 		if err != nil {
@@ -250,21 +312,25 @@ func (s *Service) PrepareGroup(
 			changes,
 			reservations,
 			expiresAt,
+			request.ManifestSetHash,
+			request.ManifestStateHash,
 		)
 		plan, err := entity.NewAuthorityPlan(entity.AuthorityPlan{
-			ID:                     planID,
-			ConversationID:         request.ConversationID,
-			FederationID:           request.FederationID,
-			AuthorityEpoch:         request.AuthorityEpoch,
-			PreparedName:           request.Name,
-			Requester:              request.Owner,
-			AuthorityHead:          valueobject.AuthorityHead{},
-			Changes:                changes,
-			PostEndpoints:          postEndpoints,
-			AddedEndpoints:         postEndpoints,
-			Hash:                   planHash,
-			ExpiresAt:              expiresAt,
-			KeyPackageReservations: reservations,
+			ID:                        planID,
+			ConversationID:            request.ConversationID,
+			FederationID:              request.FederationID,
+			AuthorityEpoch:            request.AuthorityEpoch,
+			PreparedName:              request.Name,
+			Requester:                 request.Owner,
+			AuthorityHead:             valueobject.AuthorityHead{},
+			Changes:                   changes,
+			PostEndpoints:             postEndpoints,
+			AddedEndpoints:            postEndpoints,
+			EndpointManifestSetHash:   request.ManifestSetHash,
+			EndpointManifestStateHash: request.ManifestStateHash,
+			Hash:                      planHash,
+			ExpiresAt:                 expiresAt,
+			KeyPackageReservations:    reservations,
 		})
 		if err != nil {
 			return err
@@ -282,6 +348,24 @@ func (s *Service) CreateDirect(
 	ctx context.Context,
 	request CreateDirectRequest,
 ) (Result, error) {
+	return s.createDirect(ctx, request)
+}
+
+// EnsureDirect creates the deterministic Direct Conversation or returns the
+// existing compatible aggregate. It is reserved for durable owner effects,
+// whose idempotency is the deterministic Conversation identity rather than a
+// client command receipt.
+func (s *Service) EnsureDirect(
+	ctx context.Context,
+	request CreateDirectRequest,
+) (Result, error) {
+	return s.createDirect(ctx, request)
+}
+
+func (s *Service) createDirect(
+	ctx context.Context,
+	request CreateDirectRequest,
+) (Result, error) {
 	if request.Creator.Validate() != nil || request.Peer == "" ||
 		request.FederationID == "" || request.AuthorityEpoch == 0 ||
 		request.CommandID == "" || len(request.ExactCommandBytes) == 0 {
@@ -296,7 +380,7 @@ func (s *Service) CreateDirect(
 	var notifications []ports.CommittedDelivery
 	err = s.unitOfWork.ExecuteSerialized(
 		ctx,
-		"conversation-create:"+string(conversationID),
+		conversationGenesisLockKey(conversationID),
 		func(transaction ports.Transaction) error {
 			if err := validateTransaction(transaction); err != nil {
 				return err
@@ -304,32 +388,123 @@ func (s *Service) CreateDirect(
 			existing, loadErr := transaction.Repositories.Authority.LoadForUpdate(ctx, conversationID)
 			switch {
 			case loadErr == nil:
-				event, replayErr := replayCommittedCommand(
+				_, receiptErr := transaction.Repositories.Receipts.Get(
 					ctx,
-					transaction.Repositories,
 					conversationID,
 					request.CommandID,
-					commandHash,
 				)
-				if replayErr != nil {
-					return replayErr
+				switch {
+				case receiptErr == nil:
+					event, replayErr := replayCommittedCommand(
+						ctx,
+						transaction.Repositories,
+						conversationID,
+						request.CommandID,
+						commandHash,
+					)
+					if replayErr != nil {
+						return replayErr
+					}
+					result = Result{Conversation: existing, Event: event, Replay: true}
+
+					return nil
+				case !conversationdomain.IsCode(
+					receiptErr,
+					conversationdomain.ErrorCodeNotFound,
+				):
+					return receiptErr
 				}
-				result = Result{Conversation: existing, Event: event, Replay: true}
+				if existing.AuthorityStation != s.localStation {
+					return conversationdomain.NewError(
+						conversationdomain.ErrorCodeCommandConflict,
+						"application.create_direct",
+						"authority_station",
+						"does not match the local authority",
+					)
+				}
+				if matchErr := validateExistingDirect(existing, request); matchErr != nil {
+					return matchErr
+				}
+				result = Result{Conversation: existing, Replay: true}
+
 				return nil
 			case !conversationdomain.IsCode(loadErr, conversationdomain.ErrorCodeNotFound):
 				return loadErr
 			}
-
-			routes, routeErr := resolveActorRoutes(
+			follower, followerErr := transaction.Repositories.Followers.Get(
 				ctx,
-				transaction.Identity,
+				conversationID,
+			)
+			switch {
+			case followerErr == nil:
+				if follower.Status != repository.FollowerStatusActive ||
+					follower.Conversation.AuthorityStation == s.localStation {
+					return conversationdomain.NewError(
+						conversationdomain.ErrorCodeCommandConflict,
+						"application.create_direct",
+						"follower",
+						"is not an active remote-authority projection",
+					)
+				}
+				if matchErr := validateExistingDirect(
+					follower.Conversation,
+					request,
+				); matchErr != nil {
+					return matchErr
+				}
+				result = Result{
+					Conversation: follower.Conversation,
+					Replay:       true,
+				}
+
+				return nil
+			case !conversationdomain.IsCode(
+				followerErr,
+				conversationdomain.ErrorCodeNotFound,
+			):
+				return followerErr
+			}
+
+			routes, routeErr := canonicalActorRoutes(
+				request.VerifiedRoutes,
 				[]valueobject.PTID{request.Creator.Actor, request.Peer},
 			)
 			if routeErr != nil {
 				return routeErr
 			}
+			active, activeErr := transaction.Identity.IsActive(ctx, request.Creator)
+			if activeErr != nil {
+				return activeErr
+			}
+			if !active {
+				return unauthorized(
+					"application.create_direct",
+					"creator is not an active local endpoint",
+				)
+			}
 			if !routeSetContains(routes, request.Creator) {
-				return unauthorized("application.create_direct", "creator is not an active endpoint")
+				return unauthorized(
+					"application.create_direct",
+					"creator is absent from the verified endpoint routes",
+				)
+			}
+			for _, station := range routeStations(routes) {
+				federationActive, federationErr := transaction.Federation.IsActiveStation(
+					ctx,
+					request.FederationID,
+					station,
+				)
+				if federationErr != nil {
+					return federationErr
+				}
+				if !federationActive {
+					return conversationdomain.NewError(
+						conversationdomain.ErrorCodeFederationInactive,
+						"application.create_direct",
+						"home_station",
+						"is not an active Federation Station",
+					)
+				}
 			}
 			participants, devices, buildErr := participantsAndDevices(
 				[]valueobject.PTID{request.Creator.Actor, request.Peer},
@@ -389,13 +564,95 @@ func (s *Service) CreateDirect(
 	return result, nil
 }
 
+func validateExistingDirect(
+	snapshot aggregate.Snapshot,
+	request CreateDirectRequest,
+) error {
+	activeActors := make(map[valueobject.PTID]struct{}, len(snapshot.Members))
+	for _, member := range snapshot.Members {
+		if member.Active() {
+			activeActors[member.Actor] = struct{}{}
+		}
+	}
+	_, hasCreator := activeActors[request.Creator.Actor]
+	_, hasPeer := activeActors[request.Peer]
+	if snapshot.Kind != valueobject.ConversationKindDirect ||
+		snapshot.Status != valueobject.ConversationStatusActive ||
+		snapshot.FederationID != request.FederationID ||
+		snapshot.AuthorityStation == "" ||
+		snapshot.AuthorityEpoch != request.AuthorityEpoch ||
+		len(snapshot.Members) != 2 ||
+		len(activeActors) != 2 ||
+		!hasCreator ||
+		!hasPeer {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeCommandConflict,
+			"application.ensure_direct",
+			"conversation",
+			"does not match the requested Direct Conversation",
+		)
+	}
+
+	return nil
+}
+
+func conversationGenesisLockKey(
+	conversationID valueobject.ConversationID,
+) string {
+	return "conversation-genesis:" + string(conversationID)
+}
+
+// ReplayGroupCreation resolves an existing exact command receipt without
+// requiring a fresh remote endpoint-manifest lookup.
+func (s *Service) ReplayGroupCreation(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	commandID valueobject.CommandID,
+	exactCommandBytes []byte,
+) (Result, bool, error) {
+	if conversationID == "" || commandID == "" || len(exactCommandBytes) == 0 {
+		return Result{}, false, invalid(
+			"application.replay_group_creation",
+			"request",
+			"conversation, command, and exact bytes are required",
+		)
+	}
+	commandHash := valueobject.HashBytes(exactCommandBytes)
+	var result Result
+	var replayed bool
+	err := s.unitOfWork.ExecuteSerialized(
+		ctx,
+		conversationGenesisLockKey(conversationID),
+		func(transaction ports.Transaction) error {
+			if err := validateTransaction(transaction); err != nil {
+				return err
+			}
+			var replayErr error
+			result, replayed, replayErr = resolveGroupCreationReceipt(
+				ctx,
+				transaction.Repositories,
+				conversationID,
+				commandID,
+				commandHash,
+			)
+			return replayErr
+		},
+	)
+	if err != nil {
+		return Result{}, replayed, err
+	}
+	return result, replayed, nil
+}
+
 func (s *Service) CreateGroup(
 	ctx context.Context,
 	request CreateGroupRequest,
 ) (Result, error) {
 	if request.ConversationID == "" || request.Owner.Validate() != nil ||
 		request.CommandID == "" || request.AuthorityPlanID == "" ||
-		request.AuthorityPlanHash.IsZero() || len(request.ExactCommandBytes) == 0 {
+		request.AuthorityPlanHash.IsZero() ||
+		request.ManifestStateHash.IsZero() ||
+		len(request.ExactCommandBytes) == 0 {
 		return Result{}, invalid("application.create_group", "request", "complete group input is required")
 	}
 	commandHash := valueobject.HashBytes(request.ExactCommandBytes)
@@ -404,68 +661,24 @@ func (s *Service) CreateGroup(
 	var rejection error
 	err := s.unitOfWork.ExecuteSerialized(
 		ctx,
-		"conversation-create:"+string(request.ConversationID),
+		conversationGenesisLockKey(request.ConversationID),
 		func(transaction ports.Transaction) error {
 			if err := validateTransaction(transaction); err != nil {
 				return err
 			}
-			receipt, receiptErr := transaction.Repositories.Receipts.Get(
+			replayedResult, replayed, replayErr := resolveGroupCreationReceipt(
 				ctx,
+				transaction.Repositories,
 				request.ConversationID,
 				request.CommandID,
+				commandHash,
 			)
-			switch {
-			case receiptErr == nil:
-				if !bytes.Equal(receipt.CommandHash[:], commandHash[:]) {
-					return conversationdomain.NewError(
-						conversationdomain.ErrorCodeCommandConflict,
-						"application.create_group",
-						"command_id",
-						"was resolved with different exact bytes",
-					)
-				}
-				switch receipt.Outcome {
-				case repository.CommandReceiptOutcomeAccepted:
-					existing, loadErr := transaction.Repositories.Authority.LoadForUpdate(
-						ctx,
-						request.ConversationID,
-					)
-					if loadErr != nil {
-						return loadErr
-					}
-					event, eventErr := transaction.Repositories.Events.GetByID(
-						ctx,
-						receipt.EventID,
-					)
-					if eventErr != nil {
-						return eventErr
-					}
-					if receiptErr := validateCreationReceiptEvent(
-						receipt,
-						event,
-					); receiptErr != nil {
-						return receiptErr
-					}
-					result = Result{Conversation: existing, Event: event, Replay: true}
-					return nil
-				case repository.CommandReceiptOutcomeRejected:
-					rejection = conversationdomain.NewError(
-						receipt.RejectionCode,
-						"application.create_group",
-						"command_id",
-						"was terminally rejected",
-					)
-					return nil
-				default:
-					return conversationdomain.NewError(
-						conversationdomain.ErrorCodeHashChainInvalid,
-						"application.create_group",
-						"receipt",
-						"contains an unknown command outcome",
-					)
-				}
-			case !conversationdomain.IsCode(receiptErr, conversationdomain.ErrorCodeNotFound):
-				return receiptErr
+			if replayErr != nil {
+				return replayErr
+			}
+			if replayed {
+				result = replayedResult
+				return nil
 			}
 			persistRejection := func(candidate error, at time.Time) error {
 				code := conversationdomain.CodeOf(candidate)
@@ -551,7 +764,6 @@ func (s *Service) CreateGroup(
 				)
 			}
 			if plan.ConversationID != request.ConversationID ||
-				plan.PreparedName != request.Name ||
 				!bytes.Equal(plan.Hash[:], request.AuthorityPlanHash[:]) {
 				if supersedeErr := supersedePlan(ctx, transaction, &plan, now); supersedeErr != nil {
 					return supersedeErr
@@ -581,19 +793,83 @@ func (s *Service) CreateGroup(
 				)
 				return persistRejection(rejection, now)
 			}
-			routes, routeErr := resolveActorRoutes(
-				ctx,
-				transaction.Identity,
-				uniqueActors(append(append([]valueobject.PTID(nil), request.Members...), request.Owner.Actor)),
+			verifiedPlanHash := authorityPlanHash(
+				plan.ID,
+				plan.ConversationID,
+				plan.FederationID,
+				plan.AuthorityEpoch,
+				plan.Requester,
+				plan.PreparedName,
+				aggregate.MembershipPreview{
+					PreEndpoints:     plan.PreEndpoints,
+					PostEndpoints:    plan.PostEndpoints,
+					AddedEndpoints:   plan.AddedEndpoints,
+					RemovedEndpoints: plan.RemovedEndpoints,
+				},
+				plan.Changes,
+				plan.KeyPackageReservations,
+				plan.ExpiresAt,
+				plan.EndpointManifestSetHash,
+				plan.EndpointManifestStateHash,
 			)
+			if verifiedPlanHash != plan.Hash {
+				if supersedeErr := supersedePlan(ctx, transaction, &plan, now); supersedeErr != nil {
+					return supersedeErr
+				}
+				rejection = conversationdomain.NewError(
+					conversationdomain.ErrorCodeAuthorityPlanStale,
+					"application.create_group",
+					"endpoint_manifest",
+					"does not match the prepared authority plan",
+				)
+				return persistRejection(rejection, now)
+			}
+			if request.ManifestStateHash != plan.EndpointManifestStateHash {
+				if supersedeErr := supersedePlan(ctx, transaction, &plan, now); supersedeErr != nil {
+					return supersedeErr
+				}
+				rejection = conversationdomain.NewError(
+					conversationdomain.ErrorCodeAuthorityPlanStale,
+					"application.create_group",
+					"endpoint_manifest",
+					"active directory state changed after preparation",
+				)
+				return persistRejection(rejection, now)
+			}
+			actors := genesisActors(plan.Changes)
+			routes, routeErr := canonicalActorRoutes(request.VerifiedRoutes, actors)
 			if routeErr != nil {
 				return routeErr
 			}
+			ownerActive, activeErr := transaction.Identity.IsActive(ctx, request.Owner)
+			if activeErr != nil {
+				return activeErr
+			}
+			if !ownerActive {
+				return unauthorized(
+					"application.create_group",
+					"owner device is not active",
+				)
+			}
+			for _, station := range routeStations(routes) {
+				federationActive, federationErr := transaction.Federation.IsActiveStation(
+					ctx,
+					plan.FederationID,
+					station,
+				)
+				if federationErr != nil {
+					return federationErr
+				}
+				if !federationActive {
+					return conversationdomain.NewError(
+						conversationdomain.ErrorCodeFederationInactive,
+						"application.create_group",
+						"home_station",
+						"is not an active Federation Station",
+					)
+				}
+			}
 			if !routeSetContains(routes, request.Owner) ||
-				!sameActorSets(
-					genesisActors(plan.Changes),
-					append(append([]valueobject.PTID(nil), request.Members...), request.Owner.Actor),
-				) ||
 				!membershipChangesMatchRoutes(plan.Changes, aggregate.Snapshot{}, routes) ||
 				!valueobject.EqualEndpointSets(plan.PostEndpoints, endpointsFromRoutes(routes)) {
 				if supersedeErr := supersedePlan(ctx, transaction, &plan, now); supersedeErr != nil {
@@ -612,7 +888,7 @@ func (s *Service) CreateGroup(
 				return persistRejection(routeErr, now)
 			}
 			participants, devices, buildErr := participantsAndDevices(
-				uniqueActors(append(append([]valueobject.PTID(nil), request.Members...), request.Owner.Actor)),
+				actors,
 				request.Owner.Actor,
 				routes,
 				1,
@@ -629,7 +905,7 @@ func (s *Service) CreateGroup(
 				Owner:            request.Owner.Actor,
 				Participants:     participants,
 				Devices:          devices,
-				Settings:         valueobject.ConversationSettings{Name: request.Name},
+				Settings:         valueobject.ConversationSettings{Name: plan.PreparedName},
 				CommandID:        request.CommandID,
 				Creator:          request.Owner,
 				Deliveries:       deliveries,
@@ -679,17 +955,84 @@ func (s *Service) CreateGroup(
 	return result, nil
 }
 
-func (s *Service) PrepareCommand(
+func resolveGroupCreationReceipt(
+	ctx context.Context,
+	repositories repository.Repositories,
+	conversationID valueobject.ConversationID,
+	commandID valueobject.CommandID,
+	commandHash valueobject.Hash,
+) (Result, bool, error) {
+	receipt, err := repositories.Receipts.Get(ctx, conversationID, commandID)
+	if conversationdomain.IsCode(err, conversationdomain.ErrorCodeNotFound) {
+		return Result{}, false, nil
+	}
+	if err != nil {
+		return Result{}, false, err
+	}
+	if !bytes.Equal(receipt.CommandHash[:], commandHash[:]) {
+		return Result{}, true, conversationdomain.NewError(
+			conversationdomain.ErrorCodeCommandConflict,
+			"application.create_group",
+			"command_id",
+			"was resolved with different exact bytes",
+		)
+	}
+	switch receipt.Outcome {
+	case repository.CommandReceiptOutcomeAccepted:
+		existing, loadErr := repositories.Authority.LoadForUpdate(
+			ctx,
+			conversationID,
+		)
+		if loadErr != nil {
+			return Result{}, true, loadErr
+		}
+		event, eventErr := repositories.Events.GetByID(ctx, receipt.EventID)
+		if eventErr != nil {
+			return Result{}, true, eventErr
+		}
+		if receiptErr := validateCreationReceiptEvent(receipt, event); receiptErr != nil {
+			return Result{}, true, receiptErr
+		}
+		return Result{
+			Conversation: existing,
+			Event:        event,
+			Replay:       true,
+		}, true, nil
+	case repository.CommandReceiptOutcomeRejected:
+		return Result{}, true, conversationdomain.NewError(
+			receipt.RejectionCode,
+			"application.create_group",
+			"command_id",
+			"was terminally rejected",
+		)
+	default:
+		return Result{}, true, conversationdomain.NewError(
+			conversationdomain.ErrorCodeHashChainInvalid,
+			"application.create_group",
+			"receipt",
+			"contains an unknown command outcome",
+		)
+	}
+}
+
+func (s *Service) CommandRouteActors(
 	ctx context.Context,
 	conversationID valueobject.ConversationID,
-	sender valueobject.Endpoint,
-) (aggregate.CommandPreparation, error) {
-	var preparation aggregate.CommandPreparation
+	sender valueobject.PTID,
+) ([]valueobject.PTID, error) {
+	if conversationID == "" || sender == "" {
+		return nil, invalid(
+			"application.command_route_actors",
+			"request",
+			"conversation and sender are required",
+		)
+	}
+	var actors []valueobject.PTID
 	err := s.unitOfWork.Execute(ctx, func(transaction ports.Transaction) error {
 		if err := validateTransaction(transaction); err != nil {
 			return err
 		}
-		snapshot, err := transaction.Repositories.Authority.LoadForUpdate(ctx, conversationID)
+		snapshot, err := transaction.Repositories.Authority.Get(ctx, conversationID)
 		if err != nil {
 			return err
 		}
@@ -697,19 +1040,71 @@ func (s *Service) PrepareCommand(
 		if err != nil {
 			return err
 		}
-		active, err := transaction.Identity.IsActive(ctx, sender)
+		if snapshot.AuthorityStation != s.localStation {
+			return conversationdomain.NewError(
+				conversationdomain.ErrorCodeStaleAuthorityHead,
+				"application.command_route_actors",
+				"authority_station",
+				"does not identify the local Conversation authority",
+			)
+		}
+		if !conversation.IsActiveMember(sender) {
+			return unauthorized(
+				"application.command_route_actors",
+				"sender is not an active Conversation member",
+			)
+		}
+		actors = conversation.ActiveMemberActors()
+		return nil
+	})
+	return actors, err
+}
+
+func (s *Service) PrepareCommand(
+	ctx context.Context,
+	request PrepareCommandRequest,
+) (aggregate.CommandPreparation, error) {
+	if request.ConversationID == "" ||
+		request.Sender.Validate() != nil ||
+		request.SenderHomeStation == "" {
+		return aggregate.CommandPreparation{}, invalid(
+			"application.prepare_command",
+			"request",
+			"conversation, sender, and sender Home Station are required",
+		)
+	}
+	var preparation aggregate.CommandPreparation
+	err := s.unitOfWork.Execute(ctx, func(transaction ports.Transaction) error {
+		if err := validateTransaction(transaction); err != nil {
+			return err
+		}
+		snapshot, err := transaction.Repositories.Authority.LoadForUpdate(
+			ctx,
+			request.ConversationID,
+		)
 		if err != nil {
 			return err
 		}
-		if !active {
-			return unauthorized("application.prepare_command", "sender device is not active")
-		}
-		routes, err := resolveActorRoutes(ctx, transaction.Identity, conversation.ActiveMemberActors())
+		conversation, err := aggregate.Rehydrate(snapshot)
 		if err != nil {
+			return err
+		}
+		routes, err := commandRouteSnapshot(conversation, request.VerifiedRoutes)
+		if err != nil {
+			return err
+		}
+		if err := s.authorizeCommandSender(
+			ctx,
+			transaction,
+			conversation,
+			request.Sender,
+			request.SenderHomeStation,
+			routes,
+		); err != nil {
 			return err
 		}
 		required := eligibleConversationEndpoints(conversation, routes)
-		preparation, err = conversation.PrepareCommand(sender, required)
+		preparation, err = conversation.PrepareCommand(request.Sender, required)
 		return err
 	})
 	return preparation, err
@@ -784,7 +1179,7 @@ func (s *Service) PrepareMembership(
 		reservations, err := transaction.KeyPackageReservations.Reserve(
 			ctx,
 			planID,
-			preview.AddedEndpoints,
+			filterRoutesByEndpoints(routes, preview.AddedEndpoints),
 			expiresAt,
 		)
 		if err != nil {
@@ -941,17 +1336,6 @@ func (s *Service) submit(
 			}
 			return nil
 		}
-		active, err := transaction.Identity.IsActive(ctx, request.Command.Sender)
-		if err != nil {
-			return err
-		}
-		if !active {
-			inactiveErr := unauthorized("application.submit", "sender device is not active")
-			if forwarded != nil {
-				return inactiveErr
-			}
-			return persistRejection(inactiveErr)
-		}
 		if forwarded != nil {
 			if forwardedPreflightErr != nil {
 				return forwardedPreflightErr
@@ -975,25 +1359,73 @@ func (s *Service) submit(
 					"is not an active Federation Station",
 				)
 			}
-			routes, err := resolveActorRoutes(
-				ctx,
-				transaction.Identity,
-				[]valueobject.PTID{request.Command.Sender.Actor},
+		}
+		var commandRoutes []ports.EndpointRoute
+		switch {
+		case request.Membership == nil:
+			commandRoutes, err = commandRouteSnapshot(
+				conversation,
+				request.VerifiedRoutes,
 			)
 			if err != nil {
 				return err
 			}
-			if !routeSetContainsAtStation(
-				routes,
+			senderHomeStation := s.localStation
+			if forwarded != nil {
+				senderHomeStation = forwarded.HomeStation
+			}
+			if err := s.authorizeCommandSender(
+				ctx,
+				transaction,
+				conversation,
 				request.Command.Sender,
-				forwarded.HomeStation,
-			) {
-				return conversationdomain.NewError(
-					conversationdomain.ErrorCodeProposalBinding,
-					"application.submit_forwarded",
-					"home_station",
-					"sender endpoint does not belong to the authenticated Home Station",
+				senderHomeStation,
+				commandRoutes,
+			); err != nil {
+				if forwarded != nil {
+					return err
+				}
+				return persistRejection(err)
+			}
+		default:
+			active, activeErr := transaction.Identity.IsActive(
+				ctx,
+				request.Command.Sender,
+			)
+			if activeErr != nil {
+				return activeErr
+			}
+			if !active {
+				inactiveErr := unauthorized(
+					"application.submit",
+					"sender device is not active",
 				)
+				if forwarded != nil {
+					return inactiveErr
+				}
+				return persistRejection(inactiveErr)
+			}
+			if forwarded != nil {
+				routes, routeErr := resolveActorRoutes(
+					ctx,
+					transaction.Identity,
+					[]valueobject.PTID{request.Command.Sender.Actor},
+				)
+				if routeErr != nil {
+					return routeErr
+				}
+				if !routeSetContainsAtStation(
+					routes,
+					request.Command.Sender,
+					forwarded.HomeStation,
+				) {
+					return conversationdomain.NewError(
+						conversationdomain.ErrorCodeProposalBinding,
+						"application.submit_forwarded",
+						"home_station",
+						"sender endpoint does not belong to the authenticated Home Station",
+					)
+				}
 			}
 		}
 		var transition aggregate.Transition
@@ -1019,20 +1451,18 @@ func (s *Service) submit(
 			); err != nil {
 				return persistRejection(err)
 			}
-			routes, routeErr := resolveActorRoutes(
-				ctx,
-				transaction.Identity,
-				conversation.ActiveMemberActors(),
-			)
-			if routeErr != nil {
-				return routeErr
-			}
 			command := request.Command
 			command.EventSealer = s.eventSealer
-			command.RequiredEndpoints = eligibleConversationEndpoints(conversation, routes)
-			command.Deliveries, routeErr = bindDeliveryRoutes(command.Deliveries, routes)
-			if routeErr != nil {
-				return persistRejection(routeErr)
+			command.RequiredEndpoints = eligibleConversationEndpoints(
+				conversation,
+				commandRoutes,
+			)
+			command.Deliveries, err = bindDeliveryRoutes(
+				command.Deliveries,
+				commandRoutes,
+			)
+			if err != nil {
+				return persistRejection(err)
 			}
 			switch {
 			case request.Settings != nil:
@@ -1938,11 +2368,33 @@ func resolveActorRoutes(
 	if err != nil {
 		return nil, err
 	}
+	return canonicalActorRoutes(routes, actors)
+}
+
+func canonicalActorRoutes(
+	routes []ports.EndpointRoute,
+	actors []valueobject.PTID,
+) ([]ports.EndpointRoute, error) {
+	expectedActors := make(map[valueobject.PTID]struct{}, len(actors))
+	for _, actor := range uniqueActors(actors) {
+		expectedActors[actor] = struct{}{}
+	}
+	canonical := append([]ports.EndpointRoute(nil), routes...)
 	seen := make(map[string]struct{}, len(routes))
 	homeByActor := make(map[valueobject.PTID]valueobject.StationID, len(routes))
-	for _, route := range routes {
-		if route.Endpoint.Validate() != nil || route.HomeStation == "" {
+	for _, route := range canonical {
+		homeStation, err := valueobject.NewStationID(string(route.HomeStation))
+		if route.Endpoint.Validate() != nil ||
+			err != nil ||
+			homeStation != route.HomeStation {
 			return nil, invalid("application.resolve_actor_routes", "route", "contains an invalid endpoint route")
+		}
+		if _, expected := expectedActors[route.Endpoint.Actor]; !expected {
+			return nil, invalid(
+				"application.resolve_actor_routes",
+				"route",
+				"contains an unexpected actor",
+			)
 		}
 		if _, duplicate := seen[route.Endpoint.Key()]; duplicate {
 			return nil, invalid("application.resolve_actor_routes", "route", "contains a duplicate endpoint")
@@ -1957,10 +2409,133 @@ func resolveActorRoutes(
 		}
 		homeByActor[route.Endpoint.Actor] = route.HomeStation
 	}
-	sort.Slice(routes, func(i int, j int) bool {
-		return routes[i].Endpoint.Key() < routes[j].Endpoint.Key()
+	for actor := range expectedActors {
+		if _, resolved := homeByActor[actor]; !resolved {
+			return nil, invalid(
+				"application.resolve_actor_routes",
+				"route",
+				fmt.Sprintf("actor %s has no verified active endpoint", actor),
+			)
+		}
+	}
+	sort.Slice(canonical, func(i int, j int) bool {
+		return canonical[i].Endpoint.Key() < canonical[j].Endpoint.Key()
 	})
+	return canonical, nil
+}
+
+func commandRouteSnapshot(
+	conversation *aggregate.Conversation,
+	verifiedRoutes []ports.EndpointRoute,
+) ([]ports.EndpointRoute, error) {
+	if conversation == nil {
+		return nil, invalid(
+			"application.command_route_snapshot",
+			"conversation",
+			"is required",
+		)
+	}
+	routes, err := canonicalActorRoutes(
+		verifiedRoutes,
+		conversation.ActiveMemberActors(),
+	)
+	if err != nil {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeStaleAuthorityHead,
+			"application.command_route_snapshot",
+			"routes",
+			fmt.Sprintf("do not match the locked Conversation actor set: %v", err),
+		)
+	}
+	homeByActor := make(
+		map[valueobject.PTID]valueobject.StationID,
+		len(conversation.ActiveMemberActors()),
+	)
+	for _, route := range routes {
+		homeByActor[route.Endpoint.Actor] = route.HomeStation
+	}
+	for _, member := range conversation.Members() {
+		if !member.Active() {
+			continue
+		}
+		if homeByActor[member.Actor] != member.HomeStation {
+			return nil, conversationdomain.NewError(
+				conversationdomain.ErrorCodeStaleAuthorityHead,
+				"application.command_route_snapshot",
+				"home_station",
+				fmt.Sprintf(
+					"actor %s route no longer matches the Conversation member",
+					member.Actor,
+				),
+			)
+		}
+	}
 	return routes, nil
+}
+
+func (s *Service) authorizeCommandSender(
+	ctx context.Context,
+	transaction ports.Transaction,
+	conversation *aggregate.Conversation,
+	sender valueobject.Endpoint,
+	senderHomeStation valueobject.StationID,
+	routes []ports.EndpointRoute,
+) error {
+	if senderHomeStation == "" ||
+		!routeSetContainsAtStation(routes, sender, senderHomeStation) {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeProposalBinding,
+			"application.authorize_command_sender",
+			"home_station",
+			"sender endpoint does not belong to the authenticated Home Station",
+		)
+	}
+	if senderHomeStation == s.localStation {
+		active, err := transaction.Identity.IsActive(ctx, sender)
+		if err != nil {
+			return err
+		}
+		if !active {
+			return unauthorized(
+				"application.authorize_command_sender",
+				"sender device is not active",
+			)
+		}
+		return nil
+	}
+	active, err := transaction.Federation.IsActiveStation(
+		ctx,
+		conversation.FederationID(),
+		senderHomeStation,
+	)
+	if err != nil {
+		return err
+	}
+	if !active {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeFederationInactive,
+			"application.authorize_command_sender",
+			"home_station",
+			"is not an active Federation Station",
+		)
+	}
+	return nil
+}
+
+func routeStations(routes []ports.EndpointRoute) []valueobject.StationID {
+	unique := make(map[valueobject.StationID]struct{}, len(routes))
+	for _, route := range routes {
+		unique[route.HomeStation] = struct{}{}
+	}
+	stations := make([]valueobject.StationID, 0, len(unique))
+	for station := range unique {
+		stations = append(stations, station)
+	}
+	sort.Slice(stations, func(left int, right int) bool {
+		return stations[left] < stations[right]
+	})
+
+	return stations
 }
 
 func addRemovalRoutes(
@@ -2452,6 +3027,26 @@ func filterEndpointsByRoutes(
 	return valueobject.SortEndpoints(result)
 }
 
+func filterRoutesByEndpoints(
+	routes []ports.EndpointRoute,
+	endpoints []valueobject.Endpoint,
+) []ports.EndpointRoute {
+	expected := make(map[string]struct{}, len(endpoints))
+	for _, endpoint := range endpoints {
+		expected[endpoint.Key()] = struct{}{}
+	}
+	result := make([]ports.EndpointRoute, 0, len(endpoints))
+	for _, route := range routes {
+		if _, exists := expected[route.Endpoint.Key()]; exists {
+			result = append(result, route)
+		}
+	}
+	sort.Slice(result, func(left int, right int) bool {
+		return result[left].Endpoint.Key() < result[right].Endpoint.Key()
+	})
+	return result
+}
+
 func authorityPlanHash(
 	planID valueobject.PlanID,
 	conversationID valueobject.ConversationID,
@@ -2463,6 +3058,7 @@ func authorityPlanHash(
 	changes []entity.MembershipChange,
 	reservations []valueobject.KeyPackageReservation,
 	expiresAt time.Time,
+	manifestHashes ...valueobject.Hash,
 ) valueobject.Hash {
 	fields := [][]byte{
 		[]byte("peers-touch/conversation-authority-plan"),
@@ -2478,6 +3074,9 @@ func authorityPlanHash(
 		[]byte(fmt.Sprintf("%d", preview.Head.MembershipEpoch)),
 		[]byte(fmt.Sprintf("%d", preview.Head.MLSEpoch)),
 		[]byte(fmt.Sprintf("%d", expiresAt.UTC().UnixNano())),
+	}
+	for _, manifestHash := range manifestHashes {
+		fields = append(fields, manifestHash.Bytes())
 	}
 	for _, change := range changes {
 		fields = append(fields,
@@ -2502,6 +3101,8 @@ func authorityPlanHash(
 			[]byte(reservation.Endpoint.Device),
 			[]byte(reservation.PackageID),
 			reservation.PackageHash[:],
+			[]byte(reservation.HomeStation),
+			[]byte(strconv.FormatBool(reservation.IrreversiblyConsumed)),
 		)
 	}
 	return valueobject.HashBytes(valueobject.CanonicalTuple(fields...))

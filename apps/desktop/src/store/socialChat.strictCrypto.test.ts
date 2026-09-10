@@ -73,7 +73,9 @@ describe('strict chat encryption source contract', () => {
     expect(appRuntimeSource).not.toContain('registerRuntime(imRuntime)');
     expect(appRuntimeSource).not.toContain('teardownRuntime(cryptoRuntime.id)');
     expect(appRuntimeSource).not.toContain('teardownRuntime(imRuntime.id)');
-    expect(imServiceSource).toContain('recipient_device_id: recipientDeviceId');
+    expect(imServiceSource).not.toContain('recipient_device_id: recipientDeviceId');
+    expect(imServiceSource).not.toContain('const dkxService');
+    expect(imServiceSource).not.toContain('const envelopeService');
     expect(socialChatSource).not.toContain('establishSession:');
     expect(socialChatSource).not.toContain('api.drEncrypt');
     expect(socialChatSource).not.toContain('api.drDecrypt');
@@ -102,8 +104,8 @@ describe('strict chat encryption source contract', () => {
   it('advertises Direct version 1 only through the Engine key-exchange path', () => {
     expect(socialChatSource).not.toContain('cryptoDrEnabled');
     expect(featureFlagsSource).not.toContain('cryptoDrEnabled');
-    expect(rustKeyExchangeSource).toContain('supported_versions: vec![1]');
-    expect(rustGatewaySource).toContain('supported_versions: vec![1]');
+    expect(rustKeyExchangeSource).toContain('supported_wire_versions: vec![1]');
+    expect(rustGatewaySource).toContain('supported_wire_versions: vec![1]');
   });
 
   it('does not expose the superseded raw Direct command or persistence owner', () => {

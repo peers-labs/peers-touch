@@ -11,11 +11,14 @@ import socket
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
 
 from .errors import ProvisioningError
 from .lease import normalize_lease_resource
-from tooling.acceptance.transports.ssh import SshTarget, SshTransport, SshTunnel
+from tooling.acceptance.remote_platform import RemotePlatform
+
+if TYPE_CHECKING:
+    from tooling.acceptance.transports.ssh import SshTransport, SshTunnel
 
 
 _SAFE_RELATIVE_PATH = re.compile(r"^[A-Za-z0-9._/-]+$")
@@ -102,6 +105,7 @@ class SourceSyncRequest:
     local_git_port: int = 9418
     remote_tunnel_port: int = 19418
     require_clean: bool = False
+    remote_platform: RemotePlatform = RemotePlatform.POSIX
 
     @classmethod
     def from_env_files(
@@ -113,6 +117,7 @@ class SourceSyncRequest:
         central_environment_path: Path,
         branch: str = "",
         require_clean: bool = False,
+        remote_platform: RemotePlatform = RemotePlatform.POSIX,
     ) -> "SourceSyncRequest":
         normalized_name = normalize_lease_resource(environment_name)
         if normalized_name != environment_name:
@@ -188,6 +193,7 @@ class SourceSyncRequest:
                 values.get("PT_DEPLOY_GIT_TUNNEL_PORT", "19418")
             ),
             require_clean=require_clean,
+            remote_platform=remote_platform,
         )
 
 
@@ -251,16 +257,61 @@ def _local_git_server_running(source_root: Path, port: int) -> bool:
         ) from error
 
 
+def _remote_python(remote_platform: RemotePlatform) -> str:
+    return "python" if remote_platform == RemotePlatform.WINDOWS else "python3"
+
+
 def _remote_checkout_script() -> str:
     return "\n".join(
         (
-            "import fcntl",
             "import hashlib",
             "import json",
+            "import os",
             "import pathlib",
             "import shutil",
             "import subprocess",
             "import sys",
+            "",
+            "if os.name == 'nt':",
+            "    import msvcrt",
+            "",
+            "    def try_lock(handle):",
+            "        if os.fstat(handle.fileno()).st_size == 0:",
+            "            handle.write('\\0')",
+            "            handle.flush()",
+            "        handle.seek(0)",
+            "        try:",
+            "            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)",
+            "        except OSError:",
+            "            return False",
+            "        return True",
+            "",
+            "    def unlock(handle):",
+            "        handle.seek(0)",
+            "        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)",
+            "else:",
+            "    import fcntl",
+            "",
+            "    def try_lock(handle):",
+            "        try:",
+            "            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)",
+            "        except BlockingIOError:",
+            "            return False",
+            "        return True",
+            "",
+            "    def unlock(handle):",
+            "        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)",
+            "",
+            "def read_owner(handle):",
+            "    handle.seek(1 if os.name == 'nt' else 0)",
+            "    return handle.readline().strip('\\0\\r\\n')",
+            "",
+            "def write_owner(handle, owner):",
+            "    handle.seek(1 if os.name == 'nt' else 0)",
+            "    handle.write(owner + '\\n')",
+            "    handle.truncate()",
+            "    handle.flush()",
+            "    os.fsync(handle.fileno())",
             "",
             "environment_name, deploy_path, fetch_kind, fetch_value, branch, expected_commit, expected_digest, owner, lease_mode = sys.argv[1:]",
             "repo = pathlib.Path.home() / deploy_path",
@@ -272,30 +323,23 @@ def _remote_checkout_script() -> str:
             "    raise SystemExit(79)",
             "lease = None",
             "if lease_mode == 'acquire':",
-            "    lease = lock_path.open('a+', encoding='utf-8')",
-            "    try:",
-            "        fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)",
-            "    except BlockingIOError:",
-            "        lease.seek(0)",
-            "        current_owner = lease.readline().strip()",
+            "    lock_path.touch(exist_ok=True)",
+            "    lease = lock_path.open('r+', encoding='utf-8')",
+            "    if not try_lock(lease):",
+            "        current_owner = read_owner(lease)",
             "        print(f'BLOCKED:lease-held:{current_owner}', flush=True)",
             "        raise SystemExit(73)",
-            "    lease.seek(0)",
-            "    lease.truncate()",
-            "    lease.write(owner + '\\n')",
-            "    lease.flush()",
+            "    write_owner(lease, owner)",
             "else:",
-            "    lease = lock_path.open('a+', encoding='utf-8')",
-            "    try:",
-            "        fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)",
-            "    except BlockingIOError:",
-            "        lease.seek(0)",
-            "        current_owner = lease.readline().strip()",
+            "    lock_path.touch(exist_ok=True)",
+            "    lease = lock_path.open('r+', encoding='utf-8')",
+            "    if not try_lock(lease):",
+            "        current_owner = read_owner(lease)",
             "        if current_owner != owner:",
             "            print(f'BLOCKED:lease-owner-mismatch:{current_owner}', flush=True)",
             "            raise SystemExit(80)",
             "    else:",
-            "        fcntl.flock(lease.fileno(), fcntl.LOCK_UN)",
+            "        unlock(lease)",
             "        print('BLOCKED:source-lease-not-held', flush=True)",
             "        raise SystemExit(81)",
             "",
@@ -326,7 +370,9 @@ def _remote_checkout_script() -> str:
             "        print('BLOCKED:nonempty-non-git-worktree', flush=True)",
             "        raise SystemExit(72)",
             "    run(['git', 'init', str(repo)])",
-            "elif meaningful_status():",
+            "if os.name == 'nt':",
+            "    run(['git', '-C', str(repo), 'config', 'core.longpaths', 'true'])",
+            "if meaningful_status():",
             "    print('BLOCKED:dirty-remote-worktree', flush=True)",
             "    raise SystemExit(75)",
             "",
@@ -368,6 +414,8 @@ class RemoteSourceSynchronizer:
         source_lease_held: bool = False,
         source_lease_owner: str = "",
     ) -> None:
+        from tooling.acceptance.transports.ssh import SshTarget, SshTransport
+
         normalized_owner = source_lease_owner.strip()
         if source_lease_held and not normalized_owner:
             raise ValueError(
@@ -384,6 +432,7 @@ class RemoteSourceSynchronizer:
                 user=request.user,
                 port=request.ssh_port,
                 known_hosts_file=request.known_hosts_file,
+                remote_platform=request.remote_platform,
             )
         )
 
@@ -415,7 +464,7 @@ class RemoteSourceSynchronizer:
             ) = self._publish_source()
             remote = self.transport.run_argv(
                 [
-                    "python3",
+                    _remote_python(request.remote_platform),
                     "-c",
                     _remote_checkout_script(),
                     request.environment_name,
@@ -494,6 +543,8 @@ class RemoteSourceSynchronizer:
     def _publish_source(
         self,
     ) -> tuple[str, str, SshTunnel | None, bool]:
+        from tooling.acceptance.transports.ssh import SshTarget, SshTransport
+
         request = self.request
         if request.source_mode == "direct":
             bare_path = (
@@ -502,8 +553,13 @@ class RemoteSourceSynchronizer:
             )
             self.transport.run_argv(
                 [
-                    "mkdir",
-                    "-p",
+                    _remote_python(request.remote_platform),
+                    "-c",
+                    (
+                        "import pathlib,sys;"
+                        "(pathlib.Path.home()/sys.argv[1]).mkdir("
+                        "parents=True,exist_ok=True)"
+                    ),
                     ".cache/peers-touch/source-repositories",
                 ],
                 timeout=30,
