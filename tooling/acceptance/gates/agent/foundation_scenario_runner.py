@@ -259,7 +259,7 @@ class FoundationExecutorUnavailableCoordinator:
         if platform == "browser":
             return self._runtime_pair.browser
         raise ScenarioRunnerError(
-            f"BASE-EXECUTOR-UNAVAILABLE has no receiver for {platform}"
+            f"BASE-EXECUTOR_UNAVAILABLE has no receiver for {platform}"
         )
 
     def capture(
@@ -279,7 +279,7 @@ class FoundationExecutorUnavailableCoordinator:
             or locale.get("locale") != probe_input.locale
         ):
             raise ScenarioRunnerError(
-                "BASE-EXECUTOR-UNAVAILABLE locale did not converge"
+                "BASE-EXECUTOR_UNAVAILABLE locale did not converge"
             )
         target = executor.harness(
             "getFoundationClientExecutorTarget",
@@ -287,7 +287,7 @@ class FoundationExecutorUnavailableCoordinator:
         )
         if not isinstance(target, Mapping):
             raise ScenarioRunnerError(
-                "BASE-EXECUTOR-UNAVAILABLE target is invalid"
+                "BASE-EXECUTOR_UNAVAILABLE target is invalid"
             )
         lifecycle_input = {
             "targetCapabilitySessionId": target.get("capabilitySessionId"),
@@ -310,7 +310,7 @@ class FoundationExecutorUnavailableCoordinator:
             )
             if not isinstance(prepared, Mapping):
                 raise ScenarioRunnerError(
-                    "BASE-EXECUTOR-UNAVAILABLE preparation is invalid"
+                    "BASE-EXECUTOR_UNAVAILABLE preparation is invalid"
                 )
             executor_stop = executor.harness(
                 "setFoundationClientExecutorAvailable",
@@ -322,7 +322,7 @@ class FoundationExecutorUnavailableCoordinator:
             )
             if not isinstance(executor_stop, Mapping):
                 raise ScenarioRunnerError(
-                    "BASE-EXECUTOR-UNAVAILABLE withdrawal is invalid"
+                    "BASE-EXECUTOR_UNAVAILABLE withdrawal is invalid"
                 )
             executor_available = False
             rejected = receiver.harness(
@@ -335,7 +335,7 @@ class FoundationExecutorUnavailableCoordinator:
             )
             if not isinstance(rejected, Mapping):
                 raise ScenarioRunnerError(
-                    "BASE-EXECUTOR-UNAVAILABLE rejection is invalid"
+                    "BASE-EXECUTOR_UNAVAILABLE rejection is invalid"
                 )
             executor_start = executor.harness(
                 "setFoundationClientExecutorAvailable",
@@ -347,7 +347,7 @@ class FoundationExecutorUnavailableCoordinator:
             )
             if not isinstance(executor_start, Mapping):
                 raise ScenarioRunnerError(
-                    "BASE-EXECUTOR-UNAVAILABLE restoration is invalid"
+                    "BASE-EXECUTOR_UNAVAILABLE restoration is invalid"
                 )
             executor_available = True
             recovered = receiver.harness(
@@ -361,7 +361,7 @@ class FoundationExecutorUnavailableCoordinator:
             )
             if not isinstance(recovered, Mapping):
                 raise ScenarioRunnerError(
-                    "BASE-EXECUTOR-UNAVAILABLE recovery is invalid"
+                    "BASE-EXECUTOR_UNAVAILABLE recovery is invalid"
                 )
             capture = receiver.harness(
                 "foundationDirectProbe",
@@ -376,7 +376,7 @@ class FoundationExecutorUnavailableCoordinator:
             )
             if not isinstance(capture, Mapping):
                 raise ScenarioRunnerError(
-                    "BASE-EXECUTOR-UNAVAILABLE direct capture is invalid"
+                    "BASE-EXECUTOR_UNAVAILABLE direct capture is invalid"
                 )
             assert_group_one_capture(probe_input, capture)
             return capture
@@ -406,7 +406,7 @@ class FoundationExecutorUnavailableCoordinator:
                 cleanup_errors.append(f"scenario cleanup: {error}")
             if cleanup_errors:
                 raise ScenarioRunnerError(
-                    "BASE-EXECUTOR-UNAVAILABLE cleanup failed: "
+                    "BASE-EXECUTOR_UNAVAILABLE cleanup failed: "
                     f"primary={primary_error}; cleanup={cleanup_errors}"
                 )
 
@@ -426,10 +426,10 @@ def _make_direct_probe(
     full capture dictionary expected by DirectRuntimeFoundationAdapter.
     """
     def probe(probe_input: DirectRuntimeProbeInput) -> Mapping[str, Any]:
-        if probe_input.cell == "BASE-EXECUTOR-UNAVAILABLE":
+        if probe_input.cell == "BASE-EXECUTOR_UNAVAILABLE":
             if executor_unavailable_coordinator is None:
                 raise ScenarioRunnerError(
-                    "BASE-EXECUTOR-UNAVAILABLE requires executor orchestration"
+                    "BASE-EXECUTOR_UNAVAILABLE requires executor orchestration"
                 )
             return executor_unavailable_coordinator.capture(probe_input)
         if probe_input.cell == "AS-F06":

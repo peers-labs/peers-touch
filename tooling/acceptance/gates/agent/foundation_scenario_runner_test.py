@@ -2004,7 +2004,7 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             DirectRuntimeProbeInput(
                 platform="browser",
                 locale="en",
-                cell="BASE-EXECUTOR-UNAVAILABLE",
+                cell="BASE-EXECUTOR_UNAVAILABLE",
                 sample_id="sample-001",
             )
         )

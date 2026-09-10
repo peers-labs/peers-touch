@@ -215,7 +215,7 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
-    "BASE-EXECUTOR-UNAVAILABLE": frozenset(
+    "BASE-EXECUTOR_UNAVAILABLE": frozenset(
         {
             "typedExecutorUnavailable",
             "localizedRecoveryVisible",

@@ -2664,7 +2664,7 @@ def evaluate_base_cancelled(
 def evaluate_base_executor_unavailable(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:
-    scenario = "BASE-EXECUTOR-UNAVAILABLE"
+    scenario = "BASE-EXECUTOR_UNAVAILABLE"
     outcome = _mapping(capture, "outcome", scenario=scenario)
     details = _mapping(outcome, "details", scenario=scenario)
     receiver = _mapping(capture, "receiver", scenario=scenario)

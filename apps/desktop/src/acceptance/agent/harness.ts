@@ -11698,7 +11698,7 @@ async function evaluateDirectCellAssertions(
       return evaluateBaseDuplicateConflict(ctx);
     case 'BASE-CREDENTIAL_MISSING':
       return evaluateBaseCredentialMissing(ctx);
-    case 'BASE-EXECUTOR-UNAVAILABLE':
+    case 'BASE-EXECUTOR_UNAVAILABLE':
       return evaluateBaseExecutorUnavailable(ctx);
     case 'BASE-APPROVAL_DENIED':
       return evaluateBaseApprovalDenied(ctx);
@@ -15312,7 +15312,7 @@ export function installAcceptanceHarness(): void {
         | null = null;
 
       try {
-      if (cell === 'BASE-EXECUTOR-UNAVAILABLE') {
+      if (cell === 'BASE-EXECUTOR_UNAVAILABLE') {
         const scenario = evidenceRecord(
           preparedScenario,
           'foundationExecutorUnavailablePreparedScenario',
@@ -16615,7 +16615,7 @@ export function installAcceptanceHarness(): void {
       }
       if (
         (
-          cell === 'BASE-EXECUTOR-UNAVAILABLE'
+          cell === 'BASE-EXECUTOR_UNAVAILABLE'
           || cell === 'BASE-APPROVAL_DENIED'
           || cell === 'BASE-APPROVAL_EXPIRED'
           || cell === 'BASE-ATTACHMENT_REJECTED'
@@ -16655,7 +16655,7 @@ export function installAcceptanceHarness(): void {
                 ? 'foundationDuplicateConflictCleanup'
               : cell === 'BASE-CREDENTIAL_MISSING'
                 ? 'foundationCredentialMissingCleanup'
-              : cell === 'BASE-EXECUTOR-UNAVAILABLE'
+              : cell === 'BASE-EXECUTOR_UNAVAILABLE'
                 ? 'foundationExecutorUnavailableCleanup'
               : cell === 'BASE-APPROVAL_DENIED'
                 ? 'foundationApprovalDeniedCleanup'
@@ -16850,7 +16850,7 @@ export function installAcceptanceHarness(): void {
         };
         stationReadback.credentialStatus = station.credentialStatusAfter;
       }
-      if (cell === 'BASE-EXECUTOR-UNAVAILABLE' && scenarioFacts) {
+      if (cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts) {
         const station = evidenceRecord(
           scenarioFacts.station,
           'foundationExecutorUnavailableStation',
@@ -17185,7 +17185,7 @@ export function installAcceptanceHarness(): void {
                   },
                 };
               })()
-          : cell === 'BASE-EXECUTOR-UNAVAILABLE' && scenarioFacts
+          : cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts
             ? (() => {
                 const station = evidenceRecord(
                   scenarioFacts.station,
@@ -17418,7 +17418,7 @@ export function installAcceptanceHarness(): void {
                     'foundationAttachmentRejectedCleanup',
                   ).conversationDeleted === true
                 )
-            : cell === 'BASE-EXECUTOR-UNAVAILABLE' && scenarioFacts
+            : cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts
               ? (
                   evidenceRecord(
                     scenarioFacts.cleanup,
@@ -17500,7 +17500,7 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
-          : cell === 'BASE-EXECUTOR-UNAVAILABLE' && scenarioFacts
+          : cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : (
             cell === 'BASE-APPROVAL_DENIED'
@@ -17523,7 +17523,7 @@ export function installAcceptanceHarness(): void {
       const receiver = (
         cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
         || cell === 'BASE-CANCELLED'
-        || cell === 'BASE-EXECUTOR-UNAVAILABLE'
+        || cell === 'BASE-EXECUTOR_UNAVAILABLE'
         || cell === 'BASE-APPROVAL_DENIED'
         || cell === 'BASE-APPROVAL_EXPIRED'
         || cell === 'BASE-ATTACHMENT_REJECTED'
@@ -17547,7 +17547,7 @@ export function installAcceptanceHarness(): void {
         receiverSelector = '[data-pt-agent-message-attachment]';
         receiverText = receiverDom.messageAttachments.text;
       } else if (receiver) {
-        if (cell === 'BASE-EXECUTOR-UNAVAILABLE') {
+        if (cell === 'BASE-EXECUTOR_UNAVAILABLE') {
           receiverVisible =
             receiver.recoveryVisible === true
             && receiver.errorVisible === true
@@ -17670,7 +17670,7 @@ export function installAcceptanceHarness(): void {
         replayEvidence.replayHash = replay.replayHash;
         replayEvidence.equal = replay.equal;
       }
-      if (cell === 'BASE-EXECUTOR-UNAVAILABLE' && scenarioFacts) {
+      if (cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts) {
         const replay = evidenceRecord(
           scenarioFacts.replay,
           'foundationExecutorUnavailableReplay',
@@ -17924,7 +17924,7 @@ export function installAcceptanceHarness(): void {
           }
         }
         if (
-          cell === 'BASE-EXECUTOR-UNAVAILABLE'
+          cell === 'BASE-EXECUTOR_UNAVAILABLE'
           && preparedConversationId
         ) {
           try {

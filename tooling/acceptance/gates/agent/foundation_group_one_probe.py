@@ -212,7 +212,7 @@ def assert_group_one_capture(
         "BASE-DUPLICATE_CONFLICT": (
             lambda facts: evaluate_base_duplicate_conflict(facts)
         ),
-        "BASE-EXECUTOR-UNAVAILABLE": (
+        "BASE-EXECUTOR_UNAVAILABLE": (
             lambda facts: evaluate_base_executor_unavailable(facts)
         ),
         "AS-F02": lambda facts: evaluate_as_f02(facts),

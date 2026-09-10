@@ -141,7 +141,7 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
         result["scenarioFacts"] = facts
         result["assertions"] = evaluate_base_approval_expired(facts)
         return result
-    if probe.cell == "BASE-EXECUTOR-UNAVAILABLE":
+    if probe.cell == "BASE-EXECUTOR_UNAVAILABLE":
         facts = valid_executor_unavailable_capture()
         result["scenarioFacts"] = facts
         result["assertions"] = evaluate_base_executor_unavailable(facts)
@@ -446,7 +446,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         probe = DirectRuntimeProbeInput(
             platform="browser",
             locale="en",
-            cell="BASE-EXECUTOR-UNAVAILABLE",
+            cell="BASE-EXECUTOR_UNAVAILABLE",
             sample_id="sample-001",
         )
 
@@ -458,7 +458,7 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         }
         with self.assertRaisesRegex(
             GroupOneProbeError,
-            "BASE-EXECUTOR-UNAVAILABLE assertions do not match",
+            "BASE-EXECUTOR_UNAVAILABLE assertions do not match",
         ):
             assert_group_one_capture(probe, capture_value)
 
