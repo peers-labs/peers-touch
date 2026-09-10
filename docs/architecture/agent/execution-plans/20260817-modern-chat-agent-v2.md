@@ -22,21 +22,21 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | Exact-source checkpoint, C08 product proof, and G-F Foundation proof |
-| Current step | C08 `DONE / PROVEN`；G-F crossed all four AS-F06 tuples and is implementing the planned `BASE-EXECUTOR-UNAVAILABLE` vertical |
+| Current step | Checkpoint `ff7bfa9f8` implements the planned `BASE-EXECUTOR-UNAVAILABLE` vertical with local gates passing；current-source C08 and G-F remain pending exact-source proof |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | C08 exact-source attachment journey `DONE / PROVEN`；G-F exact-source run crossed Browser/Desktop AS-F06 recovery tuples with cleanup proven |
-| Current action | Close the accepted G-FE1 typed-error backlog through non-overlapping Station、Desktop、Rust runtime control、and Acceptance lanes |
-| Next action | Reconcile the parallel lanes，run focused checks once，then let the integrator checkpoint、deploy exact source with `make station`、and rerun G-F |
+| Last completed | G-FE1 source checkpoint `ff7bfa9f8`；Station/Web/Rust/Acceptance source checks pass without claiming product proof |
+| Current action | Commit synchronized plan state，activate `chat-native-disposable`，and verify the exact checkpoint runtime |
+| Next action | Deploy exact source with `make station`，run current-source C08 first，then run the unchanged 419-cell G-F Gate |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | No external blocker. G-F is source-blocked by the planned but incomplete `BASE-EXECUTOR-UNAVAILABLE` vertical；Foundation and downstream work remain `PARTIAL / UNPROVEN` until the exact-source Gate passes |
+| Blockers | No G-FE1 source blocker. The broad Acceptance plan exposes one unrelated stale `acceptance-runtime-provisioning-self` Fixture expectation，parked outside this Slice；Foundation and downstream work remain `PARTIAL / UNPROVEN` until exact-source Gates pass |
 | Decisions required | none |
-| Evidence | C08 run `20260909T091942082203Z-5ecd651bb57a293a45c0032d5b46861d` is `DONE / PROVEN`。G-F run `20260909T141502294542Z-5a3fca9b8d25c0a8f7ac1582a5b320b7` crossed all four AS-F06 tuples，then failed closed at `BASE-EXECUTOR-UNAVAILABLE` with Provisioner cleanup `DONE / PROVEN / passed` |
-| Last updated | 2026-09-09 |
+| Evidence | Source checkpoint `ff7bfa9f8` passes Station executor-unavailable regression、Desktop check/590 tests/build、Rust check、280 Foundation/static tests、Agent Domain structural validation、locale/hard/diff checks；C08 and G-F product evidence are not current-source yet |
+| Last updated | 2026-09-10 |
 
 ---
 

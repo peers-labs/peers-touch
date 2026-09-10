@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress; exact-source run `20260909T141502294542Z-5a3fca9b8d25c0a8f7ac1582a5b320b7` crossed all four AS-F06 tuples and stopped at the planned missing `BASE-EXECUTOR-UNAVAILABLE` direct-runtime vertical; Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | in progress; checkpoint `ff7bfa9f8342a154c2b637e1f0170b2c61c8a31c` implements the planned `BASE-EXECUTOR-UNAVAILABLE` Station/Web/Rust/Acceptance vertical and passes local source checks; current-source C08 and the unchanged 419-cell Foundation Gate remain `UNPROVEN` pending exact-source deployment and execution | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1270,10 +1270,27 @@ and zero local-path leakage.
   sources, or Git index; each lane re-reads owned files before patching, stops
   on unexpected writes, and returns its exact changed-file list; the integrator
   reviews the combined diff and interface compatibility before verification.
+- **Source checkpoint**: `ff7bfa9f8342a154c2b637e1f0170b2c61c8a31c`
+  preserves the Station rejection-before-mutation contract, adds the
+  Acceptance-gated production supervisor withdrawal/restoration control,
+  keeps `toolRuntime` as the sole Web projection owner, renders localized
+  `Reconnect executor`, and adds the complete Harness plus independent Python
+  oracle. Browser recovery waits for the exact target device/capability to
+  re-advertise and never starts or fabricates a Browser executor.
+- **Local checkpoint evidence**: Station executor-unavailable regression,
+  Desktop typecheck, `590` Vitest tests with one environment-only skip,
+  Desktop production build, Rust format and `cargo check --locked --features
+  e2e-testing`, `280` Foundation/static tests, Agent Domain structural
+  validation, locale validation, hard rules, and diff checks pass.
+- **Parked non-slice evidence**: the generated broad Acceptance plan also
+  selected `acceptance-runtime-provisioning-self`; its pre-existing
+  `local-desktop-gateway` Fixture expectation is stale against the current
+  environment contract. This unrelated Acceptance Infra repair remains outside
+  G-FE1 and is not used as product proof.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error
-  families; the direct adapter currently implements 8 and leaves 20
+  families; the direct adapter currently implements 9 and leaves 19
   fail-closed.
 - **Forecast**: 5-8 working days to batch-close the remaining G-FE1 error
   families and obtain one exact-source full-Gate result; 4-6 weeks for the
