@@ -51,6 +51,36 @@ def load_module() -> Any:
 
 
 class AcceptanceRunTest(unittest.TestCase):
+    def test_station_profiles_are_explicit_runtime_bindings(self) -> None:
+        module = load_module()
+
+        self.assertEqual(
+            module.parse_station_profile_bindings(
+                [
+                    "station-primary=sixwin-primary",
+                    "station-secondary=sixwin-secondary",
+                ]
+            ),
+            {
+                "station-primary": "sixwin-primary",
+                "station-secondary": "sixwin-secondary",
+            },
+        )
+
+    def test_station_profile_binding_rejects_missing_or_duplicate_values(
+        self,
+    ) -> None:
+        module = load_module()
+
+        for values in (
+            ["sixwin"],
+            ["station-primary="],
+            ["=sixwin"],
+            ["station-primary=sixwin", "station-primary=other"],
+        ):
+            with self.subTest(values=values), self.assertRaises(SystemExit):
+                module.parse_station_profile_bindings(values)
+
     def test_load_plan_uses_the_current_python_interpreter(self) -> None:
         module = load_module()
         store = mock.Mock()

@@ -166,7 +166,7 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(contract.id, "native-tauri-embedded-webdriver")
         self.assertEqual(
             set(contract.services),
-            {"station-four", "station-five"},
+            {"station-primary"},
         )
         self.assertEqual(
             {client.id for client in contract.clients},
