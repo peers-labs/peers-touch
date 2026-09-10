@@ -961,13 +961,16 @@ class NativeDesktopWindowsProvisioner:
             raise ProvisioningError(
                 "Windows runtime-cell fixture source is invalid"
             )
-        digest = hashlib.sha256(local_source.read_bytes()).hexdigest()
+        source_identity = hashlib.sha256(
+            os.fsencode(local_source)
+        ).hexdigest()
+        content_digest = hashlib.sha256(local_source.read_bytes()).hexdigest()
         remote_path = _windows_join(
             str(state["brokerRoot"]),
             "actors",
             normalized,
             "fixtures",
-            digest,
+            source_identity,
             local_source.name,
         )
         self.transport.run_argv(
@@ -986,7 +989,7 @@ class NativeDesktopWindowsProvisioner:
             check=True,
         )
         self.transport.copy_file(local_source, remote_path, timeout=60)
-        if self.actor_file_sha256(normalized, remote_path) != digest:
+        if self.actor_file_sha256(normalized, remote_path) != content_digest:
             raise ProvisioningError(
                 "Windows runtime-cell staged fixture digest mismatch"
             )

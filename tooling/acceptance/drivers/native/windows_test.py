@@ -11,6 +11,9 @@ from tooling.acceptance.drivers.native.base import NativeDesktopAdapter
 
 
 WINDOWS_ADAPTER_PATH = Path(__file__).with_name("windows.py")
+WINDOWS_PROVISIONER_PATH = (
+    Path(__file__).parents[2] / "provisioners" / "native_desktop_windows.py"
+)
 
 
 class Win32NativeDesktopAdapterContractTest(unittest.TestCase):
@@ -128,6 +131,15 @@ class Win32NativeDesktopAdapterContractTest(unittest.TestCase):
         self.assertIn("_BM_CLICK", method)
         self.assertIn("while self._file_chooser_window(process_id):", method)
         self.assertIn("self._activate_window(dialog_hwnd, process_id)", method)
+
+    def test_staged_fixture_path_is_stable_across_content_changes(self) -> None:
+        source = WINDOWS_PROVISIONER_PATH.read_text(encoding="utf-8")
+        start = source.index("    def stage_actor_file(")
+        method = source[start:source.index("    def actor_file_sha256(", start)]
+
+        self.assertIn("os.fsencode(local_source)", method)
+        self.assertIn('"fixtures",\n            source_identity,', method)
+        self.assertIn("!= content_digest", method)
 
     def test_focus_probe_reads_the_foreground_gui_thread(self) -> None:
         source = WINDOWS_ADAPTER_PATH.read_text(encoding="utf-8")
