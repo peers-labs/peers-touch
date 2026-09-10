@@ -16,6 +16,7 @@ use super::{
 use crate::domain::crypto::IdentityKeyPair;
 use crate::infrastructure::attachment_blob::FilesystemAttachmentBlob;
 use crate::infrastructure::station_client;
+use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::chat::{
     ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationKind,
     CreateDirectConversationRequest, CreateDirectConversationResponse, CryptoEndpoint,
@@ -2156,12 +2157,12 @@ fn attachment_source_root(profile_id: &str) -> Result<PathBuf, String> {
         return Err("messaging attachment source profile is required".to_string());
     }
     let profile_hash = hex::encode(Sha256::digest(profile_id.as_bytes()));
-    Ok(std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join(".peers-touch")
-        .join("messaging-sources")
-        .join(profile_hash))
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Temp,
+        &["messaging-sources", &profile_hash],
+    )
+    .map_err(|error| format!("resolve messaging attachment source root: {error}"))
 }
 
 fn managed_attachment_source(profile_id: &str, path: &Path) -> Result<bool, String> {
@@ -2187,13 +2188,12 @@ fn attachment_cache_path(profile_id: &str, attachment_id: &str) -> Result<PathBu
         return Err("messaging attachment cache identity is incomplete".to_string());
     }
     let profile_hash = hex::encode(Sha256::digest(profile_id.as_bytes()));
-    let root = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join(".peers-touch")
-        .join("messaging-cache")
-        .join(profile_hash);
-    Ok(root.join(attachment_id))
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Cache,
+        &["messaging-cache", &profile_hash, attachment_id],
+    )
+    .map_err(|error| format!("resolve messaging attachment cache path: {error}"))
 }
 
 fn materialize_attachment_cache(
@@ -2319,6 +2319,31 @@ mod tests {
         assert_eq!(
             error,
             "messaging attachment download did not complete before open deadline"
+        );
+    }
+
+    #[test]
+    fn attachment_paths_use_canonical_desktop_storage_layout() {
+        let profile_id = "profile-1";
+        let profile_hash = hex::encode(Sha256::digest(profile_id.as_bytes()));
+
+        assert_eq!(
+            attachment_source_root(profile_id).unwrap(),
+            storage::app_file_path(
+                "desktop",
+                StorageKind::Temp,
+                &["messaging-sources", &profile_hash],
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            attachment_cache_path(profile_id, "attachment-1").unwrap(),
+            storage::app_file_path(
+                "desktop",
+                StorageKind::Cache,
+                &["messaging-cache", &profile_hash, "attachment-1"],
+            )
+            .unwrap()
         );
     }
 
