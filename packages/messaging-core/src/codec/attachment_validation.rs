@@ -12,8 +12,7 @@ pub fn validate_encrypted_object_upload_spec(
     spec: &EncryptedObjectUploadSpec,
 ) -> Result<(), String> {
     if spec.ciphertext_sha256.len() != 32
-        || spec.media_type.trim().is_empty()
-        || spec.media_type.len() > 255
+        || spec.media_type != "application/octet-stream"
         || spec.chunk_size != ATTACHMENT_CHUNK_SIZE
         || spec.chunk_count == 0
         || spec.tag_size != ATTACHMENT_TAG_SIZE

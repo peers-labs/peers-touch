@@ -86,7 +86,6 @@ pub fn validate_attachment_plaintext_metadata(
         || attachment.object_key.len() != 32
         || attachment.base_nonce.len() != 12
         || attachment.base_nonce[8..] != [0, 0, 0, 0]
-        || attachment.mime_type != object.media_type
     {
         return Err("messaging attachment private metadata is invalid".to_string());
     }
@@ -128,7 +127,7 @@ pub(crate) fn test_attachment_metadata(attachment_id: &str) -> AttachmentPlainte
             storage_ref: format!("opaque/{attachment_id}"),
             ciphertext_size: ciphertext.len() as u64,
             ciphertext_sha256: Sha256::digest(&ciphertext).to_vec(),
-            media_type: "text/plain".to_string(),
+            media_type: "application/octet-stream".to_string(),
             chunk_size: ATTACHMENT_CHUNK_SIZE,
             chunk_count: 1,
             encryption_suite: AttachmentEncryptionSuite::Aes256GcmChunked as i32,

@@ -821,7 +821,7 @@ fn prepare_upload_with_media_type(
     let object = EncryptedObjectUploadSpec {
         ciphertext_size,
         ciphertext_sha256: whole.finalize().to_vec(),
-        media_type: media_type.to_string(),
+        media_type: "application/octet-stream".to_string(),
         chunk_size: material.chunk_size(),
         chunk_count: material.chunk_count(),
         encryption_suite: crate::proto::chat::AttachmentEncryptionSuite::Aes256GcmChunked as i32,
@@ -1619,7 +1619,15 @@ mod tests {
             plaintext.len() as u64,
             1024 * 1024,
         );
-        let prepared = prepare_upload(blobs.as_ref(), &source, &material, &upload_record).unwrap();
+        let prepared = prepare_upload_with_media_type(
+            blobs.as_ref(),
+            &source,
+            &material,
+            &upload_record,
+            "image/png",
+        )
+        .unwrap();
+        assert_eq!(prepared.object.media_type, "application/octet-stream");
         let transport = Arc::new(MemoryTransport::new());
         for index in 0..material.chunk_count() {
             let chunk = read_plaintext_chunk(blobs.as_ref(), &source, &material, index).unwrap();
