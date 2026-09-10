@@ -67,11 +67,34 @@ start_source_station() {
   local runtime_identity="./data/${PT_DEV_PROFILE}-libp2p.key"
   local runtime_oss="$PT_DEV_DATA/oss"
   local auth_secret_file="$PT_DEV_DATA/auth-secret"
+  local storage_root="$PT_DEV_DATA/station-runtime"
+  local runtime_binary="$PT_DEV_DATA/station"
+  local runtime_config="$runtime_conf_dir/peers-sqlite.yml"
+  local native_runtime_db="$runtime_db"
+  local native_runtime_config="$runtime_config"
+  local native_storage_root="$storage_root"
+  local windows_native=0
+  local build_commit
+  local build_time
 
-  mkdir -p "$runtime_conf_dir" "$runtime_oss"
+  build_commit="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
+  build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  mkdir -p "$runtime_conf_dir" "$runtime_oss" "$STATION_DIR/data" \
+    "$storage_root/config" "$storage_root/data" "$storage_root/cache" \
+    "$storage_root/logs" "$storage_root/run" "$storage_root/temp"
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      windows_native=1
+      runtime_binary="${runtime_binary}.exe"
+      native_runtime_db="$(cygpath -m "$runtime_db")"
+      native_runtime_config="$(cygpath -w "$runtime_config")"
+      native_storage_root="$(cygpath -m "$storage_root")"
+      ;;
+  esac
   cp "$STATION_DIR"/conf/*.yml "$runtime_conf_dir/"
 
-  RUNTIME_DB="$runtime_db" \
+  RUNTIME_DB="$native_runtime_db" \
   RUNTIME_IDENTITY="$runtime_identity" \
   RUNTIME_PORT="$STATION_PORT" \
   RUNTIME_BASE_URL="$STATION_URL" \
@@ -87,19 +110,39 @@ start_source_station() {
     openssl rand -hex 32 > "$auth_secret_file"
   fi
 
+  (
+    cd "$STATION_DIR"
+    go build -o "$runtime_binary" .
+  )
+
   echo "[INFO] Station mode: local source"
   echo "       URL     : $STATION_URL"
-  echo "       Config  : $runtime_conf_dir/peers-sqlite.yml"
+  echo "       Config  : $runtime_config"
   echo "       Database: $runtime_db"
   echo "       Log     : $STATION_LOG_FILE"
 
   (
     cd "$STATION_DIR"
-    PEERS_AUTH_SECRET="$(cat "$auth_secret_file")" \
-    PEERS_NODE_LABEL="${PT_STATION_NAME:-local}" \
-    PEERS_NODE_SERVER_SUBSERVER_OSS_STORE_PATH="$runtime_oss" \
-    nohup go run . --config="$runtime_conf_dir/peers-sqlite.yml" \
-      >"$STATION_LOG_FILE" 2>&1 &
+    export PEERS_AUTH_SECRET="$(cat "$auth_secret_file")"
+    export PEERS_PROFILE="$PT_DEV_PROFILE"
+    export PEERS_CONFIG_DIR="$native_storage_root/config"
+    export PEERS_DATA_DIR="$native_storage_root/data"
+    export PEERS_CACHE_DIR="$native_storage_root/cache"
+    export PEERS_LOGS_DIR="$native_storage_root/logs"
+    export PEERS_RUNTIME_DIR="$native_storage_root/run"
+    export PEERS_TEMP_DIR="$native_storage_root/temp"
+    export PEERS_TOUCH_BUILD_COMMIT="$build_commit"
+    export PEERS_TOUCH_BUILD_LABEL="local-${PT_DEV_PROFILE}"
+    export PEERS_TOUCH_BUILD_TIME="$build_time"
+    export PEERS_NODE_LABEL="${PT_STATION_NAME:-local}"
+    export PEERS_NODE_SERVER_SUBSERVER_OSS_STORE_PATH="$runtime_oss"
+    if [[ "$windows_native" -eq 1 ]]; then
+      "$runtime_binary" --config="$native_runtime_config" \
+        >"$STATION_LOG_FILE" 2>&1 &
+    else
+      nohup "$runtime_binary" --config="$native_runtime_config" \
+        >"$STATION_LOG_FILE" 2>&1 &
+    fi
     echo $! > "$STATION_PID_FILE"
   )
 }
@@ -177,6 +220,22 @@ esac
 # Wait
 for _ in {1..120}; do
   if station_is_ready; then
+    case "$(uname -s)" in
+      MINGW*|MSYS*|CYGWIN*)
+        powershell="/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+        native_pid="$(
+          "$powershell" -NoProfile -Command \
+            "(Get-NetTCPConnection -State Listen -LocalPort $STATION_PORT).OwningProcess" |
+            tr -d '\r' |
+            tail -n 1
+        )"
+        if [[ ! "$native_pid" =~ ^[0-9]+$ ]]; then
+          echo "[ERROR] Could not resolve native Station PID on port $STATION_PORT"
+          exit 1
+        fi
+        echo "$native_pid" > "$STATION_PID_FILE"
+        ;;
+    esac
     echo "[OK] Station ready: $STATION_URL"
     exit 0
   fi
