@@ -251,7 +251,7 @@ Parallel policy:
 | W0 Contract/Evidence/Gates | complete | Owner EXECUTE approval received; W0 verification and completion audit PASS |
 | F1 Agent/Conversation Authority | complete | W0 complete |
 | F2 Runtime/Stream/Capability/Portability | implementation checks complete: Q4 C06 and Q5/Q6 C10 source closures pass; product proof remains pending G-F | F1 |
-| F3 Context/Resource Intelligence | C04 core and C08 product source complete; exact-source C08 run `20260910T153114899448Z-81ad0db7ab3ea3f037c936fb85d6c30f` on `5a625c62a` is `DONE / PROVEN` with 19/19 assertions | F2 |
+| F3 Context/Resource Intelligence | C04 core and C08 product source complete; exact-source C08 run `20260910T153710003596Z-e2a0b281ca165e6caaaf510dad7c5bfd` on `a48a8f3cf` is `DONE / PROVEN` with 19/19 assertions | F2 |
 | F4 Tool Policy/Observability | G1-A through G1-F and pre-W1 G1-XR diagnostic complete through AS-F03; post-W8a G-F pending | F2 + accepted D19A/D19B/D19C |
 | W1 Capability Authority | implementation checks complete; product proof UNPROVEN until W9 Gate | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
 | W2 Home Projection | pending | G-F complete 419-cell Foundation Gate |
@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / externally blocked; checkpoint `7485d1c224065a789f521f6531c2701c6083fda5` aligns the completed `BASE-EXECUTOR_UNAVAILABLE` Station/Web/Rust/Acceptance vertical with the canonical matrix ID, and exact-source focused Desktop/Browser tuples pass 9/9 with clean cleanup; C08 is `DONE / PROVEN` on `5a625c62a`; the unchanged 419-cell Gate remains `UNPROVEN` after repeated Ark provider deadlines in AS-F07 and intermittent AS-F06 recovery failures | W8a |
+| G-F Complete Foundation Gate | partial / externally blocked; checkpoint `7485d1c224065a789f521f6531c2701c6083fda5` aligns the completed `BASE-EXECUTOR_UNAVAILABLE` Station/Web/Rust/Acceptance vertical with the canonical matrix ID, and exact-source focused Desktop/Browser tuples pass 9/9 with clean cleanup; C08 is `DONE / PROVEN` on `a48a8f3cf`; the unchanged 419-cell Gate remains `UNPROVEN` after repeated Ark provider deadlines in AS-F07 and intermittent AS-F06 recovery failures | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
