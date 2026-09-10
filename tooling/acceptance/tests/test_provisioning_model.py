@@ -156,8 +156,21 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(contract.id, "local-desktop-gateway")
         self.assertIn("station", contract.services)
         self.assertIn("desktop-gateway", contract.services)
-        self.assertEqual(contract.fixtures, ())
-        self.assertEqual(contract.credentials, ())
+        self.assertEqual(len(contract.fixtures), 1)
+        self.assertEqual(contract.fixtures[0].id, "chat-native-actors")
+        self.assertTrue(contract.fixtures[0].authorization_required)
+        self.assertEqual(
+            contract.fixtures[0].authorization_ref,
+            "env:CHAT_ACCEPTANCE_RESET",
+        )
+        self.assertEqual(len(contract.credentials), 1)
+        self.assertEqual(contract.credentials[0].id, "chat-password")
+        self.assertEqual(
+            contract.credentials[0].source_ref,
+            "fixture:apps/station/app/conf/actor.yml#preset_users",
+        )
+        self.assertTrue(contract.credentials[0].required)
+        self.assertFalse(contract.credentials[0].generated_if_missing)
 
     def test_load_native_tauri_contract(self):
         contract = EnvironmentContract.from_yaml(
