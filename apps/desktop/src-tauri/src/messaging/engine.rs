@@ -2222,7 +2222,10 @@ fn materialize_attachment_cache(
         .ok_or_else(|| "messaging attachment cache parent is unavailable".to_string())?;
     std::fs::create_dir_all(parent)
         .map_err(|error| format!("create messaging attachment cache directory: {error}"))?;
-    File::open(source_path)
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(source_path)
         .and_then(|source| source.sync_all())
         .map_err(|error| format!("sync messaging attachment source: {error}"))?;
     std::fs::rename(source_path, cache_path)
