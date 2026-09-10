@@ -63,3 +63,8 @@ debug session open until the rerun proves AS-F12.
 - Next instrumentation reports only those subcondition booleans and invalid
   reference counts. It does not report message, topic, conversation, Turn,
   branch, runtime, or fact values.
+- The first browser-side subcondition event was not persisted because the
+  Python oracle rejected the complete capture and teardown immediately closed
+  the renderer before its fire-and-forget request completed. The independent
+  oracle will now include the same safe booleans plus invalid-reference counts
+  in its failure diagnostics, without serializing any identity or content.

@@ -1908,6 +1908,8 @@ def evaluate_as_f12(
             "sourceRestartProven": bool(source_restart_proven),
             "alphaRestart": alpha["restart_checks"],
             "betaRestart": beta["restart_checks"],
+            "alphaReferences": alpha["reference_checks"],
+            "betaReferences": beta["reference_checks"],
         }
         raise GroupOneScenarioError(
             f"{scenario} production facts failed assertions: {failed}; "
@@ -2043,6 +2045,27 @@ def _evaluate_as_f12_topic(
         )
         for message in messages
     )
+    message_reference_diagnostics = {
+        "wrongConversationCount": sum(
+            message.get("conversationId") != conversation_id
+            for message in messages
+        ),
+        "unknownTurnCount": sum(
+            bool(message.get("turnId"))
+            and message.get("turnId") not in turn_ids
+            for message in messages
+        ),
+        "missingParentCount": sum(
+            bool(message.get("parentMessageId"))
+            and message.get("parentMessageId") not in message_ids
+            for message in messages
+        ),
+        "missingReplacementCount": sum(
+            bool(message.get("replacesMessageId"))
+            and message.get("replacesMessageId") not in message_ids
+            for message in messages
+        ),
+    }
     receiver_before_owned = _evaluate_as_f12_receiver(
         receiver_before,
         conversation_id=conversation_id,
@@ -2210,6 +2233,12 @@ def _evaluate_as_f12_topic(
             and receiver_before_owned
             and receiver_after_owned
         ),
+        "reference_checks": {
+            "messageReferencesOwned": message_references_owned,
+            "receiverBeforeOwned": receiver_before_owned,
+            "receiverAfterOwned": receiver_after_owned,
+            **message_reference_diagnostics,
+        },
     }
 
 
