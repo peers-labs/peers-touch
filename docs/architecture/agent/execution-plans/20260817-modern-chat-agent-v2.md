@@ -22,20 +22,20 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 executor-unavailable closure and exact-source Foundation proof |
-| Current step | `BASE-EXECUTOR_UNAVAILABLE` is source-complete and both Desktop/Browser focused runtime tuples pass 9/9；C08 is current-source proven；the unchanged full Gate is parked at the external Ark provider boundary |
+| Current step | `BASE-EXECUTOR-UNAVAILABLE` is source-complete and both Desktop/Browser focused runtime tuples pass 9/9；C08 is current-source proven；the unchanged full Gate crossed all four AS-F06 tuples and exposed a Browser headless-runtime auto-exit during AS-F07 |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | C08 run `20260910T154114435441Z-b37867daa1135f6ace77f0a4f77da078` on `3bf3650e2` is `DONE / PROVEN` with 19/19 assertions and clean resource release |
-| Current action | Preserve the external-provider failure evidence and wait for Ark to execute the unchanged AS-F07 retry/regenerate sequence |
-| Next action | When Ark is healthy, deploy the current clean checkpoint, rerun C08, then rerun the unchanged 419-cell G-F Gate；admit only the next source-backed `BASE-*` failure |
+| Last completed | C08 run `20260910T172812081259Z-ebfc1012506f229d31270592d50e0d52` on `0db2aff82` is `DONE / PROVEN` with 19/19 assertions and clean resource release |
+| Current action | Verify the source-backed Browser headless lifetime and Foundation process-group cleanup corrections without changing provider, timeout, tuple, or assertion semantics |
+| Next action | Commit and deploy the corrected exact source, rerun C08, then rerun the unchanged 419-cell G-F Gate；admit only the next source-backed `BASE-*` failure |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | Full G-F is externally blocked by repeated Ark `context deadline exceeded` failures during AS-F07 retry/regenerate；two additional runs stopped earlier at AS-F06 recovery/session boundaries. No timeout inflation, fallback provider, mock, tuple reduction, or Gate weakening is authorized |
+| Blockers | Historical runs remain externally blocked by Ark `context deadline exceeded` during AS-F07 retry/regenerate. Run `20260910T174705841217Z-b9f6cba8654841d5a809bc1953da3f1f` instead exposed a source-owned macOS headless Browser auto-exit and incomplete process-group cleanup; local corrections pass focused checks but exact-source runtime proof is pending. No timeout inflation, fallback provider, mock, tuple reduction, or Gate weakening is authorized |
 | Decisions required | none |
-| Evidence | `7485d1c22` aligns the executor cell ID with the canonical matrix；Desktop and Browser focused executor tuples each pass 9/9 with clean cleanup；C08 is `DONE / PROVEN` on `3bf3650e2`；full G-F remains `PARTIAL / UNPROVEN` |
+| Evidence | `7485d1c22` aligns the executor cell ID with the canonical matrix；Desktop and Browser focused executor tuples each pass 9/9 with clean cleanup；C08 is `DONE / PROVEN` on `0db2aff82`；all four AS-F06 tuples crossed their fault boundary in the latest Gate；full G-F remains `PARTIAL / UNPROVEN` |
 | Last updated | 2026-09-10 |
 
 ---

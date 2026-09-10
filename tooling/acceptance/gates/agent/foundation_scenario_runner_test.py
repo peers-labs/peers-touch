@@ -9,6 +9,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from tooling.acceptance.gates.agent import foundation_scenario_runner
+from tooling.acceptance.gates.agent.foundation_candidate_producer import (
+    FoundationCandidateError,
+)
 from tooling.acceptance.gates.agent.foundation_direct_adapter import (
     DirectRuntimeProbeInput,
 )
@@ -1029,7 +1032,7 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertIn("RuntimeError", errors[0])
         self.assertNotIn("ptid:private", errors[0])
 
-    def test_run_scenario_withholds_produced_candidate_on_restore_failure(
+    def test_run_scenario_preserves_primary_on_restore_failure(
         self,
     ) -> None:
         runtime_pair = Mock()
@@ -1040,7 +1043,9 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         store = Mock()
         store.begin_run.return_value = run
         producer = Mock()
-        producer.produce.return_value = Path("/candidate/manifest.json")
+        producer.produce.side_effect = FoundationCandidateError(
+            "browser AS-F07 failed api_key=private-token"
+        )
 
         with (
             patch.object(
@@ -1100,10 +1105,12 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 foundation_scenario_runner.ScenarioRunnerError,
-                "CLEANUP_FAILED: capability isolation restoration failed",
-            ):
+                "CLEANUP_FAILED: capability isolation restoration failed; "
+                "primary=FoundationCandidateError: browser AS-F07 failed",
+            ) as raised:
                 foundation_scenario_runner.run_scenario()
 
+        self.assertNotIn("private-token", str(raised.exception))
         producer.produce.assert_called_once_with(run)
         runtime_pair.stop.assert_called_once_with(remove_storage=False)
         run.write_json.assert_called_once()
@@ -1112,6 +1119,15 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(
             cleanup["capabilityIsolationFailures"],
             ["browser capability identity changed"],
+        )
+        self.assertEqual(
+            cleanup["primaryFailure"],
+            [
+                {
+                    "type": "FoundationCandidateError",
+                    "message": "browser AS-F07 failed api_key=[REDACTED]",
+                }
+            ],
         )
 
     def test_initial_setup_selects_verified_station_before_login(self) -> None:

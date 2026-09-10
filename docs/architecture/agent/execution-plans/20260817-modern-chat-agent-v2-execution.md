@@ -251,7 +251,7 @@ Parallel policy:
 | W0 Contract/Evidence/Gates | complete | Owner EXECUTE approval received; W0 verification and completion audit PASS |
 | F1 Agent/Conversation Authority | complete | W0 complete |
 | F2 Runtime/Stream/Capability/Portability | implementation checks complete: Q4 C06 and Q5/Q6 C10 source closures pass; product proof remains pending G-F | F1 |
-| F3 Context/Resource Intelligence | C04 core and C08 product source complete; exact-source C08 run `20260910T154114435441Z-b37867daa1135f6ace77f0a4f77da078` on `3bf3650e2` is `DONE / PROVEN` with 19/19 assertions | F2 |
+| F3 Context/Resource Intelligence | C04 core and C08 product source complete; exact-source C08 run `20260910T172812081259Z-ebfc1012506f229d31270592d50e0d52` on `0db2aff82` is `DONE / PROVEN` with 19/19 assertions | F2 |
 | F4 Tool Policy/Observability | G1-A through G1-F and pre-W1 G1-XR diagnostic complete through AS-F03; post-W8a G-F pending | F2 + accepted D19A/D19B/D19C |
 | W1 Capability Authority | implementation checks complete; product proof UNPROVEN until W9 Gate | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
 | W2 Home Projection | pending | G-F complete 419-cell Foundation Gate |
@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / externally blocked; checkpoint `7485d1c224065a789f521f6531c2701c6083fda5` aligns the completed `BASE-EXECUTOR_UNAVAILABLE` Station/Web/Rust/Acceptance vertical with the canonical matrix ID, and exact-source focused Desktop/Browser tuples pass 9/9 with clean cleanup; C08 is `DONE / PROVEN` on `3bf3650e2`; the unchanged 419-cell Gate remains `UNPROVEN` after repeated Ark provider deadlines in AS-F07 and intermittent AS-F06 recovery failures | W8a |
+| G-F Complete Foundation Gate | partial / active remediation; checkpoint `7485d1c224065a789f521f6531c2701c6083fda5` aligns the completed `BASE-EXECUTOR_UNAVAILABLE` Station/Web/Rust/Acceptance vertical with the canonical matrix ID, and exact-source focused Desktop/Browser tuples pass 9/9 with clean cleanup; C08 is `DONE / PROVEN` on `0db2aff82`; unchanged Gate run `20260910T174705841217Z-b9f6cba8654841d5a809bc1953da3f1f` crossed all four AS-F06 tuples before the Browser BFF was automatically terminated during AS-F07; the source-owned headless lifetime and process-group cleanup corrections await checkpoint proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -6934,6 +6934,33 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Desktop tests with one unrelated environment-dependent skip, Desktop
   production build, `75/75` Agent native static tests, and
   `git diff --check` pass. Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- Exact-source C08 run
+  `20260910T172812081259Z-ebfc1012506f229d31270592d50e0d52`
+  on `0db2aff8201ef1d2b0fb1117b99d132f44b00d4b` completed
+  `DONE / PROVEN` with all `19/19` assertions and clean resource release.
+  The subsequent unchanged Foundation run
+  `20260910T174705841217Z-b9f6cba8654841d5a809bc1953da3f1f`
+  crossed all four AS-F06 tuples. Every tuple requested and acknowledged the
+  transport cut before Turn settlement, so the intermittent
+  terminal-before-fault race did not reproduce.
+- The same Foundation run reached Browser English AS-F07. Station accepted the
+  retry, persisted provider progress, completed the Turn, and returned HTTP
+  `200` after `117.852s`; the Browser BFF was automatically terminated by
+  macOS after running headless for approximately five minutes, and its fetch
+  failed six milliseconds after process exit. Inner cleanup then exposed a
+  separate lifecycle defect: the Foundation client forgot the owned POSIX
+  process group when the direct `make` child had already exited, leaving Vite
+  on renderer port `3510`, and the cleanup wrapper retained only the primary
+  exception type.
+- The local correction prevents only code-less automatic exit for
+  `PT_CLIENT_SURFACE=browser`, preserves explicit Desktop/browser exits,
+  retains the launched PGID until all descendants are gone, escalates from
+  TERM to KILL within existing cleanup budgets, and records a redacted primary
+  exception chain when cleanup also fails. The `373/373` Agent Acceptance
+  Python tests, the focused Rust main test, Desktop TypeScript check, Rust
+  formatting check, Python compilation, and `git diff --check` pass. No
+  provider, timeout, tuple, assertion, or product semantic changed.
+  Exact-source C08 and unchanged 419-cell post-fix proof remain pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

@@ -30,6 +30,8 @@ from tooling.acceptance.gates.agent.tcp_fault_proxy import (
 
 
 WAIT_TICK = threading.Event()
+PROCESS_TERMINATION_TIMEOUT_SECONDS = 15.0
+PROCESS_KILL_TIMEOUT_SECONDS = 5.0
 
 
 class FoundationClientError(RuntimeError):
@@ -240,6 +242,7 @@ class FoundationRuntimeClient:
         self.runtime_profile = self.run_root / f"{spec.profile}.env"
         self.log_path = self.run_root / f"{spec.runtime}.log"
         self.process: subprocess.Popen[str] | None = None
+        self._process_group_id: int | None = None
         self.log_handle: Any = None
         self.driver: Any = None
         self.chrome: ChromeDriver | None = None
@@ -331,6 +334,9 @@ class FoundationRuntimeClient:
                 stdout=self.log_handle,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
+            )
+            self._process_group_id = (
+                self.process.pid if os.name == "posix" else None
             )
             # #region debug-point C:runtime-process-launched
             report_browser_f06_timeout_debug(
@@ -781,16 +787,55 @@ class FoundationRuntimeClient:
             except Exception as error:  # noqa: BLE001 - cleanup records failure.
                 failures.append(f"webdriver: {error}")
             self.driver = None
-        if self.process is not None and self.process.poll() is None:
+        process = self.process
+        process_group_id = self._process_group_id
+        process_released = process is None and process_group_id is None
+        if os.name == "posix" and process_group_id is not None:
             try:
-                os.killpg(self.process.pid, signal.SIGTERM)
-                self.process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                os.killpg(self.process.pid, signal.SIGKILL)
-                self.process.wait(timeout=5)
+                self._signal_process_group(
+                    process_group_id,
+                    signal.SIGTERM,
+                )
+                if not self._wait_for_process_group_exit(
+                    process_group_id,
+                    process,
+                    PROCESS_TERMINATION_TIMEOUT_SECONDS,
+                ):
+                    self._signal_process_group(
+                        process_group_id,
+                        signal.SIGKILL,
+                    )
+                    if not self._wait_for_process_group_exit(
+                        process_group_id,
+                        process,
+                        PROCESS_KILL_TIMEOUT_SECONDS,
+                    ):
+                        raise FoundationClientError(
+                            f"process group {process_group_id} survived "
+                            "forced termination"
+                        )
+                process_released = True
             except Exception as error:  # noqa: BLE001 - cleanup records failure.
                 failures.append(f"process: {error}")
-        self.process = None
+        elif process is not None and process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=PROCESS_TERMINATION_TIMEOUT_SECONDS)
+                process_released = True
+            except subprocess.TimeoutExpired:
+                process.kill()
+                try:
+                    process.wait(timeout=PROCESS_KILL_TIMEOUT_SECONDS)
+                    process_released = True
+                except subprocess.TimeoutExpired as error:
+                    failures.append(f"process: {error}")
+            except Exception as error:  # noqa: BLE001 - cleanup records failure.
+                failures.append(f"process: {error}")
+        else:
+            process_released = True
+        if process_released:
+            self.process = None
+            self._process_group_id = None
         if self.log_handle is not None:
             try:
                 self.log_handle.flush()
@@ -825,6 +870,45 @@ class FoundationRuntimeClient:
             ),
             "failures": failures,
         }
+
+    @staticmethod
+    def _signal_process_group(
+        process_group_id: int,
+        signal_number: signal.Signals,
+    ) -> None:
+        try:
+            os.killpg(process_group_id, signal_number)
+        except ProcessLookupError:
+            return
+
+    @staticmethod
+    def _process_group_alive(process_group_id: int) -> bool:
+        try:
+            os.killpg(process_group_id, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    @classmethod
+    def _wait_for_process_group_exit(
+        cls,
+        process_group_id: int,
+        process: subprocess.Popen[str] | None,
+        timeout: float,
+    ) -> bool:
+        deadline = time.monotonic() + timeout
+        while cls._process_group_alive(process_group_id):
+            if process is not None:
+                process.poll()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            WAIT_TICK.wait(min(0.05, remaining))
+        if process is not None:
+            process.poll()
+        return True
 
     def stop(self, *, remove_storage: bool = True) -> dict[str, Any]:
         try:

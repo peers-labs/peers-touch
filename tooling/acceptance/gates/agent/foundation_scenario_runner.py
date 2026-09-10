@@ -40,6 +40,10 @@ from tooling.acceptance.core import (
     source_identity,
 )
 from tooling.acceptance.core.provisioner import load_env_file
+from tooling.acceptance.core.redaction import (
+    is_sensitive_key,
+    redact_text_with_values,
+)
 from tooling.acceptance.gates.agent.foundation_candidate_producer import (
     GATE_ID,
     FoundationAdapters,
@@ -75,6 +79,33 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
 
 class ScenarioRunnerError(RuntimeError):
     """Fatal error during Foundation scenario execution."""
+
+
+def _failure_summary(
+    error: BaseException | None,
+    profile_env: Mapping[str, str],
+) -> list[dict[str, str]]:
+    secret_values = tuple(
+        value
+        for key, value in profile_env.items()
+        if value and is_sensitive_key(key)
+    )
+    summaries: list[dict[str, str]] = []
+    current = error
+    for _ in range(4):
+        if current is None:
+            break
+        summaries.append(
+            {
+                "type": type(current).__name__,
+                "message": redact_text_with_values(
+                    str(current),
+                    secret_values,
+                )[:4096],
+            }
+        )
+        current = current.__cause__
+    return summaries
 
 
 DIRECT_PROBE_TIMEOUT_SECONDS = {
@@ -1785,6 +1816,9 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         cleanup_result = runtime_pair.stop(
             remove_storage=not restoration_errors,
         )
+        primary_failure = _failure_summary(primary_error, profile_env)
+        if primary_failure:
+            cleanup_result["primaryFailure"] = primary_failure
         if restoration_errors:
             cleanup_result["status"] = "failed"
             cleanup_result["capabilityIsolationFailures"] = restoration_errors
@@ -1793,14 +1827,20 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
             cleanup_result,
         )
     if cleanup_result.get("status") != "clean":
-        primary_kind = type(primary_error).__name__ if primary_error else "none"
+        primary_summary = (
+            f"{primary_failure[0]['type']}: "
+            f"{primary_failure[0]['message']}"
+            if primary_failure
+            else "none"
+        )
         cleanup_kind = (
             "capability isolation restoration"
             if restoration_errors
             else "runtime release"
         )
         raise ScenarioRunnerError(
-            f"CLEANUP_FAILED: {cleanup_kind} failed; primary={primary_kind}"
+            f"CLEANUP_FAILED: {cleanup_kind} failed; "
+            f"primary={primary_summary}"
         ) from primary_error
     if primary_error is not None:
         raise primary_error

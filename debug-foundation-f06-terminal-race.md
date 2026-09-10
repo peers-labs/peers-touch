@@ -53,6 +53,19 @@
   `BASE-EXECUTOR-UNAVAILABLE: direct-runtime group is not implemented`.
 - Outer Provisioner cleanup completed `DONE / PROVEN / passed`, source identity
   matched the clean deployed commit, and evidence redaction passed.
+- Exact-source Gate run
+  `20260910T174705841217Z-b9f6cba8654841d5a809bc1953da3f1f`
+  on `0db2aff8201ef1d2b0fb1117b99d132f44b00d4b` again crossed all
+  four AS-F06 tuples. The retained `pre-fix` trace records:
+  - Browser English: request at 5677 ms, acknowledgement at 5680 ms.
+  - Browser Simplified Chinese: request at 2464 ms, acknowledgement at
+    2480 ms.
+  - Desktop English: request at 2876 ms, acknowledgement at 2920 ms.
+  - Desktop Simplified Chinese: request at 1529 ms, acknowledgement at
+    1567 ms.
+- Every tuple had one text event and three durable events at the request
+  boundary. No terminal-before-cut event or cleanup-locator failure was
+  emitted. The run later failed independently during Browser AS-F07.
 
 ## Verification Conclusion
 The exact-source run rejected hypotheses A through D as current owner-layer

@@ -499,3 +499,30 @@ or raw tokens.
   `BASE-EXECUTOR_UNAVAILABLE` Desktop and Browser tuples with all 9 assertions
   and clean runtime/provisioner cleanup. Those diagnostics do not replace the
   unchanged 419-cell Gate.
+
+## 2026-09-11 Headless Browser Lifetime Follow-Up
+
+- Exact-source run
+  `20260910T174705841217Z-b9f6cba8654841d5a809bc1953da3f1f`
+  on `0db2aff8201ef1d2b0fb1117b99d132f44b00d4b` crossed all four
+  AS-F06 tuples and reached Browser English AS-F07.
+- The retry began at `18:01:20.962Z`. Station accepted it at
+  `18:01:21.249Z`, persisted `1039` thinking deltas followed by `1151` text
+  deltas, completed the Turn, and returned HTTP `200` after `117.852s`.
+- macOS enabled automatic termination for the headless Browser BFF because it
+  had no window, then terminated the process at `18:03:05.643Z`. The Browser
+  fetch failed six milliseconds later with `httpStatus=0`; Station completed
+  the still-running retry at `18:03:19.101Z`.
+- The direct failure is therefore the local headless runtime lifetime, not a
+  Station restart or provider deadline. Provider latency exposed the five
+  minute process lifetime boundary but completed successfully in this run.
+- Inner cleanup then failed to restore Native capability isolation and left
+  the Native Vite descendant on renderer port `3510`. The Foundation runtime
+  client only terminated its process group while the direct `make` child was
+  alive, then discarded process ownership even when descendants remained.
+  The top-level cleanup error also retained only the primary exception type.
+- The local correction prevents code-less automatic exits only for
+  `PT_CLIENT_SURFACE=browser`, retains and verifies POSIX process-group
+  ownership through cleanup, and stores a credential-redacted primary
+  exception chain alongside cleanup failures. Post-fix exact-source C08 and
+  full Foundation proof remain pending.

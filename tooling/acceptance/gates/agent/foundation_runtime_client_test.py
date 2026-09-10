@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import os
+import signal
 import socket
 import socketserver
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
 import urllib.request
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from tooling.acceptance.gates.agent import foundation_runtime_client
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationClientError,
     FoundationClientSpec,
@@ -560,6 +566,84 @@ class FoundationClientSpecTest(unittest.TestCase):
             self.assertTrue(result["storagePreserved"])
             self.assertIsNone(result["storageReleased"])
             self.assertEqual(journal.read_text(encoding="utf-8"), "retained")
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
+    def test_stop_runtime_kills_descendants_after_group_leader_exits(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with socket.socket() as reservation:
+                reservation.bind(("127.0.0.1", 0))
+                renderer_port = int(reservation.getsockname()[1])
+            spec = replace(
+                self.spec(root, "browser"),
+                renderer_port=renderer_port,
+            )
+            client = FoundationRuntimeClient(
+                spec,
+                station_url="http://station.example",
+                profile_env={},
+            )
+            child_code = (
+                "import signal,socket,time;"
+                "signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+                "listener=socket.socket();"
+                "listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);"
+                f"listener.bind(('127.0.0.1',{renderer_port}));"
+                "listener.listen();"
+                "time.sleep(60)"
+            )
+            leader_code = (
+                "import subprocess,sys;"
+                "subprocess.Popen("
+                "[sys.executable,'-c',sys.argv[1]],"
+                "stdin=subprocess.DEVNULL,"
+                "stdout=subprocess.DEVNULL,"
+                "stderr=subprocess.DEVNULL,"
+                "close_fds=True)"
+            )
+            leader = subprocess.Popen(
+                [sys.executable, "-c", leader_code, child_code],
+                start_new_session=True,
+            )
+            process_group_id = leader.pid
+            client.process = leader
+            client._process_group_id = process_group_id
+            try:
+                leader.wait(timeout=5)
+                foundation_runtime_client.wait_until(
+                    lambda: foundation_runtime_client.port_open(renderer_port),
+                    "orphaned renderer",
+                    5,
+                )
+                with (
+                    patch.object(
+                        foundation_runtime_client,
+                        "PROCESS_TERMINATION_TIMEOUT_SECONDS",
+                        0.05,
+                    ),
+                    patch.object(
+                        foundation_runtime_client,
+                        "PROCESS_KILL_TIMEOUT_SECONDS",
+                        2.0,
+                    ),
+                ):
+                    result = client._stop_runtime(
+                        logout=False,
+                        remove_storage=False,
+                    )
+
+                self.assertEqual(result["status"], "clean")
+                self.assertTrue(result["portsReleased"]["renderer"])
+                self.assertIsNone(client.process)
+                self.assertIsNone(client._process_group_id)
+                self.assertFalse(client._process_group_alive(process_group_id))
+            finally:
+                try:
+                    os.killpg(process_group_id, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
 
 if __name__ == "__main__":
