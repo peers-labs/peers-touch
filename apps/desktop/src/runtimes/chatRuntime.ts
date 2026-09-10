@@ -17,7 +17,7 @@ import {
   type RecoveredTurnTerminal,
   useChatStore,
 } from '../store/chat';
-import { useSessionStore } from '../store/session';
+import { terminalReasonFromStreamData } from '../store/streaming/handler';
 import { log } from '../utils/logger';
 
 const RECOVERY_STORAGE_KEY = 'agent-turn-recovery';
@@ -230,11 +230,7 @@ function terminalFromEvent(event: StreamEvent): RecoveredTurnTerminal | null {
       : undefined;
   return {
     status,
-    reason: String(
-      event.data.terminal_reason
-      || event.data.error
-      || '',
-    ).trim() || undefined,
+    reason: terminalReasonFromStreamData(event.data).trim() || undefined,
     ...(snapshotContent !== undefined ? { content: snapshotContent } : {}),
   };
 }
@@ -604,6 +600,11 @@ function reconcileActiveTurns(
   preservedFailedConversations: ReadonlySet<string> = new Set(),
 ): void {
   for (const record of Object.values(activeRecords())) {
+    // A live stream owns CONNECTED until it reports transport loss. Bootstrap
+    // is the only reconciliation pass without an existing live-stream owner.
+    if (record.phase === 'CONNECTED' && reason !== 'bootstrap') {
+      continue;
+    }
     if (
       record.phase === 'RECOVERY_FAILED'
       && (
@@ -796,10 +797,7 @@ export const chatRuntime: RuntimeDescriptor = {
   async bootstrap(nextActorId) {
     if (!nextActorId) return;
     const bootstrapSequence = ++actorBootstrapSequence;
-    const sessionUser = useSessionStore.getState().currentUser;
-    const recoveryActorId = sessionUser?.actorId === nextActorId
-      ? sessionUser.ptid || nextActorId
-      : nextActorId;
+    const recoveryActorId = nextActorId;
     actorId = recoveryActorId;
     useAgentTurnRecoveryStore.getState().beginActor(recoveryActorId);
     const preservedFailedConversations = new Set(

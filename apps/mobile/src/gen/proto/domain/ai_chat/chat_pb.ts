@@ -501,4 +501,3 @@ export enum ChatRole {
  */
 export const ChatRoleSchema: GenEnum<ChatRole> = /*@__PURE__*/
   enumDesc(file_domain_ai_chat_chat, 0);
-

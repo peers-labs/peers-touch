@@ -90,7 +90,7 @@ export function ContactsPage() {
                       onClick={async () => {
                         setBusyAction({ id: req.id, kind: 'accept' });
                         try {
-                          await acceptFriendRequest(req.id);
+                          await acceptFriendRequest(req);
                         } catch (e) {
                           log.error('contacts', 'acceptFriendRequest failed', e);
                         } finally {
@@ -107,7 +107,7 @@ export function ContactsPage() {
                       onClick={async () => {
                         setBusyAction({ id: req.id, kind: 'reject' });
                         try {
-                          await rejectFriendRequest(req.id);
+                          await rejectFriendRequest(req);
                         } catch (e) {
                           log.error('contacts', 'rejectFriendRequest failed', e);
                         } finally {

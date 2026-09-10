@@ -4,8 +4,9 @@
   "product_area": "chat",
   "owners": [
     "model/domain/chat/conversation.proto",
-    "apps/station/app/subserver/messaging/application/typing_service.go",
-    "apps/station/app/subserver/messaging/interface/http/typing_handler.go",
+    "apps/station/app/subserver/conversation/application/interaction/pulse_ledger.go",
+    "apps/station/app/subserver/conversation/application/interaction/service.go",
+    "apps/station/app/subserver/conversation/interface/http/interaction.go",
     "apps/desktop/src/components/chat/ChatMessageArea.tsx",
     "apps/desktop/src/store/socialChat.ts",
     "apps/desktop/src/acceptance/chat/**"

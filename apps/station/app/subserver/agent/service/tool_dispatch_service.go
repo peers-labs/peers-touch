@@ -75,6 +75,8 @@ type ToolBatchProposal struct {
 	Iteration                 uint32
 	MaxRetries                uint32
 	ContextWindowSize         uint32
+	DelegationDepth           uint32
+	RestrictedTools           []string
 	TaskID                    string
 	StepID                    string
 	ClientCapabilitySessionID string
@@ -89,6 +91,7 @@ type ProposalDecision struct {
 	Arguments        string
 	ApprovalID       string
 	DecisionRevision uint64
+	ExpiresAt        time.Time
 	Status           string
 	ExecutionOwner   string
 	Reason           string
@@ -523,9 +526,13 @@ func (s *ToolDispatchService) proposeBatch(
 	var decisions []ProposalDecision
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		now := s.now()
-		deadline := proposal.Deadline.UTC()
+		deadline := canonicalToolDeadline(proposal.Deadline)
 		if deadline.IsZero() {
-			deadline = now.Add(defaultToolDeadline)
+			deadline = canonicalToolDeadline(now.Add(defaultToolDeadline))
+		}
+		restrictedToolsJSON, err := marshalRestrictedTools(proposal.RestrictedTools)
+		if err != nil {
+			return internalToolError("encode restricted tool set", err)
 		}
 
 		batch := &persistence.ToolBatch{
@@ -543,6 +550,8 @@ func (s *ToolDispatchService) proposeBatch(
 			Iteration:           proposal.Iteration,
 			MaxRetries:          proposal.MaxRetries,
 			ContextWindowSize:   proposal.ContextWindowSize,
+			DelegationDepth:     proposal.DelegationDepth,
+			RestrictedToolsJSON: restrictedToolsJSON,
 			TaskID:              proposal.TaskID,
 			StepID:              proposal.StepID,
 			CapabilitySessionID: proposal.ClientCapabilitySessionID,
@@ -660,6 +669,10 @@ func loadToolBatchProposalReplayTx(
 	proposal ToolBatchProposal,
 	batch *persistence.ToolBatch,
 ) ([]ProposalDecision, error) {
+	restrictedToolsJSON, err := marshalRestrictedTools(proposal.RestrictedTools)
+	if err != nil {
+		return nil, internalToolError("encode restricted tool set replay", err)
+	}
 	if batch == nil ||
 		batch.ID != proposal.ToolBatchID ||
 		batch.ActorID != proposal.ActorID ||
@@ -675,6 +688,8 @@ func loadToolBatchProposalReplayTx(
 		batch.Iteration != proposal.Iteration ||
 		batch.MaxRetries != proposal.MaxRetries ||
 		batch.ContextWindowSize != proposal.ContextWindowSize ||
+		batch.DelegationDepth != proposal.DelegationDepth ||
+		string(batch.RestrictedToolsJSON) != string(restrictedToolsJSON) ||
 		batch.TaskID != proposal.TaskID ||
 		batch.StepID != proposal.StepID ||
 		batch.CapabilitySessionID != proposal.ClientCapabilitySessionID ||
@@ -717,6 +732,13 @@ func loadToolBatchProposalReplayTx(
 	return decisions, nil
 }
 
+func marshalRestrictedTools(values []string) ([]byte, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(values)
+}
+
 func toolProposalMatchesRecord(
 	proposal ToolBatchProposal,
 	proposed AuthorizedToolProposal,
@@ -750,10 +772,22 @@ func proposalDecisionFromRecord(record *persistence.ToolCall) ProposalDecision {
 		Arguments:        string(record.BoundedArguments),
 		ApprovalID:       record.ApprovalID,
 		DecisionRevision: record.DecisionRevision,
+		ExpiresAt:        toolCallExecutionDeadline(record),
 		Status:           record.Status,
 		ExecutionOwner:   record.ExecutionOwner,
 		FencingToken:     record.FencingToken,
 	}
+}
+
+func toolCallExecutionDeadline(record *persistence.ToolCall) time.Time {
+	if record == nil || record.ExecutionDeadline == nil {
+		return time.Time{}
+	}
+	return canonicalToolDeadline(*record.ExecutionDeadline)
+}
+
+func canonicalToolDeadline(value time.Time) time.Time {
+	return value.UTC().Truncate(time.Microsecond)
 }
 
 func (s *ToolDispatchService) SubmitDecision(
@@ -808,6 +842,27 @@ func (s *ToolDispatchService) SubmitDecision(
 			}
 			return notFoundToolError("tool call", err)
 		}
+		replayed, found, err = loadDecisionReplayTx(
+			tx,
+			actorID,
+			request.GetIdempotencyKey(),
+			canonicalHash,
+		)
+		if err != nil {
+			if businessError, ok := err.(*errcode.BizError); ok &&
+				businessError.Code == errcode.AgentIdempotencyConflict {
+				response = decisionRejection(
+					request,
+					model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT,
+				)
+				return nil
+			}
+			return err
+		}
+		if found {
+			response = replayed
+			return nil
+		}
 		if call.ApprovalID != request.GetApprovalId() {
 			return unauthorizedToolRequest("approval identity mismatch")
 		}
@@ -819,19 +874,84 @@ func (s *ToolDispatchService) SubmitDecision(
 			response.DecisionRevision = call.DecisionRevision
 			return nil
 		}
-		if call.Status != persistence.ToolCallStatusWaitingApproval {
-			if call.Status == persistence.ToolCallStatusExpired {
+		now := s.now()
+		if call.Status == persistence.ToolCallStatusWaitingApproval &&
+			call.ExecutionDeadline != nil &&
+			!call.ExecutionDeadline.After(now) {
+			result := tx.Model(&persistence.ToolCall{}).
+				Where(
+					"id = ? AND decision_revision = ? AND status = ?",
+					call.ID,
+					call.DecisionRevision,
+					persistence.ToolCallStatusWaitingApproval,
+				).
+				Updates(map[string]interface{}{
+					"status":     persistence.ToolCallStatusExpired,
+					"error_code": string(errcode.AgentToolApprovalExpired),
+					"ended_at":   now,
+					"updated_at": now,
+				})
+			if result.Error != nil {
+				return internalToolError("expire tool approval", result.Error)
+			}
+			if result.RowsAffected != 1 {
 				response = decisionRejection(
 					request,
-					model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED,
+					model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_STALE_REVISION,
 				)
-				response.DecisionRevision = call.DecisionRevision
+				return nil
+			}
+			if err := blockToolBatchTx(tx, call.ToolBatchID, now); err != nil {
+				return err
+			}
+			call.Status = persistence.ToolCallStatusExpired
+			call.ErrorCode = string(errcode.AgentToolApprovalExpired)
+		}
+		if call.Status != persistence.ToolCallStatusWaitingApproval {
+			if call.Status == persistence.ToolCallStatusExpired {
+				response = expiredDecisionRejection(request, &call)
+				if err := persistDecisionAcknowledgementTx(
+					tx,
+					actorID,
+					request,
+					response,
+					canonicalHash,
+					call.DecisionRevision,
+					now,
+				); err != nil {
+					return err
+				}
 				return nil
 			}
 			return invalidToolState("tool call is not waiting for approval")
 		}
+		if request.GetApproved() &&
+			call.ExecutionOwner == persistence.ToolOwnerClientCapability {
+			available, err := clientExecutorAvailableTx(tx, &call, now)
+			if err != nil {
+				return err
+			}
+			if !available {
+				response = decisionRejection(
+					request,
+					model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE,
+				)
+				response.OutcomeError = errcode.NewClientExecutorUnavailablePayload(
+					call.TargetDeviceID,
+					call.CapabilityID,
+				)
+				return persistDecisionAcknowledgementTx(
+					tx,
+					actorID,
+					request,
+					response,
+					canonicalHash,
+					call.DecisionRevision,
+					now,
+				)
+			}
+		}
 
-		now := s.now()
 		revision := call.DecisionRevision + 1
 		status := persistence.ToolCallStatusDenied
 		if request.GetApproved() {
@@ -845,8 +965,14 @@ func (s *ToolDispatchService) SubmitDecision(
 			"status":                status,
 			"updated_at":            now,
 		}
+		var outcomeError *model.ErrorPayload
 		if !request.GetApproved() {
 			update["ended_at"] = now
+			update["error_code"] = string(errcode.AgentToolApprovalDenied)
+			outcomeError = errcode.NewToolApprovalDeniedPayload(
+				request.GetToolCallId(),
+				request.GetDecisionId(),
+			)
 		}
 		result := tx.Model(&persistence.ToolCall{}).
 			Where("id = ? AND decision_revision = ? AND status = ?",
@@ -893,29 +1019,17 @@ func (s *ToolDispatchService) SubmitDecision(
 			Approved:         request.GetApproved(),
 			IdempotencyKey:   request.GetIdempotencyKey(),
 			PayloadHash:      canonicalHash,
+			OutcomeError:     outcomeError,
 		}
-		ack, err := proto.MarshalOptions{Deterministic: true}.Marshal(response)
-		if err != nil {
-			return internalToolError("encode decision acknowledgement", err)
-		}
-		command := &persistence.ToolDecisionCommand{
-			ID:                generateID("tool_decision"),
-			ActorID:           actorID,
-			ToolCallID:        request.GetToolCallId(),
-			ApprovalID:        request.GetApprovalId(),
-			DecisionID:        request.GetDecisionId(),
-			ExpectedRevision:  request.GetExpectedRevision(),
-			CommittedRevision: revision,
-			Approved:          request.GetApproved(),
-			IdempotencyKey:    request.GetIdempotencyKey(),
-			PayloadHash:       canonicalHash,
-			Acknowledgement:   ack,
-			CreatedAt:         now,
-		}
-		if err := tx.Create(command).Error; err != nil {
-			return internalToolError("persist decision acknowledgement", err)
-		}
-		return nil
+		return persistDecisionAcknowledgementTx(
+			tx,
+			actorID,
+			request,
+			response,
+			canonicalHash,
+			revision,
+			now,
+		)
 	})
 	return response, err
 }
@@ -1451,6 +1565,7 @@ func (s *ToolDispatchService) ExpireStaleApprovals(ctx context.Context, timeout 
 				Where("id = ? AND status = ?", call.ID, persistence.ToolCallStatusWaitingApproval).
 				Updates(map[string]interface{}{
 					"status":     persistence.ToolCallStatusExpired,
+					"error_code": string(errcode.AgentToolApprovalExpired),
 					"ended_at":   now,
 					"updated_at": now,
 				})
@@ -1494,14 +1609,18 @@ func (s *ToolDispatchService) SettleExpiredToolCalls(ctx context.Context) (int64
 		}
 		for i := range calls {
 			status := persistence.ToolCallStatusExpired
+			errorCode := string(errcode.AgentToolApprovalExpired)
 			if calls[i].Status == persistence.ToolCallStatusPrepared {
 				status = persistence.ToolCallStatusUnknownSideEffect
+				errorCode = "tool_deadline_expired"
+			} else if calls[i].Status == persistence.ToolCallStatusDispatchCommitted {
+				errorCode = "tool_deadline_expired"
 			}
 			result := tx.Model(&persistence.ToolCall{}).
 				Where("id = ? AND status = ?", calls[i].ID, calls[i].Status).
 				Updates(map[string]interface{}{
 					"status":     status,
-					"error_code": "tool_deadline_expired",
+					"error_code": errorCode,
 					"ended_at":   now,
 					"updated_at": now,
 				})
@@ -1787,6 +1906,9 @@ func (s *ToolDispatchService) proposeCallTx(
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}
+	if policy == ToolPolicyDeny {
+		row.ErrorCode = string(errcode.AgentToolApprovalDenied)
+	}
 	if authorization.ExecutionOwner ==
 		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY {
 		if lease == nil {
@@ -1813,6 +1935,7 @@ func (s *ToolDispatchService) proposeCallTx(
 		Arguments:        string(call.Arguments),
 		ApprovalID:       approvalID,
 		DecisionRevision: row.DecisionRevision,
+		ExpiresAt:        deadline,
 		Status:           row.Status,
 		ExecutionOwner:   row.ExecutionOwner,
 		Reason:           reason,
@@ -2017,6 +2140,39 @@ func (s *ToolDispatchService) dispatchCallTx(
 		call.FencingToken,
 		"",
 	)
+}
+
+func clientExecutorAvailableTx(
+	tx *gorm.DB,
+	call *persistence.ToolCall,
+	now time.Time,
+) (bool, error) {
+	var leaseRow persistence.ClientCapabilityLease
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where(
+			"session_id = ? AND actor_id = ? AND device_id = ? AND revoked_at IS NULL AND expires_at > ?",
+			call.CapabilitySessionID,
+			call.ActorID,
+			call.TargetDeviceID,
+			now,
+		).
+		First(&leaseRow).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, internalToolError("resolve active capability lease", err)
+	}
+	var lease model.ClientCapabilityLease
+	if err := proto.Unmarshal(leaseRow.LeasePayload, &lease); err != nil {
+		return false, internalToolError("decode capability lease", err)
+	}
+	return leaseAllowsCapability(
+		&lease,
+		call.CapabilityID,
+		call.SchemaVersion,
+		len(call.BoundedArguments),
+	), nil
 }
 
 func (s *ToolDispatchService) issueCapabilityRequestTx(
@@ -2538,6 +2694,39 @@ func loadActiveCapabilityLeaseTx(
 	return &lease, nil
 }
 
+func persistDecisionAcknowledgementTx(
+	tx *gorm.DB,
+	actorID string,
+	request *model.SubmitToolApprovalDecisionRequest,
+	response *model.SubmitToolApprovalDecisionResponse,
+	payloadHash string,
+	committedRevision uint64,
+	createdAt time.Time,
+) error {
+	acknowledgement, err := proto.MarshalOptions{Deterministic: true}.Marshal(response)
+	if err != nil {
+		return internalToolError("encode decision acknowledgement", err)
+	}
+	command := &persistence.ToolDecisionCommand{
+		ID:                generateID("tool_decision"),
+		ActorID:           actorID,
+		ToolCallID:        request.GetToolCallId(),
+		ApprovalID:        request.GetApprovalId(),
+		DecisionID:        request.GetDecisionId(),
+		ExpectedRevision:  request.GetExpectedRevision(),
+		CommittedRevision: committedRevision,
+		Approved:          request.GetApproved(),
+		IdempotencyKey:    request.GetIdempotencyKey(),
+		PayloadHash:       payloadHash,
+		Acknowledgement:   acknowledgement,
+		CreatedAt:         createdAt,
+	}
+	if err := tx.Create(command).Error; err != nil {
+		return internalToolError("persist decision acknowledgement", err)
+	}
+	return nil
+}
+
 func loadDecisionReplayTx(
 	tx *gorm.DB,
 	actorID string,
@@ -2766,6 +2955,24 @@ func decisionRejection(
 		PayloadHash:      request.GetPayloadHash(),
 		ErrorCode:        code,
 	}
+}
+
+func expiredDecisionRejection(
+	request *model.SubmitToolApprovalDecisionRequest,
+	call *persistence.ToolCall,
+) *model.SubmitToolApprovalDecisionResponse {
+	response := decisionRejection(
+		request,
+		model.ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED,
+	)
+	response.DecisionRevision = call.DecisionRevision
+	if call.ExecutionDeadline != nil {
+		response.OutcomeError = errcode.NewToolApprovalExpiredPayload(
+			request.GetDecisionId(),
+			*call.ExecutionDeadline,
+		)
+	}
+	return response
 }
 
 func terminalResultHash(receipt *model.ClientCapabilityReceipt) string {

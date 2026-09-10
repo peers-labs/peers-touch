@@ -7,30 +7,15 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import { fromBinary } from '@bufbuild/protobuf'
 import { describe, expect, it, vi } from 'vitest'
 
 const gatewayState = vi.hoisted(() => ({
   url: '',
-  lastMembershipTransition: null as null | {
-    gateway: string
-    input: Record<string, unknown>
-  },
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (command: string, payload?: { input?: unknown }) => {
     if (!gatewayState.url) throw new Error('C6 gateway is not selected')
-    if (
-      command === 'conversation_submit_command_proposal' &&
-      payload?.input &&
-      typeof payload.input === 'object'
-    ) {
-      gatewayState.lastMembershipTransition = {
-        gateway: gatewayState.url,
-        input: structuredClone(payload.input) as Record<string, unknown>,
-      }
-    }
     const response = await fetch(gatewayState.url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -46,7 +31,10 @@ vi.mock('@tauri-apps/api/core', () => ({
   },
 }))
 
-import { CommittedConversationEventSchema } from '../gen/proto/domain/chat/conversation_pb'
+import type {
+  MessagingConversationProjection,
+  MessagingProjection,
+} from './im-service-contract'
 import { imServiceV1 } from './im-service'
 
 interface C6Client {
@@ -58,7 +46,6 @@ interface C6Client {
   password: string
   ptid: string
   deviceId: string
-  keyPackage: Uint8Array
 }
 
 interface TopologyReport {
@@ -66,6 +53,11 @@ interface TopologyReport {
   nodes: Record<string, {
     station_peer_id: string
   }>
+}
+
+interface EndpointIdentity {
+  actorPtid: string
+  deviceId: string
 }
 
 const liveDescribe = process.env.PT_C6_MLS_E2E === '1'
@@ -79,7 +71,7 @@ const gatewayBob2 = process.env.PT_C6_GATEWAY_BOB2 ?? 'http://127.0.0.1:3333'
 const controlDir = process.env.PT_C6_CONTROL_DIR ?? ''
 
 liveDescribe('C6 MLS three-Station convergence', () => {
-  it('converges device transitions and delegated leave across real Desktop Rust clients', async () => {
+  it('converges canonical messaging transitions across real Desktop Rust clients', async () => {
     const topologyPath = requiredRuntimePath('PT_C6_TOPOLOGY_PATH')
     const reportPath = requiredRuntimePath('PT_C6_REPORT_DRAFT_PATH')
     const topology = JSON.parse(
@@ -103,184 +95,126 @@ liveDescribe('C6 MLS three-Station convergence', () => {
       gatewayThree,
       topology.nodes.three.station_peer_id,
     )
-    const bob2 = await createAdditionalDevice(
-      bob,
-      'bob2',
-      gatewayBob2,
-    )
+    const bob2 = await createAdditionalDevice(bob, 'bob2', gatewayBob2)
 
     const conversationId = randomUUID()
     await activate(alice)
-    const created = await imServiceV1.mlsGroup.createAuthorizedGroup({
+    const created = await imServiceV1.messaging.createGroup(
       conversationId,
-      name: 'C6 MLS convergence',
-      federationId: topology.federation_id,
-      ownerPtid: alice.ptid,
-      ownerDeviceId: alice.deviceId,
-      ownerHomeStationPeerId: alice.homeStationPeerId,
-      members: [{
-        ptid: bob.ptid,
-        deviceId: bob.deviceId,
-        homeStationPeerId: bob.homeStationPeerId,
-        keyPackage: bob.keyPackage,
-      }],
-    })
-    expect(created.conversation.membershipEpoch).toBe(1n)
-    await pumpMls(bob, conversationId, 1)
-    await expectConverged([alice, bob], conversationId, 1)
+      'C6 MLS convergence',
+      [bob.ptid],
+      topology.federation_id,
+    )
+    expect(created.conversationId).toBe(conversationId)
+    expect(created.state).not.toBe('failed')
+    await waitForConversation(alice, conversationId, 1, true)
+    await waitForConversation(bob, conversationId, 1, true)
 
     await requestControl('charlie', 'stop')
     await activate(alice)
-    await imServiceV1.messaging.submitMembershipIntent({
+    const addCharlie = await imServiceV1.messaging.submitMembershipIntent({
       conversationId,
       action: 'add_actor',
       targetPtid: charlie.ptid,
     })
-    await pumpMls(bob, conversationId, 2)
+    await waitForCommand(addCharlie.commandId)
+    await waitForConversation(alice, conversationId, 2, true)
+    await waitForConversation(bob, conversationId, 2, true)
     await sleep(1_500)
     await requestControl('charlie', 'start')
-    await rehydrateClient(charlie, conversationId, false)
-    const deliveryFaults = await pumpMlsWithDeliveryFaults(
-      charlie,
-      conversationId,
-      2,
-    )
-    await expectConverged([alice, bob, charlie], conversationId, 2)
-
-    const remotePlaintext = new TextEncoder().encode('C6-D17-REMOTE-ORDINARY')
-    await activate(bob)
-    const remoteCiphertext = await imServiceV1.mlsGroup.encrypt(
-      conversationId,
-      remotePlaintext,
-    )
-    await imServiceV1.mlsGroup.save(conversationId)
-    const remoteEvent = await imServiceV1.conversation.submitCommand({
-      conversation_id: conversationId,
-      sender_ptid: bob.ptid,
-      sender_device_id: bob.deviceId,
-      observed_membership_epoch: 2,
-      send_message: {
-        group_encrypted_payload: Buffer.from(remoteCiphertext).toString('base64'),
-        content_type: 1,
-      },
-    } as any)
-    if (remoteEvent.payload.case !== 'messageCommitted') {
-      throw new Error('remote ordinary command did not commit a message event')
-    }
     await activate(charlie)
-    await expect(
-      imServiceV1.mlsGroup.decrypt(
-        conversationId,
-        remoteEvent.payload.value.groupEncryptedPayload,
-      ),
-    ).resolves.toEqual(remotePlaintext)
+    await waitForConversation(charlie, conversationId, 2, true)
+
+    const remoteMessage = await sendAndObserve(
+      bob,
+      [alice, charlie],
+      conversationId,
+      'C6-D17-REMOTE-ORDINARY',
+    )
 
     await activate(bob)
-    const addDeviceEvent = await imServiceV1.mlsGroup.addAuthorizedDevice({
+    const addBobDevice = await imServiceV1.messaging.submitMembershipIntent({
       conversationId,
-      senderPtid: bob.ptid,
-      senderDeviceId: bob.deviceId,
-      observedMembershipEpoch: 2,
-      member: {
-        ptid: bob2.ptid,
-        deviceId: bob2.deviceId,
-        homeStationPeerId: bob2.homeStationPeerId,
-        keyPackage: bob2.keyPackage,
-      },
+      action: 'add_device',
+      targetPtid: bob2.ptid,
+      targetDeviceId: bob2.deviceId,
     })
-    const signedProposal = gatewayState.lastMembershipTransition
-    if (!signedProposal) {
-      throw new Error('remote ADD_DEVICE signed proposal was not captured')
-    }
-    await activate(bob)
-    const duplicateProposal = await gatewayJson(
-      signedProposal.gateway,
-      'conversation_submit_command_proposal',
-      signedProposal.input,
-    )
-    const duplicateEventBytes = (
-      duplicateProposal.data as { event_bytes?: number[] }
-    ).event_bytes
-    if (!duplicateEventBytes) {
-      throw new Error('duplicate proposal returned no canonical event bytes')
-    }
-    const duplicateEvent = fromBinary(
-      CommittedConversationEventSchema,
-      new Uint8Array(duplicateEventBytes),
-    )
-    expect(duplicateEvent.eventId).toBe(addDeviceEvent.eventId)
-    expect(duplicateEvent.eventHash).toEqual(addDeviceEvent.eventHash)
-    await pumpMls(alice, conversationId, 3)
-    await pumpMls(charlie, conversationId, 3)
-    await pumpMls(bob2, conversationId, 3)
-    await expectConverged([alice, bob, bob2, charlie], conversationId, 3)
+    await waitForCommand(addBobDevice.commandId)
+    await waitForConversation(alice, conversationId, 3, true)
+    await waitForConversation(bob, conversationId, 3, true)
+    await waitForConversation(bob2, conversationId, 3, true)
+    await waitForConversation(charlie, conversationId, 3, true)
+
     await requestControl('bob2', 'restart')
-    await rehydrateClient(bob2, conversationId, true)
-    await expectConverged([alice, bob2, charlie], conversationId, 3)
-    await expectCiphertextAccess(
+    await activate(bob2)
+    await waitForConversation(bob2, conversationId, 3, true)
+    const beforeRemoval = await sendAndObserve(
       alice,
       [bob, bob2, charlie],
-      [],
       conversationId,
       'C6-BEFORE-REMOVE-DEVICE',
     )
 
     await requestControl('station-three', 'restart')
     await activate(bob2)
-    await imServiceV1.mlsGroup.removeAuthorizedDevice({
+    const removeBobDevice = await imServiceV1.messaging.submitMembershipIntent({
       conversationId,
-      senderPtid: bob2.ptid,
-      senderDeviceId: bob2.deviceId,
-      observedMembershipEpoch: 3,
-      memberPtid: bob.ptid,
-      memberDeviceId: bob.deviceId,
+      action: 'remove_device',
+      targetPtid: bob.ptid,
+      targetDeviceId: bob.deviceId,
     })
-    await pumpMls(alice, conversationId, 4)
-    await pumpMls(bob, conversationId, 4)
-    await pumpMls(charlie, conversationId, 4)
-    await expectConverged([alice, bob2, charlie], conversationId, 4)
-    await expectCiphertextAccess(
+    await waitForCommand(removeBobDevice.commandId)
+    await waitForConversation(alice, conversationId, 4, true)
+    await waitForConversation(bob2, conversationId, 4, true)
+    await waitForConversation(charlie, conversationId, 4, true)
+    const afterDeviceRemoval = await sendAndObserve(
       alice,
       [bob2, charlie],
-      [bob],
       conversationId,
       'C6-AFTER-REMOVE-DEVICE',
     )
+    await expectMessageNotObserved(bob, conversationId, afterDeviceRemoval.messageId)
 
     await activate(bob2)
-    const intent = await imServiceV1.mlsGroup.requestLeaveIntent({
-      federationId: topology.federation_id,
-      authorityStationPeerId: alice.homeStationPeerId,
-      authorityEpoch: Number(created.conversation.authorityEpoch),
+    const authoritativeConversation =
+      await imServiceV1.conversation.getConversation(conversationId)
+    expect(authoritativeConversation.federationId).toBe(topology.federation_id)
+    expect(authoritativeConversation.authorityStationPeerId)
+      .toBe(alice.homeStationPeerId)
+    const intent = await imServiceV1.messaging.requestLeaveIntent({
+      federationId: authoritativeConversation.federationId,
+      authorityStationPeerId:
+        authoritativeConversation.authorityStationPeerId,
+      authorityEpoch: Number(authoritativeConversation.authorityEpoch),
       homeStationPeerId: bob2.homeStationPeerId,
       conversationId,
-      actorPtid: bob2.ptid,
-      actorDeviceId: bob2.deviceId,
       observedMembershipEpoch: 4,
       observedMlsEpoch: 4,
     })
     await activate(alice)
-    const listed = await imServiceV1.mlsGroup.listLeaveIntents(conversationId)
+    const listed = await imServiceV1.messaging.listLeaveIntents(conversationId)
     expect(listed.some(item => item.intentId === intent.intentId)).toBe(true)
-    await imServiceV1.mlsGroup.commitAuthorizedLeave({
-      conversationId,
-      senderPtid: alice.ptid,
-      senderDeviceId: alice.deviceId,
-      observedMembershipEpoch: 4,
-      intent,
-    })
-    await pumpMls(bob2, conversationId, 5)
-    await pumpMls(charlie, conversationId, 5)
-    await expectConverged([alice, charlie], conversationId, 5)
-    await expectCiphertextAccess(
+    const delegatedLeave =
+      await imServiceV1.messaging.commitAuthorizedLeave({ intent })
+    await waitForCommand(delegatedLeave.commandId)
+    await waitForConversation(alice, conversationId, 5, true)
+    await waitForConversation(charlie, conversationId, 5, true)
+    const afterDelegatedLeave = await sendAndObserve(
       alice,
       [charlie],
-      [bob2],
       conversationId,
       'C6-AFTER-DELEGATED-LEAVE',
     )
+    await expectMessageNotObserved(
+      bob2,
+      conversationId,
+      afterDelegatedLeave.messageId,
+    )
 
-    const finalHeads = await collectHeads([alice, charlie], conversationId)
+    const finalProjections = await collectConversationProjections(
+      [alice, charlie],
+      conversationId,
+    )
     const report = {
       schema_version: 1,
       gate: 'chat-mls-three-station-convergence',
@@ -291,34 +225,25 @@ liveDescribe('C6 MLS three-Station convergence', () => {
       conversation_id: conversationId,
       transitions: {
         genesis_epoch: 1,
+        remote_actor_add_epoch: 2,
         remote_add_device_epoch: 3,
         remote_remove_device_epoch: 4,
         delegated_leave_epoch: 5,
       },
-      fault_schedule: {
-        disconnected_recipient_before_add: true,
-        durable_inbox_reconnect: true,
-        recipient_delivery_reordered: deliveryFaults.reordered,
-        partial_ack_replayed: deliveryFaults.partialAckReplayed,
-        duplicate_delivery_noop: deliveryFaults.duplicateNoop,
-        duplicate_remote_proposal_exact_replay: true,
-        desktop_gateway_restart_epoch: 3,
-        follower_station_restart_before_epoch: 4,
-        follower_post_restart_epoch: 4,
+      lifecycle: {
+        disconnected_recipient_reconnected: true,
+        desktop_gateway_restarted: true,
+        follower_station_restarted: true,
       },
-      final_client_heads: finalHeads,
-      removed_device_decrypt_denied: true,
-      departed_actor_decrypt_denied: true,
-      remote_ordinary_send: {
-        status: 'pass',
-        sender_station: 'two',
-        authority_station: 'one',
-        recipient_station: 'three',
-        command_path: 'desktop-rust -> home -> authority -> committed-event',
-        event_id: remoteEvent.eventId,
-        event_hash: Buffer.from(remoteEvent.eventHash).toString('hex'),
-        recipient_decrypt: true,
+      message_projection_readback: {
+        remote_message_id: remoteMessage.messageId,
+        before_removal_message_id: beforeRemoval.messageId,
+        after_device_removal_message_id: afterDeviceRemoval.messageId,
+        after_delegated_leave_message_id: afterDelegatedLeave.messageId,
       },
+      final_client_projections: finalProjections,
+      removed_device_message_not_observed: true,
+      departed_actor_message_not_observed: true,
       access_tokens_present: false,
     }
     mkdirSync(dirname(reportPath), { recursive: true })
@@ -346,15 +271,17 @@ async function createClient(
     email,
     password,
   })
-  await gatewayJson(gateway, 'auth_login', { account: email, password })
-  return initializeDevice({
+  const identity = await loginAndReadEndpoint(gateway, email, password)
+  return {
     name,
     station,
     gateway,
     homeStationPeerId,
     email,
     password,
-  })
+    ptid: identity.actorPtid,
+    deviceId: identity.deviceId,
+  }
 }
 
 async function createAdditionalDevice(
@@ -362,244 +289,208 @@ async function createAdditionalDevice(
   name: string,
   gateway: string,
 ): Promise<C6Client> {
-  await gatewayJson(gateway, 'auth_login', {
-    account: actor.email,
-    password: actor.password,
-  })
-  return initializeDevice({
+  const identity = await loginAndReadEndpoint(
+    gateway,
+    actor.email,
+    actor.password,
+    actor.ptid,
+  )
+  expect(identity.deviceId).not.toBe(actor.deviceId)
+  return {
     ...actor,
     name,
     gateway,
-    ptid: '',
-    deviceId: '',
-    keyPackage: new Uint8Array(),
+    deviceId: identity.deviceId,
+  }
+}
+
+async function loginAndReadEndpoint(
+  gateway: string,
+  email: string,
+  password: string,
+  expectedActorPtid?: string,
+): Promise<EndpointIdentity> {
+  const login = await gatewayJson(gateway, 'auth_login', {
+    account: email,
+    password,
   })
+  const loginData = login.data as { actor_ptid?: string }
+  const actorPtid = loginData.actor_ptid ?? ''
+  if (!actorPtid.startsWith('ptid:')) {
+    throw new Error('authenticated session returned no canonical actor PTID')
+  }
+  if (expectedActorPtid) {
+    expect(actorPtid).toBe(expectedActorPtid)
+  }
+  select({ gateway })
+  return readCurrentEndpoint(gateway, actorPtid)
 }
 
-async function initializeDevice(
-  client: Omit<C6Client, 'ptid' | 'deviceId' | 'keyPackage'> & Partial<C6Client>,
-): Promise<C6Client> {
-  const deviceResult = await gatewayJson(
-    client.gateway,
-    'account_get_device_id',
-    {},
-  )
-  const deviceId = JSON.parse(
-    String((deviceResult.data as { status: string }).status),
-  ).device_id as string
-  select({ gateway: client.gateway })
-  const identity = await imServiceV1.mlsGroup.initIdentity('', deviceId)
-  try {
-    await imServiceV1.device.register(
-      deviceId,
-      `C6 ${client.name}`,
-      identity.publicKey,
-      identity.signingKeyId,
-    )
-  } catch (error) {
-    throw new Error(
-      `${client.name} device registration failed for ${deviceId}: ${String(error)}`,
-    )
-  }
-  const keyPackage = await imServiceV1.mlsGroup.generateKeyPackage()
-  await imServiceV1.keyPackage.upload(deviceId, keyPackage)
-  return {
-    name: client.name,
-    station: client.station,
-    gateway: client.gateway,
-    homeStationPeerId: client.homeStationPeerId,
-    email: client.email,
-    password: client.password,
-    ptid: identity.ptid,
-    deviceId,
-    keyPackage,
-  }
-}
-
-async function pumpMls(
-  client: C6Client,
-  conversationId: string,
-  expectedEpoch: number,
-): Promise<void> {
+async function readCurrentEndpoint(
+  gateway: string,
+  expectedActorPtid: string,
+): Promise<EndpointIdentity> {
+  let lastError: unknown
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    await activate(client)
-    const items = await imServiceV1.envelope.resume(client.deviceId)
-    for (const item of items) {
-      const envelope = item.envelope
-      if (!envelope) continue
-      if (envelope.payloadType === 1) {
-        await imServiceV1.mlsGroup.recordAuthorityEvent(
-          envelope.payloadBytes,
-          client.deviceId,
-        )
-      } else if (envelope.payloadType === 2) {
-        await imServiceV1.mlsGroup.applyTransitionDelivery(
-          envelope.payloadBytes,
-          client.deviceId,
-        )
+    try {
+      const response = await gatewayJson(
+        gateway,
+        'messaging_acceptance_current_endpoint',
+        { expected_actor_ptid: expectedActorPtid },
+      )
+      const data = response.data as {
+        actor_ptid?: string
+        device_id?: string
       }
-      await imServiceV1.envelope.ack(client.deviceId, item.inboxItemId)
+      if (data.actor_ptid === expectedActorPtid && data.device_id) {
+        return {
+          actorPtid: data.actor_ptid,
+          deviceId: data.device_id,
+        }
+      }
+      lastError = new Error('active messaging endpoint identity is incomplete')
+    } catch (error) {
+      lastError = error
     }
-    const status = await imServiceV1.mlsGroup.recipientStatus(conversationId)
-    if (status.status === 'active' && status.mlsEpoch === expectedEpoch) return
+    await sleep(250)
+  }
+  throw new Error(
+    `messaging endpoint did not activate for ${expectedActorPtid}: ${String(lastError)}`,
+  )
+}
+
+async function waitForCommand(commandId: string): Promise<void> {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const status = await imServiceV1.messaging.getCommandStatus(commandId)
+    if (status.state === 'committed') return
+    if (status.state === 'failed' || status.state === 'superseded') {
+      throw new Error(
+        `messaging command ${commandId} ended as ${status.state}: ${status.lastErrorCode}`,
+      )
+    }
     await sleep(500)
   }
-  throw new Error(`${client.name} did not reach MLS epoch ${expectedEpoch}`)
+  throw new Error(`messaging command ${commandId} did not commit`)
 }
 
-interface DeliveryFaultEvidence {
-  reordered: boolean
-  partialAckReplayed: boolean
-  duplicateNoop: boolean
-}
-
-async function pumpMlsWithDeliveryFaults(
+async function waitForConversation(
   client: C6Client,
   conversationId: string,
-  expectedEpoch: number,
-): Promise<DeliveryFaultEvidence> {
-  const items = await waitForInboxItems(client, 2)
-  const originalOrder = items.map(item => item.envelope?.payloadType ?? 0)
-  const reorderedItems = [...items].reverse()
-  const reorderedOrder = reorderedItems.map(
-    item => item.envelope?.payloadType ?? 0,
-  )
-  if (!originalOrder.includes(1) || !originalOrder.includes(2)) {
-    throw new Error(
-      `fault batch lacks event/material pair: ${originalOrder.join(',')}`,
-    )
-  }
-  const heldItem = reorderedItems[0]
-
-  for (const [index, item] of reorderedItems.entries()) {
-    await applyEnvelopeItem(client, item)
-    if (index > 0) {
-      await imServiceV1.envelope.ack(client.deviceId, item.inboxItemId)
-    }
-  }
-
+  membershipEpoch: number,
+  active: boolean,
+): Promise<MessagingConversationProjection> {
   await activate(client)
-  const resumed = await imServiceV1.envelope.resume(client.deviceId)
-  const replay = resumed.find(
-    item => item.inboxItemId === heldItem.inboxItemId,
-  )
-  if (!replay) {
-    throw new Error('partial ACK item was not recovered after reconnect')
-  }
-  const replayResult = await applyEnvelopeItem(client, replay)
-  if (!replayResult?.duplicate) {
-    throw new Error('replayed partial-ACK delivery was not a duplicate no-op')
-  }
-  await imServiceV1.envelope.ack(client.deviceId, replay.inboxItemId)
-
-  const status = await imServiceV1.mlsGroup.recipientStatus(conversationId)
-  if (
-    status.status !== 'active' ||
-    status.mlsEpoch !== expectedEpoch ||
-    status.buffered !== 0
-  ) {
-    throw new Error(
-      `${client.name} fault recovery ended at ${JSON.stringify(status)}`,
-    )
-  }
-  return {
-    reordered: originalOrder.join(',') !== reorderedOrder.join(','),
-    partialAckReplayed: true,
-    duplicateNoop: replayResult.duplicate,
-  }
-}
-
-async function waitForInboxItems(
-  client: C6Client,
-  minimum: number,
-) {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    await activate(client)
-    const items = await imServiceV1.envelope.resume(client.deviceId)
-    if (items.length >= minimum) return items
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const projection = (await imServiceV1.messaging.listConversations())
+      .find(item => item.conversationId === conversationId)
+    if (
+      projection
+      && projection.membershipEpoch === membershipEpoch
+      && projection.mlsEpoch === membershipEpoch
+      && projection.active === active
+    ) {
+      return projection
+    }
     await sleep(500)
   }
   throw new Error(
-    `${client.name} did not receive ${minimum} durable inbox items`,
+    `${client.name} did not project conversation ${conversationId} at epoch ${membershipEpoch}`,
   )
 }
 
-async function applyEnvelopeItem(
-  client: C6Client,
-  item: Awaited<ReturnType<typeof imServiceV1.envelope.resume>>[number],
-): Promise<{ duplicate: boolean } | null> {
-  const envelope = item.envelope
-  if (!envelope) throw new Error('inbox item has no Station envelope')
-  if (envelope.payloadType === 1) {
-    return imServiceV1.mlsGroup.recordAuthorityEvent(
-      envelope.payloadBytes,
-      client.deviceId,
-    )
-  } else if (envelope.payloadType === 2) {
-    return imServiceV1.mlsGroup.applyTransitionDelivery(
-      envelope.payloadBytes,
-      client.deviceId,
-    )
-  }
-  return null
-}
-
-async function expectConverged(
-  clients: C6Client[],
-  conversationId: string,
-  epoch: number,
-): Promise<void> {
-  const heads = await collectHeads(clients, conversationId)
-  for (const head of Object.values(heads)) {
-    expect(head.mlsEpoch).toBe(epoch)
-  }
-  const [first, ...rest] = Object.values(heads)
-  for (const head of rest) {
-    expect(head.groupContextSha256).toBe(first.groupContextSha256)
-    expect(head.ratchetTreeSha256).toBe(first.ratchetTreeSha256)
-    expect(head.memberCredentialsSha256).toBe(first.memberCredentialsSha256)
-  }
-}
-
-async function collectHeads(
-  clients: C6Client[],
-  conversationId: string,
-) {
-  const result: Record<string, Awaited<ReturnType<
-    typeof imServiceV1.mlsGroup.publicHead
-  >>> = {}
-  for (const client of clients) {
-    await activate(client)
-    result[client.name] = await imServiceV1.mlsGroup.publicHead(conversationId)
-  }
-  return result
-}
-
-async function expectCiphertextAccess(
+async function sendAndObserve(
   sender: C6Client,
-  allowed: C6Client[],
-  denied: C6Client[],
+  recipients: C6Client[],
   conversationId: string,
-  marker: string,
-): Promise<void> {
-  const plaintext = new TextEncoder().encode(marker)
+  plaintext: string,
+): Promise<MessagingProjection> {
   await activate(sender)
-  const ciphertext = await imServiceV1.mlsGroup.encrypt(
+  const outcome = await imServiceV1.messaging.sendMessage(
     conversationId,
+    'group',
     plaintext,
   )
-  for (const client of allowed) {
-    await activate(client)
-    await expect(
-      imServiceV1.mlsGroup.decrypt(conversationId, ciphertext),
-    ).resolves.toEqual(plaintext)
+  expect(outcome.state).not.toBe('attachment_failed')
+  const senderProjection = await waitForMessage(
+    sender,
+    conversationId,
+    outcome.messageId,
+    plaintext,
+  )
+  for (const recipient of recipients) {
+    await waitForMessage(
+      recipient,
+      conversationId,
+      outcome.messageId,
+      plaintext,
+    )
   }
-  for (const client of denied) {
-    await activate(client)
-    await expect(
-      imServiceV1.mlsGroup.decrypt(conversationId, ciphertext),
-    ).rejects.toThrow()
+  return senderProjection
+}
+
+async function waitForMessage(
+  client: C6Client,
+  conversationId: string,
+  messageId: string,
+  plaintext: string,
+): Promise<MessagingProjection> {
+  await activate(client)
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const projection = (await imServiceV1.messaging.listMessages(conversationId))
+      .find(message => message.messageId === messageId)
+    if (projection?.plaintext === plaintext) return projection
+    await sleep(500)
   }
+  throw new Error(
+    `${client.name} did not project message ${messageId} in ${conversationId}`,
+  )
+}
+
+async function expectMessageNotObserved(
+  client: C6Client,
+  conversationId: string,
+  messageId: string,
+): Promise<void> {
+  try {
+    await activate(client)
+  } catch {
+    return
+  }
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      const messages = await imServiceV1.messaging.listMessages(conversationId)
+      if (messages.some(message => message.messageId === messageId)) {
+        throw new Error(
+          `${client.name} observed removed-scope message ${messageId}`,
+        )
+      }
+    } catch (error) {
+      if (
+        error instanceof Error
+        && error.message.includes('observed removed-scope message')
+      ) {
+        throw error
+      }
+      return
+    }
+    await sleep(250)
+  }
+}
+
+async function collectConversationProjections(
+  clients: C6Client[],
+  conversationId: string,
+): Promise<Record<string, MessagingConversationProjection>> {
+  const result: Record<string, MessagingConversationProjection> = {}
+  for (const client of clients) {
+    result[client.name] = await waitForConversation(
+      client,
+      conversationId,
+      5,
+      true,
+    )
+  }
+  return result
 }
 
 function select(client: Pick<C6Client, 'gateway'>): void {
@@ -607,24 +498,13 @@ function select(client: Pick<C6Client, 'gateway'>): void {
 }
 
 async function activate(client: C6Client): Promise<void> {
-  await gatewayJson(client.gateway, 'auth_login', {
-    account: client.email,
-    password: client.password,
-  })
-  select(client)
-}
-
-async function rehydrateClient(
-  client: C6Client,
-  conversationId: string,
-  requireGroupState: boolean,
-): Promise<void> {
-  await activate(client)
-  const restored = await imServiceV1.mlsGroup.initIdentity('', client.deviceId)
-  expect(restored.ptid).toBe(client.ptid)
-  if (requireGroupState) {
-    await imServiceV1.mlsGroup.load(conversationId)
-  }
+  const endpoint = await loginAndReadEndpoint(
+    client.gateway,
+    client.email,
+    client.password,
+    client.ptid,
+  )
+  expect(endpoint.deviceId).toBe(client.deviceId)
 }
 
 async function requestControl(

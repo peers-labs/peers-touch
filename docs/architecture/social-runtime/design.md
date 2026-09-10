@@ -28,6 +28,12 @@
 6. **Shared visual contract, platform renderer**
    聊天骨架视觉语义（头像尺寸、头像与消息距离、气泡圆角、hover 工具桥接区、输入框浮动几何）必须来自共享 contract；Desktop/Mobile 只能在 renderer 或宿主 adapter 中消费这些 token，不能各自重新定义一套同义布局。
 
+7. **One Chat business owner**
+   Conversation 是唯一 Chat 业务入口并暴露 `/conversation/*`。Device、
+   Inbox、Recovery、Key Exchange 与 Federation 由各自 resource owner 暴露
+   `/device/*`、`/device/inbox/*`、`/recovery/*`、`/key-exchange/*` 与
+   peer-only `/federation/*`。端侧 Messaging Engine 只是内部 runtime。
+
 ---
 
 ## 2. 系统架构
@@ -221,15 +227,16 @@ Rules:
 
 | 业务族 | 真源 | Runtime projection | Host adapter 是否参与 |
 | --- | --- | --- | --- |
-| Friend request | Station friend-chat/social API | request buckets, contacts badge | 否 |
-| Friend chat | Station friend-chat API + event stream | sessions, messages, unread, receipts, mutations | 否 |
+| Friend request | Station Social API | request buckets, contacts badge | 否 |
+| Direct Conversation | Station Conversation API + event stream | sessions, messages, unread, receipts, mutations | 否 |
 | Notification | Station notification API + event stream | list, unread counts, action routing | notification tap/push 只作为 wakeup |
 | Profile | Station actor profile API | peer profile cache + invalidation | 否 |
 | Presence | Station presence stream + session seed | peer online map | 否 |
 | Typing | realtime event | ephemeral typing map + TTL prune | 否 |
-| Group chat | Station group-chat API + event stream | group projection domain | 否 |
+| Group Conversation | Station Conversation API + event stream | group projection domain | 否 |
 | Offline command | Station command APIs + Frontend `InteractionAdmission` | derived outbox/pending/unknown projection | network-online 作为 wakeup |
-| E2EE | Station key distribution + local crypto | key/device/message crypto projection | host secure storage 只存本地 secret |
+| Device delivery | Station Device Inbox API + local Messaging Engine | ordered inbox and delivery projection | network-online 作为 wakeup |
+| E2EE | Station Key Exchange API + local crypto | key/device/message crypto projection | host secure storage 只存本地 secret |
 
 ---
 

@@ -18,7 +18,14 @@ from tooling.acceptance.gates.agent.foundation_direct_adapter import (
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
+    evaluate_base_attachment_rejected,
+    evaluate_base_approval_expired,
+    evaluate_base_approval_denied,
     evaluate_base_active_mutation_conflict,
+    evaluate_base_cancelled,
+    evaluate_base_context_overflow,
+    evaluate_base_credential_missing,
+    evaluate_base_duplicate_conflict,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -26,6 +33,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f06,
     evaluate_as_f07,
     evaluate_as_f10,
+    evaluate_as_f12,
 )
 
 
@@ -179,8 +187,29 @@ def assert_group_one_capture(
     capture: Mapping[str, Any],
 ) -> None:
     evaluators = {
+        "BASE-ATTACHMENT_REJECTED": (
+            lambda facts: evaluate_base_attachment_rejected(facts)
+        ),
+        "BASE-APPROVAL_EXPIRED": (
+            lambda facts: evaluate_base_approval_expired(facts)
+        ),
+        "BASE-APPROVAL_DENIED": (
+            lambda facts: evaluate_base_approval_denied(facts)
+        ),
         "BASE-ACTIVE_MUTATION_CONFLICT": (
             lambda facts: evaluate_base_active_mutation_conflict(facts)
+        ),
+        "BASE-CANCELLED": (
+            lambda facts: evaluate_base_cancelled(facts)
+        ),
+        "BASE-CONTEXT_OVERFLOW": (
+            lambda facts: evaluate_base_context_overflow(facts)
+        ),
+        "BASE-CREDENTIAL_MISSING": (
+            lambda facts: evaluate_base_credential_missing(facts)
+        ),
+        "BASE-DUPLICATE_CONFLICT": (
+            lambda facts: evaluate_base_duplicate_conflict(facts)
         ),
         "AS-F02": lambda facts: evaluate_as_f02(facts),
         "AS-F03": lambda facts: evaluate_as_f03(facts),
@@ -200,6 +229,12 @@ def assert_group_one_capture(
             facts,
             platform=probe_input.platform,
         ),
+        "AS-F12": lambda facts: evaluate_as_f12(
+            facts,
+            platform=probe_input.platform,
+            locale=probe_input.locale,
+            sample_id=probe_input.sample_id,
+        ),
     }
     evaluator = evaluators.get(probe_input.cell)
     if evaluator is None:
@@ -214,6 +249,66 @@ def assert_group_one_capture(
         raise GroupOneProbeError(
             f"{probe_input.cell} capture must contain assertions"
         )
+    if probe_input.cell in {
+        "BASE-ATTACHMENT_REJECTED",
+        "BASE-CANCELLED",
+        "BASE-CONTEXT_OVERFLOW",
+        "BASE-CREDENTIAL_MISSING",
+        "BASE-DUPLICATE_CONFLICT",
+    }:
+        runtime_event = scenario_facts.get("runtimeEvent")
+        runtime_role = capture.get("runtime-events")
+        if not isinstance(runtime_event, Mapping) or not isinstance(
+            runtime_role,
+            Mapping,
+        ):
+            raise GroupOneProbeError(
+                f"{probe_input.cell} runtime event evidence is missing"
+            )
+        expected_role = {
+            "eventId": runtime_event.get("eventId"),
+            "sequence": runtime_event.get("sequence"),
+            "eventType": runtime_event.get("eventType"),
+            "occurredAt": runtime_event.get("observedAt"),
+            "streamGeneration": runtime_event.get("streamGeneration"),
+            "streamIdHash": runtime_event.get("streamIdHash"),
+            "conversationIdHash": runtime_event.get("conversationIdHash"),
+            "payloadHash": runtime_event.get("payloadHash"),
+            "errorType": runtime_event.get("errorType"),
+        }
+        if probe_input.cell in {
+            "BASE-CANCELLED",
+            "BASE-CONTEXT_OVERFLOW",
+            "BASE-CREDENTIAL_MISSING",
+            "BASE-DUPLICATE_CONFLICT",
+        }:
+            expected_role.update(
+                {
+                    "sourceTransport": runtime_event.get("sourceTransport"),
+                    "sourcePtidHash": runtime_event.get("sourcePtidHash"),
+                    "sourceConversationId": runtime_event.get(
+                        "sourceConversationId"
+                    ),
+                    "sourceTurnId": runtime_event.get("sourceTurnId"),
+                    "sourceSequence": runtime_event.get("sourceSequence"),
+                    "sourceEventType": runtime_event.get("sourceEventType"),
+                }
+            )
+            runtime_attestation = capture.get("runtimeAttestation")
+            if (
+                not isinstance(runtime_attestation, Mapping)
+                or expected_role["sourcePtidHash"]
+                != runtime_attestation.get("actorIdentityHash")
+            ):
+                raise GroupOneProbeError(
+                    f"{probe_input.cell} runtime source actor does not match "
+                    "the runtime attestation"
+                )
+        if dict(runtime_role) != expected_role:
+            raise GroupOneProbeError(
+                f"{probe_input.cell} runtime-events role does not "
+                "match the observed terminal event"
+            )
     try:
         evaluated = evaluator(scenario_facts)
     except GroupOneScenarioError as error:

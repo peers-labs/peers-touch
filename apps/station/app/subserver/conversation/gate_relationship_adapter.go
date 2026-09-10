@@ -4,6 +4,8 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	"gorm.io/gorm"
 )
 
@@ -15,12 +17,18 @@ const blockStatusFriendship = 3
 // existing social infrastructure (follows/blocks) still uses uint64 actor_id
 // internally. The adapter resolves ptid → actor_id via the touch_actor table.
 type ConversationRelationshipAdapter struct {
-	repo Repository
-	db   *gorm.DB
+	db            *gorm.DB
+	conversations *query.Service
 }
 
-func NewConversationRelationshipAdapter(repo Repository, db *gorm.DB) *ConversationRelationshipAdapter {
-	return &ConversationRelationshipAdapter{repo: repo, db: db}
+func NewConversationRelationshipAdapter(
+	db *gorm.DB,
+	conversations *query.Service,
+) *ConversationRelationshipAdapter {
+	return &ConversationRelationshipAdapter{
+		db:            db,
+		conversations: conversations,
+	}
 }
 
 func (a *ConversationRelationshipAdapter) AreMutualFollowers(ctx context.Context, ptidA, ptidB string) (bool, error) {
@@ -77,7 +85,24 @@ func (a *ConversationRelationshipAdapter) IsBlocked(ctx context.Context, blocker
 }
 
 func (a *ConversationRelationshipAdapter) HaveSharedConversation(ctx context.Context, ptidA, ptidB string) (bool, error) {
-	return a.repo.HaveSharedConversation(ctx, ptidA, ptidB)
+	if a.conversations == nil {
+		return false, nil
+	}
+	conversations, err := a.conversations.List(ctx, valueobject.PTID(ptidA))
+	if err != nil {
+		return false, err
+	}
+	for _, conversation := range conversations {
+		if conversation.Conversation.Status != valueobject.ConversationStatusActive {
+			continue
+		}
+		for _, member := range conversation.Conversation.Members {
+			if member.Active() && member.Actor == valueobject.PTID(ptidB) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func (a *ConversationRelationshipAdapter) resolveActorPair(ctx context.Context, ptidA, ptidB string) (uint64, uint64, error) {

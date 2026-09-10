@@ -124,6 +124,24 @@ describe('Desktop capability authority API', () => {
     expect(capability && isAgentCapabilityReady(capability)).toBe(true);
   });
 
+  it('normalizes an omitted protobuf readiness list to an empty array', async () => {
+    resolveProto(toBinary(
+      GetCapabilityReadinessResponseSchema,
+      create(GetCapabilityReadinessResponseSchema, {
+        snapshot: create(CapabilityReadinessSnapshotSchema, {
+          snapshotId: 'snapshot-empty',
+          agentId: 'agent-1',
+        }),
+      }),
+    ));
+
+    const readiness = await api.getAgentCapabilityReadiness({
+      agent_id: 'agent-1',
+    });
+
+    expect(readiness.capabilities).toEqual([]);
+  });
+
   it('forwards complete CAS inputs and decodes mutation responses', async () => {
     const binding = create(AgentCapabilityBindingSchema, {
       bindingId: 'binding-1',

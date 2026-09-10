@@ -33,6 +33,24 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ChangedPathsTests(unittest.TestCase):
+    def test_make_entrypoints_default_to_external_evidence_store(self) -> None:
+        makefile = (
+            ROOT / "tooling" / "make" / "acceptance.mk"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn(
+            "tooling/acceptance/reports/latest-plan.json",
+            makefile,
+        )
+        self.assertIn(
+            'ACCEPTANCE_PLAN_OUTPUT_ARG = $(if $(ACCEPTANCE_PLAN),--output "$(ACCEPTANCE_PLAN)",)',
+            makefile,
+        )
+        self.assertIn(
+            'ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan "$(PLAN)",$(if $(ACCEPTANCE_PLAN),--plan "$(ACCEPTANCE_PLAN)",))',
+            makefile,
+        )
+
     def test_head_includes_untracked_files(self) -> None:
         responses = [
             subprocess.CompletedProcess(
@@ -180,6 +198,23 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertNotIn("chat-native-two-client-e2e", selected)
         self.assertIn("chat-desktop-gateway-e2e", selected)
 
+    def test_agent_tool_surfaces_select_governed_tool_and_foundation_gates(
+        self,
+    ) -> None:
+        for path in (
+            "apps/desktop/src/components/messages/AssistantMessage.tsx",
+            "apps/desktop/src/components/messages/actions/types.ts",
+            "apps/desktop/src/store/streaming/handler.ts",
+        ):
+            with self.subTest(path=path):
+                selected = self.selected_ids(path)
+                self.assertIn("agent-v2-governed-tool-loop-e2e", selected)
+
+        selected = self.selected_ids(
+            "apps/desktop/src/store/streaming/handler.ts"
+        )
+        self.assertIn("agent-v2-kernel-foundation-e2e", selected)
+
     def test_proto_only_change_does_not_select_native_two_client(self) -> None:
         selected = self.selected_ids("model/domain/chat/receipt.proto")
         self.assertNotIn("chat-native-two-client-e2e", selected)
@@ -190,6 +225,20 @@ class BehaviorRuleTests(unittest.TestCase):
         )
         self.assertNotIn("chat-native-two-client-e2e", selected)
         self.assertIn("chat-desktop-gateway-e2e", selected)
+
+    def test_mobile_social_gateway_selects_chat_and_contacts_gates(self) -> None:
+        selected = self.selected_ids(
+            "apps/mobile/src/services/gateways/socialGateway.ts"
+        )
+        self.assertEqual(
+            selected,
+            {
+                "mobile-simulator-social-convergence-e2e",
+                "mobile-simulator-chat-contacts-e2e",
+                "mobile-native-social-convergence-e2e",
+                "mobile-native-chat-contacts-e2e",
+            },
+        )
 
     def test_acceptance_framework_change_selects_provisioning_self_gate(self) -> None:
         selected = self.selected_ids(
@@ -211,6 +260,16 @@ class BehaviorRuleTests(unittest.TestCase):
                     "agent-stream-resilience-e2e",
                     self.selected_ids(path),
                 )
+
+    def test_shared_agent_native_runner_selects_implemented_journeys(self) -> None:
+        for path in (
+            "tooling/acceptance/gates/agent/native_agent_runner.py",
+            "tooling/acceptance/provisioners/home_station.py",
+        ):
+            with self.subTest(path=path):
+                selected = self.selected_ids(path)
+                self.assertIn("agent-stream-resilience-e2e", selected)
+                self.assertIn("agent-attachment-e2e", selected)
 
 
 class GateLaunchContractTests(unittest.TestCase):

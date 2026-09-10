@@ -21,11 +21,8 @@ from tooling.acceptance.core.attestation import source_proto_digest
 from tooling.acceptance.core.provisioner import load_env_file
 
 
-EXPECTED_PROFILE = "two"
-EXPECTED_DEPLOYMENT = "station-two"
-EXPECTED_PROJECT_LABEL = "pt-station-two"
 EXPECTED_SERVICE_LABEL = "station"
-EXPECTED_STATION_PORT = 18080
+EXPECTED_CONTAINER_PORT = 18080
 RESTART_TIMEOUT_SECONDS = 180
 RESTORE_RESERVE_SECONDS = 15
 
@@ -116,7 +113,7 @@ def _remote_command(
     user = environment.get("PT_DEPLOY_USER", "").strip()
     if not host or not user:
         raise FoundationStationRestartError(
-            "station-two must define PT_DEPLOY_HOST and PT_DEPLOY_USER"
+            "AS-F06 deployment must define PT_DEPLOY_HOST and PT_DEPLOY_USER"
         )
     timeout = (
         RESTART_TIMEOUT_SECONDS
@@ -145,7 +142,7 @@ def _remote_command(
 def _load_bound_environment(
     runtime_manifest: Mapping[str, Any],
     repo_root: Path,
-) -> tuple[dict[str, str], dict[str, str], str, str, str]:
+) -> tuple[dict[str, str], dict[str, str], str, str, str, str]:
     if os.environ.get("PT_AGENT_V2_ALLOW_STATION_RESTART") != "1":
         raise FoundationStationRestartError(
             "PT_AGENT_V2_ALLOW_STATION_RESTART=1 is required for AS-F06"
@@ -153,57 +150,79 @@ def _load_bound_environment(
 
     profile = runtime_manifest.get("profile")
     source = runtime_manifest.get("source")
-    station = runtime_manifest.get("station")
+    services = runtime_manifest.get("services")
+    station = services.get("station") if isinstance(services, Mapping) else None
     if not all(isinstance(value, Mapping) for value in (profile, source, station)):
         raise FoundationStationRestartError(
-            "AS-F06 runtime manifest is missing profile/source/station identity"
+            "AS-F06 runtime manifest is missing profile/source/service identity"
         )
     assert isinstance(profile, Mapping)
     assert isinstance(source, Mapping)
     assert isinstance(station, Mapping)
-    if profile.get("resolvedName") != EXPECTED_PROFILE:
+    profile_name = str(profile.get("resolvedName") or "").strip()
+    approved_profile = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "").strip()
+    if not approved_profile or profile_name != approved_profile:
         raise FoundationStationRestartError(
-            "AS-F06 requires runtime manifest profile two"
+            "AS-F06 runtime manifest profile does not match "
+            "PT_ACCEPTANCE_APPROVED_PROFILE"
+        )
+    if os.environ.get("PT_ACCEPTANCE_DISPOSABLE") != "1":
+        raise FoundationStationRestartError(
+            "PT_ACCEPTANCE_DISPOSABLE=1 is required for AS-F06"
         )
 
-    profile_path = repo_root / ".local" / "dev" / "profiles" / "two.env"
-    deployment_path = (
-        repo_root / ".local" / "deploy" / "envs" / "station-two.env"
-    )
-    if not profile_path.is_file() or not deployment_path.is_file():
+    profile_path = repo_root / ".local" / "dev" / "profiles" / f"{profile_name}.env"
+    if not profile_path.is_file():
         raise FoundationStationRestartError(
-            "AS-F06 requires profile two and station-two deployment identity"
+            f"AS-F06 requires local profile {profile_name}"
         )
     profile_env = load_env_file(profile_path)
+    deployment_name = profile_env.get("PT_STATION_DEPLOY_ENV", "").strip()
+    deployment_path = (
+        repo_root / ".local" / "deploy" / "envs" / f"{deployment_name}.env"
+    )
+    if not deployment_name or not deployment_path.is_file():
+        raise FoundationStationRestartError(
+            "AS-F06 requires the approved profile deployment identity"
+        )
     deployment_env = load_env_file(deployment_path)
     if (
-        profile_env.get("PT_DEV_PROFILE") != EXPECTED_PROFILE
-        or profile_env.get("PT_STATION_DEPLOY_ENV") != EXPECTED_DEPLOYMENT
+        profile_env.get("PT_DEV_PROFILE") != profile_name
+        or station.get("deploymentEnvironment") != deployment_name
+        or deployment_env.get("PT_ACCEPTANCE_DISPOSABLE") != "1"
     ):
         raise FoundationStationRestartError(
-            "AS-F06 profile two is not bound to station-two"
+            "AS-F06 requires an approved disposable Station deployment"
         )
 
-    station_url = str(station.get("url") or "").rstrip("/")
+    station_url = str(station.get("endpoint") or "").rstrip("/")
     expected_url = profile_env.get("PT_STATION_URL", "").rstrip("/")
     health_url = profile_env.get("PT_STATION_HEALTH_URL", "").strip()
     parsed = urllib.parse.urlparse(station_url)
+    try:
+        station_port = int(profile_env.get("PT_STATION_PORT", ""))
+    except ValueError as error:
+        raise FoundationStationRestartError(
+            "AS-F06 approved profile Station port is invalid"
+        ) from error
+    project_label = deployment_env.get("PT_ACCEPTANCE_COMPOSE_PROJECT", "").strip()
     if (
         not station_url
         or station_url != expected_url
         or parsed.hostname != deployment_env.get("PT_DEPLOY_HOST", "").strip()
-        or parsed.port != EXPECTED_STATION_PORT
+        or parsed.port != station_port
         or not health_url
+        or not project_label
     ):
         raise FoundationStationRestartError(
-            "AS-F06 Station URL does not match profile two/station-two"
+            "AS-F06 Station identity does not match the approved disposable profile"
         )
 
     source_commit = str(source.get("commit") or "")
     source_workspace_digest = str(source.get("workspaceDigest") or "")
     live_commit = str(station.get("liveCommit") or "")
     station_workspace_digest = str(station.get("workspaceDigest") or "")
-    proto_digest = str(station.get("protoDigest") or "")
+    proto_digest = str(station.get("protocolDigest") or "")
     if source_workspace_digest != "clean" or station_workspace_digest != "clean":
         raise FoundationStationRestartError(
             "AS-F06 requires clean source and Station workspace digests"
@@ -216,19 +235,32 @@ def _load_bound_environment(
         raise FoundationStationRestartError(
             "AS-F06 runtime manifest proto identity differs from source"
         )
-    return profile_env, deployment_env, station_url, health_url, source_commit
+    return (
+        profile_env,
+        deployment_env,
+        station_url,
+        health_url,
+        source_commit,
+        proto_digest,
+        profile_name,
+        deployment_name,
+        project_label,
+        station_port,
+    )
 
 
 def _container_snapshot(
     environment: Mapping[str, str],
     *,
+    project_label: str,
+    station_port: int,
     deadline: float | None = None,
 ) -> dict[str, str]:
     filters = " ".join(
         (
-            f"--filter label=com.docker.compose.project={EXPECTED_PROJECT_LABEL}",
+            f"--filter label=com.docker.compose.project={project_label}",
             f"--filter label=com.docker.compose.service={EXPECTED_SERVICE_LABEL}",
-            f"--filter publish={EXPECTED_STATION_PORT}",
+            f"--filter publish={station_port}",
         )
     )
     output = _remote_command(
@@ -239,7 +271,7 @@ def _container_snapshot(
     container_ids = [line.strip() for line in output.splitlines() if line.strip()]
     if len(container_ids) != 1:
         raise FoundationStationRestartError(
-            "AS-F06 requires exactly one station-two Station container "
+            "AS-F06 requires exactly one approved disposable Station container "
             f"selected by service labels and port; found {len(container_ids)}"
         )
     container_id = container_ids[0]
@@ -270,14 +302,14 @@ def _container_snapshot(
         raise FoundationStationRestartError(
             "AS-F06 Station container labels or ports are missing"
         )
-    host_bindings = ports.get(f"{EXPECTED_STATION_PORT}/tcp")
+    host_bindings = ports.get(f"{EXPECTED_CONTAINER_PORT}/tcp")
     has_expected_port = isinstance(host_bindings, list) and any(
         isinstance(binding, Mapping)
-        and str(binding.get("HostPort") or "") == str(EXPECTED_STATION_PORT)
+        and str(binding.get("HostPort") or "") == str(station_port)
         for binding in host_bindings
     )
     if (
-        labels.get("com.docker.compose.project") != EXPECTED_PROJECT_LABEL
+        labels.get("com.docker.compose.project") != project_label
         or labels.get("com.docker.compose.service") != EXPECTED_SERVICE_LABEL
         or not has_expected_port
     ):
@@ -313,6 +345,11 @@ def restart_foundation_station(
         station_url,
         health_url,
         source_commit,
+        proto_digest,
+        profile_name,
+        deployment_name,
+        project_label,
+        station_port,
     ) = _load_bound_environment(runtime_manifest, repo_root)
     before_version = _station_version(station_url)
     before_commit = str(before_version.get("build_commit") or "")
@@ -320,7 +357,11 @@ def restart_foundation_station(
         raise FoundationStationRestartError(
             "AS-F06 live Station commit differs before restart"
         )
-    before = _container_snapshot(deployment_env)
+    before = _container_snapshot(
+        deployment_env,
+        project_label=project_label,
+        station_port=station_port,
+    )
 
     operation_started_at = time.monotonic()
     operation_deadline = operation_started_at + RESTART_TIMEOUT_SECONDS
@@ -430,6 +471,8 @@ def restart_foundation_station(
         )
     after = _container_snapshot(
         deployment_env,
+        project_label=project_label,
+        station_port=station_port,
         deadline=operation_deadline,
     )
     if (
@@ -451,11 +494,11 @@ def restart_foundation_station(
         after_restart(operation_deadline)
         _remaining_seconds(operation_deadline, "post-restart verification")
     return {
-        "profile": EXPECTED_PROFILE,
-        "deploymentEnvironment": EXPECTED_DEPLOYMENT,
+        "profile": profile_name,
+        "deploymentEnvironment": deployment_name,
         "stationUrlHash": _sha256(station_url),
         "sourceCommit": source_commit,
-        "protoDigest": str(runtime_manifest["station"]["protoDigest"]),
+        "protoDigest": proto_digest,
         "containerId": before["containerId"],
         "imageId": before["imageId"],
         "imageRef": before["imageRef"],

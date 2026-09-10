@@ -2,13 +2,22 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-08-08 | **Updated**: 2026-08-17
+> **Created**: 2026-08-08 | **Updated**: 2026-09-06
 > **Owner**: Messaging Platform Team
 > **Module**: `model/domain/chat/`, `apps/station/`, `apps/desktop/`, `apps/mobile/`
+>
+> **Accepted MP-D30 correction**: this document previously used “Station Messaging
+> Platform” for both Conversation authority and device delivery. The accepted target
+> now separates those planes: `/conversation/*` owns Chat business APIs and one
+> DDD authority, while the internal Device Messaging Engine remains a client runtime. See
+> [`../api-ownership/design.md`](../api-ownership/design.md).
 
 ---
 
 ## 1. 核心原则
+
+Conversation is the sole Chat business authority. Every public route, authority
+table, and client caller must resolve through its declared resource owner.
 
 | ID | 原则 |
 |---|---|
@@ -59,7 +68,7 @@ Evidence ledger：
 | Desktop 与 Mobile 分别维护协议实现会形成第二套 crypto/queue/recovery state machine | inference | 两个独立 Tauri crate 当前没有共享 Messaging Rust dependency | high |
 | 一个 portable Rust core 加平台 adapters 让双端执行同一协议与 transaction semantics | accepted_decision | `MP-D16` | accepted |
 
-Proposed boundary：
+Accepted client boundary：
 
 ```text
                     model/domain/chat/*.proto
@@ -154,7 +163,7 @@ flowchart TB
         PB["model/domain/chat/*.proto<br/>endpoint · command · event · queue<br/>receipt · recovery · attachment"]
     end
 
-    subgraph ST["Station Messaging Platform"]
+    subgraph ST["Station Resource Owners"]
         AU["Conversation Authority<br/>membership · sequence · hash · idempotency"]
         DD["Device / key directory"]
         Q["Ordered device queues<br/>lease · fencing · retry · ACK"]
@@ -187,13 +196,14 @@ flowchart TB
     LEG["Legacy envelope / imRuntime<br/>forbidden second owner"] -. "must not own messaging" .-> PR
 ```
 
-当前 Direct `DELIVERED` 的 canonical hot path 是：
+以下是 consolidation 前已验证、并作为 MP-D30 hard-cut 输入保留的 Direct
+`DELIVERED` hot path：
 
 ```text
 Bob ordered queue item
   -> Rust decrypt + atomic SQLCipher receive commit
   -> durable MessageReceipt outbox
-  -> POST /messaging/receipt/delivery
+  -> POST /conversation/delivery/receipt
   -> Station DEVICE_RECEIPT fan-out
   -> Alice Rust receipt processor atomic commit
   -> messaging:projection-changed
@@ -205,7 +215,7 @@ Bob ordered queue item
 
 | 能力区域 | 当前状态 | Canonical owner/path | 当前证明边界 |
 |---|---|---|---|
-| Desktop Direct send/receive + E2EE | `PROVEN` | Rust Device Messaging Engine + Station Messaging Authority | Native 双客户端双向 exact plaintext |
+| Desktop Direct send/receive + E2EE | `PROVEN` | Rust Device Messaging Engine + pre-consolidation Station authority implementation | Native 双客户端双向 exact plaintext |
 | Direct `DELIVERED` | `PROVEN` | durable receipt outbox + `DEVICE_RECEIPT` + atomic receipt processor | Alice/Bob 双向 native row 前向推进 |
 | Ordered queue、dedup、post-commit ACK | `PROVEN` for Direct slice | Station Device Queue + Rust SQLCipher transaction | Direct Gate bundle；不外推到全部 payload class |
 | Group MLS 与 membership transition | `PROVEN` on Desktop | OpenMLS + Station authority plans | W07: add/remove/rejoin/restart/crash recovery Native evidence |
@@ -240,11 +250,11 @@ Bob ordered queue item
 └───────────────┬───────────────────────┬────────────┘
                 │ HTTPS commands        │ SSE/push wake
 ┌───────────────▼───────────────────────▼────────────┐
-│ Station Messaging Platform                         │
+│ Station resource owners                            │
 │                                                    │
-│ Conversation Authority │ Device Queue Service      │
-│ Federation Transport   │ Device/Key Directory      │
-│ Backup Repository      │ Object Metadata           │
+│ Conversation DDD       │ Device Inbox              │
+│ Federation Transport   │ Actor/Key Directory       │
+│ Recovery Repository    │ Conversation Attachments  │
 └───────────────┬────────────────────────────────────┘
                 │ signed durable federation frames
                 ▼
@@ -325,7 +335,7 @@ device lanes。网络失败不改变 authority event identity。
 endpoint manifest：
 
 ```text
-FederatedEndpointManifest
+ActorEndpointManifest
   = actor + home_station + directory_version
   + active endpoints + public material hashes
   + issued/expiry + Home Station signature
@@ -336,7 +346,8 @@ Authority plan绑定manifest及endpoint routes。Authority commit将delivery按H
 
 ```text
 local endpoints  -> local device queues
-remote endpoints -> per-Home-Station FederatedDeviceQueueBatch
+remote endpoints -> per-Home-Station FederatedDomainFrame
+                 -> CONVERSATION_DEVICE_DELIVERY payload
                  -> durable federation outbox
 ```
 
@@ -347,6 +358,124 @@ truth owner。
 
 非authority Station上的client command通过durable `AUTHORITY_COMMAND` frame转发；
 authority result不直接推进device authority head，ordered queue marker仍是唯一推进路径。
+
+### 4.5 Home Station Follower Membership Projection
+
+> **Amendment status**: accepted (`MP-D29`, Owner accepted 2026-09-05)
+
+Runtime evidence from the Windows multi-Station product Gate established this
+gap:
+
+| Claim | Class | Evidence | Confidence |
+|---|---|---|---|
+| Authority station-four has active Alice/Bob rows while Bob's Home Station has no canonical conversation membership row | verified_fact | Gate `20260904T074120233666Z-fdb77bd29b2e510be6a9964332a9e4d5` database readback | high |
+| Bob's Home Station rejects member settings because active membership cannot be proven locally | verified_fact | station-five runtime log: `active conversation membership required` | high |
+| `FederatedDeviceQueueBatch` already carries deterministic `DeviceEventDelivery` bytes containing the public `ConversationEvent`, but only for active endpoint writes | verified_fact | `model/domain/chat/event.proto`, `federation.proto`, and authority fan-out source | high |
+| Membership may remain active while an actor has zero active devices, and revoked endpoints receive no future device writes | verified_fact | Messaging data model plus authority fan-out rules | high |
+| Queue receipt history alone is insufficient membership truth after removal | inference | old queue rows survive after the final removal transition | high |
+| A Station-addressed authority projection stream can reuse public events, reach zero-device/removal targets, and remain endpoint-payload blind | accepted_decision | `MP-D29`, Owner accepted 2026-09-05 | implementation proof pending |
+
+The accepted target relationship is:
+
+```text
+Authority transaction
+  -> ConversationEvent
+  -> endpoint-private DeviceEventDelivery rows
+  -> Station-addressed FOLLOWER_PROJECTION outbox rows
+       target = affected actor Home Stations, independent of active devices
+  -> target Home Station verifies signed public event
+  -> transaction: follower head + membership + inbox
+  -> device batch independently writes exact private queue rows
+  -> actor-local member settings authorize against follower membership
+```
+
+Authority fan-out sends `FOLLOWER_PROJECTION` to current active member Home
+Stations for ordinary events, initial member Home Stations for creation, and
+the union of pre/post member Home Stations for membership transitions. The
+authority membership row therefore persists the verified actor Home Station
+route; projection delivery never depends on active endpoint count.
+
+On the first `ConversationCreatedFact`, the target verifies that frame source,
+event `authority_station_id`, and the verified Home Station of `owner_ptid`
+are identical, then pins that authority to the follower conversation.
+Subsequent projection and replay signatures must match the pinned Station key;
+an event cannot establish authority merely by repeating its own source ID.
+
+Target Home Station may decode the projection's public `ConversationEvent`.
+Device queue ingest may decode only the outer `DeviceEventDelivery` to verify
+its public-event binding; it must keep `endpoint_payload` opaque and must not
+interpret Direct ciphertext, MLS bytes, private message content, or device
+crypto state.
+
+Follower membership rules:
+
+- target `ConversationCreatedFact.members[]` carries
+  `ptid + home_station_id + role` and initializes the follower actor set
+  without directory inference.
+- `MembershipTransitionCommittedFact.post_state.active_members` atomically
+  replaces the active follower actor set.
+- the Station-addressed final removal projection updates membership before the
+  projection frame is acknowledged, even when the removed actor has zero
+  active endpoints.
+- ordinary events advance the verified follower head but do not invent
+  membership.
+- an empty follower projection may establish its first checkpoint from a
+  self-contained `ConversationCreatedFact`, or from an `MLS_WELCOME`
+  membership transition whose hashed `post_state` explicitly adds and contains
+  a local actor/Home Station; both paths require event authority to equal the
+  hashed owner Home Station.
+- late-join Welcome additionally resolves `post_state.owner_ptid` through the
+  signed Federation Actor locator/profile path and requires that independently
+  verified owner Home Station to equal the frame source.
+- all other non-initial first events require authority event-log replay.
+- duplicate event/hash is a no-op; sequence gaps trigger bounded resync;
+  same sequence with a different hash enters fork-protected read-only state.
+- resync returns original hash-chained public events scoped and freshly signed
+  to the requesting Home Station; it does not return a mutable current-state
+  snapshot and cannot roll the follower head backward.
+- projection replay repairs only public follower state. Missing
+  endpoint-private delivery remains in the source federation outbox and must
+  arrive through exact device-frame retry before any device lane ACK advances.
+- authority replay returns an event only when the immutable event projection
+  grant includes the requesting Home Station. Pre-join and post-removal
+  metadata is never widened by current membership. The signed page binds both
+  ordered event bytes and ordered projection-grant tuples.
+- public future-event buffering is bounded to 128 events or 4 MiB per
+  conversation with a 10-minute expiry. Overflow stays retryable and
+  fail-closed.
+- `FORK_PROTECTED_READ_ONLY` has no automatic transition back to active; only
+  explicit operator-authorized forensic rebootstrap may replace it.
+- Authority events and projection grants co-retain for the active conversation
+  lifetime. Unexpected replay-source loss enters
+  `RESYNC_UNAVAILABLE_READ_ONLY`; normal GC requires a signed terminal
+  projection tombstone acknowledged by every granted Home Station.
+
+Canonical membership reads compose two sources without duplicating authority:
+
+```text
+authority_station_id == local_station_id
+  -> authority membership repository
+
+authority_station_id != local_station_id
+  -> verified follower membership repository
+```
+
+Actor-local member settings remain owned by the actor's Home Station. Thread
+summary/count UI reads Device Messaging Engine projections and must not call
+the legacy plaintext Conversation service.
+
+Forbidden relationships:
+
+- legacy `conversation_members` or `conversation_follower_members` authorizing
+  canonical Messaging conversations;
+- a queue item's historical existence being treated as current membership;
+- device-delivery fan-out being the only route for membership projection;
+- a mutable current-state snapshot replacing event-log replay;
+- follower resync advancing a device lane or manufacturing private payload;
+- target Home Station parsing endpoint-private payloads;
+- client-supplied membership, Home Station, role, or authority head becoming
+  Station truth;
+- swallowing authorization errors and keeping a local-only terminal setting.
 
 ## 5. Canonical Command And Event Contracts
 
@@ -384,7 +513,7 @@ message DeviceEventDelivery {
   bytes delivery_commitment = 6;
 }
 
-message DeviceQueueItem {
+message DurableDeviceInboxItem {
   string item_id = 1;
   int64 lane_sequence = 3;
   string idempotency_key = 4;
@@ -617,7 +746,7 @@ SSE/push wake
 - Typing pulse 只接受 authenticated active conversation member，绑定
   `(conversation_id, sender endpoint, pulse generation, expires_at)`。
 - Direct 与 Group fan-out 使用独立 ephemeral delivery path；不得写
-  `DeviceQueueItem`、authority event、recovery archive 或 message projection。
+  `DurableDeviceInboxItem`、authority event、recovery archive 或 message projection。
 - Sender pulse bounded/throttled；receiver 按 sender + conversation 幂等刷新 TTL。
 - stop、session switch、disconnect 或 TTL expiry 都投影为 idle。丢失 stop pulse
   只能造成 bounded 短暂显示，不能形成 durable phantom state。
@@ -787,12 +916,12 @@ Architecture gate 除 MP-G13/MP-G14 外还必须证明：
 Control metadata 使用 protobuf；chunk body 使用 bounded `application/octet-stream`：
 
 ```text
-POST /messaging/attachments/uploads:begin
-GET  /messaging/attachments/uploads/{upload_id}
-PUT  /messaging/attachments/uploads/{upload_id}/chunks/{chunk_index}
-POST /messaging/attachments/uploads/{upload_id}:complete
-POST /messaging/attachments/uploads/{upload_id}:cancel
-GET  /messaging/attachments/objects/{object_id}
+POST /conversation/attachments/uploads:begin
+GET  /conversation/attachments/uploads/{upload_id}
+PUT  /conversation/attachments/uploads/{upload_id}/chunks/{chunk_index}
+POST /conversation/attachments/uploads/{upload_id}:complete
+POST /conversation/attachments/uploads/{upload_id}:cancel
+GET  /conversation/attachments/objects/{object_id}
 ```
 
 Chunk PUT headers 绑定 `Content-Range`、`Digest: sha-256`、upload generation 和
@@ -837,3 +966,32 @@ client cancel 终止当前 stream，但不自动 cancel durable session；只有
 架构完成只由 `acceptance-matrix.md` 的 MP-G01 至 MP-G16 证明。所有 native claim
 必须记录 runtime profile、commit/digest、device IDs、Station rows、Engine transaction
 evidence 和 exact UI plaintext。
+
+### 14.1 MP-D29 Follower Membership Gates
+
+`MP-D29`的架构决策已由Owner接受。实现只有在以下evidence全部通过后才能声明
+`DONE/PROVEN`：
+
+- two-Station Direct和MLS Group分别证明remote Home Station follower projection；
+- creation、ordinary event、membership add/remove、duplicate和restart按同一event
+  head收敛；
+- zero-active-device actor仍收到Station-addressed projection；
+- creation member facts包含Home Station/role，late-join Welcome以hashed owner Home
+  Station建立authority pin；
+- final removal projection在ACK前撤销follower membership，removed actor settings
+  write fail closed；
+- missing base和sequence gap触发authority-signed event-log replay，resync前不授权；
+- replay只返回requesting Home Station具有immutable per-event grant的事件，pre-join和
+  post-removal replay被拒绝；
+- stale replay、wrong target/nonce、authority key mismatch和sequence rollback全部拒绝；
+- replay event/grant digest mismatch和unexpected source loss fail closed；
+- public replay不生成missing endpoint payload，原device frame仍由source outbox exact
+  retry后才能推进lane；
+- sequence/event identity collision与wrong previous hash进入fork-protected read-only；
+- public gap buffer的event/byte quota、10-minute expiry cleanup和retryable overload可证；
+- target persistence/log scan不含endpoint payload plaintext、Direct ciphertext明文、
+  MLS secret或private key；
+- canonical Desktop thread count来自Engine projection，member settings使用typed
+  Messaging API，legacy JSON thread/settings request为zero；
+- Windows/Linux multi-Station Native Gate无`active conversation membership required`
+  runtime-log failure，并保留source/binary/service-binding/cleanup evidence。

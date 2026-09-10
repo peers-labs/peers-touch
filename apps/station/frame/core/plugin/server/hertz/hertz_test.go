@@ -9,14 +9,14 @@ import (
 func TestRequestLogPathUsesMatchedRouteTemplate(t *testing.T) {
 	ctx := &app.RequestContext{}
 	ctx.Request.SetRequestURI(
-		"/messaging/attachments/uploads/private-upload/chunks/7",
+		"/conversation/attachments/uploads/private-upload/chunks/7",
 	)
 	ctx.SetFullPath(
-		"/messaging/attachments/uploads/:upload_id/chunks/:chunk_index",
+		"/conversation/attachments/uploads/:upload_id/chunks/:chunk_index",
 	)
 
 	if got := requestLogPath(ctx); got !=
-		"/messaging/attachments/uploads/:upload_id/chunks/:chunk_index" {
+		"/conversation/attachments/uploads/:upload_id/chunks/:chunk_index" {
 		t.Fatalf("request log path = %q", got)
 	}
 }

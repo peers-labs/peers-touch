@@ -12,6 +12,7 @@ from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.lease import (
     ProfileLease,
     ProfileLeaseUnavailable,
+    RemoteGitSourceLease,
     RemoteGitSourceLeaseUnavailable,
     _remote_git_source_lease_script,
 )
@@ -131,6 +132,52 @@ class ProfileLeaseTests(unittest.TestCase):
 
 
 class RemoteGitSourceLeaseTests(unittest.TestCase):
+    def test_ssh_transport_imports_first_in_fresh_process(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "from tooling.acceptance.transports.ssh "
+                    "import SshTarget, SshTransport;"
+                    "from tooling.acceptance.core.attestation "
+                    "import source_workspace_digest;"
+                    "from tooling.acceptance.core.lease "
+                    "import RemoteGitSourceLease"
+                ),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_remote_lease_uses_strict_shared_ssh_transport(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            known_hosts = Path(directory) / "known_hosts"
+            known_hosts.write_text(
+                "station.example ssh-ed25519 test-key\n",
+                encoding="utf-8",
+            )
+            lease = RemoteGitSourceLease(
+                "station-three",
+                "gate-owner",
+                host="station.example",
+                user="acceptance",
+                deploy_path="station-three",
+                port=2222,
+                known_hosts_file=str(known_hosts),
+            )
+
+        command = lease._command()
+        self.assertIn("StrictHostKeyChecking=yes", command)
+        self.assertNotIn("StrictHostKeyChecking=no", command)
+        self.assertIn(f"UserKnownHostsFile={known_hosts}", command)
+        self.assertIn("2222", command)
+
     def _start_lease(
         self,
         home: str,
@@ -166,16 +213,16 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
 
     def test_remote_script_blocks_competing_git_writer_and_releases(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory) / "station-three"
-            subprocess.run(
-                ["git", "init", str(repo)],
-                check=True,
-                capture_output=True,
-            )
             first = self._start_lease(directory, "first-owner")
             try:
-                index_lock = repo / ".git" / "index.lock"
-                self.assertTrue(index_lock.is_file())
+                lease_path = (
+                    Path(directory)
+                    / ".cache"
+                    / "peers-touch"
+                    / "source-leases"
+                    / "station-three.lock"
+                )
+                self.assertTrue(lease_path.is_file())
                 competing = subprocess.run(
                     [
                         "/bin/sh",
@@ -200,19 +247,12 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
             finally:
                 self._release_process(first)
 
-            self.assertFalse(index_lock.exists())
+            replacement = self._start_lease(directory, "replacement-owner")
+            self._release_process(replacement)
 
-    def test_remote_script_process_exit_removes_index_lock(self) -> None:
+    def test_remote_script_process_exit_releases_source_lease(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory) / "station-three"
-            subprocess.run(
-                ["git", "init", str(repo)],
-                check=True,
-                capture_output=True,
-            )
             process = self._start_lease(directory, "crash-owner")
-            index_lock = repo / ".git" / "index.lock"
-            self.assertTrue(index_lock.is_file())
             process.terminate()
             process.wait(timeout=10)
             if process.stdin is not None:
@@ -221,7 +261,9 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
                 process.stdout.close()
             if process.stderr is not None:
                 process.stderr.close()
-            self.assertFalse(index_lock.exists())
+
+            replacement = self._start_lease(directory, "replacement-owner")
+            self._release_process(replacement)
 
     def test_provisioner_registers_remote_source_cleanup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -240,6 +282,8 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
                         "PT_DEPLOY_HOST=station.example",
                         "PT_DEPLOY_USER=acceptance",
                         "PT_DEPLOY_PATH=station-three",
+                        "PT_DEPLOY_SSH_PORT=2222",
+                        "PT_DEPLOY_KNOWN_HOSTS_FILE=/tmp/known-hosts",
                     )
                 )
                 + "\n",
@@ -269,6 +313,8 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
             host="station.example",
             user="acceptance",
             deploy_path="station-three",
+            port=2222,
+            known_hosts_file="/tmp/known-hosts",
         )
         lease.acquire.assert_called_once_with()
         lease.release.assert_called_once_with()

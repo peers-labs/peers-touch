@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import ast
+import json
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[4]
 RUNNER = ROOT / "tooling" / "acceptance" / "gates" / "agent" / "native_agent_runner.py"
+GATE_CATALOG = ROOT / "tooling" / "acceptance" / "gates.yaml"
 HARNESS = ROOT / "apps" / "desktop" / "src" / "acceptance" / "agent" / "harness.ts"
 CAPABILITY_SUPERVISOR = (
     ROOT
@@ -45,15 +47,46 @@ FOUNDATION_SCENARIO_RUNNER = (
     / "agent"
     / "foundation_scenario_runner.py"
 )
+TCP_FAULT_PROXY = (
+    ROOT
+    / "tooling"
+    / "acceptance"
+    / "gates"
+    / "agent"
+    / "tcp_fault_proxy.py"
+)
+HOME_STATION_PROVISIONER = (
+    ROOT / "tooling" / "acceptance" / "provisioners" / "home_station.py"
+)
 DESKTOP_HTTP_GATEWAY = (
     ROOT / "apps" / "desktop" / "src-tauri" / "src" / "interface" / "http_gateway" / "mod.rs"
 )
 DESKTOP_API = ROOT / "apps" / "desktop" / "src" / "services" / "desktop_api.ts"
+DESKTOP_ASSISTANT_MESSAGE = (
+    ROOT
+    / "apps"
+    / "desktop"
+    / "src"
+    / "components"
+    / "messages"
+    / "AssistantMessage.tsx"
+)
+DESKTOP_CHAT_INPUT = ROOT / "apps" / "desktop" / "src" / "components" / "ChatInput.tsx"
 DESKTOP_APP_RUNTIME = (
     ROOT / "apps" / "desktop" / "src" / "services" / "appRuntime.ts"
 )
 DESKTOP_APP_RUNTIME_HOOK = (
     ROOT / "apps" / "desktop" / "src" / "hooks" / "useAppRuntime.ts"
+)
+DESKTOP_AGENT_TOPIC_RUNTIME = (
+    ROOT / "apps" / "desktop" / "src" / "runtimes" / "agentTopicRuntime.ts"
+)
+DESKTOP_TOOL_RUNTIME = (
+    ROOT / "apps" / "desktop" / "src" / "runtimes" / "toolRuntime.ts"
+)
+DESKTOP_CHAT_STORE = ROOT / "apps" / "desktop" / "src" / "store" / "chat.ts"
+SHARED_AGENT_CHAT_CACHE = (
+    ROOT / "packages" / "client-chat-core" / "src" / "agentChatCache.ts"
 )
 DESKTOP_CONTRACTS = ROOT / "apps" / "desktop" / "src-tauri" / "src" / "contracts.rs"
 DESKTOP_AGENT_TURN = (
@@ -66,6 +99,22 @@ DESKTOP_AGENT_TURN = (
     / "agent_turn"
     / "mod.rs"
 )
+DESKTOP_AGENT_CRUD = (
+    ROOT / "apps" / "desktop" / "src-tauri" / "src" / "application" / "agents" / "mod.rs"
+)
+DESKTOP_AGENT_COMMANDS = (
+    ROOT
+    / "apps"
+    / "desktop"
+    / "src-tauri"
+    / "src"
+    / "interface"
+    / "tauri_commands"
+    / "agents.rs"
+)
+DESKTOP_AUTH_SERVICE = (
+    ROOT / "apps" / "desktop" / "src-tauri" / "src" / "application" / "auth" / "service.rs"
+)
 
 
 class AgentNativeRunnerStaticTest(unittest.TestCase):
@@ -77,10 +126,15 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self.assertTrue(RUNNER.is_file(), f"{RUNNER} must exist")
 
     def test_runner_uses_canonical_tauri_driver(self) -> None:
-        self.assertIn("make", self.source)
-        self.assertIn("desktop", self.source)
+        self.assertIn(
+            "from tooling.acceptance.drivers.tauri import TauriDriver",
+            self.source,
+        )
+        self.assertIn("self.tauri_driver = TauriDriver(", self.source)
+        self.assertNotIn('["make", "desktop"]', self.source)
+        self.assertNotIn("subprocess.Popen", self.source)
         self.assertIn("PT_DESKTOP_E2E", self.source)
-        self.assertIn("webdriver", self.source.lower())
+        self.assertIn("log_path=self.desktop_log", self.source)
 
     def test_runner_does_not_invent_env_vars(self) -> None:
         forbidden = ["AGENT_E2E_STATION_URL", "AGENT_E2E_EMAIL", "AGENT_E2E_PASSWORD"]
@@ -97,15 +151,50 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self.assertIn("PT_DESKTOP_E2E", self.source)
 
     def test_runner_cleans_up_process_and_driver(self) -> None:
-        self.assertIn("driver.quit()", self.source)
-        self.assertIn("os.killpg", self.source)
+        self.assertIn("self.tauri_driver.stop()", self.source)
+        self.assertNotIn("os.killpg", self.source)
+        self.assertIn("shutil.rmtree(self.run_root", self.source)
+        self.assertNotIn("shutil.rmtree(self.storage_root", self.source)
+        self.assertIn("self.desktop_log_bytes", self.source)
         self.assertIn("portsReleased", self.source)
         self.assertIn("storageReleased", self.source)
+
+    def test_implemented_native_journeys_use_bounded_argv_launch(self) -> None:
+        gates = json.loads(
+            GATE_CATALOG.read_text(encoding="utf-8"),
+        )["gates"]
+        expected = {
+            "agent-native-turn-e2e": [
+                "python3",
+                "tooling/acceptance/gates/agent/native_agent_runner.py",
+            ],
+            "agent-stream-resilience-e2e": [
+                "python3",
+                "tooling/acceptance/gates/agent/native_agent_runner.py",
+                "--journey",
+                "stream-resilience",
+            ],
+            "agent-attachment-e2e": [
+                "python3",
+                "tooling/acceptance/gates/agent/native_agent_runner.py",
+                "--journey",
+                "attachment",
+            ],
+        }
+        for gate_id, argv in expected.items():
+            with self.subTest(gate_id=gate_id):
+                self.assertEqual(gates[gate_id]["argv"], argv)
+                self.assertNotIn("command", gates[gate_id])
 
     def test_runner_emits_evidence_report(self) -> None:
         self.assertIn("ArtifactSession", self.source)
         self.assertNotIn("REPORTS_DIR", self.source)
         self.assertIn("agent-native-journey.json", self.source)
+        self.assertIn(
+            '"artifactKind": "acceptance-gate-evidence-report"',
+            self.source,
+        )
+        self.assertNotIn('"artifactKind": "agent-native-journey-report"', self.source)
         self.assertIn("startedAt", self.source)
         self.assertIn("completedAt", self.source)
 
@@ -122,9 +211,88 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self.assertIn("parser.add_argument(", self.source)
         self.assertIn("runner.run_stream_resilience()", self.source)
 
+    def test_runner_dispatches_attachment_through_foundation_oracle(self) -> None:
+        self.assertIn('"attachment": "agent-attachment-e2e"', self.source)
+        self.assertIn("runner.run_attachment()", self.source)
+        self.assertIn('("AS-F05", "attachment_admission")', self.source)
+        self.assertIn(
+            '("BASE-ATTACHMENT_REJECTED", "attachment_rejection_surface")',
+            self.source,
+        )
+        self.assertIn("assert_group_one_capture(", self.source)
+        self.assertIn('"attachment-evidence"', self.source)
+
+    def test_runner_uses_canonical_station_service_and_profile_credentials(
+        self,
+    ) -> None:
+        self.assertIn("require_runtime_service(", self.source)
+        self.assertNotIn('self.runtime_manifest.get("station")', self.source)
+        self.assertIn('"CHAT_NATIVE_DEMO_PASSWORD"', self.source)
+        self.assertIn('"PT_AGENT_PROVIDER_API_KEY"', self.source)
+
+    def test_runner_binds_station_through_harness_before_login(self) -> None:
+        configure_method = self.source.index("def configure_station(")
+        configure_call = self.source.index(
+            'self.harness(\n            "configureStation"',
+            configure_method,
+        )
+        active_url_assertion = self.source.index(
+            'result.get("activeUrl")',
+            configure_call,
+        )
+        online_assertion = self.source.index(
+            'result.get("online") is True',
+            active_url_assertion,
+        )
+        peer_id_assertion = self.source.index(
+            'result.get("peerIdAvailable") is True',
+            online_assertion,
+        )
+        proxy_health_step = self.source.index(
+            'runner.step("fault_proxy_health", runner.verify_proxy_health)'
+        )
+        configure_step = self.source.index(
+            'runner.step("configure_active_station", runner.configure_station)'
+        )
+        journey_dispatch = self.source.index(
+            'if journey_name == "stream-resilience":',
+            configure_step,
+        )
+
+        self.assertLess(configure_call, active_url_assertion)
+        self.assertLess(active_url_assertion, online_assertion)
+        self.assertLess(online_assertion, peer_id_assertion)
+        self.assertLess(proxy_health_step, configure_step)
+        self.assertLess(configure_step, journey_dispatch)
+        self.assertIn('{"stationUrl": self.proxy.url}', self.source)
+        self.assertNotIn("stations.json", self.source)
+        self.assertNotIn("stationSetActive", self.source)
+        self.assertNotIn("stationAdd(", self.source)
+
+    def test_home_station_provisions_supported_agent_journeys(self) -> None:
+        source = HOME_STATION_PROVISIONER.read_text(encoding="utf-8")
+        for gate_id in (
+            "agent-attachment-e2e",
+            "agent-stream-resilience-e2e",
+        ):
+            with self.subTest(gate_id=gate_id):
+                self.assertIn(f'"{gate_id}": ("alice",)', source)
+                self.assertIn(f'"{gate_id}",', source)
+        self.assertIn("def _agent_native_manifest(", source)
+        self.assertIn(
+            'credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD"',
+            source,
+        )
+
     def test_runner_injects_transport_fault(self) -> None:
-        self.assertIn("class TcpFaultProxy", self.source)
-        self.assertIn("except socket.timeout:", self.source)
+        proxy_source = TCP_FAULT_PROXY.read_text(encoding="utf-8")
+        self.assertIn(
+            "from tooling.acceptance.gates.agent.tcp_fault_proxy "
+            "import TcpFaultProxy",
+            self.source,
+        )
+        self.assertIn("class TcpFaultProxy", proxy_source)
+        self.assertIn("except socket.timeout:", proxy_source)
         self.assertIn("cut_station_transport", self.source)
         self.assertIn("restore_station_transport", self.source)
         self.assertIn("reconciling_visible", self.source)
@@ -141,8 +309,29 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
 
     def test_runner_waits_for_harness(self) -> None:
         self.assertIn("__PT_ACCEPTANCE__", self.source)
-        self.assertIn("Agent acceptance harness", self.source)
-        self.assertIn("wait_until(", self.source)
+        runtime_started = self.source.index(
+            "self.driver = self.tauri_driver.start()"
+        )
+        renderer_ready = self.source.index(
+            "self.tauri_driver.wait_for_ready()",
+            runtime_started,
+        )
+        harness_ready = self.source.index(
+            "self.tauri_driver.wait_for_acceptance_harness()",
+            renderer_ready,
+        )
+        agent_namespace = self.source.index(
+            "window.__PT_ACCEPTANCE__?.agent",
+            harness_ready,
+        )
+
+        self.assertLess(runtime_started, renderer_ready)
+        self.assertLess(renderer_ready, harness_ready)
+        self.assertLess(harness_ready, agent_namespace)
+        self.assertNotIn(
+            "self.driver.set_script_timeout(DEFAULT_TIMEOUT)",
+            self.source,
+        )
 
     def test_runner_has_step_telemetry(self) -> None:
         self.assertIn("def step(", self.source)
@@ -151,9 +340,10 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
     def test_no_fixed_sleep_in_runner(self) -> None:
         self.assertNotIn("time.sleep(", self.source)
 
-    def test_runner_uses_selenium(self) -> None:
-        self.assertIn("selenium", self.source)
-        self.assertIn("webdriver.Remote", self.source)
+    def test_runner_delegates_selenium_ownership_to_tauri_driver(self) -> None:
+        self.assertNotIn("from selenium", self.source)
+        self.assertNotIn("webdriver.Remote", self.source)
+        self.assertIn("TauriDriver", self.source)
 
 
 class AgentHarnessStaticTest(unittest.TestCase):
@@ -190,42 +380,139 @@ class AgentHarnessStaticTest(unittest.TestCase):
             self.source,
         )
 
-    def test_recovery_cursor_is_frozen_at_fault_injection(self) -> None:
+    def test_recovery_cursor_is_frozen_at_fault_acknowledgement(self) -> None:
         prepare_start = self.source.index(
             "async function prepareFoundationF06Conversation"
         )
-        cursor_capture = self.source.index(
-            "const acknowledgedCursor = active.cursor",
+        prepare_end = self.source.index(
+            "async function observeFoundationRecoveryFailure",
+            prepare_start,
+        )
+        requested_cursor = self.source.index(
+            "const requestedCursor = active.cursor",
             prepare_start,
         )
         handoff_publish = self.source.index(
             "foundationF06PendingHandoffs.set(input.scenarioKey, handoff)",
-            cursor_capture,
+            requested_cursor,
         )
-        disconnect = self.source.index(
-            "controller.disconnectTransport()",
+        fault_request = self.source.index(
+            "requestFoundationF06TransportCut(input.faultControlUrl)",
             handoff_publish,
         )
-
-        self.assertLess(cursor_capture, handoff_publish)
-        self.assertLess(handoff_publish, disconnect)
-        self.assertNotIn("await ", self.source[cursor_capture:disconnect])
-        self.assertIn("transitions: []", self.source[cursor_capture:disconnect])
-        self.assertIn("replayDeliveries: []", self.source[cursor_capture:disconnect])
-        self.assertIn(
-            "foundationF06PendingHandoffs.delete(input.scenarioKey)",
-            self.source[disconnect:],
+        fault_observation = self.source.index(
+            "Foundation AS-F06 fault acknowledgement",
+            fault_request,
         )
-        self.assertIn("writeFoundationF06Handoff(handoff)", self.source[disconnect:])
+        cursor_capture = self.source.index(
+            "const acknowledgedCursor = activeAtCut.cursor",
+            fault_observation,
+        )
+        mutation_probe = self.source.index(
+            "publishFault(duplicateSource, activeAtCut.streamGeneration)",
+            cursor_capture,
+        )
+        boundary_publish = self.source.index(
+            "resolveBoundary(boundary)",
+            mutation_probe,
+        )
+        boundary_return = self.source.index(
+            "return boundary.handoff",
+            boundary_publish,
+        )
+        finalizer = self.source.index(
+            "async function finalizeFoundationF06Preparation",
+            boundary_return,
+        )
+
+        self.assertLess(requested_cursor, handoff_publish)
+        self.assertLess(handoff_publish, fault_request)
+        self.assertLess(fault_request, fault_observation)
+        self.assertLess(fault_observation, cursor_capture)
+        self.assertLess(cursor_capture, mutation_probe)
+        self.assertLess(mutation_probe, boundary_publish)
+        self.assertNotIn("await ", self.source[cursor_capture:mutation_probe])
+        self.assertNotIn(
+            "foundationRecoveryCursorAdvancedBeforeFault",
+            self.source[prepare_start:prepare_end],
+        )
+        self.assertIn(
+            "foundationRecoveryCursorAdvancedAfterFault",
+            self.source[mutation_probe:boundary_publish],
+        )
+        self.assertIn(
+            "]);\n  return boundary.handoff;",
+            self.source[boundary_publish:boundary_return + len("return boundary.handoff;")],
+        )
+        self.assertIn(
+            "transitions: []",
+            self.source[requested_cursor:boundary_publish],
+        )
+        self.assertIn(
+            "replayRequestCursor: requestedCursor",
+            self.source[requested_cursor:boundary_publish],
+        )
+        self.assertIn(
+            "replayDeliveries: []",
+            self.source[requested_cursor:boundary_publish],
+        )
+        self.assertIn(
+            "sourceDelivery.sequence > current.replayRequestCursor",
+            self.source,
+        )
+        self.assertNotIn(
+            "controller.disconnectTransport()",
+            self.source[prepare_start:finalizer],
+        )
+        self.assertIn(
+            "foundationF06PendingHandoffs.delete(scenarioKey)",
+            self.source[finalizer:prepare_end],
+        )
+        self.assertIn(
+            "writeFoundationF06Handoff(handoff)",
+            self.source[finalizer:prepare_end],
+        )
         drain = self.source.index(
             "await foundationF06ReplayRecording",
-            disconnect,
+            finalizer,
         )
         pending_delete = self.source.index(
-            "foundationF06PendingHandoffs.delete(input.scenarioKey)",
+            "foundationF06PendingHandoffs.delete(scenarioKey)",
             drain,
         )
         self.assertLess(drain, pending_delete)
+        self.assertIn(
+            "async foundationF06FinalizePreparation",
+            self.source,
+        )
+        self.assertIn(
+            "writeFoundationF06CleanupLocator",
+            self.source[prepare_start:prepare_end],
+        )
+        self.assertIn(
+            "foundationCleanupLocatorMissing",
+            self.source,
+        )
+        self.assertIn(
+            "state: 'deleted'",
+            self.source,
+        )
+        self.assertIn(
+            "removeFoundationF06Handoff(input.scenarioKey, false)",
+            self.source,
+        )
+        cleanup_start = self.source.index(
+            "async function cleanupFoundationF06Scenario",
+        )
+        cleanup_identity_check = self.source.index(
+            "cleanupLocator.conversationId !== input.conversationId",
+            cleanup_start,
+        )
+        deleted_receipt = self.source.index(
+            "cleanupLocator?.state === 'deleted'",
+            cleanup_start,
+        )
+        self.assertLess(cleanup_identity_check, deleted_receipt)
 
     def test_recovery_preparation_uses_one_fault_bound_attempt(self) -> None:
         prepare_start = self.source.index("async function runFoundationF06Prepare")
@@ -257,6 +544,60 @@ class AgentHarnessStaticTest(unittest.TestCase):
             self.source[observe_start:observe_end],
         )
 
+    def test_recovery_restores_capabilities_after_transport_recovery(self) -> None:
+        prepare_start = self.source.index("async function runFoundationF06Prepare")
+        prepare_end = self.source.index(
+            "async function prepareFoundationF06Conversation",
+            prepare_start,
+        )
+        prepare = self.source[prepare_start:prepare_end]
+        restore_start = self.source.index(
+            "async function restoreFoundationF06CapabilityIsolation",
+            prepare_end,
+        )
+        restore_end = self.source.index(
+            "async function observeFoundationRecoveryFailure",
+            restore_start,
+        )
+        restore = self.source[restore_start:restore_end]
+
+        self.assertIn("{ restorationMode: 'deferred' },", prepare)
+        self.assertIn("readFoundationCapabilityIsolationJournal()", restore)
+        self.assertIn(
+            "await restorePersistedFoundationCapabilityIsolation()",
+            restore,
+        )
+        self.assertIn("Object.assign(handoff.toolIsolation, restoration)", restore)
+        self.assertIn("writeFoundationF06Handoff(handoff)", restore)
+        self.assertIn(
+            "async foundationF06RestoreCapabilityIsolation",
+            self.source,
+        )
+
+        runner = FOUNDATION_SCENARIO_RUNNER.read_text(encoding="utf-8")
+        coordinator_start = runner.index("class FoundationF06Coordinator")
+        coordinator_end = runner.index(
+            "class FoundationF12Coordinator",
+            coordinator_start,
+        )
+        coordinator = runner[coordinator_start:coordinator_end]
+        active_start = coordinator.index("    def _execute_active(")
+        active = coordinator[active_start:]
+        transport_restore = active.index("client.restore_station_transport()")
+        station_auth = active.index('recovery_boundary="station-restart"')
+        capability_restore = active.index(
+            "self._restore_capability_isolation(",
+            station_auth,
+        )
+        durable_reload = active.index(
+            '"foundationF06DurableReload"',
+            capability_restore,
+        )
+
+        self.assertLess(transport_restore, station_auth)
+        self.assertLess(station_auth, capability_restore)
+        self.assertLess(capability_restore, durable_reload)
+
     def test_recovery_completion_reads_failure_after_evidence_sync(self) -> None:
         completion_start = self.source.index(
             "async function runFoundationF06Complete",
@@ -283,11 +624,11 @@ class AgentHarnessStaticTest(unittest.TestCase):
             completion[:evidence_sync],
         )
         replay_boundary = completion.index(
-            "const replayStartTransition = latestHandoff.transitions.find",
+            "const replayStartTransition = transitions.find",
             latest_handoff,
         )
         station_readback = completion.index(
-            "const stationReplayDeliveries = await foundationStationReplayReadback",
+            "foundationStationReplayReadback({",
             replay_boundary,
         )
         self.assertIn(
@@ -295,10 +636,27 @@ class AgentHarnessStaticTest(unittest.TestCase):
             completion[replay_boundary:station_readback],
         )
         self.assertIn(
+            "const replayAfterCursor = latestHandoff.acknowledgedCursor",
+            completion[replay_boundary:station_readback],
+        )
+        self.assertIn(
+            "delivery.sequence > replayAfterCursor",
+            completion[replay_boundary:station_readback],
+        )
+        self.assertIn(
             "acknowledgedCursor: replayAfterCursor",
             completion[station_readback:],
         )
+        self.assertNotIn(
+            "const replayAfterCursor = replayStartTransition.sequence",
+            completion[replay_boundary:station_readback],
+        )
+        self.assertNotIn(
+            "const replayAfterCursor = handoff.acknowledgedCursor",
+            completion[replay_boundary:station_readback],
+        )
         self.assertIn("afterCursor: replayAfterCursor", completion[station_readback:])
+        self.assertIn("throughCursor: replayThroughCursor", completion[station_readback:])
 
     def test_revision_retry_cancels_after_durable_provider_start(self) -> None:
         scenario_start = self.source.index(
@@ -317,6 +675,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertIn(
             "Reply with 20 short numbered items for retry sample",
+            scenario,
+        )
+        self.assertIn(
+            "const retrySourceNonce = crypto.randomUUID()",
+            scenario,
+        )
+        self.assertIn(
+            "Include nonce ${retrySourceNonce} in every item.",
             scenario,
         )
         self.assertNotIn(
@@ -350,6 +716,15 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         scenario = self.source[scenario_start:scenario_end]
 
+        self.assertIn("withFoundationCapabilitiesDisabled(", scenario)
+        self.assertIn("withFoundationReadyCapabilityFixture(", scenario)
+        self.assertIn("runFoundationF10WithCapabilityIsolation", scenario)
+        self.assertIn("const readiness = await api.getAgentCapabilityReadiness(", scenario)
+        self.assertIn(
+            "{ requireEffectiveCapabilities: true },",
+            scenario,
+        )
+        self.assertIn("toolIsolation", scenario)
         self.assertIn("runAgentCapabilityNegativeControl(", scenario)
         for control in (
             "'unsupported'",
@@ -363,7 +738,223 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("sideEffectDelta", scenario)
         self.assertIn("crossDeviceSession.session_id", scenario)
 
+    def test_foundation_readiness_turn_disables_tool_bindings(self) -> None:
+        direct_probe = self.source.index("async foundationDirectProbe")
+        scenario_start = self.source.index(
+            "if (cell === 'AS-F01')",
+            direct_probe,
+        )
+        scenario_end = self.source.index(
+            "if (cell === 'AS-F02')",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("withFoundationReadyCapabilityFixture(", scenario)
+        self.assertIn("withFoundationCapabilitiesDisabled(", scenario)
+        self.assertLess(
+            scenario.index("withFoundationReadyCapabilityFixture("),
+            scenario.index("withFoundationCapabilitiesDisabled("),
+        )
+        self.assertIn("thinkingMode: 'disabled'", scenario)
+        self.assertIn("scenarioFacts = { toolIsolation }", scenario)
+        self.assertIn(
+            "{ requireEffectiveCapabilities: true },",
+            scenario,
+        )
+        self.assertNotIn("streamAgentTurn({", scenario)
+
+    def test_queue_scenario_waits_for_receiver_projection(self) -> None:
+        direct_probe = self.source.index("async foundationDirectProbe")
+        scenario_start = self.source.index(
+            "if (cell === 'AS-F02')",
+            direct_probe,
+        )
+        scenario_end = self.source.index(
+            "if (cell === 'AS-F03')",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("'Foundation AS-F02 queue projection'", scenario)
+        self.assertIn(
+            "queueProjection.queuePositions.visibleCount",
+            scenario,
+        )
+        self.assertLess(
+            scenario.index("'Foundation AS-F02 queue projection'"),
+            scenario.index("return foundationDomSnapshot();"),
+        )
+
+    def test_two_topic_restart_scenario_uses_production_authorities(self) -> None:
+        snapshot_start = self.source.index(
+            "async function foundationF12TopicSnapshot",
+        )
+        snapshot_end = self.source.index(
+            "async function foundationF12ReceiverSnapshot",
+            snapshot_start,
+        )
+        snapshot = self.source[snapshot_start:snapshot_end]
+        prepare_start = self.source.index(
+            "async function runFoundationF12Prepare",
+        )
+        complete_start = self.source.index(
+            "async function runFoundationF12Complete",
+            prepare_start,
+        )
+        prepare = self.source[prepare_start:complete_start]
+        fixture_helper_start = self.source.index(
+            "async function runFoundationF12PrepareWithCapabilityFixture",
+            prepare_start,
+        )
+        fixture_helper_end = self.source.index(
+            "async function traverseFoundationF12Branches",
+            fixture_helper_start,
+        )
+        fixture_helper = self.source[fixture_helper_start:fixture_helper_end]
+        complete_end = self.source.index(
+            "async function foundationRevisionMessageFact",
+            complete_start,
+        )
+        complete = self.source[complete_start:complete_end]
+
+        self.assertIn("withFoundationCapabilitiesDisabled(", prepare)
+        self.assertIn("withFoundationReadyCapabilityFixture(", fixture_helper)
+        self.assertIn("runFoundationF12Prepare({", fixture_helper)
+        self.assertIn(
+            "runFoundationF12PrepareWithCapabilityFixture({",
+            self.source,
+        )
+        self.assertIn("JSON.parse(stableJson(snapshot))", snapshot)
+        self.assertIn("topicLabel: topic.key", snapshot)
+        self.assertNotIn("key: topic.key", snapshot)
+        self.assertIn("runFoundationF12Turn({", prepare)
+        self.assertEqual(prepare.count("runFoundationF12Turn({"), 4)
+        self.assertIn("await api.regenerateAgentTurn({", prepare)
+        self.assertIn("await api.selectAgentActiveBranch({", prepare)
+        self.assertIn("staleExpectedVersion", prepare)
+        self.assertIn("foundationF12TopicSnapshot(", prepare)
+        self.assertIn("foundationF12ReceiverSnapshot(", prepare)
+        self.assertIn("writeFoundationF12Handoff(handoff)", prepare)
+        self.assertIn("label: 'BetaOriginal'", prepare)
+        self.assertIn(
+            "selectedBranchMessageId: betaAssistant.messageId",
+            prepare,
+        )
+        self.assertNotIn("label: 'BetaSibling'", prepare)
+        self.assertIn("readFoundationF12Handoff(input.scenarioKey)", complete)
+        self.assertIn("alphaPostRestartHash", complete)
+        self.assertIn("betaPostRestartHash", complete)
+        self.assertIn("traverseFoundationF12Branches(", complete)
+        self.assertIn("alternatePostRestart", self.source)
+        self.assertIn("restoredSelectedPostRestart", self.source)
+        self.assertIn("stationRestarted:", complete)
+        self.assertIn("clientRestarted:", complete)
+        self.assertNotIn("noCrossTopicReferences: true", self.source)
+
+        direct_probe = self.source.index("async foundationDirectProbe")
+        f12 = self.source.index("if (cell === 'AS-F12')", direct_probe)
+        next_cell = self.source.index("if (cell === 'AS-F05')", f12)
+        f12_dispatch = self.source[f12:next_cell]
+        self.assertIn("runFoundationF12Complete(stationRestart", f12_dispatch)
+        self.assertNotIn("createAgentConversation", f12_dispatch)
+
+    def test_two_topic_cleanup_deletes_both_topics_and_handoff(self) -> None:
+        cleanup_start = self.source.index(
+            "async function cleanupFoundationF12Scenario",
+        )
+        cleanup_end = self.source.index(
+            "async function runFoundationF12Prepare",
+            cleanup_start,
+        )
+        cleanup = self.source[cleanup_start:cleanup_end]
+
+        self.assertIn("for (const conversationId of", cleanup)
+        self.assertIn("await deleteFoundationConversation(conversationId)", cleanup)
+        self.assertIn("removeFoundationF12Handoff(input.scenarioKey)", cleanup)
+        self.assertIn("deletedConversationIds.length === conversationIds.length", cleanup)
+
+    def test_agent_topic_reconciliation_refreshes_authoritative_branch_projection(
+        self,
+    ) -> None:
+        cache_source = SHARED_AGENT_CHAT_CACHE.read_text(encoding="utf-8")
+        chat_source = DESKTOP_CHAT_STORE.read_text(encoding="utf-8")
+        runtime_source = DESKTOP_AGENT_TOPIC_RUNTIME.read_text(encoding="utf-8")
+        tool_runtime_source = DESKTOP_TOOL_RUNTIME.read_text(encoding="utf-8")
+        sync_start = chat_source.index("syncMessages: async () =>")
+        sync_end = chat_source.index("applyRecoveredTurnEvent:", sync_start)
+        sync_messages = chat_source[sync_start:sync_end]
+
+        self.assertIn("refreshConversation(conversationId", cache_source)
+        self.assertIn("replaceMessages(conversationId, messages)", cache_source)
+        self.assertIn(
+            "agentChatCache.refreshConversation(currentSessionKey)",
+            sync_messages,
+        )
+        self.assertNotIn(
+            "agentChatCache.syncConversation(currentSessionKey)",
+            sync_messages,
+        )
+        self.assertIn(
+            "toolRuntime.reconcileMessages(folded)",
+            chat_source,
+        )
+        self.assertIn(
+            "reconcileToolProjectionState(this.state, reconciled)",
+            tool_runtime_source,
+        )
+        self.assertIn(
+            "api.exportAgentTurnDiagnostics(turnId)",
+            tool_runtime_source,
+        )
+        self.assertEqual(
+            runtime_source.count(
+                "await useChatStore.getState().syncMessages();",
+            ),
+            2,
+        )
+
+    def test_denial_evidence_distinguishes_policy_and_user_denial(self) -> None:
+        helper_start = self.source.index("function diagnosticToolCase")
+        helper_end = self.source.index(
+            "async function foundationToolSideEffectCount",
+            helper_start,
+        )
+        helper = self.source[helper_start:helper_end]
+
+        deny_policy_branch = helper.index("else if (policy === 'deny')")
+        manual_wait_state = helper.index("states.push('awaiting_user')")
+        self.assertLess(deny_policy_branch, manual_wait_state)
+        self.assertIn("states.push('denied')", helper)
+        self.assertIn("states.push('awaiting_user')", helper)
+        self.assertIn(
+            "states.push(approved ? 'approved' : 'denied')",
+            helper,
+        )
+        self.assertNotIn("if (status === 'denied')", helper)
+
     def test_revision_scenario_disables_capabilities_and_restores_them(self) -> None:
+        revision_start = self.source.index(
+            "async function runFoundationF07Scenario",
+        )
+        revision_end = self.source.index(
+            "function foundationF10RejectionFact",
+            revision_start,
+        )
+        revision = self.source[revision_start:revision_end]
+        self.assertIn("sourceCancellationStatus", revision)
+        self.assertIn("sourceStreamCancellationObserved", revision)
+        self.assertNotIn(
+            "if (!retrySourceResult.events.some",
+            revision,
+        )
+        self.assertEqual(revision.count(".branchFromMessage("), 1)
+        self.assertNotIn("label: 'F07Selected'", revision)
+        self.assertIn(
+            "await api.getAgentConversation(conversation.conversation_id)",
+            revision,
+        )
+
         helper_start = self.source.index(
             "async function runFoundationF07WithCapabilityIsolation",
         )
@@ -372,20 +963,37 @@ class AgentHarnessStaticTest(unittest.TestCase):
             helper_start,
         )
         helper = self.source[helper_start:helper_end]
-        self.assertIn("foundationToolFixture(agentId, input.platform)", helper)
-        self.assertIn("CapabilityApprovalPolicy.MANUAL", helper)
-        self.assertIn(
-            "setupIdempotencyKey: crypto.randomUUID()",
-            helper,
-        )
-        self.assertIn("parseFoundationCapabilityFixtureJournal(", helper)
-        self.assertIn("await prepareFoundationCapabilityFixture(journal)", helper)
+        self.assertIn("withFoundationReadyCapabilityFixture(", helper)
         self.assertIn("await resolveFoundationToolTurnSession()", helper)
         self.assertIn("withFoundationCapabilitiesDisabled(", helper)
-        self.assertIn("      true,", helper)
+        self.assertIn(
+            "{ requireEffectiveCapabilities: true },",
+            helper,
+        )
+
+        fixture_start = self.source.index(
+            "async function prepareFoundationReadyCapabilityFixture",
+        )
+        fixture_end = self.source.index(
+            "async function startFoundationToolTurn",
+            fixture_start,
+        )
+        fixture = self.source[fixture_start:fixture_end]
+        self.assertIn("foundationToolFixture(agentId, platform)", fixture)
+        self.assertIn("CapabilityApprovalPolicy.MANUAL", fixture)
+        self.assertIn(
+            "setupIdempotencyKey: crypto.randomUUID()",
+            fixture,
+        )
+        self.assertIn("parseFoundationCapabilityFixtureJournal(", fixture)
+        self.assertIn("await prepareFoundationCapabilityFixture(journal)", fixture)
+        self.assertIn(
+            "await restorePersistedFoundationCapabilityIsolation()",
+            fixture,
+        )
         self.assertIn(
             "await restorePersistedFoundationCapabilityFixture()",
-            helper,
+            fixture,
         )
         self.assertIn("cleanupExpectedRevision", self.source)
         self.assertIn("cleanupIdempotencyKey", self.source)
@@ -516,6 +1124,23 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
     def test_harness_exposes_login(self) -> None:
         self.assertIn("loginWithPassword", self.source)
+        login_start = self.source.index("async loginWithPassword")
+        login_end = self.source.index("async logout()", login_start)
+        login = self.source[login_start:login_end]
+
+        self.assertLess(
+            login.index("identityRuntime.boot()"),
+            login.index("'identity login precondition'"),
+        )
+        self.assertIn(
+            "if (useSessionStore.getState().authenticated)",
+            login,
+        )
+        self.assertIn("await identityRuntime.logout()", login)
+        self.assertLess(
+            login.index("'identity login precondition'"),
+            login.index("'identity account gate before login'"),
+        )
 
     def test_cleanup_logout_closes_identity_phase_before_session_reset(
         self,
@@ -586,6 +1211,50 @@ class AgentHarnessStaticTest(unittest.TestCase):
             self.source,
         )
 
+    def test_agent_crud_uses_authenticated_station_authority(self) -> None:
+        application = DESKTOP_AGENT_CRUD.read_text(encoding="utf-8")
+        commands = DESKTOP_AGENT_COMMANDS.read_text(encoding="utf-8")
+
+        for endpoint in (
+            '"/sub-agent/agent/list"',
+            '"/sub-agent/agent/get"',
+            '"/sub-agent/agent/create"',
+            '"/sub-agent/agent/update"',
+            '"/sub-agent/agent/delete"',
+        ):
+            with self.subTest(endpoint=endpoint):
+                self.assertIn(endpoint, application)
+
+        self.assertIn("fn token_for_cmd", commands)
+        self.assertIn("agents_list(&actor_ptid, &token)", commands)
+        self.assertIn("agents_update(&actor_ptid, &token, input)", commands)
+        self.assertNotIn('agents_list("")', commands)
+
+    def test_browser_auth_binds_gateway_session_before_agent_commands(self) -> None:
+        gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
+        auth_service = DESKTOP_AUTH_SERVICE.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "bind_gateway_auth_result(state, app_auth::auth_login(input, state))",
+            gateway,
+        )
+        self.assertIn(
+            "bind_gateway_auth_result(state, app_auth::access_submit_login(input, state))",
+            gateway,
+        )
+        self.assertIn(
+            'app_auth::auth_restore_session_for_device(state, "desktop-browser")',
+            gateway,
+        )
+        self.assertIn('input.device_type = Some("desktop-browser".to_string())', gateway)
+        self.assertIn("state.sessions.unbind(HTTP_GATEWAY_SESSION_LABEL)", gateway)
+        self.assertIn('.unwrap_or("desktop-native")', auth_service)
+        self.assertIn(
+            'auth_restore_session_for_device(state, "desktop-native")',
+            auth_service,
+        )
+        self.assertNotIn('"device_type": "desktop"', auth_service)
+
     def test_harness_exposes_r6_production_actions_and_readback(self) -> None:
         for method in (
             "logout",
@@ -622,9 +1291,13 @@ class AgentHarnessStaticTest(unittest.TestCase):
                 self.assertIn(method, self.source)
 
     def test_active_mutation_conflict_uses_production_profile_and_recovery(self) -> None:
+        attestation_start = self.source.index(
+            "async function runFoundationDirectAttestationTurn"
+        )
         scenario_start = self.source.index(
             "async function runFoundationActiveMutationConflictScenario"
         )
+        attestation = self.source[attestation_start:scenario_start]
         scenario_end = self.source.index(
             "async function buildDirectRuntimeAttestation",
             scenario_start,
@@ -640,6 +1313,374 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("await api.getAgent(disposable.id)", scenario)
         self.assertIn("await api.deleteAgent(disposable.id)", scenario)
         self.assertIn("await api.setSelectedAgent(priorSelection)", scenario)
+        self.assertIn("runFoundationDirectAttestationTurn({", scenario)
+        self.assertIn("api.createAgentConversation({", attestation)
+        self.assertIn("withFoundationCapabilitiesDisabled(", attestation)
+        self.assertIn("startObservedFoundationTurn({", attestation)
+        self.assertIn("thinkingMode: 'disabled'", attestation)
+        self.assertIn(
+            "await cleanupFoundationToolConversation(",
+            attestation,
+        )
+
+        direct_probe_start = self.source.index("async foundationDirectProbe")
+        active_dispatch_start = self.source.index(
+            "if (cell === 'BASE-ACTIVE_MUTATION_CONFLICT')",
+            direct_probe_start,
+        )
+        active_dispatch_end = self.source.index(
+            "if (cell === 'BASE-APPROVAL_DENIED')",
+            active_dispatch_start,
+        )
+        active_dispatch = self.source[active_dispatch_start:active_dispatch_end]
+        self.assertIn(
+            "preparedConversationId = scenario.conversationId",
+            active_dispatch,
+        )
+        self.assertIn("preparedTurnId = scenario.turnId", active_dispatch)
+        self.assertNotIn("chatState.currentSessionKey", active_dispatch)
+
+        current_conversation = self.source[
+            self.source.index("const currentConversationId =", direct_probe_start):
+            self.source.index(
+                "const [conversationReadback, turnQueue]",
+                direct_probe_start,
+            )
+        ]
+        self.assertIn(
+            "cell === 'BASE-ACTIVE_MUTATION_CONFLICT'",
+            current_conversation,
+        )
+        self.assertIn("? preparedConversationId", current_conversation)
+        self.assertIn(
+            ": preparedConversationId ?? chatState.currentSessionKey",
+            current_conversation,
+        )
+        cleanup_start = self.source.index(
+            "} catch (error) {",
+            self.source.index("return evidenceValue({", direct_probe_start),
+        )
+        cleanup_end = self.source.index(
+            "async foundationNonAdvertisementProbe",
+            cleanup_start,
+        )
+        failure_cleanup = self.source[cleanup_start:cleanup_end]
+        self.assertIn(
+            "cell === 'BASE-ACTIVE_MUTATION_CONFLICT'",
+            failure_cleanup,
+        )
+        self.assertIn(
+            "await deleteFoundationConversation(preparedConversationId)",
+            failure_cleanup,
+        )
+        self.assertIn("activeMutationCleanup.conversationDeleted === true", self.source)
+        self.assertNotIn("mock", scenario.lower())
+
+    def test_cancelled_uses_station_owned_payload_replay_and_cleanup(self) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationCancelledScenario"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationDirectAttestationTurn",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("startObservedFoundationTurn({", scenario)
+        self.assertIn("thinkingMode: 'disabled'", scenario)
+        self.assertIn("api.cancelAgentTurn(turnId)", scenario)
+        self.assertIn("foundationCancellationLostRace", scenario)
+        self.assertNotIn("terminalRaceStatuses.push", scenario)
+        self.assertNotIn("terminalRaceCount:", scenario)
+        self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn(
+            "foundationCancellationSnapshotIdentityMismatch",
+            scenario,
+        )
+        self.assertIn("snapshotDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn("waitForFoundationDiagnosticReplay(", scenario)
+        self.assertIn("AgentTurnStatus.CANCELLED", scenario)
+        self.assertIn("foundationStationReplayReadback({", scenario)
+        live_projection = scenario.index("applyRecoveredTurnEvent(")
+        live_reconciliation = scenario.index(
+            "await useChatStore.getState().reconcileRecoveredTurn(",
+            live_projection,
+        )
+        live_receiver = scenario.index(
+            "const liveReceiver = await foundationCancelledReceiverSnapshot(",
+            live_reconciliation,
+        )
+        self.assertLess(live_projection, live_reconciliation)
+        self.assertLess(live_reconciliation, live_receiver)
+        self.assertIn(
+            "terminalReasonFromStreamData(terminalEvent.data)",
+            scenario,
+        )
+        self.assertIn(
+            "terminalReasonFromStreamData(\n"
+            "            authoritativeSnapshot.data,\n"
+            "          )",
+            scenario,
+        )
+        self.assertGreaterEqual(scenario.count("messages: []"), 2)
+        self.assertIn("reconcileRecoveredTurn(", scenario)
+        self.assertIn("Foundation live cancellation receiver", scenario)
+        self.assertIn("Foundation reloaded cancellation receiver", scenario)
+        self.assertIn("Foundation replayed cancellation receiver", scenario)
+        self.assertIn("onSnapshot:", scenario)
+        self.assertIn("data-pt-agent-terminal-status", self.source)
+        self.assertIn("data-pt-agent-error-type", self.source)
+        self.assertIn("data-pt-agent-error-resource-id", self.source)
+        self.assertIn("data-pt-agent-message-error-text", self.source)
+        self.assertIn("data-pt-agent-message-error-recovery", self.source)
+        self.assertIn("await cleanupFoundationToolConversation(", scenario)
+        self.assertIn("if (cell === 'BASE-CANCELLED')", self.source)
+        self.assertNotIn("mock", scenario.lower())
+
+    def test_context_overflow_uses_pre_admission_product_path(self) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationContextOverflowScenario"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationF06Prepare",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("useChatStore.getState().sendMessage(", scenario)
+        self.assertIn("max_input_tokens: 64", scenario)
+        self.assertIn("payload.data.error_type !== 'CONTEXT_OVERFLOW'", scenario)
+        self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn(
+            "foundationContextOverflowSourceIdentityMismatch",
+            scenario,
+        )
+        self.assertIn(
+            'data-pt-agent-message-error-recovery="reduce-context"',
+            scenario,
+        )
+        self.assertIn("document.activeElement === textarea", scenario)
+        self.assertIn("providerExecutionDelta", scenario)
+        self.assertIn("messageDelta", scenario)
+        self.assertIn("queueDelta", scenario)
+        self.assertIn("conversationVersionAfter", scenario)
+        self.assertIn("await deleteFoundationConversation(", scenario)
+        self.assertIn("if (cell === 'BASE-CONTEXT_OVERFLOW')", self.source)
+        self.assertNotIn("mock", scenario.lower())
+
+    def test_duplicate_conflict_uses_typed_open_original_recovery_path(
+        self,
+    ) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationDuplicateConflictScenario"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationCredentialMissingScenario",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+        desktop_api = DESKTOP_API.read_text(encoding="utf-8")
+        assistant_message = DESKTOP_ASSISTANT_MESSAGE.read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("clientIdempotencyKey: idempotencyKey", scenario)
+        self.assertIn("ADMISSION_DUPLICATE_CONFLICT", scenario)
+        self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn(
+            "foundationDuplicateConflictSourceIdentityMismatch",
+            scenario,
+        )
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="open-original"]',
+            scenario,
+        )
+        self.assertIn("recoveryAction.click()", scenario)
+        self.assertIn("openedView.turnId === originalTurnId", scenario)
+        self.assertIn(
+            "existingCommandId: rejectedDetails.existing_command_id",
+            scenario,
+        )
+        for delta in (
+            "turnDelta",
+            "messageDelta",
+            "queueDelta",
+            "providerExecutionDelta",
+        ):
+            with self.subTest(delta=delta):
+                self.assertIn(delta, scenario)
+        self.assertIn(
+            "case 'BASE-DUPLICATE_CONFLICT':",
+            self.source,
+        )
+        self.assertIn(
+            "return evaluateBaseDuplicateConflict(ctx)",
+            self.source,
+        )
+        self.assertIn(
+            "typedError?.error_type === 'ADMISSION_DUPLICATE_CONFLICT'",
+            desktop_api,
+        )
+        self.assertIn(
+            "label: 'agent.recovery.openOriginal'",
+            desktop_api,
+        )
+        self.assertIn(
+            "message.resolution.type === 'openOriginal'",
+            assistant_message,
+        )
+        self.assertIn("handleOpenOriginal", assistant_message)
+        self.assertNotIn("mock", scenario.lower())
+
+    def test_credential_missing_uses_typed_pre_admission_recovery_path(
+        self,
+    ) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationCredentialMissingScenario"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationF06Prepare",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+        desktop_api = DESKTOP_API.read_text(encoding="utf-8")
+        assistant_message = DESKTOP_ASSISTANT_MESSAGE.read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("provider.requires_api_key", scenario)
+        self.assertIn("provider.has_api_key", scenario)
+        self.assertIn("providerConfiguredBefore: false", scenario)
+        self.assertIn("useChatStore.getState().sendMessage(", scenario)
+        self.assertIn("PROVIDER_CREDENTIAL_MISSING", scenario)
+        self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn(
+            "foundationCredentialMissingSourceIdentityMismatch",
+            scenario,
+        )
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="configure-credential"]',
+            scenario,
+        )
+        self.assertIn("recoveryAction.click()", scenario)
+        for delta in (
+            "turnDelta",
+            "messageDelta",
+            "queueDelta",
+            "providerExecutionDelta",
+        ):
+            with self.subTest(delta=delta):
+                self.assertIn(delta, scenario)
+        self.assertIn("beforeHash === afterHash", self.source)
+        self.assertIn("await deleteFoundationConversation(", scenario)
+        self.assertIn("await api.deleteAgent(disposableAgentId)", scenario)
+        self.assertIn("await api.setSelectedAgent(priorSelection)", scenario)
+        self.assertIn(
+            "case 'BASE-CREDENTIAL_MISSING':",
+            self.source,
+        )
+        self.assertIn(
+            "return evaluateBaseCredentialMissing(ctx)",
+            self.source,
+        )
+        self.assertIn(
+            "typedError?.error_type === 'PROVIDER_CREDENTIAL_MISSING'",
+            desktop_api,
+        )
+        self.assertIn(
+            "label: 'agent.recovery.configureCredential'",
+            desktop_api,
+        )
+        self.assertIn(
+            "message.resolution.type === 'openProviderSettings'",
+            assistant_message,
+        )
+        self.assertIn(
+            "eventBus.publish(EVENT.NAVIGATION_REQUESTED",
+            assistant_message,
+        )
+        self.assertIn("id: 'providers'", assistant_message)
+        self.assertIn(
+            "t(message.resolution.label, { ns: 'agent' })",
+            assistant_message,
+        )
+        self.assertIn(
+            "await api.resolveErrorAction(message.resolution!)",
+            assistant_message,
+        )
+        self.assertNotIn("mock", scenario.lower())
+
+    def test_approval_denied_uses_product_action_and_station_readback(self) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationApprovalDeniedScenario"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationApprovalExpiredScenario",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("CapabilityApprovalPolicy.MANUAL", scenario)
+        self.assertIn("waitForToolApprovalEvent(turn)", scenario)
+        self.assertIn(
+            'data-pt-agent-tool-recovery="continue-without-tool"',
+            scenario,
+        )
+        self.assertIn("recovery.click()", scenario)
+        self.assertIn("waitForFoundationToolFacts(", scenario)
+        self.assertIn("foundationToolSideEffectCount(", scenario)
+        self.assertIn("api.submitAgentToolDecision({", scenario)
+        self.assertNotIn("mock", scenario.lower())
+
+    def test_approval_expired_uses_station_expiry_and_retry_action(self) -> None:
+        self.assertNotIn("BASE-APPROVAL-EXPIRED", self.source)
+        scenario_start = self.source.index(
+            "async function runFoundationApprovalExpiredScenario"
+        )
+        scenario_end = self.source.index(
+            "const FOUNDATION_PNG_BYTES",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("CapabilityApprovalPolicy.MANUAL", scenario)
+        self.assertIn("waitForToolApprovalEvent(turn)", scenario)
+        self.assertIn("ToolCallStatus.EXPIRED", scenario)
+        self.assertIn(
+            'data-pt-agent-tool-recovery="request-again"',
+            scenario,
+        )
+        self.assertEqual(
+            scenario.count("api.submitAgentToolDecision(\n      decisionIntent"),
+            2,
+        )
+        self.assertEqual(scenario.count("recovery.click()"), 2)
+        self.assertIn("api.cancelAgentTurn(turn.turnId)", scenario)
+        self.assertEqual(
+            scenario.count("foundationToolSideEffectCount("),
+            3,
+        )
+        self.assertIn("retryToolStatus: toolStatusName(retryAfter.status)", scenario)
+        for counter in (
+            "retryExecutionAttemptCount",
+            "retrySideEffectCount",
+            "retryResultCount",
+            "retryContinuationCount",
+        ):
+            with self.subTest(counter=counter):
+                self.assertIn(counter, scenario)
+        self.assertNotIn(
+            "await useChatStore.getState().syncMessages()",
+            scenario,
+        )
+        self.assertIn("foundationToolExpiryCleanupFailed", scenario)
+        self.assertIn("cleanupFoundationToolConversation(", scenario)
+        self.assertIn("cell === 'BASE-APPROVAL_EXPIRED'", self.source)
+        self.assertIn(
+            "|| cell === 'BASE-APPROVAL_EXPIRED'\n"
+            "          ? 900_000",
+            self.source,
+        )
         self.assertNotIn("mock", scenario.lower())
 
     def test_harness_drives_as_f05_through_production_boundaries(self) -> None:
@@ -660,11 +1701,69 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertIn("startObservedFoundationTurn", self.source)
         self.assertIn("foundationDiagnosticReplay", self.source)
+        self.assertIn("historyAttachment.click()", self.source)
+        self.assertIn("receiverInteraction: historyAction", self.source)
+        self.assertIn("openedUrlHash", self.source)
         self.assertNotIn("mockFoundationAttachment", self.source)
         gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
         self.assertIn('"oss_upload_agent_attachment_bytes"', gateway)
         self.assertIn('"oss_resolve_url"', gateway)
         self.assertIn('"oss_delete_file"', gateway)
+
+    def test_agent_file_picker_uses_the_portable_attachment_mime_contract(self) -> None:
+        chat_input = DESKTOP_CHAT_INPUT.read_text(encoding="utf-8")
+        self.assertIn("AGENT_ATTACHMENT_ACCEPT", chat_input)
+        self.assertIn("accept={AGENT_ATTACHMENT_ACCEPT}", chat_input)
+        self.assertNotIn('accept="image/*"', chat_input)
+
+    def test_attachment_rejection_uses_real_composer_and_remove_action(self) -> None:
+        agent_turn = DESKTOP_AGENT_TURN.read_text(encoding="utf-8")
+        scenario_start = self.source.index(
+            "async function runFoundationAttachmentRejectedScenario"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationF06Prepare",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("[data-pt-agent-attachment-input]", scenario)
+        self.assertIn("new File(", scenario)
+        self.assertIn("[Uint8Array.from(FOUNDATION_PDF_BYTES)]", scenario)
+        self.assertNotIn("not a valid PDF payload", scenario)
+        self.assertIn("[data-pt-agent-composer-send]", scenario)
+        tombstone = scenario.index("await api.ossDeleteAgentAttachment(objectRef)")
+        send = scenario.index("[data-pt-agent-composer-send]")
+        self.assertLess(tombstone, send)
+        self.assertIn("objectPathHash", self.source)
+        self.assertNotIn("keyHash", self.source)
+        self.assertIn("CONTEXT_ATTACHMENT_REJECTED", scenario)
+        self.assertIn(
+            "[data-pt-agent-composer-attachment-status=\"rejected\"]",
+            scenario,
+        )
+        self.assertIn(
+            "[data-pt-agent-composer-attachment-remove]",
+            scenario,
+        )
+        self.assertIn("removeAction.click()", scenario)
+        self.assertIn("foundationExecutionSnapshot(", scenario)
+        self.assertIn("foundationConversationReadback(", scenario)
+        self.assertIn(
+            "foundationAttachmentDeletionReadback(objectRef)",
+            scenario,
+        )
+        self.assertIn("api.ossListMyFiles({", self.source)
+        self.assertIn("file?.deleted_at?.trim()", self.source)
+        self.assertNotIn("foundationResolvedBytes(objectRef)", scenario)
+        self.assertIn(
+            "eventId: await sha256Hex(stableJson(rejectionIdentity))",
+            scenario,
+        )
+        self.assertNotIn("baselineRuntimeEvent", scenario)
+        self.assertIn("station_stream_error_payload", agent_turn)
+        self.assertIn('get("error_type")', agent_turn)
+        self.assertNotIn("mock", scenario.lower())
 
     def test_as_f04_budget_uses_browser_and_tauri_production_streams(self) -> None:
         desktop_api = DESKTOP_API.read_text(encoding="utf-8")
@@ -759,6 +1858,45 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("closeBrowserCapabilitySession", runtime)
         self.assertIn("starts_automatically()", desktop_main)
 
+    def test_browser_gateway_exposes_runtime_evidence_commands(self) -> None:
+        gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
+        for command in (
+            "agent_submit_feedback",
+            "agent_list_turn_feedback",
+            "agent_capability_sessions",
+            "agent_browser_capability_session_open",
+            "agent_browser_capability_session_close",
+            "agent_runtime_activity_station",
+            "agent_runtime_activity_local",
+            "agent_capability_session_snapshot",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(f'"{command}" =>', gateway)
+        self.assertIn(
+            "app_runtime_evidence::open_browser_capability_session",
+            gateway,
+        )
+        self.assertIn(
+            "app_runtime_evidence::close_browser_capability_session",
+            gateway,
+        )
+        self.assertIn(
+            "app_runtime_evidence::capability_session_snapshot",
+            gateway,
+        )
+        self.assertIn(
+            "app_runtime_evidence::capability_negative_control",
+            gateway,
+        )
+        self.assertIn("app_agent_growth::agent_submit_feedback", gateway)
+        self.assertIn("app_agent_growth::agent_list_turn_feedback", gateway)
+
+    def test_native_feedback_commands_are_registered(self) -> None:
+        desktop_main = DESKTOP_MAIN.read_text(encoding="utf-8")
+
+        self.assertIn("agent_growth::agent_submit_feedback", desktop_main)
+        self.assertIn("agent_growth::agent_list_turn_feedback", desktop_main)
+
     def test_harness_compares_local_and_station_session_authorities(self) -> None:
         source = HARNESS.read_text(encoding="utf-8")
         self.assertIn("getAgentCapabilitySessionSnapshot", source)
@@ -771,7 +1909,10 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
     def test_foundation_f04_resolves_matched_session_before_each_turn(self) -> None:
         source = HARNESS.read_text(encoding="utf-8")
         start = source.index("async function runFoundationF04Scenario")
-        end = source.index("const FOUNDATION_PNG_BYTES", start)
+        end = source.index(
+            "async function runFoundationApprovalDeniedScenario",
+            start,
+        )
         scenario = source[start:end]
         run_case_start = scenario.index("const runCase")
         loop_start = scenario.index(
@@ -791,6 +1932,14 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         )
         for label in ("'auto'", "'manual'", "'deny'", "'expiry'"):
             self.assertIn(label, scenario)
+        self.assertIn(
+            "reportFoundationF04ExpirySettlementDebug(",
+            run_case,
+        )
+        self.assertIn("'settlement-timeout'", run_case)
+        self.assertIn("toolFactCount: facts.length", run_case)
+        self.assertIn("toolStatuses: facts.map", run_case)
+        self.assertIn("replayTerminal: diagnosticReplayTerminal(replay)", run_case)
         self.assertLess(
             loop_start,
             scenario.index("const loopTurn = await startFoundationToolTurn"),
@@ -926,11 +2075,109 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("queueCapacitySnapshotMismatch", source)
         self.assertIn("receiverDomAtCapacity", source)
 
+    def test_group_one_queue_probe_holds_active_turn_before_capacity_observation(
+        self,
+    ) -> None:
+        source = HARNESS.read_text(encoding="utf-8")
+        start = source.index("if (cell === 'AS-F02')")
+        end = source.index("if (cell === 'AS-F03')", start)
+        scenario = source[start:end]
+
+        ready_fixture = scenario.index(
+            "await prepareFoundationReadyCapabilityFixture(",
+        )
+        queue_baseline = scenario.index(
+            "const queueBeforeAdmissions = await api.listAgentTurnQueue(",
+        )
+        active_start = scenario.index(
+            "const active = startObservedFoundationTurn({",
+        )
+        active_admission = scenario.index(
+            "const activeAdmissionDeadline = Date.now() + 10_000;",
+        )
+        duplicate_start = scenario.index(
+            "const duplicate = startObservedFoundationTurn({",
+        )
+        queue_start = scenario.index(
+            "const queuedTurns = Array.from({ length: 8 }",
+        )
+        duplicate_first_event = scenario.index(
+            "const duplicateFirstEvent = await duplicate.firstEvent;",
+        )
+        approval_wait = scenario.index(
+            "await waitForToolApprovalEvent({",
+        )
+        capacity_snapshot = scenario.index(
+            "const queueSnapshotStartedAt = performance.now();",
+        )
+        overflow_start = scenario.index(
+            "const overflow = startObservedFoundationTurn({",
+        )
+        parallel_cancellation = scenario.index(
+            "[cancellation, activeCancellation] = await Promise.all([",
+        )
+        single_queue_cancellation = scenario.index(
+            "cancelFoundationQueuedTurns(\n"
+            "              conversation.conversation_id,\n"
+            "              1,",
+            parallel_cancellation,
+        )
+        active_cancellation = scenario.index(
+            "api.cancelAgentTurn(activeTurnId),",
+            parallel_cancellation,
+        )
+        remaining_queue_cleanup = scenario.index(
+            "await cancelFoundationQueuedTurns(conversation.conversation_id);",
+            active_cancellation,
+        )
+        stream_completion = scenario.index(
+            "firstActiveEvent,\n          activeResult,",
+        )
+        post_stream_queue_cleanup = scenario.index(
+            "await cancelFoundationQueuedTurns(conversation.conversation_id);",
+            stream_completion,
+        )
+        residual_turn_settlement = scenario.index(
+            "const residualTurnIds = Array.from(new Set(",
+            post_stream_queue_cleanup,
+        )
+        later_conversation_readback = scenario.index(
+            "const afterQueue = await api.getAgentConversation(",
+            residual_turn_settlement,
+        )
+        fixture_restore = scenario.index(
+            "await restorePersistedFoundationCapabilityFixture();",
+            later_conversation_readback,
+        )
+
+        self.assertLess(ready_fixture, queue_baseline)
+        self.assertLess(queue_baseline, active_start)
+        self.assertLess(active_start, active_admission)
+        self.assertLess(active_admission, duplicate_start)
+        self.assertLess(duplicate_start, queue_start)
+        self.assertLess(queue_start, duplicate_first_event)
+        self.assertLess(duplicate_first_event, approval_wait)
+        self.assertLess(approval_wait, capacity_snapshot)
+        self.assertLess(capacity_snapshot, overflow_start)
+        self.assertLess(overflow_start, parallel_cancellation)
+        self.assertLess(parallel_cancellation, single_queue_cancellation)
+        self.assertLess(parallel_cancellation, active_cancellation)
+        self.assertLess(active_cancellation, remaining_queue_cleanup)
+        self.assertLess(remaining_queue_cleanup, stream_completion)
+        self.assertLess(stream_completion, post_stream_queue_cleanup)
+        self.assertLess(post_stream_queue_cleanup, residual_turn_settlement)
+        self.assertLess(residual_turn_settlement, later_conversation_readback)
+        self.assertLess(later_conversation_readback, fixture_restore)
+        self.assertNotIn(
+            "const duplicateResult = await duplicate.result;",
+            scenario,
+        )
+
     def test_group_one_queue_probe_requires_completed_active_turn(self) -> None:
         source = HARNESS.read_text(encoding="utf-8")
         self.assertIn("const queuedTurns = Array.from({ length: 8 }", source)
         self.assertIn("queuedTurns.map((queued) => queued.result)", source)
-        self.assertIn("await api.cancelAgentTurn(activeTurnId)", source)
+        self.assertIn("api.cancelAgentTurn(activeTurnId),", source)
         self.assertIn("event.event === 'cancelled'", source)
         self.assertIn("preparedTurnId = activeTurnId", source)
 
@@ -944,6 +2191,20 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("event.event !== 'text'", scenario)
         self.assertIn("api.cancelAgentTurn(turnId)", scenario)
         self.assertIn("resolveCancellation({ turnId, result })", scenario)
+        self.assertIn("const maxCancellationAttempts = 2", scenario)
+        self.assertIn("max_output_tokens: 4096", scenario)
+        self.assertIn("timeoutMs: 90_000", scenario)
+        self.assertIn("cancellationStatus === 'completed'", scenario)
+        self.assertIn(
+            "'agent.acceptance.foundationCancellationWindowUnavailable'",
+            scenario,
+        )
+        self.assertLess(
+            scenario.index(
+                "await deleteFoundationConversation(conversation.conversation_id)",
+            ),
+            scenario.index("'cancel-window-retry'"),
+        )
         self.assertIn("toLowerCase() !== 'cancelled'", scenario)
         self.assertIn("terminalEvent?.eventType !== 'cancelled'", scenario)
         self.assertIn("!replay.deliveryOnly", source)
@@ -976,12 +2237,12 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("await bootstrapRuntime(runtimeId, actorId)", app_runtime)
         self.assertIn("criticalInstallInFlight?.actorId === actorId", app_runtime)
         self.assertIn(
-            "await installAuthenticatedCriticalRuntimes(user.actorId)",
+            "await installAuthenticatedCriticalRuntimes(user.actorPtid)",
             harness,
         )
         self.assertIn("tearDownSessionRuntimes()", runtime_hook)
         self.assertIn(
-            "installIdleRuntimes(actorId, CRITICAL_SESSION_RUNTIME_IDS)",
+            "installIdleRuntimes(actorPtid, CRITICAL_SESSION_RUNTIME_IDS)",
             runtime_hook,
         )
         self.assertIn(
@@ -1015,9 +2276,63 @@ class AgentSelectorsBoundInProductSource(unittest.TestCase):
 
     def test_tool_approval_selectors_bound(self) -> None:
         source = (ROOT / "apps/desktop/src/components/messages/ToolCallCard.tsx").read_text(encoding="utf-8")
+        assistant = (
+            ROOT / "apps/desktop/src/components/messages/AssistantMessage.tsx"
+        ).read_text(encoding="utf-8")
+        detail = (
+            ROOT / "apps/desktop/src/components/portal/views/ToolDetailView.tsx"
+        ).read_text(encoding="utf-8")
+        chat_store = (
+            ROOT / "apps/desktop/src/store/chat.ts"
+        ).read_text(encoding="utf-8")
         self.assertIn("submitAgentToolDecision", source)
         self.assertIn("approval_required", source)
         self.assertIn("chat.message.toolCall.approve", source)
+        self.assertIn("toolRuntime.getSnapshot", source)
+        self.assertIn("useState(actionableToolState)", source)
+        self.assertIn("if (actionableToolState) setExpanded(true)", source)
+        approve_decision = source.index("submitAgentToolDecision(tool.id, true)")
+        recovery_selector = source.index(
+            'data-pt-agent-tool-recovery="continue-without-tool"'
+        )
+        deny_decision = source.index("submitAgentToolDecision(tool.id, false)")
+        self.assertLess(approve_decision, recovery_selector)
+        self.assertLess(recovery_selector, deny_decision)
+        request_again = source.index(
+            'data-pt-agent-tool-recovery="request-again"'
+        )
+        self.assertIn("void onRequestAgain()", source[request_again:])
+        self.assertNotIn(
+            "submitAgentToolDecision(tool.id",
+            source[request_again:],
+        )
+        self.assertIn("onRequestAgain={handleRetry}", assistant)
+        self.assertIn("pendingMessageRetries.get(retryKey)", chat_store)
+        self.assertIn("pendingMessageRetries.set(retryKey, request)", chat_store)
+        self.assertIn("pendingMessageRetries.delete(retryKey)", chat_store)
+        self.assertIn("resolveToolCallProjection(toolCall, projection)", detail)
+        self.assertIn(
+            "t(`chat.message.toolCall.status.${projected.status}`)",
+            detail,
+        )
+        for locale_key in (
+            "chat.message.toolCall.server",
+            "chat.message.toolCall.arguments",
+            "chat.message.toolCall.result",
+            "chat.message.toolCall.approval",
+            "chat.message.toolCall.progress",
+        ):
+            with self.subTest(locale_key=locale_key):
+                self.assertIn(locale_key, detail)
+        for literal in (
+            'label="Server"',
+            'label="Arguments"',
+            'label="Result"',
+            "Approved by",
+            'label="Progress"',
+        ):
+            with self.subTest(literal=literal):
+                self.assertNotIn(literal, detail)
 
 if __name__ == "__main__":
     unittest.main()

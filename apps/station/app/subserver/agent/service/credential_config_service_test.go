@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -17,7 +18,7 @@ func TestCredentialSetMaterializesCatalogProviderAndUpdatesCredential(t *testing
 	service := NewCredentialConfigService()
 	ctx := context.Background()
 	request := CredentialSetRequest{
-		ActorID:    "actor-a",
+		ActorPTID:  "ptid:v1:" + strings.Repeat("a", 88),
 		ProviderID: "ark",
 		APIKey:     "test-key-with-\"-quote",
 	}
@@ -31,12 +32,15 @@ func TestCredentialSetMaterializesCatalogProviderAndUpdatesCredential(t *testing
 	}
 
 	var provider persistence.AgentProvider
-	if err := db.Where("actor_id = ? AND name = ?", request.ActorID, request.ProviderID).
+	if err := db.Where("actor_ptid = ? AND name = ?", request.ActorPTID, request.ProviderID).
 		First(&provider).Error; err != nil {
 		t.Fatalf("read materialized provider: %v", err)
 	}
 	if provider.SourceType != "catalog" {
 		t.Fatalf("provider source = %q, want catalog", provider.SourceType)
+	}
+	if provider.ActorPTID != request.ActorPTID {
+		t.Fatalf("provider actor PTID was truncated")
 	}
 	if provider.BaseURL != "https://ark.cn-beijing.volces.com/api/v3" {
 		t.Fatalf("provider base URL = %q", provider.BaseURL)
@@ -61,7 +65,7 @@ func TestCredentialSetMaterializesCatalogProviderAndUpdatesCredential(t *testing
 
 	var providerCount int64
 	if err := db.Model(&persistence.AgentProvider{}).
-		Where("actor_id = ? AND name = ?", request.ActorID, request.ProviderID).
+		Where("actor_ptid = ? AND name = ?", request.ActorPTID, request.ProviderID).
 		Count(&providerCount).Error; err != nil {
 		t.Fatalf("count providers: %v", err)
 	}
@@ -74,7 +78,7 @@ func TestCredentialSetRejectsUnknownProviderWithoutCreatingRecord(t *testing.T) 
 	db := openCredentialConfigTestDB(t)
 	service := NewCredentialConfigService()
 	request := CredentialSetRequest{
-		ActorID:    "actor-a",
+		ActorPTID:  "actor-a",
 		ProviderID: "unknown-provider",
 		APIKey:     "test-key",
 	}

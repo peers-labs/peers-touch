@@ -3,9 +3,9 @@ kind: pitfall
 title: Ordinary conversation events must join the authority hash chain
 status: active
 owns:
-  - apps/station/app/subserver/conversation/service_impl.go
-  - apps/station/app/subserver/conversation/service_test.go
-  - apps/desktop/src-tauri/src/interface/tauri_commands/mls.rs
+  - apps/station/app/subserver/conversation/application/command/
+  - apps/station/app/subserver/conversation/infrastructure/persistence/
+  - apps/desktop/src-tauri/src/messaging/
 referenced-by: []
 related:
   - ../../architecture/federated-im/design.md

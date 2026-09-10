@@ -36,4 +36,3 @@ export type CryptoEndpoint = Message<"peers_touch.model.chat.v1.CryptoEndpoint">
  */
 export const CryptoEndpointSchema: GenMessage<CryptoEndpoint> = /*@__PURE__*/
   messageDesc(file_domain_chat_endpoint, 0);
-
