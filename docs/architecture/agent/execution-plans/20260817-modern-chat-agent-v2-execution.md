@@ -1457,6 +1457,23 @@ and zero local-path leakage.
   Desktop check/build, Agent Python `398/398`, hard rules, and diff hygiene.
   Product proof remains `UNPROVEN` until a clean checkpoint is deployed and
   exact-source C08 plus the unchanged full Foundation Gate finish.
+- **Current-source C08 and BASE-CANCELLED frontier (2026-09-11)**: exact source
+  `0512c74fdee14aecef190cb75c3cdcbbc1360030` passed C08 run
+  `20260911T135839105483Z-640fb2902d4b27d9304a70280fc71829`
+  as `DONE / PROVEN` with source-matching Station attestation, clean
+  Provisioner cleanup, and a passing secret scan. The unchanged Foundation run
+  `20260911T135944321826Z-c11956eb39a2d98c5c2c1f0481964cba`
+  crossed `BASE-FORBIDDEN_ACTOR` and the previously reached typed-error cells,
+  then failed at Browser Simplified Chinese `BASE-CANCELLED` with
+  `agent.acceptance.foundationCancellationLostRace`. The outer result is
+  `PARTIAL / UNPROVEN`; cleanup and secret scanning passed. The Station contract
+  correctly lets a committed completion beat a later cancellation, so the
+  recoverable defect is the single-attempt live-provider cancellation-window
+  acquisition in the independent `BASE-CANCELLED` producer. Checkpoint
+  `2c8716aa083fe3c33d575300408acef320a0b91a` adds only pre-fix
+  request/response/terminal instrumentation; no Gate, timeout, matrix tuple, or
+  product behavior changed. Exact-source C08 and Foundation reproduction remain
+  pending for that diagnostic checkpoint.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error
