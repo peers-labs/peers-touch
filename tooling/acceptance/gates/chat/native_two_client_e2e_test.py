@@ -506,7 +506,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             / "harness.ts"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('current.get("active") is True', runner_source)
+        self.assertIn('current.get("active") is not True', runner_source)
         self.assertIn("imServiceV1.device.list()", harness_source)
         self.assertIn("ActorDeviceStatus.ACTIVE", harness_source)
 

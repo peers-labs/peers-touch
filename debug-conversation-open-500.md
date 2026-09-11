@@ -52,3 +52,23 @@ use the isolated high-chat and group-chat profile states. Alice therefore
 generated a device certificate under the wrong actor continuity key,
 `/device/enroll` returned 409, and the synchronous post-create drain surfaced
 the later inactive-device error as if Direct creation had failed.
+
+## Direct Peer Projection Follow-up
+
+The post-fix two-client run
+`20260911T061550580064Z-4bccb3c7dab491c592af6e54d03d85d6`
+passed `conversation.open`, then Alice's native composer failed before
+submitting a message with `A recipient is required for a direct message`.
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| F | Desktop Rust persisted the Station conversation without its members. | High | Low | `messaging_list_conversations` reports the Direct projection with zero members. |
+| G | The Tauri JSON response contains both members but the TypeScript protobuf decoder drops them. | Medium | Low | Rust reports two members while `imServiceV1.messaging.listConversations()` reports zero. |
+| H | Both members reach `socialChat`, but the authenticated actor PTID comparison removes or selects the wrong peer. | Medium | Low | Store input reports two members while the projected Direct peer is empty or self. |
+| I | The selected UI conversation is stale and differs from the latest store projection. | Low | Medium | Store reports a valid peer while the composer still receives an empty receiver. |
+
+Instrumentation points:
+
+- F: Rust `messaging_list_conversations` emits per-conversation member counts.
+- G/H: `socialChat.loadSessions` emits decoded member PTIDs and the
+  authenticated actor PTID before committing the store projection.
