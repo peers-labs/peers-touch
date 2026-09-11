@@ -50,13 +50,10 @@
       "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext plus DELIVERED receipt visibility."
     },
     "chat-native-current-profile-two-client-e2e": {
-      "command": "PT_ACCEPTANCE_NATIVE_DEV=1 python3 -m tooling.acceptance.gates.chat.native_current_profile_two_client_entry && PT_ACCEPTANCE_NATIVE_DEV=1 python3 -m tooling.acceptance.gates.chat.native_current_profile_two_client_e2e",
+      "command": "PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.native_current_profile_two_client_entry && PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.native_current_profile_two_client_e2e",
       "timeout_seconds": 1800,
       "environment": "native-tauri-current-profile",
       "provisioner": "native-tauri-current-profile",
-      "requiredRuntimeCells": [
-        "desktop-macos-native"
-      ],
       "tier": "env-evidence",
       "description": "Run two isolated make-desktop clients against the installed active profile without destructive Station reset and prove bidirectional Direct plaintext plus DELIVERED receipt visibility."
     },
