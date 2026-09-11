@@ -355,38 +355,6 @@ def produce_actor_manifest(
     )
 
 
-def produce_existing_actor_manifest(
-    *,
-    environment_id: str,
-    run_id: str,
-    station_url: str,
-    deployment_environment: str,
-    roles: Iterable[str],
-    credential_ref: str,
-) -> tuple[ActorManifest, Path, dict[str, str]]:
-    unique_roles = tuple(dict.fromkeys(roles))
-    actors = tuple(
-        resolve_actor_identity(
-            station_url,
-            deployment_environment,
-            role,
-        )
-        for role in unique_roles
-    )
-    manifest = ActorManifest(
-        fixture_id="chat-native-actors",
-        environment_id=environment_id,
-        run_id=run_id,
-        created_at=utc_now(),
-        actors=actors,
-        credential_refs=(credential_ref,),
-        reset_authorized=False,
-        target_verified=True,
-        initial_state="existing",
-    )
-    return persist_actor_manifest(manifest)
-
-
 def produce_bound_actor_manifest(
     *,
     environment_id: str,

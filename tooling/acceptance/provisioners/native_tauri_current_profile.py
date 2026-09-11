@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 import shutil
 import socket
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from tooling.acceptance.core._paths import REPO_ROOT
@@ -15,14 +18,18 @@ from tooling.acceptance.core.attestation import (
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.provisioning import (
+    ActorIdentity,
+    ActorManifest,
     ClientRuntime,
     EnvironmentContract,
     ProvisioningState,
     RuntimeManifest,
+    utc_now,
 )
 from tooling.acceptance.fixtures.chat_native_actors import (
+    ACTOR_ACCOUNTS,
     fixture_password,
-    produce_existing_actor_manifest,
+    persist_actor_manifest,
 )
 from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
@@ -44,6 +51,100 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
             {"chat-password": fixture_password()},
             sensitive=False,
         )
+
+    @staticmethod
+    def _resolve_existing_actor(
+        station_url: str,
+        role: str,
+        password: str,
+    ) -> ActorIdentity:
+        account = ACTOR_ACCOUNTS.get(role)
+        if not account:
+            raise BlockedError(
+                reason=f"unsupported current-profile actor role: {role}",
+                resource=f"fixture-actor:{role}",
+            )
+        request = urllib.request.Request(
+            f"{station_url.rstrip('/')}/actor/login",
+            data=json.dumps(
+                {
+                    "email": account,
+                    "password": password,
+                    "device_type": "desktop",
+                }
+            ).encode("utf-8"),
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        token = ""
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                envelope = json.loads(response.read().decode("utf-8"))
+            data = (
+                envelope.get("data")
+                if isinstance(envelope, dict)
+                and isinstance(envelope.get("data"), dict)
+                else {}
+            )
+            actor_ref = (
+                data.get("actor_ref")
+                if isinstance(data.get("actor_ref"), dict)
+                else {}
+            )
+            tokens = (
+                data.get("tokens")
+                if isinstance(data.get("tokens"), dict)
+                else {}
+            )
+            ptid = str(actor_ref.get("ptid") or "")
+            token = str(tokens.get("access_token") or "")
+            if not ptid.startswith("ptid:") or not token:
+                raise BlockedError(
+                    reason=(
+                        f"Station login did not resolve canonical actor {role}"
+                    ),
+                    resource=f"fixture-actor:{role}",
+                )
+            return ActorIdentity(
+                role=role,
+                account_ref=f"station-account:{account}",
+                ptid=ptid,
+                device_policy="existing",
+            )
+        except (
+            urllib.error.URLError,
+            OSError,
+            TimeoutError,
+            json.JSONDecodeError,
+        ) as error:
+            raise BlockedError(
+                reason=f"Cannot resolve existing actor {role}: {error}",
+                resource=f"fixture-actor:{role}",
+            ) from error
+        finally:
+            if token:
+                logout = urllib.request.Request(
+                    f"{station_url.rstrip('/')}/actor/logout",
+                    data=b"{}",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                    },
+                    method="POST",
+                )
+                try:
+                    urllib.request.urlopen(logout, timeout=15).close()
+                except (urllib.error.URLError, OSError, TimeoutError) as error:
+                    raise BlockedError(
+                        reason=(
+                            f"Existing actor {role} discovery session could "
+                            f"not be released: {error}"
+                        ),
+                        resource=f"fixture-session:{role}",
+                    ) from error
 
     @staticmethod
     def _assert_port_available(role: str, label: str, port: int) -> None:
@@ -192,14 +293,24 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                     resource="source-identity:proto",
                 )
 
-            credential_refs, _ = self.prepare_credentials()
-            _, _, actor_ref = produce_existing_actor_manifest(
-                environment_id=self.environment_id,
-                run_id=manifest.run_id,
-                station_url=station_url,
-                deployment_environment=deployment_environment,
-                roles=CLIENT_ROLES,
-                credential_ref=credential_refs[0],
+            credential_refs, credential_values = self.prepare_credentials()
+            password = credential_values.get("chat-password", "")
+            actors = tuple(
+                self._resolve_existing_actor(station_url, role, password)
+                for role in CLIENT_ROLES
+            )
+            _, _, actor_ref = persist_actor_manifest(
+                ActorManifest(
+                    fixture_id="chat-native-actors",
+                    environment_id=self.environment_id,
+                    run_id=manifest.run_id,
+                    created_at=utc_now(),
+                    actors=actors,
+                    credential_refs=credential_refs,
+                    reset_authorized=False,
+                    target_verified=True,
+                    initial_state="existing",
+                )
             )
             clients = self._clients(
                 run_id=manifest.run_id,
