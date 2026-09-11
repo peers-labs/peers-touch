@@ -897,7 +897,7 @@ func (s *subServer) handleSubmitDeliveryReceipt(
 	receipt := request.GetReceipt()
 	debugBody, _ := json.Marshal(map[string]any{
 		"sessionId":    "conversation-open-500",
-		"runId":        "delivery-receipt-pre-fix",
+		"runId":        "delivery-receipt-post-fix",
 		"hypothesisId": "Z12-Z14",
 		"location": "conversation/production_http.go:" +
 			"handleSubmitDeliveryReceipt",
