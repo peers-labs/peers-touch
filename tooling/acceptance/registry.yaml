@@ -13,6 +13,7 @@
       },
       "require": [
         "proto-build",
+        "station-api-ownership",
         "station-messaging-unit",
         "messaging-platform-contract"
       ]
@@ -37,6 +38,7 @@
         ]
       },
       "require": [
+        "station-api-ownership",
         "station-messaging-unit",
         "messaging-platform-contract",
         "desktop-check"

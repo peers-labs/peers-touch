@@ -218,7 +218,14 @@ class BehaviorRuleTests(unittest.TestCase):
 
     def test_proto_only_change_does_not_select_native_two_client(self) -> None:
         selected = self.selected_ids("model/domain/chat/receipt.proto")
+        self.assertIn("station-api-ownership", selected)
         self.assertNotIn("chat-native-two-client-e2e", selected)
+
+    def test_station_chat_change_selects_api_ownership(self) -> None:
+        selected = self.selected_ids(
+            "apps/station/app/subserver/conversation/production_http.go"
+        )
+        self.assertIn("station-api-ownership", selected)
 
     def test_gateway_only_handler_does_not_select_native_two_client(self) -> None:
         selected = self.selected_ids(
