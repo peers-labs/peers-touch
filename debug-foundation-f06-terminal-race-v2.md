@@ -31,6 +31,18 @@
 - Failure tuple: `foundation-browser-direct / browser / direct_model / AS-F06 / en / single / sample-001`.
 - Primary chain: `FoundationCandidateError -> FoundationClientError -> GateError`.
 - Cleanup: both clients, all ports, storage, and actor identity released; outer Provisioner cleanup passed.
+- Instrumented run
+  `20260911T013357171761Z-3e0f22bd90738ba4e8d15784e5ad8e1c`
+  on `ed423e16eef10a6d43a32a781e2b9fc48338c8c9` crossed all four
+  AS-F06 tuples.
+- Browser English requested and acknowledged the cut at 4039/4041 ms;
+  Browser Simplified Chinese at 3847/3849 ms; Desktop English at 1949/1992
+  ms; Desktop Simplified Chinese at 2289/2328 ms.
+- Every tuple retained its recovery record at acknowledgement, settled only
+  after the cut boundary, and completed scenario cleanup.
 
 ## Verification Conclusion
-Pending focused pre-fix instrumentation and reproduction.
+The instrumented rerun rejects A through D as stable owner-layer defects. The
+earlier terminal-before-cut failure did not recur, all conversation and Turn
+locators remained coherent, and cleanup completed. No AS-F06 behavior change is
+justified from current evidence.

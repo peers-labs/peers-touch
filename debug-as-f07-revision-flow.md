@@ -551,3 +551,24 @@ or raw tokens.
 - The headless lifetime, process-group cleanup, and failure-preservation fixes
   are runtime-confirmed. The 419-cell Gate remains `PARTIAL / UNPROVEN`
   because AS-F07 first regenerate did not complete.
+- Exact-source run
+  `20260911T013357171761Z-3e0f22bd90738ba4e8d15784e5ad8e1c`
+  on `ed423e16eef10a6d43a32a781e2b9fc48338c8c9` crossed all four
+  AS-F06 tuples and reached Browser English AS-F07. Retry completed after
+  `1m58.793s`, the baseline provider call completed after `1.905s`, and the
+  first regenerate then exhausted three provider attempts at the unchanged
+  300-second operation boundary.
+- Remote Station evidence records attempt deadlines at 120 and 240 seconds,
+  final `wall_time_exhausted`, and `/turn/regenerate` returning HTTP `422`
+  after `5m0.018s`. Inner and outer cleanup passed and released all resources.
+- Direct endpoint comparison using the same credential and model returned:
+  public `https://ark.cn-beijing.volces.com/api/v3/chat/completions` timed out
+  after 30 seconds; internal
+  `https://ark-cn-beijing.bytedance.net/api/v3/chat/completions` returned HTTP
+  `200` in 20.681 seconds; the user's internal `/responses` endpoint returned
+  HTTP `200` in 14.494 seconds.
+- The Station provider protocol remains `openai-compatible` and supports
+  `/chat/completions`; therefore the canonical disposable profile now points
+  its existing base URL injection at the working internal host. No protocol,
+  model, timeout, tuple, assertion, or fallback behavior changed. Exact-source
+  post-fix C08 and full Foundation verification remain pending.
