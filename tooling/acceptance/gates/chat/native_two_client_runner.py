@@ -634,7 +634,6 @@ class NativeTwoClientGate(AcceptanceGate):
         client = self.clients[actor]
         self.save_screenshot(client, actor)
         self.save_dom(client, actor)
-        self.save_app_log(client, actor)
 
     def cleanup_clients(self) -> dict[str, Any]:
         cleanup_errors = self.client_lifecycles.release_all()
