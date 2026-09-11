@@ -4780,3 +4780,27 @@ The owner-layer Harness correction and stable regression are source-complete:
 
 Exact-source commit, high-chat synchronization, profile-four deployment, and
 post-fix Native proof remain the next serial actions.
+
+Exact-source run
+`20260911T162203820700Z-990108707f29bb6f3188821f9ba9623a`
+then passed both clients' explicit authentication, source/runtime identity,
+cross-worktree topology, Bob-to-Alice and Alice-to-Bob native plaintext,
+identical message IDs, and delivered receipts. The only failure occurred after
+those assertions: the Chat runner wrote the still-growing Bob app log before
+cleanup and again after client shutdown under the same immutable Evidence Store
+path, which correctly raised `EvidenceConflict`.
+
+This is a mechanical Chat business-evidence lifecycle correction, not an
+Acceptance Infra change. Native Chat runners that collect a pre-cleanup
+screenshot/DOM and later export final logs must write each app log exactly once
+after stopping the client. Evidence Store immutability remains unchanged. After
+focused runner coverage, synchronize the exact source, redeploy profile four,
+and rerun the same Gate twice to prove both journey completion and persistent
+state continuity.
+
+The correction is source-complete across Direct, multi-device, recovery, Group
+MLS, and typing runners. Their pre-cleanup phase now captures screenshot and DOM
+only; each cleanup owner exports the final app log once. The Chat native static
+Python suite passes 184/184, including a Direct regression for this exact
+immutable-artifact conflict. Exact-source synchronization, deployment, and two
+consecutive Native runs remain pending.

@@ -590,7 +590,6 @@ class NativeGroupMlsGate(AcceptanceGate):
             for actor in ACTORS:
                 self.save_screenshot(self.clients[actor], actor)
                 self.save_dom(self.clients[actor], actor)
-                self.save_app_log(self.clients[actor], actor)
         finally:
             cleanup = cleanup_preserving_primary_failure(
                 self.cleanup_clients,

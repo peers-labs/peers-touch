@@ -1139,7 +1139,6 @@ class NativeTypingGate(AcceptanceGate):
             for actor, client in self.clients.items():
                 self.save_screenshot(client, actor)
                 self.save_dom(client, actor)
-                self.save_app_log(client, actor)
         finally:
             cleanup_preserving_primary_failure(
                 self.cleanup_runtime,
