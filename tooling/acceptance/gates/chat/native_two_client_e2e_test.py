@@ -510,6 +510,38 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertIn("imServiceV1.device.list()", harness_source)
         self.assertIn("ActorDeviceStatus.ACTIVE", harness_source)
 
+    def test_desktop_hydration_preserves_conversation_members(self) -> None:
+        lifecycle_source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "messaging"
+            / "lifecycle.rs"
+        ).read_text(encoding="utf-8")
+        gateway_source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "interface"
+            / "http_gateway"
+            / "mod.rs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"/conversation/members"', lifecycle_source)
+        self.assertIn("GetConversationMembersResponse", lifecycle_source)
+        self.assertNotIn(
+            "members: Vec::<ConversationMemberProjection>::new()",
+            lifecycle_source,
+        )
+        self.assertIn(
+            "hydrate_projections_from_station(&engine, &token)",
+            gateway_source,
+        )
+
     def test_source_identity_rejects_malformed_station_protocol_digest(self) -> None:
         manifest = self.valid_report()["manifest"]
         manifest["services"]["station-four"]["protocolDigest"] = "z" * 64

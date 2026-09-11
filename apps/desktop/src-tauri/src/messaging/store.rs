@@ -2783,11 +2783,12 @@ impl MessagingStore {
         &self,
         projection: &super::ConversationProjection,
     ) -> Result<bool, String> {
-        if projection.federation_id.trim().is_empty() {
-            return Err("messaging conversation Federation projection is required".to_string());
-        }
-        let changed = self
-            .connection()?
+        validate_conversation_projection(projection, &projection.conversation_id)?;
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let conversation_changed = transaction
             .execute(
                 "INSERT INTO messaging_conversations(
                     conversation_id, authority_station_id, federation_id,
@@ -2810,10 +2811,19 @@ impl MessagingStore {
                 ],
             )
             .map_err(|error| error.to_string())?;
-        if changed == 1 {
-            let connection = self.connection()?;
+        let active_member_count = transaction
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM messaging_conversation_members
+                 WHERE conversation_id = ?1 AND active = 1",
+                params![projection.conversation_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let members_backfilled = active_member_count == 0;
+        if members_backfilled {
             for member in &projection.members {
-                connection
+                transaction
                     .execute(
                         "INSERT INTO messaging_conversation_members(
                             conversation_id, ptid, role, active
@@ -2826,7 +2836,8 @@ impl MessagingStore {
                     .map_err(|error| error.to_string())?;
             }
         }
-        Ok(changed == 1)
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(conversation_changed == 1 || members_backfilled)
     }
 
     #[cfg(test)]
@@ -9185,6 +9196,54 @@ mod tests {
         assert_eq!(
             store.conversation_projections().unwrap()[0].federation_id,
             projection.federation_id
+        );
+    }
+
+    #[test]
+    fn conversation_projection_bootstrap_backfills_missing_members() {
+        let store = MessagingStore::in_memory().unwrap();
+        let projection = ConversationProjection {
+            conversation_id: "direct-member-backfill".to_string(),
+            authority_station_id: "station-local".to_string(),
+            federation_id: "federation-1".to_string(),
+            kind: ConversationKind::Direct as i32,
+            name: String::new(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![
+                ConversationMemberProjection {
+                    ptid: "ptid:alice".to_string(),
+                    role: MemberRole::Member as i32,
+                },
+                ConversationMemberProjection {
+                    ptid: "ptid:bob".to_string(),
+                    role: MemberRole::Member as i32,
+                },
+            ],
+            membership_epoch: 1,
+            mls_epoch: 0,
+            active: true,
+            updated_at_unix_ms: 100,
+        };
+
+        assert!(store
+            .bootstrap_conversation_projection(&projection)
+            .unwrap());
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "DELETE FROM messaging_conversation_members
+                 WHERE conversation_id = ?1",
+                params![projection.conversation_id],
+            )
+            .unwrap();
+
+        assert!(store
+            .bootstrap_conversation_projection(&projection)
+            .unwrap());
+        assert_eq!(
+            store.conversation_projections().unwrap()[0].members,
+            projection.members
         );
     }
 
