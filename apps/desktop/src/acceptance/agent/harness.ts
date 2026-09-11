@@ -9595,6 +9595,27 @@ function reportFoundationF03CancelDebug(
 }
 // #endregion
 
+// #region debug-point A-D:base-cancelled-race
+function reportFoundationBaseCancelledDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7781/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-cancel-race',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationCancelledScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 // #region debug-point A-E:as-f12-projection
 function reportFoundationF12ProjectionDebug(
   hypothesisId: string,
@@ -12015,6 +12036,16 @@ async function runFoundationCancelledScenario(input: {
       let cancellationRequestCount = 0;
       const streamId = crypto.randomUUID();
 
+      // #region debug-point D:base-cancelled-start
+      void reportFoundationBaseCancelledDebug('D', 'scenario-started', {
+        sampleId: input.sampleId,
+        documentLocale: document.documentElement.lang,
+        selectedSessionMatches:
+          useChatStore.getState().currentSessionKey
+          === conversation.conversation_id,
+      });
+      // #endregion
+
       const result = await withFoundationCapabilitiesDisabled(
         input.agent,
         input.capabilitySessionId,
@@ -12054,6 +12085,29 @@ async function runFoundationCancelledScenario(input: {
               turnId = observedTurn;
               cancellationRequestCount += 1;
               cancellationRequestedAt = performance.now();
+              // #region debug-point B-D:base-cancelled-request
+              void reportFoundationBaseCancelledDebug(
+                'B-D',
+                'cancel-requested',
+                {
+                  elapsedMs: cancellationRequestedAt - startedAt,
+                  eventSequence: Number(event.data.seq ?? 0),
+                  eventTurnIdPresent: Boolean(
+                    event.data.turn_id ?? event.data.turnId,
+                  ),
+                  selectedTurnIdPresent: turnId.length > 0,
+                  eventTurnMatchesSelected:
+                    String(event.data.turn_id ?? event.data.turnId ?? '')
+                    === turnId,
+                  selectedSessionMatches:
+                    useChatStore.getState().currentSessionKey
+                    === conversation.conversation_id,
+                  observedEventTypes: events.map(
+                    (candidate) => candidate.event,
+                  ),
+                },
+              );
+              // #endregion
               resolveCancellation({
                 turnId,
                 result: api.cancelAgentTurn(turnId),
@@ -12081,6 +12135,29 @@ async function runFoundationCancelledScenario(input: {
           const terminalEvents = liveDeliveries.filter((event) =>
             ['done', 'error', 'cancelled'].includes(event.event));
           const terminalEvent = terminalEvents[terminalEvents.length - 1];
+
+          // #region debug-point A-D:base-cancelled-result
+          await reportFoundationBaseCancelledDebug(
+            'A-D',
+            'cancel-and-terminal-observed',
+            {
+              elapsedMs: performance.now() - startedAt,
+              cancelLatencyMs: performance.now() - cancellationRequestedAt,
+              cancellationStatus,
+              cancellationRequestCount,
+              terminalEventType: terminalEvent?.event ?? null,
+              terminalSequence: terminalEvent?.sourceDelivery?.sequence ?? null,
+              selectedSessionMatches:
+                useChatStore.getState().currentSessionKey
+                === conversation.conversation_id,
+              observedEvents: turnResult.events.map((event) => ({
+                eventType: event.event,
+                sequence: Number(event.data.seq ?? 0),
+                sourceDelivered: Boolean(event.sourceDelivery),
+              })),
+            },
+          );
+          // #endregion
 
           if (
             cancellationStatus === 'completed'

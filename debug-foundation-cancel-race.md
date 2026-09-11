@@ -25,12 +25,16 @@
 - Diagnostic run `20260904T142747367508Z-59fddbe07fd75bf50392a158f05b2e3c` on `50f98702f09bead6606ff641224c4a1feea4c0b3` passed both Browser AS-F03 locale tuples. Cancellation was requested at text sequence 3 after 2062-2219 ms and returned `cancelled` after 158-162 ms; both Turn-identity comparisons were true.
 - Each cancellation response arrived after buffered text through sequence 31 had already been observed. The strict AS-F03 oracle still passed, and the run later advanced to AS-F12.
 - Diagnostic run `20260904T153321748945Z-5390dd23d06e8b2d74cc7b8d0253071f` on `4a0fdfb81bf356e1ef54e1e942c559dde9e7bcdb` reproduced the Browser AS-F03 English failure. Cancellation was requested from text sequence 3 after 1375 ms. The response arrived 146.5 ms later with the authoritative status `completed`; the stream had already delivered text through sequence 43 and `done` sequence 44.
+- Exact-source Gate run `20260911T135944321826Z-c11956eb39a2d98c5c2c1f0481964cba` on `0512c74fdee14aecef190cb75c3cdcbbc1360030` passed the English `BASE-CANCELLED` tuple and failed the Chinese tuple when the separate single-attempt `BASE-CANCELLED` path lost the cancellation race. The immutable outer result is `PARTIAL / UNPROVEN`; Provisioner cleanup and secret scan passed.
 
 ## Instrumentation
 - `A`: cancellation response status and request-to-response latency.
 - `B`: observed event types and sequences at request and response boundaries.
 - `C`: triggering-event Turn identity equality with the selected cancellation target.
 - `D`: safe response presence or normalized error code from the Desktop adapter.
+- The resumed `BASE-CANCELLED` session adds `pre-fix` start, request,
+  cancellation response, and authoritative terminal observations without
+  changing cancellation behavior.
 
 ## Fix
 - Replace the short response request with the plan-required long live-provider workload.
@@ -43,6 +47,7 @@
 The ordinary provider can finish and durably commit before the separate
 cancellation request wins, even though the request starts from the first
 client-observed text event. The current AS-F03 fixture therefore does not
-provide the delayed-provider precondition required by the plan. Station
-terminal-winner semantics, Turn identity, and Desktop response transport are
-correct. Post-fix exact-source comparison is pending; keep this session open.
+provide a deterministic delayed-provider precondition. Station terminal-winner
+semantics, Turn identity, and Desktop response transport remain correct.
+The single-attempt `BASE-CANCELLED` path still reproduced on `0512c74fd`; new
+pre-fix evidence is required before changing that path.
