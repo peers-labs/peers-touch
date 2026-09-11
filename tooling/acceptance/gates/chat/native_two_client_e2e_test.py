@@ -87,6 +87,20 @@ class SyntheticRuntimeBinding:
 
 
 class NativeTwoClientEvidenceTest(unittest.TestCase):
+    def test_key_exchange_uses_enrolled_messaging_endpoint(self) -> None:
+        root = Path(__file__).resolve().parents[4]
+        source = (
+            root
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/key_exchange.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn("active_key_exchange_context", source)
+        self.assertIn(".messaging_engines", source)
+        self.assertNotIn("device_install::get_or_create_device_id", source)
+        self.assertEqual(
+            source.count("station_client::request_proto_for_device::<"),
+            2,
+        )
+
     def test_native_runners_bind_conversation_creation_to_federation(self) -> None:
         root = Path(__file__).resolve().parents[4]
         runners = (
