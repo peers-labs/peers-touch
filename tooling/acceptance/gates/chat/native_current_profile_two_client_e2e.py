@@ -147,6 +147,28 @@ def validate_current_profile_topology(report: dict[str, Any]) -> None:
         and runtime.get("directionOrder") == expected_direction,
         "peers-group-chat must launch and initiate before peers-chat-high-chat",
     )
+    persistent_state = runtime.get("persistentDeviceState")
+    require(
+        isinstance(persistent_state, dict)
+        and set(persistent_state) == set(CURRENT_PROFILE_ACTOR_WORKTREES),
+        "current-profile persistent device state evidence is required",
+    )
+    storage_roots: set[str] = set()
+    for actor in CURRENT_PROFILE_ACTOR_WORKTREES:
+        state = persistent_state[actor]
+        require(
+            isinstance(state, dict)
+            and state.get("storageLifecycle") == "persistent"
+            and state.get("storageRoot")
+            == clients[actor].get("storage_root")
+            and clients[actor].get("storage_lifecycle") == "persistent",
+            f"{actor} persistent device state is incomplete or mismatched",
+        )
+        storage_roots.add(str(state["storageRoot"]))
+    require(
+        len(storage_roots) == len(CURRENT_PROFILE_ACTOR_WORKTREES),
+        "current-profile persistent device states must be isolated",
+    )
 
 
 def main() -> int:
