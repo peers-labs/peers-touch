@@ -168,6 +168,7 @@ Pick one based on intent:
 - [`pitfalls/social-ui-identity-surface-fragmentation.md`](pitfalls/social-ui-identity-surface-fragmentation.md) — Social UI surfaces must not fragment content rail, action row, trust meta, thread, or incomplete-capability states.
 - [`pitfalls/mobile-chat-conversation-actions-right-drawer.md`](pitfalls/mobile-chat-conversation-actions-right-drawer.md) — Mobile Chat conversation actions must use bottom sheets or settings pages, not phone-width right drawers.
 - [`pitfalls/acceptance-core-transport-import-cycle.md`](pitfalls/acceptance-core-transport-import-cycle.md) — Core attestation must receive remote source identity from a Provisioner adapter instead of importing concrete SSH transport.
+- [`pitfalls/acceptance-mutable-artifact-rewrite.md`](pitfalls/acceptance-mutable-artifact-rewrite.md) — mutable runtime logs must be written once, after the producing client stops, when the Evidence Store path is immutable.
 - [`pitfalls/public-api-owner-must-follow-resource-domain.md`](pitfalls/public-api-owner-must-follow-resource-domain.md) — public capabilities must be registered by their resource owner, never by an internal implementation namespace.
 
 ### Playbooks

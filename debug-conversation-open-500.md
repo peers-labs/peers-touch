@@ -689,3 +689,25 @@ only screenshot and DOM evidence; final app logs are written once after client
 stop by each runner's cleanup owner. The complete Chat native static Python
 suite passes 184/184, including a focused Direct regression that proves visible
 evidence collection does not write the mutable app log before cleanup.
+
+Two consecutive exact-source runs on commit
+`c980b22d68741b80c92caf6c43563fb3fd9057f5` now pass:
+
+- `20260911T163312619650Z-613ec264b1dd42ea7883f22a88f6cf8b`;
+- `20260911T163540508599Z-03cb6eafb1b62530f8fed69b89ac831a`.
+
+Both runs are `PASS / DONE / PROVEN`. Each proves the clean, equal-tree
+group-chat/high-chat topology, Bob-first then Alice reverse Direct delivery,
+exact receiver plaintext, identical message IDs, delivered receipts, complete
+client binding proof, final app-log evidence, and reverse-order resource
+cleanup while retaining the declared persistent Device Engine roots.
+
+Post-fix login telemetry also shows the accepted transitions:
+
+- restored authenticated-ready -> controlled logout -> data-ready account gate
+  -> explicit Bob login -> authenticated-ready; and
+- fresh data-ready account gate -> explicit Alice login ->
+  authenticated-ready.
+
+No debugging instrumentation or Debug Server resource has been removed because
+the session remains `[OPEN]` pending user confirmation.
