@@ -4496,3 +4496,16 @@ serial: commit `peers-group-chat`, merge that exact source into
 `peers-chat-high-chat`, verify clean equal Git trees, deploy through profile
 `four` plus `make station`, clear only this debug session's log content, and
 rerun the unchanged cross-worktree Native Gate.
+
+Post-fix run
+`20260911T114640876965Z-a4973bc5a5d2d31f8c348abde7649c40`
+again proved the required two-worktree topology and complete cleanup, then
+failed before checkpoint persistence because the first verifier compared
+`active_endpoints` and `active_endpoint_routes` by array position. The Station
+domain sorts the endpoint list by `(actor, device)` but sorts member-device
+routes by the canonical length-prefixed endpoint key, so both arrays can encode
+the same valid set in different orders. The Core correction now compares routes
+as a canonical endpoint-keyed set, still requiring exactly one route and the
+exact member Home Station for every endpoint. Focused Core and Desktop
+regressions pass. The exact-source deploy and unchanged Native Gate rerun remain
+the next serial action.
