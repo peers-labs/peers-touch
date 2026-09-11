@@ -501,8 +501,17 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         report = self.valid_report()
         source_commit = "a" * 40
         report["manifest"]["source"]["commit"] = source_commit
+        for client in report["manifest"]["clients"]:
+            client["storage_lifecycle"] = "persistent"
         report["runtime"]["launchOrder"] = ["bob", "alice"]
         report["runtime"]["directionOrder"] = ["bob", "alice"]
+        report["runtime"]["persistentDeviceState"] = {
+            actor: {
+                "storageRoot": f"/tmp/{actor}",
+                "storageLifecycle": "persistent",
+            }
+            for actor in ("alice", "bob")
+        }
         report["runtime"]["worktreeTopology"] = {
             "alice": {
                 "clientId": "alice",
@@ -537,6 +546,58 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         )
 
         validate_current_profile_topology(report)
+
+    def test_current_profile_rejects_ephemeral_device_state(self) -> None:
+        report = self.valid_report()
+        source_commit = "a" * 40
+        report["manifest"]["source"]["commit"] = source_commit
+        report["runtime"]["launchOrder"] = ["bob", "alice"]
+        report["runtime"]["directionOrder"] = ["bob", "alice"]
+        report["runtime"]["worktreeTopology"] = {
+            "alice": {
+                "clientId": "alice",
+                "logicalName": "peers-chat-high-chat",
+                "expectedLogicalName": "peers-chat-high-chat",
+                "workspaceId": "1" * 16,
+                "repositoryId": "3" * 16,
+                "canonicalRoot": "/workspace/peers-chat-high-chat",
+                "head": "b" * 40,
+                "tree": "c" * 40,
+                "clean": True,
+            },
+            "bob": {
+                "clientId": "bob",
+                "logicalName": "peers-group-chat",
+                "expectedLogicalName": "peers-group-chat",
+                "workspaceId": "2" * 16,
+                "repositoryId": "3" * 16,
+                "canonicalRoot": "/workspace/peers-group-chat",
+                "head": source_commit,
+                "tree": "c" * 40,
+                "clean": True,
+            },
+        }
+        report["runtime"]["persistentDeviceState"] = {
+            actor: {
+                "storageRoot": f"/tmp/{actor}",
+                "storageLifecycle": "ephemeral",
+            }
+            for actor in ("alice", "bob")
+        }
+        report["assertions"].extend(
+            {
+                "name": name,
+                "passed": True,
+                "detail": "",
+            }
+            for name in CURRENT_PROFILE_REQUIRED_ASSERTIONS
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "persistent device state",
+        ):
+            validate_current_profile_topology(report)
 
     def test_current_profile_rejects_same_worktree_evidence(self) -> None:
         report = self.valid_report()

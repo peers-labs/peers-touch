@@ -1335,23 +1335,62 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                 if session.process_id
             }
         )
+        ephemeral_storage_roots: set[Path] = set()
+        persistent_storage_roots: set[Path] = set()
+        storage_policy_errors: list[dict[str, str]] = []
+        for client_id, spec in client_specs.items():
+            storage_root = Path(str(spec["storage_root"]))
+            storage_lifecycle = str(
+                spec.get("storage_lifecycle", "ephemeral")
+            )
+            if storage_lifecycle == "ephemeral":
+                ephemeral_storage_roots.add(storage_root)
+            elif storage_lifecycle == "persistent":
+                persistent_storage_roots.add(storage_root)
+            else:
+                storage_policy_errors.append(
+                    {
+                        "path": str(storage_root),
+                        "error": (
+                            "invalid runtime client storage_lifecycle "
+                            f"{storage_lifecycle!r} for {client_id}"
+                        ),
+                    }
+                )
         storage_roots = sorted(
-            {
-                Path(str(spec["storage_root"]))
-                for spec in client_specs.values()
-            }
+            ephemeral_storage_roots | persistent_storage_roots
         )
+        released_storage_roots = sorted(ephemeral_storage_roots)
+        retained_storage_roots = sorted(persistent_storage_roots)
         log_paths = tuple(
             session.log_path
             for session in sessions
             if session.log_path is not None
         )
-        storage_errors = _remove_paths(storage_roots)
+        storage_errors = _remove_paths(released_storage_roots)
+        storage_errors.extend(storage_policy_errors)
+        for path in retained_storage_roots:
+            if not path.is_dir() or path.is_symlink():
+                storage_errors.append(
+                    {
+                        "path": str(path),
+                        "error": (
+                            "persistent runtime client storage is missing "
+                            "or symlinked after shutdown"
+                        ),
+                    }
+                )
         log_errors = _remove_paths(log_paths)
         return {
             "ports": ports,
             "pids": process_ids,
             "storageRoots": [str(path) for path in storage_roots],
+            "releasedStorageRoots": [
+                str(path) for path in released_storage_roots
+            ],
+            "persistentStorageRoots": [
+                str(path) for path in retained_storage_roots
+            ],
             "storageErrors": storage_errors,
             "cleanupErrors": [*storage_errors, *log_errors],
             "logs": [str(path) for path in log_paths],
@@ -1365,7 +1404,12 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             ),
             "storageReleased": (
                 not storage_errors
-                and all(not path.exists() for path in storage_roots)
+                and all(not path.exists() for path in released_storage_roots)
+                and all(path.is_dir() for path in retained_storage_roots)
+            ),
+            "persistentStorageRetained": all(
+                path.is_dir() and not path.is_symlink()
+                for path in retained_storage_roots
             ),
             "logsReleased": (
                 not log_errors

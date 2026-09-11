@@ -18,7 +18,12 @@
     "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder.go",
     "apps/station/app/subserver/conversation/interface/http/interaction.go",
     "apps/station/app/subserver/conversation/subserver.go",
-    "apps/station/app/subserver/key_exchange/infrastructure/canonical_store.go"
+    "apps/station/app/subserver/key_exchange/infrastructure/canonical_store.go",
+    "tooling/acceptance/core/provisioning.py",
+    "tooling/acceptance/drivers/native/runtime.py",
+    "tooling/acceptance/provisioners/native_tauri_current_profile.py",
+    "tooling/acceptance/gates/chat/native_two_client_runner.py",
+    "tooling/acceptance/gates/chat/native_current_profile_two_client_e2e.py"
   ],
   "truth_sources": [
     "Portable Messaging Core prekey publication state machine",
@@ -48,6 +53,7 @@
     "service": [
       "a locally published bundle is reconciled when Station public material is missing",
       "reconciliation persists fresh OPKs before upload and retries the exact batch",
+      "current-profile native clients retain one isolated Device Engine state across repeated Gate runs",
       "successful Direct decrypt atomically persists one typed DELIVERED receipt",
       "receipt submission failure remains pending for lifecycle retry",
       "Station routing failure is returned to the Desktop worker"
@@ -60,6 +66,7 @@
   },
   "negative": [
     "reconciliation must not republish or reactivate a consumed one-time prekey",
+    "current-profile Gate cleanup must not roll a reused device back to an older private-key state",
     "queue consumption ACK must not be reported as a user-visible DELIVERED receipt",
     "static or gateway evidence must not replace two native Desktop clients",
     "receipt evidence must not expose plaintext, credentials, tokens, or key material"

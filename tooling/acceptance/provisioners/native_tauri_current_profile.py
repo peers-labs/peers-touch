@@ -43,6 +43,8 @@ CLIENT_WORKTREE_NAMES = {
     "bob": "peers-group-chat",
 }
 CLIENT_WORKTREES_ENV = "PT_CHAT_NATIVE_CLIENT_WORKTREES"
+PERSISTENT_STORAGE_ROOTS_ENV = "PT_CHAT_NATIVE_PERSISTENT_STORAGE_ROOTS"
+PERSISTENT_STORAGE_MARKER = ".pt-current-profile-state.json"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -104,6 +106,192 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                     resource="fixture:desktop-identity-storage",
                 )
         return seeds
+
+    @staticmethod
+    def _persistent_storage_roots(
+        profile_name: str,
+        client_worktrees: dict[str, ClientWorktreeIdentity],
+    ) -> tuple[Path, ...]:
+        raw_roots = os.environ.get(PERSISTENT_STORAGE_ROOTS_ENV, "")
+        if raw_roots.strip():
+            roots = tuple(
+                Path(item.strip()).expanduser().resolve()
+                for item in raw_roots.split(",")
+                if item.strip()
+            )
+        else:
+            roots = tuple(
+                client_worktrees[role].root
+                / ".local"
+                / "acceptance"
+                / "state"
+                / "native-tauri-current-profile"
+                / profile_name
+                / role
+                / "desktop-app"
+                for role in CLIENT_ROLES
+            )
+        if len(roots) != len(CLIENT_ROLES) or len(set(roots)) != len(roots):
+            raise BlockedError(
+                reason=(
+                    "Current-profile Native Gate requires one distinct "
+                    f"persistent storage root per client ({len(CLIENT_ROLES)} "
+                    "required)"
+                ),
+                resource="client-isolation:persistent-storage",
+            )
+        return roots
+
+    @staticmethod
+    def _assert_storage_tree_is_copyable(root: Path, role: str) -> None:
+        if root.is_symlink() or any(path.is_symlink() for path in root.rglob("*")):
+            raise BlockedError(
+                reason=(
+                    f"Current-profile {role} storage seed contains a symlink: "
+                    f"{root}"
+                ),
+                resource=f"client-storage-seed:{role}",
+            )
+        active_sidecars = sorted(
+            path
+            for path in root.rglob("*")
+            if path.is_file()
+            and path.name.endswith(("-wal", "-shm", "-journal"))
+        )
+        if active_sidecars:
+            raise BlockedError(
+                reason=(
+                    f"Current-profile {role} storage seed is not quiescent"
+                ),
+                resource=f"client-storage-seed:{role}",
+            )
+
+    @classmethod
+    def _persistent_storage(
+        cls,
+        *,
+        role: str,
+        actor: ActorIdentity,
+        profile_name: str,
+        worktree: ClientWorktreeIdentity,
+        seed_root: Path,
+        storage_root: Path,
+        run_id: str,
+    ) -> Path:
+        marker = storage_root / PERSISTENT_STORAGE_MARKER
+        expected_marker = {
+            "schemaVersion": 1,
+            "environmentId": cls.environment_id,
+            "role": role,
+            "actorPtid": actor.ptid,
+            "profile": f"{profile_name}-app",
+            "sourceWorktree": str(worktree.root),
+            "devicePolicy": "persistent-acceptance",
+        }
+        if storage_root.exists():
+            if storage_root.is_symlink() or not storage_root.is_dir():
+                raise BlockedError(
+                    reason=(
+                        f"Current-profile {role} persistent storage is unsafe"
+                    ),
+                    resource=f"client-persistent-storage:{role}",
+                )
+            try:
+                actual_marker = json.loads(marker.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise BlockedError(
+                    reason=(
+                        f"Current-profile {role} persistent storage marker "
+                        f"is unavailable: {error}"
+                    ),
+                    resource=f"client-persistent-storage:{role}",
+                ) from error
+            if actual_marker != expected_marker or not (
+                storage_root / "peers-touch"
+            ).is_dir():
+                raise BlockedError(
+                    reason=(
+                        f"Current-profile {role} persistent storage identity "
+                        "does not match the selected actor/worktree/profile"
+                    ),
+                    resource=f"client-persistent-storage:{role}",
+                )
+            return storage_root
+
+        if (
+            storage_root == seed_root
+            or seed_root in storage_root.parents
+            or storage_root in seed_root.parents
+        ):
+            raise BlockedError(
+                reason=(
+                    f"Current-profile {role} persistent storage must be "
+                    "separate from its read-only source seed"
+                ),
+                resource=f"client-persistent-storage:{role}",
+            )
+        cls._assert_storage_tree_is_copyable(seed_root, role)
+        storage_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        temporary = storage_root.with_name(
+            f".{storage_root.name}.init-{run_id}"
+        )
+        if temporary.exists():
+            raise BlockedError(
+                reason=(
+                    f"Current-profile {role} persistent storage initialization "
+                    "is already pending"
+                ),
+                resource=f"client-persistent-storage:{role}",
+            )
+        try:
+            shutil.copytree(seed_root, temporary, symlinks=False)
+            desktop_profile = f"{profile_name}-app"
+            database_root = (
+                temporary
+                / "peers-touch"
+                / desktop_profile
+                / "data"
+                / "db"
+                / "users"
+            )
+            if database_root.is_dir():
+                for database in database_root.glob("*/chat.main.db*"):
+                    if database.is_file():
+                        database.unlink()
+            session_root = (
+                temporary
+                / "peers-touch"
+                / desktop_profile
+                / "data"
+                / "auth"
+                / "sessions"
+            )
+            if session_root.is_dir():
+                for device_id in session_root.glob("*/device_id"):
+                    if device_id.is_file():
+                        device_id.unlink()
+            marker = temporary / PERSISTENT_STORAGE_MARKER
+            marker.write_text(
+                json.dumps(expected_marker, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            if os.name != "nt":
+                storage_root.parent.chmod(0o700)
+                temporary.chmod(0o700)
+                marker.chmod(0o600)
+            os.replace(temporary, storage_root)
+        except Exception as error:
+            shutil.rmtree(temporary, ignore_errors=True)
+            if isinstance(error, BlockedError):
+                raise
+            raise BlockedError(
+                reason=(
+                    f"Current-profile {role} persistent storage "
+                    f"initialization failed: {error}"
+                ),
+                resource=f"client-persistent-storage:{role}",
+            ) from error
+        return storage_root
 
     @staticmethod
     def _git_value(root: Path, *args: str) -> str:
@@ -386,7 +574,7 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 role=role,
                 account_ref=f"station-account:{account}",
                 ptid=ptid,
-                device_policy="existing",
+                device_policy="persistent-acceptance",
             )
         except (
             urllib.error.URLError,
@@ -439,6 +627,7 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
         profile_name: str,
         profile_env: dict[str, str],
         slot: int,
+        actors: tuple[ActorIdentity, ...],
     ) -> tuple[ClientRuntime, ...]:
         declared = {client.id: client for client in self.contract.clients}
         if set(declared) != set(CLIENT_ROLES):
@@ -451,13 +640,16 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
             profile_name,
             client_worktrees,
         )
-
-        run_root = Path(f"/tmp/pt-chat-native-current-{run_id}")
-        run_root.mkdir(parents=True, exist_ok=False)
-        self.register_cleanup(
-            f"client-storage:{run_root}",
-            lambda: shutil.rmtree(run_root, ignore_errors=True),
+        persistent_roots = self._persistent_storage_roots(
+            profile_name,
+            client_worktrees,
         )
+        actors_by_role = {actor.role: actor for actor in actors}
+        if set(actors_by_role) != set(CLIENT_ROLES):
+            raise BlockedError(
+                reason="Current-profile Native actors are incomplete",
+                resource=f"gate-environment:{GATE_ID}",
+            )
         configured_gateway = int(profile_env["PT_DESKTOP_APP_GATEWAY_PORT"])
         configured_renderer = int(profile_env["PT_DESKTOP_APP_WEB_PORT"])
         configured_webdriver = 4445 + slot * 10
@@ -491,11 +683,18 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
         gateway_base, renderer_base, webdriver_base = allocation
         desktop_profile = f"{profile_name}-app"
         clients: list[ClientRuntime] = []
-        for index, (role, seed_root) in enumerate(
-            zip(CLIENT_ROLES, seed_roots)
+        for index, (role, seed_root, persistent_root) in enumerate(
+            zip(CLIENT_ROLES, seed_roots, persistent_roots)
         ):
-            storage_root = run_root / role / "storage"
-            shutil.copytree(seed_root, storage_root)
+            storage_root = self._persistent_storage(
+                role=role,
+                actor=actors_by_role[role],
+                profile_name=profile_name,
+                worktree=client_worktrees[role],
+                seed_root=seed_root,
+                storage_root=persistent_root,
+                run_id=run_id,
+            )
             client = ClientRuntime(
                 actor=declared[role].actor,
                 runtime="native-tauri",
@@ -505,6 +704,7 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 webdriver_port=webdriver_base + index,
                 profile=desktop_profile,
                 storage_root=str(storage_root),
+                storage_lifecycle="persistent",
                 id=role,
                 required_service_roles=declared[role].required_service_roles,
                 service_bindings=declared[role].service_bindings,
@@ -603,6 +803,7 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 profile_name=profile_name,
                 profile_env=profile_env,
                 slot=slot,
+                actors=actors,
             )
             manifest = dataclasses.replace(
                 manifest,

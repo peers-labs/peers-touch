@@ -330,3 +330,33 @@ The correction compares route membership as a canonical endpoint-keyed set and
 still requires exactly one route per endpoint plus the member's exact Home
 Station. Unit coverage now uses the two different valid orders and rejects a
 wrong Home Station. A fresh exact-source Native run is still required.
+
+## Current-Profile OPK Continuity Follow-up
+
+Exact-source run
+`20260911T120248159958Z-2b7850dfbbdc8fe6edcf8a27ea3842cd`
+proved the corrected two-worktree topology and Direct genesis checkpoint:
+
+- Bob ran from `peers-group-chat` and submitted first.
+- Alice ran from `peers-chat-high-chat` and received the queued item.
+- Both worktrees were clean, distinct, and resolved the same Git tree.
+- Bob's message advanced past durable draft submission.
+- Alice repeatedly failed the queue drain with
+  `messaging one-time prekey is unavailable`.
+- Native processes, ports, logs, and run-scoped storage were released.
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| Z1 | The current-profile Provisioner rolls the same device backward by cloning an unchanged seed on every run and deleting private OPKs that Station durably published or consumed. | Confirmed | The Provisioner copies each worktree seed to `/tmp/pt-chat-native-current-<run>` and local runtime cleanup deletes it. Station OPK publication/fetch is durable, while Desktop OPK private state exists only in the deleted SQLCipher clone. |
+| Z2 | Alice rejected the item because its canonical actor or device binding was wrong. | Rejected | The Gate passed cross-worktree topology and actor isolation; the receiver reached `load_one_time_prekey` only after exact endpoint/session-init validation. |
+| Z3 | The receiver can safely omit the missing OPK and continue with SPK-only X3DH. | Rejected | The committed `DirectSessionInit` binds a concrete OPK ID and public key. Substituting or omitting it changes the derived secret and violates the ciphertext binding. |
+| Z4 | Copying only OPK rows back to the source seed is sufficient. | Rejected | OPK consumption commits atomically with Direct session, ratchet, projection, marker, cursor, inbox, and receipt state in the same SQLCipher database. Selective copyback would split one Device Engine transaction. |
+
+The repair belongs to the current-profile Provisioner/runtime lifecycle, not
+the Messaging decrypt path. It must retain one dedicated, persistent
+Acceptance device state per actor and worktree across runs while continuing to
+delete run-owned processes, ports, and logs. The initial persistent state keeps
+the source actor identity but excludes copied live `chat.main.db` state, so the
+Gate enrolls a fresh isolated device instead of inheriting the already
+irrecoverable public/private OPK split. The receiver's missing-key rejection
+remains unchanged.
