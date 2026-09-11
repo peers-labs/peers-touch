@@ -221,12 +221,13 @@ pub fn device_revoke(
         "device_id": input.device_id,
         "observed_profile_version": input.observed_profile_version,
     });
-    match station_client::request_json_auth(
+    match station_client::request_json_auth_with_device_id(
         Method::POST,
         "/device/revoke",
         &token,
         None,
         Some(&body),
+        &input.device_id,
     ) {
         Ok(resp) => AppResult::success(resp),
         Err(e) => station_err(e, "device revoke failed"),

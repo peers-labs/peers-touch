@@ -216,6 +216,17 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             '"observed_profile_version": input.observed_profile_version',
             conversation_commands,
         )
+        revoke_start = conversation_commands.index("pub fn device_revoke(")
+        revoke_end = conversation_commands.index(
+            "\n// --- Direct Key Exchange",
+            revoke_start,
+        )
+        revoke_source = conversation_commands[revoke_start:revoke_end]
+        self.assertIn(
+            "request_json_auth_with_device_id(",
+            revoke_source,
+        )
+        self.assertIn("&input.device_id", revoke_source)
 
     def test_native_acceptance_commands_are_registered_with_tauri(self) -> None:
         main = (
