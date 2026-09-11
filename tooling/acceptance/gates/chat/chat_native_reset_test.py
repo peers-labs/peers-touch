@@ -19,6 +19,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     fixture_friendship_federation_id,
     read_fixture_actor,
     reset_local_client_storage,
+    restart_acceptance_station,
     reset_station_chat_state,
     seed_cross_station_contact,
     seed_same_station_contact,
@@ -362,6 +363,76 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                     "station-dev.sh"
                 )
             )
+
+    @patch.dict(
+        os.environ,
+        {"CHAT_ACCEPTANCE_ALLOW_STATION_RESTART": "1"},
+    )
+    def test_local_source_restart_replaces_owned_process(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active_profile = (
+                root
+                / ".local"
+                / "dev"
+                / "active"
+                / f"{root.name}.env"
+            )
+            active_profile.parent.mkdir(parents=True)
+            active_profile.write_text(
+                "PT_DEV_PROFILE=sixwin\n",
+                encoding="utf-8",
+            )
+            environment = {
+                "PT_ACCEPTANCE_RUNTIME_KIND": "local-source",
+                "PT_ACCEPTANCE_ENVIRONMENT": "sixwin",
+            }
+            with patch(
+                "tooling.acceptance.fixtures.chat_native_reset.REPO_ROOT",
+                root,
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_reset."
+                "acceptance_station_environment",
+                return_value=environment,
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_reset."
+                "verify_disposable_station_runtime",
+                side_effect=[
+                    {"pid": "101", "commit": "abc123"},
+                    {"pid": "202", "commit": "abc123"},
+                ],
+            ) as verify, patch(
+                "tooling.acceptance.fixtures.chat_native_reset."
+                "_station_version",
+                side_effect=[
+                    {"build_commit": "abc123"},
+                    {"build_commit": "abc123"},
+                ],
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_reset.subprocess.run",
+            ) as run:
+                run.return_value.returncode = 0
+                run.return_value.stderr = ""
+                run.return_value.stdout = ""
+
+                evidence = restart_acceptance_station(
+                    "http://127.0.0.1:18080",
+                    "abc123",
+                )
+
+            self.assertEqual(verify.call_count, 2)
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(run.call_args_list[0].args[0][-1], "station")
+            self.assertTrue(
+                str(run.call_args_list[1].args[0][-1]).endswith(
+                    "station-dev.sh"
+                )
+            )
+            self.assertEqual(evidence["runtimeKind"], "local-source")
+            self.assertEqual(evidence["beforePid"], "101")
+            self.assertEqual(evidence["afterPid"], "202")
+            self.assertEqual(evidence["beforeCommit"], "abc123")
+            self.assertEqual(evidence["afterCommit"], "abc123")
 
     @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"})
     def test_local_source_queue_replay_duplicates_acked_item(self) -> None:

@@ -1564,8 +1564,6 @@ def restart_acceptance_station(
     runtime_identity = verify_disposable_station_runtime(environment)
     host = environment.get("PT_DEPLOY_HOST", "").strip()
 
-    container = environment["PT_ACCEPTANCE_STATION_CONTAINER"]
-
     before_version = _station_version(station_url)
     before_commit = str(before_version.get("build_commit") or "")
     if not _commits_match(before_commit, expected_commit):
@@ -1573,6 +1571,16 @@ def restart_acceptance_station(
             "Chat Acceptance Station commit mismatch before restart: "
             f"station={before_commit or 'missing'} expected={expected_commit}"
         )
+    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
+        return _restart_local_source_station(
+            environment,
+            runtime_identity,
+            station_url,
+            expected_commit,
+            before_commit,
+        )
+
+    container = environment["PT_ACCEPTANCE_STATION_CONTAINER"]
     inspect = f"docker inspect -f '{{{{.State.StartedAt}}}}' {container}"
     before_started_at = _remote_command(environment, inspect)
     if not before_started_at:
@@ -1623,6 +1631,94 @@ def restart_acceptance_station(
         "container": container,
         "beforeStartedAt": before_started_at,
         "afterStartedAt": after_started_at,
+        "beforeCommit": before_commit,
+        "afterCommit": after_commit,
+    }
+
+
+def _restart_local_source_station(
+    environment: dict[str, str],
+    runtime_identity: dict[str, str],
+    station_url: str,
+    expected_commit: str,
+    before_commit: str,
+) -> dict[str, object]:
+    before_pid = str(runtime_identity.get("pid") or "")
+    if not before_pid.isdigit():
+        raise RuntimeError(
+            "Local source Chat Acceptance Station PID is unavailable"
+        )
+
+    profile_file = (
+        REPO_ROOT
+        / ".local"
+        / "dev"
+        / "active"
+        / f"{REPO_ROOT.name}.env"
+    )
+    if not profile_file.is_file():
+        raise RuntimeError(
+            "Local source Chat Acceptance active profile is unavailable"
+        )
+    script_environment = {
+        **os.environ,
+        "PT_DEV_PROFILE_FILE": str(profile_file),
+    }
+    scripts = (
+        (
+            "stop",
+            REPO_ROOT / "tooling" / "scripts" / "local-dev" / "stop.sh",
+            ["station"],
+            60,
+        ),
+        (
+            "start",
+            REPO_ROOT
+            / "tooling"
+            / "scripts"
+            / "local-dev"
+            / "station-dev.sh",
+            [],
+            240,
+        ),
+    )
+    for action, script, arguments, timeout in scripts:
+        completed = subprocess.run(
+            ["bash", str(script), *arguments],
+            cwd=REPO_ROOT,
+            env=script_environment,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise RuntimeError(
+                "Local source Chat Acceptance Station "
+                f"{action} failed: {detail or 'unknown failure'}"
+            )
+
+    after_identity = verify_disposable_station_runtime(environment)
+    after_pid = str(after_identity.get("pid") or "")
+    if not after_pid.isdigit() or after_pid == before_pid:
+        raise RuntimeError(
+            "Local source Chat Acceptance Station process identity did not change"
+        )
+    after_version = _station_version(station_url)
+    after_commit = str(after_version.get("build_commit") or "")
+    if not _commits_match(after_commit, expected_commit):
+        raise RuntimeError(
+            "Chat Acceptance Station returned a different commit after restart: "
+            f"{after_commit or 'missing'}"
+        )
+    return {
+        "environment": environment["PT_ACCEPTANCE_ENVIRONMENT"],
+        "runtimeIdentity": after_identity,
+        "runtimeKind": LOCAL_SOURCE_RUNTIME,
+        "host": urllib.parse.urlparse(station_url).hostname or "",
+        "beforePid": before_pid,
+        "afterPid": after_pid,
         "beforeCommit": before_commit,
         "afterCommit": after_commit,
     }
