@@ -10836,10 +10836,38 @@ async function readFoundationForbiddenActorOwner(
   };
 }
 
+// #region debug-point A-E:forbidden-actor-cleanup
+function reportForbiddenActorCleanupDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7784/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'forbidden-actor-cleanup',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:cleanupFoundationForbiddenActorOwner',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 async function cleanupFoundationForbiddenActorOwner(
   scenarioKey: string,
 ): Promise<Record<string, unknown>> {
   const scenario = foundationForbiddenActorOwnerScenarios.get(scenarioKey);
+  await reportForbiddenActorCleanupDebug('A-E', 'cleanup-started', {
+    scenarioPresent: scenario !== undefined,
+    priorSelectionPresent: Boolean(scenario?.priorSelection),
+    currentSelectionMatchesPrior:
+      scenario !== undefined
+      && useAgentStore.getState().selectedAgent === scenario.priorSelection,
+  });
   if (!scenario) {
     return {
       scenarioKey,
@@ -10857,8 +10885,15 @@ async function cleanupFoundationForbiddenActorOwner(
     );
     resourceDeleted = deletionCode === ''
       || deletionCode.includes('AGENT_4004');
+    await reportForbiddenActorCleanupDebug('A', 'conversation-delete-finished', {
+      deletionCode,
+      resourceDeleted,
+    });
   } catch (error) {
     failures.push(error);
+    await reportForbiddenActorCleanupDebug('A-D', 'conversation-delete-failed', {
+      errorCode: observedErrorCode(error),
+    });
   }
   try {
     await api.deleteAgent(scenario.agentId).catch((error: unknown) => {
@@ -10868,8 +10903,14 @@ async function cleanupFoundationForbiddenActorOwner(
       () => false,
       (error: unknown) => observedErrorCode(error).includes('AGENT_4004'),
     );
+    await reportForbiddenActorCleanupDebug('B-D', 'agent-delete-finished', {
+      agentDeleted,
+    });
   } catch (error) {
     failures.push(error);
+    await reportForbiddenActorCleanupDebug('B-D', 'agent-delete-failed', {
+      errorCode: observedErrorCode(error),
+    });
   }
   try {
     await useAgentStore.getState().loadAgents();
@@ -10879,9 +10920,19 @@ async function cleanupFoundationForbiddenActorOwner(
     }
   } catch (error) {
     failures.push(error);
+    await reportForbiddenActorCleanupDebug('C', 'selection-restore-failed', {
+      errorCode: observedErrorCode(error),
+    });
   }
   const priorSelectionRestored =
     useAgentStore.getState().selectedAgent === scenario.priorSelection;
+  await reportForbiddenActorCleanupDebug('A-E', 'cleanup-evaluated', {
+    failureCount: failures.length,
+    failureCodes: failures.map(observedErrorCode),
+    resourceDeleted,
+    agentDeleted,
+    priorSelectionRestored,
+  });
   if (
     failures.length > 0
     || !resourceDeleted
