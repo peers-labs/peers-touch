@@ -130,14 +130,24 @@ protos plus Desktop TypeScript and Station Go generated bindings.
 by commas; one path may be reused for local process-isolation checks.
 
 `chat-native-current-profile-two-client-e2e` reuses non-destructive Desktop
-identity state instead of resetting Station. By default both clients clone the
-active worktree's `.local/dev/data/<profile>/desktop-app` seed. When the
-canonical Alice and Bob identities live in separate local projections, set
-`PT_CHAT_NATIVE_STORAGE_SEEDS` to two comma-separated seed directories in
-Alice, Bob order. Each seed is copied into run-scoped storage before launch;
-the source directories are never mutated. The clients retain the canonical
-`<profile>-app` Desktop storage namespace so the copied actor identity and
-Messaging Engine database are actually reused.
+actor identity instead of resetting Station. Alice launches from
+`peers-chat-high-chat`; Bob launches first from `peers-group-chat`; both
+worktrees must be clean and resolve the same Git tree. By default each client
+uses its worktree's `.local/dev/data/<profile>/desktop-app` as a read-only
+bootstrap seed. `PT_CHAT_NATIVE_STORAGE_SEEDS` can override those two seed
+directories in Alice, Bob order.
+
+The Provisioner initializes one dedicated persistent Acceptance storage root
+per actor under that actor's worktree `.local/acceptance/state/` directory.
+`PT_CHAT_NATIVE_PERSISTENT_STORAGE_ROOTS` can override those roots in Alice,
+Bob order. Initial bootstrap retains the actor identity but excludes copied
+live `chat.main.db` and session-device bindings, so the Gate enrolls a dedicated
+device instead of reusing rollback-prone crypto state. Later runs reuse that
+same persistent state. This is required because Station OPK publication and
+consumption are durable and the matching private OPK, ratchet, inbox cursor,
+authority head, and projections must advance together. Runtime cleanup removes
+processes, ports, temporary logs, and ephemeral storage while verifying that
+the declared persistent device roots remain present.
 
 ### Agent R6 Stream Resilience
 

@@ -70,10 +70,15 @@
           "apps/station/app/subserver/key_exchange/infrastructure/canonical_store.go",
           "apps/station/app/subserver/key_exchange/infrastructure/canonical_store_test.go",
           "apps/station/app/subserver/key_exchange/canonical_api_test.go",
+          "tooling/acceptance/core/provisioning.py",
+          "tooling/acceptance/drivers/native/runtime.py",
+          "tooling/acceptance/provisioners/native_tauri_current_profile.py",
+          "tooling/acceptance/environments/native-tauri-current-profile.yaml",
           "tooling/acceptance/fixtures/chat_native_reset.py",
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
           "tooling/acceptance/gates/chat/native_two_client_runner.py",
-          "tooling/acceptance/gates/chat/native_two_client_e2e.py"
+          "tooling/acceptance/gates/chat/native_two_client_e2e.py",
+          "tooling/acceptance/gates/chat/native_current_profile_two_client_e2e.py"
         ]
       },
       "require": [

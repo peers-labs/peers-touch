@@ -61,6 +61,7 @@ REQUIRED_ASSERTIONS = {
 CURRENT_PROFILE_REQUIRED_ASSERTIONS = {
     "current_profile_cross_worktree",
     "current_profile_group_chat_initiator",
+    "current_profile_persistent_device_state",
 }
 
 
@@ -794,6 +795,41 @@ class NativeTwoClientGate(AcceptanceGate):
                         },
                         sort_keys=True,
                     ),
+                )
+                persistent_storage = {
+                    actor: {
+                        "storageRoot": str(
+                            self.client_specs[actor].get("storage_root") or ""
+                        ),
+                        "storageLifecycle": str(
+                            self.client_specs[actor].get(
+                                "storage_lifecycle",
+                                "",
+                            )
+                        ),
+                    }
+                    for actor in ("alice", "bob")
+                }
+                persistent_roots = [
+                    Path(item["storageRoot"])
+                    for item in persistent_storage.values()
+                ]
+                self.assert_condition(
+                    "current_profile_persistent_device_state",
+                    len(set(persistent_roots)) == 2
+                    and all(
+                        item["storageLifecycle"] == "persistent"
+                        and root.is_dir()
+                        and not root.is_symlink()
+                        for item, root in zip(
+                            persistent_storage.values(),
+                            persistent_roots,
+                        )
+                    ),
+                    json.dumps(persistent_storage, sort_keys=True),
+                )
+                self.report.runtime["persistentDeviceState"] = (
+                    persistent_storage
                 )
             self.assert_condition(
                 "native_runtime",
