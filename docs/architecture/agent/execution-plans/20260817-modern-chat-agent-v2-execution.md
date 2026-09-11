@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T180453978234Z-7f2b66fa96067e56cdbc57b57283091f` on `03eb3b26e35d141a2a42779a6aabbc688311a1de` passed with 19/19 assertions and clean cleanup; the unchanged Foundation run `20260911T180613134845Z-78c1fede027216c67171edb0fe191983` stopped earlier at Browser English `BASE-CANCELLED` when the separate single-attempt producer lost the legitimate Station completion race; the local correction now applies the existing bounded two-attempt acquisition policy while preserving the unique authoritative cancellation oracle; the provider wire/Fixture correction was not reached and remains runtime-unproven | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T193922706008Z-2ba9a5841230120cf3b3a7f8051ff14a` on `546b6058c312adefd3f646cda152ef81bb91e1f9` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260911T194053654495Z-418a8fadbb819a6c415d575dbc98c314` established both capability sessions on their first poll, then stopped at Browser Simplified Chinese AS-F04 auto settlement after Ark produced two succeeded same-batch `skills_list` ToolCalls and one continuation; telemetry-only provider request/stream instrumentation is pending exact-source proof and the strict one-fact oracle remains unchanged | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1538,6 +1538,34 @@ and zero local-path leakage.
   Station winner semantics remain unchanged. Desktop check, 85 Agent native
   static tests, hard rules, and diff hygiene pass; exact-source proof remains
   pending.
+- **Capability enrollment closure and AS-F04 duplicate ToolCalls
+  (2026-09-12)**: telemetry-only checkpoint
+  `546b6058c312adefd3f646cda152ef81bb91e1f9` proved the prior 90-second
+  capability-session wait was caused by two foreign Mobile clients
+  re-enrolling first after the disposable reset. Terminating only those two
+  Mobile App processes left both Simulators booted and allowed Native and
+  Browser to match one local session against three Station sessions on their
+  first poll. Exact-source C08 run
+  `20260911T193922706008Z-2ba9a5841230120cf3b3a7f8051ff14a` then passed
+  `DONE / PROVEN` with 19/19 assertions and clean cleanup. The unchanged
+  Foundation run
+  `20260911T194053654495Z-418a8fadbb819a6c415d575dbc98c314`
+  advanced to Browser Simplified Chinese AS-F04 auto settlement and timed out:
+  Station readback showed one completed Turn, one provider attempt, one
+  ToolBatch, two distinct succeeded same-batch `skills_list` ToolCalls, two
+  results, and one continuation. The model advertises `parallel-tools`,
+  `ProviderCallRequest` has no per-turn parallel policy, and the
+  OpenAI-compatible payload currently omits `parallel_tool_calls`; the strict
+  `facts.length == 1` oracle is retained. The active diagnostic records only
+  the pinned parallel capability, explicit request-policy presence, returned
+  ToolCall indices/fragment counts, assembled count, and finish reason. It
+  must distinguish a provider-parallel response from stream-assembly
+  duplication before any owner-layer fix; a blanket
+  `parallel_tool_calls=false`, budget exhaustion, truncation, deduplication,
+  retry-until-green, or Gate weakening is forbidden. The Gap Detector keeps
+  the aggregate claim `UNPROVEN`: the complete Foundation Gate is failed and
+  the instrumentation checkpoint still requires a new exact-source
+  Acceptance plan/run pair.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

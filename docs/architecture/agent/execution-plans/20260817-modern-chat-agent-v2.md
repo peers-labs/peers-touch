@@ -22,20 +22,20 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Checkpoint and exact-source prove bounded `BASE-CANCELLED` window acquisition, then resume the unchanged 419-cell Gate through the incompatible-provider Fixture |
+| Current step | Instrument AS-F04 provider ToolCall cardinality without changing runtime or Gate behavior, then rerun exact-source C08 and the unchanged 419-cell Foundation Gate |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source C08 run `20260911T180453978234Z-7f2b66fa96067e56cdbc57b57283091f` on `03eb3b26e35d141a2a42779a6aabbc688311a1de` passed `DONE / PROVEN` with 19/19 assertions and clean cleanup；the unchanged Foundation run `20260911T180613134845Z-78c1fede027216c67171edb0fe191983` stopped earlier at the intermittent Browser English `BASE-CANCELLED` race |
-| Current action | Verify and checkpoint the source-backed bounded `BASE-CANCELLED` retry, deploy exact source, rebuild the dedicated Acceptance binary, and rerun C08 |
-| Next action | After same-source C08 passes, run the unchanged 419-cell Gate and require both `BASE-CANCELLED` locale cells before exercising the incompatible-provider Fixture correction |
+| Last completed | Exact-source C08 run `20260911T193922706008Z-2ba9a5841230120cf3b3a7f8051ff14a` on `546b6058c312adefd3f646cda152ef81bb91e1f9` passed `DONE / PROVEN` with 19/19 assertions and clean cleanup；the same-source Foundation run established both runtime capability sessions immediately, then stopped at Browser Simplified Chinese AS-F04 auto settlement |
+| Current action | Checkpoint the telemetry-only AS-F04 provider request/response instrumentation, deploy exact source, reuse the source-compatible dedicated Acceptance binary, and rerun C08 |
+| Next action | After same-source C08 passes, run the unchanged 419-cell Gate and use provider index/cardinality telemetry to select the owner-layer correction or return `DESIGN_AMENDMENT_REQUIRED` |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | none；the repeated `BASE-CANCELLED` terminal-winner race is a recoverable Acceptance producer defect in the active queue |
+| Blockers | none；AS-F04 duplicate same-batch ToolCalls are an active recoverable diagnostic until evidence proves a missing per-turn architecture contract |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 is `DONE / PROVEN` on `03eb3b26e`；Foundation run `20260911T180613134845Z-78c1fede027216c67171edb0fe191983` is `FAILED / PARTIAL / UNPROVEN` at Browser English `BASE-CANCELLED`；debug evidence records cancellation from text sequence 3, a 433 ms request, and Station's already committed `completed`/`done` sequence 43 winner；all recorded Provisioner cleanup and secret scans passed |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 run `20260911T193922706008Z-2ba9a5841230120cf3b3a7f8051ff14a` is `DONE / PROVEN` on `546b6058c`；Foundation run `20260911T194053654495Z-418a8fadbb819a6c415d575dbc98c314` is `FAILED / PARTIAL / UNPROVEN` after both capability sessions matched on their first poll, with two succeeded same-batch `skills_list` ToolCalls and one continuation while the strict one-fact AS-F04 settlement remained false；cleanup and source identity passed |
 | Last updated | 2026-09-12 |
 
 ---

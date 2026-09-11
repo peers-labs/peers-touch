@@ -139,6 +139,43 @@ func reportArkProviderRequestDebug(
 
 // #endregion
 
+// #region debug-point A-B-D:foundation-f04-duplicate-toolcalls
+func reportFoundationF04DuplicateToolCallsDebug(
+	hypothesisID, stage string,
+	data map[string]any,
+) {
+	event, err := json.Marshal(map[string]any{
+		"sessionId":    "foundation-f04-duplicate-toolcalls",
+		"runId":        "pre-fix",
+		"hypothesisId": hypothesisID,
+		"location":     "provider_service.go:callOpenAIStream",
+		"msg":          "[DEBUG] " + stage,
+		"data":         data,
+		"ts":           time.Now().UnixMilli(),
+	})
+	if err != nil {
+		return
+	}
+	go func() {
+		request, requestErr := http.NewRequest(
+			http.MethodPost,
+			"http://10.4.55.179:7790/event",
+			bytes.NewReader(event),
+		)
+		if requestErr != nil {
+			return
+		}
+		request.Header.Set("Content-Type", "application/json")
+		client := &http.Client{Timeout: 500 * time.Millisecond}
+		response, requestErr := client.Do(request)
+		if requestErr == nil {
+			_ = response.Body.Close()
+		}
+	}()
+}
+
+// #endregion
+
 // ---------------------------------------------------------------------------
 // Request / Response types
 // ---------------------------------------------------------------------------
@@ -934,6 +971,22 @@ func (s *ProviderService) callOpenAIStream(
 	// #region debug-point A-B-D:ark-provider-request-dispatch
 	reportArkProviderRequestDebug("A-B-D", "request-dispatched", endpoint, body, payload, nil)
 	// #endregion
+	if tools, ok := payload["tools"].([]openAIToolDefinition); ok &&
+		len(tools) > 0 &&
+		strings.Contains(endpoint, "ark-cn-beijing.bytedance.net") {
+		_, parallelToolCallsPresent := payload["parallel_tool_calls"]
+		// #region debug-point A-C-D:foundation-f04-provider-request
+		reportFoundationF04DuplicateToolCallsDebug(
+			"A-C-D",
+			"tool-request-dispatched",
+			map[string]any{
+				"toolDefinitionCount":     len(tools),
+				"parallelPolicyPresent":   parallelToolCallsPresent,
+				"parallelToolCallsPolicy": payload["parallel_tool_calls"],
+			},
+		)
+		// #endregion
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -995,6 +1048,7 @@ func (s *ProviderService) callOpenAIStream(
 	var contentDeltaCount int
 	var firstDataReported bool
 	toolCalls := make(map[int]*openAIToolCall)
+	toolCallFragmentCounts := make(map[int]int)
 	scanner := bufio.NewScanner(io.LimitReader(resp.Body, maxResponseBytes))
 	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
 	for scanner.Scan() {
@@ -1038,6 +1092,7 @@ func (s *ProviderService) callOpenAIStream(
 			finishReason = chunk.FinishReason
 		}
 		for _, fragment := range chunk.ToolCalls {
+			toolCallFragmentCounts[fragment.Index]++
 			call := toolCalls[fragment.Index]
 			if call == nil {
 				call = &openAIToolCall{Type: "function"}
@@ -1107,6 +1162,31 @@ func (s *ProviderService) callOpenAIStream(
 	structuredCalls, err := orderedProviderToolCalls(toolCalls)
 	if err != nil {
 		return nil, err
+	}
+	if tools, ok := payload["tools"].([]openAIToolDefinition); ok &&
+		len(tools) > 0 &&
+		strings.Contains(endpoint, "ark-cn-beijing.bytedance.net") {
+		indices := make([]int, 0, len(toolCallFragmentCounts))
+		fragmentCounts := make([]int, 0, len(toolCallFragmentCounts))
+		for index := range toolCallFragmentCounts {
+			indices = append(indices, index)
+		}
+		sort.Ints(indices)
+		for _, index := range indices {
+			fragmentCounts = append(fragmentCounts, toolCallFragmentCounts[index])
+		}
+		// #region debug-point A-B-D:foundation-f04-provider-response
+		reportFoundationF04DuplicateToolCallsDebug(
+			"A-B-D",
+			"tool-response-assembled",
+			map[string]any{
+				"distinctToolCallIndices": indices,
+				"fragmentCountsByIndex":   fragmentCounts,
+				"assembledToolCallCount":  len(structuredCalls),
+				"finishReason":            finishReason,
+			},
+		)
+		// #endregion
 	}
 	if strings.TrimSpace(content.String()) == "" && len(structuredCalls) == 0 {
 		return &ProviderCallResponse{

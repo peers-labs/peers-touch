@@ -2417,6 +2417,20 @@ func (s *TurnService) callProviderWithRuntimeAuthority(
 	request.BeforeDispatch = func(dispatchCtx context.Context) error {
 		return s.reserveProviderAttempt(dispatchCtx, config)
 	}
+	if len(request.Tools) > 0 && config.Provider == "ark" {
+		agentic := config.RuntimeCapabilities.GetAgentic()
+		// #region debug-point C-D:foundation-f04-runtime-authority
+		reportFoundationF04DuplicateToolCallsDebug(
+			"C-D",
+			"runtime-tool-authority",
+			map[string]any{
+				"nativeTools":   agentic.GetNativeTools(),
+				"parallelTools": agentic.GetParallelTools(),
+				"toolCount":     len(request.Tools),
+			},
+		)
+		// #endregion
+	}
 	var response *ProviderCallResponse
 	var err error
 	if s.providerCall != nil {
