@@ -850,6 +850,39 @@ pub fn messaging_list_conversations(
         Ok(conversations) => conversations,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
+    // #region debug-point F:messaging-list-conversation-members
+    let _ = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_millis(500))
+        .build()
+        .and_then(|client| {
+            client
+                .post("http://10.4.55.179:7779/event")
+                .json(&json!({
+                    "sessionId": "conversation-open-500",
+                    "runId": "peer-projection-pre-fix",
+                    "hypothesisId": "F",
+                    "location": "tauri_commands/messaging.rs:messaging_list_conversations",
+                    "msg": "[DEBUG] Rust messaging conversation members",
+                    "data": {
+                        "actorPtid": engine.endpoint().ptid,
+                        "conversations": conversations
+                            .iter()
+                            .map(|conversation| json!({
+                                "conversationId": conversation.conversation_id,
+                                "kind": conversation.kind,
+                                "memberCount": conversation.members.len(),
+                                "members": conversation
+                                    .members
+                                    .iter()
+                                    .map(|member| member.ptid.as_str())
+                                    .collect::<Vec<_>>(),
+                            }))
+                            .collect::<Vec<_>>(),
+                    }
+                }))
+                .send()
+        });
+    // #endregion
     let mut projected = Vec::with_capacity(conversations.len());
     for conversation in conversations {
         match conversation_projection_json(&engine, &conversation) {
