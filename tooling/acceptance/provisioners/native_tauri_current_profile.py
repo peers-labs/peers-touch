@@ -4,7 +4,7 @@ import dataclasses
 import json
 import os
 import shutil
-import socket
+import subprocess
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -147,13 +147,16 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                     ) from error
 
     @staticmethod
-    def _assert_port_available(role: str, label: str, port: int) -> None:
-        with socket.socket() as probe:
-            if probe.connect_ex(("127.0.0.1", port)) == 0:
-                raise BlockedError(
-                    reason=f"{role} {label} port {port} is already in use",
-                    resource=f"client-isolation:{label}-port:{port}",
-                )
+    def _port_available(port: int) -> bool:
+        return (
+            subprocess.run(
+                ("lsof", f"-tiTCP:{port}", "-sTCP:LISTEN"),
+                capture_output=True,
+                text=True,
+                check=False,
+            ).returncode
+            != 0
+        )
 
     def _clients(
         self,
@@ -197,9 +200,37 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
             f"client-storage:{run_root}",
             lambda: shutil.rmtree(run_root, ignore_errors=True),
         )
-        gateway_base = int(profile_env["PT_DESKTOP_APP_GATEWAY_PORT"])
-        renderer_base = int(profile_env["PT_DESKTOP_APP_WEB_PORT"])
-        webdriver_base = 4445 + slot * 10
+        configured_gateway = int(profile_env["PT_DESKTOP_APP_GATEWAY_PORT"])
+        configured_renderer = int(profile_env["PT_DESKTOP_APP_WEB_PORT"])
+        configured_webdriver = 4445 + slot * 10
+        allocation = next(
+            (
+                (
+                    configured_gateway + offset,
+                    configured_renderer + offset,
+                    configured_webdriver + offset,
+                )
+                for offset in range(0, 1_000, 10)
+                if all(
+                    self._port_available(port)
+                    for port in (
+                        configured_gateway + offset,
+                        configured_gateway + offset + 1,
+                        configured_renderer + offset,
+                        configured_renderer + offset + 1,
+                        configured_webdriver + offset,
+                        configured_webdriver + offset + 1,
+                    )
+                )
+            ),
+            None,
+        )
+        if allocation is None:
+            raise BlockedError(
+                reason="No complete two-client Native port set is available",
+                resource="client-isolation:ports",
+            )
+        gateway_base, renderer_base, webdriver_base = allocation
         clients: list[ClientRuntime] = []
         for index, role in enumerate(CLIENT_ROLES):
             storage_root = run_root / role / "storage"
@@ -208,8 +239,8 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 actor=declared[role].actor,
                 runtime="native-tauri",
                 worktree=str(REPO_ROOT),
-                gateway_port=gateway_base + index * 10,
-                renderer_port=renderer_base + index * 10,
+                gateway_port=gateway_base + index,
+                renderer_port=renderer_base + index,
                 webdriver_port=webdriver_base + index,
                 profile=profile_name,
                 storage_root=str(storage_root),
@@ -217,12 +248,6 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 required_service_roles=declared[role].required_service_roles,
                 service_bindings=declared[role].service_bindings,
             )
-            for label, port in (
-                ("gateway", client.gateway_port),
-                ("renderer", client.renderer_port),
-                ("webdriver", client.webdriver_port),
-            ):
-                self._assert_port_available(role, label, port)
             clients.append(client)
         return tuple(clients)
 
