@@ -4435,7 +4435,18 @@ Source implementation is complete and runtime proof remains `UNPROVEN`:
   source-bound `chat-native-current-profile-two-client-e2e` run produces
   receiver DOM, message-ID, receipt, and cleanup evidence.
 
-The next dependency-ready action is to commit this source closure in
+The first exclusive cross-worktree diagnostic reached Bob/group-chat's initial
+submit and exposed `messaging endpoint key bundle binding mismatch`.
+Instrumentation proved that the requested Conversation endpoint and returned
+Key Exchange endpoint had the same canonical Actor PTID and device ID. The
+adapter incorrectly compared the complete generated `ActorDeviceRef`, including
+non-identity Actor metadata reconstructed differently by the two owners. The
+root correction compares only `(actor PTID, device ID)`, retains rejection for
+missing or changed canonical identity, and maps the adapter path into the Direct
+delivered-receipt Feature and Registry.
+
+The next dependency-ready action is to commit the endpoint-binding closure in
 `peers-group-chat`, merge that commit into `peers-chat-high-chat`, verify both
 worktrees are clean with equal trees, deploy the exact source through profile
-`four` and `make station`, then execute the current-profile Native Gate.
+`four` and `make station`, then execute the current-profile Native Gate with
+group-chat as initiator and high-chat as receiver.
