@@ -944,7 +944,13 @@ impl MessagingEngine {
                 attachment_ids,
                 state: "pending",
             }),
-            Err(_) => {
+            Err(error) => {
+                tracing::warn!(
+                    conversation_id = %ready_draft.conversation_id,
+                    message_id = %ready_draft.message_id,
+                    error = %error,
+                    "messaging message draft preparation deferred"
+                );
                 self.schedule_message_draft_retry(&ready_draft, now_unix_ms())?;
                 Ok(SubmitMessageOutcome {
                     command_id: None,
@@ -981,7 +987,13 @@ impl MessagingEngine {
         let Some(draft) = self.store.next_due_message_draft(now_unix_ms)? else {
             return Ok(false);
         };
-        if self.prepare_message_draft(token, &draft).is_err() {
+        if let Err(error) = self.prepare_message_draft(token, &draft) {
+            tracing::warn!(
+                conversation_id = %draft.conversation_id,
+                message_id = %draft.message_id,
+                error = %error,
+                "messaging message draft resume deferred"
+            );
             self.schedule_message_draft_retry(&draft, now_unix_ms)?;
         }
         Ok(true)
