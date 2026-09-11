@@ -602,16 +602,6 @@ class NativeTwoClientGate(AcceptanceGate):
                 "station.identity",
                 lambda: read_station_version(self.station_url),
             )
-            source_identity = self.source_identity(version)
-            self.report.runtime.update(
-                {
-                    "runtimeCellRunId": source_identity[
-                        "runtimeCell"
-                    ]["runId"],
-                    "sourceIdentity": source_identity,
-                    "launchOrder": order,
-                }
-            )
             self.step(
                 (
                     "fixture.existing"
@@ -626,6 +616,19 @@ class NativeTwoClientGate(AcceptanceGate):
                     lambda actor=actor: self.start_client(actor),
                     actor,
                 )
+            source_identity = self.step(
+                "runtime.source_identity",
+                lambda: self.source_identity(version),
+            )
+            self.report.runtime.update(
+                {
+                    "runtimeCellRunId": source_identity[
+                        "runtimeCell"
+                    ]["runId"],
+                    "sourceIdentity": source_identity,
+                    "launchOrder": order,
+                }
+            )
             self.assert_condition(
                 "native_runtime",
                 all(

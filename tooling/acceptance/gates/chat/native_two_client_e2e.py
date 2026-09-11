@@ -30,6 +30,7 @@ REQUIRED_STEPS = {
     "station.identity",
     "fixture.reset",
     "client.authenticated",
+    "runtime.source_identity",
     "conversation.open",
     "message.submitted",
     "message.received",
