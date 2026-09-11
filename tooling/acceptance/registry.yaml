@@ -75,6 +75,7 @@
         "messaging-platform-contract",
         "desktop-check",
         "chat-native-visible-static",
+        "chat-native-current-profile-two-client-e2e",
         "chat-native-two-client-e2e"
       ]
     },
@@ -188,16 +189,21 @@
           "tooling/acceptance/gates/chat/native_multi_device_runner.py",
           "tooling/acceptance/gates/chat/native_recovery_runner.py",
           "tooling/acceptance/gates/chat/native_group_mls_runner.py",
+          "tooling/acceptance/gates/chat/native_current_profile_two_client_entry.py",
+          "tooling/acceptance/gates/chat/native_current_profile_two_client_e2e.py",
           "tooling/acceptance/gates/chat/native_support.py",
           "tooling/acceptance/fixtures/chat_native_reset.py",
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
           "tooling/acceptance/playbooks/chat-native-visible-clients.md",
+          "tooling/acceptance/environments/native-tauri-current-profile.yaml",
+          "tooling/acceptance/provisioners/native_tauri_current_profile.py",
           "apps/desktop/src/acceptance/chat/**",
           "apps/desktop/src-tauri/src/application/profile/mod.rs"
         ]
       },
       "require": [
         "chat-native-visible-static",
+        "chat-native-current-profile-two-client-e2e",
         "chat-native-two-client-e2e",
         "chat-native-multi-device-e2e",
         "chat-native-recovery-e2e",

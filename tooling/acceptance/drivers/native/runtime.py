@@ -1235,6 +1235,34 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
         return True
 
     def binary_identity(self) -> dict[str, str]:
+        if self._use_make:
+            binaries: dict[str, str] = {}
+            for session in self._sessions_by_client.values():
+                launcher = session.launcher
+                if not isinstance(launcher, MakeDesktopLauncher):
+                    raise DriverError(
+                        "development Native session is not owned by make desktop"
+                    )
+                binary = launcher.runtime_binary_path()
+                binaries[str(binary)] = _file_sha256(binary)
+            hashes = set(binaries.values())
+            if not binaries or len(hashes) != 1:
+                raise DriverError(
+                    "make Desktop clients do not share one binary identity"
+                )
+            return {
+                "path": ",".join(sorted(binaries)),
+                "sha256": hashes.pop(),
+                "sourceCommit": subprocess.run(
+                    ("git", "rev-parse", "HEAD"),
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip(),
+            }
+        if self._binary is None:
+            raise DriverError("Native Acceptance binary is unavailable")
         return {
             "path": str(self._binary),
             "sha256": _file_sha256(self._binary),

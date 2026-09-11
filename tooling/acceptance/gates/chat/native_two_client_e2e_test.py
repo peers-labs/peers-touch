@@ -17,6 +17,7 @@ from tooling.acceptance.core import (
     REPO_ROOT,
 )
 from tooling.acceptance.gates.chat.native_two_client_runner import (
+    CURRENT_PROFILE_GATE_ID,
     NativeTwoClientGate,
 )
 from tooling.acceptance.gates.chat.native_support import (
@@ -461,6 +462,30 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertTrue(
             gate.report.runtime["cleanup"]["portsReleased"],
         )
+
+    def test_current_profile_gate_accepts_verified_existing_fixture(self) -> None:
+        manifest = self.valid_report()["manifest"]
+        actors = {
+            "initialState": "existing",
+            "actors": [
+                {
+                    "role": actor,
+                    "accountRef": f"station-account:{actor}@p.t",
+                    "ptid": f"ptid:{actor}",
+                }
+                for actor in ("alice", "bob")
+            ],
+            "reset": {"authorized": False, "targetVerified": True},
+        }
+        gate = NativeTwoClientGate(
+            manifest=manifest,
+            actor_manifest=actors,
+            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+            gate_id=CURRENT_PROFILE_GATE_ID,
+            allow_existing_fixture=True,
+        )
+
+        self.assertTrue(gate.verify_fixture_ready())
 
     def test_source_identity_rejects_malformed_station_protocol_digest(self) -> None:
         manifest = self.valid_report()["manifest"]

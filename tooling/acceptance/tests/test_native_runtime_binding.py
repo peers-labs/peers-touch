@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -539,6 +540,38 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         self.assertEqual(session.launcher.gateway_port, 3140)
         self.assertEqual(session.launcher.renderer_port, 3410)
         self.assertEqual(session.launcher.profile, "chat-native-alice")
+
+    def test_macos_development_binding_attests_running_make_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            binary = Path(temp_dir) / "peers-touch-desktop"
+            binary.write_bytes(b"native-binary")
+            launcher = MakeDesktopLauncher(
+                worktree=Path.cwd(),
+                port=4447,
+                gateway_port=3140,
+                renderer_port=3410,
+                profile="four",
+                storage_root=str(Path(temp_dir) / "storage"),
+            )
+            session = TauriSession(launcher)
+            with patch.dict(
+                "os.environ",
+                {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+            ):
+                binding = LocalMacOSRuntimeBinding()
+                binding._sessions_by_client["alice"] = session
+                with patch.object(
+                    launcher,
+                    "runtime_binary_path",
+                    return_value=binary,
+                ):
+                    identity = binding.binary_identity()
+
+        self.assertEqual(identity["path"], str(binary))
+        self.assertEqual(
+            identity["sha256"],
+            hashlib.sha256(b"native-binary").hexdigest(),
+        )
 
 
 if __name__ == "__main__":

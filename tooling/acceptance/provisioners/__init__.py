@@ -21,6 +21,9 @@ from .native_desktop_windows import NativeDesktopWindowsProvisioner
 from .native_tauri_embedded_webdriver import (
     NativeTauriEmbeddedWebDriverProvisioner,
 )
+from .native_tauri_current_profile import (
+    NativeTauriCurrentProfileProvisioner,
+)
 
 
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
@@ -38,6 +41,7 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
         MobileStationLifecycleSimulatorProvisioner
     ),
     NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
+    NativeTauriCurrentProfileProvisioner.environment_id: NativeTauriCurrentProfileProvisioner,
 }
 
 _RUNTIME_CELL_LIFECYCLES: dict[str, type[RuntimeCellLifecycle]] = {
@@ -81,6 +85,7 @@ __all__ = [
     "NativeDesktopLinuxProvisioner",
     "NativeDesktopWindowsProvisioner",
     "NativeTauriEmbeddedWebDriverProvisioner",
+    "NativeTauriCurrentProfileProvisioner",
     "get_provisioner",
     "get_runtime_cell_lifecycle",
 ]

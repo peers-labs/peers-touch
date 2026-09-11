@@ -259,6 +259,24 @@ class EnvironmentContractTests(unittest.TestCase):
             all(service.kind == "station" for service in contract.services.values())
         )
 
+    def test_load_native_tauri_current_profile_contract(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "native-tauri-current-profile.yaml"
+        )
+        self.assertEqual(contract.id, "native-tauri-current-profile")
+        self.assertEqual(set(contract.services), {"station"})
+        self.assertEqual(
+            {client.id for client in contract.clients},
+            {"alice", "bob"},
+        )
+        self.assertTrue(
+            all(
+                client.service_bindings["station"].service_id == "station"
+                for client in contract.clients
+            )
+        )
+        self.assertFalse(contract.fixtures[0].authorization_required)
+
     def test_load_mobile_native_contract(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "mobile-native.yaml"

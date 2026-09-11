@@ -49,9 +49,10 @@ def require(condition: bool, message: str) -> None:
 
 def load_report(
     store: EvidenceStore,
+    gate_id: str = GATE_ID,
 ) -> tuple[dict[str, Any], ArtifactRef]:
     reference = current_artifact_ref(
-        SOURCE_REPORT_PATH,
+        f"reports/{gate_id}.json",
         repo_root=REPO_ROOT,
         media_type="application/json",
     )
@@ -63,9 +64,11 @@ def validate_report(
     *,
     source_ref: ArtifactRef,
     store: EvidenceStore,
+    gate_id: str = GATE_ID,
+    required_steps: set[str] = REQUIRED_STEPS,
 ) -> None:
     require(
-        report.get("gate") == GATE_ID,
+        report.get("gate") == gate_id,
         "unexpected native two-client gate ID",
     )
     require(report.get("status") == "PASS", "native two-client report must pass")
@@ -153,7 +156,7 @@ def validate_report(
         and runtime_identity.get("artifactKind")
         == "acceptance-runtime-cell-manifest"
         and runtime_identity.get("cellId") == runtime_cell
-        and runtime_identity.get("gateId") == GATE_ID
+        and runtime_identity.get("gateId") == gate_id
         and runtime_identity.get("state") == "LEASED"
         and runtime_identity.get("runId")
         == runtime.get("runtimeCellRunId"),
@@ -205,7 +208,7 @@ def validate_report(
     require(
         isinstance(manifest, dict)
         and manifest == environment_manifest
-        and manifest.get("gateId") == GATE_ID
+        and manifest.get("gateId") == gate_id
         and manifest.get("source") == orchestrator
         and manifest_station == station,
         "embedded environment manifest does not match source identity",
@@ -246,7 +249,7 @@ def validate_report(
         for step in steps
         if isinstance(step, dict) and step.get("status") == "pass"
     }
-    missing_steps = REQUIRED_STEPS - passed_steps
+    missing_steps = required_steps - passed_steps
     require(not missing_steps, f"required steps are missing: {sorted(missing_steps)}")
     cleanup = runtime.get("cleanup")
     require(isinstance(cleanup, dict), "cleanup evidence is required")
@@ -282,6 +285,7 @@ def write_validation(
     report: dict[str, Any],
     *,
     source_ref: ArtifactRef,
+    gate_id: str = GATE_ID,
 ) -> ArtifactRef:
     output = {
         "artifactKind": "chat-native-two-client-validation",
@@ -292,7 +296,7 @@ def write_validation(
         "phase": "chat-native-two-client",
         "bom": ["CHAT-DIRECT-DELIVERED-01"],
         "spec": ["chat-direct-delivered-receipt"],
-        "gate": "chat-native-two-client-e2e",
+        "gate": gate_id,
         "sourceArtifact": source_ref.to_dict(),
         "testedCommit": report["runtime"]["sourceIdentity"][
             "orchestrator"
@@ -301,10 +305,10 @@ def write_validation(
     }
     session = ArtifactSession(
         repo_root=REPO_ROOT,
-        gate_id=GATE_ID,
+        gate_id=gate_id,
     )
     return session.write_json(
-        VALIDATED_REPORT_PATH,
+        f"reports/{gate_id}-validation.json",
         output,
         role="validation",
     )
