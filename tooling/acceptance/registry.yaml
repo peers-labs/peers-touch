@@ -67,6 +67,8 @@
           "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder_test.go",
           "apps/station/app/subserver/conversation/interface/http/interaction.go",
           "apps/station/app/subserver/conversation/interface/http/interaction_test.go",
+          "apps/station/app/subserver/conversation/production_endpoint_manifest_test.go",
+          "apps/station/app/subserver/conversation/production_http.go",
           "apps/station/app/subserver/conversation/subserver.go",
           "apps/station/app/subserver/key_exchange/infrastructure/canonical_store.go",
           "apps/station/app/subserver/key_exchange/infrastructure/canonical_store_test.go",

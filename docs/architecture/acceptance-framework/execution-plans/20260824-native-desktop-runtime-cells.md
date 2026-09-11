@@ -4686,3 +4686,32 @@ The dependency-ready actions are:
    retry/idempotency semantics; and
 5. rerun both Direct directions with exact native receiver plaintext,
    identical message IDs, delivered/read receipts, and cleanup.
+
+Pre-fix exact-source run
+`20260911T151151365999Z-53d60950ba3bc86e25a02511739515d4`
+confirmed the boundary. Both persistent clients repeatedly selected their same
+oldest sequence-3 receipt while the current send plan had reached sequence 7.
+Station accepted the authenticated endpoint and exact receipt/commitment tuple,
+then rejected aggregate derivation with
+`CONVERSATION_INTERACTION_INTEGRITY_FAILED` because the current Direct
+endpoints were absent from `conversation_member_devices`. The production HTTP
+mapper returned that typed failure as an empty-body 500.
+
+The source correction keeps the existing durable Desktop outbox unchanged:
+
+- receipt persistence loads the canonical Conversation kind;
+- Direct aggregates count exact authority-committed receipts without consulting
+  the Group/MLS device-leaf projection;
+- a missing Direct receipt remains outstanding rather than being inferred as
+  revoked;
+- Group aggregates retain strict member-device presence and revoke accounting;
+- Direct originator receipt routes come from immutable authority delivery
+  commitments, while Group routes retain committed active-leaf filtering; and
+- production HTTP maps all typed Conversation interaction errors to explicit
+  status, stable code, and safe operation/field/reason headers.
+
+Focused Station receipt and HTTP mapping tests, the complete Conversation
+package suite, focused race tests, `go vet`, and diff hygiene pass. The source
+remains `PARTIAL/UNPROVEN` until the two worktrees are synchronized, exact
+source is deployed, and the same Native Gate proves that historical receipts
+drain and the current bidirectional receipts become visible.

@@ -18,6 +18,7 @@
     "apps/station/app/subserver/conversation/application/interaction/service.go",
     "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder.go",
     "apps/station/app/subserver/conversation/interface/http/interaction.go",
+    "apps/station/app/subserver/conversation/production_http.go",
     "apps/station/app/subserver/conversation/subserver.go",
     "apps/station/app/subserver/key_exchange/infrastructure/canonical_store.go",
     "tooling/acceptance/core/provisioning.py",
@@ -58,7 +59,9 @@
       "a fresh Direct receiver checkpoints only the verified public predecessor before decrypting the current private delivery",
       "successful Direct decrypt atomically persists one typed DELIVERED receipt",
       "receipt submission failure remains pending for lifecycle retry",
-      "Station routing failure is returned to the Desktop worker"
+      "Station routing failure is returned to the Desktop worker",
+      "Direct receipt aggregation uses immutable authority delivery commitments for current endpoints outside the Group MLS device projection",
+      "typed Conversation interaction failures preserve their stable code and safe details at the HTTP boundary"
     ],
     "visible": [
       "Alice sends one Direct message and Bob renders the exact plaintext",
@@ -72,6 +75,9 @@
     "receiver checkpoint failure must prevent private delivery consumption and ACK",
     "receiver activation checkpoint must not synthesize historical plaintext, session, cursor, marker, or receipt state",
     "queue consumption ACK must not be reported as a user-visible DELIVERED receipt",
+    "Direct receipt aggregation must not require current endpoints to exist in conversation_member_devices",
+    "Group receipt aggregation must still reject a missing committed MLS member device",
+    "typed Conversation interaction failures must not collapse into generic HTTP 500 responses",
     "static or gateway evidence must not replace two native Desktop clients",
     "receipt evidence must not expose plaintext, credentials, tokens, or key material"
   ]

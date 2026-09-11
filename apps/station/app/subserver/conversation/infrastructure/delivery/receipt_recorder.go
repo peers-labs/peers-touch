@@ -109,11 +109,26 @@ func (r *ReceiptRecorder) Record(
 				)
 			}
 		}
-		aggregate, err := loadDeliveryAggregate(tx, event)
+		conversationKind, err := loadReceiptConversationKind(
+			tx,
+			event.ConversationID,
+		)
 		if err != nil {
 			return err
 		}
-		originatorRoutes, err := loadOriginatorRoutes(tx, event)
+		aggregate, err := loadDeliveryAggregate(
+			tx,
+			event,
+			conversationKind,
+		)
+		if err != nil {
+			return err
+		}
+		originatorRoutes, err := loadOriginatorRoutes(
+			tx,
+			event,
+			conversationKind,
+		)
 		if err != nil {
 			return err
 		}
@@ -873,6 +888,7 @@ func receiptUpdates(
 func loadDeliveryAggregate(
 	tx *gorm.DB,
 	event domainevent.Record,
+	conversationKind valueobject.ConversationKind,
 ) (interaction.DeliveryAggregate, error) {
 	var commitments []AuthorityDeliveryCommitmentModel
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -1018,20 +1034,26 @@ func loadDeliveryAggregate(
 		receiptsByEndpoint[endpoint.Key()] = receipt
 	}
 
-	var devices []persistence.ConversationMemberDeviceModel
-	if err := tx.Where(
-		"conversation_id = ?",
-		string(event.ConversationID),
-	).Find(&devices).Error; err != nil {
-		return interaction.DeliveryAggregate{}, err
-	}
-	devicesByEndpoint := make(map[string]persistence.ConversationMemberDeviceModel, len(devices))
-	for _, device := range devices {
-		endpoint := valueobject.Endpoint{
-			Actor:  valueobject.PTID(device.PTID),
-			Device: valueobject.DeviceID(device.DeviceID),
+	devicesByEndpoint := map[string]persistence.ConversationMemberDeviceModel{}
+	if conversationKind == valueobject.ConversationKindGroup {
+		var devices []persistence.ConversationMemberDeviceModel
+		if err := tx.Where(
+			"conversation_id = ?",
+			string(event.ConversationID),
+		).Find(&devices).Error; err != nil {
+			return interaction.DeliveryAggregate{}, err
 		}
-		devicesByEndpoint[endpoint.Key()] = device
+		devicesByEndpoint = make(
+			map[string]persistence.ConversationMemberDeviceModel,
+			len(devices),
+		)
+		for _, device := range devices {
+			endpoint := valueobject.Endpoint{
+				Actor:  valueobject.PTID(device.PTID),
+				Device: valueobject.DeviceID(device.DeviceID),
+			}
+			devicesByEndpoint[endpoint.Key()] = device
+		}
 	}
 
 	var consumedCount uint32
@@ -1043,6 +1065,12 @@ func loadDeliveryAggregate(
 			Device: valueobject.DeviceID(commitment.RecipientDeviceID),
 		}
 		key := endpoint.Key()
+		if conversationKind == valueobject.ConversationKindDirect {
+			if _, consumed := receiptsByEndpoint[key]; consumed {
+				consumedCount++
+			}
+			continue
+		}
 		device, exists := devicesByEndpoint[key]
 		if !exists {
 			return interaction.DeliveryAggregate{}, receiptIntegrityError(
@@ -1087,6 +1115,7 @@ func loadDeliveryAggregate(
 func loadOriginatorRoutes(
 	tx *gorm.DB,
 	event domainevent.Record,
+	conversationKind valueobject.ConversationKind,
 ) ([]interaction.EndpointRoute, error) {
 	var commitments []AuthorityDeliveryCommitmentModel
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -1106,28 +1135,31 @@ func loadOriginatorRoutes(
 			"does not contain an originator synchronization route",
 		)
 	}
-	var devices []persistence.ConversationMemberDeviceModel
-	if err := tx.Where(
-		"conversation_id = ? AND ptid = ? AND active = ?",
-		string(event.ConversationID),
-		string(event.Actor.Actor),
-		true,
-	).Find(&devices).Error; err != nil {
-		return nil, err
-	}
-	activeRoutes := make(map[string]valueobject.StationID, len(devices))
-	for _, device := range devices {
-		endpoint := valueobject.Endpoint{
-			Actor:  valueobject.PTID(device.PTID),
-			Device: valueobject.DeviceID(device.DeviceID),
+	activeRoutes := map[string]valueobject.StationID{}
+	if conversationKind == valueobject.ConversationKindGroup {
+		var devices []persistence.ConversationMemberDeviceModel
+		if err := tx.Where(
+			"conversation_id = ? AND ptid = ? AND active = ?",
+			string(event.ConversationID),
+			string(event.Actor.Actor),
+			true,
+		).Find(&devices).Error; err != nil {
+			return nil, err
 		}
-		if endpoint.Validate() != nil || device.HomeStation == "" {
-			return nil, receiptIntegrityError(
-				"originator_devices",
-				"contains an invalid active endpoint route",
-			)
+		activeRoutes = make(map[string]valueobject.StationID, len(devices))
+		for _, device := range devices {
+			endpoint := valueobject.Endpoint{
+				Actor:  valueobject.PTID(device.PTID),
+				Device: valueobject.DeviceID(device.DeviceID),
+			}
+			if endpoint.Validate() != nil || device.HomeStation == "" {
+				return nil, receiptIntegrityError(
+					"originator_devices",
+					"contains an invalid active endpoint route",
+				)
+			}
+			activeRoutes[endpoint.Key()] = valueobject.StationID(device.HomeStation)
 		}
-		activeRoutes[endpoint.Key()] = valueobject.StationID(device.HomeStation)
 	}
 	routes := make([]interaction.EndpointRoute, 0, len(commitments))
 	seen := make(map[string]struct{}, len(commitments))
@@ -1151,15 +1183,17 @@ func loadOriginatorRoutes(
 				"contains an invalid originator route",
 			)
 		}
-		activeHomeStation, active := activeRoutes[route.Endpoint.Key()]
-		if !active {
-			continue
-		}
-		if activeHomeStation != route.HomeStation {
-			return nil, receiptIntegrityError(
-				"originator_devices",
-				"does not match the committed Home Station route",
-			)
+		if conversationKind == valueobject.ConversationKindGroup {
+			activeHomeStation, active := activeRoutes[route.Endpoint.Key()]
+			if !active {
+				continue
+			}
+			if activeHomeStation != route.HomeStation {
+				return nil, receiptIntegrityError(
+					"originator_devices",
+					"does not match the committed Home Station route",
+				)
+			}
 		}
 		if _, duplicate := seen[route.Endpoint.Key()]; duplicate {
 			return nil, receiptIntegrityError(
@@ -1172,6 +1206,36 @@ func loadOriginatorRoutes(
 	}
 
 	return routes, nil
+}
+
+func loadReceiptConversationKind(
+	tx *gorm.DB,
+	conversationID valueobject.ConversationID,
+) (valueobject.ConversationKind, error) {
+	var model persistence.ConversationModel
+	err := tx.Select("kind").First(
+		&model,
+		"conversation_id = ?",
+		string(conversationID),
+	).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", receiptIntegrityError(
+			"conversation",
+			"is missing for the committed delivery",
+		)
+	}
+	if err != nil {
+		return "", err
+	}
+	kind := valueobject.ConversationKind(model.Kind)
+	if err := kind.Validate(); err != nil {
+		return "", receiptIntegrityError(
+			"conversation_kind",
+			"is not a supported canonical kind",
+		)
+	}
+
+	return kind, nil
 }
 
 func receiptIntegrityError(field string, message string) error {

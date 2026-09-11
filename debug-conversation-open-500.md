@@ -463,3 +463,64 @@ Instrumentation points:
 
 No receipt business behavior is changed until one exact-source pre-fix
 reproduction distinguishes these hypotheses.
+
+Pre-fix run
+`20260911T151151365999Z-53d60950ba3bc86e25a02511739515d4`
+used Station commit `b3cd1ffea3a5c748b117ad8b0f61ed28e4cee5ed`.
+The Gate again completed message submission, receiver native-DOM plaintext,
+decryption, and cleanup before failing at `receipt.delivered`.
+
+| ID | Status | Evidence |
+|----|--------|----------|
+| Z11 | Confirmed | Debug lines 5-602 repeatedly select only sequence-3 receipt `device-consumed:f4c476...` for Bob and `device-consumed:fb136e...` for Alice. The new send plan is already at sequence 7, so the historical head entries never advance. |
+| Z12 | Confirmed | Debug lines 6, 17, 27 and their Alice equivalents report `delivery_receipt_recorder.record: conversation_member_devices: is missing a required delivery endpoint`. Both receipts had already passed authentication, exact authority commitment, queue item, event, payload-hash, and idempotency validation before aggregate derivation. |
+| Z13 | Confirmed | Across 309 receipt instrumentation events, each client selected exactly one stable sequence-3 receipt and no later receipt. The current message therefore cannot reach receipt dispatch while the historical item remains pending. |
+| Z14 | Confirmed | Station reports `CONVERSATION_INTERACTION_INTEGRITY_FAILED`; the paired Desktop event receives only `station returned 500 :` with no typed code or details. |
+
+Root cause:
+
+- `loadDeliveryAggregate` requires every committed recipient endpoint to exist
+  in `conversation_member_devices`.
+- That table is the Conversation-owned device/MLS projection. Direct fan-out is
+  actor-level and uses the current Actor Directory endpoint snapshot under
+  MP-A07/MP-D17, so a current Direct endpoint can have a valid immutable
+  authority delivery commitment without appearing in the genesis-era
+  Conversation device projection.
+- The aggregate rejects after exact receipt persistence is attempted, causing
+  the transaction to roll back. Desktop then retries the same oldest durable
+  receipt forever and starves later receipts.
+- `mapProductionConversationError` does not map `interaction.Error`, hiding the
+  actionable integrity code behind generic HTTP 500.
+
+The owner-layer correction must derive Direct delivery progress from immutable
+authority commitments plus exact persisted receipts, retain strict
+Conversation member-device validation for Group/MLS deliveries, preserve
+committed originator routes for Direct receipt fan-out, and expose typed
+interaction failures through production HTTP headers.
+
+The source correction is now applied with instrumentation retained:
+
+- `ReceiptRecorder` loads the canonical Conversation kind before aggregate and
+  originator-route derivation.
+- Direct aggregates count only exact persisted receipts against immutable
+  authority commitments. Missing Direct receipts remain outstanding and are
+  not inferred as revoked.
+- Direct originator routes use the immutable committed routes; Group continues
+  to require the committed active MLS device projection.
+- Group missing-device corruption still rolls back the full receipt
+  transaction.
+- `mapProductionConversationError` maps typed `interaction.Error` values to
+  explicit 400/403/409/429/503 statuses with stable code and safe details.
+
+Local post-change evidence:
+
+- focused Direct current-endpoint and Group rollback receipt tests: PASS;
+- typed interaction HTTP mapping test: PASS;
+- complete Station Conversation tests: PASS;
+- focused receipt/interaction race tests: PASS;
+- Conversation `go vet`: PASS;
+- Chat Domain validation: expected stale-evidence failure until a source-bound
+  post-fix Gate is generated.
+
+Post-fix Native runtime evidence is pending. The Debug Server remains active
+and this session remains `[OPEN]`.
