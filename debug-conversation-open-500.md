@@ -553,3 +553,25 @@ Instrumentation point:
 - Z15/Z16: `interaction.Service.SubmitDeliveryReceipt` reports the committed
   aggregate and canonical Conversation kind outcome immediately before
   `validateDeliveryAggregate`.
+
+Exact-source post-fix iteration
+`20260911T154646356305Z-5eb5877f4195cf881d052940aa3d8e43`
+was interrupted after the diagnostic boundary and then cleaned up by exact
+Gate-owned process groups. The retained log establishes:
+
+| ID | Status | Evidence |
+|----|--------|----------|
+| Z15 | Confirmed | Debug lines 6, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 82, 88 report `requiredDeviceCount=3`, `consumedDeviceCount=0`, `read=true`, and `delivered=false` immediately before validation. |
+| Z16 | Rejected | Receipt recording completed and returned an aggregate; the prior `conversation_member_devices` error did not recur. |
+| Z17 | Rejected as a remaining defect | Paired Desktop lines report HTTP 409 with `CONVERSATION_INTERACTION_INTEGRITY_FAILED`, so typed mapping is preserved. |
+
+The remaining root cause is a monotonic receipt-state inconsistency. A
+recipient read cursor is stronger evidence than delivered, but
+`loadDeliveryAggregate` derives `delivered` only from persisted device receipt
+count. Historical read state can therefore produce the impossible
+`read=true, delivered=false` aggregate and roll back the exact old receipt.
+
+The correction must preserve the exact receipt count while deriving
+`delivered = consumed_device_count > 0 || read`. `fully_delivered` remains
+strictly tied to every required event-time endpoint being consumed or proven
+revoked.

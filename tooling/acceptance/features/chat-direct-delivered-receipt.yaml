@@ -61,6 +61,7 @@
       "receipt submission failure remains pending for lifecycle retry",
       "Station routing failure is returned to the Desktop worker",
       "Direct receipt aggregation uses immutable authority delivery commitments for current endpoints outside the Group MLS device projection",
+      "a committed recipient read cursor preserves monotonic delivered state without fabricating a device receipt",
       "typed Conversation interaction failures preserve their stable code and safe details at the HTTP boundary"
     ],
     "visible": [
@@ -77,6 +78,7 @@
     "queue consumption ACK must not be reported as a user-visible DELIVERED receipt",
     "Direct receipt aggregation must not require current endpoints to exist in conversation_member_devices",
     "Group receipt aggregation must still reject a missing committed MLS member device",
+    "read-ahead repair must not fabricate consumed-device or fully-delivered counts",
     "typed Conversation interaction failures must not collapse into generic HTTP 500 responses",
     "static or gateway evidence must not replace two native Desktop clients",
     "receipt evidence must not expose plaintext, credentials, tokens, or key material"
