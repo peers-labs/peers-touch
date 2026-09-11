@@ -4445,8 +4445,18 @@ root correction compares only `(actor PTID, device ID)`, retains rejection for
 missing or changed canonical identity, and maps the adapter path into the Direct
 delivered-receipt Feature and Registry.
 
-The next dependency-ready action is to commit the endpoint-binding closure in
-`peers-group-chat`, merge that commit into `peers-chat-high-chat`, verify both
-worktrees are clean with equal trees, deploy the exact source through profile
-`four` and `make station`, then execute the current-profile Native Gate with
-group-chat as initiator and high-chat as receiver.
+Exact-source run
+`20260911T101655225502Z-88c4b954448acee5d24cdbe670011a9d`
+proved the distinct clean worktrees, equal source trees, group-chat-first
+direction, Station/client source identity, both authenticated Native clients,
+and complete cleanup. The endpoint-binding failure no longer occurs. The run
+then failed at Bob's first `message.submitted`: the new message remained a
+durable draft because the local authority head did not match the Station send
+plan after the bounded inbox drain.
+
+The next dependency-ready action is to record the plan/local authority
+sequence and hash plus each drain result, reproduce the exact cross-worktree
+Gate, and repair the authority reconciliation owner without weakening the
+strict head equality check. After that fix, deploy the exact source through
+profile `four` and `make station`, then rerun with group-chat as initiator and
+high-chat as receiver.

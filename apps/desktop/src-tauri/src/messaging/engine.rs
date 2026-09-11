@@ -1059,12 +1059,73 @@ impl MessagingEngine {
         // Drain inbox until the local authority head matches the send plan.
         // A single drain may not suffice if the conversation was just created
         // and the creation event hasn't arrived in the device inbox yet.
-        for _ in 0..5 {
+        for attempt in 0..5 {
             let (local_seq, local_hash) = self.store.authority_head(&draft.conversation_id)?;
-            if local_seq == plan.authority_sequence && local_hash == plan.authority_hash {
+            let matches_plan =
+                local_seq == plan.authority_sequence && local_hash == plan.authority_hash;
+            // #region debug-point S-T-U-V:authority-head-before-drain
+            let _ = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_millis(500))
+                .build()
+                .and_then(|client| {
+                    client
+                        .post("http://10.4.55.179:7779/event")
+                        .json(&serde_json::json!({
+                            "sessionId": "conversation-open-500",
+                            "runId": "authority-head-pre-fix",
+                            "hypothesisId": "S-T-U-V",
+                            "location": "messaging/engine.rs:prepare_message_draft.before_drain",
+                            "msg": "[DEBUG] Direct authority head before drain",
+                            "data": {
+                                "attempt": attempt,
+                                "conversationId": draft.conversation_id,
+                                "messageId": draft.message_id,
+                                "planSequence": plan.authority_sequence,
+                                "planHash": &plan.authority_hash,
+                                "localSequence": local_seq,
+                                "localHash": &local_hash,
+                                "matchesPlan": matches_plan,
+                            }
+                        }))
+                        .send()
+                });
+            // #endregion
+            if matches_plan {
                 break;
             }
-            self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
+            let progress = self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
+            let (after_seq, after_hash) = self.store.authority_head(&draft.conversation_id)?;
+            // #region debug-point S-T-U-V:authority-head-after-drain
+            let _ = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_millis(500))
+                .build()
+                .and_then(|client| {
+                    client
+                        .post("http://10.4.55.179:7779/event")
+                        .json(&serde_json::json!({
+                            "sessionId": "conversation-open-500",
+                            "runId": "authority-head-pre-fix",
+                            "hypothesisId": "S-T-U-V",
+                            "location": "messaging/engine.rs:prepare_message_draft.after_drain",
+                            "msg": "[DEBUG] Direct authority head after drain",
+                            "data": {
+                                "attempt": attempt,
+                                "conversationId": draft.conversation_id,
+                                "messageId": draft.message_id,
+                                "planSequence": plan.authority_sequence,
+                                "planHash": &plan.authority_hash,
+                                "localSequence": after_seq,
+                                "localHash": &after_hash,
+                                "matchesPlan": after_seq == plan.authority_sequence
+                                    && after_hash == plan.authority_hash,
+                                "drainCursor": progress.cursor,
+                                "drainLaneHead": progress.lane_head,
+                                "drainProcessed": progress.processed,
+                            }
+                        }))
+                        .send()
+                });
+            // #endregion
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
         if plan.conversation_kind != draft.conversation_kind {

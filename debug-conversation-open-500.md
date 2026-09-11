@@ -245,3 +245,28 @@ binding mismatch.
 
 The fix must compare only canonical Actor PTID and device ID. It must continue
 to reject a changed PTID, changed device ID, missing actor, or empty device.
+
+## Direct Authority Head Follow-up
+
+Exact-source current-profile run
+`20260911T101655225502Z-88c4b954448acee5d24cdbe670011a9d`
+proved the corrected cross-worktree topology and removed the endpoint binding
+mismatch. Bob/group-chat still retained the new message
+`01M28064R1NZ6BR04CH9XX1C3A` as a durable draft because Direct preparation
+reported `messaging local authority head is behind send plan` on the immediate
+attempt and all six retries. Both client processes, six ports, logs, and
+run-scoped storage roots were released.
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| S | Bob's local authority sequence is lower than the Station send plan and the device inbox has no missing authority item to advance it. | High | Low | Local sequence remains lower while every drain reports zero processed items or an unchanged cursor/head. |
+| T | Bob has the same authority sequence as Station but a different event hash. | Medium | Low | Sequence values match while the local and plan hashes differ on every attempt. |
+| U | Bob's restored local authority head is ahead of the current Station plan. | Medium | Low | Local sequence is greater than the plan sequence before and after drain. |
+| V | Authority advances while the fixed send plan is being reconciled, so a newly fetched plan is required after drain. | Low | Low | Local head advances beyond the original plan during the loop and a later prepare response matches it. |
+
+Instrumentation point:
+
+- S-T-U-V: `MessagingEngine::prepare_message_draft` records the fixed plan
+  sequence/hash, local sequence/hash before each bounded drain, and the drain
+  cursor/lane-head/processed result. It does not alter the reconciliation loop
+  or accept a mismatched authority head.
