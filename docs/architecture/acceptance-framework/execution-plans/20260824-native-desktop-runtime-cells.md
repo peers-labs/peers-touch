@@ -4551,3 +4551,30 @@ fresh-device rules. It does not change Station authority, Direct cryptography,
 or product assertions. The old worktree development stores remain read-only
 bootstrap inputs; the dedicated Acceptance state becomes the sole mutable
 device owner for this Gate.
+
+Runs `20260911T132948166064Z-ed936c0d333c9acc6c9625b7b67bec18`,
+`20260911T133705719955Z-cde09239c3839bc01c996e0112e601de`, and
+`20260911T134419176858Z-46e935d2751d2a8a9e79049d86abfd6d`
+prove the persistent-state lifecycle and complete cleanup but expose a fresh
+Direct endpoint checkpoint gap. Both current devices publish their prekey
+bundles successfully. Bob's local authority head is empty because his endpoint
+was activated after the existing Direct conversation reached sequence 2; the
+send plan carries sequence 2 and its exact hash. The existing bootstrap accepts
+only a sequence-1 plan and therefore leaves the message in `draft`.
+
+The next NDR-W8 correction implements the already accepted fresh-device rule:
+
+1. fetch the authenticated public event log from sequence 1 through the exact
+   send-plan head using bounded pages;
+2. verify every event hash, previous-hash edge, conversation/authority binding,
+   contiguous sequence, and final plan sequence/hash/epoch binding;
+3. derive the Direct actor projection only from the verified genesis snapshot;
+4. atomically persist that projection and the verified final authority head
+   into an otherwise empty Device Engine state;
+5. do not create historical message projections, sessions, cursors,
+   consumption markers, or receipts; prior plaintext remains Recovery-only;
+6. keep the existing strict send-preparation equality check after checkpoint
+   installation.
+
+This allows future events to start from the fresh endpoint's activation head
+without inventing ownership of historical endpoint-private delivery.

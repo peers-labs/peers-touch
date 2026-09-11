@@ -360,3 +360,37 @@ the source actor identity but excludes copied live `chat.main.db` state, so the
 Gate enrolls a fresh isolated device instead of inheriting the already
 irrecoverable public/private OPK split. The receiver's missing-key rejection
 remains unchanged.
+
+Three exact-source runs on commit `84b5ff8fc40f79b7f36442f245d577520f3672cc`
+then isolated the next boundary:
+
+- `20260911T132948166064Z-ed936c0d333c9acc6c9625b7b67bec18`
+  created and retained the two persistent device states;
+- `20260911T133705719955Z-cde09239c3839bc01c996e0112e601de`
+  reused those states and reproduced the same first-send failure;
+- `20260911T134419176858Z-46e935d2751d2a8a9e79049d86abfd6d`
+  ran with Debug Server collection enabled.
+
+The latest runtime evidence rejects both a local prekey publication failure and
+a transient bootstrap race. Alice and Bob each report a published local bundle
+with no pending publication or replenishment, and `publish_prekeys` returns
+success. Bob instead receives a Station send plan at authority sequence 2 while
+his fresh endpoint has no local authority head. `drain_once` has no historical
+device-lane item because the endpoint was activated after those events. All
+preparation retries therefore fail with
+`messaging Direct authority checkpoint requires sequence-one send plan`.
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| Z5 | The first Gate attempted send before the fresh endpoint published its initial bundle. | Rejected | The second and third runs reuse the same durable device state; current device bundle publication remains successful, but send still fails before session bootstrap. |
+| Z6 | A stale active endpoint with no public bundle is the first failing boundary. | Rejected for the current failure | Debug instrumentation reaches the authority checkpoint before Direct bootstrap and records the sequence mismatch on every retry. |
+| Z7 | A fresh Direct endpoint can only bootstrap when the conversation is still at genesis sequence 1. | Confirmed defect | New endpoint local head is `(0, empty)` while the authenticated Station plan is `(2, exact hash)`. The current implementation rejects every non-sequence-one checkpoint. |
+
+The accepted architecture already states that a device activated after an
+event commit receives no historical live ciphertext, obtains old history only
+through Recovery, and receives future events from its activation sequence. The
+implementation therefore must verify the complete public authority event chain
+from genesis through the send-plan head, derive the Direct actor projection
+from the verified genesis event, and atomically install that projection plus
+the verified current head. It must not synthesize historical message
+projections, replay endpoint-private payloads, or trust an unverified plan hash.

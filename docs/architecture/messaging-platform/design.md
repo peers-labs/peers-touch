@@ -566,6 +566,16 @@ Logical message: (conversation_id, event_id, sequence)
 逻辑消息。设备在 event commit 后才加入时，不追补 live queue ciphertext；历史由
 Recovery 恢复，未来消息从该设备 activation sequence 开始 fan-out。
 
+Fresh Direct endpoint 在本地不存在该 conversation 的 authority head、session、
+message projection、consumption marker 或 command state 时，可以从 authenticated
+public event log 建立 activation checkpoint。Engine 必须从 sequence 1 起验证完整
+event hash chain，使用 genesis snapshot 建立 actor-level Direct projection，并把
+验证后的当前 event head 与该 projection 原子写入。中间 message events 只推进验证
+链，不生成旧 message projection、receipt、cursor 或 endpoint-private payload。
+最终 checkpoint 必须与当前 send-preparation plan 的 sequence、hash、authority 和
+epochs 完全一致；否则 fail closed。旧 plaintext/history 仍只能通过 MP-D08 Recovery
+取得。
+
 ## 6. End-To-End Send
 
 ```text

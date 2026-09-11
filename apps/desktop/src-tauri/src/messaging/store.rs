@@ -1701,7 +1701,7 @@ impl MessagingStore {
         if projection.kind != ConversationKind::Direct as i32
             || projection.membership_epoch != 1
             || projection.mls_epoch != 0
-            || checkpoint.event_sequence != 1
+            || checkpoint.event_sequence <= 0
             || checkpoint.event_hash.len() != 32
             || checkpoint.observed_at_unix_ms <= 0
         {
@@ -9701,7 +9701,7 @@ mod tests {
             .unwrap();
         let checkpoint = DirectAuthorityCheckpoint {
             projection: &projection,
-            event_sequence: 1,
+            event_sequence: 2,
             event_hash: &[7; 32],
             observed_at_unix_ms: 101,
         };
@@ -9709,7 +9709,7 @@ mod tests {
         assert!(store.bootstrap_direct_authority_head(&checkpoint).unwrap());
         assert_eq!(
             store.authority_head(&projection.conversation_id).unwrap(),
-            (1, vec![7; 32])
+            (2, vec![7; 32])
         );
         assert!(!store.bootstrap_direct_authority_head(&checkpoint).unwrap());
 
@@ -9719,7 +9719,7 @@ mod tests {
             store
                 .bootstrap_direct_authority_head(&DirectAuthorityCheckpoint {
                     projection: &mismatched,
-                    event_sequence: 1,
+                    event_sequence: 2,
                     event_hash: &[7; 32],
                     observed_at_unix_ms: 102,
                 })
