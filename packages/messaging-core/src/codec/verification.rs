@@ -118,22 +118,27 @@ pub fn verify_direct_genesis_event<'a>(
     {
         return Err("messaging Direct genesis endpoints are invalid".to_string());
     }
-    for (endpoint, route) in snapshot
-        .active_endpoints
-        .iter()
-        .zip(&snapshot.active_endpoint_routes)
-    {
-        let route_endpoint = route
-            .endpoint
-            .as_ref()
-            .ok_or_else(|| "messaging Direct genesis endpoint route is missing".to_string())?;
+    for endpoint in &snapshot.active_endpoints {
+        let matching_routes = snapshot
+            .active_endpoint_routes
+            .iter()
+            .filter(|route| {
+                route.endpoint.as_ref().is_some_and(|candidate| {
+                    candidate.ptid == endpoint.ptid && candidate.device_id == endpoint.device_id
+                })
+            })
+            .collect::<Vec<_>>();
+        if matching_routes.len() != 1 {
+            return Err("messaging Direct genesis endpoint routes are invalid".to_string());
+        }
+        let route = matching_routes[0];
         let expected_home_station = snapshot
             .active_members
             .iter()
             .find(|member| member.ptid == endpoint.ptid)
             .map(|member| member.home_station_peer_id.as_str())
             .ok_or_else(|| "messaging Direct genesis endpoint member is missing".to_string())?;
-        if route_endpoint != endpoint || route.home_station_peer_id != expected_home_station {
+        if route.home_station_peer_id != expected_home_station {
             return Err("messaging Direct genesis endpoint routes are invalid".to_string());
         }
     }
@@ -365,11 +370,11 @@ mod tests {
                         mls_epoch: 0,
                         active_endpoint_routes: vec![
                             ConversationAuthorityEndpoint {
-                                endpoint: Some(alice),
+                                endpoint: Some(bob),
                                 home_station_peer_id: "station-local".to_string(),
                             },
                             ConversationAuthorityEndpoint {
-                                endpoint: Some(bob),
+                                endpoint: Some(alice),
                                 home_station_peer_id: "station-local".to_string(),
                             },
                         ],
@@ -436,6 +441,20 @@ mod tests {
         assert_eq!(
             verify_direct_genesis_event(&event, "ptid:carol").unwrap_err(),
             "messaging Direct genesis members are invalid"
+        );
+
+        let mut wrong_route = event.clone();
+        let created = match wrong_route.payload.as_mut().unwrap() {
+            conversation_event::Payload::ConversationCreated(created) => created,
+            _ => unreachable!(),
+        };
+        created.post_state.as_mut().unwrap().active_endpoint_routes[0].home_station_peer_id =
+            "station-other".to_string();
+        wrong_route.event_hash.clear();
+        wrong_route.event_hash = Sha256::digest(wrong_route.encode_to_vec()).to_vec();
+        assert_eq!(
+            verify_direct_genesis_event(&wrong_route, "ptid:bob").unwrap_err(),
+            "messaging Direct genesis endpoint routes are invalid"
         );
     }
 
