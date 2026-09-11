@@ -542,6 +542,84 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         self.assertEqual(session.launcher.renderer_port, 3410)
         self.assertEqual(session.launcher.profile, "chat-native-alice")
 
+    def test_macos_cleanup_retains_persistent_client_storage(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            ephemeral = root / "ephemeral"
+            persistent = root / "persistent"
+            ephemeral.mkdir()
+            persistent.mkdir()
+            (ephemeral / "state").write_text("temporary", encoding="utf-8")
+            (persistent / "state").write_text("durable", encoding="utf-8")
+            binding = LocalMacOSRuntimeBinding()
+            client_specs = {
+                "alice": {
+                    "webdriver_port": 4445,
+                    "gateway_port": 3140,
+                    "renderer_port": 3410,
+                    "storage_root": str(persistent),
+                    "storage_lifecycle": "persistent",
+                },
+                "bob": {
+                    "webdriver_port": 4446,
+                    "gateway_port": 3141,
+                    "renderer_port": 3411,
+                    "storage_root": str(ephemeral),
+                    "storage_lifecycle": "ephemeral",
+                },
+            }
+
+            with patch(
+                "tooling.acceptance.drivers.native.runtime._wait_for",
+                return_value=True,
+            ):
+                cleanup = binding.finalize_cleanup([], client_specs)
+
+            self.assertTrue(persistent.is_dir())
+            self.assertEqual(
+                (persistent / "state").read_text(encoding="utf-8"),
+                "durable",
+            )
+            self.assertFalse(ephemeral.exists())
+            self.assertTrue(cleanup["storageReleased"])
+            self.assertTrue(cleanup["persistentStorageRetained"])
+            self.assertEqual(
+                cleanup["persistentStorageRoots"],
+                [str(persistent)],
+            )
+            self.assertEqual(
+                cleanup["releasedStorageRoots"],
+                [str(ephemeral)],
+            )
+
+    def test_macos_cleanup_rejects_unknown_storage_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = Path(temp_dir) / "unknown"
+            storage.mkdir()
+            binding = LocalMacOSRuntimeBinding()
+            client_specs = {
+                "alice": {
+                    "webdriver_port": 4445,
+                    "gateway_port": 3140,
+                    "renderer_port": 3410,
+                    "storage_root": str(storage),
+                    "storage_lifecycle": "mystery",
+                },
+            }
+
+            with patch(
+                "tooling.acceptance.drivers.native.runtime._wait_for",
+                return_value=True,
+            ):
+                cleanup = binding.finalize_cleanup([], client_specs)
+
+            self.assertTrue(storage.is_dir())
+            self.assertFalse(cleanup["storageReleased"])
+            self.assertIn(
+                "invalid runtime client storage_lifecycle",
+                cleanup["storageErrors"][0]["error"],
+            )
+
     def test_macos_development_binding_attests_running_make_binary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             binary = Path(temp_dir) / "peers-touch-desktop"

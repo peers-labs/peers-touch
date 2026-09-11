@@ -4509,3 +4509,45 @@ as a canonical endpoint-keyed set, still requiring exactly one route and the
 exact member Home Station for every endpoint. Focused Core and Desktop
 regressions pass. The exact-source deploy and unchanged Native Gate rerun remain
 the next serial action.
+
+Exact-source run
+`20260911T120248159958Z-2b7850dfbbdc8fe6edcf8a27ea3842cd`
+then proved the Direct genesis checkpoint, Bob/group-chat submission, distinct
+clean worktrees, equal Git trees, and complete run-resource cleanup. Alice's
+native receiver did not render the plaintext because its Device Engine failed
+the queued session init with `messaging one-time prekey is unavailable`.
+
+The failure exposes a second current-profile Provisioner ownership defect.
+The prior contract copied an existing device's complete SQLCipher state into a
+run-scoped directory, allowed Station to durably publish and consume public
+OPKs against that clone, and then deleted the only matching private state.
+Reusing the unchanged source seed on the next run rolls the same device
+backward and violates MP-A05, MP-A07, and MP-D17. The Messaging receiver must
+continue to reject the missing private key; omitting the OPK, regenerating its
+private half, or reactivating a consumed key is forbidden.
+
+The mechanical NDR-W8 plan correction is:
+
+1. retain the existing Alice and Bob actor identities from their respective
+   worktrees, but initialize one dedicated current-profile Acceptance device
+   state per actor without copying the source seed's live `chat.main.db`;
+2. store those two device states outside the run directory and reuse them
+   across Gate runs, so device identity, OPKs, ratchets, inbox cursor,
+   authority heads, and projections advance together as one Device Engine
+   state;
+3. mark the storage lifecycle explicitly in the Runtime Manifest so the local
+   runtime binding deletes only run-scoped storage and verifies that declared
+   persistent state remains present after process shutdown;
+4. retain the profile/source lease through both clients and fail closed on a
+   missing, malformed, symlinked, swapped, or duplicate persistent state root;
+5. keep Bob in `peers-group-chat` as the first sender and Alice in
+   `peers-chat-high-chat` as the first receiver, with the reverse direction and
+   all existing native DOM/message-ID/receipt assertions unchanged; and
+6. add a repeated-run regression proving the second run reuses the first run's
+   durable device state rather than cloning or rolling back live crypto.
+
+This is a lifecycle correction under the accepted Device Engine ownership and
+fresh-device rules. It does not change Station authority, Direct cryptography,
+or product assertions. The old worktree development stores remain read-only
+bootstrap inputs; the dedicated Acceptance state becomes the sole mutable
+device owner for this Gate.

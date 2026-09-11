@@ -135,6 +135,11 @@
         "chat-native-two-client-e2e"
       ],
       "synthetic_paths": [
+        "tooling/acceptance/core/provisioning.py",
+        "tooling/acceptance/drivers/native/runtime.py",
+        "tooling/acceptance/provisioners/native_tauri_current_profile.py",
+        "tooling/acceptance/gates/chat/native_two_client_runner.py",
+        "tooling/acceptance/gates/chat/native_current_profile_two_client_e2e.py",
         "apps/desktop/src-tauri/src/messaging/direct.rs",
         "apps/desktop/src-tauri/src/messaging/receipt.rs",
         "apps/desktop/src/store/socialChat.ts",
@@ -163,6 +168,7 @@
         ],
         "proven_scope": [
           "Direct prekey bootstrap self-heals missing Station public material without reusing consumed OPKs",
+          "Repeated current-profile native runs preserve each actor's isolated device-private state while retaining process and port cleanup",
           "Direct decrypt produces a durable DELIVERED receipt and the sender observes it in a native Desktop message row"
         ],
         "unproven_scope": [
