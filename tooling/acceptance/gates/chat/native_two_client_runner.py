@@ -39,6 +39,7 @@ from tooling.acceptance.gates.chat.native_support import (
 
 
 GATE_ID = "chat-native-two-client-e2e"
+CURRENT_PROFILE_GATE_ID = "chat-native-current-profile-two-client-e2e"
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 REQUIRED_ASSERTIONS = {
     "native_runtime",
@@ -52,11 +53,13 @@ REQUIRED_ASSERTIONS = {
 }
 
 
-def runtime_manifest() -> tuple[dict[str, Any], dict[str, Any]]:
+def runtime_manifest(
+    gate_id: str = GATE_ID,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     raw_path = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "").strip()
     if not raw_path:
         raise GateError("PT_ACCEPTANCE_RUNTIME_MANIFEST is required")
-    manifest = load_runtime_manifest(Path(raw_path), GATE_ID)
+    manifest = load_runtime_manifest(Path(raw_path), gate_id)
     actor_ref = manifest.get("actorManifest")
     if not isinstance(actor_ref, dict):
         raise GateError("runtime manifest actorManifest is required")
@@ -158,8 +161,12 @@ class NativeTwoClientGate(AcceptanceGate):
         manifest: dict[str, Any],
         actor_manifest: dict[str, Any],
         runtime_binding: NativeDesktopRuntimeBinding,
+        gate_id: str = GATE_ID,
+        allow_existing_fixture: bool = False,
     ) -> None:
+        self.gate_id = gate_id
         super().__init__()
+        self.allow_existing_fixture = allow_existing_fixture
         self.manifest = manifest
         self.actor_manifest = actor_manifest
         self.runtime_binding = runtime_binding
@@ -234,14 +241,22 @@ class NativeTwoClientGate(AcceptanceGate):
 
     def verify_fixture_ready(self) -> bool:
         reset = self.actor_manifest.get("reset")
-        if (
-            self.manifest.get("state") != "FIXTURE_READY"
-            or not isinstance(reset, dict)
-            or reset.get("authorized") is not True
-            or reset.get("targetVerified") is not True
-        ):
+        fixture_ready = (
+            self.manifest.get("state") == "FIXTURE_READY"
+            and isinstance(reset, dict)
+            and reset.get("targetVerified") is True
+        )
+        if self.allow_existing_fixture:
+            fixture_ready = (
+                fixture_ready
+                and self.actor_manifest.get("initialState") == "existing"
+                and reset.get("authorized") is False
+            )
+        else:
+            fixture_ready = fixture_ready and reset.get("authorized") is True
+        if not fixture_ready:
             raise GateError(
-                "runtime manifest fixture is not reset and verified"
+                "runtime manifest fixture is not ready for the selected mode"
             )
         return True
 
@@ -571,7 +586,10 @@ class NativeTwoClientGate(AcceptanceGate):
         return cleanup
 
     def run(self) -> dict[str, Any]:
-        if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
+        if (
+            not self.allow_existing_fixture
+            and os.environ.get("CHAT_ACCEPTANCE_RESET") != "1"
+        ):
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
 
         order = ["alice", "bob"]
@@ -595,7 +613,11 @@ class NativeTwoClientGate(AcceptanceGate):
                 }
             )
             self.step(
-                "fixture.reset",
+                (
+                    "fixture.existing"
+                    if self.allow_existing_fixture
+                    else "fixture.reset"
+                ),
                 self.verify_fixture_ready,
             )
             for actor in order:

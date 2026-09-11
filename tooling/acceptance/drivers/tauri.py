@@ -495,6 +495,37 @@ class MakeDesktopLauncher(AppLauncher):
             return False
         return True
 
+    def runtime_binary_path(self) -> Path:
+        if self._runtime_pid is None:
+            raise DriverError("make Desktop runtime process identity is unavailable")
+        completed = subprocess.run(
+            [
+                "lsof",
+                "-a",
+                "-p",
+                str(self._runtime_pid),
+                "-d",
+                "txt",
+                "-Fn",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        candidates = {
+            Path(line[1:]).resolve()
+            for line in completed.stdout.splitlines()
+            if line.startswith("n")
+            and Path(line[1:]).name == "peers-touch-desktop"
+            and Path(line[1:]).is_file()
+        }
+        if len(candidates) != 1:
+            raise DriverError(
+                "make Desktop executable identity is ambiguous for process "
+                f"{self._runtime_pid}: {sorted(str(path) for path in candidates)}"
+            )
+        return candidates.pop()
+
     def _owned_listener_pid(self, port: int) -> int:
         completed = subprocess.run(
             ["lsof", "-tiTCP:" + str(port), "-sTCP:LISTEN"],
