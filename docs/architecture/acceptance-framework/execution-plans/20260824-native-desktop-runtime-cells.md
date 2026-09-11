@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-24 | **Updated**: 2026-09-05
+> **Created**: 2026-08-24 | **Updated**: 2026-09-11
 > **Owner**: Acceptance Infrastructure + Desktop Platform + Chat Domain
 > **Branch**: `refactor/chat-acceptance-cutover`
 > **Parent Design**: [../design.md](../design.md)
@@ -4292,6 +4292,11 @@ Actor Identity device check.
 
 Focused regressions and the full Conversation package pass. No Station database
 mutation or Fixture reset occurred. The next dependency-ready action is to
-finish the group/high source reconciliation, create an exact-source checkpoint,
-deploy through profile `four` and `make station`, then rerun the Native
-two-client Gate before the remaining Direct/offline/Group/interaction matrix.
+run `chat-native-current-profile-two-client-e2e`. That Gate uses the installed
+active profile, clones existing Desktop identity state into two isolated
+run-scoped storage roots, launches both clients through `make desktop`, and
+performs the unchanged bidirectional plaintext/message-ID/receipt assertions
+without resetting the protected Station. The cross-platform
+`chat-native-two-client-e2e` keeps its disposable two-Station Fixture contract
+and is not weakened or replaced. After the current-profile Gate passes, resume
+the remaining Direct/offline/Group/interaction matrix.
