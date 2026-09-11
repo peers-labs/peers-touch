@@ -1245,14 +1245,22 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                     )
                 binary = launcher.runtime_binary_path()
                 binaries[str(binary)] = _file_sha256(binary)
-            hashes = set(binaries.values())
-            if not binaries or len(hashes) != 1:
+            if not binaries:
                 raise DriverError(
-                    "make Desktop clients do not share one binary identity"
+                    "make Desktop runtime binary identity is unavailable"
                 )
+            canonical = json.dumps(
+                [
+                    {"path": path, "sha256": digest}
+                    for path, digest in sorted(binaries.items())
+                ],
+                sort_keys=True,
+                separators=(",", ":"),
+            )
             return {
                 "path": ",".join(sorted(binaries)),
-                "sha256": hashes.pop(),
+                "sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+                "instances": canonical,
                 "sourceCommit": subprocess.run(
                     ("git", "rev-parse", "HEAD"),
                     cwd=REPO_ROOT,
