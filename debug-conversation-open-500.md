@@ -179,7 +179,7 @@ Instrumentation point:
 ## Cross-Worktree Direct Preparation Follow-up
 
 Exact-source current-profile run
-`20260911T090537790107Z-a5a5d64a4758cea6cb33d92386cc1728`
+`20260911T091945164468Z-8a0352c866ed640575c28ed19e7c1f2a`
 proved the corrected runtime topology:
 
 - Bob ran from `peers-group-chat` and initiated the Direct journey.
@@ -213,3 +213,12 @@ The exact P/Q/R error is currently hidden by two `Err(_)` branches in
 `MessagingEngine`: the immediate submit returns `state=draft`, and the lifecycle
 retry records only `prepare_failed`. The next instrumentation point reports that
 error to the existing Debug Server without changing retry or draft semantics.
+
+Instrumentation run
+`20260911T092935148620Z-91e7fc226001ea9e609fc8fe5258b1a9`
+is invalid for P/Q/R analysis. A concurrent local Foundation Gate acquired the
+same Desktop profile ports and runtime lifecycle after preflight; the Chat run
+timed out at Bob ACTIVE enrollment before Alice launched or message preparation
+executed. Its cleanup evidence passed, but it produced no message-path evidence.
+Do not rerun the local Chat Gate until that concurrent Gate releases the shared
+Desktop resources.
