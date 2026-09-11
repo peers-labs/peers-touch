@@ -1414,6 +1414,26 @@ and zero local-path leakage.
   integrator-owned Harness/coordinator reconciliation barrier; fixture
   provisioning, plan state, commits, deployment, and final Gates remain
   serial.
+- **BASE-FORBIDDEN_ACTOR first runtime attempt (2026-09-11)**: checkpoint
+  `6afce95271381aa1d0c2ed7a331bf728b3f40e36` was deployed exact-source to
+  `chat-native-disposable`. C08 run
+  `20260911T044710291528Z-2a7016d83a804dbf19694fb22131e1e6`
+  completed `DONE / PROVEN` with clean Provisioner cleanup. The unchanged
+  Foundation run
+  `20260911T044824404452Z-1bd6e65bb4094a3cdbc03dd37f0af86a`
+  failed before the new direct-runtime cell while Browser English AS-F06
+  recovered from its intentional transport cut. Existing provider
+  instrumentation proves the corresponding Ark request used the canonical
+  internal endpoint, received HTTP `200`, and completed in about 2.2 seconds.
+  The regression was in Desktop Browser transport classification: the new
+  immediate typed HTTP-error path projected every non-2xx response, including
+  an untyped transient `502`, as a terminal SSE error and cleared the recovery
+  record. The local correction emits terminal error events only for complete
+  typed-error contracts and leaves untyped HTTP failures on the existing
+  replay retry path. Focused Desktop API tests pass `47/47`, Desktop check
+  passes, and outer runtime cleanup released both clients, all ports, storage,
+  and actor identity. Exact-source C08 and the unchanged Foundation Gate must
+  be rerun after checkpoint and deployment.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

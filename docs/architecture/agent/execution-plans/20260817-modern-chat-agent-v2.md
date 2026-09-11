@@ -22,10 +22,10 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 forbidden-actor closure and exact-source Foundation proof |
-| Current step | `BASE-FORBIDDEN_ACTOR` is source-complete and locally verified；the prior exact-source Gate crossed AS-F06 and AS-F07 after the Ark endpoint and revision thinking-mode fixes；fresh runtime proof is pending the new checkpoint |
+| Current step | `BASE-FORBIDDEN_ACTOR` is source-complete；its first exact-source Gate rerun exposed and locally closed a Browser transport regression where an untyped recovery `502` was misclassified as a terminal typed error |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | C08 run `20260911T031908377408Z-020712763e7168d9fcf4bdefb39ec604` on `48c7065ce97b2442df3c82d17840dd120c44651e` is `DONE / PROVEN` with 19/19 assertions and clean resource release；Foundation run `20260911T032023594492Z-4af15b4006f3a3fb625e4ba4cc009f30` crossed AS-F06 and AS-F07 |
-| Current action | Checkpoint the locally verified two-actor `BASE-FORBIDDEN_ACTOR` vertical, deploy exact source, rerun C08, then run the unchanged 419-cell Gate |
+| Last completed | C08 run `20260911T044710291528Z-2a7016d83a804dbf19694fb22131e1e6` on `6afce95271381aa1d0c2ed7a331bf728b3f40e36` is `DONE / PROVEN` with clean resource release；Foundation run `20260911T044824404452Z-1bd6e65bb4094a3cdbc03dd37f0af86a` reached Browser English AS-F06 and preserved clean outer cleanup |
+| Current action | Checkpoint the locally verified Browser typed-error/transport distinction, deploy exact source, rerun C08, then run the unchanged 419-cell Gate |
 | Next action | If the full Gate crosses `BASE-FORBIDDEN_ACTOR`, admit only the next plan-defined `BASE-*` vertical exposed by its first failure |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
@@ -35,7 +35,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | none for the current source closure；fresh runtime proof still requires the exclusive local Desktop Gate window and the approved disposable profile |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` is injected through the canonical profile；C08 is `DONE / PROVEN` on `48c7065ce`；the unchanged Gate crosses AS-F06/AS-F07 and stops at the previously unimplemented `BASE-FORBIDDEN_ACTOR`；the new source adds Station owner rejection, Desktop/Browser `Switch account`, two-actor production Harness, independent oracle, replay, zero mutation, and cleanup while full G-F remains `PARTIAL / UNPROVEN` |
+| Evidence | Ark model `ep-20260623145021-n4xdm` is injected through the canonical profile；C08 is `DONE / PROVEN` on `6afce9527`；the first Foundation rerun found that an untyped post-cut `502` was incorrectly projected as terminal while Ark itself returned HTTP `200` and completed；the local transport fix and `47/47` focused Desktop tests pass while full G-F remains `PARTIAL / UNPROVEN` |
 | Last updated | 2026-09-11 |
 
 ---

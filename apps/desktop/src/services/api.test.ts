@@ -431,6 +431,70 @@ describe('Agent turn stream completion', () => {
     }))
   })
 
+  it('source-binds an immediate Browser typed HTTP rejection', async () => {
+    const browserWindow = Object.assign(new EventTarget(), {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    })
+    vi.stubGlobal('window', browserWindow)
+    ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
+      'http://127.0.0.1:3030'
+    mockFetch.mockResolvedValue(new Response(
+      JSON.stringify({ error: 'agent.errors.forbiddenActor' }),
+      {
+        status: 403,
+        headers: {
+          'x-peers-error-code': 'OWNERSHIP_FORBIDDEN_ACTOR',
+          'x-peers-error-locale-key': 'agent.errors.forbiddenActor',
+          'x-peers-error-retryable': 'false',
+          'x-peers-error-terminal': 'true',
+          'x-peers-error-details': JSON.stringify({
+            resource_kind: 'conversation',
+            resource_id: 'conversation-owned-by-bob',
+          }),
+        },
+      },
+    ))
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurn(
+      {
+        client_idempotency_key: 'request-browser-forbidden',
+        conversation_id: 'conversation-owned-by-bob',
+        agent_id: 'agent-1',
+        user_input: 'forbidden',
+      },
+      onEvent,
+      vi.fn(),
+      onError,
+      'ptid:person:alice',
+    )
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'error',
+      data: expect.objectContaining({
+        error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+        locale_key: 'agent.errors.forbiddenActor',
+        retryable: false,
+        terminal: true,
+      }),
+    }))
+    expect(onError.mock.calls[0]?.[0]).toMatchObject({
+      typedError: {
+        error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+        details: {
+          resource_kind: 'conversation',
+          resource_id: 'conversation-owned-by-bob',
+        },
+      },
+      resolution: {
+        type: 'switchAccount',
+      },
+    })
+  })
+
   it('source-binds a native pre-admission error before projection metadata', async () => {
     type NativeTurnEvent = {
       payload: {
@@ -871,6 +935,44 @@ describe('api.startAgentTurnReplayStream', () => {
   it('keeps the Browser replay retry schedule aligned with the native transport', () => {
     expect(AGENT_REPLAY_RETRY_DELAYS_MS).toEqual([500, 1_000, 2_000, 4_000, 8_000])
     expect(AGENT_REPLAY_RETRY_DELAYS_MS.length + 1).toBe(6)
+  })
+
+  it('retries an untyped Browser HTTP failure instead of projecting a terminal error', async () => {
+    vi.useFakeTimers()
+    try {
+      const browserWindow = Object.assign(new EventTarget(), {
+        setTimeout: globalThis.setTimeout.bind(globalThis),
+        clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      })
+      vi.stubGlobal('window', browserWindow)
+      ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
+        'http://127.0.0.1:3030'
+      mockFetch.mockImplementation(() => Promise.resolve(
+        new Response('upstream unavailable', { status: 502 }),
+      ))
+      const onEvent = vi.fn()
+      const onError = vi.fn()
+
+      streamAgentTurnReplay(
+        {
+          conversation_id: 'conversation-1',
+          turn_id: 'turn-1',
+          after_seq: 4,
+        },
+        onEvent,
+        onError,
+        'ptid:person:owner',
+      )
+
+      await vi.runAllTimersAsync()
+      expect(mockFetch).toHaveBeenCalledTimes(AGENT_REPLAY_RETRY_DELAYS_MS.length + 1)
+      expect(onEvent.mock.calls.some(([event]) => event.event === 'error')).toBe(false)
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Agent stream returned HTTP 502' }),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('fails a Browser replay when the Station SSE tail stops producing heartbeats', async () => {

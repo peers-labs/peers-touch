@@ -6622,11 +6622,12 @@ async function consumeAgentSSE(
   onFrame: (event: StreamEvent) => boolean,
 ): Promise<boolean> {
   if (!response.ok) {
-    onFrame({
-      event: 'error',
-      data: await agentTurnHttpErrorData(response),
-    });
-    return true;
+    const data = await agentTurnHttpErrorData(response);
+    if (projectAgentTypedErrorPayload(data)) {
+      onFrame({ event: 'error', data });
+      return true;
+    }
+    throw new Error(String(data.error));
   }
   if (!response.body) {
     throw new Error(`Agent stream returned HTTP ${response.status}`);
