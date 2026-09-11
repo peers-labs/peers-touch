@@ -656,3 +656,36 @@ Local post-change evidence:
   `PASSED`;
 - Chat Domain proof validation remains expectedly stale until the exact-source
   Native Gate produces post-fix evidence.
+
+## Immutable App Log Evidence Follow-up
+
+Exact-source post-fix run
+`20260911T162203820700Z-990108707f29bb6f3188821f9ba9623a`
+proved both Direct directions before failing during evidence collection:
+
+- Bob/group-chat restored authenticated-ready, transitioned through the
+  controlled logout account gate, and explicitly logged back in;
+- Alice/high-chat entered through a fresh data-ready account gate and logged in
+  without a redundant logout;
+- Bob-to-Alice and Alice-to-Bob native plaintext, identical message ID, and
+  delivered receipt assertions all passed;
+- the Gate then raised `EvidenceConflict` for
+  `evidence/chat-native-current-profile-two-client-e2e-bob-app-log.log`.
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| Z21 | The Chat runner writes the same mutable app log under one immutable artifact key before and after client shutdown. | Confirmed | `collect_client_evidence()` writes `bob-app-log`; `cleanup_clients()` stops clients and writes `bob-app-log` again after the file has grown. |
+| Z22 | Evidence Store incorrectly rejects an idempotent equal-byte retry. | Rejected | The error explicitly reports different bytes, and `write_current_artifact` permits equal-hash retries while rejecting changed content. |
+| Z23 | A remaining Chat product assertion or receipt transition failed. | Rejected | All ten source/runtime, cross-worktree, bidirectional plaintext, identical-ID, and delivered-receipt assertions passed before evidence collection. |
+
+The repair belongs to Chat business evidence collection. Screenshots and DOM
+remain pre-cleanup observations; mutable app logs are exported exactly once
+after the client is stopped. The Evidence Store immutable-write rule remains
+unchanged. The same duplicate writer shape is removed from the Direct,
+multi-device, recovery, Group MLS, and typing Chat runners.
+
+The business-runner correction is applied. Pre-cleanup collection now captures
+only screenshot and DOM evidence; final app logs are written once after client
+stop by each runner's cleanup owner. The complete Chat native static Python
+suite passes 184/184, including a focused Direct regression that proves visible
+evidence collection does not write the mutable app log before cleanup.

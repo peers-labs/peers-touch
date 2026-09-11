@@ -820,6 +820,21 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         )
         self.assertFalse(gate.report.assertions[-1].passed)
 
+    def test_visible_evidence_defers_mutable_app_log_until_cleanup(self) -> None:
+        client = object()
+        saved_logs: list[str] = []
+        gate = object.__new__(NativeTwoClientGate)
+        gate.clients = {"alice": client}
+        gate.save_screenshot = lambda _client, _actor: None
+        gate.save_dom = lambda _client, _actor: None
+        gate.save_app_log = (
+            lambda _client, actor: saved_logs.append(actor)
+        )
+
+        gate.collect_client_evidence("alice")
+
+        self.assertEqual(saved_logs, [])
+
     def test_cleanup_exports_remote_log_before_binding_cleanup(self) -> None:
         log_path = self.root / "alice.log"
 
