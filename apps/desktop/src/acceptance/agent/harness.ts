@@ -1568,6 +1568,24 @@ interface FoundationExecutorUnavailableScenario {
 const foundationExecutorUnavailableScenarios =
   new Map<string, FoundationExecutorUnavailableScenario>();
 
+interface FoundationForbiddenActorOwnerScenario {
+  scenarioKey: string;
+  agentId: string;
+  conversationId: string;
+  priorSelection: string;
+  ownerActorHash: string;
+  beforeHash: string;
+  beforeVersion: number;
+  beforeMessageCount: number;
+  beforeQueueCount: number;
+  beforeTurnCount: number;
+  beforeProviderCallCount: number;
+}
+
+const foundationForbiddenActorOwnerScenarios =
+  new Map<string, FoundationForbiddenActorOwnerScenario>();
+const foundationForbiddenActorReceiverResources = new Map<string, string>();
+
 interface FoundationToolTurnSession {
   capabilitySessionId: string;
   facts: Record<string, unknown>;
@@ -10728,6 +10746,500 @@ async function agentAuthorityHash(agent: Awaited<ReturnType<typeof api.getAgent>
   return sha256Hex(stableJson(agent));
 }
 
+async function prepareFoundationForbiddenActorOwner(input: {
+  scenarioKey: string;
+  sampleId: string;
+}): Promise<Record<string, unknown>> {
+  if (foundationForbiddenActorOwnerScenarios.has(input.scenarioKey)) {
+    throw new Error('agent.acceptance.foundationForbiddenActorScenarioConflict');
+  }
+  const ownerActor = authenticatedFoundationActorPtid();
+  const store = useAgentStore.getState();
+  const priorSelection = store.selectedAgent;
+  const agent = await store.createAgent({
+    name: `foundation-owner-${input.sampleId}-${crypto.randomUUID()}`,
+    title: `Foundation owner ${input.sampleId}`,
+    description: 'Foundation forbidden actor private fixture',
+    visibility: 'private',
+  });
+  let conversationId = '';
+  try {
+    const conversation = await api.createAgentConversation({
+      agent_id: agent.id,
+      title: `Foundation forbidden actor ${input.sampleId}`,
+      provider_id: agent.provider,
+      model_name: agent.model,
+    });
+    conversationId = conversation.conversation_id;
+    const [readback, execution, queue] = await Promise.all([
+      foundationConversationReadback(conversationId),
+      foundationExecutionSnapshot(agent.id, conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    const scenario: FoundationForbiddenActorOwnerScenario = {
+      scenarioKey: input.scenarioKey,
+      agentId: agent.id,
+      conversationId,
+      priorSelection,
+      ownerActorHash: await sha256Hex(ownerActor),
+      beforeHash: await sha256Hex(stableJson(readback)),
+      beforeVersion: readback.conversation.version,
+      beforeMessageCount: readback.messages.length,
+      beforeQueueCount: queue.entries.length,
+      beforeTurnCount: execution.turnCount,
+      beforeProviderCallCount: execution.providerCallCount,
+    };
+    foundationForbiddenActorOwnerScenarios.set(input.scenarioKey, scenario);
+    return {
+      scenarioKey: input.scenarioKey,
+      resourceKind: 'conversation',
+      conversationId,
+      agentId: agent.id,
+      ownerActorHash: scenario.ownerActorHash,
+      beforeHash: scenario.beforeHash,
+      beforeVersion: scenario.beforeVersion,
+    };
+  } catch (error) {
+    if (conversationId) {
+      await deleteFoundationConversation(conversationId).catch(() => undefined);
+    }
+    await api.deleteAgent(agent.id).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function readFoundationForbiddenActorOwner(
+  scenarioKey: string,
+): Promise<Record<string, unknown>> {
+  const scenario = foundationForbiddenActorOwnerScenarios.get(scenarioKey);
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationForbiddenActorScenarioMissing');
+  }
+  const [readback, execution, queue] = await Promise.all([
+    foundationConversationReadback(scenario.conversationId),
+    foundationExecutionSnapshot(scenario.agentId, scenario.conversationId),
+    api.listAgentTurnQueue(scenario.conversationId),
+  ]);
+  return {
+    resourceKind: 'conversation',
+    resourceId: scenario.conversationId,
+    ownerActorHash: scenario.ownerActorHash,
+    beforeHash: scenario.beforeHash,
+    afterHash: await sha256Hex(stableJson(readback)),
+    versionBefore: scenario.beforeVersion,
+    versionAfter: readback.conversation.version,
+    messageDelta: readback.messages.length - scenario.beforeMessageCount,
+    queueDelta: queue.entries.length - scenario.beforeQueueCount,
+    turnDelta: execution.turnCount - scenario.beforeTurnCount,
+    providerExecutionDelta:
+      execution.providerCallCount - scenario.beforeProviderCallCount,
+  };
+}
+
+async function cleanupFoundationForbiddenActorOwner(
+  scenarioKey: string,
+): Promise<Record<string, unknown>> {
+  const scenario = foundationForbiddenActorOwnerScenarios.get(scenarioKey);
+  if (!scenario) {
+    return {
+      scenarioKey,
+      resourceDeleted: true,
+      agentDeleted: true,
+      priorSelectionRestored: true,
+    };
+  }
+  const failures: unknown[] = [];
+  let resourceDeleted = false;
+  let agentDeleted = false;
+  try {
+    const deletionCode = await deleteFoundationConversation(
+      scenario.conversationId,
+    );
+    resourceDeleted = deletionCode === ''
+      || deletionCode.includes('AGENT_4004');
+  } catch (error) {
+    failures.push(error);
+  }
+  try {
+    await api.deleteAgent(scenario.agentId).catch((error: unknown) => {
+      if (!observedErrorCode(error).includes('AGENT_4004')) throw error;
+    });
+    agentDeleted = await api.getAgent(scenario.agentId).then(
+      () => false,
+      (error: unknown) => observedErrorCode(error).includes('AGENT_4004'),
+    );
+  } catch (error) {
+    failures.push(error);
+  }
+  try {
+    await useAgentStore.getState().loadAgents();
+    if (scenario.priorSelection) {
+      useAgentStore.getState().setSelectedAgent(scenario.priorSelection);
+      await api.setSelectedAgent(scenario.priorSelection);
+    }
+  } catch (error) {
+    failures.push(error);
+  }
+  const priorSelectionRestored =
+    useAgentStore.getState().selectedAgent === scenario.priorSelection;
+  if (
+    failures.length > 0
+    || !resourceDeleted
+    || !agentDeleted
+    || !priorSelectionRestored
+  ) {
+    throw Object.assign(
+      new Error('agent.acceptance.foundationForbiddenActorOwnerCleanupFailed'),
+      {
+        failures,
+        resourceDeleted,
+        agentDeleted,
+        priorSelectionRestored,
+      },
+    );
+  }
+  foundationForbiddenActorOwnerScenarios.delete(scenarioKey);
+  return {
+    scenarioKey,
+    resourceDeleted,
+    agentDeleted,
+    priorSelectionRestored,
+  };
+}
+
+async function runFoundationForbiddenActorAttempt(input: {
+  conversationId: string;
+  idempotencyKey: string;
+  content: string;
+}): Promise<{
+  outcome: Record<string, unknown>;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  rawPayloadHash: string;
+  foreignContentFieldCount: number;
+}> {
+  const rejectedRef: { current: Record<string, unknown> | null } = {
+    current: null,
+  };
+  const errorEventRef: {
+    current: FoundationPreAdmissionErrorEvent | null;
+  } = { current: null };
+  let observationSequence = 0;
+  const unsubscribe = eventBus.subscribe(
+    EVENT.AGENT_TURN_STREAM_EVENT,
+    (payload) => {
+      const sourceDelivery = (
+        payload as typeof payload & {
+          sourceDelivery?: AgentTurnSourceDelivery;
+        }
+      ).sourceDelivery;
+      if (payload.conversationId !== input.conversationId) return;
+      observationSequence += 1;
+      if (
+        payload.event !== 'error'
+        || payload.data.error_type !== 'OWNERSHIP_FORBIDDEN_ACTOR'
+      ) return;
+      errorEventRef.current = {
+        data: evidenceValue(payload.data) as Record<string, unknown>,
+        eventType: payload.event,
+        observedAt: new Date(payload.timestampMs).toISOString(),
+        streamId: payload.streamId,
+        streamGeneration: payload.streamGeneration,
+        conversationId: payload.conversationId,
+        observationSequence,
+        timestampMs: payload.timestampMs,
+        sourceDelivery,
+      };
+    },
+  );
+  try {
+    const sent = useChatStore.getState().sendMessage(
+      input.content,
+      [],
+      {
+        clientIdempotencyKey: input.idempotencyKey,
+        onRejected: (error) => {
+          if (error) {
+            rejectedRef.current = evidenceValue(error) as Record<string, unknown>;
+          }
+        },
+      },
+    );
+    if (!sent) {
+      throw new Error('agent.acceptance.foundationForbiddenActorSendRejected');
+    }
+    await waitFor(
+      () => (
+        rejectedRef.current !== null
+        && errorEventRef.current !== null
+      ),
+      'typed forbidden actor rejection',
+      60_000,
+    );
+  } finally {
+    unsubscribe();
+  }
+
+  const outcome = rejectedRef.current;
+  const errorEvent =
+    errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
+  const sourceDelivery = errorEvent?.sourceDelivery;
+  const actorPtid = authenticatedFoundationActorPtid();
+  if (
+    !outcome
+    || !errorEvent
+    || !sourceDelivery
+    || sourceDelivery.transport !== 'station-sse'
+    || sourceDelivery.ptid !== actorPtid
+    || sourceDelivery.conversationId !== input.conversationId
+    || sourceDelivery.turnId !== ''
+    || sourceDelivery.sequence !== 0
+    || sourceDelivery.rawPayload.eventType !== 'error'
+    || stableJson(
+      normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+    ) !== stableJson(
+      normalizeProjectedStationPayload(errorEvent.data),
+    )
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationForbiddenActorSourceIdentityMismatch',
+    );
+  }
+  const foreignContentFields = new Set([
+    'title',
+    'description',
+    'messages',
+    'runtime_binding',
+    'runtimeBinding',
+    'provider_id',
+    'providerId',
+    'model_name',
+    'modelName',
+  ]);
+  return {
+    outcome,
+    runtimeEvent: {
+      eventId: await sha256Hex(stableJson({
+        streamId: errorEvent.streamId,
+        streamGeneration: errorEvent.streamGeneration,
+        conversationId: errorEvent.conversationId,
+        observationSequence: errorEvent.observationSequence,
+        eventType: errorEvent.eventType,
+        timestampMs: errorEvent.timestampMs,
+        data: errorEvent.data,
+      })),
+      eventType: errorEvent.eventType,
+      sequence: errorEvent.observationSequence,
+      observedAt: errorEvent.observedAt,
+      streamGeneration: errorEvent.streamGeneration,
+      streamIdHash: await sha256Hex(errorEvent.streamId),
+      conversationIdHash: await sha256Hex(errorEvent.conversationId),
+      payloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+      errorType: String(errorEvent.data.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    },
+    rawPayloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+    foreignContentFieldCount: Object.keys(errorEvent.data)
+      .filter((key) => foreignContentFields.has(key)).length,
+  };
+}
+
+async function rejectFoundationForbiddenActor(input: {
+  scenarioKey: string;
+  platform: string;
+  sampleId: string;
+  ownerFixture: Record<string, unknown>;
+}): Promise<Record<string, unknown>> {
+  const resourceKind = String(input.ownerFixture.resourceKind ?? '');
+  const resourceId = String(input.ownerFixture.conversationId ?? '');
+  const ownerActorHash = String(input.ownerFixture.ownerActorHash ?? '');
+  if (
+    resourceKind !== 'conversation'
+    || !resourceId
+    || !String(input.ownerFixture.agentId ?? '')
+    || !ownerActorHash
+  ) {
+    throw new Error('agent.acceptance.foundationForbiddenActorOwnerInvalid');
+  }
+  const receiverActorHash = await sha256Hex(authenticatedFoundationActorPtid());
+  if (receiverActorHash === ownerActorHash) {
+    throw new Error('agent.acceptance.foundationForbiddenActorActorsCollapsed');
+  }
+
+  clearFoundationLocalConversationProjection(resourceId);
+  foundationForbiddenActorReceiverResources.set(input.scenarioKey, resourceId);
+  useChatStore.setState({
+    currentSessionKey: resourceId,
+    messages: [],
+    isStreaming: false,
+    streamingStartedAt: null,
+    abortController: null,
+  });
+  const idempotencyKey = crypto.randomUUID();
+  const content = `Forbidden actor ${input.sampleId}`;
+  const startedAt = performance.now();
+  const first = await runFoundationForbiddenActorAttempt({
+    conversationId: resourceId,
+    idempotencyKey,
+    content,
+  });
+  const replayed = await runFoundationForbiddenActorAttempt({
+    conversationId: resourceId,
+    idempotencyKey,
+    content,
+  });
+
+  await waitFor(
+    () => Boolean(document.querySelector(
+      '[data-pt-agent-message="assistant"]'
+      + '[data-pt-agent-error-type="OWNERSHIP_FORBIDDEN_ACTOR"]',
+    )),
+    'forbidden actor receiver',
+    10_000,
+  );
+  const errorSurface = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '[data-pt-agent-message="assistant"]'
+      + '[data-pt-agent-error-type="OWNERSHIP_FORBIDDEN_ACTOR"]',
+    ),
+  ).reverse().find((element) => element.getClientRects().length > 0);
+  const errorToggle = errorSurface?.querySelector<HTMLElement>(
+    '[data-pt-agent-message-error-toggle]',
+  );
+  const errorSelector =
+    '[data-pt-agent-message-error-text="agent.errors.forbiddenActor"]';
+  if (!errorSurface?.querySelector(errorSelector)) {
+    errorToggle?.click();
+    await waitFor(
+      () => Boolean(errorSurface?.querySelector(errorSelector)),
+      'localized forbidden actor text',
+      10_000,
+    );
+  }
+  const errorText = errorSurface?.querySelector<HTMLElement>(errorSelector);
+  const recovery = errorSurface?.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-message-error-recovery="switch-account"]',
+  );
+  if (!errorSurface || !errorText || !recovery) {
+    throw new Error('agent.acceptance.foundationForbiddenActorSurfaceMissing');
+  }
+  const receiver = {
+    errorVisible: errorText.getClientRects().length > 0,
+    errorText: errorText.textContent?.trim() ?? '',
+    expectedErrorText: i18n.t(
+      'agent.errors.forbiddenActor',
+      { ns: 'agent' },
+    ),
+    recoveryVisible: recovery.getClientRects().length > 0,
+    recoveryText: recovery.textContent?.trim() ?? '',
+    expectedRecoveryText: i18n.t(
+      'agent.recovery.switchAccount',
+      { ns: 'agent' },
+    ),
+    accountGateObserved: false,
+    recoveryExecuted: false,
+    receiverActorHash,
+  };
+  recovery.click();
+  await waitFor(
+    () => (
+      identityRuntime.getSnapshot().phase.kind === 'accountGate'
+      && !useSessionStore.getState().authenticated
+    ),
+    'forbidden actor account gate',
+    30_000,
+  );
+  receiver.accountGateObserved = true;
+  receiver.recoveryExecuted = true;
+
+  return {
+    scenarioKey: input.scenarioKey,
+    durationMs: performance.now() - startedAt,
+    runtimeEvent: first.runtimeEvent,
+    facts: {
+      outcome: first.outcome,
+      receiver,
+      foreignAccess: {
+        resourceKind,
+        resourceId,
+        ownerActorHash,
+        receiverActorHash,
+        requestCount: 2,
+        foreignPayloadCount:
+          first.foreignContentFieldCount + replayed.foreignContentFieldCount,
+      },
+      replay: {
+        sourceHash: first.rawPayloadHash,
+        replayHash: replayed.rawPayloadHash,
+        equal: first.rawPayloadHash === replayed.rawPayloadHash,
+      },
+      cleanup: {
+        localProjectionCleared:
+          useChatStore.getState().currentSessionKey !== resourceId,
+        conversationDeleted: false,
+      },
+    },
+  };
+}
+
+async function completeFoundationForbiddenActorRecovery(input: {
+  scenarioKey: string;
+  rejectedScenario: Record<string, unknown>;
+  ownerReadback: Record<string, unknown>;
+  ownerCleanup: Record<string, unknown>;
+}): Promise<Record<string, unknown>> {
+  const facts = evidenceRecord(
+    input.rejectedScenario.facts,
+    'foundationForbiddenActorFacts',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationForbiddenActorReceiver',
+  );
+  const foreignAccess = evidenceRecord(
+    facts.foreignAccess,
+    'foundationForbiddenActorAccess',
+  );
+  const receiverActorHash = await sha256Hex(authenticatedFoundationActorPtid());
+  foundationForbiddenActorReceiverResources.delete(input.scenarioKey);
+  return {
+    ...input.rejectedScenario,
+    scenarioKey: input.scenarioKey,
+    facts: {
+      ...facts,
+      receiver: {
+        ...receiver,
+        receiverRestored:
+          receiverActorHash === foreignAccess.receiverActorHash
+          && identityRuntime.getSnapshot().lifecycle.state === 'ready',
+      },
+      owner: input.ownerReadback,
+      station: {
+        conversationDelta: 0,
+        turnDelta: input.ownerReadback.turnDelta,
+        messageDelta: input.ownerReadback.messageDelta,
+        queueDelta: input.ownerReadback.queueDelta,
+        providerExecutionDelta: input.ownerReadback.providerExecutionDelta,
+      },
+      cleanup: {
+        ...evidenceRecord(
+          facts.cleanup,
+          'foundationForbiddenActorCleanup',
+        ),
+        foreignResourceDeleted: input.ownerCleanup.resourceDeleted,
+        foreignAgentDeleted: input.ownerCleanup.agentDeleted,
+        ownerSelectionRestored: input.ownerCleanup.priorSelectionRestored,
+        receiverRestored:
+          receiverActorHash === foreignAccess.receiverActorHash,
+      },
+    },
+  };
+}
+
 async function runFoundationCancelledScenario(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
@@ -11793,6 +12305,8 @@ async function evaluateDirectCellAssertions(
       return evaluateF12(ctx);
     case 'BASE-ACTIVE_MUTATION_CONFLICT':
       return evaluateBaseActiveMutationConflict(ctx);
+    case 'BASE-FORBIDDEN_ACTOR':
+      return evaluateBaseForbiddenActor(ctx);
     case 'BASE-CANCELLED':
       return evaluateBaseCancelled(ctx);
     case 'BASE-CONTEXT_OVERFLOW':
@@ -11812,6 +12326,102 @@ async function evaluateDirectCellAssertions(
     default:
       throw new Error(`agent.acceptance.unsupportedFoundationCell:${ctx.cell}`);
   }
+}
+
+function evaluateBaseForbiddenActor(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationForbiddenActorFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationForbiddenActorOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationForbiddenActorDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationForbiddenActorReceiver',
+  );
+  const foreignAccess = evidenceRecord(
+    facts.foreignAccess,
+    'foundationForbiddenActorAccess',
+  );
+  const owner = evidenceRecord(
+    facts.owner,
+    'foundationForbiddenActorOwner',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationForbiddenActorStation',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationForbiddenActorReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationForbiddenActorCleanup',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+  return {
+    typedForbiddenActorRejected: (
+      outcome.error_type === 'OWNERSHIP_FORBIDDEN_ACTOR'
+      && outcome.locale_key === 'agent.errors.forbiddenActor'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && stableJson(safeDetailKeys)
+        === stableJson(['resource_id', 'resource_kind'])
+      && details.resource_kind === 'conversation'
+      && details.resource_id === owner.resourceId
+    ),
+    localizedRecoveryVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    switchAccountExecuted: (
+      receiver.recoveryExecuted === true
+      && receiver.accountGateObserved === true
+      && receiver.receiverRestored === true
+    ),
+    foreignReadRejected: (
+      Number(foreignAccess.requestCount) === 2
+      && Number(foreignAccess.foreignPayloadCount) === 0
+      && foreignAccess.resourceKind === 'conversation'
+      && foreignAccess.resourceId === owner.resourceId
+      && foreignAccess.ownerActorHash === owner.ownerActorHash
+      && foreignAccess.receiverActorHash !== owner.ownerActorHash
+    ),
+    ownerStatePreserved: (
+      owner.beforeHash === owner.afterHash
+      && Number(owner.versionBefore) === Number(owner.versionAfter)
+    ),
+    zeroCrossMutation: (
+      Number(station.conversationDelta) === 0
+      && Number(station.turnDelta) === 0
+      && Number(station.messageDelta) === 0
+      && Number(station.queueDelta) === 0
+      && Number(station.providerExecutionDelta) === 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+    ),
+    cleanupComplete: (
+      cleanup.localProjectionCleared === true
+      && cleanup.foreignResourceDeleted === true
+      && cleanup.foreignAgentDeleted === true
+      && cleanup.ownerSelectionRestored === true
+      && cleanup.receiverRestored === true
+      && cleanup.conversationDeleted === true
+    ),
+  };
 }
 
 function evaluateBaseExecutorUnavailable(
@@ -14775,6 +15385,72 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async prepareFoundationForbiddenActorOwner(input: {
+      scenarioKey: string;
+      sampleId: string;
+    }) {
+      return evidenceValue(
+        await prepareFoundationForbiddenActorOwner(input),
+      );
+    },
+
+    async readFoundationForbiddenActorOwner({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      return evidenceValue(
+        await readFoundationForbiddenActorOwner(scenarioKey),
+      );
+    },
+
+    async cleanupFoundationForbiddenActorOwner({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      return evidenceValue(
+        await cleanupFoundationForbiddenActorOwner(scenarioKey),
+      );
+    },
+
+    async rejectFoundationForbiddenActor(input: {
+      scenarioKey: string;
+      platform: string;
+      sampleId: string;
+      ownerFixture: Record<string, unknown>;
+    }) {
+      return evidenceValue(await rejectFoundationForbiddenActor(input));
+    },
+
+    async completeFoundationForbiddenActorRecovery(input: {
+      scenarioKey: string;
+      rejectedScenario: Record<string, unknown>;
+      ownerReadback: Record<string, unknown>;
+      ownerCleanup: Record<string, unknown>;
+    }) {
+      return evidenceValue(
+        await completeFoundationForbiddenActorRecovery(input),
+      );
+    },
+
+    async abortFoundationForbiddenActor({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      const conversationId =
+        foundationForbiddenActorReceiverResources.get(scenarioKey);
+      if (conversationId) {
+        clearFoundationLocalConversationProjection(conversationId);
+        foundationForbiddenActorReceiverResources.delete(scenarioKey);
+      }
+      return {
+        scenarioKey,
+        cleaned: true,
+      };
+    },
+
     async createFoundationConversation({
       title,
       description,
@@ -15415,6 +16091,71 @@ export function installAcceptanceHarness(): void {
         | null = null;
 
       try {
+      if (cell === 'BASE-FORBIDDEN_ACTOR') {
+        const scenario = evidenceRecord(
+          preparedScenario,
+          'foundationForbiddenActorPreparedScenario',
+        );
+        scenarioFacts = evidenceRecord(
+          scenario.facts,
+          'foundationForbiddenActorFacts',
+        );
+        const forbiddenRuntimeEvent = evidenceRecord(
+          scenario.runtimeEvent,
+          'foundationForbiddenActorRuntimeEvent',
+        );
+        preparedRuntimeEvent.current = {
+          eventId: String(forbiddenRuntimeEvent.eventId ?? ''),
+          eventType: String(forbiddenRuntimeEvent.eventType ?? ''),
+          sequence: Number(forbiddenRuntimeEvent.sequence ?? 0),
+          observedAt: String(forbiddenRuntimeEvent.observedAt ?? ''),
+          streamGeneration: Number(
+            forbiddenRuntimeEvent.streamGeneration ?? 0,
+          ),
+          streamIdHash: String(forbiddenRuntimeEvent.streamIdHash ?? ''),
+          conversationIdHash: String(
+            forbiddenRuntimeEvent.conversationIdHash ?? '',
+          ),
+          payloadHash: String(forbiddenRuntimeEvent.payloadHash ?? ''),
+          errorType: String(forbiddenRuntimeEvent.errorType ?? ''),
+          sourceTransport: String(
+            forbiddenRuntimeEvent.sourceTransport ?? '',
+          ),
+          sourcePtidHash: String(forbiddenRuntimeEvent.sourcePtidHash ?? ''),
+          sourceConversationId: String(
+            forbiddenRuntimeEvent.sourceConversationId ?? '',
+          ),
+          sourceTurnId: String(forbiddenRuntimeEvent.sourceTurnId ?? ''),
+          sourceSequence: Number(forbiddenRuntimeEvent.sourceSequence ?? 0),
+          sourceEventType: String(
+            forbiddenRuntimeEvent.sourceEventType ?? '',
+          ),
+        };
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const attestation = await runFoundationDirectAttestationTurn({
+          agent,
+          capabilitySessionId,
+          sampleId,
+        });
+        preparedConversationId = attestation.conversationId;
+        preparedTurnId = attestation.turnId;
+        turnDurationMs =
+          Number(scenario.durationMs ?? 0) + attestation.durationMs;
+        if (
+          !preparedRuntimeEvent.current.eventType
+          || preparedRuntimeEvent.current.sequence <= 0
+          || !preparedRuntimeEvent.current.observedAt
+        ) {
+          throw new Error(
+            'agent.acceptance.foundationForbiddenActorPreparedScenarioInvalid',
+          );
+        }
+      }
+
       if (cell === 'BASE-EXECUTOR_UNAVAILABLE') {
         const scenario = evidenceRecord(
           preparedScenario,
@@ -16718,7 +17459,8 @@ export function installAcceptanceHarness(): void {
       }
       if (
         (
-          cell === 'BASE-EXECUTOR_UNAVAILABLE'
+          cell === 'BASE-FORBIDDEN_ACTOR'
+          || cell === 'BASE-EXECUTOR_UNAVAILABLE'
           || cell === 'BASE-APPROVAL_DENIED'
           || cell === 'BASE-APPROVAL_EXPIRED'
           || cell === 'BASE-ATTACHMENT_REJECTED'
@@ -16750,6 +17492,8 @@ export function installAcceptanceHarness(): void {
             scenarioFacts.cleanup,
             cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
               ? 'foundationActiveMutationConflictCleanup'
+              : cell === 'BASE-FORBIDDEN_ACTOR'
+                ? 'foundationForbiddenActorCleanup'
               : cell === 'BASE-CANCELLED'
                 ? 'foundationCancelledCleanup'
               : cell === 'BASE-CONTEXT_OVERFLOW'
@@ -16877,6 +17621,30 @@ export function installAcceptanceHarness(): void {
         stationReadback.entityIdHash = await sha256Hex(String(winner.resourceId));
         stationReadback.revision = Number(winner.revisionAfterReload);
         stationReadback.stateHash = String(winner.hashAfterReload);
+      }
+      if (cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts) {
+        const owner = evidenceRecord(
+          scenarioFacts.owner,
+          'foundationForbiddenActorOwner',
+        );
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationForbiddenActorStation',
+        );
+        stationReadback.entityKind = 'agent-conversation-owner-boundary';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(owner.resourceId),
+        );
+        stationReadback.revision = Number(owner.versionAfter);
+        stationReadback.stateHash = String(owner.afterHash);
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          conversation: station.conversationDelta,
+          turn: station.turnDelta,
+          message: station.messageDelta,
+          queue: station.queueDelta,
+          providerExecution: station.providerExecutionDelta,
+        };
       }
       if (cell === 'BASE-CANCELLED' && scenarioFacts) {
         const station = evidenceRecord(
@@ -17083,6 +17851,7 @@ export function installAcceptanceHarness(): void {
             }
           : (
             cell === 'BASE-ATTACHMENT_REJECTED'
+            || cell === 'BASE-FORBIDDEN_ACTOR'
             || cell === 'BASE-CANCELLED'
             || cell === 'BASE-CONTEXT_OVERFLOW'
             || cell === 'BASE-DUPLICATE_CONFLICT'
@@ -17101,6 +17870,7 @@ export function installAcceptanceHarness(): void {
                 ...(
                   (
                     cell === 'BASE-CANCELLED'
+                    || cell === 'BASE-FORBIDDEN_ACTOR'
                     || cell === 'BASE-CONTEXT_OVERFLOW'
                     || cell === 'BASE-DUPLICATE_CONFLICT'
                     || cell === 'BASE-CREDENTIAL_MISSING'
@@ -17167,7 +17937,30 @@ export function installAcceptanceHarness(): void {
 
       const queueEntryCount = turnQueue?.entries?.length ?? 0;
       const sideEffectCount: Record<string, unknown> =
-        cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
+        cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts
+          ? (() => {
+              const station = evidenceRecord(
+                scenarioFacts.station,
+                'foundationForbiddenActorStation',
+              );
+              return {
+                counterId: String(
+                  evidenceRecord(
+                    scenarioFacts.owner,
+                    'foundationForbiddenActorOwner',
+                  ).resourceId,
+                ),
+                count:
+                  Number(station.conversationDelta)
+                  + Number(station.turnDelta)
+                  + Number(station.messageDelta)
+                  + Number(station.queueDelta)
+                  + Number(station.providerExecutionDelta),
+                maximum: 0,
+                measurements: station,
+              };
+            })()
+          : cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
           ? {
               counterId: await sha256Hex(stableJson({
                 cell,
@@ -17442,6 +18235,13 @@ export function installAcceptanceHarness(): void {
               'foundationActiveMutationConflictCleanup',
             )
           : null;
+      const forbiddenActorCleanup =
+        cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationForbiddenActorCleanup',
+            )
+          : null;
       const cancellationCleanup =
         cell === 'BASE-CANCELLED' && scenarioFacts
           ? evidenceRecord(
@@ -17472,7 +18272,16 @@ export function installAcceptanceHarness(): void {
           : null;
       const cleanup: Record<string, unknown> = {
         status: (
-          activeMutationCleanup
+          forbiddenActorCleanup
+            ? (
+                forbiddenActorCleanup.localProjectionCleared === true
+                && forbiddenActorCleanup.foreignResourceDeleted === true
+                && forbiddenActorCleanup.foreignAgentDeleted === true
+                && forbiddenActorCleanup.ownerSelectionRestored === true
+                && forbiddenActorCleanup.receiverRestored === true
+                && forbiddenActorCleanup.conversationDeleted === true
+              )
+            : activeMutationCleanup
             ? (
                 activeMutationCleanup.deletedFromRoster === true
                 && activeMutationCleanup.deletedFromStation === true
@@ -17603,6 +18412,8 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : (
@@ -17624,7 +18435,8 @@ export function installAcceptanceHarness(): void {
       };
 
       const receiver = (
-        cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
+        cell === 'BASE-FORBIDDEN_ACTOR'
+        || cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
         || cell === 'BASE-CANCELLED'
         || cell === 'BASE-EXECUTOR_UNAVAILABLE'
         || cell === 'BASE-APPROVAL_DENIED'
@@ -17650,7 +18462,20 @@ export function installAcceptanceHarness(): void {
         receiverSelector = '[data-pt-agent-message-attachment]';
         receiverText = receiverDom.messageAttachments.text;
       } else if (receiver) {
-        if (cell === 'BASE-EXECUTOR_UNAVAILABLE') {
+        if (cell === 'BASE-FORBIDDEN_ACTOR') {
+          receiverVisible =
+            receiver.recoveryVisible === true
+            && receiver.errorVisible === true
+            && receiver.recoveryExecuted === true
+            && receiver.accountGateObserved === true;
+          receiverSelector =
+            '[data-pt-agent-message-error-recovery="switch-account"],'
+            + '[data-pt-agent-message-error-text="agent.errors.forbiddenActor"]';
+          receiverText = {
+            recoveryText: receiver.recoveryText,
+            errorText: receiver.errorText,
+          };
+        } else if (cell === 'BASE-EXECUTOR_UNAVAILABLE') {
           receiverVisible =
             receiver.recoveryVisible === true
             && receiver.errorVisible === true
@@ -17762,6 +18587,16 @@ export function installAcceptanceHarness(): void {
         replayEvidence.sourceHash = winner.hashBeforeStale;
         replayEvidence.replayHash = winner.hashAfterReload;
         replayEvidence.equal = winner.hashBeforeStale === winner.hashAfterReload;
+        replayEvidence.turnId = null;
+      }
+      if (cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationForbiddenActorReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
         replayEvidence.turnId = null;
       }
       if (cell === 'BASE-CANCELLED' && scenarioFacts) {
@@ -17953,6 +18788,24 @@ export function installAcceptanceHarness(): void {
             throw Object.assign(
               new Error(
                 'agent.acceptance.foundationActiveMutationAttestationCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-FORBIDDEN_ACTOR'
+          && preparedConversationId
+        ) {
+          try {
+            await deleteFoundationConversation(preparedConversationId);
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationForbiddenActorAttestationCleanupFailed',
               ),
               {
                 primaryError: error,

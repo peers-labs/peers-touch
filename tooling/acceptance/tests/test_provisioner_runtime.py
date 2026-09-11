@@ -570,7 +570,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
                     "mediaType": "application/json",
                 },
             ),
-        ), patch.object(
+        ) as actor_manifest, patch.object(
             provisioner,
             "acquire_profile_lease",
         ) as profile_lease, patch.object(
@@ -636,6 +636,10 @@ class ProvisionerBlockingTests(unittest.TestCase):
         source_lease.assert_called_once_with(
             "station-1",
             f"acceptance:agent-v2-kernel-foundation-e2e:{manifest.run_id}",
+        )
+        self.assertEqual(
+            actor_manifest.call_args.kwargs["roles"],
+            ("alice", "bob"),
         )
         self.assertEqual(
             provisioner.cleanup(),

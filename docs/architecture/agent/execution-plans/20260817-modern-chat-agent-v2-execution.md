@@ -1386,10 +1386,38 @@ and zero local-path leakage.
   tuple reduction is authorized. G-F therefore remains
   `PARTIAL / UNPROVEN`; the external Ark runtime is parked until it can execute
   the unchanged provider-backed AS-F07 sequence.
+- **AS-F07 closure and next typed-error frontier (2026-09-11)**: canonical
+  profile injection selects Ark model `ep-20260623145021-n4xdm` through the
+  internal `https://ark-cn-beijing.bytedance.net/api/v3` endpoint. Station
+  revision commands now preserve the source Turn's immutable
+  `thinking_mode`, so exact source
+  `48c7065ce97b2442df3c82d17840dd120c44651e` passed C08 run
+  `20260911T031908377408Z-020712763e7168d9fcf4bdefb39ec604`
+  with 19/19 assertions. The unchanged Foundation run
+  `20260911T032023594492Z-4af15b4006f3a3fb625e4ba4cc009f30`
+  crossed all AS-F06 and AS-F07 tuples, then failed closed at Browser English
+  `BASE-FORBIDDEN_ACTOR` because its direct-runtime vertical is not yet
+  implemented. Both runs completed process, port, storage, actor-identity, and
+  Provisioner cleanup.
+- **BASE-FORBIDDEN_ACTOR execution projection (2026-09-11)**: use a
+  Bob-owned private Agent conversation as the Station resource and Alice as
+  the rejecting receiver. Station must inspect only ownership metadata before
+  returning `OWNERSHIP_FORBIDDEN_ACTOR`; it must not reinterpret forbidden as
+  missing or create an Alice conversation with the supplied ID. The Desktop
+  and Browser receivers preserve the typed payload, render the existing
+  localized `Switch account` action, and delegate recovery to the identity
+  runtime. The Acceptance coordinator owns two-actor setup/restoration, while
+  the Harness and independent Python oracle prove zero foreign read payload,
+  zero conversation/Turn/message/queue/provider mutation, replay equality,
+  owner-state preservation, and cleanup. Station, Desktop receiver, and
+  Acceptance oracle files are independent read/write lanes until the
+  integrator-owned Harness/coordinator reconciliation barrier; fixture
+  provisioning, plan state, commits, deployment, and final Gates remain
+  serial.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error
-  families; the direct adapter currently implements 9 and leaves 19
+  families; the direct adapter currently implements 10 and leaves 18
   fail-closed.
 - **Forecast**: 5-8 working days to batch-close the remaining G-FE1 error
   families and obtain one exact-source full-Gate result; 4-6 weeks for the

@@ -7,10 +7,12 @@ import {
   type Session,
   type StreamEvent,
   type AgentAttachmentRefInput,
+  type AgentErrorResolutionAction,
   type AgentTypedErrorPayload,
   type AgentTurnStreamError,
   type AgentTurnQueueListOutput,
   type AgentRuntimeBudgetInput,
+  resolveAgentTypedErrorAction,
 } from '../services/desktop_api';
 import { agentService } from '../services/agent-service';
 import { useAgentStore } from './agent';
@@ -145,17 +147,7 @@ export interface RecoveredTurnTerminal {
   content?: string;
 }
 
-export interface ErrorResolutionAction {
-  type:
-    | 'reauthCli'
-    | 'openProviderSettings'
-    | 'checkConnection'
-    | 'openOriginal';
-  cliId?: string;
-  providerId?: string;
-  existingCommandId?: string;
-  label: string;
-}
+export type ErrorResolutionAction = AgentErrorResolutionAction;
 
 export interface ChatMessage {
   id: string;
@@ -266,7 +258,7 @@ function cachedConversationToSession(conversation: CachedAgentConversation): Ses
   };
 }
 
-function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
+export function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
   const persistedStatus = String(message.status || '').toLowerCase();
   const terminalStatus = (
     ['completed', 'failed', 'cancelled', 'interrupted'] as const
@@ -282,6 +274,7 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
       typedError = undefined;
     }
   }
+  const resolution = resolveAgentTypedErrorAction(typedError);
   const chatMessage: ChatMessage = {
     id: message.messageId,
     role: message.role,
@@ -293,6 +286,8 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
     turnId: message.turnId,
     error: typedError?.locale_key,
     typedError,
+    resolution,
+    providerId: typedError?.details.provider_id,
     attachments: message.attachments?.map((attachment) => ({
       cid: attachment.objectRef,
       filename: attachment.filename,

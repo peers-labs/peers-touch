@@ -21,22 +21,22 @@
 | Worktree | `<repo-root>` |
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
-| Current workstream | G-FE1 executor-unavailable closure and exact-source Foundation proof |
-| Current step | `BASE-EXECUTOR-UNAVAILABLE` is source-complete and both Desktop/Browser focused runtime tuples pass 9/9；C08 is current-source proven；the Browser headless lifetime and cleanup corrections are runtime-confirmed；the unchanged full Gate is parked at the external Ark provider boundary |
+| Current workstream | G-FE1 forbidden-actor closure and exact-source Foundation proof |
+| Current step | `BASE-FORBIDDEN_ACTOR` is source-complete and locally verified；the prior exact-source Gate crossed AS-F06 and AS-F07 after the Ark endpoint and revision thinking-mode fixes；fresh runtime proof is pending the new checkpoint |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | C08 run `20260910T185939301238Z-7e4f05f12a702632660e732aee6c476f` on `d18a40cb4` is `DONE / PROVEN` with 19/19 assertions and clean resource release |
-| Current action | Preserve the post-fix runtime evidence and park the unchanged Gate until Ark can complete the AS-F07 regenerate sequence |
-| Next action | When Ark is healthy and no concurrent local Desktop Gate can terminate this runtime, rerun C08 on the selected checkpoint and then the unchanged 419-cell G-F Gate；admit only the next source-backed `BASE-*` failure |
+| Last completed | C08 run `20260911T031908377408Z-020712763e7168d9fcf4bdefb39ec604` on `48c7065ce97b2442df3c82d17840dd120c44651e` is `DONE / PROVEN` with 19/19 assertions and clean resource release；Foundation run `20260911T032023594492Z-4af15b4006f3a3fb625e4ba4cc009f30` crossed AS-F06 and AS-F07 |
+| Current action | Checkpoint the locally verified two-actor `BASE-FORBIDDEN_ACTOR` vertical, deploy exact source, rerun C08, then run the unchanged 419-cell Gate |
+| Next action | If the full Gate crosses `BASE-FORBIDDEN_ACTOR`, admit only the next plan-defined `BASE-*` vertical exposed by its first failure |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | Full G-F remains externally blocked by Ark `context deadline exceeded` during AS-F07 retry/regenerate. Post-fix run `20260910T190158567694Z-34c18f11a6fe5ecfb85225d8e5125909` proves the Browser survives the prior five-minute boundary, all four AS-F06 tuples pass, and cleanup releases every process/port/storage resource; first regenerate then reaches the unchanged provider wall-time boundary and returns 422. Concurrent `chat-desktop-gateway-e2e` runs also invalidate Agent evidence when their out-of-band global process cleanup overlaps, so reruns require an isolated local Desktop window. No timeout inflation, fallback provider, mock, tuple reduction, or Gate weakening is authorized |
+| Blockers | none for the current source closure；fresh runtime proof still requires the exclusive local Desktop Gate window and the approved disposable profile |
 | Decisions required | none |
-| Evidence | `7485d1c22` aligns the executor cell ID with the canonical matrix；Desktop and Browser focused executor tuples each pass 9/9 with clean cleanup；C08 is `DONE / PROVEN` on `d18a40cb4`；all four AS-F06 tuples crossed their fault boundary；AS-F07 retry completed after 111.426s and the Browser remained alive；first regenerate failed only after 300.395s at the external provider boundary；full G-F remains `PARTIAL / UNPROVEN` |
-| Last updated | 2026-09-10 |
+| Evidence | Ark model `ep-20260623145021-n4xdm` is injected through the canonical profile；C08 is `DONE / PROVEN` on `48c7065ce`；the unchanged Gate crosses AS-F06/AS-F07 and stops at the previously unimplemented `BASE-FORBIDDEN_ACTOR`；the new source adds Station owner rejection, Desktop/Browser `Switch account`, two-actor production Harness, independent oracle, replay, zero mutation, and cleanup while full G-F remains `PARTIAL / UNPROVEN` |
+| Last updated | 2026-09-11 |
 
 ---
 

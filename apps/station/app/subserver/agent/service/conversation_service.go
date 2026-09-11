@@ -277,6 +277,24 @@ func (s *ConversationService) GetConversation(ctx context.Context, ptid, convers
 	if conversationID == "" || ptid == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "ptid and conversation_id are required", nil)
 	}
+	var ownership persistence.Conversation
+	if err := db.WithContext(ctx).
+		Select("actor_ptid").
+		Where("id = ?", conversationID).
+		Take(&ownership).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "conversation not found", err)
+		}
+		return nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to inspect conversation ownership",
+			err,
+		)
+	}
+	if ownership.ActorPTID != ptid {
+		return nil, errcode.NewOwnershipForbiddenActor("conversation", conversationID)
+	}
 	var row persistence.Conversation
 	if err := db.WithContext(ctx).Where("id = ? AND actor_ptid = ?", conversationID, ptid).First(&row).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {

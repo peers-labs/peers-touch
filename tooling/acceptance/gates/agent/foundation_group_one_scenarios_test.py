@@ -16,6 +16,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_credential_missing,
     evaluate_base_duplicate_conflict,
     evaluate_base_executor_unavailable,
+    evaluate_base_forbidden_actor,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -933,6 +934,94 @@ def valid_active_mutation_conflict_capture() -> dict[str, object]:
             "conversationDeleted": True,
             "priorSelection": "assistant",
             "restoredSelection": "assistant",
+        },
+    }
+
+
+def valid_forbidden_actor_capture() -> dict[str, object]:
+    owner_actor_hash = "a" * 64
+    receiver_actor_hash = "b" * 64
+    owner_state_hash = "c" * 64
+    replay_hash = "d" * 64
+    return {
+        "outcome": {
+            "error": "agent.errors.forbiddenActor",
+            "error_type": "OWNERSHIP_FORBIDDEN_ACTOR",
+            "locale_key": "agent.errors.forbiddenActor",
+            "retryable": False,
+            "terminal": True,
+            "details": {
+                "resource_kind": "conversation",
+                "resource_id": "conversation-owner",
+            },
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "This account cannot access the requested item.",
+            "expectedErrorText": (
+                "This account cannot access the requested item."
+            ),
+            "recoveryVisible": True,
+            "recoveryText": "Switch account",
+            "expectedRecoveryText": "Switch account",
+            "accountGateObserved": True,
+            "recoveryExecuted": True,
+            "receiverActorHash": receiver_actor_hash,
+            "receiverRestored": True,
+        },
+        "foreignAccess": {
+            "resourceKind": "conversation",
+            "resourceId": "conversation-owner",
+            "ownerActorHash": owner_actor_hash,
+            "receiverActorHash": receiver_actor_hash,
+            "requestCount": 2,
+            "foreignPayloadCount": 0,
+        },
+        "owner": {
+            "resourceKind": "conversation",
+            "resourceId": "conversation-owner",
+            "ownerActorHash": owner_actor_hash,
+            "beforeHash": owner_state_hash,
+            "afterHash": owner_state_hash,
+            "versionBefore": 1,
+            "versionAfter": 1,
+        },
+        "station": {
+            "conversationDelta": 0,
+            "turnDelta": 0,
+            "messageDelta": 0,
+            "queueDelta": 0,
+            "providerExecutionDelta": 0,
+        },
+        "runtimeEvent": {
+            "eventId": "e" * 64,
+            "sequence": 1,
+            "eventType": "error",
+            "observedAt": "2026-09-11T00:00:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "f" * 64,
+            "conversationIdHash": "1" * 64,
+            "payloadHash": replay_hash,
+            "errorType": "OWNERSHIP_FORBIDDEN_ACTOR",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": receiver_actor_hash,
+            "sourceConversationId": "conversation-owner",
+            "sourceTurnId": "",
+            "sourceSequence": 0,
+            "sourceEventType": "error",
+        },
+        "replay": {
+            "sourceHash": replay_hash,
+            "replayHash": replay_hash,
+            "equal": True,
+        },
+        "cleanup": {
+            "localProjectionCleared": True,
+            "foreignResourceDeleted": True,
+            "foreignAgentDeleted": True,
+            "ownerSelectionRestored": True,
+            "receiverRestored": True,
+            "conversationDeleted": True,
         },
     }
 
@@ -2539,6 +2628,149 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "cleanupComplete",
         ):
             evaluate_base_active_mutation_conflict(capture)
+
+    def test_forbidden_actor_accepts_exact_production_facts(self) -> None:
+        assertions = evaluate_base_forbidden_actor(
+            valid_forbidden_actor_capture()
+        )
+
+        self.assertEqual(len(assertions), 8)
+        self.assertTrue(all(assertions.values()))
+        self.assertTrue(all(type(value) is bool for value in assertions.values()))
+
+    def test_forbidden_actor_rejects_typed_contract_drift(self) -> None:
+        mutations = (
+            lambda capture: capture["outcome"].update(
+                {"error": "agent.errors.generic"}
+            ),
+            lambda capture: capture["outcome"].update(
+                {"error_type": "OWNERSHIP_UNAUTHORIZED_RESOURCE"}
+            ),
+            lambda capture: capture["outcome"].update(
+                {"locale_key": "agent.errors.generic"}
+            ),
+            lambda capture: capture["outcome"].update({"retryable": True}),
+            lambda capture: capture["outcome"].update({"terminal": False}),
+            lambda capture: capture["outcome"]["details"].update(
+                {"actor_id": "private-actor"}
+            ),
+            lambda capture: capture["outcome"]["details"].update(
+                {"resource_kind": "agent"}
+            ),
+            lambda capture: capture["outcome"]["details"].update(
+                {"resource_id": "conversation-other"}
+            ),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                capture = valid_forbidden_actor_capture()
+                mutation(capture)
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "typedForbiddenActorRejected",
+                ):
+                    evaluate_base_forbidden_actor(capture)
+
+    def test_forbidden_actor_requires_localized_switch_account(self) -> None:
+        for key, value, expected in (
+            ("errorText", "Forbidden", "localizedRecoveryVisible"),
+            ("recoveryVisible", False, "localizedRecoveryVisible"),
+            ("recoveryText", "Sign out", "localizedRecoveryVisible"),
+            ("accountGateObserved", False, "switchAccountExecuted"),
+            ("recoveryExecuted", False, "switchAccountExecuted"),
+            ("receiverRestored", False, "switchAccountExecuted"),
+        ):
+            with self.subTest(key=key):
+                capture = valid_forbidden_actor_capture()
+                capture["receiver"][key] = value
+                with self.assertRaisesRegex(GroupOneScenarioError, expected):
+                    evaluate_base_forbidden_actor(capture)
+
+    def test_forbidden_actor_rejects_foreign_payload_or_identity_drift(
+        self,
+    ) -> None:
+        mutations = (
+            lambda capture: capture["foreignAccess"].update(
+                {"foreignPayloadCount": 1}
+            ),
+            lambda capture: capture["foreignAccess"].update(
+                {"requestCount": 1}
+            ),
+            lambda capture: capture["foreignAccess"].update(
+                {"resourceId": "conversation-other"}
+            ),
+            lambda capture: capture["foreignAccess"].update(
+                {"receiverActorHash": "a" * 64}
+            ),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                capture = valid_forbidden_actor_capture()
+                mutation(capture)
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "foreignReadRejected",
+                ):
+                    evaluate_base_forbidden_actor(capture)
+
+    def test_forbidden_actor_rejects_owner_state_drift(self) -> None:
+        for key, value in (
+            ("afterHash", "e" * 64),
+            ("versionAfter", 2),
+        ):
+            with self.subTest(key=key):
+                capture = valid_forbidden_actor_capture()
+                capture["owner"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "ownerStatePreserved",
+                ):
+                    evaluate_base_forbidden_actor(capture)
+
+    def test_forbidden_actor_rejects_each_cross_mutation(self) -> None:
+        for key in (
+            "conversationDelta",
+            "turnDelta",
+            "messageDelta",
+            "queueDelta",
+            "providerExecutionDelta",
+        ):
+            with self.subTest(key=key):
+                capture = valid_forbidden_actor_capture()
+                capture["station"][key] = 1
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "zeroCrossMutation",
+                ):
+                    evaluate_base_forbidden_actor(capture)
+
+    def test_forbidden_actor_rejects_replay_drift(self) -> None:
+        capture = valid_forbidden_actor_capture()
+        capture["replay"]["replayHash"] = "e" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "replayEqual",
+        ):
+            evaluate_base_forbidden_actor(capture)
+
+    def test_forbidden_actor_requires_complete_cleanup(self) -> None:
+        for key in (
+            "localProjectionCleared",
+            "foreignResourceDeleted",
+            "foreignAgentDeleted",
+            "ownerSelectionRestored",
+            "receiverRestored",
+            "conversationDeleted",
+        ):
+            with self.subTest(key=key):
+                capture = valid_forbidden_actor_capture()
+                capture["cleanup"][key] = False
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "cleanupComplete",
+                ):
+                    evaluate_base_forbidden_actor(capture)
 
     def test_cancelled_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_cancelled(valid_cancelled_capture())

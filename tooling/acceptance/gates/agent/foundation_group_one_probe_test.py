@@ -24,6 +24,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_credential_missing,
     evaluate_base_duplicate_conflict,
     evaluate_base_executor_unavailable,
+    evaluate_base_forbidden_actor,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -43,6 +44,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_credential_missing_capture,
     valid_duplicate_conflict_capture,
     valid_executor_unavailable_capture,
+    valid_forbidden_actor_capture,
     valid_as_f04_capture,
     valid_as_f05_capture,
     valid_as_f06_capture,
@@ -100,6 +102,15 @@ def typed_runtime_role(
 
 def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, Any]:
     result = capture(probe)
+    if probe.cell == "BASE-FORBIDDEN_ACTOR":
+        facts = valid_forbidden_actor_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_forbidden_actor(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        result["runtimeAttestation"]["actorIdentityHash"] = (
+            facts["runtimeEvent"]["sourcePtidHash"]
+        )
+        return result
     if probe.cell == "BASE-DUPLICATE_CONFLICT":
         facts = valid_duplicate_conflict_capture()
         result["scenarioFacts"] = facts
@@ -338,6 +349,35 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
 
 
 class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
+    def test_forbidden_actor_routes_to_independent_oracle(self) -> None:
+        facts = valid_forbidden_actor_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_forbidden_actor(facts),
+            "runtime-events": typed_runtime_role(facts),
+            "runtimeAttestation": {
+                "actorIdentityHash": facts["runtimeEvent"]["sourcePtidHash"],
+            },
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-FORBIDDEN_ACTOR",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "foreignReadRejected": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-FORBIDDEN_ACTOR assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
     def test_attachment_rejected_routes_to_independent_oracle(self) -> None:
         facts = valid_attachment_rejected_capture()
         capture_value = {

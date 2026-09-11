@@ -1396,6 +1396,41 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("activeMutationCleanup.conversationDeleted === true", self.source)
         self.assertNotIn("mock", scenario.lower())
 
+    def test_forbidden_actor_uses_two_actor_station_rejection_and_recovery(
+        self,
+    ) -> None:
+        owner_start = self.source.index(
+            "async function prepareFoundationForbiddenActorOwner"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationCancelledScenario",
+            owner_start,
+        )
+        scenario = self.source[owner_start:scenario_end]
+
+        self.assertIn("visibility: 'private'", scenario)
+        self.assertIn("api.createAgentConversation({", scenario)
+        self.assertIn("runFoundationForbiddenActorAttempt({", scenario)
+        self.assertIn("OWNERSHIP_FORBIDDEN_ACTOR", scenario)
+        self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="switch-account"]',
+            scenario,
+        )
+        self.assertIn("recovery.click()", scenario)
+        self.assertIn("identityRuntime.getSnapshot().phase.kind === 'accountGate'", scenario)
+        self.assertIn("foundationExecutionSnapshot(", scenario)
+        self.assertIn("deleteFoundationConversation(", scenario)
+        self.assertIn("api.deleteAgent(", scenario)
+        self.assertNotIn("mock", scenario.lower())
+
+        direct_probe_start = self.source.index("async foundationDirectProbe")
+        direct_probe = self.source[direct_probe_start:]
+        self.assertIn("if (cell === 'BASE-FORBIDDEN_ACTOR')", direct_probe)
+        self.assertIn("runFoundationDirectAttestationTurn({", direct_probe)
+        self.assertIn("foundationForbiddenActorCleanup", direct_probe)
+        self.assertIn("foundationForbiddenActorStation", direct_probe)
+
     def test_cancelled_uses_station_owned_payload_replay_and_cleanup(self) -> None:
         scenario_start = self.source.index(
             "async function runFoundationCancelledScenario"
@@ -1538,7 +1573,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             self.source,
         )
         self.assertIn(
-            "typedError?.error_type === 'ADMISSION_DUPLICATE_CONFLICT'",
+            "error?.error_type === 'ADMISSION_DUPLICATE_CONFLICT'",
             desktop_api,
         )
         self.assertIn(
@@ -1604,7 +1639,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             self.source,
         )
         self.assertIn(
-            "typedError?.error_type === 'PROVIDER_CREDENTIAL_MISSING'",
+            "error?.error_type === 'PROVIDER_CREDENTIAL_MISSING'",
             desktop_api,
         )
         self.assertIn(

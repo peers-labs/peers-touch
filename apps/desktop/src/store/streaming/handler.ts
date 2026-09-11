@@ -8,6 +8,10 @@ import type {
 import type { TurnStreamEvent, StreamingAccumulator } from './types';
 import { useInterventionStore } from '../intervention';
 import type { InterventionType } from '../intervention';
+import {
+  projectAgentTypedErrorPayload,
+  resolveAgentTypedErrorAction,
+} from '../../services/desktop_api';
 
 function s(v: unknown): string {
   return typeof v === 'string' ? v : v != null ? String(v) : '';
@@ -29,30 +33,7 @@ export function terminalReasonFromStreamData(
 export function projectAgentTypedError(
   data: Record<string, unknown>,
 ): ChatMessage['typedError'] {
-  const errorType = s(data.error_type || data.errorType);
-  const localeKey = s(data.locale_key || data.localeKey);
-  if (
-    !errorType
-    || !localeKey
-    || typeof data.retryable !== 'boolean'
-    || typeof data.terminal !== 'boolean'
-  ) {
-    return undefined;
-  }
-  const details = data.details && typeof data.details === 'object' && !Array.isArray(data.details)
-    ? Object.fromEntries(
-        Object.entries(data.details as Record<string, unknown>)
-          .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-      )
-    : {};
-  return {
-    error: s(data.error) || localeKey,
-    error_type: errorType,
-    locale_key: localeKey,
-    retryable: data.retryable,
-    terminal: data.terminal,
-    details,
-  };
+  return projectAgentTypedErrorPayload(data);
 }
 
 function cancellationTypedError(
@@ -157,6 +138,12 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
       const errMsg = s(d.error) || 'Unknown error';
       const budgetNotice = projectBudgetNotice(d);
       const typedError = projectAgentTypedError(d);
+      const resolution = resolveAgentTypedErrorAction(typedError)
+        ?? (
+          d.resolution && typeof d.resolution === 'object'
+            ? d.resolution as ErrorResolutionAction
+            : null
+        );
       return {
         ...msg,
         error: budgetNotice?.localeKey || typedError?.locale_key || errMsg,
@@ -164,7 +151,7 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
         budgetNotice: budgetNotice ?? msg.budgetNotice,
         terminalStatus: 'failed',
         errorDetail: s(d.detail),
-        resolution: (d.resolution && typeof d.resolution === 'object' ? d.resolution as ErrorResolutionAction : null),
+        resolution,
         providerId: s(d.providerId),
         loading: false,
       };

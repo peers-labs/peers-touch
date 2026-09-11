@@ -10,6 +10,7 @@ import type {
 } from '../services/desktop_api';
 import {
   applyOperationEventIdentity,
+  cachedMessageToChatMessage,
   isMessageRetryBlocked,
   shouldUseSessionBuffer,
   type ChatMessage,
@@ -31,6 +32,20 @@ function operation(): ChatOperation {
     abortController: new AbortController(),
     startedAt: 1,
     streamGeneration: 10,
+  };
+}
+
+function forbiddenActorData(): Record<string, unknown> {
+  return {
+    error: 'agent.errors.forbiddenActor',
+    error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+    locale_key: 'agent.errors.forbiddenActor',
+    retryable: false,
+    terminal: true,
+    details: {
+      resource_kind: 'conversation',
+      resource_id: 'conversation-owned-by-bob',
+    },
   };
 }
 
@@ -311,6 +326,90 @@ describe('Agent turn event identity projection', () => {
         },
       },
     });
+  });
+
+  it('projects forbidden-actor recovery from a live error event', () => {
+    const projected = reduceStreamEvent({
+      id: 'message-1',
+      role: 'assistant',
+      content: '',
+      loading: true,
+      timestamp: 1,
+    }, {
+      event: 'error',
+      data: forbiddenActorData(),
+    });
+
+    expect(projected).toMatchObject({
+      error: 'agent.errors.forbiddenActor',
+      terminalStatus: 'failed',
+      loading: false,
+      typedError: forbiddenActorData(),
+      resolution: {
+        type: 'switchAccount',
+        resourceKind: 'conversation',
+        resourceId: 'conversation-owned-by-bob',
+        label: 'agent.recovery.switchAccount',
+      },
+    });
+  });
+
+  it('restores forbidden-actor recovery from a persisted typed error', () => {
+    const projected = cachedMessageToChatMessage({
+      messageId: 'message-1',
+      conversationId: 'conversation-owned-by-bob',
+      turnId: 'turn-1',
+      role: 'assistant',
+      status: 'failed',
+      content: '',
+      seq: 1,
+      errorJson: JSON.stringify(forbiddenActorData()),
+      createdAt: '2026-09-11T00:00:00.000Z',
+      updatedAt: '2026-09-11T00:00:00.000Z',
+    });
+
+    expect(projected).toMatchObject({
+      error: 'agent.errors.forbiddenActor',
+      terminalStatus: 'failed',
+      typedError: forbiddenActorData(),
+      resolution: {
+        type: 'switchAccount',
+        resourceKind: 'conversation',
+        resourceId: 'conversation-owned-by-bob',
+        label: 'agent.recovery.switchAccount',
+      },
+    });
+  });
+
+  it('preserves forbidden-actor recovery through replay projection', () => {
+    useChatStore.getState().reset();
+    useChatStore.setState({ currentSessionKey: 'conversation-owned-by-bob' });
+
+    try {
+      useChatStore.getState().applyRecoveredTurnEvent(
+        'conversation-owned-by-bob',
+        'agent-owned-by-bob',
+        'turn-rejected',
+        {
+          event: 'error',
+          data: forbiddenActorData(),
+        },
+      );
+
+      expect(useChatStore.getState().messages).toContainEqual(expect.objectContaining({
+        turnId: 'turn-rejected',
+        error: 'agent.errors.forbiddenActor',
+        typedError: forbiddenActorData(),
+        resolution: {
+          type: 'switchAccount',
+          resourceKind: 'conversation',
+          resourceId: 'conversation-owned-by-bob',
+          label: 'agent.recovery.switchAccount',
+        },
+      }));
+    } finally {
+      useChatStore.getState().reset();
+    }
   });
 
   it('keeps transport EOF in a non-terminal reconciling state', () => {

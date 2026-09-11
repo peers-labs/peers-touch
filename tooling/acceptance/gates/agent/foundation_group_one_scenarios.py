@@ -2442,6 +2442,162 @@ def evaluate_base_active_mutation_conflict(
     return assertions
 
 
+def evaluate_base_forbidden_actor(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-FORBIDDEN_ACTOR"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    foreign_access = _mapping(capture, "foreignAccess", scenario=scenario)
+    owner = _mapping(capture, "owner", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+
+    resource_id = _nonempty_string(
+        owner,
+        "resourceId",
+        scenario=scenario,
+    )
+    owner_actor_hash = _sha256_string(
+        owner,
+        "ownerActorHash",
+        scenario=scenario,
+    )
+    receiver_actor_hash = _sha256_string(
+        receiver,
+        "receiverActorHash",
+        scenario=scenario,
+    )
+    source_hash = _sha256_string(
+        replay,
+        "sourceHash",
+        scenario=scenario,
+    )
+    owner_state_hash = _sha256_string(
+        owner,
+        "beforeHash",
+        scenario=scenario,
+    )
+    owner_revision = _positive_int(
+        owner,
+        "versionBefore",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedForbiddenActorRejected": (
+            outcome.get("error") == "agent.errors.forbiddenActor"
+            and outcome.get("error_type") == "OWNERSHIP_FORBIDDEN_ACTOR"
+            and outcome.get("locale_key")
+            == "agent.errors.forbiddenActor"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and sorted(details) == ["resource_id", "resource_kind"]
+            and details.get("resource_kind") == "conversation"
+            and details.get("resource_id") == resource_id
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+        ),
+        "switchAccountExecuted": (
+            receiver.get("recoveryExecuted") is True
+            and receiver.get("accountGateObserved") is True
+            and receiver.get("receiverRestored") is True
+        ),
+        "foreignReadRejected": (
+            _positive_int(
+                foreign_access,
+                "requestCount",
+                scenario=scenario,
+            )
+            == 2
+            and _nonnegative_int(
+                foreign_access,
+                "foreignPayloadCount",
+                scenario=scenario,
+            )
+            == 0
+            and owner.get("resourceKind") == "conversation"
+            and foreign_access.get("resourceKind") == "conversation"
+            and foreign_access.get("resourceId") == resource_id
+            and foreign_access.get("ownerActorHash") == owner_actor_hash
+            and foreign_access.get("receiverActorHash")
+            == receiver_actor_hash
+            and receiver_actor_hash != owner_actor_hash
+        ),
+        "ownerStatePreserved": (
+            _sha256_string(
+                owner,
+                "afterHash",
+                scenario=scenario,
+            )
+            == owner_state_hash
+            and _positive_int(
+                owner,
+                "versionAfter",
+                scenario=scenario,
+            )
+            == owner_revision
+        ),
+        "zeroCrossMutation": all(
+            _nonnegative_int(station, key, scenario=scenario) == 0
+            for key in (
+                "conversationDelta",
+                "turnDelta",
+                "messageDelta",
+                "queueDelta",
+                "providerExecutionDelta",
+            )
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _sha256_string(
+                replay,
+                "replayHash",
+                scenario=scenario,
+            )
+            == source_hash
+        ),
+        "cleanupComplete": (
+            cleanup.get("localProjectionCleared") is True
+            and cleanup.get("foreignResourceDeleted") is True
+            and cleanup.get("foreignAgentDeleted") is True
+            and cleanup.get("ownerSelectionRestored") is True
+            and cleanup.get("receiverRestored") is True
+            and cleanup.get("conversationDeleted") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_cancelled(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:

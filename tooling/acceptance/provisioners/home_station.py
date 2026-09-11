@@ -427,7 +427,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             run_id=manifest.run_id,
             station_url=station_url,
             deployment_environment=deployment_environment,
-            roles=("alice",),
+            roles=("alice", "bob"),
             credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
             reset_authorized=True,
         )

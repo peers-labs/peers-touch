@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"strings"
 	"testing"
@@ -96,6 +97,42 @@ func TestAdmissionDuplicateConflictPreservesTypedPayloadDetails(t *testing.T) {
 			sha256.Sum256([]byte("request-1")),
 		),
 		"existing_command_id": "turn-1",
+	}
+	if !reflect.DeepEqual(details, expectedDetails) {
+		t.Fatalf("details = %+v, want %+v", details, expectedDetails)
+	}
+}
+
+func TestForbiddenActorPreservesTypedPayloadDetails(t *testing.T) {
+	mapped := toHandlerError(
+		errcode.NewOwnershipForbiddenActor("conversation", "conversation-1"),
+	)
+	var handlerErr *server.HandlerError
+	if !errors.As(mapped, &handlerErr) {
+		t.Fatalf("expected HandlerError, got %T: %v", mapped, mapped)
+	}
+	if handlerErr.Code != http.StatusForbidden {
+		t.Fatalf("status=%d, want %d", handlerErr.Code, http.StatusForbidden)
+	}
+	expectedHeaders := map[string]string{
+		"X-Peers-Error-Code":       string(errcode.AgentOwnershipForbiddenActor),
+		"X-Peers-Error-Locale-Key": errcode.AgentOwnershipForbiddenActorLocaleKey,
+		"X-Peers-Error-Retryable":  "false",
+		"X-Peers-Error-Terminal":   "true",
+	}
+	for key, value := range expectedHeaders {
+		if handlerErr.Headers[key] != value {
+			t.Fatalf("%s=%q, want %q", key, handlerErr.Headers[key], value)
+		}
+	}
+
+	var details map[string]string
+	if err := json.Unmarshal([]byte(handlerErr.Headers[errorDetailsHeader]), &details); err != nil {
+		t.Fatalf("decode %s: %v", errorDetailsHeader, err)
+	}
+	expectedDetails := map[string]string{
+		"resource_kind": "conversation",
+		"resource_id":   "conversation-1",
 	}
 	if !reflect.DeepEqual(details, expectedDetails) {
 		t.Fatalf("details = %+v, want %+v", details, expectedDetails)

@@ -8,6 +8,7 @@ import {
   api,
   classifyAgentTurnTerminalEvent,
   createAgentTurnSourceDelivery,
+  normalizeAgentTurnStreamError,
   streamAgentTurn,
   streamAgentTurnReplay,
   toAgentTurnReplayWireInput,
@@ -151,6 +152,87 @@ describe('agentTurnStreamErrorFromData', () => {
       },
     })
 
+    expect(error.resolution).toBeUndefined()
+  })
+
+  it('maps the exact forbidden-actor payload to switch-account recovery', () => {
+    const error = agentTurnStreamErrorFromData({
+      type: 'error',
+      error: 'agent.errors.forbiddenActor',
+      error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+      locale_key: 'agent.errors.forbiddenActor',
+      retryable: false,
+      terminal: true,
+      details: {
+        resource_kind: 'conversation',
+        resource_id: 'conversation-owned-by-bob',
+      },
+    })
+
+    expect(error.typedError).toEqual({
+      error: 'agent.errors.forbiddenActor',
+      error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+      locale_key: 'agent.errors.forbiddenActor',
+      retryable: false,
+      terminal: true,
+      details: {
+        resource_kind: 'conversation',
+        resource_id: 'conversation-owned-by-bob',
+      },
+    })
+    expect(error.resolution).toEqual({
+      type: 'switchAccount',
+      resourceKind: 'conversation',
+      resourceId: 'conversation-owned-by-bob',
+      label: 'agent.recovery.switchAccount',
+    })
+  })
+
+  it('normalizes an immediate native forbidden-actor rejection without widening details', () => {
+    const error = normalizeAgentTurnStreamError(Object.assign(
+      new Error('Agent turn rejected'),
+      {
+        details: {
+          error_code: 'OWNERSHIP_FORBIDDEN_ACTOR',
+          locale_key: 'agent.errors.forbiddenActor',
+          retryable: 'false',
+          terminal: 'true',
+          resource_kind: 'conversation',
+          resource_id: 'conversation-owned-by-bob',
+          body: 'must not enter the typed payload',
+        },
+      },
+    ))
+
+    expect(error.typedError).toEqual({
+      error: 'Agent turn rejected',
+      error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+      locale_key: 'agent.errors.forbiddenActor',
+      retryable: false,
+      terminal: true,
+      details: {
+        resource_kind: 'conversation',
+        resource_id: 'conversation-owned-by-bob',
+      },
+    })
+    expect(error.resolution?.type).toBe('switchAccount')
+  })
+
+  it('does not map malformed forbidden-actor details to account recovery', () => {
+    const error = agentTurnStreamErrorFromData({
+      error: 'agent.errors.forbiddenActor',
+      error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+      locale_key: 'agent.errors.forbiddenActor',
+      retryable: false,
+      terminal: true,
+      details: {
+        resource_kind: 'conversation',
+      },
+    })
+
+    expect(error.typedError?.details).toEqual({
+      resource_kind: 'conversation',
+    })
     expect(error.resolution).toBeUndefined()
   })
 })
@@ -443,6 +525,94 @@ describe('Agent turn stream completion', () => {
       },
     }))
     expect(unlisten).toHaveBeenCalledTimes(1)
+  })
+
+  it('source-binds an immediate native typed rejection from the start command', async () => {
+    mockListen.mockResolvedValue(() => undefined)
+    vi.mocked(invoke).mockImplementation((command) => {
+      if (command !== 'agent_execute_turn_stream') {
+        return Promise.reject(new Error(`unexpected command: ${command}`))
+      }
+      return Promise.resolve({
+        ok: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'agent.errors.forbiddenActor',
+          details: {
+            error_code: 'OWNERSHIP_FORBIDDEN_ACTOR',
+            locale_key: 'agent.errors.forbiddenActor',
+            retryable: 'false',
+            terminal: 'true',
+            resource_kind: 'conversation',
+            resource_id: 'conversation-owned-by-bob',
+          },
+        },
+      })
+    })
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurn(
+      {
+        client_idempotency_key: 'request-native-forbidden',
+        conversation_id: 'conversation-owned-by-bob',
+        agent_id: 'agent-1',
+        user_input: 'forbidden',
+      },
+      onEvent,
+      vi.fn(),
+      onError,
+      'ptid:person:alice',
+    )
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'error',
+      data: expect.objectContaining({
+        error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+        locale_key: 'agent.errors.forbiddenActor',
+        retryable: false,
+        terminal: true,
+        conversationId: 'conversation-owned-by-bob',
+        agentId: 'agent-1',
+        streamGeneration: expect.any(Number),
+      }),
+      sourceDelivery: {
+        transport: 'station-sse',
+        ptid: 'ptid:person:alice',
+        conversationId: 'conversation-owned-by-bob',
+        turnId: '',
+        sequence: 0,
+        rawPayload: {
+          eventType: 'error',
+          data: {
+            error: 'agent.errors.forbiddenActor',
+            error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+            locale_key: 'agent.errors.forbiddenActor',
+            retryable: false,
+            terminal: true,
+            details: {
+              resource_kind: 'conversation',
+              resource_id: 'conversation-owned-by-bob',
+            },
+            conversationId: 'conversation-owned-by-bob',
+            agentId: 'agent-1',
+          },
+        },
+      },
+    }))
+    expect(onError.mock.calls[0]?.[0]).toMatchObject({
+      typedError: {
+        error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+        details: {
+          resource_kind: 'conversation',
+          resource_id: 'conversation-owned-by-bob',
+        },
+      },
+      resolution: {
+        type: 'switchAccount',
+      },
+    })
   })
 
   it('cancels a native transport aborted while its start command is pending', async () => {

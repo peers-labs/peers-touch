@@ -226,6 +226,21 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
     def adapter(self, probe=capture) -> DirectRuntimeFoundationAdapter:
         return DirectRuntimeFoundationAdapter(probe)
 
+    def test_forbidden_actor_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-FORBIDDEN_ACTOR"],
+            {
+                "typedForbiddenActorRejected",
+                "localizedRecoveryVisible",
+                "switchAccountExecuted",
+                "foreignReadRejected",
+                "ownerStatePreserved",
+                "zeroCrossMutation",
+                "replayEqual",
+                "cleanupComplete",
+            },
+        )
+
     def test_group_one_cells_are_explicitly_supported_on_both_receivers(self) -> None:
         adapter = self.adapter()
         producer = FoundationCandidateProducer(

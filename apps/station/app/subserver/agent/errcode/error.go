@@ -20,6 +20,7 @@ const (
 	AgentIdempotencyConflict       Code = "IDEMPOTENCY_CONFLICT"
 	AgentInvalidSourceState        Code = "INVALID_SOURCE_STATE"
 	AgentActiveDependency          Code = "ACTIVE_DEPENDENCY"
+	AgentOwnershipForbiddenActor   Code = "OWNERSHIP_FORBIDDEN_ACTOR"
 	AgentQueueFull                 Code = "ADMISSION_QUEUE_FULL"
 	AgentAttachmentRejected        Code = "CONTEXT_ATTACHMENT_REJECTED"
 	AgentToolApprovalDenied        Code = "TOOL_APPROVAL_DENIED"
@@ -43,6 +44,7 @@ const (
 	AgentAdmissionDuplicateConflictLocaleKey   = "agent.errors.duplicateConflict"
 	AgentCanvasSingleAgentNotReadyLocaleKey    = "agent.errors.canvasSingleAgentNotReady"
 	AgentCanvasSingleAgentNotReadyRequiredGate = "agent-v2-kernel-foundation-e2e"
+	AgentOwnershipForbiddenActorLocaleKey      = "agent.errors.forbiddenActor"
 	AgentAttachmentRejectedLocaleKey           = "agent.errors.attachmentRejected"
 	AgentToolApprovalDeniedLocaleKey           = "agent.errors.toolApprovalDenied"
 	AgentToolApprovalExpiredLocaleKey          = "agent.errors.toolApprovalExpired"
@@ -92,6 +94,25 @@ func NewCanvasSingleAgentNotReady() *BizError {
 			Terminal:  true,
 			Details: map[string]string{
 				"required_gate": AgentCanvasSingleAgentNotReadyRequiredGate,
+			},
+		},
+	}
+}
+
+func NewOwnershipForbiddenActor(resourceKind, resourceID string) *BizError {
+	return &BizError{
+		Code:       AgentOwnershipForbiddenActor,
+		HTTPStatus: http.StatusForbidden,
+		Message:    AgentOwnershipForbiddenActorLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentOwnershipForbiddenActorLocaleKey,
+			ErrorType: string(AgentOwnershipForbiddenActor),
+			LocaleKey: AgentOwnershipForbiddenActorLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"resource_kind": resourceKind,
+				"resource_id":   resourceID,
 			},
 		},
 	}

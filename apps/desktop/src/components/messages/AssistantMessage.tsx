@@ -19,6 +19,7 @@ import {
   Braces,
   Workflow,
   ExternalLink,
+  LogOut,
   Minimize2,
   Settings,
 } from 'lucide-react';
@@ -33,6 +34,7 @@ import {
   parseAgentChatConfig,
 } from '../../services/desktop_api';
 import { EVENT, eventBus } from '../../kernel/events';
+import { identityRuntime } from '../../kernel/identityRuntime';
 import { LazyMarkdown as Markdown } from '../LazyMarkdown';
 import { AgentIconTile } from '../agent/AgentIconTile';
 import { ProviderIcon } from '../settings/ProviderIcon';
@@ -386,7 +388,9 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     ? 'configure-credential'
     : message.resolution?.type === 'openOriginal'
       ? 'open-original'
-      : 'true';
+      : message.resolution?.type === 'switchAccount'
+        ? 'switch-account'
+        : 'true';
   const artifacts = useMemo(() => extractMessageArtifacts(message), [message]);
 
   const handleCopy = useCallback(() => {
@@ -721,13 +725,18 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                     data-pt-agent-message-error-recovery={resolutionTarget}
                     type="primary"
                     size="small"
-                    danger={message.resolution.type !== 'openOriginal'}
+                    danger={
+                      message.resolution.type !== 'openOriginal'
+                      && message.resolution.type !== 'switchAccount'
+                    }
                     icon={
                       message.resolution.type === 'openProviderSettings'
                         ? <Settings size={14} />
                         : message.resolution.type === 'openOriginal'
                           ? <ExternalLink size={14} />
-                          : undefined
+                          : message.resolution.type === 'switchAccount'
+                            ? <LogOut size={14} />
+                            : undefined
                     }
                     style={{ marginTop: 8 }}
                     onClick={async () => {
@@ -744,6 +753,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                           handleOpenOriginal(
                             message.resolution!.existingCommandId ?? '',
                           );
+                          return;
+                        }
+                        if (message.resolution!.type === 'switchAccount') {
+                          await identityRuntime.logout();
                           return;
                         }
                         const result = await api.resolveErrorAction(message.resolution!);

@@ -442,6 +442,237 @@ class FoundationExecutorUnavailableCoordinator:
                 )
 
 
+class FoundationForbiddenActorCoordinator:
+    def __init__(
+        self,
+        runtime_pair: "FoundationRuntimePair",
+        profile_env: Mapping[str, str],
+    ) -> None:
+        self._runtime_pair = runtime_pair
+        self._password = profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", "1")
+
+    @staticmethod
+    def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
+        return "|".join(
+            (
+                probe_input.platform,
+                probe_input.locale,
+                probe_input.cell,
+                probe_input.sample_id,
+            )
+        )
+
+    def _receiver(self, platform: str) -> Any:
+        if platform == "desktop_app":
+            return self._runtime_pair.native
+        if platform == "browser":
+            return self._runtime_pair.browser
+        raise ScenarioRunnerError(
+            f"BASE-FORBIDDEN_ACTOR has no receiver for {platform}"
+        )
+
+    def _owner(self, platform: str) -> Any:
+        if platform == "desktop_app":
+            return self._runtime_pair.browser
+        if platform == "browser":
+            return self._runtime_pair.native
+        raise ScenarioRunnerError(
+            f"BASE-FORBIDDEN_ACTOR has no owner client for {platform}"
+        )
+
+    def _login(self, client: Any, account: str) -> None:
+        login = client.harness(
+            "loginWithPassword",
+            {"account": account, "password": self._password},
+            timeout=120,
+        )
+        if (
+            not isinstance(login, Mapping)
+            or login.get("authenticated") is not True
+            or not str(login.get("actorId") or "")
+        ):
+            raise ScenarioRunnerError(
+                f"BASE-FORBIDDEN_ACTOR {account} login is invalid"
+            )
+        navigation = client.harness("navigateToAgent", {}, timeout=60)
+        if (
+            not isinstance(navigation, Mapping)
+            or navigation.get("navigated") is not True
+        ):
+            raise ScenarioRunnerError(
+                f"BASE-FORBIDDEN_ACTOR {account} navigation is invalid"
+            )
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        receiver = self._receiver(probe_input.platform)
+        owner = self._owner(probe_input.platform)
+        scenario_key = self._scenario_key(probe_input)
+        locale = receiver.harness(
+            "setFoundationLocale",
+            {"locale": probe_input.locale},
+            timeout=30,
+        )
+        if (
+            not isinstance(locale, Mapping)
+            or locale.get("locale") != probe_input.locale
+        ):
+            raise ScenarioRunnerError(
+                "BASE-FORBIDDEN_ACTOR locale did not converge"
+            )
+
+        owner_fixture: Mapping[str, Any] | None = None
+        owner_is_bob = False
+        receiver_is_alice = True
+        owner_cleaned = False
+        primary_error: BaseException | None = None
+        cleanup_errors: list[str] = []
+        try:
+            self._login(owner, "bob@p.t")
+            owner_is_bob = True
+            owner_fixture = owner.harness(
+                "prepareFoundationForbiddenActorOwner",
+                {
+                    "scenarioKey": scenario_key,
+                    "sampleId": probe_input.sample_id,
+                },
+                timeout=120,
+            )
+            if (
+                not isinstance(owner_fixture, Mapping)
+                or owner_fixture.get("scenarioKey") != scenario_key
+                or not str(owner_fixture.get("conversationId") or "")
+                or not str(owner_fixture.get("agentId") or "")
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR owner fixture is invalid"
+                )
+
+            receiver_is_alice = False
+            rejected = receiver.harness(
+                "rejectFoundationForbiddenActor",
+                {
+                    "scenarioKey": scenario_key,
+                    "platform": probe_input.platform,
+                    "sampleId": probe_input.sample_id,
+                    "ownerFixture": dict(owner_fixture),
+                },
+                timeout=180,
+            )
+            if (
+                not isinstance(rejected, Mapping)
+                or rejected.get("scenarioKey") != scenario_key
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR receiver rejection is invalid"
+                )
+
+            owner_readback = owner.harness(
+                "readFoundationForbiddenActorOwner",
+                {"scenarioKey": scenario_key},
+                timeout=60,
+            )
+            if not isinstance(owner_readback, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR owner readback is invalid"
+                )
+
+            owner_cleanup = owner.harness(
+                "cleanupFoundationForbiddenActorOwner",
+                {"scenarioKey": scenario_key},
+                timeout=120,
+            )
+            if (
+                not isinstance(owner_cleanup, Mapping)
+                or owner_cleanup.get("resourceDeleted") is not True
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR owner cleanup is invalid"
+                )
+            owner_cleaned = True
+
+            self._login(owner, "alice@p.t")
+            owner_is_bob = False
+            self._login(receiver, "alice@p.t")
+            receiver_is_alice = True
+
+            recovered = receiver.harness(
+                "completeFoundationForbiddenActorRecovery",
+                {
+                    "scenarioKey": scenario_key,
+                    "rejectedScenario": dict(rejected),
+                    "ownerReadback": dict(owner_readback),
+                    "ownerCleanup": dict(owner_cleanup),
+                },
+                timeout=60,
+            )
+            if not isinstance(recovered, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR recovery is invalid"
+                )
+            capture = receiver.harness(
+                "foundationDirectProbe",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "cell": probe_input.cell,
+                    "sampleId": probe_input.sample_id,
+                    "preparedScenario": dict(recovered),
+                },
+                timeout=300,
+            )
+            if not isinstance(capture, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR direct capture is invalid"
+                )
+            assert_group_one_capture(probe_input, capture)
+            return capture
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            if owner_fixture is not None and not owner_cleaned:
+                try:
+                    if not owner_is_bob:
+                        self._login(owner, "bob@p.t")
+                        owner_is_bob = True
+                    owner.harness(
+                        "cleanupFoundationForbiddenActorOwner",
+                        {"scenarioKey": scenario_key},
+                        timeout=120,
+                    )
+                    owner_cleaned = True
+                except BaseException as error:
+                    cleanup_errors.append(f"owner resource cleanup: {error}")
+            if owner_is_bob:
+                try:
+                    self._login(owner, "alice@p.t")
+                    owner_is_bob = False
+                except BaseException as error:
+                    cleanup_errors.append(f"owner identity restore: {error}")
+            if not receiver_is_alice:
+                try:
+                    self._login(receiver, "alice@p.t")
+                    receiver_is_alice = True
+                except BaseException as error:
+                    cleanup_errors.append(f"receiver identity restore: {error}")
+            try:
+                receiver.harness(
+                    "abortFoundationForbiddenActor",
+                    {"scenarioKey": scenario_key},
+                    timeout=60,
+                )
+            except BaseException as error:
+                cleanup_errors.append(f"receiver projection cleanup: {error}")
+            if cleanup_errors:
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR cleanup failed: "
+                    f"primary={primary_error}; cleanup={cleanup_errors}"
+                )
+
+
 def _make_direct_probe(
     client: Any,
     *,
@@ -449,6 +680,8 @@ def _make_direct_probe(
     f12_coordinator: "FoundationF12Coordinator | None" = None,
     executor_unavailable_coordinator:
         "FoundationExecutorUnavailableCoordinator | None" = None,
+    forbidden_actor_coordinator:
+        "FoundationForbiddenActorCoordinator | None" = None,
 ) -> "Callable[[DirectRuntimeProbeInput], Mapping[str, Any]]":
     """Create a direct-runtime probe that executes via WebDriver harness.
 
@@ -457,6 +690,12 @@ def _make_direct_probe(
     full capture dictionary expected by DirectRuntimeFoundationAdapter.
     """
     def probe(probe_input: DirectRuntimeProbeInput) -> Mapping[str, Any]:
+        if probe_input.cell == "BASE-FORBIDDEN_ACTOR":
+            if forbidden_actor_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-FORBIDDEN_ACTOR requires two-actor orchestration"
+                )
+            return forbidden_actor_coordinator.capture(probe_input)
         if probe_input.cell == "BASE-EXECUTOR_UNAVAILABLE":
             if executor_unavailable_coordinator is None:
                 raise ScenarioRunnerError(
@@ -1751,6 +1990,10 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         executor_unavailable_coordinator = (
             FoundationExecutorUnavailableCoordinator(runtime_pair)
         )
+        forbidden_actor_coordinator = FoundationForbiddenActorCoordinator(
+            runtime_pair,
+            profile_env,
+        )
 
         # 1. Desktop native adapter: real WebDriver probe through native client.
         desktop_native_adapter = DirectRuntimeFoundationAdapter(
@@ -1761,6 +2004,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 executor_unavailable_coordinator=(
                     executor_unavailable_coordinator
                 ),
+                forbidden_actor_coordinator=forbidden_actor_coordinator,
             )
         )
 
@@ -1773,6 +2017,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 executor_unavailable_coordinator=(
                     executor_unavailable_coordinator
                 ),
+                forbidden_actor_coordinator=forbidden_actor_coordinator,
             )
         )
 

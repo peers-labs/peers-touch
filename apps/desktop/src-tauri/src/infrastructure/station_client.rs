@@ -15,7 +15,12 @@ use std::time::Duration;
 const INTERACTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const TURN_EXECUTION_WALL_TIME: Duration = Duration::from_secs(300);
 const TURN_EXECUTION_RESPONSE_MARGIN: Duration = Duration::from_secs(5);
-const SAFE_ERROR_DETAIL_FIELDS: [&str; 3] = ["resource_id", "expected_revision", "actual_revision"];
+const SAFE_ERROR_DETAIL_FIELDS: [&str; 4] = [
+    "resource_kind",
+    "resource_id",
+    "expected_revision",
+    "actual_revision",
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum StationTransportPolicy {
@@ -1593,6 +1598,7 @@ mod tests {
             "x-peers-error-retryable": "true",
             "x-peers-error-terminal": "true",
             "x-peers-error-details": r#"{
+                "resource_kind":"agent",
                 "resource_id":"agent-1",
                 "expected_revision":"7",
                 "actual_revision":"8",
@@ -1614,11 +1620,44 @@ mod tests {
         assert_eq!(details["locale_key"], "agent.errors.activeMutationConflict");
         assert_eq!(details["retryable"], "true");
         assert_eq!(details["terminal"], "true");
+        assert_eq!(details["resource_kind"], "agent");
         assert_eq!(details["resource_id"], "agent-1");
         assert_eq!(details["expected_revision"], "7");
         assert_eq!(details["actual_revision"], "8");
         assert!(details.get("ignored_string").is_none());
         assert!(details.get("ignored_number").is_none());
+    }
+
+    #[test]
+    fn forbidden_actor_station_error_preserves_exact_resource_identity() {
+        let headers = json!({
+            "x-peers-error-code": "OWNERSHIP_FORBIDDEN_ACTOR",
+            "x-peers-error-locale-key": "agent.errors.forbiddenActor",
+            "x-peers-error-retryable": "false",
+            "x-peers-error-terminal": "true",
+            "x-peers-error-details": r#"{
+                "resource_kind":"conversation",
+                "resource_id":"conversation-owned-by-bob",
+                "owner_ptid":"must-not-cross"
+            }"#,
+        });
+        let error = build_error_for_status_with_headers(
+            403,
+            "/sub-agent/agent/turn/execute",
+            "{\"error\":\"forbidden\"}",
+            Some(&headers),
+        );
+        let result = error.into_app_result::<serde_json::Value>("Agent turn rejected");
+        let app_error = result.error.expect("AppResult error");
+        assert_eq!(app_error.code, ErrorCode::Forbidden);
+        let details = app_error.details.expect("typed error details");
+        assert_eq!(details["error_code"], "OWNERSHIP_FORBIDDEN_ACTOR");
+        assert_eq!(details["locale_key"], "agent.errors.forbiddenActor");
+        assert_eq!(details["retryable"], "false");
+        assert_eq!(details["terminal"], "true");
+        assert_eq!(details["resource_kind"], "conversation");
+        assert_eq!(details["resource_id"], "conversation-owned-by-bob");
+        assert!(details.get("owner_ptid").is_none());
     }
 
     #[test]

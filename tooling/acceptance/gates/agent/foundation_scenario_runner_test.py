@@ -21,14 +21,19 @@ from tooling.acceptance.gates.agent.foundation_direct_adapter_test import (
 from tooling.acceptance.gates.agent.foundation_group_one_probe import (
     GroupOneProbeError,
 )
+from tooling.acceptance.gates.agent.foundation_group_one_probe_test import (
+    typed_runtime_role,
+)
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_executor_unavailable,
+    evaluate_base_forbidden_actor,
     evaluate_as_f04,
     evaluate_as_f06,
     evaluate_as_f12,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_executor_unavailable_capture,
+    valid_forbidden_actor_capture,
     valid_as_f04_capture,
     valid_as_f06_capture,
     valid_as_f12_capture,
@@ -129,6 +134,110 @@ class ExecutorUnavailableHarnessClient:
             result["assertions"] = evaluate_base_executor_unavailable(facts)
             return result
         if method == "abortFoundationExecutorUnavailable":
+            return {"scenarioKey": request["scenarioKey"], "cleaned": True}
+        raise AssertionError(f"unexpected method: {method}")
+
+
+class ForbiddenActorHarnessClient:
+    def __init__(
+        self,
+        platform: str,
+        *,
+        call_log: list[str],
+        fail_rejection: bool = False,
+    ) -> None:
+        self.platform = platform
+        self.call_log = call_log
+        self.fail_rejection = fail_rejection
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        del timeout
+        request = payload or {}
+        self.call_log.append(f"{self.platform}:{method}")
+        if method == "setFoundationLocale":
+            return {"locale": request["locale"]}
+        if method == "loginWithPassword":
+            account = str(request["account"])
+            return {
+                "authenticated": True,
+                "actorId": f"ptid:{account}",
+            }
+        if method == "navigateToAgent":
+            return {"navigated": True}
+        if method == "prepareFoundationForbiddenActorOwner":
+            return {
+                "scenarioKey": request["scenarioKey"],
+                "resourceKind": "conversation",
+                "conversationId": "conversation-foreign",
+                "agentId": "agent-foreign",
+                "ownerActorHash": "a" * 64,
+                "beforeHash": "c" * 64,
+                "beforeVersion": 1,
+            }
+        if method == "rejectFoundationForbiddenActor":
+            if self.fail_rejection:
+                raise RuntimeError("forbidden rejection failed")
+            facts = valid_forbidden_actor_capture()
+            facts["cleanup"]["foreignResourceDeleted"] = False
+            facts["cleanup"]["foreignAgentDeleted"] = False
+            facts["cleanup"]["ownerSelectionRestored"] = False
+            facts["cleanup"]["receiverRestored"] = False
+            facts["cleanup"]["conversationDeleted"] = False
+            facts["receiver"]["receiverRestored"] = False
+            return {
+                "scenarioKey": request["scenarioKey"],
+                "durationMs": 1,
+                "runtimeEvent": {
+                    "eventType": "error",
+                    "sequence": 1,
+                    "observedAt": "2026-09-11T00:00:00Z",
+                },
+                "facts": facts,
+            }
+        if method == "readFoundationForbiddenActorOwner":
+            facts = valid_forbidden_actor_capture()
+            return dict(facts["owner"])
+        if method == "cleanupFoundationForbiddenActorOwner":
+            return {
+                "scenarioKey": request["scenarioKey"],
+                "resourceDeleted": True,
+                "agentDeleted": True,
+                "priorSelectionRestored": True,
+            }
+        if method == "completeFoundationForbiddenActorRecovery":
+            facts = valid_forbidden_actor_capture()
+            return {
+                "scenarioKey": request["scenarioKey"],
+                "durationMs": 2,
+                "runtimeEvent": {
+                    "eventType": "error",
+                    "sequence": 1,
+                    "observedAt": "2026-09-11T00:00:00Z",
+                },
+                "facts": facts,
+            }
+        if method == "foundationDirectProbe":
+            probe = DirectRuntimeProbeInput(
+                platform=str(request["platform"]),
+                locale=str(request["locale"]),
+                cell=str(request["cell"]),
+                sample_id=str(request["sampleId"]),
+            )
+            result = capture(probe)
+            facts = valid_forbidden_actor_capture()
+            result["scenarioFacts"] = facts
+            result["assertions"] = evaluate_base_forbidden_actor(facts)
+            result["runtime-events"] = typed_runtime_role(facts)
+            result["runtimeAttestation"]["actorIdentityHash"] = (
+                facts["runtimeEvent"]["sourcePtidHash"]
+            )
+            return result
+        if method == "abortFoundationForbiddenActor":
             return {"scenarioKey": request["scenarioKey"], "cleaned": True}
         raise AssertionError(f"unexpected method: {method}")
 
@@ -2038,6 +2147,98 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                 "browser:recoverFoundationExecutorUnavailable",
                 "browser:foundationDirectProbe",
                 "browser:abortFoundationExecutorUnavailable",
+            ],
+        )
+
+    def test_forbidden_actor_coordinates_bob_owner_and_browser_receiver(
+        self,
+    ) -> None:
+        call_log: list[str] = []
+        native = ForbiddenActorHarnessClient(
+            "desktop_app",
+            call_log=call_log,
+        )
+        browser = ForbiddenActorHarnessClient(
+            "browser",
+            call_log=call_log,
+        )
+        coordinator = foundation_scenario_runner.FoundationForbiddenActorCoordinator(
+            SimpleNamespace(native=native, browser=browser),
+            {"CHAT_NATIVE_DEMO_PASSWORD": "fixture-password"},
+        )
+        probe = foundation_scenario_runner._make_direct_probe(
+            browser,
+            forbidden_actor_coordinator=coordinator,
+        )
+
+        result = probe(
+            DirectRuntimeProbeInput(
+                platform="browser",
+                locale="en",
+                cell="BASE-FORBIDDEN_ACTOR",
+                sample_id="sample-001",
+            )
+        )
+
+        self.assertTrue(result["assertions"]["typedForbiddenActorRejected"])
+        self.assertEqual(
+            call_log,
+            [
+                "browser:setFoundationLocale",
+                "desktop_app:loginWithPassword",
+                "desktop_app:navigateToAgent",
+                "desktop_app:prepareFoundationForbiddenActorOwner",
+                "browser:rejectFoundationForbiddenActor",
+                "desktop_app:readFoundationForbiddenActorOwner",
+                "desktop_app:cleanupFoundationForbiddenActorOwner",
+                "desktop_app:loginWithPassword",
+                "desktop_app:navigateToAgent",
+                "browser:loginWithPassword",
+                "browser:navigateToAgent",
+                "browser:completeFoundationForbiddenActorRecovery",
+                "browser:foundationDirectProbe",
+                "browser:abortFoundationForbiddenActor",
+            ],
+        )
+
+    def test_forbidden_actor_failure_restores_both_clients_and_owner_fixture(
+        self,
+    ) -> None:
+        call_log: list[str] = []
+        native = ForbiddenActorHarnessClient(
+            "desktop_app",
+            call_log=call_log,
+        )
+        browser = ForbiddenActorHarnessClient(
+            "browser",
+            call_log=call_log,
+            fail_rejection=True,
+        )
+        coordinator = foundation_scenario_runner.FoundationForbiddenActorCoordinator(
+            SimpleNamespace(native=native, browser=browser),
+            {"CHAT_NATIVE_DEMO_PASSWORD": "fixture-password"},
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "forbidden rejection failed"):
+            coordinator.capture(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="en",
+                    cell="BASE-FORBIDDEN_ACTOR",
+                    sample_id="sample-001",
+                )
+            )
+
+        self.assertEqual(
+            call_log[-7:],
+            [
+                "browser:rejectFoundationForbiddenActor",
+                "desktop_app:cleanupFoundationForbiddenActorOwner",
+                "desktop_app:loginWithPassword",
+                "desktop_app:navigateToAgent",
+                "browser:loginWithPassword",
+                "browser:navigateToAgent",
+                "browser:abortFoundationForbiddenActor",
             ],
         )
 

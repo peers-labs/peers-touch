@@ -173,6 +173,7 @@ describe('Agent evidence UI projections', () => {
 
   it('keeps stable proof selectors on all four user-facing surfaces', () => {
     const assistant = readFileSync(new URL('./messages/AssistantMessage.tsx', import.meta.url), 'utf8');
+    const desktopApi = readFileSync(new URL('../services/desktop_api.ts', import.meta.url), 'utf8');
     const sources = readFileSync(new URL('./messages/SourceAttributionBadges.tsx', import.meta.url), 'utf8');
     const composer = readFileSync(new URL('./ChatInput.tsx', import.meta.url), 'utf8');
     const attachments = readFileSync(new URL('./composer/AttachmentStage.tsx', import.meta.url), 'utf8');
@@ -185,8 +186,12 @@ describe('Agent evidence UI projections', () => {
     expect(assistant).toContain('data-pt-agent-error-resource-id');
     expect(assistant).toContain('data-pt-agent-message-error-recovery');
     expect(assistant).toContain('data-pt-agent-message-error-recovery="reduce-context"');
+    expect(assistant).toContain("'switch-account'");
     expect(assistant).toContain("'open-original'");
     expect(assistant).toContain('handleOpenOriginal');
+    expect(assistant).toContain('<LogOut size={14} />');
+    expect(assistant).toContain('await identityRuntime.logout()');
+    expect(desktopApi).toContain("label: 'agent.recovery.switchAccount'");
     expect(assistant).toContain('agent.recovery.reduceContext');
     expect(assistant).toContain("ns: 'agent'");
     expect(sources).toContain('data-source-badges');

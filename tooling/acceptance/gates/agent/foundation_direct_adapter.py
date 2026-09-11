@@ -168,6 +168,18 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-FORBIDDEN_ACTOR": frozenset(
+        {
+            "typedForbiddenActorRejected",
+            "localizedRecoveryVisible",
+            "switchAccountExecuted",
+            "foreignReadRejected",
+            "ownerStatePreserved",
+            "zeroCrossMutation",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
     "BASE-CANCELLED": frozenset(
         {
             "typedCancellationProjected",
