@@ -11320,6 +11320,7 @@ async function rejectFoundationForbiddenActor(input: {
     durationMs: performance.now() - startedAt,
     runtimeEvent: first.runtimeEvent,
     facts: {
+      runtimeEvent: first.runtimeEvent,
       outcome: first.outcome,
       receiver,
       foreignAccess: {

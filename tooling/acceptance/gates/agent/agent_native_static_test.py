@@ -1435,6 +1435,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("api.deleteAgent(", scenario)
         self.assertIn("deletionCode === 'CONVERSATION_DELETED'", scenario)
         self.assertIn("isFoundationResourceNotFound(error)", scenario)
+        self.assertIn("runtimeEvent: first.runtimeEvent", scenario)
         self.assertIn(
             "(error as { code?: unknown }).code === 'NOT_FOUND'",
             self.source,

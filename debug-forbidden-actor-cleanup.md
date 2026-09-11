@@ -42,10 +42,21 @@
   already-absent resources were classified as cleanup failures.
 - Direct PostgreSQL readback after the run finds the conversation in
   `deleted` status and no row for the fixture Agent.
+- Post-fix run
+  `20260911T131501808195Z-4aeab8c72e1bcb69d4ec06735992399d`
+  on `f9794c2bf68ee220643a159cc74cef658800b944` records
+  `resourceDeleted=true`, `agentDeleted=true`,
+  `priorSelectionRestored=true`, and `failureCount=0`.
+- That run then failed the independent oracle because
+  `runFoundationForbiddenActorAttempt` projected the observed SSE event only
+  as top-level `runtimeEvent`; unlike the other typed-error scenarios, its
+  `facts` object omitted the same `runtimeEvent`, so
+  `scenarioFacts.runtimeEvent` was absent even though the event had been
+  captured and source-attested.
 
 ## Verification Conclusion
-The Station deletion is correct. The Acceptance Harness cleanup is not
-idempotent because it recognizes only an embedded `AGENT_4004` string, while
-the Desktop API exposes canonical absence as `RustCommandException.code =
-NOT_FOUND`; it also fails to treat `CONVERSATION_DELETED` as success. The fix
-belongs only in the Harness cleanup classifier.
+The Station deletion and typed SSE event are correct. The Harness cleanup
+idempotency fix is runtime-proven. The remaining defect is a Harness evidence
+shape mismatch: the already-observed forbidden-actor event must be included in
+both the scenario return and its `facts` object, matching every other typed
+Foundation scenario and the independent oracle contract.

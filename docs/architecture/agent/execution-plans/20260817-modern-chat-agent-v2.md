@@ -24,8 +24,8 @@
 | Current workstream | G-FE1 incompatible-capability closure and exact-source Foundation proof |
 | Current step | `BASE-INCOMPATIBLE_CAPABILITY` is source-complete locally across Station, Desktop, production Harness, replay/cleanup evidence, and the independent oracle |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source C08 run `20260911T113028146173Z-0ffcaf437f88df0bbc212302af7a8877` on `3aabb516bae3a69a4c8de8dde6951557a4a6e937` is `DONE / PROVEN` with 19/19 assertions and clean resource release；the unchanged Foundation run `20260911T113248603126Z-06d037f93b8d390b5619d30808c87fa8` crossed the repaired AS-F07 path and all prior implemented `BASE-*` cells before `BASE-FORBIDDEN_ACTOR` cleanup |
-| Current action | Checkpoint the Harness-only canonical not-found/idempotent cleanup correction, deploy exact source, rerun C08, then run the unchanged 419-cell Gate |
+| Last completed | Exact-source C08 run `20260911T131357153837Z-a5ed49ce9dd9990ab342952446b96c0d` on `f9794c2bf68ee220643a159cc74cef658800b944` passed with clean resource release；the unchanged Foundation run `20260911T131501808195Z-4aeab8c72e1bcb69d4ec06735992399d` runtime-proved `BASE-FORBIDDEN_ACTOR` cleanup before failing its independent runtime-event evidence shape check |
+| Current action | Checkpoint the Harness-only `scenarioFacts.runtimeEvent` correction, deploy exact source, rerun C08, then run the unchanged 419-cell Gate |
 | Next action | If the full Gate crosses `BASE-INCOMPATIBLE_CAPABILITY`, admit only the next plan-defined `BASE-*` vertical exposed by its first failure |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
@@ -35,7 +35,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | none for the current Harness cleanup correction；full Foundation proof remains pending exact-source rerun |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 is current-source `DONE / PROVEN` on `3aabb516b`；Foundation is `FAILED / PARTIAL / UNPROVEN` at `BASE-FORBIDDEN_ACTOR` cleanup; Station logs prove Agent delete `200` followed by get `404`, while Harness debug evidence proves canonical absence and `CONVERSATION_DELETED` were misclassified; outer cleanup passed |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 passed on `f9794c2bf`；Foundation is `FAILED / PARTIAL / UNPROVEN` at the `BASE-FORBIDDEN_ACTOR` evidence oracle after its cleanup passed with `resourceDeleted=true`, `agentDeleted=true`, `priorSelectionRestored=true`, and `failureCount=0`; the remaining source defect is omission of the already-observed SSE event from `scenarioFacts` |
 | Last updated | 2026-09-11 |
 
 ---
