@@ -315,6 +315,104 @@ class EnvironmentContractTests(unittest.TestCase):
             "Bearer session-token",
         )
 
+    def test_current_profile_clients_use_actor_specific_storage_seeds(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "native-tauri-current-profile.yaml"
+        )
+        provisioner = (
+            native_tauri_current_profile.NativeTauriCurrentProfileProvisioner(
+                contract
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            alice_seed = root / "alice-seed"
+            bob_seed = root / "bob-seed"
+            (alice_seed / "peers-touch").mkdir(parents=True)
+            (bob_seed / "peers-touch").mkdir(parents=True)
+            (alice_seed / "peers-touch" / "identity-owner").write_text(
+                "alice",
+                encoding="utf-8",
+            )
+            (bob_seed / "peers-touch" / "identity-owner").write_text(
+                "bob",
+                encoding="utf-8",
+            )
+            run_id = f"test-{root.name}"
+            with (
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        "PT_CHAT_NATIVE_STORAGE_SEEDS": (
+                            f"{alice_seed},{bob_seed}"
+                        )
+                    },
+                ),
+                mock.patch.object(
+                    provisioner,
+                    "_port_available",
+                    return_value=True,
+                ),
+            ):
+                clients = provisioner._clients(
+                    run_id=run_id,
+                    profile_name="four",
+                    profile_env={
+                        "PT_DESKTOP_APP_GATEWAY_PORT": "3140",
+                        "PT_DESKTOP_APP_WEB_PORT": "3410",
+                    },
+                    slot=3,
+                )
+            try:
+                self.assertEqual(
+                    [
+                        (
+                            Path(client.storage_root)
+                            / "peers-touch"
+                            / "identity-owner"
+                        ).read_text(encoding="utf-8")
+                        for client in clients
+                    ],
+                    ["alice", "bob"],
+                )
+                self.assertEqual(
+                    [client.profile for client in clients],
+                    ["four-app", "four-app"],
+                )
+            finally:
+                provisioner.cleanup()
+
+    def test_current_profile_rejects_incomplete_storage_seed_set(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "native-tauri-current-profile.yaml"
+        )
+        provisioner = (
+            native_tauri_current_profile.NativeTauriCurrentProfileProvisioner(
+                contract
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seeds = []
+            for index in range(3):
+                seed = root / f"seed-{index}"
+                (seed / "peers-touch").mkdir(parents=True)
+                seeds.append(str(seed))
+            with mock.patch.dict(
+                os.environ,
+                {"PT_CHAT_NATIVE_STORAGE_SEEDS": ",".join(seeds)},
+            ):
+                with self.assertRaises(BlockedError):
+                    provisioner._storage_seeds("four")
+
     def test_load_mobile_native_contract(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "mobile-native.yaml"

@@ -45,6 +45,57 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
 
     environment_id = "native-tauri-current-profile"
 
+    @staticmethod
+    def _storage_seeds(
+        profile_name: str,
+    ) -> tuple[Path, ...]:
+        raw_seeds = os.environ.get(
+            "PT_CHAT_NATIVE_STORAGE_SEEDS",
+            "",
+        )
+        if raw_seeds.strip():
+            seeds = tuple(
+                Path(item).expanduser().resolve()
+                for item in raw_seeds.split(",")
+                if item.strip()
+            )
+        else:
+            single_seed = Path(
+                os.environ.get(
+                    "PT_CHAT_NATIVE_STORAGE_SEED",
+                    str(
+                        REPO_ROOT
+                        / ".local"
+                        / "dev"
+                        / "data"
+                        / profile_name
+                        / "desktop-app"
+                    ),
+                )
+            ).expanduser().resolve()
+            seeds = (single_seed,)
+        if len(seeds) == 1:
+            seeds *= len(CLIENT_ROLES)
+        if len(seeds) != len(CLIENT_ROLES):
+            raise BlockedError(
+                reason=(
+                    "Current-profile Native Gate requires one storage seed "
+                    f"per client ({len(CLIENT_ROLES)} required, "
+                    f"{len(seeds)} supplied)"
+                ),
+                resource="client-isolation:storage-seeds",
+            )
+        for seed in seeds:
+            if not (seed / "peers-touch").is_dir():
+                raise BlockedError(
+                    reason=(
+                        "Current-profile Native Gate requires an existing "
+                        f"Desktop identity store at {seed}"
+                    ),
+                    resource="fixture:desktop-identity-storage",
+                )
+        return seeds
+
     def _resolve_credentials(self) -> tuple[tuple[str, ...], dict[str, str]]:
         return self._remember_resolved_credentials(
             ("fixture:apps/station/app/conf/actor.yml#preset_users",),
@@ -172,27 +223,7 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 reason="Current-profile Native environment must declare Alice and Bob",
                 resource=f"gate-environment:{GATE_ID}",
             )
-        seed_root = Path(
-            os.environ.get(
-                "PT_CHAT_NATIVE_STORAGE_SEED",
-                str(
-                    REPO_ROOT
-                    / ".local"
-                    / "dev"
-                    / "data"
-                    / profile_name
-                    / "desktop-app"
-                ),
-            )
-        ).expanduser().resolve()
-        if not (seed_root / "peers-touch").is_dir():
-            raise BlockedError(
-                reason=(
-                    "Current-profile Native Gate requires an existing Desktop "
-                    f"identity store at {seed_root}"
-                ),
-                resource="fixture:desktop-identity-storage",
-            )
+        seed_roots = self._storage_seeds(profile_name)
 
         run_root = Path(f"/tmp/pt-chat-native-current-{run_id}")
         run_root.mkdir(parents=True, exist_ok=False)
@@ -231,8 +262,11 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 resource="client-isolation:ports",
             )
         gateway_base, renderer_base, webdriver_base = allocation
+        desktop_profile = f"{profile_name}-app"
         clients: list[ClientRuntime] = []
-        for index, role in enumerate(CLIENT_ROLES):
+        for index, (role, seed_root) in enumerate(
+            zip(CLIENT_ROLES, seed_roots)
+        ):
             storage_root = run_root / role / "storage"
             shutil.copytree(seed_root, storage_root)
             client = ClientRuntime(
@@ -242,7 +276,7 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 gateway_port=gateway_base + index,
                 renderer_port=renderer_base + index,
                 webdriver_port=webdriver_base + index,
-                profile=profile_name,
+                profile=desktop_profile,
                 storage_root=str(storage_root),
                 id=role,
                 required_service_roles=declared[role].required_service_roles,

@@ -487,6 +487,29 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
 
         self.assertTrue(gate.verify_fixture_ready())
 
+    def test_client_readiness_requires_active_station_device(self) -> None:
+        runner_source = (
+            REPO_ROOT
+            / "tooling"
+            / "acceptance"
+            / "gates"
+            / "chat"
+            / "native_two_client_runner.py"
+        ).read_text(encoding="utf-8")
+        harness_source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src"
+            / "acceptance"
+            / "chat"
+            / "harness.ts"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('current.get("active") is True', runner_source)
+        self.assertIn("imServiceV1.device.list()", harness_source)
+        self.assertIn("ActorDeviceStatus.ACTIVE", harness_source)
+
     def test_source_identity_rejects_malformed_station_protocol_digest(self) -> None:
         manifest = self.valid_report()["manifest"]
         manifest["services"]["station-four"]["protocolDigest"] = "z" * 64
