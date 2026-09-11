@@ -596,6 +596,17 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                 maxsplit=1,
             )[0],
         )
+        self.assertIn('"federationContext"', runner)
+        self.assertIn('"federationId": federation_id', runner)
+        self.assertIn(
+            "Alice and Bob have no shared Federation",
+            runner,
+        )
+        self.assertIn("async federationContext()", harness)
+        self.assertIn(
+            'received.get("messageUlid") == sent.get("messageUlid")',
+            runner,
+        )
         self.assertIn(
             "await refreshConversation('friend', sessionUlid)",
             friend_sync,

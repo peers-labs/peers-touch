@@ -9,11 +9,13 @@
 // 2026-04-09: Initial creation. Full 1:1 mapping of all 237 tauri commands.
 
 use std::io::{self, Read};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 use x25519_dalek::{PublicKey, StaticSecret};
 
@@ -74,6 +76,35 @@ use ulid::Ulid;
 const DEFAULT_PORT: u16 = 3030;
 const POOL_SIZE: usize = 8;
 const MAX_FRONTEND_TELEMETRY_BATCH_EVENTS: usize = 500;
+static IDENTITY_TRANSITION_WAITERS: AtomicUsize = AtomicUsize::new(0);
+static IDENTITY_TRANSITION_MAX_WAITERS: AtomicUsize = AtomicUsize::new(0);
+
+struct IdentityTransitionAttempt;
+
+impl IdentityTransitionAttempt {
+    fn enter() -> Self {
+        let waiters = IDENTITY_TRANSITION_WAITERS.fetch_add(1, Ordering::SeqCst) + 1;
+        let mut observed = IDENTITY_TRANSITION_MAX_WAITERS.load(Ordering::SeqCst);
+        while waiters > observed {
+            match IDENTITY_TRANSITION_MAX_WAITERS.compare_exchange(
+                observed,
+                waiters,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => break,
+                Err(actual) => observed = actual,
+            }
+        }
+        Self
+    }
+}
+
+impl Drop for IdentityTransitionAttempt {
+    fn drop(&mut self) {
+        IDENTITY_TRANSITION_WAITERS.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 
 struct GatewayRequestDiagnostics {
     active_workers_at_enqueue: usize,
@@ -2347,27 +2378,64 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(app_auth::auth_validate_token(input, state))
         }
         "acceptance_current_session" => {
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
+            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
             };
-            let actor_ptid = match actor_ptid_from_state(state) {
-                Some(id) if !id.trim().is_empty() => id,
-                Some(_) | None => {
-                    return to_json(AppResult::<StubPayload>::fail(
-                        ErrorCode::Unauthorized,
-                        "authentication required",
-                        None,
-                    ));
-                }
-            };
+            let messaging_profile_matches = state
+                .messaging_engines
+                .profile_worker_token(&account_id)
+                .map(|worker_token| worker_token.as_deref() == Some(token.as_str()))
+                .unwrap_or(false);
             to_json(to_stub(
                 "acceptance_current_session",
                 json!({
                     "actor_ptid": actor_ptid,
-                    "token": token,
+                    "token_fingerprint": hex::encode(Sha256::digest(token.as_bytes())),
+                    "account_id": account_id,
+                    "messaging_profile_matches": messaging_profile_matches,
                 }),
             ))
+        }
+        "acceptance_identity_transition_metrics" => {
+            if args.get("reset").and_then(Value::as_bool).unwrap_or(false) {
+                IDENTITY_TRANSITION_MAX_WAITERS.store(
+                    IDENTITY_TRANSITION_WAITERS.load(Ordering::SeqCst),
+                    Ordering::SeqCst,
+                );
+            }
+            to_json(to_stub(
+                "acceptance_identity_transition_metrics",
+                json!({
+                    "current_waiters": IDENTITY_TRANSITION_WAITERS.load(Ordering::SeqCst),
+                    "max_waiters": IDENTITY_TRANSITION_MAX_WAITERS.load(Ordering::SeqCst),
+                }),
+            ))
+        }
+        "acceptance_federation_context" => {
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            match app_federation::list_federations(&token) {
+                Ok(view) => to_json(to_stub(
+                    "acceptance_federation_context",
+                    json!({
+                        "federations": view
+                            .federations
+                            .iter()
+                            .map(|federation| json!({
+                                "federation_id": federation.federation_id,
+                                "name": federation.name,
+                                "status": federation.status,
+                            }))
+                            .collect::<Vec<_>>(),
+                    }),
+                )),
+                Err(error) => to_json(
+                    error.into_app_result::<StubPayload>("acceptance_federation_context failed"),
+                ),
+            }
         }
         "ensure_station_session" => to_json(app_auth::ensure_station_session(state)),
 
@@ -4732,41 +4800,163 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "account_switch" => {
+            let acceptance_hold_ms = args
+                .get("acceptance_hold_ms")
+                .and_then(Value::as_u64)
+                .unwrap_or_default()
+                .min(1_000);
+            #[cfg(feature = "acceptance-webdriver")]
+            let acceptance_fail_identity_commit = args
+                .get("acceptance_fail_identity_commit")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let input = match parse_args::<AccountIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let account_id = input.id.clone();
+            let _attempt = IdentityTransitionAttempt::enter();
+            let _transition = match state.identity_transition.lock() {
+                Ok(guard) => guard,
+                Err(_) => {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        "Failed to coordinate identity transition",
+                        None,
+                    ))
+                }
+            };
+            if acceptance_hold_ms > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(acceptance_hold_ms));
+            }
+            let previous_identity_state = match crate::infrastructure::auth_identity::read_state() {
+                Ok(identity_state) => identity_state,
+                Err(error) => {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        error,
+                        None,
+                    ))
+                }
+            };
+            let previous_session = gateway_session(state);
+            let prevalidated = match app_auth::prepare_account_switch_session(&input.id) {
+                Ok(prevalidated) => prevalidated,
+                Err(error) => return to_json(error),
+            };
+            let prepared = match app_auth::acquire_account_switch_session(prevalidated) {
+                Ok(prepared) => prepared,
+                Err(error) => return to_json(error),
+            };
+            if let Err(error) = app_auth::persist_prepared_account_switch_session(&prepared) {
+                return to_json(error);
+            }
+            #[cfg(feature = "acceptance-webdriver")]
+            if acceptance_fail_identity_commit {
+                return to_json(AppResult::<AuthSessionPayload>::fail(
+                    ErrorCode::InternalError,
+                    "Failed to commit authenticated identity",
+                    Some(json!({
+                        "command": "account_switch",
+                        "reason": "identity_commit_failed",
+                    })),
+                ));
+            }
+            let engine_existed = match state.messaging_engines.get(&prepared.account_id) {
+                Ok(engine) => engine.is_some(),
+                Err(error) => {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        error,
+                        None,
+                    ))
+                }
+            };
+            if let Err(error) = app_auth::prepare_messaging_profile(
+                state,
+                &prepared.account_id,
+                &prepared.actor_ptid,
+            ) {
+                return to_json(AppResult::<AuthSessionPayload>::fail(
+                    ErrorCode::InternalError,
+                    format!("Failed to prepare messaging identity: {error}"),
+                    None,
+                ));
+            }
             let switched = app_account::account_switch(input);
             if !switched.ok {
+                let _ = crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                if !engine_existed {
+                    let _ = app_auth::deactivate_messaging_profile(state, &prepared.account_id);
+                }
                 return to_json(switched);
             }
-            let restored = app_auth::auth_restore_session(state);
-            let Some(session) = restored.data else {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::Unauthorized,
-                    "selected account session is unavailable",
-                    None,
-                ));
+            let binding = match state.sessions.try_bind_exclusive(
+                crate::domain::identity::ActiveSession::new(
+                    HTTP_GATEWAY_SESSION_LABEL,
+                    prepared.account_id.clone(),
+                    crate::domain::identity::ActorRef::new_person(prepared.actor_ptid.clone()),
+                    prepared.token.clone(),
+                ),
+            ) {
+                Ok(binding) => binding,
+                Err(error) => {
+                    let _ =
+                        crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                    if !engine_existed {
+                        let _ = app_auth::deactivate_messaging_profile(state, &prepared.account_id);
+                    }
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to bind authenticated identity: {error}"),
+                        Some(json!({
+                            "command": "account_switch",
+                            "reason": "identity_commit_failed",
+                        })),
+                    ));
+                }
             };
-            let Some(actor_ptid) = session.actor_ptid else {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::Unauthorized,
-                    "selected account has no canonical actor PTID",
-                    None,
+            if let Err(error) = app_auth::activate_messaging_profile_worker(
+                state,
+                &prepared.account_id,
+                &prepared.token,
+            ) {
+                let _ = state.sessions.rollback_exclusive(binding);
+                let _ = crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                if !engine_existed {
+                    let _ = app_auth::deactivate_messaging_profile(state, &prepared.account_id);
+                }
+                return to_json(AppResult::<AuthSessionPayload>::fail(
+                    ErrorCode::InternalError,
+                    format!("Failed to activate messaging identity: {error}"),
+                    Some(json!({
+                        "command": "account_switch",
+                        "reason": "identity_commit_failed",
+                    })),
                 ));
-            };
-            let Some(token) = session.session_token else {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::Unauthorized,
-                    "selected account session token is unavailable",
-                    None,
-                ));
-            };
-            if let Err(error) = bind_gateway_session(state, account_id, actor_ptid, token) {
-                return error;
             }
-            to_json(switched)
+            if let Some(previous) = previous_session {
+                if previous.account_id != prepared.account_id {
+                    if let Err(error) =
+                        app_auth::deactivate_messaging_profile(state, &previous.account_id)
+                    {
+                        let _ = state.sessions.rollback_exclusive(binding);
+                        let _ = crate::infrastructure::auth_identity::write_state(
+                            &previous_identity_state,
+                        );
+                        let _ = app_auth::deactivate_messaging_profile(state, &prepared.account_id);
+                        return to_json(AppResult::<AuthSessionPayload>::fail(
+                            ErrorCode::InternalError,
+                            format!("Failed to detach previous messaging identity: {error}"),
+                            Some(json!({
+                                "command": "account_switch",
+                                "reason": "identity_commit_failed",
+                            })),
+                        ));
+                    }
+                }
+            }
+            let _ = binding.into_kicked();
+            to_json(AppResult::success(prepared.payload))
         }
         "account_upsert_oauth" => {
             let input = match parse_args::<AccountUpsertOAuthInput>(args) {
@@ -4792,6 +4982,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let input = match parse_args::<AccountUnlockInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
+            };
+            let _attempt = IdentityTransitionAttempt::enter();
+            let _transition = match state.identity_transition.lock() {
+                Ok(guard) => guard,
+                Err(_) => {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        "Failed to coordinate identity transition",
+                        None,
+                    ))
+                }
             };
             let result = app_account::account_unlock(input.clone());
             if !result.ok {
@@ -4829,24 +5030,115 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         None,
                     ));
                 };
+                let previous_identity_state =
+                    match crate::infrastructure::auth_identity::read_state() {
+                        Ok(identity_state) => identity_state,
+                        Err(error) => {
+                            return to_json(AppResult::<AuthSessionPayload>::fail(
+                                ErrorCode::InternalError,
+                                error,
+                                None,
+                            ))
+                        }
+                    };
+                let previous_session = gateway_session(state);
+                let engine_existed = match state.messaging_engines.get(&input.account_id) {
+                    Ok(engine) => engine.is_some(),
+                    Err(error) => {
+                        return to_json(AppResult::<AuthSessionPayload>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ))
+                    }
+                };
                 let session =
                     crate::domain::auth::session::from_station_response(actor_ptid, token.clone());
-                if let Err(error) = bind_gateway_session(
+                if let Err(error) = app_auth::prepare_messaging_profile(
                     state,
-                    input.account_id.clone(),
-                    session.actor_ptid.clone(),
-                    session.token.clone(),
-                ) {
-                    return error;
-                }
-                let _ = crate::infrastructure::session_vault::save_encrypted_session_and_purge_raw(
                     &input.account_id,
-                    &input.pin,
-                    &token,
-                );
-                let _ = app_account::account_switch(AccountIdInput {
+                    &session.actor_ptid,
+                ) {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to prepare messaging identity: {error}"),
+                        None,
+                    ));
+                }
+                if let Err(error) =
+                    crate::infrastructure::session_vault::save_encrypted_session_and_purge_raw(
+                        &input.account_id,
+                        &input.pin,
+                        &token,
+                    )
+                {
+                    if !engine_existed {
+                        let _ = app_auth::deactivate_messaging_profile(state, &input.account_id);
+                    }
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        error,
+                        None,
+                    ));
+                }
+                let switched = app_account::account_switch(AccountIdInput {
                     id: input.account_id.clone(),
                 });
+                if !switched.ok {
+                    let _ =
+                        crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                    if !engine_existed {
+                        let _ = app_auth::deactivate_messaging_profile(state, &input.account_id);
+                    }
+                    return to_json(switched);
+                }
+                let binding = match state.sessions.try_bind_exclusive(
+                    crate::domain::identity::ActiveSession::new(
+                        HTTP_GATEWAY_SESSION_LABEL,
+                        input.account_id.clone(),
+                        crate::domain::identity::ActorRef::new_person(session.actor_ptid.clone()),
+                        session.token.clone(),
+                    ),
+                ) {
+                    Ok(binding) => binding,
+                    Err(error) => {
+                        let _ = crate::infrastructure::auth_identity::write_state(
+                            &previous_identity_state,
+                        );
+                        if !engine_existed {
+                            let _ =
+                                app_auth::deactivate_messaging_profile(state, &input.account_id);
+                        }
+                        return to_json(AppResult::<AuthSessionPayload>::fail(
+                            ErrorCode::InternalError,
+                            format!("Failed to bind authenticated identity: {error}"),
+                            None,
+                        ));
+                    }
+                };
+                if let Err(error) = app_auth::activate_messaging_profile_worker(
+                    state,
+                    &input.account_id,
+                    &session.token,
+                ) {
+                    let _ = state.sessions.rollback_exclusive(binding);
+                    let _ =
+                        crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                    if !engine_existed {
+                        let _ = app_auth::deactivate_messaging_profile(state, &input.account_id);
+                    }
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to activate messaging identity: {error}"),
+                        None,
+                    ));
+                }
+                if let Some(previous) = previous_session {
+                    if previous.account_id != input.account_id {
+                        let _ = app_auth::deactivate_messaging_profile(state, &previous.account_id);
+                    }
+                }
+                let _ = binding.into_kicked();
                 let profile = crate::infrastructure::auth_identity::find_profile_by_actor_ptid(
                     &session.actor_ptid,
                 );
@@ -7557,8 +7849,21 @@ mod tests {
             Some("ptid:test:actor-http-gateway-test")
         );
         assert_eq!(
-            status.get("token").and_then(Value::as_str),
-            Some("token-http-gateway-test")
+            status.get("account_id").and_then(Value::as_str),
+            Some("account-http-gateway-test")
+        );
+        assert_eq!(
+            status
+                .get("token_fingerprint")
+                .and_then(Value::as_str)
+                .map(str::len),
+            Some(64)
+        );
+        assert_eq!(
+            status
+                .get("messaging_profile_matches")
+                .and_then(Value::as_bool),
+            Some(false)
         );
     }
 

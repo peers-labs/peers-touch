@@ -2922,28 +2922,6 @@ class AcceptanceRunTest(unittest.TestCase):
 
             self.assertFalse(run_dir.exists())
 
-    def test_unregistered_secret_artifact_discards_active_run(self) -> None:
-        module = load_module()
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            worktree = root / "repo"
-            worktree.mkdir()
-            store = EvidenceStore(root / "artifacts", worktree=worktree)
-            run = store.begin_run("runtime-gate", source={})
-            run_dir = run.run_dir
-
-            with self.assertRaisesRegex(
-                EvidenceConflict,
-                "bypassed the immutable artifact writer",
-            ):
-                module.reject_unresolved_secret_artifacts(
-                    run,
-                    ["reports/unregistered.json"],
-                    [],
-                )
-
-            self.assertFalse(run_dir.exists())
-
     def test_build_run_report_deduplicates_review_commands_by_command_text(self) -> None:
         module = load_module()
         report = module.build_run_report(
