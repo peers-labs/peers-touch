@@ -270,3 +270,43 @@ Instrumentation point:
   sequence/hash, local sequence/hash before each bounded drain, and the drain
   cursor/lane-head/processed result. It does not alter the reconciliation loop
   or accept a mismatched authority head.
+
+Exact-source current-profile run
+`20260911T104702215012Z-4d96be6ca0a6f759c9eef0db233ba72e`
+confirmed S and rejected T/U/V:
+
+- Bob ran from `peers-group-chat`; Alice ran from `peers-chat-high-chat`.
+- The two clean worktrees had equal Git trees and distinct workspace IDs.
+- Bob's local authority head remained sequence `0` with an empty hash.
+- The Station send plan remained sequence `1` with hash
+  `5da69d0e93893f14a323d5500d81aa01bb26d6fceaf367a5a1d012d9fa5bb3e0`.
+- Every bounded drain reported cursor `0`, lane head `0`, and zero processed
+  items, so no historical genesis item exists in this device lane.
+- The message `01M281CFZEXKR2JC1AH2BJ0YF4` remained a durable draft.
+- Both native clients, all six ports, logs, and run-scoped storage roots were
+  released.
+
+Root repair in progress:
+
+- The portable Core verifies the canonical protobuf event hash and the complete
+  Direct sequence-one genesis snapshot.
+- The Engine may fetch exactly the first authenticated public event only when
+  the local head is empty and the Station send plan is exactly sequence one.
+- The event must match the plan's conversation, authority Station, sequence,
+  hash, membership epoch, and MLS epoch, and its Direct projection must match
+  the already-persisted local projection.
+- The Store installs only the authority head in one SQL transaction. It does
+  not fabricate a queue item, lane cursor, consumption marker, receipt, message
+  projection, or Direct session.
+- Conflicting heads, sequence greater than one, malformed/tampered genesis,
+  projection drift, and pre-existing committed state fail closed.
+
+Source verification:
+
+- Messaging Core: 117 unit tests plus 2 integration tests passed.
+- Desktop Messaging: 103 tests passed and 1 environment-gated test was ignored.
+- The stale pre-hard-cut receipt-count assertion was corrected from two rows to
+  the one canonical `device-consumed` receipt now owned by the hard-cut model.
+
+Post-fix native runtime evidence remains pending. The debug session stays
+`[OPEN]`.
