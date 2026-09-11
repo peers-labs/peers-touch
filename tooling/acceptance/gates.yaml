@@ -206,7 +206,7 @@
       "description": "Parse Station handler registrations with Go AST and fail closed on API ownership, canonical route, owner root, superseded proto, and forbidden truth-store violations."
     },
     "station-messaging-unit": {
-      "command": "go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/federation/... ./apps/station/frame/core/federation/...",
+      "command": "go test ./apps/station/app/subserver/conversation/... ./apps/station/app/subserver/federation/... ./apps/station/app/subserver/key_exchange/... ./apps/station/frame/core/federation/...",
       "timeout_seconds": 600,
       "environment": "local",
       "tier": "ci-cheap",

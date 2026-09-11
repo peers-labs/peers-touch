@@ -4331,3 +4331,39 @@ Native diagnostic reused Alice's canonical device
 drain. This remains diagnostic evidence only; the source-bound two-client Gate
 and its receiver DOM assertions remain `UNPROVEN` until the clean candidate is
 deployed and executed.
+
+#### Direct Prekey Publication Reconciliation
+
+Exact-source run
+`20260911T070854885624Z-687f80aa16cac8e456300e5eaba74922`
+advanced both native clients through actor isolation and `conversation.open`,
+then failed at `message.submitted`. Cleanup passed for both processes, all six
+ports, logs, and run-scoped storage.
+
+The failure is a recoverable implementation defect inside NDR-W8. Both
+Desktop stores contained a locally `published` Direct prekey bundle, so the
+portable publisher returned success without contacting Station. Station had no
+active Direct bundle for either endpoint, and the sender therefore retained a
+durable `draft` instead of queuing a command. The strict `draft != queued`
+assertion remains correct and must not be weakened.
+
+The dependency-ready remediation is:
+
+1. preserve the current device SPK and all old OPK private material;
+2. persist a new, monotonically identified OPK replenishment batch before
+   network publication;
+3. use Station `/key-exchange/keys/count` and
+   `/key-exchange/keys/replenish` for normal inventory repair;
+4. when Station reports that the complete bundle is absent, upload the current
+   identity/SPK with only the new OPK batch;
+5. keep retry bytes stable, never republish or reactivate consumed OPKs, and
+   allow a newly published pending OPK to decrypt a delayed inbound init;
+6. retain receiver native-DOM plaintext, identical message ID, and receipt
+   assertions as the product proof.
+
+Concurrency Decision: hybrid. Three completed read-only analysis lanes audited
+the portable store, Station Key Exchange contract, and Chat Acceptance mapping.
+All source edits, generated-artifact decisions, deployment, profile/runtime
+resources, and final Gates remain integrator-only and serial because they share
+the same prekey contract, profile `four`, Station deployment, actor stores, and
+native port set.

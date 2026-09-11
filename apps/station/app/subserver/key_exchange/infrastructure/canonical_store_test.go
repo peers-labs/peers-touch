@@ -30,6 +30,49 @@ func (e postgresStateError) SQLState() string {
 	return e.code
 }
 
+func TestCanonicalDirectInventoryRequiresCompleteBundle(t *testing.T) {
+	device := domain.Endpoint{
+		ActorPTID: "ptid:missing-bundle",
+		DeviceID:  "device-1",
+	}
+	store := newCanonicalStoreForTest(t, device)
+	ctx := context.Background()
+
+	if _, err := store.CountDirectOneTimePreKeys(ctx, device); !domain.IsCode(
+		err,
+		domain.ErrorCodeNotFound,
+	) {
+		t.Fatalf("missing bundle count error = %v", err)
+	}
+	if err := store.ReplenishDirectOneTimePreKeys(
+		ctx,
+		device,
+		[]domain.DirectOneTimePreKey{{
+			KeyID:     1,
+			PublicKey: bytes.Repeat([]byte{31}, 32),
+		}},
+	); !domain.IsCode(err, domain.ErrorCodeNotFound) {
+		t.Fatalf("missing bundle replenish error = %v", err)
+	}
+
+	if err := store.db.Create(&IdentityKeyModel{
+		ActorPtid:         device.ActorPTID,
+		DeviceID:          device.DeviceID,
+		IdentityKeyPub:    bytes.Repeat([]byte{10}, 32),
+		KeyFingerprint:    "identity",
+		PublishedAtUnixMs: 1,
+		SupportedVersions: "1",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CountDirectOneTimePreKeys(ctx, device); !domain.IsCode(
+		err,
+		domain.ErrorCodeNotFound,
+	) {
+		t.Fatalf("bundle without signed pre-key count error = %v", err)
+	}
+}
+
 func TestCanonicalDirectUploadRollsBackOnConflictingOneTimeKey(t *testing.T) {
 	device := domain.Endpoint{
 		ActorPTID: "ptid:rollback",

@@ -584,8 +584,18 @@ func TestCanonicalPayloadBoundsRejectBeforeStoreMutation(t *testing.T) {
 	if !domain.IsCode(err, domain.ErrorCodePayloadTooLarge) {
 		t.Fatalf("oversized Direct bundle error = %v", err)
 	}
-	if got := countDirect(t, fixture, bob); got != 0 {
-		t.Fatalf("oversized Direct bundle mutated OPKs, count=%d", got)
+	var directRows int64
+	if err := fixture.db.Model(&infrastructure.OneTimePreKeyModel{}).
+		Where(
+			"actor_ptid = ? AND device_id = ?",
+			bob.GetActor().GetPtid(),
+			bob.GetDeviceId(),
+		).
+		Count(&directRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if directRows != 0 {
+		t.Fatalf("oversized Direct bundle mutated OPKs, count=%d", directRows)
 	}
 
 	_, err = fixture.api.UploadMLSKeyPackage(
