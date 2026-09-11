@@ -7516,7 +7516,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "messaging_hydrate" => {
-            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+            let (account_id, _actor_ptid, token) = match gateway_access_context(state) {
                 Ok(context) => context,
                 Err(error) => return error,
             };
@@ -7530,81 +7530,18 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ))
                 }
             };
-            let station_resp = match crate::infrastructure::station_client::request_json_auth(
-                reqwest::Method::GET,
-                "/conversation/list",
-                &token,
-                None,
-                None::<&serde_json::Value>,
-            ) {
-                Ok(v) => v,
-                Err(e) => {
-                    return to_json(AppResult::<Value>::fail(
+            match crate::messaging::hydrate_projections_from_station(&engine, &token) {
+                Ok(count) => match engine.conversations() {
+                    Ok(conversations) => to_json(AppResult::success(json!({
+                        "hydrated": count,
+                        "total_station_conversations": conversations.len(),
+                    }))),
+                    Err(error) => to_json(AppResult::<Value>::fail(
                         ErrorCode::InternalError,
-                        &format!("station fetch: {}", e.message),
+                        error,
                         None,
-                    ))
-                }
-            };
-            let conversations_raw = station_resp
-                .get("conversations")
-                .and_then(|c| c.as_array())
-                .cloned()
-                .unwrap_or_default();
-            let mut projections: Vec<crate::messaging::ConversationProjection> = Vec::new();
-            for conv in &conversations_raw {
-                let conv_id = conv
-                    .get("conversation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default();
-                let kind_str = conv.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-                let kind_i32: i32 = if kind_str.contains("GROUP") { 2 } else { 1 };
-                let authority = conv
-                    .get("authority_station_peer_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default();
-                let federation_id = conv
-                    .get("federation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default();
-                if conv_id.is_empty() || authority.is_empty() || federation_id.is_empty() {
-                    continue;
-                }
-                projections.push(crate::messaging::ConversationProjection {
-                    conversation_id: conv_id.to_string(),
-                    authority_station_id: authority.to_string(),
-                    federation_id: federation_id.to_string(),
-                    kind: kind_i32,
-                    name: conv
-                        .get("name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    owner_ptid: conv
-                        .get("owner_ptid")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    members: Vec::new(),
-                    membership_epoch: conv
-                        .get("membership_epoch")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(0),
-                    mls_epoch: conv
-                        .get("mls_epoch")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(0),
-                    active: true,
-                    updated_at_unix_ms: 0,
-                });
-            }
-            match engine.hydrate_conversation_projections(&projections) {
-                Ok(count) => to_json(AppResult::success(json!({
-                    "hydrated": count,
-                    "total_station_conversations": conversations_raw.len(),
-                }))),
+                    )),
+                },
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
         }

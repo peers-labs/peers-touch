@@ -72,3 +72,28 @@ Instrumentation points:
 - F: Rust `messaging_list_conversations` emits per-conversation member counts.
 - G/H: `socialChat.loadSessions` emits decoded member PTIDs and the
   authenticated actor PTID before committing the store projection.
+
+Runtime evidence from source-bound native run
+`20260911T063158577088Z-70e86205160096c42bf4b9b0d81d08a8`:
+
+- F confirmed for Alice and Bob: Rust repeatedly projected
+  `direct-8933203d465fd79ac34b9b33953757a2` with `memberCount=0`.
+- G rejected: the TypeScript service received the same zero-member projection;
+  no populated Rust member was lost in protobuf JSON decoding.
+- H rejected: both authenticated actor PTIDs were correct, but the store had no
+  member candidate from which to derive a peer.
+- I rejected: both clients independently reproduced the same empty peer from
+  the current projection; this was not a stale selected-conversation object.
+- The Gate again failed at `message.submitted` before any Station message
+  command, then released both native processes, six ports, and both run-scoped
+  storage roots.
+
+Root cause:
+
+- `messaging::lifecycle::hydrate_projections_from_station` fetches
+  `/conversation/list`, which intentionally returns Conversation metadata
+  without members, and persists each local projection with `members=[]`.
+- Once that metadata includes a Federation ID, the lifecycle returns early on
+  later cycles, so the empty member child projection cannot self-heal.
+- The HTTP Gateway `messaging_hydrate` path duplicates the same empty-member
+  projection construction.

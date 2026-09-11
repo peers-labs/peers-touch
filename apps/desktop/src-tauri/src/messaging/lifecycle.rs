@@ -2,7 +2,10 @@ use super::{
     CommandRetryPolicy, ConversationMemberProjection, ConversationProjection, MessagingEngine,
 };
 use crate::infrastructure::station_client;
-use crate::model::chat::{ListConversationsRequest, ListConversationsResponse};
+use crate::model::chat::{
+    GetConversationMembersRequest, GetConversationMembersResponse, ListConversationsRequest,
+    ListConversationsResponse, MemberStatus,
+};
 use reqwest::Method;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
@@ -281,14 +284,17 @@ fn ensure_cycle_active(
     }
 }
 
-fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Result<(), String> {
+pub(crate) fn hydrate_projections_from_station(
+    engine: &MessagingEngine,
+    token: &str,
+) -> Result<usize, String> {
     let current_projections = engine.store().conversation_projections()?;
     if !current_projections.is_empty()
-        && current_projections
-            .iter()
-            .all(|projection| !projection.federation_id.trim().is_empty())
+        && current_projections.iter().all(|projection| {
+            !projection.federation_id.trim().is_empty() && !projection.members.is_empty()
+        })
     {
-        return Ok(());
+        return Ok(0);
     }
     let response = station_client::request_proto_for_device::<
         ListConversationsRequest,
@@ -303,7 +309,7 @@ fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Re
     )
     .map_err(|error| format!("fetch conversation list: {error}"))?;
     if response.conversations.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
     let now = super::engine::now_unix_ms();
     let mut projections = Vec::new();
@@ -312,10 +318,7 @@ fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Re
         if conversation_id.is_empty() {
             continue;
         }
-        let authority_station_id = if conversation
-            .authority_station_peer_id
-            .is_empty()
-        {
+        let authority_station_id = if conversation.authority_station_peer_id.is_empty() {
             "local".to_string()
         } else {
             conversation.authority_station_peer_id
@@ -326,6 +329,28 @@ fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Re
                 "conversation {conversation_id} has no Federation projection"
             ));
         }
+        let member_query = [("conversation_id", conversation_id.clone())];
+        let member_response = station_client::request_proto_for_device::<
+            GetConversationMembersRequest,
+            GetConversationMembersResponse,
+        >(
+            Method::GET,
+            "/conversation/members",
+            token,
+            Some(&member_query),
+            None,
+            &engine.endpoint().device_id,
+        )
+        .map_err(|error| format!("fetch conversation {conversation_id} members: {error}"))?;
+        let members = member_response
+            .members
+            .into_iter()
+            .filter(|member| member.member_status == MemberStatus::Active as i32)
+            .map(|member| ConversationMemberProjection {
+                ptid: member.ptid,
+                role: member.role,
+            })
+            .collect::<Vec<_>>();
         projections.push(ConversationProjection {
             conversation_id,
             authority_station_id,
@@ -333,7 +358,7 @@ fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Re
             kind: conversation.kind,
             name: conversation.name,
             owner_ptid: conversation.owner_ptid,
-            members: Vec::<ConversationMemberProjection>::new(),
+            members,
             membership_epoch: conversation.membership_epoch,
             mls_epoch: conversation.mls_epoch,
             active: true,
@@ -347,7 +372,7 @@ fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Re
             "messaging conversation projections bootstrapped from Station"
         );
     }
-    Ok(())
+    Ok(count)
 }
 
 #[cfg(test)]
