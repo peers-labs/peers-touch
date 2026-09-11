@@ -1,7 +1,7 @@
 # Native Desktop Runtime Cells — Execution Plan
 
-> **Status**: active
-> **Version**: v1.0
+> **Status**: completed for the Owner-approved Windows sixwin scope
+> **Version**: v1.1
 > **Created**: 2026-08-24 | **Updated**: 2026-09-11
 > **Owner**: Acceptance Infrastructure + Desktop Platform + Chat Domain
 > **Branch**: `fix/windows-native-chat-closure`
@@ -26,23 +26,23 @@ Windows proof must not be represented as cross-Station or cross-platform proof.
 Historical evidence and amendments below remain traceable, not instructions
 to redeploy historical hosts.
 
-Current Goal: `6aa2282c0ad37e7b2b10927d`. The Goal API reports `paused` and
-exposes no resume/objective-edit operation; the Owner has explicitly requested
-continued execution. Do not falsely mark it complete or create a duplicate.
+Current Goal: `6aa2282c0ad37e7b2b10927d`. The Windows sixwin closure is
+`DONE/PROVEN` at product source
+`283832a7392e071f0d2018cfb3fd85a874744172`; the Goal may be marked complete
+after this closure record is committed and its documentation checks pass.
 
 | Remaining Closure | Status / Dependency |
 |---|---|
-| NDR-W9-D Product Closure | Partial: attachments, Bob offline recovery and client/settings restart pass at `75b0fb9e`; first failure is `clear.cursor.restart.ui` restore. |
-| Four local Chat Gates | Run once per corrective revision and again on the final frozen source; prior-source results are not final proof. |
-| Seven other Windows Native Chat Gates | Pending Product Closure; use the order in Final Windows Matrix. |
-| PostgreSQL contention/recovery | Pending; require local PostgreSQL evidence on sixwin, never substitute SQLite or remote Stations. |
-| Gap Detector | Pending final exact-source Windows matrix and source-owned conditional checks. |
-| Completion audit | Pending matrix, PostgreSQL evidence, cleanup, and zero unwaived in-scope gaps. |
+| NDR-W9-D Product Closure | Done: final sixwin run `20260911T171023157955Z-dec53283a4ae9dbb4124c94a00ba6a24` is `PASS/DONE/PROVEN`. |
+| Four local Chat Gates | Done: aggregate `20260911T192936233860Z-1619e4066c3880aefc3c47944b0341ad` passed 4/4. |
+| Seven other Windows Native Chat Gates | Done: all eight Native Gates, including Product Closure, passed in aggregate `20260911T171022643174Z-8601dca380d9a904041d72fa46bafad6`. |
+| PostgreSQL contention/recovery | Done: sixwin-local PostgreSQL 17.11 run `20260911T1915491502940Z-f3a7eb606a6e401980e62336ea6d6524` passed contention, immediate-stop recovery, exact durable readback, post-recovery rerun, and cleanup. |
+| Gap Detector | Done: local run `20260911T193242532950Z-bd8db662292312f8b77d200ed7899865` and Native run `20260911T193256473649Z-419aa292e04928879de4fd65050a1c4a` are `PROVEN` with zero gaps. |
+| Completion audit | Done: Windows audit `20260911T193908424196Z-daccebe8f7c6c434bcc1e07c767562b9` is `PASS/DONE/PROVEN`. |
 
-There are 12 final matrix Gate results outstanding (4 local + 8 Native), plus
-three closing activities (PostgreSQL, Gap Detector, audit). This counts proof
-obligations, not estimated coding effort. Recent Product Closure failures take
-35-50 minutes per attempt; total completion ETA is unknown until defects close.
+All 12 final matrix Gate results and the three closing activities are complete
+for the Owner-approved Windows sixwin scope. This does not reopen or extend the
+scope to macOS, historical Linux work, or historical distinct-Station claims.
 
 Concurrency Decision: hybrid. The integrator owns all source/plan writes,
 commits, builds, profiles, Fixture mutation, GUI, and final Gate execution.
@@ -957,8 +957,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; W9-D partial at `bob.offline.recovery.ui` | Run `20260910T225056619096Z-1e934531b5fb953335efbe6e212d2366` at `6ab9c369506b14162de7fbac1f0d587e5f874292` passes all steps through `attachments.ui`, including count, image, and byte-exact assertions on both clients. Bob restart loses its persisted session because broker cleanup deletes nested storage. Local lifecycle correction passes 52 tests; product rerun pending. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current Windows W10-D remains partial | Current Owner scope is single sixwin Station. Per-generation binding, seven further Native Gates, local PostgreSQL contention/recovery, final matrix, Gap Detector and audit remain required. Historical distinct-Station results are not current-source cross-Station proof. |
+| NDR-W9 Windows cell | done for Windows sixwin scope | Product Closure run `20260911T171023157955Z-dec53283a4ae9dbb4124c94a00ba6a24` is `PASS/DONE/PROVEN` at clean source `283832a7`; runtime identity, 1920x1080 Win32 evidence, Station binding, and cleanup are proven. |
+| NDR-W10 D-18 binding infrastructure | done for current Windows single-Station scope | Eight-Gate Native aggregate `20260911T171022643174Z-8601dca380d9a904041d72fa46bafad6`, PostgreSQL run `20260911T1915491502940Z-f3a7eb606a6e401980e62336ea6d6524`, two zero-gap reports, and audit `20260911T193908424196Z-daccebe8f7c6c434bcc1e07c767562b9` close the Owner-approved sixwin scope. Historical distinct-Station claims remain outside this closure. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -4423,3 +4423,57 @@ Product Closure and all remaining Windows product Gates remain
 `PARTIAL/UNPROVEN`. The next action is to commit this correction without push,
 run the four source-bound local Chat Gates, verify three-host source identity,
 and execute Product Closure only.
+
+### 2026-09-11 Windows Sixwin Completion
+
+The Owner-approved Windows scope closed on clean product source
+`283832a7392e071f0d2018cfb3fd85a874744172`, branch
+`fix/windows-native-chat-closure`, workspace `b7faf6d3489b3797`. Runtime
+selection was injected only at execution with
+`--station-profile station-primary=sixwin`. Every Native manifest resolved
+that profile to the single local Station at `http://127.0.0.1:18080`; no
+station-four or station-five service participated.
+
+Final exact-source evidence:
+
+- Local four-Gate aggregate
+  `20260911T192936233860Z-1619e4066c3880aefc3c47944b0341ad`
+  passed `station-messaging-unit`, `messaging-platform-contract`,
+  `chat-native-visible-static`, and `desktop-check`.
+- Native eight-Gate aggregate
+  `20260911T171022643174Z-8601dca380d9a904041d72fa46bafad6`
+  passed Product Closure, two-client, interactions, contact-message
+  resilience, typing, multi-device, recovery, and Group MLS. Every result is
+  `DONE/PROVEN`, carries a `desktop-windows-native` Runtime Manifest at
+  1920x1080, records clean local and remote source identity, and has
+  `DONE/PROVEN` cleanup.
+- The Product Closure run is
+  `20260911T171023157955Z-dec53283a4ae9dbb4124c94a00ba6a24`.
+  The final Group MLS run is
+  `20260911T190313940160Z-dd5c87297319e6801498c150785b5eee`.
+- Sixwin-local PostgreSQL 17.11 contention/recovery run
+  `20260911T1915491502940Z-f3a7eb606a6e401980e62336ea6d6524`
+  passed the attachment quota lock, canonical index, competing dispatcher,
+  and concurrent inbox exactly-once tests under `-race -count=1` before and
+  after restart. An immediate stop triggered WAL automatic recovery; the
+  source-bound durable marker read back exactly. Port 55432 and all disposable
+  PostgreSQL processes were released.
+- Gap Detector runs
+  `20260911T193242532950Z-bd8db662292312f8b77d200ed7899865`
+  and `20260911T193256473649Z-419aa292e04928879de4fd65050a1c4a`
+  report `PROVEN` with zero gaps for the local and Native matrix partitions.
+- Mechanical completion audit
+  `20260911T193908424196Z-daccebe8f7c6c434bcc1e07c767562b9`
+  is `PASS/DONE/PROVEN`. It verifies immutable artifact hashes, exact source,
+  all 12 Gate results, Native runtime and Station identity, 1920x1080 display
+  evidence, cleanup, PostgreSQL recovery evidence, zero-gap reports, and
+  host-neutral Gate/environment/provisioner source.
+
+`vdservice` was restored to `Running` with automatic startup after the fixed
+display aggregate. The Git worktree was clean throughout product, PostgreSQL,
+Gap Detector, and completion-audit execution. No push was performed.
+
+This completion is intentionally narrow: it closes NDR-W9-D and the current
+Owner-approved Windows single-sixwin NDR-W10-D scope. It does not claim macOS
+W8, reopen Linux W1-W7, or claim the superseded historical distinct-Station
+topology.
