@@ -2,15 +2,82 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-24 | **Updated**: 2026-09-05
+> **Created**: 2026-08-24 | **Updated**: 2026-09-11
 > **Owner**: Acceptance Infrastructure + Desktop Platform + Chat Domain
-> **Branch**: `refactor/chat-acceptance-cutover`
+> **Branch**: `fix/windows-native-chat-closure`
 > **Parent Design**: [../design.md](../design.md)
 > **Approved Decisions**: D-13, D-14, D-15, D-16, D-17, D-18
 
 ---
 
 ## 1. Goal And Claims
+
+### Current Windows Execution Scope
+
+The Owner's 2026-09-10 single-host instruction supersedes the historical
+Windows distinct-Station requirements below. Use sixwin for the orchestrator,
+Windows Native runtime, and the single local source Station. Inject
+`--station-profile station-primary=sixwin` at execution time; omission fails
+closed. No secondary Station, station-four, or station-five is authorized.
+Gate and provisioner definitions must remain host-neutral.
+
+NDR-W1-W7 remain closed Linux history; NDR-W8 is out of scope. Single-Station
+Windows proof must not be represented as cross-Station or cross-platform proof.
+Historical evidence and amendments below remain traceable, not instructions
+to redeploy historical hosts.
+
+Current Goal: `6aa2282c0ad37e7b2b10927d`. The Goal API reports `paused` and
+exposes no resume/objective-edit operation; the Owner has explicitly requested
+continued execution. Do not falsely mark it complete or create a duplicate.
+
+| Remaining Closure | Status / Dependency |
+|---|---|
+| NDR-W9-D Product Closure | Partial: `attachments.ui` passes at `6ab9c369`; first failure is `bob.offline.recovery.ui`. |
+| Four local Chat Gates | Run once per corrective revision and again on the final frozen source; prior-source results are not final proof. |
+| Seven other Windows Native Chat Gates | Pending Product Closure; use the order in Final Windows Matrix. |
+| PostgreSQL contention/recovery | Pending; require local PostgreSQL evidence on sixwin, never substitute SQLite or remote Stations. |
+| Gap Detector | Pending final exact-source Windows matrix and source-owned conditional checks. |
+| Completion audit | Pending matrix, PostgreSQL evidence, cleanup, and zero unwaived in-scope gaps. |
+
+There are 12 final matrix Gate results outstanding (4 local + 8 Native), plus
+three closing activities (PostgreSQL, Gap Detector, audit). This counts proof
+obligations, not estimated coding effort. Recent Product Closure failures take
+35-44 minutes per attempt; total completion ETA is unknown until defects close.
+
+Concurrency Decision: hybrid. The integrator owns all source/plan writes,
+commits, builds, profiles, Fixture mutation, GUI, and final Gate execution.
+A read-only lane may inventory PostgreSQL and final-audit commands while the
+integrator fixes broker restart preservation. No concurrent Gate or deployment
+may consume sixwin's exclusive runtime. Reconcile findings before execution.
+
+Latest authoritative run:
+`20260910T225056619096Z-1e934531b5fb953335efbe6e212d2366`,
+source `6ab9c369506b14162de7fbac1f0d587e5f874292`. It proves attachment
+count conservation, image rendering, and exact sender/receiver byte hashes.
+It fails Bob restart with `auth_restore_session: session_missing`; cleanup
+passes. Inspection finds `stop_actor(preserveState=True)` still deletes the
+actor control root containing storage. Repair lifecycle preservation and
+relaunch ownership in the Windows broker, not authentication or Gate assertions.
+
+2026-09-11 corrective checkpoint:
+
+- Broker launch files now live under `actors/<run>/<client>/control`;
+  preserving a client removes only that control subtree. Final stop/lease
+  cleanup still removes the actor root. Failed relaunch retains existing
+  storage for retry or lease cleanup.
+- Broker/provisioner/Win32 tests: 52 passed. Runtime binding and Chat static
+  cohort: 115 passed. Infra boundary: 8 passed. Planner self-check passed.
+- Local four-Gate aggregate
+  `20260911T042824149640Z-e65f3ce62f4af192526c3e8af679a64e`: all passed
+  on the corrective dirty source. This is not final clean-source matrix proof.
+- PostgreSQL read-only inventory: local test DSNs are unset and PostgreSQL
+  executables were not found in checked locations. Existing Postgres tests
+  cover attachment quota contention, canonical indexes, competing dispatchers,
+  and concurrent inbox exactly-once behavior. Independent PostgreSQL restart
+  recovery proof is still missing; client recovery/SQLite cannot substitute.
+- Ready: commit the verified correction and rerun Product Closure only.
+  Parked by dependency: seven other Native Gates, final frozen-source matrix,
+  local PostgreSQL evidence, Gap Detector and completion audit. No push.
 
 Deliver one source-bound Native Desktop Acceptance system that:
 
@@ -469,13 +536,13 @@ Deliver:
   instead of reusing MP-W11's hard-coded 22-Gate audit.
 - Exclude standalone Federation, Applet, Agent, and Mobile Gates. Cross-Station
   transport remains in scope only where a Chat Gate directly exercises it.
-- Alice and Bob on sixwin bind to distinct Stations via the same multi-Station
-  manifest contract used by the Linux cell (W10 infrastructure).
+- Alice and Bob on sixwin bind explicitly to the single runtime-selected
+  `station-primary` through the D-18 manifest contract.
 - Product assertions use platform-neutral DOM/WebDriver paths; only the
   adapter and runtime binding are Windows-specific.
 - Capture immutable evidence: screenshots, DOM snapshots, native window
   diagnostics, attachment counts, cleanup audit.
-- Collect W10-D Windows multi-Station binding evidence: manifest, Station
+- Collect W10-D Windows binding evidence: manifest, Station
   attestations, binding-proof tuple closure, live identity verification.
 
 Evidence:
@@ -483,7 +550,7 @@ Evidence:
 - Source-matched final run with all four local Chat Gates and all eight Windows
   Native Chat Gates reaching `DONE/PROVEN`.
 - Win32 adapter native diagnostics (window stack, focus, screenshot) captured.
-- Multi-Station binding proof (distinct Station identities per client).
+- Complete per-client/per-generation Station binding proof for this topology.
 - Cleanup audit shows all remote processes terminated and storage wiped.
 - Gap Detector reports zero gaps for the approved Windows matrix.
 
@@ -605,8 +672,10 @@ cell consumes it independently. Evidence is collected per-platform:
 **Windows evidence** (after W9-C):
 
 - Alice and Bob run on sixwin via the Windows runtime cell and Win32 adapter,
-  each binding to a distinct Station through the same manifest contract.
+  both binding to the runtime-selected local `station-primary`.
 - Same binding-proof tuple closure and live identity verification as Linux.
+- Distinct-Station and cross-Station claims are outside the Owner's current
+  single-Station execution scope and remain unproven by these runs.
 
 **macOS evidence** (after W8):
 
@@ -736,9 +805,9 @@ business Gate is permitted.
   cell failure blocks at W9-C. Status remains `UNPROVEN` at the failed stage.
 - **Evidence**: immutable Windows cell run, Win32 native diagnostics, and
   cleanup audit.
-- **Status**: partial — runtime cell, Win32 input, peer-bound Direct recovery,
-  exact cross-Station Direct create/reopen, and distinct client bindings are
-  proven; Product Closure currently stops at `group.create.ui`
+- **Status**: partial — current single-Station Windows run passes through
+  `attachments.ui`; Product Closure stops at `bob.offline.recovery.ui`.
+  See the current Windows execution scope and corrective checkpoint above.
 
 ### AS-NDR-09: Linux multi-Station binding
 
@@ -861,8 +930,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; Product Closure reaches `reaction.ui`; W9-D remains partial | Exact-source Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` at `2ae0254691d97f16c3c08ef3e8639bdd91a91eac` proves Direct open/reopen, canonical Group genesis, Alice sequence 2, Bob sequence 3, Alice thread-reply sequence 4, toolbar geometry, and authority reaction sequence 5. Bob's Device Inbox lane 7 contains a canonical `ActorReadCursor` whose event identity is the payload SHA-256; the client expected a retired `read:` prefix, rejected the cursor as `MessageReceipt`, and blocked the lane-8 reaction. The shared Messaging Core decoder correction and four local Chat Gates pass, but exact-source deployment and Product Closure rerun remain pending. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings, exact Direct create/reopen, bidirectional Group transcript/thread delivery, follower receipt return, and durable remote-command authority commit | Authority sequence 5 and Alice consumption prove the cross-Station mutation path through reaction commit. Bob's queue remains blocked by the read-cursor discriminator defect, so reaction convergence, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven pending the locally verified client correction. |
+| NDR-W9 Windows cell | W9-A/B/C done; W9-D partial at `bob.offline.recovery.ui` | Run `20260910T225056619096Z-1e934531b5fb953335efbe6e212d2366` at `6ab9c369506b14162de7fbac1f0d587e5f874292` passes all steps through `attachments.ui`, including count, image, and byte-exact assertions on both clients. Bob restart loses its persisted session because broker cleanup deletes nested storage. Local lifecycle correction passes 52 tests; product rerun pending. |
+| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current Windows W10-D remains partial | Current Owner scope is single sixwin Station. Per-generation binding, seven further Native Gates, local PostgreSQL contention/recovery, final matrix, Gap Detector and audit remain required. Historical distinct-Station results are not current-source cross-Station proof. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -3033,7 +3102,7 @@ Native Chat Gates must reach `DONE/PROVEN`:
 7. `chat-native-recovery-e2e`; and
 8. `chat-native-group-mls-e2e`.
 
-The final matrix also requires exact source/build/runtime identity, distinct
+The final matrix also requires exact source/build/runtime identity, explicit
 Alice and Bob Station bindings, reverse-order cleanup, and a zero-gap Gap
 Detector result.
 
