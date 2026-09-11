@@ -395,7 +395,7 @@ class EnvironmentContractTests(unittest.TestCase):
                     clean=True,
                 ),
                 "bob": native_tauri_current_profile.ClientWorktreeIdentity(
-                    root=REPO_ROOT,
+                    root=root / "peers-group-chat",
                     logical_name="peers-group-chat",
                     common_dir=common_dir,
                     head="a" * 40,
@@ -680,6 +680,8 @@ class EnvironmentContractTests(unittest.TestCase):
             native_tauri_current_profile,
         )
 
+        if REPO_ROOT.name != "peers-group-chat":
+            self.skipTest("current-profile provisioner is group-chat owned")
         common_dir = REPO_ROOT.parent / ".git"
         identities = {
             "alice": native_tauri_current_profile.ClientWorktreeIdentity(

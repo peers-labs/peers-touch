@@ -551,7 +551,11 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             persistent.mkdir()
             (ephemeral / "state").write_text("temporary", encoding="utf-8")
             (persistent / "state").write_text("durable", encoding="utf-8")
-            binding = LocalMacOSRuntimeBinding()
+            with patch.dict(
+                "os.environ",
+                {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+            ):
+                binding = LocalMacOSRuntimeBinding()
             client_specs = {
                 "alice": {
                     "webdriver_port": 4445,
@@ -596,7 +600,11 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             storage = Path(temp_dir) / "unknown"
             storage.mkdir()
-            binding = LocalMacOSRuntimeBinding()
+            with patch.dict(
+                "os.environ",
+                {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+            ):
+                binding = LocalMacOSRuntimeBinding()
             client_specs = {
                 "alice": {
                     "webdriver_port": 4445,
