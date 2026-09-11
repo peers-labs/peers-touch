@@ -11,6 +11,7 @@ import (
 	"time"
 
 	actoridentityapplication "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/application"
+	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
@@ -19,6 +20,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -74,6 +76,46 @@ func TestProductionConversationHandlerErrorExposesTypedContext(t *testing.T) {
 	}
 	if !errors.Is(mapped, cause) {
 		t.Fatal("mapped error did not retain its domain cause")
+	}
+}
+
+func TestMapProductionConversationErrorPreservesInteractionContext(t *testing.T) {
+	cause := interactionapp.NewError(
+		interactionapp.ErrorCodeIntegrityFailed,
+		"delivery_receipt_recorder.record",
+		"conversation_member_devices",
+		"is missing a required delivery endpoint",
+	)
+	mapped := mapProductionConversationError(context.Background(), cause)
+	handlerError, ok := mapped.(*server.HandlerError)
+	if !ok {
+		t.Fatalf("mapped error type = %T, want *server.HandlerError", mapped)
+	}
+	if handlerError.Code != http.StatusConflict {
+		t.Fatalf(
+			"status = %d, want %d",
+			handlerError.Code,
+			http.StatusConflict,
+		)
+	}
+	if got := handlerError.Headers["X-Peers-Error-Code"]; got !=
+		string(interactionapp.ErrorCodeIntegrityFailed) {
+		t.Fatalf("error code = %q", got)
+	}
+	var details map[string]string
+	if err := json.Unmarshal(
+		[]byte(handlerError.Headers["X-Peers-Error-Details"]),
+		&details,
+	); err != nil {
+		t.Fatalf("decode details: %v", err)
+	}
+	if details["operation"] != "delivery_receipt_recorder.record" ||
+		details["field"] != "conversation_member_devices" ||
+		details["reason"] != "is missing a required delivery endpoint" {
+		t.Fatalf("details = %#v", details)
+	}
+	if !errors.Is(handlerError, cause) {
+		t.Fatal("mapped error did not retain its interaction cause")
 	}
 }
 

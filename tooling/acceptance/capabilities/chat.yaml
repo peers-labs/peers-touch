@@ -148,7 +148,8 @@
         "apps/desktop/src/store/socialChat.ts",
         "apps/station/app/subserver/conversation/application/interaction/service.go",
         "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder.go",
-        "apps/station/app/subserver/conversation/interface/http/interaction.go"
+        "apps/station/app/subserver/conversation/interface/http/interaction.go",
+        "apps/station/app/subserver/conversation/production_http.go"
       ],
       "evidence": {
         "truth_sources": [
@@ -173,6 +174,8 @@
           "Direct prekey bootstrap self-heals missing Station public material without reusing consumed OPKs",
           "Repeated current-profile native runs preserve each actor's isolated device-private state while retaining process and port cleanup",
           "Fresh Direct receivers verify and install only the public predecessor authority head before consuming the current private delivery",
+          "Direct receipt aggregation accepts exact event-time commitments for current actor devices without treating Group MLS device rows as Direct truth",
+          "Conversation interaction failures preserve typed HTTP error codes and safe details",
           "Direct decrypt produces a durable DELIVERED receipt and the sender observes it in a native Desktop message row"
         ],
         "unproven_scope": [
