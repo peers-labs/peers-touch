@@ -199,6 +199,14 @@ event中的deterministic post-state value，进入event hash。Fresh MLS endpoin
 自己的Welcome event作为首个checkpoint时，使用该snapshot在同一SQLCipher transaction
 初始化conversation/member projection；snapshot之外不得推断或补写共享membership。
 
+Fresh Direct endpoint 不追补加入前的endpoint-private queue item。若本地尚无该
+conversation的authority head、Direct session、message projection、consumption marker或
+command state，Engine从authenticated public event log读取sequence 1到当前
+send-preparation head，验证完整hash chain，并使用sequence-1
+`ConversationCreatedFact.post_state`建立actor-level projection。该projection与最终验证的
+`authority_sequence/event_hash`在同一SQLCipher transaction写入；中间event不生成历史
+message projection、cursor、receipt或session。
+
 `ConversationAuthorityMember` target contract增加verified `home_station_id`。
 Authority membership admission从signed actor/endpoint directory绑定该route，持久化到
 member row，并把它纳入每个post-transition snapshot hash。Client command不得自行选择
