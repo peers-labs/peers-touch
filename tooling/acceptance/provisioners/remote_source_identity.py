@@ -36,10 +36,6 @@ def resolve_remote_source_identity(
 
     known_hosts_file = environment.get("PT_DEPLOY_KNOWN_HOSTS_FILE", "")
     try:
-        if not known_hosts_file:
-            raise ProvisioningError(
-                "SSH known-hosts file is required for remote attestation"
-            )
         target = SshTarget(
             host=host,
             user=user,

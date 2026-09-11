@@ -216,6 +216,57 @@ class StationAttestationOwnerTests(unittest.TestCase):
             ):
                 resolve_remote_source_identity("station-three")
 
+    def test_remote_attestation_uses_strict_openssh_default_known_hosts(self) -> None:
+        from tooling.acceptance.provisioners.remote_source_identity import (
+            resolve_remote_source_identity,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environment = (
+                root
+                / ".local"
+                / "deploy"
+                / "envs"
+                / "station-four.env"
+            )
+            environment.parent.mkdir(parents=True)
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=station.example",
+                        "PT_DEPLOY_USER=acceptance",
+                        "PT_DEPLOY_PATH=station-four",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="abcdef123456\nclean\nproto-digest\n",
+                stderr="",
+            )
+            with patch(
+                "tooling.acceptance.provisioners.remote_source_identity.REPO_ROOT",
+                root,
+            ), patch(
+                "tooling.acceptance.transports.ssh.subprocess.run",
+                return_value=completed,
+            ) as run:
+                identity = resolve_remote_source_identity("station-four")
+
+        self.assertEqual(identity, ("abcdef123456", "clean", "proto-digest"))
+        command = run.call_args.args[0]
+        self.assertIn("StrictHostKeyChecking=yes", command)
+        self.assertFalse(
+            any(
+                argument.startswith("UserKnownHostsFile=")
+                for argument in command
+            )
+        )
+
     def test_workspace_digest_binds_file_content(self) -> None:
         # The IDE git wrapper writes .git/ai asynchronously; use native Git so
         # TemporaryDirectory cleanup is deterministic.
