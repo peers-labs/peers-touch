@@ -171,6 +171,13 @@ pub struct ConversationProjection {
     pub updated_at_unix_ms: i64,
 }
 
+pub struct DirectAuthorityCheckpoint<'a> {
+    pub projection: &'a ConversationProjection,
+    pub event_sequence: i64,
+    pub event_hash: &'a [u8],
+    pub observed_at_unix_ms: i64,
+}
+
 pub struct ConversationStateReceiveCommit<'a> {
     pub item_id: &'a str,
     pub event_id: &'a str,
@@ -1683,6 +1690,154 @@ impl MessagingStore {
             .optional()
             .map_err(|error| error.to_string())
             .map(|value| value.unwrap_or((0, Vec::new())))
+    }
+
+    pub fn bootstrap_direct_authority_head(
+        &self,
+        checkpoint: &DirectAuthorityCheckpoint<'_>,
+    ) -> Result<bool, String> {
+        let projection = checkpoint.projection;
+        validate_conversation_projection(projection, &projection.conversation_id)?;
+        if projection.kind != ConversationKind::Direct as i32
+            || projection.membership_epoch != 1
+            || projection.mls_epoch != 0
+            || checkpoint.event_sequence != 1
+            || checkpoint.event_hash.len() != 32
+            || checkpoint.observed_at_unix_ms <= 0
+        {
+            return Err("messaging Direct authority checkpoint is invalid".to_string());
+        }
+
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let existing_head = transaction
+            .query_row(
+                "SELECT event_sequence, event_hash
+                 FROM messaging_authority_heads
+                 WHERE conversation_id = ?1",
+                params![projection.conversation_id],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if existing_head.as_ref().is_some_and(|(sequence, hash)| {
+            *sequence != checkpoint.event_sequence || hash != checkpoint.event_hash
+        }) {
+            return Err(
+                "messaging Direct authority checkpoint conflicts with local head".to_string(),
+            );
+        }
+
+        let persisted_projection = transaction
+            .query_row(
+                "SELECT authority_station_id, federation_id, kind, name, owner_ptid,
+                        membership_epoch, mls_epoch, active
+                 FROM messaging_conversations
+                 WHERE conversation_id = ?1",
+                params![projection.conversation_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i32>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, i64>(5)?,
+                        row.get::<_, i64>(6)?,
+                        row.get::<_, bool>(7)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| {
+                "messaging Direct authority checkpoint requires a local projection".to_string()
+            })?;
+        if persisted_projection
+            != (
+                projection.authority_station_id.clone(),
+                projection.federation_id.clone(),
+                projection.kind,
+                projection.name.clone(),
+                projection.owner_ptid.clone(),
+                projection.membership_epoch,
+                projection.mls_epoch,
+                projection.active,
+            )
+        {
+            return Err("messaging Direct authority checkpoint projection mismatch".to_string());
+        }
+
+        let persisted_members = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT ptid, role
+                     FROM messaging_conversation_members
+                     WHERE conversation_id = ?1 AND active = 1
+                     ORDER BY ptid ASC",
+                )
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map(params![projection.conversation_id], |row| {
+                    Ok(ConversationMemberProjection {
+                        ptid: row.get(0)?,
+                        role: row.get(1)?,
+                    })
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>();
+            rows.map_err(|error| error.to_string())?
+        };
+        if persisted_members != projection.members {
+            return Err(
+                "messaging Direct authority checkpoint member projection mismatch".to_string(),
+            );
+        }
+        if existing_head.is_some() {
+            return Ok(false);
+        }
+
+        let committed_state_count = transaction
+            .query_row(
+                "SELECT
+                    (SELECT COUNT(*) FROM messaging_message_projections
+                     WHERE conversation_id = ?1)
+                  + (SELECT COUNT(*) FROM messaging_consumption_markers
+                     WHERE conversation_id = ?1)
+                  + (SELECT COUNT(*) FROM messaging_local_commands
+                     WHERE conversation_id = ?1)
+                  + (SELECT COUNT(*) FROM direct_sessions
+                     WHERE conversation_id = ?1)",
+                params![projection.conversation_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if committed_state_count != 0 {
+            return Err(
+                "messaging Direct authority checkpoint requires empty committed state".to_string(),
+            );
+        }
+
+        let inserted = transaction
+            .execute(
+                "INSERT INTO messaging_authority_heads(
+                    conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    projection.conversation_id,
+                    checkpoint.event_sequence,
+                    checkpoint.event_hash,
+                    checkpoint.observed_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if inserted != 1 {
+            return Err("messaging Direct authority checkpoint was not persisted".to_string());
+        }
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(true)
     }
 
     pub fn message_projection(
@@ -9269,6 +9424,31 @@ mod tests {
     use crate::model::chat::AttachmentTransferErrorCode;
     use messaging_core::identity::generate_fresh_device_identity;
 
+    fn direct_conversation_projection() -> ConversationProjection {
+        ConversationProjection {
+            conversation_id: "direct-1".to_string(),
+            authority_station_id: "station-local".to_string(),
+            federation_id: "federation-1".to_string(),
+            kind: ConversationKind::Direct as i32,
+            name: String::new(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![
+                ConversationMemberProjection {
+                    ptid: "ptid:alice".to_string(),
+                    role: MemberRole::Member as i32,
+                },
+                ConversationMemberProjection {
+                    ptid: "ptid:bob".to_string(),
+                    role: MemberRole::Member as i32,
+                },
+            ],
+            membership_epoch: 1,
+            mls_epoch: 0,
+            active: true,
+            updated_at_unix_ms: 100,
+        }
+    }
+
     #[test]
     fn prekey_replenishment_preserves_existing_material_and_consumption() {
         let store = MessagingStore::in_memory().unwrap();
@@ -9509,6 +9689,91 @@ mod tests {
         assert_eq!(
             store.conversation_projections().unwrap()[0].members,
             projection.members
+        );
+    }
+
+    #[test]
+    fn direct_authority_checkpoint_is_atomic_idempotent_and_projection_bound() {
+        let store = MessagingStore::in_memory().unwrap();
+        let projection = direct_conversation_projection();
+        store
+            .bootstrap_conversation_projection(&projection)
+            .unwrap();
+        let checkpoint = DirectAuthorityCheckpoint {
+            projection: &projection,
+            event_sequence: 1,
+            event_hash: &[7; 32],
+            observed_at_unix_ms: 101,
+        };
+
+        assert!(store.bootstrap_direct_authority_head(&checkpoint).unwrap());
+        assert_eq!(
+            store.authority_head(&projection.conversation_id).unwrap(),
+            (1, vec![7; 32])
+        );
+        assert!(!store.bootstrap_direct_authority_head(&checkpoint).unwrap());
+
+        let mut mismatched = projection;
+        mismatched.federation_id = "federation-other".to_string();
+        assert_eq!(
+            store
+                .bootstrap_direct_authority_head(&DirectAuthorityCheckpoint {
+                    projection: &mismatched,
+                    event_sequence: 1,
+                    event_hash: &[7; 32],
+                    observed_at_unix_ms: 102,
+                })
+                .unwrap_err(),
+            "messaging Direct authority checkpoint projection mismatch"
+        );
+    }
+
+    #[test]
+    fn direct_authority_checkpoint_rejects_conflict_and_committed_state() {
+        let projection = direct_conversation_projection();
+        let conflicting = MessagingStore::in_memory().unwrap();
+        conflicting
+            .bootstrap_conversation_projection(&projection)
+            .unwrap();
+        conflicting
+            .install_test_authority_head(&projection.conversation_id, 1, &[8; 32])
+            .unwrap();
+        assert_eq!(
+            conflicting
+                .bootstrap_direct_authority_head(&DirectAuthorityCheckpoint {
+                    projection: &projection,
+                    event_sequence: 1,
+                    event_hash: &[7; 32],
+                    observed_at_unix_ms: 101,
+                })
+                .unwrap_err(),
+            "messaging Direct authority checkpoint conflicts with local head"
+        );
+
+        let committed = MessagingStore::in_memory().unwrap();
+        committed
+            .bootstrap_conversation_projection(&projection)
+            .unwrap();
+        committed
+            .connection()
+            .unwrap()
+            .execute(
+                "INSERT INTO messaging_local_commands(
+                    command_id, conversation_id, command_bytes, state, created_at_unix_ms
+                 ) VALUES ('command-1', ?1, X'01', 'pending', 100)",
+                params![projection.conversation_id],
+            )
+            .unwrap();
+        assert_eq!(
+            committed
+                .bootstrap_direct_authority_head(&DirectAuthorityCheckpoint {
+                    projection: &projection,
+                    event_sequence: 1,
+                    event_hash: &[7; 32],
+                    observed_at_unix_ms: 101,
+                })
+                .unwrap_err(),
+            "messaging Direct authority checkpoint requires empty committed state"
         );
     }
 
@@ -10642,12 +10907,7 @@ mod tests {
                     row.get(0)
                 })
                 .unwrap();
-            let expected = if table == "messaging_receipt_outbox" {
-                2
-            } else {
-                1
-            };
-            assert_eq!(count, expected, "table {table}");
+            assert_eq!(count, 1, "table {table}");
         }
         let state: String = connection
             .query_row(

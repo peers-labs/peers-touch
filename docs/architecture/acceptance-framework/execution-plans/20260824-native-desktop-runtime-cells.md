@@ -4460,3 +4460,39 @@ Gate, and repair the authority reconciliation owner without weakening the
 strict head equality check. After that fix, deploy the exact source through
 profile `four` and `make station`, then rerun with group-chat as initiator and
 high-chat as receiver.
+
+Exact-source run
+`20260911T104702215012Z-4d96be6ca0a6f759c9eef0db233ba72e`
+confirmed the missing-history case: Bob's local authority head remained
+sequence zero with an empty hash, the Station plan remained sequence one with
+hash
+`5da69d0e93893f14a323d5500d81aa01bb26d6fceaf367a5a1d012d9fa5bb3e0`,
+and every bounded drain reported cursor zero, lane head zero, and zero
+processed items. The run again proved distinct worktrees, equal source trees,
+group-chat-first direction, both authenticated Native clients, and complete
+cleanup.
+
+The source repair is complete in the integrator worktree and retains strict
+authority equality:
+
+- portable Core verifies the complete Direct sequence-one genesis event,
+  canonical event hash, members, endpoints, and endpoint routes;
+- the Engine fetches exactly the first authenticated public event only when
+  the local head is empty and the Station send plan is sequence one, then binds
+  event conversation, authority Station, hash, membership epoch, MLS epoch,
+  and local actor membership to that plan;
+- the SQLCipher Store atomically installs only the matching authority head
+  after proving the existing Direct projection/member rows match and no
+  message, marker, command, or Direct session has already committed;
+- sequence greater than one, malformed or tampered genesis, projection drift,
+  a conflicting head, and non-empty committed state all fail closed;
+- the checkpoint creates no queue item, cursor, consumption marker, receipt,
+  message projection, or Direct session.
+
+Focused and broad source evidence passes: Messaging Core 117 unit tests plus
+two integration tests, and Desktop Messaging 103 tests with one
+environment-gated test ignored. The next action remains integrator-owned and
+serial: commit `peers-group-chat`, merge that exact source into
+`peers-chat-high-chat`, verify clean equal Git trees, deploy through profile
+`four` plus `make station`, clear only this debug session's log content, and
+rerun the unchanged cross-worktree Native Gate.
