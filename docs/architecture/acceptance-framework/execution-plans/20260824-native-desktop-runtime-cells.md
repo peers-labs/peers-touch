@@ -860,7 +860,7 @@ committed to this plan.
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
-| NDR-W8 macOS regression | pending | prior evidence predates cutover |
+| NDR-W8 macOS regression | in progress | current-profile Direct receiver and receipt repairs are source-complete; persistent-session Harness re-entry blocks final native proof |
 | NDR-W9 Windows cell | W9-A/B/C done; Product Closure reaches `reaction.ui`; W9-D remains partial | Exact-source Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` at `2ae0254691d97f16c3c08ef3e8639bdd91a91eac` proves Direct open/reopen, canonical Group genesis, Alice sequence 2, Bob sequence 3, Alice thread-reply sequence 4, toolbar geometry, and authority reaction sequence 5. Bob's Device Inbox lane 7 contains a canonical `ActorReadCursor` whose event identity is the payload SHA-256; the client expected a retired `read:` prefix, rejected the cursor as `MessageReceipt`, and blocked the lane-8 reaction. The shared Messaging Core decoder correction and four local Chat Gates pass, but exact-source deployment and Product Closure rerun remain pending. |
 | NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings, exact Direct create/reopen, bidirectional Group transcript/thread delivery, follower receipt return, and durable remote-command authority commit | Authority sequence 5 and Alice consumption prove the cross-Station mutation path through reaction commit. Bob's queue remains blocked by the read-cursor discriminator defect, so reaction convergence, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven pending the locally verified client correction. |
 
@@ -4715,3 +4715,38 @@ package suite, focused race tests, `go vet`, and diff hygiene pass. The source
 remains `PARTIAL/UNPROVEN` until the two worktrees are synchronized, exact
 source is deployed, and the same Native Gate proves that historical receipts
 drain and the current bidirectional receipts become visible.
+
+Exact-source run
+`20260911T155536232655Z-6384c3db6f68e2704460e37c1d8c7e84`
+proved the owner-layer receipt correction at runtime. Bob's persistent Device
+Engine submitted every durable historical receipt from sequence 3 through
+sequence 9 successfully, removing the oldest-pending head-of-line block. The
+Gate then stopped before product assertions because the Chat Acceptance
+Harness waited only for `accountGate`, while the persistent current-profile
+client had restored an authenticated, ready identity lifecycle. Immediate
+retry
+`20260911T155859425134Z-2695df23c4f222cb9c9c87defd79afa1`
+failed at the same `client.authenticated / Bob` boundary and again completed
+reverse-order process, port, log, and persistent-storage cleanup.
+
+This is a recoverable NDR-W8 business-injection defect in
+`apps/desktop/src/acceptance/chat/harness.ts`. The production identity runtime
+already owns restored-session state and controlled logout. The Chat Harness
+must:
+
+1. admit either a fresh `accountGate + dataReady` state or an authenticated
+   `ready` restored session as the explicit-login precondition;
+2. always perform controlled identity logout when a session is already
+   authenticated, then wait for `accountGate + dataReady`;
+3. execute the requested password login and verify the resulting authenticated
+   actor rather than silently reusing the restored actor; and
+4. preserve the existing fresh account-gate path unchanged.
+
+Concurrency Decision: serial. The Harness implementation, focused regression,
+cross-worktree synchronization, profile-four Station deployment, and final
+Native Gate consume the same Chat source tree, persistent actor states, Station,
+and native port pool. The integrator owns all writes, commits, deployment, and
+runtime evidence. The first source change is instrumentation-only under the
+open `conversation-open-500` debug session; after one pre-fix reproduction
+confirms the restored lifecycle tuple, the owner-layer Harness correction and
+its regression may land.

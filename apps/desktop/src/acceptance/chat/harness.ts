@@ -278,10 +278,65 @@ export function installAcceptanceHarness(): void {
     identityState: () => nativeAcceptanceBridge.identityState(),
 
     async loginWithPassword({ account, password }: LoginInput) {
-      await waitForIdentityState(
-        ({ phase, lifecycle }) => phase.kind === 'accountGate' && lifecycle.dataReady,
-        'identity account gate',
-      );
+      // #region debug-point Z18-Z20:chat-login-precondition
+      const reportIdentityPrecondition = (
+        hypothesisId: string,
+        message: string,
+      ): void => {
+        const snapshot = identityRuntime.getSnapshot();
+        void fetch('http://127.0.0.1:7779/event', {
+          method: 'POST',
+          body: JSON.stringify({
+            sessionId: 'conversation-open-500',
+            runId: 'chat-login-pre-fix',
+            hypothesisId,
+            location: 'apps/desktop/src/acceptance/chat/harness.ts:loginWithPassword',
+            msg: `[DEBUG] ${message}`,
+            data: {
+              phaseKind: snapshot.phase.kind,
+              phaseReason:
+                'reason' in snapshot.phase ? snapshot.phase.reason : null,
+              lifecycleState: snapshot.lifecycle.state,
+              dataReady: snapshot.lifecycle.dataReady,
+              authenticated: useSessionStore.getState().authenticated,
+              actorPtid:
+                useSessionStore.getState().currentUser?.actorPtid ?? null,
+            },
+            ts: Date.now(),
+          }),
+        }).catch(() => {});
+      };
+      let priorIdentityState = '';
+      reportIdentityPrecondition('Z18-Z20', 'chat login precondition entered');
+      try {
+        await waitForIdentityState(
+          ({ phase, lifecycle }) => {
+            const identityState = JSON.stringify({
+              phaseKind: phase.kind,
+              phaseReason: 'reason' in phase ? phase.reason : null,
+              lifecycleState: lifecycle.state,
+              dataReady: lifecycle.dataReady,
+              authenticated: useSessionStore.getState().authenticated,
+            });
+            if (identityState !== priorIdentityState) {
+              priorIdentityState = identityState;
+              reportIdentityPrecondition(
+                'Z18-Z20',
+                'chat login precondition state changed',
+              );
+            }
+            return phase.kind === 'accountGate' && lifecycle.dataReady;
+          },
+          'identity account gate',
+        );
+      } catch (error) {
+        reportIdentityPrecondition(
+          'Z18-Z20',
+          'chat login precondition failed',
+        );
+        throw error;
+      }
+      // #endregion
       await identityRuntime.loginWithPassword(account, password);
       await identityRuntime.completeCurrentSession();
       await waitForIdentityState(
