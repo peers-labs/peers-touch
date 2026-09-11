@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T193922706008Z-2ba9a5841230120cf3b3a7f8051ff14a` on `546b6058c312adefd3f646cda152ef81bb91e1f9` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260911T194053654495Z-418a8fadbb819a6c415d575dbc98c314` established both capability sessions on their first poll, then stopped at Browser Simplified Chinese AS-F04 auto settlement after Ark produced two succeeded same-batch `skills_list` ToolCalls and one continuation; telemetry-only provider request/stream instrumentation is pending exact-source proof and the strict one-fact oracle remains unchanged | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T200746805524Z-bbc4c4a8ae77900f39b01ab5a8d7c737` on `08804b583c033f3405eb9496d24a85545e270cc9` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260911T200947839067Z-84a957de981a94b0b2fc02210b09fe67` crossed AS-F04, both BASE-CANCELLED locales, BASE-EXECUTOR-UNAVAILABLE, and BASE-FORBIDDEN-ACTOR, then stopped at Browser English BASE-INCOMPATIBLE_CAPABILITY because the trace-list-derived `turnDelta` was zero; typed rejection, receiver recovery, replay, Fixture cleanup, source identity, and outer cleanup passed | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1566,6 +1566,25 @@ and zero local-path leakage.
   the aggregate claim `UNPROVEN`: the complete Foundation Gate is failed and
   the instrumentation checkpoint still requires a new exact-source
   Acceptance plan/run pair.
+- **BASE-INCOMPATIBLE_CAPABILITY Turn count frontier (2026-09-12)**:
+  instrumentation checkpoint `08804b583c033f3405eb9496d24a85545e270cc9`
+  passed exact-source C08 run
+  `20260911T200746805524Z-bbc4c4a8ae77900f39b01ab5a8d7c737`
+  as `DONE / PROVEN` with 19/19 assertions and clean cleanup. The unchanged
+  Foundation run
+  `20260911T200947839067Z-84a957de981a94b0b2fc02210b09fe67`
+  crossed AS-F04 with 22 one-index ToolCall responses and no two-index
+  response, crossed the completed typed-error prefix through
+  `BASE-FORBIDDEN_ACTOR`, and failed first at Browser English
+  `BASE-INCOMPATIBLE_CAPABILITY` because the independent oracle requires one
+  failed Turn while the producer emitted `turnDelta=0`. Existing telemetry
+  proves the stale provider was reset to catalog version zero, the typed
+  rejection and recovery facts were produced, and conversation, binding,
+  disposable Agent, configured provider, selected Agent, local projection,
+  and outer Provisioner cleanup all completed. The next telemetry-only
+  checkpoint compares trace-list counts with direct Turn trace and diagnostic
+  replay availability for the source-bound rejected Turn; no oracle, timeout,
+  matrix, or product behavior changes.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

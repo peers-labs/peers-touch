@@ -13,10 +13,10 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Expected Signal | Evidence |
 |----|------------|------------|--------|-----------------|----------|
-| A | The OpenAI-compatible request omits `parallel_tool_calls`, so Ark may legally return multiple calls despite prompt-only “exactly once” steering. | High | Low | Request evidence reports tools present and no explicit parallel policy; response reports two ToolCall indices. | Pending |
-| B | The Ark stream emits one logical ToolCall, but the stream assembler incorrectly creates two calls from repeated fragments. | Medium | Low | Raw safe index sequence contains one index while the assembled response count is two. | Pending |
-| C | The pinned runtime snapshot already contains a sequential policy that is lost before provider dispatch. | Medium | Low | Runtime policy reports parallel disabled while request evidence reports the field omitted or enabled. | Pending |
-| D | The provider returns two valid independent calls because the pinned model advertises parallel ToolCalls, exposing a missing per-turn sequential-tool contract for AS-F04. | High | Medium | Snapshot reports parallel support, request uses provider default/parallel enabled, raw indices are distinct, and both calls persist. | Pending |
+| A | The OpenAI-compatible request omits `parallel_tool_calls`, so Ark may legally return multiple calls despite prompt-only “exactly once” steering. | High | Low | Request evidence reports tools present and no explicit parallel policy; response reports two ToolCall indices. | Confirmed for the request omission; the two-call response did not recur. |
+| B | The Ark stream emits one logical ToolCall, but the stream assembler incorrectly creates two calls from repeated fragments. | Medium | Low | Raw safe index sequence contains one index while the assembled response count is two. | Rejected for every observed response; prior failing response remains unobserved at this boundary. |
+| C | The pinned runtime snapshot already contains a sequential policy that is lost before provider dispatch. | Medium | Low | Runtime policy reports parallel disabled while request evidence reports the field omitted or enabled. | Rejected: the pinned model capability is `parallelTools=true`. |
+| D | The provider returns two valid independent calls because the pinned model advertises parallel ToolCalls, exposing a missing per-turn sequential-tool contract for AS-F04. | High | Medium | Snapshot reports parallel support, request uses provider default/parallel enabled, raw indices are distinct, and both calls persist. | Supported by the prior two-row Station evidence and current request facts; exact two-index response has not recurred. |
 
 ## Instrumentation Plan
 - Record whether a tool-bearing OpenAI-compatible request includes an explicit
@@ -51,9 +51,27 @@
   row, two persisted results, and one batch continuation.
 - The strict `facts.length === 1` predicate is unchanged and must not be
   weakened.
+- Instrumented exact-source Foundation run
+  `20260911T200947839067Z-84a957de981a94b0b2fc02210b09fe67`
+  on `08804b583c033f3405eb9496d24a85545e270cc9` crossed AS-F04.
+- The retained log contains 28 pinned-authority observations, 28 request
+  observations, and 26 completed response observations. Every request had one
+  Tool definition, `parallelTools=true`, and no explicit
+  `parallel_tool_calls` policy. Twenty-two responses assembled exactly one
+  ToolCall at provider index `0`; four continuation responses assembled zero.
+  No response assembled two calls in this run.
+- The Gate later failed independently at Browser
+  `BASE-INCOMPATIBLE_CAPABILITY / en / single / sample-001`; outer cleanup
+  passed.
 
 ## Verification Conclusion
-Pending pre-fix instrumentation.
+The current stream assembler preserves one logical provider index as one
+ToolCall and did not duplicate repeated fragments. The request-policy omission
+is confirmed, and the runtime advertises parallel ToolCall support, so a
+blanket `parallel_tool_calls=false` would contradict the accepted multi-call
+path. The prior two-call failure therefore exposes nondeterministic provider
+cardinality plus a missing explicit per-turn sequential-tool control. No
+runtime or Gate behavior is changed from this evidence alone.
 
 ## Local Verification
 - Focused Station provider/runtime-authority tests: PASS.

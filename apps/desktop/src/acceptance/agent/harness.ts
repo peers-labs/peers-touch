@@ -9613,6 +9613,27 @@ function reportFoundationIncompatibleCleanupDebug(
 }
 // #endregion
 
+// #region debug-point A-D:incompatible-capability-turn-count
+function reportFoundationIncompatibleTurnCountDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7791/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'incompatible-capability-turn-count',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationIncompatibleCapabilityScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 // #region debug-point A-E:as-f12-projection
 function reportFoundationF12ProjectionDebug(
   hypothesisId: string,
@@ -11869,6 +11890,79 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
       disposableAgentId,
       rejectedConversationId,
     );
+    let directTraceAvailable = false;
+    let directTraceTurnPresent = false;
+    let directTracePayloadPresent = false;
+    let directTraceErrorCode = '';
+    let diagnosticReplayAvailable = false;
+    let diagnosticReplayStatus = 0;
+    let diagnosticAttemptCount = 0;
+    let diagnosticRuntimeSnapshotPresent = false;
+    let diagnosticErrorCode = '';
+    try {
+      const traceResponse = evidenceRecord(
+        evidenceValue(await api.getAgentTurnTrace({
+          turnId: first.runtimeEvent.sourceTurnId ?? '',
+        })),
+        'foundationIncompatibleDirectTraceResponse',
+      );
+      const traceEntry = evidenceRecord(
+        traceResponse.entry,
+        'foundationIncompatibleDirectTraceEntry',
+      );
+      directTraceAvailable = true;
+      directTraceTurnPresent = Boolean(traceEntry.turn);
+      directTracePayloadPresent = Boolean(traceEntry.trace);
+    } catch (error) {
+      directTraceErrorCode = observedErrorCode(error);
+    }
+    try {
+      const diagnostics = evidenceRecord(
+        evidenceValue(await api.exportAgentTurnDiagnostics(
+          first.runtimeEvent.sourceTurnId ?? '',
+        )),
+        'foundationIncompatibleDirectDiagnostics',
+      );
+      const replay = evidenceRecord(
+        diagnostics.replay,
+        'foundationIncompatibleDirectReplay',
+      );
+      const attempts = optionalEvidenceArray(
+        evidenceField(replay, 'attempts', 'attempts'),
+        'foundationIncompatibleDirectAttempts',
+      ).map((value) =>
+        evidenceRecord(value, 'foundationIncompatibleDirectAttempt'));
+      diagnosticReplayAvailable = true;
+      diagnosticReplayStatus = Number(replay.status ?? 0);
+      diagnosticAttemptCount = attempts.length;
+      diagnosticRuntimeSnapshotPresent = attempts.some((attempt) =>
+        Boolean(evidenceField(
+          attempt,
+          'runtimeSnapshot',
+          'runtime_snapshot',
+        )));
+    } catch (error) {
+      diagnosticErrorCode = observedErrorCode(error);
+    }
+    // #region debug-point A-D:incompatible-capability-turn-count-boundary
+    await reportFoundationIncompatibleTurnCountDebug(
+      'A-D',
+      'turn-count-boundary',
+      {
+        beforeTurnCount: beforeExecution.turnCount,
+        afterTurnCount: afterExecution.turnCount,
+        directTraceAvailable,
+        directTraceTurnPresent,
+        directTracePayloadPresent,
+        directTraceErrorCode,
+        diagnosticReplayAvailable,
+        diagnosticReplayStatus,
+        diagnosticAttemptCount,
+        diagnosticRuntimeSnapshotPresent,
+        diagnosticErrorCode,
+      },
+    );
+    // #endregion
     const afterReadback = await foundationConversationReadback(
       rejectedConversationId,
     );
