@@ -63,6 +63,7 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
     @staticmethod
     def _storage_seeds(
         profile_name: str,
+        client_worktrees: dict[str, ClientWorktreeIdentity],
     ) -> tuple[Path, ...]:
         raw_seeds = os.environ.get(
             "PT_CHAT_NATIVE_STORAGE_SEEDS",
@@ -75,22 +76,15 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 if item.strip()
             )
         else:
-            single_seed = Path(
-                os.environ.get(
-                    "PT_CHAT_NATIVE_STORAGE_SEED",
-                    str(
-                        REPO_ROOT
-                        / ".local"
-                        / "dev"
-                        / "data"
-                        / profile_name
-                        / "desktop-app"
-                    ),
-                )
-            ).expanduser().resolve()
-            seeds = (single_seed,)
-        if len(seeds) == 1:
-            seeds *= len(CLIENT_ROLES)
+            seeds = tuple(
+                client_worktrees[role].root
+                / ".local"
+                / "dev"
+                / "data"
+                / profile_name
+                / "desktop-app"
+                for role in CLIENT_ROLES
+            )
         if len(seeds) != len(CLIENT_ROLES):
             raise BlockedError(
                 reason=(
@@ -452,8 +446,11 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 reason="Current-profile Native environment must declare Alice and Bob",
                 resource=f"gate-environment:{GATE_ID}",
             )
-        seed_roots = self._storage_seeds(profile_name)
         client_worktrees = self._client_worktrees()
+        seed_roots = self._storage_seeds(
+            profile_name,
+            client_worktrees,
+        )
 
         run_root = Path(f"/tmp/pt-chat-native-current-{run_id}")
         run_root.mkdir(parents=True, exist_ok=False)
