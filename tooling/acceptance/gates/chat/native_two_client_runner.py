@@ -391,7 +391,22 @@ class NativeTwoClientGate(AcceptanceGate):
             )
         self.clients[actor] = client
         self.ptids[actor] = ptid
-        device = async_harness(client, "getRealtimeDevice", {})
+
+        def active_messaging_device() -> dict[str, Any] | None:
+            current = async_harness(
+                client,
+                "getRealtimeDevice",
+                {},
+            )
+            if not isinstance(current, dict) or current.get("active") is not True:
+                return None
+            return current
+
+        device = wait_until(
+            active_messaging_device,
+            f"{actor} active messaging device enrollment",
+            timeout=45,
+        )
         device_id = str((device or {}).get("deviceId") or "")
         if not device_id:
             raise GateError(f"{actor}: messaging device ID is missing")

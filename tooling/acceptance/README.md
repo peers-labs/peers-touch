@@ -129,6 +129,16 @@ protos plus Desktop TypeScript and Station Go generated bindings.
 `CHAT_NATIVE_CLIENT_WORKTREES` accepts one worktree path per client, separated
 by commas; one path may be reused for local process-isolation checks.
 
+`chat-native-current-profile-two-client-e2e` reuses non-destructive Desktop
+identity state instead of resetting Station. By default both clients clone the
+active worktree's `.local/dev/data/<profile>/desktop-app` seed. When the
+canonical Alice and Bob identities live in separate local projections, set
+`PT_CHAT_NATIVE_STORAGE_SEEDS` to two comma-separated seed directories in
+Alice, Bob order. Each seed is copied into run-scoped storage before launch;
+the source directories are never mutated. The clients retain the canonical
+`<profile>-app` Desktop storage namespace so the copied actor identity and
+Messaging Engine database are actually reused.
+
 ### Agent R6 Stream Resilience
 
 `agent-stream-resilience-e2e` is the stable native Gate for R6. It requires the

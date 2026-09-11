@@ -7,6 +7,7 @@ import { imServiceV1 } from '../../services/im-service';
 import { useSessionStore } from '../../store/session';
 import { useSocialChatStore } from '../../store/socialChat';
 import { messageGroupSeq } from '../../store/socialProjection';
+import { ActorDeviceStatus } from '../../gen/proto/domain/actor/actor_pb';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import { registerAcceptanceHarness } from '../registry';
 import { requireCanonicalAcceptancePtid } from './identity';
@@ -755,10 +756,19 @@ export function installAcceptanceHarness(): void {
     },
 
     async getRealtimeDevice() {
-      const device = await api.messagingAcceptanceCurrentEndpoint(activeActorPtid());
+      const actorPtid = activeActorPtid();
+      const device = await api.messagingAcceptanceCurrentEndpoint(actorPtid);
+      const deviceId = String(device?.device_id ?? '');
+      const devices = await imServiceV1.device.list();
+      const active = devices.some(candidate => (
+        candidate.ref?.actor?.ptid === actorPtid
+        && candidate.ref?.deviceId === deviceId
+        && candidate.status === ActorDeviceStatus.ACTIVE
+      ));
       return {
         actorPtid: String(device?.actor_ptid ?? ''),
-        deviceId: String(device?.device_id ?? ''),
+        deviceId,
+        active,
       };
     },
 

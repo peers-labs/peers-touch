@@ -4300,3 +4300,34 @@ without resetting the protected Station. The cross-platform
 `chat-native-two-client-e2e` keeps its disposable two-Station Fixture contract
 and is not weakened or replaced. After the current-profile Gate passes, resume
 the remaining Direct/offline/Group/interaction matrix.
+
+The first current-profile run
+`20260911T051620333813Z-4640f78c3a8eddb332a6239a39482afb` proved both
+Native clients and exact Station/source binding, then failed inside
+`conversation.open`. Station request evidence shows `/conversation/direct`
+returned 200; the Desktop command subsequently converted an unauthorized
+`/device/inbox/claim` into the apparent create failure. Runtime instrumentation
+confirmed the failing Alice Engine endpoint was not enrolled.
+
+The ownership defect is in the current-profile Chat Provisioner. It cloned one
+worktree's Desktop seed for both actors and launched it under `PT_PROFILE=four`,
+while canonical developer storage is under `four-app`. The local profile state
+currently binds Alice's canonical Actor Identity in `peers-chat-high-chat` and
+Bob's in `peers-group-chat`. The remediation therefore:
+
+- accepts one explicit non-destructive storage seed per actor through
+  `PT_CHAT_NATIVE_STORAGE_SEEDS`;
+- copies each seed into its own run-scoped storage root;
+- launches both clients under the canonical `<profile>-app` Desktop namespace;
+- requires the Engine endpoint to appear as ACTIVE in Station `/device/list`
+  before `client.authenticated` passes;
+- decodes the Station protobuf JSON device response at the Desktop service
+  boundary instead of exposing snake-case wire data as generated TypeScript.
+
+Focused Python and Desktop service/type checks pass. A one-client post-fix
+Native diagnostic reused Alice's canonical device
+`01M276A60YVV4Q9MWN9NPHD3RE`, observed it as ACTIVE, reopened
+`direct-8933203d465fd79ac34b9b33953757a2`, and completed the post-create queue
+drain. This remains diagnostic evidence only; the source-bound two-client Gate
+and its receiver DOM assertions remain `UNPROVEN` until the clean candidate is
+deployed and executed.
