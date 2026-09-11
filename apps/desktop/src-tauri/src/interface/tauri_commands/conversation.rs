@@ -204,6 +204,7 @@ pub fn device_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceRevokeInput {
     pub device_id: String,
+    pub observed_profile_version: u64,
 }
 
 #[tauri::command]
@@ -216,7 +217,10 @@ pub fn device_revoke(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let body = json!({ "device_id": input.device_id });
+    let body = json!({
+        "device_id": input.device_id,
+        "observed_profile_version": input.observed_profile_version,
+    });
     match station_client::request_json_auth(
         Method::POST,
         "/device/revoke",

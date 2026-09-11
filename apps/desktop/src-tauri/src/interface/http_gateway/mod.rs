@@ -6430,6 +6430,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             None,
             Some(json!({
                 "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "observed_profile_version": args
+                    .get("observed_profile_version")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0),
             })),
             "device revoke",
         ),

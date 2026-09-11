@@ -766,7 +766,12 @@ export function installAcceptanceHarness(): void {
       if (!deviceId) {
         throw new Error('No active device is available for revocation');
       }
-      await imServiceV1.device.revoke(deviceId);
+      const devices = await imServiceV1.device.list();
+      const current = devices.find(entry => entry.ref?.deviceId === deviceId);
+      if (!current || current.profileVersion <= 0n) {
+        throw new Error('Current device profile version is unavailable');
+      }
+      await imServiceV1.device.revoke(deviceId, current.profileVersion);
       return {
         actorPtid: activeActorPtid(),
         deviceId,

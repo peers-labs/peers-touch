@@ -188,6 +188,12 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         for source in (get_device, revoke_device):
             self.assertIn("messagingAcceptanceCurrentEndpoint", source)
             self.assertNotIn("accountGetDeviceId", source)
+        self.assertIn("imServiceV1.device.list()", revoke_device)
+        self.assertIn("current.profileVersion", revoke_device)
+        self.assertIn(
+            "imServiceV1.device.revoke(deviceId, current.profileVersion)",
+            revoke_device,
+        )
         rust_commands = (
             ROOT
             / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
@@ -202,6 +208,14 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         endpoint_source = rust_commands[endpoint_start:endpoint_end]
         self.assertIn("engine.endpoint().device_id.as_str()", endpoint_source)
         self.assertIn("engine.endpoint().ptid != actor_ptid", endpoint_source)
+        conversation_commands = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/conversation.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            '"observed_profile_version": input.observed_profile_version',
+            conversation_commands,
+        )
 
     def test_native_acceptance_commands_are_registered_with_tauri(self) -> None:
         main = (
