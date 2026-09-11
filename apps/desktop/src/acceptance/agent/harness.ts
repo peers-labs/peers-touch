@@ -4625,22 +4625,10 @@ async function runFoundationF05Scenario(input: {
     model_name: input.agent.model,
   });
   const uploaded: AgentAttachmentRefInput[] = [];
-  const toolFixture = await foundationToolFixture(agentId, input.platform);
-  const originalToolBinding = toolFixture.binding;
-  let currentToolBinding = originalToolBinding;
   const startedAt = performance.now();
   let scenarioError: unknown = null;
 
   try {
-    if (currentToolBinding?.enabled) {
-      currentToolBinding = await updateFoundationToolPolicy(
-        input.agent,
-        toolFixture,
-        currentToolBinding,
-        currentToolBinding.approvalPolicy,
-        false,
-      );
-    }
     const png = await api.ossUploadAgentAttachmentBytes({
       filename: 'foundation.png',
       mime_type: 'image/png',
@@ -4699,15 +4687,19 @@ async function runFoundationF05Scenario(input: {
       uploadedAttachmentCount: 2,
     });
     // #endregion
-    const valid = await runFoundationAttachmentTurn({
-      agentId,
-      conversationId: conversation.conversation_id,
-      provider: input.agent.provider || undefined,
-      model: input.agent.model || undefined,
-      capabilitySessionId: input.capabilitySessionId,
-      attachments: [png, pdf],
-      content: 'Acknowledge the attached files in one short sentence.',
-    });
+    const valid = await withFoundationCapabilitiesDisabled(
+      input.agent,
+      input.capabilitySessionId,
+      () => runFoundationAttachmentTurn({
+        agentId,
+        conversationId: conversation.conversation_id,
+        provider: input.agent.provider || undefined,
+        model: input.agent.model || undefined,
+        capabilitySessionId: input.capabilitySessionId,
+        attachments: [png, pdf],
+        content: 'Acknowledge the attached files in one short sentence.',
+      }),
+    );
     // #region debug-point I-L:foundation-f05-positive-turn-result
     void reportFoundationAttachmentTimeoutDebug('I-L', 'positive-turn-finished', {
       eventCount: valid.result.events.length,
@@ -4966,22 +4958,6 @@ async function runFoundationF05Scenario(input: {
         }
         throw new Error('agent.acceptance.foundationAttachmentCleanupFailed');
       });
-    if (
-      originalToolBinding
-      && currentToolBinding
-      && (
-        currentToolBinding.enabled !== originalToolBinding.enabled
-        || currentToolBinding.approvalPolicy !== originalToolBinding.approvalPolicy
-      )
-    ) {
-      cleanupTasks.push(updateFoundationToolPolicy(
-        input.agent,
-        toolFixture,
-        currentToolBinding,
-        originalToolBinding.approvalPolicy,
-        originalToolBinding.enabled,
-      ));
-    }
     const cleanup = await Promise.allSettled(cleanupTasks);
     const failed = cleanup.find((result) => result.status === 'rejected');
     if (failed?.status === 'rejected' && scenarioError === null) {

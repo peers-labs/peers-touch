@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T131357153837Z-a5ed49ce9dd9990ab342952446b96c0d` on `f9794c2bf68ee220643a159cc74cef658800b944` passed with clean cleanup; the unchanged Foundation run `20260911T131501808195Z-4aeab8c72e1bcb69d4ec06735992399d` crossed AS-F07 and the prior implemented `BASE-*` cells, runtime-proved the `BASE-FORBIDDEN_ACTOR` idempotent cleanup correction, then failed because that scenario omitted its already-observed SSE event from `scenarioFacts.runtimeEvent`; outer cleanup passed and the Harness evidence-shape correction is locally implemented | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T154347342462Z-2fcba4ec93404d8b5091120bc7d72792` on `1e6f8c290bdb9aed694046eb1f129117d616fbf2` passed with 19/19 assertions and clean cleanup; the unchanged Foundation run `20260911T154504429998Z-909db68477dae4e6ff1851f9610aaf1b` crossed both `BASE-CANCELLED` locale cells and stopped at the `BASE-INCOMPATIBLE_CAPABILITY` provider-fixture precondition; current-source C08 run `20260911T163226025417Z-a4b0aae2aa8f3bbbcce3bb7b4b622f5e` on `8e88a63b26e82af0f17fd1f40ad2e31e3228e7ab` exposed incomplete AS-F05 Tool isolation when an unrelated active binding produced `tool_approval_required`; the local fixture correction now isolates every active capability for the positive attachment Turn and awaits exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1474,6 +1474,29 @@ and zero local-path leakage.
   request/response/terminal instrumentation; no Gate, timeout, matrix tuple, or
   product behavior changed. Exact-source C08 and Foundation reproduction remain
   pending for that diagnostic checkpoint.
+- **Cancellation closure, incompatible fixture diagnostics, and C08 isolation
+  correction (2026-09-12)**: checkpoint
+  `795b063e294c834f5a5f902f32b118455c8029f3` passed both Browser
+  `BASE-CANCELLED` locale cells with authoritative Station cancellation and
+  then failed `BASE-INCOMPATIBLE_CAPABILITY` cleanup. Diagnostic checkpoint
+  `1e6f8c290bdb9aed694046eb1f129117d616fbf2` passed C08 run
+  `20260911T154347342462Z-2fcba4ec93404d8b5091120bc7d72792`
+  with 19/19 assertions, then the unchanged Foundation run
+  `20260911T154504429998Z-909db68477dae4e6ff1851f9610aaf1b`
+  failed earlier because the fixed `anthropic` provider fixture was already
+  configured before scenario setup. Checkpoint
+  `8e88a63b26e82af0f17fd1f40ad2e31e3228e7ab` adds credential-safe provider
+  precondition telemetry only. Its C08 run
+  `20260911T163226025417Z-a4b0aae2aa8f3bbbcce3bb7b4b622f5e`
+  submitted the canonical Ark attachment Turn with
+  `thinking_mode=disabled`, but the Turn emitted `tool_call` and
+  `tool_approval_required` before the existing 120-second bound. Source
+  inspection confirms AS-F05 disabled only one platform-selected Tool binding,
+  allowing another active binding to enter this attachment-only baseline.
+  The local correction reuses the existing all-binding isolation journal around
+  the positive attachment Turn and removes the single-binding mutation path.
+  No provider, product execution, timeout, matrix, assertion, or evidence role
+  changed. Exact-source C08 and the unchanged 419-cell Gate remain pending.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

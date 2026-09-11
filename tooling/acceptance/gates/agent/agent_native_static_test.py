@@ -1806,8 +1806,20 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertNotIn("mock", scenario.lower())
 
     def test_harness_drives_as_f05_through_production_boundaries(self) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationF05Scenario",
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationAttachmentRejectedScenario",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
         self.assertIn("cell === 'AS-F05'", self.source)
         self.assertIn("runFoundationF05Scenario", self.source)
+        self.assertIn("withFoundationCapabilitiesDisabled(", scenario)
+        self.assertNotIn("foundationToolFixture(", scenario)
+        self.assertNotIn("updateFoundationToolPolicy(", scenario)
         self.assertIn("api.ossUploadAgentAttachmentBytes", self.source)
         self.assertIn("api.ossResolveUrl", self.source)
         self.assertIn("api.ossDeleteAgentAttachment", self.source)

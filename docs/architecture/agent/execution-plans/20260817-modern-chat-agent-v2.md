@@ -22,21 +22,21 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Diagnose the Browser Simplified Chinese `BASE-CANCELLED` live-provider cancellation-window race without weakening the authoritative terminal contract |
+| Current step | Checkpoint and exact-source prove the AS-F05 all-binding isolation correction, then resume the unchanged 419-cell Gate at `BASE-INCOMPATIBLE_CAPABILITY` |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source C08 run `20260911T135839105483Z-640fb2902d4b27d9304a70280fc71829` on `0512c74fdee14aecef190cb75c3cdcbbc1360030` passed `DONE / PROVEN` with source-matching Station attestation, clean resource release, and a passing secret scan；the unchanged Foundation run crossed the forbidden-actor evidence fix and exposed `BASE-CANCELLED` |
-| Current action | Deploy diagnostic checkpoint `2c8716aa0`, rerun C08, and collect pre-fix `BASE-CANCELLED` request/response/terminal evidence from the unchanged Foundation Gate |
-| Next action | Apply the smallest source-backed cancellation-window correction only after the pre-fix evidence confirms the race, then repeat exact-source C08 and the unchanged 419-cell Gate |
+| Last completed | Exact-source C08 run `20260911T154347342462Z-2fcba4ec93404d8b5091120bc7d72792` on `1e6f8c290bdb9aed694046eb1f129117d616fbf2` passed `DONE / PROVEN` with 19/19 assertions and clean cleanup；the unchanged Foundation run crossed both `BASE-CANCELLED` locale cells and exposed the `BASE-INCOMPATIBLE_CAPABILITY` provider-fixture precondition |
+| Current action | Commit the source-backed AS-F05 all-binding isolation correction exposed by current-source C08 run `20260911T163226025417Z-a4b0aae2aa8f3bbbcce3bb7b4b622f5e`, deploy the exact checkpoint, rebuild the dedicated Acceptance binary, and rerun C08 |
+| Next action | After same-source C08 passes, run the unchanged 419-cell Gate and use the retained incompatible-provider precondition telemetry to repair only the violated Fixture cleanup invariant |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | none；`BASE-CANCELLED` is a recoverable implementation/evidence-fixture defect and remains in the active queue |
+| Blockers | none；the C08 AS-F05 Tool-isolation defect and incompatible-provider Fixture state are recoverable Acceptance Fixture defects in the active queue |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 is `DONE / PROVEN` on `0512c74fd`；Foundation run `20260911T135944321826Z-c11956eb39a2d98c5c2c1f0481964cba` is `FAILED / PARTIAL / UNPROVEN` at `BASE-CANCELLED / browser / zh-CN / single` with `foundationCancellationLostRace`, while Provisioner cleanup and secret scanning passed |
-| Last updated | 2026-09-11 |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 is `DONE / PROVEN` on `1e6f8c290`；Foundation run `20260911T154504429998Z-909db68477dae4e6ff1851f9610aaf1b` is `FAILED / PARTIAL / UNPROVEN` before incompatible setup；current-source C08 on `8e88a63b2` emitted `tool_call` and `tool_approval_required` from the AS-F05 positive attachment Turn because only one platform Tool binding was isolated；all recorded Provisioner cleanup and secret scans passed |
+| Last updated | 2026-09-12 |
 
 ---
 

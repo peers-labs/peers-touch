@@ -154,3 +154,52 @@ submits a Turn and cannot observe a Station rejection.
   fix is to submit this focused Turn with the existing production contract
   `thinkingMode: disabled`, retaining the same provider, model, attachment
   inputs, timeout, evidence roles, and product assertions.
+
+## 2026-09-12 C08 Capability-Isolation Regression
+
+### Reproduction
+
+- Exact source: `8e88a63b26e82af0f17fd1f40ad2e31e3228e7ab`.
+- C08 run:
+  `20260911T163226025417Z-a4b0aae2aa8f3bbbcce3bb7b4b622f5e`.
+- The first Desktop `AS-F05` positive attachment Turn failed after the existing
+  120-second bound with `agent.acceptance.turnSubmissionTimeout`.
+- Source identity, Station attestation, Provisioner cleanup, and secret scanning
+  passed.
+
+### Evidence
+
+- Desktop submitted the real Turn with the canonical Ark provider/model, two
+  uploaded attachments, the selected capability session, and
+  `thinking_mode=disabled`.
+- The Turn emitted four `progress` events, then `tool_call` at sequence 5,
+  `tool_approval_required` at sequence 6, `progress` at sequence 7,
+  `connection_lost`, and a replay `snapshot`.
+- The provider therefore completed far enough to request a governed Tool. The
+  timeout was not caused by missing dispatch, Ark connection establishment, or
+  a thinking-only stream.
+- The preceding exact-source C08 run
+  `20260911T154347342462Z-2fcba4ec93404d8b5091120bc7d72792`
+  passed the same `attachment_admission` step in 19.573 seconds, showing that
+  provider choice between text and ToolCall made the existing fixture
+  nondeterministic.
+- Source inspection shows `runFoundationF05Scenario` disables only one
+  platform-selected binding (`local_clipboard_read` for Desktop or
+  `skills_list` for Browser). Other active Agent capability bindings remain
+  eligible for provider ToolCall selection.
+- The repository already provides `withFoundationCapabilitiesDisabled`, which
+  journals, disables, verifies, and restores every active binding for a
+  provider-backed scenario.
+
+### Verification Conclusion
+
+- Request-not-dispatched and provider-stall hypotheses are rejected.
+- Terminal projection loss is secondary: the Turn correctly remained
+  `waiting_approval` after the unexpected ToolCall and therefore had no
+  successful terminal to project.
+- The confirmed root cause is incomplete Acceptance Fixture isolation in
+  `runFoundationF05Scenario`.
+- The owner-layer correction is to run the positive AS-F05 attachment Turn
+  inside `withFoundationCapabilitiesDisabled` and remove its single-binding
+  mutation path. Product ToolCall behavior, provider configuration, timeouts,
+  matrix rows, and assertions remain unchanged.
