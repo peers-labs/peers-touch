@@ -4804,3 +4804,29 @@ only; each cleanup owner exports the final app log once. The Chat native static
 Python suite passes 184/184, including a Direct regression for this exact
 immutable-artifact conflict. Exact-source synchronization, deployment, and two
 consecutive Native runs remain pending.
+
+Those runtime gates now pass twice on exact source
+`c980b22d68741b80c92caf6c43563fb3fd9057f5`:
+
+- `20260911T163312619650Z-613ec264b1dd42ea7883f22a88f6cf8b`;
+- `20260911T163540508599Z-03cb6eafb1b62530f8fed69b89ac831a`.
+
+Both are `PASS / DONE / PROVEN` and prove:
+
+- distinct clean group-chat/high-chat worktrees with equal Git trees;
+- exact Station and client source identity;
+- Bob/group-chat as first sender and Alice/high-chat as first receiver;
+- reverse Alice-to-Bob delivery;
+- exact native receiver plaintext and identical message IDs in both
+  directions;
+- sender-visible delivered receipts in both directions;
+- complete client binding proof;
+- final app-log evidence without immutable-path conflict; and
+- complete process, port, log, and persistent-storage lifecycle cleanup.
+
+The repeated pass proves the dedicated current-profile Device Engine state
+continues across runs without crypto rollback. The current-profile Direct
+journey is closed. Remaining NDR-W8 work proceeds to the independently required
+offline, friendship, interaction, typing, multi-device, recovery, and
+three-client Group/MLS Gates under their declared environment and authorization
+contracts.
