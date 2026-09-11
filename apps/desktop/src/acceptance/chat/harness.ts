@@ -751,6 +751,15 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async peerKeyBundleState({ peerPtid }: { peerPtid: string }) {
+      const response = await api.keyExchangeFetchBundle(peerPtid);
+      return {
+        peerPtid,
+        bundleCount: response.bundles.length,
+        deviceIds: response.bundles.map((bundle) => bundle.device_id),
+      };
+    },
+
     async revokeCurrentDevice() {
       const device = await api.messagingAcceptanceCurrentEndpoint(activeActorPtid());
       const deviceId = String(device?.device_id ?? '');

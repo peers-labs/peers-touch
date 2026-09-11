@@ -45,6 +45,7 @@ from tooling.acceptance.gates.chat.native_support import (
     station_readback as shared_station_readback,
     stop_client,
     verify_runtime_fixture_ready,
+    wait_for_peer_key_bundle,
     wait_until,
 )
 
@@ -2304,6 +2305,10 @@ class NativeInteractionsGate(AcceptanceGate):
                 and len({client.storage_root for client in self.clients.values()}) == len(ACTORS),
             )
 
+            wait_for_peer_key_bundle(
+                self.clients["alice"],
+                self.ptids["bob"],
+            )
             direct = async_harness(
                 self.clients["alice"],
                 "createDirectConversation",

@@ -40,6 +40,7 @@ from tooling.acceptance.gates.chat.native_support import (
     selected_native_runtime,
     station_readback,
     verify_runtime_fixture_ready,
+    wait_for_peer_key_bundle,
     wait_until,
 )
 
@@ -598,6 +599,7 @@ class NativeTypingGate(AcceptanceGate):
         self.wait_typing("bob", False, "Bob Direct typing cleared by blur")
         self.assert_condition("direct_typing_blur_clear", True)
 
+        wait_for_peer_key_bundle(alice, self.ptids["charlie"])
         alternate = async_harness(
             alice,
             "createDirectConversation",
@@ -990,6 +992,10 @@ class NativeTypingGate(AcceptanceGate):
                 and len({client.storage_root for client in self.clients.values()}) == len(ACTORS),
             )
 
+            wait_for_peer_key_bundle(
+                self.clients["alice"],
+                self.ptids["bob"],
+            )
             direct = async_harness(
                 self.clients["alice"],
                 "createDirectConversation",

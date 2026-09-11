@@ -36,6 +36,7 @@ from tooling.acceptance.gates.chat.native_support import (
     fixture_federation_id,
     is_native_tauri_url,
     runtime_station_service,
+    wait_for_peer_key_bundle,
 )
 
 
@@ -399,6 +400,8 @@ class NativeTwoClientGate(AcceptanceGate):
         bob = self.clients["bob"]
         for client in (alice, bob):
             enter_chat_page(client)
+        wait_for_peer_key_bundle(alice, self.ptids["bob"])
+        wait_for_peer_key_bundle(bob, self.ptids["alice"])
         created = async_harness(
             alice,
             "createDirectConversation",

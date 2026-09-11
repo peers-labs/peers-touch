@@ -99,7 +99,8 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         )
         for filename in runners:
             path = root / "tooling/acceptance/gates/chat" / filename
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename)
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename)
             creation_calls = [
                 node
                 for node in ast.walk(tree)
@@ -120,6 +121,11 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                     if isinstance(key, ast.Constant)
                 }
                 self.assertIn("federationId", keys, filename)
+            if any(
+                call.args[1].value == "createDirectConversation"
+                for call in creation_calls
+            ):
+                self.assertIn("wait_for_peer_key_bundle(", source, filename)
 
     def setUp(self) -> None:
         self.module = load_module()

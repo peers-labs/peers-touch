@@ -480,6 +480,33 @@ def async_harness(
     )
 
 
+def wait_for_peer_key_bundle(
+    client: TauriSession,
+    peer_ptid: str,
+    *,
+    timeout: float = 60.0,
+) -> dict[str, Any]:
+    def ready() -> dict[str, Any] | None:
+        state = async_harness(
+            client,
+            "peerKeyBundleState",
+            {"peerPtid": peer_ptid},
+            timeout=10,
+        )
+        return (
+            state
+            if isinstance(state, dict)
+            and int(state.get("bundleCount") or 0) > 0
+            else None
+        )
+
+    return wait_until(
+        ready,
+        f"peer key bundle for {peer_ptid}",
+        timeout=timeout,
+    )
+
+
 def is_station_authorization_rejection(error: BaseException | str) -> bool:
     message = str(error).lower()
     return any(

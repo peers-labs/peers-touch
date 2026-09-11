@@ -37,6 +37,7 @@ from tooling.acceptance.gates.chat.native_support import (
     send_text,
     stop_client,
     verify_runtime_fixture_ready,
+    wait_for_peer_key_bundle,
     wait_until,
 )
 
@@ -302,6 +303,7 @@ class NativeMultiDeviceGate(AcceptanceGate):
         alice = self.clients["alice"]
         for client in self.clients.values():
             enter_chat_page(client)
+        wait_for_peer_key_bundle(alice, self.ptids["bob1"])
         created = async_harness(
             alice,
             "createDirectConversation",
@@ -533,6 +535,7 @@ class NativeMultiDeviceGate(AcceptanceGate):
             # Retry createDirectConversation: bob1's lifecycle worker must complete
             # device enrollment on Station before the peer can be resolved.
             conversation_id = ""
+            wait_for_peer_key_bundle(alice, self.ptids["bob1"])
             for attempt in range(8):
                 try:
                     created = async_harness(
@@ -621,6 +624,7 @@ class NativeMultiDeviceGate(AcceptanceGate):
             enter_chat_page(bob2)
 
             conversation2_id = ""
+            wait_for_peer_key_bundle(bob2, self.ptids["alice"])
             for attempt in range(8):
                 try:
                     created2 = async_harness(

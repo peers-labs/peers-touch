@@ -39,6 +39,7 @@ from tooling.acceptance.gates.chat.native_support import (
     selected_native_runtime,
     send_text,
     verify_runtime_fixture_ready,
+    wait_for_peer_key_bundle,
     wait_until,
 )
 
@@ -294,6 +295,7 @@ class NativeRecoveryGate(AcceptanceGate):
         bob = self.clients["bob"]
         for client in (alice, bob):
             enter_chat_page(client)
+        wait_for_peer_key_bundle(alice, self.ptids["bob"])
         created = async_harness(
             alice,
             "createDirectConversation",
