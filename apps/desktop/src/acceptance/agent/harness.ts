@@ -1713,7 +1713,11 @@ async function foundationToolFixture(
   ]);
   const manifest = manifests.find((candidate) =>
     candidate.sourceKind === sourceKind
-    && candidate.sourceInstanceId === toolName);
+    && candidate.sourceInstanceId === toolName
+    && (
+      sourceKind !== CapabilitySourceKind.BUILTIN_TOOL
+      || candidate.requiredRuntimeCapabilities.includes('native-tools')
+    ));
   if (!manifest) {
     throw new Error('agent.acceptance.foundationToolManifestMissing');
   }
@@ -4366,6 +4370,77 @@ async function foundationExecutionSnapshot(
       },
       0,
     ),
+  };
+}
+
+async function foundationIncompatibleExecutionSnapshot(
+  agentId: string,
+  conversationId: string,
+): Promise<{
+  turnCount: number;
+  providerCallCount: number;
+  toolCallCount: number;
+  toolExecutionCount: number;
+  sideEffectCount: number;
+}> {
+  const traces = await api.listAgentTurnTraces(agentId, {
+    conversationId,
+    page: 1,
+    pageSize: 200,
+  });
+  const toolFacts = (
+    await Promise.all(traces.entries.map(async (entry) => {
+      const turnId = entry.turn?.turnId ?? '';
+      if (!turnId) return [];
+      const diagnostics = evidenceRecord(
+        evidenceValue(await api.exportAgentTurnDiagnostics(turnId)),
+        'foundationIncompatibleDiagnostics',
+      );
+      const replay = evidenceRecord(
+        diagnostics.replay,
+        'foundationIncompatibleReplay',
+      );
+      return optionalEvidenceArray(
+        evidenceField(replay, 'toolCalls', 'tool_calls'),
+        'foundationIncompatibleToolCalls',
+      ).map((value) =>
+        evidenceRecord(value, 'foundationIncompatibleToolCall'));
+    }))
+  ).flat();
+  return {
+    turnCount: Number(traces.total ?? traces.entries.length),
+    providerCallCount: traces.entries.reduce(
+      (total, entry) => {
+        if (!entry.trace) return total;
+        const trace = evidenceRecord(
+          evidenceValue(entry.trace),
+          'foundationIncompatibleExecutionTrace',
+        );
+        return total + optionalEvidenceArray(
+          evidenceField(trace, 'providerCalls', 'provider_calls'),
+          'foundationIncompatibleProviderCalls',
+        ).length;
+      },
+      0,
+    ),
+    toolCallCount: toolFacts.length,
+    toolExecutionCount: toolFacts.reduce(
+      (total, fact) =>
+        total + Number(
+          evidenceField(
+            fact,
+            'executionAttemptCount',
+            'execution_attempt_count',
+          ) ?? 0,
+        ),
+      0,
+    ),
+    sideEffectCount: toolFacts.filter((fact) =>
+      Boolean(evidenceField(
+        fact,
+        'sideEffectReceiptId',
+        'side_effect_receipt_id',
+      ))).length,
   };
 }
 
@@ -11291,6 +11366,599 @@ async function completeFoundationForbiddenActorRecovery(input: {
   };
 }
 
+async function runFoundationIncompatibleCapabilityAttempt(input: {
+  conversationId: string;
+  idempotencyKey: string;
+  content: string;
+}): Promise<{
+  outcome: Record<string, unknown>;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  rawPayloadHash: string;
+}> {
+  const errorEventRef: {
+    current: FoundationPreAdmissionErrorEvent | null;
+  } = { current: null };
+  let observationSequence = 0;
+  const unsubscribe = eventBus.subscribe(
+    EVENT.AGENT_TURN_STREAM_EVENT,
+    (payload) => {
+      const sourceDelivery = (
+        payload as typeof payload & {
+          sourceDelivery?: AgentTurnSourceDelivery;
+        }
+      ).sourceDelivery;
+      if (payload.conversationId !== input.conversationId) return;
+      observationSequence += 1;
+      if (
+        payload.event !== 'error'
+        || payload.data.error_type !== 'RUNTIME_INCOMPATIBLE_CAPABILITY'
+      ) {
+        return;
+      }
+      errorEventRef.current = {
+        data: evidenceValue(payload.data) as Record<string, unknown>,
+        eventType: payload.event,
+        observedAt: new Date(payload.timestampMs).toISOString(),
+        streamId: payload.streamId,
+        streamGeneration: payload.streamGeneration,
+        conversationId: payload.conversationId,
+        observationSequence,
+        timestampMs: payload.timestampMs,
+        sourceDelivery,
+      };
+    },
+  );
+  try {
+    const sent = useChatStore.getState().sendMessage(
+      input.content,
+      [],
+      { clientIdempotencyKey: input.idempotencyKey },
+    );
+    if (!sent) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilitySendRejected',
+      );
+    }
+    await waitFor(
+      () => errorEventRef.current !== null,
+      'typed incompatible capability rejection',
+      60_000,
+    );
+  } finally {
+    unsubscribe();
+  }
+
+  const errorEvent =
+    errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
+  const sourceDelivery = errorEvent?.sourceDelivery;
+  const actorPtid = authenticatedFoundationActorPtid();
+  if (
+    !errorEvent
+    || !sourceDelivery
+    || sourceDelivery.transport !== 'station-sse'
+    || sourceDelivery.ptid !== actorPtid
+    || sourceDelivery.conversationId !== input.conversationId
+    || !sourceDelivery.turnId
+    || sourceDelivery.sequence <= 0
+    || sourceDelivery.rawPayload.eventType !== 'error'
+    || stableJson(
+      normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+    ) !== stableJson(
+      normalizeProjectedStationPayload(errorEvent.data),
+    )
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationIncompatibleCapabilitySourceIdentityMismatch',
+    );
+  }
+  return {
+    outcome: errorEvent.data,
+    runtimeEvent: {
+      eventId: await sha256Hex(stableJson({
+        streamId: errorEvent.streamId,
+        streamGeneration: errorEvent.streamGeneration,
+        conversationId: errorEvent.conversationId,
+        observationSequence: errorEvent.observationSequence,
+        eventType: errorEvent.eventType,
+        timestampMs: errorEvent.timestampMs,
+        data: errorEvent.data,
+      })),
+      eventType: errorEvent.eventType,
+      sequence: errorEvent.observationSequence,
+      observedAt: errorEvent.observedAt,
+      streamGeneration: errorEvent.streamGeneration,
+      streamIdHash: await sha256Hex(errorEvent.streamId),
+      conversationIdHash: await sha256Hex(errorEvent.conversationId),
+      payloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+      errorType: String(errorEvent.data.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    },
+    rawPayloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+  };
+}
+
+async function runFoundationIncompatibleCapabilityScenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  facts: Record<string, unknown>;
+}> {
+  const store = useAgentStore.getState();
+  const priorSelection = store.selectedAgent;
+  const priorSurface = store.getAgentSurface(priorSelection);
+  const sourceProvider = await api.getProvider(input.agent.provider);
+  const configuredModel = sourceProvider.models.find(
+    (model) => model.id === input.agent.model && model.enabled,
+  );
+  const fixtureProviderId = 'anthropic';
+  const catalogCandidate = await api.getProvider(fixtureProviderId);
+  const sourceModel = catalogCandidate.models.find(
+    (model) => (
+      model.id === 'claude-sonnet-4-20250514'
+      && model.enabled
+    ),
+  );
+  if (
+    input.agent.provider !== 'ark'
+    || !sourceProvider.base_url
+    || !sourceProvider.api_key
+    || !configuredModel
+    || configuredModel.type !== 'chat'
+    || catalogCandidate.version !== 0
+    || catalogCandidate.has_api_key
+    || !catalogCandidate.base_url
+    || !sourceModel
+    || sourceModel.type !== 'chat'
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationIncompatibleCapabilityProviderFixtureMissing',
+    );
+  }
+
+  let providerSetupAttempted = false;
+  let disposableAgentId = '';
+  let rejectedConversationId = '';
+  let capabilityBindingId = '';
+  let scenarioError: unknown = null;
+  let cleanupError: unknown = null;
+  let facts: Record<string, unknown> | null = null;
+  const startedAt = performance.now();
+
+  try {
+    providerSetupAttempted = true;
+    await api.createProvider({
+      id: fixtureProviderId,
+      name: fixtureProviderId,
+      description: 'Foundation incompatible capability fixture',
+      logo: '',
+      base_url: catalogCandidate.base_url,
+      api_key: sourceProvider.api_key,
+    });
+    const configuredCandidateModel = (
+      await api.listAvailableModels()
+    ).models.find(
+      (model) => (
+        model.provider_id === fixtureProviderId
+        && model.id === sourceModel.id
+        && model.enabled
+      ),
+    );
+    if (!configuredCandidateModel) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityModelFixtureMissing',
+      );
+    }
+
+    const disposable = await store.createAgent({
+      name: `foundation-incompatible-${input.sampleId}-${crypto.randomUUID()}`,
+      title: `Foundation incompatible ${input.sampleId}`,
+      description: 'Foundation runtime capability mismatch fixture',
+      provider: fixtureProviderId,
+      model: sourceModel.id,
+    });
+    disposableAgentId = disposable.id || disposable.name;
+    const toolFixture = await foundationToolFixture(disposableAgentId, 'browser');
+    if (
+      !toolFixture.manifest.requiredRuntimeCapabilities.includes(
+        'native-tools',
+      )
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityManifestInvalid',
+      );
+    }
+    const binding = await updateFoundationToolPolicy(
+      disposable,
+      toolFixture,
+      toolFixture.binding,
+      CapabilityApprovalPolicy.AUTO,
+    );
+    capabilityBindingId = binding.bindingId;
+
+    await api.setSelectedAgent(disposable.name);
+    useAgentStore.getState().setSelectedAgent(disposable.name);
+    useAgentStore.getState().setAgentSurface(disposable.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await waitFor(
+      () => Boolean(
+        document.querySelector('[data-pt-agent-composer]')
+          ?.getClientRects().length,
+      ),
+      'incompatible capability composer',
+      30_000,
+    );
+
+    const conversation = await api.createAgentConversation({
+      agent_id: disposableAgentId,
+      title: `Foundation incompatible capability ${input.sampleId}`,
+      provider_id: fixtureProviderId,
+      model_name: sourceModel.id,
+    });
+    rejectedConversationId = conversation.conversation_id;
+    await useChatStore.getState().selectSession(rejectedConversationId);
+    await useChatStore.getState().syncMessages();
+
+    const readinessBefore = await api.getAgentCapabilityReadiness({
+      agent_id: disposableAgentId,
+      client_capability_session_id: input.capabilitySessionId,
+    });
+    const readinessEntryBefore = readinessBefore.capabilities.find(
+      (entry) => entry.capability_id === binding.capabilityId,
+    );
+    if (
+      !readinessEntryBefore
+      || readinessEntryBefore.state
+        !== 'CAPABILITY_READINESS_STATE_UNAVAILABLE'
+      || readinessEntryBefore.reason_code
+        !== 'runtime_capability_unavailable'
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityReadinessMissing',
+      );
+    }
+
+    const beforeExecution = await foundationIncompatibleExecutionSnapshot(
+      disposableAgentId,
+      rejectedConversationId,
+    );
+    const beforeReadback = await foundationConversationReadback(
+      rejectedConversationId,
+    );
+    const beforeQueue = await api.listAgentTurnQueue(rejectedConversationId);
+    const idempotencyKey = crypto.randomUUID();
+    const content = `Incompatible capability ${input.sampleId}`;
+    const first = await runFoundationIncompatibleCapabilityAttempt({
+      conversationId: rejectedConversationId,
+      idempotencyKey,
+      content,
+    });
+    const replayDeliveries = await foundationStationReplayReadback({
+      conversationId: rejectedConversationId,
+      turnId: first.runtimeEvent.sourceTurnId ?? '',
+      streamId: `foundation-incompatible-${idempotencyKey}`,
+      streamGeneration: first.runtimeEvent.streamGeneration ?? 1,
+      actorPtid: authenticatedFoundationActorPtid(),
+      acknowledgedCursor: 0,
+    });
+    const replayed = replayDeliveries.find((delivery) => (
+      delivery.eventType === 'error'
+      && delivery.sourceTurnId === first.runtimeEvent.sourceTurnId
+      && delivery.sourceSequence === first.runtimeEvent.sourceSequence
+    ));
+    if (!replayed) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityReplayMissing',
+      );
+    }
+
+    await waitFor(
+      () => Boolean(document.querySelector(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="RUNTIME_INCOMPATIBLE_CAPABILITY"]',
+      )),
+      'incompatible capability receiver',
+      10_000,
+    );
+    const errorSurface = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="RUNTIME_INCOMPATIBLE_CAPABILITY"]',
+      ),
+    ).reverse().find((element) => element.getClientRects().length > 0);
+    const errorToggle = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-toggle]',
+    );
+    const errorSelector =
+      '[data-pt-agent-message-error-text="agent.errors.incompatibleCapability"]';
+    if (!errorSurface?.querySelector(errorSelector)) {
+      errorToggle?.click();
+      await waitFor(
+        () => Boolean(errorSurface?.querySelector(errorSelector)),
+        'localized incompatible capability text',
+        10_000,
+      );
+    }
+    const errorText = errorSurface?.querySelector<HTMLElement>(errorSelector);
+    const recovery = errorSurface?.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-message-error-recovery="choose-compatible-model"]',
+    );
+    if (!errorSurface || !errorText || !recovery) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilitySurfaceMissing',
+      );
+    }
+    const receiver = {
+      errorVisible: errorText.getClientRects().length > 0,
+      errorText: errorText.textContent?.trim() ?? '',
+      expectedErrorText: i18n.t(
+        'agent.errors.incompatibleCapability',
+        { ns: 'agent' },
+      ),
+      recoveryVisible: recovery.getClientRects().length > 0,
+      recoveryLocaleKey: 'agent.recovery.chooseCompatibleModel',
+      recoveryText: recovery.textContent?.trim() ?? '',
+      expectedRecoveryText: i18n.t(
+        'agent.recovery.chooseCompatibleModel',
+        { ns: 'agent' },
+      ),
+      recoveryExecuted: false,
+      profileVisible: false,
+      profileAgentId: '',
+      modelSelectionVisible: false,
+      selectedModelId: '',
+    };
+    recovery.click();
+    await waitFor(
+      () => Boolean(
+        document.querySelector(
+          `[data-pt-agent-profile="${disposableAgentId}"]`,
+        )?.getClientRects().length
+        && document.querySelector(
+          `[data-pt-agent-profile-model="${disposableAgentId}"]`,
+        )?.getClientRects().length,
+      ),
+      'incompatible capability model configuration',
+      30_000,
+    );
+    const agentAfterRecovery = await api.getAgent(disposableAgentId);
+    receiver.recoveryExecuted = true;
+    receiver.profileVisible = true;
+    receiver.profileAgentId = disposableAgentId;
+    receiver.modelSelectionVisible = true;
+    receiver.selectedModelId = agentAfterRecovery.model;
+
+    const readinessAfter = await api.getAgentCapabilityReadiness({
+      agent_id: disposableAgentId,
+      client_capability_session_id: input.capabilitySessionId,
+    });
+    const readinessEntryAfter = readinessAfter.capabilities.find(
+      (entry) => entry.capability_id === binding.capabilityId,
+    );
+    if (
+      !readinessEntryAfter
+      || readinessEntryAfter.state
+        !== 'CAPABILITY_READINESS_STATE_UNAVAILABLE'
+      || readinessEntryAfter.reason_code
+        !== 'runtime_capability_unavailable'
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityReadinessChanged',
+      );
+    }
+
+    const afterExecution = await foundationIncompatibleExecutionSnapshot(
+      disposableAgentId,
+      rejectedConversationId,
+    );
+    const afterReadback = await foundationConversationReadback(
+      rejectedConversationId,
+    );
+    const afterQueue = await api.listAgentTurnQueue(rejectedConversationId);
+    const beforeHash = await sha256Hex(stableJson(beforeReadback.messages));
+    const afterHash = await sha256Hex(stableJson(afterReadback.messages));
+    const turnDelta = afterExecution.turnCount - beforeExecution.turnCount;
+    const providerCallDelta =
+      afterExecution.providerCallCount - beforeExecution.providerCallCount;
+
+    facts = {
+      outcome: first.outcome,
+      receiver,
+      readiness: {
+        source: 'station-capability-readiness',
+        capabilityId: binding.capabilityId,
+        reasonCode: readinessEntryBefore.reason_code,
+        incompatibleModelId: sourceModel.id,
+        snapshotIdBefore: readinessBefore.snapshot_id,
+        snapshotIdAfter: readinessAfter.snapshot_id,
+        runtimeSnapshotIdBefore: readinessBefore.runtime_snapshot_id,
+        runtimeSnapshotIdAfter: readinessAfter.runtime_snapshot_id,
+        bindingRevisionBefore: Number(readinessEntryBefore.binding_revision),
+        bindingRevisionAfter: Number(readinessEntryAfter.binding_revision),
+        stateBefore: 'unavailable',
+        stateAfter: 'unavailable',
+      },
+      station: {
+        agentId: disposableAgentId,
+        conversationId: rejectedConversationId,
+        turnId: first.runtimeEvent.sourceTurnId,
+        selectedModelIdBefore: sourceModel.id,
+        selectedModelIdAfter: agentAfterRecovery.model,
+        conversationVersionBefore: beforeReadback.conversation.version,
+        conversationVersionAfter: afterReadback.conversation.version,
+        beforeHash,
+        afterHash,
+        turnDelta,
+        messageDelta:
+          afterReadback.messages.length - beforeReadback.messages.length,
+        queueDelta: afterQueue.entries.length - beforeQueue.entries.length,
+      },
+      execution: {
+        runtimeExecutionDelta: providerCallDelta,
+        providerCallDelta,
+        toolCallDelta:
+          afterExecution.toolCallCount - beforeExecution.toolCallCount,
+        toolExecutionDelta:
+          afterExecution.toolExecutionCount
+          - beforeExecution.toolExecutionCount,
+        sideEffectDelta:
+          afterExecution.sideEffectCount - beforeExecution.sideEffectCount,
+      },
+      runtimeEvent: first.runtimeEvent,
+      replay: {
+        sourceHash: first.rawPayloadHash,
+        replayHash: replayed.payloadHash,
+        equal: first.rawPayloadHash === replayed.payloadHash,
+      },
+      cleanup: {
+        localProjectionCleared: false,
+        conversationDeleted: false,
+        disposableAgentDeleted: false,
+        capabilityBindingRemoved: false,
+        fixtureProviderRestored: false,
+        modelConfigurationUnchanged:
+          agentAfterRecovery.model === sourceModel.id,
+        priorSelection,
+        restoredSelection: '',
+      },
+    };
+  } catch (error) {
+    scenarioError = error;
+  } finally {
+    try {
+      if (rejectedConversationId) {
+        clearFoundationLocalConversationProjection(rejectedConversationId);
+        await deleteFoundationConversation(rejectedConversationId);
+      }
+      if (disposableAgentId) {
+        if (capabilityBindingId) {
+          const currentBinding = (
+            await api.listAgentCapabilityBindings(disposableAgentId)
+          ).find((binding) => (
+            binding.bindingId === capabilityBindingId
+            && !binding.tombstonedAt
+          ));
+          if (currentBinding) {
+            await api.deleteAgentCapabilityBinding(
+              currentBinding.bindingId,
+              currentBinding.revision,
+              crypto.randomUUID(),
+              'acceptance_fixture_cleanup',
+            );
+          }
+        }
+        await api.deleteAgent(disposableAgentId);
+      }
+      if (providerSetupAttempted) {
+        const configuredFixture = (await api.listProviders()).find(
+          (provider) => (
+            provider.id === fixtureProviderId
+            && provider.version > 0
+          ),
+        );
+        if (configuredFixture) {
+          await api.deleteProvider(fixtureProviderId);
+        }
+      }
+      await useAgentStore.getState().loadAgents();
+      if (priorSelection) {
+        useAgentStore.getState().setSelectedAgent(priorSelection);
+        useAgentStore.getState().setAgentSurface(priorSelection, priorSurface);
+        await api.setSelectedAgent(priorSelection);
+      }
+      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+      if (facts) {
+        const cleanup = evidenceRecord(
+          facts.cleanup,
+          'foundationIncompatibleCapabilityCleanup',
+        );
+        const cleanedChatState = useChatStore.getState();
+        cleanup.localProjectionCleared = rejectedConversationId
+          ? (
+              cleanedChatState.operations[rejectedConversationId] === undefined
+              && cleanedChatState.sessionBuffers[rejectedConversationId]
+                === undefined
+              && (
+                cleanedChatState.currentSessionKey !== rejectedConversationId
+                || (
+                  cleanedChatState.messages.length === 0
+                  && cleanedChatState.isStreaming === false
+                )
+              )
+            )
+          : true;
+        cleanup.conversationDeleted = rejectedConversationId
+          ? await api.getAgentConversation(rejectedConversationId).then(
+              () => false,
+              (error: unknown) => observedErrorCode(error).includes('AGENT_4004'),
+            )
+          : true;
+        cleanup.disposableAgentDeleted = disposableAgentId
+          ? await api.getAgent(disposableAgentId).then(
+              () => false,
+              (error: unknown) => observedErrorCode(error).includes('AGENT_4004'),
+            )
+          : true;
+        cleanup.capabilityBindingRemoved = disposableAgentId
+          ? await api.listAgentCapabilityBindings(disposableAgentId).then(
+              (bindings) => !bindings.some(
+                (binding) => binding.bindingId === capabilityBindingId
+                  && !binding.tombstonedAt,
+              ),
+              (error: unknown) => observedErrorCode(error).includes('AGENT_4004'),
+            )
+          : true;
+        const restoredProvider = await api.getProvider(fixtureProviderId);
+        cleanup.fixtureProviderRestored =
+          restoredProvider.version === 0
+          && restoredProvider.has_api_key === false;
+        cleanup.restoredSelection = useAgentStore.getState().selectedAgent;
+      }
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+
+  if (cleanupError) {
+    throw Object.assign(
+      new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityCleanupFailed',
+      ),
+      { primaryError: scenarioError, cleanupError },
+    );
+  }
+  if (scenarioError) throw scenarioError;
+  if (!facts) {
+    throw new Error(
+      'agent.acceptance.foundationIncompatibleCapabilityFactsMissing',
+    );
+  }
+  const attestation = await runFoundationDirectAttestationTurn({
+    agent: input.agent,
+    capabilitySessionId: input.capabilitySessionId,
+    sampleId: input.sampleId,
+  });
+  return {
+    conversationId: attestation.conversationId,
+    turnId: attestation.turnId,
+    durationMs: performance.now() - startedAt,
+    runtimeEvent: evidenceRecord(
+      facts.runtimeEvent,
+      'foundationIncompatibleCapabilityRuntimeEvent',
+    ) as unknown as FoundationRuntimeEventObservation,
+    facts,
+  };
+}
+
 async function runFoundationCancelledScenario(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
@@ -12358,6 +13026,8 @@ async function evaluateDirectCellAssertions(
       return evaluateBaseActiveMutationConflict(ctx);
     case 'BASE-FORBIDDEN_ACTOR':
       return evaluateBaseForbiddenActor(ctx);
+    case 'BASE-INCOMPATIBLE_CAPABILITY':
+      return evaluateBaseIncompatibleCapability(ctx);
     case 'BASE-CANCELLED':
       return evaluateBaseCancelled(ctx);
     case 'BASE-CONTEXT_OVERFLOW':
@@ -12471,6 +13141,113 @@ function evaluateBaseForbiddenActor(
       && cleanup.ownerSelectionRestored === true
       && cleanup.receiverRestored === true
       && cleanup.conversationDeleted === true
+    ),
+  };
+}
+
+function evaluateBaseIncompatibleCapability(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationIncompatibleCapabilityFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationIncompatibleCapabilityOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationIncompatibleCapabilityDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationIncompatibleCapabilityReceiver',
+  );
+  const readiness = evidenceRecord(
+    facts.readiness,
+    'foundationIncompatibleCapabilityReadiness',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationIncompatibleCapabilityStation',
+  );
+  const execution = evidenceRecord(
+    facts.execution,
+    'foundationIncompatibleCapabilityExecution',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationIncompatibleCapabilityReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationIncompatibleCapabilityCleanup',
+  );
+  return {
+    typedIncompatibleCapabilityRejected: (
+      outcome.error === 'agent.errors.incompatibleCapability'
+      && outcome.error_type === 'RUNTIME_INCOMPATIBLE_CAPABILITY'
+      && outcome.locale_key === 'agent.errors.incompatibleCapability'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && stableJson(Object.keys(details).sort())
+        === stableJson(['capability_id', 'reason_code'])
+      && details.capability_id === readiness.capabilityId
+      && details.reason_code === readiness.reasonCode
+    ),
+    localizedChooseCompatibleModelRecovery: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryLocaleKey
+        === 'agent.recovery.chooseCompatibleModel'
+      && receiver.recoveryText === receiver.expectedRecoveryText
+      && receiver.recoveryExecuted === true
+      && receiver.profileVisible === true
+      && receiver.profileAgentId === station.agentId
+      && receiver.modelSelectionVisible === true
+      && receiver.selectedModelId === readiness.incompatibleModelId
+    ),
+    stationReadinessReadback: (
+      readiness.source === 'station-capability-readiness'
+      && readiness.stateBefore === 'unavailable'
+      && readiness.stateAfter === 'unavailable'
+      && readiness.reasonCode === 'runtime_capability_unavailable'
+      && Boolean(readiness.snapshotIdBefore)
+      && Boolean(readiness.snapshotIdAfter)
+      && readiness.runtimeSnapshotIdBefore
+        === readiness.runtimeSnapshotIdAfter
+      && Number(readiness.bindingRevisionBefore)
+        === Number(readiness.bindingRevisionAfter)
+      && station.selectedModelIdBefore === readiness.incompatibleModelId
+      && station.selectedModelIdAfter === readiness.incompatibleModelId
+      && Number(station.conversationVersionAfter)
+        === Number(station.conversationVersionBefore) + 1
+      && station.beforeHash === station.afterHash
+    ),
+    zeroRejectedPathSideEffects: (
+      Number(station.turnDelta) === 1
+      && Number(station.messageDelta) === 0
+      && Number(station.queueDelta) === 0
+      && Number(execution.runtimeExecutionDelta) === 0
+      && Number(execution.providerCallDelta) === 0
+      && Number(execution.toolCallDelta) === 0
+      && Number(execution.toolExecutionDelta) === 0
+      && Number(execution.sideEffectDelta) === 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+    ),
+    cleanupComplete: (
+      cleanup.localProjectionCleared === true
+      && cleanup.conversationDeleted === true
+      && cleanup.disposableAgentDeleted === true
+      && cleanup.capabilityBindingRemoved === true
+      && cleanup.fixtureProviderRestored === true
+      && cleanup.modelConfigurationUnchanged === true
+      && cleanup.restoredSelection === cleanup.priorSelection
     ),
   };
 }
@@ -16207,6 +16984,24 @@ export function installAcceptanceHarness(): void {
         }
       }
 
+      if (cell === 'BASE-INCOMPATIBLE_CAPABILITY') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenario = await runFoundationIncompatibleCapabilityScenario({
+          agent,
+          capabilitySessionId,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
       if (cell === 'BASE-EXECUTOR_UNAVAILABLE') {
         const scenario = evidenceRecord(
           preparedScenario,
@@ -17511,6 +18306,7 @@ export function installAcceptanceHarness(): void {
       if (
         (
           cell === 'BASE-FORBIDDEN_ACTOR'
+          || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
           || cell === 'BASE-EXECUTOR_UNAVAILABLE'
           || cell === 'BASE-APPROVAL_DENIED'
           || cell === 'BASE-APPROVAL_EXPIRED'
@@ -17545,6 +18341,8 @@ export function installAcceptanceHarness(): void {
               ? 'foundationActiveMutationConflictCleanup'
               : cell === 'BASE-FORBIDDEN_ACTOR'
                 ? 'foundationForbiddenActorCleanup'
+              : cell === 'BASE-INCOMPATIBLE_CAPABILITY'
+                ? 'foundationIncompatibleCapabilityCleanup'
               : cell === 'BASE-CANCELLED'
                 ? 'foundationCancelledCleanup'
               : cell === 'BASE-CONTEXT_OVERFLOW'
@@ -17695,6 +18493,31 @@ export function installAcceptanceHarness(): void {
           message: station.messageDelta,
           queue: station.queueDelta,
           providerExecution: station.providerExecutionDelta,
+        };
+      }
+      if (cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationIncompatibleCapabilityStation',
+        );
+        stationReadback.entityKind = 'agent-capability-readiness';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.agentId),
+        );
+        stationReadback.revision = Number(
+          station.conversationVersionAfter,
+        );
+        stationReadback.stateHash = String(station.afterHash);
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.readiness = scenarioFacts.readiness;
+        stationReadback.deltas = {
+          turn: station.turnDelta,
+          message: station.messageDelta,
+          queue: station.queueDelta,
+          providerExecution: evidenceRecord(
+            scenarioFacts.execution,
+            'foundationIncompatibleCapabilityExecution',
+          ).providerCallDelta,
         };
       }
       if (cell === 'BASE-CANCELLED' && scenarioFacts) {
@@ -17903,6 +18726,7 @@ export function installAcceptanceHarness(): void {
           : (
             cell === 'BASE-ATTACHMENT_REJECTED'
             || cell === 'BASE-FORBIDDEN_ACTOR'
+            || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
             || cell === 'BASE-CANCELLED'
             || cell === 'BASE-CONTEXT_OVERFLOW'
             || cell === 'BASE-DUPLICATE_CONFLICT'
@@ -17922,6 +18746,7 @@ export function installAcceptanceHarness(): void {
                   (
                     cell === 'BASE-CANCELLED'
                     || cell === 'BASE-FORBIDDEN_ACTOR'
+                    || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
                     || cell === 'BASE-CONTEXT_OVERFLOW'
                     || cell === 'BASE-DUPLICATE_CONFLICT'
                     || cell === 'BASE-CREDENTIAL_MISSING'
@@ -18011,6 +18836,29 @@ export function installAcceptanceHarness(): void {
                 measurements: station,
               };
             })()
+          : cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts
+            ? (() => {
+                const execution = evidenceRecord(
+                  scenarioFacts.execution,
+                  'foundationIncompatibleCapabilityExecution',
+                );
+                return {
+                  counterId: String(
+                    evidenceRecord(
+                      scenarioFacts.station,
+                      'foundationIncompatibleCapabilityStation',
+                    ).turnId,
+                  ),
+                  count:
+                    Number(execution.runtimeExecutionDelta)
+                    + Number(execution.providerCallDelta)
+                    + Number(execution.toolCallDelta)
+                    + Number(execution.toolExecutionDelta)
+                    + Number(execution.sideEffectDelta),
+                  maximum: 0,
+                  measurements: execution,
+                };
+              })()
           : cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
           ? {
               counterId: await sha256Hex(stableJson({
@@ -18293,6 +19141,13 @@ export function installAcceptanceHarness(): void {
               'foundationForbiddenActorCleanup',
             )
           : null;
+      const incompatibleCapabilityCleanup =
+        cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationIncompatibleCapabilityCleanup',
+            )
+          : null;
       const cancellationCleanup =
         cell === 'BASE-CANCELLED' && scenarioFacts
           ? evidenceRecord(
@@ -18332,6 +19187,17 @@ export function installAcceptanceHarness(): void {
                 && forbiddenActorCleanup.receiverRestored === true
                 && forbiddenActorCleanup.conversationDeleted === true
               )
+            : incompatibleCapabilityCleanup
+              ? (
+                  incompatibleCapabilityCleanup.localProjectionCleared === true
+                  && incompatibleCapabilityCleanup.conversationDeleted === true
+                  && incompatibleCapabilityCleanup.disposableAgentDeleted === true
+                  && incompatibleCapabilityCleanup.capabilityBindingRemoved === true
+                  && incompatibleCapabilityCleanup.fixtureProviderRestored === true
+                  && incompatibleCapabilityCleanup.modelConfigurationUnchanged === true
+                  && incompatibleCapabilityCleanup.restoredSelection
+                    === incompatibleCapabilityCleanup.priorSelection
+                )
             : activeMutationCleanup
             ? (
                 activeMutationCleanup.deletedFromRoster === true
@@ -18465,6 +19331,8 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : (
@@ -18487,6 +19355,7 @@ export function installAcceptanceHarness(): void {
 
       const receiver = (
         cell === 'BASE-FORBIDDEN_ACTOR'
+        || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
         || cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
         || cell === 'BASE-CANCELLED'
         || cell === 'BASE-EXECUTOR_UNAVAILABLE'
@@ -18522,6 +19391,21 @@ export function installAcceptanceHarness(): void {
           receiverSelector =
             '[data-pt-agent-message-error-recovery="switch-account"],'
             + '[data-pt-agent-message-error-text="agent.errors.forbiddenActor"]';
+          receiverText = {
+            recoveryText: receiver.recoveryText,
+            errorText: receiver.errorText,
+          };
+        } else if (cell === 'BASE-INCOMPATIBLE_CAPABILITY') {
+          receiverVisible =
+            receiver.recoveryVisible === true
+            && receiver.errorVisible === true
+            && receiver.recoveryExecuted === true
+            && receiver.profileVisible === true
+            && receiver.modelSelectionVisible === true;
+          receiverSelector =
+            '[data-pt-agent-message-error-recovery="choose-compatible-model"],'
+            + '[data-pt-agent-message-error-text="agent.errors.incompatibleCapability"],'
+            + '[data-pt-agent-profile-model]';
           receiverText = {
             recoveryText: receiver.recoveryText,
             errorText: receiver.errorText,
@@ -18649,6 +19533,19 @@ export function installAcceptanceHarness(): void {
         replayEvidence.replayHash = replay.replayHash;
         replayEvidence.equal = replay.equal;
         replayEvidence.turnId = null;
+      }
+      if (cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationIncompatibleCapabilityReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+        replayEvidence.turnId = evidenceRecord(
+          scenarioFacts.station,
+          'foundationIncompatibleCapabilityStation',
+        ).turnId;
       }
       if (cell === 'BASE-CANCELLED' && scenarioFacts) {
         const replay = evidenceRecord(
@@ -18857,6 +19754,24 @@ export function installAcceptanceHarness(): void {
             throw Object.assign(
               new Error(
                 'agent.acceptance.foundationForbiddenActorAttestationCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-INCOMPATIBLE_CAPABILITY'
+          && preparedConversationId
+        ) {
+          try {
+            await deleteFoundationConversation(preparedConversationId);
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationIncompatibleCapabilityAttestationCleanupFailed',
               ),
               {
                 primaryError: error,

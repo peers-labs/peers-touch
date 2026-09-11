@@ -2461,7 +2461,10 @@ export function AgentProfilePage({
                 }
               />
               <span style={{ color: token.colorTextQuaternary, fontSize: 13 }}>→</span>
-              <div style={{ minWidth: 0 }}>
+              <div
+                data-pt-agent-profile-model={agent.id}
+                style={{ minWidth: 0 }}
+              >
                 <ModelSelect
                   models={routingModels}
                   value={agent.model || undefined}

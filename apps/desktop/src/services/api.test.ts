@@ -235,6 +235,91 @@ describe('agentTurnStreamErrorFromData', () => {
     })
     expect(error.resolution).toBeUndefined()
   })
+
+  it('maps the exact incompatible-capability contract to model recovery', () => {
+    const error = agentTurnStreamErrorFromData({
+      type: 'error',
+      error: 'agent.errors.incompatibleCapability',
+      error_type: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+      locale_key: 'agent.errors.incompatibleCapability',
+      retryable: false,
+      terminal: true,
+      details: {
+        capability_id: 'tool:skills_list',
+        reason_code: 'runtime_capability_unavailable',
+      },
+    })
+
+    expect(error.typedError).toEqual({
+      error: 'agent.errors.incompatibleCapability',
+      error_type: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+      locale_key: 'agent.errors.incompatibleCapability',
+      retryable: false,
+      terminal: true,
+      details: {
+        capability_id: 'tool:skills_list',
+        reason_code: 'runtime_capability_unavailable',
+      },
+    })
+    expect(error.resolution).toEqual({
+      type: 'chooseCompatibleModel',
+      capabilityId: 'tool:skills_list',
+      reasonCode: 'runtime_capability_unavailable',
+      label: 'agent.recovery.chooseCompatibleModel',
+    })
+  })
+
+  it('requires the exact incompatible-capability booleans and safe details', () => {
+    const malformed = agentTurnStreamErrorFromData({
+      error: 'agent.errors.incompatibleCapability',
+      error_type: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+      locale_key: 'agent.errors.incompatibleCapability',
+      retryable: true,
+      terminal: true,
+      details: {
+        capability_id: 'tool:skills_list',
+        reason_code: 'runtime_capability_unavailable',
+        private_detail: 'must-not-enable-recovery',
+      },
+    })
+
+    expect(malformed.resolution).toBeUndefined()
+  })
+
+  it('normalizes an immediate native incompatible-capability rejection', () => {
+    const error = normalizeAgentTurnStreamError(Object.assign(
+      new Error('Agent turn rejected'),
+      {
+        details: {
+          error_code: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+          locale_key: 'agent.errors.incompatibleCapability',
+          retryable: 'false',
+          terminal: 'true',
+          capability_id: 'tool:skills_list',
+          reason_code: 'runtime_capability_unavailable',
+          body: 'must not enter the typed payload',
+        },
+      },
+    ))
+
+    expect(error.typedError).toEqual({
+      error: 'Agent turn rejected',
+      error_type: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+      locale_key: 'agent.errors.incompatibleCapability',
+      retryable: false,
+      terminal: true,
+      details: {
+        capability_id: 'tool:skills_list',
+        reason_code: 'runtime_capability_unavailable',
+      },
+    })
+    expect(error.resolution).toEqual({
+      type: 'chooseCompatibleModel',
+      capabilityId: 'tool:skills_list',
+      reasonCode: 'runtime_capability_unavailable',
+      label: 'agent.recovery.chooseCompatibleModel',
+    })
+  })
 })
 
 describe('api.health', () => {
@@ -491,6 +576,75 @@ describe('Agent turn stream completion', () => {
       },
       resolution: {
         type: 'switchAccount',
+      },
+    })
+  })
+
+  it('preserves incompatible-capability details from an immediate Browser rejection', async () => {
+    const browserWindow = Object.assign(new EventTarget(), {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    })
+    vi.stubGlobal('window', browserWindow)
+    ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
+      'http://127.0.0.1:3030'
+    mockFetch.mockResolvedValue(new Response(
+      JSON.stringify({ error: 'agent.errors.incompatibleCapability' }),
+      {
+        status: 409,
+        headers: {
+          'x-peers-error-code': 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+          'x-peers-error-locale-key': 'agent.errors.incompatibleCapability',
+          'x-peers-error-retryable': 'false',
+          'x-peers-error-terminal': 'true',
+          'x-peers-error-details': JSON.stringify({
+            capability_id: 'tool:skills_list',
+            reason_code: 'runtime_capability_unavailable',
+          }),
+        },
+      },
+    ))
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurn(
+      {
+        client_idempotency_key: 'request-browser-incompatible-capability',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'inspect this image',
+      },
+      onEvent,
+      vi.fn(),
+      onError,
+      'ptid:person:alice',
+    )
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'error',
+      data: expect.objectContaining({
+        error_type: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+        locale_key: 'agent.errors.incompatibleCapability',
+        retryable: false,
+        terminal: true,
+        details: {
+          capability_id: 'tool:skills_list',
+          reason_code: 'runtime_capability_unavailable',
+        },
+      }),
+    }))
+    expect(onError.mock.calls[0]?.[0]).toMatchObject({
+      typedError: {
+        error_type: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+        details: {
+          capability_id: 'tool:skills_list',
+          reason_code: 'runtime_capability_unavailable',
+        },
+      },
+      resolution: {
+        type: 'chooseCompatibleModel',
+        label: 'agent.recovery.chooseCompatibleModel',
       },
     })
   })

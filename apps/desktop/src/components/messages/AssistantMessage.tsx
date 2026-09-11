@@ -375,6 +375,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const agents = useAgentStore(s => s.agents);
   const availableModels = useAgentStore(s => s.availableModels);
   const selectedAgent = useAgentStore(s => s.selectedAgent);
+  const setAgentSurface = useAgentStore(s => s.setAgentSurface);
   const activeAgent = agents.find((agent) => agent.name === selectedAgent);
   const activeChatConfig = activeAgent ? parseAgentChatConfig(activeAgent) : {};
   const messageModel = message.model ? availableModels.find((model) => model.id === message.model) : undefined;
@@ -390,7 +391,9 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       ? 'open-original'
       : message.resolution?.type === 'switchAccount'
         ? 'switch-account'
-        : 'true';
+        : message.resolution?.type === 'chooseCompatibleModel'
+          ? 'choose-compatible-model'
+          : 'true';
   const artifacts = useMemo(() => extractMessageArtifacts(message), [message]);
 
   const handleCopy = useCallback(() => {
@@ -446,6 +449,15 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     openTurnDetails(originalMessage.id, turnId);
   }, [message.id, openTurnDetails, t]);
 
+  const handleChooseCompatibleModel = useCallback(() => {
+    if (!activeAgent) {
+      toast.error(t('chat.message.resolution.actionFailed'));
+      return;
+    }
+    setAgentSurface(activeAgent.name, 'profile');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  }, [activeAgent, setAgentSurface, t]);
+
   const handleDelAndRegenerate = useCallback(() => {
     deleteAndRegenerateMessage(message.id);
   }, [deleteAndRegenerateMessage, message.id]);
@@ -478,6 +490,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-error-type={message.typedError?.error_type}
       data-pt-agent-error-resource-kind={message.typedError?.details.resource_kind}
       data-pt-agent-error-resource-id={message.typedError?.details.resource_id}
+      data-pt-agent-error-capability-id={message.typedError?.details.capability_id}
+      data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
       id={`agent-message-${message.id}`}
       align="flex-start"
       gap={8}
@@ -728,9 +742,11 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                     danger={
                       message.resolution.type !== 'openOriginal'
                       && message.resolution.type !== 'switchAccount'
+                      && message.resolution.type !== 'chooseCompatibleModel'
                     }
                     icon={
                       message.resolution.type === 'openProviderSettings'
+                      || message.resolution.type === 'chooseCompatibleModel'
                         ? <Settings size={14} />
                         : message.resolution.type === 'openOriginal'
                           ? <ExternalLink size={14} />
@@ -757,6 +773,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         }
                         if (message.resolution!.type === 'switchAccount') {
                           await identityRuntime.logout();
+                          return;
+                        }
+                        if (message.resolution!.type === 'chooseCompatibleModel') {
+                          handleChooseCompatibleModel();
                           return;
                         }
                         const result = await api.resolveErrorAction(message.resolution!);

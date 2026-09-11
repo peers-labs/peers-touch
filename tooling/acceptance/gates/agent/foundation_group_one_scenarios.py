@@ -2598,6 +2598,250 @@ def evaluate_base_forbidden_actor(
     return assertions
 
 
+def evaluate_base_incompatible_capability(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-INCOMPATIBLE_CAPABILITY"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    readiness = _mapping(capture, "readiness", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    execution = _mapping(capture, "execution", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+
+    capability_id = _nonempty_string(
+        readiness,
+        "capabilityId",
+        scenario=scenario,
+    )
+    reason_code = _nonempty_string(
+        readiness,
+        "reasonCode",
+        scenario=scenario,
+    )
+    incompatible_model_id = _nonempty_string(
+        readiness,
+        "incompatibleModelId",
+        scenario=scenario,
+    )
+    snapshot_id_before = _nonempty_string(
+        readiness,
+        "snapshotIdBefore",
+        scenario=scenario,
+    )
+    snapshot_id_after = _nonempty_string(
+        readiness,
+        "snapshotIdAfter",
+        scenario=scenario,
+    )
+    runtime_snapshot_id_before = _nonempty_string(
+        readiness,
+        "runtimeSnapshotIdBefore",
+        scenario=scenario,
+    )
+    runtime_snapshot_id_after = _nonempty_string(
+        readiness,
+        "runtimeSnapshotIdAfter",
+        scenario=scenario,
+    )
+    binding_revision_before = _positive_int(
+        readiness,
+        "bindingRevisionBefore",
+        scenario=scenario,
+    )
+    binding_revision_after = _positive_int(
+        readiness,
+        "bindingRevisionAfter",
+        scenario=scenario,
+    )
+    conversation_id = _nonempty_string(
+        station,
+        "conversationId",
+        scenario=scenario,
+    )
+    station_hash = _sha256_string(
+        station,
+        "beforeHash",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedIncompatibleCapabilityRejected": (
+            outcome.get("error") == "agent.errors.incompatibleCapability"
+            and outcome.get("error_type")
+            == "RUNTIME_INCOMPATIBLE_CAPABILITY"
+            and outcome.get("locale_key")
+            == "agent.errors.incompatibleCapability"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and sorted(details) == ["capability_id", "reason_code"]
+            and details.get("capability_id") == capability_id
+            and details.get("reason_code") == reason_code
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType")
+            == "RUNTIME_INCOMPATIBLE_CAPABILITY"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            ) > 0
+            and _positive_int(
+                runtime_event,
+                "streamGeneration",
+                scenario=scenario,
+            ) > 0
+            and _sha256_string(
+                runtime_event,
+                "conversationIdHash",
+                scenario=scenario,
+            )
+            == hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and _sha256_string(
+                runtime_event,
+                "sourcePtidHash",
+                scenario=scenario,
+            )
+            and runtime_event.get("sourceConversationId") == conversation_id
+            and _nonempty_string(
+                runtime_event,
+                "sourceTurnId",
+                scenario=scenario,
+            ) == _nonempty_string(
+                station,
+                "turnId",
+                scenario=scenario,
+            )
+            and _positive_int(
+                runtime_event,
+                "sourceSequence",
+                scenario=scenario,
+            ) > 0
+            and runtime_event.get("sourceEventType") == "error"
+        ),
+        "localizedChooseCompatibleModelRecovery": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and receiver.get("recoveryLocaleKey")
+            == "agent.recovery.chooseCompatibleModel"
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryExecuted") is True
+            and receiver.get("profileVisible") is True
+            and receiver.get("profileAgentId") == station.get("agentId")
+            and receiver.get("modelSelectionVisible") is True
+            and receiver.get("selectedModelId") == incompatible_model_id
+        ),
+        "stationReadinessReadback": (
+            readiness.get("source") == "station-capability-readiness"
+            and readiness.get("stateBefore") == "unavailable"
+            and readiness.get("stateAfter") == "unavailable"
+            and reason_code == "runtime_capability_unavailable"
+            and bool(snapshot_id_before)
+            and bool(snapshot_id_after)
+            and runtime_snapshot_id_before == runtime_snapshot_id_after
+            and binding_revision_before == binding_revision_after
+            and station.get("selectedModelIdBefore")
+            == incompatible_model_id
+            and station.get("selectedModelIdAfter")
+            == incompatible_model_id
+            and _positive_int(
+                station,
+                "conversationVersionBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                station,
+                "conversationVersionAfter",
+                scenario=scenario,
+            )
+            and _sha256_string(
+                station,
+                "afterHash",
+                scenario=scenario,
+            ) == station_hash
+        ),
+        "zeroRejectedPathSideEffects": (
+            _positive_int(station, "turnDelta", scenario=scenario) == 1
+            and all(
+                _nonnegative_int(execution, key, scenario=scenario) == 0
+                for key in (
+                    "runtimeExecutionDelta",
+                    "providerCallDelta",
+                    "toolCallDelta",
+                    "toolExecutionDelta",
+                    "sideEffectDelta",
+                )
+            )
+            and all(
+                _nonnegative_int(station, key, scenario=scenario) == 0
+                for key in (
+                    "messageDelta",
+                    "queueDelta",
+                )
+            )
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _sha256_string(
+                replay,
+                "sourceHash",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                replay,
+                "replayHash",
+                scenario=scenario,
+            )
+        ),
+        "cleanupComplete": (
+            cleanup.get("localProjectionCleared") is True
+            and cleanup.get("conversationDeleted") is True
+            and cleanup.get("disposableAgentDeleted") is True
+            and cleanup.get("capabilityBindingRemoved") is True
+            and cleanup.get("fixtureProviderRestored") is True
+            and cleanup.get("modelConfigurationUnchanged") is True
+            and _nonempty_string(
+                cleanup,
+                "restoredSelection",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                cleanup,
+                "priorSelection",
+                scenario=scenario,
+            )
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_cancelled(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:

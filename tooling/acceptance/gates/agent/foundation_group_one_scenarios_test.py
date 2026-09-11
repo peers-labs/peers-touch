@@ -17,6 +17,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_duplicate_conflict,
     evaluate_base_executor_unavailable,
     evaluate_base_forbidden_actor,
+    evaluate_base_incompatible_capability,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -1022,6 +1023,121 @@ def valid_forbidden_actor_capture() -> dict[str, object]:
             "ownerSelectionRestored": True,
             "receiverRestored": True,
             "conversationDeleted": True,
+        },
+    }
+
+
+def valid_incompatible_capability_capture(
+    locale: str = "en",
+) -> dict[str, object]:
+    conversation_id = "conversation-incompatible-capability"
+    state_hash = "2" * 64
+    payload_hash = "7" * 64
+    receiver_copy = {
+        "en": (
+            "The selected runtime does not support a required capability.",
+            "Choose compatible model",
+        ),
+        "zh-CN": (
+            "所选运行时不支持必需能力。",
+            "选择兼容模型",
+        ),
+    }
+    error_text, recovery_text = receiver_copy[locale]
+    return {
+        "outcome": {
+            "error": "agent.errors.incompatibleCapability",
+            "error_type": "RUNTIME_INCOMPATIBLE_CAPABILITY",
+            "locale_key": "agent.errors.incompatibleCapability",
+            "retryable": False,
+            "terminal": True,
+            "details": {
+                "capability_id": "tool:skills_list",
+                "reason_code": "runtime_capability_unavailable",
+            },
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": error_text,
+            "expectedErrorText": error_text,
+            "recoveryVisible": True,
+            "recoveryLocaleKey": "agent.recovery.chooseCompatibleModel",
+            "recoveryText": recovery_text,
+            "expectedRecoveryText": recovery_text,
+            "recoveryExecuted": True,
+            "profileVisible": True,
+            "profileAgentId": "agent-incompatible",
+            "modelSelectionVisible": True,
+            "selectedModelId": "model-incompatible",
+        },
+        "readiness": {
+            "source": "station-capability-readiness",
+            "capabilityId": "tool:skills_list",
+            "reasonCode": "runtime_capability_unavailable",
+            "incompatibleModelId": "model-incompatible",
+            "snapshotIdBefore": "readiness-before",
+            "snapshotIdAfter": "readiness-after",
+            "runtimeSnapshotIdBefore": "runtime-incompatible",
+            "runtimeSnapshotIdAfter": "runtime-incompatible",
+            "bindingRevisionBefore": 7,
+            "bindingRevisionAfter": 7,
+            "stateBefore": "unavailable",
+            "stateAfter": "unavailable",
+        },
+        "station": {
+            "agentId": "agent-incompatible",
+            "conversationId": conversation_id,
+            "turnId": "turn-incompatible",
+            "selectedModelIdBefore": "model-incompatible",
+            "selectedModelIdAfter": "model-incompatible",
+            "conversationVersionBefore": 3,
+            "conversationVersionAfter": 3,
+            "beforeHash": state_hash,
+            "afterHash": state_hash,
+            "turnDelta": 1,
+            "messageDelta": 0,
+            "queueDelta": 0,
+        },
+        "execution": {
+            "runtimeExecutionDelta": 0,
+            "providerCallDelta": 0,
+            "toolCallDelta": 0,
+            "toolExecutionDelta": 0,
+            "sideEffectDelta": 0,
+        },
+        "runtimeEvent": {
+            "eventId": "3" * 64,
+            "sequence": 1,
+            "eventType": "error",
+            "observedAt": "2026-09-11T01:00:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "4" * 64,
+            "conversationIdHash": hashlib.sha256(
+                conversation_id.encode("utf-8")
+            ).hexdigest(),
+            "payloadHash": "5" * 64,
+            "errorType": "RUNTIME_INCOMPATIBLE_CAPABILITY",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "6" * 64,
+            "sourceConversationId": conversation_id,
+            "sourceTurnId": "turn-incompatible",
+            "sourceSequence": 1,
+            "sourceEventType": "error",
+        },
+        "replay": {
+            "sourceHash": payload_hash,
+            "replayHash": payload_hash,
+            "equal": True,
+        },
+        "cleanup": {
+            "localProjectionCleared": True,
+            "conversationDeleted": True,
+            "disposableAgentDeleted": True,
+            "capabilityBindingRemoved": True,
+            "fixtureProviderRestored": True,
+            "modelConfigurationUnchanged": True,
+            "priorSelection": "agent-default",
+            "restoredSelection": "agent-default",
         },
     }
 
@@ -2771,6 +2887,161 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
                     "cleanupComplete",
                 ):
                     evaluate_base_forbidden_actor(capture)
+
+    def test_incompatible_capability_accepts_exact_production_facts(self) -> None:
+        for locale in ("en", "zh-CN"):
+            with self.subTest(locale=locale):
+                assertions = evaluate_base_incompatible_capability(
+                    valid_incompatible_capability_capture(locale)
+                )
+                self.assertEqual(len(assertions), 6)
+                self.assertTrue(all(assertions.values()))
+                self.assertTrue(
+                    all(type(value) is bool for value in assertions.values())
+                )
+
+    def test_incompatible_capability_rejects_typed_contract_tampering(
+        self,
+    ) -> None:
+        mutations = (
+            lambda capture: capture["outcome"].update(
+                {"error": "agent.errors.generic"}
+            ),
+            lambda capture: capture["outcome"].update(
+                {"error_type": "RUNTIME_UNAVAILABLE"}
+            ),
+            lambda capture: capture["outcome"].update(
+                {"locale_key": "agent.errors.generic"}
+            ),
+            lambda capture: capture["outcome"].update({"retryable": True}),
+            lambda capture: capture["outcome"].update({"terminal": False}),
+            lambda capture: capture["outcome"]["details"].update(
+                {"model_id": "private-model"}
+            ),
+            lambda capture: capture["outcome"]["details"].update(
+                {"capability_id": "tools.execute"}
+            ),
+            lambda capture: capture["runtimeEvent"].update(
+                {"errorType": "RUNTIME_UNAVAILABLE"}
+            ),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                capture = valid_incompatible_capability_capture()
+                mutation(capture)
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "typedIncompatibleCapabilityRejected",
+                ):
+                    evaluate_base_incompatible_capability(capture)
+
+    def test_incompatible_capability_requires_localized_recovery(self) -> None:
+        for key, value in (
+            ("errorText", "Incompatible"),
+            ("recoveryVisible", False),
+            ("recoveryLocaleKey", "agent.recovery.chooseModel"),
+            ("recoveryText", "Choose model"),
+            ("recoveryExecuted", False),
+            ("profileVisible", False),
+            ("profileAgentId", "agent-other"),
+            ("modelSelectionVisible", False),
+            ("selectedModelId", "model-compatible"),
+        ):
+            with self.subTest(key=key):
+                capture = valid_incompatible_capability_capture()
+                capture["receiver"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "localizedChooseCompatibleModelRecovery",
+                ):
+                    evaluate_base_incompatible_capability(capture)
+
+    def test_incompatible_capability_rejects_station_readback_tampering(
+        self,
+    ) -> None:
+        mutations = (
+            lambda capture: capture["readiness"].update(
+                {"source": "desktop-cache"}
+            ),
+            lambda capture: capture["readiness"].update(
+                {"stateAfter": "ready"}
+            ),
+            lambda capture: capture["readiness"].update(
+                {"reasonCode": "model_capability_inferred"}
+            ),
+            lambda capture: capture["readiness"].update(
+                {"runtimeSnapshotIdAfter": "runtime-compatible"}
+            ),
+            lambda capture: capture["readiness"].update(
+                {"bindingRevisionAfter": 8}
+            ),
+            lambda capture: capture["station"].update(
+                {"selectedModelIdAfter": "model-compatible"}
+            ),
+            lambda capture: capture["station"].update(
+                {"conversationVersionAfter": 4}
+            ),
+            lambda capture: capture["station"].update(
+                {"afterHash": "7" * 64}
+            ),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                capture = valid_incompatible_capability_capture()
+                mutation(capture)
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "stationReadinessReadback",
+                ):
+                    evaluate_base_incompatible_capability(capture)
+
+    def test_incompatible_capability_rejects_each_side_effect(self) -> None:
+        for owner, key, value in (
+            ("execution", "runtimeExecutionDelta", 1),
+            ("execution", "providerCallDelta", 1),
+            ("execution", "toolCallDelta", 1),
+            ("execution", "toolExecutionDelta", 1),
+            ("execution", "sideEffectDelta", 1),
+            ("station", "turnDelta", 2),
+            ("station", "messageDelta", 1),
+            ("station", "queueDelta", 1),
+        ):
+            with self.subTest(owner=owner, key=key):
+                capture = valid_incompatible_capability_capture()
+                capture[owner][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "zeroRejectedPathSideEffects",
+                ):
+                    evaluate_base_incompatible_capability(capture)
+
+    def test_incompatible_capability_rejects_replay_tampering(self) -> None:
+        capture = valid_incompatible_capability_capture()
+        capture["replay"]["replayHash"] = "8" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "replayEqual",
+        ):
+            evaluate_base_incompatible_capability(capture)
+
+    def test_incompatible_capability_requires_complete_cleanup(self) -> None:
+        for key in (
+            "localProjectionCleared",
+            "conversationDeleted",
+            "disposableAgentDeleted",
+            "capabilityBindingRemoved",
+            "fixtureProviderRestored",
+            "modelConfigurationUnchanged",
+        ):
+            with self.subTest(key=key):
+                capture = valid_incompatible_capability_capture()
+                capture["cleanup"][key] = False
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "cleanupComplete",
+                ):
+                    evaluate_base_incompatible_capability(capture)
 
     def test_cancelled_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_cancelled(valid_cancelled_capture())

@@ -1431,6 +1431,55 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("foundationForbiddenActorCleanup", direct_probe)
         self.assertIn("foundationForbiddenActorStation", direct_probe)
 
+    def test_incompatible_capability_uses_station_readiness_and_model_recovery(
+        self,
+    ) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationIncompatibleCapabilityScenario"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationCancelledScenario",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("input.agent.provider !== 'ark'", scenario)
+        self.assertIn("const fixtureProviderId = 'anthropic'", scenario)
+        self.assertIn("sourceProvider.api_key", scenario)
+        self.assertIn("foundationToolFixture(disposableAgentId, 'browser')", scenario)
+        self.assertIn("'native-tools'", scenario)
+        self.assertIn("CAPABILITY_READINESS_STATE_UNAVAILABLE", scenario)
+        self.assertIn("'runtime_capability_unavailable'", scenario)
+        self.assertIn("runFoundationIncompatibleCapabilityAttempt({", scenario)
+        self.assertEqual(
+            scenario.count("runFoundationIncompatibleCapabilityAttempt({"),
+            1,
+        )
+        self.assertIn("foundationStationReplayReadback({", scenario)
+        self.assertIn("foundationIncompatibleExecutionSnapshot(", scenario)
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="choose-compatible-model"]',
+            scenario,
+        )
+        self.assertIn(
+            "`[data-pt-agent-profile-model=\"${disposableAgentId}\"]`",
+            scenario,
+        )
+        self.assertIn("api.deleteProvider(fixtureProviderId)", scenario)
+        self.assertIn("api.deleteAgent(disposableAgentId)", scenario)
+        self.assertNotIn("api.updateAgent(", scenario)
+        self.assertNotIn("api.updateModel(", scenario)
+        self.assertNotIn("mock", scenario.lower())
+
+        direct_probe_start = self.source.index("async foundationDirectProbe")
+        direct_probe = self.source[direct_probe_start:]
+        self.assertIn(
+            "if (cell === 'BASE-INCOMPATIBLE_CAPABILITY')",
+            direct_probe,
+        )
+        self.assertIn("foundationIncompatibleCapabilityCleanup", direct_probe)
+        self.assertIn("foundationIncompatibleCapabilityStation", direct_probe)
+
     def test_cancelled_uses_station_owned_payload_replay_and_cleanup(self) -> None:
         scenario_start = self.source.index(
             "async function runFoundationCancelledScenario"

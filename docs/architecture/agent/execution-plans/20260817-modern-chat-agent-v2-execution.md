@@ -1434,6 +1434,29 @@ and zero local-path leakage.
   passes, and outer runtime cleanup released both clients, all ports, storage,
   and actor identity. Exact-source C08 and the unchanged Foundation Gate must
   be rerun after checkpoint and deployment.
+- **BASE-INCOMPATIBLE_CAPABILITY source closure (2026-09-11)**: the next
+  plan-defined Foundation error vertical is implemented locally without
+  changing the 419-cell matrix, timeout, or provider fallback policy. Station
+  now versions canonical built-in Tool manifests with the `native-tools`
+  requirement, reconciles legacy embedded-config bindings to that manifest
+  version, persists the rejected runtime/readiness snapshot, and emits
+  `RUNTIME_INCOMPATIBLE_CAPABILITY /
+  agent.errors.incompatibleCapability` before provider or Tool execution.
+  Desktop preserves the exact typed error through immediate Browser/Native,
+  live, cached, and replay projections, and `Choose compatible model` opens
+  the selected Agent's real model configuration without mutating the model.
+  The production Harness uses the canonical Ark profile
+  `ep-20260623145021-n4xdm` as the configured source, creates and removes a
+  run-scoped catalog-backed incompatible provider binding through production
+  APIs, replays the persisted typed terminal event through Station, and
+  measures the allowed single failed Turn against zero messages, queue rows,
+  provider calls, ToolCalls, Tool executions, and side-effect receipts. The
+  independent Python oracle verifies typed payload, localized recovery,
+  readiness/model immutability, replay equality, and complete cleanup. Local
+  verification passes Station Agent packages, Desktop `606/606` tests,
+  Desktop check/build, Agent Python `398/398`, hard rules, and diff hygiene.
+  Product proof remains `UNPROVEN` until a clean checkpoint is deployed and
+  exact-source C08 plus the unchanged full Foundation Gate finish.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

@@ -2499,12 +2499,15 @@ export interface AgentErrorResolutionAction {
     | 'openProviderSettings'
     | 'checkConnection'
     | 'openOriginal'
-    | 'switchAccount';
+    | 'switchAccount'
+    | 'chooseCompatibleModel';
   cliId?: string;
   providerId?: string;
   existingCommandId?: string;
   resourceKind?: string;
   resourceId?: string;
+  capabilityId?: string;
+  reasonCode?: string;
   label: string;
 }
 
@@ -2513,6 +2516,10 @@ export const AGENT_ATTACHMENT_REJECTED_ERROR_TYPE =
 export const AGENT_CONTEXT_LIMIT_ERROR_TYPE = 'CONTEXT_OVERFLOW';
 export const AGENT_FORBIDDEN_ACTOR_ERROR_TYPE = 'OWNERSHIP_FORBIDDEN_ACTOR';
 export const AGENT_FORBIDDEN_ACTOR_LOCALE_KEY = 'agent.errors.forbiddenActor';
+export const AGENT_INCOMPATIBLE_CAPABILITY_ERROR_TYPE =
+  'RUNTIME_INCOMPATIBLE_CAPABILITY';
+export const AGENT_INCOMPATIBLE_CAPABILITY_LOCALE_KEY =
+  'agent.errors.incompatibleCapability';
 
 export type AgentForbiddenActorError = AgentTypedErrorPayload & {
   details: {
@@ -2521,11 +2528,20 @@ export type AgentForbiddenActorError = AgentTypedErrorPayload & {
   };
 };
 
+export type AgentIncompatibleCapabilityError = AgentTypedErrorPayload & {
+  details: {
+    capability_id: string;
+    reason_code: string;
+  };
+};
+
 const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'resource_kind',
   'resource_id',
   'expected_revision',
   'actual_revision',
+  'capability_id',
+  'reason_code',
 ] as const;
 
 function agentTypedErrorBoolean(value: unknown): boolean | undefined {
@@ -2598,6 +2614,27 @@ export function isAgentForbiddenActorError(
   );
 }
 
+export function isAgentIncompatibleCapabilityError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentIncompatibleCapabilityError {
+  if (
+    error?.error_type !== AGENT_INCOMPATIBLE_CAPABILITY_ERROR_TYPE
+    || error.locale_key !== AGENT_INCOMPATIBLE_CAPABILITY_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'capability_id'
+    && detailKeys[1] === 'reason_code'
+    && error.details.capability_id.trim().length > 0
+    && error.details.reason_code.trim().length > 0
+  );
+}
+
 export function resolveAgentTypedErrorAction(
   error: AgentTypedErrorPayload | null | undefined,
 ): AgentErrorResolutionAction | undefined {
@@ -2607,6 +2644,14 @@ export function resolveAgentTypedErrorAction(
       resourceKind: error.details.resource_kind,
       resourceId: error.details.resource_id,
       label: 'agent.recovery.switchAccount',
+    };
+  }
+  if (isAgentIncompatibleCapabilityError(error)) {
+    return {
+      type: 'chooseCompatibleModel',
+      capabilityId: error.details.capability_id,
+      reasonCode: error.details.reason_code,
+      label: 'agent.recovery.chooseCompatibleModel',
     };
   }
   if (

@@ -356,6 +356,52 @@ func TestWriteTurnStreamErrorPreservesProviderCredentialMissingPayload(t *testin
 	}
 }
 
+func TestWriteTurnStreamErrorPreservesRuntimeIncompatibleCapabilityPayload(t *testing.T) {
+	resp := &fakeStreamResponse{}
+	if err := writeTurnStreamErrorWithIdentity(
+		resp,
+		errcode.NewRuntimeIncompatibleCapability(
+			"tool:skills_list",
+			"runtime_capability_unavailable",
+		),
+		"conversation-1",
+		"agent-1",
+	); err != nil {
+		t.Fatalf("write typed stream error: %v", err)
+	}
+
+	body := resp.body.String()
+	dataLine := strings.TrimPrefix(
+		strings.TrimSpace(strings.Split(body, "\n")[1]),
+		"data: ",
+	)
+	var payload struct {
+		Error          string            `json:"error"`
+		ErrorType      string            `json:"error_type"`
+		LocaleKey      string            `json:"locale_key"`
+		Retryable      bool              `json:"retryable"`
+		Terminal       bool              `json:"terminal"`
+		Details        map[string]string `json:"details"`
+		ConversationID string            `json:"conversationId"`
+		AgentID        string            `json:"agentId"`
+	}
+	if err := json.Unmarshal([]byte(dataLine), &payload); err != nil {
+		t.Fatalf("decode typed stream error: %v", err)
+	}
+	if payload.Error != errcode.AgentRuntimeIncompatibleCapabilityLocaleKey ||
+		payload.ErrorType != string(errcode.AgentRuntimeIncompatibleCapability) ||
+		payload.LocaleKey != errcode.AgentRuntimeIncompatibleCapabilityLocaleKey ||
+		payload.Retryable ||
+		!payload.Terminal ||
+		len(payload.Details) != 2 ||
+		payload.Details["capability_id"] != "tool:skills_list" ||
+		payload.Details["reason_code"] != "runtime_capability_unavailable" ||
+		payload.ConversationID != "conversation-1" ||
+		payload.AgentID != "agent-1" {
+		t.Fatalf("typed stream error payload = %+v", payload)
+	}
+}
+
 func TestExposeTurnStreamIdentityFlushesDurableTurnID(t *testing.T) {
 	resp := &fakeStreamResponse{}
 

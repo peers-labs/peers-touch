@@ -180,6 +180,16 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-INCOMPATIBLE_CAPABILITY": frozenset(
+        {
+            "typedIncompatibleCapabilityRejected",
+            "localizedChooseCompatibleModelRecovery",
+            "stationReadinessReadback",
+            "zeroRejectedPathSideEffects",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
     "BASE-CANCELLED": frozenset(
         {
             "typedCancellationProjected",

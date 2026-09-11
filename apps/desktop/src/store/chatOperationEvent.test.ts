@@ -49,6 +49,20 @@ function forbiddenActorData(): Record<string, unknown> {
   };
 }
 
+function incompatibleCapabilityData(): Record<string, unknown> {
+  return {
+    error: 'agent.errors.incompatibleCapability',
+    error_type: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+    locale_key: 'agent.errors.incompatibleCapability',
+    retryable: false,
+    terminal: true,
+    details: {
+      capability_id: 'tool:skills_list',
+      reason_code: 'runtime_capability_unavailable',
+    },
+  };
+}
+
 describe('Agent turn event identity projection', () => {
   it('increments the composer focus intent without mutating the draft', () => {
     const before = useChatStore.getState().composerFocusNonce;
@@ -405,6 +419,90 @@ describe('Agent turn event identity projection', () => {
           resourceKind: 'conversation',
           resourceId: 'conversation-owned-by-bob',
           label: 'agent.recovery.switchAccount',
+        },
+      }));
+    } finally {
+      useChatStore.getState().reset();
+    }
+  });
+
+  it('projects incompatible-capability recovery from a live error event', () => {
+    const projected = reduceStreamEvent({
+      id: 'message-1',
+      role: 'assistant',
+      content: '',
+      loading: true,
+      timestamp: 1,
+    }, {
+      event: 'error',
+      data: incompatibleCapabilityData(),
+    });
+
+    expect(projected).toMatchObject({
+      error: 'agent.errors.incompatibleCapability',
+      terminalStatus: 'failed',
+      loading: false,
+      typedError: incompatibleCapabilityData(),
+      resolution: {
+        type: 'chooseCompatibleModel',
+        capabilityId: 'tool:skills_list',
+        reasonCode: 'runtime_capability_unavailable',
+        label: 'agent.recovery.chooseCompatibleModel',
+      },
+    });
+  });
+
+  it('restores incompatible-capability recovery from a persisted typed error', () => {
+    const projected = cachedMessageToChatMessage({
+      messageId: 'message-1',
+      conversationId: 'conversation-1',
+      turnId: 'turn-1',
+      role: 'assistant',
+      status: 'failed',
+      content: '',
+      seq: 1,
+      errorJson: JSON.stringify(incompatibleCapabilityData()),
+      createdAt: '2026-09-11T00:00:00.000Z',
+      updatedAt: '2026-09-11T00:00:00.000Z',
+    });
+
+    expect(projected).toMatchObject({
+      error: 'agent.errors.incompatibleCapability',
+      terminalStatus: 'failed',
+      typedError: incompatibleCapabilityData(),
+      resolution: {
+        type: 'chooseCompatibleModel',
+        capabilityId: 'tool:skills_list',
+        reasonCode: 'runtime_capability_unavailable',
+        label: 'agent.recovery.chooseCompatibleModel',
+      },
+    });
+  });
+
+  it('preserves incompatible-capability recovery through replay projection', () => {
+    useChatStore.getState().reset();
+    useChatStore.setState({ currentSessionKey: 'conversation-1' });
+
+    try {
+      useChatStore.getState().applyRecoveredTurnEvent(
+        'conversation-1',
+        'agent-1',
+        'turn-rejected',
+        {
+          event: 'error',
+          data: incompatibleCapabilityData(),
+        },
+      );
+
+      expect(useChatStore.getState().messages).toContainEqual(expect.objectContaining({
+        turnId: 'turn-rejected',
+        error: 'agent.errors.incompatibleCapability',
+        typedError: incompatibleCapabilityData(),
+        resolution: {
+          type: 'chooseCompatibleModel',
+          capabilityId: 'tool:skills_list',
+          reasonCode: 'runtime_capability_unavailable',
+          label: 'agent.recovery.chooseCompatibleModel',
         },
       }));
     } finally {
