@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import os
@@ -86,6 +87,40 @@ class SyntheticRuntimeBinding:
 
 
 class NativeTwoClientEvidenceTest(unittest.TestCase):
+    def test_native_runners_bind_conversation_creation_to_federation(self) -> None:
+        root = Path(__file__).resolve().parents[4]
+        runners = (
+            "native_two_client_runner.py",
+            "native_interactions_runner.py",
+            "native_typing_runner.py",
+            "native_multi_device_runner.py",
+            "native_recovery_runner.py",
+            "native_group_mls_runner.py",
+        )
+        for filename in runners:
+            path = root / "tooling/acceptance/gates/chat" / filename
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename)
+            creation_calls = [
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "async_harness"
+                and len(node.args) >= 3
+                and isinstance(node.args[1], ast.Constant)
+                and node.args[1].value
+                in {"createDirectConversation", "createGroup"}
+            ]
+            self.assertTrue(creation_calls, filename)
+            for call in creation_calls:
+                self.assertIsInstance(call.args[2], ast.Dict, filename)
+                keys = {
+                    key.value
+                    for key in call.args[2].keys
+                    if isinstance(key, ast.Constant)
+                }
+                self.assertIn("federationId", keys, filename)
+
     def setUp(self) -> None:
         self.module = load_module()
         self.temp = tempfile.TemporaryDirectory()

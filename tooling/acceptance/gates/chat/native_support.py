@@ -34,6 +34,7 @@ from tooling.acceptance.drivers.station import StationDriver
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import (
     acceptance_station_environment,
+    fixture_friendship_federation_id,
 )
 from tooling.acceptance.transports import SshTarget, SshTransport
 
@@ -44,6 +45,13 @@ ACCOUNTS = {
     "bob": "bob@p.t",
     "charlie": "carol@p.t",
 }
+
+
+def fixture_federation_id(first_ptid: str, second_ptid: str) -> str:
+    try:
+        return fixture_friendship_federation_id(first_ptid, second_ptid)
+    except ValueError as error:
+        raise GateError(str(error)) from error
 
 
 def is_native_tauri_url(value: str) -> bool:

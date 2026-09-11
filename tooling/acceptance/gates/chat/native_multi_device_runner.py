@@ -27,6 +27,7 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
+    fixture_federation_id,
     is_native_tauri_url,
     message_snapshot,
     native_runtime_source_identity,
@@ -304,7 +305,13 @@ class NativeMultiDeviceGate(AcceptanceGate):
         created = async_harness(
             alice,
             "createDirectConversation",
-            {"peerPtid": self.ptids["bob1"]},
+            {
+                "peerPtid": self.ptids["bob1"],
+                "federationId": fixture_federation_id(
+                    self.ptids["alice"],
+                    self.ptids["bob1"],
+                ),
+            },
         )
         conversation_id = str((created or {}).get("conversationId") or "")
         if not conversation_id:
@@ -531,7 +538,13 @@ class NativeMultiDeviceGate(AcceptanceGate):
                     created = async_harness(
                         alice,
                         "createDirectConversation",
-                        {"peerPtid": self.ptids["bob1"]},
+                        {
+                            "peerPtid": self.ptids["bob1"],
+                            "federationId": fixture_federation_id(
+                                self.ptids["alice"],
+                                self.ptids["bob1"],
+                            ),
+                        },
                     )
                     conversation_id = str((created or {}).get("conversationId") or "")
                 except GateError:
@@ -613,7 +626,13 @@ class NativeMultiDeviceGate(AcceptanceGate):
                     created2 = async_harness(
                         bob2,
                         "createDirectConversation",
-                        {"peerPtid": self.ptids["alice"]},
+                        {
+                            "peerPtid": self.ptids["alice"],
+                            "federationId": fixture_federation_id(
+                                self.ptids["alice"],
+                                self.ptids["bob2"],
+                            ),
+                        },
                     )
                     conversation2_id = str((created2 or {}).get("conversationId") or "")
                 except GateError:

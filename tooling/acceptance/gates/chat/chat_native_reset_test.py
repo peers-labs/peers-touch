@@ -14,6 +14,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     FixtureActorRecord,
     _remote_transport,
     acceptance_station_environment,
+    fixture_friendship_federation_id,
     read_fixture_actor,
     reset_local_client_storage,
     reset_station_chat_state,
@@ -33,6 +34,25 @@ DISPOSABLE_ENVIRONMENT = {
     "PT_ACCEPTANCE_POSTGRES_CONTAINER": "pt-chat-native-acceptance-postgres-1",
     "PT_ACCEPTANCE_POSTGRES_VOLUME": "pt-chat-native-acceptance_pg_data",
 }
+
+
+class FixtureFederationIdentityTest(unittest.TestCase):
+    def test_federation_id_is_order_independent_and_actor_bound(self) -> None:
+        expected = fixture_friendship_federation_id("ptid:alice", "ptid:bob")
+        self.assertEqual(
+            fixture_friendship_federation_id("ptid:bob", "ptid:alice"),
+            expected,
+        )
+        self.assertNotEqual(
+            fixture_friendship_federation_id("ptid:alice", "ptid:charlie"),
+            expected,
+        )
+
+    def test_federation_id_rejects_missing_or_duplicate_actors(self) -> None:
+        with self.assertRaisesRegex(ValueError, "two distinct actor PTIDs"):
+            fixture_friendship_federation_id("", "ptid:bob")
+        with self.assertRaisesRegex(ValueError, "two distinct actor PTIDs"):
+            fixture_friendship_federation_id("ptid:alice", "ptid:alice")
 
 
 class DisposableAcceptanceTargetTest(unittest.TestCase):

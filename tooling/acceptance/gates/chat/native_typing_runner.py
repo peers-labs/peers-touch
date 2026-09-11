@@ -31,6 +31,7 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
+    fixture_federation_id,
     is_native_tauri_url,
     is_station_authorization_rejection,
     native_runtime_source_identity,
@@ -600,7 +601,13 @@ class NativeTypingGate(AcceptanceGate):
         alternate = async_harness(
             alice,
             "createDirectConversation",
-            {"peerPtid": self.ptids["charlie"]},
+            {
+                "peerPtid": self.ptids["charlie"],
+                "federationId": fixture_federation_id(
+                    self.ptids["alice"],
+                    self.ptids["bob"],
+                ),
+            },
         )
         alternate_id = str((alternate or {}).get("conversationId") or "")
         if not alternate_id:
@@ -986,7 +993,13 @@ class NativeTypingGate(AcceptanceGate):
             direct = async_harness(
                 self.clients["alice"],
                 "createDirectConversation",
-                {"peerPtid": self.ptids["bob"]},
+                {
+                    "peerPtid": self.ptids["bob"],
+                    "federationId": fixture_federation_id(
+                        self.ptids["alice"],
+                        self.ptids["bob"],
+                    ),
+                },
             )
             direct_id = str((direct or {}).get("conversationId") or "")
             if not direct_id:
@@ -1033,6 +1046,10 @@ class NativeTypingGate(AcceptanceGate):
                         self.ptids["bob"],
                         self.ptids["charlie"],
                     ],
+                    "federationId": fixture_federation_id(
+                        self.ptids["alice"],
+                        self.ptids["bob"],
+                    ),
                 },
             )
             group_id = str((group or {}).get("groupUlid") or "")

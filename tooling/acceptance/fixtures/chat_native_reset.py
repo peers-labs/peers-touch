@@ -642,6 +642,19 @@ def _friend_request_event_text(
     return "\n".join(fields) + "\n"
 
 
+def fixture_friendship_federation_id(
+    first_ptid: str,
+    second_ptid: str,
+) -> str:
+    participants = sorted((first_ptid.strip(), second_ptid.strip()))
+    if not participants[0] or participants[0] == participants[1]:
+        raise ValueError("fixture Federation requires two distinct actor PTIDs")
+    identity = hashlib.sha256(
+        (participants[0] + "\x00" + participants[1]).encode("utf-8")
+    ).hexdigest()
+    return f"fed_chat_{identity[:20]}"
+
+
 def _accepted_friendship(
     actor: FixtureActorRecord,
     peer: FixtureActorRecord,
@@ -650,7 +663,10 @@ def _accepted_friendship(
     identity = hashlib.sha256(
         (sender.ptid + "\x00" + receiver.ptid).encode("utf-8")
     ).hexdigest()
-    federation_id = f"fed_chat_{identity[:20]}"
+    federation_id = fixture_friendship_federation_id(
+        sender.ptid,
+        receiver.ptid,
+    )
     request_id = f"acceptance-cross-{identity[:24]}"
     pending_event_id = f"friend-request-event:{request_id}:1"
     accepted_event_id = f"friend-request-event:{request_id}:2"

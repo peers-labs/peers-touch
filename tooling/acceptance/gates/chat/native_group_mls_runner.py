@@ -26,6 +26,7 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
+    fixture_federation_id,
     is_native_tauri_url,
     message_snapshot,
     native_runtime_source_identity,
@@ -409,6 +410,10 @@ class NativeGroupMlsGate(AcceptanceGate):
                     {
                         "name": "Acceptance MLS Group",
                         "memberPtids": [self.ptids["bob"], self.ptids["charlie"]],
+                        "federationId": fixture_federation_id(
+                            self.ptids["alice"],
+                            self.ptids["bob"],
+                        ),
                     },
                     timeout=60,
                 )
