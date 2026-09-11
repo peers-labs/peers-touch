@@ -412,6 +412,19 @@ explicit conversation stayed at version `8`. The added AC/AD instrumentation
 records only session/target-presence booleans before and after the unchanged
 production store action.
 
+Exact-source run
+`20260911T100435225314Z-18c9f82046fdcec82baf7ac246645674`
+on `227c09a2cc721ddcab2ef6d28b67ffdb02c84f3a` confirms AC. Debug lines
+17-18 show the first AS-F07 scenario kept the expected conversation selected
+and completed branch projection. Lines 34-35 show the second scenario reached
+the same version-8 original branch with `currentSessionMatchesScenario=false`
+and `targetInStore=false`, then Station returned HTTP `404 / AGENT_4004 /
+message not found`. The production store action therefore combined the stale
+selected conversation with the new scenario's message ID. AD is not the
+owning cause, and V/W/X remain rejected. The local correction reselects the
+scenario conversation through the production Chat store immediately before
+the production branch action.
+
 ## Latest Runtime Comparison
 - Exact-source run
   `20260907T200003771360Z-b929bc53a314187d9947ef9e4a824613`

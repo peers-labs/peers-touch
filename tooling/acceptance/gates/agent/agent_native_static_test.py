@@ -977,6 +977,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("currentSessionMatchesScenario:", revision)
         self.assertIn("targetInStore:", revision)
         self.assertIn("targetInOriginalReadback:", revision)
+        branch_action = revision[
+            revision.index("const branchStoreBefore")
+            : revision.index("const selectedBranchConversation")
+        ]
+        self.assertLess(
+            branch_action.index("await branchStoreBefore.selectSession("),
+            branch_action.index("await useChatStore.getState().branchFromMessage("),
+        )
 
         helper_start = self.source.index(
             "async function runFoundationF07WithCapabilityIsolation",

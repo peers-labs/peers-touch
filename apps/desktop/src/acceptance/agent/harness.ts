@@ -10164,6 +10164,9 @@ async function runFoundationF07Scenario(input: {
       (message) => message.messageId === firstRegenerateMessage.messageId,
     ),
   });
+  if (branchStoreBefore.currentSessionKey !== conversation.conversation_id) {
+    await branchStoreBefore.selectSession(conversation.conversation_id);
+  }
   try {
     await useChatStore.getState().branchFromMessage(
       String(firstRegenerateMessage.messageId),
