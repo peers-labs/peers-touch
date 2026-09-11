@@ -11584,6 +11584,24 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
       && model.enabled
     ),
   );
+  // #region debug-point A-C:incompatible-capability-precondition
+  await reportFoundationIncompatibleCleanupDebug(
+    'A-C',
+    'provider-precondition',
+    {
+      sourceProviderIsArk: input.agent.provider === 'ark',
+      sourceBaseUrlPresent: Boolean(sourceProvider.base_url),
+      sourceCredentialPresent: Boolean(sourceProvider.api_key),
+      configuredModelPresent: Boolean(configuredModel),
+      configuredModelType: configuredModel?.type ?? null,
+      fixtureProviderVersion: catalogCandidate.version,
+      fixtureCredentialPresent: catalogCandidate.has_api_key,
+      fixtureBaseUrlPresent: Boolean(catalogCandidate.base_url),
+      fixtureModelPresent: Boolean(sourceModel),
+      fixtureModelType: sourceModel?.type ?? null,
+    },
+  );
+  // #endregion
   if (
     input.agent.provider !== 'ark'
     || !sourceProvider.base_url

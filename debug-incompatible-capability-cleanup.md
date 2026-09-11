@@ -16,6 +16,12 @@ Pre-fix evidence:
 - Aggregate run: `20260911T144617762479Z-489613d497b02ead168adbf4af8b84b7`
 - Failure: `agent.acceptance.foundationIncompatibleCapabilityCleanupFailed`
 - Provisioner cleanup and secret scan: passed
+- Instrumented checkpoint run
+  `20260911T154504429998Z-909db68477dae4e6ff1851f9610aaf1b`
+  on `1e6f8c290bdb9aed694046eb1f129117d616fbf2` failed earlier at
+  `agent.acceptance.foundationIncompatibleCapabilityProviderFixtureMissing`.
+  It did not enter scenario cleanup, which is consistent with a fixture
+  provider left configured by the preceding cleanup failure.
 
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
@@ -37,6 +43,8 @@ Pending pre-fix cleanup instrumentation run.
 - `D`: records prior-selection restoration.
 - `A-D`: records the exact cleanup stage and normalized error code on failure,
   or all final safe cleanup booleans on success.
+- `A-C`: records the provider/model precondition as safe booleans and the
+  fixture provider version before the fail-closed prerequisite.
 
 ## Verification Conclusion
 Pending.
