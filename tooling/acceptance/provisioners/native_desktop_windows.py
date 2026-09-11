@@ -1088,6 +1088,7 @@ class NativeDesktopWindowsProvisioner:
         source_path = _windows_join(
             str(state["brokerRoot"]),
             "actors",
+            str(state["runId"]),
             source,
             "storage",
             str(relative),
@@ -1095,6 +1096,7 @@ class NativeDesktopWindowsProvisioner:
         target_path = _windows_join(
             str(state["brokerRoot"]),
             "actors",
+            str(state["runId"]),
             target,
             "storage",
             str(relative),

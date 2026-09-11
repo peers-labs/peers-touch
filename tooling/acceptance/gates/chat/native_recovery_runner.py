@@ -629,7 +629,6 @@ class NativeRecoveryGate(AcceptanceGate):
             for actor in ("alice", "bob"):
                 self.save_screenshot(self.clients[actor], actor)
                 self.save_dom(self.clients[actor], actor)
-                self.save_app_log(self.clients[actor], actor)
         finally:
             cleanup = cleanup_preserving_primary_failure(
                 self.cleanup_clients,

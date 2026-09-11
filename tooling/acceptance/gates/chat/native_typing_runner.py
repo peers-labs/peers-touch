@@ -263,7 +263,6 @@ class NativeTypingGate(AcceptanceGate):
 
     def start_client(self, actor: str) -> None:
         self.start_injected_client(actor)
-        enter_chat_page(client)
 
     def start_injected_client(
         self,

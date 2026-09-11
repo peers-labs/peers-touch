@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,7 +11,7 @@ from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.core.evidence import new_report
-from tooling.acceptance.gates.chat import desktop_gateway_e2e
+from tooling.acceptance.gates.chat import desktop_gateway_e2e, native_support
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
     cleanup_preserving_primary_failure,
@@ -967,6 +968,80 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self.assertIn("SshTransport(", support)
         self.assertIn("SshTarget(", support)
         self.assertNotIn("StrictHostKeyChecking=no", support)
+
+    def test_station_readback_supports_bound_local_source_database(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "station.db"
+            connection = sqlite3.connect(database)
+            try:
+                connection.executescript(
+                    """
+CREATE TABLE conversation_events (
+  event_id TEXT, conversation_id TEXT, sequence INTEGER,
+  command_id TEXT, message_id TEXT, event_hash BLOB
+);
+CREATE TABLE device_queue_items (
+  item_id TEXT, event_id TEXT, conversation_id TEXT,
+  recipient_ptid TEXT, recipient_device_id TEXT,
+  lane_sequence INTEGER, state TEXT, attempt_count INTEGER,
+  payload_sha256 BLOB
+);
+CREATE TABLE conversation_read_cursors (
+  conversation_id TEXT, reader_ptid TEXT, last_read_sequence INTEGER
+);
+INSERT INTO conversation_events VALUES
+  ('event-1', 'conversation-1', 1, 'command-1', 'message-1', x'0102');
+INSERT INTO device_queue_items VALUES
+  ('item-1', 'event-1', 'conversation-1', 'ptid:bob', 'device-1',
+   1, 'pending', 0, x'0a0b');
+INSERT INTO conversation_read_cursors VALUES
+  ('conversation-1', 'ptid:bob', 1);
+"""
+                )
+            finally:
+                connection.close()
+            with patch.object(
+                native_support,
+                "acceptance_station_environment",
+                return_value={
+                    "PT_ACCEPTANCE_RUNTIME_KIND": "local-source",
+                    "PT_ACCEPTANCE_LOCAL_DATABASE": str(database),
+                },
+            ):
+                result = native_support.station_readback(
+                    "conversation-1",
+                    "message-1",
+                    station_url="http://127.0.0.1:18080",
+                )
+
+        self.assertEqual(result["events"][0]["hashBytes"], 2)
+        self.assertEqual(result["queue"][0]["payloadSha256"], "0a0b")
+        self.assertEqual(result["readCursors"][0]["lastReadSequence"], 1)
+
+    def test_typing_start_client_does_not_reference_unbound_client(self) -> None:
+        start_client = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
+            "start_client",
+        )
+        self.assertEqual(
+            start_client.count("self.start_injected_client(actor)"),
+            1,
+        )
+        self.assertNotIn("enter_chat_page(client)", start_client)
+
+    def test_windows_storage_clone_is_scoped_by_runtime_run(self) -> None:
+        clone = self.function_source(
+            ROOT
+            / "tooling/acceptance/provisioners/native_desktop_windows.py",
+            "clone_actor_storage",
+        )
+        self.assertGreaterEqual(clone.count('str(state["runId"])'), 2)
+
+    def test_recovery_exports_each_current_log_once_during_cleanup(self) -> None:
+        recovery = (
+            ROOT / "tooling/acceptance/gates/chat/native_recovery_runner.py"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(recovery.count("self.save_app_log(client, actor)"), 1)
 
     def test_typing_contract_is_unchanged(self) -> None:
         self.assertEqual(
