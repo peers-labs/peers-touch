@@ -1091,10 +1091,21 @@ INSERT INTO conversation_read_cursors VALUES
         self.assertGreaterEqual(clone.count("_windows_verbatim_path("), 2)
 
     def test_recovery_exports_each_current_log_once_during_cleanup(self) -> None:
-        recovery = (
-            ROOT / "tooling/acceptance/gates/chat/native_recovery_runner.py"
-        ).read_text(encoding="utf-8")
-        self.assertEqual(recovery.count("self.save_app_log(client, actor)"), 1)
+        runners = {
+            "recovery": "native_recovery_runner.py",
+            "typing": "native_typing_runner.py",
+            "multi-device": "native_multi_device_runner.py",
+            "group-mls": "native_group_mls_runner.py",
+        }
+        for name, filename in runners.items():
+            with self.subTest(runner=name):
+                source = (
+                    ROOT / "tooling/acceptance/gates/chat" / filename
+                ).read_text(encoding="utf-8")
+                self.assertEqual(
+                    source.count("self.save_app_log(client, actor)"),
+                    1,
+                )
 
     def test_group_mls_start_client_launches_injected_runtime(self) -> None:
         start_client = self.function_source(
