@@ -11,6 +11,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
@@ -2082,6 +2083,33 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 		return server.NewHandlerErrorWithCause(
 			http.StatusTooManyRequests,
 			"Device Inbox quota exceeded",
+			err,
+		)
+	}
+	switch interaction.CodeOf(err) {
+	case interaction.ErrorCodeInvalidArgument,
+		interaction.ErrorCodeIntegrityFailed:
+		return server.BadRequestWithCause(
+			"invalid Conversation interaction request",
+			err,
+		)
+	case interaction.ErrorCodeUnauthorized:
+		return server.NewHandlerErrorWithCause(
+			http.StatusForbidden,
+			"Conversation interaction is not authorized",
+			err,
+		)
+	case interaction.ErrorCodeStalePulse,
+		interaction.ErrorCodeIdempotencyConflict:
+		return server.NewHandlerErrorWithCause(
+			http.StatusConflict,
+			"Conversation interaction state conflicts with the request",
+			err,
+		)
+	case interaction.ErrorCodeQuotaExceeded:
+		return server.NewHandlerErrorWithCause(
+			http.StatusTooManyRequests,
+			"Conversation interaction quota exceeded",
 			err,
 		)
 	}

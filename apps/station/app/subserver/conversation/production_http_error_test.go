@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
@@ -30,6 +31,43 @@ func TestMapProductionConversationErrorMapsDeviceInboxFailures(t *testing.T) {
 			mapped := mapProductionConversationError(
 				context.Background(),
 				delivery.NewError(test.code, "delivery.test", "device", "failed"),
+			)
+			var handlerError *server.HandlerError
+			if !errors.As(mapped, &handlerError) {
+				t.Fatalf("mapped error type = %T, want *server.HandlerError", mapped)
+			}
+			if handlerError.Code != test.want {
+				t.Fatalf("status = %d, want %d", handlerError.Code, test.want)
+			}
+		})
+	}
+}
+
+func TestMapProductionConversationErrorMapsInteractionFailures(t *testing.T) {
+	tests := []struct {
+		name string
+		code interaction.ErrorCode
+		want int
+	}{
+		{"invalid", interaction.ErrorCodeInvalidArgument, http.StatusBadRequest},
+		{"integrity", interaction.ErrorCodeIntegrityFailed, http.StatusBadRequest},
+		{"unauthorized", interaction.ErrorCodeUnauthorized, http.StatusForbidden},
+		{"stale", interaction.ErrorCodeStalePulse, http.StatusConflict},
+		{"idempotency", interaction.ErrorCodeIdempotencyConflict, http.StatusConflict},
+		{"quota", interaction.ErrorCodeQuotaExceeded, http.StatusTooManyRequests},
+		{"persistence", interaction.ErrorCodePersistence, http.StatusInternalServerError},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mapped := mapProductionConversationError(
+				context.Background(),
+				interaction.NewError(
+					test.code,
+					"interaction.test",
+					"device",
+					"failed",
+				),
 			)
 			var handlerError *server.HandlerError
 			if !errors.As(mapped, &handlerError) {
