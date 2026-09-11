@@ -1,29 +1,31 @@
 use super::recovery::{restore_profile_database_atomically, MessagingRecoveryArchive};
-use super::store::CompletedSenderAttachmentSource;
+use super::store::{CompletedSenderAttachmentSource, DirectAuthorityCheckpoint};
 use super::{
     AttachmentCryptoMaterial, AttachmentDownloadProjection, AttachmentRetryPolicy,
     AttachmentTransferControl, AttachmentTransferProgress, AttachmentTransferRecord,
     AttachmentTransferWorker, CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy,
-    ConversationMessageProjection, ConversationProjection, DirectSessionBootstrapper,
-    DrainProgress, EditTextIntent, MessagingItemConsumer, MessagingLifecycleWorker, MessagingStore,
-    PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft, PreKeyPublisher,
-    QueueDrain, SendPreparer, SendTextIntent, StationAttachmentTransferTransport,
-    StationCommandTransport, StationDeliveryReceiptTransport, StationDeviceTransport,
-    StationGroupGenesisTransport, StationKeyBundleTransport, StationMembershipTransitionTransport,
-    StationMlsKeyPackageTransport, StationMlsLeaveIntentTransport, StationPreKeyTransport,
-    StationQueueTransport, ThreadCountProjection,
+    ConversationMemberProjection, ConversationMessageProjection, ConversationProjection,
+    DirectSessionBootstrapper, DrainProgress, EditTextIntent, MessagingItemConsumer,
+    MessagingLifecycleWorker, MessagingStore, PendingAttachmentUpload, PendingMembershipIntent,
+    PendingMessageDraft, PreKeyPublisher, QueueDrain, SendPreparer, SendTextIntent,
+    StationAttachmentTransferTransport, StationCommandTransport, StationDeliveryReceiptTransport,
+    StationDeviceTransport, StationGroupGenesisTransport, StationKeyBundleTransport,
+    StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
+    StationMlsLeaveIntentTransport, StationPreKeyTransport, StationQueueTransport,
+    ThreadCountProjection,
 };
 use crate::domain::crypto::IdentityKeyPair;
 use crate::infrastructure::attachment_blob::FilesystemAttachmentBlob;
 use crate::infrastructure::station_client;
 use crate::model::chat::{
-    ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationKind,
+    ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationEvent, ConversationKind,
     CreateDirectConversationRequest, CreateDirectConversationResponse, CryptoEndpoint,
-    DeviceConsumptionReceipt, MessagingMembershipAction, MlsLeaveIntent,
-    PrepareConversationCommandRequest, PrepareConversationCommandResponse,
-    SubmitConversationReadCursorRequest, SubmitConversationReadCursorResponse,
-    SubmitConversationTypingRequest,
+    DeviceConsumptionReceipt, ListConversationEventsRequest, ListConversationEventsResponse,
+    MemberRole, MessagingMembershipAction, MlsLeaveIntent, PrepareConversationCommandRequest,
+    PrepareConversationCommandResponse, SubmitConversationReadCursorRequest,
+    SubmitConversationReadCursorResponse, SubmitConversationTypingRequest,
 };
+use messaging_core::codec::verification::verify_direct_genesis_event;
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
 use messaging_core::identity::{
     is_stale_endpoint_error, load_or_create_device_identity, DeviceEnrollmentManager,
@@ -108,6 +110,50 @@ pub struct LocalAttachmentIntent {
 enum AttachmentOpenProgress {
     Ready(String),
     Pending { next_attempt_at_unix_ms: i64 },
+}
+
+fn direct_genesis_checkpoint_projection(
+    event: &ConversationEvent,
+    plan: &PrepareConversationCommandResponse,
+    local_ptid: &str,
+    observed_at_unix_ms: i64,
+) -> Result<ConversationProjection, String> {
+    let created = verify_direct_genesis_event(event, local_ptid)?;
+    let snapshot = created
+        .post_state
+        .as_ref()
+        .ok_or_else(|| "messaging Direct genesis authority snapshot is missing".to_string())?;
+    if plan.conversation_id != event.conversation_id
+        || plan.conversation_kind != ConversationKind::Direct as i32
+        || plan.authority_sequence != event.sequence
+        || plan.authority_hash != event.event_hash
+        || plan.membership_epoch != event.membership_epoch
+        || plan.mls_epoch != event.mls_epoch
+        || plan.authority_station_peer_id != event.authority_station_peer_id
+        || observed_at_unix_ms <= 0
+    {
+        return Err("messaging Direct genesis does not match send plan".to_string());
+    }
+    Ok(ConversationProjection {
+        conversation_id: event.conversation_id.clone(),
+        authority_station_id: event.authority_station_peer_id.clone(),
+        federation_id: snapshot.federation_id.clone(),
+        kind: snapshot.kind,
+        name: snapshot.name.clone(),
+        owner_ptid: snapshot.owner_ptid.clone(),
+        members: snapshot
+            .active_members
+            .iter()
+            .map(|member| ConversationMemberProjection {
+                ptid: member.ptid.clone(),
+                role: MemberRole::Member as i32,
+            })
+            .collect(),
+        membership_epoch: snapshot.membership_epoch,
+        mls_epoch: snapshot.mls_epoch,
+        active: true,
+        updated_at_unix_ms: observed_at_unix_ms,
+    })
 }
 
 fn drive_attachment_open<F, S>(
@@ -1072,7 +1118,7 @@ impl MessagingEngine {
                         .post("http://10.4.55.179:7779/event")
                         .json(&serde_json::json!({
                             "sessionId": "conversation-open-500",
-                            "runId": "authority-head-pre-fix",
+                            "runId": "authority-head-post-fix",
                             "hypothesisId": "S-T-U-V",
                             "location": "messaging/engine.rs:prepare_message_draft.before_drain",
                             "msg": "[DEBUG] Direct authority head before drain",
@@ -1104,7 +1150,7 @@ impl MessagingEngine {
                         .post("http://10.4.55.179:7779/event")
                         .json(&serde_json::json!({
                             "sessionId": "conversation-open-500",
-                            "runId": "authority-head-pre-fix",
+                            "runId": "authority-head-post-fix",
                             "hypothesisId": "S-T-U-V",
                             "location": "messaging/engine.rs:prepare_message_draft.after_drain",
                             "msg": "[DEBUG] Direct authority head after drain",
@@ -1127,6 +1173,12 @@ impl MessagingEngine {
                 });
             // #endregion
             std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        let (local_sequence, local_hash) = self.store.authority_head(&draft.conversation_id)?;
+        if conversation_kind == ConversationKind::Direct
+            && (local_sequence != plan.authority_sequence || local_hash != plan.authority_hash)
+        {
+            self.bootstrap_direct_authority_checkpoint(token, &plan)?;
         }
         if plan.conversation_kind != draft.conversation_kind {
             return Err("messaging conversation kind does not match Station plan".to_string());
@@ -1172,6 +1224,91 @@ impl MessagingEngine {
             }
         };
         Ok(command_id)
+    }
+
+    fn bootstrap_direct_authority_checkpoint(
+        &self,
+        token: &str,
+        plan: &PrepareConversationCommandResponse,
+    ) -> Result<bool, String> {
+        let (local_sequence, local_hash) = self.store.authority_head(&plan.conversation_id)?;
+        if local_sequence == plan.authority_sequence && local_hash == plan.authority_hash {
+            return Ok(false);
+        }
+        if local_sequence != 0 || !local_hash.is_empty() {
+            return Err(
+                "messaging Direct authority checkpoint conflicts with local head".to_string(),
+            );
+        }
+        if plan.authority_sequence != 1 {
+            return Err(
+                "messaging Direct authority checkpoint requires sequence-one send plan".to_string(),
+            );
+        }
+        let query = [
+            ("conversation_id", plan.conversation_id.clone()),
+            ("after_seq", "0".to_string()),
+            ("limit", "1".to_string()),
+        ];
+        let response = station_client::request_proto_for_device::<
+            ListConversationEventsRequest,
+            ListConversationEventsResponse,
+        >(
+            Method::GET,
+            "/conversation/events",
+            token,
+            Some(&query),
+            None,
+            &self.endpoint.device_id,
+        )
+        .map_err(|error| format!("fetch Direct genesis authority event: {error}"))?;
+        if response.events.len() != 1 {
+            return Err(
+                "messaging Direct authority checkpoint requires one genesis event".to_string(),
+            );
+        }
+        let event = &response.events[0];
+        let projection =
+            direct_genesis_checkpoint_projection(event, plan, &self.endpoint.ptid, now_unix_ms())?;
+        let bootstrapped =
+            self.store
+                .bootstrap_direct_authority_head(&DirectAuthorityCheckpoint {
+                    projection: &projection,
+                    event_sequence: event.sequence,
+                    event_hash: &event.event_hash,
+                    observed_at_unix_ms: now_unix_ms(),
+                })?;
+        let (local_sequence, local_hash) = self.store.authority_head(&plan.conversation_id)?;
+        // #region debug-point S:direct-genesis-checkpoint
+        let _ = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_millis(500))
+            .build()
+            .and_then(|client| {
+                client
+                    .post("http://10.4.55.179:7779/event")
+                    .json(&serde_json::json!({
+                        "sessionId": "conversation-open-500",
+                        "runId": "authority-head-post-fix",
+                        "hypothesisId": "S",
+                        "location": "messaging/engine.rs:bootstrap_direct_authority_checkpoint",
+                        "msg": "[DEBUG] Direct genesis authority checkpoint reconciled",
+                        "data": {
+                            "conversationId": plan.conversation_id,
+                            "actorPtid": self.endpoint.ptid,
+                            "deviceId": self.endpoint.device_id,
+                            "bootstrapped": bootstrapped,
+                            "planSequence": plan.authority_sequence,
+                            "planHash": &plan.authority_hash,
+                            "localSequence": local_sequence,
+                            "localHash": &local_hash,
+                            "matchesPlan": local_sequence == plan.authority_sequence
+                                && local_hash == plan.authority_hash,
+                        }
+                    }))
+                    .send()
+            });
+        // #endregion
+        Ok(bootstrapped)
     }
 
     fn schedule_message_draft_retry(
@@ -2482,6 +2619,10 @@ pub(crate) fn now_unix_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::chat::{
+        conversation_event, ConversationAuthorityEndpoint, ConversationAuthorityMember,
+        ConversationAuthoritySnapshot, ConversationCreatedFact,
+    };
     use messaging_core::mls::group::MlsMemberKeyPackage;
     use messaging_core::proto::actor_device_ptid;
     use std::collections::VecDeque;
@@ -2493,6 +2634,124 @@ mod tests {
             ptid: "ptid:alice".to_string(),
             device_id: device_id.to_string(),
         }
+    }
+
+    fn direct_genesis_event() -> ConversationEvent {
+        let alice = CryptoEndpoint {
+            ptid: "ptid:alice".to_string(),
+            device_id: "alice-device".to_string(),
+        };
+        let bob = CryptoEndpoint {
+            ptid: "ptid:bob".to_string(),
+            device_id: "bob-device".to_string(),
+        };
+        let members = vec![
+            ConversationAuthorityMember {
+                ptid: alice.ptid.clone(),
+                role: "member".to_string(),
+                home_station_peer_id: "station-local".to_string(),
+            },
+            ConversationAuthorityMember {
+                ptid: bob.ptid.clone(),
+                role: "member".to_string(),
+                home_station_peer_id: "station-local".to_string(),
+            },
+        ];
+        let mut event = ConversationEvent {
+            event_id: "created:direct-1".to_string(),
+            conversation_id: "direct-1".to_string(),
+            sequence: 1,
+            command_id: "create:direct-1".to_string(),
+            actor: Some(alice.clone()),
+            previous_hash: Vec::new(),
+            event_hash: Vec::new(),
+            committed_at: Some(prost_types::Timestamp {
+                seconds: 1,
+                nanos: 0,
+            }),
+            delivery_commitments: vec![vec![1; 32], vec![2; 32]],
+            membership_epoch: 1,
+            mls_epoch: 0,
+            authority_station_peer_id: "station-local".to_string(),
+            payload: Some(conversation_event::Payload::ConversationCreated(
+                ConversationCreatedFact {
+                    kind: ConversationKind::Direct as i32,
+                    name: String::new(),
+                    owner_ptid: alice.ptid.clone(),
+                    members: members.clone(),
+                    post_state: Some(ConversationAuthoritySnapshot {
+                        kind: ConversationKind::Direct as i32,
+                        name: String::new(),
+                        owner_ptid: alice.ptid.clone(),
+                        active_members: members,
+                        active_endpoints: vec![alice.clone(), bob.clone()],
+                        membership_epoch: 1,
+                        mls_epoch: 0,
+                        active_endpoint_routes: vec![
+                            ConversationAuthorityEndpoint {
+                                endpoint: Some(alice),
+                                home_station_peer_id: "station-local".to_string(),
+                            },
+                            ConversationAuthorityEndpoint {
+                                endpoint: Some(bob),
+                                home_station_peer_id: "station-local".to_string(),
+                            },
+                        ],
+                        federation_id: "federation-1".to_string(),
+                        authority_epoch: 1,
+                        ..Default::default()
+                    }),
+                },
+            )),
+        };
+        event.event_hash = Sha256::digest(event.encode_to_vec()).to_vec();
+        event
+    }
+
+    fn direct_send_plan(event: &ConversationEvent) -> PrepareConversationCommandResponse {
+        PrepareConversationCommandResponse {
+            conversation_id: event.conversation_id.clone(),
+            conversation_kind: ConversationKind::Direct as i32,
+            authority_sequence: event.sequence,
+            authority_hash: event.event_hash.clone(),
+            membership_epoch: event.membership_epoch,
+            mls_epoch: event.mls_epoch,
+            authority_station_peer_id: event.authority_station_peer_id.clone(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn direct_genesis_checkpoint_requires_event_plan_and_member_binding() {
+        let event = direct_genesis_event();
+        let plan = direct_send_plan(&event);
+        let projection =
+            direct_genesis_checkpoint_projection(&event, &plan, "ptid:bob", 100).unwrap();
+        assert_eq!(projection.conversation_id, event.conversation_id);
+        assert_eq!(projection.membership_epoch, 1);
+        assert_eq!(projection.mls_epoch, 0);
+        assert_eq!(
+            projection
+                .members
+                .iter()
+                .map(|member| member.ptid.as_str())
+                .collect::<Vec<_>>(),
+            vec!["ptid:alice", "ptid:bob"]
+        );
+
+        let mut wrong_plan = plan.clone();
+        wrong_plan.authority_sequence = 2;
+        assert_eq!(
+            direct_genesis_checkpoint_projection(&event, &wrong_plan, "ptid:bob", 100).unwrap_err(),
+            "messaging Direct genesis does not match send plan"
+        );
+
+        let mut tampered = event.clone();
+        tampered.membership_epoch = 2;
+        assert_eq!(
+            direct_genesis_checkpoint_projection(&tampered, &plan, "ptid:bob", 100).unwrap_err(),
+            "messaging authority event hash mismatch"
+        );
     }
 
     #[test]
