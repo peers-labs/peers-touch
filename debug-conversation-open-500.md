@@ -524,3 +524,32 @@ Local post-change evidence:
 
 Post-fix Native runtime evidence is pending. The Debug Server remains active
 and this session remains `[OPEN]`.
+
+The interrupted post-fix run on commit
+`d089d43a0a247c1edd6e0617d5b15ea44e8050f7` produced a narrower failure before
+its parent process was terminated:
+
+- `conversation_member_devices` no longer rejects the receipt;
+- the application validator now rejects
+  `interaction.validate_delivery_aggregate: delivery: does not match the
+  committed consumption receipt`;
+- Desktop receives HTTP 409 with
+  `CONVERSATION_INTERACTION_INTEGRITY_FAILED`, proving the typed HTTP mapping;
+- both clients still select only their historical sequence-3 receipt.
+
+The interrupted Gate-owned process groups and ports were released without
+touching unrelated worktree processes. Persistent device state remains intact.
+
+Follow-up hypotheses:
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| Z15 | A later read cursor proves the old event read while no required recipient receipt has yet committed, producing `read=true` and `delivered=false`. | High | Low | The recorder result has `read=true`, `consumed_device_count=0`, and `delivered=false` immediately before application validation. |
+| Z16 | The stored Conversation kind is not Direct, so the new Direct aggregate branch is not selected. | Low | Low | The recorder reports a non-Direct kind or still returns the prior `conversation_member_devices` error. |
+| Z17 | Typed HTTP mapping remains broken after the source fix. | Low | Low | Desktop still receives generic 500 without the interaction code. |
+
+Instrumentation point:
+
+- Z15/Z16: `interaction.Service.SubmitDeliveryReceipt` reports the committed
+  aggregate and canonical Conversation kind outcome immediately before
+  `validateDeliveryAggregate`.
