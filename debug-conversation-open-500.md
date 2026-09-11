@@ -607,3 +607,52 @@ Instrumentation point:
   account-gate-only predicate.
 
 The Debug Server remains active on port 7779 and this session remains `[OPEN]`.
+
+Instrumentation-only exact-source run
+`20260911T161035318786Z-63582c44fb9232e7d3fca37313e18b25`
+used Station and client source
+`b8a6ec63e4bb97f585eccb391b09adb48f3f1151`. The Gate failed at
+`client.authenticated / Bob`, while cleanup finished `DONE/PROVEN`.
+
+| ID | Status | Evidence |
+|----|--------|----------|
+| Z18 | Confirmed | Debug lines 15, 16, and 45 report `phaseKind=authenticated`, `lifecycleState=ready`, `dataReady=true`, and `authenticated=true` from entry through timeout. |
+| Z19 | Rejected | Bob was not unauthenticated and the identity lifecycle was not stuck in boot; it was already ready. |
+| Z20 | Confirmed | The restored Bob actor PTID remained active for the full wait, and the unchanged account-gate-only predicate never admitted the explicit login path. |
+
+Root cause:
+
+- persistent current-profile storage correctly restores an authenticated
+  identity session;
+- the Chat Acceptance Harness models only the fresh-account-gate entry state;
+- unlike the Agent Acceptance Harness, it does not admit authenticated-ready
+  as a precondition and perform controlled logout before the requested
+  password login.
+
+The owner-layer correction is to make Chat Harness explicit login a deterministic
+state transition: boot idempotently, wait for either fresh account gate or
+authenticated-ready, perform controlled logout for every restored session,
+wait for the resulting account gate, then execute and complete the requested
+password login. The restored actor is never silently reused.
+
+The correction is implemented with instrumentation retained under
+`runId=chat-login-post-fix`:
+
+- `passwordLogin.ts` owns the deterministic explicit-login transition;
+- a restored authenticated-ready session always performs
+  `identityRuntime.logout()` before credential login;
+- a fresh data-ready account gate keeps the existing path without an
+  unnecessary logout;
+- incomplete boot and unauthenticated-ready states remain inadmissible; and
+- logout failure propagates before credential login.
+
+Local post-change evidence:
+
+- Chat identity/password lifecycle Vitest: 10/10 passed;
+- Native runtime-cell Python regression: 45/45 passed;
+- Desktop TypeScript check: passed;
+- `chat-native-visible-static` run
+  `20260911T161556674513Z-c14ca03d3b11d1278cf96675e7622043`:
+  `PASSED`;
+- Chat Domain proof validation remains expectedly stale until the exact-source
+  Native Gate produces post-fix evidence.
