@@ -310,3 +310,23 @@ Source verification:
 
 Post-fix native runtime evidence remains pending. The debug session stays
 `[OPEN]`.
+
+## Direct Genesis Route Ordering Follow-up
+
+Exact-source cross-worktree run
+`20260911T114640876965Z-a4973bc5a5d2d31f8c348abde7649c40`
+launched Bob from `peers-group-chat` and Alice from
+`peers-chat-high-chat`, then failed at Bob's first submission with
+`messaging Direct genesis endpoint routes are invalid`. Cleanup removed both
+Gate-owned native processes, ports, logs, and run-scoped storage.
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| W | `active_endpoints` and `active_endpoint_routes` contain the same canonical endpoints in different valid orders. | Confirmed | Station `ActiveEndpoints()` sorts by actor/device, while `MemberDevices()` sorts by the length-prefixed endpoint key before `mapConversationState` builds routes. |
+| X | A route is missing or duplicated. | Rejected | The verifier passed the equal-count check before failing route comparison. |
+| Y | A route carries the wrong Home Station for its actor. | Rejected by source construction | Both fields originate from the same persisted `MemberDevice`; no transformation changes the Home Station. |
+
+The correction compares route membership as a canonical endpoint-keyed set and
+still requires exactly one route per endpoint plus the member's exact Home
+Station. Unit coverage now uses the two different valid orders and rejects a
+wrong Home Station. A fresh exact-source Native run is still required.
