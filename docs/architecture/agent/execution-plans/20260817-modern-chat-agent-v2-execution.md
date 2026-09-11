@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T200746805524Z-bbc4c4a8ae77900f39b01ab5a8d7c737` on `08804b583c033f3405eb9496d24a85545e270cc9` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260911T200947839067Z-84a957de981a94b0b2fc02210b09fe67` crossed AS-F04, both BASE-CANCELLED locales, BASE-EXECUTOR-UNAVAILABLE, and BASE-FORBIDDEN-ACTOR, then stopped at Browser English BASE-INCOMPATIBLE_CAPABILITY because the trace-list-derived `turnDelta` was zero; typed rejection, receiver recovery, replay, Fixture cleanup, source identity, and outer cleanup passed | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T205804498399Z-a9f342630d73138031a61c41d6551937` on `8d798aa8e49455566972a34070eac94b532c2b7d` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260911T205909121513Z-22bd370b1d423b0fd40e435aca4200d2` crossed AS-F04, both BASE-CANCELLED locales, BASE-EXECUTOR-UNAVAILABLE, and BASE-FORBIDDEN-ACTOR, then stopped at Browser English BASE-INCOMPATIBLE_CAPABILITY because trace-list totals remained zero even though source-bound diagnostic replay proved one failed Turn/Attempt with its runtime snapshot; the local producer correction counts the strict union without changing the exact-one oracle | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1585,6 +1585,23 @@ and zero local-path leakage.
   checkpoint compares trace-list counts with direct Turn trace and diagnostic
   replay availability for the source-bound rejected Turn; no oracle, timeout,
   matrix, or product behavior changes.
+- Diagnostic checkpoint `8d798aa8e49455566972a34070eac94b532c2b7d`
+  passed exact-source C08 run
+  `20260911T205804498399Z-a9f342630d73138031a61c41d6551937`
+  and reproduced the same Foundation failure in
+  `20260911T205909121513Z-22bd370b1d423b0fd40e435aca4200d2`.
+  The safe boundary recorded trace-list totals `0 -> 0`; direct trace lookup
+  was unavailable, while source-bound diagnostic replay was available with
+  status `FAILED(12)`, exactly one Attempt, and a persisted runtime snapshot.
+  This matches the focused Station contract: pre-provider incompatibility
+  persists one failed Turn, Attempt, readiness snapshot, and typed event with
+  zero message/provider/tool/side-effect rows, but intentionally has no
+  `agent_turn_traces` row. The local Acceptance correction computes the strict
+  union of trace-listed Turns and that source-bound diagnostic Turn. A future
+  trace row cannot double count because the union uses `max`; extra trace rows
+  still violate the exact-one oracle. Desktop check, 234 focused
+  static/independent tests, and diff hygiene pass; exact-source post-fix proof
+  remains pending.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

@@ -1487,6 +1487,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("foundationStationReplayReadback({", scenario)
         self.assertIn("foundationIncompatibleExecutionSnapshot(", scenario)
         self.assertIn(
+            "diagnosticReplayStatus === AgentTurnStatus.FAILED",
+            scenario,
+        )
+        self.assertIn("diagnosticAttemptCount === 1", scenario)
+        self.assertIn("diagnosticRuntimeSnapshotPresent", scenario)
+        self.assertIn(
+            "const turnDelta = Math.max(",
+            scenario,
+        )
+        self.assertIn(
             '[data-pt-agent-message-error-recovery="choose-compatible-model"]',
             scenario,
         )

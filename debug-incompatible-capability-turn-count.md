@@ -13,10 +13,10 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Expected Signal | Evidence |
 |----|------------|------------|--------|-----------------|----------|
-| A | Station persists the rejected Turn, but `listAgentTurnTraces` excludes it because no trace row exists. | High | Low | Source SSE has a Turn ID and diagnostic replay is available while trace total remains unchanged. | Pending |
-| B | Station emits the typed pre-admission error without persisting the plan-required failed Turn. | Medium | Low | Source SSE has a Turn ID, diagnostic replay is unavailable, and trace total remains unchanged. | Pending |
-| C | The trace row exists but the Agent/conversation filters or pagination exclude it. | Medium | Low | Unfiltered or direct diagnostic readback finds the trace while the filtered snapshot count stays unchanged. | Pending |
-| D | The after snapshot races asynchronous trace persistence. | Medium | Low | Immediate count is unchanged, then a bounded diagnostic/readback shows the row without any retry or new command. | Pending |
+| A | Station persists the rejected Turn, but `listAgentTurnTraces` excludes it because no trace row exists. | High | Low | Source SSE has a Turn ID and diagnostic replay is available while trace total remains unchanged. | Confirmed. |
+| B | Station emits the typed pre-admission error without persisting the plan-required failed Turn. | Medium | Low | Source SSE has a Turn ID, diagnostic replay is unavailable, and trace total remains unchanged. | Rejected. |
+| C | The trace row exists but the Agent/conversation filters or pagination exclude it. | Medium | Low | Unfiltered or direct diagnostic readback finds the trace while the filtered snapshot count stays unchanged. | Rejected: direct trace lookup is unavailable. |
+| D | The after snapshot races asynchronous trace persistence. | Medium | Low | Immediate count is unchanged, then a bounded diagnostic/readback shows the row without any retry or new command. | Rejected by the persisted contract and direct replay shape. |
 
 ## Instrumentation Plan
 - Record before/after trace totals and entry counts.
@@ -46,9 +46,35 @@
 - Existing telemetry proves stale-provider reset, provider precondition,
   conversation/binding/Agent/provider cleanup, selection restore, and outer
   Provisioner cleanup all completed.
+- Diagnostic exact-source Foundation run
+  `20260911T205909121513Z-22bd370b1d423b0fd40e435aca4200d2`
+  on `8d798aa8e49455566972a34070eac94b532c2b7d` reproduced the same
+  Browser English failure.
+- The turn-count boundary recorded trace totals `0 -> 0`. Direct trace lookup
+  was unavailable, while source-bound diagnostic replay was available with
+  status `FAILED(12)`, exactly one Attempt, and a persisted runtime snapshot.
+- Station's focused runtime-authority regression already requires one failed
+  `AgentTurn`, one failed `TurnAttempt`, one typed error event, one readiness
+  snapshot, zero messages, zero ToolCalls/ToolBatches, and no TurnTrace row for
+  this pre-provider rejection.
 
 ## Verification Conclusion
-Pending pre-fix instrumentation.
+Hypothesis A is confirmed. Station persists the accepted failed-Turn contract,
+and diagnostic export reconstructs it without requiring an
+`agent_turn_traces` row. The Acceptance producer incorrectly equates trace-list
+membership with Turn existence. The minimal correction must count the strict
+union of trace-list Turns and the source-bound diagnostic Turn, while retaining
+the exact-one Turn assertion and zero provider/tool/side-effect assertions.
+
+## Fix
+- The producer keeps the trace-list delta unchanged.
+- It contributes one diagnostic Turn only when the source-bound replay is
+  `FAILED`, has exactly one Attempt, and that Attempt retains its runtime
+  snapshot.
+- `Math.max(traceDelta, diagnosticRejectedTurnCount)` models the strict union:
+  a future trace row does not double count the same rejected Turn, while extra
+  trace rows still make the exact-one oracle fail.
+- The post-fix reporter records both source counts and the projected delta.
 
 ## Local Verification
 - Desktop strict check: PASS.

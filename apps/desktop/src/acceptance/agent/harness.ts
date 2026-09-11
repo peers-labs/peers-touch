@@ -9623,7 +9623,7 @@ function reportFoundationIncompatibleTurnCountDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'incompatible-capability-turn-count',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationIncompatibleCapabilityScenario',
       msg: `[DEBUG] ${stage}`,
@@ -11944,6 +11944,20 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
     } catch (error) {
       diagnosticErrorCode = observedErrorCode(error);
     }
+    const tracedTurnDelta =
+      afterExecution.turnCount - beforeExecution.turnCount;
+    const diagnosticRejectedTurnCount = (
+      diagnosticReplayAvailable
+      && diagnosticReplayStatus === AgentTurnStatus.FAILED
+      && diagnosticAttemptCount === 1
+      && diagnosticRuntimeSnapshotPresent
+    )
+      ? 1
+      : 0;
+    const turnDelta = Math.max(
+      tracedTurnDelta,
+      diagnosticRejectedTurnCount,
+    );
     // #region debug-point A-D:incompatible-capability-turn-count-boundary
     await reportFoundationIncompatibleTurnCountDebug(
       'A-D',
@@ -11951,6 +11965,9 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
       {
         beforeTurnCount: beforeExecution.turnCount,
         afterTurnCount: afterExecution.turnCount,
+        tracedTurnDelta,
+        diagnosticRejectedTurnCount,
+        projectedTurnDelta: turnDelta,
         directTraceAvailable,
         directTraceTurnPresent,
         directTracePayloadPresent,
@@ -11969,7 +11986,6 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
     const afterQueue = await api.listAgentTurnQueue(rejectedConversationId);
     const beforeHash = await sha256Hex(stableJson(beforeReadback.messages));
     const afterHash = await sha256Hex(stableJson(afterReadback.messages));
-    const turnDelta = afterExecution.turnCount - beforeExecution.turnCount;
     const providerCallDelta =
       afterExecution.providerCallCount - beforeExecution.providerCallCount;
 
