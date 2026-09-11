@@ -993,7 +993,7 @@ impl MessagingEngine {
                     .post("http://10.4.55.179:7779/event")
                     .json(&serde_json::json!({
                         "sessionId": "conversation-open-500",
-                        "runId": "delivery-receipt-pre-fix",
+                        "runId": "delivery-receipt-post-fix",
                         "hypothesisId": "Z11-Z13",
                         "location": "messaging/engine.rs:dispatch_delivery_receipt_once.selected",
                         "msg": "[DEBUG] Selected pending delivery receipt",
@@ -1025,7 +1025,7 @@ impl MessagingEngine {
                     .post("http://10.4.55.179:7779/event")
                     .json(&serde_json::json!({
                         "sessionId": "conversation-open-500",
-                        "runId": "delivery-receipt-pre-fix",
+                        "runId": "delivery-receipt-post-fix",
                         "hypothesisId": "Z11-Z14",
                         "location": "messaging/engine.rs:dispatch_delivery_receipt_once.result",
                         "msg": "[DEBUG] Delivery receipt submission completed",
