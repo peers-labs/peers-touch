@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -568,9 +569,25 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                     identity = binding.binary_identity()
 
         self.assertEqual(identity["path"], str(binary))
+        instances = json.loads(identity["instances"])
+        self.assertEqual(
+            instances,
+            [
+                {
+                    "path": str(binary),
+                    "sha256": hashlib.sha256(b"native-binary").hexdigest(),
+                }
+            ],
+        )
         self.assertEqual(
             identity["sha256"],
-            hashlib.sha256(b"native-binary").hexdigest(),
+            hashlib.sha256(
+                json.dumps(
+                    instances,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
         )
 
 
