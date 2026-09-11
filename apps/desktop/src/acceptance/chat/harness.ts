@@ -12,6 +12,7 @@ import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import { registerAcceptanceHarness } from '../registry';
 import { requireCanonicalAcceptancePtid } from './identity';
 import { nativeAcceptanceBridge } from './nativeBridge';
+import { runChatPasswordLogin } from './passwordLogin';
 
 interface LoginInput {
   account: string;
@@ -279,6 +280,15 @@ export function installAcceptanceHarness(): void {
 
     async loginWithPassword({ account, password }: LoginInput) {
       // #region debug-point Z18-Z20:chat-login-precondition
+      const readIdentityLoginState = () => {
+        const snapshot = identityRuntime.getSnapshot();
+        return {
+          phaseKind: snapshot.phase.kind,
+          lifecycleState: snapshot.lifecycle.state,
+          dataReady: snapshot.lifecycle.dataReady,
+          authenticated: useSessionStore.getState().authenticated,
+        };
+      };
       const reportIdentityPrecondition = (
         hypothesisId: string,
         message: string,
@@ -288,7 +298,7 @@ export function installAcceptanceHarness(): void {
           method: 'POST',
           body: JSON.stringify({
             sessionId: 'conversation-open-500',
-            runId: 'chat-login-pre-fix',
+            runId: 'chat-login-post-fix',
             hypothesisId,
             location: 'apps/desktop/src/acceptance/chat/harness.ts:loginWithPassword',
             msg: `[DEBUG] ${message}`,
@@ -309,40 +319,38 @@ export function installAcceptanceHarness(): void {
       let priorIdentityState = '';
       reportIdentityPrecondition('Z18-Z20', 'chat login precondition entered');
       try {
-        await waitForIdentityState(
-          ({ phase, lifecycle }) => {
-            const identityState = JSON.stringify({
-              phaseKind: phase.kind,
-              phaseReason: 'reason' in phase ? phase.reason : null,
-              lifecycleState: lifecycle.state,
-              dataReady: lifecycle.dataReady,
-              authenticated: useSessionStore.getState().authenticated,
-            });
-            if (identityState !== priorIdentityState) {
-              priorIdentityState = identityState;
-              reportIdentityPrecondition(
-                'Z18-Z20',
-                'chat login precondition state changed',
-              );
-            }
-            return phase.kind === 'accountGate' && lifecycle.dataReady;
-          },
-          'identity account gate',
-        );
+        await runChatPasswordLogin({
+          boot: () => identityRuntime.boot(),
+          readState: readIdentityLoginState,
+          waitFor: (predicate, description) => waitForIdentityState(
+            () => {
+              const state = readIdentityLoginState();
+              const identityState = JSON.stringify(state);
+              if (identityState !== priorIdentityState) {
+                priorIdentityState = identityState;
+                reportIdentityPrecondition(
+                  'Z18-Z20',
+                  'chat login lifecycle state changed',
+                );
+              }
+              return predicate(state);
+            },
+            description,
+          ),
+          logout: () => identityRuntime.logout(),
+          loginWithPassword: (loginAccount, loginPassword) =>
+            identityRuntime.loginWithPassword(loginAccount, loginPassword),
+          completeCurrentSession: () =>
+            identityRuntime.completeCurrentSession(),
+        }, account, password);
       } catch (error) {
         reportIdentityPrecondition(
           'Z18-Z20',
-          'chat login precondition failed',
+          'chat explicit login failed',
         );
         throw error;
       }
       // #endregion
-      await identityRuntime.loginWithPassword(account, password);
-      await identityRuntime.completeCurrentSession();
-      await waitForIdentityState(
-        ({ lifecycle }) => lifecycle.state === 'ready' && lifecycle.authenticated,
-        'authenticated identity lifecycle',
-      );
       const actorPtid = activeActorPtid();
       await installDeferredAppRuntimeProjections(actorPtid);
       await hydrateSocialForActiveActor();
