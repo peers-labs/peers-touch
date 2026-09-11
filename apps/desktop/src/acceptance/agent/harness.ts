@@ -5613,6 +5613,39 @@ async function runFoundationContextOverflowScenario(input: {
         'agent.acceptance.foundationContextOverflowSurfaceMissing',
       );
     }
+    const expectedErrorText = i18n.t(
+      'agent.errors.contextOverflow',
+      { ns: 'agent' },
+    );
+    const expectedRecoveryText = i18n.t(
+      'agent.recovery.reduceContext',
+      { ns: 'agent' },
+    );
+    // #region debug-point A-D:context-overflow-pre-recovery
+    await reportFoundationContextOverflowRecoveryDebug(
+      'A-D',
+      'pre-recovery-snapshot',
+      {
+        locale: i18n.language,
+        matchingSurfaceCount: document.querySelectorAll(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="CONTEXT_OVERFLOW"]',
+        ).length,
+        errorVisible: errorText.getClientRects().length > 0,
+        errorTextMatches:
+          (errorText.textContent?.trim() ?? '') === expectedErrorText,
+        errorTextHash: await sha256Hex(errorText.textContent?.trim() ?? ''),
+        expectedErrorTextHash: await sha256Hex(expectedErrorText),
+        recoveryPresent: recoveryAction.isConnected,
+        recoveryVisible: recoveryAction.getClientRects().length > 0,
+        recoveryTextMatches:
+          (recoveryAction.textContent?.trim() ?? '') === expectedRecoveryText,
+        recoveryTextHash:
+          await sha256Hex(recoveryAction.textContent?.trim() ?? ''),
+        expectedRecoveryTextHash: await sha256Hex(expectedRecoveryText),
+      },
+    );
+    // #endregion
     if (
       !errorEvent.streamId
       || errorEvent.streamGeneration <= 0
@@ -5658,6 +5691,25 @@ async function runFoundationContextOverflowScenario(input: {
       'context overflow reduced draft',
       10_000,
     );
+    // #region debug-point A-D:context-overflow-post-recovery
+    await reportFoundationContextOverflowRecoveryDebug(
+      'A-D',
+      'post-recovery-snapshot',
+      {
+        locale: i18n.language,
+        matchingSurfaceCount: document.querySelectorAll(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="CONTEXT_OVERFLOW"]',
+        ).length,
+        errorConnected: errorText.isConnected,
+        errorVisible: errorText.getClientRects().length > 0,
+        recoveryConnected: recoveryAction.isConnected,
+        recoveryVisible: recoveryAction.getClientRects().length > 0,
+        composerFocused: document.activeElement === textarea,
+        reducedDraftApplied: textarea.value === reducedDraft,
+      },
+    );
+    // #endregion
 
     const after = await foundationExecutionSnapshot(
       agentId,
@@ -9626,6 +9678,27 @@ function reportFoundationIncompatibleTurnCountDebug(
       runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationIncompatibleCapabilityScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:context-overflow-recovery-locale
+function reportFoundationContextOverflowRecoveryDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7792/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'context-overflow-recovery-locale',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationContextOverflowScenario',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),

@@ -22,20 +22,20 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Checkpoint the source-backed BASE-INCOMPATIBLE_CAPABILITY rejected-Turn union, rebuild the dedicated Acceptance binary, and rerun exact-source C08 and Foundation |
+| Current step | Instrument BASE-CONTEXT-OVERFLOW recovery visibility before and after the action click, then rerun exact-source C08 and Foundation |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source C08 run `20260911T200746805524Z-bbc4c4a8ae77900f39b01ab5a8d7c737` on `08804b583c033f3405eb9496d24a85545e270cc9` passed `DONE / PROVEN` with 19/19 assertions and clean cleanup；the same-source Foundation run crossed AS-F04 and the completed G-FE1 prefix through `BASE-FORBIDDEN_ACTOR` |
-| Current action | Verify and checkpoint the Acceptance producer correction that counts the strict union of trace-listed Turns and the source-bound rejected diagnostic Turn |
-| Next action | Rebuild and smoke the dedicated Acceptance binary, deploy exact source, rerun C08, then run the unchanged 419-cell Gate to the next first failure |
+| Last completed | Exact-source C08 run `20260911T214403167521Z-884c868de07aec4a5a91ad6c44d8cbc6` on `040912bcabad6eb67db15fda2d37c5d7066da0dc` passed `DONE / PROVEN` with 19/19 assertions and clean cleanup；the same-source Foundation run crossed BASE-INCOMPATIBLE_CAPABILITY |
+| Current action | Checkpoint pre/post-click context-overflow locale and DOM visibility telemetry without changing the recovery action or oracle |
+| Next action | Rebuild and smoke the dedicated Acceptance binary, deploy exact source, rerun C08, then run the unchanged 419-cell Gate to classify the zh-CN recovery failure |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | none；BASE-INCOMPATIBLE_CAPABILITY `turnDelta=0` is locally corrected and pending exact-source proof；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
+| Blockers | none；BASE-CONTEXT-OVERFLOW zh-CN recovery visibility is the active recoverable diagnostic；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 run `20260911T205804498399Z-a9f342630d73138031a61c41d6551937` is `DONE / PROVEN` on `8d798aa8e`；Foundation run `20260911T205909121513Z-22bd370b1d423b0fd40e435aca4200d2` is `FAILED / PARTIAL / UNPROVEN` at Browser English `BASE-INCOMPATIBLE_CAPABILITY`；runtime telemetry proves trace totals `0 -> 0` while source-bound diagnostic replay is `FAILED(12)` with one Attempt and a persisted runtime snapshot；typed error, receiver recovery, replay, fixture cleanup, source identity, and outer cleanup passed |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 run `20260911T214403167521Z-884c868de07aec4a5a91ad6c44d8cbc6` is `DONE / PROVEN` on `040912bca`；Foundation run `20260911T214508595389Z-0e79b626b70d9158805ecc8382e7e54e` is `FAILED / PARTIAL / UNPROVEN` only at Browser Simplified Chinese BASE-CONTEXT-OVERFLOW `localizedRecoveryVisible` after crossing the incompatible-capability correction；source identity and outer cleanup passed |
 | Last updated | 2026-09-12 |
 
 ---

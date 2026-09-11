@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T205804498399Z-a9f342630d73138031a61c41d6551937` on `8d798aa8e49455566972a34070eac94b532c2b7d` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260911T205909121513Z-22bd370b1d423b0fd40e435aca4200d2` crossed AS-F04, both BASE-CANCELLED locales, BASE-EXECUTOR-UNAVAILABLE, and BASE-FORBIDDEN-ACTOR, then stopped at Browser English BASE-INCOMPATIBLE_CAPABILITY because trace-list totals remained zero even though source-bound diagnostic replay proved one failed Turn/Attempt with its runtime snapshot; the local producer correction counts the strict union without changing the exact-one oracle | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T214403167521Z-884c868de07aec4a5a91ad6c44d8cbc6` on `040912bcabad6eb67db15fda2d37c5d7066da0dc` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260911T214508595389Z-0e79b626b70d9158805ecc8382e7e54e` crossed AS-F04, both BASE-CANCELLED locales, BASE-EXECUTOR-UNAVAILABLE, BASE-FORBIDDEN-ACTOR, and the corrected BASE-INCOMPATIBLE_CAPABILITY vertical, then stopped at Browser Simplified Chinese BASE-CONTEXT-OVERFLOW with only `localizedRecoveryVisible=false`; pre/post-click locale/DOM telemetry is pending exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1602,6 +1602,22 @@ and zero local-path leakage.
   still violate the exact-one oracle. Desktop check, 234 focused
   static/independent tests, and diff hygiene pass; exact-source post-fix proof
   remains pending.
+- Exact-source checkpoint `040912bcabad6eb67db15fda2d37c5d7066da0dc`
+  passed C08 run
+  `20260911T214403167521Z-884c868de07aec4a5a91ad6c44d8cbc6`
+  and Foundation run
+  `20260911T214508595389Z-0e79b626b70d9158805ecc8382e7e54e`
+  crossed BASE-INCOMPATIBLE_CAPABILITY, confirming the rejected-Turn union.
+  The next first failure was Browser Simplified Chinese
+  `BASE-CONTEXT-OVERFLOW`, where only `localizedRecoveryVisible` was false.
+  Typed payload, zero-persistence/provider facts, draft preservation, recovery
+  execution, replay, source identity, and outer cleanup did not fail. Source
+  inspection shows the producer samples recovery visibility after clicking
+  the recovery action and replacing the draft. The next telemetry-only
+  checkpoint records locale, matching-surface count, pre/post-click
+  error/recovery visibility, localized text equality hashes, focus, and
+  reduced-draft completion; it changes no assertion, timeout, or product
+  behavior.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

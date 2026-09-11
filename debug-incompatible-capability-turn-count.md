@@ -80,3 +80,12 @@ the exact-one Turn assertion and zero provider/tool/side-effect assertions.
 - Desktop strict check: PASS.
 - Focused Foundation static/oracle tests: `234/234` PASS.
 - `git diff --check`: PASS.
+- Exact-source C08 run
+  `20260911T214403167521Z-884c868de07aec4a5a91ad6c44d8cbc6`
+  on `040912bcabad6eb67db15fda2d37c5d7066da0dc` passed
+  `DONE / PROVEN` with 19/19 assertions and clean cleanup.
+- Foundation run
+  `20260911T214508595389Z-0e79b626b70d9158805ecc8382e7e54e`
+  crossed BASE-INCOMPATIBLE_CAPABILITY and failed later at Browser
+  Simplified Chinese BASE-CONTEXT-OVERFLOW. This runtime progression confirms
+  the strict Turn-union correction without weakening the independent oracle.
