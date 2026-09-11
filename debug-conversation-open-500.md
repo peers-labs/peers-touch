@@ -575,3 +575,35 @@ The correction must preserve the exact receipt count while deriving
 `delivered = consumed_device_count > 0 || read`. `fully_delivered` remains
 strictly tied to every required event-time endpoint being consumed or proven
 revoked.
+
+## Persistent Identity Re-entry Follow-up
+
+Exact-source run
+`20260911T155536232655Z-6384c3db6f68e2704460e37c1d8c7e84`
+proved that Bob's durable receipt queue now advances successfully through
+sequences 3, 4, 5, 6, 7, 8, and 9. The prior receipt head-of-line failure is no
+longer the active boundary. The Gate then failed at
+`client.authenticated / Bob` because `chat.loginWithPassword` timed out waiting
+for `identity account gate`.
+
+Immediate retry
+`20260911T155859425134Z-2695df23c4f222cb9c9c87defd79afa1`
+failed at the same login precondition. Both runs released their Gate-owned
+processes, ports, and logs while retaining the declared persistent Device
+Engine state.
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| Z18 | The persistent current-profile client restores an authenticated, ready identity lifecycle before the Chat Harness begins explicit login. | High | Low | Harness entry reports `authenticated=true` and `lifecycleState=ready` instead of `phaseKind=accountGate`. |
+| Z19 | The client is unauthenticated but identity boot never reaches a data-ready account gate. | Low | Low | Harness entry or subsequent state reports `authenticated=false` while `phaseKind` never becomes `accountGate` with `dataReady=true`. |
+| Z20 | A restored session belongs to an actor that the Harness could silently reuse if it accepted authenticated state without controlled logout. | High | Low | Harness entry reports a non-empty restored actor PTID; no explicit password-login transition occurs before the timeout. |
+
+Instrumentation point:
+
+- Z18-Z20: `chat.loginWithPassword` reports the identity phase, lifecycle state,
+  data-ready flag, authenticated flag, and current actor PTID at entry, on each
+  distinct state transition, and on precondition failure. It does not log the
+  requested account or password and does not alter the existing
+  account-gate-only predicate.
+
+The Debug Server remains active on port 7779 and this session remains `[OPEN]`.
