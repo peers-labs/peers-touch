@@ -961,7 +961,7 @@ impl MessagingEngine {
                             .post("http://10.4.55.179:7779/event")
                             .json(&serde_json::json!({
                                 "sessionId": "conversation-open-500",
-                                "runId": "direct-prepare-error-pre-fix",
+                                "runId": "direct-prepare-error-post-fix",
                                 "hypothesisId": "P-Q-R",
                                 "location": "messaging/engine.rs:submit_message",
                                 "msg": "[DEBUG] Direct message preparation failed",
@@ -1022,7 +1022,7 @@ impl MessagingEngine {
                         .post("http://10.4.55.179:7779/event")
                         .json(&serde_json::json!({
                             "sessionId": "conversation-open-500",
-                            "runId": "direct-prepare-error-pre-fix",
+                            "runId": "direct-prepare-error-post-fix",
                             "hypothesisId": "P-Q-R",
                             "location": "messaging/engine.rs:resume_message_draft_once",
                             "msg": "[DEBUG] Direct message preparation retry failed",

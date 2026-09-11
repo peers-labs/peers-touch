@@ -64,7 +64,7 @@ impl KeyBundleTransport for StationKeyBundleTransport {
                     .post("http://10.4.55.179:7779/event")
                     .json(&serde_json::json!({
                         "sessionId": "conversation-open-500",
-                        "runId": "direct-bundle-fetch-pre-fix",
+                        "runId": "direct-bundle-fetch-post-fix",
                         "hypothesisId": "M-N-O",
                         "location": "messaging/direct_session.rs:fetch",
                         "msg": "[DEBUG] Direct key bundle fetch",
