@@ -9616,6 +9616,27 @@ function reportFoundationBaseCancelledDebug(
 }
 // #endregion
 
+// #region debug-point A-D:incompatible-capability-cleanup
+function reportFoundationIncompatibleCleanupDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7787/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'incompatible-capability-cleanup',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationIncompatibleCapabilityScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 // #region debug-point A-E:as-f12-projection
 function reportFoundationF12ProjectionDebug(
   hypothesisId: string,
@@ -11889,49 +11910,106 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
   } catch (error) {
     scenarioError = error;
   } finally {
+    let cleanupStage = 'start';
     try {
+      await reportFoundationIncompatibleCleanupDebug(
+        'A-D',
+        'cleanup-started',
+        {
+          scenarioErrorPresent: scenarioError !== null,
+          factsPresent: facts !== null,
+          conversationPresent: rejectedConversationId.length > 0,
+          agentPresent: disposableAgentId.length > 0,
+          bindingPresent: capabilityBindingId.length > 0,
+          providerSetupAttempted,
+          priorSelectionPresent: priorSelection.length > 0,
+        },
+      );
       if (rejectedConversationId) {
+        cleanupStage = 'conversation-delete';
         clearFoundationLocalConversationProjection(rejectedConversationId);
         await deleteFoundationConversation(rejectedConversationId);
+        await reportFoundationIncompatibleCleanupDebug(
+          'A',
+          'conversation-delete-completed',
+        );
       }
       if (disposableAgentId) {
         if (capabilityBindingId) {
+          cleanupStage = 'binding-readback';
           const currentBinding = (
             await api.listAgentCapabilityBindings(disposableAgentId)
           ).find((binding) => (
             binding.bindingId === capabilityBindingId
             && !binding.tombstonedAt
           ));
+          await reportFoundationIncompatibleCleanupDebug(
+            'B',
+            'binding-readback-completed',
+            { activeBindingPresent: Boolean(currentBinding) },
+          );
           if (currentBinding) {
+            cleanupStage = 'binding-delete';
             await api.deleteAgentCapabilityBinding(
               currentBinding.bindingId,
               currentBinding.revision,
               crypto.randomUUID(),
               'acceptance_fixture_cleanup',
             );
+            await reportFoundationIncompatibleCleanupDebug(
+              'B',
+              'binding-delete-completed',
+            );
           }
         }
+        cleanupStage = 'agent-delete';
         await api.deleteAgent(disposableAgentId);
+        await reportFoundationIncompatibleCleanupDebug(
+          'A-D',
+          'agent-delete-completed',
+        );
       }
       if (providerSetupAttempted) {
+        cleanupStage = 'provider-readback';
         const configuredFixture = (await api.listProviders()).find(
           (provider) => (
             provider.id === fixtureProviderId
             && provider.version > 0
           ),
         );
+        await reportFoundationIncompatibleCleanupDebug(
+          'C',
+          'provider-readback-completed',
+          { configuredFixturePresent: Boolean(configuredFixture) },
+        );
         if (configuredFixture) {
+          cleanupStage = 'provider-delete';
           await api.deleteProvider(fixtureProviderId);
+          await reportFoundationIncompatibleCleanupDebug(
+            'C',
+            'provider-delete-completed',
+          );
         }
       }
+      cleanupStage = 'agent-store-reload';
       await useAgentStore.getState().loadAgents();
       if (priorSelection) {
+        cleanupStage = 'selection-restore';
         useAgentStore.getState().setSelectedAgent(priorSelection);
         useAgentStore.getState().setAgentSurface(priorSelection, priorSurface);
         await api.setSelectedAgent(priorSelection);
+        await reportFoundationIncompatibleCleanupDebug(
+          'D',
+          'selection-restore-completed',
+          {
+            selectedAgentMatches:
+              useAgentStore.getState().selectedAgent === priorSelection,
+          },
+        );
       }
       eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
       if (facts) {
+        cleanupStage = 'cleanup-proof';
         const cleanup = evidenceRecord(
           facts.cleanup,
           'foundationIncompatibleCapabilityCleanup',
@@ -11977,8 +12055,29 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
           restoredProvider.version === 0
           && restoredProvider.has_api_key === false;
         cleanup.restoredSelection = useAgentStore.getState().selectedAgent;
+        await reportFoundationIncompatibleCleanupDebug(
+          'A-D',
+          'cleanup-proof-completed',
+          {
+            localProjectionCleared: cleanup.localProjectionCleared,
+            conversationDeleted: cleanup.conversationDeleted,
+            disposableAgentDeleted: cleanup.disposableAgentDeleted,
+            capabilityBindingRemoved: cleanup.capabilityBindingRemoved,
+            fixtureProviderRestored: cleanup.fixtureProviderRestored,
+            restoredSelectionMatches:
+              cleanup.restoredSelection === priorSelection,
+          },
+        );
       }
     } catch (error) {
+      await reportFoundationIncompatibleCleanupDebug(
+        'A-D',
+        'cleanup-failed',
+        {
+          cleanupStage,
+          errorCode: observedErrorCode(error),
+        },
+      );
       cleanupError = error;
     }
   }
