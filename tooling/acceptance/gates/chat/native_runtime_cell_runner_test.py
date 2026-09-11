@@ -91,6 +91,16 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         ):
             with self.subTest(url=url):
                 self.assertFalse(is_native_tauri_url(url))
+        with patch.dict(
+            os.environ,
+            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+        ):
+            self.assertTrue(
+                is_native_tauri_url("http://localhost:3410/#/chat")
+            )
+            self.assertFalse(
+                is_native_tauri_url("https://localhost:3410/#/chat")
+            )
 
     def test_selected_runtime_fails_closed_and_uses_binding(self) -> None:
         support = (

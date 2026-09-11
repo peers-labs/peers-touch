@@ -170,7 +170,15 @@ impl StationClientError {
 
 impl fmt::Display for StationClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.message)
+        let error_code = self
+            .details
+            .as_ref()
+            .and_then(|details| details.get("error_code"))
+            .and_then(Value::as_str);
+        match error_code {
+            Some(code) => write!(f, "{} [code={}]", self.message, code),
+            None => write!(f, "{}", self.message),
+        }
     }
 }
 
@@ -759,6 +767,7 @@ where
             )
         })?;
     let status = response.status();
+    let headers = headers_to_json(response.headers());
     let bytes = response.bytes().map_err(|error| {
         StationClientError::new(
             StationClientErrorKind::Decode,
@@ -768,7 +777,19 @@ where
     })?;
     if !status.is_success() {
         let body = String::from_utf8_lossy(&bytes).to_string();
-        return Err(build_error_for_status(status.as_u16(), path, &body));
+        tracing::warn!(
+            path = %path,
+            status = status.as_u16(),
+            elapsed_ms = start.elapsed().as_millis(),
+            body = %body,
+            "← station FAIL (profile-scoped proto)",
+        );
+        return Err(build_error_for_status_with_headers(
+            status.as_u16(),
+            path,
+            &body,
+            Some(&headers),
+        ));
     }
     tracing::debug!(
         path = %path,
@@ -1583,6 +1604,23 @@ mod tests {
         assert_eq!(details["retryable"], "false");
         assert_eq!(details["terminal"], "true");
         assert_eq!(details["required_gate"], "agent-v2-kernel-foundation-e2e");
+    }
+
+    #[test]
+    fn station_error_display_includes_typed_error_code() {
+        let error = build_error_for_status_with_headers(
+            400,
+            "/conversation/direct",
+            "",
+            Some(&json!({
+                "x-peers-error-code": "CONVERSATION_INVALID_ARGUMENT",
+            })),
+        );
+
+        assert_eq!(
+            error.to_string(),
+            "station returned 400 :  [code=CONVERSATION_INVALID_ARGUMENT]"
+        );
     }
 
     #[test]

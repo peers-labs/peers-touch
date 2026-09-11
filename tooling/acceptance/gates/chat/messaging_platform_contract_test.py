@@ -218,6 +218,18 @@ class MessagingPlatformContractTest(unittest.TestCase):
             "projection.federation_id.trim().is_empty()",
             desktop_lifecycle,
         )
+        self.assertIn(
+            "request_proto_for_device::<",
+            desktop_lifecycle,
+        )
+        self.assertIn(
+            "ListConversationsRequest",
+            desktop_lifecycle,
+        )
+        self.assertNotIn(
+            "request_json_auth_with_device_id",
+            desktop_lifecycle,
+        )
         self.assertNotIn(
             "if !self.store.conversation_projections()?.is_empty()",
             desktop_engine,

@@ -15,10 +15,15 @@ from tooling.acceptance.core.errors import DriverError
 from tooling.acceptance.drivers.native.base import MouseAction, NativeKey
 from tooling.acceptance.drivers.native.runtime import (
     LinuxNativeDesktopRuntimeBinding,
+    LocalMacOSRuntimeBinding,
     WindowsNativeDesktopRuntimeBinding,
     resolve_native_desktop_runtime,
 )
-from tooling.acceptance.drivers.tauri import ProvisionedTauriLauncher, TauriSession
+from tooling.acceptance.drivers.tauri import (
+    MakeDesktopLauncher,
+    ProvisionedTauriLauncher,
+    TauriSession,
+)
 
 
 class SyntheticRemoteNativeLifecycle:
@@ -504,6 +509,36 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             [call.args[0] for call in get_lifecycle.call_args_list],
             ["desktop-linux-native", "desktop-windows-native"],
         )
+
+    def test_macos_development_binding_launches_through_make(self) -> None:
+        client = {
+            "worktree": str(Path.cwd()),
+            "webdriver_port": 4447,
+            "gateway_port": 3140,
+            "renderer_port": 3410,
+            "profile": "chat-native-alice",
+            "storage_root": "/tmp/chat-native-alice",
+        }
+        with patch.dict(
+            "os.environ",
+            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+        ):
+            binding = LocalMacOSRuntimeBinding()
+            session = binding._create_session(
+                "alice",
+                client,
+                {
+                    "PT_ACCEPTANCE_WINDOW_SLOT": "0",
+                    "PT_ACCEPTANCE_WINDOW_COUNT": "2",
+                },
+            )
+
+        self.assertIsInstance(session.launcher, MakeDesktopLauncher)
+        self.assertEqual(session.launcher.worktree, Path.cwd())
+        self.assertEqual(session.launcher.port, 4447)
+        self.assertEqual(session.launcher.gateway_port, 3140)
+        self.assertEqual(session.launcher.renderer_port, 3410)
+        self.assertEqual(session.launcher.profile, "chat-native-alice")
 
 
 if __name__ == "__main__":

@@ -303,6 +303,17 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async federationContext() {
+      const response = await api.federationListFederations();
+      return {
+        federations: response.federations.map((federation) => ({
+          federationId: federation.federationId,
+          name: federation.name,
+          status: federation.status,
+        })),
+      };
+    },
+
     async createDirectConversation({
       peerPtid,
       federationId,

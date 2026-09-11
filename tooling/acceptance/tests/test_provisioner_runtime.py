@@ -209,9 +209,25 @@ class ProvisionerBlockingTests(unittest.TestCase):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")
         )
+        slot = next(
+            candidate
+            for candidate in range(20, 200)
+            if all(
+                self._port_is_available(port)
+                for port in (
+                    3330 + candidate * 100,
+                    3331 + candidate * 100,
+                    3510 + candidate * 100,
+                    3511 + candidate * 100,
+                    4445 + candidate * 10,
+                    4446 + candidate * 10,
+                )
+            )
+        )
+        webdriver_port = 4445 + slot * 10
         with socket.socket() as listener:
             listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            listener.bind(("127.0.0.1", 4445))
+            listener.bind(("127.0.0.1", webdriver_port))
             listener.listen()
             with patch.dict(
                 "os.environ",
@@ -220,13 +236,18 @@ class ProvisionerBlockingTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(
                     BlockedError,
-                    "webdriver port 4445 is already in use",
+                    f"webdriver port {webdriver_port} is already in use",
                 ):
                     provisioner._clients(
                         "chat-native-two-client-e2e",
                         "run-webdriver-conflict",
-                        0,
+                        slot,
                     )
+
+    @staticmethod
+    def _port_is_available(port: int) -> bool:
+        with socket.socket() as probe:
+            return probe.connect_ex(("127.0.0.1", port)) != 0
 
     def test_native_actor_targets_include_non_launched_fixture_roles(self):
         clients = tuple(

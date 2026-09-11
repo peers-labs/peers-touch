@@ -323,7 +323,7 @@ func (s *Service) authorizeMemberEndpoint(
 		return query.ConversationView{}, nil, err
 	}
 	if !conversation.Status().Writable() ||
-		!containsEndpoint(conversation.ActiveEndpoints(), endpoint) {
+		!conversation.IsActiveMemberEndpoint(endpoint) {
 		return query.ConversationView{}, nil, NewError(
 			ErrorCodeUnauthorized,
 			operation,
@@ -394,16 +394,6 @@ func validReceiptID(value string) bool {
 		len(value) > len("device-consumed:") &&
 		len(value) <= 255 &&
 		strings.TrimSpace(value) == value
-}
-
-func containsEndpoint(endpoints []valueobject.Endpoint, expected valueobject.Endpoint) bool {
-	for _, endpoint := range endpoints {
-		if endpoint == expected {
-			return true
-		}
-	}
-
-	return false
 }
 
 func memberBelongsToStation(
