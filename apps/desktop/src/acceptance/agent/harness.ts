@@ -9602,7 +9602,7 @@ function reportFoundationIncompatibleCleanupDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'incompatible-capability-cleanup',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationIncompatibleCapabilityScenario',
       msg: `[DEBUG] ${stage}`,
@@ -11553,13 +11553,57 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
     (model) => model.id === input.agent.model && model.enabled,
   );
   const fixtureProviderId = 'anthropic';
-  const catalogCandidate = await api.getProvider(fixtureProviderId);
-  const sourceModel = catalogCandidate.models.find(
+  let catalogCandidate = await api.getProvider(fixtureProviderId);
+  let sourceModel = catalogCandidate.models.find(
     (model) => (
       model.id === 'claude-sonnet-4-20250514'
       && model.enabled
     ),
   );
+  if (
+    input.agent.provider !== 'ark'
+    || !sourceProvider.base_url
+    || !sourceProvider.api_key
+    || !configuredModel
+    || configuredModel.type !== 'chat'
+    || !catalogCandidate.base_url
+    || !sourceModel
+    || sourceModel.type !== 'chat'
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationIncompatibleCapabilityProviderFixtureMissing',
+    );
+  }
+  if (catalogCandidate.version > 0) {
+    // #region debug-point C:stale-incompatible-provider-reset
+    await reportFoundationIncompatibleCleanupDebug(
+      'C',
+      'stale-provider-reset-started',
+      {
+        fixtureProviderVersion: catalogCandidate.version,
+        candidateCredentialPresent: catalogCandidate.has_api_key,
+      },
+    );
+    // #endregion
+    await api.deleteProvider(fixtureProviderId);
+    catalogCandidate = await api.getProvider(fixtureProviderId);
+    sourceModel = catalogCandidate.models.find(
+      (model) => (
+        model.id === 'claude-sonnet-4-20250514'
+        && model.enabled
+      ),
+    );
+    // #region debug-point C:stale-incompatible-provider-reset-readback
+    await reportFoundationIncompatibleCleanupDebug(
+      'C',
+      'stale-provider-reset-completed',
+      {
+        fixtureProviderVersion: catalogCandidate.version,
+        candidateCredentialPresent: catalogCandidate.has_api_key,
+      },
+    );
+    // #endregion
+  }
   // #region debug-point A-C:incompatible-capability-precondition
   await reportFoundationIncompatibleCleanupDebug(
     'A-C',
@@ -11571,7 +11615,7 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
       configuredModelPresent: Boolean(configuredModel),
       configuredModelType: configuredModel?.type ?? null,
       fixtureProviderVersion: catalogCandidate.version,
-      fixtureCredentialPresent: catalogCandidate.has_api_key,
+      candidateCredentialPresent: catalogCandidate.has_api_key,
       fixtureBaseUrlPresent: Boolean(catalogCandidate.base_url),
       fixtureModelPresent: Boolean(sourceModel),
       fixtureModelType: sourceModel?.type ?? null,
@@ -11579,12 +11623,7 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
   );
   // #endregion
   if (
-    input.agent.provider !== 'ark'
-    || !sourceProvider.base_url
-    || !sourceProvider.api_key
-    || !configuredModel
-    || configuredModel.type !== 'chat'
-    || catalogCandidate.version !== 0
+    catalogCandidate.version !== 0
     || catalogCandidate.has_api_key
     || !catalogCandidate.base_url
     || !sourceModel

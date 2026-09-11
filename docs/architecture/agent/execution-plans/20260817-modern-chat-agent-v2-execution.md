@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T154347342462Z-2fcba4ec93404d8b5091120bc7d72792` on `1e6f8c290bdb9aed694046eb1f129117d616fbf2` passed with 19/19 assertions and clean cleanup; the unchanged Foundation run `20260911T154504429998Z-909db68477dae4e6ff1851f9610aaf1b` crossed both `BASE-CANCELLED` locale cells and stopped at the `BASE-INCOMPATIBLE_CAPABILITY` provider-fixture precondition; current-source C08 run `20260911T163226025417Z-a4b0aae2aa8f3bbbcce3bb7b4b622f5e` on `8e88a63b26e82af0f17fd1f40ad2e31e3228e7ab` exposed incomplete AS-F05 Tool isolation when an unrelated active binding produced `tool_approval_required`; the local fixture correction now isolates every active capability for the positive attachment Turn and awaits exact-source proof | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T170355761021Z-3175df8f9955e5f19863b51c31390eb5` on `ada4295633891d70b9039b20b7f6a825804a2130` passed with 19/19 assertions and clean cleanup; the unchanged Foundation run `20260911T170543628428Z-e3b5ae2fe8a6c5ec41f421eaf6e3fce3` crossed the repaired AS-F05 path and stopped at Browser `BASE-INCOMPATIBLE_CAPABILITY / en / single / sample-001`; telemetry proves the fixed `anthropic` provider retained `version=1` without a credential, while the public provider wire omitted fields required by the old Desktop Rust decoder, causing create response decode failure and delete lookup collapse; the local correction aligns the BFF DTO and makes setup remove and verify interrupted Fixture residue before reuse | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1496,7 +1496,31 @@ and zero local-path leakage.
   The local correction reuses the existing all-binding isolation journal around
   the positive attachment Turn and removes the single-binding mutation path.
   No provider, product execution, timeout, matrix, assertion, or evidence role
-  changed. Exact-source C08 and the unchanged 419-cell Gate remain pending.
+  changed. Checkpoint `ada4295633891d70b9039b20b7f6a825804a2130`
+  subsequently passed exact-source C08 run
+  `20260911T170355761021Z-3175df8f9955e5f19863b51c31390eb5`
+  with 19/19 assertions and clean cleanup. The unchanged Foundation run
+  `20260911T170543628428Z-e3b5ae2fe8a6c5ec41f421eaf6e3fce3`
+  crossed AS-F05 and again stopped at Browser
+  `BASE-INCOMPATIBLE_CAPABILITY / en / single / sample-001`.
+- **Incompatible provider Fixture wire root cause (2026-09-12)**:
+  credential-safe telemetry from the failed `ada429563` Foundation run records
+  every source/catalog/model prerequisite as valid except
+  `fixtureProviderVersion=1`; the fixed provider has no credential. Read-only
+  Station evidence shows exactly that one Alice `anthropic` provider row,
+  created during the earlier cleanup failure, and no stale
+  `foundation-incompatible-*` Agent or capability binding. The Station public
+  provider response omits internal persistence fields that the Desktop Rust
+  `StationProvider` DTO required. Consequently `createProvider` persisted the
+  row and then failed response decoding, while `deleteProvider` silently
+  converted the same list-decode failure to an empty provider list and returned
+  NotFound before deletion. The local owner-layer correction narrows the DTO to
+  the public response fields, propagates provider-list decode failures, and
+  makes the destructive approved Fixture setup delete and re-read a configured
+  fixed provider before requiring the catalog `version=0` baseline. It does not
+  change provider semantics, the Ark configuration, matrix, timeout, or Gate
+  assertions. Focused Rust wire decoding, Desktop check, 85 Agent native static
+  tests, and diff hygiene pass; exact-source post-fix proof remains pending.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

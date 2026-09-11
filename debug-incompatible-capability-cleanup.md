@@ -26,13 +26,29 @@ Pre-fix evidence:
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
-| A | Scenario cleanup reaches an already-absent conversation or Agent and misclassifies canonical `NOT_FOUND` as failure. | High | Low | Pending: record each cleanup operation outcome and normalized error code. |
-| B | The capability binding is already tombstoned or removed, but cleanup repeats deletion with stale revision state. | Medium | Low | Pending: record active binding presence and delete outcome without identifiers. |
-| C | Fixture provider restoration succeeds partially but the final version/credential assertion throws. | Medium | Low | Pending: record provider delete/readback phase and final safe booleans. |
-| D | Restoring the prior selected Agent fails after disposable Agent deletion or navigation reset. | Medium | Low | Pending: record selection-presence and restoration phase outcomes. |
+| A | Scenario cleanup reaches an already-absent conversation or Agent and misclassifies canonical `NOT_FOUND` as failure. | High | Low | Rejected for the current failure: the new run stops at provider precondition before creating a conversation or Agent. |
+| B | The capability binding is already tombstoned or removed, but cleanup repeats deletion with stale revision state. | Medium | Low | Rejected for the current failure: no stale `foundation-incompatible-*` Agent or binding exists. |
+| C | Fixture provider restoration succeeds partially but the final version/credential assertion throws. | Medium | Low | Confirmed and refined: the provider control response cannot be decoded by the Desktop Rust wire DTO, so create persists `version=1` before failing and delete misclassifies the provider as absent. |
+| D | Restoring the prior selected Agent fails after disposable Agent deletion or navigation reset. | Medium | Low | Rejected for the current failure: the scenario stops before selection mutation. |
 
 ## Log Evidence
-Pending pre-fix cleanup instrumentation run.
+- Exact-source Foundation run
+  `20260911T170543628428Z-e3b5ae2fe8a6c5ec41f421eaf6e3fce3`
+  on `ada4295633891d70b9039b20b7f6a825804a2130` reached Browser
+  `BASE-INCOMPATIBLE_CAPABILITY / en / single / sample-001` after the same-source
+  C08 run passed 19/19.
+- The `provider-precondition` event records every prerequisite as valid except
+  `fixtureProviderVersion=1`; `fixtureCredentialPresent=false`.
+- Read-only Station DB evidence shows exactly one `anthropic` provider row for
+  Alice, created at `2026-09-11 15:16:10.571182+00`, with `version=1`, enabled,
+  the catalog base URL, and an empty key vault. No
+  `foundation-incompatible-*` Agent or capability binding remains.
+- Station's public provider response is `AgentProviderInfo`. It omits the
+  internal `actor_ptid`, `display_name`, and `cli_command` fields required by
+  the old Desktop Rust `StationProvider` decoder. `createProvider` therefore
+  persisted the provider before response decoding failed; `deleteProvider`
+  decoded the provider list through the same incompatible DTO and silently
+  converted the error to an empty list, returning NotFound before deletion.
 
 ## Instrumentation
 - `A-D`: records whether the scenario had already failed and which cleanup
@@ -47,4 +63,17 @@ Pending pre-fix cleanup instrumentation run.
   fixture provider version before the fail-closed prerequisite.
 
 ## Verification Conclusion
-Pending.
+The current failure is not an Ark or product-runtime failure. It is a
+Desktop-BFF wire-decoding defect followed by a non-idempotent Acceptance
+Fixture precondition. The local fix:
+
+1. aligns `StationProvider` with the public Station provider response and
+   propagates provider-list decode errors instead of converting them to an
+   empty list;
+2. removes a configured fixed `anthropic` Fixture record before validating the
+   catalog baseline, then re-reads and requires `version=0` with no credential;
+3. retains the cleanup instrumentation with `runId=post-fix`.
+
+Focused Rust wire decoding, Desktop typecheck, the 85-test Agent native static
+suite, and diff hygiene pass. Exact-source C08 and Foundation post-fix evidence
+remain pending.

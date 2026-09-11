@@ -1460,9 +1460,20 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario_start,
         )
         scenario = self.source[scenario_start:scenario_end]
+        setup = scenario[:scenario.index("let providerSetupAttempted")]
 
         self.assertIn("input.agent.provider !== 'ark'", scenario)
         self.assertIn("const fixtureProviderId = 'anthropic'", scenario)
+        self.assertIn("if (catalogCandidate.version > 0)", setup)
+        self.assertIn("await api.deleteProvider(fixtureProviderId)", setup)
+        self.assertIn(
+            "catalogCandidate = await api.getProvider(fixtureProviderId)",
+            setup,
+        )
+        self.assertEqual(
+            scenario.count("await api.deleteProvider(fixtureProviderId)"),
+            2,
+        )
         self.assertIn("sourceProvider.api_key", scenario)
         self.assertIn("foundationToolFixture(disposableAgentId, 'browser')", scenario)
         self.assertIn("'native-tools'", scenario)
