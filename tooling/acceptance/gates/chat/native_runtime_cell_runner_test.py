@@ -736,6 +736,10 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             )
         )["gates"]
         command = gates["chat-native-visible-static"]["command"]
+        self.assertIn(
+            "src/acceptance/chat/passwordLogin.test.ts",
+            command,
+        )
         for suite in (
             "native_runtime_cell_runner_test",
             "native_recovery_runner_test",

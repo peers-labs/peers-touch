@@ -4750,3 +4750,33 @@ runtime evidence. The first source change is instrumentation-only under the
 open `conversation-open-500` debug session; after one pre-fix reproduction
 confirms the restored lifecycle tuple, the owner-layer Harness correction and
 its regression may land.
+
+Instrumentation-only exact-source run
+`20260911T161035318786Z-63582c44fb9232e7d3fca37313e18b25`
+confirmed the lifecycle tuple on Bob from Harness entry through timeout:
+`phase=authenticated`, `lifecycle=ready`, `dataReady=true`, and
+`authenticated=true`. Station, Bob/group-chat, and Alice/high-chat were bound
+to source `b8a6ec63e4bb97f585eccb391b09adb48f3f1151`; the runtime manifest reached
+`FIXTURE_READY`, and cleanup finished `DONE/PROVEN`.
+
+The next serial action is now evidence-authorized: implement the deterministic
+Chat Harness transition from either accepted precondition into a fresh explicit
+password login, add focused lifecycle regressions for fresh, restored,
+wrong-actor, and logout-failure paths, synchronize the exact source into
+high-chat, redeploy profile four, and rerun the unchanged Native Gate.
+
+The owner-layer Harness correction and stable regression are source-complete:
+
+- `passwordLogin.ts` models the explicit-login lifecycle independently of the
+  restored actor;
+- every authenticated-ready precondition performs controlled logout before
+  credential login;
+- fresh account-gate login retains the existing path;
+- incomplete boot, unauthenticated-ready, and logout-failure paths fail closed;
+- Chat lifecycle Vitest passed 10/10, Native runtime-cell regressions passed
+  45/45, Desktop TypeScript passed, and `chat-native-visible-static` run
+  `20260911T161556674513Z-c14ca03d3b11d1278cf96675e7622043`
+  passed.
+
+Exact-source commit, high-chat synchronization, profile-four deployment, and
+post-fix Native proof remain the next serial actions.
