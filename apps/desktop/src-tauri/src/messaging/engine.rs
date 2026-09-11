@@ -984,8 +984,64 @@ impl MessagingEngine {
         if consumer.ptid != self.endpoint.ptid || consumer.device_id != self.endpoint.device_id {
             return Err("messaging delivery receipt endpoint mismatch".to_string());
         }
-        StationDeliveryReceiptTransport::new(token.to_string(), self.endpoint.device_id.clone())?
-            .submit(&receipt)?;
+        // #region debug-point Z11-Z13:delivery-receipt-selection
+        let _ = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_millis(500))
+            .build()
+            .and_then(|client| {
+                client
+                    .post("http://10.4.55.179:7779/event")
+                    .json(&serde_json::json!({
+                        "sessionId": "conversation-open-500",
+                        "runId": "delivery-receipt-pre-fix",
+                        "hypothesisId": "Z11-Z13",
+                        "location": "messaging/engine.rs:dispatch_delivery_receipt_once.selected",
+                        "msg": "[DEBUG] Selected pending delivery receipt",
+                        "data": {
+                            "receiptId": receipt.receipt_id,
+                            "conversationId": receipt.conversation_id,
+                            "eventId": receipt.event_id,
+                            "eventSequence": receipt.event_sequence,
+                            "laneSequence": receipt.lane_sequence,
+                            "consumerPtid": consumer.ptid,
+                            "consumerDeviceId": consumer.device_id,
+                            "payloadSha256": hex::encode(&receipt.payload_sha256),
+                        },
+                    }))
+                    .send()
+            });
+        // #endregion
+        let submit_result = StationDeliveryReceiptTransport::new(
+            token.to_string(),
+            self.endpoint.device_id.clone(),
+        )?
+        .submit(&receipt);
+        // #region debug-point Z11-Z14:delivery-receipt-submit-result
+        let _ = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_millis(500))
+            .build()
+            .and_then(|client| {
+                client
+                    .post("http://10.4.55.179:7779/event")
+                    .json(&serde_json::json!({
+                        "sessionId": "conversation-open-500",
+                        "runId": "delivery-receipt-pre-fix",
+                        "hypothesisId": "Z11-Z14",
+                        "location": "messaging/engine.rs:dispatch_delivery_receipt_once.result",
+                        "msg": "[DEBUG] Delivery receipt submission completed",
+                        "data": {
+                            "receiptId": receipt.receipt_id,
+                            "eventId": receipt.event_id,
+                            "eventSequence": receipt.event_sequence,
+                            "consumerDeviceId": consumer.device_id,
+                            "ok": submit_result.is_ok(),
+                            "error": submit_result.as_ref().err(),
+                        },
+                    }))
+                    .send()
+            });
+        // #endregion
+        submit_result?;
         self.store
             .mark_delivery_receipt_submitted(&entry.receipt_id, &entry.receipt_bytes)?;
         Ok(true)
