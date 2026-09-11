@@ -772,6 +772,34 @@ func TestReceiptRecorderUsesDirectCommitmentsOutsideGroupDeviceProjection(
 	}
 }
 
+func TestReceiptRecorderKeepsReadAheadOfDeliveredMonotonic(t *testing.T) {
+	fixture := newCrossStationReceiptFixture(t)
+	if err := fixture.db.Create(&persistence.ConversationReadCursorModel{
+		ConversationID: string(fixture.event.ConversationID),
+		PTID:           string(fixture.firstRemote.Actor),
+		Sequence:       uint64(fixture.event.Sequence),
+		UpdatedAt:      fixture.clock.now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := fixture.recorder.Record(
+		context.Background(),
+		fixture.receipts[fixture.originator],
+	)
+	if err != nil {
+		t.Fatalf("record originator marker after recipient read: %v", err)
+	}
+	if result.Aggregate.RequiredDeviceCount != 2 ||
+		result.Aggregate.ConsumedDeviceCount != 0 ||
+		result.Aggregate.RevokedDeviceCount != 0 ||
+		!result.Aggregate.Delivered ||
+		result.Aggregate.FullyDelivered ||
+		!result.Aggregate.Read {
+		t.Fatalf("read-ahead delivery aggregate = %+v", result.Aggregate)
+	}
+}
+
 func TestReceiptRecorderAdmitsExactFollowerConsumptionBeforeForwarding(
 	t *testing.T,
 ) {

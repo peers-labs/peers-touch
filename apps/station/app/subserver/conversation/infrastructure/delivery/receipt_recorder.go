@@ -1097,6 +1097,7 @@ func loadDeliveryAggregate(
 		return interaction.DeliveryAggregate{}, err
 	}
 	required := uint32(len(requiredCommitments))
+	read := readCount > 0
 
 	return interaction.DeliveryAggregate{
 		ConversationID:      event.ConversationID,
@@ -1105,10 +1106,10 @@ func loadDeliveryAggregate(
 		RequiredDeviceCount: required,
 		ConsumedDeviceCount: consumedCount,
 		RevokedDeviceCount:  revokedCount,
-		Delivered:           consumedCount > 0,
+		Delivered:           consumedCount > 0 || read,
 		FullyDelivered: required > 0 &&
 			consumedCount+revokedCount == required,
-		Read: readCount > 0,
+		Read: read,
 	}, nil
 }
 

@@ -768,7 +768,7 @@ SSE/push wake
 | persisted | Station 已原子写入 event/queue |
 | notified | SSE/push wake 已尝试 |
 | consumed | device local transaction 已 commit |
-| delivered | 至少一个 required recipient device consumed |
+| delivered | 至少一个 required recipient device consumed，或 recipient actor 的更强 read cursor 已越过该 event |
 | fully_delivered | command 声明的 required devices 均 consumed/revoked |
 | read | recipient actor read cursor 越过 event sequence |
 
@@ -785,6 +785,9 @@ Receipt aggregate 必须按 conversation kind 使用正确的 endpoint truth：
 - Direct 中尚未 receipt 且当前状态无法由 authority-local truth 证明为 revoked 的
   endpoint 保持 outstanding，禁止把“缺少 Group device row”解释为 revoked 或
   delivered。
+- `read` 是比 `delivered` 更强的单调事实。Receipt gap repair 可以由已提交 read
+  cursor 推导 `delivered=true`，但不得伪造 `consumed_device_count` 或
+  `fully_delivered`。
 
 ## 10. Failure, Retry, And Overload
 

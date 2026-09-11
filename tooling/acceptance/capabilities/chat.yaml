@@ -175,6 +175,7 @@
           "Repeated current-profile native runs preserve each actor's isolated device-private state while retaining process and port cleanup",
           "Fresh Direct receivers verify and install only the public predecessor authority head before consuming the current private delivery",
           "Direct receipt aggregation accepts exact event-time commitments for current actor devices without treating Group MLS device rows as Direct truth",
+          "Committed read state preserves monotonic delivered status without changing exact consumed-device or fully-delivered counts",
           "Conversation interaction failures preserve typed HTTP error codes and safe details",
           "Direct decrypt produces a durable DELIVERED receipt and the sender observes it in a native Desktop message row"
         ],
