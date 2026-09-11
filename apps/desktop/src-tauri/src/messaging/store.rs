@@ -9711,6 +9711,28 @@ mod tests {
             store.authority_head(&projection.conversation_id).unwrap(),
             (2, vec![7; 32])
         );
+        assert_eq!(store.lane_checkpoint().unwrap(), (0, 0));
+        assert!(store
+            .conversation_message_projections(&projection.conversation_id)
+            .unwrap()
+            .is_empty());
+        let connection = store.connection().unwrap();
+        for table in [
+            "messaging_consumption_markers",
+            "messaging_local_commands",
+            "direct_sessions",
+        ] {
+            let count: i64 = connection
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM {table} WHERE conversation_id = ?1"),
+                    params![projection.conversation_id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 0, "{table} must remain empty");
+        }
+        drop(connection);
+        assert!(store.next_delivery_receipt().unwrap().is_none());
         assert!(!store.bootstrap_direct_authority_head(&checkpoint).unwrap());
 
         let mut mismatched = projection;

@@ -394,3 +394,42 @@ from genesis through the send-plan head, derive the Direct actor projection
 from the verified genesis event, and atomically install that projection plus
 the verified current head. It must not synthesize historical message
 projections, replay endpoint-private payloads, or trust an unverified plan hash.
+
+## Fresh Direct Receiver Checkpoint Follow-up
+
+Exact-source run
+`20260911T140324819274Z-6ce74ecee89fe31d068dd1f82efbe3c0`
+advanced Bob/group-chat through sender checkpoint and message submission, then
+timed out waiting for Alice/high-chat's native DOM plaintext. Alice's native
+runtime reported `messaging authority event chain is not contiguous`.
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| Z8 | Alice's fresh Device Engine receives sequence 3 with local authority head 0, so the ordinary strict consumer rejects the missing predecessor before decryption. | Confirmed | Bob's checkpoint reached sequence 2 and submission passed in 735 ms; Alice's first private delivery was sequence 3 and failed the Store's `None unless sequence == 1` chain branch. |
+| Z9 | The receiver should skip or ACK the sequence-3 item before decrypting it. | Rejected | MP-A05 requires decrypt, local commit, dedup, and ACK to share the Device Engine boundary; ACK remains strictly post-commit. |
+| Z10 | Historical private queue items should be synthesized or replayed to fill the gap. | Rejected | MP-A07/MP-D17 allow only authenticated public-event replay for an activation checkpoint; old plaintext remains Recovery-only. |
+
+The source correction now inserts one fail-closed hook between claim/lane
+validation and the existing consumer:
+
+- non-Direct items and receivers with an existing authority head take the
+  unchanged path;
+- a fresh Direct receiver verifies the current `DeviceEventDelivery`, replays
+  public events only through `current_sequence - 1`, and requires the replay
+  head hash to equal the current event's `previous_hash`;
+- the existing Store checkpoint atomically installs only the verified
+  predecessor head against the matching Direct projection;
+- the current private item still decrypts and commits through the original
+  consumer before any ACK;
+- checkpoint failure stops the lane before consume and ACK.
+
+Post-change local evidence:
+
+- Desktop Messaging: 106 passed, one live-environment test ignored;
+- Desktop TypeScript/social checks: PASS;
+- Desktop Rust `acceptance-webdriver` check: PASS;
+- `git diff --check`: PASS.
+
+The Debug Server remains active on port 7779 and the session remains `[OPEN]`.
+Post-fix native runtime evidence is pending exact-source commit, high-chat
+synchronization, profile-four deployment, and the unchanged two-client Gate.
