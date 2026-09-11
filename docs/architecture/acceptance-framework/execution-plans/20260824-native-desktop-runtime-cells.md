@@ -4830,3 +4830,10 @@ journey is closed. Remaining NDR-W8 work proceeds to the independently required
 offline, friendship, interaction, typing, multi-device, recovery, and
 three-client Group/MLS Gates under their declared environment and authorization
 contracts.
+
+Post-proof structural validation exposed one independent Registry closure gap:
+the Chat service Feature required `station-api-ownership`, but its proto and
+Station implementation rules did not select that Gate. Both rules now select
+the existing ownership Gate, and focused planner regressions prove Chat proto
+and Station Conversation changes cannot omit it. The planner suite passes
+23/23. The generated coverage report is refreshed from current contracts.
