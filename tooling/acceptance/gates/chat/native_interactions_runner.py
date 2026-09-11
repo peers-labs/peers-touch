@@ -1271,7 +1271,7 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         if not edit_command:
             raise GateError(f"{claim_kind} offline edit returned no command ID")
-        async_harness(
+        reaction = async_harness(
             self.clients["alice"],
             "submitMetadataInteraction",
             {
@@ -1282,6 +1282,32 @@ class NativeInteractionsGate(AcceptanceGate):
                 "reaction": "👍",
                 "remove": False,
             },
+        )
+        reaction_command = str(
+            (reaction or {}).get("command_id")
+            or (reaction or {}).get("commandId")
+            or ""
+        )
+        if not reaction_command:
+            raise GateError(
+                f"{claim_kind} offline reaction returned no command ID"
+            )
+        wait_until(
+            lambda: (
+                snapshot
+                if (
+                    snapshot := self.engine_snapshot(
+                        "alice",
+                        conversation_id,
+                        message_id,
+                        reaction_command,
+                    )
+                )
+                and (snapshot.get("intent") or {}).get("state") == "committed"
+                else None
+            ),
+            f"alice {claim_kind} offline reaction commit",
+            STEP_TIMEOUT,
         )
         async_harness(
             self.clients["alice"],

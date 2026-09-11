@@ -320,6 +320,21 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                     source,
                 )
 
+    def test_offline_metadata_mutations_wait_for_their_authority_dependency(
+        self,
+    ) -> None:
+        source = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_interactions_runner.py",
+            "prove_offline_recovery",
+        )
+        reaction_commit = source.index("offline reaction commit")
+        pin_submit = source.index('"interaction": "pin"')
+        self.assertLess(reaction_commit, pin_submit)
+        self.assertIn(
+            '(snapshot.get("intent") or {}).get("state") == "committed"',
+            source,
+        )
+
     def test_revoked_typing_is_submitted_and_receiver_stays_inactive(self) -> None:
         source = self.function_source(
             ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
