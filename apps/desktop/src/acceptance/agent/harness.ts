@@ -10953,7 +10953,7 @@ function reportForbiddenActorCleanupDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'forbidden-actor-cleanup',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:cleanupFoundationForbiddenActorOwner',
       msg: `[DEBUG] ${stage}`,
