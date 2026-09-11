@@ -9581,7 +9581,7 @@ function reportFoundationBaseCancelledDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'foundation-cancel-race',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationCancelledScenario',
       msg: `[DEBUG] ${stage}`,
@@ -12150,16 +12150,22 @@ async function runFoundationCancelledScenario(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
   sampleId: string;
+  attemptIndex?: number;
+  terminalRaceStatuses?: string[];
 }): Promise<FoundationCancelledResult> {
   const agentId = input.agent.id || input.agent.name;
   const actorPtid = authenticatedFoundationActorPtid();
+  const maxCancellationAttempts = 2;
+  const attemptIndex = input.attemptIndex ?? 1;
+  const terminalRaceStatuses = input.terminalRaceStatuses ?? [];
   const conversation = await api.createAgentConversation({
     agent_id: agentId,
-    title: `Foundation cancelled ${input.sampleId}`,
+    title: `Foundation cancelled ${input.sampleId} attempt ${attemptIndex}`,
     provider_id: input.agent.provider,
     model_name: input.agent.model,
   });
   let turnId = '';
+  let conversationCleaned = false;
 
   try {
       await useChatStore.getState().selectSession(conversation.conversation_id);
@@ -12170,6 +12176,7 @@ async function runFoundationCancelledScenario(input: {
 
       // #region debug-point D:base-cancelled-start
       void reportFoundationBaseCancelledDebug('D', 'scenario-started', {
+        attemptIndex,
         sampleId: input.sampleId,
         documentLocale: document.documentElement.lang,
         selectedSessionMatches:
@@ -12222,6 +12229,7 @@ async function runFoundationCancelledScenario(input: {
                 'B-D',
                 'cancel-requested',
                 {
+                  attemptIndex,
                   elapsedMs: cancellationRequestedAt - startedAt,
                   eventSequence: Number(event.data.seq ?? 0),
                   eventTurnIdPresent: Boolean(
@@ -12273,6 +12281,7 @@ async function runFoundationCancelledScenario(input: {
             'A-D',
             'cancel-and-terminal-observed',
             {
+              attemptIndex,
               elapsedMs: performance.now() - startedAt,
               cancelLatencyMs: performance.now() - cancellationRequestedAt,
               cancellationStatus,
@@ -12293,8 +12302,14 @@ async function runFoundationCancelledScenario(input: {
 
           if (
             cancellationStatus === 'completed'
-            || terminalEvent?.event === 'done'
+            && terminalEvent?.event === 'done'
           ) {
+            return {
+              result: null,
+              terminalRaceStatus: cancellationStatus,
+            };
+          }
+          if (terminalEvent?.event === 'done') {
             throw new Error('agent.acceptance.foundationCancellationLostRace');
           }
           if (
@@ -12667,20 +12682,51 @@ async function runFoundationCancelledScenario(input: {
                 cancellation: {
                   status: cancellationStatus,
                   latencyMs: performance.now() - cancellationRequestedAt,
+                  attemptCount: attemptIndex,
+                  terminalRaceCount: terminalRaceStatuses.length,
                 },
                 runtimeEvent,
               },
             } satisfies FoundationCancelledResult,
+            terminalRaceStatus: '',
           };
         },
       );
+    if (result.terminalRaceStatus) {
+      terminalRaceStatuses.push(result.terminalRaceStatus);
+      await deleteFoundationConversation(conversation.conversation_id);
+      conversationCleaned = true;
+      await reportFoundationBaseCancelledDebug(
+        'A-B',
+        'cancel-window-retry',
+        {
+          attemptIndex,
+          terminalRaceCount: terminalRaceStatuses.length,
+        },
+      );
+      if (attemptIndex >= maxCancellationAttempts) {
+        throw new Error(
+          'agent.acceptance.foundationCancellationWindowUnavailable',
+        );
+      }
+      return runFoundationCancelledScenario({
+        ...input,
+        attemptIndex: attemptIndex + 1,
+        terminalRaceStatuses,
+      });
+    }
+    if (!result.result) {
+      throw new Error('agent.acceptance.foundationCancellationFactsMissing');
+    }
     return result.result;
   } catch (error) {
     try {
-      await cleanupFoundationToolConversation(
-        conversation.conversation_id,
-        turnId,
-      );
+      if (!conversationCleaned) {
+        await cleanupFoundationToolConversation(
+          conversation.conversation_id,
+          turnId,
+        );
+      }
     } catch (cleanupError) {
       throw Object.assign(
         new Error('agent.acceptance.foundationCancellationCleanupFailed'),

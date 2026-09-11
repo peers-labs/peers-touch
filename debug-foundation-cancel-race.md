@@ -26,6 +26,13 @@
 - Each cancellation response arrived after buffered text through sequence 31 had already been observed. The strict AS-F03 oracle still passed, and the run later advanced to AS-F12.
 - Diagnostic run `20260904T153321748945Z-5390dd23d06e8b2d74cc7b8d0253071f` on `4a0fdfb81bf356e1ef54e1e942c559dde9e7bcdb` reproduced the Browser AS-F03 English failure. Cancellation was requested from text sequence 3 after 1375 ms. The response arrived 146.5 ms later with the authoritative status `completed`; the stream had already delivered text through sequence 43 and `done` sequence 44.
 - Exact-source Gate run `20260911T135944321826Z-c11956eb39a2d98c5c2c1f0481964cba` on `0512c74fdee14aecef190cb75c3cdcbbc1360030` passed the English `BASE-CANCELLED` tuple and failed the Chinese tuple when the separate single-attempt `BASE-CANCELLED` path lost the cancellation race. The immutable outer result is `PARTIAL / UNPROVEN`; Provisioner cleanup and secret scan passed.
+- Exact-source Gate run
+  `20260911T180613134845Z-78c1fede027216c67171edb0fe191983`
+  on `03eb3b26e35d141a2a42779a6aabbc688311a1de` reproduced the same race
+  in Browser English. Cancellation was requested from text sequence 3 after
+  3255 ms with matching Turn/session identity. The response returned the
+  authoritative `completed` winner after 433 ms, with `done` already committed
+  at sequence 43. Provisioner cleanup and secret scanning passed.
 
 ## Instrumentation
 - `A`: cancellation response status and request-to-response latency.
@@ -42,6 +49,9 @@
 - Retry only when Station returns the legitimate durable `completed` winner, deleting that completed conversation before the next attempt.
 - Preserve strict failure for every other non-cancelled outcome and for retry exhaustion.
 - Preserve the final requirement for one authoritative `cancelled` terminal event.
+- Apply the same bounded acquisition policy to the separate
+  `BASE-CANCELLED` producer; it previously remained single-attempt after AS-F03
+  adopted the policy.
 
 ## Verification Conclusion
 The ordinary provider can finish and durably commit before the separate
@@ -49,5 +59,8 @@ cancellation request wins, even though the request starts from the first
 client-observed text event. The current AS-F03 fixture therefore does not
 provide a deterministic delayed-provider precondition. Station terminal-winner
 semantics, Turn identity, and Desktop response transport remain correct.
-The single-attempt `BASE-CANCELLED` path still reproduced on `0512c74fd`; new
-pre-fix evidence is required before changing that path.
+The single-attempt `BASE-CANCELLED` path reproduced again on `03eb3b26e` with
+the same confirmed terminal-winner ordering. The local correction retries only
+that source-backed completed winner once, records attempt/race counts, and
+leaves every strict cancellation oracle unchanged. Exact-source post-fix
+comparison remains pending; keep this session open.

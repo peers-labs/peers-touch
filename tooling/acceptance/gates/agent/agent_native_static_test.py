@@ -1523,8 +1523,19 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("thinkingMode: 'disabled'", scenario)
         self.assertIn("api.cancelAgentTurn(turnId)", scenario)
         self.assertIn("foundationCancellationLostRace", scenario)
-        self.assertNotIn("terminalRaceStatuses.push", scenario)
-        self.assertNotIn("terminalRaceCount:", scenario)
+        self.assertIn("const maxCancellationAttempts = 2", scenario)
+        self.assertIn("terminalRaceStatuses.push", scenario)
+        self.assertIn("terminalRaceCount:", scenario)
+        self.assertIn(
+            "'agent.acceptance.foundationCancellationWindowUnavailable'",
+            scenario,
+        )
+        self.assertLess(
+            scenario.index(
+                "await deleteFoundationConversation(conversation.conversation_id)",
+            ),
+            scenario.index("'cancel-window-retry'"),
+        )
         self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
         self.assertIn(
             "foundationCancellationSnapshotIdentityMismatch",
