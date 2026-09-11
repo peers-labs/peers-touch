@@ -109,7 +109,7 @@ func reportArkProviderRequestDebug(
 	}
 	event, err := json.Marshal(map[string]any{
 		"sessionId":    "ark-provider-request",
-		"runId":        "pre-fix",
+		"runId":        "post-fix",
 		"hypothesisId": hypothesisID,
 		"location":     "provider_service.go:callOpenAIStream",
 		"msg":          "[DEBUG] " + stage,

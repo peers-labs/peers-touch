@@ -35,6 +35,40 @@
 - Exact-source Gate run
   `20260911T020204856489Z-438300f2aa793d7acd4492395eb344da`
   still failed first regenerate after 300 seconds.
+- Instrumented exact-source run
+  `20260911T023302255347Z-4409f33994d2cf1cdab008f28d017de5`
+  on `361c73e0a9cdad58e3ea68e7624631ab1af3b098` reproduced the
+  AS-F07 provider failure after all four AS-F06 tuples passed.
+- The baseline and regenerate requests both used the internal endpoint,
+  `stream=true`, `maxTokens=8192`, zero tools, one system message of 1122
+  bytes, and one user message of 61 bytes.
+- The baseline request carried `thinking.type=disabled`, received headers and
+  first stream data after 2224 ms, and completed with `[DONE]` after 2858 ms.
+- Both regenerate requests omitted the thinking field. The first regenerate
+  completed after 96448 ms and 912 parsed chunks. The second emitted 952 parsed
+  chunks before the 120001 ms HTTP-client timeout; its retry emitted 400
+  parsed chunks before the aggregate operation deadline cancelled it.
+- Both failed attempts received HTTP 200 headers and first stream data, so the
+  failure is not DNS, connection establishment, route selection, or response
+  framing startup.
 
 ## Verification Conclusion
-Pending provider request/stream lifecycle instrumentation.
+- A is confirmed only for the thinking-mode field; message roles and lengths,
+  tool count, endpoint, stream mode, and max tokens match.
+- B is confirmed: revision execution loses the source Turn's explicit
+  `thinking_mode=disabled` and falls back to the Agent default `auto`.
+- C is confirmed as the resulting symptom: Ark streams long reasoning output
+  without reaching a terminal marker inside the unchanged provider and
+  operation budgets.
+- D and E are rejected.
+- The owner-layer fix is for revision execution to carry the source Turn's
+  persisted `RuntimeSnapshot.thinking_mode`. Endpoint fallback, timeout
+  inflation, prompt steering, and Gate weakening are not justified.
+- Source inspection confirms `RevisionService.admitAndExecute` constructed
+  retry/regenerate/edit `TurnConfig` values without `ThinkingMode`, causing
+  `TurnService.resolveAgentDefaults` to replace the source Turn's explicit
+  override with the Agent default `auto`.
+- The minimal fix loads the latest source-Turn attempt snapshot inside the
+  revision transaction and carries only its normalized thinking mode into the
+  new execution config. Current provider/model/readiness authority and optional
+  lower requested budgets remain unchanged.
