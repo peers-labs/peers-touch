@@ -458,8 +458,7 @@ WHERE recipient_ptid = 'ptid:bob'
 
             self.assertEqual(
                 duplicate,
-                (8, "event-1", 3, 1, 0, b"\x01\x02", b"\x03\x04",
-                 "acceptance_duplicate_delivery"),
+                (8, "event-1", 3, 1, 0, b"\x01\x02", b"\x03\x04", ""),
             )
             self.assertEqual(next_sequence, 8)
             self.assertEqual(evidence["sourceItemId"], "source-item")

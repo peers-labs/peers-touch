@@ -807,7 +807,7 @@ INSERT INTO device_queue_items (
 ) VALUES (
   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, '', 0, NULL,
   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, NULL, NULL, '',
-  'acceptance_duplicate_delivery', 0
+  '', 0
 )
 """,
                 (
