@@ -7,6 +7,8 @@ use messaging_core::proto::actor_device_ptid;
 use std::sync::Arc;
 
 pub type AcknowledgedItemObserver = Arc<dyn Fn(&DurableDeviceInboxItem) + Send + Sync>;
+pub type BeforeConsumeHook =
+    Arc<dyn Fn(&DurableDeviceInboxItem) -> Result<(), String> + Send + Sync>;
 pub type ConsumerEpochObserver = Arc<dyn Fn(u64) + Send + Sync>;
 
 pub trait QueueTransport {
@@ -40,6 +42,7 @@ pub struct QueueDrain<T, C> {
     device: ActorDeviceRef,
     consumer_id: String,
     batch_limit: u32,
+    before_consume_hook: Option<BeforeConsumeHook>,
     consumer_epoch_observer: Option<ConsumerEpochObserver>,
     acknowledged_item_observer: Option<AcknowledgedItemObserver>,
 }
@@ -66,9 +69,15 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
             device,
             consumer_id,
             batch_limit,
+            before_consume_hook: None,
             consumer_epoch_observer: None,
             acknowledged_item_observer: None,
         })
+    }
+
+    pub fn with_before_consume_hook(mut self, hook: BeforeConsumeHook) -> Self {
+        self.before_consume_hook = Some(hook);
+        self
     }
 
     pub fn with_consumer_epoch_observer(mut self, observer: ConsumerEpochObserver) -> Self {
@@ -112,6 +121,9 @@ impl<T: QueueTransport, C: ClaimedItemConsumer> QueueDrain<T, C> {
         for item in &response.items {
             if item.lane_sequence != next_cursor + 1 {
                 return Err("messaging claimed batch is not contiguous".to_string());
+            }
+            if let Some(hook) = &self.before_consume_hook {
+                hook(item)?;
             }
             self.consumer.consume(item, response.consumer_epoch)?;
             self.transport
@@ -297,6 +309,44 @@ mod tests {
         .unwrap();
 
         assert!(drain.drain_once(0, 0).is_err());
+        assert_eq!(*drain.consumer.consumed.borrow(), vec![1]);
+        let acknowledgements = drain.transport.acknowledgements.borrow();
+        assert_eq!(acknowledgements.len(), 1);
+        assert_eq!(acknowledgements[0].lane_sequence, 1);
+    }
+
+    #[test]
+    fn before_consume_failure_stops_lane_before_commit_and_ack() {
+        let inspected = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let inspected_state = inspected.clone();
+        let drain = QueueDrain::new(
+            Transport {
+                items: vec![item(1), item(2), item(3)],
+                claims: RefCell::new(Vec::new()),
+                acknowledgements: RefCell::new(Vec::new()),
+            },
+            Consumer {
+                fail_at: None,
+                consumed: RefCell::new(Vec::new()),
+            },
+            device(),
+            "consumer-1".to_string(),
+            10,
+        )
+        .unwrap()
+        .with_before_consume_hook(Arc::new(move |item| {
+            inspected_state.lock().unwrap().push(item.lane_sequence);
+            if item.lane_sequence == 2 {
+                return Err("injected pre-consume failure".to_string());
+            }
+            Ok(())
+        }));
+
+        assert_eq!(
+            drain.drain_once(0, 0).unwrap_err(),
+            "injected pre-consume failure"
+        );
+        assert_eq!(*inspected.lock().unwrap(), vec![1, 2]);
         assert_eq!(*drain.consumer.consumed.borrow(), vec![1]);
         let acknowledgements = drain.transport.acknowledgements.borrow();
         assert_eq!(acknowledgements.len(), 1);
