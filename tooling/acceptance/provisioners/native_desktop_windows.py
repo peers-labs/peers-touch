@@ -1085,22 +1085,22 @@ class NativeDesktopWindowsProvisioner:
             raise ProvisioningError(
                 f"Windows runtime-cell actor {target!r} is active"
             )
-        source_path = _windows_join(
+        source_path = _windows_verbatim_path(_windows_join(
             str(state["brokerRoot"]),
             "actors",
             str(state["runId"]),
             source,
             "storage",
             str(relative),
-        )
-        target_path = _windows_join(
+        ))
+        target_path = _windows_verbatim_path(_windows_join(
             str(state["brokerRoot"]),
             "actors",
             str(state["runId"]),
             target,
             "storage",
             str(relative),
-        )
+        ))
         script = (
             "$ErrorActionPreference='Stop'; "
             f"if (Test-Path -LiteralPath '{target_path}') {{ "

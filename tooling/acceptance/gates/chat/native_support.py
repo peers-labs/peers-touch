@@ -770,10 +770,10 @@ ORDER BY recipient_ptid, recipient_device_id, lane_sequence
             ).fetchall()
             read_cursors = connection.execute(
                 """
-SELECT reader_ptid, last_read_sequence
+SELECT ptid AS reader_ptid, last_read_sequence
 FROM conversation_read_cursors
 WHERE conversation_id = ?
-ORDER BY reader_ptid
+ORDER BY ptid
 """,
                 (conversation_id,),
             ).fetchall()

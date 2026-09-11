@@ -987,7 +987,7 @@ CREATE TABLE device_queue_items (
   payload_sha256 BLOB
 );
 CREATE TABLE conversation_read_cursors (
-  conversation_id TEXT, reader_ptid TEXT, last_read_sequence INTEGER
+  conversation_id TEXT, ptid TEXT, last_read_sequence INTEGER
 );
 INSERT INTO conversation_events VALUES
   ('event-1', 'conversation-1', 1, 'command-1', 'message-1', x'0102');
@@ -1036,12 +1036,20 @@ INSERT INTO conversation_read_cursors VALUES
             "clone_actor_storage",
         )
         self.assertGreaterEqual(clone.count('str(state["runId"])'), 2)
+        self.assertGreaterEqual(clone.count("_windows_verbatim_path("), 2)
 
     def test_recovery_exports_each_current_log_once_during_cleanup(self) -> None:
         recovery = (
             ROOT / "tooling/acceptance/gates/chat/native_recovery_runner.py"
         ).read_text(encoding="utf-8")
         self.assertEqual(recovery.count("self.save_app_log(client, actor)"), 1)
+
+    def test_group_mls_start_client_launches_injected_runtime(self) -> None:
+        start_client = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_group_mls_runner.py",
+            "start_client",
+        )
+        self.assertIn("self.start_injected_client(actor)", start_client)
 
     def test_typing_contract_is_unchanged(self) -> None:
         self.assertEqual(

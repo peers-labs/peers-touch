@@ -224,7 +224,7 @@ class NativeGroupMlsGate(AcceptanceGate):
     def start_client(self, actor: str) -> None:
         if self.runtime_binding is None:
             raise GateError("Native Desktop runtime binding is required")
-
+        self.start_injected_client(actor)
 
     def start_injected_client(self, actor: str) -> None:
         if self.runtime_binding is None:

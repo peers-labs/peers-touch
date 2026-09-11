@@ -241,6 +241,18 @@ func TestServiceTypingIsMembershipBoundedEphemeralAndIdempotent(t *testing.T) {
 	if err != nil || !result.Accepted || len(typing.events) != 2 {
 		t.Fatalf("stop result=%+v events=%d err=%v", result, len(typing.events), err)
 	}
+	restartedTyping := stop
+	restartedTyping.Generation = 4
+	restartedTyping.IsTyping = true
+	result, err = service.SubmitTyping(context.Background(), restartedTyping)
+	if err != nil || !result.Accepted || len(typing.events) != 3 {
+		t.Fatalf(
+			"restarted typing result=%+v events=%d err=%v",
+			result,
+			len(typing.events),
+			err,
+		)
+	}
 	if _, err := service.SubmitTyping(
 		context.Background(),
 		throttled,
