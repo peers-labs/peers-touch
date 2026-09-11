@@ -97,3 +97,25 @@ Root cause:
   later cycles, so the empty member child projection cannot self-heal.
 - The HTTP Gateway `messaging_hydrate` path duplicates the same empty-member
   projection construction.
+
+## Direct Prekey Publication Follow-up
+
+Source-bound post-fix run
+`20260911T065128258878Z-d9d996f2e7792c2582a3ae30e950000e`
+proved both clients now receive two members and derive the opposite peer PTID.
+The first send then persisted a local draft but could not queue a command:
+
+- Station `/key-exchange/keys/bundle/fetch` returned 404 for Bob.
+- `messaging_send_message` returned `state=draft`.
+- Desktop surfaced `messaging_send_outcome:not_queued:draft`.
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| J | The copied local Messaging Store marks its prekey bundle published, so lifecycle skips upload even though Station has no bundle. | High | Low | `hasBundle=true`, `pendingPublication=false`, publish returns success, peer fetch remains 404. |
+| K | Lifecycle prekey publication is failing, but the error is hidden by later successful cycles. | Medium | Low | publish instrumentation reports an upload or local-state error. |
+| L | Bob publishes successfully, but Station stores the bundle under a mismatched actor/device. | Low | Medium | local publish reports a pending upload while fetch for the same active endpoint remains 404. |
+
+Instrumentation point:
+
+- J-K: `MessagingEngine::publish_prekeys` records local bundle/pending state and
+  the publish result without recording private key material.

@@ -1599,7 +1599,47 @@ impl MessagingEngine {
             .actor_identity
             .as_ref()
             .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?;
-        PreKeyPublisher::new(
+        let has_bundle = self.store.has_prekey_bundle();
+        let pending_bundle = self.store.pending_prekey_bundle();
+        // #region debug-point J-K:prekey-publication-local-state
+        let _ = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_millis(500))
+            .build()
+            .and_then(|client| {
+                client
+                    .post("http://10.4.55.179:7779/event")
+                    .json(&serde_json::json!({
+                        "sessionId": "conversation-open-500",
+                        "runId": "prekey-publication-pre-fix",
+                        "hypothesisId": "J-K",
+                        "location": "messaging/engine.rs:publish_prekeys",
+                        "msg": "[DEBUG] prekey publication local state",
+                        "data": {
+                            "actorPtid": self.endpoint.ptid,
+                            "deviceId": self.endpoint.device_id,
+                            "hasBundle": has_bundle.as_ref().copied().unwrap_or(false),
+                            "hasBundleError": has_bundle.as_ref().err().map(ToString::to_string),
+                            "pendingPublication": pending_bundle
+                                .as_ref()
+                                .ok()
+                                .and_then(|bundle| bundle.as_ref())
+                                .is_some(),
+                            "pendingOpkCount": pending_bundle
+                                .as_ref()
+                                .ok()
+                                .and_then(|bundle| bundle.as_ref())
+                                .map(|bundle| bundle.one_time_prekeys.len())
+                                .unwrap_or_default(),
+                            "pendingError": pending_bundle
+                                .as_ref()
+                                .err()
+                                .map(ToString::to_string),
+                        }
+                    }))
+                    .send()
+            });
+        // #endregion
+        let result = PreKeyPublisher::new(
             self.store.clone(),
             CoreCryptoEndpoint {
                 ptid: self.endpoint.ptid.clone(),
@@ -1610,7 +1650,31 @@ impl MessagingEngine {
             actor_identity.as_ref(),
             now_unix_ms(),
             &StationPreKeyTransport::new(token.to_string(), self.endpoint.device_id.clone())?,
-        )
+        );
+        // #region debug-point J-K:prekey-publication-result
+        let _ = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_millis(500))
+            .build()
+            .and_then(|client| {
+                client
+                    .post("http://10.4.55.179:7779/event")
+                    .json(&serde_json::json!({
+                        "sessionId": "conversation-open-500",
+                        "runId": "prekey-publication-pre-fix",
+                        "hypothesisId": "J-K",
+                        "location": "messaging/engine.rs:publish_prekeys.result",
+                        "msg": "[DEBUG] prekey publication result",
+                        "data": {
+                            "actorPtid": self.endpoint.ptid,
+                            "deviceId": self.endpoint.device_id,
+                            "ok": result.is_ok(),
+                            "error": result.as_ref().err().map(ToString::to_string),
+                        }
+                    }))
+                    .send()
+            });
+        // #endregion
+        result
     }
 
     pub fn publish_mls_key_packages(&self, token: &str) -> Result<(), String> {
