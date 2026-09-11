@@ -75,7 +75,16 @@ func (s *Service) UpdateMemberSettings(
 			current.BackgroundImage = *patch.BackgroundImage
 		}
 		if patch.ClearedAtUnixMillis != nil {
-			if *patch.ClearedAtUnixMillis < current.ClearedAtUnixMillis {
+			if *patch.ClearedAtUnixMillis < 0 {
+				return invalid(
+					"application.update_member_settings",
+					"cleared_at_unix_ms",
+					"must be non-negative",
+				)
+			}
+			// Zero restores visible history; only non-zero clear cursors are monotonic.
+			if *patch.ClearedAtUnixMillis != 0 &&
+				*patch.ClearedAtUnixMillis < current.ClearedAtUnixMillis {
 				return conversationdomain.NewError(
 					conversationdomain.ErrorCodeStaleAuthorityHead,
 					"application.update_member_settings",

@@ -32,7 +32,7 @@ continued execution. Do not falsely mark it complete or create a duplicate.
 
 | Remaining Closure | Status / Dependency |
 |---|---|
-| NDR-W9-D Product Closure | Partial: `attachments.ui` passes at `6ab9c369`; first failure is `bob.offline.recovery.ui`. |
+| NDR-W9-D Product Closure | Partial: attachments, Bob offline recovery and client/settings restart pass at `75b0fb9e`; first failure is `clear.cursor.restart.ui` restore. |
 | Four local Chat Gates | Run once per corrective revision and again on the final frozen source; prior-source results are not final proof. |
 | Seven other Windows Native Chat Gates | Pending Product Closure; use the order in Final Windows Matrix. |
 | PostgreSQL contention/recovery | Pending; require local PostgreSQL evidence on sixwin, never substitute SQLite or remote Stations. |
@@ -42,7 +42,7 @@ continued execution. Do not falsely mark it complete or create a duplicate.
 There are 12 final matrix Gate results outstanding (4 local + 8 Native), plus
 three closing activities (PostgreSQL, Gap Detector, audit). This counts proof
 obligations, not estimated coding effort. Recent Product Closure failures take
-35-44 minutes per attempt; total completion ETA is unknown until defects close.
+35-50 minutes per attempt; total completion ETA is unknown until defects close.
 
 Concurrency Decision: hybrid. The integrator owns all source/plan writes,
 commits, builds, profiles, Fixture mutation, GUI, and final Gate execution.
@@ -50,7 +50,7 @@ A read-only lane may inventory PostgreSQL and final-audit commands while the
 integrator fixes broker restart preservation. No concurrent Gate or deployment
 may consume sixwin's exclusive runtime. Reconcile findings before execution.
 
-Latest authoritative run:
+Prior authoritative run:
 `20260910T225056619096Z-1e934531b5fb953335efbe6e212d2366`,
 source `6ab9c369506b14162de7fbac1f0d587e5f874292`. It proves attachment
 count conservation, image rendering, and exact sender/receiver byte hashes.
@@ -78,6 +78,33 @@ relaunch ownership in the Windows broker, not authentication or Gate assertions.
 - Ready: commit the verified correction and rerun Product Closure only.
   Parked by dependency: seven other Native Gates, final frozen-source matrix,
   local PostgreSQL evidence, Gap Detector and completion audit. No push.
+
+Latest authoritative run:
+`20260911T045324047847Z-6ca265061291ef49f14f993fb0501c0a`,
+source `75b0fb9ea03a658ef43ee89dbfcd6715972485e9`. Attachments,
+`offline_recovery_exact`, `restart_exact` and `settings_restart_recovery`
+pass. First failure is restoring the clear-history cursor to zero. Station's
+member-settings service rejects this existing restore action as a backwards
+cursor; its error also causes the failed unhandled-rejection log audit.
+Processes, ports and storage cleanup pass.
+
+The focused persistent composition regression reproduces the same rejection,
+then passes after allowing the explicit zero restore while retaining negative
+and non-zero backwards-cursor rejection and active-member authorization.
+Conversation's full race suite and all four local Chat Gates pass.
+The reviewed Agent runtime matrix uses CRLF after Windows checkout; enforcing
+the repository's existing `eol=lf` convention restores its original reviewed
+SHA-256 without changing the contract. Infra validation
+`20260911T055916897553Z-97305cd3ce920c2d552ea6781f9d43dd` is
+`STRUCTURALLY_VALID`.
+
+Two preceding runs stopped in display preflight when SPICE auto-resized QXL
+away from the required 1920x1080. The successful preflight used a bounded local
+operator wrapper to pause SPICE VDAgent for the Gate and restore its prior
+service/display state in `finally`; service restoration was verified.
+This is runtime setup only, not a relaxed Gate geometry requirement.
+Next: commit the cursor/line-ending correction, rerun Product Closure with
+fixed display setup, then advance to the seven queued Native Gates.
 
 Deliver one source-bound Native Desktop Acceptance system that:
 
@@ -806,7 +833,7 @@ business Gate is permitted.
 - **Evidence**: immutable Windows cell run, Win32 native diagnostics, and
   cleanup audit.
 - **Status**: partial — current single-Station Windows run passes through
-  `attachments.ui`; Product Closure stops at `bob.offline.recovery.ui`.
+  `client.restart.ui`; Product Closure stops at `clear.cursor.restart.ui`.
   See the current Windows execution scope and corrective checkpoint above.
 
 ### AS-NDR-09: Linux multi-Station binding
