@@ -4578,3 +4578,48 @@ The next NDR-W8 correction implements the already accepted fresh-device rule:
 
 This allows future events to start from the fresh endpoint's activation head
 without inventing ownership of historical endpoint-private delivery.
+
+#### Fresh Direct Receiver Pre-Consume Checkpoint
+
+Exact-source run
+`20260911T140324819274Z-6ce74ecee89fe31d068dd1f82efbe3c0`
+proved that the sender-side checkpoint is complete: Bob/group-chat reconciled
+its empty local authority head to Station sequence 2 and submitted the next
+message in 735 ms. Alice/high-chat claimed that sequence-3 private delivery but
+failed before decryption with
+`messaging authority event chain is not contiguous`; her fresh Device Engine
+still had no authority head.
+
+The receiver correction stays inside the Device Engine ordered-consume
+boundary:
+
+1. a pre-consume hook runs after the Station claim and lane-contiguity check,
+   but before the local receive transaction and Station ACK;
+2. only a fully verified `DIRECT_CIPHERTEXT` delivery with an empty local
+   authority head and event sequence greater than one can request a checkpoint;
+3. the Engine fetches and verifies the authenticated public event log only
+   through the current item's predecessor, requiring the final sequence/hash,
+   authority Station, and epochs to equal the current event's
+   `sequence - 1` / `previous_hash` boundary;
+4. the existing atomic Direct checkpoint installs the genesis-derived actor
+   projection and predecessor authority head without creating historical
+   messages, sessions, receipts, consumption markers, or a lane cursor;
+5. the current private item then enters the unchanged decrypt/commit consumer,
+   and any checkpoint or consume failure prevents ACK.
+
+The shared sender/receiver checkpoint target retains the explicit Direct-kind
+binding. Existing non-empty authority heads are never rewritten by the
+pre-consume path; normal strict contiguous-chain validation remains the owner.
+
+Source verification on the uncommitted correction:
+
+- Desktop Messaging: 106 passed, one live-environment test ignored;
+- Desktop TypeScript/social checks: PASS;
+- Desktop Rust `acceptance-webdriver` check: PASS;
+- `git diff --check`: PASS.
+
+The correction remains `PARTIAL/UNPROVEN` until it is committed, synchronized
+into `peers-chat-high-chat`, deployed exactly through profile `four` and
+`make station`, and the unchanged current-profile Native Gate proves both
+directions, exact receiver plaintext, identical message IDs, receipts, and
+complete cleanup.

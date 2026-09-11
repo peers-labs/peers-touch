@@ -7,6 +7,7 @@
     "apps/desktop/src-tauri/src/messaging/prekeys.rs",
     "apps/desktop/src-tauri/src/messaging/direct.rs",
     "apps/desktop/src-tauri/src/messaging/direct_session.rs",
+    "apps/desktop/src-tauri/src/messaging/drain.rs",
     "apps/desktop/src-tauri/src/messaging/engine.rs",
     "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
     "apps/desktop/src-tauri/src/messaging/store.rs",
@@ -54,6 +55,7 @@
       "a locally published bundle is reconciled when Station public material is missing",
       "reconciliation persists fresh OPKs before upload and retries the exact batch",
       "current-profile native clients retain one isolated Device Engine state across repeated Gate runs",
+      "a fresh Direct receiver checkpoints only the verified public predecessor before decrypting the current private delivery",
       "successful Direct decrypt atomically persists one typed DELIVERED receipt",
       "receipt submission failure remains pending for lifecycle retry",
       "Station routing failure is returned to the Desktop worker"
@@ -67,6 +69,8 @@
   "negative": [
     "reconciliation must not republish or reactivate a consumed one-time prekey",
     "current-profile Gate cleanup must not roll a reused device back to an older private-key state",
+    "receiver checkpoint failure must prevent private delivery consumption and ACK",
+    "receiver activation checkpoint must not synthesize historical plaintext, session, cursor, marker, or receipt state",
     "queue consumption ACK must not be reported as a user-visible DELIVERED receipt",
     "static or gateway evidence must not replace two native Desktop clients",
     "receipt evidence must not expose plaintext, credentials, tokens, or key material"
