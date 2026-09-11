@@ -16,6 +16,7 @@ from tooling.acceptance.core import (
     current_artifact_ref,
 )
 from tooling.acceptance.gates.chat.native_two_client_runner import (
+    CURRENT_PROFILE_GATE_ID,
     REQUIRED_ASSERTIONS,
     commits_match,
 )
@@ -67,6 +68,7 @@ def validate_report(
     store: EvidenceStore,
     gate_id: str = GATE_ID,
     required_steps: set[str] = REQUIRED_STEPS,
+    required_assertions: set[str] = REQUIRED_ASSERTIONS,
 ) -> None:
     require(
         report.get("gate") == gate_id,
@@ -220,9 +222,16 @@ def validate_report(
         isinstance(actors, dict) and set(actors) == {"alice", "bob"},
         "exactly Alice and Bob actor evidence is required",
     )
-    for field in ("port", "gateway_port", "profile", "storage_root", "pid"):
+    for field in ("port", "gateway_port", "storage_root", "pid"):
         values = {str(actor.get(field) or "") for actor in actors.values()}
         require("" not in values and len(values) == 2, f"actors require distinct {field}")
+    profiles = {str(actor.get("profile") or "") for actor in actors.values()}
+    require("" not in profiles, "actors require a non-empty profile")
+    if gate_id != CURRENT_PROFILE_GATE_ID:
+        require(
+            len(profiles) == 2,
+            "actors require distinct profile",
+        )
     require(
         all(
             actor.get("runtime") == runtime_cell
@@ -238,9 +247,9 @@ def validate_report(
         for assertion in assertions
         if isinstance(assertion, dict)
     }
-    missing = REQUIRED_ASSERTIONS - set(by_name)
+    missing = required_assertions - set(by_name)
     require(not missing, f"required assertions are missing: {sorted(missing)}")
-    for name in sorted(REQUIRED_ASSERTIONS):
+    for name in sorted(required_assertions):
         require(by_name[name].get("passed") is True, f"{name} must pass")
 
     steps = runtime.get("steps")
@@ -287,6 +296,7 @@ def write_validation(
     *,
     source_ref: ArtifactRef,
     gate_id: str = GATE_ID,
+    required_assertions: set[str] = REQUIRED_ASSERTIONS,
 ) -> ArtifactRef:
     output = {
         "artifactKind": "chat-native-two-client-validation",
@@ -302,7 +312,7 @@ def write_validation(
         "testedCommit": report["runtime"]["sourceIdentity"][
             "orchestrator"
         ]["commit"],
-        "assertionCount": len(REQUIRED_ASSERTIONS),
+        "assertionCount": len(required_assertions),
     }
     session = ArtifactSession(
         repo_root=REPO_ROOT,

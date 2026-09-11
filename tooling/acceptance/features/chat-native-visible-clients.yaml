@@ -29,6 +29,7 @@
   "acceptance": {
     "product_truths": [
       "visible native Desktop clients use isolated profiles, ports, storage roots, and observer sockets",
+      "current-profile parity proof launches peers-group-chat and peers-chat-high-chat as distinct synchronized worktrees, with peers-group-chat initiating the journey",
       "Station and every client record matching commit and canonical proto digest with workspace identity",
       "direct multi-device recovery and MLS journeys emit bounded boundary telemetry and stop on first failure",
       "failed message submission clears acceptance-injected composer text"
@@ -42,6 +43,7 @@
   },
   "constraints": [
     "live journeys must launch through make desktop",
+    "two clients launched from one worktree cannot prove current-profile cross-worktree parity",
     "fixed sleeps and startup-order assumptions are forbidden",
     "missing stale partial API-only browser-only or dirty-Station evidence fails closed"
   ]
