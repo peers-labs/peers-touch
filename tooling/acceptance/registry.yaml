@@ -52,6 +52,7 @@
           "packages/messaging-core/src/crypto/prekeys.rs",
           "apps/desktop/src-tauri/src/messaging/prekeys.rs",
           "apps/desktop/src-tauri/src/messaging/direct.rs",
+          "apps/desktop/src-tauri/src/messaging/direct_session.rs",
           "apps/desktop/src-tauri/src/messaging/engine.rs",
           "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
           "apps/desktop/src-tauri/src/messaging/store.rs",
