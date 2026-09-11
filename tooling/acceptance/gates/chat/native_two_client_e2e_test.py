@@ -16,7 +16,11 @@ from tooling.acceptance.core import (
     GateError,
     REPO_ROOT,
 )
+from tooling.acceptance.gates.chat.native_current_profile_two_client_e2e import (
+    validate_current_profile_topology,
+)
 from tooling.acceptance.gates.chat.native_two_client_runner import (
+    CURRENT_PROFILE_REQUIRED_ASSERTIONS,
     CURRENT_PROFILE_GATE_ID,
     NativeTwoClientGate,
 )
@@ -145,6 +149,11 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                 "id": actor,
                 "actor": actor,
                 "runtime": "native-tauri",
+                "worktree": (
+                    "/workspace/peers-chat-high-chat"
+                    if actor == "alice"
+                    else "/workspace/peers-group-chat"
+                ),
                 "webdriver_port": 4445 + index,
                 "gateway_port": 3030 + index,
                 "renderer_port": 14310 + index,
@@ -486,6 +495,120 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         )
 
         self.assertTrue(gate.verify_fixture_ready())
+        self.assertEqual(gate.direction_order, ["bob", "alice"])
+
+    def test_current_profile_accepts_cross_worktree_group_initiator(self) -> None:
+        report = self.valid_report()
+        source_commit = "a" * 40
+        report["manifest"]["source"]["commit"] = source_commit
+        report["runtime"]["launchOrder"] = ["bob", "alice"]
+        report["runtime"]["directionOrder"] = ["bob", "alice"]
+        report["runtime"]["worktreeTopology"] = {
+            "alice": {
+                "clientId": "alice",
+                "logicalName": "peers-chat-high-chat",
+                "expectedLogicalName": "peers-chat-high-chat",
+                "workspaceId": "1" * 16,
+                "repositoryId": "3" * 16,
+                "canonicalRoot": "/workspace/peers-chat-high-chat",
+                "head": "b" * 40,
+                "tree": "c" * 40,
+                "clean": True,
+            },
+            "bob": {
+                "clientId": "bob",
+                "logicalName": "peers-group-chat",
+                "expectedLogicalName": "peers-group-chat",
+                "workspaceId": "2" * 16,
+                "repositoryId": "3" * 16,
+                "canonicalRoot": "/workspace/peers-group-chat",
+                "head": source_commit,
+                "tree": "c" * 40,
+                "clean": True,
+            },
+        }
+        report["assertions"].extend(
+            {
+                "name": name,
+                "passed": True,
+                "detail": "",
+            }
+            for name in CURRENT_PROFILE_REQUIRED_ASSERTIONS
+        )
+
+        validate_current_profile_topology(report)
+
+    def test_current_profile_rejects_same_worktree_evidence(self) -> None:
+        report = self.valid_report()
+        source_commit = "a" * 40
+        report["manifest"]["source"]["commit"] = source_commit
+        report["manifest"]["clients"][0]["worktree"] = (
+            "/workspace/peers-group-chat"
+        )
+        report["runtime"]["launchOrder"] = ["bob", "alice"]
+        report["runtime"]["directionOrder"] = ["bob", "alice"]
+        report["runtime"]["worktreeTopology"] = {
+            actor: {
+                "clientId": actor,
+                "logicalName": (
+                    "peers-chat-high-chat"
+                    if actor == "alice"
+                    else "peers-group-chat"
+                ),
+                "expectedLogicalName": (
+                    "peers-chat-high-chat"
+                    if actor == "alice"
+                    else "peers-group-chat"
+                ),
+                "workspaceId": "2" * 16,
+                "repositoryId": "3" * 16,
+                "canonicalRoot": "/workspace/peers-group-chat",
+                "head": source_commit,
+                "tree": "c" * 40,
+                "clean": True,
+            }
+            for actor in ("alice", "bob")
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "distinct worktrees"):
+            validate_current_profile_topology(report)
+
+    def test_current_profile_rejects_high_chat_initiator(self) -> None:
+        report = self.valid_report()
+        source_commit = "a" * 40
+        report["manifest"]["source"]["commit"] = source_commit
+        report["runtime"]["launchOrder"] = ["alice", "bob"]
+        report["runtime"]["directionOrder"] = ["alice", "bob"]
+        report["runtime"]["worktreeTopology"] = {
+            "alice": {
+                "clientId": "alice",
+                "logicalName": "peers-chat-high-chat",
+                "expectedLogicalName": "peers-chat-high-chat",
+                "workspaceId": "1" * 16,
+                "repositoryId": "3" * 16,
+                "canonicalRoot": "/workspace/peers-chat-high-chat",
+                "head": "b" * 40,
+                "tree": "c" * 40,
+                "clean": True,
+            },
+            "bob": {
+                "clientId": "bob",
+                "logicalName": "peers-group-chat",
+                "expectedLogicalName": "peers-group-chat",
+                "workspaceId": "2" * 16,
+                "repositoryId": "3" * 16,
+                "canonicalRoot": "/workspace/peers-group-chat",
+                "head": source_commit,
+                "tree": "c" * 40,
+                "clean": True,
+            },
+        }
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "must launch and initiate",
+        ):
+            validate_current_profile_topology(report)
 
     def test_client_readiness_requires_active_station_device(self) -> None:
         runner_source = (

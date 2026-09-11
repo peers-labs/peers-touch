@@ -342,6 +342,25 @@ class EnvironmentContractTests(unittest.TestCase):
                 "bob",
                 encoding="utf-8",
             )
+            common_dir = root / "common"
+            client_worktrees = {
+                "alice": native_tauri_current_profile.ClientWorktreeIdentity(
+                    root=root / "peers-chat-high-chat",
+                    logical_name="peers-chat-high-chat",
+                    common_dir=common_dir,
+                    head="b" * 40,
+                    tree="c" * 40,
+                    clean=True,
+                ),
+                "bob": native_tauri_current_profile.ClientWorktreeIdentity(
+                    root=REPO_ROOT,
+                    logical_name="peers-group-chat",
+                    common_dir=common_dir,
+                    head="a" * 40,
+                    tree="c" * 40,
+                    clean=True,
+                ),
+            }
             run_id = f"test-{root.name}"
             with (
                 mock.patch.dict(
@@ -356,6 +375,11 @@ class EnvironmentContractTests(unittest.TestCase):
                     provisioner,
                     "_port_available",
                     return_value=True,
+                ),
+                mock.patch.object(
+                    provisioner,
+                    "_client_worktrees",
+                    return_value=client_worktrees,
                 ),
             ):
                 clients = provisioner._clients(
@@ -383,8 +407,83 @@ class EnvironmentContractTests(unittest.TestCase):
                     [client.profile for client in clients],
                     ["four-app", "four-app"],
                 )
+                self.assertEqual(
+                    [Path(client.worktree).name for client in clients],
+                    ["peers-chat-high-chat", "peers-group-chat"],
+                )
             finally:
                 provisioner.cleanup()
+
+    def test_current_profile_rejects_same_client_worktree(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        shared = REPO_ROOT.resolve()
+        common_dir = shared.parent / ".git"
+        identities = {
+            "alice": native_tauri_current_profile.ClientWorktreeIdentity(
+                root=shared,
+                logical_name="peers-chat-high-chat",
+                common_dir=common_dir,
+                head="a" * 40,
+                tree="c" * 40,
+                clean=True,
+            ),
+            "bob": native_tauri_current_profile.ClientWorktreeIdentity(
+                root=shared,
+                logical_name="peers-group-chat",
+                common_dir=common_dir,
+                head="b" * 40,
+                tree="c" * 40,
+                clean=True,
+            ),
+        }
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "two distinct client worktrees",
+        ):
+            (
+                native_tauri_current_profile
+                .NativeTauriCurrentProfileProvisioner
+                ._validate_client_worktrees(identities)
+            )
+
+    def test_current_profile_rejects_unsynchronized_source_trees(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        common_dir = REPO_ROOT.parent / ".git"
+        identities = {
+            "alice": native_tauri_current_profile.ClientWorktreeIdentity(
+                root=REPO_ROOT.parent / "peers-chat-high-chat",
+                logical_name="peers-chat-high-chat",
+                common_dir=common_dir,
+                head="a" * 40,
+                tree="c" * 40,
+                clean=True,
+            ),
+            "bob": native_tauri_current_profile.ClientWorktreeIdentity(
+                root=REPO_ROOT.resolve(),
+                logical_name="peers-group-chat",
+                common_dir=common_dir,
+                head="b" * 40,
+                tree="d" * 40,
+                clean=True,
+            ),
+        }
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "not synchronized",
+        ):
+            (
+                native_tauri_current_profile
+                .NativeTauriCurrentProfileProvisioner
+                ._validate_client_worktrees(identities)
+            )
 
     def test_current_profile_rejects_incomplete_storage_seed_set(self):
         from tooling.acceptance.provisioners import (

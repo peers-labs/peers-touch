@@ -38,6 +38,21 @@ from tooling.acceptance.provisioners.remote_source_identity import (
 
 GATE_ID = "chat-native-current-profile-two-client-e2e"
 CLIENT_ROLES = ("alice", "bob")
+CLIENT_WORKTREE_NAMES = {
+    "alice": "peers-chat-high-chat",
+    "bob": "peers-group-chat",
+}
+CLIENT_WORKTREES_ENV = "PT_CHAT_NATIVE_CLIENT_WORKTREES"
+
+
+@dataclasses.dataclass(frozen=True)
+class ClientWorktreeIdentity:
+    root: Path
+    logical_name: str
+    common_dir: Path
+    head: str
+    tree: str
+    clean: bool
 
 
 class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
@@ -95,6 +110,220 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                     resource="fixture:desktop-identity-storage",
                 )
         return seeds
+
+    @staticmethod
+    def _git_value(root: Path, *args: str) -> str:
+        completed = subprocess.run(
+            ("git", "-C", str(root), *args),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        value = completed.stdout.strip()
+        if completed.returncode != 0 or not value:
+            detail = completed.stderr.strip() or "git returned no value"
+            raise BlockedError(
+                reason=f"Cannot inspect Native client worktree {root}: {detail}",
+                resource="client-isolation:worktrees",
+            )
+        return value
+
+    @classmethod
+    def _inspect_worktree(cls, root: Path) -> ClientWorktreeIdentity:
+        if not (root / "Makefile").is_file():
+            raise BlockedError(
+                reason=f"Native client worktree has no Makefile: {root}",
+                resource="client-isolation:worktrees",
+            )
+        canonical_root = Path(
+            cls._git_value(root, "rev-parse", "--show-toplevel")
+        ).resolve()
+        if canonical_root != root:
+            raise BlockedError(
+                reason=(
+                    "Native client worktree must be a canonical Git root: "
+                    f"{root}"
+                ),
+                resource="client-isolation:worktrees",
+            )
+        common_dir = Path(
+            cls._git_value(
+                root,
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-common-dir",
+            )
+        ).resolve()
+        status = subprocess.run(
+            (
+                "git",
+                "-C",
+                str(root),
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+            ),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if status.returncode != 0:
+            raise BlockedError(
+                reason=f"Cannot inspect Native client worktree status: {root}",
+                resource="client-isolation:worktrees",
+            )
+        return ClientWorktreeIdentity(
+            root=root,
+            logical_name=root.name,
+            common_dir=common_dir,
+            head=cls._git_value(root, "rev-parse", "HEAD"),
+            tree=cls._git_value(root, "rev-parse", "HEAD^{tree}"),
+            clean=not status.stdout.strip(),
+        )
+
+    @staticmethod
+    def _validate_client_worktrees(
+        identities: dict[str, ClientWorktreeIdentity],
+    ) -> None:
+        if set(identities) != set(CLIENT_ROLES):
+            raise BlockedError(
+                reason=(
+                    "Current-profile Native Gate requires one worktree "
+                    "for Alice and one for Bob"
+                ),
+                resource="client-isolation:worktrees",
+            )
+        for role, expected_name in CLIENT_WORKTREE_NAMES.items():
+            identity = identities[role]
+            if identity.logical_name != expected_name:
+                raise BlockedError(
+                    reason=(
+                        f"Current-profile actor {role} must run from "
+                        f"{expected_name}, got {identity.logical_name}"
+                    ),
+                    resource=f"client-worktree:{role}",
+                )
+        roots = {identity.root for identity in identities.values()}
+        if len(roots) != len(CLIENT_ROLES):
+            raise BlockedError(
+                reason=(
+                    "Current-profile Native Gate requires two distinct "
+                    "client worktrees"
+                ),
+                resource="client-isolation:worktrees",
+            )
+        if identities["bob"].root != REPO_ROOT.resolve():
+            raise BlockedError(
+                reason=(
+                    "The current-profile Gate must run from peers-group-chat "
+                    "so its existing Bob client initiates the journey"
+                ),
+                resource="client-worktree:initiator",
+            )
+        if len(
+            {identity.common_dir for identity in identities.values()}
+        ) != 1:
+            raise BlockedError(
+                reason="Native client worktrees do not belong to one repository",
+                resource="client-isolation:worktrees",
+            )
+        dirty = sorted(
+            role for role, identity in identities.items() if not identity.clean
+        )
+        if dirty:
+            raise BlockedError(
+                reason=(
+                    "Current-profile Native client worktrees must be clean: "
+                    f"{', '.join(dirty)}"
+                ),
+                resource="source-identity:worktree-cleanliness",
+            )
+        trees = {identity.tree for identity in identities.values()}
+        if len(trees) != 1:
+            raise BlockedError(
+                reason=(
+                    "peers-chat-high-chat is not synchronized to the "
+                    "peers-group-chat source tree"
+                ),
+                resource="source-identity:worktree-tree",
+            )
+
+    @classmethod
+    def _client_worktrees(cls) -> dict[str, ClientWorktreeIdentity]:
+        raw = os.environ.get(CLIENT_WORKTREES_ENV, "").strip()
+        roots: dict[str, Path]
+        if raw:
+            try:
+                configured = json.loads(raw)
+            except json.JSONDecodeError as error:
+                raise BlockedError(
+                    reason=(
+                        f"{CLIENT_WORKTREES_ENV} must be a JSON object: {error}"
+                    ),
+                    resource="client-isolation:worktrees",
+                ) from error
+            if not isinstance(configured, dict):
+                raise BlockedError(
+                    reason=f"{CLIENT_WORKTREES_ENV} must be a JSON object",
+                    resource="client-isolation:worktrees",
+                )
+            if set(configured) != set(CLIENT_ROLES) or any(
+                not isinstance(path, str) or not path.strip()
+                for path in configured.values()
+            ):
+                raise BlockedError(
+                    reason=(
+                        f"{CLIENT_WORKTREES_ENV} must map exactly Alice and "
+                        "Bob to non-empty worktree paths"
+                    ),
+                    resource="client-isolation:worktrees",
+                )
+            roots = {
+                str(role): Path(str(path)).expanduser().resolve()
+                for role, path in configured.items()
+            }
+        else:
+            completed = subprocess.run(
+                ("git", "worktree", "list", "--porcelain"),
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise BlockedError(
+                    reason="Cannot discover linked Native client worktrees",
+                    resource="client-isolation:worktrees",
+                )
+            discovered: dict[str, Path] = {}
+            for line in completed.stdout.splitlines():
+                if not line.startswith("worktree "):
+                    continue
+                candidate = Path(line.removeprefix("worktree ")).resolve()
+                if candidate.name in CLIENT_WORKTREE_NAMES.values():
+                    if (
+                        candidate.name in discovered
+                        and discovered[candidate.name] != candidate
+                    ):
+                        raise BlockedError(
+                            reason=(
+                                "Multiple linked worktrees use the required "
+                                f"logical name {candidate.name}"
+                            ),
+                            resource="client-isolation:worktrees",
+                        )
+                    discovered[candidate.name] = candidate
+            roots = {
+                role: discovered[name]
+                for role, name in CLIENT_WORKTREE_NAMES.items()
+                if name in discovered
+            }
+        identities = {
+            role: cls._inspect_worktree(root)
+            for role, root in roots.items()
+        }
+        cls._validate_client_worktrees(identities)
+        return identities
 
     def _resolve_credentials(self) -> tuple[tuple[str, ...], dict[str, str]]:
         return self._remember_resolved_credentials(
@@ -224,6 +453,7 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 resource=f"gate-environment:{GATE_ID}",
             )
         seed_roots = self._storage_seeds(profile_name)
+        client_worktrees = self._client_worktrees()
 
         run_root = Path(f"/tmp/pt-chat-native-current-{run_id}")
         run_root.mkdir(parents=True, exist_ok=False)
@@ -272,7 +502,7 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
             client = ClientRuntime(
                 actor=declared[role].actor,
                 runtime="native-tauri",
-                worktree=str(REPO_ROOT),
+                worktree=str(client_worktrees[role].root),
                 gateway_port=gateway_base + index,
                 renderer_port=renderer_base + index,
                 webdriver_port=webdriver_base + index,
