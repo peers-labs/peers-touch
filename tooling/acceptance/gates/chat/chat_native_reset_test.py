@@ -441,7 +441,8 @@ INSERT INTO device_queue_lanes VALUES (
                 duplicate = connection.execute(
                     """
 SELECT lane_sequence, event_id, event_sequence, state, attempt_count,
-       opaque_payload, payload_sha256, last_error_code
+       opaque_payload, payload_sha256, consumption_receipt_id,
+       last_error_code
 FROM device_queue_items
 WHERE item_id = ?
 """,
@@ -458,7 +459,17 @@ WHERE recipient_ptid = 'ptid:bob'
 
             self.assertEqual(
                 duplicate,
-                (8, "event-1", 3, 1, 0, b"\x01\x02", b"\x03\x04", ""),
+                (
+                    8,
+                    "event-1",
+                    3,
+                    1,
+                    0,
+                    b"\x01\x02",
+                    b"\x03\x04",
+                    None,
+                    "",
+                ),
             )
             self.assertEqual(next_sequence, 8)
             self.assertEqual(evidence["sourceItemId"], "source-item")

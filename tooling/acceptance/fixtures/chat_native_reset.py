@@ -806,7 +806,7 @@ INSERT INTO device_queue_items (
   consumption_receipt_id, last_error_code, last_reject_consumer_epoch
 ) VALUES (
   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, '', 0, NULL,
-  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, NULL, NULL, '',
+  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, NULL, NULL, NULL,
   '', 0
 )
 """,
