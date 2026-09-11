@@ -4,6 +4,7 @@ from contextlib import closing
 from pathlib import Path
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -14,6 +15,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     FixtureActorRecord,
     _remote_transport,
     acceptance_station_environment,
+    duplicate_acceptance_queue_delivery,
     fixture_friendship_federation_id,
     read_fixture_actor,
     reset_local_client_storage,
@@ -360,6 +362,109 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                     "station-dev.sh"
                 )
             )
+
+    @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"})
+    def test_local_source_queue_replay_duplicates_acked_item(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "station.db"
+            with closing(sqlite3.connect(database)) as connection:
+                connection.executescript(
+                    """
+CREATE TABLE device_queue_items (
+  id INTEGER PRIMARY KEY,
+  item_id TEXT,
+  recipient_ptid TEXT,
+  recipient_device_id TEXT,
+  lane_sequence INTEGER,
+  idempotency_key TEXT,
+  event_id TEXT,
+  event_sequence INTEGER NOT NULL,
+  conversation_id TEXT,
+  payload_type INTEGER,
+  opaque_payload BLOB,
+  payload_sha256 BLOB,
+  state INTEGER,
+  attempt_count INTEGER,
+  lease_consumer_id TEXT,
+  lease_consumer_epoch INTEGER,
+  lease_expires_at TEXT,
+  first_queued_at TEXT,
+  next_attempt_at TEXT,
+  expires_at TEXT,
+  consumed_at TEXT,
+  acked_at TEXT,
+  consumption_receipt_id TEXT,
+  last_error_code TEXT,
+  last_reject_consumer_epoch INTEGER
+);
+CREATE TABLE device_queue_lanes (
+  recipient_ptid TEXT,
+  recipient_device_id TEXT,
+  next_sequence INTEGER NOT NULL,
+  acked_through INTEGER NOT NULL,
+  active_consumer_id TEXT,
+  active_consumer_epoch INTEGER NOT NULL,
+  PRIMARY KEY (recipient_ptid, recipient_device_id)
+);
+INSERT INTO device_queue_items VALUES (
+  1, 'source-item', 'ptid:bob', 'bob-device', 7, 'source-key',
+  'event-1', 3, 'conversation-1', 1, x'0102', x'0304', 5, 1,
+  '', 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+  '2099-01-01 00:00:00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+  'receipt-1', '', 0
+);
+INSERT INTO device_queue_lanes VALUES (
+  'ptid:bob', 'bob-device', 7, 7, '', 1
+);
+"""
+                )
+            environment = {
+                "PT_ACCEPTANCE_RUNTIME_KIND": "local-source",
+                "PT_ACCEPTANCE_LOCAL_DATABASE": str(database),
+            }
+            with patch(
+                "tooling.acceptance.fixtures.chat_native_reset."
+                "acceptance_station_environment",
+                return_value=environment,
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_reset."
+                "verify_disposable_station_runtime",
+            ):
+                evidence = duplicate_acceptance_queue_delivery(
+                    "http://127.0.0.1:18080",
+                    "source-item",
+                    "ptid:bob",
+                    "bob-device",
+                )
+
+            with closing(sqlite3.connect(database)) as connection:
+                duplicate = connection.execute(
+                    """
+SELECT lane_sequence, event_id, event_sequence, state, attempt_count,
+       opaque_payload, payload_sha256, last_error_code
+FROM device_queue_items
+WHERE item_id = ?
+""",
+                    (evidence["duplicateItemId"],),
+                ).fetchone()
+                next_sequence = connection.execute(
+                    """
+SELECT next_sequence
+FROM device_queue_lanes
+WHERE recipient_ptid = 'ptid:bob'
+  AND recipient_device_id = 'bob-device'
+"""
+                ).fetchone()[0]
+
+            self.assertEqual(
+                duplicate,
+                (8, "event-1", 3, 1, 0, b"\x01\x02", b"\x03\x04",
+                 "acceptance_duplicate_delivery"),
+            )
+            self.assertEqual(next_sequence, 8)
+            self.assertEqual(evidence["sourceItemId"], "source-item")
+            self.assertEqual(evidence["laneSequence"], 8)
+            self.assertEqual(evidence["payloadSha256"], "0304")
 
     def test_reads_fixture_actor_from_owned_local_database(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

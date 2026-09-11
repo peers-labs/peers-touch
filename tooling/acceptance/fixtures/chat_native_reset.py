@@ -763,6 +763,89 @@ def duplicate_acceptance_queue_delivery(
 
     environment = acceptance_station_environment(station_url)
     verify_disposable_station_runtime(environment)
+    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
+        database = environment["PT_ACCEPTANCE_LOCAL_DATABASE"]
+        duplicate_item_id = hashlib.sha256(
+            f"{source_item_id}:{time.time_ns()}".encode("utf-8")
+        ).hexdigest()[:32]
+        with closing(sqlite3.connect(database, timeout=10)) as connection:
+            connection.row_factory = sqlite3.Row
+            connection.execute("BEGIN IMMEDIATE")
+            source_row = connection.execute(
+                """
+SELECT event_id, event_sequence, conversation_id, payload_type,
+       opaque_payload, payload_sha256, state, expires_at
+FROM device_queue_items
+WHERE item_id = ? AND recipient_ptid = ? AND recipient_device_id = ?
+""",
+                (source_item_id, recipient_ptid, recipient_device_id),
+            ).fetchone()
+            if source_row is None:
+                raise RuntimeError("queue replay source item is unavailable")
+            if source_row["state"] != 5:
+                raise RuntimeError("queue replay source item is not ACKED")
+            lane_row = connection.execute(
+                """
+SELECT next_sequence
+FROM device_queue_lanes
+WHERE recipient_ptid = ? AND recipient_device_id = ?
+""",
+                (recipient_ptid, recipient_device_id),
+            ).fetchone()
+            if lane_row is None:
+                raise RuntimeError("queue replay recipient lane is unavailable")
+            lane_sequence = int(lane_row["next_sequence"]) + 1
+            connection.execute(
+                """
+INSERT INTO device_queue_items (
+  item_id, recipient_ptid, recipient_device_id, lane_sequence,
+  idempotency_key, event_id, event_sequence, conversation_id,
+  payload_type, opaque_payload, payload_sha256, state, attempt_count,
+  lease_consumer_id, lease_consumer_epoch, lease_expires_at,
+  first_queued_at, next_attempt_at, expires_at, consumed_at, acked_at,
+  consumption_receipt_id, last_error_code, last_reject_consumer_epoch
+) VALUES (
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, '', 0, NULL,
+  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, NULL, NULL, '',
+  'acceptance_duplicate_delivery', 0
+)
+""",
+                (
+                    duplicate_item_id,
+                    recipient_ptid,
+                    recipient_device_id,
+                    lane_sequence,
+                    duplicate_item_id,
+                    source_row["event_id"],
+                    source_row["event_sequence"],
+                    source_row["conversation_id"],
+                    source_row["payload_type"],
+                    source_row["opaque_payload"],
+                    source_row["payload_sha256"],
+                    source_row["expires_at"],
+                ),
+            )
+            updated = connection.execute(
+                """
+UPDATE device_queue_lanes
+SET next_sequence = ?
+WHERE recipient_ptid = ? AND recipient_device_id = ?
+""",
+                (lane_sequence, recipient_ptid, recipient_device_id),
+            ).rowcount
+            if updated != 1:
+                raise RuntimeError("queue replay recipient lane update failed")
+            connection.commit()
+        return {
+            "sourceItemId": source_item_id,
+            "duplicateItemId": duplicate_item_id,
+            "eventId": source_row["event_id"],
+            "laneSequence": lane_sequence,
+            "payloadSha256": bytes(
+                source_row["payload_sha256"] or b""
+            ).hex(),
+            "state": 1,
+        }
     source = _sql_literal(source_item_id)
     ptid = _sql_literal(recipient_ptid)
     device = _sql_literal(recipient_device_id)
