@@ -2,7 +2,10 @@ package interaction
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
@@ -284,6 +287,41 @@ func (s *Service) SubmitDeliveryReceipt(
 	if err != nil {
 		return DeliveryRecordResult{}, err
 	}
+	// #region debug-point Z15-Z16:delivery-aggregate-validation
+	debugBody, _ := json.Marshal(map[string]any{
+		"sessionId":    "conversation-open-500",
+		"runId":        "delivery-receipt-post-fix",
+		"hypothesisId": "Z15-Z16",
+		"location": "conversation/application/interaction/service.go:" +
+			"SubmitDeliveryReceipt",
+		"msg": "[DEBUG] Delivery aggregate before validation",
+		"data": map[string]any{
+			"receiptId":           receipt.ReceiptID,
+			"eventId":             receipt.EventID,
+			"eventSequence":       receipt.EventSequence,
+			"requiredDeviceCount": result.Aggregate.RequiredDeviceCount,
+			"consumedDeviceCount": result.Aggregate.ConsumedDeviceCount,
+			"revokedDeviceCount":  result.Aggregate.RevokedDeviceCount,
+			"delivered":           result.Aggregate.Delivered,
+			"fullyDelivered":      result.Aggregate.FullyDelivered,
+			"read":                result.Aggregate.Read,
+		},
+	})
+	if debugRequest, debugRequestErr := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		"http://10.4.55.179:7779/event",
+		strings.NewReader(string(debugBody)),
+	); debugRequestErr == nil {
+		debugRequest.Header.Set("Content-Type", "application/json")
+		debugResponse, _ := (&http.Client{
+			Timeout: 500 * time.Millisecond,
+		}).Do(debugRequest)
+		if debugResponse != nil {
+			_ = debugResponse.Body.Close()
+		}
+	}
+	// #endregion
 	if err := validateDeliveryAggregate(receipt, result.Aggregate); err != nil {
 		return DeliveryRecordResult{}, err
 	}
