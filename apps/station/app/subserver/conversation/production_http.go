@@ -2090,6 +2090,46 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 
 		return server.Forbidden("Conversation policy rejected the request")
 	}
+	interactionCode := interactionapp.CodeOf(err)
+	switch interactionCode {
+	case interactionapp.ErrorCodeInvalidArgument:
+		return productionInteractionHandlerError(
+			http.StatusBadRequest,
+			"invalid Conversation interaction request",
+			interactionCode,
+			err,
+		)
+	case interactionapp.ErrorCodeUnauthorized:
+		return productionInteractionHandlerError(
+			http.StatusForbidden,
+			"Conversation interaction is not authorized",
+			interactionCode,
+			err,
+		)
+	case interactionapp.ErrorCodeStalePulse,
+		interactionapp.ErrorCodeIdempotencyConflict,
+		interactionapp.ErrorCodeIntegrityFailed:
+		return productionInteractionHandlerError(
+			http.StatusConflict,
+			"Conversation interaction conflicts with committed state",
+			interactionCode,
+			err,
+		)
+	case interactionapp.ErrorCodeQuotaExceeded:
+		return productionInteractionHandlerError(
+			http.StatusTooManyRequests,
+			"Conversation interaction quota exceeded",
+			interactionCode,
+			err,
+		)
+	case interactionapp.ErrorCodePersistence:
+		return productionInteractionHandlerError(
+			http.StatusServiceUnavailable,
+			"Conversation interaction persistence is unavailable",
+			interactionCode,
+			err,
+		)
+	}
 	code := conversationdomain.CodeOf(err)
 	switch code {
 	case conversationdomain.ErrorCodeInvalidArgument,
@@ -2151,6 +2191,30 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 
 		return server.InternalErrorWithCause("Conversation operation failed", err)
 	}
+}
+
+func productionInteractionHandlerError(
+	status int,
+	message string,
+	code interactionapp.ErrorCode,
+	err error,
+) *server.HandlerError {
+	handlerError := server.NewHandlerErrorWithCause(status, message, err)
+	handlerError.Headers = map[string]string{
+		"X-Peers-Error-Code": string(code),
+	}
+	var typed *interactionapp.Error
+	if errors.As(err, &typed) {
+		details, encodeErr := json.Marshal(map[string]string{
+			"operation": typed.Operation,
+			"field":     typed.Field,
+			"reason":    typed.Message,
+		})
+		if encodeErr == nil && len(details) <= 4096 {
+			handlerError.Headers["X-Peers-Error-Details"] = string(details)
+		}
+	}
+	return handlerError
 }
 
 func productionConversationHandlerError(

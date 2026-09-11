@@ -774,6 +774,18 @@ SSE/push wake
 
 服务端 `notified` 不得映射为 delivered。
 
+Receipt aggregate 必须按 conversation kind 使用正确的 endpoint truth：
+
+- Direct 的 event-time required set 与 originator synchronization routes 来自
+  authority event 的 immutable delivery commitments。Direct 当前设备由 Actor
+  Directory 在 MP-D17 send preparation 时选出，不要求存在于
+  `conversation_member_devices`。
+- Group 的 required endpoints 和 revoke accounting 继续由 committed MLS
+  `conversation_member_devices` 约束；缺失 leaf 是 integrity failure。
+- Direct 中尚未 receipt 且当前状态无法由 authority-local truth 证明为 revoked 的
+  endpoint 保持 outstanding，禁止把“缺少 Group device row”解释为 revoked 或
+  delivered。
+
 ## 10. Failure, Retry, And Overload
 
 - Claim lease 超时：item 回到 pending，由 consumer epoch 防止旧 consumer ACK。
