@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T214403167521Z-884c868de07aec4a5a91ad6c44d8cbc6` on `040912bcabad6eb67db15fda2d37c5d7066da0dc` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260911T214508595389Z-0e79b626b70d9158805ecc8382e7e54e` crossed AS-F04, both BASE-CANCELLED locales, BASE-EXECUTOR-UNAVAILABLE, BASE-FORBIDDEN-ACTOR, and the corrected BASE-INCOMPATIBLE_CAPABILITY vertical, then stopped at Browser Simplified Chinese BASE-CONTEXT-OVERFLOW with only `localizedRecoveryVisible=false`; pre/post-click locale/DOM telemetry is pending exact-source proof | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T222805881767Z-f6325398e35ef10bbc86e10e3f291ff1` on `07351dcf4f28fd8b81a2de58f493609b7086177a` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260911T222932042410Z-f62cac19455ffd1a5c5bb8bd182423b4` crossed both BASE-CONTEXT-OVERFLOW locales with matching pre/post receiver evidence, then stopped at Browser Simplified Chinese BASE-DUPLICATE-CONFLICT while waiting for the original Turn details view; click/portal/projection telemetry is pending exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1618,6 +1618,22 @@ and zero local-path leakage.
   error/recovery visibility, localized text equality hashes, focus, and
   reduced-draft completion; it changes no assertion, timeout, or product
   behavior.
+- Exact-source checkpoint `07351dcf4f28fd8b81a2de58f493609b7086177a`
+  passed C08 run
+  `20260911T222805881767Z-f6325398e35ef10bbc86e10e3f291ff1`
+  with 19/19 assertions and clean cleanup. Foundation run
+  `20260911T222932042410Z-f62cac19455ffd1a5c5bb8bd182423b4`
+  crossed both Browser `BASE-CONTEXT-OVERFLOW` locale cells. Its four
+  pre/post-click events prove one current surface, matching localized error and
+  recovery hashes, visible receiver controls, restored focus, and reduced-draft
+  completion for `en` and `zh-CN`; no context-overflow correction is justified.
+  The next first failure is Browser Simplified Chinese
+  `BASE-DUPLICATE-CONFLICT`, where the recovery action timed out waiting for the
+  original Turn details view. Provisioner cleanup completed
+  `DONE / PROVEN / passed`. The next telemetry-only checkpoint distinguishes a
+  stale recovery node, mismatched target, missing original assistant
+  projection, absent portal transition, and overwritten portal transition
+  without changing product behavior, assertions, tuples, or timeouts.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

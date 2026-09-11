@@ -6065,15 +6065,131 @@ async function runFoundationDuplicateConflictScenario(input: {
     const receiverRecoveryVisible =
       recoveryAction.getClientRects().length > 0;
     const receiverRecoveryText = recoveryAction.textContent?.trim() ?? '';
-    recoveryAction.click();
-    await waitFor(
-      () => {
-        const view = usePortalStore.getState().activeView;
-        return view?.type === 'turnDetails' && view.turnId === originalTurnId;
-      },
-      'duplicate conflict original turn details',
-      30_000,
+    const recoverySelector =
+      '[data-pt-agent-message-error-recovery="open-original"]';
+    const liveRecoveryAction =
+      errorSurface.querySelector<HTMLElement>(recoverySelector);
+    const projectedOriginalMessages = useChatStore.getState().messages.filter(
+      (candidate) => candidate.turnId === originalTurnId,
     );
+    // #region debug-point A-E:duplicate-conflict-recovery-click
+    await reportFoundationDuplicateConflictOriginalDetailsDebug(
+      'A-E',
+      'pre-click-snapshot',
+      {
+        locale: i18n.language,
+        recoveryConnected: recoveryAction.isConnected,
+        recoveryVisible: recoveryAction.getClientRects().length > 0,
+        recoveryNodeIsLive:
+          Boolean(liveRecoveryAction)
+          && recoveryAction.isSameNode(liveRecoveryAction),
+        recoveryTargetMatchesOriginal:
+          String(rejectedDetails.existing_command_id ?? '') === originalTurnId,
+        projectedOriginalMessageCount: projectedOriginalMessages.length,
+        projectedOriginalAssistantCount: projectedOriginalMessages.filter(
+          (candidate) => candidate.role === 'assistant',
+        ).length,
+        activeViewType: usePortalStore.getState().activeView?.type ?? 'none',
+        portalExpanded: usePortalStore.getState().expanded,
+      },
+    );
+    let clickObserved = false;
+    let portalTransitionCount = 0;
+    const observeRecoveryClick = () => {
+      clickObserved = true;
+      void reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'A-C',
+        'recovery-click-observed',
+        {
+          recoveryConnected: recoveryAction.isConnected,
+          recoveryNodeIsLive:
+            Boolean(
+              errorSurface.querySelector<HTMLElement>(recoverySelector),
+            )
+            && recoveryAction.isSameNode(
+              errorSurface.querySelector<HTMLElement>(recoverySelector),
+            ),
+        },
+      );
+    };
+    recoveryAction.addEventListener('click', observeRecoveryClick, {
+      once: true,
+    });
+    const unsubscribePortalDebug = usePortalStore.subscribe((state) => {
+      portalTransitionCount += 1;
+      const view = state.activeView;
+      void reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'C-D',
+        'portal-transition',
+        {
+          transitionCount: portalTransitionCount,
+          activeViewType: view?.type ?? 'none',
+          turnMatchesOriginal:
+            view?.type === 'turnDetails' && view.turnId === originalTurnId,
+          expanded: state.expanded,
+        },
+      );
+    });
+    try {
+      recoveryAction.click();
+      try {
+        await waitFor(
+          () => {
+            const view = usePortalStore.getState().activeView;
+            return (
+              view?.type === 'turnDetails'
+              && view.turnId === originalTurnId
+            );
+          },
+          'duplicate conflict original turn details',
+          30_000,
+        );
+      } catch (error) {
+        const failedView = usePortalStore.getState().activeView;
+        const failedOriginalMessages =
+          useChatStore.getState().messages.filter(
+            (candidate) => candidate.turnId === originalTurnId,
+          );
+        await reportFoundationDuplicateConflictOriginalDetailsDebug(
+          'A-E',
+          'original-details-timeout',
+          {
+            clickObserved,
+            portalTransitionCount,
+            activeViewType: failedView?.type ?? 'none',
+            turnMatchesOriginal:
+              failedView?.type === 'turnDetails'
+              && failedView.turnId === originalTurnId,
+            projectedOriginalMessageCount: failedOriginalMessages.length,
+            projectedOriginalAssistantCount: failedOriginalMessages.filter(
+              (candidate) => candidate.role === 'assistant',
+            ).length,
+            turnDetailsState:
+              document.querySelector<HTMLElement>(
+                '[data-agent-turn-details] [data-turn-details-state]',
+              )?.dataset.turnDetailsState ?? 'absent',
+          },
+        );
+        throw error;
+      }
+      const observedView = usePortalStore.getState().activeView;
+      await reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'C-E',
+        'original-details-observed',
+        {
+          clickObserved,
+          portalTransitionCount,
+          activeViewType: observedView?.type ?? 'none',
+          turnMatchesOriginal:
+            observedView?.type === 'turnDetails'
+            && observedView.turnId === originalTurnId,
+        },
+      );
+    } finally {
+      recoveryAction.removeEventListener('click', observeRecoveryClick);
+      unsubscribePortalDebug();
+    }
+    // #endregion
     await waitFor(
       () => Boolean(document.querySelector(
         `[data-agent-turn-details="${originalTurnId}"]`
@@ -9699,6 +9815,27 @@ function reportFoundationContextOverflowRecoveryDebug(
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationContextOverflowScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:duplicate-conflict-original-details
+function reportFoundationDuplicateConflictOriginalDetailsDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7793/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'duplicate-conflict-original-details',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationDuplicateConflictScenario',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),

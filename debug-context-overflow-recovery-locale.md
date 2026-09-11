@@ -13,10 +13,10 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Expected Signal | Evidence |
 |----|------------|------------|--------|-----------------|----------|
-| A | The recovery action is visible with correct localized text before click, then disappears after the recovery click as intended, while the producer samples visibility too late. | High | Low | Pre-click visibility/text hashes match; post-click visibility is false and focus/draft recovery succeeds. | Pending |
-| B | The active locale or Agent namespace is wrong for the Simplified Chinese tuple. | Medium | Low | Active locale differs from `zh-CN`, or actual and expected text hashes differ before click. | Pending |
-| C | The recovery action exists but is hidden before click because the typed error projection is incomplete. | Medium | Low | Pre-click element presence is true but visibility is false. | Pending |
-| D | The Harness selects a stale error surface from another Turn. | Low | Medium | Multiple matching surfaces exist or the selected surface changes before recovery. | Pending |
+| A | The recovery action is visible with correct localized text before click, then disappears after the recovery click as intended, while the producer samples visibility too late. | High | Low | Pre-click visibility/text hashes match; post-click visibility is false and focus/draft recovery succeeds. | Rejected: both locales remained visible after click. |
+| B | The active locale or Agent namespace is wrong for the Simplified Chinese tuple. | Medium | Low | Active locale differs from `zh-CN`, or actual and expected text hashes differ before click. | Rejected: locale and both text hashes matched. |
+| C | The recovery action exists but is hidden before click because the typed error projection is incomplete. | Medium | Low | Pre-click element presence is true but visibility is false. | Rejected: recovery was connected and visible. |
+| D | The Harness selects a stale error surface from another Turn. | Low | Medium | Multiple matching surfaces exist or the selected surface changes before recovery. | Rejected in this run: exactly one surface existed before and after click. |
 
 ## Instrumentation Plan
 - Record locale, matching surface count, error/recovery presence and visibility,
@@ -43,9 +43,30 @@
   `BASE-CONTEXT_OVERFLOW / zh-CN / single / sample-001` with only
   `localizedRecoveryVisible=false`.
 - Outer Provisioner cleanup passed.
+- Exact-source C08 run
+  `20260911T222805881767Z-f6325398e35ef10bbc86e10e3f291ff1`
+  on `07351dcf4f28fd8b81a2de58f493609b7086177a` is
+  `DONE / PROVEN`, 19/19, with clean cleanup.
+- Foundation run
+  `20260911T222932042410Z-f62cac19455ffd1a5c5bb8bd182423b4`
+  crossed both Browser `BASE-CONTEXT_OVERFLOW` locale cells. The four
+  pre/post events show one matching surface, matching localized error and
+  recovery hashes, visible error/recovery elements, restored composer focus,
+  and the reduced draft for both `en` and `zh-CN`.
+- The same Foundation run failed later at Browser Simplified Chinese
+  `BASE-DUPLICATE_CONFLICT` while waiting for the original Turn details.
+- Outer run
+  `20260911T222931919783Z-035e57e4db549bbe72107ed12eb1db2f`
+  is `FAILED / PARTIAL / UNPROVEN`; Provisioner cleanup is
+  `DONE / PROVEN / passed`.
 
 ## Verification Conclusion
-Pending pre-fix instrumentation.
+The previously observed context-overflow visibility failure did not reproduce.
+Hypotheses A-D are rejected for this exact-source run, and the Gate advanced to
+the next typed-error vertical. No context-overflow behavior change is justified
+from the current evidence. The session remains `[OPEN]`; instrumentation and
+the collector are retained until the enclosing Foundation proof is complete or
+the user authorizes cleanup.
 
 ## Local Verification
 - Desktop strict check: PASS.
