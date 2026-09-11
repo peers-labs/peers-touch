@@ -131,6 +131,65 @@ def report_identity_boot_debug(
     # #endregion
 
 
+# #region debug-point A-D:browser-renderer-lifecycle
+def report_browser_renderer_closed_debug(
+    hypothesis_id: str,
+    message: str,
+    data: Mapping[str, Any],
+) -> None:
+    try:
+        env_path = (
+            Path(__file__).resolve().parents[4]
+            / ".dbg"
+            / "browser-renderer-closed.env"
+        )
+        env_values = dict(
+            line.split("=", 1)
+            for line in env_path.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        debug_url = env_values["DEBUG_SERVER_URL"]
+        session_id = env_values["DEBUG_SESSION_ID"]
+    except Exception:
+        debug_url = "http://127.0.0.1:7786/event"
+        session_id = "browser-renderer-closed"
+    payload = json.dumps(
+        {
+            "sessionId": session_id,
+            "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
+            "hypothesisId": hypothesis_id,
+            "location": (
+                "tooling/acceptance/gates/agent/"
+                "foundation_runtime_client.py"
+            ),
+            "msg": f"[DEBUG] {message}",
+            "data": dict(data),
+            "ts": int(time.time() * 1000),
+        }
+    ).encode("utf-8")
+
+    def send() -> None:
+        try:
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    debug_url,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                ),
+                timeout=0.5,
+            ).read()
+        except Exception:
+            pass
+
+    threading.Thread(
+        target=send,
+        name="browser-renderer-closed-debug-report",
+        daemon=True,
+    ).start()
+# #endregion
+
+
 def port_open(port: int) -> bool:
     """Check if a port is listening on localhost (IPv4 or IPv6)."""
     for family, addr in (
@@ -549,6 +608,14 @@ class FoundationRuntimeClient:
         )
         # #endregion
         self.chrome.wait_for_ready(30)
+        # #region debug-point A-C:browser-session-ready
+        if self.spec.runtime == "browser":
+            report_browser_renderer_closed_debug(
+                "A-C",
+                "browser-session-ready",
+                self._browser_lifecycle_debug_snapshot(),
+            )
+        # #endregion
 
     def _process_alive(self) -> bool:
         if self.process is None:
@@ -558,6 +625,49 @@ class FoundationRuntimeClient:
                 f"{self.spec.runtime} exited with code {self.process.returncode}"
             )
         return True
+
+    # #region debug-point A-D:browser-runtime-snapshot
+    def _browser_lifecycle_debug_snapshot(self) -> dict[str, Any]:
+        process_return_code = (
+            None if self.process is None else self.process.poll()
+        )
+        driver_service = (
+            getattr(self.driver, "service", None)
+            if self.driver is not None
+            else None
+        )
+        driver_process = (
+            getattr(driver_service, "process", None)
+            if driver_service is not None
+            else None
+        )
+        driver_return_code = (
+            None if driver_process is None else driver_process.poll()
+        )
+        return {
+            "runtime": self.spec.runtime,
+            "restartGeneration": self.restart_generation,
+            "processPid": (
+                None if self.process is None else self.process.pid
+            ),
+            "processReturnCode": process_return_code,
+            "processGroupId": self._process_group_id,
+            "driverPresent": self.driver is not None,
+            "driverSessionPresent": bool(
+                getattr(self.driver, "session_id", None)
+                if self.driver is not None
+                else None
+            ),
+            "driverServicePid": (
+                None if driver_process is None else driver_process.pid
+            ),
+            "driverServiceReturnCode": driver_return_code,
+            "chromePresent": self.chrome is not None,
+            "gatewayPortOpen": port_open(self.spec.gateway_port),
+            "rendererPortOpen": port_open(self.spec.renderer_port),
+            "webdriverPortOpen": port_open(self.spec.webdriver_port),
+        }
+    # #endregion
 
     def harness(
         self,
@@ -569,15 +679,61 @@ class FoundationRuntimeClient:
             raise FoundationClientError(
                 f"{self.spec.runtime} client is not connected"
             )
+        started_at = time.monotonic()
+        if self.spec.runtime == "browser":
+            # #region debug-point A-D:browser-harness-call
+            report_browser_renderer_closed_debug(
+                "A-D",
+                "browser-harness-started",
+                {
+                    **self._browser_lifecycle_debug_snapshot(),
+                    "method": method,
+                    "cell": str((payload or {}).get("cell") or ""),
+                },
+            )
+            # #endregion
         try:
-            return call_async_harness(
+            result = call_async_harness(
                 self.driver,
                 method,
                 payload,
                 namespace="agent",
                 script_timeout=timeout,
             )
+            if self.spec.runtime == "browser":
+                # #region debug-point A-D:browser-harness-result
+                report_browser_renderer_closed_debug(
+                    "A-D",
+                    "browser-harness-completed",
+                    {
+                        **self._browser_lifecycle_debug_snapshot(),
+                        "method": method,
+                        "cell": str((payload or {}).get("cell") or ""),
+                        "elapsedMs": int(
+                            (time.monotonic() - started_at) * 1000
+                        ),
+                    },
+                )
+                # #endregion
+            return result
         except Exception as error:
+            if self.spec.runtime == "browser":
+                # #region debug-point A-D:browser-harness-failure
+                report_browser_renderer_closed_debug(
+                    "A-D",
+                    "browser-harness-failed",
+                    {
+                        **self._browser_lifecycle_debug_snapshot(),
+                        "method": method,
+                        "cell": str((payload or {}).get("cell") or ""),
+                        "elapsedMs": int(
+                            (time.monotonic() - started_at) * 1000
+                        ),
+                        "errorType": type(error).__name__,
+                        "error": str(error)[:512],
+                    },
+                )
+                # #endregion
             # #region debug-point C:client-harness-failure
             try:
                 urllib.request.urlopen(
@@ -767,6 +923,18 @@ class FoundationRuntimeClient:
         logout: bool,
         remove_storage: bool,
     ) -> dict[str, Any]:
+        # #region debug-point B-D:browser-runtime-stop
+        if self.spec.runtime == "browser":
+            report_browser_renderer_closed_debug(
+                "B-D",
+                "browser-runtime-stop-entered",
+                {
+                    **self._browser_lifecycle_debug_snapshot(),
+                    "logout": logout,
+                    "removeStorage": remove_storage,
+                },
+            )
+        # #endregion
         failures: list[str] = []
         if logout and self.driver is not None:
             try:
@@ -855,7 +1023,7 @@ class FoundationRuntimeClient:
             failures.append(f"ports still listening: {ports}")
         if remove_storage and self.spec.storage_root.exists():
             failures.append(f"storage remains: {self.spec.storage_root}")
-        return {
+        result = {
             "status": "clean" if not failures else "failed",
             "portsReleased": ports,
             "storageReleased": (
@@ -870,6 +1038,21 @@ class FoundationRuntimeClient:
             ),
             "failures": failures,
         }
+        # #region debug-point B-D:browser-runtime-stopped
+        if self.spec.runtime == "browser":
+            report_browser_renderer_closed_debug(
+                "B-D",
+                "browser-runtime-stopped",
+                {
+                    **self._browser_lifecycle_debug_snapshot(),
+                    "logout": logout,
+                    "removeStorage": remove_storage,
+                    "cleanupStatus": result["status"],
+                    "cleanupFailures": list(failures),
+                },
+            )
+        # #endregion
+        return result
 
     @staticmethod
     def _signal_process_group(

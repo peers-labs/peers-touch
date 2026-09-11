@@ -24,18 +24,18 @@
 | Current workstream | G-FE1 incompatible-capability closure and exact-source Foundation proof |
 | Current step | `BASE-INCOMPATIBLE_CAPABILITY` is source-complete locally across Station, Desktop, production Harness, replay/cleanup evidence, and the independent oracle |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | C08 run `20260911T044710291528Z-2a7016d83a804dbf19694fb22131e1e6` on `6afce95271381aa1d0c2ed7a331bf728b3f40e36` is `DONE / PROVEN` with clean resource release；Foundation run `20260911T044824404452Z-1bd6e65bb4094a3cdbc03dd37f0af86a` reached Browser English AS-F06 and preserved clean outer cleanup |
-| Current action | Create a clean checkpoint, deploy exact source through `chat-native-disposable`, rerun C08, then run the unchanged 419-cell Gate |
-| Next action | If the full Gate crosses `BASE-INCOMPATIBLE_CAPABILITY`, admit only the next plan-defined `BASE-*` vertical exposed by its first failure |
+| Last completed | Exact-source C08 run `20260911T103744741659Z-6465d9a037b69ecf3a3cbe97cb7306e5` on `ad04118c27a7c6890638046b9271be5ce01b22e8` is `DONE / PROVEN` with 19/19 assertions and clean resource release；the unchanged Foundation run `20260911T103941162463Z-636de10c5006785521980cd5b47864be` crossed the repaired AS-F07 path and preserved clean outer cleanup |
+| Current action | Instrument the Browser client lifecycle around the first failing `BASE-APPROVAL_EXPIRED` tuple, reproduce on exact source, then apply only the evidence-supported root-cause fix |
+| Next action | After the Browser lifecycle correction, redeploy exact source, rerun C08, and run the unchanged 419-cell Gate; admit only the next plan-defined `BASE-*` vertical exposed by its first failure |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | none for the current source closure；fresh runtime proof still requires the exclusive local Desktop Gate window and the approved disposable profile |
+| Blockers | no hard blocker；the current recoverable implementation failure is Browser WebDriver session loss during `BASE-APPROVAL_EXPIRED` |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；the incompatible-capability source closure passes Station Agent packages, Desktop `606/606`, Desktop check/build, Agent Python `398/398`, hard rules, and diff hygiene；C08 is previously `DONE / PROVEN` on `6afce9527`, while current-source C08 and full G-F remain `UNPROVEN` until checkpoint/deploy |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 is current-source `DONE / PROVEN` on `ad04118c2`；Foundation is `FAILED / PARTIAL / UNPROVEN` after AS-F07 because Browser Chrome closed its WebDriver session at `BASE-APPROVAL_EXPIRED`; source attestation, redaction, and outer cleanup passed |
 | Last updated | 2026-09-11 |
 
 ---
