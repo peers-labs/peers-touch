@@ -164,9 +164,12 @@ class StationAttestationOwnerTests(unittest.TestCase):
         self.assertIn("\\.bare\\.git\\/", remote_command)
         self.assertIn("subprocess.check_output", remote_command)
         self.assertIn("ls-files", remote_command)
-        self.assertIn("model/domain", remote_command)
-        self.assertIn("apps/desktop/src/gen/proto", remote_command)
-        self.assertIn("apps/station", remote_command)
+        self.assertIn(":(glob)model/domain/**/*.proto", remote_command)
+        self.assertIn(
+            ":(glob)apps/desktop/src/gen/proto/**/*.ts",
+            remote_command,
+        )
+        self.assertIn(":(glob)apps/station/**/*.pb.go", remote_command)
         self.assertNotIn("apps/mobile/ios", remote_command)
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertNotIn("StrictHostKeyChecking=no", command)

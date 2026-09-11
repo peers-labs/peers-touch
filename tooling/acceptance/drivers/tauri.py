@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import shutil
 import socket
 import subprocess
@@ -345,6 +346,210 @@ class LocalTauriLauncher(AppLauncher):
 
     def is_alive(self) -> bool:
         return self._process is not None and self._process.poll() is None
+
+
+class MakeDesktopLauncher(AppLauncher):
+    """Launch an isolated native development client through `make desktop`."""
+
+    def __init__(
+        self,
+        *,
+        worktree: str | Path,
+        port: int,
+        gateway_port: int,
+        renderer_port: int,
+        profile: str,
+        storage_root: str,
+        environment: Mapping[str, str] | None = None,
+        startup_timeout: float = 900.0,
+    ) -> None:
+        self.worktree = Path(worktree).resolve()
+        self.port = port
+        self.gateway_port = gateway_port
+        self.renderer_port = renderer_port
+        self.profile = profile
+        self.storage_root = storage_root
+        self.environment = dict(environment or {})
+        self.startup_timeout = startup_timeout
+        self._process: subprocess.Popen[bytes] | None = None
+        self._runtime_pid: int | None = None
+        self._log_file: Any | None = None
+        self.log_path: Path | None = None
+
+    @property
+    def metadata(self) -> AppLaunchMetadata:
+        return AppLaunchMetadata(
+            webdriver_host="127.0.0.1",
+            webdriver_port=self.port,
+            gateway_port=self.gateway_port,
+            profile=self.profile,
+            storage_root=self.storage_root,
+            process_id=self._runtime_pid,
+            log_path=self.log_path,
+        )
+
+    def start(self) -> AppLaunchMetadata:
+        if self._process is not None and self._process.poll() is None:
+            return self.metadata
+        if not (self.worktree / "Makefile").is_file():
+            raise DriverError(
+                f"Native Desktop worktree has no Makefile: {self.worktree}"
+            )
+        Path(self.storage_root).mkdir(parents=True, exist_ok=True)
+        env = os.environ.copy()
+        env.update(self.environment)
+        env.update(
+            {
+                "PT_ACCEPTANCE_NATIVE_DEV": "1",
+                "PT_ACCEPTANCE_WEBDRIVER_PORT": str(self.port),
+                "PT_GATEWAY_PORT": str(self.gateway_port),
+                "PT_RENDERER_PORT": str(self.renderer_port),
+                "PT_PROFILE": self.profile,
+                "PEERS_STORAGE_ROOT": self.storage_root,
+                "DESKTOP_RUST_STARTUP_TIMEOUT_SECONDS": str(
+                    max(1, int(self.startup_timeout))
+                ),
+            }
+        )
+        self._log_file = tempfile.NamedTemporaryFile(
+            prefix=f"peers-touch-make-desktop-{self.port}-",
+            suffix=".log",
+            delete=False,
+        )
+        self.log_path = Path(self._log_file.name)
+        self._process = subprocess.Popen(
+            ["make", "desktop"],
+            cwd=self.worktree,
+            env=env,
+            stdout=self._log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        deadline = time.monotonic() + self.startup_timeout
+        try:
+            while time.monotonic() < deadline:
+                return_code = self._process.poll()
+                if return_code is not None:
+                    raise DriverError(
+                        "make desktop exited before native readiness "
+                        f"(code {return_code}): {self._log_tail()}"
+                    )
+                try:
+                    urllib.request.urlopen(
+                        f"{_webdriver_url('127.0.0.1', self.port)}/status",
+                        timeout=1,
+                    ).close()
+                except Exception:
+                    time.sleep(0.25)
+                    continue
+                self._runtime_pid = self._owned_listener_pid(self.port)
+                return self.metadata
+            raise DriverError(
+                "make desktop did not expose embedded WebDriver within "
+                f"{self.startup_timeout}s: {self._log_tail()}"
+            )
+        except Exception:
+            self.stop()
+            raise
+
+    def stop(self, *, preserve_state: bool = False) -> None:
+        del preserve_state
+        errors: list[str] = []
+        process = self._process
+        if process is not None:
+            try:
+                if process.poll() is None:
+                    os.killpg(process.pid, signal.SIGTERM)
+                    try:
+                        process.wait(timeout=20)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.wait(timeout=5)
+            except ProcessLookupError:
+                pass
+            except Exception as error:
+                errors.append(f"process: {error}")
+            finally:
+                self._process = None
+                self._runtime_pid = None
+        if self._log_file is not None:
+            try:
+                self._log_file.close()
+            except Exception as error:
+                errors.append(f"log: {error}")
+            finally:
+                self._log_file = None
+        if errors:
+            raise DriverError(
+                "make Desktop launcher cleanup failed: " + "; ".join(errors)
+            )
+
+    def is_alive(self) -> bool:
+        if self._process is None or self._process.poll() is not None:
+            return False
+        if self._runtime_pid is None:
+            return True
+        try:
+            os.kill(self._runtime_pid, 0)
+        except (ProcessLookupError, PermissionError):
+            return False
+        return True
+
+    def _owned_listener_pid(self, port: int) -> int:
+        completed = subprocess.run(
+            ["lsof", "-tiTCP:" + str(port), "-sTCP:LISTEN"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        listeners = {
+            int(value)
+            for value in completed.stdout.split()
+            if value.isdigit()
+        }
+        if self._process is None:
+            raise DriverError("make Desktop process is unavailable")
+        owned = [
+            pid
+            for pid in listeners
+            if self._is_descendant(pid, self._process.pid)
+        ]
+        if len(owned) != 1:
+            raise DriverError(
+                f"embedded WebDriver port {port} is not owned by the "
+                f"launched make desktop process; listeners={sorted(listeners)}"
+            )
+        return owned[0]
+
+    @staticmethod
+    def _is_descendant(pid: int, ancestor: int) -> bool:
+        current = pid
+        visited: set[int] = set()
+        while current > 1 and current not in visited:
+            if current == ancestor:
+                return True
+            visited.add(current)
+            completed = subprocess.run(
+                ["ps", "-o", "ppid=", "-p", str(current)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            value = completed.stdout.strip()
+            if not value.isdigit():
+                return False
+            current = int(value)
+        return False
+
+    def _log_tail(self) -> str:
+        if self._log_file is not None:
+            self._log_file.flush()
+        if self.log_path is None or not self.log_path.is_file():
+            return "app log unavailable"
+        return self.log_path.read_text(
+            encoding="utf-8",
+            errors="replace",
+        )[-4000:]
 
 
 class ProvisionedTauriLauncher(AppLauncher):

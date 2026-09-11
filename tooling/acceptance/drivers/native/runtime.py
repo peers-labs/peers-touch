@@ -37,6 +37,7 @@ from tooling.acceptance.drivers.native.base import (
 )
 from tooling.acceptance.drivers.tauri import (
     LocalTauriLauncher,
+    MakeDesktopLauncher,
     TauriSession,
     find_app_binary,
 )
@@ -1069,7 +1070,15 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             MacOSNativeDesktopAdapter,
         )
 
-        self._binary = Path(find_app_binary()).resolve()
+        self._use_make = os.environ.get(
+            "PT_ACCEPTANCE_NATIVE_DEV",
+            "",
+        ) == "1"
+        self._binary = (
+            None
+            if self._use_make
+            else Path(find_app_binary()).resolve()
+        )
         self._native_adapter = MacOSNativeDesktopAdapter()
 
     @property
@@ -1086,7 +1095,21 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
         client_spec: Mapping[str, Any],
         environment: Mapping[str, str],
     ) -> TauriSession:
+        if self._use_make:
+            return TauriSession(
+                MakeDesktopLauncher(
+                    worktree=str(client_spec["worktree"]),
+                    port=int(client_spec["webdriver_port"]),
+                    gateway_port=int(client_spec["gateway_port"]),
+                    renderer_port=int(client_spec["renderer_port"]),
+                    profile=str(client_spec["profile"]),
+                    storage_root=str(client_spec["storage_root"]),
+                    environment=environment,
+                )
+            )
         del client_role
+        if self._binary is None:
+            raise DriverError("Native Acceptance binary is unavailable")
         return TauriSession(
             LocalTauriLauncher(
                 app_binary=str(self._binary),

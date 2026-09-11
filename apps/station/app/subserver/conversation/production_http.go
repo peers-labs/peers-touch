@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -2055,17 +2056,24 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 	case conversationdomain.ErrorCodeInvalidArgument,
 		conversationdomain.ErrorCodeDeliverySetMismatch,
 		conversationdomain.ErrorCodeUnsupportedTransition:
-		return server.BadRequestWithCause("invalid Conversation request", err)
+		return productionConversationHandlerError(
+			http.StatusBadRequest,
+			"invalid Conversation request",
+			code,
+			err,
+		)
 	case conversationdomain.ErrorCodeUnauthorized:
-		return server.NewHandlerErrorWithCause(
+		return productionConversationHandlerError(
 			http.StatusForbidden,
 			"Conversation operation is not authorized",
+			code,
 			err,
 		)
 	case conversationdomain.ErrorCodeNotFound:
-		return server.NewHandlerErrorWithCause(
+		return productionConversationHandlerError(
 			http.StatusNotFound,
 			"Conversation was not found",
+			code,
 			err,
 		)
 	case conversationdomain.ErrorCodeCommandConflict,
@@ -2086,15 +2094,17 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 		conversationdomain.ErrorCodeFederationInactive,
 		conversationdomain.ErrorCodeInactive,
 		conversationdomain.ErrorCodeReadOnly:
-		return server.NewHandlerErrorWithCause(
+		return productionConversationHandlerError(
 			http.StatusConflict,
 			"Conversation state conflicts with the request",
+			code,
 			err,
 		)
 	case conversationdomain.ErrorCodeActorKeyUnavailable:
-		return server.NewHandlerErrorWithCause(
+		return productionConversationHandlerError(
 			http.StatusServiceUnavailable,
 			"Conversation identity dependency is unavailable",
+			code,
 			err,
 		)
 	default:
@@ -2102,4 +2112,28 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 
 		return server.InternalErrorWithCause("Conversation operation failed", err)
 	}
+}
+
+func productionConversationHandlerError(
+	status int,
+	message string,
+	code conversationdomain.ErrorCode,
+	err error,
+) *server.HandlerError {
+	handlerError := server.NewHandlerErrorWithCause(status, message, err)
+	handlerError.Headers = map[string]string{
+		"X-Peers-Error-Code": string(code),
+	}
+	var typed *conversationdomain.Error
+	if errors.As(err, &typed) {
+		details, encodeErr := json.Marshal(map[string]string{
+			"operation": typed.Operation,
+			"field":     typed.Field,
+			"reason":    typed.Message,
+		})
+		if encodeErr == nil && len(details) <= 4096 {
+			handlerError.Headers["X-Peers-Error-Details"] = string(details)
+		}
+	}
+	return handlerError
 }

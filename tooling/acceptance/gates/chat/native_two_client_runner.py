@@ -398,10 +398,37 @@ class NativeTwoClientGate(AcceptanceGate):
         bob = self.clients["bob"]
         for client in (alice, bob):
             enter_chat_page(client)
+        alice_context = async_harness(alice, "federationContext", {})
+        bob_context = async_harness(bob, "federationContext", {})
+        alice_federations = [
+            str(item.get("federationId") or "")
+            for item in (alice_context or {}).get("federations", [])
+            if isinstance(item, dict) and item.get("federationId")
+        ]
+        bob_federations = {
+            str(item.get("federationId") or "")
+            for item in (bob_context or {}).get("federations", [])
+            if isinstance(item, dict) and item.get("federationId")
+        }
+        federation_id = next(
+            (
+                candidate
+                for candidate in alice_federations
+                if candidate in bob_federations
+            ),
+            "",
+        )
+        if not federation_id:
+            raise GateError(
+                "Alice and Bob have no shared Federation for Direct Chat"
+            )
         created = async_harness(
             alice,
             "createDirectConversation",
-            {"peerPtid": self.ptids["bob"]},
+            {
+                "peerPtid": self.ptids["bob"],
+                "federationId": federation_id,
+            },
         )
         conversation_id = str((created or {}).get("conversationId") or "")
         if not conversation_id:
@@ -409,7 +436,10 @@ class NativeTwoClientGate(AcceptanceGate):
         peer_created = async_harness(
             bob,
             "createDirectConversation",
-            {"peerPtid": self.ptids["alice"]},
+            {
+                "peerPtid": self.ptids["alice"],
+                "federationId": federation_id,
+            },
         )
         peer_conversation_id = str(
             (peer_created or {}).get("conversationId") or ""
@@ -457,7 +487,8 @@ class NativeTwoClientGate(AcceptanceGate):
         self.assert_condition(
             f"{sender_name}_to_{receiver_name}_plaintext",
             text in str(received.get("text") or "")
-            and bool(received.get("messageUlid")),
+            and bool(sent.get("messageUlid"))
+            and received.get("messageUlid") == sent.get("messageUlid"),
             f"message_id={received.get('messageUlid', '')}",
         )
         self.step("message.decrypted", lambda: True, receiver_name)

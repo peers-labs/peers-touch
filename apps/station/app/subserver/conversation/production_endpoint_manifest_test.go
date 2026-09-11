@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
 	actoridentityapplication "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
+	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/entity"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
@@ -36,6 +39,43 @@ var productionManifestTestTime = time.Date(
 	0,
 	time.UTC,
 )
+
+func TestProductionConversationHandlerErrorExposesTypedContext(t *testing.T) {
+	cause := conversationdomain.NewError(
+		conversationdomain.ErrorCodeInvalidArgument,
+		"aggregate.rehydrate",
+		"snapshot",
+		"must contain members and member devices",
+	)
+	mapped := productionConversationHandlerError(
+		http.StatusBadRequest,
+		"invalid Conversation request",
+		conversationdomain.ErrorCodeInvalidArgument,
+		cause,
+	)
+
+	if mapped.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", mapped.Code, http.StatusBadRequest)
+	}
+	if got := mapped.Headers["X-Peers-Error-Code"]; got != "CONVERSATION_INVALID_ARGUMENT" {
+		t.Fatalf("error code = %q", got)
+	}
+	var details map[string]string
+	if err := json.Unmarshal(
+		[]byte(mapped.Headers["X-Peers-Error-Details"]),
+		&details,
+	); err != nil {
+		t.Fatalf("decode details: %v", err)
+	}
+	if details["operation"] != "aggregate.rehydrate" ||
+		details["field"] != "snapshot" ||
+		details["reason"] != "must contain members and member devices" {
+		t.Fatalf("details = %#v", details)
+	}
+	if !errors.Is(mapped, cause) {
+		t.Fatal("mapped error did not retain its domain cause")
+	}
+}
 
 type productionManifestTestClock struct {
 	now time.Time

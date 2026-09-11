@@ -151,12 +151,12 @@ func (r *testReceiptRecorder) CommitDeliveryReceipt(
 			)
 		}
 
-		return deliveryRecordResult(true), nil
+		return deliveryRecordResult(receipt, true), nil
 	}
 	cloned := receipt
 	r.receipt = &cloned
 
-	return deliveryRecordResult(false), nil
+	return deliveryRecordResult(receipt, false), nil
 }
 
 type testDeliveryReceiptForwarder struct {
@@ -188,12 +188,15 @@ func (f *testDeliveryReceiptForwarder) ForwardDeliveryReceipt(
 	return false, nil
 }
 
-func deliveryRecordResult(replay bool) interaction.DeliveryRecordResult {
+func deliveryRecordResult(
+	receipt interaction.DeliveryReceipt,
+	replay bool,
+) interaction.DeliveryRecordResult {
 	return interaction.DeliveryRecordResult{
 		Aggregate: interaction.DeliveryAggregate{
-			ConversationID:      "conversation-1",
-			EventID:             "event-3",
-			EventSequence:       3,
+			ConversationID:      receipt.ConversationID,
+			EventID:             receipt.EventID,
+			EventSequence:       receipt.EventSequence,
 			RequiredDeviceCount: 1,
 			ConsumedDeviceCount: 1,
 			Delivered:           true,
@@ -201,6 +204,57 @@ func deliveryRecordResult(replay bool) interaction.DeliveryRecordResult {
 		},
 		Originator: "ptid:alice",
 		Replay:     replay,
+	}
+}
+
+func TestServiceDirectUsesCurrentActiveDeviceOutsideGenesisProjection(t *testing.T) {
+	aliceOriginal := valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-original"}
+	bobOriginal := valueobject.Endpoint{Actor: "ptid:bob", Device: "bob-original"}
+	bobCurrent := valueobject.Endpoint{Actor: bobOriginal.Actor, Device: "bob-current"}
+	snapshot := directInteractionConversationSnapshot(t, aliceOriginal, bobOriginal)
+	service, _, devices, typing, _, _ := newInteractionFixture(
+		t,
+		testConversationReader{snapshot: snapshot},
+	)
+	devices.active[bobCurrent] = true
+
+	pulse := interaction.TypingPulse{
+		ConversationID: snapshot.ID,
+		Sender:         bobCurrent,
+		Generation:     1,
+		ExpiresAt:      interactionTestTime.Add(6 * time.Second),
+		IsTyping:       true,
+	}
+	result, err := service.SubmitTyping(context.Background(), pulse)
+	if err != nil || !result.Accepted || len(typing.events) != 1 {
+		t.Fatalf(
+			"current Direct endpoint typing result=%+v events=%+v err=%v",
+			result,
+			typing.events,
+			err,
+		)
+	}
+
+	receipt := interaction.DeliveryReceipt{
+		ReceiptID:      "device-consumed:direct-current-device",
+		ConversationID: snapshot.ID,
+		EventID:        "event-3",
+		Consumer:       bobCurrent,
+		EventSequence:  snapshot.Head.Sequence,
+		LaneSequence:   9,
+		PayloadHash:    valueobject.HashBytes([]byte("direct-current-device")),
+		ConsumedAt:     interactionTestTime,
+	}
+	receiptResult, err := service.SubmitDeliveryReceipt(
+		context.Background(),
+		receipt,
+	)
+	if err != nil || !receiptResult.Aggregate.Delivered {
+		t.Fatalf(
+			"current Direct endpoint receipt result=%+v err=%v",
+			receiptResult,
+			err,
+		)
 	}
 }
 
@@ -483,6 +537,60 @@ func interactionConversationSnapshot(
 		Devices: []entity.MemberDevice{
 			{Endpoint: aliceOne, HomeStation: "station:local", Active: true, JoinedAt: 1},
 			{Endpoint: aliceTwo, HomeStation: "station:local", Active: true, JoinedAt: 1},
+			{Endpoint: bob, HomeStation: "station:local", Active: true, JoinedAt: 1},
+		},
+		CreatedAt: interactionTestTime.Add(-time.Hour),
+		UpdatedAt: interactionTestTime,
+	}
+}
+
+func directInteractionConversationSnapshot(
+	t *testing.T,
+	alice valueobject.Endpoint,
+	bob valueobject.Endpoint,
+) aggregate.Snapshot {
+	t.Helper()
+	conversationID, err := valueobject.DirectConversationID(alice.Actor, bob.Actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventHash := sha256.Sum256([]byte("event-3"))
+	owner := alice.Actor
+	if bob.Actor < owner {
+		owner = bob.Actor
+	}
+	return aggregate.Snapshot{
+		ID:               conversationID,
+		Kind:             valueobject.ConversationKindDirect,
+		Status:           valueobject.ConversationStatusActive,
+		FederationID:     "federation-1",
+		AuthorityStation: "station:local",
+		AuthorityEpoch:   1,
+		Owner:            owner,
+		Head: valueobject.AuthorityHead{
+			Sequence:        3,
+			EventHash:       eventHash,
+			MembershipEpoch: 1,
+			MLSEpoch:        0,
+		},
+		Members: []entity.Member{
+			{
+				Actor:       alice.Actor,
+				Role:        valueobject.MemberRoleMember,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station:local",
+				JoinedAt:    1,
+			},
+			{
+				Actor:       bob.Actor,
+				Role:        valueobject.MemberRoleMember,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station:local",
+				JoinedAt:    1,
+			},
+		},
+		Devices: []entity.MemberDevice{
+			{Endpoint: alice, HomeStation: "station:local", Active: true, JoinedAt: 1},
 			{Endpoint: bob, HomeStation: "station:local", Active: true, JoinedAt: 1},
 		},
 		CreatedAt: interactionTestTime.Add(-time.Hour),

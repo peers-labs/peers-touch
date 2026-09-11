@@ -230,12 +230,11 @@ def get_station_peer_id(station: str) -> str:
 
 
 def get_federation_id(gateway: str) -> str:
-    data = gateway_command(gateway, "federation_list")
+    data = gateway_command(gateway, "acceptance_federation_context")
     status_raw = data.get("status", "")
-    if isinstance(status_raw, str):
-        parsed = json.loads(status_raw)
-    else:
-        parsed = status_raw
+    require(isinstance(status_raw, str), "federation context status is required")
+    parsed = json.loads(status_raw)
+    require(isinstance(parsed, dict), "federation context is invalid")
     federations = parsed.get("federations") or parsed.get("items") or []
     require(len(federations) > 0, "no federation available for friend request")
     return str(federations[0].get("federation_id") or federations[0].get("federationId") or "")
