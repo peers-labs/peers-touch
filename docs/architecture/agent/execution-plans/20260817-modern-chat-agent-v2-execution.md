@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T103744741659Z-6465d9a037b69ecf3a3cbe97cb7306e5` on `ad04118c27a7c6890638046b9271be5ce01b22e8` is `DONE / PROVEN` with 19/19 assertions and clean cleanup; the unchanged Foundation run `20260911T103941162463Z-636de10c5006785521980cd5b47864be` crossed the repaired AS-F07 branch-selection path, then failed first at Browser English `BASE-APPROVAL_EXPIRED` because Chrome deleted the WebDriver session; outer cleanup passed and a bounded Browser lifecycle diagnostic is in progress | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T113028146173Z-0ffcaf437f88df0bbc212302af7a8877` on `3aabb516bae3a69a4c8de8dde6951557a4a6e937` is `DONE / PROVEN` with 19/19 assertions and clean cleanup; the unchanged Foundation run `20260911T113248603126Z-06d037f93b8d390b5619d30808c87fa8` crossed AS-F07, `BASE-APPROVAL_EXPIRED`, `BASE-ATTACHMENT_REJECTED`, and `BASE-EXECUTOR_UNAVAILABLE`, then failed at `BASE-FORBIDDEN_ACTOR` because its idempotent cleanup misclassified canonical deleted/not-found results; outer cleanup passed and the Harness-only correction is locally verified | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |

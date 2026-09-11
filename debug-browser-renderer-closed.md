@@ -14,10 +14,10 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Expected signal |
 |----|------------|------------|--------|-----------------|
-| A | The Browser renderer or host process crashes under runtime/resource pressure. | High | Low | Browser/driver logs contain crash, signal, OOM, or abnormal exit evidence before WebDriver reports `invalid session id`. |
-| B | A Browser lifetime guard still closes the process during a long Foundation run. | Medium | Low | A bounded lifetime timer or supervisor exit occurs at a stable elapsed duration before the failing probe. |
-| C | Application navigation, logout, or window-close behavior destroys the active Browser session. | Medium | Medium | Lifecycle logs show an explicit close/navigation/teardown event immediately before the failed command. |
-| D | Tuple cleanup or shared-resource reconciliation closes Browser while `BASE-APPROVAL_EXPIRED` still owns it. | Medium | Medium | Cleanup ownership logs overlap the failing tuple and precede session deletion. |
+| A | The Browser renderer or host process crashes under runtime/resource pressure. | Not reproduced | Low | The rerun crossed the same cell with host, Driver service, session, and ports alive. |
+| B | A Browser lifetime guard still closes the process during a long Foundation run. | Rejected for the rerun | Low | The Browser survived four restart generations and crossed the prior failure cell. |
+| C | Application navigation, logout, or window-close behavior destroys the active Browser session. | Rejected for the rerun | Medium | No session loss occurred before or during `BASE-APPROVAL_EXPIRED`. |
+| D | Tuple cleanup or shared-resource reconciliation closes Browser while `BASE-APPROVAL_EXPIRED` still owns it. | Rejected for the rerun | Medium | Browser cleanup began only after the later `BASE-FORBIDDEN_ACTOR` failure. |
 
 ## Log Evidence
 - Pre-fix Gate run: `20260911T103941162463Z-636de10c5006785521980cd5b47864be`.
@@ -30,8 +30,16 @@
   session readiness, every Harness call boundary, process/driver-service state,
   and runtime stop boundaries. It reports to this session without changing
   Gate behavior.
+- Exact-source run
+  `20260911T113248603126Z-06d037f93b8d390b5619d30808c87fa8`
+  on `3aabb516bae3a69a4c8de8dde6951557a4a6e937` crossed
+  `BASE-APPROVAL_EXPIRED`. Its lifecycle trace kept the Browser host,
+  ChromeDriver service, WebDriver session, Gateway, renderer, and WebDriver
+  port live through the cell. Browser cleanup started only after the later
+  `BASE-FORBIDDEN_ACTOR` failure and completed cleanly.
 
 ## Verification Conclusion
-Pre-fix evidence rejects a missing Ark configuration and an AS-F07 branch-selection
-regression. Instrument Browser harness calls and runtime lifecycle boundaries to
-distinguish hypotheses A-D.
+The prior Browser session deletion is not deterministic and none of hypotheses
+A-D reproduced on the next exact-source run. No Browser recovery or timeout
+change is justified. Keep instrumentation until the full Gate is proven or the
+user confirms that this debug session may be closed.

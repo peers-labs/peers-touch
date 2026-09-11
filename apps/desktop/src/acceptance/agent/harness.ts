@@ -942,6 +942,17 @@ function observedErrorCode(error: unknown): string {
   return message;
 }
 
+function isFoundationResourceNotFound(error: unknown): boolean {
+  return (
+    (
+      error !== null
+      && typeof error === 'object'
+      && (error as { code?: unknown }).code === 'NOT_FOUND'
+    )
+    || observedErrorCode(error).includes('AGENT_4004')
+  );
+}
+
 function redactedAuthError(error: unknown): Record<string, string | null> {
   if (!(error instanceof AuthCommandException)) {
     return {
@@ -1005,7 +1016,7 @@ async function deleteFoundationConversation(
       return '';
     } catch (error) {
       const code = observedErrorCode(error);
-      if (code.includes('AGENT_4004')) return code;
+      if (isFoundationResourceNotFound(error)) return 'AGENT_4004';
       if (code !== 'VERSION_CONFLICT' && code !== 'ACTIVE_DEPENDENCY') {
         try {
           await api.getAgentConversation(conversationId);
@@ -10980,6 +10991,7 @@ async function cleanupFoundationForbiddenActorOwner(
       scenario.conversationId,
     );
     resourceDeleted = deletionCode === ''
+      || deletionCode === 'CONVERSATION_DELETED'
       || deletionCode.includes('AGENT_4004');
     await reportForbiddenActorCleanupDebug('A', 'conversation-delete-finished', {
       deletionCode,
@@ -10993,11 +11005,11 @@ async function cleanupFoundationForbiddenActorOwner(
   }
   try {
     await api.deleteAgent(scenario.agentId).catch((error: unknown) => {
-      if (!observedErrorCode(error).includes('AGENT_4004')) throw error;
+      if (!isFoundationResourceNotFound(error)) throw error;
     });
     agentDeleted = await api.getAgent(scenario.agentId).then(
       () => false,
-      (error: unknown) => observedErrorCode(error).includes('AGENT_4004'),
+      (error: unknown) => isFoundationResourceNotFound(error),
     );
     await reportForbiddenActorCleanupDebug('B-D', 'agent-delete-finished', {
       agentDeleted,

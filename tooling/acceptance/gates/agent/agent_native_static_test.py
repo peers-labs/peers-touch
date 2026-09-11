@@ -1433,6 +1433,12 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("foundationExecutionSnapshot(", scenario)
         self.assertIn("deleteFoundationConversation(", scenario)
         self.assertIn("api.deleteAgent(", scenario)
+        self.assertIn("deletionCode === 'CONVERSATION_DELETED'", scenario)
+        self.assertIn("isFoundationResourceNotFound(error)", scenario)
+        self.assertIn(
+            "(error as { code?: unknown }).code === 'NOT_FOUND'",
+            self.source,
+        )
         self.assertNotIn("mock", scenario.lower())
 
         direct_probe_start = self.source.index("async foundationDirectProbe")
