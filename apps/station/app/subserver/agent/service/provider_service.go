@@ -29,6 +29,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -69,6 +70,74 @@ const (
 // e.g. "/v1", "/openai/v1", or Ark's "/api/v3". The version must be the final
 // path segment so "/v1/chat/completions" does not match it.
 var apiVersionSuffix = regexp.MustCompile(`(^|/)v\d+$`)
+
+// #region debug-point A-E:ark-provider-request
+func reportArkProviderRequestDebug(
+	hypothesisID, stage, endpoint string,
+	body []byte,
+	payload map[string]any,
+	data map[string]any,
+) {
+	if !strings.Contains(endpoint, "ark-cn-beijing.bytedance.net") {
+		return
+	}
+	messageRoles := make([]string, 0)
+	messageLengths := make([]int, 0)
+	if messages, ok := payload["messages"].([]openAIMessage); ok {
+		for _, message := range messages {
+			messageRoles = append(messageRoles, message.Role)
+			messageLengths = append(messageLengths, len(message.Content))
+		}
+	}
+	eventData := map[string]any{
+		"endpoint":       endpoint,
+		"bodyBytes":      len(body),
+		"bodyHash":       fmt.Sprintf("%x", sha256.Sum256(body)),
+		"messageRoles":   messageRoles,
+		"messageLengths": messageLengths,
+		"maxTokens":      payload["max_tokens"],
+		"stream":         payload["stream"],
+		"thinking":       payload["thinking"],
+	}
+	if tools, ok := payload["tools"].([]openAIToolDefinition); ok {
+		eventData["toolCount"] = len(tools)
+	} else {
+		eventData["toolCount"] = 0
+	}
+	for key, value := range data {
+		eventData[key] = value
+	}
+	event, err := json.Marshal(map[string]any{
+		"sessionId":    "ark-provider-request",
+		"runId":        "pre-fix",
+		"hypothesisId": hypothesisID,
+		"location":     "provider_service.go:callOpenAIStream",
+		"msg":          "[DEBUG] " + stage,
+		"data":         eventData,
+		"ts":           time.Now().UnixMilli(),
+	})
+	if err != nil {
+		return
+	}
+	go func() {
+		request, requestErr := http.NewRequest(
+			http.MethodPost,
+			"http://10.4.55.179:7784/event",
+			bytes.NewReader(event),
+		)
+		if requestErr != nil {
+			return
+		}
+		request.Header.Set("Content-Type", "application/json")
+		client := &http.Client{Timeout: 500 * time.Millisecond}
+		response, requestErr := client.Do(request)
+		if requestErr == nil {
+			_ = response.Body.Close()
+		}
+	}()
+}
+
+// #endregion
 
 // ---------------------------------------------------------------------------
 // Request / Response types
@@ -861,6 +930,10 @@ func (s *ProviderService) callOpenAIStream(
 	deltaSink ProviderDeltaSink,
 ) (*ProviderCallResponse, error) {
 	body, _ := json.Marshal(payload)
+	requestStartedAt := time.Now()
+	// #region debug-point A-B-D:ark-provider-request-dispatch
+	reportArkProviderRequestDebug("A-B-D", "request-dispatched", endpoint, body, payload, nil)
+	// #endregion
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -873,9 +946,36 @@ func (s *ProviderService) callOpenAIStream(
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
+		// #region debug-point C-E:ark-provider-request-error
+		reportArkProviderRequestDebug(
+			"C-E",
+			"request-failed-before-headers",
+			endpoint,
+			body,
+			payload,
+			map[string]any{
+				"elapsedMs":   time.Since(requestStartedAt).Milliseconds(),
+				"errorType":   fmt.Sprintf("%T", err),
+				"contextDone": ctx.Err() != nil,
+			},
+		)
+		// #endregion
 		return nil, err
 	}
 	defer resp.Body.Close()
+	// #region debug-point C-D:ark-provider-response-headers
+	reportArkProviderRequestDebug(
+		"C-D",
+		"response-headers-received",
+		endpoint,
+		body,
+		payload,
+		map[string]any{
+			"elapsedMs":  time.Since(requestStartedAt).Milliseconds(),
+			"httpStatus": resp.StatusCode,
+		},
+	)
+	// #endregion
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
@@ -890,6 +990,10 @@ func (s *ProviderService) callOpenAIStream(
 	var model string
 	var finishReason string
 	var sawDone bool
+	var dataLineCount int
+	var parsedChunkCount int
+	var contentDeltaCount int
+	var firstDataReported bool
 	toolCalls := make(map[int]*openAIToolCall)
 	scanner := bufio.NewScanner(io.LimitReader(resp.Body, maxResponseBytes))
 	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
@@ -901,6 +1005,22 @@ func (s *ProviderService) callOpenAIStream(
 		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
+		dataLineCount++
+		if !firstDataReported {
+			firstDataReported = true
+			// #region debug-point C:ark-provider-first-stream-data
+			reportArkProviderRequestDebug(
+				"C",
+				"first-stream-data-received",
+				endpoint,
+				body,
+				payload,
+				map[string]any{
+					"elapsedMs": time.Since(requestStartedAt).Milliseconds(),
+				},
+			)
+			// #endregion
+		}
 		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if data == "[DONE]" {
 			sawDone = true
@@ -910,6 +1030,7 @@ func (s *ProviderService) callOpenAIStream(
 		if !ok {
 			continue
 		}
+		parsedChunkCount++
 		if chunk.Model != "" {
 			model = chunk.Model
 		}
@@ -932,6 +1053,7 @@ func (s *ProviderService) callOpenAIStream(
 			call.Function.Arguments += fragment.Function.Arguments
 		}
 		if chunk.Delta.Content != "" {
+			contentDeltaCount++
 			if chunk.Delta.Type == "text" {
 				content.WriteString(chunk.Delta.Content)
 			}
@@ -941,8 +1063,44 @@ func (s *ProviderService) callOpenAIStream(
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		// #region debug-point C-E:ark-provider-stream-error
+		reportArkProviderRequestDebug(
+			"C-E",
+			"stream-scan-failed",
+			endpoint,
+			body,
+			payload,
+			map[string]any{
+				"elapsedMs":         time.Since(requestStartedAt).Milliseconds(),
+				"errorType":         fmt.Sprintf("%T", err),
+				"contextDone":       ctx.Err() != nil,
+				"dataLineCount":     dataLineCount,
+				"parsedChunkCount":  parsedChunkCount,
+				"contentDeltaCount": contentDeltaCount,
+			},
+		)
+		// #endregion
 		return nil, err
 	}
+	// #region debug-point B-C:ark-provider-stream-complete
+	reportArkProviderRequestDebug(
+		"B-C",
+		"stream-completed",
+		endpoint,
+		body,
+		payload,
+		map[string]any{
+			"elapsedMs":         time.Since(requestStartedAt).Milliseconds(),
+			"sawDone":           sawDone,
+			"finishReason":      finishReason,
+			"dataLineCount":     dataLineCount,
+			"parsedChunkCount":  parsedChunkCount,
+			"contentDeltaCount": contentDeltaCount,
+			"contentBytes":      content.Len(),
+			"toolCallCount":     len(toolCalls),
+		},
+	)
+	// #endregion
 	if !sawDone && finishReason == "" {
 		return nil, io.ErrUnexpectedEOF
 	}
