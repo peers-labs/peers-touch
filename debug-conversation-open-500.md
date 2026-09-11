@@ -148,3 +148,30 @@ Root cause:
   the existing SPK and old OPKs, use count/replenish for normal inventory
   repair, fall back to full bundle upload only when Station reports the bundle
   absent, and never reactivate consumed OPKs.
+
+Post-fix runtime evidence from
+`20260911T080723648674Z-b5b7b2f14dc6b6fabad5d38f7365a3a0`:
+
+- Both canonical endpoints completed `publish_prekeys` with `ok=true`.
+- Station now contains complete identity/SPK rows and 20 available OPKs for
+  Alice `01M276A60YVV4Q9MWN9NPHD3RE` and Bob
+  `01M276ADT9PV9HYNNE7XP6WBN0`.
+- Both native clients passed ACTIVE enrollment and `conversation.open`.
+- The sender still received 404 from `/key-exchange/keys/bundle/fetch`, so the
+  prekey publication defect is fixed and the Gate has advanced to a distinct
+  target-endpoint lookup defect.
+- Gate cleanup again released both processes, all six ports, logs, and
+  run-scoped storage.
+
+Next hypotheses:
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| M | The Station prepare snapshot includes a stale actor device that is no longer ACTIVE. | High | Low | The fetch request targets a device absent from the current ACTIVE device rows. |
+| N | The fetch request targets the canonical active endpoint, but local-versus-federated routing resolves the wrong Home Station. | Medium | Low | Target PTID/device are canonical while the fetch still returns 404. |
+| O | One active peer endpoint has no complete Station bundle despite the canonical endpoint being repaired. | Medium | Low | Fetch succeeds for one endpoint and fails for another active endpoint. |
+
+Instrumentation point:
+
+- M-N-O: `StationKeyBundleTransport::fetch` records requester and target endpoint
+  IDs plus success/error and returned bundle endpoints.
