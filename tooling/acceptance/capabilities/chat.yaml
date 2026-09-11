@@ -131,6 +131,7 @@
         "messaging-platform-contract",
         "desktop-check",
         "chat-native-visible-static",
+        "chat-native-current-profile-two-client-e2e",
         "chat-native-two-client-e2e"
       ],
       "synthetic_paths": [
@@ -144,6 +145,8 @@
       "evidence": {
         "truth_sources": [
           "Desktop Rust messaging receive transaction",
+          "Portable prekey publication reconciliation",
+          "Station Key Exchange public bundle inventory",
           "Desktop durable receipt outbox",
           "Station Conversation per-device receipt queue",
           "Desktop Rust delivery receipt processor",
@@ -154,8 +157,12 @@
           "Bob native Direct message row",
           "DELIVERED receipt projection"
         ],
-        "proven_by": ["chat-native-two-client-e2e"],
+        "proven_by": [
+          "chat-native-current-profile-two-client-e2e",
+          "chat-native-two-client-e2e"
+        ],
         "proven_scope": [
+          "Direct prekey bootstrap self-heals missing Station public material without reusing consumed OPKs",
           "Direct decrypt produces a durable DELIVERED receipt and the sender observes it in a native Desktop message row"
         ],
         "unproven_scope": [

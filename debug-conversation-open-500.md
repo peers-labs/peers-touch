@@ -119,3 +119,32 @@ Instrumentation point:
 
 - J-K: `MessagingEngine::publish_prekeys` records local bundle/pending state and
   the publish result without recording private key material.
+
+Runtime evidence from exact-source native run
+`20260911T070854885624Z-687f80aa16cac8e456300e5eaba74922`:
+
+- J confirmed for both endpoints: Alice
+  `01M276A60YVV4Q9MWN9NPHD3RE` and Bob
+  `01M276ADT9PV9HYNNE7XP6WBN0` repeatedly reported
+  `hasBundle=true`, `pendingPublication=false`, and `pendingOpkCount=0`.
+- K rejected: every instrumented `publish_prekeys` call returned `ok=true`
+  without an upload attempt or local-state error.
+- L rejected: neither endpoint had a pending upload; Station bundle fetch
+  returned 404 because publication was skipped, not because a new bundle was
+  stored under a different endpoint.
+- The Gate reached `conversation.open`, failed at `message.submitted`, and
+  preserved the strict durable-draft-versus-queued distinction.
+- Provisioner cleanup passed for both native processes, ports
+  `3140/3141/3410/3411/4475/4476`, logs, and both run-scoped storage roots.
+
+Root cause:
+
+- `PreKeyPublisher::publish` treats a locally present bundle as complete and
+  returns success when no local publication is pending.
+- Local publication state is not authoritative for Station public material.
+  A copied or restored Desktop store can therefore retain `published` while
+  Station has no matching Direct bundle.
+- Repair must add a durable, additive OPK reconciliation batch. It must preserve
+  the existing SPK and old OPKs, use count/replenish for normal inventory
+  repair, fall back to full bundle upload only when Station reports the bundle
+  absent, and never reactivate consumed OPKs.

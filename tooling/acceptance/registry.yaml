@@ -49,6 +49,8 @@
       ],
       "when": {
         "paths": [
+          "packages/messaging-core/src/crypto/prekeys.rs",
+          "apps/desktop/src-tauri/src/messaging/prekeys.rs",
           "apps/desktop/src-tauri/src/messaging/direct.rs",
           "apps/desktop/src-tauri/src/messaging/engine.rs",
           "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
@@ -64,6 +66,9 @@
           "apps/station/app/subserver/conversation/interface/http/interaction.go",
           "apps/station/app/subserver/conversation/interface/http/interaction_test.go",
           "apps/station/app/subserver/conversation/subserver.go",
+          "apps/station/app/subserver/key_exchange/infrastructure/canonical_store.go",
+          "apps/station/app/subserver/key_exchange/infrastructure/canonical_store_test.go",
+          "apps/station/app/subserver/key_exchange/canonical_api_test.go",
           "tooling/acceptance/fixtures/chat_native_reset.py",
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
           "tooling/acceptance/gates/chat/native_two_client_runner.py",

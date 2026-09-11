@@ -24,7 +24,9 @@ use messaging_core::contracts::{
     PendingMlsTransitionState as CorePendingMlsTransitionState,
     ReceiveCommitResult as CoreReceiveCommitResult,
 };
-use messaging_core::crypto::prekeys::{PendingPreKeyBundle, PreKeyRepository};
+use messaging_core::crypto::prekeys::{
+    PendingPreKeyBundle, PreKeyInventoryRepository, PreKeyRepository,
+};
 use messaging_core::identity::{
     DeviceEnrollmentRepository, FreshDeviceEnrollment, FreshDeviceIdentityState,
     MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
@@ -4553,7 +4555,8 @@ impl MessagingStore {
                 let changed = transaction
                     .execute(
                         "UPDATE messaging_one_time_prekeys SET state = 'consumed'
-                         WHERE prekey_id = ?1 AND state = 'available'",
+                         WHERE prekey_id = ?1
+                           AND state IN ('available', 'awaiting_replenishment')",
                         params![prekey_id],
                     )
                     .map_err(|error| error.to_string())?;
@@ -4629,7 +4632,8 @@ impl MessagingStore {
                 let changed = transaction
                     .execute(
                         "UPDATE messaging_one_time_prekeys SET state = 'consumed'
-                         WHERE prekey_id = ?1 AND state = 'available'",
+                         WHERE prekey_id = ?1
+                           AND state IN ('available', 'awaiting_replenishment')",
                         params![prekey_id],
                     )
                     .map_err(|error| error.to_string())?;
@@ -5854,6 +5858,182 @@ impl MessagingStore {
         transaction.commit().map_err(|error| error.to_string())
     }
 
+    pub fn next_one_time_prekey_id(&self) -> Result<i32, String> {
+        let current_max = self
+            .connection()?
+            .query_row(
+                "SELECT COALESCE(MAX(prekey_id), 0) FROM messaging_one_time_prekeys",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        i32::try_from(current_max)
+            .ok()
+            .and_then(|value| value.checked_add(1))
+            .filter(|value| *value > 0)
+            .ok_or_else(|| "messaging one-time prekey ID space is exhausted".to_string())
+    }
+
+    pub fn install_prekey_replenishment(
+        &self,
+        one_time_prekeys: &[(i32, [u8; 32])],
+    ) -> Result<(), String> {
+        if one_time_prekeys.is_empty() {
+            return Err("messaging prekey replenishment is empty".to_string());
+        }
+        let mut seen = HashSet::with_capacity(one_time_prekeys.len());
+        if one_time_prekeys
+            .iter()
+            .any(|(id, _)| *id <= 0 || !seen.insert(*id))
+        {
+            return Err("messaging replenishment prekey IDs are invalid".to_string());
+        }
+
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let active = transaction
+            .query_row(
+                "SELECT status = 'active' FROM messaging_recovery_state WHERE id = 1",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .unwrap_or(false);
+        if !active {
+            return Err("messaging prekeys require active device enrollment".to_string());
+        }
+        let published_bundle = transaction
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM messaging_prekey_bundle
+                    WHERE id = 1 AND state = 'published'
+                 )",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if !published_bundle {
+            return Err("messaging published prekey bundle is unavailable".to_string());
+        }
+        let pending = transaction
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM messaging_one_time_prekeys
+                    WHERE state = 'awaiting_replenishment'
+                 )",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if pending {
+            return Err("messaging prekey replenishment is already pending".to_string());
+        }
+        for (id, private_key) in one_time_prekeys {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_one_time_prekeys(
+                        prekey_id, private_key, state
+                     ) VALUES (?1, ?2, 'awaiting_replenishment')",
+                    params![id, private_key.as_slice()],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
+    pub fn pending_prekey_replenishment(&self) -> Result<Option<PendingPreKeyBundle>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT prekey_id, private_key
+                 FROM messaging_one_time_prekeys
+                 WHERE state = 'awaiting_replenishment'
+                 ORDER BY prekey_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let one_time_prekeys = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, i32>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })
+            .map_err(|error| error.to_string())?
+            .map(|row| {
+                let (id, key) = row.map_err(|error| error.to_string())?;
+                Ok((id, fixed_key("one-time prekey", key)?))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        if one_time_prekeys.is_empty() {
+            return Ok(None);
+        }
+        let (signed_prekey_id, signed_prekey_private) = connection
+            .query_row(
+                "SELECT signed_prekey_id, signed_prekey_private
+                 FROM messaging_prekey_bundle
+                 WHERE id = 1 AND state = 'published'",
+                [],
+                |row| Ok((row.get::<_, i32>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "messaging published prekey bundle is unavailable".to_string())?;
+        Ok(Some(PendingPreKeyBundle {
+            signed_prekey_id,
+            signed_prekey_private: fixed_key("signed prekey", signed_prekey_private)?,
+            one_time_prekeys,
+        }))
+    }
+
+    pub fn complete_prekey_replenishment(&self, one_time_prekey_ids: &[i32]) -> Result<(), String> {
+        if one_time_prekey_ids.is_empty() {
+            return Err("messaging prekey replenishment completion is empty".to_string());
+        }
+        let mut seen = HashSet::with_capacity(one_time_prekey_ids.len());
+        if one_time_prekey_ids
+            .iter()
+            .any(|id| *id <= 0 || !seen.insert(*id))
+        {
+            return Err("messaging replenishment completion IDs are invalid".to_string());
+        }
+
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        for id in one_time_prekey_ids {
+            let state = transaction
+                .query_row(
+                    "SELECT state FROM messaging_one_time_prekeys WHERE prekey_id = ?1",
+                    params![id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| {
+                    "messaging prekey replenishment transition was not applied".to_string()
+                })?;
+            match state.as_str() {
+                "awaiting_replenishment" => {
+                    transaction
+                        .execute(
+                            "UPDATE messaging_one_time_prekeys SET state = 'available'
+                             WHERE prekey_id = ?1 AND state = 'awaiting_replenishment'",
+                            params![id],
+                        )
+                        .map_err(|error| error.to_string())?;
+                }
+                "consumed" => {}
+                _ => {
+                    return Err(
+                        "messaging prekey replenishment transition was not applied".to_string()
+                    );
+                }
+            }
+        }
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
     pub fn load_signed_prekey(&self, signed_prekey_id: i32) -> Result<[u8; 32], String> {
         let bytes = self
             .connection()?
@@ -5879,7 +6059,8 @@ impl MessagingStore {
         let bytes = transaction
             .query_row(
                 "SELECT private_key FROM messaging_one_time_prekeys
-                 WHERE prekey_id = ?1 AND state = 'available'",
+                 WHERE prekey_id = ?1
+                   AND state IN ('available', 'awaiting_replenishment')",
                 params![prekey_id],
                 |row| row.get::<_, Vec<u8>>(0),
             )
@@ -5889,7 +6070,8 @@ impl MessagingStore {
         let changed = transaction
             .execute(
                 "UPDATE messaging_one_time_prekeys SET state = 'consumed'
-                 WHERE prekey_id = ?1 AND state = 'available'",
+                 WHERE prekey_id = ?1
+                   AND state IN ('available', 'awaiting_replenishment')",
                 params![prekey_id],
             )
             .map_err(|error| error.to_string())?;
@@ -5905,7 +6087,8 @@ impl MessagingStore {
             .connection()?
             .query_row(
                 "SELECT private_key FROM messaging_one_time_prekeys
-                 WHERE prekey_id = ?1 AND state = 'available'",
+                 WHERE prekey_id = ?1
+                   AND state IN ('available', 'awaiting_replenishment')",
                 params![prekey_id],
                 |row| row.get::<_, Vec<u8>>(0),
             )
@@ -6814,6 +6997,27 @@ impl PreKeyRepository for MessagingStore {
 
     fn complete_prekey_publication(&self, signed_prekey_id: i32) -> Result<(), String> {
         MessagingStore::complete_prekey_publication(self, signed_prekey_id)
+    }
+}
+
+impl PreKeyInventoryRepository for MessagingStore {
+    fn next_one_time_prekey_id(&self) -> Result<i32, String> {
+        MessagingStore::next_one_time_prekey_id(self)
+    }
+
+    fn install_prekey_replenishment(
+        &self,
+        one_time_prekeys: &[(i32, [u8; 32])],
+    ) -> Result<(), String> {
+        MessagingStore::install_prekey_replenishment(self, one_time_prekeys)
+    }
+
+    fn pending_prekey_replenishment(&self) -> Result<Option<PendingPreKeyBundle>, String> {
+        MessagingStore::pending_prekey_replenishment(self)
+    }
+
+    fn complete_prekey_replenishment(&self, one_time_prekey_ids: &[i32]) -> Result<(), String> {
+        MessagingStore::complete_prekey_replenishment(self, one_time_prekey_ids)
     }
 }
 
@@ -9064,6 +9268,67 @@ mod tests {
     use crate::messaging::private_content::test_attachment_metadata;
     use crate::model::chat::AttachmentTransferErrorCode;
     use messaging_core::identity::generate_fresh_device_identity;
+
+    #[test]
+    fn prekey_replenishment_preserves_existing_material_and_consumption() {
+        let store = MessagingStore::in_memory().unwrap();
+        let identity = IdentityKeyPair::from_seed(&[12; 32]);
+        let fresh = generate_fresh_device_identity("ptid:alice", identity.seed_bytes(), 1).unwrap();
+        store.install_fresh_device_identity(&fresh).unwrap();
+        let device_id = fresh
+            .enrollment
+            .certificate
+            .device
+            .as_ref()
+            .unwrap()
+            .device_id
+            .clone();
+        store.complete_device_enrollment(&device_id).unwrap();
+        store
+            .install_fresh_prekey_bundle(7, &[7; 32], &[(1, [1; 32]), (2, [2; 32])], 100)
+            .unwrap();
+        store.complete_prekey_publication(7).unwrap();
+        store.consume_one_time_prekey(1).unwrap();
+
+        assert_eq!(store.next_one_time_prekey_id().unwrap(), 3);
+        store
+            .install_prekey_replenishment(&[(3, [3; 32]), (4, [4; 32])])
+            .unwrap();
+        let pending = store.pending_prekey_replenishment().unwrap().unwrap();
+        assert_eq!(pending.signed_prekey_id, 7);
+        assert_eq!(pending.signed_prekey_private, [7; 32]);
+        assert_eq!(
+            pending
+                .one_time_prekeys
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>(),
+            vec![3, 4]
+        );
+        assert_eq!(store.load_one_time_prekey(3).unwrap(), [3; 32]);
+        store.consume_one_time_prekey(3).unwrap();
+        store.complete_prekey_replenishment(&[3, 4]).unwrap();
+
+        let connection = store.connection().unwrap();
+        let states = [1, 2, 3, 4]
+            .into_iter()
+            .map(|id| {
+                connection
+                    .query_row(
+                        "SELECT state FROM messaging_one_time_prekeys WHERE prekey_id = ?1",
+                        params![id],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            states,
+            vec!["consumed", "available", "consumed", "available"]
+        );
+        drop(connection);
+        assert_eq!(store.load_signed_prekey(7).unwrap(), [7; 32]);
+    }
 
     #[test]
     fn mls_key_package_repository_requires_enrollment_and_tracks_publication() {
