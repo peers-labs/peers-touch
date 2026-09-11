@@ -77,3 +77,47 @@ Fixture precondition. The local fix:
 Focused Rust wire decoding, Desktop typecheck, the 85-test Agent native static
 suite, and diff hygiene pass. Exact-source C08 and Foundation post-fix evidence
 remain pending.
+
+## Iteration 2: Authoritative Cleanup Readback
+
+Exact-source Foundation run
+`20260911T231733779911Z-ca94e3b2c6d9c4870f95d3ddabee4c02`
+on `43f94f5ef0838dd51ea458857e4f025ce135559a` reached Browser English
+`BASE-INCOMPATIBLE_CAPABILITY` and failed only `stationReadinessReadback` and
+`cleanupComplete`. Its current telemetry proves:
+
+- the scenario completed and produced facts;
+- conversation archive, binding delete, Agent delete, and provider delete all
+  returned successfully;
+- the final provider catalog baseline was restored and the prior Agent
+  selection matched;
+- the strict failed-Turn union remained one source-bound diagnostic Turn.
+
+The three false cleanup booleans came from the producer's verification:
+
+- permanent Conversation archive is a durable `status=deleted` transition, but
+  the producer treated every successful get as not deleted;
+- Agent and binding readbacks used string containment on a canonical
+  not-found error instead of the established `isFoundationResourceNotFound`
+  decoder.
+
+The local correction accepts only the authoritative Conversation deleted
+status or canonical not-found and uses the same canonical not-found decoder for
+Agent and binding readback. Readiness telemetry now records each remaining
+oracle predicate as safe booleans and counts. The independent oracle, product
+behavior, tuples, and timeouts are unchanged.
+
+Source reconciliation also found the readiness failure: Station admission
+increments the Conversation version exactly once when it persists the rejected
+failed Turn, and the TypeScript producer already requires
+`conversationVersionAfter = conversationVersionBefore + 1`. The independent
+Python oracle and its valid fixture still required equality. They now require
+the same exact `+1` transition, preserving the one-failed-Turn contract rather
+than weakening it.
+
+Local verification:
+
+- Desktop strict check: PASS.
+- Focused Harness/independent-oracle tests: `206/206` PASS.
+- `git diff --check`: PASS.
+- Exact-source post-fix C08 and Foundation evidence remain pending.

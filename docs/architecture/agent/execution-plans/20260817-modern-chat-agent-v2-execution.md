@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T222805881767Z-f6325398e35ef10bbc86e10e3f291ff1` on `07351dcf4f28fd8b81a2de58f493609b7086177a` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260911T222932042410Z-f62cac19455ffd1a5c5bb8bd182423b4` crossed both BASE-CONTEXT-OVERFLOW locales with matching pre/post receiver evidence, then stopped at Browser Simplified Chinese BASE-DUPLICATE-CONFLICT while waiting for the original Turn details view; click/portal/projection telemetry is pending exact-source proof | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T231620368290Z-b71583aba9e8415b4c964204c34edb19` on `43f94f5ef0838dd51ea458857e4f025ce135559a` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260911T231733779911Z-ca94e3b2c6d9c4870f95d3ddabee4c02` crossed both BASE-CONTEXT-OVERFLOW and BASE-DUPLICATE-CONFLICT locale cells, then failed at Browser English BASE-INCOMPATIBLE-CAPABILITY on `stationReadinessReadback` and `cleanupComplete`; canonical cleanup readback is corrected and readiness predicate telemetry is pending exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1634,6 +1634,29 @@ and zero local-path leakage.
   stale recovery node, mismatched target, missing original assistant
   projection, absent portal transition, and overwritten portal transition
   without changing product behavior, assertions, tuples, or timeouts.
+- Exact-source checkpoint `43f94f5ef0838dd51ea458857e4f025ce135559a`
+  used Acceptance binary
+  `096b20f33ce3478b1fae062670b41d2e2c96a0e6f77431b2b49de57205af1f49`
+  and passed C08 run
+  `20260911T231620368290Z-b71583aba9e8415b4c964204c34edb19`
+  with 19/19 assertions and clean cleanup. Foundation run
+  `20260911T231733779911Z-ca94e3b2c6d9c4870f95d3ddabee4c02`
+  crossed both context-overflow and duplicate-conflict locale cells. All eight
+  duplicate-conflict click/portal/projection events matched the accepted
+  recovery path, so that prior timeout does not justify a correction. The run
+  failed at Browser English `BASE-INCOMPATIBLE-CAPABILITY` only on
+  `stationReadinessReadback` and `cleanupComplete`. Retained cleanup telemetry
+  shows all four delete commands completed, provider and selection restoration
+  passed, while the producer misclassified the Conversation `deleted` status
+  and canonical Agent/binding not-found responses. The local correction aligns
+  those readbacks with their public contracts. Source reconciliation also found
+  that the independent Python oracle incorrectly required an unchanged
+  Conversation version even though Station persists one failed Turn and the
+  TypeScript producer requires the exact `before + 1` transition. The Python
+  oracle and valid fixture now enforce that same strict transition, while safe
+  predicate-level readiness telemetry remains enabled. Desktop check, 206
+  focused Harness/oracle tests, and diff hygiene pass; exact-source post-fix
+  proof remains pending.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

@@ -12198,6 +12198,26 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
     const afterHash = await sha256Hex(stableJson(afterReadback.messages));
     const providerCallDelta =
       afterExecution.providerCallCount - beforeExecution.providerCallCount;
+    // #region debug-point E-H:incompatible-capability-readiness
+    await reportFoundationIncompatibleCleanupDebug(
+      'E-H',
+      'readiness-readback-boundary',
+      {
+        snapshotBeforePresent: Boolean(readinessBefore.snapshot_id),
+        snapshotAfterPresent: Boolean(readinessAfter.snapshot_id),
+        runtimeSnapshotStable:
+          readinessBefore.runtime_snapshot_id
+          === readinessAfter.runtime_snapshot_id,
+        bindingRevisionBefore: Number(readinessEntryBefore.binding_revision),
+        bindingRevisionAfter: Number(readinessEntryAfter.binding_revision),
+        selectedModelStable: agentAfterRecovery.model === sourceModel.id,
+        conversationVersionDelta:
+          afterReadback.conversation.version
+          - beforeReadback.conversation.version,
+        messageHashStable: beforeHash === afterHash,
+      },
+    );
+    // #endregion
 
     facts = {
       outcome: first.outcome,
@@ -12382,25 +12402,45 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
               )
             )
           : true;
+        let conversationReadbackStatus = '';
+        let conversationReadbackErrorCode = '';
         cleanup.conversationDeleted = rejectedConversationId
           ? await api.getAgentConversation(rejectedConversationId).then(
-              () => false,
-              (error: unknown) => observedErrorCode(error).includes('AGENT_4004'),
+              (conversation) => {
+                conversationReadbackStatus = conversation.status;
+                return conversation.status === 'deleted';
+              },
+              (error: unknown) => {
+                conversationReadbackErrorCode = observedErrorCode(error);
+                return isFoundationResourceNotFound(error);
+              },
             )
           : true;
+        let agentReadbackErrorCode = '';
         cleanup.disposableAgentDeleted = disposableAgentId
           ? await api.getAgent(disposableAgentId).then(
               () => false,
-              (error: unknown) => observedErrorCode(error).includes('AGENT_4004'),
+              (error: unknown) => {
+                agentReadbackErrorCode = observedErrorCode(error);
+                return isFoundationResourceNotFound(error);
+              },
             )
           : true;
+        let activeBindingCount = 0;
+        let bindingReadbackErrorCode = '';
         cleanup.capabilityBindingRemoved = disposableAgentId
           ? await api.listAgentCapabilityBindings(disposableAgentId).then(
-              (bindings) => !bindings.some(
-                (binding) => binding.bindingId === capabilityBindingId
-                  && !binding.tombstonedAt,
-              ),
-              (error: unknown) => observedErrorCode(error).includes('AGENT_4004'),
+              (bindings) => {
+                activeBindingCount = bindings.filter(
+                  (binding) => binding.bindingId === capabilityBindingId
+                    && !binding.tombstonedAt,
+                ).length;
+                return activeBindingCount === 0;
+              },
+              (error: unknown) => {
+                bindingReadbackErrorCode = observedErrorCode(error);
+                return isFoundationResourceNotFound(error);
+              },
             )
           : true;
         const restoredProvider = await api.getProvider(fixtureProviderId);
@@ -12419,6 +12459,11 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
             fixtureProviderRestored: cleanup.fixtureProviderRestored,
             restoredSelectionMatches:
               cleanup.restoredSelection === priorSelection,
+            conversationReadbackStatus,
+            conversationReadbackErrorCode,
+            agentReadbackErrorCode,
+            activeBindingCount,
+            bindingReadbackErrorCode,
           },
         );
       }

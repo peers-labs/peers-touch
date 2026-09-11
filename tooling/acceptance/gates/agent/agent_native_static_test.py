@@ -1506,6 +1506,18 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertIn("api.deleteProvider(fixtureProviderId)", scenario)
         self.assertIn("api.deleteAgent(disposableAgentId)", scenario)
+        self.assertIn(
+            "conversation.status === 'deleted'",
+            scenario,
+        )
+        self.assertGreaterEqual(
+            scenario.count("isFoundationResourceNotFound(error)"),
+            3,
+        )
+        self.assertIn(
+            "'readiness-readback-boundary'",
+            scenario,
+        )
         self.assertNotIn("api.updateAgent(", scenario)
         self.assertNotIn("api.updateModel(", scenario)
         self.assertNotIn("mock", scenario.lower())

@@ -22,20 +22,20 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Instrument BASE-DUPLICATE-CONFLICT recovery click, portal transitions, and original Turn projection, then rerun exact-source C08 and Foundation |
+| Current step | Align BASE-INCOMPATIBLE-CAPABILITY cleanup readback and independent version oracle, then rerun exact-source C08 and Foundation |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source C08 run `20260911T222805881767Z-f6325398e35ef10bbc86e10e3f291ff1` on `07351dcf4f28fd8b81a2de58f493609b7086177a` passed `DONE / PROVEN` with 19/19 assertions and clean cleanup；the same-source Foundation run crossed both BASE-CONTEXT-OVERFLOW locale cells |
-| Current action | Checkpoint duplicate-conflict click/portal/projection telemetry without changing recovery behavior, Gate tuples, assertions, or timeouts |
-| Next action | Rebuild and smoke the dedicated Acceptance binary, deploy exact source, rerun C08, then run the unchanged 419-cell Gate to classify the zh-CN original-details timeout |
+| Last completed | Exact-source C08 run `20260911T231620368290Z-b71583aba9e8415b4c964204c34edb19` on `43f94f5ef0838dd51ea458857e4f025ce135559a` passed `DONE / PROVEN` with 19/19 assertions and clean cleanup；the same-source Foundation run crossed both BASE-CONTEXT-OVERFLOW and BASE-DUPLICATE-CONFLICT locale cells |
+| Current action | Verify canonical cleanup readback plus the strict one-failed-Turn Conversation version oracle for BASE-INCOMPATIBLE-CAPABILITY |
+| Next action | Checkpoint, rebuild and smoke the dedicated Acceptance binary, deploy exact source, rerun C08, then run the unchanged 419-cell Gate |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | none；BASE-DUPLICATE-CONFLICT zh-CN original-details navigation is the active recoverable diagnostic；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
+| Blockers | none；BASE-INCOMPATIBLE-CAPABILITY cleanup/readiness is the active recoverable correction；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 run `20260911T222805881767Z-f6325398e35ef10bbc86e10e3f291ff1` is `DONE / PROVEN` on `07351dcf4`；Foundation run `20260911T222932042410Z-f62cac19455ffd1a5c5bb8bd182423b4` crossed both BASE-CONTEXT-OVERFLOW locales with matching pre/post receiver evidence, then failed at Browser Simplified Chinese BASE-DUPLICATE-CONFLICT while waiting for original Turn details；source identity and outer cleanup passed |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 run `20260911T231620368290Z-b71583aba9e8415b4c964204c34edb19` is `DONE / PROVEN` on `43f94f5ef`；Foundation run `20260911T231733779911Z-ca94e3b2c6d9c4870f95d3ddabee4c02` crossed both context-overflow and duplicate-conflict locales, then failed only BASE-INCOMPATIBLE-CAPABILITY `stationReadinessReadback` and `cleanupComplete`；source identity and outer cleanup passed |
 | Last updated | 2026-09-12 |
 
 ---

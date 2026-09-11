@@ -13,11 +13,11 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Expected Signal | Evidence |
 |----|------------|------------|--------|-----------------|----------|
-| A | Locale rerender leaves the Harness holding a stale recovery-action node, so `.click()` does not reach the live handler. | High | Low | The captured node is disconnected or differs from the live selector at click time, and no portal transition follows. | Pending |
-| B | The recovery handler executes with an `existing_command_id` that differs from the original Turn ID. | Medium | Low | Hashed handler target differs from the hashed original Turn ID. | Pending |
-| C | The recovery handler executes but never writes a `turnDetails` active view. | Medium | Low | Click dispatch is observed while portal state remains unchanged. | Pending |
-| D | The portal briefly enters the expected `turnDetails` view and a later transition overwrites it before the Harness samples it. | Medium | Medium | A portal subscription records the expected view followed by another view. | Pending |
-| E | The original Turn is absent from the client projection, so details loading rejects after navigation intent. | Medium | Medium | Portal target is correct but the details state reports missing/error rather than ready. | Pending |
+| A | Locale rerender leaves the Harness holding a stale recovery-action node, so `.click()` does not reach the live handler. | High | Low | The captured node is disconnected or differs from the live selector at click time, and no portal transition follows. | Rejected for both locales: the node was live and the click was observed. |
+| B | The recovery handler executes with an `existing_command_id` that differs from the original Turn ID. | Medium | Low | Hashed handler target differs from the hashed original Turn ID. | Rejected for both locales: the target matched the original Turn. |
+| C | The recovery handler executes but never writes a `turnDetails` active view. | Medium | Low | Click dispatch is observed while portal state remains unchanged. | Rejected for both locales: one matching transition was recorded. |
+| D | The portal briefly enters the expected `turnDetails` view and a later transition overwrites it before the Harness samples it. | Medium | Medium | A portal subscription records the expected view followed by another view. | Rejected for both locales: exactly one transition occurred. |
+| E | The original Turn is absent from the client projection, so details loading rejects after navigation intent. | Medium | Medium | Portal target is correct but the details state reports missing/error rather than ready. | Rejected at click time: two original Turn messages including one assistant were present. |
 
 ## Instrumentation Plan
 - Record only booleans, locale, view types, counts, and SHA-256 hashes of Turn IDs.
@@ -52,9 +52,29 @@
 - Provisioner cleanup is `DONE / PROVEN / passed`.
 - Context-overflow pre/post telemetry showed both `en` and `zh-CN` receiver
   text, recovery visibility, focus, and reduced-draft behavior were correct.
+- Exact-source C08 run
+  `20260911T231620368290Z-b71583aba9e8415b4c964204c34edb19`
+  on `43f94f5ef0838dd51ea458857e4f025ce135559a` is
+  `DONE / PROVEN`, 19/19, with clean cleanup.
+- Foundation run
+  `20260911T231733779911Z-ca94e3b2c6d9c4870f95d3ddabee4c02`
+  recorded four events for each locale. Both had a connected live recovery
+  node, matching target identity, two original Turn messages including one
+  assistant, an observed click, and exactly one matching `turnDetails`
+  transition.
+- The same run failed elsewhere at Browser English
+  `BASE-INCOMPATIBLE_CAPABILITY` on `stationReadinessReadback` and
+  `cleanupComplete`. Outer run
+  `20260911T231733635029Z-de141411895995af4f41eeba257b284e`
+  is `FAILED / PARTIAL / UNPROVEN`; Provisioner cleanup passed.
 
 ## Verification Conclusion
-Pending pre-fix instrumentation.
+Hypotheses A-E are rejected for the exact-source run. The previous
+duplicate-conflict timeout did not reproduce, both locale cells completed their
+real click-to-portal transition, and no correction is justified from current
+evidence. The session remains `[OPEN]`; instrumentation and the collector are
+retained until the enclosing Foundation proof is complete or the user
+authorizes cleanup.
 
 ## Local Verification
 - Desktop strict check: PASS.

@@ -1091,7 +1091,7 @@ def valid_incompatible_capability_capture(
             "selectedModelIdBefore": "model-incompatible",
             "selectedModelIdAfter": "model-incompatible",
             "conversationVersionBefore": 3,
-            "conversationVersionAfter": 3,
+            "conversationVersionAfter": 4,
             "beforeHash": state_hash,
             "afterHash": state_hash,
             "turnDelta": 1,
@@ -2979,7 +2979,7 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
                 {"selectedModelIdAfter": "model-compatible"}
             ),
             lambda capture: capture["station"].update(
-                {"conversationVersionAfter": 4}
+                {"conversationVersionAfter": 3}
             ),
             lambda capture: capture["station"].update(
                 {"afterHash": "7" * 64}

@@ -89,3 +89,10 @@ the exact-one Turn assertion and zero provider/tool/side-effect assertions.
   crossed BASE-INCOMPATIBLE_CAPABILITY and failed later at Browser
   Simplified Chinese BASE-CONTEXT-OVERFLOW. This runtime progression confirms
   the strict Turn-union correction without weakening the independent oracle.
+- Exact-source run
+  `20260911T231733779911Z-ca94e3b2c6d9c4870f95d3ddabee4c02`
+  on `43f94f5ef0838dd51ea458857e4f025ce135559a` again recorded
+  `tracedTurnDelta=0`, `diagnosticRejectedTurnCount=1`, and
+  `projectedTurnDelta=1`. The only failed assertions were the separate
+  readiness and cleanup contracts, so the Turn-union correction remains
+  runtime-proven.

@@ -2768,14 +2768,15 @@ def evaluate_base_incompatible_capability(
             == incompatible_model_id
             and _positive_int(
                 station,
-                "conversationVersionBefore",
+                "conversationVersionAfter",
                 scenario=scenario,
             )
             == _positive_int(
                 station,
-                "conversationVersionAfter",
+                "conversationVersionBefore",
                 scenario=scenario,
             )
+            + 1
             and _sha256_string(
                 station,
                 "afterHash",
