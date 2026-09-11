@@ -622,6 +622,16 @@ class NativeInteractionsGate(AcceptanceGate):
             "bob",
         )
         reply_id = str(reply["messageId"])
+        wait_until(
+            lambda: self.projection(
+                "alice",
+                kind,
+                conversation_id,
+                reply_id,
+            ),
+            f"alice {claim_kind} reply authority projection",
+            STEP_TIMEOUT,
+        )
         thread = self.step(
             f"{claim_kind}.thread.send",
             lambda: self.send(
@@ -634,6 +644,16 @@ class NativeInteractionsGate(AcceptanceGate):
             "bob",
         )
         thread_id = str(thread["messageId"])
+        wait_until(
+            lambda: self.projection(
+                "alice",
+                kind,
+                conversation_id,
+                thread_id,
+            ),
+            f"alice {claim_kind} thread authority projection",
+            STEP_TIMEOUT,
+        )
         nested = self.step(
             f"{claim_kind}.thread.nested.send",
             lambda: self.send(

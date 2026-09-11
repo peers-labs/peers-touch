@@ -335,6 +335,18 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             source,
         )
 
+    def test_nested_thread_waits_for_authority_projection(self) -> None:
+        source = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_interactions_runner.py",
+            "prove_lifecycle",
+        )
+        reply_projection = source.index("reply authority projection")
+        thread_submit = source.index(f'{{claim_kind}}.thread.send')
+        thread_projection = source.index("thread authority projection")
+        nested_submit = source.index(f'{{claim_kind}}.thread.nested.send')
+        self.assertLess(reply_projection, thread_submit)
+        self.assertLess(thread_projection, nested_submit)
+
     def test_revoked_typing_is_submitted_and_receiver_stays_inactive(self) -> None:
         source = self.function_source(
             ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
