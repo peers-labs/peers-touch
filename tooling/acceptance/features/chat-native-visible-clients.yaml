@@ -8,6 +8,7 @@
     "tooling/acceptance/gates/chat/native_*_runner.py",
     "tooling/acceptance/gates/chat/native_support.py",
     "tooling/acceptance/gates/chat/native_two_client_e2e.py",
+    "tooling/acceptance/gates/chat/native_current_profile_two_client_*.py",
     "tooling/acceptance/gates/chat/*_test.py",
     "tooling/acceptance/playbooks/chat-native-visible-clients.md",
     "apps/desktop/src/acceptance/chat/**",
@@ -19,6 +20,7 @@
   ],
   "required_gates": [
     "chat-native-visible-static",
+    "chat-native-current-profile-two-client-e2e",
     "chat-native-two-client-e2e",
     "chat-native-multi-device-e2e",
     "chat-native-recovery-e2e",

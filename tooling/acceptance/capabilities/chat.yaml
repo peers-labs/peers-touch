@@ -171,6 +171,7 @@
       "features": ["chat-native-visible-clients"],
       "required_gates": [
         "chat-native-visible-static",
+        "chat-native-current-profile-two-client-e2e",
         "chat-native-two-client-e2e",
         "chat-native-multi-device-e2e",
         "chat-native-recovery-e2e",
@@ -198,6 +199,7 @@
           "three-device MLS"
         ],
         "proven_by": [
+        "chat-native-current-profile-two-client-e2e",
           "chat-native-two-client-e2e",
           "chat-native-multi-device-e2e",
           "chat-native-recovery-e2e",
