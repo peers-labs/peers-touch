@@ -72,3 +72,18 @@
   revision transaction and carries only its normalized thinking mode into the
   new execution config. Current provider/model/readiness authority and optional
   lower requested budgets remain unchanged.
+- Post-fix checkpoint
+  `48c7065ce97b2442df3c82d17840dd120c44651e` passed C08 in run
+  `20260911T031908377408Z-020712763e7168d9fcf4bdefb39ec604`.
+- Foundation run
+  `20260911T032023594492Z-4af15b4006f3a3fb625e4ba4cc009f30`
+  passed all four AS-F06 tuples and both Browser AS-F07 tuples, then advanced
+  to the next planned gap `BASE-FORBIDDEN_ACTOR`.
+- In the post-fix AS-F07 trace, retry completed in 19.751 seconds and the two
+  regenerate calls completed in 3.179 and 3.146 seconds. Every baseline,
+  retry, regenerate, and edit provider request carried
+  `thinking.type=disabled`, received HTTP 200 streaming headers, and completed
+  with `[DONE]`.
+- This confirms B as the owner-layer root cause and rejects A/C/D/E for the
+  repaired flow. The Debug Server and instrumentation remain until Owner
+  confirmation authorizes cleanup.
