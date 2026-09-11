@@ -4211,11 +4211,12 @@ process cleanup. Historical Windows/Linux proof does not prove this macOS run.
 Binding verified after resume:
 
 - integrator: `peers-group-chat`, `fix/deploy-env-host-guard`,
-  workspace `a534541b87e49abf`, expected HEAD
-  `82ed55406b8a0f48a091f4f8add9994751f8d78a`;
+  workspace `a534541b87e49abf`, slice baseline HEAD
+  `8f0d34d1549046a5f8fcdac0b15a4d7d8ed96668`;
 - user-requested synchronization target: `peers-chat-high-chat`,
-  `high-chat-dogfood`, workspace `95620934d3348d95`, initial/expected HEAD
-  `79ae008706ca29f4bb5f1da29d9b6651a59b2f7c`;
+  `high-chat-dogfood`, workspace `95620934d3348d95`, synchronization baseline
+  `67efeb70354351ed2afa838849f3b5c1d0b6d5c3`, first synchronization merge
+  `f20e4e4c12485b6002bb78579dc0a3b39a9d63a7`;
 - shared worktree-set digest:
   `4b41b36f2a0a6704e9779efc97495b76bbe1cd0b1427a1d564baf306025281c4`.
 
@@ -4367,3 +4368,74 @@ All source edits, generated-artifact decisions, deployment, profile/runtime
 resources, and final Gates remain integrator-only and serial because they share
 the same prekey contract, profile `four`, Station deployment, actor stores, and
 native port set.
+
+#### Current-Profile Cross-Worktree Correction
+
+The prior current-profile topology launched both native clients from
+`peers-group-chat`. That proves process, port, profile, storage, and device
+isolation, but it cannot prove that the synchronized `peers-group-chat` and
+`peers-chat-high-chat` development worktrees both run the same Chat behavior.
+That run is diagnostic only and is invalid as final cross-worktree product
+proof.
+
+The user-confirmed current-profile topology is:
+
+1. synchronize `peers-chat-high-chat` from the `peers-group-chat` source line;
+2. require the two worktrees to have distinct canonical roots and equal Git
+   trees before client acquisition;
+3. launch one native Desktop through `make desktop` in each worktree;
+4. preserve each worktree's existing actor/device storage instead of switching
+   identities between clients;
+5. use the `peers-group-chat` client as the first Direct sender and
+   `peers-chat-high-chat` as the first receiver;
+6. retain the reverse direction, exact receiver plaintext, identical message
+   ID, and delivered receipt assertions before accepting the Gate.
+
+Source synchronization is complete. The `peers-chat-high-chat` merge commit
+`f20e4e4c12485b6002bb78579dc0a3b39a9d63a7` has parents
+`67efeb70354351ed2afa838849f3b5c1d0b6d5c3` and
+`8f0d34d1549046a5f8fcdac0b15a4d7d8ed96668`; both worktrees resolve tree
+`2ac48a00acb5eaab5b63e5d578575b89a2663eba`.
+
+The dependency-ready correction is owned by the Chat current-profile
+Provisioner and Gate:
+
+- accept an explicit client-ID to worktree mapping;
+- reject missing, duplicate, non-worktree, dirty, or unequal-tree roots before
+  allocating ports or run-scoped storage;
+- publish the distinct roots in `RuntimeManifest.clients`;
+- bind the initial journey direction to the client launched from
+  `peers-group-chat`, regardless of whether its existing actor is Alice or Bob;
+- add focused regressions that reject a same-worktree pair and verify the
+  cross-worktree initiator order.
+
+Concurrency Decision: serial. The Provisioner contract is consumed directly by
+the Gate direction logic, and both clients share profile `four`, one Station,
+one port allocation set, and one cleanup ledger. The integrator exclusively
+owns the Provisioner, Chat Gate, focused tests, plan, deployment, and final
+runtime proof.
+
+Source implementation is complete and runtime proof remains `UNPROVEN`:
+
+- the Provisioner discovers or accepts an exact Alice/Bob worktree map and
+  rejects same-root, wrong-name, dirty, unrelated-repository, or unequal-tree
+  inputs before allocating run resources;
+- Alice keeps the `peers-chat-high-chat` identity seed, Bob keeps the
+  `peers-group-chat` identity seed, and the current-profile Gate launches and
+  sends in Bob/group-chat then Alice/high-chat order;
+- the Gate report records both workspace IDs, one repository ID, both heads,
+  the equal tree, launch order, and direction order; the validator rejects
+  same-worktree or reversed-initiator evidence;
+- Chat Static passed 6 Vitest and 182 Python tests; focused Provisioning and
+  Native two-client regressions passed 34/34; full Provisioning passed 164/164;
+  planner, boundary, validator, gap-detector, coverage, and quality self-tests
+  passed; Desktop check, 20 messaging contract tests, and Station
+  Conversation/Federation/Key Exchange tests passed;
+- the Gap Detector correctly keeps the product claim `UNPROVEN` until a fresh
+  source-bound `chat-native-current-profile-two-client-e2e` run produces
+  receiver DOM, message-ID, receipt, and cleanup evidence.
+
+The next dependency-ready action is to commit this source closure in
+`peers-group-chat`, merge that commit into `peers-chat-high-chat`, verify both
+worktrees are clean with equal trees, deploy the exact source through profile
+`four` and `make station`, then execute the current-profile Native Gate.

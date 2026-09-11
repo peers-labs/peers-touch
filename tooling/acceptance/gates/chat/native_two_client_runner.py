@@ -7,6 +7,7 @@ import json
 import os
 import random
 import re
+import subprocess
 import time
 import urllib.request
 from pathlib import Path
@@ -24,6 +25,7 @@ from tooling.acceptance.core import (
     REPO_ROOT,
 )
 from tooling.acceptance.core.provisioning import load_runtime_manifest
+from tooling.acceptance.core.evidence_store import workspace_id
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
@@ -40,6 +42,11 @@ from tooling.acceptance.gates.chat.native_support import (
 
 GATE_ID = "chat-native-two-client-e2e"
 CURRENT_PROFILE_GATE_ID = "chat-native-current-profile-two-client-e2e"
+CURRENT_PROFILE_ACTOR_WORKTREES = {
+    "alice": "peers-chat-high-chat",
+    "bob": "peers-group-chat",
+}
+CURRENT_PROFILE_INITIAL_SENDER = "bob"
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 REQUIRED_ASSERTIONS = {
     "native_runtime",
@@ -50,6 +57,10 @@ REQUIRED_ASSERTIONS = {
     "bob_to_alice_plaintext",
     "bob_to_alice_delivered",
     "resources_released",
+}
+CURRENT_PROFILE_REQUIRED_ASSERTIONS = {
+    "current_profile_cross_worktree",
+    "current_profile_group_chat_initiator",
 }
 
 
@@ -192,6 +203,11 @@ class NativeTwoClientGate(AcceptanceGate):
             raise GateError(
                 "actor manifest must contain canonical Alice and Bob identities"
             )
+        self.direction_order = (
+            [CURRENT_PROFILE_INITIAL_SENDER, "alice"]
+            if gate_id == CURRENT_PROFILE_GATE_ID
+            else ["alice", "bob"]
+        )
         self.steps: list[dict[str, Any]] = []
         self.clients: dict[str, TauriSession] = {}
         self.runtime_instances: list[TauriSession] = []
@@ -423,28 +439,98 @@ class NativeTwoClientGate(AcceptanceGate):
             )
         )
 
+    def current_profile_worktree_topology(self) -> dict[str, Any]:
+        topology: dict[str, Any] = {}
+        for actor, expected_name in CURRENT_PROFILE_ACTOR_WORKTREES.items():
+            raw_root = str(self.client_specs[actor].get("worktree") or "")
+            root = Path(raw_root).expanduser().resolve()
+            completed = subprocess.run(
+                (
+                    "git",
+                    "-C",
+                    str(root),
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=all",
+                ),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise GateError(
+                    f"cannot inspect current-profile worktree for {actor}"
+                )
+
+            def git_value(*args: str) -> str:
+                result = subprocess.run(
+                    ("git", "-C", str(root), *args),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                value = result.stdout.strip()
+                if result.returncode != 0 or not value:
+                    raise GateError(
+                        "cannot resolve current-profile worktree identity "
+                        f"for {actor}"
+                    )
+                return value
+
+            canonical_root = Path(
+                git_value("rev-parse", "--show-toplevel")
+            ).resolve()
+            common_dir = Path(
+                git_value(
+                    "rev-parse",
+                    "--path-format=absolute",
+                    "--git-common-dir",
+                )
+            ).resolve()
+            topology[actor] = {
+                "clientId": str(self.client_specs[actor].get("id") or ""),
+                "logicalName": root.name,
+                "expectedLogicalName": expected_name,
+                "workspaceId": workspace_id(root),
+                "repositoryId": workspace_id(common_dir),
+                "canonicalRoot": str(canonical_root),
+                "head": git_value("rev-parse", "HEAD"),
+                "tree": git_value("rev-parse", "HEAD^{tree}"),
+                "clean": not completed.stdout.strip(),
+            }
+        return topology
+
     def open_conversation(self) -> str:
-        alice = self.clients["alice"]
-        bob = self.clients["bob"]
-        for client in (alice, bob):
+        initiator_name, receiver_name = self.direction_order
+        initiator = self.clients[initiator_name]
+        receiver = self.clients[receiver_name]
+        for client in (initiator, receiver):
             enter_chat_page(client)
-        alice_context = async_harness(alice, "federationContext", {})
-        bob_context = async_harness(bob, "federationContext", {})
-        alice_federations = [
+        initiator_context = async_harness(
+            initiator,
+            "federationContext",
+            {},
+        )
+        receiver_context = async_harness(
+            receiver,
+            "federationContext",
+            {},
+        )
+        initiator_federations = [
             str(item.get("federationId") or "")
-            for item in (alice_context or {}).get("federations", [])
+            for item in (initiator_context or {}).get("federations", [])
             if isinstance(item, dict) and item.get("federationId")
         ]
-        bob_federations = {
+        receiver_federations = {
             str(item.get("federationId") or "")
-            for item in (bob_context or {}).get("federations", [])
+            for item in (receiver_context or {}).get("federations", [])
             if isinstance(item, dict) and item.get("federationId")
         }
         federation_id = next(
             (
                 candidate
-                for candidate in alice_federations
-                if candidate in bob_federations
+                for candidate in initiator_federations
+                if candidate in receiver_federations
             ),
             "",
         )
@@ -453,10 +539,10 @@ class NativeTwoClientGate(AcceptanceGate):
                 "Alice and Bob have no shared Federation for Direct Chat"
             )
         created = async_harness(
-            alice,
+            initiator,
             "createDirectConversation",
             {
-                "peerPtid": self.ptids["bob"],
+                "peerPtid": self.ptids[receiver_name],
                 "federationId": federation_id,
             },
         )
@@ -464,10 +550,10 @@ class NativeTwoClientGate(AcceptanceGate):
         if not conversation_id:
             raise GateError("Direct conversation creation returned no ID")
         peer_created = async_harness(
-            bob,
+            receiver,
             "createDirectConversation",
             {
-                "peerPtid": self.ptids["alice"],
+                "peerPtid": self.ptids[initiator_name],
                 "federationId": federation_id,
             },
         )
@@ -477,9 +563,10 @@ class NativeTwoClientGate(AcceptanceGate):
         if peer_conversation_id != conversation_id:
             raise GateError(
                 "Direct conversation identity diverged across actors: "
-                f"alice={conversation_id} bob={peer_conversation_id}"
+                f"{initiator_name}={conversation_id} "
+                f"{receiver_name}={peer_conversation_id}"
             )
-        for client in (alice, bob):
+        for client in (initiator, receiver):
             async_harness(
                 client,
                 "syncFriendSession",
@@ -607,8 +694,9 @@ class NativeTwoClientGate(AcceptanceGate):
         ):
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
 
-        order = ["alice", "bob"]
-        random.SystemRandom().shuffle(order)
+        order = list(self.direction_order)
+        if self.gate_id != CURRENT_PROFILE_GATE_ID:
+            random.SystemRandom().shuffle(order)
         cleanup: dict[str, Any] = {}
         source_identity: dict[str, Any] = {}
         conversation_id = ""
@@ -642,8 +730,71 @@ class NativeTwoClientGate(AcceptanceGate):
                     ]["runId"],
                     "sourceIdentity": source_identity,
                     "launchOrder": order,
+                    "directionOrder": list(self.direction_order),
                 }
             )
+            if self.gate_id == CURRENT_PROFILE_GATE_ID:
+                topology = self.step(
+                    "runtime.cross_worktree",
+                    self.current_profile_worktree_topology,
+                )
+                self.report.runtime["worktreeTopology"] = topology
+                source = self.manifest.get("source")
+                source_commit = str(
+                    source.get("commit")
+                    if isinstance(source, dict)
+                    else ""
+                )
+                self.assert_condition(
+                    "current_profile_cross_worktree",
+                    {
+                        topology[actor]["logicalName"]
+                        for actor in ("alice", "bob")
+                    }
+                    == set(CURRENT_PROFILE_ACTOR_WORKTREES.values())
+                    and all(
+                        topology[actor]["logicalName"]
+                        == CURRENT_PROFILE_ACTOR_WORKTREES[actor]
+                        and topology[actor]["canonicalRoot"]
+                        == str(
+                            Path(
+                                self.client_specs[actor]["worktree"]
+                            ).resolve()
+                        )
+                        and topology[actor]["clean"] is True
+                        for actor in ("alice", "bob")
+                    )
+                    and len(
+                        {
+                            topology[actor]["workspaceId"]
+                            for actor in ("alice", "bob")
+                        }
+                    )
+                    == 2
+                    and len(
+                        {
+                            topology[actor]["repositoryId"]
+                            for actor in ("alice", "bob")
+                        }
+                    )
+                    == 1
+                    and topology["alice"]["tree"] == topology["bob"]["tree"]
+                    and topology["bob"]["head"] == source_commit,
+                    json.dumps(topology, sort_keys=True),
+                )
+                self.assert_condition(
+                    "current_profile_group_chat_initiator",
+                    self.direction_order[0] == CURRENT_PROFILE_INITIAL_SENDER
+                    and topology[self.direction_order[0]]["logicalName"]
+                    == "peers-group-chat",
+                    json.dumps(
+                        {
+                            "directionOrder": self.direction_order,
+                            "topology": topology,
+                        },
+                        sort_keys=True,
+                    ),
+                )
             self.assert_condition(
                 "native_runtime",
                 all(
@@ -663,8 +814,8 @@ class NativeTwoClientGate(AcceptanceGate):
                 "conversation.open",
                 self.open_conversation,
             )
-            self.prove_direction("alice", "bob")
-            self.prove_direction("bob", "alice")
+            self.prove_direction(*self.direction_order)
+            self.prove_direction(*reversed(self.direction_order))
             for actor in ("alice", "bob"):
                 self.collect_client_evidence(actor)
         finally:
@@ -696,6 +847,11 @@ class NativeTwoClientGate(AcceptanceGate):
             "conversationId": conversation_id,
             "sourceIdentity": source_identity,
             "launchOrder": order,
+            "directionOrder": list(self.direction_order),
+            "worktreeTopology": self.report.runtime.get(
+                "worktreeTopology",
+                {},
+            ),
             "steps": self.steps,
             "cleanup": cleanup,
             "clients": {

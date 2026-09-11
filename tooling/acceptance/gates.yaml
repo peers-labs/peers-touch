@@ -55,7 +55,7 @@
       "environment": "native-tauri-current-profile",
       "provisioner": "native-tauri-current-profile",
       "tier": "env-evidence",
-      "description": "Run two isolated make-desktop clients against the installed active profile without destructive Station reset and prove bidirectional Direct plaintext plus DELIVERED receipt visibility."
+      "description": "Run synchronized peers-group-chat initiator and peers-chat-high-chat receiver worktrees through separate make-desktop clients against the installed active profile, without destructive Station reset, and prove bidirectional Direct plaintext plus DELIVERED receipt visibility."
     },
     "chat-native-interactions-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_interactions_runner",

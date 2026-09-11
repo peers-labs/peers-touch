@@ -191,11 +191,12 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertIn("chat-native-two-client-e2e", selected)
         self.assertIn("chat-desktop-gateway-e2e", selected)
 
-    def test_unrelated_messaging_file_does_not_select_native_two_client(self) -> None:
+    def test_prekey_owner_selects_native_two_client(self) -> None:
         selected = self.selected_ids(
             "apps/desktop/src-tauri/src/messaging/prekeys.rs"
         )
-        self.assertNotIn("chat-native-two-client-e2e", selected)
+        self.assertIn("chat-native-current-profile-two-client-e2e", selected)
+        self.assertIn("chat-native-two-client-e2e", selected)
         self.assertIn("chat-desktop-gateway-e2e", selected)
 
     def test_agent_tool_surfaces_select_governed_tool_and_foundation_gates(
