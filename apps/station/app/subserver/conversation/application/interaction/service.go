@@ -410,12 +410,12 @@ func validateDeliveryAggregate(
 		aggregate.RevokedDeviceCount > aggregate.RequiredDeviceCount ||
 		aggregate.ConsumedDeviceCount+aggregate.RevokedDeviceCount >
 			aggregate.RequiredDeviceCount ||
-		aggregate.Delivered != (aggregate.ConsumedDeviceCount > 0) ||
+		aggregate.Delivered !=
+			(aggregate.ConsumedDeviceCount > 0 || aggregate.Read) ||
 		aggregate.FullyDelivered !=
 			(aggregate.RequiredDeviceCount > 0 &&
 				aggregate.ConsumedDeviceCount+aggregate.RevokedDeviceCount ==
-					aggregate.RequiredDeviceCount) ||
-		(aggregate.Read && !aggregate.Delivered) {
+					aggregate.RequiredDeviceCount) {
 		return NewError(
 			ErrorCodeIntegrityFailed,
 			"interaction.validate_delivery_aggregate",

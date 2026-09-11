@@ -44,9 +44,13 @@ For Direct endpoints whose current revoke state cannot be proven from
 authority-local truth, the aggregate remains outstanding. Missing Group state
 must never be interpreted as Direct revocation or delivery.
 
+A committed recipient read cursor is stronger than delivered. Aggregate repair
+may therefore derive `delivered=true` from `read=true`, but it MUST preserve the
+actual persisted receipt count and MUST NOT infer `fully_delivered`.
+
 ## How to verify
 
-- `go test ./subserver/conversation/infrastructure/delivery -run 'TestReceiptRecorder(UsesDirectCommitmentsOutsideGroupDeviceProjection|RollsBackWhenAggregateValidationFails)' -count=1` from `apps/station/app` must pass.
+- `go test ./subserver/conversation/infrastructure/delivery -run 'TestReceiptRecorder(UsesDirectCommitmentsOutsideGroupDeviceProjection|KeepsReadAheadOfDeliveredMonotonic|RollsBackWhenAggregateValidationFails)' -count=1` from `apps/station/app` must pass.
 - `go test ./subserver/conversation/...` from `apps/station/app` must pass.
 - `chat-native-current-profile-two-client-e2e` must show exact receiver
   plaintext and sender-visible `delivered` in both directions.
