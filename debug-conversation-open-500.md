@@ -222,3 +222,26 @@ timed out at Bob ACTIVE enrollment before Alice launched or message preparation
 executed. Its cleanup evidence passed, but it produced no message-path evidence.
 Do not rerun the local Chat Gate until that concurrent Gate releases the shared
 Desktop resources.
+
+After the concurrent Gate released its resources, the exclusive pre-fix run
+produced the missing evidence:
+
+- Debug line 158: Bob's immediate submit failed with
+  `messaging endpoint key bundle binding mismatch`.
+- Debug lines 165/177/185/198: the corresponding Key Exchange fetch returned
+  exactly Alice PTID plus canonical device
+  `01M276A60YVV4Q9MWN9NPHD3RE`.
+- Debug lines 167/179/187/200: every lifecycle retry failed with the same
+  binding mismatch after the fetch succeeded.
+
+P is confirmed at the wire-to-session boundary; Q and R are rejected because
+execution never reached outbound persistence or encryption. The requested and
+returned endpoints have the same canonical `(actor PTID, device ID)`, but
+`StationKeyBundleTransport::fetch` compares the entire generated
+`ActorDeviceRef`. The Conversation send plan includes Actor metadata such as
+`kind`, while the Key Exchange response reconstructs only canonical identity
+fields. Non-identity protobuf metadata therefore creates a false endpoint
+binding mismatch.
+
+The fix must compare only canonical Actor PTID and device ID. It must continue
+to reject a changed PTID, changed device ID, missing actor, or empty device.
