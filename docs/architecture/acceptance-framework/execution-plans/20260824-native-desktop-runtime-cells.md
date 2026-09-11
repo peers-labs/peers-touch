@@ -4427,7 +4427,7 @@ Source implementation is complete and runtime proof remains `UNPROVEN`:
   the equal tree, launch order, and direction order; the validator rejects
   same-worktree or reversed-initiator evidence;
 - Chat Static passed 6 Vitest and 182 Python tests; focused Provisioning and
-  Native two-client regressions passed 34/34; full Provisioning passed 164/164;
+  Native two-client regressions passed 35/35; full Provisioning passed 164/164;
   planner, boundary, validator, gap-detector, coverage, and quality self-tests
   passed; Desktop check, 20 messaging contract tests, and Station
   Conversation/Federation/Key Exchange tests passed;

@@ -414,6 +414,54 @@ class EnvironmentContractTests(unittest.TestCase):
             finally:
                 provisioner.cleanup()
 
+    def test_current_profile_defaults_to_each_worktree_storage_seed(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            common_dir = root / "common"
+            identities = {}
+            for role, logical_name in (
+                ("alice", "peers-chat-high-chat"),
+                ("bob", "peers-group-chat"),
+            ):
+                worktree = root / logical_name
+                (
+                    worktree
+                    / ".local"
+                    / "dev"
+                    / "data"
+                    / "four"
+                    / "desktop-app"
+                    / "peers-touch"
+                ).mkdir(parents=True)
+                identities[role] = (
+                    native_tauri_current_profile.ClientWorktreeIdentity(
+                        root=worktree,
+                        logical_name=logical_name,
+                        common_dir=common_dir,
+                        head="a" * 40,
+                        tree="b" * 40,
+                        clean=True,
+                    )
+                )
+            with mock.patch.dict(
+                os.environ,
+                {"PT_CHAT_NATIVE_STORAGE_SEEDS": ""},
+            ):
+                seeds = (
+                    native_tauri_current_profile
+                    .NativeTauriCurrentProfileProvisioner
+                    ._storage_seeds("four", identities)
+                )
+
+        self.assertEqual(
+            [seed.parents[4].name for seed in seeds],
+            ["peers-chat-high-chat", "peers-group-chat"],
+        )
+
     def test_current_profile_rejects_same_client_worktree(self):
         from tooling.acceptance.provisioners import (
             native_tauri_current_profile,
@@ -510,7 +558,7 @@ class EnvironmentContractTests(unittest.TestCase):
                 {"PT_CHAT_NATIVE_STORAGE_SEEDS": ",".join(seeds)},
             ):
                 with self.assertRaises(BlockedError):
-                    provisioner._storage_seeds("four")
+                    provisioner._storage_seeds("four", {})
 
     def test_load_mobile_native_contract(self):
         contract = EnvironmentContract.from_yaml(
