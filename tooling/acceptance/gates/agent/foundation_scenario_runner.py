@@ -26,6 +26,7 @@ import os
 import re
 import sys
 import time
+import urllib.request
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
@@ -79,6 +80,49 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
 
 class ScenarioRunnerError(RuntimeError):
     """Fatal error during Foundation scenario execution."""
+
+
+# #region debug-point A-D:capability-session-enrollment
+def _report_capability_session_enrollment_debug(
+    hypothesis_id: str,
+    message: str,
+    data: Mapping[str, object],
+) -> None:
+    if os.environ.get("DEBUG_SESSION_ID") != "capability-session-enrollment":
+        return
+    url = os.environ.get(
+        "DEBUG_SERVER_URL",
+        "http://127.0.0.1:7789/event",
+    )
+    payload = json.dumps(
+        {
+            "sessionId": "capability-session-enrollment",
+            "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
+            "hypothesisId": hypothesis_id,
+            "location": (
+                "tooling/acceptance/gates/agent/"
+                "foundation_scenario_runner.py:_authenticate_clients"
+            ),
+            "msg": f"[DEBUG] {message}",
+            "data": dict(data),
+            "ts": int(time.time() * 1000),
+        }
+    ).encode("utf-8")
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            ),
+            timeout=1,
+        ).read()
+    except Exception:
+        pass
+
+
+# #endregion
 
 
 def _failure_summary(
@@ -1735,7 +1779,14 @@ def _authenticate_clients(
     for client in selected_clients:
         client_deadline = _time.monotonic() + 90
         established = False
+        poll_count = 0
+        _report_capability_session_enrollment_debug(
+            "A-D",
+            "capability-session-wait-started",
+            {"runtime": client.spec.runtime},
+        )
         while _time.monotonic() < client_deadline:
+            poll_count += 1
             try:
                 cap_result = client.harness(
                     "getFoundationCapabilitySessions",
@@ -1744,6 +1795,48 @@ def _authenticate_clients(
                 )
             except Exception:
                 cap_result = None
+            local_result = (
+                cap_result.get("local")
+                if isinstance(cap_result, Mapping)
+                else None
+            )
+            station_result = (
+                cap_result.get("station")
+                if isinstance(cap_result, Mapping)
+                else None
+            )
+            local_sessions = (
+                local_result.get("sessions")
+                if isinstance(local_result, Mapping)
+                else None
+            )
+            station_sessions = (
+                station_result.get("sessions")
+                if isinstance(station_result, Mapping)
+                else None
+            )
+            _report_capability_session_enrollment_debug(
+                "A-D",
+                "capability-session-poll",
+                {
+                    "runtime": client.spec.runtime,
+                    "pollCount": poll_count,
+                    "localSessionCount": (
+                        len(local_sessions)
+                        if isinstance(local_sessions, list)
+                        else None
+                    ),
+                    "stationSessionCount": (
+                        len(station_sessions)
+                        if isinstance(station_sessions, list)
+                        else None
+                    ),
+                    "selectedSessionPresent": bool(
+                        isinstance(cap_result, Mapping)
+                        and cap_result.get("selectedStationSession")
+                    ),
+                },
+            )
             if isinstance(cap_result, Mapping) and cap_result.get(
                 "selectedStationSession"
             ):
@@ -1784,6 +1877,14 @@ def _authenticate_clients(
                 f"{client.spec.runtime} capability session not established "
                 f"after 90s polling.{diag}"
             )
+        _report_capability_session_enrollment_debug(
+            "A-D",
+            "capability-session-wait-completed",
+            {
+                "runtime": client.spec.runtime,
+                "pollCount": poll_count,
+            },
+        )
 
 
 def _capability_isolation_restoration_error(
