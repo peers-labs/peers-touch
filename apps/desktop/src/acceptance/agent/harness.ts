@@ -9323,7 +9323,7 @@ function reportFoundationF06TerminalRaceDebug(
   return fetch('http://127.0.0.1:7780/event', {
     method: 'POST',
     body: JSON.stringify({
-      sessionId: 'foundation-f06-terminal-race',
+      sessionId: 'foundation-f06-terminal-race-v2',
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:AS-F06-terminal-race',
