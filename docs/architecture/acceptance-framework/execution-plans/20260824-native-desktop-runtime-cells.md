@@ -4618,8 +4618,71 @@ Source verification on the uncommitted correction:
 - Desktop Rust `acceptance-webdriver` check: PASS;
 - `git diff --check`: PASS.
 
-The correction remains `PARTIAL/UNPROVEN` until it is committed, synchronized
-into `peers-chat-high-chat`, deployed exactly through profile `four` and
-`make station`, and the unchanged current-profile Native Gate proves both
-directions, exact receiver plaintext, identical message IDs, receipts, and
-complete cleanup.
+The correction was committed in `peers-group-chat` at
+`a6daa9102161724b5a615b35f2ec1c96bd9f36e5`, merged into
+`peers-chat-high-chat` at
+`fdd80f6ed3d23989a74c047c25cbaa5c7097470c`, and both worktrees resolve Git
+tree `f2d588d26cbaee713a7b1070da20c7d452132720`. Exact Station deployment
+through profile `four` and `make station` completed at the group-chat commit.
+
+The first post-fix Native run
+`20260911T143857629638Z-f9c984dccd20ac3bac35b419b8db6084` stopped before
+product execution because another worktree acquired renderer port `3410`
+after preflight. The Gate did not terminate the unrelated process and proved
+complete cleanup of its own processes, six ports, logs, and retained
+persistent storage. The second run
+`20260911T145212236066Z-b0a891ef9f0427c57b86834eeb8226c4` selected isolated
+ports and proved:
+
+- Bob launched from `peers-group-chat` and initiated first;
+- Alice launched independently from `peers-chat-high-chat`;
+- both clean worktrees had the same Git tree and exact Station source;
+- Bob submitted message `01M28FDJ5609MJ2D1BFHCTJ9KV`;
+- Alice rendered the exact native-DOM plaintext under the same message ID;
+- Alice decrypted and committed sequence 3 after installing the verified
+  sequence-2 predecessor checkpoint; and
+- process, port, log, and persistent-storage cleanup completed.
+
+The receiver checkpoint defect is therefore fixed. The run remains
+`PARTIAL/UNPROVEN` because Bob timed out waiting for the delivered receipt.
+Both clients repeatedly observed HTTP 500 from
+`POST /conversation/delivery/receipt`.
+
+#### Current-Profile Delivery Receipt Follow-up
+
+The current recoverable NDR-W8 boundary is the durable delivery-receipt path:
+
+1. Alice's Device Engine has already committed the private delivery and
+   generated its durable consumption receipt;
+2. Desktop dispatch selects the oldest pending `device-consumed:*` receipt;
+3. Station rejects that submission, but the production HTTP mapper collapses
+   typed `interaction.Error` values into a generic HTTP 500;
+4. the failed oldest receipt remains pending and may starve the new sequence-3
+   receipt; and
+5. Bob's sender projection therefore never advances to delivered.
+
+The exact rejected receipt tuple and Station interaction error remain to be
+proved before changing business behavior. The strict post-consume receipt
+creation, durable retry, and sender-side delivered assertion must not be
+weakened.
+
+Concurrency Decision: hybrid. Remote Station log inspection, read-only local
+persistent-store inspection, and error-contract analysis may proceed in
+parallel because they have disjoint read sets. One integrator owns the shared
+receipt contract, all instrumentation and source edits, Acceptance mappings,
+commits, high-chat synchronization, profile-four deployment, and final Native
+Gates. Runtime execution remains serial because both clients share the
+protected profile, Station, persistent device states, and native port pool.
+
+The dependency-ready actions are:
+
+1. instrument the selected Desktop receipt tuple and Station typed failure
+   without changing behavior;
+2. reproduce once against the exact deployed source;
+3. fix the confirmed owning layer, including typed production error mapping
+   when applicable;
+4. add regression coverage proving a permanently rejected historical receipt
+   cannot silently starve a valid current receipt without weakening exact
+   retry/idempotency semantics; and
+5. rerun both Direct directions with exact native receiver plaintext,
+   identical message IDs, delivered/read receipts, and cleanup.

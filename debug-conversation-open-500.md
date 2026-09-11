@@ -433,3 +433,33 @@ Post-change local evidence:
 The Debug Server remains active on port 7779 and the session remains `[OPEN]`.
 Post-fix native runtime evidence is pending exact-source commit, high-chat
 synchronization, profile-four deployment, and the unchanged two-client Gate.
+
+## Delivery Receipt Follow-up
+
+The receiver checkpoint was committed in `peers-group-chat`, synchronized into
+`peers-chat-high-chat`, and deployed through profile `four`. Exact-source Native
+run `20260911T145212236066Z-b0a891ef9f0427c57b86834eeb8226c4`
+proved Bob submission and Alice native-DOM decryption for message
+`01M28FDJ5609MJ2D1BFHCTJ9KV`. Alice's checkpoint installed the exact sequence-2
+predecessor before committing sequence 3. The run then timed out waiting for
+Bob's delivered receipt while both clients repeatedly observed HTTP 500 from
+`POST /conversation/delivery/receipt`.
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| Z11 | A historical pending consumption receipt is the oldest Desktop outbox entry and is retried before the new sequence-3 receipt. | High | Low | Repeated dispatch logs carry one older receipt/event ID while the new message's receipt remains pending but unselected. |
+| Z12 | The selected receipt's exact event/consumer/item tuple has no matching Station authority delivery commitment or canonical queue item. | High | Low | Station reports an interaction integrity failure for the selected receipt tuple, identifying the missing or mismatched authority expectation. |
+| Z13 | The new sequence-3 receipt is valid and would succeed if selected, but strict oldest-first selection causes permanent head-of-line starvation. | Medium | Medium | The persistent store contains multiple pending receipts; the selected oldest tuple fails repeatedly while the latest tuple matches current Station state. |
+| Z14 | Production HTTP error mapping hides the typed `interaction.Error` and converts the actionable code/details into generic HTTP 500. | High | Low | Station handler receives `CONVERSATION_INTERACTION_*`, while the client receives 500 without `X-Peers-Error-Code` or typed details. |
+
+Instrumentation points:
+
+- Z11/Z13: `MessagingEngine::dispatch_delivery_receipt_once` reports the
+  selected receipt ID, conversation/event sequence, consumer endpoint, lane
+  sequence, payload hash, and submit result.
+- Z12/Z14: `handleSubmitDeliveryReceipt` reports the authenticated endpoint,
+  canonical receipt tuple, and typed interaction code/error immediately after
+  the application call.
+
+No receipt business behavior is changed until one exact-source pre-fix
+reproduction distinguishes these hypotheses.
