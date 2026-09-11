@@ -104,6 +104,7 @@ pub use engine::{
 };
 pub use group_genesis::StationGroupGenesisTransport;
 pub use inbox::{InboxWorker, QueueAcknowledger};
+pub(crate) use lifecycle::hydrate_projections_from_station;
 pub use lifecycle::MessagingLifecycleWorker;
 pub use membership_transition::StationMembershipTransitionTransport;
 pub use messaging_core::codec::private_content::{

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-24 | **Updated**: 2026-09-05
+> **Created**: 2026-08-24 | **Updated**: 2026-09-11
 > **Owner**: Acceptance Infrastructure + Desktop Platform + Chat Domain
 > **Branch**: `refactor/chat-acceptance-cutover`
 > **Parent Design**: [../design.md](../design.md)
@@ -4200,3 +4200,170 @@ dependency-ready action is a checkpoint commit without push, exact-source
 deployment, and another Product Closure-only run. The remaining seven Windows
 Native Chat Gates and PostgreSQL contention stay deferred until Product
 Closure passes.
+
+### 2026-09-11 NDR-W8 Development Runtime Repair
+
+The user-selected runtime is native `make desktop` on the installed canonical
+env-repo profile `four`. This does not authorize a packaged-app substitution,
+the retired local `chat-native-four/five` profiles, Station reset, or global
+process cleanup. Historical Windows/Linux proof does not prove this macOS run.
+
+Binding verified after resume:
+
+- integrator: `peers-group-chat`, `fix/deploy-env-host-guard`,
+  workspace `a534541b87e49abf`, expected HEAD
+  `82ed55406b8a0f48a091f4f8add9994751f8d78a`;
+- user-requested synchronization target: `peers-chat-high-chat`,
+  `high-chat-dogfood`, workspace `95620934d3348d95`, initial/expected HEAD
+  `79ae008706ca29f4bb5f1da29d9b6651a59b2f7c`;
+- shared worktree-set digest:
+  `4b41b36f2a0a6704e9779efc97495b76bbe1cd0b1427a1d564baf306025281c4`.
+
+Run `20260911T010001453367Z-fd133cd4e8ee5f82e4a1480f0aa8a26b`
+failed building Bob's binary with E0609: the HTTP adapter's identity-transition
+lock dependency was not synchronized. A 600-second port wait concealed that
+failure. The auth/wire investigation also refutes missing account creation:
+both login adapters invoke the same application service. A drain request is an
+active queue operation, not a passive readiness probe.
+
+Concurrency Decision: hybrid. The completed auth/wire lane was read-only.
+The startup lane exclusively owns `_ensure-desktop-rust.sh`,
+`_ensure-desktop-vite.sh`, `dev-desktop-app.sh`, `local-dev/desktop-dev.sh`,
+and focused launch regression tests. The integrator owns Rust changes,
+Native Driver/Provisioner integration, Chat injection, tracking, and all live
+resources. High-chat synchronization is integrator-only after source review.
+No lane deploys, resets a Fixture, or stops unrelated processes.
+
+| Ready unit | Owner | Proof required | State |
+|---|---|---|---|
+| Restore complete identity-lock dependency in high-chat | integrator | binary compilation, not library-only check | done |
+| Fail closed on native startup failure and preserve instance isolation | startup lane | child exit, timeout, foreign port, per-instance input regressions | done |
+| Connect current-profile Make runtime to the native Driver | integrator | bound process, embedded WebDriver, storage and Station identity | done |
+| Recover missing Direct device child projection from verified authority genesis | integrator | positive recovery, tampered-genesis rejection, current-device fan-out/receipt/typing/attachment regressions | source complete |
+| Direct, offline recovery, three-actor group, friendship and thread | Chat injection | native receiver DOM and immutable evidence | ready after exact-source Station deployment |
+
+Infra scope is generic launcher lifecycle and resource isolation. Business
+injection scope is the existing Chat journey/actor/proof contract. The current
+gap matrix keeps every macOS receiver journey UNPROVEN until executed; no
+Gateway-only result or unavailable third client may produce a silent pass.
+
+Post-fix source and runtime evidence:
+
+- startup and instance isolation regressions: 18/18 PASS;
+- Native Driver, launcher, and direct-runner regressions: 35/35 PASS in both
+  `peers-group-chat` and `peers-chat-high-chat`;
+- Desktop checks: PASS in both worktrees;
+- `acceptance-webdriver` Desktop binary checks: PASS in both worktrees;
+- `chat-native-visible-static`:
+  `20260911T034838944867Z-660d10f0ef5e37d16412a7fdfd981bc4`
+  PASS in the integrator and
+  `20260911T034716287495Z-eb54e8d1e438ca625f3cfec7e459693f`
+  PASS in high-chat;
+- two Native clients launched through `make desktop`, exposed independent
+  process/Gateway/renderer/WebDriver/profile/storage identities, selected
+  Station `four`, authenticated Alice/Bob, hydrated distinct canonical PTIDs,
+  and resolved the same Federation.
+
+The first product failure is now source-backed and external to the launched
+clients. Read-only Station inspection found deterministic Direct conversation
+`direct-8933203d465fd79ac34b9b33953757a2` with two active members and zero
+`conversation_member_devices`. Its signed genesis event still proves the
+original two endpoints, while the current actor-device directory contains
+later device IDs. `aggregate.Rehydrate` correctly rejects this split state, so
+both `/conversation/list` and `/conversation/direct` return
+`CONVERSATION_INVALID_ARGUMENT` before any message can be submitted.
+
+The first blocker classification was too strong. Accepted MP-D17 semantics and
+`TestConversationDDDDirectFanoutUsesCurrentActiveActorDevices` prove that Direct
+commands resolve the current Actor Directory endpoint set at prepare/submit;
+the genesis device set is the immutable authority baseline, not the current
+delivery fan-out. The signed sequence-one event contains the complete Direct
+post-state and is verified by the existing event sealer.
+
+The Station persistence owner now reconstructs a missing Direct device child
+projection in memory only from that verified genesis post-state. It rejects a
+missing, malformed, tampered, or scope-mismatched genesis and does not apply the
+rule to Group projections. The next successful authority mutation persists the
+reconstructed baseline through the existing aggregate save transaction, while
+message delivery continues to target only current active Actor Directory
+devices. Direct typing, receipt, and attachment authorization now use the same
+actor-level Direct / device-level Group rule and still require the current
+Actor Identity device check.
+
+Focused regressions and the full Conversation package pass. No Station database
+mutation or Fixture reset occurred. The next dependency-ready action is to
+run `chat-native-current-profile-two-client-e2e`. That Gate uses the installed
+active profile, clones existing Desktop identity state into two isolated
+run-scoped storage roots, launches both clients through `make desktop`, and
+performs the unchanged bidirectional plaintext/message-ID/receipt assertions
+without resetting the protected Station. The cross-platform
+`chat-native-two-client-e2e` keeps its disposable two-Station Fixture contract
+and is not weakened or replaced. After the current-profile Gate passes, resume
+the remaining Direct/offline/Group/interaction matrix.
+
+The first current-profile run
+`20260911T051620333813Z-4640f78c3a8eddb332a6239a39482afb` proved both
+Native clients and exact Station/source binding, then failed inside
+`conversation.open`. Station request evidence shows `/conversation/direct`
+returned 200; the Desktop command subsequently converted an unauthorized
+`/device/inbox/claim` into the apparent create failure. Runtime instrumentation
+confirmed the failing Alice Engine endpoint was not enrolled.
+
+The ownership defect is in the current-profile Chat Provisioner. It cloned one
+worktree's Desktop seed for both actors and launched it under `PT_PROFILE=four`,
+while canonical developer storage is under `four-app`. The local profile state
+currently binds Alice's canonical Actor Identity in `peers-chat-high-chat` and
+Bob's in `peers-group-chat`. The remediation therefore:
+
+- accepts one explicit non-destructive storage seed per actor through
+  `PT_CHAT_NATIVE_STORAGE_SEEDS`;
+- copies each seed into its own run-scoped storage root;
+- launches both clients under the canonical `<profile>-app` Desktop namespace;
+- requires the Engine endpoint to appear as ACTIVE in Station `/device/list`
+  before `client.authenticated` passes;
+- decodes the Station protobuf JSON device response at the Desktop service
+  boundary instead of exposing snake-case wire data as generated TypeScript.
+
+Focused Python and Desktop service/type checks pass. A one-client post-fix
+Native diagnostic reused Alice's canonical device
+`01M276A60YVV4Q9MWN9NPHD3RE`, observed it as ACTIVE, reopened
+`direct-8933203d465fd79ac34b9b33953757a2`, and completed the post-create queue
+drain. This remains diagnostic evidence only; the source-bound two-client Gate
+and its receiver DOM assertions remain `UNPROVEN` until the clean candidate is
+deployed and executed.
+
+#### Direct Prekey Publication Reconciliation
+
+Exact-source run
+`20260911T070854885624Z-687f80aa16cac8e456300e5eaba74922`
+advanced both native clients through actor isolation and `conversation.open`,
+then failed at `message.submitted`. Cleanup passed for both processes, all six
+ports, logs, and run-scoped storage.
+
+The failure is a recoverable implementation defect inside NDR-W8. Both
+Desktop stores contained a locally `published` Direct prekey bundle, so the
+portable publisher returned success without contacting Station. Station had no
+active Direct bundle for either endpoint, and the sender therefore retained a
+durable `draft` instead of queuing a command. The strict `draft != queued`
+assertion remains correct and must not be weakened.
+
+The dependency-ready remediation is:
+
+1. preserve the current device SPK and all old OPK private material;
+2. persist a new, monotonically identified OPK replenishment batch before
+   network publication;
+3. use Station `/key-exchange/keys/count` and
+   `/key-exchange/keys/replenish` for normal inventory repair;
+4. when Station reports that the complete bundle is absent, upload the current
+   identity/SPK with only the new OPK batch;
+5. keep retry bytes stable, never republish or reactivate consumed OPKs, and
+   allow a newly published pending OPK to decrypt a delayed inbound init;
+6. retain receiver native-DOM plaintext, identical message ID, and receipt
+   assertions as the product proof.
+
+Concurrency Decision: hybrid. Three completed read-only analysis lanes audited
+the portable store, Station Key Exchange contract, and Chat Acceptance mapping.
+All source edits, generated-artifact decisions, deployment, profile/runtime
+resources, and final Gates remain integrator-only and serial because they share
+the same prekey contract, profile `four`, Station deployment, actor stores, and
+native port set.

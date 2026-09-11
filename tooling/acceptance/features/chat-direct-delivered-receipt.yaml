@@ -3,6 +3,8 @@
   "status": "active",
   "product_area": "chat",
   "owners": [
+    "packages/messaging-core/src/crypto/prekeys.rs",
+    "apps/desktop/src-tauri/src/messaging/prekeys.rs",
     "apps/desktop/src-tauri/src/messaging/direct.rs",
     "apps/desktop/src-tauri/src/messaging/engine.rs",
     "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
@@ -14,9 +16,13 @@
     "apps/station/app/subserver/conversation/application/interaction/service.go",
     "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder.go",
     "apps/station/app/subserver/conversation/interface/http/interaction.go",
-    "apps/station/app/subserver/conversation/subserver.go"
+    "apps/station/app/subserver/conversation/subserver.go",
+    "apps/station/app/subserver/key_exchange/infrastructure/canonical_store.go"
   ],
   "truth_sources": [
+    "Portable Messaging Core prekey publication state machine",
+    "Desktop encrypted prekey publication batches",
+    "Station Key Exchange public bundle inventory",
     "Desktop Rust messaging receive transaction",
     "Desktop durable receipt outbox",
     "Station Conversation per-device receipt queue",
@@ -34,10 +40,13 @@
     "messaging-platform-contract",
     "desktop-check",
     "chat-native-visible-static",
+    "chat-native-current-profile-two-client-e2e",
     "chat-native-two-client-e2e"
   ],
   "acceptance": {
     "service": [
+      "a locally published bundle is reconciled when Station public material is missing",
+      "reconciliation persists fresh OPKs before upload and retries the exact batch",
       "successful Direct decrypt atomically persists one typed DELIVERED receipt",
       "receipt submission failure remains pending for lifecycle retry",
       "Station routing failure is returned to the Desktop worker"
@@ -49,6 +58,7 @@
     ]
   },
   "negative": [
+    "reconciliation must not republish or reactivate a consumed one-time prekey",
     "queue consumption ACK must not be reported as a user-visible DELIVERED receipt",
     "static or gateway evidence must not replace two native Desktop clients",
     "receipt evidence must not expose plaintext, credentials, tokens, or key material"

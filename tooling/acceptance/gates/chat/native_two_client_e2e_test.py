@@ -487,6 +487,111 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
 
         self.assertTrue(gate.verify_fixture_ready())
 
+    def test_client_readiness_requires_active_station_device(self) -> None:
+        runner_source = (
+            REPO_ROOT
+            / "tooling"
+            / "acceptance"
+            / "gates"
+            / "chat"
+            / "native_two_client_runner.py"
+        ).read_text(encoding="utf-8")
+        harness_source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src"
+            / "acceptance"
+            / "chat"
+            / "harness.ts"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('current.get("active") is not True', runner_source)
+        self.assertIn("imServiceV1.device.list()", harness_source)
+        self.assertIn("ActorDeviceStatus.ACTIVE", harness_source)
+
+    def test_desktop_hydration_preserves_conversation_members(self) -> None:
+        lifecycle_source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "messaging"
+            / "lifecycle.rs"
+        ).read_text(encoding="utf-8")
+        gateway_source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "interface"
+            / "http_gateway"
+            / "mod.rs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"/conversation/members"', lifecycle_source)
+        self.assertIn("GetConversationMembersResponse", lifecycle_source)
+        self.assertNotIn(
+            "members: Vec::<ConversationMemberProjection>::new()",
+            lifecycle_source,
+        )
+        self.assertIn(
+            "hydrate_projections_from_station(&engine, &token)",
+            gateway_source,
+        )
+
+    def test_prekey_publication_reconciles_station_inventory(self) -> None:
+        core_source = (
+            REPO_ROOT
+            / "packages"
+            / "messaging-core"
+            / "src"
+            / "crypto"
+            / "prekeys.rs"
+        ).read_text(encoding="utf-8")
+        transport_source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "messaging"
+            / "prekeys.rs"
+        ).read_text(encoding="utf-8")
+        store_source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "messaging"
+            / "store.rs"
+        ).read_text(encoding="utf-8")
+        station_store_source = (
+            REPO_ROOT
+            / "apps"
+            / "station"
+            / "app"
+            / "subserver"
+            / "key_exchange"
+            / "infrastructure"
+            / "canonical_store.go"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("pending_prekey_replenishment", core_source)
+        self.assertIn("RemotePreKeyInventory::MissingBundle", core_source)
+        self.assertIn("transport.replenish(&replenish_request)", core_source)
+        self.assertIn('"/key-exchange/keys/count"', transport_source)
+        self.assertIn('"/key-exchange/keys/replenish"', transport_source)
+        self.assertIn("'awaiting_replenishment'", store_source)
+        self.assertIn(
+            "state IN ('available', 'awaiting_replenishment')",
+            store_source,
+        )
+        self.assertIn("requireCompleteDirectBundle", station_store_source)
+
     def test_source_identity_rejects_malformed_station_protocol_digest(self) -> None:
         manifest = self.valid_report()["manifest"]
         manifest["services"]["station-four"]["protocolDigest"] = "z" * 64
