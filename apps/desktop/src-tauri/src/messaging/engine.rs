@@ -951,7 +951,31 @@ impl MessagingEngine {
                 attachment_ids,
                 state: "pending",
             }),
-            Err(_) => {
+            Err(error) => {
+                // #region debug-point P-Q-R:direct-prepare-error
+                let _ = reqwest::blocking::Client::builder()
+                    .timeout(std::time::Duration::from_millis(500))
+                    .build()
+                    .and_then(|client| {
+                        client
+                            .post("http://10.4.55.179:7779/event")
+                            .json(&serde_json::json!({
+                                "sessionId": "conversation-open-500",
+                                "runId": "direct-prepare-error-pre-fix",
+                                "hypothesisId": "P-Q-R",
+                                "location": "messaging/engine.rs:submit_message",
+                                "msg": "[DEBUG] Direct message preparation failed",
+                                "data": {
+                                    "actorPtid": self.endpoint.ptid,
+                                    "deviceId": self.endpoint.device_id,
+                                    "conversationId": ready_draft.conversation_id,
+                                    "messageId": ready_draft.message_id,
+                                    "error": error,
+                                }
+                            }))
+                            .send()
+                    });
+                // #endregion
                 self.schedule_message_draft_retry(&ready_draft, now_unix_ms())?;
                 Ok(SubmitMessageOutcome {
                     command_id: None,
@@ -988,7 +1012,32 @@ impl MessagingEngine {
         let Some(draft) = self.store.next_due_message_draft(now_unix_ms)? else {
             return Ok(false);
         };
-        if self.prepare_message_draft(token, &draft).is_err() {
+        if let Err(error) = self.prepare_message_draft(token, &draft) {
+            // #region debug-point P-Q-R:direct-prepare-retry-error
+            let _ = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_millis(500))
+                .build()
+                .and_then(|client| {
+                    client
+                        .post("http://10.4.55.179:7779/event")
+                        .json(&serde_json::json!({
+                            "sessionId": "conversation-open-500",
+                            "runId": "direct-prepare-error-pre-fix",
+                            "hypothesisId": "P-Q-R",
+                            "location": "messaging/engine.rs:resume_message_draft_once",
+                            "msg": "[DEBUG] Direct message preparation retry failed",
+                            "data": {
+                                "actorPtid": self.endpoint.ptid,
+                                "deviceId": self.endpoint.device_id,
+                                "conversationId": draft.conversation_id,
+                                "messageId": draft.message_id,
+                                "attemptCount": draft.attempt_count,
+                                "error": error,
+                            }
+                        }))
+                        .send()
+                });
+            // #endregion
             self.schedule_message_draft_retry(&draft, now_unix_ms)?;
         }
         Ok(true)

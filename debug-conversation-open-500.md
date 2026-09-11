@@ -175,3 +175,41 @@ Instrumentation point:
 
 - M-N-O: `StationKeyBundleTransport::fetch` records requester and target endpoint
   IDs plus success/error and returned bundle endpoints.
+
+## Cross-Worktree Direct Preparation Follow-up
+
+Exact-source current-profile run
+`20260911T090537790107Z-a5a5d64a4758cea6cb33d92386cc1728`
+proved the corrected runtime topology:
+
+- Bob ran from `peers-group-chat` and initiated the Direct journey.
+- Alice ran from `peers-chat-high-chat` as the receiver.
+- Both worktrees were clean, shared one Git repository, and had the same source
+  tree.
+- Station ran group-chat commit
+  `4a4ff5ef493d89c241cbe480cc70552f7e6d16e6`.
+- Both clients reached ACTIVE enrollment and `conversation.open`.
+- The first message remained a durable draft, receiver DOM evidence was absent,
+  and reverse cleanup released both clients, all six ports, logs, and storage.
+
+Fresh pre-fix instrumentation from the repeated cross-worktree run records Bob
+`01M276ADT9PV9HYNNE7XP6WBN0` fetching Alice canonical ACTIVE endpoint
+`01M276A60YVV4Q9MWN9NPHD3RE`. Every recorded Direct bootstrap fetch returned one
+bundle bound to that exact endpoint. Station inventory inspection also reports
+complete bundles for all four ACTIVE Alice/Bob endpoints; Alice's second device
+has zero OPKs but retains identity/SPK material, which is valid for an
+OPK-optional Direct bootstrap.
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| M | The send plan targets a device absent from the ACTIVE Actor Directory. | Medium | Low | Rejected: the observed target is the canonical ACTIVE Alice endpoint. |
+| N | Local-versus-federated routing sends a canonical target to the wrong Home Station. | Medium | Low | Rejected: local canonical fetch returns the exact requested bundle. |
+| O | The Direct send bootstrap fails because its requested endpoint has no complete bundle. | Medium | Low | Rejected for the send path: every instrumented fetch returns one exact bundle. |
+| P | Session resolution rejects the fetched bootstrap because local stored session state conflicts with it or another required endpoint remains unresolved. | High | Low | `prepare_message_draft` returns a session/bootstrap-specific error after successful fetch. |
+| Q | Atomic Direct outbound persistence rejects the prepared session/authority state. | Medium | Low | `prepare_message_draft` returns a store/authority commit error after successful fetch. |
+| R | Encryption or command construction rejects the prepared inputs before persistence. | Low | Low | `prepare_message_draft` returns an encryption/command validation error after successful fetch. |
+
+The exact P/Q/R error is currently hidden by two `Err(_)` branches in
+`MessagingEngine`: the immediate submit returns `state=draft`, and the lifecycle
+retry records only `prepare_failed`. The next instrumentation point reports that
+error to the existing Debug Server without changing retry or draft semantics.
