@@ -10146,6 +10146,7 @@ async function runFoundationF07Scenario(input: {
       'version',
     ) ?? 0,
   );
+  const branchStoreBefore = useChatStore.getState();
   await reportFoundationF07Debug('V-X', 'selected-branch-started', {
     expectedVersion: selectedExpectedVersion,
     activeBranchIsOriginal:
@@ -10154,6 +10155,14 @@ async function runFoundationF07Scenario(input: {
     activeBranchIsTarget:
       originalBranchConversation.active_branch_message_id
       === firstRegenerateMessage.messageId,
+    currentSessionMatchesScenario:
+      branchStoreBefore.currentSessionKey === conversation.conversation_id,
+    targetInStore: branchStoreBefore.messages.some(
+      (message) => message.id === firstRegenerateMessage.messageId,
+    ),
+    targetInOriginalReadback: originalReadbackAfter.messages.some(
+      (message) => message.messageId === firstRegenerateMessage.messageId,
+    ),
   });
   try {
     await useChatStore.getState().branchFromMessage(
@@ -10198,6 +10207,15 @@ async function runFoundationF07Scenario(input: {
       activeBranchIsTarget:
         failedConversation?.active_branch_message_id
         === firstRegenerateMessage.messageId,
+      currentSessionMatchesScenario:
+        useChatStore.getState().currentSessionKey
+        === conversation.conversation_id,
+      targetInStore: useChatStore.getState().messages.some(
+        (message) => message.id === firstRegenerateMessage.messageId,
+      ),
+      targetInOriginalReadback: originalReadbackAfter.messages.some(
+        (message) => message.messageId === firstRegenerateMessage.messageId,
+      ),
       errorCode: typeof codedError.code === 'string' ? codedError.code : '',
       httpStatus: Number(codedError.details?.status ?? 0),
       stationErrorCode:

@@ -398,11 +398,19 @@
 | V | `branchFromMessage` fetches or submits a stale expected version despite the Harness owning version 8. | Medium | Low | Pre-call server version is 8 but Station returns typed `VERSION_CONFLICT`. |
 | W | The first regenerated assistant is no longer a valid branch head. | Medium | Low | Pre-call active target differs, versions match, and Station returns `AGENT_INVALID_SOURCE_STATE`. |
 | X | Revision event persistence fails after validation, as in the prior per-Turn event collision. | Medium | Low | Versions match, target is a distinct head, and Station returns an internal persistence error. |
+| AC | The Chat store's `currentSessionKey` drifts from the AS-F07 conversation before `branchFromMessage`. | High | Low | Station returns `AGENT_4004 / message not found` while `currentSessionMatchesScenario=false`. |
+| AD | The first regenerated message is removed before branch selection even though the conversation remains current. | Medium | Low | `currentSessionMatchesScenario=true` while the target is absent from both store and authoritative readback. |
 
 The next instrumentation records only numeric versions, active-target
 relationships, typed transport status/code/reason, and the Station error code
 and message. It does not record actor identity, message content, credentials,
 or raw tokens.
+
+The latest exact-source failure on `3be26da460dffe271b9e04d6d997cdcea8ec6ada`
+returned HTTP `404`, Station `AGENT_4004`, and `message not found` while the
+explicit conversation stayed at version `8`. The added AC/AD instrumentation
+records only session/target-presence booleans before and after the unchanged
+production store action.
 
 ## Latest Runtime Comparison
 - Exact-source run

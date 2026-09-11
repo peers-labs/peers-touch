@@ -974,6 +974,9 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "await api.getAgentConversation(conversation.conversation_id)",
             revision,
         )
+        self.assertIn("currentSessionMatchesScenario:", revision)
+        self.assertIn("targetInStore:", revision)
+        self.assertIn("targetInOriginalReadback:", revision)
 
         helper_start = self.source.index(
             "async function runFoundationF07WithCapabilityIsolation",
