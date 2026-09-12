@@ -236,3 +236,42 @@ Product matrix tuples, assertions, timeouts, and cleanup remain unchanged.
 The next checkpoint records the sanitized operation, buffer, current-session,
 and per-Turn message projection immediately after reconciliation and before
 waiting for DOM visibility.
+
+## Same-Terminal Merge Overwrite Recurrence
+
+- Exact-source C08 run
+  `20260912T023434831395Z-dc4a3d0ab9740c4baa9b3b64419957a4`
+  completed `DONE / PROVEN` on
+  `98631c455267c53c003b3b0096b0e3c1ad30102c`.
+- The same-source Foundation run
+  `20260912T023608539671Z-044de305ad05ee857f80db5d636c939b`
+  crossed AS-F06 and failed first at Browser English `BASE-CANCELLED` on
+  `localizedCancellationVisible`; Provisioner cleanup passed.
+- Fresh retained receiver evidence proves:
+  - live and reload use canonical message
+    `msg_03fc81f5b14c7c39c0fabcc4`, render the expected localized text, and
+    preserve typed cancellation;
+  - the authoritative replay snapshot contains
+    `terminalReason=cancelled_by_user`;
+  - `reconcileRecoveredTurn` projects `errorDetail=cancelled_by_user`;
+  - 311 ms later, the receiver still renders the same typed cancellation but
+    its store message has `errorDetail=""`.
+- Root cause: `mergeServerMessages` correctly uses the persisted server message
+  as the terminal-state authority, but `carryChainOfThoughtFields` discards a
+  local `errorDetail` whenever the server message is terminal, even when both
+  messages identify the same Turn and agree on the same terminal status.
+  Periodic authoritative sync can therefore erase the Station replay reason.
+- Local correction: preserve a missing `errorDetail` only when source and
+  target terminal statuses are equal. A different server terminal status still
+  replaces all stale local terminal details.
+- Local verification:
+  - focused merge/stream tests: `40/40` passed;
+  - complete Desktop tests: `606/606` passed with one environment-dependent
+    test skipped;
+  - Desktop TypeScript check: passed;
+  - focused Foundation/oracle/static tests: `234/234` passed;
+  - Acceptance Infra boundary tests: `8/8` passed;
+  - `git diff --check`: passed.
+
+Exact-source post-fix proof is pending. Instrumentation remains active until
+the user confirmation gate.

@@ -22,20 +22,20 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Trace Native AS-F06 post-restart harness stability after a proven cross-worktree renderer takeover, then apply only the evidence-selected owner-layer correction |
+| Current step | Preserve the Station replay cancellation reason across same-terminal Desktop message reconciliation, then rerun exact-source C08 and Foundation |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source C08 run `20260912T004956133520Z-4c4e04249e3297881a3475afba06bb31` on `4ca50a1b0088e5a31da35753fc00117c29d5a641` passed `DONE / PROVEN` with 19/19 assertions and clean cleanup |
-| Current action | Capture Native URL, document readiness, Harness namespace, WebDriver/process liveness, and listener ownership at `harness_ready` and the next `setFoundationLocale` call |
-| Next action | Commit the expanded instrumentation checkpoint, rebuild and smoke the dedicated Acceptance binary, deploy exact source, rerun C08 first, then reproduce Foundation without a concurrent port owner |
+| Last completed | Exact-source C08 run `20260912T023434831395Z-dc4a3d0ab9740c4baa9b3b64419957a4` on `98631c455267c53c003b3b0096b0e3c1ad30102c` passed `DONE / PROVEN` with 19/19 assertions and clean cleanup |
+| Current action | Keep a missing local `errorDetail` only when the canonical server message identifies the same Turn and agrees on the same terminal status; retain server authority when terminal states differ |
+| Next action | Commit the merge correction, rebuild and smoke the dedicated Acceptance binary, deploy exact source, rerun C08 first, then continue the unchanged Foundation matrix |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | none；cross-worktree renderer takeover is confirmed and the Native post-restart Harness boundary is the active recoverable Acceptance Infra branch；BASE-CONTEXT-OVERFLOW receiver sampling is source-corrected；the incompatible cleanup/readiness correction remains pending runtime proof；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
+| Blockers | none；Native AS-F06 is isolated and crossed；Browser `BASE-CANCELLED` same-terminal projection merge is the active recoverable correction；BASE-CONTEXT-OVERFLOW receiver sampling is source-corrected；the incompatible cleanup/readiness correction remains pending runtime proof；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 run `20260912T012820159809Z-4ce386dda8bc33cd50afb936234a01e5` is `DONE / PROVEN` on `24c7e3e04`；same-source Foundation run `20260912T012949927697Z-6d3190d85eefa6885987842e0bc08383` proved three clean Native stop boundaries after observing renderer `3410` owned by later `peers-group-chat` PGID `59637`, then failed at Native `setFoundationLocale` with `acceptance harness not mounted`；outer cleanup remained `DONE / PROVEN` with all ports and storage released |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 run `20260912T023434831395Z-dc4a3d0ab9740c4baa9b3b64419957a4` is `DONE / PROVEN` on `98631c455`；same-source Foundation run `20260912T023608539671Z-044de305ad05ee857f80db5d636c939b` crossed AS-F06 and failed first at Browser English `BASE-CANCELLED`；fresh telemetry shows replay reconciliation set `errorDetail=cancelled_by_user` before background server-message merge erased it 311 ms later；outer cleanup remained `DONE / PROVEN` |
 | Last updated | 2026-09-12 |
 
 ---

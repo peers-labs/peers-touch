@@ -71,3 +71,23 @@ listener, not a surviving child of the retained Native process group. The
 subsequent harness-loss failure may be downstream damage from that takeover or
 an independent post-readiness lifecycle race. Hypotheses E-H require one
 instrumented exact-source run without concurrent port ownership.
+
+Post-instrumentation exact-source comparison:
+
+- C08 `20260912T023434831395Z-dc4a3d0ab9740c4baa9b3b64419957a4`
+  passed `DONE / PROVEN` on `98631c455267c53c003b3b0096b0e3c1ad30102c`.
+- Foundation
+  `20260912T023608539671Z-044de305ad05ee857f80db5d636c939b`
+  ran without a concurrent listener owner and crossed AS-F06.
+- Initial startup and both Native restarts retained one window at
+  `http://localhost:3410/#/agent`, `document.readyState=complete`, and live
+  root, Acceptance, Agent namespace, and locale method.
+- Every locale call completed with all three listeners owned by the retained
+  Native PGID. Both restart stops released all three ports after TERM without
+  KILL.
+- Hypotheses E-H are REJECTED under isolated runtime ownership. The prior
+  `acceptance harness not mounted` failure is attributable to the observed
+  cross-worktree renderer takeover rather than a stable Native startup defect.
+- The Gate advanced to Browser English `BASE-CANCELLED`, where a separate
+  projection-merge defect was reproduced. This session remains `[OPEN]`; no
+  instrumentation or debug artifact cleanup is authorized yet.

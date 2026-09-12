@@ -411,6 +411,8 @@ function isInFlightMessage(message: ChatMessage): boolean {
 
 function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): ChatMessage {
   const targetOwnsTerminal = Boolean(target.terminalStatus);
+  const terminalStatusMatches = targetOwnsTerminal
+    && target.terminalStatus === source.terminalStatus;
   const hasCot = source.toolCalls
     || source.thinking
     || source.thinkingDone != null
@@ -441,7 +443,11 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     typedError:
       targetOwnsTerminal ? target.typedError : target.typedError ?? source.typedError,
     errorDetail:
-      targetOwnsTerminal ? target.errorDetail : target.errorDetail ?? source.errorDetail,
+      targetOwnsTerminal
+        ? target.errorDetail ?? (
+          terminalStatusMatches ? source.errorDetail : undefined
+        )
+        : target.errorDetail ?? source.errorDetail,
     resolution:
       targetOwnsTerminal ? target.resolution : target.resolution ?? source.resolution,
     budgetNotice: target.budgetNotice ?? source.budgetNotice,

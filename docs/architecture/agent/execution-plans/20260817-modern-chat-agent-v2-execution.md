@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T012820159809Z-4ce386dda8bc33cd50afb936234a01e5` on `24c7e3e04330d8c0968cf99cd6cb5bcd603af21e` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T012949927697Z-6d3190d85eefa6885987842e0bc08383` observed a later `peers-group-chat` process group take renderer port `3410`, then crossed three clean Native stop boundaries and failed when the Native executor's next `setFoundationLocale` call found no mounted Acceptance Harness; outer cleanup remained `DONE / PROVEN`; post-restart Harness stability diagnosis is active, while the incompatible cleanup/readiness corrections remain pending exact-source proof | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T023434831395Z-dc4a3d0ab9740c4baa9b3b64419957a4` on `98631c455267c53c003b3b0096b0e3c1ad30102c` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T023608539671Z-044de305ad05ee857f80db5d636c939b` crossed AS-F06 and failed first at Browser English `BASE-CANCELLED`; replay telemetry proves the Station snapshot and immediate reconciliation carried `cancelled_by_user`, then same-terminal authoritative message merge erased the detail before receiver sampling; outer cleanup remained `DONE / PROVEN`; the owner-layer merge correction is pending exact-source proof, while the incompatible cleanup/readiness corrections remain pending runtime proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7314,6 +7314,40 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   readiness, Harness namespace, WebDriver/process liveness, and listener
   ownership at one-shot startup readiness and locale dispatch. No startup
   policy, deadline, retry, tuple, or assertion changes.
+- Exact-source checkpoint
+  `98631c455267c53c003b3b0096b0e3c1ad30102c` used dedicated
+  Acceptance binary SHA-256
+  `e9b4677286bdf94eba1ceabeb1cafc51f83b75e147996c98ace7084d9e0d17d6`;
+  embedded-WebDriver smoke passed and the approved Station reported the same
+  commit. C08 runs
+  `20260912T020355956900Z-784cfd570bb868b30b25683b2b39103c`
+  and
+  `20260912T023434831395Z-dc4a3d0ab9740c4baa9b3b64419957a4`
+  both completed `DONE / PROVEN`.
+- Isolated Foundation run
+  `20260912T023608539671Z-044de305ad05ee857f80db5d636c939b`
+  kept every Native renderer, Gateway, and WebDriver listener in the retained
+  process group. Both Native restart generations remained at
+  `http://localhost:3410/#/agent` with complete DOM, mounted Acceptance/Agent
+  namespaces, and a live locale method before and after locale dispatch. The
+  run crossed AS-F06 and rejected the independent Native startup hypotheses.
+- The first later failure was Browser English `BASE-CANCELLED /
+  localizedCancellationVisible`. Fresh receiver telemetry proves live and
+  reload projections were correct. Replay carried
+  `terminalReason=cancelled_by_user`, and immediate
+  `reconcileRecoveredTurn` state retained that detail; the receiver snapshot
+  311 ms later still rendered the correct typed/localized cancellation on the
+  same canonical message but had `errorDetail=""`.
+- Root cause is the Desktop projection merge owner:
+  `carryChainOfThoughtFields` discarded local `errorDetail` whenever the
+  server message was terminal, even when both messages identified the same
+  Turn and agreed on the same terminal status. The local correction preserves
+  only a missing same-terminal detail. A different server terminal remains
+  authoritative and continues to clear stale local details. Focused Web tests
+  pass `40/40`, complete Desktop tests pass `606/606` with one
+  environment-dependent skip, Desktop TypeScript passes, focused
+  Foundation/oracle/static tests pass `234/234`, and Acceptance Infra boundary
+  tests pass `8/8`. Exact-source proof remains pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
