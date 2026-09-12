@@ -33,10 +33,12 @@ REQUIRED_STEPS = {
     "client.authenticated",
     "runtime.source_identity",
     "conversation.open",
+    "avatar.bundled",
     "message.submitted",
     "message.received",
     "message.decrypted",
     "receipt.delivered",
+    "message.layout",
 }
 
 

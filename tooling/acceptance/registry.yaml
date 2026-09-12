@@ -125,6 +125,7 @@
         "paths": [
           "apps/station/app/subserver/social/infrastructure/follow_repo.go",
           "apps/station/app/subserver/social/application/relationship_service_test.go",
+          "apps/desktop/src/store/federation.ts",
           "apps/desktop/src/store/relationships.ts",
           "apps/desktop/src/store/friendshipProjection.ts",
           "apps/desktop/src/services/socialRealtime.ts",
@@ -133,6 +134,8 @@
           "apps/desktop/src/components/chat/CreateGroupModal.tsx",
           "apps/desktop/src/components/chat/ChatContactsPanel.tsx",
           "apps/desktop/src/components/chat/ChatSessionList.tsx",
+          "apps/desktop/src/components/chat/contactSelection.ts",
+          "apps/desktop/src/pages/SocialChatPage.tsx",
           "tooling/acceptance/gates/chat/native_group_mls_runner.py",
           "tooling/acceptance/gates/chat/native_group_mls_runner_test.py",
           "tooling/acceptance/features/chat-native-friendship-projection.yaml"
@@ -263,7 +266,10 @@
           "tooling/acceptance/environments/native-tauri-current-profile.yaml",
           "tooling/acceptance/provisioners/native_tauri_current_profile.py",
           "apps/desktop/src/acceptance/chat/**",
-          "apps/desktop/src-tauri/src/application/profile/mod.rs"
+          "apps/desktop/src-tauri/src/application/profile/mod.rs",
+          "apps/desktop/src/components/common/SquareAvatar.tsx",
+          "apps/station/app/conf/actor.yml",
+          "apps/station/frame/touch/actor/seed.go"
         ]
       },
       "require": [

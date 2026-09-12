@@ -244,6 +244,7 @@
         "tooling/acceptance/gates/chat/native_group_mls_runner.py",
         "apps/desktop/src/acceptance/chat/identity.ts",
         "apps/station/app/subserver/social/infrastructure/follow_repo.go",
+        "apps/desktop/src/store/federation.ts",
         "apps/desktop/src/store/relationships.ts",
         "apps/desktop/src/store/friendshipProjection.ts",
         "apps/desktop/src/services/socialRealtime.ts",
@@ -251,7 +252,14 @@
         "apps/desktop/src/components/chat/CreateGroupModal.tsx",
         "apps/desktop/src/components/chat/ChatContactsPanel.tsx",
         "apps/desktop/src/components/chat/ChatSessionList.tsx",
+        "apps/desktop/src/components/chat/contactSelection.ts",
+        "apps/desktop/src/pages/SocialChatPage.tsx",
         "apps/desktop/src/components/chat/ChatComposer.tsx",
+        "apps/desktop/src/components/chat/ChatMessageArea.tsx",
+        "apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx",
+        "apps/desktop/src/components/common/SquareAvatar.tsx",
+        "apps/station/app/conf/actor.yml",
+        "apps/station/frame/touch/actor/seed.go",
         "apps/desktop/src/components/settings/RecoverySettings.tsx"
       ],
       "evidence": {
@@ -277,7 +285,8 @@
           "chat-native-group-mls-e2e"
         ],
         "proven_scope": [
-          "Only successful live runs with complete current source-bound reports prove W8 journeys"
+          "Only successful live runs with complete current source-bound reports prove W8 journeys",
+          "Current-source Native Direct sends keep the newest row clear of the composer and render seeded peer avatars from bundled image data"
         ],
         "unproven_scope": [
           "W8 remains unproven until all four environment-evidence gates pass",

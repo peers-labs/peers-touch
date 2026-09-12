@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -902,6 +904,39 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         harness = (
             root / "apps/desktop/src/acceptance/chat/harness.ts"
         ).read_text(encoding="utf-8")
+        timeline = (
+            root
+            / "apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx"
+        ).read_text(encoding="utf-8")
+        timeline_policy = (
+            root
+            / "apps/desktop/src/components/chat/message/chatMessageTimelinePolicy.ts"
+        ).read_text(encoding="utf-8")
+        message_area = (
+            root / "apps/desktop/src/components/chat/ChatMessageArea.tsx"
+        ).read_text(encoding="utf-8")
+        avatar = (
+            root / "apps/desktop/src/components/common/SquareAvatar.tsx"
+        ).read_text(encoding="utf-8")
+        social_chat = (
+            root / "apps/desktop/src/store/socialChat.ts"
+        ).read_text(encoding="utf-8")
+        profile_projection = (
+            root / "apps/desktop/src/store/socialProfileProjection.ts"
+        ).read_text(encoding="utf-8")
+        message_store = (
+            root / "apps/desktop/src-tauri/src/messaging/store.rs"
+        ).read_text(encoding="utf-8")
+        federation_resolver = (
+            root
+            / "apps/station/frame/touch/federation/resolver/resolver.go"
+        ).read_text(encoding="utf-8")
+        actor_seed = (
+            root / "apps/station/frame/touch/actor/seed.go"
+        ).read_text(encoding="utf-8")
+        actor_config = (
+            root / "apps/station/app/conf/actor.yml"
+        ).read_text(encoding="utf-8")
         friend_sync = harness.split(
             "    async syncFriendSession(",
             maxsplit=1,
@@ -936,6 +971,61 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             'received.get("messageUlid") == sent.get("messageUlid")',
             runner,
         )
+        self.assertIn("def message_composer_geometry(", runner)
+        self.assertIn("timelineFlexShrink", runner)
+        self.assertIn("row[\"bottom\"] <= composer[\"top\"] - 8", runner)
+        self.assertIn("def prove_demo_avatar_sources(", runner)
+        self.assertIn('"avatar.bundled"', runner)
+        self.assertIn('"message.layout"', runner)
+        direction = runner.split(
+            "    def prove_direction(",
+            maxsplit=1,
+        )[1].split(
+            "    def prove_demo_avatar_sources(",
+            maxsplit=1,
+        )[0]
+        self.assertLess(
+            direction.index('"message.layout"'),
+            direction.index('"message.received"'),
+        )
+        self.assertIn("data-chat-message-timeline", timeline)
+        self.assertIn("chatMessageTimelineContainerStyle", timeline)
+        self.assertIn("behavior: 'auto'", timeline_policy)
+        self.assertIn("useLayoutEffect", message_area)
+        self.assertIn(
+            "scrollIntoView(chatMessageTailScrollOptions())",
+            message_area,
+        )
+        self.assertIn("RETIRED_GENERATED_AVATAR_PREFIX", avatar)
+        self.assertIn("inlineAvatarSource", avatar)
+        self.assertNotIn("copilot-cn.bytedance.net", actor_config)
+        avatar_payloads = re.findall(
+            r'^\s*avatar: "data:image/svg\+xml;base64,([^"]+)"',
+            actor_config,
+            flags=re.MULTILINE,
+        )
+        self.assertEqual(len(avatar_payloads), 3)
+        for payload in avatar_payloads:
+            svg = base64.b64decode(payload, validate=True).decode("utf-8")
+            self.assertIn('<rect width="128" height="128" fill="', svg)
+            self.assertNotIn('rx="64"', svg)
+        legacy_payloads = re.findall(
+            r'^\s*-\s+"data:image/svg\+xml;base64,([^"]+)"',
+            actor_config,
+            flags=re.MULTILINE,
+        )
+        self.assertEqual(len(legacy_payloads), 3)
+        for payload in legacy_payloads:
+            svg = base64.b64decode(payload, validate=True).decode("utf-8")
+            self.assertIn('rx="64"', svg)
+        self.assertIn("is_bundled_square_avatar", runner)
+        self.assertIn("len({", runner)
+        self.assertIn("remoteProfileHandle", profile_projection)
+        self.assertIn("accountProfileFromFederationResolve", profile_projection)
+        self.assertIn("await api.federationResolve(federatedHandle)", social_chat)
+        self.assertIn("merge_message_projection_rows", message_store)
+        self.assertNotIn("CacheVerifiedRemoteDeviceSigningKeys", federation_resolver)
+        self.assertNotIn("migrateLegacyPresetAvatarRows", actor_seed)
         self.assertIn(
             "await refreshConversation('friend', sessionUlid)",
             friend_sync,

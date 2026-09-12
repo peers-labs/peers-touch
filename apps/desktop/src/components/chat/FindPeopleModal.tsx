@@ -14,6 +14,7 @@ import {
 import {
   selectFederationReady,
 } from '../../store/federation';
+import { singleFederationId } from '../../store/friendshipProjection';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { FederatedHandle } from '../FederatedHandle';
 
@@ -155,8 +156,12 @@ export function FindPeopleModal({ open, onClose }: Props) {
   }));
   const federationReady = useActiveChatFederationSlice(selectFederationReady);
   const federations = useActiveChatFederationSlice((s) => s.federations);
-  const joinedFederations = useMemo(
+  const federationOptions = useMemo(
     () => federations.map((f) => ({ federationId: f.federationId, federationName: f.name })),
+    [federations],
+  );
+  const defaultFederationId = useMemo(
+    () => singleFederationId(federations),
     [federations],
   );
 
@@ -196,8 +201,8 @@ export function FindPeopleModal({ open, onClose }: Props) {
   const activeFederationId = useMemo(() => {
     if (searchScope === 'all') return '';
     if (selectedFederationId) return selectedFederationId;
-    return joinedFederations[0]?.federationId ?? '';
-  }, [searchScope, selectedFederationId, joinedFederations]);
+    return defaultFederationId;
+  }, [defaultFederationId, searchScope, selectedFederationId]);
 
   const handleSearch = async () => {
     const trimmed = searchText.trim();
@@ -254,7 +259,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
     const receiverPtid = target.id;
     if (!receiverPtid || receiverPtid === currentUserPtid) return;
     const federationId =
-      activeFederationId || joinedFederations[0]?.federationId || '';
+      activeFederationId || defaultFederationId;
     if (!federationId || !target.homeStationPeerId) {
       message.error(t('chat.social.findPeople.catalogNoFederation'));
       return;
@@ -375,7 +380,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
             {t('chat.social.findPeople.scopeAll')}
           </Tag.CheckableTag>
 
-          {joinedFederations.map((fed) => {
+          {federationOptions.map((fed) => {
             const isActive = searchScope === 'federation' && selectedFederationId === fed.federationId;
             return (
               <Tag.CheckableTag
@@ -401,13 +406,13 @@ export function FindPeopleModal({ open, onClose }: Props) {
             );
           })}
 
-          {joinedFederations.length === 0 && federationReady && (
+          {federationOptions.length === 0 && federationReady && (
             <Text type="secondary" style={{ fontSize: 11 }}>
               {t('chat.social.findPeople.catalogNoFederation')}
             </Text>
           )}
 
-          {joinedFederations.length === 0 && !federationReady && (
+          {federationOptions.length === 0 && !federationReady && (
             <Text type="secondary" style={{ fontSize: 11 }}>
               {t('chat.social.findPeople.joinFederation', { defaultValue: 'Join a federation to enable catalog search' })}
             </Text>
