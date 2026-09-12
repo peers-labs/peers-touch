@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T154305828038Z-5576a1b0184154cc2ea5f09b08bc5c40` on `7c10521a51d521f30cf36c0173171e4175d0b418` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T154441125137Z-e0e1b6e88414d48337d349c72bc4883c` reached Browser English `BASE-CONTEXT_OVERFLOW` and failed only `cleanupComplete` because composer-fill consumption and one empty DOM observation did not prove a stable controlled-state/draft-cache commit; instrumentation checkpoint `263b72ed2` restores the original effect ordering and dependencies while retaining owner telemetry, and passes Agent focused tests `126/126`, Desktop tests `622/622` with one existing environment-only skip, Desktop strict check, and diff hygiene; exact-source diagnostic C08 and Foundation remain pending; the `BASE-INTERRUPTED` recovery fence is locally verified but has not yet been reached by the post-fix full Gate | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T164209337981Z-1dd91d795d071a4d07025ed07620fcc3` on `e68640fc6ef195f1e805443c827a4fa71a4fcb58` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260912T170246593060Z-c3aa9e29803ff2ee6cf45578ac99fffc` crossed Browser AS-F06 but failed at Desktop English AS-F06 when bounded warm-up restarted the native client and `foundationF06RestoreCapabilityIsolation` could not read its finalized handoff; Provisioner cleanup passed; bounded storage-shape instrumentation is pending exact-source proof before returning to `BASE-CONTEXT_OVERFLOW`; the `BASE-INTERRUPTED` recovery fence remains locally verified but has not yet been reached by the current full Gate | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7713,6 +7713,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   observation points. Agent focused tests remain `126/126`, Desktop tests
   remain `622/622` with one existing environment-only skip, Desktop strict
   check passes, and the corrected source has not yet been deployed.
+- **AS-F06 native handoff persistence regression (2026-09-12)**: exact-source
+  C08 run `20260912T164209337981Z-1dd91d795d071a4d07025ed07620fcc3`
+  on `e68640fc6ef195f1e805443c827a4fa71a4fcb58` completed
+  `DONE / PROVEN`. Two fail-closed Foundation invocations exposed omitted
+  AS-F06 authorization variables and released all resources. Fully authorized
+  Foundation run
+  `20260912T170246593060Z-c3aa9e29803ff2ee6cf45578ac99fffc`
+  then crossed Browser English and Simplified Chinese AS-F06. Desktop English
+  finalized its handoff and switched away from Agent, but the native client
+  failed bounded warm-up after Station restart and was restarted. The
+  subsequent capability-isolation restore failed with
+  `agent.acceptance.foundationRecoveryHandoffMissing`; cleanup remained
+  `DONE / PROVEN / passed`. The next instrumentation records only handoff
+  storage presence, serialized length, entry count, target-entry presence,
+  null field names, and strict parser acceptance before navigation and after
+  Station recovery. It does not reseed state, relax persistence proof, or
+  change product behavior.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

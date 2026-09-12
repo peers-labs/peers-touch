@@ -411,6 +411,75 @@ function readFoundationF06Handoff(scenarioKey: string): FoundationF06Handoff | n
   return readFoundationF06Handoffs()[scenarioKey] ?? null;
 }
 
+function foundationF06HandoffStorageSnapshot(
+  scenarioKey: string,
+): Record<string, unknown> {
+  const raw = window.localStorage.getItem(FOUNDATION_F06_STORAGE_KEY);
+  if (!raw) {
+    return {
+      storagePresent: false,
+      serializedLength: 0,
+      containerValid: false,
+      entryCount: 0,
+      scenarioPresent: false,
+      topLevelNullFields: [],
+      toolIsolationPresent: false,
+      toolIsolationNullFields: [],
+    };
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    const containerValid = Boolean(
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed),
+    );
+    const entries = containerValid
+      ? parsed as Record<string, unknown>
+      : {};
+    const candidate = entries[scenarioKey];
+    const candidateValid = Boolean(
+      candidate && typeof candidate === 'object' && !Array.isArray(candidate),
+    );
+    const candidateRecord = candidateValid
+      ? candidate as Record<string, unknown>
+      : {};
+    const toolIsolation = candidateRecord.toolIsolation;
+    const toolIsolationValid = Boolean(
+      toolIsolation
+      && typeof toolIsolation === 'object'
+      && !Array.isArray(toolIsolation),
+    );
+    const toolIsolationRecord = toolIsolationValid
+      ? toolIsolation as Record<string, unknown>
+      : {};
+    return {
+      storagePresent: true,
+      serializedLength: raw.length,
+      containerValid,
+      entryCount: Object.keys(entries).length,
+      scenarioPresent: candidateValid,
+      topLevelNullFields: Object.entries(candidateRecord)
+        .filter(([, value]) => value === null)
+        .map(([key]) => key),
+      toolIsolationPresent: toolIsolationValid,
+      toolIsolationNullFields: Object.entries(toolIsolationRecord)
+        .filter(([, value]) => value === null)
+        .map(([key]) => key),
+    };
+  } catch (error) {
+    return {
+      storagePresent: true,
+      serializedLength: raw.length,
+      containerValid: false,
+      entryCount: 0,
+      scenarioPresent: false,
+      parseErrorType: error instanceof Error ? error.name : typeof error,
+      topLevelNullFields: [],
+      toolIsolationPresent: false,
+      toolIsolationNullFields: [],
+    };
+  }
+}
+
 function readFoundationF06CleanupLocators(): Record<
   string,
   FoundationF06CleanupLocator
@@ -7462,6 +7531,13 @@ async function finalizeFoundationF06Preparation(
   foundationF06PendingHandoffs.delete(scenarioKey);
   foundationF06FaultBoundaries.delete(scenarioKey);
   writeFoundationF06Handoff(handoff);
+  // #region debug-point R-U:f06-handoff-storage
+  void reportFoundationF06TerminalRaceDebug(
+    'R-U',
+    'handoff-persisted-before-navigation',
+    foundationF06HandoffStorageSnapshot(scenarioKey),
+  );
+  // #endregion
 
   void reportFoundationF06PageSwitchDebug(
     'A-D',
@@ -7504,6 +7580,16 @@ async function restoreFoundationF06CapabilityIsolation(
   scenarioKey: string,
 ): Promise<FoundationF06Handoff> {
   const handoff = readFoundationF06Handoff(scenarioKey);
+  // #region debug-point R-U:f06-handoff-storage
+  void reportFoundationF06TerminalRaceDebug(
+    'R-U',
+    'handoff-read-after-station-restart',
+    {
+      ...foundationF06HandoffStorageSnapshot(scenarioKey),
+      parsedHandoffPresent: handoff !== null,
+    },
+  );
+  // #endregion
   if (!handoff) {
     throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
   }

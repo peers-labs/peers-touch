@@ -22,11 +22,11 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Trace the `ChatInput` state/draft-cache commit ordering after an empty composer fill, then close `BASE-CONTEXT_OVERFLOW` without timing workarounds |
+| Current step | Trace the AS-F06 native handoff loss after bounded warm-up restarts the client, then resume the `ChatInput` state/draft-cache diagnosis |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
 | Last completed | C08 run `20260912T154305828038Z-5576a1b0184154cc2ea5f09b08bc5c40` on `7c10521a51d521f30cf36c0173171e4175d0b418` completed `DONE / PROVEN`；same-source Foundation run `20260912T154441125137Z-e0e1b6e88414d48337d349c72bc4883c` again proved local projection plus Conversation cleanup but showed the empty `fillComposer` request was acknowledged before the controlled draft stayed empty |
-| Current action | Rebuild and deploy the behavior-neutral composer owner instrumentation from checkpoint `263b72ed2`, then collect fill consumption, input-state commit, per-session draft restore, native input, and captured-node identity evidence |
-| Next action | Run C08 first, then the unchanged Foundation matrix; use the N-Q evidence to repair the `ChatInput` owner before rerunning same-source proof and the required stream-resilience Gate |
+| Current action | Instrument AS-F06 handoff storage presence and strict-parser acceptance before navigation and after Station recovery, without reseeding or weakening persistence proof |
+| Next action | Create a clean diagnostic checkpoint, rebuild/smoke, deploy exact source, run C08 first, and rerun Foundation through AS-F06 before collecting the pending N-Q composer evidence |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
@@ -35,7 +35,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | none；the current context-overflow draft writeback is a recoverable Harness owner-path defect；the `BASE-INTERRUPTED` `chatRuntime` fix remains locally verified and awaits runtime proof after this earlier cell crosses；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 run `20260912T154305828038Z-5576a1b0184154cc2ea5f09b08bc5c40` is `DONE / PROVEN` on `7c10521a51d521f30cf36c0173171e4175d0b418`；Foundation run `20260912T154441125137Z-e0e1b6e88414d48337d349c72bc4883c` records `draftCleared=true` after `fillComposer('')` and `false` before deletion while `localProjectionCleared=true` and `conversationDeleted=true`；outer cleanup is `DONE / PROVEN`；checkpoint `263b72ed2` restores original effect ordering/dependencies after a pre-deploy instrumentation-neutrality audit and passes Agent focused tests `126/126`, Desktop `622/622` with one existing environment skip, Desktop strict check, and diff hygiene |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 run `20260912T164209337981Z-1dd91d795d071a4d07025ed07620fcc3` is `DONE / PROVEN` on `e68640fc6ef195f1e805443c827a4fa71a4fcb58`；fully authorized Foundation run `20260912T170246593060Z-c3aa9e29803ff2ee6cf45578ac99fffc` crossed Browser AS-F06, then Desktop English failed after a bounded warm-up client restart with `foundationRecoveryHandoffMissing`；Provisioner cleanup is `DONE / PROVEN`；new storage-shape instrumentation passes Agent static `85/85`, scenario-runner `51/51`, Desktop `622/622` with one existing environment skip, Desktop strict check, and diff hygiene |
 | Last updated | 2026-09-12 |
 
 ---

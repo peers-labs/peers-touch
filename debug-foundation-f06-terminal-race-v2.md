@@ -100,3 +100,29 @@ closed it, the runtime stops that recovery subscription, persists the empty
 state, and does not publish or consume the stale `connected` marker. A focused
 runtime regression recreates this exact ordering. No retry, delay, cleanup
 weakening, or Harness-only suppression is added.
+
+## Iteration 3: Native Handoff Persistence
+
+Exact-source C08 run
+`20260912T164209337981Z-1dd91d795d071a4d07025ed07620fcc3`
+on `e68640fc6ef195f1e805443c827a4fa71a4fcb58` is `DONE / PROVEN`.
+After two fail-closed invocations exposed omitted AS-F06 authorization
+variables, fully authorized Foundation run
+`20260912T170246593060Z-c3aa9e29803ff2ee6cf45578ac99fffc`
+crossed Browser English and Simplified Chinese AS-F06. Desktop English then
+prepared and finalized its handoff, but the native client failed its bounded
+warm-up after Station restart and was restarted. The next capability-isolation
+restore reported `agent.acceptance.foundationRecoveryHandoffMissing`.
+Provisioner cleanup remained `DONE / PROVEN / passed`.
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| R | The native client restart loses the Acceptance handoff storage key. | High | Low | The key exists after finalization and is absent at post-restart restore. |
+| S | The key survives, but one serialized `null` or invalid field makes the fail-closed handoff parser reject the map. | Medium | Low | The target entry exists after restart, but parsed handoff is absent and invalid/null field metadata is present. |
+| T | Cleanup for another AS-F06 tuple removes the Desktop handoff through a scenario-key collision. | Low | Low | The storage map survives but does not contain the Desktop scenario entry. |
+| U | Auth/navigation startup clears the key before capability restoration. | Medium | Medium | Finalization reports a valid entry, while post-auth restore reports missing storage without a parse defect. |
+
+The next instrumentation records only storage presence, serialized length,
+entry count, target-entry presence, null field names, and parser acceptance
+before navigation and after Station recovery. It records no handoff values,
+actor identity, conversation identity, draft content, or credentials.
