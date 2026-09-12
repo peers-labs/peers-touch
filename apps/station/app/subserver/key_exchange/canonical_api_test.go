@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -127,6 +128,19 @@ func TestCanonicalDirectBundleLifecycleAndBinding(t *testing.T) {
 	)
 	if !domain.IsCode(err, domain.ErrorCodeUnauthorized) {
 		t.Fatalf("actor/device mismatch error = %v", err)
+	}
+	missing := endpoint("ptid:bob", "bob-missing")
+	_, err = fixture.api.UploadDirectKeyBundle(
+		ctx,
+		missing.GetActor().GetPtid(),
+		missing.GetDeviceId(),
+		directUploadRequest(missing, 21),
+	)
+	if !domain.IsCode(err, domain.ErrorCodeUnauthorized) {
+		t.Fatalf("inactive endpoint error = %v", err)
+	}
+	if !strings.Contains(err.Error(), "endpoint is not active") {
+		t.Fatalf("inactive endpoint reason = %v", err)
 	}
 }
 
