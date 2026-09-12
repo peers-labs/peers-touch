@@ -122,6 +122,43 @@
       }
     },
     {
+      "id": "chat-friend-request-gateway-lifecycle",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-friend-request-gateway-lifecycle"],
+      "required_gates": ["chat-friend-request-gateway-e2e"],
+      "synthetic_paths": [
+        "apps/desktop/src-tauri/src/interface/tauri_commands/social.rs",
+        "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+        "apps/station/app/subserver/social/handler.go",
+        "apps/station/app/subserver/social/domain/federated_friend_request.go",
+        "apps/station/app/subserver/social/infrastructure/federated_friend_request_store.go",
+        "apps/station/frame/touch/actor/seed_dev_federation.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "running Desktop HTTP gateway",
+          "Station Social friend-request repository",
+          "Station Federation transport"
+        ],
+        "surfaces": [
+          "social_friend_request_send",
+          "social_friend_request_list",
+          "social_friend_request_accept",
+          "social_get_relationship",
+          "acceptance_friend_request_context"
+        ],
+        "proven_by": ["chat-friend-request-gateway-e2e"],
+        "proven_scope": [
+          "Desktop gateway sends, lists, accepts and reads back one friend-request lifecycle through Station Social and Federation owners"
+        ],
+        "unproven_scope": [
+          "Native Desktop DOM rendering of friend-request controls and states",
+          "Friend-request acceptance does not prove Direct message delivery"
+        ]
+      }
+    },
+    {
       "id": "chat-direct-delivery-receipt",
       "domain": "chat",
       "direction": "acceptance_validates_product",

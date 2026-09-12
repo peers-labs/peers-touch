@@ -4860,3 +4860,104 @@ the canonical remote `four` profile:
 Each Gate must independently preflight the disposable target, produce
 source-bound native evidence, and complete reverse-order cleanup. A failed Gate
 enters root-cause diagnosis before any dependent Gate is treated as proven.
+
+The first authorized `chat-friend-request-gateway-e2e` attempt exposed an
+Acceptance Infra finalization defect before product execution. A blocked
+resource string containing `fixture-authorization:` was recursively redacted
+correctly as structured data, then the complete serialized manifest was passed
+through line-oriented text redaction. That redundant pass consumed the JSON
+string terminator and caused `JSONDecodeError` before a structured
+`BLOCKED/UNPROVEN` result could be published. The source-backed Infra repair is
+to retain recursive key/value redaction, remove only post-serialization text
+redaction, and add a focused finalizer regression for sensitive assignment
+labels embedded inside JSON string values. Chat Fixture and product assertions
+remain outside this Infra correction.
+
+The Evidence Store correction is source-verified. Its focused suites pass
+40 Evidence Store and 27 redaction tests; current-source
+`acceptance-infra-validation` run
+`20260912T004839902168Z-bd12b5b8291206d0ebc74ccc3e4dd0fc`
+passes, and direct Infra validation is structurally valid. Blocked
+friend-request run
+`20260912T005402176248Z-cf49351e69ba3ca0617cf31fe9c73ddd`
+publishes a valid `BLOCKED/UNPROVEN` manifest instead of raising
+`JSONDecodeError`. The retained post-fix debug probe emitted no parse-failure
+event.
+
+The friend-request follow-up exposed three previously untracked but
+source-defined closure gaps:
+
+1. profile `four` reset authorization was not target-scoped and the Fixture
+   rejected every port `18080` target before verifying the active profile,
+   deployment environment, Docker Compose project, containers, and Postgres
+   volume;
+2. the existing Friend Request Feature/Gate was not connected to a Chat
+   Capability or Registry rule; and
+3. the Gate used stale Desktop Gateway fields and did not provision an initial
+   non-friend pair while preserving the required Alice/Bob/Carol default
+   friendship baseline after cleanup.
+
+The mechanical correction adds exact
+`CHAT_ACCEPTANCE_RESET_PROFILE=four` authorization, validates the canonical
+profile/deployment/runtime identity before reset, makes the default six-edge
+friendship seed idempotent, adds a Gate-scoped Alice/Bob non-friend Fixture
+with reset-backed teardown, connects the Feature through the Chat Capability
+Graph and Registry, and aligns the Gateway Harness with current auth,
+protobuf-command, Station-peer, and relationship-readback contracts.
+
+Run `20260912T013926156053Z-b4332decbfb55cc809e93c7893b1a27f`
+then proved send, pending-list, and accept through the real Desktop Gateway,
+but final relationship readback remained false in both directions. The
+accepted Social contract requires friend-request acceptance to create mutual
+follow edges; the canonical acceptance transaction persisted only
+`social_relationship_projections`, while `/api/v1/social/relationships`
+reads `follows`. The Station transaction now projects each accepted
+relationship into `follows` atomically with its accepted-event provenance.
+Cross-Station and same-Station repository tests cover those projections. A
+clean commit and exact-source `make station` deployment are required before
+the profile-four Gate can prove this final product correction.
+
+The Friend Request contract closure now also maps the exact Station persistence
+owner
+`apps/station/app/subserver/social/infrastructure/federated_friend_request_store.go`
+through the existing Feature, Capability, and Registry rule. Its planner
+regression proves that a change at this owner selects
+`chat-friend-request-gateway-e2e`; the independently owned Mobile Social rule
+continues to select `mobile-native-social-convergence-e2e` for the same shared
+source path. `chat-native-visible-static` now owns the focused Friend Request
+Gateway regression rather than leaving it as an unregistered test.
+
+Working-tree verification passes the seven source-relevant local Gates:
+`station-messaging-unit`, `messaging-platform-contract`, `desktop-check`,
+`chat-native-visible-static`, `station-api-ownership`,
+`acceptance-plan-self`, and `acceptance-infra-validation`. The focused
+Evidence Store, redaction, Provisioner model, reset, and Friend Request suites
+pass 140 tests; Station Social packages and Chat structural validation pass.
+The Owner selected debugger outcome `A`, so the verified
+`evidence-finalize-control-char` session is closed and its server,
+instrumentation, record, env file, and NDJSON are removed. These dirty-tree
+results prove source consistency only. They do not replace the required clean
+commit, exact-source profile-four deployment, or live Friend Request product
+proof.
+
+The canonical `HEAD` working-tree Acceptance plan now covers 18 changed paths.
+All eight selected local Gates pass, including
+`acceptance-runtime-provisioning-self` run
+`20260912T020400224162Z-40f7db21111c416a859b44e396410837`.
+Profile `four` is active and healthy at
+`http://10.37.245.247:18080`, but its deployed Station still reports
+`c58ba844ba657760d91f429a7fe317c1e6de9e90`. Both development worktrees retain
+the same committed pre-fix tree
+`b2de3f8537afda2727da37b2013ec57e1254f2a8`; high-chat is clean, while the
+group-chat working tree contains the uncommitted Friend Request correction.
+
+The current Ready queue is therefore exhausted at one hard source-identity
+boundary: explicit authorization is required to commit the group-chat
+checkpoint. After that authorization, the serial critical path is to merge the
+exact checkpoint into high-chat, verify clean equal trees, deploy through
+`make profile four` and `make station`, run the target-scoped reset, and rerun
+`chat-friend-request-gateway-e2e`. Generic Native interaction, typing,
+multi-device, recovery, and Group/MLS Gates remain parked behind their
+station-five Fixture authorization and, for interactions, explicit Station
+restart authorization. Mobile Social convergence remains owned by the Mobile
+execution line and is not executed from this Chat worktree.
