@@ -222,6 +222,9 @@
 - Agent LobeHub 蓝本重构：`architecture/agent/agent-lobehub-blueprint.md`
 - Atelier 个人 Agent 工作台 × Peers Agent Collaboration：`architecture/atelier/README.md`（文档集，入口 `README.md`；Station projection endpoints 已登记为 `/sub-agent/agent/atelier/workspace/load`、`/sub-agent/agent/atelier/project/create-from-goal`、`/sub-agent/agent/atelier/message/send`、`/sub-agent/agent/atelier/escalation/resolve`、`/sub-agent/agent/atelier/task/set-status`、`/sub-agent/agent/atelier/task/purge`，Desktop applet capabilities / contract permissions 已登记为 `atelier.workspace.load`、`atelier.project.createFromGoal`、`atelier.message.send`、`atelier.escalation.resolve`、`atelier.task.setStatus`、`atelier.task.purge`、`atelier.events.subscribe`，projection event topic 为 `atelier.projection.event`；Artifact/Gate projection mapper 已支持 `artifact.upsert` / `gate.upsert`，真实生产与端到端验证后置；prototype 入口已通过 `runtimeBootstrap` 在 Lynx / Web Host 中走 applet-sdk bridge，在 standalone / unavailable 中回退 mock；runtime manifest 草案位于 `apps/applets/atelier/applet.manifest.json`，真实 bundle integrity 待正式 applet 化补齐）
 - 原型统一入口（Prototype Portal + 统一登记 + 确认门）：`architecture/prototypes/README.md`
+- 跨平台开发工具链：`architecture/developer-toolchain/README.md`
+  （active；`devctl` 是 profile、诊断、本地运行时生命周期与检查的统一控制面，
+  Make、PowerShell 和 package scripts 只保留薄入口）
 
 ### 4.2 平台层真源
 

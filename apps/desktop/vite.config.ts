@@ -65,7 +65,9 @@ export default defineConfig(({ command }) => ({
     port: 3210,
     strictPort: true,
     hmr: process.env.VITE_RUNTIME_EVIDENCE_HARNESS ? false : undefined,
-    watch: process.env.VITE_RUNTIME_EVIDENCE_HARNESS ? { ignored: ['**/*'] } : undefined,
+    watch: process.env.VITE_RUNTIME_EVIDENCE_HARNESS
+      ? { ignored: ['**/*'] }
+      : { ignored: ['**/src-tauri/target/**'] },
     proxy: {
       '/api': {
         target: process.env.PEERS_STATION_URL || 'http://127.0.0.1:18080',

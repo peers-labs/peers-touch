@@ -48,10 +48,8 @@ export VITE_PORT=3000
 | `proto-gen-mobile.sh` | 可用 | 生成 Mobile proto 产物 | 支持 `kotlin` / `swift` / `web` / `all`；`web` 通过临时目录生成，只替换真实变化并统一新文件/变化文件的 EOF |
 | `verify-worktree-binding.py` | 推荐 | capture/verify 当前执行 worktree 的 fail-closed identity | 校验 canonical root、branch、`workspaceId`、expected HEAD 与 worktree-set digest；必须从被绑定 root 运行 |
 | `verify-worktree-binding-test.py` | 可用 | 回归验证 worktree identity guard 与 Goal 队列契约 | 覆盖 wrong cwd、detached HEAD、identity drift、持久 schema、synthetic worktree-set digest 变化，以及 Ready/Parked queue 与 exhaustion-proof 阻塞语义；不创建真实 worktree |
-| `check-social-runtime-boundaries.sh` | 可用 | 校验双端社交 Runtime 边界 | 禁止页面/组件直接拥有社交实时流、reconcile、长期 freshness |
-| `check-frontend-runtime-registry.sh` | 可用 | 校验 Frontend Runtime registry 门禁 | 检查 registry 必填字段、alive/status 枚举、evidence、`needs audit` owner/revisit wording，并支持 review diff-range warning |
-| `apps/mobile/scripts/check-social-wire-contract.sh` | 可用 | 校验 Mobile 社交实时协议契约 | 禁止回退到手写 protobuf wire decoder |
-| `apps/desktop/scripts/check-social-wire-contract.sh` | 可用 | 校验 Desktop 社交实时协议契约 | 禁止回退到手写 protobuf wire decoder |
+| `tooling/devctl/checks.mjs` | 推荐 | 校验双端社交 wire 与 Runtime 边界 | 由 Desktop/Mobile package scripts 调用，不依赖 Bash |
+| `check-frontend-runtime-registry.mjs` | 推荐 | 校验 Frontend Runtime registry 门禁 | 检查必填字段、枚举和 evidence，并支持 review diff-range warning |
 | `review/run.sh` | 推荐 | 运行 Code Review Framework 门禁 | 统一调用变更路由、硬规则、知识库匹配、Review Skill 保鲜检查；也可通过 `make review` 使用 |
 | `review/route-change.sh` | 推荐 | 将 git diff 映射到 Review profiles | 输出每类变更需要关注的规则和验证命令 |
 | `review/hard-rules.sh` | 推荐 | 自动拦截 Review 铁律违规 | 检查 debug 语句、泄密、生成物手改、mock API、硬编码 UI 文案、静默吞错；无 Proto diff 时仅允许与隔离目录内 canonical Mobile Web regeneration 完全一致的生成物变更 |
