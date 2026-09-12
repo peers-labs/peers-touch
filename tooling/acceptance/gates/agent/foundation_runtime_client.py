@@ -131,6 +131,156 @@ def report_identity_boot_debug(
     # #endregion
 
 
+# #region debug-point A-D:native-restart-port-release
+def _native_restart_debug_env() -> tuple[str, str] | None:
+    env_path = (
+        Path(__file__).resolve().parents[4]
+        / ".dbg"
+        / "native-restart-port-release.env"
+    )
+    try:
+        env_values = dict(
+            line.split("=", 1)
+            for line in env_path.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        return (
+            env_values["DEBUG_SERVER_URL"],
+            env_values["DEBUG_SESSION_ID"],
+        )
+    except Exception:
+        return None
+
+
+def report_native_restart_port_release_debug(
+    hypothesis_id: str,
+    message: str,
+    data: Mapping[str, Any],
+) -> None:
+    debug_env = _native_restart_debug_env()
+    if debug_env is None:
+        return
+    debug_url, session_id = debug_env
+    payload = json.dumps(
+        {
+            "sessionId": session_id,
+            "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
+            "hypothesisId": hypothesis_id,
+            "location": (
+                "tooling/acceptance/gates/agent/"
+                "foundation_runtime_client.py:_stop_runtime"
+            ),
+            "msg": f"[DEBUG] {message}",
+            "data": dict(data),
+            "ts": int(time.time() * 1000),
+        }
+    ).encode("utf-8")
+
+    def send() -> None:
+        try:
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    debug_url,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                ),
+                timeout=0.5,
+            ).read()
+        except Exception:
+            pass
+
+    threading.Thread(
+        target=send,
+        name="native-restart-port-release-debug-report",
+        daemon=True,
+    ).start()
+
+
+def _native_restart_process_snapshot(
+    process: subprocess.Popen[str] | None,
+    process_group_id: int | None,
+) -> dict[str, Any]:
+    process_id = None if process is None else process.pid
+    process_return_code = None if process is None else process.poll()
+    live_process_group_id: int | None = None
+    live_session_id: int | None = None
+    if process_id is not None and process_return_code is None:
+        try:
+            live_process_group_id = os.getpgid(process_id)
+            live_session_id = os.getsid(process_id)
+        except ProcessLookupError:
+            pass
+    return {
+        "processPid": process_id,
+        "processReturnCode": process_return_code,
+        "storedProcessGroupId": process_group_id,
+        "liveProcessGroupId": live_process_group_id,
+        "liveSessionId": live_session_id,
+        "storedProcessGroupAlive": (
+            False
+            if process_group_id is None
+            else FoundationRuntimeClient._process_group_alive(
+                process_group_id
+            )
+        ),
+    }
+
+
+def _native_restart_listener_snapshot(
+    ports: Mapping[str, int],
+) -> dict[str, Any]:
+    if _native_restart_debug_env() is None:
+        return {}
+    snapshots: dict[str, Any] = {}
+    for name, port in ports.items():
+        try:
+            result = subprocess.run(
+                [
+                    "lsof",
+                    "-nP",
+                    f"-iTCP:{port}",
+                    "-sTCP:LISTEN",
+                    "-FpcgR",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=1,
+            )
+        except Exception as error:
+            snapshots[name] = {
+                "port": port,
+                "errorType": type(error).__name__,
+            }
+            continue
+        owners: list[dict[str, Any]] = []
+        owner: dict[str, Any] | None = None
+        for line in result.stdout.splitlines():
+            if not line:
+                continue
+            field, value = line[0], line[1:]
+            if field == "p":
+                if owner is not None:
+                    owners.append(owner)
+                owner = {"pid": int(value)}
+            elif owner is not None and field == "R":
+                owner["parentPid"] = int(value)
+            elif owner is not None and field == "g":
+                owner["processGroupId"] = int(value)
+            elif owner is not None and field == "c":
+                owner["command"] = value
+        if owner is not None:
+            owners.append(owner)
+        snapshots[name] = {
+            "port": port,
+            "lsofReturnCode": result.returncode,
+            "owners": owners,
+        }
+    return snapshots
+# #endregion
+
+
 # #region debug-point A-D:browser-renderer-lifecycle
 def report_browser_renderer_closed_debug(
     hypothesis_id: str,
@@ -923,6 +1073,30 @@ class FoundationRuntimeClient:
         logout: bool,
         remove_storage: bool,
     ) -> dict[str, Any]:
+        stop_started_at = time.monotonic()
+        process = self.process
+        process_group_id = self._process_group_id
+        if self.spec.runtime == "native-tauri":
+            report_native_restart_port_release_debug(
+                "A-D",
+                "native-runtime-stop-entered",
+                {
+                    "restartGeneration": self.restart_generation,
+                    "logout": logout,
+                    "removeStorage": remove_storage,
+                    **_native_restart_process_snapshot(
+                        process,
+                        process_group_id,
+                    ),
+                    "listeners": _native_restart_listener_snapshot(
+                        {
+                            "gateway": self.spec.gateway_port,
+                            "renderer": self.spec.renderer_port,
+                            "webdriver": self.spec.webdriver_port,
+                        }
+                    ),
+                },
+            )
         # #region debug-point B-D:browser-runtime-stop
         if self.spec.runtime == "browser":
             report_browser_renderer_closed_debug(
@@ -955,29 +1129,52 @@ class FoundationRuntimeClient:
             except Exception as error:  # noqa: BLE001 - cleanup records failure.
                 failures.append(f"webdriver: {error}")
             self.driver = None
-        process = self.process
-        process_group_id = self._process_group_id
+        if self.spec.runtime == "native-tauri":
+            report_native_restart_port_release_debug(
+                "A-D",
+                "native-driver-stop-completed",
+                {
+                    "restartGeneration": self.restart_generation,
+                    **_native_restart_process_snapshot(
+                        process,
+                        process_group_id,
+                    ),
+                    "listeners": _native_restart_listener_snapshot(
+                        {
+                            "gateway": self.spec.gateway_port,
+                            "renderer": self.spec.renderer_port,
+                            "webdriver": self.spec.webdriver_port,
+                        }
+                    ),
+                },
+            )
         process_released = process is None and process_group_id is None
+        term_wait_completed: bool | None = None
+        kill_sent = False
+        kill_wait_completed: bool | None = None
         if os.name == "posix" and process_group_id is not None:
             try:
                 self._signal_process_group(
                     process_group_id,
                     signal.SIGTERM,
                 )
-                if not self._wait_for_process_group_exit(
+                term_wait_completed = self._wait_for_process_group_exit(
                     process_group_id,
                     process,
                     PROCESS_TERMINATION_TIMEOUT_SECONDS,
-                ):
+                )
+                if not term_wait_completed:
+                    kill_sent = True
                     self._signal_process_group(
                         process_group_id,
                         signal.SIGKILL,
                     )
-                    if not self._wait_for_process_group_exit(
+                    kill_wait_completed = self._wait_for_process_group_exit(
                         process_group_id,
                         process,
                         PROCESS_KILL_TIMEOUT_SECONDS,
-                    ):
+                    )
+                    if not kill_wait_completed:
                         raise FoundationClientError(
                             f"process group {process_group_id} survived "
                             "forced termination"
@@ -1019,6 +1216,33 @@ class FoundationRuntimeClient:
             "renderer": not port_open(self.spec.renderer_port),
             "webdriver": not port_open(self.spec.webdriver_port),
         }
+        if self.spec.runtime == "native-tauri":
+            report_native_restart_port_release_debug(
+                "A-D",
+                "native-runtime-stop-evaluated",
+                {
+                    "restartGeneration": self.restart_generation,
+                    "elapsedMs": int(
+                        (time.monotonic() - stop_started_at) * 1000
+                    ),
+                    "processReleased": process_released,
+                    "termWaitCompleted": term_wait_completed,
+                    "killSent": kill_sent,
+                    "killWaitCompleted": kill_wait_completed,
+                    "portsReleased": ports,
+                    **_native_restart_process_snapshot(
+                        process,
+                        process_group_id,
+                    ),
+                    "listeners": _native_restart_listener_snapshot(
+                        {
+                            "gateway": self.spec.gateway_port,
+                            "renderer": self.spec.renderer_port,
+                            "webdriver": self.spec.webdriver_port,
+                        }
+                    ),
+                },
+            )
         if not all(ports.values()):
             failures.append(f"ports still listening: {ports}")
         if remove_storage and self.spec.storage_root.exists():

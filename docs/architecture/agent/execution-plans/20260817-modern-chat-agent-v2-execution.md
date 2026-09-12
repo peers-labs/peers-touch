@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T000527387739Z-0d146c9dcdf795efbfc787cbee66292c` on `ae12997a91ea4e5525b2e17e5817e2396c8abca4` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260912T000634915947Z-ab105f5f3f6e2f29fdfedf9169d85b02` stopped at Browser Simplified Chinese BASE-CONTEXT-OVERFLOW because final facts sampled captured DOM nodes after clearing the local projection even though pre/post recovery telemetry proved the receiver visible; receiver facts are now frozen before cleanup, while the incompatible cleanup/readiness corrections remain pending exact-source proof | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T004956133520Z-4c4e04249e3297881a3475afba06bb31` on `4ca50a1b0088e5a31da35753fc00117c29d5a641` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260912T005105177245Z-a2e74dde0946da7a7ca5a3cf58e3d2fe` stopped at Native AS-F06 restart cleanup because renderer port `3410` remained listening after the retained POSIX process group was judged exited; outer run `20260912T005105057682Z-a3acb135a6ecd9e0170d1188c01192a1` completed cleanup `DONE / PROVEN`; Acceptance Infra process/listener ownership diagnosis is active, while the incompatible cleanup/readiness corrections remain pending exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7267,6 +7267,27 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   cleanup, and failure-preservation defects are closed. Foundation/G-F remain
   `PARTIAL / UNPROVEN` only because the unchanged AS-F07 provider-backed
   sequence did not complete; no source-authorized substitute exists.
+- Exact-source checkpoint
+  `4ca50a1b0088e5a31da35753fc00117c29d5a641` froze
+  `BASE-CONTEXT-OVERFLOW` receiver facts before local projection cleanup.
+  C08 run
+  `20260912T004956133520Z-4c4e04249e3297881a3475afba06bb31`
+  completed `DONE / PROVEN` with `19/19` assertions and clean cleanup.
+  Unchanged Foundation run
+  `20260912T005105177245Z-a2e74dde0946da7a7ca5a3cf58e3d2fe`
+  failed earlier at Native `AS-F06 / en / single / sample-001`: restart cleanup
+  judged the retained process group exited, but renderer port `3410` still
+  accepted loopback connections. Gateway and embedded WebDriver ports were
+  already released. Outer run
+  `20260912T005105057682Z-a3acb135a6ecd9e0170d1188c01192a1`
+  completed Provisioner cleanup `DONE / PROVEN`, so no final process or port
+  residue remained.
+- This is an Acceptance Infra lifecycle mismatch, not an Agent product
+  assertion failure. The active diagnostic records the retained root
+  PID/PGID/session, TERM/KILL wait outcome, and the listener
+  PID/PPID/PGID/command after the existing immediate release verdict. It does
+  not change the `15s`/`5s` deadlines, retry the Gate, weaken cleanup, or alter
+  any Foundation tuple. Foundation/G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
