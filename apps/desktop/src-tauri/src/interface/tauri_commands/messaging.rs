@@ -801,36 +801,14 @@ pub fn messaging_create_direct(
         Ok(value) => value,
         Err(error) => return error,
     };
-    // #region debug-point D:messaging-create-direct-entry
-    let _ = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_millis(500)).build().and_then(|client| client.post("http://10.4.55.179:7779/event").json(&json!({"sessionId":"conversation-open-500","runId":"post-fix","hypothesisId":"D","location":"tauri_commands/messaging.rs:messaging_create_direct.entry","msg":"[DEBUG] messaging create direct entered","data":{"accountId":account_id,"actorPtid":engine.endpoint().ptid,"deviceId":engine.endpoint().device_id,"profileId":engine.profile_id()}})).send());
-    // #endregion
-    let conversation_id = match engine.create_direct_conversation(
-        &token,
-        &input.peer_ptid,
-        &input.federation_id,
-    ) {
-        Ok(conversation_id) => {
-            // #region debug-point D:messaging-create-direct-station-success
-            let _ = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_millis(500)).build().and_then(|client| client.post("http://10.4.55.179:7779/event").json(&json!({"sessionId":"conversation-open-500","runId":"post-fix","hypothesisId":"D","location":"tauri_commands/messaging.rs:messaging_create_direct.station","msg":"[DEBUG] Station direct conversation succeeded","data":{"actorPtid":engine.endpoint().ptid,"deviceId":engine.endpoint().device_id,"profileId":engine.profile_id(),"conversationId":conversation_id}})).send());
-            // #endregion
-            conversation_id
-        }
-        Err(error) => {
-            // #region debug-point D:messaging-create-direct-station-failure
-            let _ = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_millis(500)).build().and_then(|client| client.post("http://10.4.55.179:7779/event").json(&json!({"sessionId":"conversation-open-500","runId":"post-fix","hypothesisId":"D","location":"tauri_commands/messaging.rs:messaging_create_direct.station","msg":"[DEBUG] Station direct conversation failed","data":{"actorPtid":engine.endpoint().ptid,"deviceId":engine.endpoint().device_id,"profileId":engine.profile_id(),"error":error}})).send());
-            // #endregion
-            return AppResult::fail(ErrorCode::InternalError, error, None);
-        }
-    };
+    let conversation_id =
+        match engine.create_direct_conversation(&token, &input.peer_ptid, &input.federation_id) {
+            Ok(conversation_id) => conversation_id,
+            Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+        };
     if let Err(error) = engine.drain_once(&token, 100) {
-        // #region debug-point C-E:messaging-create-direct-drain-failure
-        let _ = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_millis(500)).build().and_then(|client| client.post("http://10.4.55.179:7779/event").json(&json!({"sessionId":"conversation-open-500","runId":"post-fix","hypothesisId":"C-E","location":"tauri_commands/messaging.rs:messaging_create_direct.drain","msg":"[DEBUG] post-create queue drain failed","data":{"actorPtid":engine.endpoint().ptid,"deviceId":engine.endpoint().device_id,"profileId":engine.profile_id(),"conversationId":conversation_id,"error":error}})).send());
-        // #endregion
         return AppResult::fail(ErrorCode::InternalError, error, None);
     }
-    // #region debug-point C-E:messaging-create-direct-drain-success
-    let _ = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_millis(500)).build().and_then(|client| client.post("http://10.4.55.179:7779/event").json(&json!({"sessionId":"conversation-open-500","runId":"post-fix","hypothesisId":"C-E","location":"tauri_commands/messaging.rs:messaging_create_direct.drain","msg":"[DEBUG] post-create queue drain succeeded","data":{"actorPtid":engine.endpoint().ptid,"deviceId":engine.endpoint().device_id,"profileId":engine.profile_id(),"conversationId":conversation_id}})).send());
-    // #endregion
     if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
         return AppResult::fail(ErrorCode::InternalError, error, None);
     }
@@ -853,39 +831,6 @@ pub fn messaging_list_conversations(
         Ok(conversations) => conversations,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    // #region debug-point F:messaging-list-conversation-members
-    let _ = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_millis(500))
-        .build()
-        .and_then(|client| {
-            client
-                .post("http://10.4.55.179:7779/event")
-                .json(&json!({
-                    "sessionId": "conversation-open-500",
-                    "runId": "peer-projection-pre-fix",
-                    "hypothesisId": "F",
-                    "location": "tauri_commands/messaging.rs:messaging_list_conversations",
-                    "msg": "[DEBUG] Rust messaging conversation members",
-                    "data": {
-                        "actorPtid": engine.endpoint().ptid,
-                        "conversations": conversations
-                            .iter()
-                            .map(|conversation| json!({
-                                "conversationId": conversation.conversation_id,
-                                "kind": conversation.kind,
-                                "memberCount": conversation.members.len(),
-                                "members": conversation
-                                    .members
-                                    .iter()
-                                    .map(|member| member.ptid.as_str())
-                                    .collect::<Vec<_>>(),
-                            }))
-                            .collect::<Vec<_>>(),
-                    }
-                }))
-                .send()
-        });
-    // #endregion
     let mut projected = Vec::with_capacity(conversations.len());
     for conversation in conversations {
         match conversation_projection_json(&engine, &conversation) {

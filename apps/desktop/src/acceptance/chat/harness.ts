@@ -279,7 +279,6 @@ export function installAcceptanceHarness(): void {
     identityState: () => nativeAcceptanceBridge.identityState(),
 
     async loginWithPassword({ account, password }: LoginInput) {
-      // #region debug-point Z18-Z20:chat-login-precondition
       const readIdentityLoginState = () => {
         const snapshot = identityRuntime.getSnapshot();
         return {
@@ -289,68 +288,19 @@ export function installAcceptanceHarness(): void {
           authenticated: useSessionStore.getState().authenticated,
         };
       };
-      const reportIdentityPrecondition = (
-        hypothesisId: string,
-        message: string,
-      ): void => {
-        const snapshot = identityRuntime.getSnapshot();
-        void fetch('http://127.0.0.1:7779/event', {
-          method: 'POST',
-          body: JSON.stringify({
-            sessionId: 'conversation-open-500',
-            runId: 'chat-login-post-fix',
-            hypothesisId,
-            location: 'apps/desktop/src/acceptance/chat/harness.ts:loginWithPassword',
-            msg: `[DEBUG] ${message}`,
-            data: {
-              phaseKind: snapshot.phase.kind,
-              phaseReason:
-                'reason' in snapshot.phase ? snapshot.phase.reason : null,
-              lifecycleState: snapshot.lifecycle.state,
-              dataReady: snapshot.lifecycle.dataReady,
-              authenticated: useSessionStore.getState().authenticated,
-              actorPtid:
-                useSessionStore.getState().currentUser?.actorPtid ?? null,
-            },
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
-      };
-      let priorIdentityState = '';
-      reportIdentityPrecondition('Z18-Z20', 'chat login precondition entered');
-      try {
-        await runChatPasswordLogin({
-          boot: () => identityRuntime.boot(),
-          readState: readIdentityLoginState,
-          waitFor: (predicate, description) => waitForIdentityState(
-            () => {
-              const state = readIdentityLoginState();
-              const identityState = JSON.stringify(state);
-              if (identityState !== priorIdentityState) {
-                priorIdentityState = identityState;
-                reportIdentityPrecondition(
-                  'Z18-Z20',
-                  'chat login lifecycle state changed',
-                );
-              }
-              return predicate(state);
-            },
-            description,
-          ),
-          logout: () => identityRuntime.logout(),
-          loginWithPassword: (loginAccount, loginPassword) =>
-            identityRuntime.loginWithPassword(loginAccount, loginPassword),
-          completeCurrentSession: () =>
-            identityRuntime.completeCurrentSession(),
-        }, account, password);
-      } catch (error) {
-        reportIdentityPrecondition(
-          'Z18-Z20',
-          'chat explicit login failed',
-        );
-        throw error;
-      }
-      // #endregion
+      await runChatPasswordLogin({
+        boot: () => identityRuntime.boot(),
+        readState: readIdentityLoginState,
+        waitFor: (predicate, description) => waitForIdentityState(
+          () => predicate(readIdentityLoginState()),
+          description,
+        ),
+        logout: () => identityRuntime.logout(),
+        loginWithPassword: (loginAccount, loginPassword) =>
+          identityRuntime.loginWithPassword(loginAccount, loginPassword),
+        completeCurrentSession: () =>
+          identityRuntime.completeCurrentSession(),
+      }, account, password);
       const actorPtid = activeActorPtid();
       await installDeferredAppRuntimeProjections(actorPtid);
       await hydrateSocialForActiveActor();

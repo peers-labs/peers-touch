@@ -343,35 +343,6 @@ fn checkpoint_fresh_direct_receiver(
     let events = fetch_direct_authority_events(token, &endpoint.device_id, &target)?;
     let bootstrapped =
         apply_direct_authority_checkpoint(store, &endpoint.ptid, &target, &events, now_unix_ms())?;
-    let (local_sequence, local_hash) = store.authority_head(&target.conversation_id)?;
-    // #region debug-point T:fresh-direct-receiver-checkpoint
-    let _ = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_millis(500))
-        .build()
-        .and_then(|client| {
-            client
-                .post("http://10.4.55.179:7779/event")
-                .json(&serde_json::json!({
-                    "sessionId": "conversation-open-500",
-                    "runId": "receiver-checkpoint-post-fix",
-                    "hypothesisId": "T",
-                    "location": "messaging/engine.rs:checkpoint_fresh_direct_receiver",
-                    "msg": "[DEBUG] Fresh Direct receiver authority checkpoint reconciled",
-                    "data": {
-                        "conversationId": target.conversation_id,
-                        "actorPtid": endpoint.ptid,
-                        "deviceId": endpoint.device_id,
-                        "bootstrapped": bootstrapped,
-                        "targetSequence": target.event_sequence,
-                        "currentEventSequence": target.event_sequence + 1,
-                        "localSequence": local_sequence,
-                        "matchesTarget": local_sequence == target.event_sequence
-                            && local_hash == target.event_hash,
-                    }
-                }))
-                .send()
-        });
-    // #endregion
     Ok(bootstrapped)
 }
 
@@ -984,64 +955,8 @@ impl MessagingEngine {
         if consumer.ptid != self.endpoint.ptid || consumer.device_id != self.endpoint.device_id {
             return Err("messaging delivery receipt endpoint mismatch".to_string());
         }
-        // #region debug-point Z11-Z13:delivery-receipt-selection
-        let _ = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_millis(500))
-            .build()
-            .and_then(|client| {
-                client
-                    .post("http://10.4.55.179:7779/event")
-                    .json(&serde_json::json!({
-                        "sessionId": "conversation-open-500",
-                        "runId": "delivery-receipt-post-fix",
-                        "hypothesisId": "Z11-Z13",
-                        "location": "messaging/engine.rs:dispatch_delivery_receipt_once.selected",
-                        "msg": "[DEBUG] Selected pending delivery receipt",
-                        "data": {
-                            "receiptId": receipt.receipt_id,
-                            "conversationId": receipt.conversation_id,
-                            "eventId": receipt.event_id,
-                            "eventSequence": receipt.event_sequence,
-                            "laneSequence": receipt.lane_sequence,
-                            "consumerPtid": consumer.ptid,
-                            "consumerDeviceId": consumer.device_id,
-                            "payloadSha256": hex::encode(&receipt.payload_sha256),
-                        },
-                    }))
-                    .send()
-            });
-        // #endregion
-        let submit_result = StationDeliveryReceiptTransport::new(
-            token.to_string(),
-            self.endpoint.device_id.clone(),
-        )?
-        .submit(&receipt);
-        // #region debug-point Z11-Z14:delivery-receipt-submit-result
-        let _ = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_millis(500))
-            .build()
-            .and_then(|client| {
-                client
-                    .post("http://10.4.55.179:7779/event")
-                    .json(&serde_json::json!({
-                        "sessionId": "conversation-open-500",
-                        "runId": "delivery-receipt-post-fix",
-                        "hypothesisId": "Z11-Z14",
-                        "location": "messaging/engine.rs:dispatch_delivery_receipt_once.result",
-                        "msg": "[DEBUG] Delivery receipt submission completed",
-                        "data": {
-                            "receiptId": receipt.receipt_id,
-                            "eventId": receipt.event_id,
-                            "eventSequence": receipt.event_sequence,
-                            "consumerDeviceId": consumer.device_id,
-                            "ok": submit_result.is_ok(),
-                            "error": submit_result.as_ref().err(),
-                        },
-                    }))
-                    .send()
-            });
-        // #endregion
-        submit_result?;
+        StationDeliveryReceiptTransport::new(token.to_string(), self.endpoint.device_id.clone())?
+            .submit(&receipt)?;
         self.store
             .mark_delivery_receipt_submitted(&entry.receipt_id, &entry.receipt_bytes)?;
         Ok(true)
@@ -1284,31 +1199,7 @@ impl MessagingEngine {
                 attachment_ids,
                 state: "pending",
             }),
-            Err(error) => {
-                // #region debug-point P-Q-R:direct-prepare-error
-                let _ = reqwest::blocking::Client::builder()
-                    .timeout(std::time::Duration::from_millis(500))
-                    .build()
-                    .and_then(|client| {
-                        client
-                            .post("http://10.4.55.179:7779/event")
-                            .json(&serde_json::json!({
-                                "sessionId": "conversation-open-500",
-                                "runId": "direct-prepare-error-post-fix",
-                                "hypothesisId": "P-Q-R",
-                                "location": "messaging/engine.rs:submit_message",
-                                "msg": "[DEBUG] Direct message preparation failed",
-                                "data": {
-                                    "actorPtid": self.endpoint.ptid,
-                                    "deviceId": self.endpoint.device_id,
-                                    "conversationId": ready_draft.conversation_id,
-                                    "messageId": ready_draft.message_id,
-                                    "error": error,
-                                }
-                            }))
-                            .send()
-                    });
-                // #endregion
+            Err(_) => {
                 self.schedule_message_draft_retry(&ready_draft, now_unix_ms())?;
                 Ok(SubmitMessageOutcome {
                     command_id: None,
@@ -1345,32 +1236,7 @@ impl MessagingEngine {
         let Some(draft) = self.store.next_due_message_draft(now_unix_ms)? else {
             return Ok(false);
         };
-        if let Err(error) = self.prepare_message_draft(token, &draft) {
-            // #region debug-point P-Q-R:direct-prepare-retry-error
-            let _ = reqwest::blocking::Client::builder()
-                .timeout(std::time::Duration::from_millis(500))
-                .build()
-                .and_then(|client| {
-                    client
-                        .post("http://10.4.55.179:7779/event")
-                        .json(&serde_json::json!({
-                            "sessionId": "conversation-open-500",
-                            "runId": "direct-prepare-error-post-fix",
-                            "hypothesisId": "P-Q-R",
-                            "location": "messaging/engine.rs:resume_message_draft_once",
-                            "msg": "[DEBUG] Direct message preparation retry failed",
-                            "data": {
-                                "actorPtid": self.endpoint.ptid,
-                                "deviceId": self.endpoint.device_id,
-                                "conversationId": draft.conversation_id,
-                                "messageId": draft.message_id,
-                                "attemptCount": draft.attempt_count,
-                                "error": error,
-                            }
-                        }))
-                        .send()
-                });
-            // #endregion
+        if self.prepare_message_draft(token, &draft).is_err() {
             self.schedule_message_draft_retry(&draft, now_unix_ms)?;
         }
         Ok(true)
@@ -1392,73 +1258,12 @@ impl MessagingEngine {
         // Drain inbox until the local authority head matches the send plan.
         // A single drain may not suffice if the conversation was just created
         // and the creation event hasn't arrived in the device inbox yet.
-        for attempt in 0..5 {
+        for _ in 0..5 {
             let (local_seq, local_hash) = self.store.authority_head(&draft.conversation_id)?;
-            let matches_plan =
-                local_seq == plan.authority_sequence && local_hash == plan.authority_hash;
-            // #region debug-point S-T-U-V:authority-head-before-drain
-            let _ = reqwest::blocking::Client::builder()
-                .timeout(std::time::Duration::from_millis(500))
-                .build()
-                .and_then(|client| {
-                    client
-                        .post("http://10.4.55.179:7779/event")
-                        .json(&serde_json::json!({
-                            "sessionId": "conversation-open-500",
-                            "runId": "authority-head-post-fix",
-                            "hypothesisId": "S-T-U-V",
-                            "location": "messaging/engine.rs:prepare_message_draft.before_drain",
-                            "msg": "[DEBUG] Direct authority head before drain",
-                            "data": {
-                                "attempt": attempt,
-                                "conversationId": draft.conversation_id,
-                                "messageId": draft.message_id,
-                                "planSequence": plan.authority_sequence,
-                                "planHash": &plan.authority_hash,
-                                "localSequence": local_seq,
-                                "localHash": &local_hash,
-                                "matchesPlan": matches_plan,
-                            }
-                        }))
-                        .send()
-                });
-            // #endregion
-            if matches_plan {
+            if local_seq == plan.authority_sequence && local_hash == plan.authority_hash {
                 break;
             }
-            let progress = self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
-            let (after_seq, after_hash) = self.store.authority_head(&draft.conversation_id)?;
-            // #region debug-point S-T-U-V:authority-head-after-drain
-            let _ = reqwest::blocking::Client::builder()
-                .timeout(std::time::Duration::from_millis(500))
-                .build()
-                .and_then(|client| {
-                    client
-                        .post("http://10.4.55.179:7779/event")
-                        .json(&serde_json::json!({
-                            "sessionId": "conversation-open-500",
-                            "runId": "authority-head-post-fix",
-                            "hypothesisId": "S-T-U-V",
-                            "location": "messaging/engine.rs:prepare_message_draft.after_drain",
-                            "msg": "[DEBUG] Direct authority head after drain",
-                            "data": {
-                                "attempt": attempt,
-                                "conversationId": draft.conversation_id,
-                                "messageId": draft.message_id,
-                                "planSequence": plan.authority_sequence,
-                                "planHash": &plan.authority_hash,
-                                "localSequence": after_seq,
-                                "localHash": &after_hash,
-                                "matchesPlan": after_seq == plan.authority_sequence
-                                    && after_hash == plan.authority_hash,
-                                "drainCursor": progress.cursor,
-                                "drainLaneHead": progress.lane_head,
-                                "drainProcessed": progress.processed,
-                            }
-                        }))
-                        .send()
-                });
-            // #endregion
+            self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
         let (local_sequence, local_hash) = self.store.authority_head(&draft.conversation_id)?;
@@ -1539,36 +1344,6 @@ impl MessagingEngine {
             &events,
             now_unix_ms(),
         )?;
-        let (local_sequence, local_hash) = self.store.authority_head(&plan.conversation_id)?;
-        // #region debug-point S:direct-genesis-checkpoint
-        let _ = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_millis(500))
-            .build()
-            .and_then(|client| {
-                client
-                    .post("http://10.4.55.179:7779/event")
-                    .json(&serde_json::json!({
-                        "sessionId": "conversation-open-500",
-                        "runId": "authority-head-post-fix",
-                        "hypothesisId": "S",
-                        "location": "messaging/engine.rs:bootstrap_direct_authority_checkpoint",
-                        "msg": "[DEBUG] Direct authority checkpoint reconciled",
-                        "data": {
-                            "conversationId": plan.conversation_id,
-                            "actorPtid": self.endpoint.ptid,
-                            "deviceId": self.endpoint.device_id,
-                            "bootstrapped": bootstrapped,
-                            "planSequence": plan.authority_sequence,
-                            "planHash": &plan.authority_hash,
-                            "localSequence": local_sequence,
-                            "localHash": &local_hash,
-                            "matchesPlan": local_sequence == plan.authority_sequence
-                                && local_hash == plan.authority_hash,
-                        }
-                    }))
-                    .send()
-            });
-        // #endregion
         Ok(bootstrapped)
     }
 
@@ -2119,62 +1894,6 @@ impl MessagingEngine {
             .actor_identity
             .as_ref()
             .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?;
-        let has_bundle = self.store.has_prekey_bundle();
-        let pending_bundle = self.store.pending_prekey_bundle();
-        let pending_replenishment = self.store.pending_prekey_replenishment();
-        // #region debug-point J-K:prekey-publication-local-state
-        let _ = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_millis(500))
-            .build()
-            .and_then(|client| {
-                client
-                    .post("http://10.4.55.179:7779/event")
-                    .json(&serde_json::json!({
-                        "sessionId": "conversation-open-500",
-                        "runId": "prekey-publication-post-fix",
-                        "hypothesisId": "J-K",
-                        "location": "messaging/engine.rs:publish_prekeys",
-                        "msg": "[DEBUG] prekey publication local state",
-                        "data": {
-                            "actorPtid": self.endpoint.ptid,
-                            "deviceId": self.endpoint.device_id,
-                            "hasBundle": has_bundle.as_ref().copied().unwrap_or(false),
-                            "hasBundleError": has_bundle.as_ref().err().map(ToString::to_string),
-                            "pendingPublication": pending_bundle
-                                .as_ref()
-                                .ok()
-                                .and_then(|bundle| bundle.as_ref())
-                                .is_some(),
-                            "pendingOpkCount": pending_bundle
-                                .as_ref()
-                                .ok()
-                                .and_then(|bundle| bundle.as_ref())
-                                .map(|bundle| bundle.one_time_prekeys.len())
-                                .unwrap_or_default(),
-                            "pendingError": pending_bundle
-                                .as_ref()
-                                .err()
-                                .map(ToString::to_string),
-                            "pendingReplenishment": pending_replenishment
-                                .as_ref()
-                                .ok()
-                                .and_then(|bundle| bundle.as_ref())
-                                .is_some(),
-                            "pendingReplenishmentOpkCount": pending_replenishment
-                                .as_ref()
-                                .ok()
-                                .and_then(|bundle| bundle.as_ref())
-                                .map(|bundle| bundle.one_time_prekeys.len())
-                                .unwrap_or_default(),
-                            "pendingReplenishmentError": pending_replenishment
-                                .as_ref()
-                                .err()
-                                .map(ToString::to_string),
-                        }
-                    }))
-                    .send()
-            });
-        // #endregion
         let publisher = PreKeyPublisher::new(
             self.store.clone(),
             CoreCryptoEndpoint {
@@ -2185,7 +1904,7 @@ impl MessagingEngine {
         let now = now_unix_ms();
         let transport =
             StationPreKeyTransport::new(token.to_string(), self.endpoint.device_id.clone())?;
-        let result = publisher
+        publisher
             .publish(actor_identity.as_ref(), now, &transport)
             .and_then(|_| {
                 if maintenance.next_inventory_reconciliation_at_unix_ms > now {
@@ -2197,31 +1916,7 @@ impl MessagingEngine {
                         maintenance.next_inventory_reconciliation_at_unix_ms =
                             now.saturating_add(PREKEY_INVENTORY_RECONCILIATION_INTERVAL_MS);
                     })
-            });
-        // #region debug-point J-K:prekey-publication-result
-        let _ = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_millis(500))
-            .build()
-            .and_then(|client| {
-                client
-                    .post("http://10.4.55.179:7779/event")
-                    .json(&serde_json::json!({
-                        "sessionId": "conversation-open-500",
-                        "runId": "prekey-publication-post-fix",
-                        "hypothesisId": "J-K",
-                        "location": "messaging/engine.rs:publish_prekeys.result",
-                        "msg": "[DEBUG] prekey publication result",
-                        "data": {
-                            "actorPtid": self.endpoint.ptid,
-                            "deviceId": self.endpoint.device_id,
-                            "ok": result.is_ok(),
-                            "error": result.as_ref().err().map(ToString::to_string),
-                        }
-                    }))
-                    .send()
-            });
-        // #endregion
-        result
+            })
     }
 
     pub fn publish_mls_key_packages(&self, token: &str) -> Result<(), String> {
