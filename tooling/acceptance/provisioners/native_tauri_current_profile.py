@@ -45,6 +45,7 @@ CLIENT_WORKTREE_NAMES = {
 CLIENT_WORKTREES_ENV = "PT_CHAT_NATIVE_CLIENT_WORKTREES"
 PERSISTENT_STORAGE_ROOTS_ENV = "PT_CHAT_NATIVE_PERSISTENT_STORAGE_ROOTS"
 PERSISTENT_STORAGE_MARKER = ".pt-current-profile-state.json"
+PERSISTENT_STORAGE_RESET_ENV = "PT_CHAT_NATIVE_RESET_PERSISTENT_STATE"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -177,6 +178,7 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
         seed_root: Path,
         storage_root: Path,
         run_id: str,
+        reset_authorized: bool = False,
     ) -> Path:
         marker = storage_root / PERSISTENT_STORAGE_MARKER
         expected_marker = {
@@ -216,7 +218,17 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                     ),
                     resource=f"client-persistent-storage:{role}",
                 )
-            return storage_root
+            if not reset_authorized:
+                return storage_root
+            if any(path.is_symlink() for path in storage_root.rglob("*")):
+                raise BlockedError(
+                    reason=(
+                        f"Current-profile {role} persistent storage reset "
+                        "refuses a tree containing symlinks"
+                    ),
+                    resource=f"client-persistent-storage:{role}",
+                )
+            shutil.rmtree(storage_root)
 
         if (
             storage_root == seed_root
@@ -292,6 +304,28 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 resource=f"client-persistent-storage:{role}",
             ) from error
         return storage_root
+
+    @staticmethod
+    def _persistent_storage_reset_authorized(profile_name: str) -> bool:
+        if os.environ.get(PERSISTENT_STORAGE_RESET_ENV, "").strip() != "1":
+            return False
+        authorized_profile = os.environ.get(
+            "CHAT_ACCEPTANCE_RESET_PROFILE",
+            "",
+        ).strip()
+        if (
+            os.environ.get("CHAT_ACCEPTANCE_RESET", "").strip() != "1"
+            or authorized_profile != profile_name
+        ):
+            raise BlockedError(
+                reason=(
+                    "Current-profile persistent storage reset requires "
+                    "CHAT_ACCEPTANCE_RESET=1 and an exact "
+                    "CHAT_ACCEPTANCE_RESET_PROFILE match"
+                ),
+                resource="fixture-authorization:persistent-device-state",
+            )
+        return True
 
     @staticmethod
     def _git_value(root: Path, *args: str) -> str:
@@ -644,6 +678,9 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
             profile_name,
             client_worktrees,
         )
+        reset_persistent_storage = (
+            self._persistent_storage_reset_authorized(profile_name)
+        )
         actors_by_role = {actor.role: actor for actor in actors}
         if set(actors_by_role) != set(CLIENT_ROLES):
             raise BlockedError(
@@ -694,6 +731,7 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 seed_root=seed_root,
                 storage_root=persistent_root,
                 run_id=run_id,
+                reset_authorized=reset_persistent_storage,
             )
             client = ClientRuntime(
                 actor=declared[role].actor,
