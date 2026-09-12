@@ -66,6 +66,31 @@ function reportFoundationCleanupIdentityHandler(
 }
 // #endregion
 
+// #region debug-point C-E:forbidden-actor-account-gate
+function reportFoundationForbiddenActorIdentityHandler(
+  stage: string,
+  handlerName: string,
+  durationMs?: number,
+): void {
+  if (typeof fetch !== 'function') return;
+  void fetch('http://127.0.0.1:7795/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-forbidden-actor-account-gate',
+      runId: 'pre-fix',
+      hypothesisId: 'C-E',
+      location: 'identityPipeline.ts:runIdentityPipeline',
+      msg: `[DEBUG] ${stage}`,
+      data: {
+        handlerName,
+        ...(durationMs === undefined ? {} : { durationMs }),
+      },
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 export function registerIdentityHandler(
   name: string,
   fn: (payload: IdentityChangePayload) => void | Promise<void>,
@@ -86,18 +111,29 @@ export async function runIdentityPipeline(payload: IdentityChangePayload): Promi
     const t0 = performance.now();
     if (payload.reason === 'logout') {
       reportFoundationCleanupIdentityHandler('handler-started', name);
+      reportFoundationForbiddenActorIdentityHandler('handler-started', name);
     }
     try {
       await fn(payload);
       const ms = Math.round(performance.now() - t0);
       if (payload.reason === 'logout') {
         reportFoundationCleanupIdentityHandler('handler-finished', name, ms);
+        reportFoundationForbiddenActorIdentityHandler(
+          'handler-finished',
+          name,
+          ms,
+        );
       }
       log.info('identity', `identity pipeline handler ok: ${name}`, { ms, reason: payload.reason });
     } catch (error) {
       const ms = Math.round(performance.now() - t0);
       if (payload.reason === 'logout') {
         reportFoundationCleanupIdentityHandler('handler-failed', name, ms);
+        reportFoundationForbiddenActorIdentityHandler(
+          'handler-failed',
+          name,
+          ms,
+        );
       }
       log.error('identity', `identity pipeline handler failed: ${name}`, { ms, reason: payload.reason, error: String(error) });
       failures.push({ handlerName: name, error, durationMs: ms });

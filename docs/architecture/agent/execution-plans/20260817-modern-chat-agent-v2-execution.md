@@ -7582,6 +7582,31 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   behavior changed. Clean checkpoint, binary rebuild/smoke, exact-source
   deployment, C08-first proof, and the unchanged Foundation matrix remain
   pending.
+- **AS-F06 proof and forbidden-actor account-gate frontier (2026-09-12)**:
+  checkpoint `8a080bf6878ca11bdd49f88db8d3ba92cba84b70` used dedicated
+  Acceptance binary SHA-256
+  `94a2920ba8447822a2978aed8f6505b7fec10f2004dfe7139ee88ad603d48920`
+  and was deployed exact-source to `chat-native-disposable-station`. C08 run
+  `20260912T120726450221Z-fad550ba6b11f323b0aa3a7ea4657f2b`
+  completed `DONE / PROVEN` with `19/19` assertions, source-matching Station
+  attestation, secret scan, and complete cleanup. The unchanged Foundation run
+  `20260912T120931452932Z-eaa05a1591ac11c0a71664540cb4d52e`
+  crossed all four AS-F06 runtime/locale tuples. Each tuple acknowledged the
+  real proxy cut before restart/replay, and every scenario reported
+  `conversationDeleted=true`, `handoffCleared=true`,
+  `cleanupLocatorCleared=true`, `recoveryRecordCleared=true`,
+  `localProjectionCleared=true`, and `cleanupComplete=true`. The run also
+  captured matching visible context-overflow error/recovery surfaces and
+  reduced-draft focus restoration in both locales. Its first failure was
+  Browser English `BASE-FORBIDDEN_ACTOR`, where the source-bound typed
+  rejection and visible `Switch account` recovery completed but the Harness
+  timed out waiting for `identityRuntime.phase=accountGate` and an
+  unauthenticated session. Outer Provisioner cleanup completed
+  `DONE / PROVEN / passed`; Foundation/G-F remain `PARTIAL / UNPROVEN`.
+  Retained session `foundation-forbidden-actor-account-gate` now observes the
+  recovery click, Identity Runtime logout, session logout, per-handler identity
+  pipeline, and final account-gate state without changing behavior, timeouts,
+  matrix tuples, or assertions.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

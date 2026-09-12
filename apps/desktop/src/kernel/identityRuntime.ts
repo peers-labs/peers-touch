@@ -59,6 +59,28 @@ function reportFoundationLaunchContextDebug(
 }
 // #endregion
 
+// #region debug-point C-D:forbidden-actor-account-gate
+function reportFoundationForbiddenActorAccountGateDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown>,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7795/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-forbidden-actor-account-gate',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'identityRuntime.ts:logout',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 export function clearWarmResume(): void {
   try {
     removeDesktopPreferenceSync(WARM_RESUME_KEY);
@@ -466,14 +488,68 @@ class IdentityRuntime {
   };
 
   logout = async (): Promise<void> => {
+    // #region debug-point C-D:forbidden-actor-identity-logout
+    reportFoundationForbiddenActorAccountGateDebug('C-D', 'logout-entered', {
+      phaseKind: this.phase.kind,
+      lifecycleState: this.snapshot.lifecycle.state,
+      dataReady: this.dataReady,
+      authenticated: useSessionStore.getState().authenticated,
+    });
+    // #endregion
     this.dispatch({ type: 'LOGOUT_REQUESTED' });
+    // #region debug-point C-D:forbidden-actor-identity-logout-requested
+    reportFoundationForbiddenActorAccountGateDebug(
+      'C-D',
+      'logout-requested-dispatched',
+      {
+        phaseKind: this.phase.kind,
+        lifecycleState: this.snapshot.lifecycle.state,
+        authenticated: useSessionStore.getState().authenticated,
+      },
+    );
+    // #endregion
     let cleanupError: unknown;
     try {
       await useSessionStore.getState().logout();
+      // #region debug-point C-D:forbidden-actor-session-logout-resolved
+      reportFoundationForbiddenActorAccountGateDebug(
+        'C-D',
+        'session-logout-resolved',
+        {
+          phaseKind: this.phase.kind,
+          authenticated: useSessionStore.getState().authenticated,
+        },
+      );
+      // #endregion
     } catch (error) {
       cleanupError = error;
+      // #region debug-point C-D:forbidden-actor-session-logout-rejected
+      reportFoundationForbiddenActorAccountGateDebug(
+        'C-D',
+        'session-logout-rejected',
+        {
+          phaseKind: this.phase.kind,
+          authenticated: useSessionStore.getState().authenticated,
+          errorType: error instanceof Error ? error.name : typeof error,
+        },
+      );
+      // #endregion
     }
     await this.loadAuthGate('logout', false);
+    // #region debug-point A-D:forbidden-actor-account-gate-loaded
+    reportFoundationForbiddenActorAccountGateDebug(
+      'A-D',
+      'account-gate-loaded',
+      {
+        phaseKind: this.phase.kind,
+        lifecycleState: this.snapshot.lifecycle.state,
+        dataReady: this.dataReady,
+        authenticated: useSessionStore.getState().authenticated,
+        knownAccountCount: this.knownAccounts.length,
+        cleanupErrorPresent: cleanupError !== undefined,
+      },
+    );
+    // #endregion
     if (cleanupError) {
       throw cleanupError;
     }

@@ -9822,6 +9822,27 @@ function reportFoundationBaseCancelledDebug(
 }
 // #endregion
 
+// #region debug-point A-E:forbidden-actor-account-gate
+function reportFoundationForbiddenActorAccountGateDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7795/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-forbidden-actor-account-gate',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:rejectFoundationForbiddenActor',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 // #region debug-point A-D:incompatible-capability-cleanup
 function reportFoundationIncompatibleCleanupDebug(
   hypothesisId: string,
@@ -11717,15 +11738,91 @@ async function rejectFoundationForbiddenActor(input: {
     recoveryExecuted: false,
     receiverActorHash,
   };
-  recovery.click();
-  await waitFor(
-    () => (
-      identityRuntime.getSnapshot().phase.kind === 'accountGate'
-      && !useSessionStore.getState().authenticated
-    ),
-    'forbidden actor account gate',
-    30_000,
+  const identityBeforeRecovery = identityRuntime.getSnapshot();
+  // #region debug-point A-E:forbidden-actor-recovery-click
+  await reportFoundationForbiddenActorAccountGateDebug(
+    'A-E',
+    'before-recovery-click',
+    {
+      phaseKind: identityBeforeRecovery.phase.kind,
+      lifecycleState: identityBeforeRecovery.lifecycle.state,
+      dataReady: identityBeforeRecovery.lifecycle.dataReady,
+      authenticated: useSessionStore.getState().authenticated,
+      currentActorPresent:
+        Boolean(useSessionStore.getState().currentUser?.actorPtid),
+      knownAccountCount: identityBeforeRecovery.lifecycle.knownAccounts.length,
+      recoveryConnected: recovery.isConnected,
+      recoveryVisible: recovery.getClientRects().length > 0,
+      recoveryDisabled: recovery.disabled,
+    },
   );
+  const observeRecoveryClick = () => {
+    void reportFoundationForbiddenActorAccountGateDebug(
+      'C-D',
+      'recovery-click-observed',
+      {
+        recoveryConnected: recovery.isConnected,
+        recoveryDisabled: recovery.disabled,
+      },
+    );
+  };
+  recovery.addEventListener('click', observeRecoveryClick, { once: true });
+  try {
+    recovery.click();
+    const identityAfterRecovery = identityRuntime.getSnapshot();
+    void reportFoundationForbiddenActorAccountGateDebug(
+      'C-D',
+      'after-recovery-click',
+      {
+        phaseKind: identityAfterRecovery.phase.kind,
+        lifecycleState: identityAfterRecovery.lifecycle.state,
+        dataReady: identityAfterRecovery.lifecycle.dataReady,
+        authenticated: useSessionStore.getState().authenticated,
+      },
+    );
+    try {
+      await waitFor(
+        () => (
+          identityRuntime.getSnapshot().phase.kind === 'accountGate'
+          && !useSessionStore.getState().authenticated
+        ),
+        'forbidden actor account gate',
+        30_000,
+      );
+    } catch (error) {
+      const identityAtTimeout = identityRuntime.getSnapshot();
+      await reportFoundationForbiddenActorAccountGateDebug(
+        'A-E',
+        'account-gate-timeout',
+        {
+          phaseKind: identityAtTimeout.phase.kind,
+          lifecycleState: identityAtTimeout.lifecycle.state,
+          dataReady: identityAtTimeout.lifecycle.dataReady,
+          authenticated: useSessionStore.getState().authenticated,
+          currentActorPresent:
+            Boolean(useSessionStore.getState().currentUser?.actorPtid),
+          knownAccountCount: identityAtTimeout.lifecycle.knownAccounts.length,
+          errorType: error instanceof Error ? error.name : typeof error,
+        },
+      );
+      throw error;
+    }
+    const identityAtGate = identityRuntime.getSnapshot();
+    await reportFoundationForbiddenActorAccountGateDebug(
+      'A-E',
+      'account-gate-observed',
+      {
+        phaseKind: identityAtGate.phase.kind,
+        lifecycleState: identityAtGate.lifecycle.state,
+        dataReady: identityAtGate.lifecycle.dataReady,
+        authenticated: useSessionStore.getState().authenticated,
+        knownAccountCount: identityAtGate.lifecycle.knownAccounts.length,
+      },
+    );
+  } finally {
+    recovery.removeEventListener('click', observeRecoveryClick);
+  }
+  // #endregion
   receiver.accountGateObserved = true;
   receiver.recoveryExecuted = true;
 
