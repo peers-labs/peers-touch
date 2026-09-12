@@ -1275,6 +1275,36 @@ fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
     })
 }
 
+fn friend_request_projection(request: &model::social::SocialFriendRequest) -> Value {
+    json!({
+        "request_id": request.request_id.as_str(),
+        "sender_ptid": request
+            .sender
+            .as_ref()
+            .map(|actor| actor.ptid.as_str())
+            .unwrap_or_default(),
+        "receiver_ptid": request
+            .receiver
+            .as_ref()
+            .map(|actor| actor.ptid.as_str())
+            .unwrap_or_default(),
+        "state": request.state,
+        "federation_id": request.federation_id.as_str(),
+        "sender_home_station_peer_id":
+            request.sender_home_station_peer_id.as_str(),
+        "receiver_home_station_peer_id":
+            request.receiver_home_station_peer_id.as_str(),
+    })
+}
+
+fn relationship_projection(relationship: &model::social::Relationship) -> Value {
+    json!({
+        "target_actor_ptid": relationship.target_actor_ptid.as_str(),
+        "following": relationship.following,
+        "followed_by": relationship.followed_by,
+    })
+}
+
 fn extract_latest_ulid(payload: &Value) -> Option<String> {
     payload
         .get("messages")?
@@ -2417,10 +2447,21 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(token) => token,
                 Err(error) => return error,
             };
+            let active_station_peer_id = match station_client::active_station_peer_id() {
+                Some(peer_id) => peer_id,
+                None => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        "active Station peer ID is unavailable",
+                        None,
+                    ))
+                }
+            };
             match app_federation::list_federations(&token) {
                 Ok(view) => to_json(to_stub(
                     "acceptance_federation_context",
                     json!({
+                        "active_station_peer_id": active_station_peer_id,
                         "federations": view
                             .federations
                             .iter()
@@ -2436,6 +2477,101 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     error.into_app_result::<StubPayload>("acceptance_federation_context failed"),
                 ),
             }
+        }
+        "social_get_relationship" => {
+            let input = match parse_args::<SocialGetRelationshipInput>(args) {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            if input.target_actor_ptid.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "target_actor_ptid is required",
+                    None,
+                ));
+            }
+            let query = vec![("target_actor_ptid", input.target_actor_ptid)];
+            let response =
+                match station_client::request_proto::<(), model::social::GetRelationshipResponse>(
+                    Method::GET,
+                    "/api/v1/social/relationships",
+                    &token,
+                    Some(&query),
+                    None::<&()>,
+                ) {
+                    Ok(response) => response,
+                    Err(error) => {
+                        return to_json(error.into_app_result::<Vec<u8>>("get relationship failed"))
+                    }
+                };
+            to_json(AppResult::success(response.encode_to_vec()))
+        }
+        "acceptance_friend_request_context" => {
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            let target_actor_ptid = string_arg(&args, "target_actor_ptid", "targetActorPtid");
+            let pending_query = vec![
+                (
+                    "state",
+                    (model::social::FriendRequestState::Pending as i32).to_string(),
+                ),
+                ("limit", "200".to_string()),
+                ("offset", "0".to_string()),
+            ];
+            let pending =
+                match station_client::request_proto::<
+                    (),
+                    model::social::ListSocialFriendRequestsResponse,
+                >(
+                    Method::GET,
+                    "/api/v1/social/friend-requests",
+                    &token,
+                    Some(&pending_query),
+                    None::<&()>,
+                ) {
+                    Ok(response) => response,
+                    Err(error) => {
+                        return to_json(error.into_app_result::<StubPayload>(
+                            "acceptance friend-request list failed",
+                        ))
+                    }
+                };
+            let relationship = if target_actor_ptid.is_empty() {
+                None
+            } else {
+                let query = vec![("target_actor_ptid", target_actor_ptid)];
+                match station_client::request_proto::<(), model::social::GetRelationshipResponse>(
+                    Method::GET,
+                    "/api/v1/social/relationships",
+                    &token,
+                    Some(&query),
+                    None::<&()>,
+                ) {
+                    Ok(response) => response.relationship.as_ref().map(relationship_projection),
+                    Err(error) => {
+                        return to_json(error.into_app_result::<StubPayload>(
+                            "acceptance relationship readback failed",
+                        ))
+                    }
+                }
+            };
+            to_json(to_stub(
+                "acceptance_friend_request_context",
+                json!({
+                    "pending_requests": pending
+                        .requests
+                        .iter()
+                        .map(friend_request_projection)
+                        .collect::<Vec<_>>(),
+                    "relationship": relationship,
+                }),
+            ))
         }
         "ensure_station_session" => to_json(app_auth::ensure_station_session(state)),
 
@@ -7825,6 +7961,46 @@ mod tests {
                 .and_then(Value::as_str),
             Some("UNAUTHORIZED")
         );
+    }
+
+    #[test]
+    fn friend_request_acceptance_projection_preserves_canonical_identity() {
+        let request = model::social::SocialFriendRequest {
+            request_id: "request-1".to_string(),
+            sender: Some(model::actor::ActorRef {
+                ptid: "ptid:alice".to_string(),
+                ..Default::default()
+            }),
+            receiver: Some(model::actor::ActorRef {
+                ptid: "ptid:bob".to_string(),
+                ..Default::default()
+            }),
+            state: model::social::FriendRequestState::Pending as i32,
+            federation_id: "federation-1".to_string(),
+            sender_home_station_peer_id: "station-four".to_string(),
+            receiver_home_station_peer_id: "station-five".to_string(),
+            ..Default::default()
+        };
+        let request_json = friend_request_projection(&request);
+        assert_eq!(request_json["request_id"], "request-1");
+        assert_eq!(request_json["sender_ptid"], "ptid:alice");
+        assert_eq!(request_json["receiver_ptid"], "ptid:bob");
+        assert_eq!(request_json["sender_home_station_peer_id"], "station-four");
+        assert_eq!(
+            request_json["receiver_home_station_peer_id"],
+            "station-five"
+        );
+
+        let relationship = model::social::Relationship {
+            target_actor_ptid: "ptid:bob".to_string(),
+            following: true,
+            followed_by: true,
+            ..Default::default()
+        };
+        let relationship_json = relationship_projection(&relationship);
+        assert_eq!(relationship_json["target_actor_ptid"], "ptid:bob");
+        assert_eq!(relationship_json["following"], true);
+        assert_eq!(relationship_json["followed_by"], true);
     }
 
     #[test]

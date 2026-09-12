@@ -189,6 +189,29 @@ def gateway_command(
     return data
 
 
+def gateway_proto_command(
+    gateway: str,
+    command: str,
+    args: dict[str, Any] | None = None,
+) -> bytes:
+    envelope = gateway_envelope(gateway, command, args)
+    if not envelope.get("ok"):
+        raise GateError(f"gateway command {command} failed envelope={envelope}")
+    data = envelope.get("data")
+    require(
+        isinstance(data, list)
+        and data
+        and all(
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and 0 <= value <= 255
+            for value in data
+        ),
+        f"gateway command {command} returned invalid protobuf bytes",
+    )
+    return bytes(data)
+
+
 def gateway_status(
     gateway: str,
     command: str,
@@ -203,33 +226,45 @@ def gateway_status(
 
 
 def gateway_login(gateway: str, actor: ActorCredentials) -> ActorCredentials:
-    result = gateway_status(
+    result = gateway_command(
         gateway,
         "auth_login",
-        {"email": actor.email, "password": actor.password},
+        {"account": actor.email, "password": actor.password},
     )
-    actor.account_id = str(result.get("account_id") or "")
-    actor.actor_ptid = str(result.get("actor_ptid") or actor.actor_ptid)
-    require(bool(actor.account_id), f"login {actor.name} did not return an account ID")
-    require(bool(actor.actor_ptid), f"login {actor.name} did not return a PTID")
+    actor_ptid = str(result.get("actor_ptid") or "")
+    require(
+        actor_ptid == actor.actor_ptid,
+        f"login {actor.name} PTID mismatch got={actor_ptid} "
+        f"want={actor.actor_ptid}",
+    )
+    session = gateway_status(gateway, "acceptance_current_session")
+    actor.account_id = str(session.get("account_id") or "")
+    require(
+        str(session.get("actor_ptid") or "") == actor.actor_ptid,
+        f"login {actor.name} current-session actor mismatch",
+    )
+    require(
+        session.get("messaging_profile_matches") is True,
+        f"login {actor.name} messaging profile is not bound",
+    )
+    require(
+        bool(actor.account_id),
+        f"login {actor.name} did not return an account ID",
+    )
     return actor
 
 
 def gateway_logout(gateway: str) -> None:
-    try:
-        gateway_command(gateway, "auth_logout")
-    except Exception:
-        pass
+    envelope = gateway_envelope(gateway, "auth_logout")
+    if envelope.get("ok"):
+        return
+    error = envelope.get("error")
+    if isinstance(error, dict) and error.get("code") == "UNAUTHORIZED":
+        return
+    raise GateError(f"gateway command auth_logout failed envelope={envelope}")
 
 
-def get_station_peer_id(station: str) -> str:
-    req = urllib.request.Request(f"{station}/sub-oss/healthz", method="GET")
-    with urllib.request.urlopen(req, timeout=10) as response:
-        data = json.loads(response.read().decode("utf-8"))
-    return ""
-
-
-def get_federation_id(gateway: str) -> str:
+def get_federation_context(gateway: str) -> tuple[str, str]:
     data = gateway_command(gateway, "acceptance_federation_context")
     status_raw = data.get("status", "")
     require(isinstance(status_raw, str), "federation context status is required")
@@ -237,12 +272,102 @@ def get_federation_id(gateway: str) -> str:
     require(isinstance(parsed, dict), "federation context is invalid")
     federations = parsed.get("federations") or parsed.get("items") or []
     require(len(federations) > 0, "no federation available for friend request")
-    return str(federations[0].get("federation_id") or federations[0].get("federationId") or "")
+    federation_id = str(
+        federations[0].get("federation_id")
+        or federations[0].get("federationId")
+        or ""
+    )
+    station_peer_id = str(parsed.get("active_station_peer_id") or "")
+    require(bool(federation_id), "federation ID is required for friend request")
+    require(
+        bool(station_peer_id),
+        "active Station peer ID is required for friend request",
+    )
+    return federation_id, station_peer_id
+
+
+def friend_request_context(
+    gateway: str,
+    target_actor_ptid: str,
+) -> dict[str, Any]:
+    return gateway_status(
+        gateway,
+        "acceptance_friend_request_context",
+        {"target_actor_ptid": target_actor_ptid},
+    )
+
+
+def wait_for_pending_request(
+    gateway: str,
+    sender_ptid: str,
+    *,
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        context = friend_request_context(gateway, sender_ptid)
+        pending = context.get("pending_requests")
+        if isinstance(pending, list):
+            match = next(
+                (
+                    request
+                    for request in pending
+                    if isinstance(request, dict)
+                    and request.get("sender_ptid") == sender_ptid
+                ),
+                None,
+            )
+            if isinstance(match, dict):
+                return match
+        time.sleep(0.25)
+    raise GateError(
+        f"actor B has no pending request from actor A={sender_ptid}"
+    )
+
+
+def wait_for_friendship(
+    gateway: str,
+    target_actor_ptid: str,
+    *,
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    last_relationship: object = None
+    while time.monotonic() < deadline:
+        context = friend_request_context(gateway, target_actor_ptid)
+        last_relationship = context.get("relationship")
+        if (
+            isinstance(last_relationship, dict)
+            and last_relationship.get("target_actor_ptid")
+            == target_actor_ptid
+            and last_relationship.get("following") is True
+            and last_relationship.get("followed_by") is True
+        ):
+            return last_relationship
+        time.sleep(0.25)
+    raise GateError(
+        "friendship did not converge for target "
+        f"{target_actor_ptid}: {last_relationship}"
+    )
 
 
 def run_friend_request_flow(report: EvidenceReport) -> dict[str, Any]:
     gateway_a = gateway_url()
     station = station_url()
+
+    gateway_command(
+        gateway_a,
+        "station_add",
+        {"url": station},
+        timeout=10,
+    )
+    gateway_command(
+        gateway_a,
+        "station_set_active",
+        {"url": station},
+        timeout=10,
+    )
+    report.add_assertion("station_configured", True)
 
     actor_a = fixture_actor("alice")
     actor_b = fixture_actor("bob")
@@ -250,88 +375,94 @@ def run_friend_request_flow(report: EvidenceReport) -> dict[str, Any]:
     gateway_login(gateway_a, actor_a)
     report.add_assertion("actor_a_login_via_gateway", True)
 
-    federation_id = get_federation_id(gateway_a)
-    require(bool(federation_id), "federation ID is required for friend request")
+    federation_id, station_peer_id = get_federation_context(gateway_a)
     report.add_assertion("federation_available", True)
 
-    gateway_command(
+    gateway_proto_command(
         gateway_a,
         "social_friend_request_send",
         {
             "receiver_ptid": actor_b.actor_ptid,
-            "receiver_home_station_peer_id": actor_a.actor_ptid.split(":")[0]
-                if ":" not in actor_a.actor_ptid else "",
+            "receiver_home_station_peer_id": station_peer_id,
             "federation_id": federation_id,
             "message": "acceptance gate friend request",
         },
     )
     report.add_assertion("actor_a_sends_friend_request", True)
 
-    gateway_command(gateway_a, "account_switch", {"id": ""})
+    gateway_logout(gateway_a)
     gateway_login(gateway_a, actor_b)
     report.add_assertion("actor_b_login_via_gateway", True)
 
-    requests_data = gateway_command(gateway_a, "social_friend_request_list")
-    status_raw = requests_data.get("status", "")
-    if isinstance(status_raw, str):
-        parsed = json.loads(status_raw)
-    else:
-        parsed = status_raw
-    requests_list = parsed.get("requests") or parsed.get("items") or []
-    pending = [
-        r for r in requests_list
-        if str(r.get("sender_ptid") or r.get("senderPtid") or "") == actor_a.actor_ptid
-    ]
-    require(len(pending) > 0, f"actor B has no pending request from actor A: {requests_list}")
+    gateway_proto_command(
+        gateway_a,
+        "social_friend_request_list",
+        {"status": 1, "limit": 200, "offset": 0},
+    )
+    pending = wait_for_pending_request(
+        gateway_a,
+        actor_a.actor_ptid,
+    )
     report.add_assertion("actor_b_sees_pending_request", True)
 
     request_id = str(
-        pending[0].get("request_id")
-        or pending[0].get("requestId")
-        or pending[0].get("id")
+        pending.get("request_id")
+        or pending.get("requestId")
+        or pending.get("id")
         or ""
     )
     require(bool(request_id), "pending friend request has no request_id")
+    sender_home_station_peer_id = str(
+        pending.get("sender_home_station_peer_id")
+        or pending.get("senderHomeStationPeerId")
+        or ""
+    )
+    require(
+        bool(sender_home_station_peer_id),
+        "pending friend request has no sender Home Station",
+    )
+    request_federation_id = str(
+        pending.get("federation_id")
+        or pending.get("federationId")
+        or federation_id
+    )
 
-    gateway_command(
+    gateway_proto_command(
         gateway_a,
         "social_friend_request_accept",
-        {"request_id": request_id},
+        {
+            "request_id": request_id,
+            "sender_ptid": actor_a.actor_ptid,
+            "sender_home_station_peer_id": sender_home_station_peer_id,
+            "federation_id": request_federation_id,
+            "message": "",
+        },
     )
     report.add_assertion("actor_b_accepts_friend_request", True)
 
-    gateway_command(gateway_a, "account_switch", {"id": ""})
+    gateway_logout(gateway_a)
     gateway_login(gateway_a, actor_a)
 
-    time.sleep(1)
-
-    friends_data = gateway_command(
+    gateway_proto_command(
         gateway_a,
-        "social_relationships_list",
-        {"relationship_type": "friend"},
+        "social_get_relationship",
+        {"target_actor_ptid": actor_b.actor_ptid},
     )
-    status_raw = friends_data.get("status", "")
-    if isinstance(status_raw, str):
-        parsed = json.loads(status_raw)
-    else:
-        parsed = status_raw
-    friends = parsed.get("relationships") or parsed.get("friends") or parsed.get("items") or []
-    is_friend = any(
-        str(f.get("ptid") or f.get("actor_ptid") or f.get("actorPtid") or "") == actor_b.actor_ptid
-        for f in friends
+    relationship = wait_for_friendship(
+        gateway_a,
+        actor_b.actor_ptid,
     )
-    report.add_assertion(
-        "friendship_established",
-        is_friend,
-        f"actor B not in actor A friends list: {[str(f.get('ptid', f.get('actor_ptid', ''))) for f in friends]}",
-    )
+    report.add_assertion("friendship_established", True)
 
     return {
         "actor_a": actor_a.actor_ptid,
         "actor_b": actor_b.actor_ptid,
         "federation_id": federation_id,
         "request_id": request_id,
-        "friendship_confirmed": is_friend,
+        "friendship_confirmed": (
+            relationship["following"]
+            and relationship["followed_by"]
+        ),
     }
 
 

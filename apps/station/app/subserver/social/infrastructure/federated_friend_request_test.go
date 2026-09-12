@@ -20,6 +20,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/driver/sqlite"
@@ -151,6 +152,7 @@ func TestFederatedFriendRequestCrossStationAcceptConvergesAndCreatesDirectEffect
 	); err != nil || relationship == nil {
 		t.Fatalf("receiver relationship = %+v, %v", relationship, err)
 	}
+	assertFollowProjection(t, fixture.b.db, bobPTID, alicePTID)
 
 	fixture.dispatchOnce(t, fixture.b)
 	assertProjectionState(
@@ -168,6 +170,7 @@ func TestFederatedFriendRequestCrossStationAcceptConvergesAndCreatesDirectEffect
 	); err != nil || relationship == nil {
 		t.Fatalf("sender relationship = %+v, %v", relationship, err)
 	}
+	assertFollowProjection(t, fixture.a.db, alicePTID, bobPTID)
 
 	effectID := domain.DirectConversationEffectID("request-accept")
 	effect, conversationID, err := fixture.a.store.DirectConversationEffect(
@@ -987,6 +990,7 @@ func TestSameStationFriendRequestUsesSharedDeliveryReceiver(t *testing.T) {
 		if err != nil || relationship == nil {
 			t.Fatalf("local relationship %s -> %s = %+v, %v", owner, peer, relationship, err)
 		}
+		assertFollowProjection(t, local.db, owner, peer)
 	}
 	effect, _, err := local.store.DirectConversationEffect(
 		context.Background(),
@@ -1806,6 +1810,33 @@ func newFriendRequestStation(
 ) *friendRequestStation {
 	t.Helper()
 	db := openFriendRequestSQLite(t)
+	if err := db.AutoMigrate(&dbmodel.Actor{}, &dbmodel.Follow{}); err != nil {
+		t.Fatal(err)
+	}
+	for index, actorPTID := range []string{alicePTID, bobPTID} {
+		homeStationID := stationA
+		if actorPTID == bobPTID {
+			homeStationID = stationB
+		}
+		if stationID == "station-local" {
+			homeStationID = stationID
+		}
+		actor := dbmodel.Actor{
+			ID:                uint64(index + 1),
+			PTID:              actorPTID,
+			Namespace:         "peers",
+			PreferredUsername: fmt.Sprintf("fixture-%d", index+1),
+			Email:             fmt.Sprintf("fixture-%d@example.invalid", index+1),
+			PasswordHash:      "fixture",
+			Kind:              "p",
+			FederatedHandle:   fmt.Sprintf("@fixture-%d@%s", index+1, homeStationID),
+			HomeStationPeerID: homeStationID,
+			Origin:            "local",
+		}
+		if err := db.Create(&actor).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	actorDeviceStore := touchactor.NewDeviceStore(db)
 	if err := actorDeviceStore.AutoMigrate(); err != nil {
 		t.Fatal(err)
@@ -1935,6 +1966,35 @@ func newFriendRequestStation(
 		localTransport: localTransport,
 		stationSigner:  signer,
 		clock:          clock,
+	}
+}
+
+func assertFollowProjection(
+	t *testing.T,
+	db *gorm.DB,
+	followerPTID string,
+	followingPTID string,
+) {
+	t.Helper()
+	var count int64
+	if err := db.Table("follows AS follow").
+		Joins("JOIN touch_actor AS follower ON follower.id = follow.follower_id").
+		Joins("JOIN touch_actor AS following ON following.id = follow.following_id").
+		Where(
+			"follower.ptid = ? AND following.ptid = ?",
+			followerPTID,
+			followingPTID,
+		).
+		Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf(
+			"follow projection %s -> %s count = %d, want 1",
+			followerPTID,
+			followingPTID,
+			count,
+		)
 	}
 }
 

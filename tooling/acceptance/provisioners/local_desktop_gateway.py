@@ -33,6 +33,10 @@ from tooling.acceptance.core.provisioning import (
 from tooling.acceptance.fixtures.chat_native_actors import (
     fixture_password,
     produce_actor_manifest,
+    reset_fixture,
+)
+from tooling.acceptance.fixtures.chat_native_reset import (
+    prepare_local_friend_request_lifecycle,
 )
 from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
@@ -93,6 +97,10 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
             "PT_RENDERER_PORT": str(renderer_port),
             "PT_PROFILE": f"{profile_name}-gateway-{run_id}",
             "PEERS_STORAGE_ROOT": str(storage_parent),
+            "DESKTOP_RUST_STARTUP_TIMEOUT_SECONDS": os.environ.get(
+                "DESKTOP_RUST_STARTUP_TIMEOUT_SECONDS",
+                "900",
+            ),
         }
         process = subprocess.Popen(
             ["make", "desktop"],
@@ -108,7 +116,8 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
         def stop_desktop() -> None:
             nonlocal persisted_log
             try:
-                os.killpg(process.pid, signal.SIGTERM)
+                if process.poll() is None:
+                    os.killpg(process.pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
             try:
@@ -280,7 +289,7 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
                     reason="Chat gateway requires one actor Fixture credential",
                     resource="fixture:chat-native-actors",
                 )
-            _, _, actor_ref = produce_actor_manifest(
+            actor_manifest, _, actor_ref = produce_actor_manifest(
                 environment_id=self.environment_id,
                 run_id=manifest.run_id,
                 station_url=station_url,
@@ -292,6 +301,23 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
                     "",
                 ) == "1",
             )
+            if gate_id == "chat-friend-request-gateway-e2e":
+                actor_by_role = {
+                    actor.role: actor
+                    for actor in actor_manifest.actors
+                }
+                self.register_cleanup(
+                    f"chat-fixture-baseline:{deployment_environment}",
+                    lambda: reset_fixture(
+                        deployment_environment,
+                        ("alice", "bob"),
+                    ),
+                )
+                prepare_local_friend_request_lifecycle(
+                    deployment_environment,
+                    actor_by_role["alice"].ptid,
+                    actor_by_role["bob"].ptid,
+                )
             storage_parent = (
                 REPO_ROOT
                 / ".local"

@@ -7,6 +7,7 @@
     "apps/desktop/src/components/chat/FindPeopleModal.tsx",
     "apps/station/app/subserver/social/handler.go",
     "apps/station/app/subserver/social/domain/federated_friend_request.go",
+    "apps/station/app/subserver/social/infrastructure/federated_friend_request_store.go",
     "apps/station/frame/touch/actor/seed_dev_federation.go"
   ],
   "truth_sources": [
@@ -19,7 +20,8 @@
     {"type": "desktop-gateway", "command": "social_friend_request_list"},
     {"type": "desktop-gateway", "command": "social_friend_request_accept"},
     {"type": "desktop-gateway", "command": "social_friend_request_reject"},
-    {"type": "desktop-gateway", "command": "social_relationships_list"}
+    {"type": "desktop-gateway", "command": "social_get_relationship"},
+    {"type": "desktop-gateway", "command": "acceptance_friend_request_context"}
   ],
   "required_gates": ["chat-friend-request-gateway-e2e"],
   "acceptance": {
