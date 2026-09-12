@@ -245,7 +245,7 @@ def identity_state_path(account_id: str) -> Path:
     storage_root = Path(str(clients[0].get("storage_root") or ""))
     require(storage_root.is_absolute(), "gateway storage root must be absolute")
     candidates = list(
-        (storage_root / "peers-touch" / "desktop" / "data" / "account").glob(
+        (storage_root / "desktop" / "data" / "account").glob(
             "*/identities.json"
         )
     )
