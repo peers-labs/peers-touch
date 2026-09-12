@@ -7638,6 +7638,29 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Conversation deletion owner, all cleanup predicates, Gate tuples, timeout,
   provider, and proof requirements. Exact-source C08 and Foundation proof
   remain pending.
+- **Context-overflow proof and interrupted-recovery frontier (2026-09-12)**:
+  checkpoint `09a6897e3d4b4c4399cc53cd69a4a75153f0fe18` used Acceptance
+  binary SHA-256
+  `ee0b1241ee4f414b2f9c56a7ab5c7cd89f95fceb5e9c691115b45d0926210238`
+  and passed exact-source C08 run
+  `20260912T134813555538Z-1f9395aff32137b9257f32727cb728e0fb9ec909287`.
+  Foundation run
+  `20260912T134934601704Z-2a47f9cf4b4e32fb5b07225daad92a1c`
+  proved both context-overflow locale cells with
+  `draftCleared=true`, `localProjectionCleared=true`, and
+  `conversationDeleted=true`, and it also crossed the prior forbidden-actor
+  account-gate timeout with an observed
+  `authenticated -> loggingOut -> accountGate` transition. The first new
+  failure was Browser English `BASE-INTERRUPTED`: terminal snapshot
+  reconciliation cleared the generation-bound recovery record, then the same
+  in-flight `connected` callback continued and recreated it. The first cleanup
+  therefore had only `recoveryRecordCleared=false`; the idempotent retry
+  cleared the late record and passed. The `chatRuntime` owner now rechecks the
+  exact recovery generation after authoritative `connected` reconciliation,
+  stops and persists the closed subscription when reconciliation removed it,
+  and does not publish or consume that stale lifecycle event. A focused
+  runtime regression reproduces the ordering. No sleep, retry, timeout, tuple,
+  assertion, or cleanup weakening is introduced.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

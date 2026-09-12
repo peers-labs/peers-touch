@@ -74,3 +74,29 @@ problem. The proxy remains the source of the outage: the local transport is
 disconnected only after the proxy acknowledges the real cut, solely to discard
 bytes buffered before that acknowledgement. No retry, timeout increase,
 synthetic terminal, or relaxed oracle is introduced.
+
+## Iteration 2: Interrupted Recovery Closure
+
+Exact-source Foundation run
+`20260912T134934601704Z-2a47f9cf4b4e32fb5b07225daad92a1c`
+on `09a6897e3d4b4c4399cc53cd69a4a75153f0fe18` crossed all AS-F06,
+context-overflow, and forbidden-actor cells reached before Browser English
+`BASE-INTERRUPTED`. The first cleanup deleted the Conversation, handoff,
+cleanup locator, and local projection, but reported
+`recoveryRecordCleared=false`. Its idempotent retry cleared the record and
+completed every remaining cleanup fact.
+
+The recovery trace identifies the ordering defect:
+
+1. the terminal snapshot reconciliation reached `RECONCILING`;
+2. reconciliation cleared the active recovery record;
+3. the same in-flight `connected` event continued after the await and recreated
+   the record for the same Turn and stream generation;
+4. cleanup observed the resurrected record before its retry removed it.
+
+The owner-layer correction in `chatRuntime` rechecks the generation-bound
+record after authoritative `connected` reconciliation. If reconciliation
+closed it, the runtime stops that recovery subscription, persists the empty
+state, and does not publish or consume the stale `connected` marker. A focused
+runtime regression recreates this exact ordering. No retry, delay, cleanup
+weakening, or Harness-only suppression is added.

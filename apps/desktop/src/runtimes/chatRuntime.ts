@@ -416,6 +416,16 @@ async function consumeRecoveryEvent(
     await useChatStore
       .getState()
       .reconcileRecoveredTurn(current.conversationId, current.turnId, null);
+    if (!currentRecord(
+      record.conversationId,
+      record.turnId,
+      record.streamGeneration,
+      recoveryEpoch,
+    )) {
+      stopRecoverySubscription(record.conversationId);
+      await persistActiveRecords();
+      return;
+    }
   }
 
   const payload: AgentTurnStreamEventPayload = {
