@@ -279,6 +279,57 @@ class FoundationClientSpecTest(unittest.TestCase):
             client.stop()
         self.assertNotIn("PT_AGENT_PROVIDER_API_KEY", environment)
 
+    def test_managed_launcher_clean_exit_keeps_runtime_readiness_alive(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "browser"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.process = Mock()
+            client.process.poll.return_value = 0
+            client._managed_runtime_started = True
+
+            self.assertTrue(client._process_alive())
+            client._managed_runtime_started = False
+            client.stop()
+
+    def test_managed_launcher_failure_still_fails_fast(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "browser"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.process = Mock()
+            client.process.poll.return_value = 2
+            client._managed_runtime_started = True
+
+            with self.assertRaisesRegex(
+                FoundationClientError,
+                "browser exited with code 2",
+            ):
+                client._process_alive()
+            client._managed_runtime_started = False
+            client.stop()
+
+    def test_unmanaged_launcher_clean_exit_still_fails_fast(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "browser"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.process = Mock()
+            client.process.poll.return_value = 0
+
+            with self.assertRaisesRegex(
+                FoundationClientError,
+                "browser exited with code 0",
+            ):
+                client._process_alive()
+            client.stop()
+
     def test_runtime_pair_requires_exact_native_and_browser_clients(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

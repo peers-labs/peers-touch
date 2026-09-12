@@ -898,11 +898,14 @@ class FoundationRuntimeClient:
     def _process_alive(self) -> bool:
         if self.process is None:
             return False
-        if self.process.poll() is not None:
-            raise FoundationClientError(
-                f"{self.spec.runtime} exited with code {self.process.returncode}"
-            )
-        return True
+        return_code = self.process.poll()
+        if return_code is None:
+            return True
+        if self._managed_runtime_started and return_code == 0:
+            return True
+        raise FoundationClientError(
+            f"{self.spec.runtime} exited with code {return_code}"
+        )
 
     # #region debug-point E-H:native-harness-snapshot
     def _native_harness_debug_snapshot(self) -> dict[str, Any]:

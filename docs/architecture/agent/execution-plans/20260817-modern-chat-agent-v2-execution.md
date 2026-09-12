@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T102443766254Z-b54c0863776672d25291bfe12d204847` on `0a8c04977ad1d951d1970d550df74df9f5ee49a5` passed with clean cleanup; Foundation runs `20260912T101751744551Z-8c254412faed073c37cfce05934b7b99` and `20260912T102603877808Z-15c8bb3648cb9ef33b1526c79f66fa78` then failed before any product tuple because devctl replaced the Provisioner-assigned client profile/storage with shared development defaults, leaving one Station capability session and zero local sessions; the owner-layer identity fix passes focused local checks, but exact-source post-fix C08 and Foundation remain pending; the product frontier remains Browser English `BASE-CONTEXT-OVERFLOW / cleanupComplete` under retained instrumentation | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T105004727136Z-0d64e02674e4c9ce26eed7d76bace6fe` on `a3979445150bce05158bd0bdc23b0943bedc4c3f` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T110041844602Z-ec9969fcf6c374c695bba2d8d74fcd51` proved the isolated profiles/storage and initial capability-session enrollment, then failed during AS-F06 Browser restart because the successful one-shot devctl launcher exit was misclassified as runtime death; cleanup passed; the owner-layer lifecycle fix passes focused local checks, but exact-source post-fix C08 and Foundation remain pending; the product frontier remains Browser English `BASE-CONTEXT-OVERFLOW / cleanupComplete` under retained instrumentation | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7535,6 +7535,28 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   changed. Clean checkpoint, dedicated-binary rebuild/smoke, exact-source
   deployment, C08-first proof, and the unchanged Foundation matrix remain
   pending.
+- **Foundation managed-launcher lifecycle diagnostic (2026-09-12)**:
+  checkpoint `a3979445150bce05158bd0bdc23b0943bedc4c3f` produced
+  dedicated binary SHA-256
+  `aa9b848f40056dc03729745af17814f375f2eaceb5d4b56c71e92005bd0e6d45`,
+  passed embedded-WebDriver smoke, deployed exact source, and passed C08 run
+  `20260912T105004727136Z-0d64e02674e4c9ce26eed7d76bace6fe`
+  with `19/19` assertions and complete cleanup. Foundation run
+  `20260912T110041844602Z-ec9969fcf6c374c695bba2d8d74fcd51`
+  then used the manifest-assigned Native and Browser profile/storage roots and
+  crossed initial capability-session enrollment, proving the preceding devctl
+  identity fix. During AS-F06 Browser restart, the compatibility
+  `make desktop-web` launcher returned code 0 after devctl transferred
+  lifecycle ownership to detached managed children; the Foundation client
+  treated that successful one-shot command exit as runtime death and exhausted
+  the existing bounded startup wait. Provisioner cleanup remained
+  `DONE / PROVEN` and released all client processes, ports, and storage. The
+  Foundation runtime owner now accepts only a code-0 managed-launcher handoff
+  while retaining immediate failure for direct launchers and nonzero managed
+  exits. Focused Foundation runtime/scenario tests pass `74/74`; Agent static
+  tests pass `85/85`; hard rules and diff hygiene pass. No Gate assertion,
+  timeout, product behavior, or cleanup contract changed. Clean checkpoint and
+  same-source C08-first/Foundation proof remain pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

@@ -18,6 +18,7 @@
 | B | The prior Chrome session or reused profile remains live enough to interfere with the replacement session | Medium | Low | The replacement starts while old Chrome process/session state or the profile lock is still present |
 | C | The Browser renderer process becomes unhealthy between port readiness and navigation | Medium | Low | Gateway/renderer ports are initially open but process state or renderer readiness changes before navigation completes |
 | D | `start()` closes the run-owned fault proxy after the Browser connection failure, so later cleanup cannot restart the same client | High | Low | Startup rollback records the proxy changing from alive/open to closed before cleanup calls `restart()` |
+| E | The compatibility `make desktop-web` launcher exits successfully after devctl transfers ownership to detached children, but `_process_alive()` misclassifies that code-0 completion as Browser runtime death | High | Low | Confirmed on `a39794451`: the post-identity-fix Foundation run waited the full startup deadline and ended with `browser exited with code 0`; devctl-owned ports were released by cleanup |
 
 ## Instrumentation Plan
 - `FoundationRuntimeClient.start`: record runtime, restart generation, process state, and fault-proxy/controller liveness at entry, after process launch, and on rollback.
@@ -46,10 +47,28 @@
 - The Gate advanced into Native AS-F06 and failed at the final Native
   preparation with `foundationRecoveryTurnAlreadyTerminal`. Provisioner cleanup
   passed.
+- Exact-source run
+  `20260912T110041844602Z-ec9969fcf6c374c695bba2d8d74fcd51`
+  on `a3979445150bce05158bd0bdc23b0943bedc4c3f` crossed initial
+  Native/Browser capability-session enrollment after preserving both
+  run-scoped client identities. During AS-F06 Browser restart, the Make/devctl
+  launcher completed normally with code 0 before the readiness poll observed
+  both ports. `_process_alive()` treated that successful handoff as a runtime
+  crash, so the bounded startup wait ended with
+  `timed out waiting for Browser gateway and renderer; last error: browser
+  exited with code 0`. Provisioner cleanup passed and released all client
+  ports and storage.
+- The minimal lifecycle fix accepts code-0 completion only after devctl has
+  assumed managed-runtime ownership. Direct launchers and any nonzero managed
+  launcher exit still fail immediately. Focused Foundation runtime/scenario
+  tests pass `74/74`; Agent static tests pass `85/85`; hard rules and diff
+  hygiene pass. Exact-source post-fix runtime comparison remains pending.
 
 ## Verification Conclusion
-Hypotheses A, B, and C are rejected for the controlled run. Hypothesis D
-correctly explains the secondary cleanup cascade in the original failure, but
-the primary Browser timeout did not reproduce and no Browser behavior change is
-justified. Keep this session open until the user confirmation gate. The current
-G-F blocker is tracked separately by `foundation-f06-terminal-race`.
+Hypotheses A, B, and C are rejected for the earlier controlled run. Hypothesis D
+correctly explains the secondary cleanup cascade in the original failure.
+Hypothesis E is confirmed for the latest synchronized devctl lifecycle: a
+successful one-shot launcher was mistaken for the detached runtime it created.
+The owner-layer fix preserves fail-fast behavior for real launcher failures.
+Keep this session open until exact-source post-fix Foundation evidence and the
+user confirmation gate.
