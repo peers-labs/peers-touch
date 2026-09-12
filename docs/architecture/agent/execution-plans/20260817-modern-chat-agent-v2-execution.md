@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T184141268751Z-7159a0985434bdfdb6886536d4934e98` on `dcbe51435408bf25c46de3adff5bdfa01aa6b7aa` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260912T184304342469Z-8866672e9f3932fc3fcfbcf6932d1773` proved all four AS-F06 tuples, then failed only Browser English `BASE-CONTEXT_OVERFLOW / cleanupComplete`; N-Q telemetry proves the empty owner request committed before local Conversation removal switched `currentSessionKey` and restored a surviving topic's 57-character draft; the local Harness fix now removes the scenario projection before issuing the final production `fillComposer('')` request and samples the current textarea; Desktop `622/622`, Agent focused `266/266`, strict check, production build, Acceptance planning/self-tests, and diff hygiene pass; exact-source post-fix proof remains pending; the `BASE-INTERRUPTED` recovery fence remains locally verified but has not yet been reached by the current full Gate | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T184141268751Z-7159a0985434bdfdb6886536d4934e98` on `dcbe51435408bf25c46de3adff5bdfa01aa6b7aa` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260912T184304342469Z-8866672e9f3932fc3fcfbcf6932d1773` proved all four AS-F06 tuples, then failed only Browser English `BASE-CONTEXT_OVERFLOW / cleanupComplete`; N-Q telemetry proves the empty owner request committed before local Conversation removal switched `currentSessionKey` and restored a surviving topic's 57-character draft; checkpoint `ab765cb9543819cb519e3a29d00e819925463255` now removes the scenario projection before issuing the final production `fillComposer('')` request and samples the current textarea; Desktop `622/622`, Agent focused `266/266`, strict check, production build, Acceptance planning/self-tests, and diff hygiene pass; exact-source post-fix proof remains pending; the `BASE-INTERRUPTED` recovery fence remains locally verified but has not yet been reached by the current full Gate | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7776,7 +7776,10 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   existing environment-only skip; Agent focused tests pass `266/266`;
   Desktop strict check, production build, Acceptance planner/self-tests, and
   diff hygiene pass. Domain proof validation remains fail-closed until a
-  clean source-matching Gate run is available.
+  clean source-matching Gate run is available. The implementation and
+  diagnostic record are committed at
+  `ab765cb9543819cb519e3a29d00e819925463255`; the next action is final
+  documentation synchronization followed by Native binary rebuild and smoke.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

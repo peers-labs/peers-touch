@@ -22,11 +22,11 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Checkpoint and exact-source prove the `BASE-CONTEXT_OVERFLOW` cleanup owner-ordering fix |
+| Current step | Rebuild and smoke the dedicated Native Acceptance binary for the `BASE-CONTEXT_OVERFLOW` cleanup owner-ordering fix |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | C08 run `20260912T184141268751Z-7159a0985434bdfdb6886536d4934e98` on `dcbe51435408bf25c46de3adff5bdfa01aa6b7aa` completed `DONE / PROVEN`；same-source Foundation run `20260912T184304342469Z-8866672e9f3932fc3fcfbcf6932d1773` proved all four AS-F06 tuples and then isolated Browser English `BASE-CONTEXT_OVERFLOW / cleanupComplete` to a cleanup-driven session transition restoring a surviving topic draft |
-| Current action | Preserve per-topic product draft semantics while ordering Harness cleanup as local projection removal followed by current-owner `fillComposer('')` acknowledgement |
-| Next action | Create a clean checkpoint, rebuild/smoke, deploy exact source, run C08 first, and rerun the full Foundation Gate |
+| Last completed | Fix checkpoint `ab765cb9543819cb519e3a29d00e819925463255` preserves per-topic product drafts while ordering Harness cleanup as local projection removal followed by current-owner `fillComposer('')`; local Desktop `622/622`, Agent focused `266/266`, strict check, production build, Acceptance planning/self-tests, and diff hygiene pass |
+| Current action | Synchronize the clean checkpoint, rebuild/smoke the dedicated Acceptance binary, and bind it to the final source identity |
+| Next action | Deploy exact source, run C08 first, and rerun the full Foundation Gate |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |

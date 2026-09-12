@@ -313,3 +313,6 @@ semantics, Gate tuple, timeout, or assertion strength.
 - Agent Domain validation remains fail-closed because the latest runtime
   evidence predates the uncommitted source; it must be rerun after the clean
   checkpoint and exact-source Gates.
+- Implementation, ordering regression, and this evidence record are committed
+  at `ab765cb9543819cb519e3a29d00e819925463255`; the session remains `[OPEN]`
+  for exact-source post-fix comparison.
