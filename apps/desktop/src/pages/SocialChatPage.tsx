@@ -132,6 +132,7 @@ export function SocialChatPage() {
 
     const intent = beginDirectConversationOpen(contact);
     setDirectOpenIntent(intent);
+    selectSession('');
     setSubPage('chats');
 
     // #region debug-point C:cross-station-direct-open
@@ -280,6 +281,7 @@ export function SocialChatPage() {
   return (
     <Flexbox
       data-social-chat-layout
+      data-chat-active-peer-ptid={activePeerDid ?? ''}
       data-chat-side-panel-open={openThreadRootUlid || showDetail ? 'true' : 'false'}
       horizontal
       style={{ height: '100%', minHeight: 0, width: '100%', overflowX: 'auto', overflowY: 'hidden' }}

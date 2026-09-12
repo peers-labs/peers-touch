@@ -148,3 +148,21 @@ describe('contacts panel projection subscriptions', () => {
     expect(source).toContain('groupMembers: s.groupMembers');
   });
 });
+
+describe('contact message routing', () => {
+  const source = readFileSync(
+    new URL('../../pages/SocialChatPage.tsx', import.meta.url),
+    'utf8',
+  );
+
+  it('clears a stale conversation before rendering a new Direct-open intent', () => {
+    const begin = source.indexOf('const intent = beginDirectConversationOpen(contact);');
+    const clear = source.indexOf("selectSession('');", begin);
+    const showChats = source.indexOf("setSubPage('chats');", begin);
+
+    expect(begin).toBeGreaterThan(-1);
+    expect(clear).toBeGreaterThan(begin);
+    expect(clear).toBeLessThan(showChats);
+    expect(source).toContain('data-chat-active-peer-ptid={activePeerDid ??');
+  });
+});

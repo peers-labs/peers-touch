@@ -57,6 +57,7 @@
 | AM | Alice's Station authentication or token validation failed. | Low | Low | Rejected: `auth_login`, repeated `auth_validate_token`, profile sync, and authenticated actor projection all succeeded. |
 | AN | WebDriver or the native Alice process died during login. | Low | Low | Rejected: the native log continued through post-login projections, runtime-log audit was clean, and cleanup stopped the live client normally. |
 | AO | The Desktop remained stuck before critical or deferred runtime completion. | Medium | Low | Rejected: `runtime:critical:end`, `runtime:idle:end`, and `deferred projections installed` all completed before Selenium canceled the async script. |
+| AP | Contacts projects mutual friends from an unpopulated `FederationSelfView.joined_federations`, so a new contact has no Federation scope; Direct creation fails while the previous Bob session remains selected. | High | Low | Confirmed and fixed locally: Carol carried the exact Carol PTID but empty `federationId`, `messaging_create_direct` returned `peer_ptid and federation_id are required`, and Bob stayed visible. Chat now consumes the runtime-owned Federation list, clears the stale session before creation, and opens Carol as `direct-8a347c66c96357574bbf4a9e5ba795f6`. |
 
 ## Log Evidence
 - Pre-debug Gate `20260904T045902948981Z-417027f393536e2374d0c23805f7e141`:

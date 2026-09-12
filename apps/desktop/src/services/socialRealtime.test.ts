@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { create, toBinary } from '@bufbuild/protobuf';
 
 import { EVENT, eventBus } from '../kernel/events';
+import {
+  FriendChatMessageSchema,
+  FriendMessageType,
+} from '../gen/proto/domain/chat/friend_chat_pb';
 import {
   installSocialRealtimeBridge,
   teardownSocialRealtimeBridge,
@@ -35,6 +40,7 @@ const mocks = vi.hoisted(() => ({
   loadGroupMembers: vi.fn(),
   loadConversationPreviews: vi.fn(),
   loadMessages: vi.fn(),
+  markFriendRead: vi.fn(),
   markGroupRead: vi.fn(),
   ingestRealtimeMessage: vi.fn(),
   loadMutualFriends: vi.fn(),
@@ -42,6 +48,8 @@ const mocks = vi.hoisted(() => ({
   bumpChatUnread: vi.fn(),
   clearChatUnread: vi.fn(),
   currentActorPtid: null as string | null,
+  activeTab: 'group' as 'friend' | 'group',
+  activeSessionUlid: null as string | null,
 }));
 
 const originalWindow = globalThis.window;
@@ -67,12 +75,13 @@ vi.mock('../store/socialChat', () => ({
   useSocialChatStore: {
     getState: () => ({
       currentUserPtid: 'did:peer:self',
-      activeTab: 'group',
       sessions: [],
       groups: [],
       conversationLocalState: {},
       messages: {},
+      activeSessionUlid: mocks.activeSessionUlid,
       activeGroupUlid: 'group-1',
+      activeTab: mocks.activeTab,
       selectGroup: mocks.selectGroup,
       loadSessions: mocks.loadSessions,
       loadGroups: mocks.loadGroups,
@@ -81,6 +90,7 @@ vi.mock('../store/socialChat', () => ({
       loadGroupMembers: mocks.loadGroupMembers,
       loadConversationPreviews: mocks.loadConversationPreviews,
       loadMessages: mocks.loadMessages,
+      markFriendRead: mocks.markFriendRead,
       markGroupRead: mocks.markGroupRead,
       ingestRealtimeMessage: mocks.ingestRealtimeMessage,
       bumpChatUnread: mocks.bumpChatUnread,
@@ -153,8 +163,11 @@ describe('social realtime group membership side effects', () => {
     mocks.loadGroupMembers.mockResolvedValue(undefined);
     mocks.loadConversationPreviews.mockResolvedValue(undefined);
     mocks.loadMessages.mockResolvedValue(undefined);
+    mocks.markFriendRead.mockResolvedValue(undefined);
     mocks.markGroupRead.mockResolvedValue(undefined);
     mocks.currentActorPtid = null;
+    mocks.activeTab = 'group';
+    mocks.activeSessionUlid = null;
     teardownSocialRealtimeBridge();
     installSocialRealtimeBridge();
   });
@@ -204,6 +217,60 @@ describe('social realtime group membership side effects', () => {
       expect(mocks.loadGroupUnreadCounts).toHaveBeenCalled();
       expect(mocks.loadConversationPreviews).toHaveBeenCalled();
     });
+  });
+
+  it('advances the read cursor when a Direct message arrives in the visible conversation', async () => {
+    mocks.activeTab = 'friend';
+    mocks.activeSessionUlid = 'direct-1';
+
+    eventBus.publish(EVENT.REALTIME_MESSAGE_RECEIVED, {
+      eventId: 'stream-event-direct-1',
+      sessionUlid: 'direct-1',
+      messageUlid: 'message-direct-1',
+      senderActorPtid: 'ptid:bob',
+      recipientActorPtid: 'did:peer:self',
+      ciphertext: toBinary(FriendChatMessageSchema, create(FriendChatMessageSchema, {
+        ulid: 'message-direct-1',
+        sessionUlid: 'direct-1',
+        senderPtid: 'ptid:bob',
+        receiverPtid: 'did:peer:self',
+        type: FriendMessageType.TEXT,
+        content: 'hello',
+      })),
+      sentTsUnixMs: 123,
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.loadMessages).toHaveBeenCalledWith('direct-1', 'friend');
+      expect(mocks.markFriendRead).toHaveBeenCalledWith('direct-1');
+    });
+  });
+
+  it('does not advance the read cursor for an inactive Direct conversation', async () => {
+    mocks.activeTab = 'friend';
+    mocks.activeSessionUlid = 'direct-active';
+
+    eventBus.publish(EVENT.REALTIME_MESSAGE_RECEIVED, {
+      eventId: 'stream-event-direct-2',
+      sessionUlid: 'direct-inactive',
+      messageUlid: 'message-direct-2',
+      senderActorPtid: 'ptid:bob',
+      recipientActorPtid: 'did:peer:self',
+      ciphertext: toBinary(FriendChatMessageSchema, create(FriendChatMessageSchema, {
+        ulid: 'message-direct-2',
+        sessionUlid: 'direct-inactive',
+        senderPtid: 'ptid:bob',
+        receiverPtid: 'did:peer:self',
+        type: FriendMessageType.TEXT,
+        content: 'hello',
+      })),
+      sentTsUnixMs: 124,
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.loadConversationPreviews).toHaveBeenCalled();
+    });
+    expect(mocks.markFriendRead).not.toHaveBeenCalled();
   });
 
   it('coalesces overlapping realtime resync requests into a serial cold resync lane', async () => {

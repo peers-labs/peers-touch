@@ -345,19 +345,9 @@ export function projectDesktopIMMessages(
   conversationId: string,
   messages: SocialMessage[],
 ): DesktopIMMessageProjection[] {
-  return messages
-    .map((message) => projectDesktopIMMessage(kind, conversationId, message))
-    .sort((a, b) => {
-      if (a.eventSequence > 0 && b.eventSequence > 0) {
-        const sequenceDelta = a.eventSequence - b.eventSequence;
-        if (sequenceDelta !== 0) return sequenceDelta;
-      } else if (a.eventSequence > 0 || b.eventSequence > 0) {
-        return a.eventSequence > 0 ? -1 : 1;
-      }
-      const timestampDelta = a.sentAtMs - b.sentAtMs;
-      if (timestampDelta !== 0) return timestampDelta;
-      return a.id.localeCompare(b.id);
-    });
+  return messages.map((message) => (
+    projectDesktopIMMessage(kind, conversationId, message)
+  ));
 }
 
 export function applyPresenceToMap(

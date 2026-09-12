@@ -47,6 +47,7 @@ REQUIRED_ASSERTIONS = {
     "native_runtime",
     "actor_isolation",
     "default_friend_projection",
+    "contact_message_routes_selected_peer",
     "existing_friend_search_state",
     "group_created",
     "member_added",
@@ -56,6 +57,8 @@ REQUIRED_ASSERTIONS = {
 
 SELECTORS = {
     "chat_nav": '[data-pt-primary-nav="chat"]',
+    "contacts_subpage": '[data-chat-subpage="contacts"]',
+    "contact_message": "[data-chat-contact-message]",
     "new_menu": "[data-chat-new-menu]",
     "create_group_menu": "[data-chat-create-group-menu]",
     "create_group": "[data-chat-create-group]",
@@ -531,8 +534,76 @@ class NativeGroupMlsGate(AcceptanceGate):
             STEP_TIMEOUT,
         )
         alice.find_element(".ant-modal-close", 10).click()
+
+        alice.find_element(SELECTORS["contacts_subpage"], 10).click()
+        contact_selector = (
+            f'[data-chat-contact-ptid={json.dumps(self.ptids["charlie"])}]'
+        )
+
+        def contact_route_ready() -> dict[str, Any] | None:
+            value = alice.execute_script(
+                """
+                const row = document.querySelector(arguments[0]);
+                if (!row) return null;
+                return {
+                  peerPtid: row.getAttribute('data-chat-contact-ptid') || '',
+                  federationId:
+                    row.getAttribute('data-chat-contact-federation-id') || '',
+                };
+                """,
+                contact_selector,
+            )
+            if not isinstance(value, dict):
+                return None
+            return value if (
+                value.get("peerPtid") == self.ptids["charlie"]
+                and bool(value.get("federationId"))
+            ) else None
+
+        route = wait_until(
+            contact_route_ready,
+            "selected contact has explicit federation scope",
+            STEP_TIMEOUT,
+        )
+        alice.find_element(contact_selector, 10).click()
+        alice.find_element(SELECTORS["contact_message"], 10).click()
+
+        def selected_peer_route() -> dict[str, Any] | None:
+            value = alice.execute_script(
+                """
+                const layout = document.querySelector(
+                  '[data-social-chat-layout]',
+                );
+                const pane = document.querySelector(
+                  '[data-chat-conversation-pane]',
+                );
+                if (!layout || !pane) return null;
+                return {
+                  activePeerPtid:
+                    layout.getAttribute('data-chat-active-peer-ptid') || '',
+                  conversationId:
+                    pane.getAttribute('data-chat-conversation-pane') || '',
+                };
+                """,
+            )
+            if not isinstance(value, dict):
+                return None
+            return value if (
+                value.get("activePeerPtid") == self.ptids["charlie"]
+                and bool(value.get("conversationId"))
+            ) else None
+
+        direct = wait_until(
+            selected_peer_route,
+            "contact Message routes to the selected peer",
+            STEP_TIMEOUT,
+        )
         return {
             "contacts": contacts,
+            "direct": {
+                **route,
+                **direct,
+            },
             "search": search,
         }
 
@@ -676,6 +747,12 @@ class NativeGroupMlsGate(AcceptanceGate):
                     self.ptids["bob"],
                     self.ptids["charlie"],
                 }.issubset(set(friendship["contacts"]["contacts"])),
+            )
+            self.assert_condition(
+                "contact_message_routes_selected_peer",
+                friendship["direct"]["peerPtid"] == self.ptids["charlie"]
+                and friendship["direct"]["activePeerPtid"]
+                == self.ptids["charlie"],
             )
             self.assert_condition(
                 "existing_friend_search_state",

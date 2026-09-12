@@ -10,6 +10,7 @@ import type { FriendRequestData } from './socialNormalizers';
 import {
   projectChatFriendContacts,
   projectMutualFriends,
+  singleFederationId,
 } from './friendshipProjection';
 
 function conversation(
@@ -126,7 +127,7 @@ describe('projectChatFriendContacts', () => {
     ]);
   });
 
-  it('assigns the current joined federation before a Direct conversation exists', () => {
+  it('assigns the sole available federation before a Direct conversation exists', () => {
     const contacts = projectChatFriendContacts(
       [{
         actorPtid: 'ptid:carol',
@@ -147,5 +148,20 @@ describe('projectChatFriendContacts', () => {
       federationId: 'federation-current',
     });
     expect(contacts[0]?.conversationId).toBeUndefined();
+  });
+});
+
+describe('singleFederationId', () => {
+  it('returns the only explicit federation scope', () => {
+    expect(singleFederationId([
+      { federationId: 'federation-current' },
+    ])).toBe('federation-current');
+  });
+
+  it('does not guess when multiple federation scopes are available', () => {
+    expect(singleFederationId([
+      { federationId: 'federation-a' },
+      { federationId: 'federation-b' },
+    ])).toBe('');
   });
 });

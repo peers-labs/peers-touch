@@ -5,7 +5,10 @@ import { Button, Tag } from '@lobehub/ui';
 import { Alert, Collapse, Empty, Spin, theme, Typography } from 'antd';
 import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
 import { currentAuthenticatedActorPtid } from '../../store/session';
-import { projectChatFriendContacts } from '../../store/friendshipProjection';
+import {
+  projectChatFriendContacts,
+  singleFederationId,
+} from '../../store/friendshipProjection';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { log } from '../../utils/logger';
 import {
@@ -73,7 +76,7 @@ export function ChatContactsPanel({
     mutualFriendsLoadedAt: s.mutualFriendsLoadedAt,
     mutualFriendsError: s.mutualFriendsError,
   }));
-  const joinedFederations = useActiveChatFederationSlice((s) => s.self?.joinedFederations);
+  const federations = useActiveChatFederationSlice((s) => s.federations);
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
   const conversations = useMemo(
@@ -114,9 +117,9 @@ export function ChatContactsPanel({
       conversations,
       friendRequests,
       myDid,
-      joinedFederations?.[0]?.federationId ?? '',
+      singleFederationId(federations),
     ),
-    [conversations, friendRequests, joinedFederations, mutualFriends, myDid],
+    [conversations, federations, friendRequests, mutualFriends, myDid],
   );
 
   const totalContacts = friendContacts.length;
@@ -469,6 +472,8 @@ export function ChatContactsPanel({
                 <Flexbox
                   key={friend.actorPtid}
                   data-chat-contact-ptid={friend.actorPtid}
+                  data-chat-contact-conversation-id={friend.conversationId ?? ''}
+                  data-chat-contact-federation-id={friend.federationId}
                   horizontal
                   align="center"
                   gap={9}
