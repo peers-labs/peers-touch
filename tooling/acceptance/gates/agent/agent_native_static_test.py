@@ -1657,6 +1657,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
         self.assertIn("document.activeElement === textarea", scenario)
+        self.assertIn("await setFoundationComposerDraft(", scenario)
+        self.assertIn(
+            "useChatStore.getState().fillComposer(value)",
+            self.source,
+        )
+        self.assertIn(
+            "useChatStore.getState().composerFill === null",
+            self.source,
+        )
+        self.assertNotIn("HTMLTextAreaElement.prototype", scenario)
         self.assertIn("providerExecutionDelta", scenario)
         self.assertIn("messageDelta", scenario)
         self.assertIn("queueDelta", scenario)

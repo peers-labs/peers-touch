@@ -163,3 +163,51 @@ The owner-layer fix replaces only those four stale comparisons with the
 canonical matrix ID and adds a static regression that rejects the hyphenated
 alias. The Gate matrix, timeout, assertions, provider, and cleanup requirements
 remain unchanged.
+
+## Iteration 6: Controlled Composer Draft Writeback
+
+Exact-source Foundation run
+`20260912T144543109509Z-bc0f12ef86eccfff0a1261c8526c6f7b`
+on `b4d086986beb22cf7bcd345157d7b10e69d2efcf` reached Browser English
+`BASE-CONTEXT_OVERFLOW` and failed only `cleanupComplete`.
+
+The retained events establish the transition:
+
+- `scenario-cleanup-sampled`: `draftCleared=true`,
+  `localProjectionCleared=true`;
+- `cleanup-dispatch-entered`: `draftCleared=false`,
+  `localProjectionCleared=true`, `conversationDeleted=false`;
+- `cleanup-deletion-completed`: `draftCleared=false`,
+  `localProjectionCleared=true`, `conversationDeleted=true`;
+- `assertion-input`: `draftCleared=false`,
+  `localProjectionCleared=true`, `conversationDeleted=true`.
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal | Evidence |
+|----|------------|------------|--------|-----------------|----------|
+| J | Harness mutates the controlled textarea DOM without updating the `ChatInput` draft owner, so React later writes the retained reduced draft back. | High | Low | DOM is empty immediately, then becomes non-empty without a new Harness fill request; `ChatInput` remains controlled by local `input` state. | Confirmed: runtime transition above plus `ChatInput.tsx` binds `value={input}` while the Harness uses the native textarea setter. |
+| K | A pending `composerFill` request writes the reduced draft after cleanup. | Low | Low | The reduced draft is requested through `fillComposer` and consumed after cleanup starts. | Rejected: the scenario uses the DOM setter for the reduced draft; no reduced-draft `composerFill` request exists. |
+| L | A session-key transition restores the reduced draft from `topicDraftRef`. | Medium | Medium | `currentSessionKey` changes between scenario cleanup and shared deletion. | Not required to explain the observed writeback; no session selection occurs in that interval. |
+| M | Conversation deletion or local projection cleanup restores the draft. | Low | Low | Draft changes only after deletion/projection mutation. | Rejected: draft is already non-empty before deletion starts while local projection cleanup remains true. |
+
+The broken state is the client-local composer draft. `ChatInput` is its owner,
+and `useChatStore.fillComposer()` is the existing production request channel
+that updates that owner. The Harness must use that channel for reduced and empty
+draft transitions and wait for both request consumption and controlled DOM
+commit before recording cleanup. Direct prototype-setter mutation is not an
+authoritative product action and must be removed from this scenario.
+
+The local correction now does that for the reduced draft, normal cleanup,
+scenario-failure cleanup, and outer cleanup. Static coverage rejects restoring
+the prototype setter. Post-fix exact-source runtime evidence is pending; this
+session remains `[OPEN]`.
+
+## Iteration 6 Local Verification
+
+- Agent Acceptance tests: `418/418` PASS.
+- Agent native static tests: `85/85` PASS.
+- Desktop Vitest: `622/622` PASS with one existing environment-only skip.
+- Desktop strict check: PASS.
+- Desktop production build: PASS.
+- Acceptance planner, Provisioner, runner, validator, responsibility-boundary,
+  Gap Detector, coverage, and quality self-tests: PASS.
+- `git diff --check`: PASS.

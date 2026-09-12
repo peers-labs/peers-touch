@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T112721385973Z-279bb5e3f6b8b59a48213b223ef3508f` on `68417f9f19bf8e2a78700dd2799edd4e958ea7db` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T112845134359Z-c05aa8bcfaf45a91f7e171c27a90c915` crossed managed launcher handoff and Browser English AS-F06, then failed when Browser Simplified Chinese consumed an already-buffered terminal frame one millisecond after the real proxy cut acknowledgement; cleanup passed after outer recovery; the owner-layer buffered-frame and idempotent cleanup corrections pass focused local checks, but exact-source post-fix C08 and Foundation remain pending; the product frontier after AS-F06 remains Browser English `BASE-CONTEXT-OVERFLOW / cleanupComplete` under retained instrumentation | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T144402476036Z-831b8f4aad987ea9bb221f17361d5736` on `b4d086986beb22cf7bcd345157d7b10e69d2efcf` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T144543109509Z-bc0f12ef86eccfff0a1261c8526c6f7b` reached Browser English `BASE-CONTEXT_OVERFLOW` and failed only `cleanupComplete` because the Harness directly cleared a controlled textarea DOM node while `ChatInput` retained the reduced draft; the local correction uses the production `fillComposer` owner path and passes local checks, but exact-source post-fix C08 and Foundation remain pending; the `BASE-INTERRUPTED` recovery fence is locally verified but has not yet been reached by the post-fix full Gate | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7661,6 +7661,32 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   and does not publish or consume that stale lifecycle event. A focused
   runtime regression reproduces the ordering. No sleep, retry, timeout, tuple,
   assertion, or cleanup weakening is introduced.
+- **Controlled composer cleanup correction (2026-09-12)**: checkpoint
+  `b4d086986beb22cf7bcd345157d7b10e69d2efcf` used dedicated Acceptance
+  binary SHA-256
+  `4ef0c9ca15894ae1ece881999360ad5ed29e38f8804e33e732352baa213310be`
+  and passed exact-source C08 run
+  `20260912T144402476036Z-831b8f4aad987ea9bb221f17361d5736`.
+  Foundation run
+  `20260912T144543109509Z-bc0f12ef86eccfff0a1261c8526c6f7b`
+  then failed first at Browser English
+  `BASE-CONTEXT_OVERFLOW / cleanupComplete`. Retained telemetry showed the
+  native textarea value empty immediately after Harness cleanup, then
+  non-empty before shared deletion; `localProjectionCleared=true` and
+  `conversationDeleted=true` remained valid. The source owner is
+  `ChatInput`'s controlled local draft, while the Harness had bypassed it with
+  `HTMLTextAreaElement.prototype.value`. The local correction routes reduced
+  and empty draft transitions through the existing production
+  `useChatStore.fillComposer()` request, waits for request consumption and the
+  controlled DOM commit, and removes the direct setter from success and
+  cleanup paths. It also updates the stale static budget-error assertion to
+  preserve the accepted conditional `interrupted` terminal state. Agent
+  Acceptance tests pass `418/418`; Desktop tests pass `622/622` with one
+  existing environment-only skip; Desktop strict check, production build,
+  and diff hygiene pass. No product state, matrix tuple, timeout, cleanup
+  predicate, or provider behavior changed. Exact-source post-fix C08,
+  Foundation, and the separately selected stream-resilience Gate remain
+  pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

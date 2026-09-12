@@ -1100,6 +1100,28 @@ function clearFoundationLocalConversationProjection(
   });
 }
 
+async function setFoundationComposerDraft(
+  value: string,
+  label: string,
+): Promise<HTMLTextAreaElement> {
+  const textarea = document.querySelector<HTMLTextAreaElement>(
+    '[data-pt-agent-composer-input]',
+  );
+  if (!textarea) {
+    throw new Error('agent.acceptance.foundationComposerInputMissing');
+  }
+  useChatStore.getState().fillComposer(value);
+  await waitFor(
+    () => (
+      useChatStore.getState().composerFill === null
+      && textarea.value === value
+    ),
+    label,
+    10_000,
+  );
+  return textarea;
+}
+
 async function cancelFoundationQueuedTurns(
   conversationId: string,
   maximumCancellations = Number.POSITIVE_INFINITY,
@@ -5461,22 +5483,6 @@ async function runFoundationContextOverflowScenario(input: {
   const reducedDraft = `Reduced context ${input.sampleId}`;
   let baselineTurnId = '';
 
-  const setComposerDraft = (value: string) => {
-    const textarea = document.querySelector<HTMLTextAreaElement>(
-      '[data-pt-agent-composer-input]',
-    );
-    const setTextareaValue = Object.getOwnPropertyDescriptor(
-      window.HTMLTextAreaElement.prototype,
-      'value',
-    )?.set;
-    if (!textarea || !setTextareaValue) {
-      throw new Error('agent.acceptance.foundationComposerInputMissing');
-    }
-    setTextareaValue.call(textarea, value);
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    return textarea;
-  };
-
   try {
     await useChatStore.getState().selectSession(conversation.conversation_id);
     const baseline = await withFoundationCapabilitiesDisabled(
@@ -5698,11 +5704,9 @@ async function runFoundationContextOverflowScenario(input: {
       10_000,
     );
     const composerFocusedAfterRecovery = document.activeElement === textarea;
-    setComposerDraft(reducedDraft);
-    await waitFor(
-      () => textarea.value === reducedDraft,
+    await setFoundationComposerDraft(
+      reducedDraft,
       'context overflow reduced draft',
-      10_000,
     );
     // #region debug-point A-D:context-overflow-post-recovery
     await reportFoundationContextOverflowRecoveryDebug(
@@ -5765,7 +5769,10 @@ async function runFoundationContextOverflowScenario(input: {
       sourceSequence: sourceDelivery.sequence,
       sourceEventType: sourceDelivery.rawPayload.eventType,
     };
-    setComposerDraft('');
+    await setFoundationComposerDraft(
+      '',
+      'context overflow composer cleanup',
+    );
     clearFoundationLocalConversationProjection(
       conversation.conversation_id,
     );
@@ -5852,7 +5859,12 @@ async function runFoundationContextOverflowScenario(input: {
       const textarea = document.querySelector<HTMLTextAreaElement>(
         '[data-pt-agent-composer-input]',
       );
-      if (textarea) setComposerDraft('');
+      if (textarea) {
+        await setFoundationComposerDraft(
+          '',
+          'context overflow failed-scenario composer cleanup',
+        );
+      }
       clearFoundationLocalConversationProjection(
         conversation.conversation_id,
       );
@@ -21538,12 +21550,10 @@ export function installAcceptanceHarness(): void {
               '[data-pt-agent-composer-input]',
             );
             if (textarea) {
-              const setTextareaValue = Object.getOwnPropertyDescriptor(
-                window.HTMLTextAreaElement.prototype,
-                'value',
-              )?.set;
-              setTextareaValue?.call(textarea, '');
-              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+              await setFoundationComposerDraft(
+                '',
+                'context overflow outer composer cleanup',
+              );
             }
             await deleteFoundationConversation(preparedConversationId);
           } catch (cleanupError) {
