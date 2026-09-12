@@ -19,6 +19,17 @@ export interface ChatFriendContactProjection extends MutualFriendProjection {
   federationId: string;
 }
 
+export function singleFederationId(
+  federations: readonly { federationId: string }[],
+): string {
+  const ids = Array.from(new Set(
+    federations
+      .map((federation) => federation.federationId.trim())
+      .filter(Boolean),
+  ));
+  return ids.length === 1 ? ids[0] : '';
+}
+
 export function projectMutualFriends(
   followers: readonly Follower[],
   following: readonly Following[],

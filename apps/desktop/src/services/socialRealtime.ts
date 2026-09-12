@@ -273,6 +273,7 @@ async function refreshFriendMessage(payload: RealtimeMessageReceivedPayload, sho
   const store = useSocialChatStore.getState();
   if (shouldLoadMessages) {
     await store.loadMessages(payload.sessionUlid, 'friend');
+    await store.markFriendRead(payload.sessionUlid);
   }
 
   await refreshConversationDecorations();

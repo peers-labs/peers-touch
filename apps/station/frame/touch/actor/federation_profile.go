@@ -17,7 +17,6 @@ import (
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	fedprofile "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile"
-	profilepb "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"gorm.io/gorm"
 )
@@ -87,45 +86,6 @@ func (f federationProfileFetcher) FetchDeviceSigningKeys(
 		})
 	}
 	return keys, nil
-}
-
-// CacheVerifiedRemoteDeviceSigningKeys persists keys only after the caller has
-// verified the enclosing Home Station profile envelope.
-func CacheVerifiedRemoteDeviceSigningKeys(
-	ctx context.Context,
-	envelope *profilepb.ActorProfileEnvelope,
-) error {
-	if envelope == nil {
-		return ErrDeviceSigningKeyNotFound
-	}
-	keys := envelope.DeviceSigningKeys
-	if len(keys) == 0 {
-		return nil
-	}
-	if envelope.Profile == nil ||
-		envelope.Profile.PeersTouch == nil ||
-		envelope.Profile.PeersTouch.NetworkId == "" {
-		return ErrDeviceSigningKeyNotFound
-	}
-	rds, err := store.GetRDS(ctx)
-	if err != nil {
-		return err
-	}
-	deviceStore := NewDeviceStore(rds)
-	if err := deviceStore.AutoMigrate(); err != nil {
-		return err
-	}
-	for _, key := range keys {
-		if key == nil ||
-			key.ActorPtid != envelope.Profile.PeersTouch.NetworkId ||
-			key.HomeStationPeerId != envelope.HomeStationPeerId {
-			return ErrDeviceSigningKeyConflict
-		}
-		if err := deviceStore.UpsertVerifiedRemote(ctx, key); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // FederationKeyCache exposes the node-level federation key cache to

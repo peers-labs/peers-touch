@@ -13,10 +13,13 @@
     "tooling/acceptance/playbooks/chat-native-visible-clients.md",
     "apps/desktop/src/acceptance/chat/**",
     "apps/desktop/src-tauri/src/application/profile/mod.rs",
+    "apps/desktop/src/components/common/SquareAvatar.tsx",
     "apps/desktop/src/components/chat/**",
     "apps/desktop/src/components/settings/RecoverySettings.tsx",
     "apps/desktop/src/components/common/StationPicker.tsx",
-    "apps/desktop/src/pages/login/views/**"
+    "apps/desktop/src/pages/login/views/**",
+    "apps/station/app/conf/actor.yml",
+    "apps/station/frame/touch/actor/seed.go"
   ],
   "required_gates": [
     "chat-native-visible-static",
@@ -33,11 +36,19 @@
       "a persistent current-profile client explicitly authenticates its assigned actor even when a prior session restores",
       "Station and every client record matching commit and canonical proto digest with workspace identity",
       "direct multi-device recovery and MLS journeys emit bounded boundary telemetry and stop on first failure",
-      "failed message submission clears acceptance-injected composer text"
+      "failed message submission clears acceptance-injected composer text",
+      "a newly sent optimistic message row is placed above the visible composer on its first rendered frame and remains clear as timestamp and receipt projections settle",
+      "unresolved local drafts remain at their creation position relative to newer committed authority messages",
+      "seeded Alice, Bob, and Carol avatars render as the standard rounded-square shape from bundled full-bleed image data without an external image origin",
+      "the same Actor PTID renders the same signed Home-Station avatar source on every Native client"
     ],
     "surfaces": [
       {"type": "native-desktop", "selector": "[data-pt-text-input=\"chat-composer\"]"},
+      {"type": "native-desktop", "selector": "[data-chat-composer]"},
+      {"type": "native-desktop", "selector": "[data-chat-message-timeline]"},
+      {"type": "native-desktop", "selector": "[data-chat-message-bottom-sentinel]"},
       {"type": "native-desktop", "selector": "[data-message-ulid]"},
+      {"type": "native-desktop", "selector": "[data-chat-avatar-src]"},
       {"type": "native-desktop", "selector": "[data-session-security]"},
       {"type": "native-desktop", "selector": "[data-group-security]"}
     ]
@@ -47,6 +58,11 @@
     "two clients launched from one worktree cannot prove current-profile cross-worktree parity",
     "a restored authenticated actor must not be silently reused as the Gate's requested actor",
     "fixed sleeps and startup-order assumptions are forbidden",
+    "seeded demo avatars must not depend on an HTTP or HTTPS image-generation service",
+    "seeded avatar assets must not bake in a circular mask that overrides the shared UserSquareAvatar radius",
+    "a Station must not rewrite another Home Station's cached Actor profile by username",
+    "pending or failed local drafts must not be appended after newer committed authority events",
+    "the composer must not occlude any part of the newest message row, including during post-send scroll positioning",
     "missing stale partial API-only browser-only or dirty-Station evidence fails closed"
   ]
 }

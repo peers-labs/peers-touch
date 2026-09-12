@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import random
@@ -12,6 +13,7 @@ import time
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
+from xml.etree import ElementTree
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -54,8 +56,11 @@ REQUIRED_ASSERTIONS = {
     "actor_isolation",
     "alice_to_bob_plaintext",
     "alice_to_bob_delivered",
+    "alice_to_bob_message_clear",
     "bob_to_alice_plaintext",
     "bob_to_alice_delivered",
+    "bob_to_alice_message_clear",
+    "demo_avatar_bundled",
     "resources_released",
 }
 CURRENT_PROFILE_REQUIRED_ASSERTIONS = {
@@ -142,6 +147,7 @@ def send_text(client: TauriSession, text: str) -> dict[str, Any]:
     return wait_until(
         lambda: message_snapshot(client, text),
         "sender optimistic message",
+        interval=0.01,
     )
 
 
@@ -162,6 +168,76 @@ def message_snapshot(client: TauriSession, text: str) -> dict[str, Any] | None:
         text,
     )
     return value if isinstance(value, dict) else None
+
+
+def message_composer_geometry(
+    client: TauriSession,
+    message_id: str,
+) -> dict[str, Any] | None:
+    value = client.execute_script(
+        """
+        const messageId = arguments[0];
+        const row = document.querySelector(
+          `[data-message-ulid="${messageId}"]`
+        );
+        const composer = document.querySelector('[data-chat-composer]');
+        const viewport = document.querySelector('.chat-message-scroll');
+        const timeline = document.querySelector(
+          '[data-chat-message-timeline]'
+        );
+        const sentinel = document.querySelector(
+          '[data-chat-message-bottom-sentinel]'
+        );
+        const rect = (element) => {
+          const value = element?.getBoundingClientRect();
+          return value ? {
+            left: value.left,
+            right: value.right,
+            top: value.top,
+            bottom: value.bottom,
+            width: value.width,
+            height: value.height,
+          } : null;
+        };
+        return row && composer && viewport && timeline && sentinel ? {
+          row: rect(row),
+          composer: rect(composer),
+          viewport: rect(viewport),
+          timeline: rect(timeline),
+          timelineFlexShrink: getComputedStyle(timeline).flexShrink,
+          sentinel: rect(sentinel),
+        } : null;
+        """,
+        message_id,
+    )
+    return value if isinstance(value, dict) else None
+
+
+def is_bundled_square_avatar(source: str) -> bool:
+    prefix = "data:image/svg+xml;base64,"
+    if not source.startswith(prefix):
+        return False
+    try:
+        root = ElementTree.fromstring(
+            base64.b64decode(source[len(prefix):], validate=True),
+        )
+    except (ValueError, ElementTree.ParseError):
+        return False
+    rect = next(
+        (
+            child
+            for child in root
+            if child.tag.rsplit("}", maxsplit=1)[-1] == "rect"
+        ),
+        None,
+    )
+    return (
+        rect is not None
+        and rect.attrib.get("width") == "128"
+        and rect.attrib.get("height") == "128"
+        and "rx" not in rect.attrib
+        and "ry" not in rect.attrib
+    )
 
 
 class NativeTwoClientGate(AcceptanceGate):
@@ -594,6 +670,40 @@ class NativeTwoClientGate(AcceptanceGate):
             lambda: send_text(sender, text),
             sender_name,
         )
+
+        message_id = str(sent.get("messageUlid") or "")
+
+        def unobscured_sender_row() -> dict[str, Any] | None:
+            geometry = message_composer_geometry(sender, message_id)
+            if not geometry:
+                return None
+            row = geometry.get("row")
+            composer = geometry.get("composer")
+            viewport = geometry.get("viewport")
+            sentinel = geometry.get("sentinel")
+            if not all(
+                isinstance(item, dict)
+                for item in (row, composer, viewport, sentinel)
+            ):
+                return None
+            return geometry if (
+                geometry.get("timelineFlexShrink") == "0"
+                and row["bottom"] <= composer["top"] - 8
+                and row["bottom"] <= viewport["bottom"] - 8
+                and sentinel["top"] >= row["bottom"] + 8
+            ) else None
+
+        geometry = self.step(
+            "message.layout",
+            unobscured_sender_row,
+            sender_name,
+        )
+        self.assert_condition(
+            f"{sender_name}_to_{receiver_name}_message_clear",
+            bool(geometry),
+            json.dumps(geometry, sort_keys=True),
+        )
+
         received = self.step(
             "message.received",
             lambda: wait_until(
@@ -629,6 +739,65 @@ class NativeTwoClientGate(AcceptanceGate):
             delivered.get("receipt") in {"delivered", "read"},
             f"message_id={sent.get('messageUlid', '')}; receipt={delivered.get('receipt', '')}",
         )
+
+    def prove_demo_avatar_sources(self) -> dict[str, Any]:
+        evidence: dict[str, Any] = {}
+        actors = tuple(self.clients)
+        for identity in actors:
+            identity_ptid = self.ptids[identity]
+            identity_evidence: dict[str, Any] = {}
+            for client_name, client in self.clients.items():
+                snapshot = client.execute_script(
+                    """
+                    const actorPtid = arguments[0];
+                    const candidates = Array.from(
+                      document.querySelectorAll('[data-chat-avatar-ptid]')
+                    ).filter((element) => (
+                      element.getAttribute('data-chat-avatar-ptid')
+                        === actorPtid
+                    ));
+                    const element = candidates.find((candidate) => {
+                      const rect = candidate.getBoundingClientRect();
+                      return rect.width > 0 && rect.height > 0;
+                    });
+                    const image = element?.querySelector('img');
+                    return element ? {
+                      declared:
+                        element.getAttribute('data-chat-avatar-src') || '',
+                      rendered: image?.getAttribute('src') || '',
+                      complete: image?.complete === true,
+                      naturalWidth: Number(image?.naturalWidth || 0),
+                    } : null;
+                    """,
+                    identity_ptid,
+                )
+                identity_evidence[client_name] = snapshot
+            evidence[identity] = identity_evidence
+
+        valid = all(
+            all(
+                isinstance(snapshot, dict)
+                and is_bundled_square_avatar(
+                    str(snapshot.get("declared") or ""),
+                )
+                and snapshot.get("rendered") == snapshot.get("declared")
+                and snapshot.get("complete") is True
+                and int(snapshot.get("naturalWidth") or 0) > 0
+                for snapshot in identity_evidence.values()
+            )
+            and len({
+                str(snapshot.get("declared") or "")
+                for snapshot in identity_evidence.values()
+                if isinstance(snapshot, dict)
+            }) == 1
+            for identity_evidence in evidence.values()
+        )
+        self.assert_condition(
+            "demo_avatar_bundled",
+            valid,
+            json.dumps(evidence, sort_keys=True),
+        )
+        return evidence
 
     def collect_client_evidence(self, actor: str) -> None:
         client = self.clients[actor]
@@ -848,6 +1017,10 @@ class NativeTwoClientGate(AcceptanceGate):
             conversation_id = self.step(
                 "conversation.open",
                 self.open_conversation,
+            )
+            self.step(
+                "avatar.bundled",
+                self.prove_demo_avatar_sources,
             )
             self.prove_direction(*self.direction_order)
             self.prove_direction(*reversed(self.direction_order))

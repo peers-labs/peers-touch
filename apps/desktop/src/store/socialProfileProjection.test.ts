@@ -4,9 +4,12 @@ import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb'
 import type { GroupMember } from '../gen/proto/domain/chat/group_chat_pb';
 import type { AccountProfile } from '../services/desktop_api';
 import {
+  accountProfileFromFederationResolve,
   projectGroupAvatarSlots,
+  remoteProfileHandle,
   resolveActorIdentity,
 } from './socialProfileProjection';
+import type { FederationResolveView } from '../gen/proto/domain/federation/federation_resolve_pb';
 
 const alice = 'ptid:alice';
 const bob = 'ptid:bob';
@@ -28,6 +31,53 @@ const bobStationProfile = {
 } as AccountProfile;
 
 describe('social profile projection', () => {
+  it('recognizes only canonical remote profile handles', () => {
+    expect(remoteProfileHandle({
+      acct: '@bob@station.example',
+      username: '@bob@station.example',
+    })).toBe('@bob@station.example');
+    expect(remoteProfileHandle({
+      acct: 'bob',
+      username: 'bob',
+    })).toBe('');
+  });
+
+  it('binds a resolved remote profile to the expected PTID', () => {
+    const resolved = {
+      profile: {
+        id: 'https://station.example/users/bob',
+        username: 'bob',
+        acct: '@bob@station.example',
+        displayName: 'Bob',
+        note: '',
+        url: 'https://station.example/users/bob',
+        avatar: 'data:image/svg+xml;base64,PHN2Zz4=',
+        header: '',
+        locked: false,
+        createdAt: '',
+        statusesCount: 0n,
+        followingCount: 0n,
+        followersCount: 0n,
+        region: '',
+        timezone: '',
+        tags: [],
+        links: [],
+        defaultVisibility: '',
+        manuallyApprovesFollowers: false,
+        messagePermission: '',
+        autoExpireDays: 0,
+        peersTouch: { networkId: bob },
+      },
+    } as unknown as FederationResolveView;
+
+    expect(accountProfileFromFederationResolve(resolved, bob)).toMatchObject({
+      acct: '@bob@station.example',
+      avatar: 'data:image/svg+xml;base64,PHN2Zz4=',
+      peers_touch: { network_id: bob },
+    });
+    expect(accountProfileFromFederationResolve(resolved, alice)).toBeNull();
+  });
+
   it('uses exact self identity without username substring inference', () => {
     expect(resolveActorIdentity({
       ptid: alice,

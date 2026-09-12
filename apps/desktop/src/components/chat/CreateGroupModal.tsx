@@ -5,7 +5,10 @@ import { Input, toast } from '@lobehub/ui';
 import { Alert, Spin, theme } from 'antd';
 import { Search, X } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
-import { projectChatFriendContacts } from '../../store/friendshipProjection';
+import {
+  projectChatFriendContacts,
+  singleFederationId,
+} from '../../store/friendshipProjection';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { imServiceV1 } from '../../services/im-service';
 import { log } from '../../utils/logger';
@@ -76,10 +79,10 @@ export function CreateGroupModal({ open, onClose }: Props) {
     mutualFriendsLoadedAt: s.mutualFriendsLoadedAt,
     mutualFriendsError: s.mutualFriendsError,
   }));
-  const joinedFederations = useActiveChatFederationSlice((s) => s.self?.joinedFederations);
+  const federations = useActiveChatFederationSlice((s) => s.federations);
   const sessionActorPtid = useActiveChatSessionSlice((s) => s.currentUser?.actorPtid ?? null);
   const ownDid = currentUserPtid || sessionActorPtid;
-  const defaultFederationId = joinedFederations?.[0]?.federationId ?? '';
+  const defaultFederationId = singleFederationId(federations);
   const friendshipReady = Boolean(
     ownDid
     && mutualFriendsActorPtid === ownDid

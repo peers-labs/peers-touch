@@ -219,6 +219,7 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
                 "native_runtime",
                 "actor_isolation",
                 "default_friend_projection",
+                "contact_message_routes_selected_peer",
                 "existing_friend_search_state",
                 "group_created",
                 "member_added",
@@ -237,6 +238,10 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
         self.assertEqual(
             SELECTORS["find_people_result"],
             "[data-chat-find-people-result]",
+        )
+        self.assertEqual(
+            SELECTORS["contact_message"],
+            "[data-chat-contact-message]",
         )
         self.assertIn(
             "chat-native-friendship-projection",
@@ -260,6 +265,7 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
     def test_native_surfaces_consume_the_runtime_owned_friend_projection(
         self,
     ) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
         relationships = (
             ROOT / "apps/desktop/src/store/relationships.ts"
         ).read_text(encoding="utf-8")
@@ -283,6 +289,8 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
         self.assertIn("data-chat-friend-state", find_people)
         self.assertIn("data-chat-create-group-contact", create_group)
         self.assertIn("data-chat-friendship-state", contacts)
+        self.assertIn("data-chat-contact-federation-id", contacts)
+        self.assertIn("contact Message routes to the selected peer", source)
 
 
 if __name__ == "__main__":
