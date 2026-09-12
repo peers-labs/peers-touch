@@ -860,7 +860,7 @@ committed to this plan.
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
-| NDR-W8 macOS regression | in progress | Current-profile Direct, reply/thread, reaction, edit, recall, and fresh Alice-to-Bob Native delivery at authority sequence 34 pass while formal Gate execution remains paused. One older Alice command remains `submitted` with no authority event and is absent on Bob, so submitted-command recovery and transcript convergence remain `PARTIAL/UNPROVEN`. Cross-Station avatar parity also remains `BLOCKED/UNPROVEN` pending exact-source profile four/five deployment. Typing, multi-device, backup recovery, and three-client Group/MLS runtime cells remain. |
+| NDR-W8 macOS regression | in progress | Current-profile Direct, reply/thread, reaction, edit, recall, fresh Alice-to-Bob Native delivery at authority sequence 34, and cross-Station Alice/Bob avatar parity pass while formal Gate execution remains paused. One older Alice command remains `submitted` with no authority event and is absent on Bob, so submitted-command recovery and transcript convergence remain `PARTIAL/UNPROVEN`. Typing, multi-device, backup recovery, and three-client Group/MLS runtime cells remain. |
 | NDR-W9 Windows cell | W9-A/B/C done; Product Closure reaches `reaction.ui`; W9-D remains partial | Exact-source Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` at `2ae0254691d97f16c3c08ef3e8639bdd91a91eac` proves Direct open/reopen, canonical Group genesis, Alice sequence 2, Bob sequence 3, Alice thread-reply sequence 4, toolbar geometry, and authority reaction sequence 5. Bob's Device Inbox lane 7 contains a canonical `ActorReadCursor` whose event identity is the payload SHA-256; the client expected a retired `read:` prefix, rejected the cursor as `MessageReceipt`, and blocked the lane-8 reaction. The shared Messaging Core decoder correction and four local Chat Gates pass, but exact-source deployment and Product Closure rerun remain pending. |
 | NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings, exact Direct create/reopen, bidirectional Group transcript/thread delivery, follower receipt return, and durable remote-command authority commit | Authority sequence 5 and Alice consumption prove the cross-Station mutation path through reaction commit. Bob's queue remains blocked by the read-cursor discriminator defect, so reaction convergence, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven pending the locally verified client correction. |
 
@@ -5216,7 +5216,7 @@ frontier is:
 | Advance Direct READ for a message arriving while its conversation remains visible | receipt behavior pass; overall visual acceptance rejected | `messagingProjection` and `socialRealtime` now invoke the store-owned actor read-cursor action only for a visible Direct conversation, but Owner review found the newly sent row occluded by the composer and rejected overall acceptance |
 | Keep the newest virtualized message above the composer | Native first-frame functional pass | the virtual timeline and bottom sentinel are non-shrinking, and layout-phase immediate tail positioning keeps the optimistic row above the composer before receipt projection; both profile-bound Native clients show zero first-observed overlap |
 | Keep unresolved local drafts at their chronological position | Native functional pass | the Rust projection owner merges pending/failed rows by creation time without changing committed authority order; the Desktop projection preserves that canonical order for main and thread surfaces |
-| Replace legacy remote and circular demo avatars with bundled rounded-square presets | source-complete; Native cross-Station proof blocked on exact-source Station deployment | Desktop renders inline sources without cache/network access; Station startup migrates exact local demo values only; remote peers refresh from signed Home-Station profiles, and Actor Identity remains the sole verified device-key writer |
+| Replace legacy remote and circular demo avatars with bundled rounded-square presets | Native functional pass | Desktop renders inline sources without cache/network access; exact-source profile four/five Station deployment migrated local demo values only; remote peers refresh from signed Home-Station profiles; Alice and Bob source hashes match across both Native clients; Actor Identity remains the sole verified device-key writer |
 
 Concurrency Decision: serial for the friendship projection because the shared
 store contract is consumed by the runtime and all three Chat surfaces. The
@@ -5228,8 +5228,8 @@ the recovery boundary is resolved; no reset is authorized by this continuation.
 The Federation correction is also serial. The integrator exclusively owns the
 Desktop Rust transport call site, its focused Federation regression, the
 existing `desktop-federation` Registry rule, plan evidence, and source-tree
-reconciliation. Runtime deployment remains read-only: formal Gates are paused,
-and an exact-source Native rerun depends on an authorized commit boundary.
+reconciliation. The authorized exact-source Station deployment and Native avatar
+parity check are complete; formal Gate execution remains paused.
 
 Direct Native diagnosis used the two profile-bound `make desktop` clients
 without invoking a formal Gate. Alice (`profile four`) and Bob (`profile five`)
@@ -5375,6 +5375,19 @@ selects only local Actors, and the avatar backfill helper independently refuses
 Home-Station-owned avatar. The Federation resolver package documentation now
 matches its verified-profile write-through behavior while retaining Actor
 Identity as the sole device-key persistence owner.
+
+After the authorized checkpoint commits and non-destructive `make station`
+deployments, profile four reports `7d5137c77177` and profile five reports
+`eecb3e6288b5`. Live Native evidence records Alice's coral source as
+`sha256:4fa6e9e666c16fd453868d1fb6a21d18ee8e86ee83d9757bddc27015075c5010`
+on Alice's self surface and Bob's remote surface, and Bob's teal source as
+`sha256:212729014d91d3fc4b0b71d93d063592acd303437766be2529655af0e2a21d1d`
+on Bob's self surface and Alice's remote surface. Every image is complete,
+non-empty, and rendered as a `36x36` rounded square with the owning component's
+`8px` self or `9px` message radius. Cross-Station avatar parity is therefore a
+Native functional pass; the formal Gate remains paused by Owner instruction.
+Evidence is under
+`.local/acceptance/runtime/chat-functional-20260913-post-deploy/`.
 
 The Owner then correctly rejected the broader message-correctness claim. Native
 engine readback proves Alice's earlier command
