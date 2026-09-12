@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T144402476036Z-831b8f4aad987ea9bb221f17361d5736` on `b4d086986beb22cf7bcd345157d7b10e69d2efcf` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T144543109509Z-bc0f12ef86eccfff0a1261c8526c6f7b` reached Browser English `BASE-CONTEXT_OVERFLOW` and failed only `cleanupComplete` because the Harness directly cleared a controlled textarea DOM node while `ChatInput` retained the reduced draft; the local correction uses the production `fillComposer` owner path and passes local checks, but exact-source post-fix C08 and Foundation remain pending; the `BASE-INTERRUPTED` recovery fence is locally verified but has not yet been reached by the post-fix full Gate | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T154305828038Z-5576a1b0184154cc2ea5f09b08bc5c40` on `7c10521a51d521f30cf36c0173171e4175d0b418` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T154441125137Z-e0e1b6e88414d48337d349c72bc4883c` reached Browser English `BASE-CONTEXT_OVERFLOW` and failed only `cleanupComplete` because composer-fill consumption and one empty DOM observation did not prove a stable controlled-state/draft-cache commit; instrumentation checkpoint `263b72ed2` restores the original effect ordering and dependencies while retaining owner telemetry, and passes Agent focused tests `126/126`, Desktop tests `622/622` with one existing environment-only skip, Desktop strict check, and diff hygiene; exact-source diagnostic C08 and Foundation remain pending; the `BASE-INTERRUPTED` recovery fence is locally verified but has not yet been reached by the post-fix full Gate | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7704,7 +7704,15 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   It changes no product behavior, matrix tuple, timeout, or assertion.
   Focused Agent tests pass `126/126`; Desktop tests pass `622/622` with one
   existing environment-only skip; Desktop strict check and diff hygiene pass.
-  Outer Provisioner cleanup completed `DONE / PROVEN / passed`.
+  Outer Provisioner cleanup completed `DONE / PROVEN / passed`. A pre-deploy
+  neutrality review found that the first instrumentation checkpoint
+  `33c8b21436958d4964dda422f570806199128a26` had moved draft lookup before the
+  original previous-session write and added `currentSessionKey` to the
+  composer-fill effect dependencies. Checkpoint
+  `263b72ed2` restores both original semantics while retaining the same bounded
+  observation points. Agent focused tests remain `126/126`, Desktop tests
+  remain `622/622` with one existing environment-only skip, Desktop strict
+  check passes, and the corrected source has not yet been deployed.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

@@ -243,3 +243,22 @@ The following hypotheses are now active:
 The next change is instrumentation-only in `ChatInput` and the Harness. It
 records lengths, booleans, and state-transition kinds only; no draft text,
 session identity, actor identity, or credential is emitted.
+
+### Instrumentation Neutrality Correction
+
+The first instrumentation checkpoint
+`33c8b21436958d4964dda422f570806199128a26` was not deployed. A pre-deploy
+review found two observation-induced semantic changes: draft lookup moved
+before the original previous-session write, and `currentSessionKey` was added
+to the composer-fill effect dependencies.
+
+Checkpoint `263b72ed2` restores the original ordering and dependency list while
+retaining the N-Q observation points. Local verification remains:
+
+- Agent focused Acceptance tests: `126/126` PASS.
+- Desktop Vitest: `622/622` PASS with one existing environment-only skip.
+- Desktop strict check: PASS.
+- `git diff --check`: PASS.
+
+Exact-source C08 and Foundation diagnostics for this corrected checkpoint are
+pending. The session remains `[OPEN]`.
