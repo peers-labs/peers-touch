@@ -18,6 +18,7 @@
 | B | The cut is armed, but the fault proxy does not match the active request/stream. | Medium | Medium | The cut is acknowledged for a different request or no bytes are cut before terminal settlement. |
 | C | Browser restart/readback selects a stale conversation or Turn. | Medium | Low | Prepared conversation/Turn IDs differ from the IDs read after restart. |
 | D | Cleanup wraps an expected already-terminal state and obscures the primary ordering failure. | Medium | Low | Cleanup begins after terminal settlement and emits secondary cancel/readback failures. |
+| E | The real proxy cut completes, but Browser consumes an already-buffered terminal frame before its recovery store observes transport loss. | High | Low | Confirmed: proxy cut was requested and acknowledged with the matching active record, then `done` removed that record in the same millisecond before the non-CONNECTED boundary settled. |
 
 ## Instrumentation Plan
 - Record preparation start and the elapsed time to failure.
@@ -40,9 +41,36 @@
   ms; Desktop Simplified Chinese at 2289/2328 ms.
 - Every tuple retained its recovery record at acknowledgement, settled only
   after the cut boundary, and completed scenario cleanup.
+- Exact-source run
+  `20260912T112845134359Z-c05aa8bcfaf45a91f7e171c27a90c915`
+  on `68417f9f19bf8e2a78700dd2799edd4e958ea7db` crossed the
+  managed-launcher restart defect. Browser English AS-F06 completed its cut,
+  restart, and cleanup. Browser Simplified Chinese requested the proxy cut at
+  2616 ms and received the acknowledgement at 2617 ms with the matching active
+  record still `CONNECTED`; a buffered `done` event was consumed at 2618 ms
+  before the recovery phase changed, removing the record and producing
+  `foundationRecoveryTurnAlreadyTerminal`.
+- That failed preparation also proved the cleanup diagnostic gap: the durable
+  cleanup locator contained the Turn ID, but canceling the already-terminal
+  Turn returned `agent.turnCancelFailed` and prevented queue cancellation and
+  Conversation deletion inside the first cleanup attempt. Outer failure
+  cleanup eventually released all processes, ports, storage, and Station
+  leases.
+- The local correction preserves the external proxy as the fault authority,
+  then invokes the existing production transport-disconnect primitive only
+  after the proxy acknowledges that its active sockets are closed. This drops
+  buffered post-cut frames through the existing `consumeAgentSSE` abort check
+  before waiting for the recovery phase. Cleanup records a Turn-cancel error
+  but continues to queue cancellation, Conversation deletion, and final residue
+  verification; a still-active dependency therefore continues to fail closed.
+  Desktop API tests pass `60/60`, Foundation runtime/scenario tests pass
+  `74/74`, Agent static tests pass `85/85`, Desktop strict check and diff
+  hygiene pass. Exact-source post-fix proof remains pending.
 
 ## Verification Conclusion
-The instrumented rerun rejects A through D as stable owner-layer defects. The
-earlier terminal-before-cut failure did not recur, all conversation and Turn
-locators remained coherent, and cleanup completed. No AS-F06 behavior change is
-justified from current evidence.
+The earlier controlled run rejected A through D as stable defects, but the
+latest exact-source run confirms E and reproduces D as a secondary cleanup
+problem. The proxy remains the source of the outage: the local transport is
+disconnected only after the proxy acknowledges the real cut, solely to discard
+bytes buffered before that acknowledgement. No retry, timeout increase,
+synthetic terminal, or relaxed oracle is introduced.

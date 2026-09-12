@@ -7055,6 +7055,8 @@ async function prepareFoundationF06Conversation(
       );
       void requestFoundationF06TransportCut(input.faultControlUrl)
         .then(async () => {
+          // The proxy owns the fault; abort only discards post-cut buffered frames.
+          controller.disconnectTransport();
           const activeAfterAcknowledgement = useAgentTurnRecoveryStore.getState()
             .active[conversation.conversation_id];
           // #region debug-point C:f06-fault-ack
@@ -7917,12 +7919,17 @@ async function cleanupFoundationF06Scenario(input: {
     throw new Error('CLEANUP_FAILED:foundationCleanupLocatorMissing');
   }
   let cleanupError: unknown = null;
+  let turnCancellationErrorCode = '';
   let deletionErrorCode = '';
   let cleanupStage = 'turn-cancel';
-  try {
-    if (turnId) {
+  if (turnId) {
+    try {
       await api.cancelAgentTurn(turnId);
+    } catch (error) {
+      turnCancellationErrorCode = observedErrorCode(error);
     }
+  }
+  try {
     cleanupStage = 'queue-cancel';
     await cancelFoundationQueuedTurns(conversationId);
     cleanupStage = 'conversation-delete';
@@ -7934,6 +7941,8 @@ async function cleanupFoundationF06Scenario(input: {
       {
         scenarioKey: input.scenarioKey,
         inputTurnPresent: turnId.length > 0,
+        turnCancellationErrorCodePresent:
+          turnCancellationErrorCode.length > 0,
         deletionErrorCodePresent: deletionErrorCode.length > 0,
       },
     );

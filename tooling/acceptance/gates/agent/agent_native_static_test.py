@@ -420,6 +420,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "requestFoundationF06TransportCut(input.faultControlUrl)",
             handoff_publish,
         )
+        transport_disconnect = self.source.index(
+            "controller.disconnectTransport()",
+            fault_request,
+        )
         fault_observation = self.source.index(
             "Foundation AS-F06 fault acknowledgement",
             fault_request,
@@ -447,7 +451,8 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
         self.assertLess(requested_cursor, handoff_publish)
         self.assertLess(handoff_publish, fault_request)
-        self.assertLess(fault_request, fault_observation)
+        self.assertLess(fault_request, transport_disconnect)
+        self.assertLess(transport_disconnect, fault_observation)
         self.assertLess(fault_observation, cursor_capture)
         self.assertLess(cursor_capture, mutation_probe)
         self.assertLess(mutation_probe, boundary_publish)
@@ -480,9 +485,11 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "sourceDelivery.sequence > current.replayRequestCursor",
             self.source,
         )
-        self.assertNotIn(
-            "controller.disconnectTransport()",
-            self.source[prepare_start:finalizer],
+        self.assertEqual(
+            self.source[prepare_start:finalizer].count(
+                "controller.disconnectTransport()",
+            ),
+            1,
         )
         self.assertIn(
             "foundationF06PendingHandoffs.delete(scenarioKey)",
@@ -531,6 +538,11 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertIn("cleanupLocatorCleared", cleanup)
         self.assertIn("localProjectionCleared", cleanup)
+        turn_cancel_error = cleanup.index(
+            "turnCancellationErrorCode = observedErrorCode(error)",
+        )
+        queue_cancel = cleanup.index("cleanupStage = 'queue-cancel'")
+        self.assertLess(turn_cancel_error, queue_cancel)
         cleanup_identity_check = self.source.index(
             "cleanupLocator.conversationId !== input.conversationId",
             cleanup_start,

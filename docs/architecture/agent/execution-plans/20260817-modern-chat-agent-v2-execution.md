@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T105004727136Z-0d64e02674e4c9ce26eed7d76bace6fe` on `a3979445150bce05158bd0bdc23b0943bedc4c3f` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T110041844602Z-ec9969fcf6c374c695bba2d8d74fcd51` proved the isolated profiles/storage and initial capability-session enrollment, then failed during AS-F06 Browser restart because the successful one-shot devctl launcher exit was misclassified as runtime death; cleanup passed; the owner-layer lifecycle fix passes focused local checks, but exact-source post-fix C08 and Foundation remain pending; the product frontier remains Browser English `BASE-CONTEXT-OVERFLOW / cleanupComplete` under retained instrumentation | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T112721385973Z-279bb5e3f6b8b59a48213b223ef3508f` on `68417f9f19bf8e2a78700dd2799edd4e958ea7db` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T112845134359Z-c05aa8bcfaf45a91f7e171c27a90c915` crossed managed launcher handoff and Browser English AS-F06, then failed when Browser Simplified Chinese consumed an already-buffered terminal frame one millisecond after the real proxy cut acknowledgement; cleanup passed after outer recovery; the owner-layer buffered-frame and idempotent cleanup corrections pass focused local checks, but exact-source post-fix C08 and Foundation remain pending; the product frontier after AS-F06 remains Browser English `BASE-CONTEXT-OVERFLOW / cleanupComplete` under retained instrumentation | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7557,6 +7557,31 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   tests pass `85/85`; hard rules and diff hygiene pass. No Gate assertion,
   timeout, product behavior, or cleanup contract changed. Clean checkpoint and
   same-source C08-first/Foundation proof remain pending.
+- **AS-F06 acknowledged-cut terminal race (2026-09-12)**: checkpoint
+  `68417f9f19bf8e2a78700dd2799edd4e958ea7db` passed C08 run
+  `20260912T112721385973Z-279bb5e3f6b8b59a48213b223ef3508f`
+  with `19/19` assertions and complete cleanup. Foundation run
+  `20260912T112845134359Z-c05aa8bcfaf45a91f7e171c27a90c915`
+  proved the managed-launcher fix across Browser restart generations one and
+  two and completed Browser English AS-F06. Browser Simplified Chinese then
+  requested the real proxy cut at 2616 ms, received its acknowledgement at
+  2617 ms with the exact active recovery record still `CONNECTED`, and
+  consumed an already-buffered `done` at 2618 ms before the recovery phase
+  transition removed the race. The first local cleanup attempt also stopped
+  on `agent.turnCancelFailed` for the already-terminal Turn even though its
+  durable cleanup locator had the exact Turn and Conversation; outer cleanup
+  subsequently released all clients, ports, storage, source lease, and profile
+  lease. The local correction preserves the external proxy as the sole fault
+  authority, invokes the existing production transport disconnect only after
+  proxy acknowledgement to discard buffered post-cut frames, and lets cleanup
+  continue from terminal Turn cancellation through queue cancellation,
+  Conversation deletion, and final residue verification. Desktop API tests
+  pass `60/60`, Foundation runtime/scenario tests pass `74/74`, Agent static
+  tests pass `85/85`, Desktop strict check, hard rules, and diff hygiene pass.
+  No retry, timeout increase, synthetic terminal, Gate assertion, or product
+  behavior changed. Clean checkpoint, binary rebuild/smoke, exact-source
+  deployment, C08-first proof, and the unchanged Foundation matrix remain
+  pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
