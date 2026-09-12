@@ -4981,3 +4981,32 @@ resolves `desktop/data/account/*/identities.json` directly below the manifest
 root. A focused manifest-shape regression and the 46-test Native runtime
 contract suite pass; `chat-native-visible-static` and all three selected
 Acceptance Infra Gates also pass. Exact-source rerun remains required.
+
+Exact-source Gateway rerun
+`20260912T025725462350Z-d7265de082b528a02f0f3be48f1eaa82`
+then reached `PASS/DONE/PROVEN`. The next current-profile Native Direct run
+`20260912T025909198497Z-0d46ecaede03013faf81226e4d07aba2`
+failed before product messaging at Bob's active-device precondition, while all
+owned processes, ports, logs, and persistent storage completed cleanup.
+
+The authorized profile-four reset had removed the Station device directory,
+while Bob's persistent Acceptance Device Engine retained its pre-reset local
+enrollment. Runtime evidence showed repeated Key Exchange `404` and Device
+Inbox `500` responses, so the existing stale-enrollment recovery could not
+observe the authoritative missing endpoint. The owner correction keeps
+Station as active-device truth:
+
+- Key Exchange converts a missing authenticated local endpoint into its typed
+  `UNAUTHORIZED` error, which maps to HTTP 403 without changing material
+  `NOT_FOUND` semantics.
+- Conversation production HTTP maps every typed Device Inbox error to its
+  stable HTTP class and `X-Peers-Error-*` context instead of collapsing it to
+  500.
+- The existing Device Engine recognizes the explicit 403 stale-endpoint signal,
+  resets only its enrollment status to pending, and re-enrolls the same durable
+  cross-signed device identity on the next lifecycle cycle.
+
+Focused Key Exchange and complete Conversation package suites pass. Native
+Chat static verification also passes, and targeted tests preserve the typed
+error context. Exact-source deployment and current-profile Native rerun remain
+required.

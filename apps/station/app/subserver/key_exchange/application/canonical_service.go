@@ -1069,6 +1069,14 @@ func (s *CanonicalService) requireLocalActiveEndpoint(
 ) (domain.DeviceRoute, error) {
 	route, err := s.resolveActiveDevice(ctx, operation, endpoint)
 	if err != nil {
+		if domain.IsCode(err, domain.ErrorCodeNotFound) {
+			return domain.DeviceRoute{}, domain.NewError(
+				domain.ErrorCodeUnauthorized,
+				operation,
+				"device",
+				"endpoint is not active",
+			)
+		}
 		return domain.DeviceRoute{}, err
 	}
 	if route.HomeStationID != s.localStation {
