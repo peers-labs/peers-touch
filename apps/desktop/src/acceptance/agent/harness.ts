@@ -541,6 +541,35 @@ function writeFoundationF06Handoff(value: FoundationF06Handoff): void {
   window.localStorage.setItem(FOUNDATION_F06_STORAGE_KEY, JSON.stringify(handoffs));
 }
 
+function importFoundationF06RestartHandoff(
+  scenarioKey: string,
+  platform: string,
+  value: unknown,
+): FoundationF06Handoff {
+  if (
+    platform !== 'desktop_app'
+    || !value
+    || typeof value !== 'object'
+    || Array.isArray(value)
+  ) {
+    throw new Error('agent.acceptance.foundationRecoveryScopeMismatch');
+  }
+  const candidate = value as Partial<FoundationF06Handoff>;
+  if (
+    candidate.scenarioKey !== scenarioKey
+    || candidate.platform !== platform
+  ) {
+    throw new Error('agent.acceptance.foundationRecoveryScopeMismatch');
+  }
+  writeFoundationF06Handoff(candidate as FoundationF06Handoff);
+  const imported = readFoundationF06Handoff(scenarioKey);
+  if (!imported) {
+    removeFoundationF06Handoff(scenarioKey);
+    throw new Error('agent.acceptance.foundationRecoveryHandoffInvalid');
+  }
+  return imported;
+}
+
 async function updateFoundationF06RecoveryFailure(
   scenarioKey: string,
   evidence: Record<string, unknown>,
@@ -18358,6 +18387,37 @@ export function installAcceptanceHarness(): void {
     }) {
       return evidenceValue(
         await restoreFoundationF06CapabilityIsolation(scenarioKey),
+      );
+    },
+
+    async foundationF06ExportRestartHandoff({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      await foundationF06ReplayRecording;
+      const handoff = readFoundationF06Handoff(scenarioKey);
+      if (!handoff) {
+        throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
+      }
+      return evidenceValue(handoff);
+    },
+
+    async foundationF06ImportRestartHandoff({
+      scenarioKey,
+      platform,
+      handoff,
+    }: {
+      scenarioKey: string;
+      platform: string;
+      handoff: unknown;
+    }) {
+      return evidenceValue(
+        importFoundationF06RestartHandoff(
+          scenarioKey,
+          platform,
+          handoff,
+        ),
       );
     },
 

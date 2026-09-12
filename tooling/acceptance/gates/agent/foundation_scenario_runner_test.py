@@ -327,6 +327,8 @@ class F06HarnessClient:
         self.failure_calls: list[dict[str, object]] = []
         self.restoration_calls: list[dict[str, object]] = []
         self.reload_calls: list[dict[str, object]] = []
+        self.export_calls: list[dict[str, object]] = []
+        self.import_calls: list[dict[str, object]] = []
         self.complete_calls: list[dict[str, object]] = []
         self.cleanup_calls: list[dict[str, object]] = []
         self.handoffs: dict[str, dict[str, object]] = {}
@@ -335,6 +337,8 @@ class F06HarnessClient:
         self.restart_count += 1
         if self.event_log is not None:
             self.event_log.append(f"{self.platform}:client-restart")
+        if self.platform == "desktop_app":
+            self.handoffs.clear()
 
     def prepare_foundation_f06(
         self,
@@ -379,6 +383,9 @@ class F06HarnessClient:
             suffix = f"{self.platform}-{len(self.prepare_calls)}"
             handoff = {
                 "scenarioKey": str(request["scenarioKey"]),
+                "platform": str(request["platform"]),
+                "locale": str(request["locale"]),
+                "sampleId": str(request["sampleId"]),
                 "conversationId": f"conversation-{suffix}",
                 "turnId": f"turn-{suffix}",
                 "toolIsolation": {
@@ -446,6 +453,20 @@ class F06HarnessClient:
                     },
                 }
             }
+        if method == "foundationF06ExportRestartHandoff":
+            self.export_calls.append(request)
+            if self.event_log is not None:
+                self.event_log.append(f"{self.platform}:handoff-exported")
+            return self.handoffs[str(request["scenarioKey"])]
+        if method == "foundationF06ImportRestartHandoff":
+            self.import_calls.append(request)
+            handoff = request["handoff"]
+            if not isinstance(handoff, dict):
+                raise AssertionError("invalid fake restart handoff")
+            self.handoffs[str(request["scenarioKey"])] = handoff
+            if self.event_log is not None:
+                self.event_log.append(f"{self.platform}:handoff-imported")
+            return handoff
         if method == "foundationF06Cleanup":
             self.cleanup_calls.append(request)
             if self.cleanup_log is not None:
@@ -1631,11 +1652,17 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                     f"{platform}:authenticate:station-restart",
                     f"{platform}:capability-restored",
                     f"{platform}:durable-reload",
-                    f"{platform}:client-restart",
-                    f"{platform}:authenticate:client-restart",
-                    f"{platform}:complete",
                 )
             )
+            if platform == "desktop_app":
+                expected_order.append(f"{platform}:handoff-exported")
+            expected_order.extend((
+                f"{platform}:client-restart",
+                f"{platform}:authenticate:client-restart",
+            ))
+            if platform == "desktop_app":
+                expected_order.append(f"{platform}:handoff-imported")
+            expected_order.append(f"{platform}:complete")
         self.assertEqual(event_log, expected_order)
         self.assertEqual(len(native.prepare_calls), 2)
         self.assertEqual(len(browser.prepare_calls), 2)
@@ -1647,6 +1674,10 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(len(browser.restoration_calls), 2)
         self.assertEqual(len(native.reload_calls), 2)
         self.assertEqual(len(browser.reload_calls), 2)
+        self.assertEqual(len(native.export_calls), 2)
+        self.assertEqual(len(browser.export_calls), 0)
+        self.assertEqual(len(native.import_calls), 2)
+        self.assertEqual(len(browser.import_calls), 0)
         self.assertEqual(len(native.complete_calls), 2)
         self.assertEqual(len(browser.complete_calls), 2)
         for call in (*native.complete_calls, *browser.complete_calls):

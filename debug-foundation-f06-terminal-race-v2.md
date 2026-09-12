@@ -141,3 +141,26 @@ explicit client restart, and the following `foundationDirectProbe` failed with
 boundary from Station recovery to the explicit native client restart. The next
 observation reuses the same bounded storage snapshot at the DirectProbe entry
 to distinguish a missing key from a post-durable-reload parser rejection.
+
+Exact-source run
+`20260912T180742830795Z-694e471ddbaec21631a4f8e75d5ed7e1`
+on `69011df9f388c4d50627c331b0dfbbd61fe78bc8` confirms the root
+cause. Browser retained and parsed its handoff after client restart. Desktop
+English reported a valid handoff after Station recovery, then
+`storagePresent=false` and `parsedHandoffPresent=false` at DirectProbe entry
+after the explicit native client restart.
+
+- R is confirmed for the explicit native client restart.
+- S is rejected: no serialized `null` fields or parser rejection preceded the
+  loss.
+- T is rejected: each runtime held exactly one correctly scoped entry.
+- U is narrowed to the native WebView restart boundary; Station recovery and
+  the first re-authentication retained the key.
+
+The Acceptance runner owns restart-surviving oracle state. The owner-layer fix
+exports the latest strict handoff after durable reload, retains it only in the
+Python coordinator, and imports it only into the Desktop native Harness after
+the explicit client restart. Browser continues proving its native persistence
+path. The imported object is scope-checked and strict-parser validated, is not
+published as product evidence, and cannot replace Station snapshot, cursor
+replay, or receiver assertions.

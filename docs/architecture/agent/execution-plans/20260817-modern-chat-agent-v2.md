@@ -22,11 +22,11 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Trace the AS-F06 native handoff loss after bounded warm-up restarts the client, then resume the `ChatInput` state/draft-cache diagnosis |
+| Current step | Transfer the AS-F06 test-oracle handoff across explicit Desktop native restart, then resume the `ChatInput` state/draft-cache diagnosis |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
 | Last completed | C08 run `20260912T154305828038Z-5576a1b0184154cc2ea5f09b08bc5c40` on `7c10521a51d521f30cf36c0173171e4175d0b418` completed `DONE / PROVEN`；same-source Foundation run `20260912T154441125137Z-e0e1b6e88414d48337d349c72bc4883c` again proved local projection plus Conversation cleanup but showed the empty `fillComposer` request was acknowledged before the controlled draft stayed empty |
-| Current action | Instrument AS-F06 handoff storage presence and strict-parser acceptance at the DirectProbe entry after the explicit native client restart |
-| Next action | Create a clean diagnostic checkpoint, rebuild/smoke, deploy exact source, run C08 first, and classify missing storage versus parser rejection before repairing the owner |
+| Current action | Implement the coordinator-owned native restart handoff transfer with strict Desktop scope and Harness parser validation |
+| Next action | Create a clean fix checkpoint, rebuild/smoke, deploy exact source, run C08 first, and rerun Foundation through AS-F06 before collecting pending N-Q composer evidence |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
@@ -35,7 +35,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | none；the current context-overflow draft writeback is a recoverable Harness owner-path defect；the `BASE-INTERRUPTED` `chatRuntime` fix remains locally verified and awaits runtime proof after this earlier cell crosses；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 run `20260912T173512273580Z-38719937fe33a5d53f708286ef2c0950` is `DONE / PROVEN` on `f504880cf60ae1c880e82558b81462e87e70e74d`；Foundation run `20260912T173659604871Z-1f7f52da5b4decfe75a9e4e31440e1f2` proves Browser and Desktop English handoff storage remains valid through Station recovery, then Desktop DirectProbe fails only after the explicit client restart；Provisioner cleanup is `DONE / PROVEN`；local instrumentation checks remain Agent static `85/85`, scenario-runner `51/51`, Desktop `622/622` with one existing environment skip, Desktop strict check, and diff hygiene |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 run `20260912T180622143401Z-f2650421031ed153e55640b67c3e676b` is `DONE / PROVEN` on `69011df9f388c4d50627c331b0dfbbd61fe78bc8`；Foundation run `20260912T180742830795Z-694e471ddbaec21631a4f8e75d5ed7e1` proves Browser retains its handoff across client restart while Desktop reports `storagePresent=false` only after explicit native restart；Provisioner cleanup is `DONE / PROVEN`；the local coordinator/Harness owner fix is pending checkpoint verification |
 | Last updated | 2026-09-12 |
 
 ---

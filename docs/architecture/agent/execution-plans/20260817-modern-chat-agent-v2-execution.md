@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T173512273580Z-38719937fe33a5d53f708286ef2c0950` on `f504880cf60ae1c880e82558b81462e87e70e74d` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260912T173659604871Z-1f7f52da5b4decfe75a9e4e31440e1f2` proved Browser and Desktop English handoff storage remained valid through Station recovery, then Desktop English failed at `foundationDirectProbe` after the coordinator's explicit native client restart; Provisioner cleanup passed; one DirectProbe-entry storage observation remains before the owner fix and return to `BASE-CONTEXT_OVERFLOW`; the `BASE-INTERRUPTED` recovery fence remains locally verified but has not yet been reached by the current full Gate | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T180622143401Z-f2650421031ed153e55640b67c3e676b` on `69011df9f388c4d50627c331b0dfbbd61fe78bc8` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260912T180742830795Z-694e471ddbaec21631a4f8e75d5ed7e1` proved Browser retains its handoff across client restart and Desktop loses the storage key only after explicit native restart; Provisioner cleanup passed; the local owner fix transfers the test oracle through the Python coordinator only for Desktop native and is pending exact-source proof before returning to `BASE-CONTEXT_OVERFLOW`; the `BASE-INTERRUPTED` recovery fence remains locally verified but has not yet been reached by the current full Gate | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7741,6 +7741,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   with `agent.acceptance.foundationRecoveryHandoffMissing`. The next
   instrumentation records the same bounded storage snapshot at that
   DirectProbe entry; no state is reinjected and no proof is weakened.
+  Exact-source run
+  `20260912T180742830795Z-694e471ddbaec21631a4f8e75d5ed7e1`
+  on `69011df9f388c4d50627c331b0dfbbd61fe78bc8` confirms the
+  distinction. Browser retained one valid parsed handoff after client restart.
+  Desktop retained one valid parsed handoff through Station recovery, then
+  reported `storagePresent=false` and `parsedHandoffPresent=false` at
+  DirectProbe entry after the explicit native client restart. The Acceptance
+  runner therefore becomes the restart-surviving owner of this test-only
+  oracle: it exports the latest validated handoff after durable reload and
+  imports it only into the Desktop native Harness after restart with exact
+  scenario/platform validation. Browser keeps its native persistence path.
+  The transfer is excluded from product evidence and cannot replace Station
+  snapshot, cursor replay, or receiver assertions.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

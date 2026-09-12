@@ -1057,6 +1057,7 @@ class FoundationF06Coordinator:
         probe_input: DirectRuntimeProbeInput,
     ) -> None:
         durable_reload_evidence: Mapping[str, Any] | None = None
+        restart_handoff: Mapping[str, Any] | None = None
         transport_restored = False
 
         def observe_recovery_failures(outage_deadline: float) -> None:
@@ -1086,7 +1087,7 @@ class FoundationF06Coordinator:
                 )
 
         def exercise_durable_reloads(operation_deadline: float) -> None:
-            nonlocal durable_reload_evidence, transport_restored
+            nonlocal durable_reload_evidence, restart_handoff, transport_restored
             client = self._client(probe_input.platform)
             client.restore_station_transport()
             transport_restored = True
@@ -1143,6 +1144,31 @@ class FoundationF06Coordinator:
                     f"AS-F06 durable reload source delivery is invalid for "
                     f"{self._scenario_key(probe_input)}: {result!r}"
                 )
+            if probe_input.platform == "desktop_app":
+                remaining = operation_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ScenarioRunnerError(
+                        "AS-F06 Station restart deadline expired "
+                        "while exporting the native restart handoff"
+                    )
+                exported = client.harness(
+                    "foundationF06ExportRestartHandoff",
+                    {"scenarioKey": self._scenario_key(probe_input)},
+                    timeout=remaining,
+                )
+                if (
+                    not isinstance(exported, Mapping)
+                    or exported.get("scenarioKey")
+                    != self._scenario_key(probe_input)
+                    or exported.get("platform") != probe_input.platform
+                    or exported.get("locale") != probe_input.locale
+                    or exported.get("sampleId") != probe_input.sample_id
+                ):
+                    raise ScenarioRunnerError(
+                        "AS-F06 native restart handoff export is invalid for "
+                        f"{self._scenario_key(probe_input)}"
+                    )
+                restart_handoff = dict(exported)
             durable_reload_evidence = dict(result)
 
         client = self._client(probe_input.platform)
@@ -1165,6 +1191,31 @@ class FoundationF06Coordinator:
             require_existing_session=True,
             recovery_boundary="client-restart",
         )
+        if probe_input.platform == "desktop_app":
+            if restart_handoff is None:
+                raise ScenarioRunnerError(
+                    "AS-F06 native restart handoff is missing for "
+                    f"{self._scenario_key(probe_input)}"
+                )
+            imported = client.harness(
+                "foundationF06ImportRestartHandoff",
+                {
+                    "scenarioKey": self._scenario_key(probe_input),
+                    "platform": probe_input.platform,
+                    "handoff": restart_handoff,
+                },
+                timeout=60,
+            )
+            if (
+                not isinstance(imported, Mapping)
+                or imported.get("scenarioKey")
+                != self._scenario_key(probe_input)
+                or imported.get("platform") != probe_input.platform
+            ):
+                raise ScenarioRunnerError(
+                    "AS-F06 native restart handoff import is invalid for "
+                    f"{self._scenario_key(probe_input)}"
+                )
         if durable_reload_evidence is None:
             raise ScenarioRunnerError(
                 f"AS-F06 durable reload evidence is missing for "

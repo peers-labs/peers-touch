@@ -632,10 +632,41 @@ class AgentHarnessStaticTest(unittest.TestCase):
             '"foundationF06DurableReload"',
             capability_restore,
         )
+        handoff_export = active.index(
+            '"foundationF06ExportRestartHandoff"',
+            durable_reload,
+        )
+        client_restart = active.index("client.restart()", handoff_export)
+        client_auth = active.index(
+            'recovery_boundary="client-restart"',
+            client_restart,
+        )
+        handoff_import = active.index(
+            '"foundationF06ImportRestartHandoff"',
+            client_auth,
+        )
+        direct_probe = active.index('"foundationDirectProbe"', handoff_import)
 
         self.assertLess(transport_restore, station_auth)
         self.assertLess(station_auth, capability_restore)
         self.assertLess(capability_restore, durable_reload)
+        self.assertLess(durable_reload, handoff_export)
+        self.assertLess(handoff_export, client_restart)
+        self.assertLess(client_restart, client_auth)
+        self.assertLess(client_auth, handoff_import)
+        self.assertLess(handoff_import, direct_probe)
+        self.assertIn(
+            'if probe_input.platform == "desktop_app":',
+            active[durable_reload:direct_probe],
+        )
+        self.assertIn(
+            "async foundationF06ExportRestartHandoff",
+            self.source,
+        )
+        self.assertIn(
+            "async foundationF06ImportRestartHandoff",
+            self.source,
+        )
 
     def test_recovery_completion_reads_failure_after_evidence_sync(self) -> None:
         completion_start = self.source.index(
