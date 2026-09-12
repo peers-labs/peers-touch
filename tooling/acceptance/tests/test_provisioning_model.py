@@ -528,10 +528,80 @@ class EnvironmentContractTests(unittest.TestCase):
                     continuity.read_text(encoding="utf-8"),
                     "preserved",
                 )
+                with (
+                    mock.patch.dict(
+                        os.environ,
+                        {
+                            "PT_CHAT_NATIVE_STORAGE_SEEDS": (
+                                f"{alice_seed},{bob_seed}"
+                            ),
+                            "PT_CHAT_NATIVE_PERSISTENT_STORAGE_ROOTS": (
+                                f"{alice_state},{bob_state}"
+                            ),
+                            "PT_CHAT_NATIVE_RESET_PERSISTENT_STATE": "1",
+                            "CHAT_ACCEPTANCE_RESET": "1",
+                            "CHAT_ACCEPTANCE_RESET_PROFILE": "four",
+                        },
+                        clear=True,
+                    ),
+                    mock.patch.object(
+                        provisioner,
+                        "_port_available",
+                        return_value=True,
+                    ),
+                    mock.patch.object(
+                        provisioner,
+                        "_client_worktrees",
+                        return_value=client_worktrees,
+                    ),
+                ):
+                    reset = provisioner._clients(
+                        run_id=f"{run_id}-reset",
+                        profile_name="four",
+                        profile_env={
+                            "PT_DESKTOP_APP_GATEWAY_PORT": "3140",
+                            "PT_DESKTOP_APP_WEB_PORT": "3410",
+                        },
+                        slot=3,
+                        actors=actors,
+                    )
+                self.assertEqual(
+                    [Path(client.storage_root) for client in reset],
+                    [alice_state.resolve(), bob_state.resolve()],
+                )
+                self.assertFalse(continuity.exists())
+                self.assertFalse(any(alice_state.rglob("chat.main.db*")))
+                self.assertFalse(any(alice_state.rglob("device_id")))
             finally:
                 provisioner.cleanup()
             self.assertTrue(alice_state.is_dir())
             self.assertTrue(bob_state.is_dir())
+
+    def test_current_profile_persistent_reset_requires_exact_authorization(
+        self,
+    ) -> None:
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "PT_CHAT_NATIVE_RESET_PERSISTENT_STATE": "1",
+                "CHAT_ACCEPTANCE_RESET": "1",
+                "CHAT_ACCEPTANCE_RESET_PROFILE": "five",
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(
+                BlockedError,
+                "exact CHAT_ACCEPTANCE_RESET_PROFILE match",
+            ):
+                (
+                    native_tauri_current_profile
+                    .NativeTauriCurrentProfileProvisioner
+                    ._persistent_storage_reset_authorized("four")
+                )
 
     def test_current_profile_defaults_to_each_worktree_storage_seed(self):
         from tooling.acceptance.provisioners import (

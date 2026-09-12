@@ -5010,3 +5010,23 @@ Focused Key Exchange and complete Conversation package suites pass. Native
 Chat static verification also passes, and targeted tests preserve the typed
 error context. Exact-source deployment and current-profile Native rerun remain
 required.
+
+Exact-source rerun
+`20260912T031128172843Z-11631fb034b8b5add3296ae0ac6f0681`
+proved the stale-endpoint classification and Device Engine transition back to
+pending enrollment. A clean profile-four reset immediately before the next run
+allowed both devices to re-enroll, but run
+`20260912T031727584709Z-6ad8e8045d5693193dd4d0526d3c3e32`
+then correctly rejected Bob's pre-reset local inbox cursor against the
+reset Station lane with `DEVICE_INBOX_ITEM_NOT_HEAD`.
+
+The current-profile Provisioner now supports one explicit
+`PT_CHAT_NATIVE_RESET_PERSISTENT_STATE=1` operation gated by both
+`CHAT_ACCEPTANCE_RESET=1` and an exact
+`CHAT_ACCEPTANCE_RESET_PROFILE=<active-profile>` match. Before deleting either
+dedicated Acceptance state, it verifies the existing actor/worktree/profile
+marker and rejects symlinked state. It then reconstructs each persistent state
+from its read-only identity seed while excluding the old Device Engine
+database and device binding. Normal runs keep the flag unset and continue to
+preserve crypto, cursor, authority, and projection continuity. Focused
+Provisioner tests cover reuse, reset, marker validation, and authorization.
