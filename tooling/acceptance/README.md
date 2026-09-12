@@ -149,6 +149,22 @@ authority head, and projections must advance together. Runtime cleanup removes
 processes, ports, temporary logs, and ephemeral storage while verifying that
 the declared persistent device roots remain present.
 
+After an explicitly authorized destructive reset of the same active Station
+profile, reset the two dedicated Acceptance device states exactly once by
+running the Gate with:
+
+```bash
+CHAT_ACCEPTANCE_RESET=1 \
+CHAT_ACCEPTANCE_RESET_PROFILE=<active-profile> \
+PT_CHAT_NATIVE_RESET_PERSISTENT_STATE=1 \
+python3 tooling/scripts/acceptance-run.py \
+  --gate chat-native-current-profile-two-client-e2e
+```
+
+The Provisioner validates each existing marker against the actor, worktree, and
+profile before deletion, then rebuilds the persistent state from the read-only
+identity seed. The reset flag must not remain set for normal repeated runs.
+
 ### Agent R6 Stream Resilience
 
 `agent-stream-resilience-e2e` is the stable native Gate for R6. It requires the
