@@ -5059,3 +5059,61 @@ the Make target uses that mode unless an explicit
 live smoke run passed on dynamically allocated WebDriver and Gateway ports
 without touching the existing `4445/4446` listeners. Exact-source
 two-Station Native rerun remains required.
+
+The next two-Station run
+`20260912T040052696673Z-d528407bc41bee9fecf2d3013351aa09`
+reached `FIXTURE_READY` and dynamic driver smoke, then failed closed because
+`desktop-macos-native` had no registered Runtime Cell lifecycle. The accepted
+NDR-W8 contract already requires the explicit local macOS contract,
+Provisioner, AppKit/CoreGraphics adapter evidence, clean source identity,
+binary hash, GUI-session lease, and reverse cleanup. This is a mechanical
+implementation gap under D-13, not a new product or architecture decision.
+
+The first live lifecycle probe exposed two platform-observation defects before
+any Chat journey:
+
+1. exact-PID AppKit activation may race another native Desktop process, so the
+   lifecycle must require bounded focus convergence instead of accepting one
+   activation attempt; and
+2. Quartz lists a transparent full-screen Dock compositor surface above the
+   target window. Raw bounds and global alpha therefore do not establish the
+   top visible owner at a point. The macOS adapter must sample each candidate
+   window at the probe point and ignore only fully transparent samples before
+   evaluating point ownership.
+
+The same correction must read back the CoreGraphics pointer location after
+posting the move event; successful API return alone is not input proof.
+Focused tests must cover transparent-surface filtering, byte-order-aware alpha
+decoding, focus retry/failure, lifecycle lease cleanup, and contract
+registration. A repeated live host probe, the owning Infra Gate cohort, a
+clean checkpoint, high-chat tree synchronization, exact-source Station
+deployment, and the unchanged two-Station Native Gate remain required.
+
+The corrected dirty-source host probe now passes on macOS 26.6.2 arm64 with a
+1728x1117 connected display. It proves the dedicated Tauri process reached
+exact-PID AppKit focus, the CoreGraphics pointer reached the requested point,
+the first non-transparent Quartz window sample belongs to that process, and
+the desktop screenshot is nonempty. Probe process, dynamic WebDriver port,
+temporary screenshot, log, storage, and lease state were released.
+
+Focused runtime-cell, binding, alpha-sample, focus-convergence, and lifecycle
+tests pass 39/39. The owning Infra Gates pass:
+
+- `acceptance-runtime-provisioning-self`
+  `20260912T041726128138Z-4c2c81d24afa614dbcba790c20a46508`;
+- `acceptance-plan-self`
+  `20260912T041754300476Z-4da6850454a305a3d3fdd7860f09e74c`;
+- `acceptance-infra-validation`
+  `20260912T041802024558Z-9cee68e7d7ca9e93872e5f2feecc52e2`;
+  and
+- adapter-consumer `chat-native-visible-static`
+  `20260912T041847932814Z-cdea8c6ff21011a8483ffa7dc2d34a17`.
+
+Direct Infra validation is structurally valid, Quality Evidence and
+responsibility-boundary tests pass, and diff hygiene passes. The documented
+`make acceptance-plan-self` convenience target is absent, while the canonical
+Gate above passes. Repository `skill-check` also retains the previously
+recorded unrelated upstream review-rule hash drift. Neither issue changes the
+macOS lifecycle result. Clean-source lifecycle evidence, high-chat
+synchronization, exact-source deployment, and the product Gate queue remain
+open.

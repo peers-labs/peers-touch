@@ -1,0 +1,47 @@
+{
+  "id": "desktop-macos-native",
+  "platform": "macos",
+  "architecture": "arm64",
+  "isolation": {
+    "kind": "host",
+    "image_ref": "",
+    "image_digest_required": false
+  },
+  "transport": {
+    "kind": "local",
+    "target_ref": "",
+    "webdriver_forward": "local-loopback"
+  },
+  "display": {
+    "session_type": "native-macos",
+    "physical_monitor_required": true,
+    "connected_output_required": true,
+    "fixed_geometry": ""
+  },
+  "webdriver": {
+    "kind": "tauri-embedded",
+    "bind": "127.0.0.1"
+  },
+  "native_adapter": {
+    "input": "coregraphics-events",
+    "window": "appkit-accessibility",
+    "screenshot": "coregraphics-screencapture"
+  },
+  "source": {
+    "mode": "local-worktree",
+    "clean_commit_required_for_proof": true,
+    "binary_sha256_required": true
+  },
+  "lease": {
+    "scope": "gui-session",
+    "ttl_seconds": 5400
+  },
+  "cleanup": {
+    "resources": [
+      "probe-process",
+      "ports",
+      "storage",
+      "gui-session-lease"
+    ]
+  }
+}

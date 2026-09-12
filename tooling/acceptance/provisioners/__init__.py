@@ -17,6 +17,7 @@ from .mobile_simulator import (
     MobileStationLifecycleSimulatorProvisioner,
 )
 from .native_desktop_linux import NativeDesktopLinuxProvisioner
+from .native_desktop_macos import NativeDesktopMacOSProvisioner
 from .native_desktop_windows import NativeDesktopWindowsProvisioner
 from .native_tauri_embedded_webdriver import (
     NativeTauriEmbeddedWebDriverProvisioner,
@@ -45,6 +46,7 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
 }
 
 _RUNTIME_CELL_LIFECYCLES: dict[str, type[RuntimeCellLifecycle]] = {
+    "desktop-macos-native": NativeDesktopMacOSProvisioner,
     "desktop-linux-native": NativeDesktopLinuxProvisioner,
     "desktop-windows-native": NativeDesktopWindowsProvisioner,
 }
@@ -83,6 +85,7 @@ __all__ = [
     "MobileSocialSimulatorProvisioner",
     "MobileStationLifecycleSimulatorProvisioner",
     "NativeDesktopLinuxProvisioner",
+    "NativeDesktopMacOSProvisioner",
     "NativeDesktopWindowsProvisioner",
     "NativeTauriEmbeddedWebDriverProvisioner",
     "NativeTauriCurrentProfileProvisioner",
