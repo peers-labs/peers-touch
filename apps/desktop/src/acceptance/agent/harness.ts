@@ -8188,6 +8188,16 @@ async function runFoundationF06Complete(
   facts: Record<string, unknown>;
 }> {
   const handoff = readFoundationF06Handoff(input.scenarioKey);
+  // #region debug-point R-U:f06-handoff-storage
+  void reportFoundationF06TerminalRaceDebug(
+    'R-U',
+    'handoff-read-after-client-restart',
+    {
+      ...foundationF06HandoffStorageSnapshot(input.scenarioKey),
+      parsedHandoffPresent: handoff !== null,
+    },
+  );
+  // #endregion
   if (!handoff) {
     throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
   }

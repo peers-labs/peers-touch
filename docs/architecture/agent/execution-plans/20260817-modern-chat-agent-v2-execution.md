@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T164209337981Z-1dd91d795d071a4d07025ed07620fcc3` on `e68640fc6ef195f1e805443c827a4fa71a4fcb58` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260912T170246593060Z-c3aa9e29803ff2ee6cf45578ac99fffc` crossed Browser AS-F06 but failed at Desktop English AS-F06 when bounded warm-up restarted the native client and `foundationF06RestoreCapabilityIsolation` could not read its finalized handoff; Provisioner cleanup passed; bounded storage-shape instrumentation is pending exact-source proof before returning to `BASE-CONTEXT_OVERFLOW`; the `BASE-INTERRUPTED` recovery fence remains locally verified but has not yet been reached by the current full Gate | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T173512273580Z-38719937fe33a5d53f708286ef2c0950` on `f504880cf60ae1c880e82558b81462e87e70e74d` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260912T173659604871Z-1f7f52da5b4decfe75a9e4e31440e1f2` proved Browser and Desktop English handoff storage remained valid through Station recovery, then Desktop English failed at `foundationDirectProbe` after the coordinator's explicit native client restart; Provisioner cleanup passed; one DirectProbe-entry storage observation remains before the owner fix and return to `BASE-CONTEXT_OVERFLOW`; the `BASE-INTERRUPTED` recovery fence remains locally verified but has not yet been reached by the current full Gate | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7730,6 +7730,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   null field names, and strict parser acceptance before navigation and after
   Station recovery. It does not reseed state, relax persistence proof, or
   change product behavior.
+  Exact-source run
+  `20260912T173659604871Z-1f7f52da5b4decfe75a9e4e31440e1f2`
+  on `f504880cf60ae1c880e82558b81462e87e70e74d` did not reproduce the
+  earlier loss at capability restoration. Browser English, Browser Simplified
+  Chinese, and Desktop English each persisted one valid handoff and retained
+  it through Station recovery with no `null` fields and strict parser
+  acceptance. Desktop English then completed durable reload, the coordinator
+  performed its explicit client restart, and `foundationDirectProbe` failed
+  with `agent.acceptance.foundationRecoveryHandoffMissing`. The next
+  instrumentation records the same bounded storage snapshot at that
+  DirectProbe entry; no state is reinjected and no proof is weakened.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

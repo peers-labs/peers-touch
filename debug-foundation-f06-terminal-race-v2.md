@@ -126,3 +126,18 @@ The next instrumentation records only storage presence, serialized length,
 entry count, target-entry presence, null field names, and parser acceptance
 before navigation and after Station recovery. It records no handoff values,
 actor identity, conversation identity, draft content, or credentials.
+
+Exact-source run
+`20260912T173659604871Z-1f7f52da5b4decfe75a9e4e31440e1f2`
+on `f504880cf60ae1c880e82558b81462e87e70e74d` did not reproduce the
+earlier loss at capability restoration. Browser English, Browser Simplified
+Chinese, and Desktop English all reported a valid one-entry handoff before
+navigation and after Station recovery, with no top-level or tool-isolation
+`null` fields and `parsedHandoffPresent=true`.
+
+Desktop English then completed durable reload, the coordinator performed its
+explicit client restart, and the following `foundationDirectProbe` failed with
+`agent.acceptance.foundationRecoveryHandoffMissing`. This moves the loss
+boundary from Station recovery to the explicit native client restart. The next
+observation reuses the same bounded storage snapshot at the DirectProbe entry
+to distinguish a missing key from a post-durable-reload parser rejection.
