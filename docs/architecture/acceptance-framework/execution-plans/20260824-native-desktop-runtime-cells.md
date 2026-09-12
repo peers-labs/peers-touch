@@ -5117,3 +5117,40 @@ recorded unrelated upstream review-rule hash drift. Neither issue changes the
 macOS lifecycle result. Clean-source lifecycle evidence, high-chat
 synchronization, exact-source deployment, and the product Gate queue remain
 open.
+
+At the Owner's direction, Gate execution was then paused in favor of direct
+functional validation. Independent `make desktop` processes from group-chat
+and high-chat exposed two environment/product boundaries:
+
+1. the paired `chat-native-four` and `chat-native-five` profiles existed only
+   as one worktree's `.local` cache, so high-chat could not select the matching
+   Station through the env-repository authority; and
+2. after both profiles were defined canonically in the env repository, Alice
+   and Bob authenticated against the paired disposable Stations, shared active
+   Federation `fed_chat_7341c15a026c42dd6d56`, remained reciprocal friends,
+   enrolled their exact devices, and published prekeys, but Bob's first Direct
+   message remained `draft`.
+
+Runtime evidence isolates the product defect. Conversation created
+`direct-060c1c0291de8a853548f6b289895557` and prepared the correct Alice/Bob
+endpoint set. Key Exchange then rejected Alice's exact remote device with
+`key_exchange.device_directory.resolve: device: is not an active verified
+actor device` because the source Station queried its local-only
+`actor_devices` table before federation. MP-D19 explicitly forbids a remote
+Actor shadow row.
+
+The focused correction stays in Key Exchange:
+
+- Actor Identity remains the owner of the Actor-to-Home-Station route;
+- an exact remote Direct target is routed to that Home Station without adding
+  a local `actor_devices` row;
+- the target Home Station still performs the authoritative active-device check
+  before consuming a prekey; and
+- local actors continue to require the existing local active-device lookup.
+
+The regression removes the remote target from the source Station's test device
+directory while retaining only its Actor Identity Home Station projection, and
+proves the typed Federation Direct-bundle fetch still succeeds. Uncached Key
+Exchange tests, Key Exchange race tests, focused Actor Identity tests,
+`go vet`, formatting, and diff hygiene pass. Exact-source deployment and the
+same direct functional send remain required; Gate execution stays paused.
