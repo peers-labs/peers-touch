@@ -230,6 +230,9 @@ mod tests {
             validate_encrypted_object_upload_spec(&invalid).unwrap_err(),
             "messaging attachment exceeds policy"
         );
+        invalid = valid_spec();
+        invalid.media_type = "image/png".to_string();
+        assert!(validate_encrypted_object_upload_spec(&invalid).is_err());
     }
 
     #[test]

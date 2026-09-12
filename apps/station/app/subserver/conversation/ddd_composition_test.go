@@ -3407,6 +3407,67 @@ func TestConversationDDDPlanConsumptionRollsBackWithTransition(t *testing.T) {
 	}
 }
 
+func TestConversationDDDMemberSettingsClearAndRestore(t *testing.T) {
+	fixture := newDDDComposition(t)
+	ctx := context.Background()
+	alice := dddEndpoint("ptid:alice", "alice-1")
+	bob := dddEndpoint("ptid:bob", "bob-1")
+	seedDDDDevices(t, fixture.db, dddDevice(alice, "station-a"), dddDevice(bob, "station-a"))
+	created, err := fixture.commands.CreateDirect(ctx, command.CreateDirectRequest{
+		Creator:           alice,
+		Peer:              bob.Actor,
+		FederationID:      dddFederationID,
+		AuthorityEpoch:    dddAuthorityEpoch,
+		CommandID:         "create-settings",
+		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-a"),
+		ExactCommandBytes: []byte("create-settings"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversationID := created.Conversation.ID
+	clearedAt := dddTestTime.UnixMilli()
+	muted := true
+	if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, alice.Actor,
+		command.MemberSettingsPatch{ClearedAtUnixMillis: &clearedAt, Muted: &muted},
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, rejected := range []int64{-1, clearedAt - 1} {
+		if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, alice.Actor,
+			command.MemberSettingsPatch{ClearedAtUnixMillis: &rejected},
+		); err == nil {
+			t.Fatalf("accepted invalid clear cursor %d", rejected)
+		}
+	}
+	restoredAt := int64(0)
+	if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, "ptid:outsider",
+		command.MemberSettingsPatch{ClearedAtUnixMillis: &restoredAt},
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeUnauthorized) {
+		t.Fatalf("nonmember restore error = %v", err)
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		settings, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, alice.Actor,
+			command.MemberSettingsPatch{ClearedAtUnixMillis: &restoredAt},
+		)
+		if err != nil {
+			t.Fatalf("restore attempt %d: %v", attempt, err)
+		}
+		if settings.ClearedAtUnixMillis != 0 || !settings.Muted {
+			t.Fatalf("restored settings = %+v", settings)
+		}
+		var persisted persistence.ConversationMemberSettingsModel
+		if err := fixture.db.First(&persisted, "conversation_id = ? AND ptid = ?",
+			string(conversationID), string(alice.Actor),
+		).Error; err != nil {
+			t.Fatal(err)
+		}
+		if persisted.ClearedAtUnixMillis != 0 || !persisted.Muted {
+			t.Fatalf("persisted restored settings = %+v", persisted)
+		}
+	}
+}
+
 func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *testing.T) {
 	fixture := newDDDComposition(t)
 	owner := dddEndpoint("ptid:owner", "owner-1")

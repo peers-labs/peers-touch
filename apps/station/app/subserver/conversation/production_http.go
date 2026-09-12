@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
@@ -2049,6 +2051,67 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 		logger.Warnf(ctx, "Conversation policy rejected request: %v", err)
 
 		return server.Forbidden("Conversation policy rejected the request")
+	}
+	switch delivery.CodeOf(err) {
+	case delivery.ErrorCodeInvalidArgument,
+		delivery.ErrorCodePayloadHashMismatch:
+		return server.BadRequestWithCause("invalid Device Inbox request", err)
+	case delivery.ErrorCodeUnauthorized,
+		delivery.ErrorCodeItemOwnerMismatch:
+		return server.NewHandlerErrorWithCause(
+			http.StatusForbidden,
+			"Device Inbox operation is not authorized",
+			err,
+		)
+	case delivery.ErrorCodeItemNotFound:
+		return server.NewHandlerErrorWithCause(
+			http.StatusNotFound,
+			"Device Inbox item was not found",
+			err,
+		)
+	case delivery.ErrorCodeConsumerFenced,
+		delivery.ErrorCodeItemNotHead,
+		delivery.ErrorCodeItemNotClaimed,
+		delivery.ErrorCodeIdempotencyConflict,
+		delivery.ErrorCodeLeaseExpired:
+		return server.NewHandlerErrorWithCause(
+			http.StatusConflict,
+			"Device Inbox state conflicts with the request",
+			err,
+		)
+	case delivery.ErrorCodeQuotaExceeded:
+		return server.NewHandlerErrorWithCause(
+			http.StatusTooManyRequests,
+			"Device Inbox quota exceeded",
+			err,
+		)
+	}
+	switch interaction.CodeOf(err) {
+	case interaction.ErrorCodeInvalidArgument,
+		interaction.ErrorCodeIntegrityFailed:
+		return server.BadRequestWithCause(
+			"invalid Conversation interaction request",
+			err,
+		)
+	case interaction.ErrorCodeUnauthorized:
+		return server.NewHandlerErrorWithCause(
+			http.StatusForbidden,
+			"Conversation interaction is not authorized",
+			err,
+		)
+	case interaction.ErrorCodeStalePulse,
+		interaction.ErrorCodeIdempotencyConflict:
+		return server.NewHandlerErrorWithCause(
+			http.StatusConflict,
+			"Conversation interaction state conflicts with the request",
+			err,
+		)
+	case interaction.ErrorCodeQuotaExceeded:
+		return server.NewHandlerErrorWithCause(
+			http.StatusTooManyRequests,
+			"Conversation interaction quota exceeded",
+			err,
+		)
 	}
 	code := conversationdomain.CodeOf(err)
 	switch code {

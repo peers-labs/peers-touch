@@ -1,16 +1,110 @@
 # Native Desktop Runtime Cells — Execution Plan
 
-> **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-24 | **Updated**: 2026-09-05
+> **Status**: completed for the Owner-approved Windows sixwin scope
+> **Version**: v1.1
+> **Created**: 2026-08-24 | **Updated**: 2026-09-11
 > **Owner**: Acceptance Infrastructure + Desktop Platform + Chat Domain
-> **Branch**: `refactor/chat-acceptance-cutover`
+> **Branch**: `fix/windows-native-chat-closure`
 > **Parent Design**: [../design.md](../design.md)
 > **Approved Decisions**: D-13, D-14, D-15, D-16, D-17, D-18
 
 ---
 
 ## 1. Goal And Claims
+
+### Current Windows Execution Scope
+
+The Owner's 2026-09-10 single-host instruction supersedes the historical
+Windows distinct-Station requirements below. Use sixwin for the orchestrator,
+Windows Native runtime, and the single local source Station. Inject
+`--station-profile station-primary=sixwin` at execution time; omission fails
+closed. No secondary Station, station-four, or station-five is authorized.
+Gate and provisioner definitions must remain host-neutral.
+
+NDR-W1-W7 remain closed Linux history; NDR-W8 is out of scope. Single-Station
+Windows proof must not be represented as cross-Station or cross-platform proof.
+Historical evidence and amendments below remain traceable, not instructions
+to redeploy historical hosts.
+
+Current Goal: `6aa2282c0ad37e7b2b10927d`. The Windows sixwin closure is
+`DONE/PROVEN` at product source
+`283832a7392e071f0d2018cfb3fd85a874744172`; the Goal may be marked complete
+after this closure record is committed and its documentation checks pass.
+
+| Remaining Closure | Status / Dependency |
+|---|---|
+| NDR-W9-D Product Closure | Done: final sixwin run `20260911T171023157955Z-dec53283a4ae9dbb4124c94a00ba6a24` is `PASS/DONE/PROVEN`. |
+| Four local Chat Gates | Done: aggregate `20260911T192936233860Z-1619e4066c3880aefc3c47944b0341ad` passed 4/4. |
+| Seven other Windows Native Chat Gates | Done: all eight Native Gates, including Product Closure, passed in aggregate `20260911T171022643174Z-8601dca380d9a904041d72fa46bafad6`. |
+| PostgreSQL contention/recovery | Done: sixwin-local PostgreSQL 17.11 run `20260911T1915491502940Z-f3a7eb606a6e401980e62336ea6d6524` passed contention, immediate-stop recovery, exact durable readback, post-recovery rerun, and cleanup. |
+| Gap Detector | Done: local run `20260911T193242532950Z-bd8db662292312f8b77d200ed7899865` and Native run `20260911T193256473649Z-419aa292e04928879de4fd65050a1c4a` are `PROVEN` with zero gaps. |
+| Completion audit | Done: Windows audit `20260911T193908424196Z-daccebe8f7c6c434bcc1e07c767562b9` is `PASS/DONE/PROVEN`. |
+
+All 12 final matrix Gate results and the three closing activities are complete
+for the Owner-approved Windows sixwin scope. This does not reopen or extend the
+scope to macOS, historical Linux work, or historical distinct-Station claims.
+
+Concurrency Decision: hybrid. The integrator owns all source/plan writes,
+commits, builds, profiles, Fixture mutation, GUI, and final Gate execution.
+A read-only lane may inventory PostgreSQL and final-audit commands while the
+integrator fixes broker restart preservation. No concurrent Gate or deployment
+may consume sixwin's exclusive runtime. Reconcile findings before execution.
+
+Prior authoritative run:
+`20260910T225056619096Z-1e934531b5fb953335efbe6e212d2366`,
+source `6ab9c369506b14162de7fbac1f0d587e5f874292`. It proves attachment
+count conservation, image rendering, and exact sender/receiver byte hashes.
+It fails Bob restart with `auth_restore_session: session_missing`; cleanup
+passes. Inspection finds `stop_actor(preserveState=True)` still deletes the
+actor control root containing storage. Repair lifecycle preservation and
+relaunch ownership in the Windows broker, not authentication or Gate assertions.
+
+2026-09-11 corrective checkpoint:
+
+- Broker launch files now live under `actors/<run>/<client>/control`;
+  preserving a client removes only that control subtree. Final stop/lease
+  cleanup still removes the actor root. Failed relaunch retains existing
+  storage for retry or lease cleanup.
+- Broker/provisioner/Win32 tests: 52 passed. Runtime binding and Chat static
+  cohort: 115 passed. Infra boundary: 8 passed. Planner self-check passed.
+- Local four-Gate aggregate
+  `20260911T042824149640Z-e65f3ce62f4af192526c3e8af679a64e`: all passed
+  on the corrective dirty source. This is not final clean-source matrix proof.
+- PostgreSQL read-only inventory: local test DSNs are unset and PostgreSQL
+  executables were not found in checked locations. Existing Postgres tests
+  cover attachment quota contention, canonical indexes, competing dispatchers,
+  and concurrent inbox exactly-once behavior. Independent PostgreSQL restart
+  recovery proof is still missing; client recovery/SQLite cannot substitute.
+- Ready: commit the verified correction and rerun Product Closure only.
+  Parked by dependency: seven other Native Gates, final frozen-source matrix,
+  local PostgreSQL evidence, Gap Detector and completion audit. No push.
+
+Latest authoritative run:
+`20260911T045324047847Z-6ca265061291ef49f14f993fb0501c0a`,
+source `75b0fb9ea03a658ef43ee89dbfcd6715972485e9`. Attachments,
+`offline_recovery_exact`, `restart_exact` and `settings_restart_recovery`
+pass. First failure is restoring the clear-history cursor to zero. Station's
+member-settings service rejects this existing restore action as a backwards
+cursor; its error also causes the failed unhandled-rejection log audit.
+Processes, ports and storage cleanup pass.
+
+The focused persistent composition regression reproduces the same rejection,
+then passes after allowing the explicit zero restore while retaining negative
+and non-zero backwards-cursor rejection and active-member authorization.
+Conversation's full race suite and all four local Chat Gates pass.
+The reviewed Agent runtime matrix uses CRLF after Windows checkout; enforcing
+the repository's existing `eol=lf` convention restores its original reviewed
+SHA-256 without changing the contract. Infra validation
+`20260911T055916897553Z-97305cd3ce920c2d552ea6781f9d43dd` is
+`STRUCTURALLY_VALID`.
+
+Two preceding runs stopped in display preflight when SPICE auto-resized QXL
+away from the required 1920x1080. The successful preflight used a bounded local
+operator wrapper to pause SPICE VDAgent for the Gate and restore its prior
+service/display state in `finally`; service restoration was verified.
+This is runtime setup only, not a relaxed Gate geometry requirement.
+Next: commit the cursor/line-ending correction, rerun Product Closure with
+fixed display setup, then advance to the seven queued Native Gates.
 
 Deliver one source-bound Native Desktop Acceptance system that:
 
@@ -469,13 +563,13 @@ Deliver:
   instead of reusing MP-W11's hard-coded 22-Gate audit.
 - Exclude standalone Federation, Applet, Agent, and Mobile Gates. Cross-Station
   transport remains in scope only where a Chat Gate directly exercises it.
-- Alice and Bob on sixwin bind to distinct Stations via the same multi-Station
-  manifest contract used by the Linux cell (W10 infrastructure).
+- Alice and Bob on sixwin bind explicitly to the single runtime-selected
+  `station-primary` through the D-18 manifest contract.
 - Product assertions use platform-neutral DOM/WebDriver paths; only the
   adapter and runtime binding are Windows-specific.
 - Capture immutable evidence: screenshots, DOM snapshots, native window
   diagnostics, attachment counts, cleanup audit.
-- Collect W10-D Windows multi-Station binding evidence: manifest, Station
+- Collect W10-D Windows binding evidence: manifest, Station
   attestations, binding-proof tuple closure, live identity verification.
 
 Evidence:
@@ -483,7 +577,7 @@ Evidence:
 - Source-matched final run with all four local Chat Gates and all eight Windows
   Native Chat Gates reaching `DONE/PROVEN`.
 - Win32 adapter native diagnostics (window stack, focus, screenshot) captured.
-- Multi-Station binding proof (distinct Station identities per client).
+- Complete per-client/per-generation Station binding proof for this topology.
 - Cleanup audit shows all remote processes terminated and storage wiped.
 - Gap Detector reports zero gaps for the approved Windows matrix.
 
@@ -605,8 +699,10 @@ cell consumes it independently. Evidence is collected per-platform:
 **Windows evidence** (after W9-C):
 
 - Alice and Bob run on sixwin via the Windows runtime cell and Win32 adapter,
-  each binding to a distinct Station through the same manifest contract.
+  both binding to the runtime-selected local `station-primary`.
 - Same binding-proof tuple closure and live identity verification as Linux.
+- Distinct-Station and cross-Station claims are outside the Owner's current
+  single-Station execution scope and remain unproven by these runs.
 
 **macOS evidence** (after W8):
 
@@ -736,9 +832,9 @@ business Gate is permitted.
   cell failure blocks at W9-C. Status remains `UNPROVEN` at the failed stage.
 - **Evidence**: immutable Windows cell run, Win32 native diagnostics, and
   cleanup audit.
-- **Status**: partial — runtime cell, Win32 input, peer-bound Direct recovery,
-  exact cross-Station Direct create/reopen, and distinct client bindings are
-  proven; Product Closure currently stops at `group.create.ui`
+- **Status**: partial — current single-Station Windows run passes through
+  `client.restart.ui`; Product Closure stops at `clear.cursor.restart.ui`.
+  See the current Windows execution scope and corrective checkpoint above.
 
 ### AS-NDR-09: Linux multi-Station binding
 
@@ -861,8 +957,8 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
-| NDR-W9 Windows cell | W9-A/B/C done; Product Closure reaches `reaction.ui`; W9-D remains partial | Exact-source Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` at `2ae0254691d97f16c3c08ef3e8639bdd91a91eac` proves Direct open/reopen, canonical Group genesis, Alice sequence 2, Bob sequence 3, Alice thread-reply sequence 4, toolbar geometry, and authority reaction sequence 5. Bob's Device Inbox lane 7 contains a canonical `ActorReadCursor` whose event identity is the payload SHA-256; the client expected a retired `read:` prefix, rejected the cursor as `MessageReceipt`, and blocked the lane-8 reaction. The shared Messaging Core decoder correction and four local Chat Gates pass, but exact-source deployment and Product Closure rerun remain pending. |
-| NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings, exact Direct create/reopen, bidirectional Group transcript/thread delivery, follower receipt return, and durable remote-command authority commit | Authority sequence 5 and Alice consumption prove the cross-Station mutation path through reaction commit. Bob's queue remains blocked by the read-cursor discriminator defect, so reaction convergence, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven pending the locally verified client correction. |
+| NDR-W9 Windows cell | done for Windows sixwin scope | Product Closure run `20260911T171023157955Z-dec53283a4ae9dbb4124c94a00ba6a24` is `PASS/DONE/PROVEN` at clean source `283832a7`; runtime identity, 1920x1080 Win32 evidence, Station binding, and cleanup are proven. |
+| NDR-W10 D-18 binding infrastructure | done for current Windows single-Station scope | Eight-Gate Native aggregate `20260911T171022643174Z-8601dca380d9a904041d72fa46bafad6`, PostgreSQL run `20260911T1915491502940Z-f3a7eb606a6e401980e62336ea6d6524`, two zero-gap reports, and audit `20260911T193908424196Z-daccebe8f7c6c434bcc1e07c767562b9` close the Owner-approved sixwin scope. Historical distinct-Station claims remain outside this closure. |
 
 ### 2026-08-24 Execution Reconciliation
 
@@ -3033,7 +3129,7 @@ Native Chat Gates must reach `DONE/PROVEN`:
 7. `chat-native-recovery-e2e`; and
 8. `chat-native-group-mls-e2e`.
 
-The final matrix also requires exact source/build/runtime identity, distinct
+The final matrix also requires exact source/build/runtime identity, explicit
 Alice and Bob Station bindings, reverse-order cleanup, and a zero-gap Gap
 Detector result.
 
@@ -4200,3 +4296,184 @@ dependency-ready action is a checkpoint commit without push, exact-source
 deployment, and another Product Closure-only run. The remaining seven Windows
 Native Chat Gates and PostgreSQL contention stay deferred until Product
 Closure passes.
+
+### 2026-09-10 Windows Operator Profile Injection
+
+Work resumed from the ordinary repo on master HEAD
+`79ae008706ca29f4bb5f1da29d9b6651a59b2f7c` (clean, single worktree, workspace
+`1f485431c64ce139`), which matches the handoff HEAD exactly. No Gate ran in
+this checkpoint; all Windows Gate claims remain `PARTIAL/UNPROVEN`.
+
+The scope is the Windows branch only: NDR-W9-D Product Closure first, then the
+seven remaining NDR-W10-D Windows Native Chat Gates, then PostgreSQL
+contention/recovery, Gap Detector, and completion audit. NDR-W1–W7 are closed
+Linux evidence and are not reopened; NDR-W8 macOS stays out of scope.
+
+Operator environment findings on sixwin:
+
+- Git for Windows 2.55 provides bash at `C:/Program Files/Git/bin/bash.exe`;
+  `C:/Program Files/Git/cmd` is in the system PATH but newly opened operator
+  shells must be restarted to inherit it.
+- No GNU `make` ships with Git for Windows. Strawberry Perl provides
+  `gmake.exe` only; local-dev make recipes hard-code `/bin/bash`, so profile
+  operations run through Git Bash directly, and Acceptance make targets map
+  1:1 to `python tooling/scripts/acceptance-run.py ...`.
+- The operator Python is 3.12.1 as `python` (there is no `python3` shim);
+  cargo, node, pnpm, an `id_ed25519` SSH key, protoc at
+  `C:/Tools/protobuf-36.0/bin/protoc.exe`, VsDevCmd under `C:/BuildTools`, and
+  Strawberry Perl are present.
+- The local-dev env tool is bash + per-worktree symlink based. Git Bash's
+  default `ln -s` creates a plain copy (so env.sh's `-L` active-pointer check
+  fails), while `MSYS=winsymlinks:nativestrict ln` creates a real symlink but
+  returns exit 1 and its `-sfn` replacement leaves stray temporary links.
+  Therefore `profile.sh activate` cannot perform its final symlink step on
+  Windows without a cross-platform owner-layer fix.
+
+Profile resolution (two layers, both verified):
+
+- Canonical deployable profile added in the sibling env repository as
+  `env/peers-touch/sixwin/profile.env.example`: `PT_DEV_PROFILE=sixwin`,
+  slot 6, `PT_STATION_MODE=remote`, default Station station-four
+  `10.37.245.247:18080` with its standalone relay, local Desktop ports
+  3160/3610 and web 3161/3611, mobile 5276, and the same actor/reset variables
+  as the four/fiveArm profiles (`CHAT_NATIVE_DEMO_PASSWORD=1`,
+  `CHAT_ACCEPTANCE_RESET=1`, station restart kept at 0 and exported
+  explicitly only when a Gate is authorized). station-five remains bound by
+  the Chat Acceptance multi-Station manifest for two-client Gates. The env
+  inventory moved `discovered` to `provisioned`.
+- On sixwin the import cache was bootstrapped at
+  `.local/dev/profiles/sixwin.env` and the active pointer
+  `.local/dev/active/peers-touch.env` was created as a native file symlink to
+  that cache (Windows `mklink` equivalent), bypassing the broken `ln` step.
+
+Injection verification passed three ways: Git Bash `config.sh` resolves the
+canonical env-repository file and redacts the password; Python
+`Path.is_symlink()`/`resolve(strict=True)` (the same mechanism as
+`BaseProvisioner._resolve_active_profile`) resolves the cache and matches
+`PT_DEV_PROFILE` to the `sixwin.env` stem; `profile.sh list` runs. No
+peers-touch tracked file other than this checkpoint changed, and `.local/`
+remains ignored, so exact-source proof is not diluted.
+
+Outstanding before the first Product Closure run (fail-closed inputs the
+Windows provisioner reads independently of the dev profile):
+`.local/acceptance/runtime-cells/acceptance-windows.env`
+(`PT_ACCEPTANCE_CELL_DEPLOY_ENV`, `PT_ACCEPTANCE_CELL_DESKTOP_USER`,
+`PT_ACCEPTANCE_CELL_PROTOC=C:/Tools/protobuf-36.0/bin/protoc.exe`, build
+ports) and `.local/deploy/envs/acceptance-windows.env` (loopback SSH deploy
+target for the local cell) do not yet exist. A cross-platform
+`profile.sh activate` symlink fix is an owner-layer enhancement to be made on
+a fresh branch with the local/static cohorts rerun; it is not a Gate blocker
+because the active pointer is already provisioned.
+
+The next dependency-ready action remains the handoff sequence: sixwin sshd /
+interactive-desktop / stale-process preflight, ff-only master sync with the
+actual HEAD recorded, static cohorts and the four local Gates, exact-source
+identity for station-four, station-five, and sixwin, then the Product
+Closure-only run with `RUNTIME_CELL=desktop-windows-native`.
+
+### 2026-09-10 Windows Host Preflight And Import Portability
+
+The Windows execution branch is `fix/windows-native-chat-closure`, created
+from exact master `79ae008706ca29f4bb5f1da29d9b6651a59b2f7c`. The sixwin
+host preflight now proves:
+
+- TRAE and Explorer are both in active interactive Session 1;
+- a connected primary display is available;
+- OpenSSH for Windows 9.5p1 is listening on port 22 through the automatic
+  `OpenSSH-Server` service;
+- localhost public-key command execution succeeds through the strict
+  administrators key file;
+- stale file-dialog debug tasks were removed, while repository `.dbg`
+  resources remain untouched;
+- no PeersTouch, WebDriver, Cargo, or Acceptance runtime process remains.
+
+The legacy `sshd` service entry is disabled and deletion-pending after the
+working `OpenSSH-Server` registration. It is not restarted or repaired in
+place because the active service already owns port 22 and passes command
+execution; no host reboot is required.
+
+The ignored Windows Runtime Cell inputs now exist:
+
+- `.local/acceptance/runtime-cells/acceptance-windows.env` binds the
+  Administrator interactive user, runtime root, Python, VsDevCmd, Strawberry
+  Perl, protoc, WebDriver port 4645, and Gateway port 3230;
+- `.local/deploy/envs/acceptance-windows.env` binds direct exact-source sync
+  to sixwin over localhost SSH;
+- `.local/acceptance/known_hosts` pins the sixwin host keys.
+
+Fresh Windows Python initially could not import the Provisioner registry
+because `mobile_resource_lease.py` resolved POSIX `/var/tmp` with
+`strict=True` at module import. The Mobile ledger already enforces POSIX
+no-follow dirfd support when `ResourceLeaseLedger` is constructed, so the
+owner-layer correction removes only the import-time filesystem existence
+requirement. It does not weaken Mobile lease storage or business evidence.
+The source-sync portability test now sets both `HOME` and `USERPROFILE` for
+its isolated child checkout.
+
+Verification on the dirty correction range:
+
+- focused Win32 driver, broker, runtime-binding, and Product Closure static
+  cohort: 104/104 PASS;
+- SSH transport, Windows source-sync, and Windows lease cohort: 14/14 PASS;
+- Acceptance Infra ownership boundary: 8/8 PASS;
+- fresh `chat_native_reset` import, Python compilation, and
+  `git diff --check`: PASS.
+
+Product Closure and all remaining Windows product Gates remain
+`PARTIAL/UNPROVEN`. The next action is to commit this correction without push,
+run the four source-bound local Chat Gates, verify three-host source identity,
+and execute Product Closure only.
+
+### 2026-09-11 Windows Sixwin Completion
+
+The Owner-approved Windows scope closed on clean product source
+`283832a7392e071f0d2018cfb3fd85a874744172`, branch
+`fix/windows-native-chat-closure`, workspace `b7faf6d3489b3797`. Runtime
+selection was injected only at execution with
+`--station-profile station-primary=sixwin`. Every Native manifest resolved
+that profile to the single local Station at `http://127.0.0.1:18080`; no
+station-four or station-five service participated.
+
+Final exact-source evidence:
+
+- Local four-Gate aggregate
+  `20260911T192936233860Z-1619e4066c3880aefc3c47944b0341ad`
+  passed `station-messaging-unit`, `messaging-platform-contract`,
+  `chat-native-visible-static`, and `desktop-check`.
+- Native eight-Gate aggregate
+  `20260911T171022643174Z-8601dca380d9a904041d72fa46bafad6`
+  passed Product Closure, two-client, interactions, contact-message
+  resilience, typing, multi-device, recovery, and Group MLS. Every result is
+  `DONE/PROVEN`, carries a `desktop-windows-native` Runtime Manifest at
+  1920x1080, records clean local and remote source identity, and has
+  `DONE/PROVEN` cleanup.
+- The Product Closure run is
+  `20260911T171023157955Z-dec53283a4ae9dbb4124c94a00ba6a24`.
+  The final Group MLS run is
+  `20260911T190313940160Z-dd5c87297319e6801498c150785b5eee`.
+- Sixwin-local PostgreSQL 17.11 contention/recovery run
+  `20260911T1915491502940Z-f3a7eb606a6e401980e62336ea6d6524`
+  passed the attachment quota lock, canonical index, competing dispatcher,
+  and concurrent inbox exactly-once tests under `-race -count=1` before and
+  after restart. An immediate stop triggered WAL automatic recovery; the
+  source-bound durable marker read back exactly. Port 55432 and all disposable
+  PostgreSQL processes were released.
+- Gap Detector runs
+  `20260911T193242532950Z-bd8db662292312f8b77d200ed7899865`
+  and `20260911T193256473649Z-419aa292e04928879de4fd65050a1c4a`
+  report `PROVEN` with zero gaps for the local and Native matrix partitions.
+- Mechanical completion audit
+  `20260911T193908424196Z-daccebe8f7c6c434bcc1e07c767562b9`
+  is `PASS/DONE/PROVEN`. It verifies immutable artifact hashes, exact source,
+  all 12 Gate results, Native runtime and Station identity, 1920x1080 display
+  evidence, cleanup, PostgreSQL recovery evidence, zero-gap reports, and
+  host-neutral Gate/environment/provisioner source.
+
+`vdservice` was restored to `Running` with automatic startup after the fixed
+display aggregate. The Git worktree was clean throughout product, PostgreSQL,
+Gap Detector, and completion-audit execution. No push was performed.
+
+This completion is intentionally narrow: it closes NDR-W9-D and the current
+Owner-approved Windows single-sixwin NDR-W10-D scope. It does not claim macOS
+W8, reopen Linux W1-W7, or claim the superseded historical distinct-Station
+topology.

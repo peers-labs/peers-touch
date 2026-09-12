@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,7 +11,7 @@ from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.core.evidence import new_report
-from tooling.acceptance.gates.chat import desktop_gateway_e2e
+from tooling.acceptance.gates.chat import desktop_gateway_e2e, native_support
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
     cleanup_preserving_primary_failure,
@@ -187,6 +188,12 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         for source in (get_device, revoke_device):
             self.assertIn("messagingAcceptanceCurrentEndpoint", source)
             self.assertNotIn("accountGetDeviceId", source)
+        self.assertIn("imServiceV1.device.list()", revoke_device)
+        self.assertIn("current.profileVersion", revoke_device)
+        self.assertIn(
+            "imServiceV1.device.revoke(deviceId, current.profileVersion)",
+            revoke_device,
+        )
         rust_commands = (
             ROOT
             / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
@@ -201,6 +208,25 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         endpoint_source = rust_commands[endpoint_start:endpoint_end]
         self.assertIn("engine.endpoint().device_id.as_str()", endpoint_source)
         self.assertIn("engine.endpoint().ptid != actor_ptid", endpoint_source)
+        conversation_commands = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/conversation.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            '"observed_profile_version": input.observed_profile_version',
+            conversation_commands,
+        )
+        revoke_start = conversation_commands.index("pub fn device_revoke(")
+        revoke_end = conversation_commands.index(
+            "\n// --- Direct Key Exchange",
+            revoke_start,
+        )
+        revoke_source = conversation_commands[revoke_start:revoke_end]
+        self.assertIn(
+            "request_json_auth_with_device_id(",
+            revoke_source,
+        )
+        self.assertIn("&input.device_id", revoke_source)
 
     def test_native_acceptance_commands_are_registered_with_tauri(self) -> None:
         main = (
@@ -318,6 +344,33 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                     "self.client_lifecycles.transfer_preserved_session(",
                     source,
                 )
+
+    def test_offline_metadata_mutations_wait_for_their_authority_dependency(
+        self,
+    ) -> None:
+        source = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_interactions_runner.py",
+            "prove_offline_recovery",
+        )
+        reaction_commit = source.index("offline reaction commit")
+        pin_submit = source.index('"interaction": "pin"')
+        self.assertLess(reaction_commit, pin_submit)
+        self.assertIn(
+            '(snapshot.get("intent") or {}).get("state") == "committed"',
+            source,
+        )
+
+    def test_nested_thread_waits_for_authority_projection(self) -> None:
+        source = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_interactions_runner.py",
+            "prove_lifecycle",
+        )
+        reply_projection = source.index("reply authority projection")
+        thread_submit = source.index(f'{{claim_kind}}.thread.send')
+        thread_projection = source.index("thread authority projection")
+        nested_submit = source.index(f'{{claim_kind}}.thread.nested.send')
+        self.assertLess(reply_projection, thread_submit)
+        self.assertLess(thread_projection, nested_submit)
 
     def test_revoked_typing_is_submitted_and_receiver_stays_inactive(self) -> None:
         source = self.function_source(
@@ -967,6 +1020,99 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self.assertIn("SshTransport(", support)
         self.assertIn("SshTarget(", support)
         self.assertNotIn("StrictHostKeyChecking=no", support)
+
+    def test_station_readback_supports_bound_local_source_database(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "station.db"
+            connection = sqlite3.connect(database)
+            try:
+                connection.executescript(
+                    """
+CREATE TABLE conversation_events (
+  event_id TEXT, conversation_id TEXT, sequence INTEGER,
+  command_id TEXT, message_id TEXT, event_hash BLOB
+);
+CREATE TABLE device_queue_items (
+  item_id TEXT, event_id TEXT, conversation_id TEXT,
+  recipient_ptid TEXT, recipient_device_id TEXT,
+  lane_sequence INTEGER, state TEXT, attempt_count INTEGER,
+  payload_sha256 BLOB
+);
+CREATE TABLE conversation_read_cursors (
+  conversation_id TEXT, ptid TEXT, last_read_sequence INTEGER
+);
+INSERT INTO conversation_events VALUES
+  ('event-1', 'conversation-1', 1, 'command-1', 'message-1', x'0102');
+INSERT INTO device_queue_items VALUES
+  ('item-1', 'event-1', 'conversation-1', 'ptid:bob', 'device-1',
+   1, 'pending', 0, x'0a0b');
+INSERT INTO conversation_read_cursors VALUES
+  ('conversation-1', 'ptid:bob', 1);
+"""
+                )
+            finally:
+                connection.close()
+            with patch.object(
+                native_support,
+                "acceptance_station_environment",
+                return_value={
+                    "PT_ACCEPTANCE_RUNTIME_KIND": "local-source",
+                    "PT_ACCEPTANCE_LOCAL_DATABASE": str(database),
+                },
+            ):
+                result = native_support.station_readback(
+                    "conversation-1",
+                    "message-1",
+                    station_url="http://127.0.0.1:18080",
+                )
+
+        self.assertEqual(result["events"][0]["hashBytes"], 2)
+        self.assertEqual(result["queue"][0]["payloadSha256"], "0a0b")
+        self.assertEqual(result["readCursors"][0]["lastReadSequence"], 1)
+
+    def test_typing_start_client_does_not_reference_unbound_client(self) -> None:
+        start_client = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
+            "start_client",
+        )
+        self.assertEqual(
+            start_client.count("self.start_injected_client(actor)"),
+            1,
+        )
+        self.assertNotIn("enter_chat_page(client)", start_client)
+
+    def test_windows_storage_clone_is_scoped_by_runtime_run(self) -> None:
+        clone = self.function_source(
+            ROOT
+            / "tooling/acceptance/provisioners/native_desktop_windows.py",
+            "clone_actor_storage",
+        )
+        self.assertGreaterEqual(clone.count('str(state["runId"])'), 2)
+        self.assertGreaterEqual(clone.count("_windows_verbatim_path("), 2)
+
+    def test_recovery_exports_each_current_log_once_during_cleanup(self) -> None:
+        runners = {
+            "recovery": "native_recovery_runner.py",
+            "typing": "native_typing_runner.py",
+            "multi-device": "native_multi_device_runner.py",
+            "group-mls": "native_group_mls_runner.py",
+        }
+        for name, filename in runners.items():
+            with self.subTest(runner=name):
+                source = (
+                    ROOT / "tooling/acceptance/gates/chat" / filename
+                ).read_text(encoding="utf-8")
+                self.assertEqual(
+                    source.count("self.save_app_log(client, actor)"),
+                    1,
+                )
+
+    def test_group_mls_start_client_launches_injected_runtime(self) -> None:
+        start_client = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_group_mls_runner.py",
+            "start_client",
+        )
+        self.assertIn("self.start_injected_client(actor)", start_client)
 
     def test_typing_contract_is_unchanged(self) -> None:
         self.assertEqual(

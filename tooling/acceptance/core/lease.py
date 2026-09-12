@@ -3,12 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import queue
 import re
 import selectors
 import shlex
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Sequence
@@ -501,19 +503,37 @@ class RemoteGitSourceLease:
                 "SSH stdout pipe was not created",
             )
 
-        selector = selectors.DefaultSelector()
-        selector.register(process.stdout, selectors.EVENT_READ)
         deadline = time.monotonic() + self.acquire_timeout
-        response = ""
-        try:
+        if os.name == "nt":
+            responses: queue.Queue[str] = queue.Queue(maxsize=1)
+            reader = threading.Thread(
+                target=lambda: responses.put(process.stdout.readline().strip()),
+                daemon=True,
+            )
+            reader.start()
+            response = ""
             while time.monotonic() < deadline:
-                if selector.select(timeout=0.1):
-                    response = process.stdout.readline().strip()
+                try:
+                    response = responses.get(
+                        timeout=min(0.1, max(0.0, deadline - time.monotonic()))
+                    )
                     break
-                if process.poll() is not None:
-                    break
-        finally:
-            selector.close()
+                except queue.Empty:
+                    if process.poll() is not None:
+                        break
+        else:
+            selector = selectors.DefaultSelector()
+            selector.register(process.stdout, selectors.EVENT_READ)
+            response = ""
+            try:
+                while time.monotonic() < deadline:
+                    if selector.select(timeout=0.1):
+                        response = process.stdout.readline().strip()
+                        break
+                    if process.poll() is not None:
+                        break
+            finally:
+                selector.close()
 
         if response == "READY" and process.poll() is None and not self.persistent:
             self._process = process

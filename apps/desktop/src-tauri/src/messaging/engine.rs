@@ -16,6 +16,7 @@ use super::{
 use crate::domain::crypto::IdentityKeyPair;
 use crate::infrastructure::attachment_blob::FilesystemAttachmentBlob;
 use crate::infrastructure::station_client;
+use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::chat::{
     ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationKind,
     CreateDirectConversationRequest, CreateDirectConversationResponse, CryptoEndpoint,
@@ -943,7 +944,13 @@ impl MessagingEngine {
                 attachment_ids,
                 state: "pending",
             }),
-            Err(_) => {
+            Err(error) => {
+                tracing::warn!(
+                    conversation_id = %ready_draft.conversation_id,
+                    message_id = %ready_draft.message_id,
+                    error = %error,
+                    "messaging message draft preparation deferred"
+                );
                 self.schedule_message_draft_retry(&ready_draft, now_unix_ms())?;
                 Ok(SubmitMessageOutcome {
                     command_id: None,
@@ -980,7 +987,13 @@ impl MessagingEngine {
         let Some(draft) = self.store.next_due_message_draft(now_unix_ms)? else {
             return Ok(false);
         };
-        if self.prepare_message_draft(token, &draft).is_err() {
+        if let Err(error) = self.prepare_message_draft(token, &draft) {
+            tracing::warn!(
+                conversation_id = %draft.conversation_id,
+                message_id = %draft.message_id,
+                error = %error,
+                "messaging message draft resume deferred"
+            );
             self.schedule_message_draft_retry(&draft, now_unix_ms)?;
         }
         Ok(true)
@@ -2156,17 +2169,24 @@ fn attachment_source_root(profile_id: &str) -> Result<PathBuf, String> {
         return Err("messaging attachment source profile is required".to_string());
     }
     let profile_hash = hex::encode(Sha256::digest(profile_id.as_bytes()));
-    Ok(std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join(".peers-touch")
-        .join("messaging-sources")
-        .join(profile_hash))
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Temp,
+        &["messaging-sources", &profile_hash],
+    )
+    .map_err(|error| format!("resolve messaging attachment source root: {error}"))
 }
 
 fn managed_attachment_source(profile_id: &str, path: &Path) -> Result<bool, String> {
     let root = attachment_source_root(profile_id)?;
-    Ok(path.parent() == Some(root.as_path())
+    let Some(parent) = path.parent() else {
+        return Ok(false);
+    };
+    let canonical_root = std::fs::canonicalize(&root)
+        .map_err(|error| format!("resolve messaging attachment source root: {error}"))?;
+    let canonical_parent = std::fs::canonicalize(parent)
+        .map_err(|error| format!("resolve messaging attachment source parent: {error}"))?;
+    Ok(canonical_parent == canonical_root
         && path
             .file_name()
             .and_then(|value| value.to_str())
@@ -2180,13 +2200,12 @@ fn attachment_cache_path(profile_id: &str, attachment_id: &str) -> Result<PathBu
         return Err("messaging attachment cache identity is incomplete".to_string());
     }
     let profile_hash = hex::encode(Sha256::digest(profile_id.as_bytes()));
-    let root = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join(".peers-touch")
-        .join("messaging-cache")
-        .join(profile_hash);
-    Ok(root.join(attachment_id))
+    storage::app_file_path(
+        "desktop",
+        StorageKind::Cache,
+        &["messaging-cache", &profile_hash, attachment_id],
+    )
+    .map_err(|error| format!("resolve messaging attachment cache path: {error}"))
 }
 
 fn materialize_attachment_cache(
@@ -2215,7 +2234,10 @@ fn materialize_attachment_cache(
         .ok_or_else(|| "messaging attachment cache parent is unavailable".to_string())?;
     std::fs::create_dir_all(parent)
         .map_err(|error| format!("create messaging attachment cache directory: {error}"))?;
-    File::open(source_path)
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(source_path)
         .and_then(|source| source.sync_all())
         .map_err(|error| format!("sync messaging attachment source: {error}"))?;
     std::fs::rename(source_path, cache_path)
@@ -2313,6 +2335,31 @@ mod tests {
     }
 
     #[test]
+    fn attachment_paths_use_canonical_desktop_storage_layout() {
+        let profile_id = "profile-1";
+        let profile_hash = hex::encode(Sha256::digest(profile_id.as_bytes()));
+
+        assert_eq!(
+            attachment_source_root(profile_id).unwrap(),
+            storage::app_file_path(
+                "desktop",
+                StorageKind::Temp,
+                &["messaging-sources", &profile_hash],
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            attachment_cache_path(profile_id, "attachment-1").unwrap(),
+            storage::app_file_path(
+                "desktop",
+                StorageKind::Cache,
+                &["messaging-cache", &profile_hash, "attachment-1"],
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
     fn sender_attachment_source_is_atomically_promoted_to_durable_cache() {
         let root = std::env::temp_dir().join(format!("sender-cache-{}", Ulid::new()));
         let source_path = root.join("sources").join("attachment");
@@ -2365,6 +2412,8 @@ mod tests {
 
         assert!(source_path.is_file());
         assert!(managed_attachment_source(&profile_id, &staged_path).unwrap());
+        let canonical_staged_path = std::fs::canonicalize(&staged_path).unwrap();
+        assert!(managed_attachment_source(&profile_id, &canonical_staged_path).unwrap());
         assert_eq!(std::fs::read(&staged_path).unwrap(), bytes);
 
         engine

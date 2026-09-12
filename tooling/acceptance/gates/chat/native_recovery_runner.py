@@ -30,6 +30,7 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
+    fixture_federation_id,
     is_native_tauri_url,
     message_snapshot,
     native_runtime_source_identity,
@@ -38,6 +39,7 @@ from tooling.acceptance.gates.chat.native_support import (
     selected_native_runtime,
     send_text,
     verify_runtime_fixture_ready,
+    wait_for_peer_key_bundle,
     wait_until,
 )
 
@@ -293,10 +295,17 @@ class NativeRecoveryGate(AcceptanceGate):
         bob = self.clients["bob"]
         for client in (alice, bob):
             enter_chat_page(client)
+        wait_for_peer_key_bundle(alice, self.ptids["bob"])
         created = async_harness(
             alice,
             "createDirectConversation",
-            {"peerPtid": self.ptids["bob"]},
+            {
+                "peerPtid": self.ptids["bob"],
+                "federationId": fixture_federation_id(
+                    self.ptids["alice"],
+                    self.ptids["bob"],
+                ),
+            },
         )
         conversation_id = str((created or {}).get("conversationId") or "")
         if not conversation_id:
@@ -620,7 +629,6 @@ class NativeRecoveryGate(AcceptanceGate):
             for actor in ("alice", "bob"):
                 self.save_screenshot(self.clients[actor], actor)
                 self.save_dom(self.clients[actor], actor)
-                self.save_app_log(self.clients[actor], actor)
         finally:
             cleanup = cleanup_preserving_primary_failure(
                 self.cleanup_clients,

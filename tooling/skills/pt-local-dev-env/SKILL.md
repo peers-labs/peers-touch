@@ -11,22 +11,22 @@ description: >
 
 ## Goal
 
-Prepare the development environment so the user can simply run:
+Prepare the development environment through the cross-platform `devctl`
+control plane. On Windows use `tooling/dev.ps1`; on every platform the direct
+Node entrypoint has the same contract:
 
 ```bash
-make station       # Ready Station (local start / remote deploy)
-make relay         # Ready Relay (remote deploy)
-make desktop       # Start Desktop (Tauri app)
-make desktop-web   # Start Desktop (browser)
-make mobile        # Start Mobile iOS Simulator
-make status        # Check what's running
-make stop          # Stop everything
-make restart       # Restart everything
+node tooling/devctl/index.mjs config
+node tooling/devctl/index.mjs doctor
+node tooling/devctl/index.mjs station start
+node tooling/devctl/index.mjs desktop start --mode app
+node tooling/devctl/index.mjs desktop start --mode web
+node tooling/devctl/index.mjs status
+node tooling/devctl/index.mjs stop all
 ```
 
-The agent's job is to ensure a **profile** is created, configured correctly for
-the user's scenario, and activated. Once that's done, all `make` commands work
-without any additional flags.
+Make targets are compatibility forwarders. Relay and Mobile iOS remain legacy,
+platform-specific workflows and are outside devctl ownership.
 
 ## Agent Station Safety Boundary
 
@@ -107,31 +107,35 @@ Use `make relay-check` only when the user explicitly wants health-check only.
 
 ```bash
 # Profile management
-make profiles                               # Bootstrap/list profiles and deploy envs
-make profile <name>                         # Activate profile
-make profile-init <name> SLOT=<n>           # Create new profile
-make config                                 # Show active config
+node tooling/devctl/index.mjs profile list
+node tooling/devctl/index.mjs profile activate <name>
+node tooling/devctl/index.mjs profile init <name> --slot <n>
+node tooling/devctl/index.mjs config
+node tooling/devctl/index.mjs doctor
 
-# Services
-make station                                # Start/verify Station
-make station-check                          # Health-check Station only
-make station-status                         # Station deployment/runtime status
+# Managed services
+node tooling/devctl/index.mjs station start
+node tooling/devctl/index.mjs station check
+node tooling/devctl/index.mjs station status
+node tooling/devctl/index.mjs desktop start --mode app
+node tooling/devctl/index.mjs desktop start --mode web
+
+# Managed lifecycle
+node tooling/devctl/index.mjs status
+node tooling/devctl/index.mjs stop all
+node tooling/devctl/index.mjs restart all
+node tooling/devctl/index.mjs station stop
+node tooling/devctl/index.mjs station restart
+node tooling/devctl/index.mjs desktop stop --mode app
+node tooling/devctl/index.mjs desktop restart --mode web
+
+# Legacy non-devctl workflows
 make station-logs                           # Station logs
 make relay                                  # Prepare Relay
 make relay-check                            # Health-check Relay only
 make relay-status                           # Relay deployment/runtime status
 make relay-logs                             # Relay logs
-make desktop                                # Desktop Tauri app
-make desktop-web                            # Desktop in browser
 make mobile                                 # Mobile iOS Simulator
-
-# Lifecycle
-make status                                 # Show running services
-make stop                                   # Stop all
-make restart                                # Restart all
-make station-stop                           # Stop Station only
-make station-restart                        # Restart Station only
-make desktop-stop / desktop-restart
 make mobile-stop / mobile-restart
 ```
 

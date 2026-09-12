@@ -33,8 +33,10 @@ from tooling.acceptance.gates.chat.native_support import (
     async_harness,
     commits_match,
     enter_chat_page,
+    fixture_federation_id,
     is_native_tauri_url,
     runtime_station_service,
+    wait_for_peer_key_bundle,
 )
 
 
@@ -398,10 +400,18 @@ class NativeTwoClientGate(AcceptanceGate):
         bob = self.clients["bob"]
         for client in (alice, bob):
             enter_chat_page(client)
+        wait_for_peer_key_bundle(alice, self.ptids["bob"])
+        wait_for_peer_key_bundle(bob, self.ptids["alice"])
         created = async_harness(
             alice,
             "createDirectConversation",
-            {"peerPtid": self.ptids["bob"]},
+            {
+                "peerPtid": self.ptids["bob"],
+                "federationId": fixture_federation_id(
+                    self.ptids["alice"],
+                    self.ptids["bob"],
+                ),
+            },
         )
         conversation_id = str((created or {}).get("conversationId") or "")
         if not conversation_id:
@@ -409,7 +419,13 @@ class NativeTwoClientGate(AcceptanceGate):
         peer_created = async_harness(
             bob,
             "createDirectConversation",
-            {"peerPtid": self.ptids["alice"]},
+            {
+                "peerPtid": self.ptids["alice"],
+                "federationId": fixture_federation_id(
+                    self.ptids["alice"],
+                    self.ptids["bob"],
+                ),
+            },
         )
         peer_conversation_id = str(
             (peer_created or {}).get("conversationId") or ""

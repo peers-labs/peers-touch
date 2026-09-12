@@ -63,9 +63,38 @@ impl KeyBundleTransport for StationKeyBundleTransport {
             .into_iter()
             .next()
             .ok_or_else(|| "messaging endpoint key bundle is unavailable".to_string())?;
-        if bundle.device.as_ref() != Some(endpoint) {
+        let bundle_device = bundle
+            .device
+            .as_ref()
+            .ok_or_else(|| "messaging endpoint key bundle has no device".to_string())?;
+        if !same_endpoint(bundle_device, endpoint)? {
             return Err("messaging endpoint key bundle binding mismatch".to_string());
         }
         Ok(bundle)
+    }
+}
+
+fn same_endpoint(left: &ActorDeviceRef, right: &ActorDeviceRef) -> Result<bool, String> {
+    Ok(actor_device_ptid(left)? == actor_device_ptid(right)? && left.device_id == right.device_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use messaging_core::proto::{actor, actor_device_ref};
+
+    #[test]
+    fn endpoint_binding_ignores_redundant_actor_kind_representation() {
+        let expected = actor_device_ref("ptid:v1:actor:peers:p:bob:1220abc", "bob-device");
+        let returned = actor::ActorDeviceRef {
+            actor: Some(actor::ActorRef {
+                ptid: actor_device_ptid(&expected).unwrap().to_string(),
+                ..Default::default()
+            }),
+            device_id: expected.device_id.clone(),
+        };
+
+        assert_ne!(returned, expected);
+        assert!(same_endpoint(&returned, &expected).unwrap());
     }
 }

@@ -25,6 +25,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     acceptance_station_environment,
     read_fixture_actor,
     seed_cross_station_contact,
+    seed_same_station_contact,
     verify_disposable_station_runtime,
 )
 
@@ -201,7 +202,10 @@ def _terminate_reset_process(
     try:
         process.communicate(timeout=min(0.25, remaining))
     except subprocess.TimeoutExpired:
-        _signal_reset_process_group(process, signal.SIGKILL)
+        if os.name == "posix":
+            _signal_reset_process_group(process, signal.SIGKILL)
+        else:
+            process.kill()
         remaining = max(0.0, deadline_monotonic - time.monotonic())
         try:
             process.communicate(timeout=remaining)
@@ -216,9 +220,9 @@ def _kill_remaining_reset_group(
     process: subprocess.Popen[str],
     deadline_monotonic: float,
 ) -> None:
-    _signal_reset_process_group(process, signal.SIGKILL)
     if os.name != "posix":
         return
+    _signal_reset_process_group(process, signal.SIGKILL)
     while True:
         try:
             os.killpg(process.pid, 0)
@@ -274,8 +278,6 @@ def prepare_bound_friendships(
 ) -> None:
     if "alice" not in role_targets or "bob" not in role_targets:
         return
-    if role_targets["alice"] == role_targets["bob"]:
-        return
 
     by_role = {actor.role: actor for actor in actors}
     alice = by_role["alice"]
@@ -292,6 +294,14 @@ def prepare_bound_friendships(
         bob_environment,
         ACTOR_ACCOUNTS["bob"],
     )
+    if role_targets["alice"] == role_targets["bob"]:
+        seed_same_station_contact(
+            alice_station_url,
+            alice_environment,
+            alice_record,
+            bob_record,
+        )
+        return
 
     seed_cross_station_contact(
         alice_station_url,

@@ -100,6 +100,7 @@ func (l *MemoryTypingPulseLedger) Admit(
 	}
 	accepted := !pulse.IsTyping ||
 		!exists ||
+		pulse.IsTyping != current.isTyping ||
 		now.Sub(current.publishedAt) >= minimumInterval
 	entry := pulseLedgerEntry{
 		generation: pulse.Generation,

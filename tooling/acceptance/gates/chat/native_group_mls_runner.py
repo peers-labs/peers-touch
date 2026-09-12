@@ -26,6 +26,7 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
+    fixture_federation_id,
     is_native_tauri_url,
     message_snapshot,
     native_runtime_source_identity,
@@ -223,7 +224,7 @@ class NativeGroupMlsGate(AcceptanceGate):
     def start_client(self, actor: str) -> None:
         if self.runtime_binding is None:
             raise GateError("Native Desktop runtime binding is required")
-
+        self.start_injected_client(actor)
 
     def start_injected_client(self, actor: str) -> None:
         if self.runtime_binding is None:
@@ -409,6 +410,10 @@ class NativeGroupMlsGate(AcceptanceGate):
                     {
                         "name": "Acceptance MLS Group",
                         "memberPtids": [self.ptids["bob"], self.ptids["charlie"]],
+                        "federationId": fixture_federation_id(
+                            self.ptids["alice"],
+                            self.ptids["bob"],
+                        ),
                     },
                     timeout=60,
                 )
@@ -590,7 +595,6 @@ class NativeGroupMlsGate(AcceptanceGate):
             for actor in ACTORS:
                 self.save_screenshot(self.clients[actor], actor)
                 self.save_dom(self.clients[actor], actor)
-                self.save_app_log(self.clients[actor], actor)
         finally:
             cleanup = cleanup_preserving_primary_failure(
                 self.cleanup_clients,

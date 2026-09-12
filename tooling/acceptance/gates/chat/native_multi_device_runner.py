@@ -27,6 +27,7 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
+    fixture_federation_id,
     is_native_tauri_url,
     message_snapshot,
     native_runtime_source_identity,
@@ -36,6 +37,7 @@ from tooling.acceptance.gates.chat.native_support import (
     send_text,
     stop_client,
     verify_runtime_fixture_ready,
+    wait_for_peer_key_bundle,
     wait_until,
 )
 
@@ -301,10 +303,17 @@ class NativeMultiDeviceGate(AcceptanceGate):
         alice = self.clients["alice"]
         for client in self.clients.values():
             enter_chat_page(client)
+        wait_for_peer_key_bundle(alice, self.ptids["bob1"])
         created = async_harness(
             alice,
             "createDirectConversation",
-            {"peerPtid": self.ptids["bob1"]},
+            {
+                "peerPtid": self.ptids["bob1"],
+                "federationId": fixture_federation_id(
+                    self.ptids["alice"],
+                    self.ptids["bob1"],
+                ),
+            },
         )
         conversation_id = str((created or {}).get("conversationId") or "")
         if not conversation_id:
@@ -526,12 +535,19 @@ class NativeMultiDeviceGate(AcceptanceGate):
             # Retry createDirectConversation: bob1's lifecycle worker must complete
             # device enrollment on Station before the peer can be resolved.
             conversation_id = ""
+            wait_for_peer_key_bundle(alice, self.ptids["bob1"])
             for attempt in range(8):
                 try:
                     created = async_harness(
                         alice,
                         "createDirectConversation",
-                        {"peerPtid": self.ptids["bob1"]},
+                        {
+                            "peerPtid": self.ptids["bob1"],
+                            "federationId": fixture_federation_id(
+                                self.ptids["alice"],
+                                self.ptids["bob1"],
+                            ),
+                        },
                     )
                     conversation_id = str((created or {}).get("conversationId") or "")
                 except GateError:
@@ -608,12 +624,19 @@ class NativeMultiDeviceGate(AcceptanceGate):
             enter_chat_page(bob2)
 
             conversation2_id = ""
+            wait_for_peer_key_bundle(bob2, self.ptids["alice"])
             for attempt in range(8):
                 try:
                     created2 = async_harness(
                         bob2,
                         "createDirectConversation",
-                        {"peerPtid": self.ptids["alice"]},
+                        {
+                            "peerPtid": self.ptids["alice"],
+                            "federationId": fixture_federation_id(
+                                self.ptids["alice"],
+                                self.ptids["bob2"],
+                            ),
+                        },
                     )
                     conversation2_id = str((created2 or {}).get("conversationId") or "")
                 except GateError:
@@ -630,7 +653,6 @@ class NativeMultiDeviceGate(AcceptanceGate):
             for actor in self.clients:
                 self.save_screenshot(self.clients[actor], actor)
                 self.save_dom(self.clients[actor], actor)
-                self.save_app_log(self.clients[actor], actor)
         finally:
             cleanup_preserving_primary_failure(
                 self.cleanup_runtime,

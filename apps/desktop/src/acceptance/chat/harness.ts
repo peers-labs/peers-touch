@@ -751,13 +751,27 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async peerKeyBundleState({ peerPtid }: { peerPtid: string }) {
+      const response = await api.keyExchangeFetchBundle(peerPtid);
+      return {
+        peerPtid,
+        bundleCount: response.bundles.length,
+        deviceIds: response.bundles.map((bundle) => bundle.device_id),
+      };
+    },
+
     async revokeCurrentDevice() {
       const device = await api.messagingAcceptanceCurrentEndpoint(activeActorPtid());
       const deviceId = String(device?.device_id ?? '');
       if (!deviceId) {
         throw new Error('No active device is available for revocation');
       }
-      await imServiceV1.device.revoke(deviceId);
+      const devices = await imServiceV1.device.list();
+      const current = devices.find(entry => entry.ref?.deviceId === deviceId);
+      if (!current || current.profileVersion <= 0n) {
+        throw new Error('Current device profile version is unavailable');
+      }
+      await imServiceV1.device.revoke(deviceId, current.profileVersion);
       return {
         actorPtid: activeActorPtid(),
         deviceId,

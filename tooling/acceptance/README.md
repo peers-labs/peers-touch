@@ -129,6 +129,21 @@ protos plus Desktop TypeScript and Station Go generated bindings.
 `CHAT_NATIVE_CLIENT_WORKTREES` accepts one worktree path per client, separated
 by commas; one path may be reused for local process-isolation checks.
 
+Native Tauri Chat Gates do not select Station hosts in the Gate catalog or
+environment contract. Every required Station slot must be bound explicitly at
+run time:
+
+```bash
+python3 tooling/scripts/acceptance-run.py \
+  --gate chat-native-product-closure-e2e \
+  --runtime-cell desktop-windows-native \
+  --station-profile station-primary=sixwin
+```
+
+Each selected profile supplies its Station endpoint and
+local/remote lifecycle. Missing, unknown, or duplicate bindings fail closed
+before Station provisioning.
+
 ### Agent R6 Stream Resilience
 
 `agent-stream-resilience-e2e` is the stable native Gate for R6. It requires the

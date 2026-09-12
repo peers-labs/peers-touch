@@ -31,6 +31,7 @@ from tooling.acceptance.gates.chat.native_support import (
     current_commit,
     current_workspace_digest,
     enter_chat_page,
+    fixture_federation_id,
     is_native_tauri_url,
     is_station_authorization_rejection,
     native_runtime_source_identity,
@@ -39,6 +40,7 @@ from tooling.acceptance.gates.chat.native_support import (
     selected_native_runtime,
     station_readback,
     verify_runtime_fixture_ready,
+    wait_for_peer_key_bundle,
     wait_until,
 )
 
@@ -261,7 +263,6 @@ class NativeTypingGate(AcceptanceGate):
 
     def start_client(self, actor: str) -> None:
         self.start_injected_client(actor)
-        enter_chat_page(client)
 
     def start_injected_client(
         self,
@@ -597,10 +598,17 @@ class NativeTypingGate(AcceptanceGate):
         self.wait_typing("bob", False, "Bob Direct typing cleared by blur")
         self.assert_condition("direct_typing_blur_clear", True)
 
+        wait_for_peer_key_bundle(alice, self.ptids["charlie"])
         alternate = async_harness(
             alice,
             "createDirectConversation",
-            {"peerPtid": self.ptids["charlie"]},
+            {
+                "peerPtid": self.ptids["charlie"],
+                "federationId": fixture_federation_id(
+                    self.ptids["alice"],
+                    self.ptids["bob"],
+                ),
+            },
         )
         alternate_id = str((alternate or {}).get("conversationId") or "")
         if not alternate_id:
@@ -983,10 +991,20 @@ class NativeTypingGate(AcceptanceGate):
                 and len({client.storage_root for client in self.clients.values()}) == len(ACTORS),
             )
 
+            wait_for_peer_key_bundle(
+                self.clients["alice"],
+                self.ptids["bob"],
+            )
             direct = async_harness(
                 self.clients["alice"],
                 "createDirectConversation",
-                {"peerPtid": self.ptids["bob"]},
+                {
+                    "peerPtid": self.ptids["bob"],
+                    "federationId": fixture_federation_id(
+                        self.ptids["alice"],
+                        self.ptids["bob"],
+                    ),
+                },
             )
             direct_id = str((direct or {}).get("conversationId") or "")
             if not direct_id:
@@ -1033,6 +1051,10 @@ class NativeTypingGate(AcceptanceGate):
                         self.ptids["bob"],
                         self.ptids["charlie"],
                     ],
+                    "federationId": fixture_federation_id(
+                        self.ptids["alice"],
+                        self.ptids["bob"],
+                    ),
                 },
             )
             group_id = str((group or {}).get("groupUlid") or "")
@@ -1139,7 +1161,6 @@ class NativeTypingGate(AcceptanceGate):
             for actor, client in self.clients.items():
                 self.save_screenshot(client, actor)
                 self.save_dom(client, actor)
-                self.save_app_log(client, actor)
         finally:
             cleanup_preserving_primary_failure(
                 self.cleanup_runtime,

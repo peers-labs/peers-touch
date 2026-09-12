@@ -1,8 +1,8 @@
 # Local Development Environment
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-07-23 | **Updated**: 2026-08-31
+> **Version**: v1.1
+> **Created**: 2026-07-23 | **Updated**: 2026-09-12
 > **Owner**: Platform Team
 
 ---
@@ -19,12 +19,32 @@ This document defines:
 - Profile system: what a profile is, field semantics, mode types
 - Deploy model: how code reaches remote stations
 - Runtime topology: ports, services, connections per profile
-- Make targets: what each command does under each mode
+- `devctl` commands and compatibility entrypoints
 
 This document does NOT define:
 - When to restart vs hot-reload (see `pt-dev-runtime-handoff` skill for decision logic)
 - How to create/switch profiles (see `pt-local-dev-env` skill for interactive workflow)
 - CI/CD pipeline (out of scope for local dev)
+
+The canonical daily-development control plane is
+`node tooling/devctl/index.mjs`. Windows users invoke the same implementation
+through `tooling/dev.ps1`; `make` targets are compatibility forwarders for Unix
+workflows and contain no Station/Desktop lifecycle policy.
+
+```powershell
+.\tooling\dev.ps1 config
+.\tooling\dev.ps1 doctor
+.\tooling\dev.ps1 station start
+.\tooling\dev.ps1 desktop start --mode app
+.\tooling\dev.ps1 status
+.\tooling\dev.ps1 stop all
+```
+
+```bash
+node tooling/devctl/index.mjs config
+node tooling/devctl/index.mjs station start
+node tooling/devctl/index.mjs desktop start --mode web
+```
 
 ---
 
@@ -149,30 +169,34 @@ With profile active, the developer's machine runs:
 
 ---
 
-## 5. Make Targets Reference
+## 5. Command Reference
 
 All commands run from repository root. Profile must be active.
 
 ### Core
 
-| Target | What it does |
+| Command | What it does |
 |--------|-------------|
-| `make station` | Ready Station (local start or remote deploy, per mode) |
-| `make desktop` | Start Desktop Tauri app |
-| `make desktop-web` | Start Desktop in browser |
+| `devctl station start` | Ready Station for the active profile |
+| `devctl desktop start --mode app` | Start Desktop Tauri app |
+| `devctl desktop start --mode web` | Start Desktop Web runtime |
 | `make mobile` | Start Mobile iOS simulator |
 
 ### Lifecycle
 
-| Target | What it does |
+| Command | What it does |
 |--------|-------------|
-| `make status` | Show all running services |
-| `make stop` | Stop all services |
-| `make restart` | Restart all services |
-| `make station-restart` | Restart Station only |
-| `make desktop-restart` | Restart Desktop only |
-| `make station-check` | Health-check Station |
+| `devctl status` | Show Station and Desktop App/Web state |
+| `devctl stop all` | Stop all devctl-managed services |
+| `devctl restart all` | Restart all devctl-managed services |
+| `devctl station restart` | Restart Station only |
+| `devctl desktop restart --mode app` | Restart Desktop App only |
+| `devctl station check` | Health-check Station |
 | `make station-logs` | Tail Station logs |
+
+With pnpm, use `pnpm devctl -- <arguments>`. The matching `make station`,
+`make desktop`, `make desktop-web`, `make status`, `make stop`, and restart
+targets forward to these commands.
 
 ### Deploy (explicit)
 
