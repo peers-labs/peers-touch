@@ -841,6 +841,48 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                     actor,
                 )
 
+    def test_desktop_gateway_identity_state_uses_manifest_storage_root(
+        self,
+    ) -> None:
+        account_id = "oauth-account"
+        state = {
+            "accounts": [
+                {
+                    "id": account_id,
+                    "encrypted_session": {
+                        "actor_ptid": "ptid:test:bob",
+                        "ciphertext": "ciphertext",
+                    },
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            storage_root = Path(directory) / "peers-touch"
+            expected = (
+                storage_root
+                / "desktop"
+                / "data"
+                / "account"
+                / "station-four"
+                / "identities.json"
+            )
+            expected.parent.mkdir(parents=True)
+            expected.write_text(json.dumps(state), encoding="utf-8")
+            with patch.object(
+                desktop_gateway_e2e,
+                "runtime_manifest",
+                return_value={
+                    "clients": [
+                        {"storage_root": str(storage_root)},
+                    ],
+                },
+            ):
+                selected = desktop_gateway_e2e.identity_state_path(
+                    account_id,
+                )
+
+        self.assertEqual(selected, expected)
+
     def test_desktop_gateway_legacy_pin_fixture_removes_actor_ptid(self) -> None:
         state = {
             "accounts": [
