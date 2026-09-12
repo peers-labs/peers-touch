@@ -11,6 +11,7 @@ import (
 	"time"
 
 	actoridentityapplication "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/application"
+	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
 	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
@@ -116,6 +117,46 @@ func TestMapProductionConversationErrorPreservesInteractionContext(t *testing.T)
 	}
 	if !errors.Is(handlerError, cause) {
 		t.Fatal("mapped error did not retain its interaction cause")
+	}
+}
+
+func TestMapProductionConversationErrorPreservesDeviceInboxContext(t *testing.T) {
+	cause := deliveryapp.NewError(
+		deliveryapp.ErrorCodeUnauthorized,
+		"delivery.claim",
+		"device",
+		"is not active for the authenticated actor",
+	)
+	mapped := mapProductionConversationError(context.Background(), cause)
+	handlerError, ok := mapped.(*server.HandlerError)
+	if !ok {
+		t.Fatalf("mapped error type = %T, want *server.HandlerError", mapped)
+	}
+	if handlerError.Code != http.StatusForbidden {
+		t.Fatalf(
+			"status = %d, want %d",
+			handlerError.Code,
+			http.StatusForbidden,
+		)
+	}
+	if got := handlerError.Headers["X-Peers-Error-Code"]; got !=
+		string(deliveryapp.ErrorCodeUnauthorized) {
+		t.Fatalf("error code = %q", got)
+	}
+	var details map[string]string
+	if err := json.Unmarshal(
+		[]byte(handlerError.Headers["X-Peers-Error-Details"]),
+		&details,
+	); err != nil {
+		t.Fatalf("decode details: %v", err)
+	}
+	if details["operation"] != "delivery.claim" ||
+		details["field"] != "device" ||
+		details["reason"] != "is not active for the authenticated actor" {
+		t.Fatalf("details = %#v", details)
+	}
+	if !errors.Is(handlerError, cause) {
+		t.Fatal("mapped error did not retain its Device Inbox cause")
 	}
 }
 

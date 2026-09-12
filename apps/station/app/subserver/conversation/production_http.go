@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
+	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
 	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
@@ -2052,6 +2053,57 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 
 		return server.Forbidden("Conversation policy rejected the request")
 	}
+	deliveryCode := deliveryapp.CodeOf(err)
+	switch deliveryCode {
+	case deliveryapp.ErrorCodeInvalidArgument:
+		return productionDeviceInboxHandlerError(
+			http.StatusBadRequest,
+			"invalid Device Inbox request",
+			deliveryCode,
+			err,
+		)
+	case deliveryapp.ErrorCodeUnauthorized:
+		return productionDeviceInboxHandlerError(
+			http.StatusForbidden,
+			"Device Inbox operation is not authorized",
+			deliveryCode,
+			err,
+		)
+	case deliveryapp.ErrorCodeItemNotFound:
+		return productionDeviceInboxHandlerError(
+			http.StatusNotFound,
+			"Device Inbox item was not found",
+			deliveryCode,
+			err,
+		)
+	case deliveryapp.ErrorCodeConsumerFenced,
+		deliveryapp.ErrorCodeItemOwnerMismatch,
+		deliveryapp.ErrorCodeItemNotHead,
+		deliveryapp.ErrorCodeItemNotClaimed,
+		deliveryapp.ErrorCodePayloadHashMismatch,
+		deliveryapp.ErrorCodeIdempotencyConflict,
+		deliveryapp.ErrorCodeLeaseExpired:
+		return productionDeviceInboxHandlerError(
+			http.StatusConflict,
+			"Device Inbox state conflicts with the request",
+			deliveryCode,
+			err,
+		)
+	case deliveryapp.ErrorCodeQuotaExceeded:
+		return productionDeviceInboxHandlerError(
+			http.StatusTooManyRequests,
+			"Device Inbox quota exceeded",
+			deliveryCode,
+			err,
+		)
+	case deliveryapp.ErrorCodePersistence:
+		return productionDeviceInboxHandlerError(
+			http.StatusServiceUnavailable,
+			"Device Inbox persistence is unavailable",
+			deliveryCode,
+			err,
+		)
+	}
 	interactionCode := interactionapp.CodeOf(err)
 	switch interactionCode {
 	case interactionapp.ErrorCodeInvalidArgument:
@@ -2153,6 +2205,30 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 
 		return server.InternalErrorWithCause("Conversation operation failed", err)
 	}
+}
+
+func productionDeviceInboxHandlerError(
+	status int,
+	message string,
+	code deliveryapp.ErrorCode,
+	err error,
+) *server.HandlerError {
+	handlerError := server.NewHandlerErrorWithCause(status, message, err)
+	handlerError.Headers = map[string]string{
+		"X-Peers-Error-Code": string(code),
+	}
+	var typed *deliveryapp.Error
+	if errors.As(err, &typed) {
+		details, encodeErr := json.Marshal(map[string]string{
+			"operation": typed.Operation,
+			"field":     typed.Field,
+			"reason":    typed.Message,
+		})
+		if encodeErr == nil && len(details) <= 4096 {
+			handlerError.Headers["X-Peers-Error-Details"] = string(details)
+		}
+	}
+	return handlerError
 }
 
 func productionInteractionHandlerError(
