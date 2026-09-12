@@ -30,11 +30,11 @@
       "description": "Validate that acceptance-run preserves source artifact diagnostics, Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN metadata in latest-run evidence."
     },
     "chat-native-visible-static": {
-      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts src/acceptance/chat/passwordLogin.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.friend_request_gateway_e2e_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
+      "command": "cd apps/station/app && GOWORK=off go test ./subserver/social/application -run 'TestRelationshipListsHydrateActorProjections|TestRelationshipListsFilterBlockedEdges' -count=1 && cd ../../.. && pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts src/acceptance/chat/passwordLogin.test.ts src/store/friendshipProjection.test.ts src/store/relationships.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.friend_request_gateway_e2e_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate native runner fail-closed evidence, MP-W13 no-bypass DOM actions, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey."
+      "description": "Validate Station relationship-list actor hydration, native runner fail-closed evidence, mutual-friend projection, MP-W13 no-bypass DOM actions, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey."
     },
     "chat-native-two-client-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_two_client_entry && python3 -m tooling.acceptance.gates.chat.native_two_client_e2e",
@@ -133,7 +133,7 @@
         "desktop-windows-native"
       ],
       "tier": "env-evidence",
-      "description": "Run visible native three-device MLS add, send, remove, restart, and recovery acceptance."
+      "description": "Run visible native mutual-friend discovery plus three-device MLS create, send, remove, restart, and recovery acceptance."
     },
     "chat-w11-forbidden-scan": {
       "command": "python3 -m tooling.acceptance.gates.chat.w11_forbidden_scan",

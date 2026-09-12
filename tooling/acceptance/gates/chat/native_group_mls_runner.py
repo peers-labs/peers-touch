@@ -46,6 +46,8 @@ STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 REQUIRED_ASSERTIONS = {
     "native_runtime",
     "actor_isolation",
+    "default_friend_projection",
+    "existing_friend_search_state",
     "group_created",
     "member_added",
     "group_message_delivered",
@@ -57,7 +59,14 @@ SELECTORS = {
     "new_menu": "[data-chat-new-menu]",
     "create_group_menu": "[data-chat-create-group-menu]",
     "create_group": "[data-chat-create-group]",
+    "create_group_close": "[data-chat-create-group-close]",
+    "create_group_contact": "[data-chat-create-group-contact]",
     "create_group_submit": "[data-chat-create-group-submit]",
+    "find_people_menu": "[data-chat-find-people-menu]",
+    "find_people": "[data-chat-find-people]",
+    "find_people_input": "[data-chat-find-people-input]",
+    "find_people_search": "[data-chat-find-people-search]",
+    "find_people_result": "[data-chat-find-people-result]",
     "group_ready": '[data-group-security="ready"]',
     "detail_toggle": "[data-chat-detail-toggle]",
     "group_add_open": "[data-chat-group-add-member-open]",
@@ -82,7 +91,10 @@ class NativeGroupMlsGate(AcceptanceGate):
     gate_id = "chat-native-group-mls-e2e"
     phase = "MP-W07"
     bom = ("MP-G05", "MP-G06", "MP-G09")
-    spec = ("chat-native-visible-clients",)
+    spec = (
+        "chat-native-visible-clients",
+        "chat-native-friendship-projection",
+    )
     report_path = REPORT_PATH
     evidence_dir = (
         REPORT_PATH.parent / "chat-native-group-mls-evidence"
@@ -422,6 +434,108 @@ class NativeGroupMlsGate(AcceptanceGate):
                 time.sleep(5)
         raise GateError(f"create_group failed after 15 attempts: {last_error}")
 
+    def verify_default_friend_projection(self) -> dict[str, Any]:
+        alice = self.clients["alice"]
+        enter_chat_page(alice)
+        alice.find_element(SELECTORS["new_menu"], 30).click()
+        alice.find_element(SELECTORS["create_group_menu"], 10).click()
+
+        expected_contacts = {
+            self.ptids["bob"],
+            self.ptids["charlie"],
+        }
+
+        def group_contacts() -> dict[str, Any] | None:
+            value = alice.execute_script(
+                """
+                const root = document.querySelector(arguments[0]);
+                if (!root) return null;
+                return {
+                  state: root.getAttribute('data-chat-friendship-state') || '',
+                  contacts: Array.from(root.querySelectorAll(arguments[1]))
+                    .map((item) => item.getAttribute('data-chat-create-group-contact') || '')
+                    .filter(Boolean),
+                };
+                """,
+                SELECTORS["create_group"],
+                SELECTORS["create_group_contact"],
+            )
+            if not isinstance(value, dict) or value.get("state") != "ready":
+                return None
+            contacts = {
+                str(item) for item in value.get("contacts", []) if item
+            }
+            return value if expected_contacts.issubset(contacts) else None
+
+        contacts = wait_until(
+            group_contacts,
+            "default mutual friends in Create Group",
+            STEP_TIMEOUT,
+        )
+        alice.find_element(SELECTORS["create_group_close"], 10).click()
+
+        alice.find_element(SELECTORS["new_menu"], 10).click()
+        alice.find_element(SELECTORS["find_people_menu"], 10).click()
+        search_input = alice.find_element(SELECTORS["find_people_input"], 10)
+        alice.execute_script(
+            """
+            const root = arguments[0];
+            const input = root instanceof HTMLInputElement
+              ? root
+              : root.querySelector('input');
+            const value = arguments[1];
+            if (!input) throw new Error('Find People input missing');
+            const setter = Object.getOwnPropertyDescriptor(
+              HTMLInputElement.prototype, 'value'
+            )?.set;
+            if (!setter) throw new Error('input setter missing');
+            setter.call(input, value);
+            input.dispatchEvent(new InputEvent('input', {
+              bubbles: true, data: value, inputType: 'insertText',
+            }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            """,
+            search_input,
+            "carol",
+        )
+        alice.find_element(SELECTORS["find_people_search"], 10).click()
+
+        carol_selector = (
+            f'[data-chat-find-people-result={json.dumps(self.ptids["charlie"])}]'
+        )
+
+        def existing_friend_result() -> dict[str, Any] | None:
+            value = alice.execute_script(
+                """
+                const row = document.querySelector(arguments[0]);
+                if (!row) return null;
+                const action = row.querySelector('[data-chat-find-people-action]');
+                return {
+                  friendState: row.getAttribute('data-chat-friend-state') || '',
+                  actionDisabled: Boolean(action?.disabled),
+                  actionText: action?.textContent?.trim() || '',
+                };
+                """,
+                carol_selector,
+            )
+            if not isinstance(value, dict):
+                return None
+            return value if (
+                value.get("friendState") == "friend"
+                and value.get("actionDisabled") is True
+            ) else None
+
+        search = wait_until(
+            existing_friend_result,
+            "existing friend state in Find People",
+            STEP_TIMEOUT,
+        )
+        alice.find_element(".ant-modal-close", 10).click()
+        return {
+            "contacts": contacts,
+            "search": search,
+        }
+
     def add_member(self, group_id: str) -> None:
         """Verify charlie is present in the group (added during creation)."""
         alice = self.clients["alice"]
@@ -550,6 +664,23 @@ class NativeGroupMlsGate(AcceptanceGate):
                 and len(set(self.device_ids.values())) == 3
                 and len({client.port for client in self.clients.values()}) == 3
                 and len({client.storage_root for client in self.clients.values()}) == 3,
+            )
+            friendship = self.step(
+                "friendship.default_projection",
+                self.verify_default_friend_projection,
+                "alice",
+            )
+            self.assert_condition(
+                "default_friend_projection",
+                {
+                    self.ptids["bob"],
+                    self.ptids["charlie"],
+                }.issubset(set(friendship["contacts"]["contacts"])),
+            )
+            self.assert_condition(
+                "existing_friend_search_state",
+                friendship["search"]["friendState"] == "friend"
+                and friendship["search"]["actionDisabled"] is True,
             )
             self.step(
                 "mls.readiness",

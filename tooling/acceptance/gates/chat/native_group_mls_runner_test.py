@@ -22,6 +22,7 @@ from tooling.acceptance.gates.chat.native_support import (
 
 
 RUNNER = Path(__file__).with_name("native_group_mls_runner.py")
+ROOT = Path(__file__).resolve().parents[4]
 
 
 class SyntheticRuntimeBinding:
@@ -217,6 +218,8 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
             {
                 "native_runtime",
                 "actor_isolation",
+                "default_friend_projection",
+                "existing_friend_search_state",
                 "group_created",
                 "member_added",
                 "group_message_delivered",
@@ -227,6 +230,59 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
             SELECTORS["group_manage"],
             "[data-chat-group-manage-members]",
         )
+        self.assertEqual(
+            SELECTORS["create_group_contact"],
+            "[data-chat-create-group-contact]",
+        )
+        self.assertEqual(
+            SELECTORS["find_people_result"],
+            "[data-chat-find-people-result]",
+        )
+        self.assertIn(
+            "chat-native-friendship-projection",
+            NativeGroupMlsGate.spec,
+        )
+
+    def test_default_friend_projection_is_checked_before_group_creation(
+        self,
+    ) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        projection = source.index(
+            '"friendship.default_projection"'
+        )
+        group_creation = source.index('"group.create"')
+
+        self.assertLess(projection, group_creation)
+        self.assertIn("default mutual friends in Create Group", source)
+        self.assertIn("existing friend state in Find People", source)
+        self.assertIn('"actionDisabled"', source)
+
+    def test_native_surfaces_consume_the_runtime_owned_friend_projection(
+        self,
+    ) -> None:
+        relationships = (
+            ROOT / "apps/desktop/src/store/relationships.ts"
+        ).read_text(encoding="utf-8")
+        realtime = (
+            ROOT / "apps/desktop/src/services/socialRealtime.ts"
+        ).read_text(encoding="utf-8")
+        find_people = (
+            ROOT / "apps/desktop/src/components/chat/FindPeopleModal.tsx"
+        ).read_text(encoding="utf-8")
+        create_group = (
+            ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
+        ).read_text(encoding="utf-8")
+        contacts = (
+            ROOT / "apps/desktop/src/components/chat/ChatContactsPanel.tsx"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("projectMutualFriends(followers, following)", relationships)
+        self.assertIn("loadMutualFriends(actorPtid, true)", realtime)
+        self.assertIn("EVENT.RELATIONSHIP_CHANGED", realtime)
+        self.assertIn("data-chat-find-people-result", find_people)
+        self.assertIn("data-chat-friend-state", find_people)
+        self.assertIn("data-chat-create-group-contact", create_group)
+        self.assertIn("data-chat-friendship-state", contacts)
 
 
 if __name__ == "__main__":

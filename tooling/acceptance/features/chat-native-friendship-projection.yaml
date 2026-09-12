@@ -1,0 +1,46 @@
+{
+  "id": "chat-native-friendship-projection",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "apps/station/app/subserver/social/infrastructure/follow_repo.go",
+    "apps/desktop/src/store/relationships.ts",
+    "apps/desktop/src/store/friendshipProjection.ts",
+    "apps/desktop/src/services/socialRealtime.ts",
+    "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+    "apps/desktop/src/components/chat/CreateGroupModal.tsx",
+    "apps/desktop/src/components/chat/ChatContactsPanel.tsx",
+    "apps/desktop/src/components/chat/ChatSessionList.tsx"
+  ],
+  "truth_sources": [
+    "Station Social mutual follow edges",
+    "Desktop socialRealtime relationship reconciliation"
+  ],
+  "visible_surfaces": [
+    {"type": "desktop-dom", "selector": "[data-chat-find-people-result]"},
+    {"type": "desktop-dom", "selector": "[data-chat-contacts]"},
+    {"type": "desktop-dom", "selector": "[data-chat-create-group-contact]"}
+  ],
+  "required_gates": [
+    "desktop-check",
+    "chat-native-visible-static",
+    "chat-native-group-mls-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "Desktop derives friendship only from the intersection of Station followers and following",
+      "socialRealtime refreshes mutual friendship at bootstrap, after relationship events, during cold resync, and during periodic reconciliation",
+      "relationship pagination cannot omit mutual friends beyond the first page"
+    ],
+    "visible": [
+      "seeded mutual friends appear in Contacts without requiring a prior Direct conversation or friend-request record",
+      "seeded mutual friends appear as selectable Create Group members",
+      "Find People renders an existing mutual friend as Friends and disables duplicate friend-request submission"
+    ]
+  },
+  "negative": [
+    "Direct conversation history and accepted friend-request history must not define friendship truth",
+    "page or modal mount effects must not own friendship projection freshness",
+    "static or unit evidence must not be reported as Native DOM proof"
+  ]
+}

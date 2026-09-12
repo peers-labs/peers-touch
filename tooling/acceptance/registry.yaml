@@ -117,6 +117,34 @@
       ]
     },
     {
+      "id": "chat-native-friendship-projection",
+      "features": [
+        "chat-native-friendship-projection"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/app/subserver/social/infrastructure/follow_repo.go",
+          "apps/station/app/subserver/social/application/relationship_service_test.go",
+          "apps/desktop/src/store/relationships.ts",
+          "apps/desktop/src/store/friendshipProjection.ts",
+          "apps/desktop/src/services/socialRealtime.ts",
+          "apps/desktop/src/components/chat/useActiveSocialChatStore.ts",
+          "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+          "apps/desktop/src/components/chat/CreateGroupModal.tsx",
+          "apps/desktop/src/components/chat/ChatContactsPanel.tsx",
+          "apps/desktop/src/components/chat/ChatSessionList.tsx",
+          "tooling/acceptance/gates/chat/native_group_mls_runner.py",
+          "tooling/acceptance/gates/chat/native_group_mls_runner_test.py",
+          "tooling/acceptance/features/chat-native-friendship-projection.yaml"
+        ]
+      },
+      "require": [
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-native-group-mls-e2e"
+      ]
+    },
+    {
       "id": "chat-message-interactions",
       "features": [
         "chat-message-interactions"
@@ -365,6 +393,7 @@
           "apps/desktop/src/components/chat/FindPeopleModal.tsx",
           "apps/desktop/src/store/stationRegistry.ts",
           "apps/desktop/src/runtimes/stationRuntime.ts",
+          "apps/desktop/src-tauri/src/application/federation/mod.rs",
           "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
           "apps/desktop/src-tauri/src/interface/tauri_commands/station.rs"
         ]
