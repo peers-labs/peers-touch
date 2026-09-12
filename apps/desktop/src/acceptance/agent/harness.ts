@@ -19708,6 +19708,30 @@ export function installAcceptanceHarness(): void {
         };
       }
       if (
+        cell === 'BASE-CONTEXT-OVERFLOW'
+        && scenarioFacts
+        && currentConversationId
+      ) {
+        const contextOverflowCleanup = evidenceRecord(
+          scenarioFacts.cleanup,
+          'foundationContextOverflowCleanup',
+        );
+        // #region debug-point E-H:context-overflow-cleanup-dispatch
+        await reportFoundationContextOverflowRecoveryDebug(
+          'E-H',
+          'cleanup-dispatch-entered',
+          {
+            conversationIdHash: await sha256Hex(currentConversationId),
+            draftCleared: contextOverflowCleanup.draftCleared === true,
+            localProjectionCleared:
+              contextOverflowCleanup.localProjectionCleared === true,
+            conversationDeleted:
+              contextOverflowCleanup.conversationDeleted === true,
+          },
+        );
+        // #endregion
+      }
+      if (
         (
           cell === 'BASE-FORBIDDEN_ACTOR'
           || cell === 'BASE-INCOMPATIBLE_CAPABILITY'

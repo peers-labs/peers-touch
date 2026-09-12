@@ -90,3 +90,35 @@ tuples, and timeouts are unchanged.
 - Desktop strict check: PASS.
 - Focused Foundation static/oracle tests: `234/234` PASS.
 - `git diff --check`: PASS.
+
+## Iteration 3: Cleanup Readback
+
+Exact-source Foundation run
+`20260912T090751589578Z-8609947413ae347978a77156d5021b64`
+on `f94b2fb4d360b6ae1f6f8401ac1df81955142903` crossed the
+`BASE-INTERRUPTED` frontier and failed only
+`BASE-CONTEXT_OVERFLOW / browser / en / cleanupComplete`. Runtime and
+Provisioner cleanup both completed without leaked process, port, storage, or
+lease resources.
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| E | Conversation deletion returns before the authoritative readback reaches `deleted` or not-found. | High | Low | Delete call succeeds, immediate readback has a non-deleted status, and the final cleanup fact is false. |
+| F | The baseline Turn remains active long enough to block conversation deletion. | Medium | Low | Pre-delete status or delete retries report `ACTIVE_DEPENDENCY`. |
+| G | Local projection cleanup leaves an operation/session buffer behind. | Medium | Low | Final `localProjectionCleared` is false while conversation deletion succeeds. |
+| H | The controlled composer update has not committed before cleanup facts are sampled. | Low | Low | Final `draftCleared` is false. |
+
+The next instrumentation records only hashed Conversation identity, bounded
+status/error categories, and the three final cleanup booleans. It does not
+record drafts, messages, actor identity, or credentials.
+
+The first two reduced diagnostic launches did not execute the target cell:
+outside the full Provisioner lifecycle, the freshly reset local identity could
+not satisfy the Station actor-device continuity contract. Both diagnostics
+failed before product actions and released every client and fault-transport
+resource. They are not evidence for or against E-H.
+
+The retained Harness instrumentation now records
+`cleanup-dispatch-entered` immediately before the shared Conversation deletion
+phase. A source-bound diagnostic checkpoint is required because Foundation
+correctly rejects dirty-worktree product evidence.

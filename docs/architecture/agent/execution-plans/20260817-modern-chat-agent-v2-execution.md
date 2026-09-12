@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T082711692343Z-79fcf43c5d6f4a857834e3f6d20a8939` on `f1963a7f2567a05cbbaaafe3a23ff7f9f493b53d` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T082943713422Z-b48301566d031c38e6ea7aca840bfd5e` stopped before the first tuple because the synchronized devctl launch omitted the renderer Harness flag and its detached managed children outlived the launcher PGID; the local correction restores the existing Harness flag and devctl-owned stop lifecycle, passes 367 Foundation/runtime/static tests and a real Native startup/cleanup comparison, while a clean exact-source checkpoint and unchanged 419-cell proof remain pending | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T090634799644Z-5a0cf759ba34269c19ba21ab82242462` on `f94b2fb4d360b6ae1f6f8401ac1df81955142903` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T090751589578Z-8609947413ae347978a77156d5021b64` crossed `BASE-INTERRUPTED` and failed first at Browser English `BASE-CONTEXT-OVERFLOW / cleanupComplete`; both client cleanup and outer Provisioner cleanup passed; the exact failed cleanup tuple is under retained instrumentation and Foundation remains unproven | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7496,6 +7496,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   rules, Python compilation, and diff hygiene pass. No Gate tuple, timeout,
   provider, or evidence requirement changed. Clean checkpoint deployment and
   same-source C08 then Foundation proof remain pending.
+- **BASE-CONTEXT-OVERFLOW cleanup diagnostic (2026-09-12)**: checkpoint
+  `f94b2fb4d360b6ae1f6f8401ac1df81955142903` deployed exact-source after
+  reclaiming `27.83GB` of inactive Docker build cache on the approved Station
+  host; no image in use, container, database volume, source, or evidence was
+  removed. PostgreSQL and Station returned healthy, and C08 run
+  `20260912T090634799644Z-5a0cf759ba34269c19ba21ab82242462`
+  completed `DONE / PROVEN` with `19/19` assertions. The unchanged Foundation
+  run `20260912T090751589578Z-8609947413ae347978a77156d5021b64`
+  crossed `BASE-INTERRUPTED` and failed first at Browser English
+  `BASE-CONTEXT-OVERFLOW / cleanupComplete`. Both runtime clients released all
+  process, port, storage, and fault-transport resources, and outer Provisioner
+  cleanup is `DONE / PROVEN`. The retained context-overflow instrumentation now
+  records the draft, local projection, and Conversation cleanup facts before
+  the shared deletion phase. Exact-field evidence remains pending one
+  source-bound diagnostic checkpoint; no cleanup assertion or Gate tuple was
+  weakened.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
