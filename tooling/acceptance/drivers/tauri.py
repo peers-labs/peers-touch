@@ -88,6 +88,14 @@ def _available_port() -> int:
         return int(listener.getsockname()[1])
 
 
+def resolve_smoke_port(port: int) -> int:
+    if port == 0:
+        return _available_port()
+    if port < 1 or port > 65535:
+        raise ValueError("Tauri smoke WebDriver port must be 0 or 1..65535")
+    return port
+
+
 class TauriDriver(DomDriver):
     def __init__(
         self,
@@ -757,7 +765,8 @@ def tauri_driver_session(
         td.stop()
 
 
-def smoke_test(app_binary: Optional[str] = None, port: int = DEFAULT_PORT) -> bool:
+def smoke_test(app_binary: Optional[str] = None, port: int = 0) -> bool:
+    port = resolve_smoke_port(port)
     print(f"[smoke] Launching Tauri app with embedded WebDriver on port {port}...")
     print(f"[smoke] App binary: {app_binary or '(auto-detect)'}")
     passed = False
@@ -805,7 +814,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Tauri embedded WebDriver smoke test")
     parser.add_argument("--binary", help="Path to Tauri app binary")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--port", type=int, default=0)
     args = parser.parse_args()
     success = smoke_test(app_binary=args.binary, port=args.port)
     raise SystemExit(0 if success else 1)

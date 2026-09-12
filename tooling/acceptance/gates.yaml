@@ -16,7 +16,7 @@
       "description": "Validate only acceptance_core_self_validation capabilities and generic Infra closure without consuming business Domain injection."
     },
     "acceptance-runtime-provisioning-self": {
-      "command": "python3 -m unittest tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py",
+      "command": "python3 -m unittest tooling.acceptance.tests.test_tauri_smoke tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py",
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",

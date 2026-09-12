@@ -49,7 +49,8 @@ acceptance-driver-build:
 	@mv "$(ACCEPTANCE_DRIVER_BINARY).tmp" "$(ACCEPTANCE_DRIVER_BINARY)"
 
 acceptance-driver-smoke:
-	python3 -m tooling.acceptance.drivers.tauri
+	python3 -m tooling.acceptance.drivers.tauri \
+		--port "$${PT_ACCEPTANCE_WEBDRIVER_PORT:-0}"
 
 acceptance-cell-ready:
 	python3 tooling/scripts/acceptance-cell.py ready \
