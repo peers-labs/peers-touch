@@ -7607,6 +7607,37 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   recovery click, Identity Runtime logout, session logout, per-handler identity
   pipeline, and final account-gate state without changing behavior, timeouts,
   matrix tuples, or assertions.
+- **Context-overflow cleanup branch diagnostic (2026-09-12)**: diagnostic
+  checkpoint `08d16193949cd19757c099302fa25dda35dfb836` used Acceptance
+  binary SHA-256
+  `33365d738b0864adda7a3e2242a94c14894f57205a003dfb357d72a3e07a2aed`,
+  passed exact-source C08 run
+  `20260912T125646628616Z-710277c0ccf2c2b5a90fe9d998816ce7`
+  with `19/19` assertions and complete cleanup, and crossed all four AS-F06
+  tuples again. Foundation run
+  `20260912T125854097224Z-4aadb1165f439562306772b14ce522c5`
+  then failed first at Browser English
+  `BASE-CONTEXT-OVERFLOW / cleanupComplete`. Its pre/post recovery telemetry
+  proves one visible localized error/recovery surface, restored composer
+  focus, and the reduced draft. The expected `cleanup-dispatch-entered`
+  observation was absent, so the next instrumentation is moved to the exact
+  context-overflow scenario return and records cleanup-branch admission,
+  authoritative deletion, and the final assertion input. The
+  forbidden-actor account-gate instrumentation was not reached and remains
+  queued. Outer Provisioner cleanup completed `DONE / PROVEN / passed`; no
+  timeout, tuple, assertion, cleanup requirement, or product behavior changed.
+- **Context-overflow canonical cell-ID correction (2026-09-12)**: the missing
+  cleanup telemetry and failed assertion have one source-confirmed cause. The
+  matrix and evaluator use `BASE-CONTEXT_OVERFLOW`, while four shared Harness
+  cleanup/telemetry branches compared against the stale hyphenated
+  `BASE-CONTEXT-OVERFLOW`. The scenario therefore returned its intentional
+  pre-deletion `conversationDeleted=false`, skipped authoritative Conversation
+  deletion and cleanup fact enrichment, and failed `cleanupComplete`. The
+  local correction uses the canonical matrix ID in all four branches and adds
+  a static regression rejecting the stale alias. It retains the existing
+  Conversation deletion owner, all cleanup predicates, Gate tuples, timeout,
+  provider, and proof requirements. Exact-source C08 and Foundation proof
+  remain pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

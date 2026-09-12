@@ -107,6 +107,7 @@ lease resources.
 | F | The baseline Turn remains active long enough to block conversation deletion. | Medium | Low | Pre-delete status or delete retries report `ACTIVE_DEPENDENCY`. |
 | G | Local projection cleanup leaves an operation/session buffer behind. | Medium | Low | Final `localProjectionCleared` is false while conversation deletion succeeds. |
 | H | The controlled composer update has not committed before cleanup facts are sampled. | Low | Low | Final `draftCleared` is false. |
+| I | Shared cleanup compares the runtime cell against a non-canonical ID and never enters the deletion branch. | High | Low | Runtime uses `BASE-CONTEXT_OVERFLOW`, while cleanup code checks `BASE-CONTEXT-OVERFLOW`; no cleanup-dispatch event is emitted. |
 
 The next instrumentation records only hashed Conversation identity, bounded
 status/error categories, and the three final cleanup booleans. It does not
@@ -122,3 +123,43 @@ The retained Harness instrumentation now records
 `cleanup-dispatch-entered` immediately before the shared Conversation deletion
 phase. A source-bound diagnostic checkpoint is required because Foundation
 correctly rejects dirty-worktree product evidence.
+
+## Iteration 4: Cleanup Branch Admission
+
+Exact-source Foundation run
+`20260912T125854097224Z-4aadb1165f439562306772b14ce522c5`
+on `08d16193949cd19757c099302fa25dda35dfb836` again failed only
+`BASE-CONTEXT-OVERFLOW / browser / en / cleanupComplete`. The pre/post
+recovery snapshots prove the receiver state, focus restoration, and reduced
+draft, but `cleanup-dispatch-entered` was not emitted.
+
+The next instrumentation distinguishes:
+
+- whether the scenario returned a non-empty Conversation and Turn identity;
+- whether the shared cleanup branch saw `scenarioFacts` and the current
+  Conversation identity;
+- whether authoritative Conversation deletion completed;
+- which of `draftCleared`, `localProjectionCleared`, and
+  `conversationDeleted` reached the final assertion input.
+
+No cleanup, assertion, timeout, matrix, or product behavior changes.
+
+## Iteration 5: Canonical Cell ID Root Cause
+
+Exact-source Foundation run
+`20260912T125854097224Z-4aadb1165f439562306772b14ce522c5`
+on `08d16193949cd19757c099302fa25dda35dfb836` reproduced Browser English
+`BASE-CONTEXT_OVERFLOW / cleanupComplete`. The pre/post recovery observations
+were correct, while no cleanup-branch observation was emitted.
+
+Source inspection confirms hypothesis I. The matrix and evaluator use
+`BASE-CONTEXT_OVERFLOW`, but the shared deletion, telemetry, result, and
+assertion-input branches checked the non-canonical
+`BASE-CONTEXT-OVERFLOW`. The scenario therefore returned its intentional
+pre-deletion `conversationDeleted=false`, skipped authoritative deletion and
+cleanup fact enrichment, and failed `cleanupComplete`.
+
+The owner-layer fix replaces only those four stale comparisons with the
+canonical matrix ID and adds a static regression that rejects the hyphenated
+alias. The Gate matrix, timeout, assertions, provider, and cleanup requirements
+remain unchanged.

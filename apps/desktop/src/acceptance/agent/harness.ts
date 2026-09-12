@@ -5769,6 +5769,22 @@ async function runFoundationContextOverflowScenario(input: {
     clearFoundationLocalConversationProjection(
       conversation.conversation_id,
     );
+    // #region debug-point E-H:context-overflow-scenario-cleanup
+    await reportFoundationContextOverflowRecoveryDebug(
+      'E-H',
+      'scenario-cleanup-sampled',
+      {
+        draftCleared: textarea.value === '',
+        localProjectionCleared:
+          !useChatStore.getState().sessionBuffers[
+            conversation.conversation_id
+          ]
+          && !useChatStore.getState().operations[
+            conversation.conversation_id
+          ],
+      },
+    );
+    // #endregion
 
     return {
       conversationId: conversation.conversation_id,
@@ -18588,6 +18604,24 @@ export function installAcceptanceHarness(): void {
         preparedRuntimeEvent.current = scenario.runtimeEvent;
         turnDurationMs = scenario.durationMs;
         scenarioFacts = scenario.facts;
+        // #region debug-point E-H:context-overflow-scenario-return
+        await reportFoundationContextOverflowRecoveryDebug(
+          'E-H',
+          'scenario-returned',
+          {
+            conversationIdPresent: scenario.conversationId.length > 0,
+            conversationIdHash: scenario.conversationId
+              ? await sha256Hex(scenario.conversationId)
+              : '',
+            turnIdPresent: scenario.turnId.length > 0,
+            scenarioFactsPresent: scenarioFacts !== null,
+            cleanupPresent:
+              scenarioFacts !== null
+              && typeof scenarioFacts.cleanup === 'object'
+              && scenarioFacts.cleanup !== null,
+          },
+        );
+        // #endregion
       }
 
       if (cell === 'BASE-CREDENTIAL_MISSING') {
@@ -19813,8 +19847,26 @@ export function installAcceptanceHarness(): void {
           ),
         };
       }
+      if (cell === 'BASE-CONTEXT_OVERFLOW') {
+        // #region debug-point E-H:context-overflow-cleanup-branch
+        await reportFoundationContextOverflowRecoveryDebug(
+          'E-H',
+          'cleanup-branch-evaluated',
+          {
+            scenarioFactsPresent: scenarioFacts !== null,
+            preparedConversationIdPresent:
+              Boolean(preparedConversationId),
+            currentConversationIdPresent:
+              Boolean(currentConversationId),
+            currentConversationMatchesPrepared:
+              Boolean(currentConversationId)
+              && currentConversationId === preparedConversationId,
+          },
+        );
+        // #endregion
+      }
       if (
-        cell === 'BASE-CONTEXT-OVERFLOW'
+        cell === 'BASE-CONTEXT_OVERFLOW'
         && scenarioFacts
         && currentConversationId
       ) {
@@ -19896,6 +19948,26 @@ export function installAcceptanceHarness(): void {
           conversationDeleted,
           deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
         };
+        if (cell === 'BASE-CONTEXT_OVERFLOW') {
+          const contextOverflowCleanup = evidenceRecord(
+            scenarioFacts.cleanup,
+            'foundationContextOverflowCleanup',
+          );
+          // #region debug-point E-H:context-overflow-cleanup-result
+          await reportFoundationContextOverflowRecoveryDebug(
+            'E-H',
+            'cleanup-deletion-completed',
+            {
+              deletionErrorCodePresent: deletionErrorCode.length > 0,
+              draftCleared: contextOverflowCleanup.draftCleared === true,
+              localProjectionCleared:
+                contextOverflowCleanup.localProjectionCleared === true,
+              conversationDeleted:
+                contextOverflowCleanup.conversationDeleted === true,
+            },
+          );
+          // #endregion
+        }
         if (cell === 'BASE-ACTIVE_MUTATION_CONFLICT') {
           await reportActiveMutationConflictDebug(
             'attestation-cleanup-complete',
@@ -19934,6 +20006,25 @@ export function installAcceptanceHarness(): void {
         locale,
         sampleId,
       };
+      if (cell === 'BASE-CONTEXT_OVERFLOW') {
+        const contextOverflowCleanup = evidenceRecord(
+          scenarioFacts?.cleanup,
+          'foundationContextOverflowCleanup',
+        );
+        // #region debug-point E-H:context-overflow-assertion-input
+        await reportFoundationContextOverflowRecoveryDebug(
+          'E-H',
+          'assertion-input',
+          {
+            draftCleared: contextOverflowCleanup.draftCleared === true,
+            localProjectionCleared:
+              contextOverflowCleanup.localProjectionCleared === true,
+            conversationDeleted:
+              contextOverflowCleanup.conversationDeleted === true,
+          },
+        );
+        // #endregion
+      }
       const assertions = await evaluateDirectCellAssertions(assertionContext);
 
       const receiverDom = foundationDomSnapshot();

@@ -1673,6 +1673,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("recoveryText: receiverRecoveryText", scenario)
         self.assertIn("await deleteFoundationConversation(", scenario)
         self.assertIn("if (cell === 'BASE-CONTEXT_OVERFLOW')", self.source)
+        self.assertNotIn("BASE-CONTEXT-OVERFLOW", self.source)
         self.assertNotIn("mock", scenario.lower())
 
     def test_duplicate_conflict_uses_typed_open_original_recovery_path(
