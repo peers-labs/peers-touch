@@ -5030,3 +5030,32 @@ from its read-only identity seed while excluding the old Device Engine
 database and device binding. Normal runs keep the flag unset and continue to
 preserve crypto, cursor, authority, and projection continuity. Focused
 Provisioner tests cover reuse, reset, marker validation, and authorization.
+
+Commit `ea23c32ff103748454881da4d38896ad3b384176` is synchronized to high-chat
+as `86ce853a5590d3297b9303e54e5b67d0abbeeaaa`; both worktrees resolve tree
+`0a683c3d95b23447624fe9ecc1378e76222983b0`. On that exact source, profile
+`four` has current `PASS/DONE/PROVEN` evidence for:
+
+- Friend Request run
+  `20260912T033259732218Z-83448b324aa37935261e9ac66ffcfc27`;
+- Desktop Gateway run
+  `20260912T033419573708Z-0adc2fad958a0e37212a783f7dea46a8`;
+- coupled Station/persistent-state reset Native Direct run
+  `20260912T033638787114Z-fcc60adb49eb604ec051e3588a45144d`;
+  and
+- immediate no-reset continuity run
+  `20260912T033834891235Z-3d0d26f40ad583cd4f7b8d91123a96df`.
+
+The dedicated disposable `chat-native-four` and `chat-native-five` Stations
+were then deployed to the same source. Two-Station Native run
+`20260912T034546153079Z-af7aa0120e4125f73865c875a0c111cd`
+attested both services and completed reverse cleanup, but blocked before
+Fixture execution because the standalone driver smoke used fixed WebDriver
+port `4445`, already owned by another worktree.
+
+The driver smoke now treats port `0` as collision-free loopback allocation;
+the Make target uses that mode unless an explicit
+`PT_ACCEPTANCE_WEBDRIVER_PORT` is supplied. Focused resolver tests pass, and a
+live smoke run passed on dynamically allocated WebDriver and Gateway ports
+without touching the existing `4445/4446` listeners. Exact-source
+two-Station Native rerun remains required.
