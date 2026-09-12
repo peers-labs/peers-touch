@@ -4951,13 +4951,33 @@ the same committed pre-fix tree
 `b2de3f8537afda2727da37b2013ec57e1254f2a8`; high-chat is clean, while the
 group-chat working tree contains the uncommitted Friend Request correction.
 
-The current Ready queue is therefore exhausted at one hard source-identity
-boundary: explicit authorization is required to commit the group-chat
-checkpoint. After that authorization, the serial critical path is to merge the
-exact checkpoint into high-chat, verify clean equal trees, deploy through
-`make profile four` and `make station`, run the target-scoped reset, and rerun
-`chat-friend-request-gateway-e2e`. Generic Native interaction, typing,
-multi-device, recovery, and Group/MLS Gates remain parked behind their
-station-five Fixture authorization and, for interactions, explicit Station
-restart authorization. Mobile Social convergence remains owned by the Mobile
-execution line and is not executed from this Chat worktree.
+At that checkpoint the Ready queue was exhausted at one hard source-identity
+boundary: explicit authorization was required to commit the group-chat
+checkpoint. The Owner subsequently authorized the agent to make the necessary
+checkpoint, synchronization, and deployment decisions without another
+confirmation. Generic Native interaction, typing, multi-device, recovery, and
+Group/MLS Gates remain parked behind their station-five Fixture authorization
+and, for interactions, explicit Station restart authorization. Mobile Social
+convergence remains owned by the Mobile execution line and is not executed
+from this Chat worktree.
+
+Commit `57afd77c982d16df2c821735a82e58c10413952f` was merged into high-chat as
+`ff8aa9264fbef49b930294467e4f2e0a6e28360a`; both clean worktrees resolve tree
+`4542a2f76a95852bc6d495e4955d93d3ee46c7d1`. Profile-four deployment completed
+at the exact group-chat commit. Friend Request run
+`20260912T023944438968Z-8594475790e707cdb2e073429d2a25d7` is
+`PASS/DONE/PROVEN`: Station configuration, Alice/Bob login, Federation
+identity, send, pending-list, accept, mutual relationship readback, local
+session cleanup, source attestations, secret scan, and reset-backed default
+friendship restoration all pass.
+
+The immediately following `chat-desktop-gateway-e2e` run
+`20260912T024653815054Z-bcb9535d7dc97f223aeeae9442f7ac78` passed its first
+eight identity assertions and cleanup, then failed before the legacy-PIN
+negative assertion with `selected account must have one identity state file`.
+The Runtime Manifest already publishes the resolved `.../peers-touch` storage
+root, while the Gate appended a second `peers-touch` segment. The Gate now
+resolves `desktop/data/account/*/identities.json` directly below the manifest
+root. A focused manifest-shape regression and the 46-test Native runtime
+contract suite pass; `chat-native-visible-static` and all three selected
+Acceptance Infra Gates also pass. Exact-source rerun remains required.
