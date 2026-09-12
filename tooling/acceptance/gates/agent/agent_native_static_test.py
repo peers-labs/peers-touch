@@ -1630,6 +1630,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("messageDelta", scenario)
         self.assertIn("queueDelta", scenario)
         self.assertIn("conversationVersionAfter", scenario)
+        receiver_snapshot = scenario.index("const receiverErrorVisible")
+        projection_cleanup = scenario.index(
+            "clearFoundationLocalConversationProjection(",
+            receiver_snapshot,
+        )
+        self.assertLess(receiver_snapshot, projection_cleanup)
+        self.assertIn("errorVisible: receiverErrorVisible", scenario)
+        self.assertIn("errorText: receiverErrorText", scenario)
+        self.assertIn("recoveryVisible: receiverRecoveryVisible", scenario)
+        self.assertIn("recoveryText: receiverRecoveryText", scenario)
         self.assertIn("await deleteFoundationConversation(", scenario)
         self.assertIn("if (cell === 'BASE-CONTEXT_OVERFLOW')", self.source)
         self.assertNotIn("mock", scenario.lower())

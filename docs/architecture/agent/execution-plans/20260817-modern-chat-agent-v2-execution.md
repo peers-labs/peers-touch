@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260911T231620368290Z-b71583aba9e8415b4c964204c34edb19` on `43f94f5ef0838dd51ea458857e4f025ce135559a` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260911T231733779911Z-ca94e3b2c6d9c4870f95d3ddabee4c02` crossed both BASE-CONTEXT-OVERFLOW and BASE-DUPLICATE-CONFLICT locale cells, then failed at Browser English BASE-INCOMPATIBLE-CAPABILITY on `stationReadinessReadback` and `cleanupComplete`; canonical cleanup readback is corrected and readiness predicate telemetry is pending exact-source proof | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T000527387739Z-0d146c9dcdf795efbfc787cbee66292c` on `ae12997a91ea4e5525b2e17e5817e2396c8abca4` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260912T000634915947Z-ab105f5f3f6e2f29fdfedf9169d85b02` stopped at Browser Simplified Chinese BASE-CONTEXT-OVERFLOW because final facts sampled captured DOM nodes after clearing the local projection even though pre/post recovery telemetry proved the receiver visible; receiver facts are now frozen before cleanup, while the incompatible cleanup/readiness corrections remain pending exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1657,6 +1657,21 @@ and zero local-path leakage.
   predicate-level readiness telemetry remains enabled. Desktop check, 206
   focused Harness/oracle tests, and diff hygiene pass; exact-source post-fix
   proof remains pending.
+- Exact-source checkpoint `ae12997a91ea4e5525b2e17e5817e2396c8abca4`
+  used Acceptance binary
+  `b9e8655659ddb015ca38692c59289083129e3cad94a7f3fec46e9986364a286a`
+  and passed C08 run
+  `20260912T000527387739Z-0d146c9dcdf795efbfc787cbee66292c`
+  with 19/19 assertions and clean cleanup. Foundation run
+  `20260912T000634915947Z-ab105f5f3f6e2f29fdfedf9169d85b02`
+  stopped at Browser Simplified Chinese `BASE-CONTEXT-OVERFLOW` with only
+  `localizedRecoveryVisible=false`; outer cleanup passed. The current run's
+  pre/post-click telemetry again proves both localized elements visible and
+  matching. The final facts were sampled only after
+  `clearFoundationLocalConversationProjection`, so React commit timing could
+  detach the already-observed nodes. The local correction freezes the receiver
+  facts before recovery and cleanup. The independent oracle, recovery action,
+  cleanup, tuple, and timeout contracts are unchanged.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error

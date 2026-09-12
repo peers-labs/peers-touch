@@ -68,6 +68,24 @@ from the current evidence. The session remains `[OPEN]`; instrumentation and
 the collector are retained until the enclosing Foundation proof is complete or
 the user authorizes cleanup.
 
+## Iteration 2: Final-Fact Sampling Race
+
+Exact-source Foundation run
+`20260912T000634915947Z-ab105f5f3f6e2f29fdfedf9169d85b02`
+on `ae12997a91ea4e5525b2e17e5817e2396c8abca4` again failed only
+`localizedRecoveryVisible` for Browser `zh-CN`. The current run's pre- and
+post-click telemetry still records matching localized hashes and visible error
+and recovery elements for both locales.
+
+The remaining divergence is after the instrumented post-click boundary:
+`clearFoundationLocalConversationProjection()` runs before the receiver facts
+read `getClientRects()` from the captured DOM nodes. React may commit that clear
+before the final facts are sampled, making a receiver that was visibly proven
+appear absent. The local correction freezes error/recovery visibility and text
+before executing recovery and cleanup, then emits those observed values into
+the receiver facts. Recovery execution, cleanup order, independent oracle,
+tuples, and timeouts are unchanged.
+
 ## Local Verification
 - Desktop strict check: PASS.
 - Focused Foundation static/oracle tests: `234/234` PASS.

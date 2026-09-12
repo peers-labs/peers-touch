@@ -5621,6 +5621,11 @@ async function runFoundationContextOverflowScenario(input: {
       'agent.recovery.reduceContext',
       { ns: 'agent' },
     );
+    const receiverErrorVisible = errorText.getClientRects().length > 0;
+    const receiverErrorText = errorText.textContent?.trim() ?? '';
+    const receiverRecoveryVisible =
+      recoveryAction.getClientRects().length > 0;
+    const receiverRecoveryText = recoveryAction.textContent?.trim() ?? '';
     // #region debug-point A-D:context-overflow-pre-recovery
     await reportFoundationContextOverflowRecoveryDebug(
       'A-D',
@@ -5766,14 +5771,14 @@ async function runFoundationContextOverflowScenario(input: {
         outcome: typedOutcome,
         runtimeEvent,
         receiver: {
-          errorVisible: errorText.getClientRects().length > 0,
-          errorText: errorText.textContent?.trim() ?? '',
+          errorVisible: receiverErrorVisible,
+          errorText: receiverErrorText,
           expectedErrorText: i18n.t(
             'agent.errors.contextOverflow',
             { ns: 'agent' },
           ),
-          recoveryVisible: recoveryAction.getClientRects().length > 0,
-          recoveryText: recoveryAction.textContent?.trim() ?? '',
+          recoveryVisible: receiverRecoveryVisible,
+          recoveryText: receiverRecoveryText,
           expectedRecoveryText: i18n.t(
             'agent.recovery.reduceContext',
             { ns: 'agent' },
