@@ -262,3 +262,54 @@ retaining the N-Q observation points. Local verification remains:
 
 Exact-source C08 and Foundation diagnostics for this corrected checkpoint are
 pending. The session remains `[OPEN]`.
+
+## Iteration 8: Cleanup-Driven Session Restore
+
+Exact-source C08 run
+`20260912T184141268751Z-7159a0985434bdfdb6886536d4934e98`
+on `dcbe51435408bf25c46de3adff5bdfa01aa6b7aa` completed
+`DONE / PROVEN`. The same-source, fully authorized Foundation run
+`20260912T184304342469Z-8866672e9f3932fc3fcfbcf6932d1773`
+crossed all four AS-F06 tuples and failed first at Browser English
+`BASE-CONTEXT_OVERFLOW / cleanupComplete`. Provisioner cleanup completed
+`DONE / PROVEN / passed`.
+
+The retained owner telemetry establishes this exact sequence:
+
+1. Empty `composerFill` is observed and consumed.
+2. Controlled `input` and the current topic draft cache both commit length 0.
+3. The current textarea remains connected, current, and empty.
+4. Scenario cleanup samples `draftCleared=true`.
+5. Local Conversation projection cleanup changes `currentSessionKey`.
+6. The new topic restores a cached 57-character draft.
+7. Shared cleanup and the final assertion therefore observe
+   `draftCleared=false`.
+
+| ID | Hypothesis | Status | Evidence |
+|----|------------|--------|----------|
+| N | `composerFill` is consumed before the controlled input and draft cache commit. | Rejected as the final cause | Lines 207-209 show the empty request, input, cache, and current DOM all at length 0 before cleanup. |
+| O | A later `currentSessionKey` effect restores a cached topic draft. | Confirmed | Lines 211-213 show `sessionChanged=true`, `restoredDraftLength=57`, then controlled input/cache length 57. |
+| P | The scenario observes a detached textarea. | Rejected | Line 210 records `composerConnected=true` and `composerMatchesCurrent=true`. |
+| Q | A native input event or later non-empty fill restores the draft. | Rejected for the failing transition | No native-input or non-empty fill event occurs between lines 207 and 213. |
+
+The product contract preserves per-topic drafts across legitimate topic
+switches, so disabling restoration in `ChatInput` would be incorrect. The
+Acceptance cleanup transaction must instead remove the scenario Conversation
+projection first, let the session owner select the surviving topic, and only
+then issue the existing production `fillComposer('')` request against the
+current composer owner. The final cleanup fact must sample the current
+textarea returned after that owner acknowledgement. This changes no product
+semantics, Gate tuple, timeout, or assertion strength.
+
+### Iteration 8 Local Verification
+
+- Agent focused Acceptance tests: `266/266` PASS.
+- Agent native static tests: `85/85` PASS, including cleanup ordering.
+- Desktop Vitest: `622/622` PASS with one existing environment-only skip.
+- Desktop strict check: PASS.
+- Desktop production build: PASS.
+- Acceptance planner and Runtime Provisioning self-tests: PASS.
+- `git diff --check`: PASS.
+- Agent Domain validation remains fail-closed because the latest runtime
+  evidence predates the uncommitted source; it must be rerun after the clean
+  checkpoint and exact-source Gates.

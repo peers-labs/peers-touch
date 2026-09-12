@@ -5867,26 +5867,26 @@ async function runFoundationContextOverflowScenario(input: {
       sourceSequence: sourceDelivery.sequence,
       sourceEventType: sourceDelivery.rawPayload.eventType,
     };
-    await setFoundationComposerDraft(
-      '',
-      'context overflow composer cleanup',
-    );
     clearFoundationLocalConversationProjection(
       conversation.conversation_id,
+    );
+    const cleanupTextarea = await setFoundationComposerDraft(
+      '',
+      'context overflow composer cleanup',
     );
     // #region debug-point E-H:context-overflow-scenario-cleanup
     await reportFoundationContextOverflowRecoveryDebug(
       'E-H',
       'scenario-cleanup-sampled',
       {
-        composerConnected: textarea.isConnected,
+        composerConnected: cleanupTextarea.isConnected,
         composerMatchesCurrent:
           document.querySelector('[data-pt-agent-composer-input]')
-          === textarea,
-        composerLength: textarea.value.length,
+          === cleanupTextarea,
+        composerLength: cleanupTextarea.value.length,
         composerFillPresent:
           useChatStore.getState().composerFill !== null,
-        draftCleared: textarea.value === '',
+        draftCleared: cleanupTextarea.value === '',
         localProjectionCleared:
           !useChatStore.getState().sessionBuffers[
             conversation.conversation_id
@@ -5947,7 +5947,7 @@ async function runFoundationContextOverflowScenario(input: {
           equal: beforeHash === afterHash,
         },
         cleanup: {
-          draftCleared: textarea.value === '',
+          draftCleared: cleanupTextarea.value === '',
           localProjectionCleared:
             !useChatStore.getState().sessionBuffers[
               conversation.conversation_id
@@ -5961,6 +5961,9 @@ async function runFoundationContextOverflowScenario(input: {
     };
   } catch (error) {
     try {
+      clearFoundationLocalConversationProjection(
+        conversation.conversation_id,
+      );
       const textarea = document.querySelector<HTMLTextAreaElement>(
         '[data-pt-agent-composer-input]',
       );
@@ -5970,9 +5973,6 @@ async function runFoundationContextOverflowScenario(input: {
           'context overflow failed-scenario composer cleanup',
         );
       }
-      clearFoundationLocalConversationProjection(
-        conversation.conversation_id,
-      );
       await deleteFoundationConversation(conversation.conversation_id);
     } catch (cleanupError) {
       throw Object.assign(
@@ -21709,6 +21709,9 @@ export function installAcceptanceHarness(): void {
           && preparedConversationId
         ) {
           try {
+            clearFoundationLocalConversationProjection(
+              preparedConversationId,
+            );
             const textarea = document.querySelector<HTMLTextAreaElement>(
               '[data-pt-agent-composer-input]',
             );

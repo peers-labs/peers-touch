@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T180622143401Z-f2650421031ed153e55640b67c3e676b` on `69011df9f388c4d50627c331b0dfbbd61fe78bc8` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260912T180742830795Z-694e471ddbaec21631a4f8e75d5ed7e1` proved Browser retains its handoff across client restart and Desktop loses the storage key only after explicit native restart; Provisioner cleanup passed; the local owner fix transfers the test oracle through the Python coordinator only for Desktop native and is pending exact-source proof before returning to `BASE-CONTEXT_OVERFLOW`; the `BASE-INTERRUPTED` recovery fence remains locally verified but has not yet been reached by the current full Gate | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T184141268751Z-7159a0985434bdfdb6886536d4934e98` on `dcbe51435408bf25c46de3adff5bdfa01aa6b7aa` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260912T184304342469Z-8866672e9f3932fc3fcfbcf6932d1773` proved all four AS-F06 tuples, then failed only Browser English `BASE-CONTEXT_OVERFLOW / cleanupComplete`; N-Q telemetry proves the empty owner request committed before local Conversation removal switched `currentSessionKey` and restored a surviving topic's 57-character draft; the local Harness fix now removes the scenario projection before issuing the final production `fillComposer('')` request and samples the current textarea; Desktop `622/622`, Agent focused `266/266`, strict check, production build, Acceptance planning/self-tests, and diff hygiene pass; exact-source post-fix proof remains pending; the `BASE-INTERRUPTED` recovery fence remains locally verified but has not yet been reached by the current full Gate | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7754,6 +7754,29 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   scenario/platform validation. Browser keeps its native persistence path.
   The transfer is excluded from product evidence and cannot replace Station
   snapshot, cursor replay, or receiver assertions.
+- **BASE-CONTEXT_OVERFLOW cleanup owner ordering (2026-09-13)**:
+  exact-source C08 run
+  `20260912T184141268751Z-7159a0985434bdfdb6886536d4934e98`
+  on `dcbe51435408bf25c46de3adff5bdfa01aa6b7aa` completed
+  `DONE / PROVEN`. Fully authorized same-source Foundation run
+  `20260912T184304342469Z-8866672e9f3932fc3fcfbcf6932d1773`
+  crossed all four AS-F06 tuples and failed first at Browser English
+  `BASE-CONTEXT_OVERFLOW / cleanupComplete`; Provisioner cleanup completed
+  `DONE / PROVEN / passed`. Retained N-Q telemetry proves the empty
+  `fillComposer` request committed controlled input, current topic cache, and
+  current DOM to length zero. Local Conversation projection cleanup then
+  changed `currentSessionKey`, and the normal per-topic owner restored a
+  surviving topic's 57-character draft before shared cleanup sampled the
+  final tuple. Per-topic draft restoration is accepted product behavior and
+  remains unchanged. The local Harness correction orders the isolated
+  cleanup transaction as projection removal followed by the production
+  `fillComposer('')` owner request, samples the returned current textarea,
+  and applies the same order to failure and outer cleanup. Static coverage
+  rejects reversing that order. Desktop tests pass `622/622` with one
+  existing environment-only skip; Agent focused tests pass `266/266`;
+  Desktop strict check, production build, Acceptance planner/self-tests, and
+  diff hygiene pass. Domain proof validation remains fail-closed until a
+  clean source-matching Gate run is available.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

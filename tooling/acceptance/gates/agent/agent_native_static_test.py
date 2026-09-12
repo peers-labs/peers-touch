@@ -1707,7 +1707,20 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "clearFoundationLocalConversationProjection(",
             receiver_snapshot,
         )
+        composer_cleanup = scenario.index(
+            "'context overflow composer cleanup'",
+            projection_cleanup,
+        )
         self.assertLess(receiver_snapshot, projection_cleanup)
+        self.assertLess(projection_cleanup, composer_cleanup)
+        self.assertIn(
+            "const cleanupTextarea = await setFoundationComposerDraft(",
+            scenario,
+        )
+        self.assertIn(
+            "draftCleared: cleanupTextarea.value === ''",
+            scenario,
+        )
         self.assertIn("errorVisible: receiverErrorVisible", scenario)
         self.assertIn("errorText: receiverErrorText", scenario)
         self.assertIn("recoveryVisible: receiverRecoveryVisible", scenario)
