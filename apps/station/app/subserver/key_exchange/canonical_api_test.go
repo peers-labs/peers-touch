@@ -35,6 +35,7 @@ type canonicalFixture struct {
 	service    *application.CanonicalService
 	store      *infrastructure.CanonicalStore
 	clock      *testClock
+	devices    *testDeviceDirectory
 	inbox      *recordingDeviceInbox
 	federation *recordingFederation
 }
@@ -741,6 +742,12 @@ func TestCanonicalRemoteFetchUsesTypedFederationPort(t *testing.T) {
 	ctx := context.Background()
 	alice := endpoint("ptid:alice", "alice-1")
 	carol := endpoint("ptid:carol", "carol-1")
+	remoteRouteKey := domain.Endpoint{
+		ActorPTID: carol.GetActor().GetPtid(),
+		DeviceID:  carol.GetDeviceId(),
+	}.Key()
+	remoteRoute := fixture.devices.routes[remoteRouteKey]
+	delete(fixture.devices.routes, remoteRouteKey)
 	fixture.federation.directBundles = []domain.DirectKeyBundle{
 		directDomainBundle(
 			domain.Endpoint{
@@ -786,6 +793,7 @@ func TestCanonicalRemoteFetchUsesTypedFederationPort(t *testing.T) {
 			fixture.federation.DirectFetchLen(),
 		)
 	}
+	fixture.devices.routes[remoteRouteKey] = remoteRoute
 
 	mlsResponse, err := fixture.api.FetchMLSKeyPackage(
 		ctx,
@@ -891,7 +899,8 @@ func newCanonicalFixture(t *testing.T) *canonicalFixture {
 		t.Fatalf("migrate actor device authorization table: %v", err)
 	}
 	directory := &testDeviceDirectory{
-		routes: map[string]domain.DeviceRoute{},
+		routes:       map[string]domain.DeviceRoute{},
+		homeStations: map[string]string{},
 	}
 	for _, route := range []domain.DeviceRoute{
 		{
@@ -917,6 +926,7 @@ func newCanonicalFixture(t *testing.T) *canonicalFixture {
 		},
 	} {
 		directory.routes[route.Endpoint.Key()] = route
+		directory.homeStations[route.Endpoint.ActorPTID] = route.HomeStationID
 		if route.HomeStationID == testLocalStation {
 			if err := db.Create(&actoridentitypersistence.ActorDeviceModel{
 				PTID:               route.Endpoint.ActorPTID,
@@ -944,6 +954,7 @@ func newCanonicalFixture(t *testing.T) *canonicalFixture {
 		store,
 		store,
 		directory,
+		directory,
 		inbox,
 		federation,
 		clock,
@@ -963,6 +974,7 @@ func newCanonicalFixture(t *testing.T) *canonicalFixture {
 		service:    service,
 		store:      store,
 		clock:      clock,
+		devices:    directory,
 		inbox:      inbox,
 		federation: federation,
 	}
@@ -1137,7 +1149,8 @@ func directKeyExchangeRequest(
 }
 
 type testDeviceDirectory struct {
-	routes map[string]domain.DeviceRoute
+	routes       map[string]domain.DeviceRoute
+	homeStations map[string]string
 }
 
 func (d *testDeviceDirectory) ResolveActiveDevice(
@@ -1167,6 +1180,22 @@ func (d *testDeviceDirectory) ListActiveDevices(
 		}
 	}
 	return routes, nil
+}
+
+func (d *testDeviceDirectory) ResolveActorHomeStationPeerID(
+	_ context.Context,
+	actorPTID string,
+) (string, error) {
+	homeStationID, ok := d.homeStations[actorPTID]
+	if !ok {
+		return "", domain.NewError(
+			domain.ErrorCodeNotFound,
+			"test.resolve_actor_home_station",
+			"actor",
+			"has no Home Station",
+		)
+	}
+	return homeStationID, nil
 }
 
 type testClock struct {
