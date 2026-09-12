@@ -155,6 +155,13 @@ export function desktopTauriArguments(configPath, environment = process.env) {
   return args;
 }
 
+export function desktopRuntimeIdentity(values, environment = process.env) {
+  return {
+    profile: environment.PT_PROFILE ?? values.runtimeProfile,
+    storageRoot: environment.PEERS_STORAGE_ROOT ?? values.storageRoot,
+  };
+}
+
 function runAppletBuild(root, pnpm, environment, values) {
   const fingerprint = appletSourceFingerprint(root);
   if (
@@ -258,6 +265,7 @@ export async function desktopStatus(
   validateMode(mode);
   const resolved = resolveProfile(root, environment);
   const values = desktopValues(root, resolved, mode);
+  const runtimeIdentity = desktopRuntimeIdentity(values, environment);
   const [viteReady, gatewayReady] = await Promise.all([
     probeHttp(`http://127.0.0.1:${values.webPort}/`),
     isPortListening(values.gatewayPort),
@@ -265,7 +273,7 @@ export async function desktopStatus(
   return {
     profile: resolved.reference.profileName,
     mode,
-    runtimeProfile: values.runtimeProfile,
+    runtimeProfile: runtimeIdentity.profile,
     web: {
       url: `http://127.0.0.1:${values.webPort}/`,
       health: viteReady,
@@ -325,6 +333,7 @@ export async function startDesktop(
   }
 
   const runtimeEnv = runtimeEnvironment(resolved, environment);
+  const runtimeIdentity = desktopRuntimeIdentity(values, environment);
   const pnpm = findExecutable('pnpm', runtimeEnv);
   if (!pnpm) {
     throw new DevctlError(
@@ -332,7 +341,7 @@ export async function startDesktop(
       'pnpm is required to start Desktop',
     );
   }
-  fs.mkdirSync(values.storageRoot, { recursive: true });
+  fs.mkdirSync(runtimeIdentity.storageRoot, { recursive: true });
   for (const toolScript of [values.viteScript, values.tauriScript]) {
     if (!fs.existsSync(toolScript)) {
       throw new DevctlError(
@@ -347,11 +356,11 @@ export async function startDesktop(
 
   const childEnvironment = windowsDeveloperEnvironment({
     ...runtimeEnv,
-    PT_PROFILE: values.runtimeProfile,
+    PT_PROFILE: runtimeIdentity.profile,
     PT_CLIENT_SURFACE: mode === 'app' ? 'desktop' : 'browser',
     PEERS_STATION_URL: resolved.profile.PT_STATION_URL,
     PEERS_STATION_MODE: resolved.profile.PT_STATION_MODE,
-    PEERS_STORAGE_ROOT: values.storageRoot,
+    PEERS_STORAGE_ROOT: runtimeIdentity.storageRoot,
     PT_GATEWAY_PORT: String(values.gatewayPort),
     VITE_GATEWAY_PORT: String(values.gatewayPort),
     CARGO_BUILD_JOBS: environment.CARGO_BUILD_JOBS ?? '1',

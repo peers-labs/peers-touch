@@ -23,6 +23,9 @@
 | G | Native provider detail lookup or provider persistence never settles. | Medium | Low | Both sequences reached provider persistence; intermittent cause remains inconclusive. |
 | H | Native available-model lookup never settles. | Medium | Low | Both sequences found the requested model; intermittent cause remains inconclusive. |
 | I | Native Agent load/profile update/readiness lookup never settles. | Medium | Low | Both sequences reached matching readiness snapshots; intermittent cause remains inconclusive. |
+| J | devctl overwrites the Foundation client profile and storage root with shared development defaults, splitting local device identity from the Station capability session. | High | Low | Confirmed: the runtime manifest assigns `agent-v2-foundation-native` and `/tmp/pt-agent-v2-*/native/storage`, while `desktop.mjs` replaced them with its `chat-native-disposable-app` and `.local/dev/data/.../desktop-app` defaults; the failed snapshot had zero local sessions and one Station session. |
+| K | The Station failed to persist the capability session. | Low | Low | Rejected for the latest failure: Station readback contained one current Desktop capability session while the local snapshot was empty. |
+| L | A leaked Foundation process or occupied client port caused the local snapshot failure. | Low | Low | Rejected for both latest preflight failures: runtime and Provisioner cleanup completed and all allocated client ports were released. |
 
 ## Log Evidence
 - Exact-source run `20260904T110406527755Z-0a3cb161b052d5ff5c86e5176456b73c` timed out at `identity login precondition`.
@@ -80,6 +83,23 @@
   This later failure cannot prove a new product defect or a provider-stage
   regression. The run's child cleanup result and outer Provisioner cleanup
   passed, but the Foundation product proof remains unproven.
+- Checkpoint `0a8c04977ad1d951d1970d550df74df9f5ee49a5` passed C08 run
+  `20260912T102443766254Z-b54c0863776672d25291bfe12d204847`.
+  Foundation runs
+  `20260912T101751744551Z-8c254412faed073c37cfce05934b7b99`
+  and
+  `20260912T102603877808Z-15c8bb3648cb9ef33b1526c79f66fa78`
+  then failed before any product tuple. The latter retained
+  `local.active_session_count=0` while Station readback contained one Desktop
+  capability session. Its runtime manifest assigned
+  `agent-v2-foundation-native` and a run-scoped
+  `/tmp/pt-agent-v2-*/native/storage`, but the devctl child was launched with
+  its shared development runtime identity.
+- The minimal devctl fix preserves explicit `PT_PROFILE` and
+  `PEERS_STORAGE_ROOT` values while retaining profile-scoped defaults for
+  ordinary development. Local post-fix checks pass: devctl `24/24`,
+  Foundation runtime client `20/20`, Desktop strict check, and diff hygiene.
+  Exact-source runtime comparison remains pending.
 
 ## Instrumentation
 - `A`: identity phase and lifecycle transitions during the login precondition.
@@ -114,3 +134,10 @@ Browser investigation, not the latest Native provider-stage observation.
 The Native timeout did not reproduce in the two retained setup sequences;
 F-I remain inconclusive for the intermittent incident. Do not turn those
 successes, or the interrupted Browser failure, into a product-fix claim.
+
+The latest Foundation preflight failure is a separate confirmed J boundary:
+devctl replaced the Provisioner-assigned client runtime identity after profile
+resolution. K and L are rejected by Station readback and cleanup evidence.
+The devctl fix is implemented with instrumentation retained; the session stays
+`[OPEN]` until an exact-source post-fix Foundation run proves capability-session
+reconciliation and reaches the next product tuple.

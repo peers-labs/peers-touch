@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T090634799644Z-5a0cf759ba34269c19ba21ab82242462` on `f94b2fb4d360b6ae1f6f8401ac1df81955142903` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T090751589578Z-8609947413ae347978a77156d5021b64` crossed `BASE-INTERRUPTED` and failed first at Browser English `BASE-CONTEXT-OVERFLOW / cleanupComplete`; both client cleanup and outer Provisioner cleanup passed; the exact failed cleanup tuple is under retained instrumentation and Foundation remains unproven | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T102443766254Z-b54c0863776672d25291bfe12d204847` on `0a8c04977ad1d951d1970d550df74df9f5ee49a5` passed with clean cleanup; Foundation runs `20260912T101751744551Z-8c254412faed073c37cfce05934b7b99` and `20260912T102603877808Z-15c8bb3648cb9ef33b1526c79f66fa78` then failed before any product tuple because devctl replaced the Provisioner-assigned client profile/storage with shared development defaults, leaving one Station capability session and zero local sessions; the owner-layer identity fix passes focused local checks, but exact-source post-fix C08 and Foundation remain pending; the product frontier remains Browser English `BASE-CONTEXT-OVERFLOW / cleanupComplete` under retained instrumentation | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7512,6 +7512,29 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   the shared deletion phase. Exact-field evidence remains pending one
   source-bound diagnostic checkpoint; no cleanup assertion or Gate tuple was
   weakened.
+- **Foundation devctl client-identity closure (2026-09-12)**: checkpoint
+  `0a8c04977ad1d951d1970d550df74df9f5ee49a5` retained the
+  context-overflow cleanup instrumentation and passed exact-source C08 run
+  `20260912T102443766254Z-b54c0863776672d25291bfe12d204847`
+  with complete cleanup. Foundation runs
+  `20260912T101751744551Z-8c254412faed073c37cfce05934b7b99`
+  and
+  `20260912T102603877808Z-15c8bb3648cb9ef33b1526c79f66fa78`
+  stopped before any product tuple because the Desktop devctl owner replaced
+  the Runtime Manifest's isolated `agent-v2-foundation-native|browser`
+  profile and `/tmp/pt-agent-v2-*/native|browser/storage` roots with its
+  shared `chat-native-disposable-app|web` development defaults. Station
+  readback retained one Desktop capability session while the affected client
+  reported zero local sessions, which confirms a split local device identity
+  rather than a missing Station session. devctl now preserves explicit
+  `PT_PROFILE` and `PEERS_STORAGE_ROOT` launch overrides and creates the
+  resolved storage root while ordinary development retains the existing
+  profile-scoped defaults. Local checks pass: devctl `24/24`, Foundation
+  runtime client `20/20`, Desktop strict check, and diff hygiene. No Gate
+  tuple, identity oracle, timeout, provider, cleanup, or proof requirement
+  changed. Clean checkpoint, dedicated-binary rebuild/smoke, exact-source
+  deployment, C08-first proof, and the unchanged Foundation matrix remain
+  pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
