@@ -7687,6 +7687,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   predicate, or provider behavior changed. Exact-source post-fix C08,
   Foundation, and the separately selected stream-resilience Gate remain
   pending.
+- **Composer owner post-fix diagnostic (2026-09-12)**: checkpoint
+  `7c10521a51d521f30cf36c0173171e4175d0b418` passed exact-source C08 run
+  `20260912T154305828038Z-5576a1b0184154cc2ea5f09b08bc5c40`.
+  Same-source Foundation run
+  `20260912T154441125137Z-e0e1b6e88414d48337d349c72bc4883c`
+  again failed only Browser English
+  `BASE-CONTEXT_OVERFLOW / cleanupComplete`. The post-fix collector records
+  `draftCleared=true` immediately after the empty owner request, then
+  `draftCleared=false` before shared deletion; local projection and
+  Conversation cleanup remain true. This proves that `composerFill` request
+  consumption plus one DOM observation does not yet establish stable
+  `ChatInput` state/draft-cache commit. The next instrumentation records only
+  fill-request length/emptiness, controlled input-state length, per-session
+  draft-restore length, native-input occurrence, and captured-node identity.
+  It changes no product behavior, matrix tuple, timeout, or assertion.
+  Focused Agent tests pass `126/126`; Desktop tests pass `622/622` with one
+  existing environment-only skip; Desktop strict check and diff hygiene pass.
+  Outer Provisioner cleanup completed `DONE / PROVEN / passed`.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

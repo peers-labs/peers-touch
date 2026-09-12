@@ -5781,6 +5781,13 @@ async function runFoundationContextOverflowScenario(input: {
       'E-H',
       'scenario-cleanup-sampled',
       {
+        composerConnected: textarea.isConnected,
+        composerMatchesCurrent:
+          document.querySelector('[data-pt-agent-composer-input]')
+          === textarea,
+        composerLength: textarea.value.length,
+        composerFillPresent:
+          useChatStore.getState().composerFill !== null,
         draftCleared: textarea.value === '',
         localProjectionCleared:
           !useChatStore.getState().sessionBuffers[

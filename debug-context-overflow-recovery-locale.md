@@ -211,3 +211,35 @@ session remains `[OPEN]`.
 - Acceptance planner, Provisioner, runner, validator, responsibility-boundary,
   Gap Detector, coverage, and quality self-tests: PASS.
 - `git diff --check`: PASS.
+
+## Iteration 7: Composer Owner Commit Ordering
+
+Exact-source C08 run
+`20260912T154305828038Z-5576a1b0184154cc2ea5f09b08bc5c40`
+on `7c10521a51d521f30cf36c0173171e4175d0b418` is
+`DONE / PROVEN`. The same-source Foundation run
+`20260912T154441125137Z-e0e1b6e88414d48337d349c72bc4883c`
+again failed only Browser English `BASE-CONTEXT_OVERFLOW /
+cleanupComplete`.
+
+Post-fix telemetry still records:
+
+- `scenario-cleanup-sampled`: `draftCleared=true`;
+- `cleanup-dispatch-entered`: `draftCleared=false`;
+- `cleanup-deletion-completed`: `conversationDeleted=true`;
+- `assertion-input`: only `draftCleared=false`.
+
+The first owner-path correction therefore proves that request consumption plus
+one empty DOM observation is not yet a stable composer-owner acknowledgement.
+The following hypotheses are now active:
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| N | `composerFill` is consumed before the controlled `input` state and per-session draft cache commit atomically. | High | Low | Empty fill is observed and consumed, then the committed input returns to the previous non-empty length. |
+| O | A later `currentSessionKey` effect restores the stale reduced draft from `topicDraftRef`. | High | Low | A session-draft restore occurs after empty fill consumption with a non-empty restored length. |
+| P | The scenario's textarea reference is detached and the active controlled node retains the old value. | Medium | Low | The Harness reports `isConnected=false` or the current query no longer equals the captured node. |
+| Q | A native input event or another composer-fill request restores the old draft. | Low | Low | A later input handler or non-empty fill request appears after empty cleanup. |
+
+The next change is instrumentation-only in `ChatInput` and the Harness. It
+records lengths, booleans, and state-transition kinds only; no draft text,
+session identity, actor identity, or credential is emitted.

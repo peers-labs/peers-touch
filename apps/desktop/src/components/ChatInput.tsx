@@ -39,6 +39,27 @@ const COMPOSER_COLORS = {
   toolButtonShadow: '0 1px 4px rgba(15,23,42,0.04)',
 } as const;
 
+// #region debug-point N-Q:context-overflow-composer-owner
+function reportContextOverflowComposerDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7792/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'context-overflow-recovery-locale',
+      runId: 'owner-pre-fix',
+      hypothesisId,
+      location: 'ChatInput.tsx:composer-owner',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 export interface ChatInputProps {
   placeholder?: string;
   minHeight?: number;
@@ -106,19 +127,44 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
   useEffect(() => {
     const previousKey = prevSessionKeyRef.current;
+    const restoredDraft = topicDraftRef.current[currentSessionKey] || '';
+    // #region debug-point O:context-overflow-session-draft
+    void reportContextOverflowComposerDebug('O', 'session-draft-restore', {
+      previousSessionPresent: previousKey.length > 0,
+      currentSessionPresent: currentSessionKey.length > 0,
+      sessionChanged: previousKey !== currentSessionKey,
+      restoredDraftLength: restoredDraft.length,
+    });
+    // #endregion
     if (previousKey) topicDraftRef.current[previousKey] = input;
-    setInput(topicDraftRef.current[currentSessionKey] || '');
+    setInput(restoredDraft);
     prevSessionKeyRef.current = currentSessionKey;
   }, [currentSessionKey]);
 
   useEffect(() => {
     if (currentSessionKey) topicDraftRef.current[currentSessionKey] = input;
+    // #region debug-point N-P:context-overflow-input-state
+    void reportContextOverflowComposerDebug('N-P', 'input-state-committed', {
+      currentSessionPresent: currentSessionKey.length > 0,
+      inputEmpty: input.length === 0,
+      inputLength: input.length,
+      storedDraftLength:
+        (topicDraftRef.current[currentSessionKey] || '').length,
+    });
+    // #endregion
   }, [currentSessionKey, input]);
 
   // I2 follow-up: consume a pending composer-fill request (fill-not-send), aligning
   // with LobeHub `fillInputMessage`. Populate the draft, focus, then clear the request.
   useEffect(() => {
     if (!composerFill) return;
+    // #region debug-point N-Q:context-overflow-composer-fill
+    void reportContextOverflowComposerDebug('N-Q', 'composer-fill-observed', {
+      currentSessionPresent: currentSessionKey.length > 0,
+      requestedEmpty: composerFill.text.length === 0,
+      requestedLength: composerFill.text.length,
+    });
+    // #endregion
     setInput(composerFill.text);
     consumeComposerFill();
     requestAnimationFrame(() => {
@@ -127,9 +173,23 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         el.focus();
         const end = composerFill.text.length;
         el.setSelectionRange(end, end);
+        // #region debug-point N-P:context-overflow-composer-fill-frame
+        void reportContextOverflowComposerDebug(
+          'N-P',
+          'composer-fill-animation-frame',
+          {
+            currentNodePresent: true,
+            currentNodeConnected: el.isConnected,
+            domEmpty: el.value.length === 0,
+            domLength: el.value.length,
+            requestStillPending:
+              useChatStore.getState().composerFill !== null,
+          },
+        );
+        // #endregion
       }
     });
-  }, [composerFill, consumeComposerFill]);
+  }, [composerFill, consumeComposerFill, currentSessionKey]);
 
   useEffect(() => {
     if (composerFocusNonce === 0) return;
@@ -181,6 +241,12 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   // Scan the draft for "@" triggers whenever it changes, driving the popup.
   const handleInputChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
     const value = event.target.value;
+    // #region debug-point Q:context-overflow-native-input
+    void reportContextOverflowComposerDebug('Q', 'native-input-observed', {
+      nextEmpty: value.length === 0,
+      nextLength: value.length,
+    });
+    // #endregion
     setInput(value);
     mentionScan(value, event.target.selectionStart ?? value.length);
   }, [mentionScan]);
