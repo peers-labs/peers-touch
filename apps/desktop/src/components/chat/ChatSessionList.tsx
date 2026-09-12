@@ -302,7 +302,7 @@ export function ChatSessionList({
     {
       key: 'find-people',
       icon: <UserPlus size={14} />,
-      label: t('chat.social.sessionList.findPeople'),
+      label: <span data-chat-find-people-menu>{t('chat.social.sessionList.findPeople')}</span>,
       onClick: () => setShowFindPeople(true),
     },
     {

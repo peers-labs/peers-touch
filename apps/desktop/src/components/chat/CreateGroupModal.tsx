@@ -2,13 +2,19 @@ import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Input, toast } from '@lobehub/ui';
-import { theme } from 'antd';
+import { Alert, Spin, theme } from 'antd';
 import { Search, X } from 'lucide-react';
-import { peerOfSession, useSocialChatStore } from '../../store/socialChat';
+import { useSocialChatStore } from '../../store/socialChat';
+import { projectChatFriendContacts } from '../../store/friendshipProjection';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { imServiceV1 } from '../../services/im-service';
 import { log } from '../../utils/logger';
-import { useActiveChatSessionSlice, useActiveSocialChatSlice } from './useActiveSocialChatStore';
+import {
+  useActiveChatFederationSlice,
+  useActiveChatRelationshipsSlice,
+  useActiveChatSessionSlice,
+  useActiveSocialChatSlice,
+} from './useActiveSocialChatStore';
 
 interface Props {
   open: boolean;
@@ -33,26 +39,52 @@ export function CreateGroupModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
-    sessions,
     friendRequests,
     currentUserPtid,
+    conversationRecords,
+    conversationMembers,
+    groupMembers,
+    peerProfiles,
     loadGroups,
     selectGroup,
     setActiveTab,
     getIMConversations,
     trackPendingGroupCreation,
   } = useActiveSocialChatSlice((s) => ({
-    sessions: s.sessions,
     friendRequests: s.friendRequests,
     currentUserPtid: s.currentUserPtid,
+    conversationRecords: s.conversations,
+    conversationMembers: s.conversationMembers,
+    groupMembers: s.groupMembers,
+    peerProfiles: s.peerProfiles,
     loadGroups: s.loadGroups,
     selectGroup: s.selectGroup,
     setActiveTab: s.setActiveTab,
     getIMConversations: s.getIMConversations,
     trackPendingGroupCreation: s.trackPendingGroupCreation,
   }));
+  const {
+    mutualFriends,
+    mutualFriendsActorPtid,
+    mutualFriendsLoading,
+    mutualFriendsLoadedAt,
+    mutualFriendsError,
+  } = useActiveChatRelationshipsSlice((s) => ({
+    mutualFriends: s.mutualFriends,
+    mutualFriendsActorPtid: s.mutualFriendsActorPtid,
+    mutualFriendsLoading: s.mutualFriendsLoading,
+    mutualFriendsLoadedAt: s.mutualFriendsLoadedAt,
+    mutualFriendsError: s.mutualFriendsError,
+  }));
+  const joinedFederations = useActiveChatFederationSlice((s) => s.self?.joinedFederations);
   const sessionActorPtid = useActiveChatSessionSlice((s) => s.currentUser?.actorPtid ?? null);
   const ownDid = currentUserPtid || sessionActorPtid;
+  const defaultFederationId = joinedFederations?.[0]?.federationId ?? '';
+  const friendshipReady = Boolean(
+    ownDid
+    && mutualFriendsActorPtid === ownDid
+    && mutualFriendsLoadedAt,
+  );
 
   const [searchText, setSearchText] = useState('');
   const [selectedDids, setSelectedDids] = useState<Set<string>>(new Set());
@@ -60,61 +92,34 @@ export function CreateGroupModal({ open, onClose }: Props) {
 
   const contacts: Contact[] = useMemo(() => {
     if (!ownDid) return [];
-    const seen = new Map<string, Contact>();
-    const federationByPtid = new Map<string, string>();
-
-    for (const req of friendRequests) {
-      if (req.status !== 2) continue;
-      const peerId = req.senderPtid === ownDid ? req.receiverPtid : req.senderPtid;
-      if (peerId && req.federationId) {
-        federationByPtid.set(peerId, req.federationId);
-      }
-    }
-    for (const conversation of getIMConversations()) {
-      if (conversation.kind === 'friend' && conversation.peerPtid && conversation.federationId) {
-        federationByPtid.set(conversation.peerPtid, conversation.federationId);
-      }
-    }
-
-    for (const s of sessions) {
-      const peer = peerOfSession(s, ownDid);
-      if (!peer.did || peer.did === ownDid || seen.has(peer.did)) continue;
-      seen.set(peer.did, {
-        did: peer.did,
-        name: peer.name || t('chat.social.sessionList.unknown'),
-        avatar: peer.avatar,
-        federationId: federationByPtid.get(peer.did) || '',
-      });
-    }
-
-    const conversations = getIMConversations();
-    for (const conv of conversations) {
-      if (conv.kind !== 'friend' || !conv.peerPtid || conv.peerPtid === ownDid || seen.has(conv.peerPtid)) continue;
-      seen.set(conv.peerPtid, {
-        did: conv.peerPtid,
-        name: conv.title || t('chat.social.sessionList.unknown'),
-        avatar: conv.avatar || '',
-        federationId: conv.federationId || '',
-      });
-    }
-
-    for (const req of friendRequests) {
-      if (req.status !== 2) continue;
-      const isSender: boolean = req.senderPtid === ownDid;
-      const peerId: string = isSender ? req.receiverPtid : req.senderPtid;
-      if (!peerId || peerId === ownDid || seen.has(peerId)) continue;
-      const peerName: string = isSender ? req.receiverDisplayName : req.senderDisplayName;
-      const peerAvatar: string = isSender ? req.receiverAvatar : req.senderAvatar;
-      seen.set(peerId, {
-        did: peerId,
-        name: peerName || t('chat.social.sessionList.unknown'),
-        avatar: peerAvatar || '',
-        federationId: req.federationId,
-      });
-    }
-
-    return Array.from(seen.values());
-  }, [sessions, friendRequests, ownDid, t, getIMConversations]);
+    void conversationRecords;
+    void conversationMembers;
+    void groupMembers;
+    void peerProfiles;
+    return projectChatFriendContacts(
+      mutualFriends,
+      getIMConversations(),
+      friendRequests,
+      ownDid,
+      defaultFederationId,
+    ).map((friend) => ({
+      did: friend.actorPtid,
+      name: friend.displayName || t('chat.social.sessionList.unknown'),
+      avatar: friend.avatarUrl,
+      federationId: friend.federationId,
+    }));
+  }, [
+    conversationMembers,
+    conversationRecords,
+    defaultFederationId,
+    friendRequests,
+    getIMConversations,
+    groupMembers,
+    mutualFriends,
+    ownDid,
+    peerProfiles,
+    t,
+  ]);
 
   const selectedContacts = useMemo(() => {
     return contacts.filter((c) => selectedDids.has(c.did));
@@ -256,6 +261,9 @@ export function CreateGroupModal({ open, onClose }: Props) {
   return (
     <div
       data-chat-create-group
+      data-chat-friendship-state={
+        mutualFriendsError ? 'error' : friendshipReady ? 'ready' : 'loading'
+      }
       style={{
         position: 'fixed',
         inset: 0,
@@ -266,6 +274,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
       }}
     >
       <div
+        data-chat-create-group-close
         onClick={handleClose}
         style={{
           position: 'absolute',
@@ -305,7 +314,18 @@ export function CreateGroupModal({ open, onClose }: Props) {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {filteredContacts.length === 0 ? (
+            {mutualFriendsError ? (
+              <Alert
+                type="error"
+                showIcon
+                message={t('chat.social.findPeople.friendshipUnavailable')}
+                style={{ margin: '8px 16px' }}
+              />
+            ) : !friendshipReady || mutualFriendsLoading ? (
+              <Flexbox align="center" justify="center" style={{ padding: '40px 20px', height: '100%' }}>
+                <Spin size="small" />
+              </Flexbox>
+            ) : filteredContacts.length === 0 ? (
               <Flexbox align="center" justify="center" style={{ padding: '40px 20px', height: '100%' }}>
                 <span style={{ color: token.colorTextTertiary, fontSize: 13 }}>
                   {t('chat.social.createGroup.noContacts')}

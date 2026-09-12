@@ -226,7 +226,10 @@
       "id": "chat-native-visible-clients",
       "domain": "chat",
       "direction": "acceptance_validates_product",
-      "features": ["chat-native-visible-clients"],
+      "features": [
+        "chat-native-visible-clients",
+        "chat-native-friendship-projection"
+      ],
       "required_gates": [
         "chat-native-visible-static",
         "chat-native-current-profile-two-client-e2e",
@@ -240,6 +243,14 @@
         "tooling/acceptance/gates/chat/native_recovery_runner.py",
         "tooling/acceptance/gates/chat/native_group_mls_runner.py",
         "apps/desktop/src/acceptance/chat/identity.ts",
+        "apps/station/app/subserver/social/infrastructure/follow_repo.go",
+        "apps/desktop/src/store/relationships.ts",
+        "apps/desktop/src/store/friendshipProjection.ts",
+        "apps/desktop/src/services/socialRealtime.ts",
+        "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+        "apps/desktop/src/components/chat/CreateGroupModal.tsx",
+        "apps/desktop/src/components/chat/ChatContactsPanel.tsx",
+        "apps/desktop/src/components/chat/ChatSessionList.tsx",
         "apps/desktop/src/components/chat/ChatComposer.tsx",
         "apps/desktop/src/components/settings/RecoverySettings.tsx"
       ],
@@ -248,13 +259,15 @@
           "visible native Desktop windows",
           "per-client embedded Tauri WebDriver sessions",
           "Station deployment attestation and live app metadata",
-          "per-client source and workspace identity"
+          "per-client source and workspace identity",
+          "Station Social mutual follow edges"
         ],
         "surfaces": [
           "two-client direct messages",
           "multi-device direct delivery",
           "reinstall recovery",
-          "three-device MLS"
+          "three-device MLS",
+          "Native Contacts, Find People, and Create Group friendship projection"
         ],
         "proven_by": [
         "chat-native-current-profile-two-client-e2e",
@@ -267,7 +280,8 @@
           "Only successful live runs with complete current source-bound reports prove W8 journeys"
         ],
         "unproven_scope": [
-          "W8 remains unproven until all four environment-evidence gates pass"
+          "W8 remains unproven until all four environment-evidence gates pass",
+          "The corrected friendship projection remains Native-UI UNPROVEN until chat-native-group-mls-e2e passes on exact source"
         ]
       }
     },
