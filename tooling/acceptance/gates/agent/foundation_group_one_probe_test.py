@@ -26,6 +26,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_executor_unavailable,
     evaluate_base_forbidden_actor,
     evaluate_base_incompatible_capability,
+    evaluate_base_interrupted,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -47,6 +48,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_executor_unavailable_capture,
     valid_forbidden_actor_capture,
     valid_incompatible_capability_capture,
+    valid_interrupted_capture,
     valid_as_f04_capture,
     valid_as_f05_capture,
     valid_as_f06_capture,
@@ -145,6 +147,15 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
         result["scenarioFacts"] = facts
         result["assertions"] = evaluate_base_cancelled(facts)
         result["runtime-events"] = typed_runtime_role(facts)
+        return result
+    if probe.cell == "BASE-INTERRUPTED":
+        facts = valid_interrupted_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_interrupted(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        result["runtimeAttestation"]["actorIdentityHash"] = (
+            facts["runtimeEvent"]["sourcePtidHash"]
+        )
         return result
     if probe.cell == "BASE-ATTACHMENT_REJECTED":
         facts = valid_attachment_rejected_capture()
@@ -631,6 +642,59 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneProbeError,
             "BASE-CANCELLED assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_interrupted_routes_to_independent_oracle(self) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-INTERRUPTED",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "interruptedPersisted": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-INTERRUPTED assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_interrupted_rejects_runtime_role_source_drift(self) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-INTERRUPTED",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+        capture_value["runtime-events"]["sourceTurnId"] = "turn-forged"
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "runtime-events role does not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_interrupted_rejects_runtime_actor_drift(self) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-INTERRUPTED",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+        capture_value["runtimeAttestation"]["actorIdentityHash"] = "0" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "runtime source actor does not match",
         ):
             assert_group_one_capture(probe, capture_value)
 

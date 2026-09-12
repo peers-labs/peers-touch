@@ -201,6 +201,18 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-INTERRUPTED": frozenset(
+        {
+            "typedInterruptionProjected",
+            "localizedRecoveryVisible",
+            "recoverExecuted",
+            "interruptedPersisted",
+            "exactlyOneAuthoritativeTerminal",
+            "zeroCompletedInference",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
     "BASE-CONTEXT_OVERFLOW": frozenset(
         {
             "typedContextOverflow",

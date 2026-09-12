@@ -25,6 +25,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_probe_test import (
     typed_runtime_role,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
+    evaluate_base_interrupted,
     evaluate_base_executor_unavailable,
     evaluate_base_forbidden_actor,
     evaluate_as_f04,
@@ -32,6 +33,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f12,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
+    valid_interrupted_capture,
     valid_executor_unavailable_capture,
     valid_forbidden_actor_capture,
     valid_as_f04_capture,
@@ -473,6 +475,60 @@ class F06HarnessClient:
             locale=probe.locale,
             sample_id=probe.sample_id,
         )
+        return result
+
+
+class InterruptedHarnessClient(F06HarnessClient):
+    def __init__(
+        self,
+        platform: str,
+        *,
+        cleanup_log: list[str] | None = None,
+        fail_direct: bool = False,
+    ) -> None:
+        super().__init__(platform, cleanup_log=cleanup_log)
+        self.fail_direct = fail_direct
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        if method != "foundationDirectProbe":
+            return super().harness(method, payload, timeout)
+        if self.fail_direct:
+            raise RuntimeError("interrupted direct probe failed")
+        request = payload or {}
+        self.complete_calls.append(request)
+        probe = DirectRuntimeProbeInput(
+            platform=str(request["platform"]),
+            locale=str(request["locale"]),
+            cell=str(request["cell"]),
+            sample_id=str(request["sampleId"]),
+        )
+        result = capture(probe)
+        facts = valid_interrupted_capture(probe.locale)
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_interrupted(facts)
+        runtime_event = facts["runtimeEvent"]
+        result["runtime-events"] = {
+            "eventId": runtime_event["eventId"],
+            "sequence": runtime_event["sequence"],
+            "eventType": runtime_event["eventType"],
+            "occurredAt": runtime_event["observedAt"],
+            "streamGeneration": runtime_event["streamGeneration"],
+            "streamIdHash": runtime_event["streamIdHash"],
+            "conversationIdHash": runtime_event["conversationIdHash"],
+            "payloadHash": runtime_event["payloadHash"],
+            "errorType": runtime_event["errorType"],
+            "sourceTransport": runtime_event["sourceTransport"],
+            "sourcePtidHash": runtime_event["sourcePtidHash"],
+            "sourceConversationId": runtime_event["sourceConversationId"],
+            "sourceTurnId": runtime_event["sourceTurnId"],
+            "sourceSequence": runtime_event["sourceSequence"],
+            "sourceEventType": runtime_event["sourceEventType"],
+        }
         return result
 
 
@@ -1904,6 +1960,137 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                 "browser|zh-CN|AS-F06|sample-001",
                 "browser|en|AS-F06|sample-001",
             ],
+        )
+
+    def test_base_interrupted_orders_source_bound_restart_and_probe(
+        self,
+    ) -> None:
+        native = InterruptedHarnessClient("desktop_app")
+        browser = InterruptedHarnessClient("browser")
+        runtime_pair = SimpleNamespace(native=native, browser=browser)
+        coordinator = (
+            foundation_scenario_runner.FoundationInterruptedCoordinator(
+                runtime_pair,
+                {"profile": {"resolvedName": "chat-native-disposable"}},
+                {},
+            )
+        )
+        probe = foundation_scenario_runner._make_direct_probe(
+            browser,
+            interrupted_coordinator=coordinator,
+        )
+        restart_evidence = {
+            "outageObserved": True,
+            "stationUrlHash": "c" * 64,
+            "protoDigest": "d" * 64,
+            "containerId": "e" * 64,
+            "imageId": "f" * 64,
+            "imageRef": "foundation-station:test",
+            "beforeStartedAt": "2026-09-12T00:00:00Z",
+            "afterStartedAt": "2026-09-12T00:01:00Z",
+            "sourceCommit": "a" * 40,
+            "beforeCommit": "a" * 12,
+            "afterCommit": "a" * 12,
+        }
+
+        with (
+            patch.object(
+                foundation_scenario_runner,
+                "restart_foundation_station",
+                return_value=restart_evidence,
+            ) as station_restart,
+            patch.object(
+                foundation_scenario_runner,
+                "_authenticate_clients",
+            ) as authenticate,
+        ):
+            result = probe(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="zh-CN",
+                    cell="BASE-INTERRUPTED",
+                    sample_id="sample-001",
+                )
+            )
+            replay = probe(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="zh-CN",
+                    cell="BASE-INTERRUPTED",
+                    sample_id="sample-001",
+                )
+            )
+
+        station_restart.assert_called_once()
+        authenticate.assert_called_once()
+        self.assertEqual(native.prepare_calls, [])
+        self.assertEqual(len(browser.prepare_calls), 1)
+        self.assertEqual(len(browser.finalize_calls), 1)
+        self.assertEqual(len(browser.restoration_calls), 1)
+        self.assertEqual(browser.transport_restore_count, 1)
+        self.assertEqual(browser.restart_count, 0)
+        self.assertEqual(len(browser.complete_calls), 1)
+        self.assertEqual(
+            browser.complete_calls[0]["stationRestart"],
+            restart_evidence,
+        )
+        self.assertEqual(browser.cleanup_calls, [])
+        self.assertEqual(result["cleanup"]["status"], "clean")
+        self.assertEqual(replay, result)
+
+    def test_base_interrupted_failure_runs_explicit_cleanup(self) -> None:
+        cleanup_log: list[str] = []
+        native = InterruptedHarnessClient("desktop_app")
+        browser = InterruptedHarnessClient(
+            "browser",
+            cleanup_log=cleanup_log,
+            fail_direct=True,
+        )
+        coordinator = (
+            foundation_scenario_runner.FoundationInterruptedCoordinator(
+                SimpleNamespace(native=native, browser=browser),
+                {"profile": {"resolvedName": "chat-native-disposable"}},
+                {},
+            )
+        )
+        probe = foundation_scenario_runner._make_direct_probe(
+            browser,
+            interrupted_coordinator=coordinator,
+        )
+
+        with (
+            patch.object(
+                foundation_scenario_runner,
+                "restart_foundation_station",
+                return_value={
+                    "outageObserved": True,
+                    "sourceCommit": "a" * 40,
+                    "beforeCommit": "a" * 12,
+                    "afterCommit": "a" * 12,
+                },
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "_authenticate_clients",
+            ) as authenticate,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "interrupted direct probe failed",
+            ):
+                probe(
+                    DirectRuntimeProbeInput(
+                        platform="browser",
+                        locale="en",
+                        cell="BASE-INTERRUPTED",
+                        sample_id="sample-001",
+                    )
+                )
+
+        self.assertEqual(authenticate.call_count, 2)
+        self.assertEqual(
+            cleanup_log,
+            ["browser|en|BASE-INTERRUPTED|sample-001"],
         )
 
     def test_as_f12_orders_restart_and_owning_client_restoration(

@@ -21,6 +21,7 @@ import {
   ExternalLink,
   LogOut,
   Minimize2,
+  RotateCcw,
   Settings,
 } from 'lucide-react';
 import type { ChatMessage, DelegationTaskInfo, MessageArtifact } from '../../store/chat';
@@ -393,7 +394,9 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
         ? 'switch-account'
         : message.resolution?.type === 'chooseCompatibleModel'
           ? 'choose-compatible-model'
-          : 'true';
+          : message.resolution?.type === 'recover'
+            ? 'recover'
+            : 'true';
   const artifacts = useMemo(() => extractMessageArtifacts(message), [message]);
 
   const handleCopy = useCallback(() => {
@@ -491,6 +494,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-error-resource-kind={message.typedError?.details.resource_kind}
       data-pt-agent-error-resource-id={message.typedError?.details.resource_id}
       data-pt-agent-error-capability-id={message.typedError?.details.capability_id}
+      data-pt-agent-error-turn-id={message.typedError?.details.turn_id}
       data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
       id={`agent-message-${message.id}`}
       align="flex-start"
@@ -743,6 +747,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                       message.resolution.type !== 'openOriginal'
                       && message.resolution.type !== 'switchAccount'
                       && message.resolution.type !== 'chooseCompatibleModel'
+                      && message.resolution.type !== 'recover'
                     }
                     icon={
                       message.resolution.type === 'openProviderSettings'
@@ -752,7 +757,9 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                           ? <ExternalLink size={14} />
                           : message.resolution.type === 'switchAccount'
                             ? <LogOut size={14} />
-                            : undefined
+                            : message.resolution.type === 'recover'
+                              ? <RotateCcw size={14} />
+                              : undefined
                     }
                     style={{ marginTop: 8 }}
                     onClick={async () => {
@@ -777,6 +784,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         }
                         if (message.resolution!.type === 'chooseCompatibleModel') {
                           handleChooseCompatibleModel();
+                          return;
+                        }
+                        if (message.resolution!.type === 'recover') {
+                          await handleRetry();
                           return;
                         }
                         const result = await api.resolveErrorAction(message.resolution!);

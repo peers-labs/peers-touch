@@ -320,6 +320,84 @@ describe('agentTurnStreamErrorFromData', () => {
       label: 'agent.recovery.chooseCompatibleModel',
     })
   })
+
+  it('projects the exact nested lifecycle interruption and Recover resolution', () => {
+    const error = agentTurnStreamErrorFromData({
+      error: 'station_restart_interrupted',
+      terminal_reason: 'station_restart_interrupted',
+      outcome_error: {
+        error: 'agent.errors.lifecycleInterrupted',
+        error_type: 'LIFECYCLE_INTERRUPTED',
+        locale_key: 'agent.errors.lifecycleInterrupted',
+        retryable: true,
+        terminal: true,
+        details: {
+          turn_id: 'turn-interrupted',
+          reason_code: 'station_restart_interrupted',
+        },
+      },
+    })
+
+    expect(error.message).toBe('agent.errors.lifecycleInterrupted')
+    expect(error.typedError).toEqual({
+      error: 'agent.errors.lifecycleInterrupted',
+      error_type: 'LIFECYCLE_INTERRUPTED',
+      locale_key: 'agent.errors.lifecycleInterrupted',
+      retryable: true,
+      terminal: true,
+      details: {
+        turn_id: 'turn-interrupted',
+        reason_code: 'station_restart_interrupted',
+      },
+    })
+    expect(error.resolution).toEqual({
+      type: 'recover',
+      turnId: 'turn-interrupted',
+      reasonCode: 'station_restart_interrupted',
+      label: 'agent.recovery.recover',
+    })
+  })
+
+  it.each([
+    ['non-retryable', {
+      turn_id: 'turn-interrupted',
+      reason_code: 'station_restart_interrupted',
+    }, false, true],
+    ['non-terminal', {
+      turn_id: 'turn-interrupted',
+      reason_code: 'station_restart_interrupted',
+    }, true, false],
+    ['missing turn id', {
+      reason_code: 'station_restart_interrupted',
+    }, true, true],
+    ['unsafe extra detail', {
+      turn_id: 'turn-interrupted',
+      reason_code: 'station_restart_interrupted',
+      internal_error: 'must-not-enable-recovery',
+    }, true, true],
+    ['unsafe non-string detail', {
+      turn_id: 'turn-interrupted',
+      reason_code: 'station_restart_interrupted',
+      internal_error: { diagnostic: 'must-not-enable-recovery' },
+    }, true, true],
+  ])('rejects %s lifecycle interruption recovery', (_case, details, retryable, terminal) => {
+    const error = agentTurnStreamErrorFromData({
+      outcome_error: {
+        error: 'agent.errors.lifecycleInterrupted',
+        error_type: 'LIFECYCLE_INTERRUPTED',
+        locale_key: 'agent.errors.lifecycleInterrupted',
+        retryable,
+        terminal,
+        details,
+      },
+      resolution: {
+        type: 'recover',
+        label: 'agent.recovery.recover',
+      },
+    })
+
+    expect(error.resolution).toBeUndefined()
+  })
 })
 
 describe('api.health', () => {
@@ -387,6 +465,48 @@ describe('Agent turn stream completion', () => {
     expect(classifyAgentTurnTerminalEvent({ event: 'cancelled', data: {} })).toBe('cancelled')
   })
 
+  it('classifies only a strict nested lifecycle interruption as interrupted', () => {
+    const interruption = {
+      error: 'agent.errors.lifecycleInterrupted',
+      error_type: 'LIFECYCLE_INTERRUPTED',
+      locale_key: 'agent.errors.lifecycleInterrupted',
+      retryable: true,
+      terminal: true,
+      details: {
+        turn_id: 'turn-interrupted',
+        reason_code: 'station_restart_interrupted',
+      },
+    }
+
+    expect(classifyAgentTurnTerminalEvent({
+      event: 'error',
+      data: { outcome_error: interruption },
+    })).toBe('interrupted')
+    expect(classifyAgentTurnTerminalEvent({
+      event: 'error',
+      data: interruption,
+    })).toBe('failed')
+    expect(classifyAgentTurnTerminalEvent({
+      event: 'error',
+      data: {
+        outcome_error: {
+          ...interruption,
+          details: {
+            ...interruption.details,
+            internal_error: 'must-not-enable-interrupted',
+          },
+        },
+      },
+    })).toBe('failed')
+    expect(classifyAgentTurnTerminalEvent({
+      event: 'error',
+      data: {
+        error: 'provider failed',
+        error_type: 'PROVIDER_FAILURE',
+      },
+    })).toBe('failed')
+  })
+
   it('uses replay snapshot status as the terminal authority', () => {
     expect(classifyAgentTurnTerminalEvent({
       event: 'snapshot',
@@ -448,6 +568,152 @@ describe('Agent turn stream completion', () => {
 
     expect(source.conversationId).toBe('')
     expect(source.turnId).toBe('')
+  })
+
+  it('keeps a Browser lifecycle interruption out of the failed callback', async () => {
+    const browserWindow = Object.assign(new EventTarget(), {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    })
+    vi.stubGlobal('window', browserWindow)
+    ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
+      'http://127.0.0.1:3030'
+    const rawData = {
+      error: 'station_restart_interrupted',
+      terminal_reason: 'station_restart_interrupted',
+      conversation_id: 'conversation-1',
+      turn_id: 'turn-interrupted',
+      seq: 9,
+      outcome_error: {
+        error: 'agent.errors.lifecycleInterrupted',
+        error_type: 'LIFECYCLE_INTERRUPTED',
+        locale_key: 'agent.errors.lifecycleInterrupted',
+        retryable: true,
+        terminal: true,
+        details: {
+          turn_id: 'turn-interrupted',
+          reason_code: 'station_restart_interrupted',
+        },
+      },
+    }
+    mockFetch.mockResolvedValue(new Response(
+      `event: error\ndata: ${JSON.stringify(rawData)}\n\n`,
+      {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      },
+    ))
+    const onEvent = vi.fn()
+    const onDone = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurn(
+      {
+        client_idempotency_key: 'request-browser-interrupted',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'resume after restart',
+      },
+      onEvent,
+      onDone,
+      onError,
+      'ptid:person:owner',
+    )
+
+    await vi.waitFor(() => expect(onEvent).toHaveBeenCalledTimes(1))
+    expect(onEvent.mock.calls[0]?.[0]).toMatchObject({
+      event: 'error',
+      data: {
+        ...rawData,
+        streamGeneration: expect.any(Number),
+      },
+    })
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('settles a Native lifecycle interruption without reporting failure', async () => {
+    type NativeStreamEvent = {
+      payload: {
+        streamId: string
+        ptid: string
+        event: string
+        data: Record<string, unknown>
+      }
+    }
+    let listener: ((event: NativeStreamEvent) => void) | undefined
+    let startedStreamId = ''
+    const unlisten = vi.fn()
+    mockListen.mockImplementation(async (_event, callback) => {
+      listener = callback as (event: NativeStreamEvent) => void
+      return unlisten
+    })
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      if (command !== 'agent_execute_turn_stream') {
+        return Promise.reject(new Error(`unexpected command: ${command}`))
+      }
+      startedStreamId = String(
+        (args as { input: { stream_id: string } }).input.stream_id,
+      )
+      return Promise.resolve({
+        ok: true,
+        data: {
+          command,
+          status: JSON.stringify({ stream_id: startedStreamId }),
+        },
+      })
+    })
+    const onEvent = vi.fn()
+    const onDone = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurn(
+      {
+        client_idempotency_key: 'request-native-interrupted',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'resume after restart',
+      },
+      onEvent,
+      onDone,
+      onError,
+      'ptid:person:owner',
+    )
+    await vi.waitFor(() => {
+      expect(listener).toBeTypeOf('function')
+      expect(startedStreamId).not.toBe('')
+    })
+
+    listener?.({
+      payload: {
+        streamId: startedStreamId,
+        ptid: 'ptid:person:owner',
+        event: 'error',
+        data: {
+          error: 'station_restart_interrupted',
+          terminal_reason: 'station_restart_interrupted',
+          conversation_id: 'conversation-1',
+          turn_id: 'turn-interrupted',
+          seq: 9,
+          outcome_error: {
+            error: 'agent.errors.lifecycleInterrupted',
+            error_type: 'LIFECYCLE_INTERRUPTED',
+            locale_key: 'agent.errors.lifecycleInterrupted',
+            retryable: true,
+            terminal: true,
+            details: {
+              turn_id: 'turn-interrupted',
+              reason_code: 'station_restart_interrupted',
+            },
+          },
+        },
+      },
+    })
+
+    expect(onEvent).toHaveBeenCalledTimes(1)
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect(onError).not.toHaveBeenCalled()
+    expect(unlisten).toHaveBeenCalledTimes(1)
   })
 
   it('source-binds a Browser pre-admission error before projection metadata', async () => {

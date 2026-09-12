@@ -722,6 +722,71 @@ ORDER BY owner_ptid
             )
             self.assertEqual(memberships, 1)
 
+    def test_same_station_contact_seeds_canonical_postgres_projection(self) -> None:
+        actor = FixtureActorRecord(
+            ptid="ptid:alice",
+            preferred_username="alice",
+            name="Alice",
+            summary="",
+            icon="",
+            image="",
+            url="http://10.37.94.156:18132/actors/alice",
+            federated_handle="@alice@station.example",
+            home_station_peer_id="peer-station",
+            home_station_domain="station.example",
+            visibility=1,
+            locator_seq=1,
+        )
+        peer = FixtureActorRecord(
+            ptid="ptid:bob",
+            preferred_username="bob",
+            name="Bob",
+            summary="",
+            icon="",
+            image="",
+            url="http://10.37.94.156:18132/actors/bob",
+            federated_handle="@bob@station.example",
+            home_station_peer_id="peer-station",
+            home_station_domain="station.example",
+            visibility=1,
+            locator_seq=1,
+        )
+        environment = {
+            **DISPOSABLE_ENVIRONMENT,
+            "PT_ACCEPTANCE_RUNTIME_KIND": "remote",
+        }
+        with patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "acceptance_station_environment",
+            return_value=environment,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "verify_disposable_station_runtime",
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "_encode_social_proto",
+            return_value=b"canonical-proto",
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset._remote_psql",
+        ) as remote_psql:
+            seed_same_station_contact(
+                "http://10.37.94.156:18132",
+                "chat-native-disposable-station",
+                actor,
+                peer,
+            )
+
+        remote_psql.assert_called_once()
+        self.assertEqual(remote_psql.call_args.args[0], environment)
+        sql = remote_psql.call_args.args[1]
+        self.assertIn("INSERT INTO social_friend_requests", sql)
+        self.assertIn("INSERT INTO social_relationship_projections", sql)
+        self.assertIn("'ptid:alice'", sql)
+        self.assertIn("'ptid:bob'", sql)
+        self.assertIn("relationship_count <> 2", sql)
+        self.assertIn("membership_count <> 1", sql)
+        self.assertTrue(sql.rstrip().endswith("COMMIT;"))
+
     def test_reset_rejects_unknown_account_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(

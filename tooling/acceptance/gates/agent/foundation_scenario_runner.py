@@ -722,6 +722,8 @@ def _make_direct_probe(
     *,
     f06_coordinator: "FoundationF06Coordinator | None" = None,
     f12_coordinator: "FoundationF12Coordinator | None" = None,
+    interrupted_coordinator:
+        "FoundationInterruptedCoordinator | None" = None,
     executor_unavailable_coordinator:
         "FoundationExecutorUnavailableCoordinator | None" = None,
     forbidden_actor_coordinator:
@@ -746,6 +748,12 @@ def _make_direct_probe(
                     "BASE-EXECUTOR_UNAVAILABLE requires executor orchestration"
                 )
             return executor_unavailable_coordinator.capture(probe_input)
+        if probe_input.cell == "BASE-INTERRUPTED":
+            if interrupted_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-INTERRUPTED requires Station restart orchestration"
+                )
+            return interrupted_coordinator.capture(probe_input)
         if probe_input.cell == "AS-F06":
             if f06_coordinator is None:
                 raise ScenarioRunnerError(
@@ -1205,6 +1213,253 @@ class FoundationF06Coordinator:
                 f"AS-F06 tuple was not prepared: "
                 f"{self._scenario_key(probe_input)}"
             )
+        return capture
+
+
+class FoundationInterruptedCoordinator:
+    """Produce one independent interrupted Turn per direct-runtime tuple."""
+
+    def __init__(
+        self,
+        runtime_pair: FoundationRuntimePair,
+        runtime_manifest: Mapping[str, Any],
+        profile_env: Mapping[str, str],
+    ) -> None:
+        self._runtime_pair = runtime_pair
+        self._runtime_manifest = runtime_manifest
+        self._profile_env = dict(profile_env)
+        self._captures: dict[
+            tuple[str, str, str, str],
+            Mapping[str, Any],
+        ] = {}
+
+    @staticmethod
+    def _capture_key(
+        probe_input: DirectRuntimeProbeInput,
+    ) -> tuple[str, str, str, str]:
+        return (
+            probe_input.platform,
+            probe_input.locale,
+            probe_input.cell,
+            probe_input.sample_id,
+        )
+
+    @staticmethod
+    def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
+        return "|".join(
+            (
+                probe_input.platform,
+                probe_input.locale,
+                probe_input.cell,
+                probe_input.sample_id,
+            )
+        )
+
+    def _client(self, platform: str) -> Any:
+        if platform == "desktop_app":
+            return self._runtime_pair.native
+        if platform == "browser":
+            return self._runtime_pair.browser
+        raise ScenarioRunnerError(
+            f"BASE-INTERRUPTED has no direct client for {platform}"
+        )
+
+    def _set_locale(
+        self,
+        client: Any,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> None:
+        result = client.harness(
+            "setFoundationLocale",
+            {"locale": probe_input.locale},
+            timeout=30,
+        )
+        if (
+            not isinstance(result, Mapping)
+            or result.get("locale") != probe_input.locale
+        ):
+            raise ScenarioRunnerError(
+                "BASE-INTERRUPTED locale did not converge for "
+                f"{self._scenario_key(probe_input)}"
+            )
+
+    def _cleanup(
+        self,
+        client: Any,
+        *,
+        scenario_key: str,
+        conversation_id: str,
+        turn_id: str,
+    ) -> None:
+        result = client.harness(
+            "foundationF06Cleanup",
+            {
+                "scenarioKey": scenario_key,
+                "conversationId": conversation_id,
+                "turnId": turn_id,
+            },
+            timeout=60,
+        )
+        if (
+            not isinstance(result, Mapping)
+            or result.get("cleanupComplete") is not True
+        ):
+            raise ScenarioRunnerError(
+                "BASE-INTERRUPTED cleanup proof is invalid for "
+                f"{scenario_key}: {result!r}"
+            )
+
+    def _execute_active(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        client = self._client(probe_input.platform)
+        scenario_key = self._scenario_key(probe_input)
+        handoff: Mapping[str, Any] | None = None
+        result: Mapping[str, Any] | None = None
+        transport_restored = False
+        primary_error: BaseException | None = None
+        try:
+            self._set_locale(client, probe_input)
+            prepared = client.prepare_foundation_f06(
+                {
+                    "scenarioKey": scenario_key,
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "sampleId": probe_input.sample_id,
+                },
+                timeout=300,
+            )
+            if (
+                not isinstance(prepared, Mapping)
+                or not str(prepared.get("conversationId") or "")
+                or not str(prepared.get("turnId") or "")
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-INTERRUPTED prepare returned invalid evidence for "
+                    f"{scenario_key}: {prepared!r}"
+                )
+            handoff = prepared
+            finalized = client.harness(
+                "foundationF06FinalizePreparation",
+                {"scenarioKey": scenario_key},
+                timeout=60,
+            )
+            if (
+                not isinstance(finalized, Mapping)
+                or finalized.get("conversationId")
+                != handoff.get("conversationId")
+                or finalized.get("turnId") != handoff.get("turnId")
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-INTERRUPTED finalized handoff is invalid for "
+                    f"{scenario_key}"
+                )
+
+            station_restart = restart_foundation_station(
+                self._runtime_manifest,
+                repo_root=REPO_ROOT,
+                during_outage=lambda _deadline: None,
+            )
+            client.restore_station_transport()
+            transport_restored = True
+            _authenticate_clients(
+                self._runtime_pair,
+                self._profile_env,
+                clients=(client,),
+                require_existing_session=True,
+                recovery_boundary="base-interrupted-station-restart",
+            )
+            restored = client.harness(
+                "foundationF06RestoreCapabilityIsolation",
+                {"scenarioKey": scenario_key},
+                timeout=60,
+            )
+            restoration_error = _capability_isolation_restoration_error(
+                probe_input.platform,
+                restored.get("toolIsolation")
+                if isinstance(restored, Mapping)
+                else None,
+                allow_empty=True,
+            )
+            if restoration_error:
+                raise ScenarioRunnerError(
+                    "BASE-INTERRUPTED capability-isolation restoration "
+                    f"failed for {scenario_key}: {restoration_error}"
+                )
+            self._set_locale(client, probe_input)
+            candidate = client.harness(
+                "foundationDirectProbe",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "cell": probe_input.cell,
+                    "sampleId": probe_input.sample_id,
+                    "scenarioKey": scenario_key,
+                    "stationRestart": station_restart,
+                },
+                timeout=300,
+            )
+            if not isinstance(candidate, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-INTERRUPTED direct probe returned invalid "
+                    f"evidence for {scenario_key}"
+                )
+            result = dict(candidate)
+            assert_group_one_capture(probe_input, result)
+            return result
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            if not transport_restored:
+                client.restore_station_transport()
+            cleanup = (
+                result.get("cleanup")
+                if isinstance(result, Mapping)
+                else None
+            )
+            cleanup_is_clean = (
+                isinstance(cleanup, Mapping)
+                and cleanup.get("status") == "clean"
+            )
+            if handoff is not None and not cleanup_is_clean:
+                try:
+                    _authenticate_clients(
+                        self._runtime_pair,
+                        self._profile_env,
+                        clients=(client,),
+                        require_existing_session=True,
+                        recovery_boundary="base-interrupted-cleanup",
+                    )
+                    self._cleanup(
+                        client,
+                        scenario_key=scenario_key,
+                        conversation_id=str(handoff["conversationId"]),
+                        turn_id=str(handoff["turnId"]),
+                    )
+                except BaseException as cleanup_error:
+                    if primary_error is not None:
+                        raise ScenarioRunnerError(
+                            f"{primary_error}; "
+                            f"CLEANUP_FAILED: {cleanup_error}"
+                        ) from primary_error
+                    raise
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        if probe_input.cell != "BASE-INTERRUPTED":
+            raise ScenarioRunnerError(
+                "BASE-INTERRUPTED coordinator received "
+                f"{probe_input.cell}"
+            )
+        capture_key = self._capture_key(probe_input)
+        capture = self._captures.get(capture_key)
+        if capture is None:
+            capture = dict(self._execute_active(probe_input))
+            self._captures[capture_key] = capture
         return capture
 
 
@@ -2091,6 +2346,11 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         executor_unavailable_coordinator = (
             FoundationExecutorUnavailableCoordinator(runtime_pair)
         )
+        interrupted_coordinator = FoundationInterruptedCoordinator(
+            runtime_pair,
+            runtime_manifest,
+            profile_env,
+        )
         forbidden_actor_coordinator = FoundationForbiddenActorCoordinator(
             runtime_pair,
             profile_env,
@@ -2102,6 +2362,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 runtime_pair.native,
                 f06_coordinator=f06_coordinator,
                 f12_coordinator=f12_coordinator,
+                interrupted_coordinator=interrupted_coordinator,
                 executor_unavailable_coordinator=(
                     executor_unavailable_coordinator
                 ),
@@ -2115,6 +2376,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 runtime_pair.browser,
                 f06_coordinator=f06_coordinator,
                 f12_coordinator=f12_coordinator,
+                interrupted_coordinator=interrupted_coordinator,
                 executor_unavailable_coordinator=(
                     executor_unavailable_coordinator
                 ),

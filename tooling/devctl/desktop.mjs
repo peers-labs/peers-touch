@@ -146,6 +146,15 @@ function pnpmInvocation(pnpm) {
   return { command: process.execPath, prefix: [script] };
 }
 
+export function desktopTauriArguments(configPath, environment = process.env) {
+  const args = ['dev', '--no-watch'];
+  if (environment.PT_DESKTOP_E2E === 'true') {
+    args.push('--features', 'e2e-testing');
+  }
+  args.push('--config', configPath);
+  return args;
+}
+
 function runAppletBuild(root, pnpm, environment, values) {
   const fingerprint = appletSourceFingerprint(root);
   if (
@@ -382,10 +391,7 @@ export async function startDesktop(
       command: process.execPath,
       args: [
         values.tauriScript,
-        'dev',
-        '--no-watch',
-        '--config',
-        values.configPath,
+        ...desktopTauriArguments(values.configPath, childEnvironment),
       ],
       cwd: values.desktopDirectory,
       environment: childEnvironment,

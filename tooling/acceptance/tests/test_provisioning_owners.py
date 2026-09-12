@@ -529,7 +529,11 @@ class ActorFixtureOwnerTests(unittest.TestCase):
         popen.return_value = process
         killpg.side_effect = ProcessLookupError()
 
-        reset_fixture("chat-native-acceptance", ("alice", "bob"))
+        reset_fixture(
+            "chat-native-acceptance",
+            ("alice", "bob"),
+            reset_authorized=True,
+        )
 
         arguments, options = popen.call_args
         self.assertEqual(
@@ -552,6 +556,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
         self.assertTrue(options["start_new_session"])
         self.assertFalse(options["shell"])
         self.assertTrue(options["close_fds"])
+        self.assertEqual(options["env"]["CHAT_ACCEPTANCE_RESET"], "1")
         self.assertLessEqual(
             process.communicate.call_args.kwargs["timeout"],
             0.05,
@@ -675,6 +680,8 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                     account_ref=f"station-account:{role}@p.t",
                     ptid=f"ptid:{role}",
                 ),
+            ), patch(
+                "tooling.acceptance.fixtures.chat_native_actors.prepare_bound_friendships"
             ):
                 manifest, path, reference = produce_actor_manifest(
                     environment_id="home-station",
@@ -738,8 +745,16 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 )
 
             self.assertEqual(verify.call_count, 2)
-            reset.assert_any_call("station-four", ["alice"])
-            reset.assert_any_call("station-five", ["bob"])
+            reset.assert_any_call(
+                "station-four",
+                ["alice"],
+                reset_authorized=True,
+            )
+            reset.assert_any_call(
+                "station-five",
+                ["bob"],
+                reset_authorized=True,
+            )
             self.assertEqual(
                 [call.args for call in resolve.call_args_list],
                 [

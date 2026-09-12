@@ -93,6 +93,7 @@ def reset_fixture(
     deployment_environment: str,
     actors: Iterable[str],
     *,
+    reset_authorized: bool | None = None,
     deadline_monotonic: float | None = None,
     cancellation: threading.Event | None = None,
 ) -> None:
@@ -109,6 +110,12 @@ def reset_fixture(
     )
     operation_deadline = effective_deadline - termination_reserve
     try:
+        child_environment = os.environ.copy()
+        if reset_authorized is not None:
+            if reset_authorized:
+                child_environment["CHAT_ACCEPTANCE_RESET"] = "1"
+            else:
+                child_environment.pop("CHAT_ACCEPTANCE_RESET", None)
         process = subprocess.Popen(
             [
                 sys.executable,
@@ -120,6 +127,7 @@ def reset_fixture(
                 *accounts,
             ],
             cwd=REPO_ROOT,
+            env=child_environment,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -366,7 +374,11 @@ def produce_bound_actor_manifest(
         ).append(role)
     for (station_url, deployment_environment), target_roles in grouped_roles.items():
         verify_reset_target(station_url, deployment_environment)
-        reset_fixture(deployment_environment, target_roles)
+        reset_fixture(
+            deployment_environment,
+            target_roles,
+            reset_authorized=reset_authorized,
+        )
     actors = tuple(
         resolve_actor_identity(
             role_targets[role][0],

@@ -12,6 +12,7 @@ import {
   type AgentTurnStreamError,
   type AgentTurnQueueListOutput,
   type AgentRuntimeBudgetInput,
+  classifyAgentTurnTerminalEvent,
   resolveAgentTypedErrorAction,
 } from '../services/desktop_api';
 import { agentService } from '../services/agent-service';
@@ -967,6 +968,9 @@ export function applyOperationEventIdentity(
   const snapshotStatus = event.event === 'snapshot'
     ? String(event.data?.status || '').toLowerCase()
     : '';
+  const terminalStatus = classifyAgentTurnTerminalEvent(event);
+  const terminalRunState =
+    terminalStatus === 'queued' ? null : terminalStatus;
   const runState = ({
     connection_lost: 'connection_lost',
     reconnecting: 'reconnecting',
@@ -974,10 +978,8 @@ export function applyOperationEventIdentity(
     reconciling: 'reconciling',
     connected: 'streaming',
     recovery_failed: 'recovery_failed',
-    done: 'completed',
-    error: 'failed',
-    cancelled: 'cancelled',
   } as const)[event.event]
+    ?? terminalRunState
     ?? ({
       completed: 'completed',
       failed: 'failed',

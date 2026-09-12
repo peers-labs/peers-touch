@@ -21,6 +21,7 @@ type revisionFakeTurnExecutor struct {
 	observedTurnStatus         string
 	observedAttemptStatus      string
 	observedAssistantMsgStatus string
+	observedAssistantErrorJSON []byte
 }
 
 func (f *revisionFakeTurnExecutor) ExecuteTurn(
@@ -41,6 +42,7 @@ func (f *revisionFakeTurnExecutor) ExecuteTurn(
 			var assistant persistence.AgentMessage
 			_ = f.db.First(&assistant, "id = ?", config.AssistantMessageID).Error
 			f.observedAssistantMsgStatus = assistant.Status
+			f.observedAssistantErrorJSON = assistant.ErrorJSON
 		}
 	}
 	if f.err != nil {
@@ -487,6 +489,7 @@ func TestRetryAddsAttemptUnderSameTurnWithoutBranchMutation(t *testing.T) {
 	branch := "branch-failed"
 	failedContent := ""
 	turnID := "turn-failed"
+	errorJSON := []byte(`{"error_type":"LIFECYCLE_INTERRUPTED"}`)
 	if err := db.Create(&persistence.AgentMessage{
 		ID:              "assistant-failed",
 		ConversationID:  "conversation-revision",
@@ -494,6 +497,7 @@ func TestRetryAddsAttemptUnderSameTurnWithoutBranchMutation(t *testing.T) {
 		Role:            string(domain.MessageRoleAssistant),
 		Status:          "failed",
 		Content:         &failedContent,
+		ErrorJSON:       errorJSON,
 		Seq:             2,
 		BranchID:        &branch,
 		ParentMessageID: &parent,
@@ -532,12 +536,14 @@ func TestRetryAddsAttemptUnderSameTurnWithoutBranchMutation(t *testing.T) {
 	}
 	if executor.observedTurnStatus != string(domain.TurnStatusRunning) ||
 		executor.observedAttemptStatus != string(domain.TurnStatusRunning) ||
-		executor.observedAssistantMsgStatus != "pending" {
+		executor.observedAssistantMsgStatus != "pending" ||
+		len(executor.observedAssistantErrorJSON) != 0 {
 		t.Fatalf(
-			"retry authority was not atomically admitted before execution: turn=%q attempt=%q assistant=%q",
+			"retry authority was not atomically admitted before execution: turn=%q attempt=%q assistant=%q error_json=%q",
 			executor.observedTurnStatus,
 			executor.observedAttemptStatus,
 			executor.observedAssistantMsgStatus,
+			executor.observedAssistantErrorJSON,
 		)
 	}
 	var messageCount int64

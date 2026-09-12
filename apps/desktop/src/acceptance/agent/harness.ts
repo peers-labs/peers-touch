@@ -11,6 +11,7 @@ import {
   AuthCommandException,
   classifyAgentTurnTerminalEvent,
   isAgentCapabilityReady,
+  projectAgentTypedErrorPayload,
   streamAgentTurn,
   streamAgentTurnReplay,
   submitAgentFeedback,
@@ -1081,9 +1082,16 @@ function clearFoundationLocalConversationProjection(
     const sessionBuffers = { ...state.sessionBuffers };
     delete sessionBuffers[conversationId];
     const isCurrent = state.currentSessionKey === conversationId;
+    const sessions = state.sessions.filter(
+      (session) =>
+        session.id !== conversationId && session.key !== conversationId,
+    );
     return {
       operations,
       sessionBuffers,
+      sessions,
+      currentSessionKey:
+        isCurrent ? sessions[0]?.key || 'main' : state.currentSessionKey,
       messages: isCurrent ? [] : state.messages,
       isStreaming: isCurrent ? false : state.isStreaming,
       streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
@@ -7854,24 +7862,47 @@ async function cleanupFoundationF06Scenario(input: {
     throw new Error('agent.acceptance.foundationCleanupIdentityMismatch');
   }
   if (cleanupLocator?.state === 'deleted') {
+    clearFoundationLocalConversationProjection(cleanupLocator.conversationId);
     useAgentTurnRecoveryStore.getState().clear(
       cleanupLocator.conversationId,
       cleanupLocator.turnId,
     );
-    removeFoundationF06Handoff(input.scenarioKey, false);
+    removeFoundationF06Handoff(input.scenarioKey);
     const handoffCleared =
       readFoundationF06Handoff(input.scenarioKey) === null;
     const recoveryRecordCleared =
       useAgentTurnRecoveryStore.getState()
         .active[cleanupLocator.conversationId] === undefined;
-    if (!handoffCleared || !recoveryRecordCleared) {
+    const cleanupLocatorCleared =
+      readFoundationF06CleanupLocators()[input.scenarioKey] === undefined;
+    const cleanedChatState = useChatStore.getState();
+    const localProjectionCleared = (
+      !cleanedChatState.sessions.some(
+        (session) =>
+          session.id === cleanupLocator.conversationId
+          || session.key === cleanupLocator.conversationId,
+      )
+      && !cleanedChatState.messages.some(
+        (message) => message.turnId === cleanupLocator.turnId,
+      )
+      && cleanedChatState.operations[cleanupLocator.conversationId] === undefined
+      && cleanedChatState.sessionBuffers[cleanupLocator.conversationId] === undefined
+    );
+    if (
+      !handoffCleared
+      || !cleanupLocatorCleared
+      || !recoveryRecordCleared
+      || !localProjectionCleared
+    ) {
       throw new Error('CLEANUP_FAILED:foundationCleanupVerificationFailed');
     }
     return {
       cleanupComplete: true,
       handoffCleared,
+      cleanupLocatorCleared,
       conversationDeleted: true,
       recoveryRecordCleared,
+      localProjectionCleared,
     };
   }
   const conversationId = input.conversationId
@@ -7950,19 +7981,32 @@ async function cleanupFoundationF06Scenario(input: {
     if (!conversationDeleted && cleanupError === null) cleanupError = error;
   }
   if (conversationDeleted) {
-    writeFoundationF06CleanupLocator({
-      scenarioKey: input.scenarioKey,
-      conversationId,
-      turnId,
-      state: 'deleted',
-    });
-    removeFoundationF06Handoff(input.scenarioKey, false);
+    clearFoundationLocalConversationProjection(conversationId);
+    removeFoundationF06Handoff(input.scenarioKey);
   }
   const handoffCleared = readFoundationF06Handoff(input.scenarioKey) === null;
+  const cleanupLocatorCleared =
+    readFoundationF06CleanupLocators()[input.scenarioKey] === undefined;
   const recoveryRecordCleared =
     useAgentTurnRecoveryStore.getState().active[conversationId] === undefined;
+  const cleanedChatState = useChatStore.getState();
+  const localProjectionCleared = (
+    !cleanedChatState.sessions.some(
+      (session) =>
+        session.id === conversationId || session.key === conversationId,
+    )
+    && !cleanedChatState.messages.some(
+      (message) => message.turnId === turnId,
+    )
+    && cleanedChatState.operations[conversationId] === undefined
+    && cleanedChatState.sessionBuffers[conversationId] === undefined
+  );
   const cleanupComplete =
-    conversationDeleted && handoffCleared && recoveryRecordCleared;
+    conversationDeleted
+    && handoffCleared
+    && cleanupLocatorCleared
+    && recoveryRecordCleared
+    && localProjectionCleared;
   // #region debug-point D:f06-cleanup-result
   void reportFoundationF06TerminalRaceDebug('D', 'cleanup-result-sampled', {
     scenarioKey: input.scenarioKey,
@@ -7970,7 +8014,9 @@ async function cleanupFoundationF06Scenario(input: {
     cleanupErrorPresent: cleanupError !== null,
     conversationDeleted,
     handoffCleared,
+    cleanupLocatorCleared,
     recoveryRecordCleared,
+    localProjectionCleared,
     cleanupComplete,
   });
   // #endregion
@@ -7983,8 +8029,10 @@ async function cleanupFoundationF06Scenario(input: {
   return {
     cleanupComplete,
     handoffCleared,
+    cleanupLocatorCleared,
     conversationDeleted,
     recoveryRecordCleared,
+    localProjectionCleared,
     deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
   };
 }
@@ -9930,9 +9978,25 @@ function foundationTurnAttemptFacts(value: unknown): Record<string, unknown>[] {
       turnId: String(evidenceField(attempt, 'turnId', 'turn_id') ?? ''),
       index: Number(attempt.index ?? 0),
       status: Number(attempt.status ?? 0),
+      errorCode: String(
+        evidenceField(attempt, 'errorCode', 'error_code') ?? '',
+      ),
       usage: evidenceValue(attempt.usage ?? null),
+      record: evidenceValue(attempt),
     };
   });
+}
+
+function foundationTurnStatusName(value: unknown): string {
+  return ({
+    [AgentTurnStatus.RUNNING]: 'running',
+    [AgentTurnStatus.WAITING_LOCAL_TOOL]: 'waiting_local_tool',
+    [AgentTurnStatus.COMPLETED]: 'completed',
+    [AgentTurnStatus.FAILED]: 'failed',
+    [AgentTurnStatus.CANCELLED]: 'cancelled',
+    [AgentTurnStatus.INTERRUPTED]: 'interrupted',
+    [AgentTurnStatus.REJECTED]: 'rejected',
+  } as Record<number, string>)[Number(value)] ?? 'unknown';
 }
 
 async function runFoundationF07Scenario(input: {
@@ -10975,6 +11039,14 @@ interface FoundationCancelledResult {
   facts: Record<string, unknown>;
 }
 
+interface FoundationInterruptedResult {
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  facts: Record<string, unknown>;
+}
+
 interface FoundationCancelledReceiverSnapshot {
   messageId: string | null;
   visible: boolean;
@@ -11084,6 +11156,85 @@ async function foundationCancelledReceiverSnapshot(
     resolutionPresent: snapshot.resolutionPresent,
   });
   return snapshot;
+}
+
+async function foundationInterruptedReceiverSnapshot(
+  messageId: string,
+  description: string,
+): Promise<{
+  messageId: string;
+  turnId: string;
+  visible: boolean;
+  terminalStatus: string;
+  errorType: string;
+  reasonCode: string;
+  errorText: string;
+  expectedErrorText: string;
+  recoveryVisible: boolean;
+  recoveryText: string;
+  expectedRecoveryText: string;
+  recoveryExecuted: boolean;
+}> {
+  const selector =
+    '[data-pt-agent-message="assistant"]'
+    + `[data-pt-agent-message-id="${messageId}"]`;
+  const recoverySelector =
+    '[data-pt-agent-message-error-recovery="recover"]';
+  await waitFor(
+    () => {
+      const element = document.querySelector<HTMLElement>(selector);
+      const recovery = element?.querySelector<HTMLElement>(recoverySelector);
+      return Boolean(
+        element
+        && element.getAttribute('data-pt-agent-terminal-status')
+          === 'interrupted'
+        && element.getAttribute('data-pt-agent-error-type')
+          === 'LIFECYCLE_INTERRUPTED'
+        && recovery
+        && recovery.getClientRects().length > 0,
+      );
+    },
+    description,
+    30_000,
+  );
+  const messageElement = document.querySelector<HTMLElement>(selector);
+  const recovery = messageElement?.querySelector<HTMLElement>(
+    recoverySelector,
+  );
+  const error = messageElement?.querySelector<HTMLElement>(
+    '[data-pt-agent-message-error-text="agent.errors.lifecycleInterrupted"]',
+  );
+  const projected = [...useChatStore.getState().messages]
+    .reverse()
+    .find((message) => message.id === messageId);
+  if (!messageElement || !recovery || !error || !projected?.turnId) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedReceiverMissing',
+    );
+  }
+  return {
+    messageId,
+    turnId: projected.turnId,
+    visible: messageElement.getClientRects().length > 0,
+    terminalStatus:
+      messageElement.getAttribute('data-pt-agent-terminal-status') ?? '',
+    errorType:
+      messageElement.getAttribute('data-pt-agent-error-type') ?? '',
+    reasonCode:
+      messageElement.getAttribute('data-pt-agent-error-reason-code') ?? '',
+    errorText: error.textContent?.trim() ?? '',
+    expectedErrorText: i18n.t(
+      'agent.errors.lifecycleInterrupted',
+      { ns: 'agent' },
+    ),
+    recoveryVisible: recovery.getClientRects().length > 0,
+    recoveryText: recovery.textContent?.trim() ?? '',
+    expectedRecoveryText: i18n.t(
+      'agent.recovery.recover',
+      { ns: 'agent' },
+    ),
+    recoveryExecuted: false,
+  };
 }
 
 function typedActiveMutationConflict(error: unknown): Record<string, unknown> {
@@ -13105,6 +13256,362 @@ async function runFoundationCancelledScenario(input: {
   }
 }
 
+async function runFoundationInterruptedScenario(input: {
+  scenarioKey: string;
+  platform: string;
+  locale: string;
+  sampleId: string;
+  stationRestart: Record<string, unknown>;
+}): Promise<FoundationInterruptedResult> {
+  const handoff = readFoundationF06Handoff(input.scenarioKey);
+  if (!handoff) {
+    throw new Error('agent.acceptance.foundationInterruptedHandoffMissing');
+  }
+  if (
+    handoff.platform !== input.platform
+    || handoff.locale !== input.locale
+    || handoff.sampleId !== input.sampleId
+  ) {
+    throw new Error('agent.acceptance.foundationInterruptedScopeMismatch');
+  }
+
+  await foundationF06ReplayRecording;
+  await useChatStore.getState().selectSession(handoff.conversationId);
+  await useChatStore.getState().syncMessages();
+
+  const sourceReadback = await foundationConversationReadback(
+    handoff.conversationId,
+  );
+  const sourceAssistant = [...sourceReadback.messages].reverse().find(
+    (message) =>
+      message.role === 'assistant' && message.turnId === handoff.turnId,
+  );
+  if (!sourceAssistant) {
+    throw new Error('agent.acceptance.foundationInterruptedMessageMissing');
+  }
+  const persistedOutcome = projectAgentTypedErrorPayload(
+    JSON.parse(String(sourceAssistant.errorJson || '{}')),
+  );
+  if (!persistedOutcome) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedPersistedOutcomeMissing',
+    );
+  }
+  const sourceEvidence = evidenceRecord(
+    await foundationTurnEvidence(
+      handoff.conversationId,
+      handoff.turnId,
+    ),
+    'foundationInterruptedTurnEvidence',
+  );
+  const sourceDiagnostics = evidenceRecord(
+    sourceEvidence.diagnostics,
+    'foundationInterruptedDiagnostics',
+  );
+  const sourceDiagnosticReplay = evidenceRecord(
+    sourceDiagnostics.replay,
+    'foundationInterruptedDiagnosticReplay',
+  );
+  const sourceAttempts = foundationTurnAttemptFacts(sourceEvidence);
+  const sourceAttempt = sourceAttempts[sourceAttempts.length - 1];
+  if (!sourceAttempt) {
+    throw new Error('agent.acceptance.foundationInterruptedAttemptMissing');
+  }
+
+  const replayDeliveries = await foundationStationReplayReadback({
+    conversationId: handoff.conversationId,
+    turnId: handoff.turnId,
+    streamId: handoff.streamId,
+    streamGeneration: handoff.streamGeneration,
+    actorPtid: handoff.actorPtid,
+    acknowledgedCursor: 0,
+  }, { finishOnTerminal: false });
+  const terminalDeliveries = replayDeliveries.filter((delivery) =>
+    ['done', 'error', 'cancelled'].includes(delivery.eventType));
+  const interruptedDelivery = terminalDeliveries.find(
+    (delivery) => delivery.eventType === 'error',
+  );
+  if (!interruptedDelivery) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedTerminalEventMissing',
+    );
+  }
+  const interruptedEventData = evidenceRecord(
+    interruptedDelivery.rawPayload.data,
+    'foundationInterruptedEventData',
+  );
+  const outcome = projectAgentTypedErrorPayload(evidenceRecord(
+    evidenceField(
+      interruptedEventData,
+      'outcomeError',
+      'outcome_error',
+    ),
+    'foundationInterruptedOutcomeCandidate',
+  ));
+  if (!outcome) {
+    throw new Error('agent.acceptance.foundationInterruptedOutcomeMissing');
+  }
+  const sourceTerminalHash = await sha256Hex(
+    stableJson(interruptedDelivery.rawPayload),
+  );
+  const sourceState = {
+    turnId: handoff.turnId,
+    attemptId: String(sourceAttempt.attemptId),
+    attemptStatus: foundationTurnStatusName(sourceAttempt.status),
+    attemptErrorCode: String(sourceAttempt.errorCode),
+    attemptRecordHash: await sha256Hex(stableJson(sourceAttempt.record)),
+    terminalEventSequence: interruptedDelivery.sequence,
+    terminalEventHash: sourceTerminalHash,
+  };
+  const sourceStateHash = await sha256Hex(stableJson(sourceState));
+  const receiver = await foundationInterruptedReceiverSnapshot(
+    sourceAssistant.messageId,
+    'Foundation interrupted receiver',
+  );
+  const recoveryAction = document.querySelector<HTMLElement>(
+    '[data-pt-agent-message="assistant"]'
+    + `[data-pt-agent-message-id="${sourceAssistant.messageId}"] `
+    + '[data-pt-agent-message-error-recovery="recover"]',
+  );
+  if (!recoveryAction) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedRecoveryActionMissing',
+    );
+  }
+
+  let recoveryClickCount = 0;
+  const observeRecovery = () => {
+    recoveryClickCount += 1;
+  };
+  recoveryAction.addEventListener('click', observeRecovery);
+  recoveryAction.click();
+  recoveryAction.removeEventListener('click', observeRecovery);
+
+  const recoveryDeadline = Date.now() + 30_000;
+  let recoveryEvidence = await foundationTurnEvidence(
+    handoff.conversationId,
+    handoff.turnId,
+  );
+  let recoveryAttempts = foundationTurnAttemptFacts(recoveryEvidence);
+  while (
+    recoveryAttempts.length !== sourceAttempts.length + 1
+    && Date.now() < recoveryDeadline
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    recoveryEvidence = await foundationTurnEvidence(
+      handoff.conversationId,
+      handoff.turnId,
+    );
+    recoveryAttempts = foundationTurnAttemptFacts(recoveryEvidence);
+  }
+  const recoveryAttempt = recoveryAttempts[recoveryAttempts.length - 1];
+  if (
+    !recoveryAttempt
+    || recoveryAttempts.length !== sourceAttempts.length + 1
+    || recoveryAttempt.attemptId === sourceAttempt.attemptId
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedRecoveryAttemptMissing',
+    );
+  }
+
+  const cancellation = await api.cancelAgentTurn(handoff.turnId);
+  const settlementDeadline = Date.now() + 30_000;
+  while (Date.now() < settlementDeadline) {
+    recoveryEvidence = await foundationTurnEvidence(
+      handoff.conversationId,
+      handoff.turnId,
+    );
+    recoveryAttempts = foundationTurnAttemptFacts(recoveryEvidence);
+    const latest = recoveryAttempts[recoveryAttempts.length - 1];
+    if (
+      latest
+      && [
+        AgentTurnStatus.CANCELLED,
+        AgentTurnStatus.FAILED,
+        AgentTurnStatus.INTERRUPTED,
+        AgentTurnStatus.COMPLETED,
+      ].includes(Number(latest.status))
+    ) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  const settledRecoveryAttempt = recoveryAttempts[
+    recoveryAttempts.length - 1
+  ];
+  if (!settledRecoveryAttempt) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedRecoverySettlementMissing',
+    );
+  }
+  const sourceAttemptAfter = recoveryAttempts.find(
+    (attempt) => attempt.attemptId === sourceAttempt.attemptId,
+  );
+  if (!sourceAttemptAfter) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedSourceAttemptMissing',
+    );
+  }
+  const replayAfterRecovery = await foundationStationReplayReadback({
+    conversationId: handoff.conversationId,
+    turnId: handoff.turnId,
+    streamId: handoff.streamId,
+    streamGeneration: handoff.streamGeneration,
+    actorPtid: handoff.actorPtid,
+    acknowledgedCursor: 0,
+  }, { finishOnTerminal: false });
+  const sourceDeliveryAfter = replayAfterRecovery.find(
+    (delivery) =>
+      delivery.eventType === interruptedDelivery.eventType
+      && delivery.sequence === interruptedDelivery.sequence,
+  );
+  if (!sourceDeliveryAfter) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedSourceEventMissingAfterRecovery',
+    );
+  }
+  const sourceStateAfter = {
+    turnId: handoff.turnId,
+    attemptId: String(sourceAttemptAfter.attemptId),
+    attemptStatus: foundationTurnStatusName(sourceAttemptAfter.status),
+    attemptErrorCode: String(sourceAttemptAfter.errorCode),
+    attemptRecordHash: await sha256Hex(
+      stableJson(sourceAttemptAfter.record),
+    ),
+    terminalEventSequence: sourceDeliveryAfter.sequence,
+    terminalEventHash: await sha256Hex(
+      stableJson(sourceDeliveryAfter.rawPayload),
+    ),
+  };
+  const runtimeEvent: FoundationRuntimeEventObservation = {
+    eventId: await sha256Hex(stableJson({
+      turnId: handoff.turnId,
+      sequence: interruptedDelivery.sequence,
+      payloadHash: interruptedDelivery.payloadHash,
+    })),
+    eventType: interruptedDelivery.eventType,
+    sequence: interruptedDelivery.sequence,
+    observedAt: interruptedDelivery.observedAt,
+    streamGeneration: interruptedDelivery.streamGeneration,
+    streamIdHash: await sha256Hex(interruptedDelivery.streamId),
+    conversationIdHash: await sha256Hex(handoff.conversationId),
+    payloadHash: interruptedDelivery.payloadHash,
+    errorType: String(outcome.error_type ?? ''),
+    sourceTransport: interruptedDelivery.sourceTransport,
+    sourcePtidHash: interruptedDelivery.sourcePtidHash,
+    sourceConversationId: interruptedDelivery.sourceConversationId,
+    sourceTurnId: interruptedDelivery.sourceTurnId,
+    sourceSequence: interruptedDelivery.sourceSequence,
+    sourceEventType: interruptedDelivery.sourceEventType,
+  };
+  const recoveryStatus = foundationTurnStatusName(
+    settledRecoveryAttempt.status,
+  );
+
+  return {
+    conversationId: handoff.conversationId,
+    turnId: handoff.turnId,
+    durationMs: Date.now() - Date.parse(handoff.preparedAt),
+    runtimeEvent,
+    facts: {
+      outcome,
+      receiver: {
+        ...receiver,
+        recoveryExecuted: recoveryClickCount === 1,
+      },
+      recovery: {
+        action: 'recover',
+        executed: recoveryClickCount === 1,
+        attemptCountBefore: sourceAttempts.length,
+        attemptCountAfter: recoveryAttempts.length,
+        sourceTurnId: handoff.turnId,
+        sourceAttemptId: String(sourceAttempt.attemptId),
+        recoveryAttemptId: String(settledRecoveryAttempt.attemptId),
+        recoveryAttemptStatus: recoveryStatus,
+        cancellationStatus: String(cancellation.status ?? '').toLowerCase(),
+        sourceAttemptStatusAfter: foundationTurnStatusName(
+          sourceAttemptAfter.status,
+        ),
+        sourceTerminalHashBefore: sourceTerminalHash,
+        sourceTerminalHashAfter: sourceStateAfter.terminalEventHash,
+        completedInferenceCount:
+          recoveryStatus === 'completed' ? 1 : 0,
+      },
+      station: {
+        conversationId: handoff.conversationId,
+        turnId: handoff.turnId,
+        attemptId: String(sourceAttempt.attemptId),
+        messageId: sourceAssistant.messageId,
+        turnStatus: foundationTurnStatusName(sourceDiagnosticReplay.status),
+        attemptStatus: foundationTurnStatusName(sourceAttempt.status),
+        attemptErrorCode: String(sourceAttempt.errorCode),
+        messageStatus: String(sourceAssistant.status).toLowerCase(),
+        terminalReason: String(
+          evidenceField(
+            sourceDiagnosticReplay,
+            'terminalReason',
+            'terminal_reason',
+          ) ?? '',
+        ),
+        persistedOutcome,
+        terminalEventCount: terminalDeliveries.length,
+        errorEventCount: terminalDeliveries.filter(
+          (delivery) => delivery.eventType === 'error',
+        ).length,
+        doneEventCount: terminalDeliveries.filter(
+          (delivery) => delivery.eventType === 'done',
+        ).length,
+        liveDoneEventCount: handoff.replayDeliveries.filter(
+          (delivery) => delivery.eventType === 'done',
+        ).length,
+        recoveryAttemptCount: recoveryAttempts.length - sourceAttempts.length,
+        recoveryAttemptId: String(settledRecoveryAttempt.attemptId),
+        sourceBeforeRecovery: {
+          ...sourceState,
+          stateHash: sourceStateHash,
+        },
+        sourceAfterRecovery: {
+          ...sourceStateAfter,
+          stateHash: await sha256Hex(stableJson(sourceStateAfter)),
+        },
+      },
+      replay: {
+        sourceHash: await sha256Hex(stableJson(outcome)),
+        replayHash: await sha256Hex(stableJson(persistedOutcome)),
+        equal: stableJson(outcome) === stableJson(persistedOutcome),
+        snapshot: {
+          sourceTransport: interruptedDelivery.sourceTransport,
+          sourcePtidHash: interruptedDelivery.sourcePtidHash,
+          sourceConversationId: interruptedDelivery.sourceConversationId,
+          sourceTurnId: interruptedDelivery.sourceTurnId,
+          sourceSequence: interruptedDelivery.sourceSequence,
+          sourceEventType: interruptedDelivery.sourceEventType,
+          status: foundationTurnStatusName(sourceDiagnosticReplay.status),
+          reasonCode: String(
+            evidenceField(
+              sourceDiagnosticReplay,
+              'terminalReason',
+              'terminal_reason',
+            ) ?? '',
+          ),
+          attemptId: String(sourceAttempt.attemptId),
+          messageId: sourceAssistant.messageId,
+        },
+      },
+      restart: input.stationRestart,
+      cleanup: {
+        recoveryAttemptSettled: [
+          'cancelled',
+          'failed',
+          'interrupted',
+        ].includes(recoveryStatus),
+      },
+      runtimeEvent,
+    },
+  };
+}
+
 async function runFoundationDirectAttestationTurn(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
@@ -13687,6 +14194,8 @@ async function evaluateDirectCellAssertions(
       return evaluateBaseIncompatibleCapability(ctx);
     case 'BASE-CANCELLED':
       return evaluateBaseCancelled(ctx);
+    case 'BASE-INTERRUPTED':
+      return evaluateBaseInterrupted(ctx);
     case 'BASE-CONTEXT_OVERFLOW':
       return evaluateBaseContextOverflow(ctx);
     case 'BASE-DUPLICATE_CONFLICT':
@@ -14210,6 +14719,195 @@ function evaluateBaseCancelled(
       Number(cleanup.cancellationRequestCount) === 1
       && Number(cleanup.terminalCleanupCount) === 1
       && cleanup.conversationDeleted === true
+    ),
+  };
+}
+
+function evaluateBaseInterrupted(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationInterruptedFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationInterruptedOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationInterruptedDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationInterruptedReceiver',
+  );
+  const recovery = evidenceRecord(
+    facts.recovery,
+    'foundationInterruptedRecovery',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationInterruptedStation',
+  );
+  const persistedOutcome = evidenceRecord(
+    station.persistedOutcome,
+    'foundationInterruptedPersistedOutcome',
+  );
+  const persistedDetails = evidenceRecord(
+    persistedOutcome.details,
+    'foundationInterruptedPersistedDetails',
+  );
+  const sourceBefore = evidenceRecord(
+    station.sourceBeforeRecovery,
+    'foundationInterruptedSourceBefore',
+  );
+  const sourceAfter = evidenceRecord(
+    station.sourceAfterRecovery,
+    'foundationInterruptedSourceAfter',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationInterruptedReplay',
+  );
+  const replaySnapshot = evidenceRecord(
+    replay.snapshot,
+    'foundationInterruptedReplaySnapshot',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationInterruptedCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationInterruptedRuntimeEvent',
+  );
+  const restart = evidenceRecord(
+    facts.restart,
+    'foundationInterruptedRestart',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+
+  return {
+    typedInterruptionProjected: (
+      outcome.error === 'agent.errors.lifecycleInterrupted'
+      && outcome.error_type === 'LIFECYCLE_INTERRUPTED'
+      && outcome.locale_key === 'agent.errors.lifecycleInterrupted'
+      && outcome.retryable === true
+      && outcome.terminal === true
+      && stableJson(safeDetailKeys)
+        === stableJson(['reason_code', 'turn_id'])
+      && details.turn_id === station.turnId
+      && details.reason_code === 'station_restart_interrupted'
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'LIFECYCLE_INTERRUPTED'
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === station.turnId
+      && runtimeEvent.sourceSequence === runtimeEvent.sequence
+      && runtimeEvent.sourceEventType === 'error'
+      && Number(runtimeEvent.sequence) > 0
+    ),
+    localizedRecoveryVisible: (
+      receiver.visible === true
+      && receiver.terminalStatus === 'interrupted'
+      && receiver.errorType === 'LIFECYCLE_INTERRUPTED'
+      && receiver.turnId === station.turnId
+      && receiver.messageId === station.messageId
+      && receiver.reasonCode === 'station_restart_interrupted'
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    recoverExecuted: (
+      receiver.recoveryExecuted === true
+      && recovery.action === 'recover'
+      && recovery.executed === true
+      && Number(recovery.attemptCountAfter)
+        === Number(recovery.attemptCountBefore) + 1
+      && Number(station.recoveryAttemptCount) === 1
+      && recovery.sourceTurnId === station.turnId
+      && recovery.sourceAttemptId === station.attemptId
+      && String(recovery.recoveryAttemptId).length > 0
+      && recovery.recoveryAttemptId !== station.attemptId
+      && recovery.recoveryAttemptId === station.recoveryAttemptId
+      && recovery.recoveryAttemptStatus === 'cancelled'
+      && recovery.cancellationStatus === 'cancelled'
+      && recovery.sourceAttemptStatusAfter === 'interrupted'
+      && recovery.sourceTerminalHashBefore
+        === recovery.sourceTerminalHashAfter
+      && String(sourceBefore.attemptRecordHash).length === 64
+      && sourceBefore.attemptRecordHash === sourceAfter.attemptRecordHash
+    ),
+    interruptedPersisted: (
+      station.turnStatus === 'interrupted'
+      && station.attemptStatus === 'interrupted'
+      && station.attemptErrorCode === 'station_restart_interrupted'
+      && station.messageStatus === 'interrupted'
+      && station.terminalReason === 'station_restart_interrupted'
+      && persistedOutcome.error === outcome.error
+      && persistedOutcome.error_type === outcome.error_type
+      && persistedOutcome.locale_key === outcome.locale_key
+      && persistedOutcome.retryable === outcome.retryable
+      && persistedOutcome.terminal === outcome.terminal
+      && stableJson(Object.keys(persistedDetails).sort())
+        === stableJson(safeDetailKeys)
+      && persistedDetails.turn_id === details.turn_id
+      && persistedDetails.reason_code === details.reason_code
+      && restart.outageObserved === true
+      && restart.beforeStartedAt !== restart.afterStartedAt
+      && restart.beforeCommit === restart.afterCommit
+      && (
+        String(restart.sourceCommit).startsWith(
+          String(restart.beforeCommit),
+        )
+        || String(restart.beforeCommit).startsWith(
+          String(restart.sourceCommit),
+        )
+      )
+    ),
+    exactlyOneAuthoritativeTerminal: (
+      Number(station.terminalEventCount) === 1
+      && Number(station.errorEventCount) === 1
+    ),
+    zeroCompletedInference: (
+      Number(station.doneEventCount) === 0
+      && Number(station.liveDoneEventCount) === 0
+      && Number(recovery.completedInferenceCount) === 0
+      && recovery.recoveryAttemptStatus !== 'completed'
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+      && replaySnapshot.sourceTransport === 'station-sse'
+      && replaySnapshot.sourcePtidHash === runtimeEvent.sourcePtidHash
+      && replaySnapshot.sourceConversationId === station.conversationId
+      && replaySnapshot.sourceTurnId === station.turnId
+      && replaySnapshot.sourceSequence === runtimeEvent.sourceSequence
+      && replaySnapshot.sourceEventType === 'error'
+      && replaySnapshot.status === 'interrupted'
+      && replaySnapshot.reasonCode === 'station_restart_interrupted'
+      && replaySnapshot.attemptId === station.attemptId
+      && replaySnapshot.messageId === station.messageId
+      && sourceBefore.turnId === sourceAfter.turnId
+      && sourceBefore.attemptId === sourceAfter.attemptId
+      && sourceBefore.attemptStatus === 'interrupted'
+      && sourceAfter.attemptStatus === 'interrupted'
+      && sourceBefore.attemptErrorCode === 'station_restart_interrupted'
+      && sourceAfter.attemptErrorCode === 'station_restart_interrupted'
+      && sourceBefore.attemptRecordHash === sourceAfter.attemptRecordHash
+      && sourceBefore.terminalEventSequence
+        === sourceAfter.terminalEventSequence
+      && sourceBefore.terminalEventHash === sourceAfter.terminalEventHash
+    ),
+    cleanupComplete: (
+      cleanup.recoveryAttemptSettled === true
+      && cleanup.localProjectionCleared === true
+      && cleanup.conversationDeleted === true
+      && cleanup.cleanupComplete === true
+      && cleanup.handoffCleared === true
+      && cleanup.recoveryRecordCleared === true
     ),
   };
 }
@@ -17748,6 +18446,26 @@ export function installAcceptanceHarness(): void {
         scenarioFacts = scenario.facts;
       }
 
+      if (cell === 'BASE-INTERRUPTED') {
+        if (!stationRestart || !scenarioKey) {
+          throw new Error(
+            'agent.acceptance.foundationInterruptedStationRestartMissing',
+          );
+        }
+        const scenario = await runFoundationInterruptedScenario({
+          scenarioKey,
+          platform,
+          locale,
+          sampleId,
+          stationRestart,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
       if (cell === 'BASE-CONTEXT_OVERFLOW') {
         const capabilitySessionId =
           capabilitySessions.selectedStationSession?.session_id;
@@ -18961,6 +19679,35 @@ export function installAcceptanceHarness(): void {
         });
       }
       if (
+        cell === 'BASE-INTERRUPTED'
+        && scenarioFacts
+        && scenarioKey
+        && currentConversationId
+        && turnId
+      ) {
+        preservedReplayReadback = conversationReadback;
+        const interruptionCleanup = await cleanupFoundationF06Scenario({
+          scenarioKey,
+          conversationId: currentConversationId,
+          turnId,
+        });
+        scenarioFacts.cleanup = {
+          ...evidenceRecord(
+            scenarioFacts.cleanup,
+            'foundationInterruptedCleanup',
+          ),
+          ...interruptionCleanup,
+          localProjectionCleared: (
+            !useChatStore.getState().sessions.some(
+              (session) => session.id === currentConversationId,
+            )
+            && !useChatStore.getState().messages.some(
+              (message) => message.turnId === turnId,
+            )
+          ),
+        };
+      }
+      if (
         (
           cell === 'BASE-FORBIDDEN_ACTOR'
           || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
@@ -19188,6 +19935,19 @@ export function installAcceptanceHarness(): void {
         stationReadback.stateHash = await sha256Hex(stableJson(station));
         stationReadback.typedError = scenarioFacts.outcome;
       }
+      if (cell === 'BASE-INTERRUPTED' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationInterruptedStation',
+        );
+        stationReadback.entityKind = 'agent-turn-interruption';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.turnId),
+        );
+        stationReadback.revision = Number(station.terminalEventCount);
+        stationReadback.stateHash = await sha256Hex(stableJson(station));
+        stationReadback.typedError = scenarioFacts.outcome;
+      }
       if (cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts) {
         const station = evidenceRecord(
           scenarioFacts.station,
@@ -19385,6 +20145,7 @@ export function installAcceptanceHarness(): void {
             || cell === 'BASE-FORBIDDEN_ACTOR'
             || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
             || cell === 'BASE-CANCELLED'
+            || cell === 'BASE-INTERRUPTED'
             || cell === 'BASE-CONTEXT_OVERFLOW'
             || cell === 'BASE-DUPLICATE_CONFLICT'
             || cell === 'BASE-CREDENTIAL_MISSING'
@@ -19402,6 +20163,7 @@ export function installAcceptanceHarness(): void {
                 ...(
                   (
                     cell === 'BASE-CANCELLED'
+                    || cell === 'BASE-INTERRUPTED'
                     || cell === 'BASE-FORBIDDEN_ACTOR'
                     || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
                     || cell === 'BASE-CONTEXT_OVERFLOW'
@@ -19549,6 +20311,32 @@ export function installAcceptanceHarness(): void {
                     cancelledEventCount: station.cancelledEventCount,
                     liveTerminalEventCount: station.liveTerminalEventCount,
                     liveDoneEventCount: station.liveDoneEventCount,
+                  },
+                };
+              })()
+          : cell === 'BASE-INTERRUPTED' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationInterruptedStation',
+                );
+                const recovery = evidenceRecord(
+                  scenarioFacts.recovery,
+                  'foundationInterruptedRecovery',
+                );
+                return {
+                  counterId: String(station.turnId),
+                  count:
+                    Number(station.doneEventCount)
+                    + Number(station.liveDoneEventCount)
+                    + Number(recovery.completedInferenceCount),
+                  maximum: 0,
+                  measurements: {
+                    terminalEventCount: station.terminalEventCount,
+                    errorEventCount: station.errorEventCount,
+                    recoveryAttemptCount: station.recoveryAttemptCount,
+                    recoveryAttemptStatus:
+                      recovery.recoveryAttemptStatus,
                   },
                 };
               })()
@@ -19812,6 +20600,13 @@ export function installAcceptanceHarness(): void {
               'foundationCancelledCleanup',
             )
           : null;
+      const interruptionCleanup =
+        cell === 'BASE-INTERRUPTED' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationInterruptedCleanup',
+            )
+          : null;
       const contextOverflowCleanup =
         cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts
           ? evidenceRecord(
@@ -19868,6 +20663,15 @@ export function installAcceptanceHarness(): void {
                   Number(cancellationCleanup.cancellationRequestCount) === 1
                   && Number(cancellationCleanup.terminalCleanupCount) === 1
                   && cancellationCleanup.conversationDeleted === true
+                )
+            : interruptionCleanup
+              ? (
+                  interruptionCleanup.recoveryAttemptSettled === true
+                  && interruptionCleanup.cleanupComplete === true
+                  && interruptionCleanup.handoffCleared === true
+                  && interruptionCleanup.conversationDeleted === true
+                  && interruptionCleanup.recoveryRecordCleared === true
+                  && interruptionCleanup.localProjectionCleared === true
                 )
             : contextOverflowCleanup
               ? (
@@ -20001,6 +20805,8 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-CANCELLED' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-INTERRUPTED' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
@@ -20015,6 +20821,7 @@ export function installAcceptanceHarness(): void {
         || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
         || cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
         || cell === 'BASE-CANCELLED'
+        || cell === 'BASE-INTERRUPTED'
         || cell === 'BASE-EXECUTOR_UNAVAILABLE'
         || cell === 'BASE-APPROVAL_DENIED'
         || cell === 'BASE-APPROVAL_EXPIRED'
@@ -20117,6 +20924,21 @@ export function installAcceptanceHarness(): void {
             errorText: receiver.errorText,
             recoveryVisible: receiver.recoveryVisible,
           };
+        } else if (cell === 'BASE-INTERRUPTED') {
+          receiverVisible =
+            receiver.visible === true
+            && receiver.terminalStatus === 'interrupted'
+            && receiver.errorType === 'LIFECYCLE_INTERRUPTED'
+            && receiver.recoveryVisible === true
+            && receiver.recoveryExecuted === true;
+          receiverSelector =
+            '[data-pt-agent-terminal-status="interrupted"]'
+            + '[data-pt-agent-error-type="LIFECYCLE_INTERRUPTED"] '
+            + '[data-pt-agent-message-error-recovery="recover"]';
+          receiverText = {
+            errorText: receiver.errorText,
+            recoveryText: receiver.recoveryText,
+          };
         } else if (cell === 'BASE-CONTEXT_OVERFLOW') {
           receiverVisible =
             receiver.errorVisible === true
@@ -20208,6 +21030,15 @@ export function installAcceptanceHarness(): void {
         const replay = evidenceRecord(
           scenarioFacts.replay,
           'foundationCancelledReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+      }
+      if (cell === 'BASE-INTERRUPTED' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationInterruptedReplay',
         );
         replayEvidence.sourceHash = replay.sourceHash;
         replayEvidence.replayHash = replay.replayHash;
@@ -20357,6 +21188,28 @@ export function installAcceptanceHarness(): void {
           } catch (cleanupError) {
             throw Object.assign(
               new Error('agent.acceptance.foundationToolExpiryCleanupFailed'),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-INTERRUPTED'
+          && scenarioKey
+        ) {
+          try {
+            await cleanupFoundationF06Scenario({
+              scenarioKey,
+              conversationId: preparedConversationId ?? '',
+              turnId: preparedTurnId ?? '',
+            });
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationInterruptionCleanupFailed',
+              ),
               {
                 primaryError: error,
                 cleanupError,

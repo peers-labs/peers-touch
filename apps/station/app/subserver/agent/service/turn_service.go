@@ -4056,6 +4056,13 @@ func (s *TurnService) interruptTurnWithEvent(
 			if err != nil {
 				return err
 			}
+			outcomeErrorJSON, err := (protojson.MarshalOptions{
+				UseProtoNames:   true,
+				EmitUnpopulated: true,
+			}).Marshal(errcode.NewLifecycleInterruptedPayload(turnID, reasonCode))
+			if err != nil {
+				return err
+			}
 			conversationID = turn.ConversationID
 			if err := tx.Model(&turn).
 				Updates(map[string]interface{}{
@@ -4079,6 +4086,7 @@ func (s *TurnService) interruptTurnWithEvent(
 				Where("turn_id = ? AND role = ? AND status = ?", turnID, string(domain.MessageRoleAssistant), "pending").
 				Updates(map[string]interface{}{
 					"status":     string(domain.TurnStatusInterrupted),
+					"error_json": outcomeErrorJSON,
 					"updated_at": now,
 				}).Error; err != nil {
 				return err
@@ -4111,6 +4119,7 @@ func (s *TurnService) interruptTurnWithEvent(
 				AgentID:        agentID,
 				Stage:          reasonCode,
 				Error:          reasonCode,
+				OutcomeError:   outcomeErrorJSON,
 			}
 			payload, err := json.Marshal(event)
 			if err != nil {

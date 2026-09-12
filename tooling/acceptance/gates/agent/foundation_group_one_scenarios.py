@@ -3062,6 +3062,305 @@ def evaluate_base_cancelled(
     return assertions
 
 
+def evaluate_base_interrupted(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-INTERRUPTED"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    recovery = _mapping(capture, "recovery", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    persisted_outcome = _mapping(
+        station,
+        "persistedOutcome",
+        scenario=scenario,
+    )
+    persisted_details = _mapping(
+        persisted_outcome,
+        "details",
+        scenario=scenario,
+    )
+    source_before = _mapping(
+        station,
+        "sourceBeforeRecovery",
+        scenario=scenario,
+    )
+    source_after = _mapping(
+        station,
+        "sourceAfterRecovery",
+        scenario=scenario,
+    )
+    replay = _mapping(capture, "replay", scenario=scenario)
+    replay_snapshot = _mapping(replay, "snapshot", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+    restart = _mapping(capture, "restart", scenario=scenario)
+
+    turn_id = _nonempty_string(station, "turnId", scenario=scenario)
+    attempt_id = _nonempty_string(station, "attemptId", scenario=scenario)
+    message_id = _nonempty_string(station, "messageId", scenario=scenario)
+    source_hash = _sha256_string(
+        replay,
+        "sourceHash",
+        scenario=scenario,
+    )
+    source_state_hash = _sha256_string(
+        source_before,
+        "stateHash",
+        scenario=scenario,
+    )
+    source_keys = {
+        "turnId",
+        "attemptId",
+        "attemptStatus",
+        "attemptErrorCode",
+        "attemptRecordHash",
+        "terminalEventSequence",
+        "terminalEventHash",
+        "stateHash",
+    }
+    restart_source_commit = _nonempty_string(
+        restart,
+        "sourceCommit",
+        scenario=scenario,
+    )
+    restart_before_commit = _nonempty_string(
+        restart,
+        "beforeCommit",
+        scenario=scenario,
+    )
+    restart_after_commit = _nonempty_string(
+        restart,
+        "afterCommit",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedInterruptionProjected": (
+            outcome.get("error") == "agent.errors.lifecycleInterrupted"
+            and outcome.get("error_type") == "LIFECYCLE_INTERRUPTED"
+            and outcome.get("locale_key")
+            == "agent.errors.lifecycleInterrupted"
+            and outcome.get("retryable") is True
+            and outcome.get("terminal") is True
+            and sorted(details) == ["reason_code", "turn_id"]
+            and details.get("turn_id") == turn_id
+            and details.get("reason_code") == "station_restart_interrupted"
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType") == "LIFECYCLE_INTERRUPTED"
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and _sha256_string(
+                runtime_event,
+                "sourcePtidHash",
+                scenario=scenario,
+            )
+            and runtime_event.get("sourceConversationId")
+            == station.get("conversationId")
+            and runtime_event.get("sourceTurnId") == turn_id
+            and runtime_event.get("sourceSequence")
+            == runtime_event.get("sequence")
+            and runtime_event.get("sourceEventType") == "error"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            ) > 0
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("visible") is True
+            and receiver.get("terminalStatus") == "interrupted"
+            and receiver.get("errorType") == "LIFECYCLE_INTERRUPTED"
+            and receiver.get("turnId") == turn_id
+            and receiver.get("messageId") == message_id
+            and receiver.get("reasonCode") == "station_restart_interrupted"
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+        ),
+        "recoverExecuted": (
+            receiver.get("recoveryExecuted") is True
+            and recovery.get("action") == "recover"
+            and recovery.get("executed") is True
+            and _positive_int(
+                recovery,
+                "attemptCountAfter",
+                scenario=scenario,
+            )
+            == _positive_int(
+                recovery,
+                "attemptCountBefore",
+                scenario=scenario,
+            ) + 1
+            and _positive_int(
+                station,
+                "recoveryAttemptCount",
+                scenario=scenario,
+            ) == 1
+            and recovery.get("sourceTurnId") == turn_id
+            and recovery.get("sourceAttemptId") == attempt_id
+            and _nonempty_string(
+                recovery,
+                "recoveryAttemptId",
+                scenario=scenario,
+            )
+            != attempt_id
+            and recovery.get("recoveryAttemptId")
+            == station.get("recoveryAttemptId")
+            and recovery.get("recoveryAttemptStatus") == "cancelled"
+            and recovery.get("cancellationStatus") == "cancelled"
+            and recovery.get("sourceAttemptStatusAfter") == "interrupted"
+            and recovery.get("sourceTerminalHashBefore")
+            == recovery.get("sourceTerminalHashAfter")
+            and _sha256_string(
+                source_before,
+                "attemptRecordHash",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                source_after,
+                "attemptRecordHash",
+                scenario=scenario,
+            )
+            and set(source_before) == source_keys
+            and source_before == source_after
+            and source_after.get("stateHash") == source_state_hash
+        ),
+        "interruptedPersisted": (
+            station.get("turnStatus") == "interrupted"
+            and station.get("attemptStatus") == "interrupted"
+            and station.get("attemptErrorCode")
+            == "station_restart_interrupted"
+            and station.get("messageStatus") == "interrupted"
+            and station.get("terminalReason") == "station_restart_interrupted"
+            and source_before.get("turnId") == turn_id
+            and source_before.get("attemptId") == attempt_id
+            and source_before.get("attemptStatus") == "interrupted"
+            and source_before.get("attemptErrorCode")
+            == "station_restart_interrupted"
+            and _positive_int(
+                source_before,
+                "terminalEventSequence",
+                scenario=scenario,
+            ) == runtime_event.get("sourceSequence")
+            and _sha256_string(
+                source_before,
+                "terminalEventHash",
+                scenario=scenario,
+            )
+            and persisted_outcome.get("error") == outcome.get("error")
+            and persisted_outcome.get("error_type")
+            == outcome.get("error_type")
+            and persisted_outcome.get("locale_key")
+            == outcome.get("locale_key")
+            and persisted_outcome.get("retryable")
+            == outcome.get("retryable")
+            and persisted_outcome.get("terminal")
+            == outcome.get("terminal")
+            and sorted(persisted_details) == sorted(details)
+            and persisted_details.get("turn_id") == turn_id
+            and persisted_details.get("reason_code")
+            == "station_restart_interrupted"
+            and restart.get("outageObserved") is True
+            and restart.get("beforeStartedAt") != restart.get("afterStartedAt")
+            and restart_before_commit == restart_after_commit
+            and (
+                restart_source_commit.startswith(restart_before_commit)
+                or restart_before_commit.startswith(restart_source_commit)
+            )
+        ),
+        "exactlyOneAuthoritativeTerminal": (
+            _positive_int(
+                station,
+                "terminalEventCount",
+                scenario=scenario,
+            ) == 1
+            and _positive_int(
+                station,
+                "errorEventCount",
+                scenario=scenario,
+            ) == 1
+        ),
+        "zeroCompletedInference": (
+            _nonnegative_int(
+                station,
+                "doneEventCount",
+                scenario=scenario,
+            ) == 0
+            and _nonnegative_int(
+                station,
+                "liveDoneEventCount",
+                scenario=scenario,
+            ) == 0
+            and _nonnegative_int(
+                recovery,
+                "completedInferenceCount",
+                scenario=scenario,
+            ) == 0
+            and recovery.get("recoveryAttemptStatus") != "completed"
+            and source_after.get("attemptStatus") == "interrupted"
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _sha256_string(
+                replay,
+                "replayHash",
+                scenario=scenario,
+            ) == source_hash
+            and replay_snapshot.get("sourceTransport") == "station-sse"
+            and _sha256_string(
+                replay_snapshot,
+                "sourcePtidHash",
+                scenario=scenario,
+            )
+            == runtime_event.get("sourcePtidHash")
+            and replay_snapshot.get("sourceConversationId")
+            == station.get("conversationId")
+            and replay_snapshot.get("sourceTurnId") == turn_id
+            and replay_snapshot.get("sourceSequence")
+            == runtime_event.get("sourceSequence")
+            and replay_snapshot.get("sourceEventType") == "error"
+            and replay_snapshot.get("status") == "interrupted"
+            and replay_snapshot.get("reasonCode")
+            == "station_restart_interrupted"
+            and replay_snapshot.get("attemptId") == attempt_id
+            and replay_snapshot.get("messageId") == message_id
+        ),
+        "cleanupComplete": (
+            cleanup.get("recoveryAttemptSettled") is True
+            and cleanup.get("localProjectionCleared") is True
+            and cleanup.get("conversationDeleted") is True
+            and cleanup.get("cleanupComplete") is True
+            and cleanup.get("handoffCleared") is True
+            and cleanup.get("recoveryRecordCleared") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_executor_unavailable(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:

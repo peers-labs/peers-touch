@@ -9,6 +9,9 @@ import type { TurnStreamEvent, StreamingAccumulator } from './types';
 import { useInterventionStore } from '../intervention';
 import type { InterventionType } from '../intervention';
 import {
+  isAgentLifecycleInterruptedError,
+  projectAgentTurnErrorPayload,
+  projectAgentTurnOutcomeErrorPayload,
   projectAgentTypedErrorPayload,
   resolveAgentTypedErrorAction,
 } from '../../services/desktop_api';
@@ -39,11 +42,7 @@ export function projectAgentTypedError(
 function cancellationTypedError(
   data: Record<string, unknown>,
 ): ChatMessage['typedError'] {
-  const outcome = data.outcome_error ?? data.outcomeError;
-  if (!outcome || typeof outcome !== 'object' || Array.isArray(outcome)) {
-    return undefined;
-  }
-  return projectAgentTypedError(outcome as Record<string, unknown>);
+  return projectAgentTurnOutcomeErrorPayload(data);
 }
 
 function budgetKind(reason: string): BudgetExhaustionKind {
@@ -137,20 +136,36 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
     case 'error': {
       const errMsg = s(d.error) || 'Unknown error';
       const budgetNotice = projectBudgetNotice(d);
-      const typedError = projectAgentTypedError(d);
-      const resolution = resolveAgentTypedErrorAction(typedError)
-        ?? (
-          d.resolution && typeof d.resolution === 'object'
-            ? d.resolution as ErrorResolutionAction
-            : null
-        );
+      const typedError = event.event === 'error'
+        ? projectAgentTurnErrorPayload(d)
+        : projectAgentTypedError(d);
+      const outcomeError = event.event === 'error'
+        ? projectAgentTurnOutcomeErrorPayload(d)
+        : undefined;
+      const interruptedError = event.event === 'error'
+        && isAgentLifecycleInterruptedError(outcomeError)
+        ? outcomeError
+        : undefined;
+      const interrupted = Boolean(interruptedError);
+      const suppliedResolution = d.resolution && typeof d.resolution === 'object'
+        ? d.resolution as ErrorResolutionAction
+        : null;
+      const mappedResolution = resolveAgentTypedErrorAction(typedError);
+      const resolution = (
+        mappedResolution?.type === 'recover' && !interrupted
+          ? null
+          : mappedResolution
+      )
+        ?? (suppliedResolution?.type === 'recover' ? null : suppliedResolution);
       return {
         ...msg,
         error: budgetNotice?.localeKey || typedError?.locale_key || errMsg,
         typedError: typedError ?? msg.typedError,
         budgetNotice: budgetNotice ?? msg.budgetNotice,
-        terminalStatus: 'failed',
-        errorDetail: s(d.detail),
+        terminalStatus: interrupted ? 'interrupted' : 'failed',
+        errorDetail: interrupted
+          ? terminalReasonFromStreamData(d) || interruptedError?.details.reason_code
+          : s(d.detail),
         resolution,
         providerId: s(d.providerId),
         loading: false,
@@ -221,11 +236,19 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
       const terminalReason = terminalReasonFromStreamData(d);
       const budgetNotice = projectBudgetNotice(d);
       const hasSnapshotText = typeof d.text === 'string';
+      const projectedError = projectAgentTurnErrorPayload(d);
       const cancelledError = (
         status === 'cancelled'
         && msg.typedError?.error_type === 'LIFECYCLE_CANCELLED'
       )
         ? msg.typedError
+        : undefined;
+      const interruptedError = status === 'interrupted'
+        ? isAgentLifecycleInterruptedError(projectedError)
+          ? projectedError
+          : isAgentLifecycleInterruptedError(msg.typedError)
+            ? msg.typedError
+            : undefined
         : undefined;
       const terminalStatus = ['completed', 'failed', 'cancelled', 'interrupted'].includes(status)
         ? status as NonNullable<ChatMessage['terminalStatus']>
@@ -235,22 +258,31 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
         content: hasSnapshotText ? d.text as string : msg.content,
         cancelled: status === 'cancelled',
         error:
-          status === 'failed' || status === 'interrupted'
-            ? terminalReason || msg.error
-            : status === 'cancelled'
-              ? cancelledError?.locale_key
-              : status === 'completed'
-              ? undefined
-              : msg.error,
+          status === 'interrupted'
+            ? interruptedError?.locale_key || terminalReason || msg.error
+            : status === 'failed'
+              ? terminalReason || msg.error
+              : status === 'cancelled'
+                ? cancelledError?.locale_key
+                : status === 'completed'
+                  ? undefined
+                  : msg.error,
         typedError:
           status === 'cancelled'
             ? cancelledError
-            : msg.typedError,
+            : status === 'interrupted'
+              ? interruptedError
+              : msg.typedError,
         errorDetail:
           status === 'failed' || status === 'cancelled' || status === 'interrupted'
             ? terminalReason || msg.errorDetail
             : msg.errorDetail,
-        resolution: status === 'cancelled' ? null : msg.resolution,
+        resolution:
+          status === 'cancelled'
+            ? null
+            : status === 'interrupted'
+              ? resolveAgentTypedErrorAction(interruptedError) ?? null
+              : msg.resolution,
         budgetNotice: budgetNotice ?? msg.budgetNotice,
         terminalStatus,
         loading: status === 'running',

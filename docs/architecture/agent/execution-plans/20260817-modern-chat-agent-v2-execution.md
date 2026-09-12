@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T033904525557Z-d6822c40db31c543386eb94ec994b4e0` on `1362900aa41d2afa2d7f912fb34f8abc1e6bf30d` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T034122773227Z-6f85ea63620dd1dca04bff43347bb8ba` crossed AS-F06 and `BASE-CANCELLED`, then failed only `BASE-INCOMPATIBLE_CAPABILITY / cleanupComplete`; cleanup telemetry proves binding deletion and zero active bindings before parent deletion, while the redundant post-parent child-list call returned `agent.capabilityBindingListFailed`; outer cleanup remained `DONE / PROVEN`; the child-readback ordering correction is pending exact-source proof | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T044940388295Z-e4198462d6841359eb30ec467e4fc976` on `64511e23628c16003bc45703049b7e974f6f3110` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T045125090233Z-1e96c04957a4d44b519fcbdc2f295cdc` crossed AS-F06, `BASE-CANCELLED`, and `BASE-INCOMPATIBLE_CAPABILITY`, then failed only because `BASE-INTERRUPTED` had no direct-runtime producer; the `BASE-INTERRUPTED` Station, Desktop, Harness, restart coordinator, cleanup, and independent-oracle source closure now passes local checks on the synchronized `8d315217f` baseline, while exact-source C08 and unchanged 419-cell proof remain pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7370,6 +7370,110 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   readbacks remain independently required. Desktop TypeScript and focused
   `234/234` Foundation/oracle/static tests pass; no product path, tuple,
   timeout, or cleanup requirement changed. Exact-source proof remains pending.
+- **BASE-INCOMPATIBLE_CAPABILITY proof and next frontier (2026-09-12)**:
+  checkpoint `64511e23628c16003bc45703049b7e974f6f3110` deployed exact-source.
+  C08 run
+  `20260912T044940388295Z-e4198462d6841359eb30ec467e4fc976`
+  completed `DONE / PROVEN` with `19/19` assertions and complete cleanup.
+  The unchanged Foundation run
+  `20260912T045125090233Z-1e96c04957a4d44b519fcbdc2f295cdc`
+  crossed AS-F06, `BASE-CANCELLED`, and
+  `BASE-INCOMPATIBLE_CAPABILITY`, then failed at
+  `BASE-INTERRUPTED` because its direct-runtime group was not implemented.
+  This classifies the next action as `RECOVERABLE_IMPLEMENTATION`; no Gate
+  tuple, timeout, provider, or evidence requirement changed.
+- **Git Server and workflow synchronization (2026-09-12)**: remote default
+  `fix/windows-native-chat-closure@29f75b0687681079433e8b0ae08fe3139d746ff1`
+  was merged as
+  `8d315217f0cf90e23ce8a8834fac9e4119c791b6`. The pre-sync WIP is retained
+  by safety stash `025099bd9fe00278cb6bece07269f1c8d6fe07df`, was reapplied
+  without conflict, and remains present in the worktree. Removed legacy shell
+  owners were not restored. The official TRAE Skill installation now resolves
+  `.trae/skills` to `tooling/skills`; Developer Toolchain operations use
+  `node tooling/devctl/index.mjs`, while Make remains only a compatibility
+  entrypoint. The synchronized provisioning suite also exposed one test
+  isolation defect: the Actor Manifest serialization test invoked separately
+  covered friendship seeding after replacing the repository root with a
+  temporary directory. The test now isolates that side effect while the
+  production Fixture path remains unchanged; all `159/159` provisioning model,
+  owner, lease, and launch-context tests pass.
+- **Synchronized preflight corrections (2026-09-12)**: C08 run
+  `20260912T070046991021Z-445a476c9f6427dd0aacc6ff6f552747`
+  stopped before resource acquisition because the new Home Station Provisioner
+  defaulted its approved profile identity to `one`; the explicitly authorized
+  `chat-native-disposable` identity is now supplied through
+  `PT_ACCEPTANCE_APPROVED_PROFILE` without changing `PT_DEV_PROFILE`. Run
+  `20260912T070250232142Z-09da8bd06ea9d3966075e6d99fa41cc9`
+  then reached exact-source Station attestation and stopped before reset because
+  the Provisioner verified `CHAT_ACCEPTANCE_RESET=1` from the canonical profile
+  but its reset child inherited only the outer process environment. The Fixture
+  now threads that already-validated boolean into the child environment without
+  forwarding provider credentials or other profile values. Both blocked runs
+  performed complete Provisioner cleanup and executed no product assertion.
+- **C08 proof and remote same-Station Fixture closure (2026-09-12)**:
+  exact-source C08 run
+  `20260912T070721099163Z-96070381bb1ebd5f4ed0332961603360`
+  on `4a844a64e07c984dcce443599e292ed6d5700edd` completed
+  `DONE / PROVEN` with all `19/19` assertions and complete process, port,
+  storage, and Provisioner cleanup. The subsequent Foundation run
+  `20260912T070925565032Z-0ab2f9288035bf85a7f64df16098a73b`
+  stopped during Fixture provisioning before any matrix tuple because
+  synchronized same-Station friendship seeding supported only local SQLite.
+  The Fixture owner now executes the same one-federation, one-membership, one
+  accepted-request, and two-directional-projection transaction through the
+  existing verified remote PostgreSQL transport. Focused reset and
+  provisioning-owner tests pass `43/43`; the failed run completed Provisioner
+  cleanup and remains `PARTIAL / UNPROVEN`.
+- **Foundation devctl profile closure (2026-09-12)**: exact-source C08 run
+  `20260912T071438908670Z-e065e04e11685b66e1e74c2317d75ed3`
+  on `674b5d87bd256cc834b40469ab0694cf07337305` completed
+  `DONE / PROVEN` with `19/19` assertions and clean cleanup. The next
+  Foundation attempt allocated run
+  `20260912T071608435037Z-ca808b293ce3fb1734940c3ccae11647`
+  but was cancelled before any tuple after its Native log proved that the
+  generated runtime-profile filename `agent-v2-foundation-native.env`
+  disagreed with the approved `PT_DEV_PROFILE=chat-native-disposable`; new
+  devctl correctly rejected that split identity. `FoundationRuntimeClient`
+  now derives both the generated filename and launch environment from the same
+  approved profile identity while retaining the independent client profile
+  label. Focused runtime-client/restart tests pass `31/31`; the cancelled run
+  produced no product evidence and its diagnostic runtime directory is
+  intentionally retained.
+- **Foundation devctl feature closure (2026-09-12)**: the next bounded
+  Foundation diagnostic reached the Native dev runtime with matching profile
+  identity, then waited for embedded WebDriver while renderer and Gateway were
+  healthy. Runtime inspection proved the synchronized `desktop.mjs` launcher
+  had dropped the prior `PT_DESKTOP_E2E=true -> --features e2e-testing`
+  contract. The run was cancelled before any tuple or product claim, its exact
+  owned process group and ports were released, and the stale source lease was
+  terminated before reuse. The devctl Desktop owner now adds the existing
+  `e2e-testing` feature only for Acceptance launches and leaves ordinary
+  development unchanged. The same validation exposed that synchronous POSIX
+  stop polling treated an already-exited zombie child as live; the process
+  adapter now classifies `Z` state as exited after signaling the owned process
+  group. All `22/22` devctl tests and focused runtime-client/restart/scenario
+  tests pass.
+- **BASE-INTERRUPTED source closure (2026-09-12)**: Station now persists the
+  exact `LIFECYCLE_INTERRUPTED / agent.errors.lifecycleInterrupted`
+  `retryable=true / terminal=true` payload with only `turn_id` and
+  `reason_code` on both startup recovery and live lifecycle interruption.
+  Retrying clears the reused Assistant Message's stale `error_json` before the
+  new Attempt executes. Desktop projects the same terminal through message and
+  operation state, rejects malformed or unsafe details, renders localized
+  `Recover`, and closes the stream lifecycle so retry admission is not blocked.
+  The Harness uses one F06-style real in-flight Turn, a source-bound abrupt
+  Station restart, Station persistence/replay readback, real receiver action,
+  exactly one new cancelled recovery Attempt, full original Attempt and
+  terminal-event immutability checks, and reverse cleanup of Station state,
+  Desktop projection, recovery state, handoff, and cleanup locator. The Python
+  oracle independently recomputes all eight assertions for all four
+  Desktop/Browser x English/Simplified-Chinese tuples. Current local checks
+  pass: Station Agent packages, Desktop check, Desktop `621/621`, focused
+  Desktop `102/102`, Desktop production build, Foundation/oracle/static
+  `304/304`, Python compilation, Go formatting, hard rules, and
+  `git diff --check`. Agent Domain validation remains correctly
+  stale-source `UNPROVEN` until the clean checkpoint is deployed and C08 then
+  the unchanged 419-cell Foundation Gate execute.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

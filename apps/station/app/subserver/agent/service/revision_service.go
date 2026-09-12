@@ -428,6 +428,7 @@ func (s *RevisionService) admitAndExecute(
 			if reuseRetryAssistantMessage {
 				if err := tx.Model(&retryAssistantMessage).Updates(map[string]interface{}{
 					"status":     "pending",
+					"error_json": nil,
 					"updated_at": now,
 				}).Error; err != nil {
 					return err

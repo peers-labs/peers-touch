@@ -30,6 +30,7 @@ const (
 	AgentToolBudgetExhausted           Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
 	AgentContextOverflow               Code = "CONTEXT_OVERFLOW"
 	AgentLifecycleCancelled            Code = "LIFECYCLE_CANCELLED"
+	AgentLifecycleInterrupted          Code = "LIFECYCLE_INTERRUPTED"
 	AgentProviderCredentialMissing     Code = "PROVIDER_CREDENTIAL_MISSING"
 	AgentProviderFailed                Code = "AGENT_5001"
 	AgentCompressionFailed             Code = "AGENT_5002"
@@ -54,6 +55,7 @@ const (
 	AgentToolBudgetExhaustedLocaleKey           = "agent.errors.toolLoopBudgetExhausted"
 	AgentContextOverflowLocaleKey               = "agent.errors.contextOverflow"
 	AgentLifecycleCancelledLocaleKey            = "agent.errors.lifecycleCancelled"
+	AgentLifecycleInterruptedLocaleKey          = "agent.errors.lifecycleInterrupted"
 	AgentProviderCredentialMissingLocaleKey     = "agent.errors.providerCredentialMissing"
 )
 
@@ -210,6 +212,20 @@ func NewLifecycleCancelledPayload(resourceKind, resourceID string) *model.ErrorP
 		Details: map[string]string{
 			"resource_kind": resourceKind,
 			"resource_id":   resourceID,
+		},
+	}
+}
+
+func NewLifecycleInterruptedPayload(turnID, reasonCode string) *model.ErrorPayload {
+	return &model.ErrorPayload{
+		Error:     AgentLifecycleInterruptedLocaleKey,
+		ErrorType: string(AgentLifecycleInterrupted),
+		LocaleKey: AgentLifecycleInterruptedLocaleKey,
+		Retryable: true,
+		Terminal:  true,
+		Details: map[string]string{
+			"turn_id":     turnID,
+			"reason_code": reasonCode,
 		},
 	}
 }

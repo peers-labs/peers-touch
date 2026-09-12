@@ -63,6 +63,20 @@ function incompatibleCapabilityData(): Record<string, unknown> {
   };
 }
 
+function lifecycleInterruptedOutcome(): Record<string, unknown> {
+  return {
+    error: 'agent.errors.lifecycleInterrupted',
+    error_type: 'LIFECYCLE_INTERRUPTED',
+    locale_key: 'agent.errors.lifecycleInterrupted',
+    retryable: true,
+    terminal: true,
+    details: {
+      turn_id: 'turn-interrupted',
+      reason_code: 'station_restart_interrupted',
+    },
+  };
+}
+
 describe('Agent turn event identity projection', () => {
   it('increments the composer focus intent without mutating the draft', () => {
     const before = useChatStore.getState().composerFocusNonce;
@@ -165,6 +179,30 @@ describe('Agent turn event identity projection', () => {
       turnId: 'turn-1',
       conversationId: 'conversation-1',
       lastEventSeq: 3,
+    });
+  });
+
+  it('projects a typed interruption into the operation lifecycle', () => {
+    const result = applyOperationEventIdentity(
+      { 'conversation-1': operation() },
+      'conversation-1',
+      {
+        event: 'error',
+        data: {
+          seq: 4,
+          turnId: 'turn-interrupted',
+          conversationId: 'conversation-1',
+          streamGeneration: 10,
+          outcome_error: lifecycleInterruptedOutcome(),
+        },
+      },
+    );
+
+    expect(result.accepted).toBe(true);
+    expect(result.operations['conversation-1']).toMatchObject({
+      turnId: 'turn-interrupted',
+      runState: 'interrupted',
+      status: 'interrupted',
     });
   });
 
@@ -338,6 +376,158 @@ describe('Agent turn event identity projection', () => {
           resource_kind: 'turn',
           resource_id: 'turn-1',
         },
+      },
+    });
+  });
+
+  it('projects a live lifecycle interruption as interrupted with Recover', () => {
+    const data = {
+      error: 'station_restart_interrupted',
+      terminal_reason: 'station_restart_interrupted',
+      outcome_error: lifecycleInterruptedOutcome(),
+    };
+    const projected = reduceStreamEvent({
+      id: 'message-1',
+      role: 'assistant',
+      content: 'partial',
+      loading: true,
+      timestamp: 1,
+      turnId: 'turn-interrupted',
+    }, {
+      event: 'error',
+      data,
+    });
+
+    expect(projected).toMatchObject({
+      content: 'partial',
+      error: 'agent.errors.lifecycleInterrupted',
+      errorDetail: 'station_restart_interrupted',
+      terminalStatus: 'interrupted',
+      loading: false,
+      typedError: lifecycleInterruptedOutcome(),
+      resolution: {
+        type: 'recover',
+        turnId: 'turn-interrupted',
+        reasonCode: 'station_restart_interrupted',
+        label: 'agent.recovery.recover',
+      },
+    });
+    expect(isTerminalEvent({ event: 'error', data })).toBe(true);
+  });
+
+  it('keeps malformed lifecycle interruption events failed without Recover', () => {
+    const projected = reduceStreamEvent({
+      id: 'message-1',
+      role: 'assistant',
+      content: 'partial',
+      loading: true,
+      timestamp: 1,
+    }, {
+      event: 'error',
+      data: {
+        error: 'station_restart_interrupted',
+        outcome_error: {
+          ...lifecycleInterruptedOutcome(),
+          details: {
+            turn_id: 'turn-interrupted',
+            reason_code: 'station_restart_interrupted',
+            internal_error: 'must-not-enable-recovery',
+          },
+        },
+      },
+    });
+
+    expect(projected.terminalStatus).toBe('failed');
+    expect(projected.resolution).toBeNull();
+
+    const nonStationShape = reduceStreamEvent({
+      id: 'message-2',
+      role: 'assistant',
+      content: 'partial',
+      loading: true,
+      timestamp: 1,
+    }, {
+      event: 'error',
+      data: lifecycleInterruptedOutcome(),
+    });
+
+    expect(nonStationShape.terminalStatus).toBe('failed');
+    expect(nonStationShape.resolution).toBeNull();
+  });
+
+  it('projects lifecycle interruption recovery from an authoritative snapshot', () => {
+    const projected = reduceStreamEvent({
+      id: 'message-1',
+      role: 'assistant',
+      content: 'partial',
+      loading: true,
+      timestamp: 1,
+      turnId: 'turn-interrupted',
+    }, {
+      event: 'snapshot',
+      data: {
+        status: 'interrupted',
+        terminal_reason: 'station_restart_interrupted',
+        outcome_error: lifecycleInterruptedOutcome(),
+      },
+    });
+
+    expect(projected).toMatchObject({
+      error: 'agent.errors.lifecycleInterrupted',
+      terminalStatus: 'interrupted',
+      typedError: lifecycleInterruptedOutcome(),
+      resolution: {
+        type: 'recover',
+        turnId: 'turn-interrupted',
+        reasonCode: 'station_restart_interrupted',
+        label: 'agent.recovery.recover',
+      },
+    });
+  });
+
+  it('does not invent Recover for an interrupted snapshot without a typed outcome', () => {
+    const projected = reduceStreamEvent({
+      id: 'message-1',
+      role: 'assistant',
+      content: 'partial',
+      loading: true,
+      timestamp: 1,
+    }, {
+      event: 'snapshot',
+      data: {
+        status: 'interrupted',
+        terminal_reason: 'station_restart_interrupted',
+      },
+    });
+
+    expect(projected.terminalStatus).toBe('interrupted');
+    expect(projected.typedError).toBeUndefined();
+    expect(projected.resolution).toBeNull();
+  });
+
+  it('restores lifecycle interruption recovery from a persisted typed error', () => {
+    const projected = cachedMessageToChatMessage({
+      messageId: 'message-1',
+      conversationId: 'conversation-1',
+      turnId: 'turn-interrupted',
+      role: 'assistant',
+      status: 'interrupted',
+      content: 'partial',
+      seq: 1,
+      errorJson: JSON.stringify(lifecycleInterruptedOutcome()),
+      createdAt: '2026-09-11T00:00:00.000Z',
+      updatedAt: '2026-09-11T00:00:00.000Z',
+    });
+
+    expect(projected).toMatchObject({
+      error: 'agent.errors.lifecycleInterrupted',
+      terminalStatus: 'interrupted',
+      typedError: lifecycleInterruptedOutcome(),
+      resolution: {
+        type: 'recover',
+        turnId: 'turn-interrupted',
+        reasonCode: 'station_restart_interrupted',
+        label: 'agent.recovery.recover',
       },
     });
   });

@@ -48,18 +48,21 @@ export function inspectProcess(pid) {
 
   const result = spawnSync(
     'ps',
-    ['-p', String(pid), '-o', 'lstart=', '-o', 'command='],
+    ['-p', String(pid), '-o', 'state=', '-o', 'lstart=', '-o', 'command='],
     { encoding: 'utf8', timeout: 10_000 },
   );
   if (result.status !== 0 || !result.stdout.trim()) {
     return undefined;
   }
   const line = result.stdout.trim();
-  const dateText = line.slice(0, 24);
+  const match = /^(\S+)\s+(.{24})\s+(.*)$/u.exec(line);
+  if (!match || match[1].startsWith('Z')) {
+    return undefined;
+  }
   return {
     pid,
-    commandLine: line.slice(24).trim(),
-    startedAt: new Date(dateText).toISOString(),
+    commandLine: match[3],
+    startedAt: new Date(match[2]).toISOString(),
   };
 }
 

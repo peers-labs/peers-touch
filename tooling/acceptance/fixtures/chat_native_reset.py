@@ -1367,11 +1367,6 @@ def seed_same_station_contact(
 ) -> None:
     environment = acceptance_station_environment(station_url, environment_name)
     verify_disposable_station_runtime(environment)
-    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") != LOCAL_SOURCE_RUNTIME:
-        raise RuntimeError(
-            "same-Station canonical contact seeding currently requires a "
-            "local-source Station"
-        )
     if (
         actor.home_station_peer_id != peer.home_station_peer_id
         or actor.home_station_peer_id == ""
@@ -1397,6 +1392,155 @@ def seed_same_station_contact(
         "%Y-%m-%d %H:%M:%S+00:00",
         time.gmtime(FIXTURE_FRIENDSHIP_CREATED_AT_UNIX + 1),
     )
+    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") != LOCAL_SOURCE_RUNTIME:
+        sql = f"""
+BEGIN;
+INSERT INTO federation (
+  federation_id, name, description, status, policy_type,
+  sequencer_station_peer_id, genesis_hash, head_hash, head_seq,
+  created_by_actor_ptid, created_by_station_peer_id, created_at, updated_at
+) VALUES (
+  {_sql_literal(friendship.federation_id)},
+  'chat-native-acceptance',
+  '',
+  'active',
+  'single_admin',
+  {_sql_literal(friendship.sender.home_station_peer_id)},
+  {_sql_bytes(bytes(32))},
+  {_sql_bytes(bytes(32))},
+  0,
+  {_sql_literal(friendship.sender.ptid)},
+  {_sql_literal(friendship.sender.home_station_peer_id)},
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX})
+)
+ON CONFLICT (federation_id) DO UPDATE SET
+  status = EXCLUDED.status,
+  sequencer_station_peer_id = EXCLUDED.sequencer_station_peer_id,
+  created_by_actor_ptid = EXCLUDED.created_by_actor_ptid,
+  created_by_station_peer_id = EXCLUDED.created_by_station_peer_id,
+  updated_at = EXCLUDED.updated_at;
+INSERT INTO federation_station_membership (
+  federation_id, station_peer_id, station_name, station_url, role,
+  status, joined_at, approved_by_event_id
+) VALUES (
+  {_sql_literal(friendship.federation_id)},
+  {_sql_literal(friendship.sender.home_station_peer_id)},
+  {_sql_literal(friendship.sender.home_station_domain)},
+  {_sql_literal(station_url.rstrip("/"))},
+  'founder',
+  'active',
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
+  ''
+)
+ON CONFLICT (federation_id, station_peer_id) DO UPDATE SET
+  station_name = EXCLUDED.station_name,
+  station_url = EXCLUDED.station_url,
+  role = EXCLUDED.role,
+  status = EXCLUDED.status;
+INSERT INTO social_friend_requests (
+  request_id, federation_id, authority_station_peer_id,
+  sender_ptid, receiver_ptid, sender_actor_ref_bytes,
+  receiver_actor_ref_bytes, sender_home_station_peer_id,
+  receiver_home_station_peer_id, message, state, sequence,
+  last_event_hash, last_event_bytes, authority_confirmed,
+  created_at, responded_at
+) VALUES (
+  {_sql_literal(friendship.request_id)},
+  {_sql_literal(friendship.federation_id)},
+  {_sql_literal(friendship.receiver.home_station_peer_id)},
+  {_sql_literal(friendship.sender.ptid)},
+  {_sql_literal(friendship.receiver.ptid)},
+  {_sql_bytes(sender_ref)},
+  {_sql_bytes(receiver_ref)},
+  {_sql_literal(friendship.sender.home_station_peer_id)},
+  {_sql_literal(friendship.receiver.home_station_peer_id)},
+  '',
+  2,
+  2,
+  {_sql_bytes(friendship.accepted_event_hash)},
+  {_sql_bytes(friendship.accepted_event_bytes)},
+  TRUE,
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX + 1})
+)
+ON CONFLICT (request_id) DO UPDATE SET
+  federation_id = EXCLUDED.federation_id,
+  authority_station_peer_id = EXCLUDED.authority_station_peer_id,
+  sender_ptid = EXCLUDED.sender_ptid,
+  receiver_ptid = EXCLUDED.receiver_ptid,
+  sender_actor_ref_bytes = EXCLUDED.sender_actor_ref_bytes,
+  receiver_actor_ref_bytes = EXCLUDED.receiver_actor_ref_bytes,
+  sender_home_station_peer_id = EXCLUDED.sender_home_station_peer_id,
+  receiver_home_station_peer_id = EXCLUDED.receiver_home_station_peer_id,
+  state = EXCLUDED.state,
+  sequence = EXCLUDED.sequence,
+  last_event_hash = EXCLUDED.last_event_hash,
+  last_event_bytes = EXCLUDED.last_event_bytes,
+  authority_confirmed = EXCLUDED.authority_confirmed,
+  created_at = EXCLUDED.created_at,
+  responded_at = EXCLUDED.responded_at;
+INSERT INTO social_relationship_projections (
+  owner_ptid, peer_ptid, request_id, accepted_event_id,
+  accepted_event_hash, accepted_at
+) VALUES
+  (
+    {_sql_literal(actor.ptid)},
+    {_sql_literal(peer.ptid)},
+    {_sql_literal(friendship.request_id)},
+    {_sql_literal(friendship.accepted_event_id)},
+    {_sql_bytes(friendship.accepted_event_hash)},
+    to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX + 1})
+  ),
+  (
+    {_sql_literal(peer.ptid)},
+    {_sql_literal(actor.ptid)},
+    {_sql_literal(friendship.request_id)},
+    {_sql_literal(friendship.accepted_event_id)},
+    {_sql_bytes(friendship.accepted_event_hash)},
+    to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX + 1})
+  )
+ON CONFLICT (owner_ptid, peer_ptid) DO UPDATE SET
+  request_id = EXCLUDED.request_id,
+  accepted_event_id = EXCLUDED.accepted_event_id,
+  accepted_event_hash = EXCLUDED.accepted_event_hash,
+  accepted_at = EXCLUDED.accepted_at;
+DO $acceptance$
+DECLARE
+  accepted_request_count integer;
+  relationship_count integer;
+  membership_count integer;
+BEGIN
+  SELECT count(*) INTO accepted_request_count
+  FROM social_friend_requests
+  WHERE request_id = {_sql_literal(friendship.request_id)}
+    AND state = 2
+    AND sequence = 2
+    AND authority_confirmed = TRUE;
+  SELECT count(*) INTO relationship_count
+  FROM social_relationship_projections
+  WHERE request_id = {_sql_literal(friendship.request_id)}
+    AND owner_ptid IN (
+      {_sql_literal(actor.ptid)},
+      {_sql_literal(peer.ptid)}
+    );
+  SELECT count(*) INTO membership_count
+  FROM federation_station_membership
+  WHERE federation_id = {_sql_literal(friendship.federation_id)}
+    AND station_peer_id =
+      {_sql_literal(friendship.sender.home_station_peer_id)}
+    AND status = 'active';
+  IF accepted_request_count <> 1 OR relationship_count <> 2
+    OR membership_count <> 1 THEN
+    RAISE EXCEPTION 'same-Station canonical accepted relationship is incomplete';
+  END IF;
+END
+$acceptance$;
+COMMIT;
+"""
+        _remote_psql(environment, sql)
+        return
+
     database = environment["PT_ACCEPTANCE_LOCAL_DATABASE"]
     with closing(sqlite3.connect(database, timeout=10)) as connection:
         connection.execute("PRAGMA busy_timeout = 10000")

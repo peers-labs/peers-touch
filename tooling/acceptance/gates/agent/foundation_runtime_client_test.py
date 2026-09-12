@@ -223,6 +223,7 @@ class FoundationClientSpecTest(unittest.TestCase):
             client.stop()
 
         self.assertEqual(environment["PT_DEV_PROFILE"], "one")
+        self.assertEqual(client.runtime_profile.name, "one.env")
         self.assertEqual(environment["PT_PROFILE"], "foundation-browser")
         self.assertEqual(environment["GATEWAY_PORT"], "23030")
         self.assertEqual(environment["WEB_PORT"], "23210")
@@ -243,6 +244,36 @@ class FoundationClientSpecTest(unittest.TestCase):
             environment["PEERS_ACTOR_IDENTITY_ROOT"],
             str(root / "actor-identity"),
         )
+        self.assertNotIn("PT_AGENT_PROVIDER_API_KEY", environment)
+    def test_runtime_profile_filename_matches_approved_profile_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {"PT_ACCEPTANCE_APPROVED_PROFILE": "chat-native-disposable"},
+        ):
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="http://station.example/",
+                profile_env={
+                    "PT_DEV_PROFILE": "chat-native-disposable",
+                    "PT_STATION_DEPLOY_ENV": "station-1",
+                },
+            )
+
+            environment = client.launch_environment()
+
+            self.assertEqual(
+                client.runtime_profile.name,
+                "chat-native-disposable.env",
+            )
+            self.assertEqual(
+                environment["PT_DEV_PROFILE"],
+                "chat-native-disposable",
+            )
+            self.assertEqual(
+                environment["PT_DEV_PROFILE_FILE"],
+                str(client.runtime_profile),
+            )
+            client.stop()
         self.assertNotIn("PT_AGENT_PROVIDER_API_KEY", environment)
 
     def test_runtime_pair_requires_exact_native_and_browser_clients(self) -> None:

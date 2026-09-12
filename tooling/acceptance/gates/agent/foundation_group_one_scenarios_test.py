@@ -18,6 +18,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_executor_unavailable,
     evaluate_base_forbidden_actor,
     evaluate_base_incompatible_capability,
+    evaluate_base_interrupted,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -1237,6 +1238,142 @@ def valid_cancelled_capture() -> dict[str, object]:
             "sourceTurnId": "turn-cancelled",
             "sourceSequence": 3,
             "sourceEventType": "cancelled",
+        },
+    }
+
+
+def valid_interrupted_capture(
+    locale: str = "en",
+) -> dict[str, object]:
+    recovery_copy = {
+        "en": "Recover",
+        "zh-CN": "恢复",
+    }[locale]
+    error_copy = {
+        "en": "This operation was interrupted before completion.",
+        "zh-CN": "该操作在完成前被中断。",
+    }[locale]
+    outcome = {
+        "error": "agent.errors.lifecycleInterrupted",
+        "error_type": "LIFECYCLE_INTERRUPTED",
+        "locale_key": "agent.errors.lifecycleInterrupted",
+        "retryable": True,
+        "terminal": True,
+        "details": {
+            "turn_id": "turn-interrupted",
+            "reason_code": "station_restart_interrupted",
+        },
+    }
+    source = {
+        "turnId": "turn-interrupted",
+        "attemptId": "attempt-interrupted",
+        "attemptStatus": "interrupted",
+        "attemptErrorCode": "station_restart_interrupted",
+        "attemptRecordHash": "1" * 64,
+        "terminalEventSequence": 4,
+        "terminalEventHash": "e" * 64,
+        "stateHash": "f" * 64,
+    }
+    return {
+        "outcome": outcome,
+        "receiver": {
+            "visible": True,
+            "terminalStatus": "interrupted",
+            "errorType": "LIFECYCLE_INTERRUPTED",
+            "turnId": "turn-interrupted",
+            "messageId": "message-interrupted",
+            "reasonCode": "station_restart_interrupted",
+            "errorText": error_copy,
+            "expectedErrorText": error_copy,
+            "recoveryVisible": True,
+            "recoveryText": recovery_copy,
+            "expectedRecoveryText": recovery_copy,
+            "recoveryExecuted": True,
+        },
+        "recovery": {
+            "action": "recover",
+            "executed": True,
+            "attemptCountBefore": 1,
+            "attemptCountAfter": 2,
+            "sourceTurnId": "turn-interrupted",
+            "sourceAttemptId": "attempt-interrupted",
+            "recoveryAttemptId": "attempt-recovery",
+            "recoveryAttemptStatus": "cancelled",
+            "cancellationStatus": "cancelled",
+            "sourceAttemptStatusAfter": "interrupted",
+            "sourceTerminalHashBefore": "e" * 64,
+            "sourceTerminalHashAfter": "e" * 64,
+            "completedInferenceCount": 0,
+        },
+        "station": {
+            "conversationId": "conversation-interrupted",
+            "turnId": "turn-interrupted",
+            "attemptId": "attempt-interrupted",
+            "messageId": "message-interrupted",
+            "turnStatus": "interrupted",
+            "attemptStatus": "interrupted",
+            "attemptErrorCode": "station_restart_interrupted",
+            "messageStatus": "interrupted",
+            "terminalReason": "station_restart_interrupted",
+            "persistedOutcome": copy.deepcopy(outcome),
+            "terminalEventCount": 1,
+            "errorEventCount": 1,
+            "doneEventCount": 0,
+            "liveDoneEventCount": 0,
+            "recoveryAttemptCount": 1,
+            "recoveryAttemptId": "attempt-recovery",
+            "sourceBeforeRecovery": copy.deepcopy(source),
+            "sourceAfterRecovery": copy.deepcopy(source),
+        },
+        "replay": {
+            "sourceHash": "a" * 64,
+            "replayHash": "a" * 64,
+            "equal": True,
+            "snapshot": {
+                "sourceTransport": "station-sse",
+                "sourcePtidHash": "a" * 64,
+                "sourceConversationId": "conversation-interrupted",
+                "sourceTurnId": "turn-interrupted",
+                "sourceSequence": 4,
+                "sourceEventType": "error",
+                "status": "interrupted",
+                "reasonCode": "station_restart_interrupted",
+                "attemptId": "attempt-interrupted",
+                "messageId": "message-interrupted",
+            },
+        },
+        "cleanup": {
+            "recoveryAttemptSettled": True,
+            "localProjectionCleared": True,
+            "conversationDeleted": True,
+            "cleanupComplete": True,
+            "handoffCleared": True,
+            "recoveryRecordCleared": True,
+        },
+        "runtimeEvent": {
+            "eventId": "b" * 64,
+            "eventType": "error",
+            "sequence": 4,
+            "observedAt": "2026-09-11T08:30:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "c" * 64,
+            "conversationIdHash": "d" * 64,
+            "payloadHash": "e" * 64,
+            "errorType": "LIFECYCLE_INTERRUPTED",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "a" * 64,
+            "sourceConversationId": "conversation-interrupted",
+            "sourceTurnId": "turn-interrupted",
+            "sourceSequence": 4,
+            "sourceEventType": "error",
+        },
+        "restart": {
+            "outageObserved": True,
+            "beforeStartedAt": "2026-09-11T08:29:00Z",
+            "afterStartedAt": "2026-09-11T08:29:05Z",
+            "beforeCommit": "a" * 12,
+            "afterCommit": "a" * 12,
+            "sourceCommit": "a" * 40,
         },
     }
 
@@ -3114,6 +3251,153 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "cleanupComplete",
         ):
             evaluate_base_cancelled(capture)
+
+    def test_interrupted_accepts_exact_production_facts(self) -> None:
+        for locale in ("en", "zh-CN"):
+            with self.subTest(locale=locale):
+                assertions = evaluate_base_interrupted(
+                    valid_interrupted_capture(locale),
+                )
+                self.assertEqual(
+                    set(assertions),
+                    {
+                        "typedInterruptionProjected",
+                        "localizedRecoveryVisible",
+                        "recoverExecuted",
+                        "interruptedPersisted",
+                        "exactlyOneAuthoritativeTerminal",
+                        "zeroCompletedInference",
+                        "replayEqual",
+                        "cleanupComplete",
+                    },
+                )
+                self.assertTrue(all(assertions.values()))
+
+    def test_interrupted_rejects_unsafe_details(self) -> None:
+        capture = valid_interrupted_capture()
+        capture["outcome"]["details"]["actor_id"] = "private-actor"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "typedInterruptionProjected",
+        ):
+            evaluate_base_interrupted(capture)
+
+    def test_interrupted_requires_exact_typed_error_contract(self) -> None:
+        for key, value in (
+            ("error_type", "LIFECYCLE_CANCELLED"),
+            ("locale_key", "agent.errors.lifecycleCancelled"),
+            ("retryable", False),
+            ("terminal", False),
+        ):
+            with self.subTest(key=key):
+                capture = valid_interrupted_capture()
+                capture["outcome"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "typedInterruptionProjected",
+                ):
+                    evaluate_base_interrupted(capture)
+
+    def test_interrupted_requires_recover_ui_and_action(self) -> None:
+        for section, key, value, assertion in (
+            ("receiver", "recoveryText", "Retry", "localizedRecoveryVisible"),
+            ("receiver", "recoveryExecuted", False, "recoverExecuted"),
+            ("recovery", "attemptCountAfter", 3, "recoverExecuted"),
+        ):
+            with self.subTest(section=section, key=key):
+                capture = valid_interrupted_capture()
+                capture[section][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    assertion,
+                ):
+                    evaluate_base_interrupted(capture)
+
+    def test_interrupted_requires_persisted_station_statuses(self) -> None:
+        for key in ("turnStatus", "attemptStatus", "messageStatus"):
+            with self.subTest(key=key):
+                capture = valid_interrupted_capture()
+                capture["station"][key] = "completed"
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "interruptedPersisted",
+                ):
+                    evaluate_base_interrupted(capture)
+        capture = valid_interrupted_capture()
+        capture["station"]["attemptErrorCode"] = "provider_failed"
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "interruptedPersisted",
+        ):
+            evaluate_base_interrupted(capture)
+
+    def test_interrupted_rejects_recovery_source_mutation(self) -> None:
+        capture = valid_interrupted_capture()
+        capture["station"]["sourceAfterRecovery"][
+            "terminalEventHash"
+        ] = "0" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "recoverExecuted",
+        ):
+            evaluate_base_interrupted(capture)
+
+        capture = valid_interrupted_capture()
+        capture["station"]["sourceAfterRecovery"][
+            "attemptRecordHash"
+        ] = "0" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "recoverExecuted",
+        ):
+            evaluate_base_interrupted(capture)
+
+    def test_interrupted_requires_one_error_terminal_and_zero_done(
+        self,
+    ) -> None:
+        for key, value, assertion in (
+            ("terminalEventCount", 2, "exactlyOneAuthoritativeTerminal"),
+            ("errorEventCount", 2, "exactlyOneAuthoritativeTerminal"),
+            ("doneEventCount", 1, "zeroCompletedInference"),
+        ):
+            with self.subTest(key=key):
+                capture = valid_interrupted_capture()
+                capture["station"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    assertion,
+                ):
+                    evaluate_base_interrupted(capture)
+        capture = valid_interrupted_capture()
+        capture["recovery"]["completedInferenceCount"] = 1
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroCompletedInference",
+        ):
+            evaluate_base_interrupted(capture)
+
+    def test_interrupted_rejects_replay_source_identity_drift(self) -> None:
+        capture = valid_interrupted_capture()
+        capture["replay"]["snapshot"]["sourceTurnId"] = "turn-other"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "replayEqual",
+        ):
+            evaluate_base_interrupted(capture)
+
+    def test_interrupted_requires_cleanup(self) -> None:
+        capture = valid_interrupted_capture()
+        capture["cleanup"]["recoveryAttemptSettled"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_interrupted(capture)
 
     def test_context_overflow_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_context_overflow(

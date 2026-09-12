@@ -29,6 +29,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_executor_unavailable,
     evaluate_base_forbidden_actor,
     evaluate_base_incompatible_capability,
+    evaluate_base_interrupted,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -223,6 +224,9 @@ def assert_group_one_capture(
         "BASE-INCOMPATIBLE_CAPABILITY": (
             lambda facts: evaluate_base_incompatible_capability(facts)
         ),
+        "BASE-INTERRUPTED": (
+            lambda facts: evaluate_base_interrupted(facts)
+        ),
         "AS-F02": lambda facts: evaluate_as_f02(facts),
         "AS-F03": lambda facts: evaluate_as_f03(facts),
         "AS-F04": lambda facts: evaluate_as_f04(
@@ -269,6 +273,7 @@ def assert_group_one_capture(
         "BASE-DUPLICATE_CONFLICT",
         "BASE-FORBIDDEN_ACTOR",
         "BASE-INCOMPATIBLE_CAPABILITY",
+        "BASE-INTERRUPTED",
     }:
         runtime_event = scenario_facts.get("runtimeEvent")
         runtime_role = capture.get("runtime-events")
@@ -297,6 +302,7 @@ def assert_group_one_capture(
             "BASE-DUPLICATE_CONFLICT",
             "BASE-FORBIDDEN_ACTOR",
             "BASE-INCOMPATIBLE_CAPABILITY",
+            "BASE-INTERRUPTED",
         }:
             expected_role.update(
                 {

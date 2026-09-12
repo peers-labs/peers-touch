@@ -449,7 +449,11 @@ class FoundationRuntimeClient:
         self.profile_env = dict(profile_env)
         self.startup_timeout = startup_timeout
         self.run_root = spec.storage_root.parent
-        self.runtime_profile = self.run_root / f"{spec.profile}.env"
+        self.dev_profile = os.environ.get(
+            "PT_ACCEPTANCE_APPROVED_PROFILE",
+            "one",
+        )
+        self.runtime_profile = self.run_root / f"{self.dev_profile}.env"
         self.log_path = self.run_root / f"{spec.runtime}.log"
         self.process: subprocess.Popen[str] | None = None
         self._process_group_id: int | None = None
@@ -469,7 +473,7 @@ class FoundationRuntimeClient:
         self.actor_identity_root.chmod(0o700)
         values = {
             **self.profile_env,
-            "PT_DEV_PROFILE": os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one"),
+            "PT_DEV_PROFILE": self.dev_profile,
             "PT_STATION_MODE": "remote",
             "PT_STATION_URL": self._station_url,
             "PEERS_STATION_URL": self._station_url,
@@ -490,7 +494,7 @@ class FoundationRuntimeClient:
     def launch_environment(self) -> dict[str, str]:
         return {
             "WORKTREE_ID": self.spec.worktree.name,
-            "PT_DEV_PROFILE": os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one"),
+            "PT_DEV_PROFILE": self.dev_profile,
             "PT_DEV_PROFILE_FILE": str(self.runtime_profile),
             "PT_PROFILE": self.spec.profile,
             "GATEWAY_PORT": str(self.spec.gateway_port),

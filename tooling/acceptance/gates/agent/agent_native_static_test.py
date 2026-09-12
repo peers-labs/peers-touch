@@ -513,17 +513,24 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "foundationCleanupLocatorMissing",
             self.source,
         )
-        self.assertIn(
-            "state: 'deleted'",
-            self.source,
-        )
-        self.assertIn(
-            "removeFoundationF06Handoff(input.scenarioKey, false)",
-            self.source,
-        )
         cleanup_start = self.source.index(
             "async function cleanupFoundationF06Scenario",
         )
+        cleanup_end = self.source.index(
+            "async function runFoundationF06Complete",
+            cleanup_start,
+        )
+        cleanup = self.source[cleanup_start:cleanup_end]
+        self.assertIn(
+            "removeFoundationF06Handoff(input.scenarioKey);",
+            cleanup,
+        )
+        self.assertNotIn(
+            "removeFoundationF06Handoff(input.scenarioKey, false)",
+            cleanup,
+        )
+        self.assertIn("cleanupLocatorCleared", cleanup)
+        self.assertIn("localProjectionCleared", cleanup)
         cleanup_identity_check = self.source.index(
             "cleanupLocator.conversationId !== input.conversationId",
             cleanup_start,

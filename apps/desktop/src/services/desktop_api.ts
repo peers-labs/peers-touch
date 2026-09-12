@@ -2500,13 +2500,15 @@ export interface AgentErrorResolutionAction {
     | 'checkConnection'
     | 'openOriginal'
     | 'switchAccount'
-    | 'chooseCompatibleModel';
+    | 'chooseCompatibleModel'
+    | 'recover';
   cliId?: string;
   providerId?: string;
   existingCommandId?: string;
   resourceKind?: string;
   resourceId?: string;
   capabilityId?: string;
+  turnId?: string;
   reasonCode?: string;
   label: string;
 }
@@ -2520,6 +2522,9 @@ export const AGENT_INCOMPATIBLE_CAPABILITY_ERROR_TYPE =
   'RUNTIME_INCOMPATIBLE_CAPABILITY';
 export const AGENT_INCOMPATIBLE_CAPABILITY_LOCALE_KEY =
   'agent.errors.incompatibleCapability';
+export const AGENT_LIFECYCLE_INTERRUPTED_ERROR_TYPE = 'LIFECYCLE_INTERRUPTED';
+export const AGENT_LIFECYCLE_INTERRUPTED_LOCALE_KEY =
+  'agent.errors.lifecycleInterrupted';
 
 export type AgentForbiddenActorError = AgentTypedErrorPayload & {
   details: {
@@ -2535,12 +2540,20 @@ export type AgentIncompatibleCapabilityError = AgentTypedErrorPayload & {
   };
 };
 
+export type AgentLifecycleInterruptedError = AgentTypedErrorPayload & {
+  details: {
+    turn_id: string;
+    reason_code: string;
+  };
+};
+
 const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'resource_kind',
   'resource_id',
   'expected_revision',
   'actual_revision',
   'capability_id',
+  'turn_id',
   'reason_code',
 ] as const;
 
@@ -2553,12 +2566,13 @@ function agentTypedErrorBoolean(value: unknown): boolean | undefined {
 
 function agentTypedErrorDetails(
   data: Record<string, unknown>,
-): Record<string, string> {
+): Record<string, string> | undefined {
   if (data.details && typeof data.details === 'object' && !Array.isArray(data.details)) {
-    return Object.fromEntries(
-      Object.entries(data.details as Record<string, unknown>)
-        .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-    );
+    const entries = Object.entries(data.details as Record<string, unknown>);
+    if (entries.some(([, value]) => typeof value !== 'string')) {
+      return undefined;
+    }
+    return Object.fromEntries(entries) as Record<string, string>;
   }
   return Object.fromEntries(
     AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS
@@ -2583,14 +2597,37 @@ export function projectAgentTypedErrorPayload(
   if (!errorType || !localeKey || retryable === undefined || terminal === undefined) {
     return undefined;
   }
+  const details = agentTypedErrorDetails(data);
+  if (!details) {
+    return undefined;
+  }
   return {
     error: typeof data.error === 'string' ? data.error : localeKey,
     error_type: errorType,
     locale_key: localeKey,
     retryable,
     terminal,
-    details: agentTypedErrorDetails(data),
+    details,
   };
+}
+
+export function projectAgentTurnOutcomeErrorPayload(
+  data: Record<string, unknown>,
+): AgentTypedErrorPayload | undefined {
+  const outcome = data.outcome_error ?? data.outcomeError;
+  if (!outcome || typeof outcome !== 'object' || Array.isArray(outcome)) {
+    return undefined;
+  }
+  return projectAgentTypedErrorPayload(outcome as Record<string, unknown>);
+}
+
+export function projectAgentTurnErrorPayload(
+  data: Record<string, unknown>,
+): AgentTypedErrorPayload | undefined {
+  if (data.outcome_error !== undefined || data.outcomeError !== undefined) {
+    return projectAgentTurnOutcomeErrorPayload(data);
+  }
+  return projectAgentTypedErrorPayload(data);
 }
 
 export function isAgentForbiddenActorError(
@@ -2635,6 +2672,27 @@ export function isAgentIncompatibleCapabilityError(
   );
 }
 
+export function isAgentLifecycleInterruptedError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentLifecycleInterruptedError {
+  if (
+    error?.error_type !== AGENT_LIFECYCLE_INTERRUPTED_ERROR_TYPE
+    || error.locale_key !== AGENT_LIFECYCLE_INTERRUPTED_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'reason_code'
+    && detailKeys[1] === 'turn_id'
+    && error.details.turn_id.trim().length > 0
+    && error.details.reason_code.trim().length > 0
+  );
+}
+
 export function resolveAgentTypedErrorAction(
   error: AgentTypedErrorPayload | null | undefined,
 ): AgentErrorResolutionAction | undefined {
@@ -2652,6 +2710,14 @@ export function resolveAgentTypedErrorAction(
       capabilityId: error.details.capability_id,
       reasonCode: error.details.reason_code,
       label: 'agent.recovery.chooseCompatibleModel',
+    };
+  }
+  if (isAgentLifecycleInterruptedError(error)) {
+    return {
+      type: 'recover',
+      turnId: error.details.turn_id,
+      reasonCode: error.details.reason_code,
+      label: 'agent.recovery.recover',
     };
   }
   if (
@@ -6730,7 +6796,10 @@ async function consumeAgentSSE(
 export function classifyAgentTurnTerminalEvent(
   event: StreamEvent,
 ): 'completed' | 'cancelled' | 'queued' | 'failed' | 'interrupted' | null {
-  if (event.event === 'error') return 'failed';
+  if (event.event === 'error') {
+    const outcome = projectAgentTurnOutcomeErrorPayload(event.data);
+    return isAgentLifecycleInterruptedError(outcome) ? 'interrupted' : 'failed';
+  }
   if (event.event === 'queued' || event.event === 'admission_replayed') return 'queued';
   if (event.event === 'done') return 'completed';
   if (event.event === 'cancelled') return 'cancelled';
@@ -6746,7 +6815,7 @@ export function classifyAgentTurnTerminalEvent(
 export function agentTurnStreamErrorFromData(
   data: Record<string, unknown>,
 ): AgentTurnStreamError {
-  const typedError = projectAgentTypedErrorPayload(data);
+  const typedError = projectAgentTurnErrorPayload(data);
   const error = new Error(
     typedError?.locale_key
     || (typeof data.error === 'string' ? data.error : 'agent.error.streamFailed'),
@@ -6756,7 +6825,10 @@ export function agentTurnStreamErrorFromData(
   if (mappedResolution) {
     error.resolution = mappedResolution;
   } else if (data.resolution && typeof data.resolution === 'object') {
-    error.resolution = data.resolution as AgentErrorResolutionAction;
+    const suppliedResolution = data.resolution as AgentErrorResolutionAction;
+    if (suppliedResolution.type !== 'recover') {
+      error.resolution = suppliedResolution;
+    }
   }
   if (typeof data.detail === 'string') error.errorDetail = data.detail;
   if (typeof data.providerId === 'string') {
@@ -6983,12 +7055,13 @@ export function streamAgentTurn(
           settled = true;
           return true;
         }
-        if (terminal === 'completed' || terminal === 'cancelled' || terminal === 'queued') {
+        if (
+          terminal === 'completed'
+          || terminal === 'cancelled'
+          || terminal === 'queued'
+          || terminal === 'interrupted'
+        ) {
           onDone();
-          settled = true;
-          return true;
-        }
-        if (terminal === 'interrupted') {
           settled = true;
           return true;
         }
@@ -7249,7 +7322,12 @@ export function streamAgentTurn(
           event: payload.event,
           data: payload.data || {},
         });
-        if (terminal === 'completed' || terminal === 'cancelled' || terminal === 'queued') {
+        if (
+          terminal === 'completed'
+          || terminal === 'cancelled'
+          || terminal === 'queued'
+          || terminal === 'interrupted'
+        ) {
           unlistenLive?.();
           unlistenLive = undefined;
           onDone();
@@ -7259,9 +7337,6 @@ export function streamAgentTurn(
           unlistenLive?.();
           unlistenLive = undefined;
           onError(agentTurnStreamErrorFromData(payload.data || {}));
-          settle();
-        }
-        if (terminal === 'interrupted') {
           settle();
         }
       });

@@ -22,20 +22,20 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Verify incompatible-capability binding deletion before deleting its parent Agent, then rerun exact-source C08 and Foundation |
+| Current step | Checkpoint synchronized devctl Acceptance launch and owned-process cleanup, then resume C08-first exact-source proof |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source C08 run `20260912T033904525557Z-d6822c40db31c543386eb94ec994b4e0` on `1362900aa41d2afa2d7f912fb34f8abc1e6bf30d` passed `DONE / PROVEN` with 19/19 assertions and clean cleanup；the same-source Foundation run crossed `BASE-CANCELLED` |
-| Current action | Move capability-binding deletion readback before parent Agent deletion so the cleanup proof observes the binding resource while its list API remains valid |
-| Next action | Commit the cleanup-order correction, rebuild and smoke the dedicated Acceptance binary, deploy exact source, rerun C08 first, then continue the unchanged Foundation matrix |
+| Last completed | C08 run `20260912T074611647530Z-f4a13d920f499f43bd630d6d9fa2042a` on `a89bcbb9342c21c4ffd07d3efca78ad00cd8ad64` completed `DONE / PROVEN` with `19/19` assertions and clean cleanup；the next Foundation diagnostic reached a healthy Native app/gateway but new devctl omitted the Acceptance feature, so embedded WebDriver never opened |
+| Current action | Finalize devctl Acceptance feature propagation and POSIX zombie-aware owned-process cleanup |
+| Next action | Redeploy exact source, rerun C08 first, then continue the unchanged Foundation matrix |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | none；Native AS-F06 and Browser `BASE-CANCELLED` are crossed；`BASE-INCOMPATIBLE_CAPABILITY` child-readback ordering is the active recoverable correction；BASE-CONTEXT-OVERFLOW receiver sampling remains pending later runtime traversal；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
+| Blockers | none；Native AS-F06, Browser `BASE-CANCELLED`, and `BASE-INCOMPATIBLE_CAPABILITY` are crossed；`BASE-INTERRUPTED` is source-complete locally but exact-source runtime proof is pending；BASE-CONTEXT-OVERFLOW receiver sampling remains pending later runtime traversal；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 run `20260912T033904525557Z-d6822c40db31c543386eb94ec994b4e0` is `DONE / PROVEN` on `1362900aa`；same-source Foundation run `20260912T034122773227Z-6f85ea63620dd1dca04bff43347bb8ba` crossed AS-F06 and `BASE-CANCELLED`, then failed only `BASE-INCOMPATIBLE_CAPABILITY / cleanupComplete`；telemetry proves all cleanup actions passed and active binding count was zero before parent deletion, but post-parent child-list readback returned `agent.capabilityBindingListFailed`；outer cleanup remained `DONE / PROVEN` |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 run `20260912T074611647530Z-f4a13d920f499f43bd630d6d9fa2042a` is `DONE / PROVEN` on `a89bcbb9342c21c4ffd07d3efca78ad00cd8ad64` with `19/19` assertions and clean cleanup；the following Foundation diagnostic was cancelled before any tuple after runtime evidence isolated missing devctl Acceptance feature propagation；current local evidence passes Desktop `621/621`, focused Desktop `102/102`, Foundation/oracle/static `304/304`, Station Agent packages, Desktop check/build, provisioning `159/159`, focused Fixture `43/43`, runtime client/restart/scenario `82/82`, devctl `22/22`, hard rules, Python compile, Go formatting, and diff hygiene |
 | Last updated | 2026-09-12 |
 
 ---
