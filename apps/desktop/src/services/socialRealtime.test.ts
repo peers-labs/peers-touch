@@ -37,17 +37,29 @@ const mocks = vi.hoisted(() => ({
   loadMessages: vi.fn(),
   markGroupRead: vi.fn(),
   ingestRealtimeMessage: vi.fn(),
+  loadMutualFriends: vi.fn(),
+  resetMutualFriends: vi.fn(),
   bumpChatUnread: vi.fn(),
   clearChatUnread: vi.fn(),
+  currentActorPtid: null as string | null,
 }));
 
 const originalWindow = globalThis.window;
 const originalCustomEvent = globalThis.CustomEvent;
 
 vi.mock('../store/session', () => ({
-  currentAuthenticatedActorPtid: () => null,
+  currentAuthenticatedActorPtid: () => mocks.currentActorPtid,
   useSessionStore: {
     subscribe: vi.fn(() => () => undefined),
+  },
+}));
+
+vi.mock('../store/relationships', () => ({
+  useRelationshipsStore: {
+    getState: () => ({
+      loadMutualFriends: mocks.loadMutualFriends,
+      resetMutualFriends: mocks.resetMutualFriends,
+    }),
   },
 }));
 
@@ -133,6 +145,7 @@ describe('social realtime group membership side effects', () => {
     }
     vi.clearAllMocks();
     mocks.ingestRealtimeMessage.mockResolvedValue(undefined);
+    mocks.loadMutualFriends.mockResolvedValue(undefined);
     mocks.loadSessions.mockResolvedValue(undefined);
     mocks.loadGroups.mockResolvedValue(undefined);
     mocks.loadFriendRequests.mockResolvedValue(undefined);
@@ -141,6 +154,7 @@ describe('social realtime group membership side effects', () => {
     mocks.loadConversationPreviews.mockResolvedValue(undefined);
     mocks.loadMessages.mockResolvedValue(undefined);
     mocks.markGroupRead.mockResolvedValue(undefined);
+    mocks.currentActorPtid = null;
     teardownSocialRealtimeBridge();
     installSocialRealtimeBridge();
   });
@@ -223,6 +237,24 @@ describe('social realtime group membership side effects', () => {
       expect(mocks.loadSessions).toHaveBeenCalledTimes(2);
     });
     expect(mocks.loadGroups).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshes mutual friends after friendship acceptance', async () => {
+    mocks.currentActorPtid = 'ptid:self';
+
+    eventBus.publish(EVENT.REALTIME_SOCIAL_GRAPH_EVENT, {
+      eventId: 'social-event-1',
+      kind: 'friend_request_accepted',
+      actorPtid: 'ptid:alice',
+      targetPtid: 'ptid:self',
+      requestId: 'request-1',
+      conversationId: '',
+      actorDisplayName: 'Alice',
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.loadMutualFriends).toHaveBeenCalledWith('ptid:self', true);
+    });
   });
 });
 

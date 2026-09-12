@@ -17,6 +17,7 @@ import type {
   RealtimeResyncPayload,
   RealtimeSocialGraphEventPayload,
   RealtimeTypingStatePayload,
+  RelationshipChangedPayload,
 } from '../kernel/events/types';
 import { useMediaRuntimeStore } from './mediaRuntime';
 import { installEventStreamBridge, startEventStream, stopEventStream } from './eventStream';
@@ -29,6 +30,7 @@ import { GroupMessageSchema, type GroupMessage } from '../gen/proto/domain/chat/
 import { NotificationType } from '../gen/proto/domain/notification/notification_pb';
 import { useNotificationStore } from '../store/notification';
 import { useNavigationBadgeStore } from '../store/navigationBadges';
+import { useRelationshipsStore } from '../store/relationships';
 import { currentAuthenticatedActorPtid, useSessionStore } from '../store/session';
 import { useSocialChatStore } from '../store/socialChat';
 import { conversationKey, conversationSuppressesAlerts } from '../store/socialProjection';
@@ -82,6 +84,12 @@ async function refreshConversationDecorations(): Promise<void> {
   ]);
 }
 
+async function refreshFriendshipProjection(refresh = true): Promise<void> {
+  const actorPtid = currentAuthenticatedActorPtid();
+  if (!actorPtid) return;
+  await useRelationshipsStore.getState().loadMutualFriends(actorPtid, refresh);
+}
+
 function rememberBounded(set: Set<string>, key: string, maxSize: number): boolean {
   if (!key) return true;
   if (set.has(key)) return false;
@@ -113,6 +121,7 @@ export async function refreshSocialProjection(label: string, includeNotification
       chat.loadFriendRequests(),
       chat.loadSessions(),
       chat.loadGroups(),
+      refreshFriendshipProjection(true),
       notifications.refreshUnreadCounts(),
       includeNotifications ? notifications.loadNotifications() : Promise.resolve(),
     ]);
@@ -185,6 +194,7 @@ async function bootstrapSocialProjection(actorPtid: string, sequence: number): P
     chat.loadSessions(),
     chat.loadGroups(),
     chat.loadFriendRequests(),
+    useRelationshipsStore.getState().loadMutualFriends(actorPtid, true),
     notifications.refreshUnreadCounts(),
   ]);
 
@@ -233,6 +243,7 @@ function reconcileAuthenticatedRuntime(): void {
       bootstrappedActorPtid = null;
       bootstrapSequence += 1;
     }
+    useRelationshipsStore.getState().resetMutualFriends();
     return;
   }
 
@@ -466,15 +477,29 @@ function onSocialGraphEvent(payload: RealtimeSocialGraphEventPayload): void {
       store.loadFriendRequests().catch(() => {});
       break;
     case 'friend_request_accepted':
-      Promise.allSettled([store.loadFriendRequests(), store.loadSessions()]).catch(() => {});
+      Promise.allSettled([
+        store.loadFriendRequests(),
+        store.loadSessions(),
+        refreshFriendshipProjection(true),
+      ]).catch(() => {});
       break;
     case 'conversation_created':
       store.loadSessions().catch(() => {});
       break;
     case 'unfriended':
-      Promise.allSettled([store.loadFriendRequests(), store.loadSessions()]).catch(() => {});
+      Promise.allSettled([
+        store.loadFriendRequests(),
+        store.loadSessions(),
+        refreshFriendshipProjection(true),
+      ]).catch(() => {});
       break;
   }
+}
+
+function onRelationshipChanged(_payload: RelationshipChangedPayload): void {
+  runDetached('relationship friendship projection refresh', () => (
+    refreshFriendshipProjection(true)
+  ));
 }
 
 async function syncKnownConversations(): Promise<void> {
@@ -492,6 +517,7 @@ async function executeColdResync(payload: RealtimeResyncPayload): Promise<void> 
     chat.loadSessions(),
     chat.loadGroups(),
     chat.loadFriendRequests(),
+    refreshFriendshipProjection(true),
     notifications.loadNotifications(),
     notifications.refreshUnreadCounts(),
   ]);
@@ -652,6 +678,7 @@ export function installSocialRealtimeBridge(): void {
     eventBus.subscribe(EVENT.REALTIME_PRESENCE_FLIP, onPresenceFlip),
     eventBus.subscribe(EVENT.REALTIME_RESYNC, onResync),
     eventBus.subscribe(EVENT.REALTIME_SOCIAL_GRAPH_EVENT, onSocialGraphEvent),
+    eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, onRelationshipChanged),
     useNotificationStore.subscribe(onNotificationProjectionChanged),
   ];
 

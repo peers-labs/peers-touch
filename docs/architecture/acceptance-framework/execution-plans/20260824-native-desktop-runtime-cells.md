@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-24 | **Updated**: 2026-09-11
+> **Created**: 2026-08-24 | **Updated**: 2026-09-12
 > **Owner**: Acceptance Infrastructure + Desktop Platform + Chat Domain
 > **Branch**: `refactor/chat-acceptance-cutover`
 > **Parent Design**: [../design.md](../design.md)
@@ -860,7 +860,7 @@ committed to this plan.
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
-| NDR-W8 macOS regression | in progress | current-profile Direct bidirectional delivery and persistent-state continuity are proven; offline, interaction, typing, multi-device, recovery, and Group/MLS runtime cells remain |
+| NDR-W8 macOS regression | in progress | current-profile Direct bidirectional delivery and persistent-state continuity are proven; direct functional validation on exact source `f83639c695aa1e53f69302658dcb1d6eeb0f38e9` additionally proves two-Station Native send/receive, offline receiver recovery, reply/thread, reaction, edit, and recall while formal Gate execution remains paused; typing, multi-device, backup recovery, and three-client Group/MLS runtime cells remain |
 | NDR-W9 Windows cell | W9-A/B/C done; Product Closure reaches `reaction.ui`; W9-D remains partial | Exact-source Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` at `2ae0254691d97f16c3c08ef3e8639bdd91a91eac` proves Direct open/reopen, canonical Group genesis, Alice sequence 2, Bob sequence 3, Alice thread-reply sequence 4, toolbar geometry, and authority reaction sequence 5. Bob's Device Inbox lane 7 contains a canonical `ActorReadCursor` whose event identity is the payload SHA-256; the client expected a retired `read:` prefix, rejected the cursor as `MessageReceipt`, and blocked the lane-8 reaction. The shared Messaging Core decoder correction and four local Chat Gates pass, but exact-source deployment and Product Closure rerun remain pending. |
 | NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings, exact Direct create/reopen, bidirectional Group transcript/thread delivery, follower receipt return, and durable remote-command authority commit | Authority sequence 5 and Alice consumption prove the cross-Station mutation path through reaction commit. Bob's queue remains blocked by the read-cursor discriminator defect, so reaction convergence, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven pending the locally verified client correction. |
 
@@ -5153,4 +5153,111 @@ directory while retaining only its Actor Identity Home Station projection, and
 proves the typed Federation Direct-bundle fetch still succeeds. Uncached Key
 Exchange tests, Key Exchange race tests, focused Actor Identity tests,
 `go vet`, formatting, and diff hygiene pass. Exact-source deployment and the
-same direct functional send remain required; Gate execution stays paused.
+same direct functional send subsequently completed as recorded below; Gate
+execution stays paused.
+
+### 2026-09-12 Direct Functional Validation
+
+Both disposable Stations were deployed from exact source
+`f83639c695aa1e53f69302658dcb1d6eeb0f38e9` without reset. Independent Native
+Desktop processes used:
+
+- group-chat / Bob -> `chat-native-five`,
+  `http://10.37.221.38:18132`, gateway `127.0.0.1:3220`; and
+- high-chat / Alice -> `chat-native-four`,
+  `http://10.37.245.247:18132`, gateway `127.0.0.1:3176`.
+
+The two client source trees were equal at tree
+`e9e84275451157529c83892261f075661377c517`. Direct functional verification
+proved:
+
+- the previously blocked message `01M2A078E6X4TCNPTANEYZKG5A` advanced from
+  `draft` to Bob-side `delivered` and Alice-side `consumed`, with exact
+  plaintext `functional-bob-to-alice-20260912-1307`;
+- Alice-to-Bob message `01M2A23Z0MPTJSCVHG3PFG77AD` reached sender-side
+  `delivered` and receiver-side `consumed` with matching plaintext;
+- a message entered and sent through the Bob Native UI became authority event
+  `afe09d31b3ccc380ece11f100f45c601`, message
+  `01M2A3FYAVG7Z5XRVBKCEGCPBC`, and rendered live in the Alice Native UI;
+- reply `01M2A3RA6NPV2YY7S0WBBVH6SS` and thread reply
+  `01M2A3S1SZ9Z3Z32XXJGSACH4C` were consumed by Bob, while the thread root
+  reported `replyCount=1` and `unreadCount=1`;
+- the Native UI rendered the reply quote and thread preview, applied a thumbs-up
+  reaction, replaced a message body with an `(edited)` marker, and projected a
+  recalled message as `A message was recalled` on the receiver; and
+- while the Alice/high-chat process and gateway were absent, Bob submitted
+  `offline-bob-to-alice-20260912T071728Z` from the Native composer and initially
+  saw one check. After high-chat restarted from the canonical
+  `chat-native-four` profile, Alice's Native conversation recovered the exact
+  plaintext and Bob's Native row advanced to two checks.
+
+These are direct functional observations, not Gate evidence. Formal Gate
+execution remains paused by Owner direction. Three-client Group/MLS functional
+validation is not complete because only group-chat and high-chat currently
+contain the exact source tree; the other existing worktrees differ in Desktop
+source, and no third worktree was created or synchronized without explicit
+authorization. Local-only screenshots for the completed functional paths are
+under `.local/acceptance/runtime/chat-functional-20260912/`; they are diagnostic
+artifacts and are not promoted to Acceptance Evidence Store proof.
+
+### 2026-09-12 Friendship Projection And Third-Client Continuation
+
+Formal Gate execution remains paused. The dependency-ready direct-functional
+frontier is:
+
+| Unit | State | Owner / boundary |
+|---|---|---|
+| Project Station mutual-follow truth into Desktop Contacts, Find People, and Create Group | source-complete; runtime pending | `socialRealtime` owns bootstrap, event refresh, and periodic reconciliation; Station Social list queries now hydrate their Actor associations before constructing the canonical relationship projection |
+| Re-run Alice/Bob/Carol seeded-friend visibility and group-member selection in Native UI | pending | current Native diagnosis returned `total=3` with empty follower/following items on both Stations; local regression proves the missing `Follower`/`Following` preload fix, but exact-source Station deployment is still required |
+| Recover Carol's established Actor identity or reset its disposable Station identity | parked | requires a source-defined recovery path or fresh explicit destructive authorization |
+| Three-client Group/MLS functional validation | parked | depends on Carol enrollment and the corrected friend projection |
+| Federation Catalog `INTERNAL_ERROR` correction | functional pass; exact-source proof pending | Desktop now selects direct typed protobuf transport, the existing Federation Gateway Gate rejects the legacy envelope call, and the owning Rust path maps to the Federation Feature; rebuilt profile-four Native returned typed success instead of `INTERNAL_ERROR`, while committed-source proof remains pending |
+
+Concurrency Decision: serial for the friendship projection because the shared
+store contract is consumed by the runtime and all three Chat surfaces. The
+integrator owns the plan, shared projection, runtime wiring, UI consumers,
+focused tests, source-tree reconciliation, and Native runtime verification.
+Carol's retained Windows state and both Station deployments are read-only until
+the recovery boundary is resolved; no reset is authorized by this continuation.
+
+The Federation correction is also serial. The integrator exclusively owns the
+Desktop Rust transport call site, its focused Federation regression, the
+existing `desktop-federation` Registry rule, plan evidence, and source-tree
+reconciliation. Runtime deployment remains read-only: formal Gates are paused,
+and an exact-source Native rerun depends on an authorized commit boundary.
+
+Direct Native diagnosis used the two profile-bound `make desktop` clients
+without invoking a formal Gate. Alice (`profile four`) and Bob (`profile five`)
+authenticated with distinct actor PTIDs. Both Station Social endpoints reported
+three relationship rows while returning empty item arrays. The root cause was
+`followRepository.GetFollowers` / `GetFollowing` loading `db.Follow` rows
+without their `Follower` / `Following` Actor associations; the application
+service then correctly skipped every nil association. The repository now
+preloads those associations, and
+`TestRelationshipListsHydrateActorProjections` reproduces the old
+`total=1, len=0` failure and passes with the correction. Native UI proof remains
+unproven until the exact changed source is deployed through the profile and
+Make workflow.
+
+The independent Federation Catalog diagnosis reproduced the failure through
+the running Native Tauri bridge and correlated it with Station request
+`8d4679ac-d46e-43b0-85dd-a880e8c10ef1`. Station authenticated the request,
+queried both Federation members, and returned HTTP 200. Its
+`server.NewTypedHandler` serializes `FederationCatalogSearchResponse` directly,
+but Desktop `application/federation::catalog_search` selected
+`request_peers_proto`, which attempted to decode those bytes as
+`PeersResponse -> Any -> payload` and surfaced the resulting decode error as
+generic `INTERNAL_ERROR`. The correction must select `request_proto` at that
+application-owned protocol boundary and leave legacy Touch endpoints
+unchanged. The source correction, focused old/new transport regression, Gate
+traceability, Rust formatting and compile check, Registry path selection,
+cross-worktree byte comparison, and diff hygiene pass in both group-chat and high-chat. Growth
+decision: `acceptance_gate`,
+`federation-desktop-gateway-smoke` in Domain `federation`. Full Federation
+Domain validation remains blocked by the pre-existing missing `fedp5`
+environment and Provisioner contracts; the environment-backed Gate and Native
+authenticated Catalog Gate were not executed. A direct functional rerun through
+the rebuilt profile-four Native client and embedded WebDriver returned
+`{"ok":true,"data":[],"error":null}` for the same Federation and `carol`
+prefix that previously returned `INTERNAL_ERROR`; the empty result is current
+Catalog data state, not a transport decode failure.

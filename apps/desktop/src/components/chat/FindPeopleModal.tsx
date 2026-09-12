@@ -7,6 +7,7 @@ import { Search, ShieldCheck, Globe, Server } from 'lucide-react';
 import { api, type FederationResolveView, type FederationCatalogEntry } from '../../services/desktop_api';
 import {
   useActiveChatFederationSlice,
+  useActiveChatRelationshipsSlice,
   useActiveSocialChatSlice,
   useActiveSocialChatStore,
 } from './useActiveSocialChatStore';
@@ -139,6 +140,19 @@ export function FindPeopleModal({ open, onClose }: Props) {
     friendRequests: s.friendRequests,
   }));
   const currentUserPtid = useActiveSocialChatStore((s) => s.currentUserPtid);
+  const {
+    mutualFriends,
+    mutualFriendsActorPtid,
+    mutualFriendsLoading,
+    mutualFriendsLoadedAt,
+    mutualFriendsError,
+  } = useActiveChatRelationshipsSlice((s) => ({
+    mutualFriends: s.mutualFriends,
+    mutualFriendsActorPtid: s.mutualFriendsActorPtid,
+    mutualFriendsLoading: s.mutualFriendsLoading,
+    mutualFriendsLoadedAt: s.mutualFriendsLoadedAt,
+    mutualFriendsError: s.mutualFriendsError,
+  }));
   const federationReady = useActiveChatFederationSlice(selectFederationReady);
   const federations = useActiveChatFederationSlice((s) => s.federations);
   const joinedFederations = useMemo(
@@ -166,6 +180,15 @@ export function FindPeopleModal({ open, onClose }: Props) {
     }
     return ids;
   }, [friendRequests, currentUserPtid]);
+  const friendPtidSet = useMemo(
+    () => new Set(mutualFriends.map((friend) => friend.actorPtid)),
+    [mutualFriends],
+  );
+  const friendshipReady = Boolean(
+    currentUserPtid
+    && mutualFriendsActorPtid === currentUserPtid
+    && mutualFriendsLoadedAt,
+  );
 
   const parsed = useMemo(() => parseHandleInput(searchText), [searchText]);
   const blockedByGate = parsed.isFederated && parsed.hasHost && !federationReady;
@@ -282,7 +305,13 @@ export function FindPeopleModal({ open, onClose }: Props) {
       width={420}
       destroyOnHidden
     >
-      <Flexbox gap={12}>
+      <Flexbox
+        gap={12}
+        data-chat-find-people
+        data-chat-friendship-state={
+          mutualFriendsError ? 'error' : friendshipReady ? 'ready' : 'loading'
+        }
+      >
         {!federationReady && (
           <Alert
             type="info"
@@ -290,8 +319,16 @@ export function FindPeopleModal({ open, onClose }: Props) {
             message={t('chat.social.findPeople.federationJoining')}
           />
         )}
+        {mutualFriendsError && (
+          <Alert
+            type="error"
+            showIcon
+            message={t('chat.social.findPeople.friendshipUnavailable')}
+          />
+        )}
 
         <Input
+          data-chat-find-people-input
           prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
           placeholder={t('chat.social.findPeople.searchPlaceholderFederated')}
           value={searchText}
@@ -307,6 +344,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
           spellCheck={false}
           suffix={
             <Button
+              data-chat-find-people-search
               type="link"
               size="small"
               loading={searching}
@@ -405,9 +443,12 @@ export function FindPeopleModal({ open, onClose }: Props) {
               const sentAt = sentTimestamps.current.get(receiverPtid);
               const cooldownActive = isPending && (!sentAt || Date.now() - sentAt < RESEND_COOLDOWN_MS);
               const isSelf = !!currentUserPtid && receiverPtid === currentUserPtid;
+              const isFriend = friendPtidSet.has(receiverPtid);
               return (
                 <Flexbox
                   key={receiverPtid || r.id}
+                  data-chat-find-people-result={receiverPtid}
+                  data-chat-friend-state={isFriend ? 'friend' : isPending ? 'pending' : 'none'}
                   horizontal
                   align="center"
                   gap={10}
@@ -466,18 +507,33 @@ export function FindPeopleModal({ open, onClose }: Props) {
                     />
                   </Flexbox>
                   <Button
-                    type={cooldownActive ? 'default' : 'primary'}
+                    data-chat-find-people-action={receiverPtid}
+                    type={cooldownActive || isFriend ? 'default' : 'primary'}
                     size="small"
-                    loading={addingId === receiverPtid}
-                    disabled={cooldownActive || isSelf}
+                    loading={
+                      addingId === receiverPtid
+                      || (!friendshipReady && mutualFriendsLoading)
+                    }
+                    disabled={
+                      cooldownActive
+                      || isSelf
+                      || isFriend
+                      || !friendshipReady
+                    }
                     onClick={(event) => {
                       event.stopPropagation();
                       void handleSendRequest(r);
                     }}
-                    style={cooldownActive ? { color: token.colorSuccess, borderColor: token.colorSuccess } : undefined}
+                    style={cooldownActive || isFriend
+                      ? { color: token.colorSuccess, borderColor: token.colorSuccess }
+                      : undefined}
                   >
                     {isSelf
                       ? t('chat.social.findPeople.self')
+                      : isFriend
+                        ? t('chat.social.findPeople.alreadyFriend')
+                      : !friendshipReady
+                        ? t('chat.social.findPeople.checkingFriendship')
                       : cooldownActive
                         ? t('chat.social.findPeople.awaitingApproval')
                         : t('chat.social.findPeople.sendRequest')}

@@ -7,12 +7,33 @@ import unittest
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.gates.desktop.gateway_smoke import (
+    FEDERATION_APPLICATION,
     DesktopGatewaySmokeGate,
+    catalog_search_uses_direct_typed_proto,
     runtime_endpoints,
 )
 
 
 class RuntimeEndpointsTests(unittest.TestCase):
+    def test_catalog_search_uses_direct_typed_proto_transport(self) -> None:
+        source = FEDERATION_APPLICATION.read_text(encoding="utf-8")
+
+        self.assertTrue(catalog_search_uses_direct_typed_proto(source))
+
+    def test_rejects_legacy_peers_response_envelope_transport(self) -> None:
+        broken_source = """
+pub fn catalog_search() {
+    station_client::request_peers_proto::<
+        FederationCatalogSearchRequest,
+        FederationCatalogSearchResponse,
+    >();
+}
+
+pub fn encode_catalog_search() {}
+"""
+
+        self.assertFalse(catalog_search_uses_direct_typed_proto(broken_source))
+
     def test_declares_federation_traceability(self) -> None:
         gate = DesktopGatewaySmokeGate()
 
