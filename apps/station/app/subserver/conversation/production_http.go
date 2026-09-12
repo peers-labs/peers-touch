@@ -893,44 +893,6 @@ func (s *subServer) handleSubmitDeliveryReceipt(
 		authenticated,
 		request,
 	)
-	// #region debug-point Z12-Z14:delivery-receipt-station-result
-	receipt := request.GetReceipt()
-	debugBody, _ := json.Marshal(map[string]any{
-		"sessionId":    "conversation-open-500",
-		"runId":        "delivery-receipt-post-fix",
-		"hypothesisId": "Z12-Z14",
-		"location": "conversation/production_http.go:" +
-			"handleSubmitDeliveryReceipt",
-		"msg": "[DEBUG] Station delivery receipt application result",
-		"data": map[string]any{
-			"authenticatedPtid":     authenticated.PTID,
-			"authenticatedDeviceId": authenticated.DeviceID,
-			"receiptId":             receipt.GetReceiptId(),
-			"conversationId":        receipt.GetConversationId(),
-			"eventId":               receipt.GetEventId(),
-			"eventSequence":         receipt.GetEventSequence(),
-			"laneSequence":          receipt.GetLaneSequence(),
-			"consumerPtid":          receipt.GetConsumer().GetPtid(),
-			"consumerDeviceId":      receipt.GetConsumer().GetDeviceId(),
-			"interactionCode":       string(interactionapp.CodeOf(err)),
-			"error":                 fmt.Sprint(err),
-		},
-	})
-	if debugRequest, debugRequestErr := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		"http://10.4.55.179:7779/event",
-		strings.NewReader(string(debugBody)),
-	); debugRequestErr == nil {
-		debugRequest.Header.Set("Content-Type", "application/json")
-		debugResponse, _ := (&http.Client{
-			Timeout: 500 * time.Millisecond,
-		}).Do(debugRequest)
-		if debugResponse != nil {
-			_ = debugResponse.Body.Close()
-		}
-	}
-	// #endregion
 
 	return response, mapProductionConversationError(ctx, err)
 }

@@ -37,14 +37,7 @@ impl KeyBundleTransport for StationKeyBundleTransport {
         {
             return Err("messaging key bundle endpoint is incomplete".to_string());
         }
-        let fetch_request = FetchDirectKeyBundlesRequest {
-            actor: Some(actor_ref(endpoint_ptid)),
-            target_device_id: endpoint.device_id.clone(),
-            home_station_peer_id: String::new(),
-            request_id: request_id.to_string(),
-            requester: Some(requester.clone()),
-        };
-        let result = station_client::request_proto_for_device::<
+        let response = station_client::request_proto_for_device::<
             FetchDirectKeyBundlesRequest,
             FetchDirectKeyBundlesResponse,
         >(
@@ -52,54 +45,16 @@ impl KeyBundleTransport for StationKeyBundleTransport {
             "/key-exchange/keys/bundle/fetch",
             &self.token,
             None,
-            Some(&fetch_request),
+            Some(&FetchDirectKeyBundlesRequest {
+                actor: Some(actor_ref(endpoint_ptid)),
+                target_device_id: endpoint.device_id.clone(),
+                home_station_peer_id: String::new(),
+                request_id: request_id.to_string(),
+                requester: Some(requester.clone()),
+            }),
             &self.device_id,
-        );
-        // #region debug-point M-N-O:direct-key-bundle-fetch
-        let _ = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_millis(500))
-            .build()
-            .and_then(|client| {
-                client
-                    .post("http://10.4.55.179:7779/event")
-                    .json(&serde_json::json!({
-                        "sessionId": "conversation-open-500",
-                        "runId": "direct-bundle-fetch-post-fix",
-                        "hypothesisId": "M-N-O",
-                        "location": "messaging/direct_session.rs:fetch",
-                        "msg": "[DEBUG] Direct key bundle fetch",
-                        "data": {
-                            "requesterPtid": actor_device_ptid(requester).unwrap_or_default(),
-                            "requesterDeviceId": requester.device_id,
-                            "targetPtid": endpoint_ptid,
-                            "targetDeviceId": endpoint.device_id,
-                            "ok": result.is_ok(),
-                            "error": result.as_ref().err().map(ToString::to_string),
-                            "returnedEndpoints": result
-                                .as_ref()
-                                .ok()
-                                .map(|response| response.bundles.iter().map(|bundle| {
-                                    serde_json::json!({
-                                        "ptid": bundle
-                                            .device
-                                            .as_ref()
-                                            .and_then(|device| device.actor.as_ref())
-                                            .map(|actor| actor.ptid.as_str())
-                                            .unwrap_or_default(),
-                                        "deviceId": bundle
-                                            .device
-                                            .as_ref()
-                                            .map(|device| device.device_id.as_str())
-                                            .unwrap_or_default(),
-                                    })
-                                }).collect::<Vec<_>>())
-                                .unwrap_or_default(),
-                        }
-                    }))
-                    .send()
-            });
-        // #endregion
-        let response = result.map_err(|error| error.to_string())?;
+        )
+        .map_err(|error| error.to_string())?;
         if response.bundles.len() != 1 {
             return Err("messaging endpoint key bundle is unavailable or ambiguous".to_string());
         }
