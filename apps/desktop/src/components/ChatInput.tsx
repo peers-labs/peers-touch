@@ -127,6 +127,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
   useEffect(() => {
     const previousKey = prevSessionKeyRef.current;
+    if (previousKey) topicDraftRef.current[previousKey] = input;
     const restoredDraft = topicDraftRef.current[currentSessionKey] || '';
     // #region debug-point O:context-overflow-session-draft
     void reportContextOverflowComposerDebug('O', 'session-draft-restore', {
@@ -136,7 +137,6 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
       restoredDraftLength: restoredDraft.length,
     });
     // #endregion
-    if (previousKey) topicDraftRef.current[previousKey] = input;
     setInput(restoredDraft);
     prevSessionKeyRef.current = currentSessionKey;
   }, [currentSessionKey]);
@@ -189,7 +189,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         // #endregion
       }
     });
-  }, [composerFill, consumeComposerFill, currentSessionKey]);
+  }, [composerFill, consumeComposerFill]);
 
   useEffect(() => {
     if (composerFocusNonce === 0) return;
