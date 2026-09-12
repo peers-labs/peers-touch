@@ -38,6 +38,65 @@ class FoundationClientError(RuntimeError):
     """A provisioned Foundation client failed its lifecycle contract."""
 
 
+# #region debug-point A-F:foundation-native-harness-startup
+def report_foundation_native_harness_startup_debug(
+    hypothesis_id: str,
+    message: str,
+    data: Mapping[str, Any],
+) -> None:
+    try:
+        env_path = (
+            Path(__file__).resolve().parents[4]
+            / ".dbg"
+            / "foundation-native-harness-startup.env"
+        )
+        env_values = dict(
+            line.split("=", 1)
+            for line in env_path.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        debug_url = env_values["DEBUG_SERVER_URL"]
+        session_id = env_values["DEBUG_SESSION_ID"]
+    except Exception:
+        return
+    payload = json.dumps(
+        {
+            "sessionId": session_id,
+            "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
+            "hypothesisId": hypothesis_id,
+            "location": (
+                "tooling/acceptance/gates/agent/"
+                "foundation_runtime_client.py"
+            ),
+            "msg": f"[DEBUG] {message}",
+            "data": dict(data),
+            "ts": int(time.time() * 1000),
+        }
+    ).encode("utf-8")
+
+    def send() -> None:
+        try:
+            with urllib.request.urlopen(
+                urllib.request.Request(
+                    debug_url,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                ),
+                timeout=0.5,
+            ) as response:
+                response.read()
+        except Exception:
+            pass
+
+    threading.Thread(
+        target=send,
+        name="foundation-native-harness-startup-debug-report",
+        daemon=True,
+    ).start()
+# #endregion
+
+
 def report_browser_f06_timeout_debug(
     hypothesis_id: str,
     message: str,
@@ -422,6 +481,10 @@ class FoundationClientSpec:
         return "desktop" if self.runtime == "native-tauri" else "browser"
 
     @property
+    def devctl_mode(self) -> str:
+        return "app" if self.runtime == "native-tauri" else "web"
+
+    @property
     def cargo_target_dir(self) -> Path:
         return (
             self.worktree
@@ -457,6 +520,7 @@ class FoundationRuntimeClient:
         self.log_path = self.run_root / f"{spec.runtime}.log"
         self.process: subprocess.Popen[str] | None = None
         self._process_group_id: int | None = None
+        self._managed_runtime_started = False
         self.log_handle: Any = None
         self.driver: Any = None
         self.chrome: ChromeDriver | None = None
@@ -483,6 +547,7 @@ class FoundationRuntimeClient:
             "PT_DESKTOP_APP_WEB_PORT": str(self.spec.renderer_port),
             "PT_DESKTOP_WEB_GATEWAY_PORT": str(self.spec.gateway_port),
             "PT_DESKTOP_WEB_WEB_PORT": str(self.spec.renderer_port),
+            "VITE_ACCEPTANCE_HARNESS": "1",
         }
         self.runtime_profile.write_text(
             "\n".join(f"{key}={value}" for key, value in sorted(values.items()))
@@ -509,6 +574,7 @@ class FoundationRuntimeClient:
             "PT_STATION_URL": self._station_url,
             "PEERS_STATION_URL": self._station_url,
             "PT_DESKTOP_E2E": "true",
+            "VITE_ACCEPTANCE_HARNESS": "1",
             "PT_AGENT_AS_F10_NEGATIVE_CONTROL": "1",
             "PT_AGENT_GFE1_EXECUTOR_CONTROL": "1",
             "TAURI_WEBDRIVER_PORT": str(self.spec.webdriver_port),
@@ -541,6 +607,20 @@ class FoundationRuntimeClient:
             self.log_handle = self.log_path.open("w", encoding="utf-8")
             environment = os.environ.copy()
             environment.update(self.launch_environment())
+            # #region debug-point A:launch-environment
+            report_foundation_native_harness_startup_debug(
+                "A",
+                "launch-environment-ready",
+                {
+                    "runtime": self.spec.runtime,
+                    "makeTarget": self.spec.make_target,
+                    "desktopE2E": environment.get("PT_DESKTOP_E2E") == "true",
+                    "viteAcceptanceHarness": (
+                        environment.get("VITE_ACCEPTANCE_HARNESS") == "1"
+                    ),
+                },
+            )
+            # #endregion
             self.process = subprocess.Popen(
                 ["make", self.spec.make_target],
                 cwd=self.spec.worktree,
@@ -549,6 +629,7 @@ class FoundationRuntimeClient:
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
+            self._managed_runtime_started = True
             self._process_group_id = (
                 self.process.pid if os.name == "posix" else None
             )
@@ -566,11 +647,40 @@ class FoundationRuntimeClient:
             )
             # #endregion
             self._connect_driver()
+            # #region debug-point B-D:webdriver-connected
+            report_foundation_native_harness_startup_debug(
+                "B-D",
+                "webdriver-connected",
+                (
+                    self._native_harness_debug_snapshot()
+                    if self.spec.runtime == "native-tauri"
+                    else {
+                        "runtime": self.spec.runtime,
+                        "driverPresent": self.driver is not None,
+                    }
+                ),
+            )
+            # #endregion
             agent_harness_ready = harness_ready(
                 self.driver,
                 namespace="agent",
                 timeout=60,
             )
+            # #region debug-point A-D:harness-probe
+            report_foundation_native_harness_startup_debug(
+                "A-D",
+                "agent-harness-probe-completed",
+                {
+                    "runtime": self.spec.runtime,
+                    "ready": agent_harness_ready,
+                    **(
+                        self._native_harness_debug_snapshot()
+                        if self.spec.runtime == "native-tauri"
+                        else {}
+                    ),
+                },
+            )
+            # #endregion
             if not agent_harness_ready:
                 raise FoundationClientError(
                     f"{self.spec.runtime} Agent acceptance Harness is unavailable"
@@ -1313,6 +1423,35 @@ class FoundationRuntimeClient:
         if process_released:
             self.process = None
             self._process_group_id = None
+        if self._managed_runtime_started:
+            environment = os.environ.copy()
+            environment.update(self.launch_environment())
+            try:
+                completed = subprocess.run(
+                    [
+                        "node",
+                        "tooling/devctl/index.mjs",
+                        "desktop",
+                        "stop",
+                        "--mode",
+                        self.spec.devctl_mode,
+                    ],
+                    cwd=self.spec.worktree,
+                    env=environment,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                if completed.returncode != 0:
+                    failures.append(
+                        "devctl cleanup exited with "
+                        f"status {completed.returncode}"
+                    )
+                else:
+                    self._managed_runtime_started = False
+            except Exception as error:  # noqa: BLE001 - cleanup records failure.
+                failures.append(f"devctl cleanup: {error}")
         if self.log_handle is not None:
             try:
                 self.log_handle.flush()
@@ -1328,6 +1467,31 @@ class FoundationRuntimeClient:
             "renderer": not port_open(self.spec.renderer_port),
             "webdriver": not port_open(self.spec.webdriver_port),
         }
+        # #region debug-point E-F:runtime-stop
+        report_foundation_native_harness_startup_debug(
+            "E-F",
+            "runtime-stop-evaluated",
+            {
+                "runtime": self.spec.runtime,
+                "processReleased": process_released,
+                "termWaitCompleted": term_wait_completed,
+                "killSent": kill_sent,
+                "killWaitCompleted": kill_wait_completed,
+                "portsReleased": ports,
+                **_native_restart_process_snapshot(
+                    process,
+                    process_group_id,
+                ),
+                "listeners": _native_restart_listener_snapshot(
+                    {
+                        "gateway": self.spec.gateway_port,
+                        "renderer": self.spec.renderer_port,
+                        "webdriver": self.spec.webdriver_port,
+                    }
+                ),
+            },
+        )
+        # #endregion
         if self.spec.runtime == "native-tauri":
             report_native_restart_port_release_debug(
                 "A-D",

@@ -181,10 +181,12 @@ class FoundationClientSpecTest(unittest.TestCase):
             browser = self.spec(root, "browser")
 
         self.assertEqual((native.make_target, native.surface), ("desktop", "desktop"))
+        self.assertEqual(native.devctl_mode, "app")
         self.assertEqual(
             (browser.make_target, browser.surface),
             ("desktop-web", "browser"),
         )
+        self.assertEqual(browser.devctl_mode, "web")
         self.assertEqual(
             native.cargo_target_dir,
             root.resolve()
@@ -228,6 +230,7 @@ class FoundationClientSpecTest(unittest.TestCase):
         self.assertEqual(environment["GATEWAY_PORT"], "23030")
         self.assertEqual(environment["WEB_PORT"], "23210")
         self.assertEqual(environment["PT_DESKTOP_E2E"], "true")
+        self.assertEqual(environment["VITE_ACCEPTANCE_HARNESS"], "1")
         self.assertEqual(environment["PT_AGENT_GFE1_EXECUTOR_CONTROL"], "1")
         self.assertEqual(
             environment["CARGO_TARGET_DIR"],
@@ -597,6 +600,62 @@ class FoundationClientSpecTest(unittest.TestCase):
             self.assertTrue(result["storagePreserved"])
             self.assertIsNone(result["storageReleased"])
             self.assertEqual(journal.read_text(encoding="utf-8"), "retained")
+
+    def test_stop_runtime_uses_devctl_for_managed_children(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            client = FoundationRuntimeClient(
+                self.spec(root, "native-tauri"),
+                station_url="http://station.example",
+                profile_env={},
+            )
+            client._managed_runtime_started = True
+            with (
+                patch.object(
+                    foundation_runtime_client,
+                    "port_open",
+                    return_value=False,
+                ),
+                patch.object(
+                    foundation_runtime_client,
+                    "_native_restart_debug_env",
+                    return_value=None,
+                ),
+                patch(
+                    "tooling.acceptance.gates.agent."
+                    "foundation_runtime_client.subprocess.run",
+                    return_value=subprocess.CompletedProcess(
+                        args=[],
+                        returncode=0,
+                        stdout="",
+                        stderr="",
+                    ),
+                ) as run,
+            ):
+                result = client._stop_runtime(
+                    logout=False,
+                    remove_storage=False,
+                )
+
+            self.assertEqual(result["status"], "clean")
+            self.assertFalse(client._managed_runtime_started)
+            command = run.call_args.args[0]
+            self.assertEqual(
+                command,
+                [
+                    "node",
+                    "tooling/devctl/index.mjs",
+                    "desktop",
+                    "stop",
+                    "--mode",
+                    "app",
+                ],
+            )
+            self.assertEqual(run.call_args.kwargs["cwd"], root.resolve())
+            self.assertEqual(
+                run.call_args.kwargs["env"]["VITE_ACCEPTANCE_HARNESS"],
+                "1",
+            )
 
     @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
     def test_stop_runtime_kills_descendants_after_group_leader_exits(

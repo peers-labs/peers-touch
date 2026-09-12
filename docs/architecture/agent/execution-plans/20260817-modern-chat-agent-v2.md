@@ -22,10 +22,10 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Checkpoint synchronized devctl Acceptance launch and owned-process cleanup, then resume C08-first exact-source proof |
+| Current step | Checkpoint the Foundation devctl Harness/managed-child lifecycle correction, deploy exact source, rerun C08, then resume the unchanged Foundation matrix |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | C08 run `20260912T074611647530Z-f4a13d920f499f43bd630d6d9fa2042a` on `a89bcbb9342c21c4ffd07d3efca78ad00cd8ad64` completed `DONE / PROVEN` with `19/19` assertions and clean cleanup；the next Foundation diagnostic reached a healthy Native app/gateway but new devctl omitted the Acceptance feature, so embedded WebDriver never opened |
-| Current action | Finalize devctl Acceptance feature propagation and POSIX zombie-aware owned-process cleanup |
+| Last completed | C08 run `20260912T082711692343Z-79fcf43c5d6f4a857834e3f6d20a8939` on `f1963a7f2567a05cbbaaafe3a23ff7f9f493b53d` completed `DONE / PROVEN` with `19/19` assertions and clean cleanup；the following Foundation run stopped before its first tuple and isolated missing renderer Harness propagation plus missing devctl-owned child teardown |
+| Current action | Finalize and checkpoint the Foundation runtime correction after `367/367` focused tests and a passing real Native Harness/cleanup comparison |
 | Next action | Redeploy exact source, rerun C08 first, then continue the unchanged Foundation matrix |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
@@ -33,9 +33,9 @@
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | none；Native AS-F06, Browser `BASE-CANCELLED`, and `BASE-INCOMPATIBLE_CAPABILITY` are crossed；`BASE-INTERRUPTED` is source-complete locally but exact-source runtime proof is pending；BASE-CONTEXT-OVERFLOW receiver sampling remains pending later runtime traversal；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
+| Blockers | none；Native AS-F06, Browser `BASE-CANCELLED`, and `BASE-INCOMPATIBLE_CAPABILITY` are crossed；`BASE-INTERRUPTED` is source-complete locally but exact-source runtime proof is pending；the current pre-tuple devctl Harness/cleanup failure has a verified local correction；BASE-CONTEXT-OVERFLOW receiver sampling remains pending later runtime traversal；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 run `20260912T074611647530Z-f4a13d920f499f43bd630d6d9fa2042a` is `DONE / PROVEN` on `a89bcbb9342c21c4ffd07d3efca78ad00cd8ad64` with `19/19` assertions and clean cleanup；the following Foundation diagnostic was cancelled before any tuple after runtime evidence isolated missing devctl Acceptance feature propagation；current local evidence passes Desktop `621/621`, focused Desktop `102/102`, Foundation/oracle/static `304/304`, Station Agent packages, Desktop check/build, provisioning `159/159`, focused Fixture `43/43`, runtime client/restart/scenario `82/82`, devctl `22/22`, hard rules, Python compile, Go formatting, and diff hygiene |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 run `20260912T082711692343Z-79fcf43c5d6f4a857834e3f6d20a8939` is `DONE / PROVEN` on `f1963a7f2567a05cbbaaafe3a23ff7f9f493b53d` with `19/19` assertions and clean cleanup；Foundation run `20260912T082943713422Z-b48301566d031c38e6ea7aca840bfd5e` stopped before its first tuple after runtime evidence isolated missing `VITE_ACCEPTANCE_HARNESS` propagation and devctl detached-child teardown；the real Native post-fix comparison mounts the Agent Harness and releases all client/fault ports；current local evidence passes Foundation/runtime/static `367/367`, devctl `22/22`, hard rules, Python compilation, and diff hygiene in addition to the preceding `f1963a7f2` verification set |
 | Last updated | 2026-09-12 |
 
 ---

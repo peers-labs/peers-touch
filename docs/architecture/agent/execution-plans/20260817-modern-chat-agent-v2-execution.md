@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T044940388295Z-e4198462d6841359eb30ec467e4fc976` on `64511e23628c16003bc45703049b7e974f6f3110` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T045125090233Z-1e96c04957a4d44b519fcbdc2f295cdc` crossed AS-F06, `BASE-CANCELLED`, and `BASE-INCOMPATIBLE_CAPABILITY`, then failed only because `BASE-INTERRUPTED` had no direct-runtime producer; the `BASE-INTERRUPTED` Station, Desktop, Harness, restart coordinator, cleanup, and independent-oracle source closure now passes local checks on the synchronized `8d315217f` baseline, while exact-source C08 and unchanged 419-cell proof remain pending | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T082711692343Z-79fcf43c5d6f4a857834e3f6d20a8939` on `f1963a7f2567a05cbbaaafe3a23ff7f9f493b53d` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T082943713422Z-b48301566d031c38e6ea7aca840bfd5e` stopped before the first tuple because the synchronized devctl launch omitted the renderer Harness flag and its detached managed children outlived the launcher PGID; the local correction restores the existing Harness flag and devctl-owned stop lifecycle, passes 367 Foundation/runtime/static tests and a real Native startup/cleanup comparison, while a clean exact-source checkpoint and unchanged 419-cell proof remain pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7474,6 +7474,28 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `git diff --check`. Agent Domain validation remains correctly
   stale-source `UNPROVEN` until the clean checkpoint is deployed and C08 then
   the unchanged 419-cell Foundation Gate execute.
+- **Foundation devctl Harness and cleanup closure (2026-09-12)**: the final
+  `f1963a7f2567a05cbbaaafe3a23ff7f9f493b53d` Acceptance binary has SHA-256
+  `3948b4a2d2934711c7ded241befd96d2b2d6398407aec0fc57d1015b81c3e97b`
+  and passes embedded-WebDriver smoke. Exact-source C08 run
+  `20260912T082711692343Z-79fcf43c5d6f4a857834e3f6d20a8939` is
+  `DONE / PROVEN` with `19/19` assertions and complete cleanup. The following
+  Foundation run
+  `20260912T082943713422Z-b48301566d031c38e6ea7aca840bfd5e`
+  stopped before the first matrix tuple: the native renderer had
+  `PT_DESKTOP_E2E=true` but no `VITE_ACCEPTANCE_HARNESS=1`, so its root and
+  Tauri bridge were healthy while the Acceptance root and Agent namespace
+  remained absent. Cleanup then terminated the short-lived `make desktop`
+  process group but not the detached Vite and Tauri children owned by devctl.
+  The Domain runtime owner now writes and launches with the existing Harness
+  flag and invokes the matching devctl `desktop stop --mode app|web` lifecycle
+  before final port verification. A real Native post-fix comparison proves the
+  Agent Harness and locale method are mounted and all Gateway, renderer,
+  WebDriver, fault-control, and fault-proxy ports are released. Foundation,
+  runtime, and static tests pass `367/367`; devctl tests pass `22/22`; hard
+  rules, Python compilation, and diff hygiene pass. No Gate tuple, timeout,
+  provider, or evidence requirement changed. Clean checkpoint deployment and
+  same-source C08 then Foundation proof remain pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
