@@ -5412,3 +5412,15 @@ correctly excludes `submitted` commands from blind replay, so this cannot be
 fixed by retrying or hiding the local row. The architecture owner must choose
 and specify either restored authoritative result readback or an explicit
 terminal unknown-outcome product contract before this branch resumes.
+
+Direct typing is independently `DESIGN_AMENDMENT_REQUIRED`. A live Native
+Alice-to-Bob test submitted `typing=true` successfully through
+`/conversation/typing`, but Bob's profile-five client remained
+`data-chat-typing="inactive"`. The Conversation service selected Bob correctly,
+then the production `TypingPublisher` emitted only to profile four's
+process-local Event Bus. D-10 and MP-D27 require cross-Station best-effort
+ephemeral signaling, but no peer wire contract defines Home-to-Home versus
+authority-mediated routing, authenticated bindings, remote validation, partial
+fan-out, or overload behavior. Desktop receive/TTL projection is already
+present and is not the missing owner. This branch remains parked until that
+Station signaling topology is accepted.
