@@ -178,7 +178,7 @@ def report_native_restart_port_release_debug(
 
     def send() -> None:
         try:
-            urllib.request.urlopen(
+            with urllib.request.urlopen(
                 urllib.request.Request(
                     debug_url,
                     data=payload,
@@ -186,7 +186,8 @@ def report_native_restart_port_release_debug(
                     method="POST",
                 ),
                 timeout=0.5,
-            ).read()
+            ) as response:
+                response.read()
         except Exception:
             pass
 
@@ -561,10 +562,23 @@ class FoundationRuntimeClient:
             )
             # #endregion
             self._connect_driver()
-            if not harness_ready(self.driver, namespace="agent", timeout=60):
+            agent_harness_ready = harness_ready(
+                self.driver,
+                namespace="agent",
+                timeout=60,
+            )
+            if not agent_harness_ready:
                 raise FoundationClientError(
                     f"{self.spec.runtime} Agent acceptance Harness is unavailable"
                 )
+            if self.spec.runtime == "native-tauri":
+                # #region debug-point E-H:native-harness-ready
+                report_native_restart_port_release_debug(
+                    "E-H",
+                    "native-runtime-harness-ready",
+                    self._native_harness_debug_snapshot(),
+                )
+                # #endregion
             # #region debug-point A-C:runtime-start-completed
             report_browser_f06_timeout_debug(
                 "A-C",
@@ -776,6 +790,60 @@ class FoundationRuntimeClient:
             )
         return True
 
+    # #region debug-point E-H:native-harness-snapshot
+    def _native_harness_debug_snapshot(self) -> dict[str, Any]:
+        snapshot = {
+            "runtime": self.spec.runtime,
+            "restartGeneration": self.restart_generation,
+            **_native_restart_process_snapshot(
+                self.process,
+                self._process_group_id,
+            ),
+            "listeners": _native_restart_listener_snapshot(
+                {
+                    "gateway": self.spec.gateway_port,
+                    "renderer": self.spec.renderer_port,
+                    "webdriver": self.spec.webdriver_port,
+                }
+            ),
+            "driverPresent": self.driver is not None,
+        }
+        if self.driver is None:
+            return snapshot
+        if not port_open(self.spec.webdriver_port):
+            snapshot["domProbe"] = {"error": "webdriver-port-closed"}
+            return snapshot
+        raw_driver = (
+            self.driver.driver
+            if hasattr(self.driver, "driver")
+            else self.driver
+        )
+        try:
+            snapshot["domProbe"] = raw_driver.execute_script(
+                """
+                return {
+                  url: String(window.location.href || ''),
+                  readyState: String(document.readyState || ''),
+                  rootElementPresent: Boolean(document.querySelector('#root')),
+                  acceptanceRootPresent: Boolean(window.__PT_ACCEPTANCE__),
+                  agentNamespacePresent: Boolean(
+                    window.__PT_ACCEPTANCE__?.agent
+                  ),
+                  localeMethodPresent: Boolean(
+                    window.__PT_ACCEPTANCE__?.agent?.setFoundationLocale
+                  ),
+                };
+                """
+            )
+            snapshot["windowCount"] = len(raw_driver.window_handles)
+        except Exception as error:
+            snapshot["domProbe"] = {
+                "errorType": type(error).__name__,
+                "error": str(error)[:512],
+            }
+        return snapshot
+    # #endregion
+
     # #region debug-point A-D:browser-runtime-snapshot
     def _browser_lifecycle_debug_snapshot(self) -> dict[str, Any]:
         process_return_code = (
@@ -830,6 +898,18 @@ class FoundationRuntimeClient:
                 f"{self.spec.runtime} client is not connected"
             )
         started_at = time.monotonic()
+        native_locale_probe = (
+            self.spec.runtime == "native-tauri"
+            and method == "setFoundationLocale"
+        )
+        if native_locale_probe:
+            # #region debug-point E-H:native-locale-call
+            report_native_restart_port_release_debug(
+                "E-H",
+                "native-locale-call-started",
+                self._native_harness_debug_snapshot(),
+            )
+            # #endregion
         if self.spec.runtime == "browser":
             # #region debug-point A-D:browser-harness-call
             report_browser_renderer_closed_debug(
@@ -850,6 +930,19 @@ class FoundationRuntimeClient:
                 namespace="agent",
                 script_timeout=timeout,
             )
+            if native_locale_probe:
+                # #region debug-point E-H:native-locale-call-completed
+                report_native_restart_port_release_debug(
+                    "E-H",
+                    "native-locale-call-completed",
+                    {
+                        **self._native_harness_debug_snapshot(),
+                        "elapsedMs": int(
+                            (time.monotonic() - started_at) * 1000
+                        ),
+                    },
+                )
+                # #endregion
             if self.spec.runtime == "browser":
                 # #region debug-point A-D:browser-harness-result
                 report_browser_renderer_closed_debug(
@@ -867,6 +960,21 @@ class FoundationRuntimeClient:
                 # #endregion
             return result
         except Exception as error:
+            if native_locale_probe:
+                # #region debug-point E-H:native-locale-call-failed
+                report_native_restart_port_release_debug(
+                    "E-H",
+                    "native-locale-call-failed",
+                    {
+                        **self._native_harness_debug_snapshot(),
+                        "elapsedMs": int(
+                            (time.monotonic() - started_at) * 1000
+                        ),
+                        "errorType": type(error).__name__,
+                        "error": str(error)[:512],
+                    },
+                )
+                # #endregion
             if self.spec.runtime == "browser":
                 # #region debug-point A-D:browser-harness-failure
                 report_browser_renderer_closed_debug(

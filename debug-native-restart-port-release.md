@@ -18,6 +18,10 @@
 | B | Process-group wait completion precedes actual renderer listener release. | High | Low | Pending: compare group wait completion timestamp with repeated owner snapshots without changing the cleanup deadline. |
 | C | The renderer port is owned by a stale or parallel runtime generation. | Medium | Low | Pending: compare the listener owner command and ancestry with the current root PID and generation. |
 | D | The runtime client has lost or retained an incorrect root PID/PGID, so stop signals do not cover the renderer owner. | Medium | Low | Pending: compare stored process identity with live process and listener ancestry at stop entry. |
+| E | A foreign renderer takeover invalidates the Native page, and a later restart reports readiness before that damage is fully recovered. | High | Low | Pending: compare post-start DOM identity with the first locale-call DOM identity after the observed takeover. |
+| F | The Native process or embedded WebDriver exits between `harness_ready` and `setFoundationLocale`. | Medium | Low | Pending: compare process return code and Gateway/WebDriver listeners at both boundaries. |
+| G | A Vite reload occurs after the one-shot readiness check, temporarily removing `window.__PT_ACCEPTANCE__`. | Medium | Low | Pending: compare URL, `document.readyState`, root, harness root, and Agent namespace before and after the locale call. |
+| H | The WebDriver session switches to a different window or document after restart. | Low | Low | Pending: compare current URL and window-count snapshots across startup and locale dispatch. |
 
 ## Log Evidence
 Instrumentation added in
@@ -41,5 +45,29 @@ Focused pre-reproduction checks:
 
 Pending pre-fix runtime reproduction.
 
+Pre-fix exact-source reproduction:
+
+- C08 `20260912T012820159809Z-4ce386dda8bc33cd50afb936234a01e5`
+  passed `DONE / PROVEN` on `24c7e3e04330d8c0968cf99cd6cb5bcd603af21e`.
+- During Foundation run startup, the expected Native Gateway and WebDriver
+  belonged to root PGID `55568`, while renderer port `3410` was replaced by a
+  later `peers-group-chat` Acceptance runtime in PGID `59637`.
+- Native restart generations 1 and 2 then stopped cleanly. TERM completed in
+  `535ms` and `490ms`; no KILL was needed and every final listener snapshot was
+  empty.
+- Foundation run
+  `20260912T012949927697Z-6d3190d85eefa6885987842e0bc08383`
+  failed at Browser English AS-F06 when the Native executor's
+  `setFoundationLocale` call reported `acceptance harness not mounted`.
+  Final cleanup released all client and fault-transport ports and storage.
+- Hypothesis A: REJECTED for the observed clean restarts.
+- Hypothesis B: REJECTED for the observed clean restarts.
+- Hypothesis C: CONFIRMED.
+- Hypothesis D: REJECTED for the observed clean restarts.
+
 ## Verification Conclusion
-Pending.
+The original renderer-port cleanup failure was caused by a foreign worktree
+listener, not a surviving child of the retained Native process group. The
+subsequent harness-loss failure may be downstream damage from that takeover or
+an independent post-readiness lifecycle race. Hypotheses E-H require one
+instrumented exact-source run without concurrent port ownership.

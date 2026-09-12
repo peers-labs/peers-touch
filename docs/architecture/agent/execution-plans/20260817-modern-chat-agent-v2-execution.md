@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T004956133520Z-4c4e04249e3297881a3475afba06bb31` on `4ca50a1b0088e5a31da35753fc00117c29d5a641` passed with 19/19 assertions and clean cleanup; the same-source Foundation run `20260912T005105177245Z-a2e74dde0946da7a7ca5a3cf58e3d2fe` stopped at Native AS-F06 restart cleanup because renderer port `3410` remained listening after the retained POSIX process group was judged exited; outer run `20260912T005105057682Z-a3acb135a6ecd9e0170d1188c01192a1` completed cleanup `DONE / PROVEN`; Acceptance Infra process/listener ownership diagnosis is active, while the incompatible cleanup/readiness corrections remain pending exact-source proof | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T012820159809Z-4ce386dda8bc33cd50afb936234a01e5` on `24c7e3e04330d8c0968cf99cd6cb5bcd603af21e` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T012949927697Z-6d3190d85eefa6885987842e0bc08383` observed a later `peers-group-chat` process group take renderer port `3410`, then crossed three clean Native stop boundaries and failed when the Native executor's next `setFoundationLocale` call found no mounted Acceptance Harness; outer cleanup remained `DONE / PROVEN`; post-restart Harness stability diagnosis is active, while the incompatible cleanup/readiness corrections remain pending exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7288,6 +7288,32 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   PID/PPID/PGID/command after the existing immediate release verdict. It does
   not change the `15s`/`5s` deadlines, retry the Gate, weaken cleanup, or alter
   any Foundation tuple. Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- Instrumentation checkpoint
+  `24c7e3e04330d8c0968cf99cd6cb5bcd603af21e` used dedicated
+  Acceptance binary SHA-256
+  `948d9bf978c4cfd88a3a40ba7f6a156b772143ec86f93f308e077280007d32dd`;
+  embedded-WebDriver smoke passed and the approved Station reported the same
+  commit. C08 run
+  `20260912T012820159809Z-4ce386dda8bc33cd50afb936234a01e5`
+  completed `DONE / PROVEN` with `19/19` assertions.
+- During the same-source Foundation run, the expected Native Gateway and
+  WebDriver belonged to process group `55568`, while a later
+  `peers-group-chat` Acceptance runtime replaced renderer port `3410` with
+  process group `59637`. That foreign run exited before the first Native
+  restart. Native restart generations one and two then released their retained
+  groups and all three ports after TERM in `535ms` and `490ms`; no KILL was
+  required. This rejects a detached Native child and an early port verdict for
+  the observed restarts and confirms cross-worktree port takeover.
+- Foundation run
+  `20260912T012949927697Z-6d3190d85eefa6885987842e0bc08383`
+  then failed at Browser English AS-F06 when the Native executor's
+  `setFoundationLocale` call returned `acceptance harness not mounted`.
+  Inner cleanup recorded the primary chain, and outer cleanup released all
+  client/fault ports, storage, actor identity, and leases
+  `DONE / PROVEN`. The next instrumentation compares Native URL, document
+  readiness, Harness namespace, WebDriver/process liveness, and listener
+  ownership at one-shot startup readiness and locale dispatch. No startup
+  policy, deadline, retry, tuple, or assertion changes.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
