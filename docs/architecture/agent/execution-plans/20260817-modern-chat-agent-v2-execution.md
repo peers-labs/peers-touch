@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T023434831395Z-dc4a3d0ab9740c4baa9b3b64419957a4` on `98631c455267c53c003b3b0096b0e3c1ad30102c` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T023608539671Z-044de305ad05ee857f80db5d636c939b` crossed AS-F06 and failed first at Browser English `BASE-CANCELLED`; replay telemetry proves the Station snapshot and immediate reconciliation carried `cancelled_by_user`, then same-terminal authoritative message merge erased the detail before receiver sampling; outer cleanup remained `DONE / PROVEN`; the owner-layer merge correction is pending exact-source proof, while the incompatible cleanup/readiness corrections remain pending runtime proof | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T033904525557Z-d6822c40db31c543386eb94ec994b4e0` on `1362900aa41d2afa2d7f912fb34f8abc1e6bf30d` passed with 19/19 assertions and clean cleanup; same-source Foundation run `20260912T034122773227Z-6f85ea63620dd1dca04bff43347bb8ba` crossed AS-F06 and `BASE-CANCELLED`, then failed only `BASE-INCOMPATIBLE_CAPABILITY / cleanupComplete`; cleanup telemetry proves binding deletion and zero active bindings before parent deletion, while the redundant post-parent child-list call returned `agent.capabilityBindingListFailed`; outer cleanup remained `DONE / PROVEN`; the child-readback ordering correction is pending exact-source proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7348,6 +7348,28 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   environment-dependent skip, Desktop TypeScript passes, focused
   Foundation/oracle/static tests pass `234/234`, and Acceptance Infra boundary
   tests pass `8/8`. Exact-source proof remains pending.
+- Checkpoint `1362900aa41d2afa2d7f912fb34f8abc1e6bf30d` deployed
+  exact-source with Acceptance binary SHA-256
+  `560c9839fb4a4c1a9b8986accd6b6dc55dbe31b11f8aba85101bb803170d5c49`.
+  C08 run
+  `20260912T033904525557Z-d6822c40db31c543386eb94ec994b4e0`
+  completed `DONE / PROVEN`; unchanged Foundation run
+  `20260912T034122773227Z-6f85ea63620dd1dca04bff43347bb8ba`
+  crossed AS-F06 and `BASE-CANCELLED`, proving the same-terminal detail
+  correction, then failed only
+  `BASE-INCOMPATIBLE_CAPABILITY / cleanupComplete`.
+- Fresh incompatible-capability telemetry records successful Conversation
+  archive, binding deletion, Agent deletion, provider restoration, prior
+  selection restoration, and zero active bindings before parent deletion. The
+  final producer nevertheless set `capabilityBindingRemoved=false` because it
+  called the child-list API after deleting the parent Agent and received the
+  Desktop wrapper error `agent.capabilityBindingListFailed`.
+- The local correction performs the zero-active-binding readback immediately
+  after binding deletion while the Agent still exists, then carries that
+  verified result into final cleanup facts. Conversation and Agent deletion
+  readbacks remain independently required. Desktop TypeScript and focused
+  `234/234` Foundation/oracle/static tests pass; no product path, tuple,
+  timeout, or cleanup requirement changed. Exact-source proof remains pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

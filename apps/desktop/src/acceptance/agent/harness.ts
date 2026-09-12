@@ -12289,6 +12289,8 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
     scenarioError = error;
   } finally {
     let cleanupStage = 'start';
+    let activeBindingCount = 0;
+    let capabilityBindingRemoved = capabilityBindingId.length === 0;
     try {
       await reportFoundationIncompatibleCleanupDebug(
         'A-D',
@@ -12339,6 +12341,19 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
               'binding-delete-completed',
             );
           }
+          cleanupStage = 'binding-delete-readback';
+          activeBindingCount = (
+            await api.listAgentCapabilityBindings(disposableAgentId)
+          ).filter((binding) => (
+            binding.bindingId === capabilityBindingId
+            && !binding.tombstonedAt
+          )).length;
+          capabilityBindingRemoved = activeBindingCount === 0;
+          await reportFoundationIncompatibleCleanupDebug(
+            'B',
+            'binding-delete-readback-completed',
+            { activeBindingCount },
+          );
         }
         cleanupStage = 'agent-delete';
         await api.deleteAgent(disposableAgentId);
@@ -12431,23 +12446,7 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
               },
             )
           : true;
-        let activeBindingCount = 0;
-        let bindingReadbackErrorCode = '';
-        cleanup.capabilityBindingRemoved = disposableAgentId
-          ? await api.listAgentCapabilityBindings(disposableAgentId).then(
-              (bindings) => {
-                activeBindingCount = bindings.filter(
-                  (binding) => binding.bindingId === capabilityBindingId
-                    && !binding.tombstonedAt,
-                ).length;
-                return activeBindingCount === 0;
-              },
-              (error: unknown) => {
-                bindingReadbackErrorCode = observedErrorCode(error);
-                return isFoundationResourceNotFound(error);
-              },
-            )
-          : true;
+        cleanup.capabilityBindingRemoved = capabilityBindingRemoved;
         const restoredProvider = await api.getProvider(fixtureProviderId);
         cleanup.fixtureProviderRestored =
           restoredProvider.version === 0
@@ -12468,7 +12467,6 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
             conversationReadbackErrorCode,
             agentReadbackErrorCode,
             activeBindingCount,
-            bindingReadbackErrorCode,
           },
         );
       }

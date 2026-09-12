@@ -22,20 +22,20 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Preserve the Station replay cancellation reason across same-terminal Desktop message reconciliation, then rerun exact-source C08 and Foundation |
+| Current step | Verify incompatible-capability binding deletion before deleting its parent Agent, then rerun exact-source C08 and Foundation |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source C08 run `20260912T023434831395Z-dc4a3d0ab9740c4baa9b3b64419957a4` on `98631c455267c53c003b3b0096b0e3c1ad30102c` passed `DONE / PROVEN` with 19/19 assertions and clean cleanup |
-| Current action | Keep a missing local `errorDetail` only when the canonical server message identifies the same Turn and agrees on the same terminal status; retain server authority when terminal states differ |
-| Next action | Commit the merge correction, rebuild and smoke the dedicated Acceptance binary, deploy exact source, rerun C08 first, then continue the unchanged Foundation matrix |
+| Last completed | Exact-source C08 run `20260912T033904525557Z-d6822c40db31c543386eb94ec994b4e0` on `1362900aa41d2afa2d7f912fb34f8abc1e6bf30d` passed `DONE / PROVEN` with 19/19 assertions and clean cleanup；the same-source Foundation run crossed `BASE-CANCELLED` |
+| Current action | Move capability-binding deletion readback before parent Agent deletion so the cleanup proof observes the binding resource while its list API remains valid |
+| Next action | Commit the cleanup-order correction, rebuild and smoke the dedicated Acceptance binary, deploy exact source, rerun C08 first, then continue the unchanged Foundation matrix |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | none；Native AS-F06 is isolated and crossed；Browser `BASE-CANCELLED` same-terminal projection merge is the active recoverable correction；BASE-CONTEXT-OVERFLOW receiver sampling is source-corrected；the incompatible cleanup/readiness correction remains pending runtime proof；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
+| Blockers | none；Native AS-F06 and Browser `BASE-CANCELLED` are crossed；`BASE-INCOMPATIBLE_CAPABILITY` child-readback ordering is the active recoverable correction；BASE-CONTEXT-OVERFLOW receiver sampling remains pending later runtime traversal；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 run `20260912T023434831395Z-dc4a3d0ab9740c4baa9b3b64419957a4` is `DONE / PROVEN` on `98631c455`；same-source Foundation run `20260912T023608539671Z-044de305ad05ee857f80db5d636c939b` crossed AS-F06 and failed first at Browser English `BASE-CANCELLED`；fresh telemetry shows replay reconciliation set `errorDetail=cancelled_by_user` before background server-message merge erased it 311 ms later；outer cleanup remained `DONE / PROVEN` |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint are injected through the canonical profile；C08 run `20260912T033904525557Z-d6822c40db31c543386eb94ec994b4e0` is `DONE / PROVEN` on `1362900aa`；same-source Foundation run `20260912T034122773227Z-6f85ea63620dd1dca04bff43347bb8ba` crossed AS-F06 and `BASE-CANCELLED`, then failed only `BASE-INCOMPATIBLE_CAPABILITY / cleanupComplete`；telemetry proves all cleanup actions passed and active binding count was zero before parent deletion, but post-parent child-list readback returned `agent.capabilityBindingListFailed`；outer cleanup remained `DONE / PROVEN` |
 | Last updated | 2026-09-12 |
 
 ---

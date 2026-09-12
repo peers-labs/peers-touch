@@ -1512,8 +1512,20 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertGreaterEqual(
             scenario.count("isFoundationResourceNotFound(error)"),
-            3,
+            2,
         )
+        binding_delete_readback = scenario.index(
+            "'binding-delete-readback-completed'",
+        )
+        agent_delete = scenario.index(
+            "cleanupStage = 'agent-delete'",
+        )
+        self.assertLess(binding_delete_readback, agent_delete)
+        self.assertIn(
+            "cleanup.capabilityBindingRemoved = capabilityBindingRemoved",
+            scenario,
+        )
+        self.assertNotIn("bindingReadbackErrorCode", scenario)
         self.assertIn(
             "'readiness-readback-boundary'",
             scenario,

@@ -275,3 +275,20 @@ waiting for DOM visibility.
 
 Exact-source post-fix proof is pending. Instrumentation remains active until
 the user confirmation gate.
+
+## Same-Terminal Merge Runtime Closure
+
+- Checkpoint `1362900aa41d2afa2d7f912fb34f8abc1e6bf30d` deployed
+  exact-source and used Acceptance binary SHA-256
+  `560c9839fb4a4c1a9b8986accd6b6dc55dbe31b11f8aba85101bb803170d5c49`;
+  embedded-WebDriver smoke passed.
+- C08 run
+  `20260912T033904525557Z-d6822c40db31c543386eb94ec994b4e0`
+  completed `DONE / PROVEN`.
+- Foundation run
+  `20260912T034122773227Z-6f85ea63620dd1dca04bff43347bb8ba`
+  crossed Browser English `BASE-CANCELLED` and failed later at
+  `BASE-INCOMPATIBLE_CAPABILITY / cleanupComplete`.
+- This proves the same-terminal merge correction in the unchanged Foundation
+  matrix. The debug session remains `[OPEN]`; no instrumentation or debug
+  artifact cleanup is authorized yet.

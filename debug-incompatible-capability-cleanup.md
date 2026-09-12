@@ -121,3 +121,31 @@ Local verification:
 - Focused Harness/independent-oracle tests: `206/206` PASS.
 - `git diff --check`: PASS.
 - Exact-source post-fix C08 and Foundation evidence remain pending.
+
+## Iteration 3: Child Readback Before Parent Deletion
+
+Exact-source C08 run
+`20260912T033904525557Z-d6822c40db31c543386eb94ec994b4e0`
+completed `DONE / PROVEN` on
+`1362900aa41d2afa2d7f912fb34f8abc1e6bf30d`.
+The same-source Foundation run
+`20260912T034122773227Z-6f85ea63620dd1dca04bff43347bb8ba`
+crossed AS-F06 and `BASE-CANCELLED`, then failed only
+`BASE-INCOMPATIBLE_CAPABILITY / cleanupComplete`.
+
+Fresh cleanup telemetry proves:
+
+- Conversation deletion readback returned `status=deleted`.
+- Agent deletion returned canonical not-found.
+- Binding deletion completed and the active binding count was zero.
+- The final binding readback ran after deleting the parent Agent, so the
+  Desktop API surfaced `agent.capabilityBindingListFailed` instead of a
+  binding-level not-found code.
+- Provider restoration, prior selection restoration, and all remaining cleanup
+  booleans passed.
+
+The local correction verifies zero active bindings immediately after binding
+deletion while the parent Agent still exists, then carries that verified result
+into final cleanup facts. It no longer calls the child-list API after deleting
+the parent Agent. Conversation and Agent readbacks retain their existing
+canonical deletion checks. Exact-source post-fix proof is pending.
