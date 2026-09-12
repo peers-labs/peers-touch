@@ -199,6 +199,21 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertIn("chat-native-two-client-e2e", selected)
         self.assertIn("chat-desktop-gateway-e2e", selected)
 
+    def test_friend_request_owners_select_gateway_lifecycle(self) -> None:
+        for path in (
+            "apps/desktop/src-tauri/src/interface/tauri_commands/social.rs",
+            "apps/station/app/subserver/social/domain/"
+            "federated_friend_request.go",
+            "apps/station/app/subserver/social/infrastructure/"
+            "federated_friend_request_store.go",
+        ):
+            with self.subTest(path=path):
+                selected = self.selected_ids(path)
+                self.assertIn(
+                    "chat-friend-request-gateway-e2e",
+                    selected,
+                )
+
     def test_agent_tool_surfaces_select_governed_tool_and_foundation_gates(
         self,
     ) -> None:

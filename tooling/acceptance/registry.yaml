@@ -96,6 +96,27 @@
       ]
     },
     {
+      "id": "chat-friend-request-gateway-lifecycle",
+      "features": [
+        "chat-friend-request-gateway-lifecycle"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/src-tauri/src/interface/tauri_commands/social.rs",
+          "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+          "apps/station/app/subserver/social/handler.go",
+          "apps/station/app/subserver/social/domain/federated_friend_request.go",
+          "apps/station/app/subserver/social/infrastructure/federated_friend_request_store.go",
+          "apps/station/frame/touch/actor/seed_dev_federation.go",
+          "tooling/acceptance/gates/chat/friend_request_gateway_e2e.py",
+          "tooling/acceptance/features/chat-friend-request-gateway-lifecycle.yaml"
+        ]
+      },
+      "require": [
+        "chat-friend-request-gateway-e2e"
+      ]
+    },
+    {
       "id": "chat-message-interactions",
       "features": [
         "chat-message-interactions"
