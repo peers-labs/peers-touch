@@ -1107,34 +1107,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         memberMap[conversation.conversationId] =
           activeConversationMembers(conversation.members);
       }
-      // #region debug-point G-H:social-chat-conversation-members
-      void fetch('http://10.4.55.179:7779/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'conversation-open-500',
-          runId: 'peer-projection-pre-fix',
-          hypothesisId: 'G-H',
-          location: 'store/socialChat.ts:loadSessions',
-          msg: '[DEBUG] Desktop social projection members',
-          data: {
-            actorPtid,
-            conversations: projections.map(conversation => {
-              const members = memberMap[conversation.conversationId] ?? [];
-              const peer = members.find(member => (
-                member.ptid && member.ptid !== actorPtid
-              ));
-              return {
-                conversationId: conversation.conversationId,
-                kind: conversation.kind,
-                memberCount: members.length,
-                members: members.map(member => member.ptid),
-                peerPtid: peer?.ptid ?? '',
-              };
-            }),
-          },
-        }),
-      }).catch(() => {});
-      // #endregion
 
       if (
         requestGeneration !== loadSessionsGeneration

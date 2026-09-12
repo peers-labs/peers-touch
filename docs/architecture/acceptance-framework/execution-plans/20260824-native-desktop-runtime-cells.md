@@ -4837,3 +4837,26 @@ Station implementation rules did not select that Gate. Both rules now select
 the existing ownership Gate, and focused planner regressions prove Chat proto
 and Station Conversation changes cannot omit it. The planner suite passes
 23/23. The generated coverage report is refreshed from current contracts.
+
+On 2026-09-12 the Owner confirmed the native Direct correction and explicitly
+authorized `CHAT_ACCEPTANCE_RESET=1` for profile `four`. The
+`conversation-open-500` debug session is closed: all session-specific network
+instrumentation, its tracked debug record, local NDJSON/env artifacts, and the
+Debug Server listener were removed. Focused cleanup verification passes 108
+Desktop Messaging tests with one live-only test ignored, the complete Station
+Conversation suite, Desktop TypeScript/social checks, and 10 Chat identity
+lifecycle tests.
+
+The remaining NDR-W8 Gate queue is now authorized to execute serially against
+the canonical remote `four` profile:
+
+1. `chat-friend-request-gateway-e2e`;
+2. `chat-native-interactions-e2e`, including Direct offline/restart behavior;
+3. `chat-native-typing-e2e`;
+4. `chat-native-multi-device-e2e`;
+5. `chat-native-recovery-e2e`; and
+6. `chat-native-group-mls-e2e`.
+
+Each Gate must independently preflight the disposable target, produce
+source-bound native evidence, and complete reverse-order cleanup. A failed Gate
+enters root-cause diagnosis before any dependent Gate is treated as proven.
