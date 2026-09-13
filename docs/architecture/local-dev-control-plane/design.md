@@ -24,6 +24,9 @@
    stale identity, or dirty untracked environment definition blocks mutation.
 7. **Product namespace isolation**: development artifacts never write under
    the formal product Application Support root.
+8. **Repository cleanliness**: transient debug sessions, logs, traces,
+   screenshots, DOM dumps, and ad-hoc reports are machine development state,
+   not repository-root content.
 
 ## 2. System Architecture
 
@@ -61,6 +64,7 @@ The following roots remain separate:
 ~/.peers-touch/                                  product and Agent data
 ~/.peers-touch/dev/                              machine dev control plane
 ~/.peers-touch/dev/acceptance/                   Acceptance evidence
+~/.peers-touch/dev/workspaces/<workspaceId>/     worktree-scoped development state
 ~/Library/Application Support/peers-touch/       Desktop runtime instances
 ~/Library/Application Support/PeersTouch/        formal product namespace
 ```
@@ -132,7 +136,20 @@ It remains logically independent from registry and lease mutation. Artifact
 root overrides may redirect CI and isolated tests, but they must never redirect
 machine-global lease authority.
 
-### 4.4 Lease Manager
+### 4.4 Debug Session Store
+
+Transient debug sessions resolve to:
+
+```text
+~/.peers-touch/dev/workspaces/<workspaceId>/debug/<sessionId>/
+```
+
+This store owns debug logs, traces, screenshots, DOM snapshots, temporary
+reports, and reproduction notes. A session must be deleted after closure.
+Reusable conclusions move to the governing design, operational knowledge, or
+Acceptance Evidence Store; transient files do not move into the repository.
+
+### 4.5 Lease Manager
 
 Owns bounded live exclusivity. Required lease classes:
 
@@ -147,7 +164,7 @@ Owns bounded live exclusivity. Required lease classes:
 A durable binding does not prove a live lease. A live lease does not rewrite the
 durable binding.
 
-### 4.5 Runtime Observer
+### 4.6 Runtime Observer
 
 Projects current OS facts:
 
