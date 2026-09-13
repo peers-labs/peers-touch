@@ -5904,3 +5904,12 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   service-coordination contracts. Conversation must not add a default
   Federation, direct-URL fallback, synthetic peer route, local remote-Actor
   device row, or relaxed product assertion.
+- After both Stations reached ready DHT and live relay mounts, run
+  `20260913T174952713386Z-87e46bac15e72bb351f1e60c14365984`
+  stopped before product execution because an unrelated macOS notification
+  window covered the runtime probe's single hard-coded center point. The target
+  Tauri PID was frontmost with a main window, the pointer reached the requested
+  coordinate, the screenshot was nonempty, and reverse cleanup passed. The
+  runtime-cell repair keeps exact-PID point ownership mandatory while selecting
+  from a bounded set of interior points; a fully occluded target still fails
+  closed.
