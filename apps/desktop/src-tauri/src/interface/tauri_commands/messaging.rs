@@ -990,7 +990,7 @@ pub(crate) fn messaging_create_group_with_engine(
         &input.federation_id,
     ) {
         Ok(prepared) => prepared,
-        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+        Err(error) => return error.into_app_result("Failed to create group"),
     };
     let progress = match engine.dispatch_command_once(
         token,

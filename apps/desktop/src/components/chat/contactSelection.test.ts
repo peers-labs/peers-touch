@@ -8,6 +8,24 @@ import {
   friendContactSelection,
   type ContactSelection,
 } from './contactSelection';
+import type { ChatActorIdentityProjection } from '../../store/friendshipProjection';
+
+function identity(
+  actorPtid: string,
+  displayName: string,
+): ChatActorIdentityProjection {
+  return {
+    actorPtid,
+    username: displayName.toLowerCase(),
+    displayName,
+    avatarUrl: 'avatar',
+    federatedHandle: `@${displayName.toLowerCase()}@station.example`,
+    homeStationDomain: 'station.example',
+    homeStationPeerId: 'station-peer',
+    federationId: 'federation-1',
+    federationName: 'Federation One',
+  };
+}
 
 function conversation(
   id: string,
@@ -41,7 +59,12 @@ describe('findContactConversation', () => {
       kind: 'friend',
       peerPtid: 'ptid:bob',
       federationId: 'federation-1',
+      federationName: 'Federation One',
       displayName: 'Bob',
+      username: 'bob',
+      federatedHandle: '@bob@station.example',
+      homeStationDomain: 'station.example',
+      homeStationPeerId: 'station-peer',
     };
 
     expect(findContactConversation(selection, conversations)).toBeUndefined();
@@ -52,7 +75,12 @@ describe('findContactConversation', () => {
       kind: 'friend',
       peerPtid: 'ptid:alice',
       federationId: 'federation-1',
+      federationName: 'Federation One',
       displayName: 'Alice',
+      username: 'alice',
+      federatedHandle: '@alice@station.example',
+      homeStationDomain: 'station.example',
+      homeStationPeerId: 'station-peer',
     };
 
     expect(findContactConversation(selection, conversations)?.id).toBe('dm-1');
@@ -71,34 +99,41 @@ describe('findContactConversation', () => {
 
   it('links an accepted request actor to an existing direct conversation', () => {
     expect(friendContactSelection(
-      'ptid:alice',
-      'federation-1',
-      'Alice',
-      'avatar',
+      identity('ptid:alice', 'Alice'),
       conversations,
     )).toEqual({
       kind: 'friend',
       conversationId: 'dm-1',
       peerPtid: 'ptid:alice',
       federationId: 'federation-1',
+      federationName: 'Federation One',
       displayName: 'Alice',
       avatar: 'avatar',
+      username: 'alice',
+      federatedHandle: '@alice@station.example',
+      homeStationDomain: 'station.example',
+      homeStationPeerId: 'station-peer',
     });
   });
 
   it('keeps an accepted request actor selectable before a DM exists', () => {
     expect(friendContactSelection(
-      'ptid:bob',
-      'federation-1',
-      'Bob',
-      undefined,
+      {
+        ...identity('ptid:bob', 'Bob'),
+        avatarUrl: '',
+      },
       conversations,
     )).toEqual({
       kind: 'friend',
       peerPtid: 'ptid:bob',
       federationId: 'federation-1',
+      federationName: 'Federation One',
       displayName: 'Bob',
-      avatar: undefined,
+      avatar: '',
+      username: 'bob',
+      federatedHandle: '@bob@station.example',
+      homeStationDomain: 'station.example',
+      homeStationPeerId: 'station-peer',
     });
   });
 
@@ -107,8 +142,13 @@ describe('findContactConversation', () => {
       kind: 'friend',
       peerPtid: 'ptid:bob',
       federationId: 'federation-1',
+      federationName: 'Federation One',
       displayName: 'Bob',
       avatar: 'avatar',
+      username: 'bob',
+      federatedHandle: '@bob@station.example',
+      homeStationDomain: 'station.example',
+      homeStationPeerId: 'station-peer',
     });
     const failed = failDirectConversationOpen(creating, {
       code: 'chat.conversationActionFailed',
@@ -122,8 +162,13 @@ describe('findContactConversation', () => {
       phase: 'creating',
       peerPtid: 'ptid:bob',
       federationId: 'federation-1',
+      federationName: 'Federation One',
       displayName: 'Bob',
       avatar: 'avatar',
+      username: 'bob',
+      federatedHandle: '@bob@station.example',
+      homeStationDomain: 'station.example',
+      homeStationPeerId: 'station-peer',
     });
     expect(failed).toMatchObject({
       phase: 'failed',

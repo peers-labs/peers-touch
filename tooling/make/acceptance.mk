@@ -134,6 +134,12 @@ acceptance-chat-native-two-client:
 		--gate chat-native-two-client-e2e \
 		--runtime-cell "$(RUNTIME_CELL)"
 
+acceptance-chat-native-submitted-command-recovery:
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-submitted-command-recovery-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
+
 acceptance-chat-native-interactions:
 	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
 		python3 tooling/scripts/acceptance-run.py \

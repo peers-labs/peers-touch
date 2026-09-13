@@ -47,15 +47,25 @@ REQUIRED_ASSERTIONS = {
     "native_runtime",
     "actor_isolation",
     "default_friend_projection",
+    "same_name_identity_disambiguated",
+    "identity_metadata_parity",
+    "avatar_parity",
     "contact_message_routes_selected_peer",
     "existing_friend_search_state",
     "group_created",
+    "group_creation_visible",
+    "group_creation_failure_recoverable",
     "member_added",
     "group_message_delivered",
+    "group_restart_recovered",
     "member_removed",
 }
 
+class VisibleGroupCreationFailure(GateError):
+    """Stops polling once the UI reaches a terminal recoverable failure."""
+
 SELECTORS = {
+    "chat_nav": '[data-pt-primary-nav="chat"]',
     "chat_nav": '[data-pt-primary-nav="chat"]',
     "contacts_subpage": '[data-chat-subpage="contacts"]',
     "contact_message": "[data-chat-contact-message]",
@@ -238,7 +248,7 @@ class NativeGroupMlsGate(AcceptanceGate):
     def start_client(self, actor: str) -> None:
         if self.runtime_binding is None:
             raise GateError("Native Desktop runtime binding is required")
-
+        self.start_injected_client(actor)
 
     def start_injected_client(self, actor: str) -> None:
         if self.runtime_binding is None:
@@ -412,52 +422,99 @@ class NativeGroupMlsGate(AcceptanceGate):
             )
         return cleanup
 
-    def create_group(self) -> str:
-        alice = self.clients["alice"]
-        enter_chat_page(alice)
-        last_error = ""
-        for attempt in range(15):
-            try:
-                result = async_harness(
-                    alice,
-                    "createGroup",
-                    {
-                        "name": "Acceptance MLS Group",
-                        "memberPtids": [self.ptids["bob"], self.ptids["charlie"]],
-                    },
-                    timeout=60,
-                )
-                group_id = (result or {}).get("groupUlid", "")
-                if group_id:
-                    return str(group_id)
-                last_error = f"createGroup returned no groupUlid: {result}"
-            except GateError as exc:
-                last_error = str(exc)
-            if attempt < 14:
-                time.sleep(5)
-        raise GateError(f"create_group failed after 15 attempts: {last_error}")
+    def open_create_group_modal(self, actor: str) -> TauriSession:
+        client = self.clients[actor]
+        enter_chat_page(client)
+        client.find_element(SELECTORS["new_menu"], 30).click()
+        client.find_element(SELECTORS["create_group_menu"], 10).click()
+        client.find_element(SELECTORS["create_group"], 20)
+        return client
 
-    def verify_default_friend_projection(self) -> dict[str, Any]:
-        alice = self.clients["alice"]
-        enter_chat_page(alice)
-        alice.find_element(SELECTORS["new_menu"], 30).click()
-        alice.find_element(SELECTORS["create_group_menu"], 10).click()
-
-        expected_contacts = {
-            self.ptids["bob"],
-            self.ptids["charlie"],
+    def create_group_contact_snapshot(self, actor: str) -> dict[str, Any]:
+        client = self.open_create_group_modal(actor)
+        expected_ptids = {
+            ptid
+            for role, ptid in self.ptids.items()
+            if role != actor
         }
 
-        def group_contacts() -> dict[str, Any] | None:
-            value = alice.execute_script(
+        def ready() -> dict[str, Any] | None:
+            value = client.execute_script(
                 """
                 const root = document.querySelector(arguments[0]);
                 if (!root) return null;
+                const rows = Array.from(root.querySelectorAll(arguments[1]))
+                  .map((row) => {
+                    const identity = row.querySelector(
+                      '[data-chat-identity-ptid]',
+                    );
+                    const image = row.querySelector('img');
+                    const federationLabel = row.querySelector(
+                      '[data-chat-identity-federation]',
+                    );
+                    const stationLabel = row.querySelector(
+                      '[data-chat-identity-station]',
+                    );
+                    const metadataFields = [
+                      federationLabel,
+                      stationLabel,
+                    ].filter(Boolean);
+                    return {
+                      ptid:
+                        row.getAttribute('data-chat-contact-ptid') || '',
+                      displayName:
+                        identity?.getAttribute(
+                          'data-chat-identity-display-name',
+                        ) || '',
+                      federatedHandle:
+                        row.getAttribute(
+                          'data-chat-contact-federated-handle',
+                        ) || '',
+                      homeStationDomain:
+                        row.getAttribute(
+                          'data-chat-contact-home-station-domain',
+                        ) || '',
+                      homeStationPeerId:
+                        row.getAttribute(
+                          'data-chat-contact-home-station-peer-id',
+                        ) || '',
+                      federationId:
+                        row.getAttribute(
+                          'data-chat-contact-federation-id',
+                        ) || '',
+                      federationName:
+                        identity?.getAttribute(
+                          'data-chat-identity-federation-name',
+                        ) || '',
+                      avatarSource:
+                        row.getAttribute(
+                          'data-chat-contact-avatar-src',
+                        ) || '',
+                      avatarCurrentSource:
+                        image?.currentSrc || image?.src || '',
+                      avatarLoaded: Boolean(
+                        image?.complete && image?.naturalWidth > 0,
+                      ),
+                      metadata:
+                        row.querySelector(
+                          '[data-chat-identity-metadata]',
+                        )?.textContent?.trim() || '',
+                      federationLabel:
+                        federationLabel?.textContent?.trim() || '',
+                      stationLabel:
+                        stationLabel?.textContent?.trim() || '',
+                      metadataClipped: metadataFields.some(
+                        (field) => (
+                          field.scrollWidth > field.clientWidth + 1
+                          || field.scrollHeight > field.clientHeight + 1
+                        ),
+                      ),
+                    };
+                  });
                 return {
-                  state: root.getAttribute('data-chat-friendship-state') || '',
-                  contacts: Array.from(root.querySelectorAll(arguments[1]))
-                    .map((item) => item.getAttribute('data-chat-create-group-contact') || '')
-                    .filter(Boolean),
+                  state:
+                    root.getAttribute('data-chat-friendship-state') || '',
+                  rows,
                 };
                 """,
                 SELECTORS["create_group"],
@@ -465,17 +522,161 @@ class NativeGroupMlsGate(AcceptanceGate):
             )
             if not isinstance(value, dict) or value.get("state") != "ready":
                 return None
-            contacts = {
-                str(item) for item in value.get("contacts", []) if item
+            rows = value.get("rows")
+            if not isinstance(rows, list):
+                return None
+            by_ptid = {
+                str(row.get("ptid") or ""): row
+                for row in rows
+                if isinstance(row, dict) and row.get("ptid")
             }
-            return value if expected_contacts.issubset(contacts) else None
+            for ptid in expected_ptids:
+                row = by_ptid.get(ptid)
+                if (
+                    not isinstance(row, dict)
+                    or not row.get("displayName")
+                    or not row.get("federatedHandle")
+                    or not row.get("homeStationDomain")
+                    or not row.get("homeStationPeerId")
+                    or not row.get("federationId")
+                    or not row.get("federationName")
+                    or not row.get("avatarSource")
+                    or not row.get("avatarCurrentSource")
+                    or row.get("avatarLoaded") is not True
+                    or not row.get("metadata")
+                    or not row.get("federationLabel")
+                    or not row.get("stationLabel")
+                    or row.get("metadataClipped") is not False
+                ):
+                    return None
+            return {
+                "state": value["state"],
+                "contacts": sorted(by_ptid),
+                "byPtid": by_ptid,
+            }
 
-        contacts = wait_until(
-            group_contacts,
-            "default mutual friends in Create Group",
+        snapshot = wait_until(
+            ready,
+            f"{actor} complete Create Group identity projection",
             STEP_TIMEOUT,
         )
-        alice.find_element(SELECTORS["create_group_close"], 10).click()
+        client.find_element(SELECTORS["create_group_close"], 10).click()
+        return snapshot
+
+    def create_group(self) -> str:
+        alice = self.open_create_group_modal("alice")
+        selected_ptids = [self.ptids["bob"], self.ptids["charlie"]]
+        for ptid in selected_ptids:
+            selector = (
+                f'[data-chat-create-group-contact={json.dumps(ptid)}]'
+            )
+            alice.find_element(selector, 20).click()
+            wait_until(
+                lambda selector=selector: next(
+                    (
+                        row
+                        for row in alice.find_elements(selector)
+                        if row.get_attribute("aria-pressed") == "true"
+                    ),
+                    None,
+                ),
+                f"Alice selected {ptid} for Group creation",
+                10,
+            )
+
+        submit = wait_until(
+            lambda: next(
+                (
+                    button
+                    for button in alice.find_elements(
+                        SELECTORS["create_group_submit"]
+                    )
+                    if button.is_enabled()
+                ),
+                None,
+            ),
+            "Alice enabled visible Group creation",
+            10,
+        )
+        submit.click()
+
+        def accepted_group() -> str | None:
+            state = alice.execute_script(
+                """
+                const modal = document.querySelector(arguments[0]);
+                const selected = modal
+                  ? Array.from(modal.querySelectorAll(arguments[1]))
+                    .filter((row) => row.getAttribute('aria-pressed') === 'true')
+                    .map((row) => (
+                      row.getAttribute('data-chat-create-group-contact') || ''
+                    ))
+                  : [];
+                const error = modal?.querySelector(
+                  '[data-chat-create-group-error]',
+                );
+                const retry = modal?.querySelector(
+                  '[data-chat-create-group-retry="true"]',
+                );
+                const pane = document.querySelector(
+                  '[data-chat-conversation-pane][data-group-security]',
+                );
+                return {
+                  modalState:
+                    modal?.getAttribute('data-chat-create-group-state') || '',
+                  selected,
+                  error: error?.textContent?.trim() || '',
+                  retry: Boolean(retry),
+                  conversationId:
+                    pane?.getAttribute('data-chat-conversation-pane') || '',
+                  groupSecurity:
+                    pane?.getAttribute('data-group-security') || '',
+                };
+                """,
+                SELECTORS["create_group"],
+                SELECTORS["create_group_contact"],
+            )
+            if not isinstance(state, dict):
+                return None
+            if state.get("modalState") == "failed":
+                preserved = set(state.get("selected") or [])
+                if (
+                    set(selected_ptids).issubset(preserved)
+                    and state.get("retry") is True
+                    and state.get("error")
+                ):
+                    self.assert_condition(
+                        "group_creation_failure_recoverable",
+                        True,
+                        json.dumps(state, sort_keys=True),
+                    )
+                raise VisibleGroupCreationFailure(
+                    "visible Group creation failed: "
+                    f"{json.dumps(state, sort_keys=True)}"
+                )
+            conversation_id = str(state.get("conversationId") or "")
+            security = str(state.get("groupSecurity") or "")
+            return (
+                conversation_id
+                if conversation_id
+                and security in {"establishing", "ready"}
+                else None
+            )
+
+        deadline = time.monotonic() + 180
+        while time.monotonic() < deadline:
+            value = accepted_group()
+            if value:
+                return value
+            time.sleep(0.25)
+        raise GateError("timed out waiting for visible Group creation acceptance")
+
+    def verify_default_friend_projection(self) -> dict[str, Any]:
+        alice = self.clients["alice"]
+        identity_matrix = {
+            actor: self.create_group_contact_snapshot(actor)
+            for actor in ACTORS
+        }
+        contacts = identity_matrix["alice"]
 
         alice.find_element(SELECTORS["new_menu"], 10).click()
         alice.find_element(SELECTORS["find_people_menu"], 10).click()
@@ -600,6 +801,7 @@ class NativeGroupMlsGate(AcceptanceGate):
         )
         return {
             "contacts": contacts,
+            "identityMatrix": identity_matrix,
             "direct": {
                 **route,
                 **direct,
@@ -607,33 +809,307 @@ class NativeGroupMlsGate(AcceptanceGate):
             "search": search,
         }
 
-    def add_member(self, group_id: str) -> None:
-        """Verify charlie is present in the group (added during creation)."""
-        alice = self.clients["alice"]
-        result = async_harness(
-            alice, "syncGroup", {"groupUlid": group_id}, timeout=30
+    def verify_identity_parity(
+        self,
+        matrix: dict[str, Any],
+    ) -> dict[str, Any]:
+        comparable_fields = (
+            "displayName",
+            "federatedHandle",
+            "homeStationDomain",
+            "homeStationPeerId",
+            "federationId",
+            "federationName",
+            "avatarSource",
         )
-        if not result or result.get("messageCount", -1) < 0:
-            raise GateError(f"syncGroup failed: {result}")
+        by_ptid: dict[str, list[dict[str, Any]]] = {}
+        same_name: dict[str, dict[str, list[dict[str, Any]]]] = {}
+        for observer, snapshot in matrix.items():
+            contacts = snapshot.get("byPtid")
+            if not isinstance(contacts, dict):
+                raise GateError(
+                    f"{observer} Create Group identity snapshot is invalid"
+                )
+            for ptid, row in contacts.items():
+                if ptid == self.ptids[observer] or not isinstance(row, dict):
+                    continue
+                by_ptid.setdefault(str(ptid), []).append(
+                    {"observer": observer, **row}
+                )
+            by_name: dict[str, list[dict[str, Any]]] = {}
+            for row in contacts.values():
+                if not isinstance(row, dict):
+                    continue
+                display_name = str(row.get("displayName") or "").strip()
+                if display_name:
+                    by_name.setdefault(display_name.casefold(), []).append(row)
+            duplicates = {
+                display_name: rows
+                for display_name, rows in by_name.items()
+                if len(rows) > 1
+            }
+            for display_name, rows in duplicates.items():
+                ptids = {str(row.get("ptid") or "") for row in rows}
+                stations = {
+                    (
+                        str(row.get("federatedHandle") or ""),
+                        str(row.get("homeStationPeerId") or ""),
+                    )
+                    for row in rows
+                }
+                if (
+                    len(ptids) != len(rows)
+                    or "" in ptids
+                    or len(stations) != len(rows)
+                    or any(not all(station) for station in stations)
+                ):
+                    raise GateError(
+                        f"{observer} same-name identities are ambiguous: "
+                        f"{json.dumps(rows, sort_keys=True)}"
+                    )
+            if duplicates:
+                same_name[observer] = duplicates
+
+        evidence: dict[str, Any] = {}
+        for ptid in self.ptids.values():
+            rows = by_ptid.get(ptid, [])
+            if len(rows) < 2:
+                raise GateError(
+                    f"Actor {ptid} is not visible on two independent clients"
+                )
+            field_values = {
+                field: {str(row.get(field) or "") for row in rows}
+                for field in comparable_fields
+            }
+            if any(len(values) != 1 or "" in values for values in field_values.values()):
+                raise GateError(
+                    f"Actor identity diverged for {ptid}: "
+                    f"{json.dumps(rows, sort_keys=True)}"
+                )
+            if not all(
+                row.get("avatarLoaded") is True
+                and row.get("avatarCurrentSource")
+                for row in rows
+            ):
+                raise GateError(
+                    f"Actor avatar did not load for {ptid}: "
+                    f"{json.dumps(rows, sort_keys=True)}"
+                )
+            evidence[ptid] = rows
+        if not same_name:
+            raise GateError(
+                "Native fixture did not expose a same-name cross-Station "
+                "identity case"
+            )
+        return {
+            "actors": evidence,
+            "sameName": same_name,
+        }
+
+    def restart_group_client(
+        self,
+        actor: str,
+        group_id: str,
+        expected_text: str,
+    ) -> dict[str, Any]:
+        if self.runtime_binding is None:
+            raise GateError("Native Desktop runtime binding is required")
+        predecessor = self.clients[actor]
+        self.client_lifecycles.stop_preserving_session(predecessor)
+        client = self.runtime_binding.create_bound_session(
+            actor,
+            NativeLaunchOptions(
+                window_slot=ACTORS.index(actor),
+                window_count=len(ACTORS),
+                restore_session=True,
+            ),
+        )
+        self.runtime_instances.append(client)
+        expected_ptid = self.ptids[actor]
+        self.client_lifecycles.register(client, expected_ptid)
+        self.client_lifecycles.transfer_preserved_session(
+            predecessor,
+            client,
+        )
+        self.client_lifecycles.mark_live(client)
+        try:
+            endpoint = wait_until(
+                lambda: (
+                    status
+                    if (
+                        isinstance(
+                            status := async_harness(
+                                client,
+                                "mlsReadiness",
+                                {},
+                                timeout=10,
+                            ),
+                            dict,
+                        )
+                        and status.get("actorPtid") == expected_ptid
+                        and status.get("deviceId") == self.device_ids[actor]
+                        and status.get("active") is True
+                    )
+                    else None
+                ),
+                f"{actor} restored MLS endpoint",
+                120,
+                interval=1,
+            )
+            self.client_lifecycles.mark_authenticated(client)
+            self.register_driver(client)
+            self.clients[actor] = client
+            projection = wait_until(
+                lambda: (
+                    snapshot
+                    if (
+                        isinstance(
+                            snapshot := async_harness(
+                                client,
+                                "syncGroup",
+                                {"groupUlid": group_id},
+                                timeout=30,
+                            ),
+                            dict,
+                        )
+                        and snapshot.get("securityState") == "ready"
+                    )
+                    else None
+                ),
+                f"{actor} restored Group projection",
+                180,
+                interval=1,
+            )
+            enter_chat_page(client)
+            client.find_element(
+                f'[data-chat-group-ulid={json.dumps(group_id)}]',
+                30,
+            ).click()
+            message = wait_until(
+                lambda: message_snapshot(client, expected_text),
+                f"{actor} restored Group message",
+                120,
+            )
+            return {
+                "endpoint": endpoint,
+                "projection": projection,
+                "message": message,
+            }
+        except Exception:
+            cleanup_errors = self.client_lifecycles.release(client)
+            if cleanup_errors:
+                raise GateError(
+                    "restored Group client cleanup failed: "
+                    f"{json.dumps(cleanup_errors, sort_keys=True)}"
+                )
+            raise
+
+    def visible_group_projection(self, group_id: str) -> dict[str, Any]:
+        expected_members = sorted(self.ptids.values())
+        projections: dict[str, Any] = {}
+        for actor in ACTORS:
+            client = self.clients[actor]
+
+            def ready() -> dict[str, Any] | None:
+                result = async_harness(
+                    client,
+                    "syncGroup",
+                    {"groupUlid": group_id},
+                    timeout=30,
+                )
+                if not isinstance(result, dict):
+                    return None
+                members = sorted(
+                    str(member)
+                    for member in result.get("memberPtids", [])
+                    if member
+                )
+                group_name = str(result.get("groupName") or "").strip()
+                if members != expected_members or not group_name:
+                    return None
+                enter_chat_page(client)
+                selector = (
+                    f'[data-chat-group-ulid={json.dumps(group_id)}]'
+                )
+                rows = client.find_elements(selector)
+                if not rows:
+                    return None
+                row = rows[0]
+                visible_name = (row.text or "").strip()
+                row.click()
+                pane = client.execute_script(
+                    """
+                    const pane = document.querySelector(
+                      '[data-chat-conversation-pane][data-group-security]',
+                    );
+                    return pane ? {
+                      conversationId:
+                        pane.getAttribute('data-chat-conversation-pane') || '',
+                      security:
+                        pane.getAttribute('data-group-security') || '',
+                    } : null;
+                    """
+                )
+                if (
+                    not isinstance(pane, dict)
+                    or pane.get("conversationId") != group_id
+                    or pane.get("security") != "ready"
+                ):
+                    return None
+                return {
+                    **result,
+                    "memberPtids": members,
+                    "visibleName": visible_name,
+                    "pane": pane,
+                }
+
+            projections[actor] = wait_until(
+                ready,
+                f"{actor} visible ready Group projection",
+                240,
+                interval=2,
+            )
+
+        names = {
+            str(projection.get("groupName") or "")
+            for projection in projections.values()
+        }
+        if len(names) != 1 or "" in names:
+            raise GateError(
+                "Group name diverged across Native clients: "
+                f"{json.dumps(projections, sort_keys=True)}"
+            )
+        return projections
+
+    def add_member(self, group_id: str) -> dict[str, Any]:
+        """Verify the UI-created Group has the exact initial member set."""
+        return self.visible_group_projection(group_id)
 
     def wait_mls_readiness(self) -> None:
         """Wait for all clients to complete MLS key package publishing."""
-        deadline = time.monotonic() + 60
         for actor in ACTORS:
             client = self.clients[actor]
-            while time.monotonic() < deadline:
+            def ready() -> dict[str, Any] | None:
                 try:
                     status = async_harness(
-                        client, "getRealtimeDevice", {}, timeout=10
+                        client, "mlsReadiness", {}, timeout=10
                     )
-                    if status and status.get("deviceId"):
-                        break
+                    return status if (
+                        isinstance(status, dict)
+                        and status.get("deviceId")
+                        == self.device_ids[actor]
+                        and status.get("active") is True
+                        and int(status.get("availableKeyPackages") or 0) > 0
+                    ) else None
                 except GateError:
-                    pass
-                time.sleep(3)
-            else:
-                raise GateError(f"{actor} MLS enrollment did not complete in 60s")
-        time.sleep(15)
+                    return None
+
+            wait_until(
+                ready,
+                f"{actor} active endpoint and MLS KeyPackage inventory",
+                120,
+                interval=1,
+            )
 
     def send_and_verify(self, group_id: str) -> str:
         alice = self.clients["alice"]
@@ -678,9 +1154,8 @@ class NativeGroupMlsGate(AcceptanceGate):
             )
         return text
 
-    def remove_member(self, group_id: str) -> None:
+    def remove_member(self, group_id: str) -> dict[str, Any]:
         alice = self.clients["alice"]
-        time.sleep(10)
         result = async_harness(
             alice,
             "removeGroupMember",
@@ -691,6 +1166,143 @@ class NativeGroupMlsGate(AcceptanceGate):
             raise GateError(
                 f"removeGroupMember returned unexpected result: {result}"
             )
+        projections: dict[str, Any] = {}
+        for actor in ("alice", "bob"):
+            projections[actor] = wait_until(
+                lambda actor=actor: (
+                    snapshot
+                    if (
+                        isinstance(
+                            snapshot := async_harness(
+                                self.clients[actor],
+                                "syncGroup",
+                                {"groupUlid": group_id},
+                                timeout=30,
+                            ),
+                            dict,
+                        )
+                        and self.ptids["charlie"]
+                        not in set(snapshot.get("memberPtids") or [])
+                    )
+                    else None
+                ),
+                f"{actor} observes Charlie removed from Group",
+                180,
+                interval=1,
+            )
+        return projections
+
+    def prove_group_creation_failure_recovery(self) -> dict[str, Any]:
+        revoked = async_harness(
+            self.clients["charlie"],
+            "revokeCurrentDevice",
+            {},
+        )
+        if (
+            not isinstance(revoked, dict)
+            or revoked.get("revoked") is not True
+            or revoked.get("deviceId") != self.device_ids["charlie"]
+        ):
+            raise GateError(
+                "Charlie current-device revocation did not succeed"
+            )
+        self.client_lifecycles.mark_device_revoked(
+            self.clients["charlie"]
+        )
+        wait_until(
+            lambda: (
+                status
+                if (
+                    isinstance(
+                        status := async_harness(
+                            self.clients["charlie"],
+                            "getRealtimeDevice",
+                            {},
+                        ),
+                        dict,
+                    )
+                    and status.get("active") is False
+                )
+                else None
+            ),
+            "Charlie revoked endpoint projection",
+            STEP_TIMEOUT,
+        )
+
+        alice = self.open_create_group_modal("alice")
+        charlie_ptid = self.ptids["charlie"]
+        selector = (
+            f'[data-chat-create-group-contact={json.dumps(charlie_ptid)}]'
+        )
+        alice.find_element(selector, 20).click()
+        submit = wait_until(
+            lambda: next(
+                (
+                    button
+                    for button in alice.find_elements(
+                        SELECTORS["create_group_submit"]
+                    )
+                    if button.is_enabled()
+                ),
+                None,
+            ),
+            "Alice enabled unavailable-member Group creation",
+            10,
+        )
+        submit.click()
+
+        def recoverable_failure() -> dict[str, Any] | None:
+            value = alice.execute_script(
+                """
+                const root = document.querySelector(arguments[0]);
+                if (!root) return null;
+                const selected = Array.from(
+                  root.querySelectorAll(arguments[1]),
+                )
+                  .filter(
+                    (row) => row.getAttribute('aria-pressed') === 'true',
+                  )
+                  .map((row) => (
+                    row.getAttribute(
+                      'data-chat-create-group-contact',
+                    ) || ''
+                  ));
+                const error = root.querySelector(
+                  '[data-chat-create-group-error]',
+                );
+                const retry = root.querySelector(
+                  '[data-chat-create-group-retry="true"]',
+                );
+                return {
+                  state:
+                    root.getAttribute('data-chat-create-group-state') || '',
+                  selected,
+                  error: error?.textContent?.trim() || '',
+                  retryEnabled:
+                    retry instanceof HTMLButtonElement && !retry.disabled,
+                };
+                """,
+                SELECTORS["create_group"],
+                SELECTORS["create_group_contact"],
+            )
+            if not isinstance(value, dict):
+                return None
+            return value if (
+                value.get("state") == "failed"
+                and charlie_ptid in set(value.get("selected") or [])
+                and bool(value.get("error"))
+                and value.get("retryEnabled") is True
+            ) else None
+
+        evidence = wait_until(
+            recoverable_failure,
+            "inline unavailable-member Group creation recovery",
+            120,
+        )
+        self.save_screenshot(alice, "alice-group-create-recoverable-error")
+        self.save_dom(alice, "alice-group-create-recoverable-error")
+        alice.find_element(SELECTORS["create_group_close"], 10).click()
+        return evidence
 
     def run(self) -> dict[str, Any]:
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
@@ -748,6 +1360,46 @@ class NativeGroupMlsGate(AcceptanceGate):
                     self.ptids["charlie"],
                 }.issubset(set(friendship["contacts"]["contacts"])),
             )
+            identity_parity = self.step(
+                "friendship.identity_parity",
+                lambda: self.verify_identity_parity(
+                    friendship["identityMatrix"]
+                ),
+            )
+            actor_identity = identity_parity["actors"]
+            self.assert_condition(
+                "same_name_identity_disambiguated",
+                bool(identity_parity["sameName"]),
+                json.dumps(
+                    identity_parity["sameName"],
+                    sort_keys=True,
+                ),
+            )
+            self.assert_condition(
+                "identity_metadata_parity",
+                bool(actor_identity)
+                and all(
+                    row.get("federatedHandle")
+                    and row.get("homeStationDomain")
+                    and row.get("homeStationPeerId")
+                    and row.get("federationId")
+                    and row.get("federationName")
+                    for rows in actor_identity.values()
+                    for row in rows
+                ),
+                json.dumps(actor_identity, sort_keys=True),
+            )
+            self.assert_condition(
+                "avatar_parity",
+                bool(actor_identity)
+                and all(
+                    row.get("avatarSource")
+                    and row.get("avatarLoaded") is True
+                    for rows in actor_identity.values()
+                    for row in rows
+                ),
+                json.dumps(actor_identity, sort_keys=True),
+            )
             self.assert_condition(
                 "contact_message_routes_selected_peer",
                 friendship["direct"]["peerPtid"] == self.ptids["charlie"]
@@ -770,12 +1422,30 @@ class NativeGroupMlsGate(AcceptanceGate):
             )
             self.assert_condition("group_created", bool(group_id))
 
-            self.step(
+            group_projection = self.step(
                 "group.add_member",
                 lambda: self.add_member(group_id),
                 "alice",
             )
-            self.assert_condition("member_added", True)
+            self.assert_condition(
+                "group_creation_visible",
+                set(group_projection) == set(ACTORS)
+                and all(
+                    projection["pane"]["conversationId"] == group_id
+                    and projection["pane"]["security"] == "ready"
+                    for projection in group_projection.values()
+                ),
+                json.dumps(group_projection, sort_keys=True),
+            )
+            self.assert_condition(
+                "member_added",
+                all(
+                    projection["memberPtids"]
+                    == sorted(self.ptids.values())
+                    for projection in group_projection.values()
+                ),
+                json.dumps(group_projection, sort_keys=True),
+            )
 
             text = self.step(
                 "group.send_verify",
@@ -788,12 +1458,50 @@ class NativeGroupMlsGate(AcceptanceGate):
                 f"text={text}",
             )
 
-            self.step(
+            restart = self.step(
+                "group.restart_recovery",
+                lambda: self.restart_group_client(
+                    "bob",
+                    group_id,
+                    text,
+                ),
+                "bob",
+            )
+            self.assert_condition(
+                "group_restart_recovered",
+                restart["projection"]["securityState"] == "ready"
+                and bool(restart["message"]),
+                json.dumps(restart, sort_keys=True),
+            )
+
+            removal = self.step(
                 "group.remove_member",
                 lambda: self.remove_member(group_id),
                 "alice",
             )
-            self.assert_condition("member_removed", True)
+            self.assert_condition(
+                "member_removed",
+                set(removal) == {"alice", "bob"}
+                and all(
+                    self.ptids["charlie"]
+                    not in set(projection["memberPtids"])
+                    for projection in removal.values()
+                ),
+                json.dumps(removal, sort_keys=True),
+            )
+
+            group_failure = self.step(
+                "group.create_failure_recovery",
+                self.prove_group_creation_failure_recovery,
+                "alice",
+            )
+            self.assert_condition(
+                "group_creation_failure_recoverable",
+                group_failure["state"] == "failed"
+                and group_failure["retryEnabled"] is True
+                and self.ptids["charlie"] in group_failure["selected"],
+                json.dumps(group_failure, sort_keys=True),
+            )
 
             for actor in ACTORS:
                 self.save_screenshot(self.clients[actor], actor)

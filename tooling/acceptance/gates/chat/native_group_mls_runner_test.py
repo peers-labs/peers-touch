@@ -219,11 +219,17 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
                 "native_runtime",
                 "actor_isolation",
                 "default_friend_projection",
+                "same_name_identity_disambiguated",
+                "identity_metadata_parity",
+                "avatar_parity",
                 "contact_message_routes_selected_peer",
                 "existing_friend_search_state",
                 "group_created",
+                "group_creation_visible",
+                "group_creation_failure_recoverable",
                 "member_added",
                 "group_message_delivered",
+                "group_restart_recovered",
                 "member_removed",
             },
         )
@@ -258,7 +264,7 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
         group_creation = source.index('"group.create"')
 
         self.assertLess(projection, group_creation)
-        self.assertIn("default mutual friends in Create Group", source)
+        self.assertIn("complete Create Group identity projection", source)
         self.assertIn("existing friend state in Find People", source)
         self.assertIn('"actionDisabled"', source)
 
@@ -291,6 +297,54 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
         self.assertIn("data-chat-friendship-state", contacts)
         self.assertIn("data-chat-contact-federation-id", contacts)
         self.assertIn("contact Message routes to the selected peer", source)
+
+    def test_start_client_delegates_to_the_bound_runtime_session(self) -> None:
+        gate, _ = self.gate()
+        gate.start_injected_client = Mock()
+
+        gate.start_client("alice")
+
+        gate.start_injected_client.assert_called_once_with("alice")
+
+    def test_group_creation_uses_visible_ui_and_not_create_group_harness(
+        self,
+    ) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        create_start = source.index("    def create_group(self)")
+        create_end = source.index(
+            "\n    def verify_default_friend_projection",
+            create_start,
+        )
+        create_source = source[create_start:create_end]
+
+        self.assertIn('SELECTORS["create_group_contact"]', create_source)
+        self.assertIn('SELECTORS["create_group_submit"]', create_source)
+        self.assertIn("data-chat-create-group-state", create_source)
+        self.assertIn("data-chat-create-group-error", create_source)
+        self.assertIn("data-chat-create-group-retry", create_source)
+        self.assertNotIn('"createGroup"', create_source)
+
+    def test_identity_and_visible_group_proof_fail_closed(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        for field in (
+            "federatedHandle",
+            "homeStationDomain",
+            "homeStationPeerId",
+            "federationId",
+            "federationName",
+            "avatarSource",
+            "avatarLoaded",
+            "federationLabel",
+            "stationLabel",
+            "metadataClipped",
+            "sameName",
+            "memberPtids",
+            "groupName",
+        ):
+            with self.subTest(field=field):
+                self.assertIn(field, source)
+        self.assertIn("visible ready Group projection", source)
+        self.assertIn("restored Group projection", source)
 
 
 if __name__ == "__main__":

@@ -860,9 +860,10 @@ committed to this plan.
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
-| NDR-W8 macOS regression | in progress | Current-profile Direct, reply/thread, reaction, edit, recall, fresh Alice-to-Bob Native delivery at authority sequence 34, and cross-Station Alice/Bob avatar parity pass while formal Gate execution remains paused. One older Alice command remains `submitted` with no authority event and is absent on Bob, so submitted-command recovery and transcript convergence remain `PARTIAL/UNPROVEN`. MP-D31/MP-D32 are accepted; NDR-W8A/W8B implementation is in progress. Multi-device, backup recovery, and three-client Group/MLS runtime cells remain. |
+| NDR-W8 macOS regression | in progress | Current-profile Direct, reply/thread, reaction, edit, recall, fresh Alice-to-Bob Native delivery at authority sequence 34, and historical cross-Station Alice/Bob avatar parity evidence exist while formal remaining Gates are incomplete. NDR-W8A has dedicated retained-command proof wiring in the current worktree; NDR-W8B remains exact-source Native-proof pending; NDR-W8C tracks authoritative remote-profile refresh, one PTID-keyed identity projection, recoverable Group creation, and the real three-client Create Group/MLS UI journey. Multi-device, backup recovery, and full three-client Group/MLS runtime cells remain. |
 | NDR-W8A submitted-command reconciliation | source-complete; Native proof pending | MP-D31 contract, generated bindings, authenticated `/conversation/command/results`, canonical receipt/outbox/exact Device Inbox resolver, transactional hard-cut migration from historical payload-hash result IDs, deterministic endpoint/command result identity, and Device Engine startup reconciliation are implemented. Conversation packages, migration regression, two static contract tests, Desktop bounded/cursor-neutral reconciliation, and rollback-on-integrity-failure tests pass. Exact-source deployment and stale Native command convergence remain `UNPROVEN`. |
 | NDR-W8B federated ephemeral typing | source-complete; Native proof pending | MP-D32 signal, receiver-fixed ephemeral QoS, bounded no-row receiver dispatch, Runtime payload-kind-restricted transport, Authority-mediated routing, production identity-directory binding, and local/remote common receiver composition are implemented. Conversation and Federation package tests pass. Exact-source cross-Station Direct/Group typing, TTL/session/disconnect, deny, partial-failure, and durable-row runtime evidence remain `UNPROVEN`. |
+| NDR-W8C federated contact identity and Group genesis reliability | source-complete; Native proof pending | Station remote-cache refresh, relationship identity contract, one PTID-keyed Desktop projection, readable Federation/Home Station rows, recoverable Group creation, accepted-Group convergence, typed errors, prototype parity, and UI-driven Native Gate logic are implemented and statically proven. Exact-source three-client Native Group/MLS proof remains `UNPROVEN`. |
 | NDR-W9 Windows cell | W9-A/B/C done; Product Closure reaches `reaction.ui`; W9-D remains partial | Exact-source Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` at `2ae0254691d97f16c3c08ef3e8639bdd91a91eac` proves Direct open/reopen, canonical Group genesis, Alice sequence 2, Bob sequence 3, Alice thread-reply sequence 4, toolbar geometry, and authority reaction sequence 5. Bob's Device Inbox lane 7 contains a canonical `ActorReadCursor` whose event identity is the payload SHA-256; the client expected a retired `read:` prefix, rejected the cursor as `MessageReceipt`, and blocked the lane-8 reaction. The shared Messaging Core decoder correction and four local Chat Gates pass, but exact-source deployment and Product Closure rerun remain pending. |
 | NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings, exact Direct create/reopen, bidirectional Group transcript/thread delivery, follower receipt return, and durable remote-command authority commit | Authority sequence 5 and Alice consumption prove the cross-Station mutation path through reaction commit. Bob's queue remains blocked by the read-cursor discriminator defect, so reaction convergence, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven pending the locally verified client correction. |
 
@@ -5450,6 +5451,103 @@ Evidence:
 - Group fan-out across at least two Stations, deny paths, partial failure, overload,
   and zero durable typing-row proof.
 
+### NDR-W8C: Federated Contact Identity And Group Genesis Reliability
+
+Deliver:
+
+- Station Federation Actor resolution updates an existing remote-cached Actor by
+  canonical PTID instead of failing on the `idx_touch_actor_ptid` uniqueness
+  boundary; signed Home-Station profile fields, including avatar, handle, domain,
+  and Station peer ID, remain authoritative.
+- Proto-first relationship projections expose the Home Station peer ID already
+  owned by Actor identity, with generated Go, Desktop, and Mobile bindings updated
+  in one atomic contract cut.
+- Desktop `socialRealtime` and `friendshipProjection` own one PTID-keyed Chat Actor
+  identity projection. Contacts, Create Group, session rows, search, and contact
+  detail consume the same display-name, avatar, federated-handle, Home Station, and
+  Federation fields without display-name deduplication or component-local avatar
+  precedence.
+- Contacts and Create Group render the actor name first and quiet Federation /
+  Home-Station identity metadata second, with separate readable labels that do
+  not ellipsize away the distinguishing Station value, so distinct same-name
+  actors remain visibly distinguishable.
+- Create Group keeps the dialog, name, and selected PTIDs alive until the command
+  is accepted. Typed preparation or MLS-readiness failure remains inline, identifies
+  the affected actor or Station when the server provides it, and offers retry
+  without replacing the conversation or member identities.
+- A committed Group may remain `establishing` while the creator Device Inbox
+  projects sequence 1. The Desktop must reconcile through the existing messaging
+  lifecycle and must not convert temporary `conversation_members_unavailable`
+  projection lag into a false creation failure.
+- The Social Chat prototype mirrors the same identity hierarchy and recoverable
+  Group-creation states; mock behavior remains clearly non-authoritative.
+
+Evidence:
+
+- Station tests prove remote Actor refresh updates the existing PTID row and does
+  not create, merge, or overwrite another same-name Actor.
+- Relationship wire tests prove `home_station_peer_id` for local and remote mutual
+  friends, and generated bindings are clean.
+- Desktop projection tests prove one PTID produces one avatar source on every Chat
+  surface while two same-name PTIDs remain distinct and expose their exact
+  federated handle, Home Station, and Federation.
+- Create Group component tests prove pending state, preserved input/selection,
+  typed inline failure, retry, and accepted `establishing` transition.
+- `chat-native-group-mls-e2e` launches three source-bound Native clients through
+  `NativeDesktopRuntimeBinding`, selects members through the visible Create Group
+  dialog, proves same-name identity metadata and avatar parity, creates the MLS
+  Group, sends/decrypts across all members, removes one member, restarts, recovers,
+  and completes reverse cleanup.
+- The Gate must fail before product proof when any client, actor, Station binding,
+  endpoint manifest, KeyPackage, or source identity is absent. Harness-only
+  `createGroup` calls do not prove the visible Group-creation journey.
+
+Concurrency Decision: serial implementation with parallel read-only audits. Shared
+relationship proto and generated artifacts are frozen first; Station remote-cache
+upsert and Desktop projection/UI then consume that contract in dependency order.
+The integrator exclusively owns the plan, proto/generated artifacts, shared
+projection, Acceptance contracts, final reconciliation, deployment, and Native
+proof. Existing `audit_contact_identity`, `audit_group_create_500`, and
+`audit_group_acceptance` agents remain read-only evidence lanes and must not edit
+the shared write set.
+
+NDR-W8C source closure on 2026-09-13:
+
+- Station remote Actor cache reconciliation searches by canonical handle, legacy
+  handle, or exact PTID and refreshes the existing `remote_cached` row by stable
+  database ID. It rejects local ownership takeover, stale locator sequence, and
+  split handle/PTID identity instead of swallowing the unique-index failure.
+- `home_station_peer_id` is carried proto-first through Station relationship
+  projections and generated Go, Desktop, and Mobile bindings.
+- `socialRealtime` refreshes every mutual-friend profile, and
+  `friendshipProjection` is the single PTID-keyed source for Contacts, Create
+  Group, search, session, and detail identity. Display name never acts as an
+  identity key.
+- Contacts and Create Group render Federation and Home Station as separate,
+  readable metadata lines. The Gate records both visible labels and fails if
+  either clips; the same PTID retains one authoritative avatar source.
+- Create Group keeps the same draft conversation ID and selected PTIDs through
+  typed inline failure, exposes Retry, treats an accepted pending command as
+  `establishing`, and reconciles Device Inbox projection in the background.
+- The Native Group/MLS Gate launches three bound clients, selects members through
+  the visible dialog, verifies same-name metadata/avatar parity, waits on real
+  MLS readiness, proves send/decrypt/restart/removal, exercises typed unavailable
+  member recovery, and performs reverse cleanup. Harness `createGroup` is not a
+  product action.
+- Canonical Prototype Portal L2/L3 verification at desktop and narrow desktop
+  widths proves distinct Bob rows with full `aspen.social` / `harbor.social`
+  Station labels, full-row selection, preserved selection after inline failure,
+  enabled Retry, and mock-success transition. Prototype evidence remains
+  non-authoritative for Native product proof.
+- Focused Desktop tests, Desktop contract/type checks, prototype build, 147
+  Chat runner/static tests, Chat structural validation, exact-path Acceptance
+  planning, local Acceptance framework Gates, proto generation, Station package
+  tests, and `git diff --check` pass. The immutable Evidence Store latest runs
+  remain the source of truth for exact-tree static evidence.
+- Acceptance Gap Detector keeps the overall product claim `UNPROVEN` because
+  exact-source environment Gates, especially `chat-native-group-mls-e2e`, have
+  not run against this uncommitted source.
+
 Source verification on 2026-09-13:
 
 - `go test ./subserver/conversation/...` from `apps/station/app`: PASS.
@@ -5554,6 +5652,20 @@ Runtime preflight on 2026-09-13:
   minutes. Accepted convergence additionally requires the same message ID on
   the peer; terminal convergence requires explicit failure/supersession
   evidence and no false receiver projection.
+- Exact-source run
+  `20260913T062223002207Z-a96048bde6d1f4b0111d21d7f82be44d`
+  proved the retained W8A branch on Native clients: source/build/Station
+  identity matched commit `89fda643d8a25b71bbebafc50444067a1cb27a12`,
+  isolated retained Alice SQLCipher state loaded the exact original
+  command/message/hash, terminal `superseded/stale_delivery_plan` matched the
+  accepted state machine, Bob had no false projection, and cleanup released
+  all six ports and both client processes while retaining isolated storage.
+  The composite current-profile Gate later failed its unrelated fresh
+  Bob-to-Alice smoke because retained Alice and fresh Bob were not one prepared
+  crypto pair. W8A therefore receives the dedicated
+  `chat-native-submitted-command-recovery-e2e` Gate; the existing
+  `chat-native-current-profile-two-client-e2e` remains the independent fresh
+  bidirectional Direct proof and is not weakened by a recovery-only mode.
 
 Concurrency Decision: hybrid. The integrator serially owns authoritative docs,
 shared proto, generated artifacts, composition/registry files, final reconciliation,

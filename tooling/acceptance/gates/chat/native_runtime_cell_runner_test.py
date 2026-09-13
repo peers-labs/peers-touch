@@ -1059,7 +1059,6 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self,
     ) -> None:
         for filename in (
-            "native_group_mls_runner.py",
             "native_interactions_runner.py",
             "native_typing_runner.py",
         ):
@@ -1089,8 +1088,6 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                     [ast.literal_eval(key) for key in payload.keys],
                 )
 
-                if filename == "native_group_mls_runner.py":
-                    continue
                 group_id_assignment = next(
                     node
                     for node in ast.walk(tree)
@@ -1120,6 +1117,14 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             ROOT
             / "tooling/acceptance/gates/chat/native_group_mls_runner.py"
         ).read_text(encoding="utf-8")
+        group_create = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_group_mls_runner.py",
+            "create_group",
+        )
+        self.assertIn('SELECTORS["create_group_contact"]', group_create)
+        self.assertIn('SELECTORS["create_group_submit"]', group_create)
+        self.assertIn("data-chat-create-group-state", group_create)
+        self.assertNotIn('"createGroup"', group_create)
         self.assertIn('"memberPtid": self.ptids["charlie"]', group_runner)
         self.assertNotIn('"memberDid":', group_runner)
 

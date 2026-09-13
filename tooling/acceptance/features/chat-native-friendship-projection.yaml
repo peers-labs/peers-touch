@@ -3,20 +3,37 @@
   "status": "active",
   "product_area": "chat",
   "owners": [
+    "model/domain/social/relationship.proto",
+    "apps/station/frame/touch/federation/cache/cache.go",
+    "apps/station/app/subserver/social/application/relationship_service.go",
     "apps/station/app/subserver/social/infrastructure/follow_repo.go",
     "apps/desktop/src/store/federation.ts",
     "apps/desktop/src/store/relationships.ts",
     "apps/desktop/src/store/friendshipProjection.ts",
     "apps/desktop/src/services/socialRealtime.ts",
+    "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
+    "apps/desktop/src-tauri/src/messaging/group_genesis.rs",
+    "apps/desktop/src-tauri/src/messaging/engine.rs",
+    "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
+    "apps/desktop/src/acceptance/chat/harness.ts",
     "apps/desktop/src/components/chat/FindPeopleModal.tsx",
     "apps/desktop/src/components/chat/CreateGroupModal.tsx",
+    "apps/desktop/src/components/chat/ChatActorIdentityRow.tsx",
     "apps/desktop/src/components/chat/ChatContactsPanel.tsx",
     "apps/desktop/src/components/chat/ChatSessionList.tsx",
     "apps/desktop/src/components/chat/contactSelection.ts",
-    "apps/desktop/src/pages/SocialChatPage.tsx"
+    "apps/desktop/src/components/profile/PublicProfileCard.tsx",
+    "apps/desktop/src/pages/SocialChatPage.tsx",
+    "packages/locales/en/chat.json",
+    "packages/locales/en/errors.json",
+    "packages/locales/zh-CN/chat.json",
+    "packages/locales/zh-CN/errors.json",
+    "packages/prototypes/desktop/features/social-chat/**",
+    "docs/architecture/social/prototype/README.md"
   ],
   "truth_sources": [
     "Station Social mutual follow edges",
+    "signed Home-Station Actor profile and remote_cached PTID row",
     "Station Federation governance projection",
     "Desktop socialRealtime relationship reconciliation"
   ],
@@ -24,11 +41,17 @@
     {"type": "desktop-dom", "selector": "[data-chat-find-people-result]"},
     {"type": "desktop-dom", "selector": "[data-chat-contacts]"},
     {"type": "desktop-dom", "selector": "[data-chat-create-group-contact]"},
+    {"type": "desktop-dom", "selector": "[data-chat-identity-ptid]"},
+    {"type": "desktop-dom", "selector": "[data-chat-identity-metadata]"},
+    {"type": "desktop-dom", "selector": "[data-chat-identity-federation]"},
+    {"type": "desktop-dom", "selector": "[data-chat-identity-station]"},
+    {"type": "desktop-dom", "selector": "[data-chat-create-group-error]"},
     {"type": "desktop-dom", "selector": "[data-chat-contact-ptid]"},
     {"type": "desktop-dom", "selector": "[data-chat-contact-message]"},
     {"type": "desktop-dom", "selector": "[data-social-chat-layout][data-chat-active-peer-ptid]"}
   ],
   "required_gates": [
+    "proto-build",
     "desktop-check",
     "chat-native-visible-static",
     "chat-native-group-mls-e2e"
@@ -36,13 +59,22 @@
   "acceptance": {
     "service": [
       "Desktop derives friendship only from the intersection of Station followers and following",
+      "Station refreshes an existing remote-cached Actor by canonical PTID without overwriting local ownership or merging same-name Actors",
+      "relationship projections carry federated handle, Home Station domain, and Home Station peer ID",
       "socialRealtime refreshes mutual friendship at bootstrap, after relationship events, during cold resync, and during periodic reconciliation",
+      "socialRealtime refreshes Home-Station peer profiles for mutual friends even before a Direct conversation exists",
       "relationship pagination cannot omit mutual friends beyond the first page"
     ],
     "visible": [
       "seeded mutual friends appear in Contacts without requiring a prior Direct conversation or friend-request record",
+      "same-name contacts remain separate by PTID and show their Federation plus Home Station identity",
+      "Federation and Home Station render as separate readable labels without clipping the Station value",
+      "one Actor PTID uses the same authoritative avatar source in Contacts, Create Group, search, and conversation rows",
       "clicking Message for a mutual friend opens or creates the Direct conversation for that exact peer PTID and never leaves the previously active peer visible",
       "seeded mutual friends appear as selectable Create Group members",
+      "Create Group remains open with its selected PTIDs, typed inline error, and Retry action when preparation fails",
+      "an accepted Group may render as establishing until the creator Device Inbox projects it, then becomes visible with the exact member set on all three clients",
+      "a restarted member restores the same device identity, ready MLS state, Group projection, and decrypted message",
       "Find People renders an existing mutual friend as Friends and disables duplicate friend-request submission"
     ]
   },
@@ -50,6 +82,11 @@
     "Direct conversation history and accepted friend-request history must not define friendship truth",
     "a failed Direct creation must render the selected peer's failure state instead of falling through to a stale active conversation",
     "multiple available federations must not be resolved by first-item fallback",
+    "contacts must not be deduplicated by display name",
+    "components must not define a second avatar or display-name precedence",
+    "Federation and Home Station must not collapse into one ellipsized line that hides the distinguishing Station value",
+    "a failed Group preparation must not close the dialog or discard its selected PTIDs",
+    "a temporary creator projection delay must not be reported as Group creation failure",
     "page or modal mount effects must not own friendship projection freshness",
     "static or unit evidence must not be reported as Native DOM proof"
   ]

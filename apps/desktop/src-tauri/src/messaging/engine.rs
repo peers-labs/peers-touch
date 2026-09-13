@@ -11,9 +11,9 @@ use super::{
     PendingMembershipIntent, PendingMessageDraft, PreKeyPublisher, QueueDrain, SendPreparer,
     SendTextIntent, StationAttachmentTransferTransport, StationCommandTransport,
     StationDeliveryReceiptTransport, StationDeviceTransport, StationGroupGenesisTransport,
-    StationKeyBundleTransport, StationMembershipTransitionTransport,
-    StationMlsKeyPackageTransport, StationMlsLeaveIntentTransport, StationPreKeyTransport,
-    StationQueueTransport, ThreadCountProjection,
+    StationKeyBundleTransport, StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
+    StationMlsLeaveIntentTransport, StationPreKeyTransport, StationQueueTransport,
+    ThreadCountProjection,
 };
 use crate::domain::crypto::IdentityKeyPair;
 use crate::infrastructure::attachment_blob::FilesystemAttachmentBlob;
@@ -1707,7 +1707,7 @@ impl MessagingEngine {
         name: &str,
         member_ptids: &[String],
         federation_id: &str,
-    ) -> Result<PreparedGroupConversation, String> {
+    ) -> Result<PreparedGroupConversation, station_client::StationClientError> {
         let transport =
             StationGroupGenesisTransport::new(token.to_string(), self.endpoint.clone())?;
         let plan = transport.prepare(conversation_id, name, member_ptids, federation_id)?;
@@ -1718,8 +1718,22 @@ impl MessagingEngine {
                 ptid: self.endpoint.ptid.clone(),
                 device_id: self.endpoint.device_id.clone(),
             },
-        )?
-        .prepare(&plan, conversation_id, now_unix_ms())?;
+        )
+        .map_err(|error| {
+            station_client::StationClientError::new(
+                station_client::StationClientErrorKind::InvalidResponse,
+                error,
+                None,
+            )
+        })?
+        .prepare(&plan, conversation_id, now_unix_ms())
+        .map_err(|error| {
+            station_client::StationClientError::new(
+                station_client::StationClientErrorKind::InvalidResponse,
+                error,
+                None,
+            )
+        })?;
         Ok(PreparedGroupConversation {
             conversation_id: conversation_id.to_string(),
             command_id: command.command_id,

@@ -169,6 +169,7 @@
         "desktop-check",
         "chat-native-visible-static",
         "chat-native-current-profile-two-client-e2e",
+        "chat-native-submitted-command-recovery-e2e",
         "chat-native-two-client-e2e"
       ],
       "synthetic_paths": [
@@ -205,6 +206,7 @@
         ],
         "proven_by": [
           "chat-native-current-profile-two-client-e2e",
+          "chat-native-submitted-command-recovery-e2e",
           "chat-native-two-client-e2e"
         ],
         "proven_scope": [
@@ -231,6 +233,8 @@
         "chat-native-friendship-projection"
       ],
       "required_gates": [
+        "proto-build",
+        "desktop-check",
         "chat-native-visible-static",
         "chat-native-current-profile-two-client-e2e",
         "chat-native-two-client-e2e",
@@ -243,17 +247,28 @@
         "tooling/acceptance/gates/chat/native_recovery_runner.py",
         "tooling/acceptance/gates/chat/native_group_mls_runner.py",
         "apps/desktop/src/acceptance/chat/identity.ts",
+        "model/domain/social/relationship.proto",
+        "apps/station/frame/touch/federation/cache/cache.go",
+        "apps/station/app/subserver/social/application/relationship_service.go",
         "apps/station/app/subserver/social/infrastructure/follow_repo.go",
         "apps/desktop/src/store/federation.ts",
         "apps/desktop/src/store/relationships.ts",
         "apps/desktop/src/store/friendshipProjection.ts",
         "apps/desktop/src/services/socialRealtime.ts",
+        "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
+        "apps/desktop/src-tauri/src/messaging/group_genesis.rs",
+        "apps/desktop/src-tauri/src/messaging/engine.rs",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
+        "apps/desktop/src/acceptance/chat/harness.ts",
         "apps/desktop/src/components/chat/FindPeopleModal.tsx",
         "apps/desktop/src/components/chat/CreateGroupModal.tsx",
+        "apps/desktop/src/components/chat/ChatActorIdentityRow.tsx",
         "apps/desktop/src/components/chat/ChatContactsPanel.tsx",
         "apps/desktop/src/components/chat/ChatSessionList.tsx",
         "apps/desktop/src/components/chat/contactSelection.ts",
+        "apps/desktop/src/components/profile/PublicProfileCard.tsx",
         "apps/desktop/src/pages/SocialChatPage.tsx",
+        "packages/prototypes/desktop/features/social-chat/**",
         "apps/desktop/src/components/chat/ChatComposer.tsx",
         "apps/desktop/src/components/chat/ChatMessageArea.tsx",
         "apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx",
@@ -268,14 +283,16 @@
           "per-client embedded Tauri WebDriver sessions",
           "Station deployment attestation and live app metadata",
           "per-client source and workspace identity",
-          "Station Social mutual follow edges"
+          "Station Social mutual follow edges",
+          "signed Home-Station Actor profile and remote_cached PTID row"
         ],
         "surfaces": [
           "two-client direct messages",
           "multi-device direct delivery",
           "reinstall recovery",
           "three-device MLS",
-          "Native Contacts, Find People, and Create Group friendship projection"
+          "Native Contacts, Find People, and Create Group friendship projection",
+          "recoverable visible Group creation failure"
         ],
         "proven_by": [
         "chat-native-current-profile-two-client-e2e",
@@ -286,11 +303,13 @@
         ],
         "proven_scope": [
           "Only successful live runs with complete current source-bound reports prove W8 journeys",
-          "Current-source Native Direct sends keep the newest row clear of the composer and render seeded peer avatars from bundled image data"
+          "Current-source Native Direct sends keep the newest row clear of the composer and render seeded peer avatars from bundled image data",
+          "Three source-bound Native clients distinguish same-name PTIDs by Federation and Home Station, render one avatar identity per PTID, converge on the UI-created MLS Group, and restore that Group after a member restart",
+          "Unavailable-member Group preparation preserves the visible selection and exposes typed inline retry"
         ],
         "unproven_scope": [
           "W8 remains unproven until all four environment-evidence gates pass",
-          "The corrected friendship projection remains Native-UI UNPROVEN until chat-native-group-mls-e2e passes on exact source"
+          "The corrected friendship and Group creation projections remain Native-UI UNPROVEN until chat-native-group-mls-e2e passes on exact source"
         ]
       }
     },
