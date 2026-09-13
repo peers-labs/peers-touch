@@ -1210,3 +1210,19 @@ action because the Gate omitted the required `federationId` from
 resolves one Federation shared by each Native journey's participating clients
 and passes that stable ID to every programmatic Direct or Group creation. The
 161-test focused Native suite passes; no default-Federation fallback is added.
+
+W8B run
+`20260913T172916171669Z-08cced18a98560673115310c4a9e1725`
+proved the shared-Federation adapter correction and reached the first
+cross-Station Direct creation. Station `four` request
+`799bbec1-632a-4c22-a7ea-1328f9264c51` failed with
+`transport_unavailable: no direct or relay route is available`; all Native and
+Provisioner cleanup passed. Both canonical Stations are exact-source and
+healthy at the HTTP layer, but Federation health reports
+`peers=0/1 connected=0 seeds=0/0`, with no bootstrap node and relay client
+disabled. The next CA-W6 action is therefore the existing
+service-coordination owner: mount canonical `four` and `fiveArm` to the shared
+Federation relay/bootstrap fabric and require ready DHT plus live relay mounts
+before rerunning the bounded W8B product journey. Conversation remains the
+sole Chat authority; no default Federation, direct-route fallback, remote
+Actor shadow row, or weakened Gate is permitted.

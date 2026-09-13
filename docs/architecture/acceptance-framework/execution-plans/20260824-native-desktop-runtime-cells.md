@@ -5878,3 +5878,29 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   stable ID to every programmatic Direct or Group creation. The 161-test
   focused Native suite passes. No product API fallback or inferred default
   Federation is added.
+
+### 2026-09-13 W8B Canonical Federation Runtime Boundary
+
+- Exact-source W8B run
+  `20260913T172916171669Z-08cced18a98560673115310c4a9e1725`
+  reached three authenticated Native clients, resolved shared Federation
+  `fed_chat_fc4d197a2cca84c9a142`, and then failed its first Direct creation.
+  Station `four` request
+  `799bbec1-632a-4c22-a7ea-1328f9264c51` returned HTTP 500 with the typed
+  owner error `transport_unavailable: no direct or relay route is available`.
+  Reverse cleanup passed for all three clients, nine ports, sessions, logs, and
+  ephemeral storage roots.
+- Both canonical `:18080` Stations attest exact source
+  `6e2de9065ce531bfa458e4f766a248782951e77d`, but their live Federation health
+  is not ready: `peers=0/1 connected=0 seeds=0/0`. Their containers run with an
+  empty `PEERS_BOOTSTRAP_NODES` and `RELAY_CLIENT_ENABLED=false`.
+- The previously functioning disposable pair proves the intended existing
+  topology: both Stations use the shared relay/bootstrap service at
+  `10.37.118.48`, whose DHT seed is healthy. The canonical runtime repair is to
+  mount `four` and `fiveArm` to that same Federation-owned relay, retain their
+  distinct Station identities, and require `ready=true`, one connected seed,
+  and a live relay mount before another W8B product run.
+- This is a runtime-composition correction under the accepted Federation and
+  service-coordination contracts. Conversation must not add a default
+  Federation, direct-URL fallback, synthetic peer route, local remote-Actor
+  device row, or relaxed product assertion.
