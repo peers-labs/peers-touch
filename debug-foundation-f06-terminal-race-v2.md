@@ -263,3 +263,38 @@ copy already renders `presentedError`, but only the collapsed Diagnostics copy
 owns `data-pt-agent-message-error-text`. The correction places that stable
 evidence selector on the visible error copy while preserving the same
 localized text, layout, recovery action, and store/runtime ownership.
+
+## Iteration 6: Provider Completion Before Restart
+
+The selector-correction source
+`d5bfa071a260116a1c5f1f25a48cb45cec0920d6` passed C08 run
+`20260913T032341973486Z-0e8f949da6e64423747d4206ff53c3f0`.
+Its fully authorized Foundation run
+`20260913T032512505621Z-53d0a764362fb2dc00ce9d4ecc93c1b2`
+crossed AS-F06 and Duplicate Conflict but stopped before receiver sampling:
+the selected Assistant Message was already `completed` with no `error_json`.
+Provisioner cleanup completed `DONE / PROVEN / passed`.
+
+The retained timeline confirms the intermittent boundary race. The fault cut
+was requested after the first text event, while Station emits a durable
+`provider_call_started` progress event immediately before entering the real
+provider call. The restart helper also performed its source/container
+preflight only after the Turn was prepared, leaving the live provider enough
+time to complete before `docker kill`.
+
+The correction keeps AS-F06 on its accepted text-prefix boundary and gives
+only `BASE-INTERRUPTED` an explicit `provider-started` boundary. The restart
+helper completes source/container preflight first, invokes the coordinator's
+Turn preparation callback, and then immediately kills the verified container.
+There is still one real Ark Turn, one real abrupt Station restart, no retry
+loop, no timeout increase, and no provider substitution.
+
+Local verification:
+
+- Agent Acceptance tests: `419/419` PASS.
+- Desktop Vitest: `622/622` PASS with one existing environment-only skip.
+- Desktop strict check: PASS.
+- Station restart tests: `13/13` PASS.
+- Foundation scenario runner tests: `51/51` PASS.
+- Agent static tests: `85/85` PASS.
+- `git diff --check`: PASS.

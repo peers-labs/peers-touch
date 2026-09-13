@@ -7018,6 +7018,7 @@ async function runFoundationF06Prepare(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
   faultControlUrl: string;
+  faultBoundary?: 'text-prefix' | 'provider-started';
   scenarioKey: string;
   platform: string;
   locale: string;
@@ -7127,6 +7128,7 @@ async function prepareFoundationF06Conversation(
     agent: NonNullable<ReturnType<typeof selectedAgent>>;
     capabilitySessionId: string;
     faultControlUrl: string;
+    faultBoundary?: 'text-prefix' | 'provider-started';
     scenarioKey: string;
     platform: string;
     locale: string;
@@ -7142,6 +7144,7 @@ async function prepareFoundationF06Conversation(
   const streamId = `foundation-f06-${crypto.randomUUID()}`;
   const idempotencyKey = crypto.randomUUID();
   const actorId = authenticatedFoundationActorPtid();
+  const faultBoundaryMode = input.faultBoundary ?? 'text-prefix';
   let boundarySettled = false;
   let boundaryRequested = false;
   let cleanupTurnId = '';
@@ -7219,11 +7222,24 @@ async function prepareFoundationF06Conversation(
       const hasText = observedDurableEvents.some(
         (candidate) => candidate.event === 'text',
       );
+      const providerStarted = observedDurableEvents.some(
+        (candidate) => (
+          candidate.event === 'progress'
+          && candidate.data.stage === 'provider_call_started'
+        ),
+      );
       const uniqueSequences = new Set(
         observedDurableEvents.map((candidate) =>
           Number(candidate.data.seq ?? 0)),
       );
-      if (!hasText || uniqueSequences.size < 2) return;
+      if (
+        uniqueSequences.size < 2
+        || (
+          faultBoundaryMode === 'provider-started'
+            ? !providerStarted
+            : !hasText
+        )
+      ) return;
 
       const turnId = observedTurnId(events);
       if (!turnId) {
@@ -7306,6 +7322,8 @@ async function prepareFoundationF06Conversation(
         textEventCount: observedDurableEvents.filter(
           (candidate) => candidate.event === 'text',
         ).length,
+        faultBoundaryMode,
+        providerStarted,
         requestedCursor,
         activePhase: active.phase,
       });
@@ -7444,13 +7462,15 @@ async function prepareFoundationF06Conversation(
             prefixLength: prefix.length,
           });
           if (!prefix) {
-            void reportFoundationF06PrefixDebug('A-D', 'prefix-missing', {
-              acknowledgedCursor,
-              textEventFacts,
-            });
-            throw new Error(
-              'agent.acceptance.foundationRecoveryPrefixMissing',
-            );
+            if (faultBoundaryMode === 'text-prefix') {
+              void reportFoundationF06PrefixDebug('A-D', 'prefix-missing', {
+                acknowledgedCursor,
+                textEventFacts,
+              });
+              throw new Error(
+                'agent.acceptance.foundationRecoveryPrefixMissing',
+              );
+            }
           }
           void reportFoundationF06PrefixDebug('A-C', 'prefix-ready', {
             acknowledgedCursor,
@@ -18570,12 +18590,14 @@ export function installAcceptanceHarness(): void {
       locale,
       sampleId,
       faultControlUrl,
+      faultBoundary,
     }: {
       scenarioKey: string;
       platform: string;
       locale: string;
       sampleId: string;
       faultControlUrl: string;
+      faultBoundary?: 'text-prefix' | 'provider-started';
     }) {
       try {
         const agent = selectedAgent();
@@ -18594,6 +18616,7 @@ export function installAcceptanceHarness(): void {
           locale,
           sampleId,
           faultControlUrl,
+          faultBoundary,
         }));
       } catch (error) {
         const primary = error instanceof Error ? error.message : String(error);

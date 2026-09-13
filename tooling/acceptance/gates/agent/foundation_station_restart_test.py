@@ -257,6 +257,9 @@ class FoundationStationRestartTest(unittest.TestCase):
             evidence = foundation_station_restart.restart_foundation_station(
                 runtime_manifest(),
                 repo_root=self.repo_root,
+                before_outage=lambda: phases.append(
+                    ("before-outage", 0.0)
+                ),
                 during_outage=lambda deadline: phases.append(
                     ("outage", deadline)
                 ),
@@ -267,9 +270,9 @@ class FoundationStationRestartTest(unittest.TestCase):
 
         self.assertEqual(
             [phase for phase, _deadline in phases],
-            ["outage", "restarted"],
+            ["before-outage", "outage", "restarted"],
         )
-        self.assertLess(phases[0][1], phases[1][1])
+        self.assertLess(phases[1][1], phases[2][1])
         stop_deadline = next(
             call.kwargs["deadline"]
             for call in remote.call_args_list
@@ -284,7 +287,7 @@ class FoundationStationRestartTest(unittest.TestCase):
             start_deadline - stop_deadline,
             foundation_station_restart.RESTORE_RESERVE_SECONDS,
         )
-        self.assertEqual(start_deadline, phases[1][1])
+        self.assertEqual(start_deadline, phases[2][1])
         self.assertIs(evidence["outageObserved"], True)
         self.assertEqual(evidence["deadlineSeconds"], 180)
         commands = [call.args[1] for call in remote.call_args_list]
@@ -349,6 +352,49 @@ class FoundationStationRestartTest(unittest.TestCase):
 
         commands = [call.args[1] for call in remote.call_args_list]
         self.assertIn(f"docker start {CONTAINER_ID}", commands)
+
+    def test_before_outage_failure_prevents_station_mutation(self) -> None:
+        def fail_prepare() -> None:
+            raise RuntimeError("prepare failed")
+
+        remote_outputs = iter(
+            (
+                CONTAINER_ID[:12],
+                inspect_payload("2026-08-28T00:00:00Z"),
+            )
+        )
+        with (
+            patch.dict(
+                os.environ,
+                AUTHORIZED_ENV,
+            ),
+            patch.object(
+                foundation_station_restart,
+                "source_proto_digest",
+                return_value=PROTO_DIGEST,
+            ),
+            patch.object(
+                foundation_station_restart,
+                "_station_version",
+                return_value={"build_commit": SOURCE_COMMIT[:12]},
+            ),
+            patch.object(
+                foundation_station_restart,
+                "_remote_command",
+                side_effect=lambda *_args, **_kwargs: next(remote_outputs),
+            ) as remote,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "prepare failed"):
+                foundation_station_restart.restart_foundation_station(
+                    runtime_manifest(),
+                    repo_root=self.repo_root,
+                    before_outage=fail_prepare,
+                    during_outage=lambda _deadline: None,
+                )
+
+        commands = [call.args[1] for call in remote.call_args_list]
+        self.assertFalse(any("docker kill" in command for command in commands))
+        self.assertFalse(any("docker start" in command for command in commands))
 
     def test_bounded_outage_restores_after_kill_identity_error(self) -> None:
         remote_outputs = iter(

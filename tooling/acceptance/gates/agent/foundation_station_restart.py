@@ -336,6 +336,7 @@ def restart_foundation_station(
     runtime_manifest: Mapping[str, Any],
     *,
     repo_root: Path,
+    before_outage: Callable[[], None] | None = None,
     during_outage: Callable[[float], None] | None = None,
     after_restart: Callable[[float], None] | None = None,
 ) -> dict[str, Any]:
@@ -362,6 +363,8 @@ def restart_foundation_station(
         project_label=project_label,
         station_port=station_port,
     )
+    if before_outage is not None:
+        before_outage()
 
     operation_started_at = time.monotonic()
     operation_deadline = operation_started_at + RESTART_TIMEOUT_SECONDS

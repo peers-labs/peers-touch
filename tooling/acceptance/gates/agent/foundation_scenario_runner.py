@@ -1371,47 +1371,56 @@ class FoundationInterruptedCoordinator:
         transport_restored = False
         primary_error: BaseException | None = None
         try:
-            self._set_locale(client, probe_input)
-            prepared = client.prepare_foundation_f06(
-                {
-                    "scenarioKey": scenario_key,
-                    "platform": probe_input.platform,
-                    "locale": probe_input.locale,
-                    "sampleId": probe_input.sample_id,
-                },
-                timeout=300,
-            )
-            if (
-                not isinstance(prepared, Mapping)
-                or not str(prepared.get("conversationId") or "")
-                or not str(prepared.get("turnId") or "")
-            ):
-                raise ScenarioRunnerError(
-                    "BASE-INTERRUPTED prepare returned invalid evidence for "
-                    f"{scenario_key}: {prepared!r}"
+            def prepare_before_outage() -> None:
+                nonlocal handoff
+                self._set_locale(client, probe_input)
+                prepared = client.prepare_foundation_f06(
+                    {
+                        "scenarioKey": scenario_key,
+                        "platform": probe_input.platform,
+                        "locale": probe_input.locale,
+                        "sampleId": probe_input.sample_id,
+                        "faultBoundary": "provider-started",
+                    },
+                    timeout=300,
                 )
-            handoff = prepared
-            finalized = client.harness(
-                "foundationF06FinalizePreparation",
-                {"scenarioKey": scenario_key},
-                timeout=60,
-            )
-            if (
-                not isinstance(finalized, Mapping)
-                or finalized.get("conversationId")
-                != handoff.get("conversationId")
-                or finalized.get("turnId") != handoff.get("turnId")
-            ):
-                raise ScenarioRunnerError(
-                    "BASE-INTERRUPTED finalized handoff is invalid for "
-                    f"{scenario_key}"
+                if (
+                    not isinstance(prepared, Mapping)
+                    or not str(prepared.get("conversationId") or "")
+                    or not str(prepared.get("turnId") or "")
+                ):
+                    raise ScenarioRunnerError(
+                        "BASE-INTERRUPTED prepare returned invalid evidence for "
+                        f"{scenario_key}: {prepared!r}"
+                    )
+                handoff = prepared
+                finalized = client.harness(
+                    "foundationF06FinalizePreparation",
+                    {"scenarioKey": scenario_key},
+                    timeout=60,
                 )
+                if (
+                    not isinstance(finalized, Mapping)
+                    or finalized.get("conversationId")
+                    != handoff.get("conversationId")
+                    or finalized.get("turnId") != handoff.get("turnId")
+                ):
+                    raise ScenarioRunnerError(
+                        "BASE-INTERRUPTED finalized handoff is invalid for "
+                        f"{scenario_key}"
+                    )
 
             station_restart = restart_foundation_station(
                 self._runtime_manifest,
                 repo_root=REPO_ROOT,
+                before_outage=prepare_before_outage,
                 during_outage=lambda _deadline: None,
             )
+            if handoff is None:
+                raise ScenarioRunnerError(
+                    "BASE-INTERRUPTED restart did not prepare a handoff for "
+                    f"{scenario_key}"
+                )
             client.restore_station_transport()
             transport_restored = True
             _authenticate_clients(

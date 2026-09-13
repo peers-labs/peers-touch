@@ -505,9 +505,14 @@ class InterruptedHarnessClient(F06HarnessClient):
         platform: str,
         *,
         cleanup_log: list[str] | None = None,
+        event_log: list[str] | None = None,
         fail_direct: bool = False,
     ) -> None:
-        super().__init__(platform, cleanup_log=cleanup_log)
+        super().__init__(
+            platform,
+            cleanup_log=cleanup_log,
+            event_log=event_log,
+        )
         self.fail_direct = fail_direct
 
     def harness(
@@ -1996,8 +2001,9 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
     def test_base_interrupted_orders_source_bound_restart_and_probe(
         self,
     ) -> None:
+        event_log: list[str] = []
         native = InterruptedHarnessClient("desktop_app")
-        browser = InterruptedHarnessClient("browser")
+        browser = InterruptedHarnessClient("browser", event_log=event_log)
         runtime_pair = SimpleNamespace(native=native, browser=browser)
         coordinator = (
             foundation_scenario_runner.FoundationInterruptedCoordinator(
@@ -2024,11 +2030,17 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             "afterCommit": "a" * 12,
         }
 
+        def restart_station(*_args: object, **kwargs: object) -> dict[str, object]:
+            event_log.append("station:preflight")
+            kwargs["before_outage"]()
+            event_log.append("station:restart")
+            return restart_evidence
+
         with (
             patch.object(
                 foundation_scenario_runner,
                 "restart_foundation_station",
-                return_value=restart_evidence,
+                side_effect=restart_station,
             ) as station_restart,
             patch.object(
                 foundation_scenario_runner,
@@ -2056,6 +2068,10 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         authenticate.assert_called_once()
         self.assertEqual(native.prepare_calls, [])
         self.assertEqual(len(browser.prepare_calls), 1)
+        self.assertEqual(
+            browser.prepare_calls[0]["faultBoundary"],
+            "provider-started",
+        )
         self.assertEqual(len(browser.finalize_calls), 1)
         self.assertEqual(len(browser.restoration_calls), 1)
         self.assertEqual(browser.transport_restore_count, 1)
@@ -2068,6 +2084,18 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(browser.cleanup_calls, [])
         self.assertEqual(result["cleanup"]["status"], "clean")
         self.assertEqual(replay, result)
+        self.assertLess(
+            event_log.index("station:preflight"),
+            event_log.index("browser:transport-cut"),
+        )
+        self.assertLess(
+            event_log.index("browser:transport-cut"),
+            event_log.index("browser:boundary-finalized"),
+        )
+        self.assertLess(
+            event_log.index("browser:boundary-finalized"),
+            event_log.index("station:restart"),
+        )
 
     def test_base_interrupted_failure_runs_explicit_cleanup(self) -> None:
         cleanup_log: list[str] = []
@@ -2088,17 +2116,22 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             browser,
             interrupted_coordinator=coordinator,
         )
+        restart_evidence = {
+            "outageObserved": True,
+            "sourceCommit": "a" * 40,
+            "beforeCommit": "a" * 12,
+            "afterCommit": "a" * 12,
+        }
+
+        def restart_station(*_args: object, **kwargs: object) -> dict[str, object]:
+            kwargs["before_outage"]()
+            return restart_evidence
 
         with (
             patch.object(
                 foundation_scenario_runner,
                 "restart_foundation_station",
-                return_value={
-                    "outageObserved": True,
-                    "sourceCommit": "a" * 40,
-                    "beforeCommit": "a" * 12,
-                    "afterCommit": "a" * 12,
-                },
+                side_effect=restart_station,
             ),
             patch.object(
                 foundation_scenario_runner,

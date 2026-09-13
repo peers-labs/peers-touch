@@ -22,10 +22,10 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Verify the Browser `BASE-INTERRUPTED` visible error selector correction after AA-AD identified the receiver mismatch |
+| Current step | Verify deterministic Browser `BASE-INTERRUPTED` Station restart after the provider-completion race |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source C08 run `20260913T022558987346Z-78df1003eb513fa7302eded75bda3d75` on `a56c2989953deae1c1454640ac4646d1d464ddd1` completed `DONE / PROVEN`; same-source fully authorized Foundation run `20260913T023858647859Z-b63d363ceb9dc4769ea169c39523d037` crossed AS-F06 and both Duplicate Conflict locale cells, then confirmed AA at Browser English `BASE-INTERRUPTED` |
-| Current action | Expose the existing localized `presentedError` through the stable visible-error selector and retain both Duplicate F-I and Interrupted AA-AD instrumentation for post-fix comparison |
+| Last completed | Exact-source C08 run `20260913T032341973486Z-0e8f949da6e64423747d4206ff53c3f0` on `d5bfa071a260116a1c5f1f25a48cb45cec0920d6` completed `DONE / PROVEN`; same-source fully authorized Foundation run `20260913T032512505621Z-53d0a764362fb2dc00ce9d4ecc93c1b2` crossed AS-F06 and both Duplicate Conflict locale cells, then exposed a provider-completion race before `BASE-INTERRUPTED` restart |
+| Current action | Keep AS-F06 on its text-prefix boundary; prepare the one real `BASE-INTERRUPTED` Turn only after restart preflight and cut transport at durable `provider_call_started` |
 | Next action | Create a clean fix checkpoint, rebuild/smoke, deploy exact source, run C08 first, and rerun Foundation through `BASE-INTERRUPTED` |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
@@ -33,9 +33,9 @@
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | none；AA-AD proved the `BASE-INTERRUPTED` message, typed status, Recover action, store projection, and Turn identity are present while only the visible error selector is absent；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
+| Blockers | none；the selector correction is locally verified, and the provider-completion race is addressed at the source-bound restart coordinator without retry or provider substitution；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 run `20260913T022558987346Z-78df1003eb513fa7302eded75bda3d75` is `DONE / PROVEN` on `a56c2989953deae1c1454640ac4646d1d464ddd1`；Foundation run `20260913T023858647859Z-b63d363ceb9dc4769ea169c39523d037` crosses Duplicate Conflict and fails first at Browser English `BASE-INTERRUPTED / foundationInterruptedReceiverMissing`；AA-AD records only `errorElementPresent=false`；Provisioner cleanup is `DONE / PROVEN / passed` |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 run `20260913T032341973486Z-0e8f949da6e64423747d4206ff53c3f0` is `DONE / PROVEN` on `d5bfa071a260116a1c5f1f25a48cb45cec0920d6`；Foundation run `20260913T032512505621Z-53d0a764362fb2dc00ce9d4ecc93c1b2` crosses Duplicate Conflict and reaches Browser English `BASE-INTERRUPTED`, where readback is `completed` with no typed outcome；Provisioner cleanup is `DONE / PROVEN / passed` |
 | Last updated | 2026-09-13 |
 
 ---

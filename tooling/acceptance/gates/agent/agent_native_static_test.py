@@ -573,6 +573,23 @@ class AgentHarnessStaticTest(unittest.TestCase):
             self.source[prepare_start:prepare_end],
         )
         self.assertIn("preparationAttempts: 1", self.source[prepare_end:observe_start])
+        self.assertIn(
+            "faultBoundary?: 'text-prefix' | 'provider-started'",
+            self.source[prepare_start:observe_start],
+        )
+        self.assertIn(
+            "candidate.data.stage === 'provider_call_started'",
+            self.source[prepare_end:observe_start],
+        )
+        scenario_runner = FOUNDATION_SCENARIO_RUNNER.read_text(encoding="utf-8")
+        self.assertIn(
+            '"faultBoundary": "provider-started"',
+            scenario_runner,
+        )
+        self.assertIn(
+            "before_outage=prepare_before_outage",
+            scenario_runner,
+        )
         self.assertIn("await cleanupFoundationF06Scenario", self.source)
         self.assertIn(
             "foundationF06Controllers.set(input.scenarioKey, observed.controller)",

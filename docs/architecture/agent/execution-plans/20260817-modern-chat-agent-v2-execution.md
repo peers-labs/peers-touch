@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260913T022558987346Z-78df1003eb513fa7302eded75bda3d75` on `a56c2989953deae1c1454640ac4646d1d464ddd1` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260913T023858647859Z-b63d363ceb9dc4769ea169c39523d037` crossed all AS-F06 and both Duplicate Conflict locale cells, then failed first at Browser English `BASE-INTERRUPTED / foundationInterruptedReceiverMissing`; AA-AD proved only the visible error selector was absent while message, typed status, recovery, store projection, and Turn identity were present; the local visible-error selector correction passes Desktop `622/622`, Agent `418/418`, strict check, static `85/85`, and diff hygiene; exact-source post-fix proof is pending | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260913T032341973486Z-0e8f949da6e64423747d4206ff53c3f0` on `d5bfa071a260116a1c5f1f25a48cb45cec0920d6` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260913T032512505621Z-53d0a764362fb2dc00ce9d4ecc93c1b2` crossed all AS-F06 and both Duplicate Conflict locale cells, then failed first at Browser English `BASE-INTERRUPTED` because the provider completed before the Station restart could interrupt it; the local coordinator correction uses the persisted `provider_call_started` boundary and preflights the restart target before starting the one real Turn; Desktop `622/622`, Agent `419/419`, strict check, restart `13/13`, scenario runner `51/51`, static `85/85`, production build, and diff hygiene pass; exact-source post-fix proof is pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7856,6 +7856,27 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   cleanup, or provider configuration. Desktop tests pass `622/622` with one
   existing environment-only skip; Agent Acceptance tests pass `418/418`;
   Desktop strict check, Agent static `85/85`, and diff hygiene pass.
+- The selector-correction source
+  `d5bfa071a260116a1c5f1f25a48cb45cec0920d6` passed exact-source C08 run
+  `20260913T032341973486Z-0e8f949da6e64423747d4206ff53c3f0`.
+  Fully authorized Foundation run
+  `20260913T032512505621Z-53d0a764362fb2dc00ce9d4ecc93c1b2`
+  crossed all AS-F06 and both Duplicate Conflict locale cells, then failed
+  before receiver sampling because the source Assistant Message was already
+  `completed` without `error_json`. The prior run had proved the same source
+  path can persist interruption, so this is a real orchestration race rather
+  than a missing Station contract. Source inspection confirms Station emits
+  durable `turn_started` and `provider_call_started` progress events before
+  entering the real provider call, while the old coordinator waited for the
+  first text token and then performed remote source/container preflight before
+  `docker kill`. The local correction preserves AS-F06's text-prefix boundary
+  and gives only `BASE-INTERRUPTED` an explicit `provider-started` boundary.
+  Restart source/container preflight now completes before the Turn starts, then
+  the verified container is killed immediately after the prepared handoff.
+  There remains one real Ark Turn, one real abrupt Station restart, no retry
+  loop, no timeout increase, and no provider substitution. Local verification
+  passes Desktop `622/622`, Agent `419/419`, strict check, restart `13/13`,
+  scenario runner `51/51`, static `85/85`, production build, and diff hygiene.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
