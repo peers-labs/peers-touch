@@ -38,6 +38,7 @@ export {
   SocialThreadSection,
 } from './SocialThreadSurface';
 export type {
+  SocialThreadDividerProps,
   SocialThreadSurfaceProps,
   SocialThreadHeaderProps,
   SocialThreadBodyProps,
