@@ -294,6 +294,8 @@ class AgentNativeJourney:
             **self.profile_env,
             "PT_DEV_PROFILE": APPROVED_PROFILE,
             "PT_DEV_PROFILE_FILE": str(self.runtime_profile),
+            "PT_DEV_PROFILE_FILE_AUTHORITY": "acceptance-runtime-manifest",
+            "PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT": str(self.run_root),
             "PT_DESKTOP_APP_GATEWAY_PORT": str(self.gateway_port),
             "PT_DESKTOP_APP_WEB_PORT": str(self.renderer_port),
             "PT_STATION_MODE": "remote",

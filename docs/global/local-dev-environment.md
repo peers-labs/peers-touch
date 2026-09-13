@@ -80,7 +80,8 @@ A deployable profile is a `.env` source at
 `../env/peers-touch/<name>/profile.env.example` that configures one complete
 development topology: which Station to use, which ports, and which mode.
 `.local/dev/profiles/<name>.env` is an imported cache, not a competing source
-for a same-named deployable profile.
+for a same-named deployable profile. The only local-authority exception is a
+human-authorized compose profile whose bytes match its consumed machine receipt.
 
 In the current implementation, each git worktree selects its profile through
 `.local/dev/active/<worktree-name>.env`. Runtime commands derive the selected
@@ -92,7 +93,42 @@ The target architecture keeps the selection independent but moves its durable
 binding to `~/.peers-touch/dev/`, keyed by canonical `workspaceId`. See
 [`local-dev-control-plane/design.md`](../architecture/local-dev-control-plane/design.md).
 
-### 2.2 Profile Fields
+### 2.2 Environment Creation Authorization
+
+AI agents may inspect and activate an existing approved profile, but MUST NOT
+create, copy, derive, or register a profile or deploy environment without
+explicit human developer approval for the exact environment name and target.
+This includes `env/peers-touch/<name>/`, `.local/dev/profiles/`,
+`.local/deploy/envs/`, `make profile-authorize`, and `make profile-init`.
+
+A missing profile or deploy environment fails closed and must be reported. A
+task, execution plan, available host, old profile pointer, or Acceptance need
+does not imply creation permission. Untracked env-repository definitions and
+local definitions without a matching consumed authorization receipt cannot
+authorize profile selection, deployment, restart, or reset.
+
+Human local-profile creation is a two-step, single-use flow:
+
+```bash
+make profile-authorize PROFILE=<name> SLOT=<n>
+make profile-init PROFILE=<name> SLOT=<n>
+```
+
+The first command requires an interactive exact-tuple confirmation and writes a
+30-minute pending grant under
+`~/.peers-touch/dev/authorizations/environment-creation/`. The second consumes
+that grant, creates one compose profile, and records its digest. It never
+overwrites an existing profile. Agents may consume an already approved grant
+for the exact requested tuple but must not run the authorization command or
+create its files.
+
+`PT_DEV_PROFILE_FILE` is not a general override. It is accepted only with
+`PT_DEV_PROFILE_FILE_AUTHORITY=acceptance-runtime-manifest`, and the owned
+regular profile file must be directly contained by the absolute
+`PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT`. Normal development resolves reviewed
+env-repository topology or an authorized local compose profile.
+
+### 2.3 Profile Fields
 
 | Field | Required | Example | Semantics |
 |-------|----------|---------|-----------|
@@ -113,11 +149,13 @@ binding to `~/.peers-touch/dev/`, keyed by canonical `workspaceId`. See
 | `PT_DESKTOP_WEB_WEB_PORT` | yes | `3211` | Desktop browser web port |
 | `PT_MOBILE_WEB_PORT` | if mobile | `5173` | Mobile dev server port |
 
-### 2.3 Deploy Env Files
+### 2.4 Deploy Env Files
 
 Canonical definitions live at
-`../env/peers-touch/<profile>/deploy/<name>.env.example` and are imported to
-`.local/deploy/envs/<name>.env`. These define remote host connection:
+`../env/peers-touch/<profile>/deploy/<name>.env.example`. Remote deploy commands
+resolve exactly one Git-tracked, clean definition directly from the env
+repository. `.local/deploy/envs/<name>.env` is legacy cache/observation only
+and cannot authorize deployment. These definitions contain:
 
 | Field | Semantics |
 |-------|-----------|
@@ -326,7 +364,10 @@ SELECT id, conversation_id, created_at FROM device_queue_lanes ORDER BY created_
 4. **Health check is the contract** — `make station` is not done until health passes.
 5. **Current branch deploys** — remote mode pushes HEAD, not necessarily main.
 6. **Environment repository is authoritative** — do not repurpose a canonical
-   profile by editing only its `.local` cache; create a distinctly named
-   environment profile instead.
+   profile by editing only its `.local` cache. If no approved profile fits,
+   stop and request explicit human authorization before creating a distinctly
+   named environment profile or deploy environment.
 7. **No implicit global fallback** — an unbound worktree must fail closed; do
    not infer profile or slot from another worktree.
+8. **Local creation consumes authorization** — `profile-init` requires one
+   unexpired exact-tuple machine grant and produces a digest-bound receipt.

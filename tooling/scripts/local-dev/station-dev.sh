@@ -3,6 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
 source "$SCRIPT_DIR/env.sh"
 
 STATION_DIR="$PROJECT_ROOT/apps/station/app"
@@ -127,12 +128,9 @@ if [[ "$STATION_MODE" == "remote" ]]; then
     exit 1
   fi
 
-  deploy_env_file="$PROJECT_ROOT/.local/deploy/envs/$deploy_env.env"
-  if [[ ! -f "$deploy_env_file" ]]; then
-    echo "[ERROR] Deploy env file not found: $deploy_env_file"
+  if ! deploy_env_file="$("$DEPLOY_SCRIPT" resolve "$deploy_env")"; then
+    echo "[ERROR] Reviewed deploy env is unavailable for PT_STATION_DEPLOY_ENV=$deploy_env."
     echo "        Referenced by PT_STATION_DEPLOY_ENV=$deploy_env in the active profile."
-    echo "        Available deploy envs:"
-    ls "$PROJECT_ROOT/.local/deploy/envs/"*.env 2>/dev/null | xargs -I{} basename {} .env | sed 's/^/          /'
     exit 1
   fi
 

@@ -20,6 +20,7 @@
 | LDCP-D06 | Bootstrap with a non-authoritative observed snapshot | accepted |
 | LDCP-D07 | Place Acceptance Evidence under the machine Dev root | accepted |
 | LDCP-D08 | Registration is explicit and activity is runtime-derived | accepted |
+| LDCP-D09 | Require human authorization for environment creation | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -265,3 +266,53 @@ not share one status field.
   capabilities.
 - A registered worktree with no live resource is reported as `idle`.
 - Migration audits may inspect every Git worktree without registering it.
+
+## LDCP-D09: Human-Authorized Environment Creation
+
+**Status**: accepted
+**Date**: 2026-09-13
+
+### Context
+
+Agent workflows could previously interpret a missing profile as permission to
+run `make profile-init`, create an `env/peers-touch/<name>/` definition, or
+retain a local-only `.local` fallback. That silently created topology and
+destructive-operation authority outside developer review.
+
+### Decision
+
+An AI agent may inspect or select an existing approved environment, but may not
+create, copy, derive, or register a profile or deploy environment without
+explicit human developer approval for the exact environment name and target.
+Missing topology fails closed and is reported as a blocker.
+
+For machine-local compose profiles, approval is represented by a short-lived
+machine grant bound to the exact `workspaceId + profile + mode + slot` tuple.
+`profile-init` consumes it once and stores a receipt bound to the generated
+profile digest. The grant command is human-only; an Agent may not mint approval.
+
+### Rationale
+
+An environment definition controls hosts, ports, databases, compose projects,
+deployment, restart, and reset behavior. Creating one is an infrastructure
+ownership decision, not an implementation convenience.
+
+### Alternatives Considered
+
+- Let agents create distinctly named environments: rejected because a unique
+  name does not prove host ownership or operational approval.
+- Allow local-only profiles: rejected because they bypass the reviewable env
+  repository and create hidden machine state.
+- Infer approval from an Acceptance plan or available host: rejected because
+  neither grants topology mutation authority.
+
+### Consequences
+
+- `make profile-authorize` is human-only and requires interactive exact-tuple
+  confirmation.
+- `make profile-init` fails without a matching unexpired grant and never
+  overwrites an existing profile.
+- Untracked env-repository definitions and unauthorized local definitions
+  cannot authorize selection, deployment, restart, or reset.
+- Agent workflows stop and report the missing environment instead of creating
+  one.
