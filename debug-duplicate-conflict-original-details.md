@@ -108,6 +108,22 @@ Instrumentation checkpoint
 `09974e4e77fb1c470c491bc7438ab2798740dcc6` contains those F-I observations
 and retains the earlier A-E click/Portal observations.
 
+Foundation run
+`20260913T023858647859Z-b63d363ceb9dc4769ea169c39523d037`
+on exact source `a56c2989953deae1c1454640ac4646d1d464ddd1` crossed both
+Duplicate Conflict locale cells. In both cells:
+
+- the current session remained the target Conversation;
+- the Station event first observed the local assistant as loading;
+- the rejection callback then observed the current and buffered assistant with
+  `ADMISSION_DUPLICATE_CONFLICT` and operation status `failed`;
+- the DOM transitioned once from zero to one matching receiver;
+- the receiver and Open-original Portal transition were observed.
+
+F, G, H, and I are rejected for this exact-source run. The earlier receiver
+timeout did not reproduce, so no Duplicate Conflict product correction is
+justified. The enclosing Gate advanced to Browser English `BASE-INTERRUPTED`.
+
 ## Local Verification
 - Agent Acceptance tests: `418/418` PASS.
 - Desktop Vitest: `622/622` PASS with one existing environment-only skip.

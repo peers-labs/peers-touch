@@ -239,3 +239,27 @@ advanced to receiver sampling.
 The next instrumentation captures only booleans, counts, terminal/error
 attributes, and the current-session-presence flag after the ready boundary. It
 records no text, IDs, actor identity, credentials, or provider payload.
+
+## Iteration 5: Interrupted Visible Error Selector
+
+Fully authorized exact-source Foundation run
+`20260913T023858647859Z-b63d363ceb9dc4769ea169c39523d037`
+on `a56c2989953deae1c1454640ac4646d1d464ddd1` crossed all AS-F06 and
+Duplicate Conflict locale cells, then reproduced
+`agent.acceptance.foundationInterruptedReceiverMissing` at Browser English
+`BASE-INTERRUPTED`. Provisioner cleanup completed `DONE / PROVEN / passed`.
+
+The AA-AD snapshot is decisive:
+
+- `waitReadyObserved=true`;
+- the message is present and visible with terminal status `interrupted`;
+- `data-pt-agent-error-type=LIFECYCLE_INTERRUPTED`;
+- the Recover action is present and visible;
+- the store projection and Turn identity are present;
+- only `errorElementPresent=false`.
+
+AA is confirmed. AB, AC, and AD are rejected. The user-visible primary error
+copy already renders `presentedError`, but only the collapsed Diagnostics copy
+owns `data-pt-agent-message-error-text`. The correction places that stable
+evidence selector on the visible error copy while preserving the same
+localized text, layout, recovery action, and store/runtime ownership.

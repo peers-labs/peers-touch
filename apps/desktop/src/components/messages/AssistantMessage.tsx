@@ -724,7 +724,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             >
               <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
               <div style={{ flex: 1 }}>
-                <div>{presentedError}</div>
+                <div data-pt-agent-message-error-text={message.error}>{presentedError}</div>
                 {isContextOverflow && (
                   <Button
                     data-pt-agent-message-error-recovery="reduce-context"

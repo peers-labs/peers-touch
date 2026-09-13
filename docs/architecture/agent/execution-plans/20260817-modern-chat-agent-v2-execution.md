@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260913T012013690791Z-a87dd97ff5c3a0acf76621e915eaa84d` on `acf98eb3bd0f59a206351488777f89d7a64106e4` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260913T013756664860Z-5244311931c42973f9cfccf9571b6c72` crossed the earlier AS-F10 transient and failed first at Browser Simplified Chinese `BASE-DUPLICATE_CONFLICT / duplicate conflict receiver`; Provisioner cleanup passed; bounded F-I typed-event/store/DOM instrumentation is committed at `09974e4e77fb1c470c491bc7438ab2798740dcc6` before returning to the pending AA-AD `BASE-INTERRUPTED` receiver diagnosis; the `chatRuntime` generation fence remains locally verified | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260913T022558987346Z-78df1003eb513fa7302eded75bda3d75` on `a56c2989953deae1c1454640ac4646d1d464ddd1` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260913T023858647859Z-b63d363ceb9dc4769ea169c39523d037` crossed all AS-F06 and both Duplicate Conflict locale cells, then failed first at Browser English `BASE-INTERRUPTED / foundationInterruptedReceiverMissing`; AA-AD proved only the visible error selector was absent while message, typed status, recovery, store projection, and Turn identity were present; the local visible-error selector correction passes Desktop `622/622`, Agent `418/418`, strict check, static `85/85`, and diff hygiene; exact-source post-fix proof is pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7835,6 +7835,27 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Instrumentation checkpoint
   `09974e4e77fb1c470c491bc7438ab2798740dcc6` is ready for Native binary
   rebuild, smoke, exact-source deployment, C08, and Foundation.
+- **BASE-INTERRUPTED visible receiver correction (2026-09-13)**: exact-source
+  C08 run `20260913T022558987346Z-78df1003eb513fa7302eded75bda3d75`
+  on `a56c2989953deae1c1454640ac4646d1d464ddd1` completed
+  `DONE / PROVEN`. Fully authorized same-source Foundation run
+  `20260913T023858647859Z-b63d363ceb9dc4769ea169c39523d037`
+  crossed all AS-F06 and both Duplicate Conflict locale cells. F-I shows both
+  Duplicate Conflict receivers progressed from loading through one stable
+  typed DOM projection and matching Open-original transition, rejecting all
+  four new Duplicate hypotheses. The run then failed first at Browser English
+  `BASE-INTERRUPTED / foundationInterruptedReceiverMissing`; AA-AD records
+  `waitReadyObserved=true`, a visible message with terminal status
+  `interrupted`, `LIFECYCLE_INTERRUPTED`, a visible Recover action, and a
+  matching store Turn, while only `errorElementPresent=false`. The root cause
+  is that the actual visible `presentedError` node lacked the stable evidence
+  selector, which existed only inside collapsed Diagnostics. The local
+  correction places the selector on the visible error copy and strengthens its
+  source-contract regression without changing localized copy, layout,
+  recovery, store/runtime ownership, Gate assertions, matrix tuples, timeout,
+  cleanup, or provider configuration. Desktop tests pass `622/622` with one
+  existing environment-only skip; Agent Acceptance tests pass `418/418`;
+  Desktop strict check, Agent static `85/85`, and diff hygiene pass.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

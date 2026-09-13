@@ -9927,7 +9927,7 @@ function reportFoundationF06TerminalRaceDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'foundation-f06-terminal-race-v2',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:AS-F06-terminal-race',
       msg: `[DEBUG] ${stage}`,
@@ -10209,7 +10209,7 @@ function reportFoundationDuplicateConflictOriginalDetailsDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'duplicate-conflict-original-details',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationDuplicateConflictScenario',
       msg: `[DEBUG] ${stage}`,

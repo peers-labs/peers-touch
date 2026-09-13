@@ -181,6 +181,9 @@ describe('Agent evidence UI projections', () => {
 
     expect(assistant).toContain('data-budget-notice');
     expect(assistant).toContain('data-pt-agent-message-error-text');
+    expect(assistant).toContain(
+      '<div data-pt-agent-message-error-text={message.error}>{presentedError}</div>',
+    );
     expect(assistant).toContain('data-pt-agent-terminal-status');
     expect(assistant).toContain('data-pt-agent-error-resource-kind');
     expect(assistant).toContain('data-pt-agent-error-resource-id');
