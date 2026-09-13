@@ -1,4 +1,7 @@
-use super::{CommandSubmitFailure, CommandTransport, QueueAcknowledger, QueueTransport};
+use super::{
+    CommandResultTransport, CommandSubmitFailure, CommandTransport, QueueAcknowledger,
+    QueueTransport, COMMAND_RECONCILIATION_BATCH_LIMIT,
+};
 use crate::infrastructure::station_client::{self, StationClientErrorKind};
 use crate::model::chat::{
     chat_command, submit_conversation_authority_command_request, AcknowledgeDeviceInboxItemRequest,
@@ -8,10 +11,11 @@ use crate::model::chat::{
     ConversationPublicHead, ConversationPublicHeadSource, CreateGroupConversationRequest,
     CreateGroupConversationResponse, DeviceConsumptionReceipt, GetConversationPublicHeadRequest,
     GetConversationPublicHeadResponse, PrepareConversationCommandRequest,
-    PrepareConversationCommandResponse, SubmitConversationAuthorityCommandRequest,
-    SubmitConversationAuthorityCommandResponse, SubmitConversationDeliveryReceiptRequest,
-    SubmitConversationDeliveryReceiptResponse, SubmitConversationTypingRequest,
-    SubmitConversationTypingResponse,
+    PrepareConversationCommandResponse, ResolveConversationCommandResultsRequest,
+    ResolveConversationCommandResultsResponse, ResolvedConversationCommandResult,
+    SubmitConversationAuthorityCommandRequest, SubmitConversationAuthorityCommandResponse,
+    SubmitConversationDeliveryReceiptRequest, SubmitConversationDeliveryReceiptResponse,
+    SubmitConversationTypingRequest, SubmitConversationTypingResponse,
 };
 use ed25519_dalek::{Signer, SigningKey};
 use messaging_core::identity::DeviceEnrollmentTransport;
@@ -25,6 +29,7 @@ use sha2::{Digest, Sha256};
 
 const GROUP_CREATION_PATH: &str = "/conversation/group";
 const AUTHORITY_COMMAND_PATH: &str = "/conversation/command";
+const COMMAND_RESULTS_PATH: &str = "/conversation/command/results";
 const COMMAND_PROPOSAL_FORMAT_VERSION: u32 = 1;
 const COMMAND_PROPOSAL_LIFETIME_MS: i64 = 5 * 60 * 1_000;
 
@@ -351,6 +356,37 @@ impl CommandTransport for StationCommandTransport {
             CommandSubmissionRoute::GroupCreation => self.submit_group_creation(&command),
             CommandSubmissionRoute::AuthorityCommand => self.submit_authority_command(&command),
         }
+    }
+}
+
+impl CommandResultTransport for StationCommandTransport {
+    fn resolve(
+        &self,
+        request: ResolveConversationCommandResultsRequest,
+    ) -> Result<Vec<ResolvedConversationCommandResult>, String> {
+        if request.commands.is_empty()
+            || request.commands.len() > COMMAND_RECONCILIATION_BATCH_LIMIT
+            || request.commands.iter().any(|command| {
+                command.conversation_id.trim().is_empty()
+                    || command.command_id.trim().is_empty()
+                    || command.command_sha256.len() != 32
+            })
+        {
+            return Err("messaging command result request is invalid".to_string());
+        }
+        station_client::request_proto_for_device::<
+            ResolveConversationCommandResultsRequest,
+            ResolveConversationCommandResultsResponse,
+        >(
+            Method::POST,
+            COMMAND_RESULTS_PATH,
+            &self.token,
+            None,
+            Some(&request),
+            &self.device_id,
+        )
+        .map(|response| response.results)
+        .map_err(|error| error.to_string())
     }
 }
 

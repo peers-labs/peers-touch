@@ -4,13 +4,14 @@ use super::{
     verify_device_event_delivery, AttachmentCryptoMaterial, AttachmentDownloadProjection,
     AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferProgress,
     AttachmentTransferRecord, AttachmentTransferWorker, CommandDispatchProgress,
-    CommandOutboxWorker, CommandRetryPolicy, ConversationMemberProjection,
-    ConversationMessageProjection, ConversationProjection, DirectSessionBootstrapper,
-    DrainProgress, EditTextIntent, MessagingItemConsumer, MessagingLifecycleWorker, MessagingStore,
-    PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft, PreKeyPublisher,
-    QueueDrain, SendPreparer, SendTextIntent, StationAttachmentTransferTransport,
-    StationCommandTransport, StationDeliveryReceiptTransport, StationDeviceTransport,
-    StationGroupGenesisTransport, StationKeyBundleTransport, StationMembershipTransitionTransport,
+    CommandOutboxWorker, CommandReconciliationProgress, CommandReconciliationWorker,
+    CommandRetryPolicy, ConversationMemberProjection, ConversationMessageProjection,
+    ConversationProjection, DirectSessionBootstrapper, DrainProgress, EditTextIntent,
+    MessagingItemConsumer, MessagingLifecycleWorker, MessagingStore, PendingAttachmentUpload,
+    PendingMembershipIntent, PendingMessageDraft, PreKeyPublisher, QueueDrain, SendPreparer,
+    SendTextIntent, StationAttachmentTransferTransport, StationCommandTransport,
+    StationDeliveryReceiptTransport, StationDeviceTransport, StationGroupGenesisTransport,
+    StationKeyBundleTransport, StationMembershipTransitionTransport,
     StationMlsKeyPackageTransport, StationMlsLeaveIntentTransport, StationPreKeyTransport,
     StationQueueTransport, ThreadCountProjection,
 };
@@ -971,6 +972,24 @@ impl MessagingEngine {
             .lock()
             .map_err(|_| "messaging projection notifier lock poisoned".to_string())? = notifier;
         Ok(())
+    }
+
+    pub fn reconcile_submitted_commands_once(
+        &self,
+        token: &str,
+        now_unix_ms: i64,
+    ) -> Result<CommandReconciliationProgress, String> {
+        let _guard = self
+            .dispatch_lock
+            .lock()
+            .map_err(|_| "messaging command dispatch lock poisoned".to_string())?;
+        CommandReconciliationWorker::new(
+            self.store.clone(),
+            self.mls_manager.clone(),
+            self.endpoint.clone(),
+            StationCommandTransport::new(token.to_string(), self.endpoint.device_id.clone())?,
+        )?
+        .reconcile_once(now_unix_ms)
     }
 
     pub fn dispatch_command_once(

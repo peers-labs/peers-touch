@@ -1,8 +1,8 @@
 # Messaging Platform — 架构设计
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-08-08 | **Updated**: 2026-09-06
+> **Version**: v1.4
+> **Created**: 2026-08-08 | **Updated**: 2026-09-13
 > **Owner**: Messaging Platform Team
 > **Module**: `model/domain/chat/`, `apps/station/`, `apps/desktop/`, `apps/mobile/`
 >
@@ -758,6 +758,57 @@ SSE/push wake
 - Direct 与 Group fan-out 使用独立 ephemeral delivery path；不得写
   `DurableDeviceInboxItem`、authority event、recovery archive 或 message projection。
 - Sender pulse bounded/throttled；receiver 按 sender + conversation 幂等刷新 TTL。
+
+### 8.3 Submitted Command Reconciliation
+
+> **Amendment status**: accepted (`MP-D31`, Owner accepted 2026-09-13)
+
+The Device Messaging Engine reconciles at most 64 `submitted` commands per startup,
+reconnect, or explicit worker wake through one authenticated Conversation-owned batch
+read. The Home Station resolves each exact
+`(conversation_id, command_id, command_sha256)` reference from existing canonical
+truth only:
+
+```text
+local authority receipt -> ACCEPTED or TERMINAL_REJECTED
+addressed COMMAND_RESULT Device Inbox item -> ACCEPTED or TERMINAL_REJECTED
+Federation authority-command outbox -> HOME_PENDING
+no canonical row -> NOT_FOUND
+```
+
+`HOME_PENDING` remains owned by the Home durable worker. `NOT_FOUND` returns the same
+exact command bytes to `retry_wait`; it never creates a new command identity or
+re-encrypts the logical attempt. Accepted readback settles local command lifecycle
+state but cannot advance the authority head, Device Inbox lane cursor, or committed
+message projection. Hash or endpoint mismatch fails closed with zero local mutation.
+
+The old proposal-specific result route/store remains deleted.
+
+### 8.4 Authority-Mediated Federated Typing
+
+> **Amendment status**: accepted (`MP-D32`, Owner accepted 2026-09-13)
+
+Cross-Station typing reuses the signed `FederatedDomainFrame` and peer delivery route,
+with QoS fixed by the receiver registry from payload kind:
+
+```text
+durable payload kind -> durable Federation outbox/inbox and retry
+CONVERSATION_TYPING -> verify + bounded memory admission + typed dispatch
+                       no outbox row, no inbox row, no retry
+```
+
+The sender Home sends `AUTHORITY_ADMISSION` to the current Conversation Authority.
+The Authority validates the active sender endpoint and membership, selects recipients
+from canonical membership, groups them by verified Home Station, and sends one
+`HOME_FANOUT` signal per recipient Home. Same-Station and remote delivery call the
+same typed receiver. Recipient Homes validate source, target, authority, recipients,
+generation, and expiry before publishing to the local Event Bus.
+
+The signal binds federation, conversation, authority Station and epoch, sender
+endpoint and Home Station, pulse generation, expiry, typing state, phase, and bounded
+recipient PTIDs. Duplicate or older generations do not extend TTL. Partial recipient
+failure does not roll back successful fan-out, and overload drops typing without
+affecting durable Chat lanes.
 - stop、session switch、disconnect 或 TTL expiry 都投影为 idle。丢失 stop pulse
   只能造成 bounded 短暂显示，不能形成 durable phantom state。
 
@@ -985,6 +1036,11 @@ client cancel 终止当前 stream，但不自动 cancel durable session；只有
 - group Sender Keys/Megolm/fully-connected member fan-out。
 - permanent compatibility runtime、dual source、fallback transport。
 - fixed sleep、page refresh 或 polling 作为 correctness。
+- result readback advancing authority head or Device Inbox cursor。
+- typing in Conversation events、Device Inbox、Federation durable outbox/inbox、
+  history、receipts 或 recovery。
+- follower Home Station deciding final Group typing recipients。
+- Conversation-owned peer transport parallel to shared Federation。
 
 ## 14. Architecture Gates
 
@@ -1020,3 +1076,27 @@ evidence 和 exact UI plaintext。
   Messaging API，legacy JSON thread/settings request为zero；
 - Windows/Linux multi-Station Native Gate无`active conversation membership required`
   runtime-log failure，并保留source/binary/service-binding/cleanup evidence。
+
+### 14.2 MP-D31 Command Reconciliation Gates
+
+- local accepted response loss converges from the authority receipt;
+- remote pending survives Home restart without client replay;
+- accepted and terminal-rejected result loss converges from canonical Device Inbox;
+- `NOT_FOUND` retries only exact bytes under the same command ID;
+- hash and endpoint conflicts fail closed;
+- accepted readback does not advance authority head or Inbox cursor;
+- expired historical commands become typed failures instead of permanent
+  `submitted`;
+- no proposal-specific result route/store exists.
+
+### 14.3 MP-D32 Federated Typing Gates
+
+- cross-Station Direct proves start, stop, lost-stop TTL, session switch, and
+  disconnect;
+- three-client Group proves authority-selected fan-out across at least two Stations;
+- non-member, removed member, revoked device, wrong Home, wrong Authority, expired
+  frame, and forged signature are rejected;
+- partial remote failure preserves successful recipients;
+- bounded overload drops typing without affecting durable lanes;
+- typing produces zero rows in Conversation events, Device Inbox, Federation durable
+  outbox/inbox, history, receipts, and recovery.
