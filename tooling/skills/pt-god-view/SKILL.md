@@ -107,6 +107,11 @@ First, classify the work mode:
 For standalone tasks, the agent skips PRODUCT/DESIGN/PLAN stages but still operates
 under methodology: proper edits, proper checks, proper commits.
 
+Every non-trivial mutating task dispatches through `pt-dev-workflow`. Read-only
+inspection may precede declaration; before the first repository write or
+runtime acquisition, `pt-dev-workflow` must publish and confirm the machine-wide
+resource declaration.
+
 ### 3.2 Stage Reasoning (for tracked/multi-step work)
 
 ```
@@ -188,6 +193,7 @@ The agent must NOT do the work itself when a skill exists for it:
 | Need a TRAE `/goal`, multi-subagent execution contract, or Goal review | Assemble an ad hoc prompt | `pt-trae-goal-orchestrator` |
 | Need tracked-work status, resume, handoff, or blocker projection | Reconstruct from chat | `pt-context-anchor` |
 | Need to implement planned step | Code without checking plan | `pt-execution-plan-guardian` |
+| Need a complete development lifecycle | Dispatch stages independently | `pt-dev-workflow` |
 | Need to fix a bug with regression protection | Debug ad-hoc → fix → move on | `pt-defect-closure` |
 | Need to optimize/audit Acceptance Infra | Let business evidence drive framework readiness | `pt-acceptance-infra-engineering` |
 | Need business Domain Acceptance injection/proof | Infer onboarding or start from a Gate | `pt-acceptance-engineering` |
@@ -265,6 +271,10 @@ When starting new work:
 
 If unclear: "Is this a new product/capability, a new architecture decision, or
 implementation of something already accepted and planned?"
+
+After classification, route non-trivial development through `pt-dev-workflow`;
+do not bypass its public declaration or product-functional fence by invoking a
+later stage Skill directly.
 
 ---
 
@@ -391,3 +401,8 @@ pt-god-view (methodology OS / entry point)
    in-scope ready frontier, and continue legal work. A Goal-level block requires
    an empty ready queue and only hard governance or unavailable external
    resource boundaries remaining.
+9. **Declare before mutation** — public source/runtime intent is required before
+   writes or runtime acquisition; active work and process discovery are not
+   substitutes.
+10. **Function before proof** — required exact-source Journeys reach
+    `FUNCTIONAL_PASS` before Acceptance expansion or broad execution.

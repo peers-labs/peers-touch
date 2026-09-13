@@ -1349,7 +1349,8 @@ func (s *Service) authorizeMemberEndpoint(
 	if err != nil {
 		return err
 	}
-	if !conversation.Status().Writable() || !containsEndpoint(conversation.ActiveEndpoints(), endpoint) {
+	if !conversation.Status().Writable() ||
+		!conversation.IsActiveMemberEndpoint(endpoint) {
 		return NewError(
 			ErrorCodeUnauthorized,
 			operation,

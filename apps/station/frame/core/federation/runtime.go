@@ -44,6 +44,7 @@ type Runtime struct {
 	repository         *delivery.GORMRepository
 	registry           *delivery.Registry
 	dispatcher         *delivery.Dispatcher
+	ephemeralTransport delivery.Transport
 	signer             delivery.Signer
 	routes             *PeerRouteFactory
 	peerClient         *peerClient
@@ -118,13 +119,14 @@ func NewRuntime(
 	if err != nil {
 		return nil, err
 	}
+	transport := &routedTransport{
+		localStationPeerID: config.LocalStationPeerID,
+		local:              localTransport,
+		remote:             remoteTransport,
+	}
 	dispatcher, err := delivery.NewDispatcher(
 		repository,
-		&routedTransport{
-			localStationPeerID: config.LocalStationPeerID,
-			local:              localTransport,
-			remote:             remoteTransport,
-		},
+		transport,
 		config.Dispatcher,
 		config.Clock,
 	)
@@ -156,6 +158,7 @@ func NewRuntime(
 		repository:         repository,
 		registry:           registry,
 		dispatcher:         dispatcher,
+		ephemeralTransport: transport,
 		signer:             signer,
 		routes:             routes,
 		peerClient:         peerClient,
@@ -236,6 +239,30 @@ func (r *Runtime) CallPeer(ctx context.Context, call PeerCall) error {
 	}
 
 	return r.peerClient.Call(ctx, call)
+}
+
+// DeliverConversationTyping sends only the registered ephemeral typing payload.
+// Durable payload kinds must enter the Federation outbox and dispatcher instead.
+func (r *Runtime) DeliverConversationTyping(
+	ctx context.Context,
+	frame *delivery.Frame,
+) (delivery.Result, error) {
+	if r == nil || r.ephemeralTransport == nil || frame == nil {
+		return delivery.Result{}, delivery.NewError(
+			delivery.FailureInvalidArgument,
+			"deliver Conversation typing",
+			errors.New("runtime, transport, and frame are required"),
+		)
+	}
+	if frame.GetPayloadKind() != delivery.PayloadKindConversationTyping {
+		return delivery.Result{}, delivery.NewError(
+			delivery.FailureInvalidFrame,
+			"deliver Conversation typing",
+			errors.New("only Conversation typing may bypass the durable outbox"),
+		)
+	}
+
+	return r.ephemeralTransport.Deliver(ctx, frame)
 }
 
 // OpenPeerStream executes one authenticated raw or streaming request through

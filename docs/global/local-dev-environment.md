@@ -70,6 +70,16 @@ every current Git worktree uses the canonical root, the old directory is
 deleted, and the live registry plus active docs remove their legacy fields and
 migration branches.
 
+Development task intent is separately published at:
+
+```text
+~/.peers-touch/dev/work.json
+```
+
+It is machine-visible source/runtime intent owned by Development Workflow, not
+Profile allocation or a live lease. Read-only intake may precede it; non-trivial
+tasks must publish and confirm it before the first write or runtime acquisition.
+
 ---
 
 ## 2. Profile System
@@ -243,6 +253,13 @@ All commands run from repository root. Profile must be active.
 
 | Target | What it does |
 |--------|-------------|
+| `make dev-start ...` | Publish and conflict-check this task's source/runtime intent |
+| `make dev-update WORK_ITEM=<id>` | Replace supplied scope or refresh the declared branch/HEAD |
+| `make dev-status [WORK_ITEM=<id>]` | Show declarations for the current worktree |
+| `make dev-status-all` | Show machine-wide task declarations |
+| `make dev-check WORK_ITEM=<id>` | Verify current declaration before mutation |
+| `make dev-heartbeat WORK_ITEM=<id>` | Extend the current declaration expiry |
+| `make dev-release WORK_ITEM=<id>` | Release declaration after runtime cleanup |
 | `make station` | Ready Station (local start or remote deploy, per mode) |
 | `make desktop` | Start Desktop Tauri app |
 | `make desktop-web` | Start Desktop in browser |

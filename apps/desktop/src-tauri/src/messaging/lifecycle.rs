@@ -2,7 +2,10 @@ use super::{
     CommandRetryPolicy, ConversationMemberProjection, ConversationProjection, MessagingEngine,
 };
 use crate::infrastructure::station_client;
-use crate::model::chat::{ConversationKind, MemberRole};
+use crate::model::chat::{
+    GetConversationMembersRequest, GetConversationMembersResponse, ListConversationsRequest,
+    ListConversationsResponse, MemberStatus,
+};
 use reqwest::Method;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
@@ -237,6 +240,10 @@ fn run_cycle(
         engine.resume_message_draft_once(token, super::engine::now_unix_ms())
     );
     run_step!(
+        "submitted command reconciliation",
+        engine.reconcile_submitted_commands_once(token, super::engine::now_unix_ms())
+    );
+    run_step!(
         "command dispatch",
         engine.dispatch_command_once(
             token,
@@ -281,127 +288,83 @@ fn ensure_cycle_active(
     }
 }
 
-fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Result<(), String> {
+pub(crate) fn hydrate_projections_from_station(
+    engine: &MessagingEngine,
+    token: &str,
+) -> Result<usize, String> {
     let current_projections = engine.store().conversation_projections()?;
     if !current_projections.is_empty()
-        && current_projections
-            .iter()
-            .all(|projection| !projection.federation_id.trim().is_empty())
+        && current_projections.iter().all(|projection| {
+            !projection.federation_id.trim().is_empty() && !projection.members.is_empty()
+        })
     {
-        return Ok(());
+        return Ok(0);
     }
-    let resp = station_client::request_json_auth_with_device_id(
+    let response = station_client::request_proto_for_device::<
+        ListConversationsRequest,
+        ListConversationsResponse,
+    >(
         Method::GET,
         "/conversation/list",
         token,
         None,
-        None,
+        Some(&ListConversationsRequest {}),
         &engine.endpoint().device_id,
     )
     .map_err(|error| format!("fetch conversation list: {error}"))?;
-    let empty_vec = Vec::new();
-    let conversations = resp
-        .get("conversations")
-        .and_then(|c| c.as_array())
-        .unwrap_or(&empty_vec);
-    if conversations.is_empty() {
-        return Ok(());
+    if response.conversations.is_empty() {
+        return Ok(0);
     }
     let now = super::engine::now_unix_ms();
     let mut projections = Vec::new();
-    for conv in conversations {
-        let conversation_id = conv
-            .get("conversation_id")
-            .or_else(|| conv.get("conversationId"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+    for conversation in response.conversations {
+        let conversation_id = conversation.conversation_id;
         if conversation_id.is_empty() {
             continue;
         }
-        let authority_station_id = conv
-            .get("authority_station_id")
-            .or_else(|| conv.get("authorityStationId"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("local")
-            .to_string();
-        let federation_id = conv
-            .get("federation_id")
-            .or_else(|| conv.get("federationId"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string();
+        let authority_station_id = if conversation.authority_station_peer_id.is_empty() {
+            "local".to_string()
+        } else {
+            conversation.authority_station_peer_id
+        };
+        let federation_id = conversation.federation_id;
         if federation_id.is_empty() {
             return Err(format!(
                 "conversation {conversation_id} has no Federation projection"
             ));
         }
-        let kind = match conv
-            .get("kind")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-        {
-            "CONVERSATION_KIND_DIRECT" => 1,
-            "CONVERSATION_KIND_GROUP" => 2,
-            _ => conv.get("kind").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-        };
-        let name = conv
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string();
-        let owner_ptid = conv
-            .get("owner_ptid")
-            .or_else(|| conv.get("ownerPtid"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string();
-        let membership_epoch = conv
-            .get("membership_epoch")
-            .or_else(|| conv.get("membershipEpoch"))
-            .and_then(|v| {
-                v.as_i64()
-                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-            })
-            .unwrap_or(1);
-        let mls_epoch = conv
-            .get("mls_epoch")
-            .or_else(|| conv.get("mlsEpoch"))
-            .and_then(|v| {
-                v.as_i64()
-                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-            })
-            .unwrap_or(0);
-        let member_ptids = conv
-            .get("member_ptids")
-            .or_else(|| conv.get("memberPtids"))
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let members = member_ptids
+        let member_query = [("conversation_id", conversation_id.clone())];
+        let member_response = station_client::request_proto_for_device::<
+            GetConversationMembersRequest,
+            GetConversationMembersResponse,
+        >(
+            Method::GET,
+            "/conversation/members",
+            token,
+            Some(&member_query),
+            None,
+            &engine.endpoint().device_id,
+        )
+        .map_err(|error| format!("fetch conversation {conversation_id} members: {error}"))?;
+        let members = member_response
+            .members
             .into_iter()
-            .map(|ptid| ConversationMemberProjection {
-                role: if kind == ConversationKind::Group as i32 && ptid == owner_ptid {
-                    MemberRole::Owner as i32
-                } else {
-                    MemberRole::Member as i32
-                },
-                ptid,
+            .filter(|member| member.member_status == MemberStatus::Active as i32)
+            .map(|member| ConversationMemberProjection {
+                ptid: member.ptid,
+                role: member.role,
             })
-            .collect();
+            .collect::<Vec<_>>();
         projections.push(ConversationProjection {
-            conversation_id: conversation_id.to_string(),
+            conversation_id,
             authority_station_id,
             federation_id,
-            kind,
-            name,
-            owner_ptid,
+            kind: conversation.kind,
+            name: conversation.name,
+            owner_ptid: conversation.owner_ptid,
             members,
-            membership_epoch,
-            mls_epoch,
+            membership_epoch: conversation.membership_epoch,
+            mls_epoch: conversation.mls_epoch,
             active: true,
             updated_at_unix_ms: now,
         });
@@ -413,7 +376,7 @@ fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Re
             "messaging conversation projections bootstrapped from Station"
         );
     }
-    Ok(())
+    Ok(count)
 }
 
 #[cfg(test)]

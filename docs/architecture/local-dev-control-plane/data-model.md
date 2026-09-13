@@ -242,7 +242,29 @@ interface RegistryConflict {
 Static slot reuse is reported during migration. It becomes blocking when two
 workspaces attempt to run local clients on the same slot.
 
-## 9. Atomicity
+## 9. Development Work Intent
+
+Development Workflow publishes machine-visible intent in:
+
+```text
+~/.peers-touch/dev/work.json
+```
+
+The full schema is owned by
+[`development-workflow/data-model.md`](../development-workflow/data-model.md).
+This control plane consumes only projected runtime claims for status and
+conflict reporting.
+
+Rules:
+
+- Intent declaration precedes resource acquisition.
+- Declaration does not establish a lease.
+- Live lease and process observation determine active resource possession.
+- Missing or released intent prevents new workflow mutation but does not
+  fabricate process cleanup.
+- Secrets and raw runtime handles are invalid in both registry and work ledger.
+
+## 10. Atomicity
 
 Registry mutation must:
 
@@ -256,7 +278,7 @@ Registry mutation must:
 
 Unknown schema versions or unknown mutation variants fail closed.
 
-## 10. Acceptance Evidence Root
+## 11. Acceptance Evidence Root
 
 The local developer default is:
 
@@ -319,7 +341,7 @@ auto-register the result. Every discovered worktree must either prove
 before `cut-over`. The readiness matrix belongs to the migration manifest, not
 the long-lived machine registry.
 
-### 10.1 Terminal State
+### 11.1 Terminal State
 
 Migration has no persistent terminal `legacy-removed` state. After the old
 directory is removed and absence is verified:

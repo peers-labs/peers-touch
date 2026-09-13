@@ -13,6 +13,7 @@
 本文档集定义：
 
 - 单机多 worktree 开发环境的全局控制面。
+- Development Workflow 发布的机器级 source/runtime intent 公共账本。
 - 环境定义、worktree 绑定、本机 slot、Station 权限和运行租约的唯一 Owner。
 - `~/.peers-touch/dev/` 的机器级持久化边界。
 - Acceptance Evidence Store 的开发期持久化边界。
@@ -51,7 +52,8 @@ Application Support namespace，不适合承载开发期产物；目标路径统
 6. 用机器可读账本统一展示 worktree、branch、profile、slot、Station、进程和租约。
 7. 将 Acceptance Evidence Store 收敛到同一 Dev Control Plane 根。
 8. 所有冲突 fail closed，不依赖人工记忆或 worktree 私有缓存。
-9. 环境创建必须由研发人员对精确名称和目标显式授权；Agent 不得自行生成授权。
+9. 让所有 worktree 在首次写入或运行前看到其它任务的资源意图。
+10. 环境创建必须由研发人员对精确名称和目标显式授权；Agent 不得自行生成授权。
 
 ## 4. 当前机器登记
 
@@ -76,3 +78,7 @@ record observations but must keep `registrations` empty.
 | [data-model.md](./data-model.md) | 机器注册表、worktree 绑定和租约模型 |
 | [integration.md](./integration.md) | 与 env 仓、现有 `.local` 和 Make 入口的关系 |
 | [decisions.md](./decisions.md) | 关键架构决策与替代方案 |
+
+Development task sequencing, Journey state and functional/Acceptance
+promotion belong to
+[`docs/architecture/development-workflow/`](../development-workflow/README.md).

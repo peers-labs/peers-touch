@@ -19,6 +19,63 @@ from tooling.acceptance.drivers.native.base import (
 )
 
 
+_CG_IMAGE_ALPHA_NONE = frozenset((0, 5, 6))
+_CG_IMAGE_ALPHA_FIRST = frozenset((2, 4))
+_CG_IMAGE_ALPHA_LAST = frozenset((1, 3))
+_CG_IMAGE_ALPHA_ONLY = 7
+_CG_BITMAP_BYTE_ORDER_MASK = 0x7000
+_CG_BITMAP_BYTE_ORDER_32_LITTLE = 0x2000
+
+
+def _pixel_buffer_has_visible_alpha(
+    content: bytes,
+    *,
+    width: int,
+    height: int,
+    bits_per_pixel: int,
+    bytes_per_row: int,
+    alpha_info: int,
+    bitmap_info: int,
+) -> bool:
+    """Return whether a CoreGraphics point sample contains a visible pixel."""
+    if alpha_info in _CG_IMAGE_ALPHA_NONE:
+        return True
+    if width <= 0 or height <= 0 or bits_per_pixel <= 0:
+        return True
+    if bits_per_pixel % 8 != 0:
+        return True
+
+    bytes_per_pixel = bits_per_pixel // 8
+    if bytes_per_pixel <= 0 or bytes_per_row < width * bytes_per_pixel:
+        return True
+
+    little_endian = (
+        bitmap_info & _CG_BITMAP_BYTE_ORDER_MASK
+    ) == _CG_BITMAP_BYTE_ORDER_32_LITTLE
+    if alpha_info in _CG_IMAGE_ALPHA_FIRST:
+        alpha_offset = bytes_per_pixel - 1 if little_endian else 0
+    elif alpha_info in _CG_IMAGE_ALPHA_LAST:
+        alpha_offset = 0 if little_endian else bytes_per_pixel - 1
+    elif alpha_info == _CG_IMAGE_ALPHA_ONLY:
+        alpha_offset = 0
+    else:
+        return True
+
+    required_size = (height - 1) * bytes_per_row + width * bytes_per_pixel
+    if len(content) < required_size:
+        return True
+    return any(
+        content[
+            row * bytes_per_row
+            + column * bytes_per_pixel
+            + alpha_offset
+        ]
+        > 0
+        for row in range(height)
+        for column in range(width)
+    )
+
+
 _ACCESSIBILITY_PROBE = r"""
 import ctypes
 import json
@@ -259,6 +316,10 @@ _WINDOW_STACK_PROBE = r"""
 import json
 import sys
 
+from tooling.acceptance.drivers.native.macos import (
+    _pixel_buffer_has_visible_alpha,
+)
+
 try:
     import Quartz
 
@@ -280,6 +341,37 @@ try:
             and top <= point_y < top + height
         ):
             continue
+        window_id = int(window.get(Quartz.kCGWindowNumber, 0))
+        sample = Quartz.CGWindowListCreateImage(
+            Quartz.CGRectMake(point_x, point_y, 1, 1),
+            Quartz.kCGWindowListOptionIncludingWindow,
+            window_id,
+            Quartz.kCGWindowImageBoundsIgnoreFraming,
+        )
+        if sample is not None:
+            provider = Quartz.CGImageGetDataProvider(sample)
+            sample_content = (
+                Quartz.CGDataProviderCopyData(provider)
+                if provider is not None
+                else None
+            )
+            if (
+                sample_content is not None
+                and not _pixel_buffer_has_visible_alpha(
+                    bytes(sample_content),
+                    width=int(Quartz.CGImageGetWidth(sample)),
+                    height=int(Quartz.CGImageGetHeight(sample)),
+                    bits_per_pixel=int(
+                        Quartz.CGImageGetBitsPerPixel(sample)
+                    ),
+                    bytes_per_row=int(
+                        Quartz.CGImageGetBytesPerRow(sample)
+                    ),
+                    alpha_info=int(Quartz.CGImageGetAlphaInfo(sample)),
+                    bitmap_info=int(Quartz.CGImageGetBitmapInfo(sample)),
+                )
+            ):
+                continue
         owners.append(
             {
                 "index": index,

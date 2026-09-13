@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -105,6 +106,15 @@ func TestResolveRemoteUsesProtobufAndBindsProfileToLocator(t *testing.T) {
 		Profile: &modelpb.ActorProfile{
 			PeersTouch: &modelpb.PeersTouchInfo{NetworkId: "ptid:bob"},
 		},
+		DeviceSigningKeys: []*modelpb.VerifiedActorDeviceSigningKey{{
+			ActorPtid:          "ptid:bob",
+			ActorDeviceId:      "bob-device",
+			HomeStationPeerId:  "station-remote",
+			SigningKeyId:       "bob-key",
+			Ed25519PublicKey:   make([]byte, ed25519.PublicKeySize),
+			ProfileVersion:     1,
+			VerificationSource: modelpb.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+		}},
 		Now:      now,
 		LocalKey: key,
 	})

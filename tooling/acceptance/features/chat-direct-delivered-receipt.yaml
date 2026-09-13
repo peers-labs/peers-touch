@@ -3,7 +3,12 @@
   "status": "active",
   "product_area": "chat",
   "owners": [
+    "packages/messaging-core/src/crypto/prekeys.rs",
+    "apps/desktop/src-tauri/src/messaging/prekeys.rs",
     "apps/desktop/src-tauri/src/messaging/direct.rs",
+    "apps/desktop/src-tauri/src/messaging/direct_session.rs",
+    "apps/desktop/src-tauri/src/messaging/drain.rs",
+    "apps/desktop/src-tauri/src/messaging/command_reconciliation.rs",
     "apps/desktop/src-tauri/src/messaging/engine.rs",
     "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
     "apps/desktop/src-tauri/src/messaging/store.rs",
@@ -14,9 +19,19 @@
     "apps/station/app/subserver/conversation/application/interaction/service.go",
     "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder.go",
     "apps/station/app/subserver/conversation/interface/http/interaction.go",
-    "apps/station/app/subserver/conversation/subserver.go"
+    "apps/station/app/subserver/conversation/production_http.go",
+    "apps/station/app/subserver/conversation/subserver.go",
+    "apps/station/app/subserver/key_exchange/infrastructure/canonical_store.go",
+    "tooling/acceptance/core/provisioning.py",
+    "tooling/acceptance/drivers/native/runtime.py",
+    "tooling/acceptance/provisioners/native_tauri_current_profile.py",
+    "tooling/acceptance/gates/chat/native_two_client_runner.py",
+    "tooling/acceptance/gates/chat/native_current_profile_two_client_e2e.py"
   ],
   "truth_sources": [
+    "Portable Messaging Core prekey publication state machine",
+    "Desktop encrypted prekey publication batches",
+    "Station Key Exchange public bundle inventory",
     "Desktop Rust messaging receive transaction",
     "Desktop durable receipt outbox",
     "Station Conversation per-device receipt queue",
@@ -34,13 +49,24 @@
     "messaging-platform-contract",
     "desktop-check",
     "chat-native-visible-static",
+    "chat-native-current-profile-two-client-e2e",
+    "chat-native-submitted-command-recovery-e2e",
     "chat-native-two-client-e2e"
   ],
   "acceptance": {
     "service": [
+      "a locally published bundle is reconciled when Station public material is missing",
+      "reconciliation persists fresh OPKs before upload and retries the exact batch",
+      "current-profile native clients retain one isolated Device Engine state across repeated Gate runs",
+      "a fresh Direct receiver checkpoints only the verified public predecessor before decrypting the current private delivery",
       "successful Direct decrypt atomically persists one typed DELIVERED receipt",
       "receipt submission failure remains pending for lifecycle retry",
-      "Station routing failure is returned to the Desktop worker"
+      "Station routing failure is returned to the Desktop worker",
+      "Direct receipt aggregation uses immutable authority delivery commitments for current endpoints outside the Group MLS device projection",
+      "a committed recipient read cursor preserves monotonic delivered state without fabricating a device receipt",
+      "typed Conversation interaction failures preserve their stable code and safe details at the HTTP boundary",
+      "a retained submitted command converges to accepted, failed, or superseded canonical truth before new Native sends",
+      "NOT_FOUND retries the exact command identity and bytes; a later stale delivery plan supersedes only that transport attempt while preserving the logical message identity"
     ],
     "visible": [
       "Alice sends one Direct message and Bob renders the exact plaintext",
@@ -49,8 +75,18 @@
     ]
   },
   "negative": [
+    "reconciliation must not republish or reactivate a consumed one-time prekey",
+    "current-profile Gate cleanup must not roll a reused device back to an older private-key state",
+    "receiver checkpoint failure must prevent private delivery consumption and ACK",
+    "receiver activation checkpoint must not synthesize historical plaintext, session, cursor, marker, or receipt state",
     "queue consumption ACK must not be reported as a user-visible DELIVERED receipt",
+    "Direct receipt aggregation must not require current endpoints to exist in conversation_member_devices",
+    "Group receipt aggregation must still reject a missing committed MLS member device",
+    "read-ahead repair must not fabricate consumed-device or fully-delivered counts",
+    "typed Conversation interaction failures must not collapse into generic HTTP 500 responses",
     "static or gateway evidence must not replace two native Desktop clients",
-    "receipt evidence must not expose plaintext, credentials, tokens, or key material"
+    "receipt evidence must not expose plaintext, credentials, tokens, or key material",
+    "NOT_FOUND submitted-command recovery must not mint a replacement command or message identity",
+    "stale-delivery-plan recovery must not reuse stale ciphertext or replace the logical message identity"
   ]
 }
