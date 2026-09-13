@@ -56,7 +56,8 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 5. checkpoint、部署和 destructive action 使用任务级显式授权，不逐命令反复询问。
 6. 仓库只保留当前状态和 durable decision，不追加运行日志。
 7. 所有状态和结论都绑定 source、workspace、Journey 和 runtime identity。
-8. 所有 worktree 在编辑或占用运行资源前都能发现冲突。
+8. 所有 worktree 在编辑或占用运行资源前都能发现重叠意图；独立分支的
+   源码重叠仅提示协调风险，真实共享资源冲突才阻塞。
 9. 通过一个 Chat pilot 验证流程，再决定是否推广到所有 Domain。
 
 ## 4. Document Navigation

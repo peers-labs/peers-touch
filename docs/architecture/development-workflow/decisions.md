@@ -23,6 +23,7 @@
 | DWF-D10 | Pilot the architecture in Chat before generalizing it | accepted |
 | DWF-D11 | Publish resource intent to one machine-wide work ledger | accepted |
 | DWF-D12 | Upgrade `pt-dev-workflow`; do not add another orchestrator Skill | accepted |
+| DWF-D13 | Treat independent-branch source overlap as coordination, not locking | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -360,7 +361,9 @@ holds”.
 - Dev start fails closed when the public ledger cannot be locked, validated,
   written or read back.
 - Declarations require heartbeat, expiry and explicit release semantics.
-- Overlapping exclusive source claims block before editing.
+- Source claims inside one workspace and writes to the same branch block before
+  editing. Overlap between different worktrees on different branches remains
+  visible as a coordination warning.
 - Runtime mutation still requires the corresponding live lease and
   authorization; a declaration alone cannot deploy or reset.
 
@@ -411,3 +414,52 @@ keeping domain-specific work in existing specialist Skills.
   injection.
 - `pt-dev-runtime-handoff` must expose Dev and Acceptance policies without
   creating two Journey implementations.
+
+## DWF-D13: Independent-Branch Source Overlap Is Advisory
+
+**Status**: accepted
+**Date**: 2026-09-14
+
+### Context
+
+Git worktrees provide separate working directories and indexes. The initial
+ledger policy nevertheless treated overlapping repository-relative source
+claims as a machine-global lock, even when the declarations belonged to
+different worktrees on different branches. A broad claim such as
+`apps/desktop` could therefore stop unrelated branch-local implementation
+without proving that another process was editing the same files.
+
+### Decision
+
+Keep source claims machine-visible, but distinguish coordination risk from
+shared-resource exclusion:
+
+- overlapping source writes inside one workspace remain a hard conflict;
+- two worktrees writing the same branch remain a hard conflict;
+- overlapping source claims in different worktrees on different branches are
+  allowed and emit `SOURCE_OVERLAP_WARNING`;
+- runtime claims keep their existing machine-global shared/exclusive conflict
+  semantics.
+
+### Rationale
+
+Source trees are isolated by Git and can be reconciled semantically at merge
+time. Ports, client storage, Fixtures, deploy targets and resets are not
+isolated by Git and still require machine-global exclusion.
+
+### Alternatives Considered
+
+- Keep every overlapping source path as a hard lock: rejected because broad
+  declarations serialize independent branches and block useful product work.
+- Remove source declarations entirely: rejected because same-workspace and
+  same-branch collisions still need prevention, and cross-branch overlap is
+  valuable coordination information.
+- Infer active editing from a declaration: rejected because a declaration
+  records intent, not process liveness.
+
+### Consequences
+
+- Parallel branches can edit the same logical module.
+- `dev-start` and `dev-update` report cross-branch overlap without failing.
+- Integrators must still reconcile overlapping source changes before merge.
+- Runtime resources remain protected independently from source coordination.
