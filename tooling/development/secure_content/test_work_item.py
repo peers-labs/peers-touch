@@ -130,6 +130,13 @@ class WorkItemProjectionTest(unittest.TestCase):
         def fake_runner(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
             self.assertEqual(REPO_ROOT, cwd)
             calls.append(command)
+            if command == ["git", "config", "user.email"]:
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout="acceptance@test.invalid\n",
+                    stderr="",
+                )
             if command[2] == "status":
                 stdout = json.dumps(
                     {
@@ -152,12 +159,13 @@ class WorkItemProjectionTest(unittest.TestCase):
         self.assertEqual("a" * 64, result["declarationDigest"])
         self.assertEqual(
             ["node", "tooling/scripts/local-dev/dev-work.mjs", "start"],
-            calls[0][:3],
+            calls[1][:3],
         )
         self.assertIn(
             ";".join(projection.source_claim_arguments),
-            calls[0],
+            calls[1],
         )
+        self.assertIn("acceptance@test.invalid", calls[1])
         self.assertEqual(
             [
                 "node",
@@ -166,7 +174,7 @@ class WorkItemProjectionTest(unittest.TestCase):
                 "--work-item",
                 "secure-content-w4",
             ],
-            calls[1],
+            calls[2],
         )
 
     def test_readback_mismatch_fails_closed(self) -> None:
@@ -212,6 +220,34 @@ class WorkItemProjectionTest(unittest.TestCase):
                 repo_root=REPO_ROOT,
                 session="secure-content-w4",
                 command_runner=fake_runner,
+            )
+
+    def test_start_fails_closed_when_git_owner_is_unavailable(self) -> None:
+        projection = work_item.load_projection(
+            MANIFEST,
+            workstream="W4",
+            journey="sc-dj-optional-auth",
+            repo_root=REPO_ROOT,
+        )
+
+        def missing_owner(
+            command: list[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            self.assertEqual(REPO_ROOT, cwd)
+            self.assertEqual(["git", "config", "user.email"], command)
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
+
+        with self.assertRaisesRegex(
+            work_item.CommandError,
+            "cannot resolve the Development work owner",
+        ):
+            work_item.execute_projection(
+                "start",
+                projection,
+                repo_root=REPO_ROOT,
+                session="secure-content-w4",
+                command_runner=missing_owner,
             )
 
     def test_rejects_shell_metacharacters_in_claim_paths(self) -> None:

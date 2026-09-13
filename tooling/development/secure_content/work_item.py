@@ -438,6 +438,23 @@ def _decode_json_output(process: subprocess.CompletedProcess[str], action: str) 
         raise CommandError(f"{action} returned invalid JSON") from error
 
 
+def _resolve_default_owner(
+    repo_root: Path,
+    command_runner: CommandRunner,
+) -> str:
+    process = command_runner(["git", "config", "user.email"], repo_root)
+    if process.returncode != 0:
+        raise CommandError("cannot resolve the Development work owner")
+    try:
+        return _require_text(
+            process.stdout.strip(),
+            "owner",
+            max_length=256,
+        )
+    except ManifestError as error:
+        raise CommandError("Development work owner is not configured") from error
+
+
 def _canonical_source_claims(projection: WorkItemProjection) -> list[dict[str, str]]:
     claims = []
     for value in projection.source_claim_arguments:
@@ -550,6 +567,9 @@ def execute_projection(
         raise ManifestError("action must be start or update")
     if expires_minutes < 1 or expires_minutes > 1440:
         raise ManifestError("expires_minutes must be within 1..1440")
+    resolved_owner = owner
+    if action == "start" and resolved_owner is None:
+        resolved_owner = _resolve_default_owner(repo_root, command_runner)
 
     command = [
         "node",
@@ -570,8 +590,10 @@ def execute_projection(
         command.extend(("--journey", projection.journey_id))
     if session is not None:
         command.extend(("--session", _require_identifier(session, "session")))
-    if owner is not None:
-        command.extend(("--owner", _require_text(owner, "owner", max_length=256)))
+    if resolved_owner is not None:
+        command.extend(
+            ("--owner", _require_text(resolved_owner, "owner", max_length=256))
+        )
 
     mutation = command_runner(command, repo_root)
     mutation_declaration = _decode_json_output(mutation, f"development {action}")
