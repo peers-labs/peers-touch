@@ -966,6 +966,13 @@ class NativeTypingGate(AcceptanceGate):
             wait_for_peer_key_bundle(
                 self.clients["alice"],
                 self.ptids["bob"],
+                str(
+                    runtime_station_service(
+                        self.manifest,
+                        "bob",
+                    ).get("runtimeIdentity")
+                    or ""
+                ),
             )
             direct = async_harness(
                 self.clients["alice"],

@@ -111,8 +111,14 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertNotIn("device_install::get_or_create_device_id", source)
         self.assertEqual(
             source.count("station_client::request_proto_for_device::<"),
-            2,
+            5,
         )
+        for request in (
+            "UploadMlsKeyPackageRequest",
+            "FetchMlsKeyPackageRequest",
+            "CountMlsKeyPackagesRequest",
+        ):
+            self.assertIn(f"kemodel::{request}", source)
 
     def test_native_runners_bind_conversation_creation_to_federation(self) -> None:
         root = Path(__file__).resolve().parents[4]

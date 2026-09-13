@@ -1183,6 +1183,7 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             result = wait_for_peer_key_bundle(
                 object(),  # type: ignore[arg-type]
                 "ptid:bob",
+                "station-five",
                 timeout=1,
             )
 
@@ -1190,7 +1191,10 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self.assertEqual(harness.call_count, 2)
         self.assertEqual(
             harness.call_args.args[2],
-            {"peerPtid": "ptid:bob"},
+            {
+                "peerPtid": "ptid:bob",
+                "homeStationPeerId": "station-five",
+            },
         )
 
     def test_station_readback_supports_bound_local_source_database(self) -> None:

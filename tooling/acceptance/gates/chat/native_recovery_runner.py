@@ -299,7 +299,17 @@ class NativeRecoveryGate(AcceptanceGate):
             self.clients,
             ("alice", "bob"),
         )
-        wait_for_peer_key_bundle(alice, self.ptids["bob"])
+        wait_for_peer_key_bundle(
+            alice,
+            self.ptids["bob"],
+            str(
+                runtime_station_service(
+                    self.manifest,
+                    "bob",
+                ).get("runtimeIdentity")
+                or ""
+            ),
+        )
         created = async_harness(
             alice,
             "createDirectConversation",

@@ -532,14 +532,21 @@ def shared_federation_id(
 def wait_for_peer_key_bundle(
     client: TauriSession,
     peer_ptid: str,
+    home_station_peer_id: str,
     *,
     timeout: float = 60.0,
 ) -> dict[str, Any]:
+    if not home_station_peer_id:
+        raise GateError("peer key readiness requires a Home Station peer ID")
+
     def ready() -> dict[str, Any] | None:
         state = async_harness(
             client,
             "peerKeyBundleState",
-            {"peerPtid": peer_ptid},
+            {
+                "peerPtid": peer_ptid,
+                "homeStationPeerId": home_station_peer_id,
+            },
             timeout=10,
         )
         return (

@@ -834,8 +834,18 @@ export function installAcceptanceHarness(): void {
       };
     },
 
-    async peerKeyBundleState({ peerPtid }: { peerPtid: string }) {
-      const response = await api.keyExchangeFetchBundle(peerPtid);
+    async peerKeyBundleState({
+      peerPtid,
+      homeStationPeerId,
+    }: {
+      peerPtid: string;
+      homeStationPeerId: string;
+    }) {
+      const response = await api.keyExchangeFetchBundle(
+        peerPtid,
+        undefined,
+        homeStationPeerId,
+      );
       return {
         peerPtid,
         bundleCount: response.bundles.length,

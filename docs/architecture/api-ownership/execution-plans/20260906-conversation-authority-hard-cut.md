@@ -1444,3 +1444,18 @@ Device revoke rejects a caller device that differs from the active Messaging
 endpoint. Desktop tests, Rust compilation, the focused Chat/provisioning
 cohort, Conversation/Agent race suites, and devctl ledger tests pass. CA-W6
 still requires exact-source W8B/W8C deployment and Native reruns.
+
+Exact-source W8B run
+`20260913T232407335289Z-09e7de4d91b4f783b9c1bdf1e3ce86ca`
+at `309f421133295ae49e3e2690853124462cfa54fe` passed two-Station
+provisioning, three Native client authentication, and shared-Federation
+selection. It then failed at the newly integrated Direct peer-key readiness
+probe because the probe omitted Bob's attested Home Station ID and Alice's
+Station correctly returned `404`. Cleanup is `DONE/PROVEN`.
+
+The peer-key readiness correction now carries the peer client's
+runtime-attested Station identity through the Chat Harness into the canonical
+Key Exchange fetch. It retains the readiness fence and does not infer routes
+from display fields or introduce a fallback. Focused Chat/provisioning tests,
+Desktop tests, Rust compilation, and Python compilation pass; CA-W6 remains
+`PARTIAL/UNPROVEN` pending checkpoint deployment and the W8B/W8C reruns.
