@@ -1,8 +1,8 @@
 # Acceptance Framework — 架构设计
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-06-03 | **Updated**: 2026-09-02
+> **Version**: v1.2
+> **Created**: 2026-06-03 | **Updated**: 2026-09-13
 
 
 > **Owner**: Architecture Team
@@ -429,6 +429,14 @@ domain-neutral contracts组成：
 | `EvidenceWriter` | redaction、atomic file write、manifest finalize和typed errors |
 | `EvidenceReader` | 从`ArtifactRef`或atomic latest pointer读取并验证identity/hash |
 | `EvidenceCleanup` | 在lock与retention policy下删除eligible closed runs |
+
+本机默认root由Machine Dev Control Plane拥有：
+
+```text
+~/.peers-touch/dev/acceptance
+```
+
+正式产品Application Support namespace不得承载Acceptance evidence。
 
 ```text
 Repository (code/schema/template/fixture only)
