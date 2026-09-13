@@ -1,7 +1,7 @@
 # ─── Local Worktree Dev ──────────────────────────────────────────
 # Profile-based, worktree-isolated development environment.
 
-.PHONY: profile profile-init profiles config \
+.PHONY: profile profile-authorize profile-init profiles config \
         station station-check station-status station-logs station-stop station-restart \
         relay relay-check relay-status relay-logs relay-stop relay-restart \
         desktop desktop-stop desktop-restart \
@@ -17,8 +17,12 @@ profile:
 	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile <name>  or  make profile PROFILE=<name>"; exit 1; fi
 	@/bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh activate $(PROFILE_ARG)
 
+profile-authorize:
+	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile-authorize <name> [SLOT=0]  or  make profile-authorize PROFILE=<name> [SLOT=0]"; exit 1; fi
+	@SLOT=$(SLOT_ARG) /bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh authorize $(PROFILE_ARG)
+
 profile-init:
-	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile-init <name> [SLOT=0]  or  make profile-init PROFILE=<name> [SLOT=0]"; exit 1; fi
+	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile-init <name> [SLOT=0]  or  make profile-init PROFILE=<name> [SLOT=0] (requires profile-authorize)"; exit 1; fi
 	@SLOT=$(SLOT_ARG) /bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh init $(PROFILE_ARG)
 
 profiles:
@@ -100,7 +104,7 @@ restart:
 	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh all
 
 .DEFAULT:
-	@if [[ "$(firstword $(MAKECMDGOALS))" == "profile" || "$(firstword $(MAKECMDGOALS))" == "profile-init" || "$(firstword $(MAKECMDGOALS))" == "run-prototype" ]]; then \
+	@if [[ "$(firstword $(MAKECMDGOALS))" == "profile" || "$(firstword $(MAKECMDGOALS))" == "profile-authorize" || "$(firstword $(MAKECMDGOALS))" == "profile-init" || "$(firstword $(MAKECMDGOALS))" == "run-prototype" ]]; then \
 		:; \
 	else \
 		echo "make: *** No rule to make target '$@'."; \
