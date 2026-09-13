@@ -48,6 +48,12 @@ CURRENT_PROFILE_GATE_ID = "chat-native-current-profile-two-client-e2e"
 SUBMITTED_COMMAND_RECOVERY_GATE_ID = (
     "chat-native-submitted-command-recovery-e2e"
 )
+CURRENT_PROFILE_GATE_IDS = frozenset(
+    {
+        CURRENT_PROFILE_GATE_ID,
+        SUBMITTED_COMMAND_RECOVERY_GATE_ID,
+    }
+)
 CURRENT_PROFILE_ACTOR_WORKTREES = {
     "alice": "peers-chat-high-chat",
     "bob": "peers-group-chat",
@@ -102,6 +108,10 @@ SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS = {
     "submitted_command_converged",
     "resources_released",
 }
+
+
+def is_current_profile_gate(gate_id: str) -> bool:
+    return gate_id in CURRENT_PROFILE_GATE_IDS
 
 
 def runtime_manifest(
@@ -450,7 +460,7 @@ class NativeTwoClientGate(AcceptanceGate):
             )
         self.direction_order = (
             [CURRENT_PROFILE_INITIAL_SENDER, "alice"]
-            if gate_id == CURRENT_PROFILE_GATE_ID
+            if is_current_profile_gate(gate_id)
             else ["alice", "bob"]
         )
         self.steps: list[dict[str, Any]] = []
@@ -1211,7 +1221,7 @@ class NativeTwoClientGate(AcceptanceGate):
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
 
         order = list(self.direction_order)
-        if self.gate_id != CURRENT_PROFILE_GATE_ID:
+        if not is_current_profile_gate(self.gate_id):
             random.SystemRandom().shuffle(order)
         cleanup: dict[str, Any] = {}
         source_identity: dict[str, Any] = {}
@@ -1249,7 +1259,7 @@ class NativeTwoClientGate(AcceptanceGate):
                     "directionOrder": list(self.direction_order),
                 }
             )
-            if self.gate_id == CURRENT_PROFILE_GATE_ID:
+            if is_current_profile_gate(self.gate_id):
                 topology = self.step(
                     "runtime.cross_worktree",
                     self.current_profile_worktree_topology,

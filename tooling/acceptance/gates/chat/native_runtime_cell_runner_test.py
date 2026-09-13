@@ -1128,21 +1128,37 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self.assertIn('"memberPtid": self.ptids["charlie"]', group_runner)
         self.assertNotIn('"memberDid":', group_runner)
 
-    def test_typing_start_stop_waits_for_receiver_evidence(self) -> None:
+    def test_typing_lifecycle_uses_native_surface_events(self) -> None:
         source = (
             ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py"
         ).read_text(encoding="utf-8")
+        start_client = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
+            "start_client",
+        )
         prove_direct = self.function_source(
             ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
             "prove_direct",
         )
-
-        self.assertIn("def submit_typing_and_wait(", source)
-        self.assertEqual(
-            prove_direct.count("self.submit_typing_and_wait("),
-            2,
+        prove_group = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
+            "prove_group",
         )
-        self.assertNotIn("or self.wait_typing(", prove_direct)
+
+        self.assertIn("self.start_injected_client(actor)", start_client)
+        self.assertNotIn("enter_chat_page(client)", start_client)
+        self.assertNotIn("def submit_typing_and_wait(", source)
+        for lifecycle in (prove_direct, prove_group):
+            self.assertIn("set_composer(", lifecycle)
+            self.assertIn('"[data-chat-send]"', lifecycle)
+            self.assertIn('"arguments[0].blur()"', lifecycle)
+            self.assertIn("select_conversation(", lifecycle)
+        self.assertNotIn('"submitTyping"', prove_direct)
+        self.assertEqual(
+            prove_group.count('"submitTyping"'),
+            1,
+            "only the removed-member rejection may submit typing directly",
+        )
 
     def test_multi_device_contract_is_unchanged(self) -> None:
         self.assertEqual(

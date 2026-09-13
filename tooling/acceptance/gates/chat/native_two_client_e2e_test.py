@@ -25,7 +25,9 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
     CURRENT_PROFILE_REQUIRED_ASSERTIONS,
     CURRENT_PROFILE_GATE_ID,
     NativeTwoClientGate,
+    SUBMITTED_COMMAND_RECOVERY_GATE_ID,
     avatar_evidence_is_valid,
+    is_current_profile_gate,
     reconciled_command_snapshot_outcome,
 )
 from tooling.acceptance.gates.chat.native_support import (
@@ -717,6 +719,33 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         )
 
         self.assertTrue(gate.verify_fixture_ready())
+        self.assertEqual(gate.direction_order, ["bob", "alice"])
+
+    def test_submitted_recovery_uses_current_profile_contract(self) -> None:
+        manifest = self.valid_report()["manifest"]
+        actors = {
+            "initialState": "existing",
+            "actors": [
+                {
+                    "role": actor,
+                    "accountRef": f"station-account:{actor}@p.t",
+                    "ptid": f"ptid:{actor}",
+                }
+                for actor in ("alice", "bob")
+            ],
+            "reset": {"authorized": False, "targetVerified": True},
+        }
+        gate = NativeTwoClientGate(
+            manifest=manifest,
+            actor_manifest=actors,
+            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+            gate_id=SUBMITTED_COMMAND_RECOVERY_GATE_ID,
+            allow_existing_fixture=True,
+        )
+
+        self.assertTrue(is_current_profile_gate(CURRENT_PROFILE_GATE_ID))
+        self.assertTrue(is_current_profile_gate(SUBMITTED_COMMAND_RECOVERY_GATE_ID))
+        self.assertFalse(is_current_profile_gate(self.module.GATE_ID))
         self.assertEqual(gate.direction_order, ["bob", "alice"])
 
     def test_current_profile_accepts_cross_worktree_group_initiator(self) -> None:
