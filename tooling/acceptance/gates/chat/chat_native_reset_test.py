@@ -16,7 +16,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     prepare_local_friend_request_lifecycle,
     reset_local_client_storage,
     reset_station_chat_state,
-    seed_cross_station_contact,
+    seed_bound_contact,
     verify_disposable_station_runtime,
 )
 
@@ -539,11 +539,12 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             locator_seq=1,
         )
 
-        seed_cross_station_contact(
+        seed_bound_contact(
             "http://10.37.94.156:18132",
             "chat-native-acceptance",
             actor,
             peer,
+            (actor, peer),
         )
 
         sql = remote_psql.call_args.args[1]
@@ -581,6 +582,65 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             "cross-Station accepted relationship is incomplete",
             sql,
         )
+
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset._remote_psql"
+    )
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset.verify_disposable_station_runtime"
+    )
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset.acceptance_station_environment",
+        return_value=DISPOSABLE_ENVIRONMENT,
+    )
+    def test_same_station_contact_reuses_local_actor(
+        self,
+        _environment,
+        _runtime,
+        remote_psql,
+    ) -> None:
+        actor = FixtureActorRecord(
+            ptid="ptid:v1:actor:peers:p:bob:local",
+            preferred_username="bob",
+            name="Bob",
+            summary="",
+            icon="",
+            image="",
+            url="https://station-five.example/actors/bob",
+            federated_handle="@bob@station-five.example",
+            home_station_peer_id="station-five",
+            home_station_domain="station-five.example",
+            visibility=1,
+            locator_seq=1,
+        )
+        peer = FixtureActorRecord(
+            ptid="ptid:v1:actor:peers:p:carol:local",
+            preferred_username="carol",
+            name="Carol",
+            summary="",
+            icon="",
+            image="",
+            url="https://station-five.example/actors/carol",
+            federated_handle="@carol@station-five.example",
+            home_station_peer_id="station-five",
+            home_station_domain="station-five.example",
+            visibility=1,
+            locator_seq=1,
+        )
+
+        seed_bound_contact(
+            "http://10.37.94.156:18132",
+            "chat-native-acceptance",
+            actor,
+            peer,
+            (actor, peer),
+        )
+
+        sql = remote_psql.call_args.args[1]
+        self.assertNotIn("INSERT INTO touch_actor", sql)
+        self.assertIn("same-Station peer Actor projection is incomplete", sql)
+        self.assertIn("INSERT INTO social_relationship_projections", sql)
+        self.assertIn("fed_chat_", sql)
 
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset.SshTransport.run_argv"

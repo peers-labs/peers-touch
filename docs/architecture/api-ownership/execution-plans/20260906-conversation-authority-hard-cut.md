@@ -1358,3 +1358,16 @@ the plan with zero Conversation mutation. The complete Conversation suite,
 race suite, `go vet`, Go style, and `git diff --check` pass. CA-W6 remains
 `PARTIAL/UNPROVEN` until this checkpoint is deployed and the bounded W8B Native
 journey reaches `FUNCTIONAL_PASS`.
+
+Exact-source W8B run
+`20260913T212936487149Z-ed835cb01d6862ff711e0845bd9588a1`
+passes the complete Direct/Group typing lifecycle, Group member removal, and
+zero-write checks. Its only remaining failure is the Desktop device-revocation
+request omitting the current window-scoped device identity; that source path is
+parked behind the active MCA Desktop write claim. Independent W8C run
+`20260913T214114429384Z-d22427d1bb8cdca1049d82a01a1d32ee`
+then exposed pair-specific fixture Federations and a missing same-Station
+accepted relationship projection. The Fixture correction now shares one
+deterministic Federation across the bound actor set and seeds every directed
+relationship without creating local remote-cache rows. Its 120 focused tests
+pass; CA-W6 remains `PARTIAL/UNPROVEN` pending exact-source reruns.

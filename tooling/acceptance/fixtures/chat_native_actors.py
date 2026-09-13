@@ -25,7 +25,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     FixtureActorRecord,
     acceptance_station_environment,
     read_fixture_actor,
-    seed_cross_station_contact,
+    seed_bound_contact,
     verify_disposable_station_runtime,
 )
 
@@ -321,15 +321,17 @@ def prepare_bound_friendships(
             )
         records[role] = record
 
+    federation_members = tuple(records.values())
     for actor_role, (station_url, environment) in role_targets.items():
-        for peer_role, peer_target in role_targets.items():
-            if actor_role == peer_role or peer_target == (station_url, environment):
+        for peer_role in role_targets:
+            if actor_role == peer_role:
                 continue
-            seed_cross_station_contact(
+            seed_bound_contact(
                 station_url,
                 environment,
                 records[actor_role],
                 records[peer_role],
+                federation_members,
             )
 
 

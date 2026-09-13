@@ -6059,3 +6059,21 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   suite, the complete Conversation race suite, `go vet`, Go style, and
   `git diff --check` pass. This is source readiness only; W8B still requires the
   checkpoint deployment and bounded Native functional rerun.
+- Exact-source Linux run
+  `20260913T212936487149Z-ed835cb01d6862ff711e0845bd9588a1`
+  proves the MP-D19 correction in the real journey: every Direct and Group
+  typing lifecycle assertion, removed-member rejection, zero durable writes,
+  source identity, and cleanup passed. The final revoked-device assertion
+  failed because Desktop `/device/revoke` omitted the current window-scoped
+  `X-Device-ID` and Station correctly returned `401`. That Desktop owner path
+  is parked behind the active MCA write claim; W8B remains `PARTIAL/UNPROVEN`.
+- Independent W8C run
+  `20260913T214114429384Z-d22427d1bb8cdca1049d82a01a1d32ee`
+  reached all three exact-source Native clients and failed before Group
+  creation because Bob's same-Station Charlie contact had no complete
+  Federation identity projection. Readback showed pair-specific fixture
+  Federations and no accepted projection for the local pair. The Fixture now
+  creates one deterministic Federation for the complete bound actor set and
+  seeds every directed relationship, while local peers reuse local Actor rows
+  and remote peers retain identity-stable cache upserts. The 120-test combined
+  Fixture and Native contract cohort passes; W8C runtime proof remains pending.

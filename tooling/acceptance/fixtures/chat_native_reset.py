@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import threading
 import time
+from typing import Iterable
 import urllib.parse
 import urllib.request
 
@@ -654,15 +655,29 @@ def _friend_request_event_text(
     return "\n".join(fields) + "\n"
 
 
+def fixture_federation_id(actors: Iterable[FixtureActorRecord]) -> str:
+    station_ids = sorted(
+        {
+            actor.home_station_peer_id
+            for actor in actors
+            if actor.home_station_peer_id
+        }
+    )
+    if not station_ids:
+        raise RuntimeError("Chat fixture Federation requires a Home Station")
+    identity = hashlib.sha256("\x00".join(station_ids).encode("utf-8")).hexdigest()
+    return f"fed_chat_{identity[:20]}"
+
+
 def _accepted_friendship(
     actor: FixtureActorRecord,
     peer: FixtureActorRecord,
+    federation_id: str,
 ) -> FixtureAcceptedFriendship:
     sender, receiver = sorted((actor, peer), key=lambda item: item.ptid)
     identity = hashlib.sha256(
         (sender.ptid + "\x00" + receiver.ptid).encode("utf-8")
     ).hexdigest()
-    federation_id = f"fed_chat_{identity[:20]}"
     request_id = f"acceptance-cross-{identity[:24]}"
     pending_event_id = f"friend-request-event:{request_id}:1"
     accepted_event_id = f"friend-request-event:{request_id}:2"
@@ -914,15 +929,24 @@ WHERE email = {_sql_literal(account_email)}
     return record
 
 
-def seed_cross_station_contact(
+def seed_bound_contact(
     station_url: str,
     environment_name: str,
     actor: FixtureActorRecord,
     peer: FixtureActorRecord,
+    federation_members: Iterable[FixtureActorRecord],
 ) -> None:
     environment = acceptance_station_environment(station_url, environment_name)
     verify_disposable_station_runtime(environment)
-    friendship = _accepted_friendship(actor, peer)
+    members = tuple(federation_members)
+    if not members:
+        raise RuntimeError("Chat fixture Federation requires actors")
+    federation_owner = min(members, key=lambda member: member.ptid)
+    friendship = _accepted_friendship(
+        actor,
+        peer,
+        fixture_federation_id(members),
+    )
     sender_ref = _encode_social_proto(
         "peers_touch.model.actor.v1.ActorRef",
         _actor_ref_text(friendship.sender),
@@ -933,10 +957,16 @@ def seed_cross_station_contact(
     )
     local_scheme = urllib.parse.urlparse(station_url).scheme
     station_urls = {
-        actor.home_station_peer_id: station_url.rstrip("/"),
-        peer.home_station_peer_id: (
-            f"{local_scheme}://{peer.home_station_domain}"
-        ),
+        member.home_station_peer_id: (
+            station_url.rstrip("/")
+            if member.home_station_peer_id == actor.home_station_peer_id
+            else f"{local_scheme}://{member.home_station_domain}"
+        )
+        for member in members
+    }
+    members_by_station = {
+        member.home_station_peer_id: member
+        for member in members
     }
     memberships = ",\n".join(
         f"""(
@@ -947,70 +977,30 @@ def seed_cross_station_contact(
     {_sql_literal(
         "founder"
         if member.home_station_peer_id
-        == friendship.sender.home_station_peer_id
+        == federation_owner.home_station_peer_id
         else "member_station"
     )},
     'active',
     to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
     ''
   )"""
-        for member in (friendship.sender, friendship.receiver)
+        for member in members_by_station.values()
     )
-    sql = f"""
-BEGIN;
-INSERT INTO federation (
-  federation_id,
-  name,
-  description,
-  status,
-  policy_type,
-  sequencer_station_peer_id,
-  genesis_hash,
-  head_hash,
-  head_seq,
-  created_by_actor_ptid,
-  created_by_station_peer_id,
-  created_at,
-  updated_at
-) VALUES (
-  {_sql_literal(friendship.federation_id)},
-  'chat-native-acceptance',
-  '',
-  'active',
-  'single_admin',
-  {_sql_literal(friendship.sender.home_station_peer_id)},
-  {_sql_bytes(bytes(32))},
-  {_sql_bytes(bytes(32))},
-  0,
-  {_sql_literal(friendship.sender.ptid)},
-  {_sql_literal(friendship.sender.home_station_peer_id)},
-  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
-  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX})
-)
-ON CONFLICT (federation_id) DO UPDATE SET
-  status = EXCLUDED.status,
-  sequencer_station_peer_id = EXCLUDED.sequencer_station_peer_id,
-  created_by_actor_ptid = EXCLUDED.created_by_actor_ptid,
-  created_by_station_peer_id = EXCLUDED.created_by_station_peer_id,
-  updated_at = EXCLUDED.updated_at;
-INSERT INTO federation_station_membership (
-  federation_id,
-  station_peer_id,
-  station_name,
-  station_url,
-  role,
-  status,
-  joined_at,
-  approved_by_event_id
-) VALUES
-  {memberships}
-ON CONFLICT (federation_id, station_peer_id) DO UPDATE SET
-  station_name = EXCLUDED.station_name,
-  station_url = EXCLUDED.station_url,
-  role = EXCLUDED.role,
-  status = EXCLUDED.status;
-LOCK TABLE touch_actor IN SHARE ROW EXCLUSIVE MODE;
-LOCK TABLE follows IN SHARE ROW EXCLUSIVE MODE;
+    peer_is_remote = (
+        peer.home_station_peer_id != actor.home_station_peer_id
+    )
+    peer_projection = ""
+    peer_projection_check = f"""
+  SELECT count(*) INTO peer_actor_count
+  FROM touch_actor
+  WHERE ptid = {_sql_literal(peer.ptid)}
+    AND origin = 'local';
+  IF peer_actor_count <> 1 THEN
+    RAISE EXCEPTION 'same-Station peer Actor projection is incomplete';
+  END IF;
+"""
+    if peer_is_remote:
+        peer_projection = f"""
 INSERT INTO touch_actor (
   id,
   ptid,
@@ -1079,6 +1069,74 @@ ON CONFLICT (federated_handle) DO UPDATE SET
   updated_at = EXCLUDED.updated_at
 WHERE touch_actor.origin = 'remote_cached'
   AND touch_actor.ptid = EXCLUDED.ptid;
+"""
+        peer_projection_check = f"""
+  SELECT count(*) INTO peer_actor_count
+  FROM touch_actor
+  WHERE ptid = {_sql_literal(peer.ptid)}
+    AND federated_handle = {_sql_literal(peer.federated_handle)}
+    AND home_station_peer_id = {_sql_literal(peer.home_station_peer_id)}
+    AND origin = 'remote_cached';
+  IF peer_actor_count <> 1 THEN
+    RAISE EXCEPTION 'cross-Station remote Actor projection is incomplete';
+  END IF;
+"""
+    sql = f"""
+BEGIN;
+INSERT INTO federation (
+  federation_id,
+  name,
+  description,
+  status,
+  policy_type,
+  sequencer_station_peer_id,
+  genesis_hash,
+  head_hash,
+  head_seq,
+  created_by_actor_ptid,
+  created_by_station_peer_id,
+  created_at,
+  updated_at
+) VALUES (
+  {_sql_literal(friendship.federation_id)},
+  'chat-native-acceptance',
+  '',
+  'active',
+  'single_admin',
+  {_sql_literal(federation_owner.home_station_peer_id)},
+  {_sql_bytes(bytes(32))},
+  {_sql_bytes(bytes(32))},
+  0,
+  {_sql_literal(federation_owner.ptid)},
+  {_sql_literal(federation_owner.home_station_peer_id)},
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX}),
+  to_timestamp({FIXTURE_FRIENDSHIP_CREATED_AT_UNIX})
+)
+ON CONFLICT (federation_id) DO UPDATE SET
+  status = EXCLUDED.status,
+  sequencer_station_peer_id = EXCLUDED.sequencer_station_peer_id,
+  created_by_actor_ptid = EXCLUDED.created_by_actor_ptid,
+  created_by_station_peer_id = EXCLUDED.created_by_station_peer_id,
+  updated_at = EXCLUDED.updated_at;
+INSERT INTO federation_station_membership (
+  federation_id,
+  station_peer_id,
+  station_name,
+  station_url,
+  role,
+  status,
+  joined_at,
+  approved_by_event_id
+) VALUES
+  {memberships}
+ON CONFLICT (federation_id, station_peer_id) DO UPDATE SET
+  station_name = EXCLUDED.station_name,
+  station_url = EXCLUDED.station_url,
+  role = EXCLUDED.role,
+  status = EXCLUDED.status;
+LOCK TABLE touch_actor IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE follows IN SHARE ROW EXCLUSIVE MODE;
+{peer_projection}
 WITH actor_pair AS (
   SELECT
     actor.id AS actor_id,
@@ -1188,21 +1246,12 @@ ON CONFLICT (owner_ptid, peer_ptid) DO UPDATE SET
   accepted_at = EXCLUDED.accepted_at;
 DO $acceptance$
 DECLARE
-  remote_actor_count integer;
+  peer_actor_count integer;
   relationship_edge_count integer;
   accepted_request_count integer;
   federation_membership_count integer;
 BEGIN
-  SELECT count(*) INTO remote_actor_count
-  FROM touch_actor
-  WHERE ptid = {_sql_literal(peer.ptid)}
-    AND federated_handle = {_sql_literal(peer.federated_handle)}
-    AND home_station_peer_id = {_sql_literal(peer.home_station_peer_id)}
-    AND origin = 'remote_cached';
-  IF remote_actor_count <> 1 THEN
-    RAISE EXCEPTION 'cross-Station remote Actor projection is incomplete';
-  END IF;
-
+{peer_projection_check}
   SELECT count(*) INTO relationship_edge_count
   FROM follows
   WHERE (follower_id, following_id) IN (
