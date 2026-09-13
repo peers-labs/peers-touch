@@ -1,8 +1,8 @@
 # Acceptance Framework Core Runtime — 集成与迁移
 
 > **Status**: active
-> **Version**: v2.1
-> **Created**: 2026-08-15 | **Updated**: 2026-09-02
+> **Version**: v2.2
+> **Created**: 2026-08-15 | **Updated**: 2026-09-13
 
 
 > **Owner**: Architecture Team
@@ -470,7 +470,14 @@ generic helper is available and correct before any Domain begins migration.
 D-11 compatibility boundary：
 
 - Gate IDs、Make target names、product assertions和proof semantics保持不变；
-- `PT_ACCEPTANCE_ARTIFACT_ROOT`可选，local developer无需配置；
+- `PT_ACCEPTANCE_ARTIFACT_ROOT`只作为CI和隔离测试override，local developer无需配置；
+- local default由Machine Dev Control Plane统一解析为
+  `~/.peers-touch/dev/acceptance`；
+- legacy `~/Library/Application Support/PeersTouch/acceptance`只允许一次性迁移，
+  不保留symlink、dual-write、dual-read或fallback；
+- migration cutover要求当前Git worktree全集全部证明canonical resolver或先从Git
+  worktree registry移除；旧root删除后，live registry和active docs同步删除legacy
+  字段与迁移分支，不保留永久`legacy-removed`状态；
 - CI必须override root并从该目录收集artifact；
 - repository-relative runtime report paths不是public API，原子删除；
 - explicit test fixture paths保留，但必须位于temporary directory或

@@ -1,8 +1,8 @@
 # Acceptance Framework — Runtime Provisioning 数据模型
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-16 | **Updated**: 2026-09-02
+> **Version**: v1.2
+> **Created**: 2026-08-16 | **Updated**: 2026-09-13
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -550,12 +550,10 @@ Root resolution：
 override = trim(PT_ACCEPTANCE_ARTIFACT_ROOT)
 if override != "":
   root = canonical_absolute(override)
-else if platform == macOS:
-  root = ~/Library/Application Support/PeersTouch/acceptance
-else if platform == Linux:
-  root = ${XDG_STATE_HOME:-~/.local/state}/peers-touch/acceptance
+else if platform == macOS or platform == Linux or platform == other Unix:
+  root = ~/.peers-touch/dev/acceptance
 else if platform == Windows:
-  root = %LOCALAPPDATA%\PeersTouch\acceptance
+  root = %USERPROFILE%\.peers-touch\dev\acceptance
 else:
   EvidenceRootUnsupportedPlatform
 ```
@@ -567,6 +565,8 @@ Resolver验证：
 - existing symlink component、existing non-directory和NUL均拒绝；
 - override设置但无效时fail closed，不改用default；
 - CI检测到CI environment但没有override时fail closed。
+- root不得位于正式产品Application Support namespace；
+- legacy root只参与显式migration，不参与normal resolver fallback。
 
 Identity：
 

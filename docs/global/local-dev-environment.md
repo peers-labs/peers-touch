@@ -1,8 +1,8 @@
 # Local Development Environment
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-07-23 | **Updated**: 2026-08-31
+> **Version**: v1.1
+> **Created**: 2026-07-23 | **Updated**: 2026-09-13
 > **Owner**: Platform Team
 
 ---
@@ -26,6 +26,50 @@ This document does NOT define:
 - How to create/switch profiles (see `pt-local-dev-env` skill for interactive workflow)
 - CI/CD pipeline (out of scope for local dev)
 
+The machine-global ownership and allocation architecture is defined in
+[`docs/architecture/local-dev-control-plane/`](../architecture/local-dev-control-plane/README.md).
+Until its runtime migration is implemented, this document describes the current
+command behavior.
+
+### 1.1 Current Machine-State Boundary
+
+The current implementation has no authoritative machine-global registry.
+Each worktree may have its own `.local` directory and
+`.local/dev/active/<worktree-name>.env` pointer. This keeps profile selection
+worktree-specific, but it does not prevent another worktree from selecting the
+same profile or local slot.
+
+Do not interpret discovered worktrees or profile pointers as active usage.
+Under the target control plane:
+
+- registration is an explicit Owner action;
+- `active` requires a matching live process/listener or valid lease;
+- a registered worktree without live resources is `idle`;
+- an unregistered worktree remains an observation only.
+
+An initial machine audit snapshot is registered at:
+
+```text
+~/.peers-touch/dev/registry.json
+```
+
+It is marked `authority: observed-snapshot`. Existing Make targets do not read
+it, and it must not authorize profile selection, Station deploy, restart, or
+reset.
+
+Acceptance evidence is also development state. Its canonical local target is:
+
+```text
+~/.peers-touch/dev/acceptance
+```
+
+`~/Library/Application Support/PeersTouch/` is reserved for formal product
+data. The existing `acceptance/` child there is legacy data pending a verified
+resolver cutover and one-time migration. The migration is not complete until
+every current Git worktree uses the canonical root, the old directory is
+deleted, and the live registry plus active docs remove their legacy fields and
+migration branches.
+
 ---
 
 ## 2. Profile System
@@ -38,11 +82,15 @@ development topology: which Station to use, which ports, and which mode.
 `.local/dev/profiles/<name>.env` is an imported cache, not a competing source
 for a same-named deployable profile.
 
-Each git worktree selects its profile through
+In the current implementation, each git worktree selects its profile through
 `.local/dev/active/<worktree-name>.env`. Runtime commands derive the selected
 name from that worktree-specific pointer and load the sibling `env` repository
 source when it exists. The shared `.local/dev/profile` selector is not part of
 the runtime contract.
+
+The target architecture keeps the selection independent but moves its durable
+binding to `~/.peers-touch/dev/`, keyed by canonical `workspaceId`. See
+[`local-dev-control-plane/design.md`](../architecture/local-dev-control-plane/design.md).
 
 ### 2.2 Profile Fields
 
@@ -271,9 +319,14 @@ SELECT id, conversation_id, created_at FROM device_queue_lanes ORDER BY created_
 
 1. **Never SSH manually to deploy** — always use `make station` or `make deploy ENV=x`.
 2. **Never edit code on remote hosts** — deploy env discipline (AGENTS.md §12).
-3. **Profile per worktree** — each git worktree has its own profile, avoids port conflicts.
+3. **Profile selection per worktree** — each git worktree selects independently.
+   The current implementation does not by itself prevent two worktrees from
+   selecting the same profile or slot; check the machine registry snapshot and
+   live ports before starting clients.
 4. **Health check is the contract** — `make station` is not done until health passes.
 5. **Current branch deploys** — remote mode pushes HEAD, not necessarily main.
 6. **Environment repository is authoritative** — do not repurpose a canonical
    profile by editing only its `.local` cache; create a distinctly named
    environment profile instead.
+7. **No implicit global fallback** — an unbound worktree must fail closed; do
+   not infer profile or slot from another worktree.
