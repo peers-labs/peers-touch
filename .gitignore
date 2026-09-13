@@ -55,7 +55,12 @@ apps/station/**/model/*.pb.go
 *.log
 logs/
 
+# Worktree-local debug sessions belong under the machine Dev Control Plane.
+/.dbg/
+/debug-*
+
 # Temporary files
+/tmp/
 *.tmp
 *.temp
 

@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+import { workspaceRuntimePath, workspaceRuntimeRef } from './lib/machine-dev-paths.mjs';
 
 const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-full-e2e-fail-closed-controlled-gate.json');
@@ -14,7 +16,7 @@ const sharedSideEvidencePaths = [
   path.join(evidenceDir, 'atelier-full-e2e-ide-launch.json'),
   path.join(evidenceDir, 'atelier-full-e2e-provider-runtime.json'),
 ];
-const controlledWorkDir = path.resolve('tmp/atelier-full-e2e-fail-closed-controlled-gate');
+const controlledWorkDir = workspaceRuntimePath('atelier-full-e2e-fail-closed-controlled-gate');
 const runnerScript = path.resolve('tooling/scripts/atelier-full-e2e.mjs');
 
 const runtimeInputNames = [
@@ -203,6 +205,7 @@ function assertNoRawRuntimeInputLeak(value, label) {
   }
 }
 
+rmSync(controlledWorkDir, { recursive: true, force: true });
 mkdirSync(controlledWorkDir, { recursive: true });
 const sharedBefore = readOptionalFile(sharedFullE2EEvidencePath);
 const sharedPreflightBefore = readOptionalFile(sharedPreflightEvidencePath);
@@ -284,7 +287,7 @@ const document = {
   readiness: 'NOT_READY',
   globalReady: false,
   scenarios: scenarioResults,
-  isolatedWorkDir: path.relative(process.cwd(), controlledWorkDir),
+  isolatedWorkDir: workspaceRuntimeRef('atelier-full-e2e-fail-closed-controlled-gate'),
   mutatesSharedFullE2EEvidence: false,
   mutatesSharedPreflightEvidence: false,
   mutatesSharedFinalSideEvidence: false,

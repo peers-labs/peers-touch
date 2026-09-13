@@ -2,8 +2,10 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+import { workspaceRuntimePath, workspaceRuntimeRef } from './lib/machine-dev-paths.mjs';
 
 const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-full-e2e-final-evidence-controlled-gate.json');
@@ -12,7 +14,7 @@ const sharedPreflightEvidencePath = path.join(evidenceDir, 'atelier-full-e2e-pre
 const sharedWorkspaceOpenEvidencePath = path.join(evidenceDir, 'atelier-full-e2e-workspace-open.json');
 const sharedIdeLaunchEvidencePath = path.join(evidenceDir, 'atelier-full-e2e-ide-launch.json');
 const sharedProviderRuntimeEvidencePath = path.join(evidenceDir, 'atelier-full-e2e-provider-runtime.json');
-const controlledWorkDir = path.resolve('tmp/atelier-full-e2e-final-evidence-controlled-gate');
+const controlledWorkDir = workspaceRuntimePath('atelier-full-e2e-final-evidence-controlled-gate');
 const runnerScript = path.resolve('tooling/scripts/atelier-full-e2e.mjs');
 const fakeDesktopAppPath = path.join(controlledWorkDir, 'fake-desktop-app.mjs');
 const rawRuntimeInputLeakSentinels = [
@@ -402,6 +404,7 @@ function assertNoRawRuntimeInputLeak(value, label) {
   }
 }
 
+rmSync(controlledWorkDir, { recursive: true, force: true });
 mkdirSync(controlledWorkDir, { recursive: true });
 writeFakeDesktopApp();
 const sharedBefore = readOptionalFile(sharedFullE2EEvidencePath);
@@ -550,7 +553,7 @@ const document = {
   readiness: 'NOT_READY',
   globalReady: false,
   scenarios: scenarioResults,
-  isolatedWorkDir: path.relative(process.cwd(), controlledWorkDir),
+  isolatedWorkDir: workspaceRuntimeRef('atelier-full-e2e-final-evidence-controlled-gate'),
   mutatesSharedFullE2EEvidence: false,
   mutatesSharedPreflightEvidence: false,
   sharedEvidenceUnchanged: {

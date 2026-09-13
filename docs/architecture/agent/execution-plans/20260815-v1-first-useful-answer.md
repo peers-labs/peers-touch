@@ -163,11 +163,11 @@ deferred visual hardening contract:
 
 - `20260815-v1-visual-replica-contract.md`
 
-The current historical `agent-lobehub-parity` prototype is research evidence,
-not production-intent code. V1 functional implementation must preserve the
-surface anatomy and make every user action visible and operable, but pixel-level
-prototype confirmation is deferred until the planned functional journeys are
-closed.
+The historical `agent-lobehub-parity` prototype and its generated evidence were
+retired after the confirmed Modern Chat Agent prototype became authoritative.
+V1 functional implementation must preserve the accepted surface anatomy and
+make every user action visible and operable, while pixel-level hardening remains
+deferred until the planned functional journeys are closed.
 
 V1 replaces the current page-owned, nested Agent UI with this production tree:
 

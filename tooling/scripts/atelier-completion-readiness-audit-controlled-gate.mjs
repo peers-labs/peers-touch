@@ -5,12 +5,14 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { workspaceRuntimePath } from './lib/machine-dev-paths.mjs';
+
 const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-completion-readiness-audit-controlled-gate.json');
 const sharedFullE2EEvidencePath = path.join(evidenceDir, 'atelier-full-e2e.json');
 const sharedCompletionAuditEvidencePath = path.join(evidenceDir, 'atelier-completion-readiness-audit.json');
 const completionAuditScript = path.resolve('tooling/scripts/atelier-completion-readiness-audit.mjs');
-const controlledWorkDir = path.resolve('tmp/atelier-completion-readiness-audit-controlled-gate');
+const controlledWorkDir = workspaceRuntimePath('atelier-completion-readiness-audit-controlled-gate');
 const isolatedEvidenceRoot = path.join(controlledWorkDir, 'evidence-root');
 const isolatedEvidenceDir = path.join(isolatedEvidenceRoot, 'tooling/acceptance/evidence/applets/official-applet');
 const isolatedFullE2EEvidencePath = path.join(controlledWorkDir, 'atelier-full-e2e.fixture.json');
@@ -2847,6 +2849,7 @@ const aggregateChildEvidenceRejectionFixtures = [
 
 function runGate() {
   mkdirSync(evidenceDir, { recursive: true });
+  rmSync(controlledWorkDir, { recursive: true, force: true });
   mkdirSync(controlledWorkDir, { recursive: true });
   const sharedFullE2EBefore = stableEvidenceText(sharedFullE2EEvidencePath);
   const sharedCompletionAuditBefore = stableEvidenceText(sharedCompletionAuditEvidencePath);

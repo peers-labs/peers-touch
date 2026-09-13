@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+import { workspaceRuntimePath, workspaceRuntimeRef } from './lib/machine-dev-paths.mjs';
 
 const evidenceDir = path.resolve('tooling/acceptance/evidence/applets/official-applet');
 const evidencePath = path.join(evidenceDir, 'atelier-full-e2e-preflight-controlled-gate.json');
 const sharedPreflightEvidencePath = path.join(evidenceDir, 'atelier-full-e2e-preflight.json');
-const controlledWorkDir = path.resolve('tmp/atelier-full-e2e-preflight-controlled-gate');
+const controlledWorkDir = workspaceRuntimePath('atelier-full-e2e-preflight-controlled-gate');
 const preflightScript = path.resolve('tooling/scripts/atelier-full-e2e-preflight.mjs');
 
 const runtimeInputNames = [
@@ -153,6 +155,7 @@ function assertNoRawRuntimeInputLeak(value, label) {
   }
 }
 
+rmSync(controlledWorkDir, { recursive: true, force: true });
 mkdirSync(controlledWorkDir, { recursive: true });
 const sharedBefore = readOptionalFile(sharedPreflightEvidencePath);
 
@@ -205,7 +208,7 @@ const document = {
   readiness: 'NOT_READY',
   globalReady: false,
   scenarios: scenarioResults,
-  isolatedWorkDir: path.relative(process.cwd(), controlledWorkDir),
+  isolatedWorkDir: workspaceRuntimeRef('atelier-full-e2e-preflight-controlled-gate'),
   mutatesSharedPreflightEvidence: false,
   claimBoundary,
   notCovered: claimBoundary.doesNotProve,

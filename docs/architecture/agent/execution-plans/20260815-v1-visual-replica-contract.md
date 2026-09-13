@@ -58,35 +58,17 @@ When sources disagree, use this order:
 2. Confirmed V1 production-intent prototype.
 3. LobeHub source behavior and component structure.
 4. Live LobeHub computed styles and screenshots.
-5. Historical `agent-lobehub-parity` screenshots and DOM evidence.
-6. Existing Peers production UI.
+5. Existing Peers production UI.
 
 The existing production UI is last because V1 replaces it.
 
 ## 4. Existing Evidence Audit
 
-### 4.1 Historical parity prototype
+### 4.1 Retired parity prototype
 
-Path:
-
-```text
-packages/prototypes/desktop/features/agent-lobehub-parity/
-```
-
-Audit:
-
-| Fact | Result |
-|---|---|
-| TSX size | 3,807 lines |
-| CSS size | 9,194 lines |
-| Raw button count | 382 |
-| `react-layout-kit` usage | absent |
-| `@lobehub/ui` usage | absent in the main prototype |
-| antd `theme.useToken()` usage | absent |
-| Verdict | research evidence only; forbidden as replica source |
-
-Its screenshots and DOM JSON may prove that a state was considered. They do
-not authorize copying its component structure or CSS.
+The superseded `agent-lobehub-parity` prototype and its generated screenshots
+and DOM dumps were removed. They are not a replica source or an evidence input.
+New visual baselines must come from the confirmed Modern Chat Agent prototype.
 
 ### 4.2 Desktop Shell Agent Chat
 
@@ -185,22 +167,8 @@ Observed source metrics:
 | Model row primary gap | `16px` |
 | Enable switch | `44px × 22px` |
 
-Historical evidence inspected:
-
-```text
-tmp/agent-lobehub-l2-screenshots/settings-ds-provider-detail-scoped.png
-tmp/agent-lobehub-settings-ds-dom.json
-tmp/agent-lobehub-settings-ds-scoped-screenshot-meta.json
-```
-
-Historical viewport/region:
-
-- viewport: `1900 × 1100`;
-- scoped region: `1320 × 1024`;
-- historical layout: Settings nav + Provider menu + Provider detail.
-
-The historical screenshot is not the final baseline. It proves required
-information density and state coverage.
+The final Provider baseline must be recaptured from the confirmed prototype at
+the contract viewport; retired screenshots do not satisfy this gate.
 
 ### V1-VS02: Agent Profile ready configuration
 
@@ -236,20 +204,8 @@ Observed source metrics:
 | Prompt editor padding | `18px` |
 | Prompt editor section gap | `16px` |
 
-Historical evidence inspected:
-
-```text
-tmp/agent-lobehub-l2-screenshots/profile-cl-compact-profile-scoped.png
-tmp/agent-lobehub-profile-cl-dom.json
-tmp/agent-lobehub-profile-cl-scoped-screenshot-meta.json
-```
-
-Historical viewport/region:
-
-- viewport: `2600 × 1500`;
-- scoped region: `2524 × 1100`;
-- visible baseline: compact rail, 54px header, avatar/name, one Model & Tools
-  panel, Core Instructions.
+The final Profile baseline must be recaptured from the confirmed prototype;
+retired screenshots do not satisfy this gate.
 
 ### V1-VS03: New Topic
 
@@ -300,15 +256,8 @@ Exact production-intent metrics:
 | Compact composer min height | `96px` |
 | Narrow threshold | `< 900px` |
 
-Historical benchmark evidence inspected:
-
-```text
-tmp/agent-lobehub-l2-screenshots/chat-da-compact-new-topic-scoped.png
-tmp/agent-lobehub-chat-da-dom.json
-tmp/agent-lobehub-chat-da-scoped-screenshot-meta.json
-```
-
-Historical region: `1135 × 630`.
+The final Chat baseline must be recaptured from the confirmed prototype;
+retired screenshots do not satisfy this gate.
 
 ### V1-VS04: Active streaming
 
@@ -393,14 +342,8 @@ Required behavior:
 - expanded secondary rail never overlays composer or message content;
 - opening one narrow rail closes the other.
 
-Historical evidence inspected:
-
-```text
-tmp/agent-lobehub-l2-responsive-screenshots/narrow-chat-review.png
-```
-
-This historical screenshot includes review chrome and is not a final baseline.
-It proves the minimum content/approval/composer stack that must fit.
+The narrow-layout baseline must be recaptured from the confirmed prototype;
+retired screenshots do not satisfy this gate.
 
 ## 6. Prototype Rebuild Obligations
 

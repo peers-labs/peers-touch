@@ -164,6 +164,17 @@ Example:
 `console.log`, `print`, `println!`, `fmt.Println`, `debugPrint` — **absolutely forbidden**.
 Use domain-specific loggers only (see platform docs for specifics).
 
+### No Repository Debug Artifacts
+
+- Do not create or commit `debug-*`, `.dbg/`, ad-hoc test prompts, runtime
+  logs, DOM dumps, screenshots, traces, or temporary reports at repository
+  root.
+- Worktree-scoped debug sessions live under
+  `~/.peers-touch/dev/workspaces/<workspaceId>/debug/<sessionId>/`.
+- Durable conclusions belong in the governing `docs/` source, `docs/knowledge/`,
+  or the Acceptance Evidence Store. Temporary debug sessions are deleted after
+  closure; they are not retained as repository history.
+
 ### No Secrets in Code
 
 - Never hardcode keys, tokens, passwords.
