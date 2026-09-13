@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -20,18 +21,22 @@ class LocalDevProfileRedactionTests(unittest.TestCase):
         self.script_root = self.project_root / "tooling" / "scripts" / "local-dev"
         self.profile_root = self.project_root / ".local" / "dev" / "profiles"
         self.active_root = self.project_root / ".local" / "dev" / "active"
+        self.env_root = Path(self.temporary_directory.name) / "env"
         self.script_root.mkdir(parents=True)
         self.profile_root.mkdir(parents=True)
         self.active_root.mkdir(parents=True)
         for script_name in (
             "config.sh",
             "env.sh",
+            "environment-creation-authorization.py",
             "profile.sh",
             "redact-env.sh",
         ):
             shutil.copy2(SCRIPT_ROOT / script_name, self.script_root / script_name)
 
-        self.profile = self.profile_root / "one.env"
+        canonical_profile_root = self.env_root / "peers-touch" / "one"
+        canonical_profile_root.mkdir(parents=True)
+        self.profile = canonical_profile_root / "profile.env.example"
         self.profile.write_text(
             "\n".join(
                 (
@@ -44,9 +49,38 @@ class LocalDevProfileRedactionTests(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
+        subprocess.run(["git", "init", "-q"], cwd=self.env_root, check=True)
+        subprocess.run(
+            ["git", "config", "user.name", "Local Dev Test"],
+            cwd=self.env_root,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "local-dev-test@example.invalid"],
+            cwd=self.env_root,
+            check=True,
+        )
+        subprocess.run(["git", "add", "."], cwd=self.env_root, check=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "test: add canonical profile"],
+            cwd=self.env_root,
+            check=True,
+        )
+        shutil.copy2(self.profile, self.profile_root / "one.env")
 
     def tearDown(self) -> None:
-        self.temporary_directory.cleanup()
+        path = Path(self.temporary_directory.name)
+        self.temporary_directory._finalizer.detach()
+        for attempt in range(5):
+            try:
+                shutil.rmtree(path)
+                return
+            except FileNotFoundError:
+                return
+            except OSError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.05)
 
     def run_script(self, script_name: str, *arguments: str) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()

@@ -51,6 +51,7 @@ Application Support namespace，不适合承载开发期产物；目标路径统
 6. 用机器可读账本统一展示 worktree、branch、profile、slot、Station、进程和租约。
 7. 将 Acceptance Evidence Store 收敛到同一 Dev Control Plane 根。
 8. 所有冲突 fail closed，不依赖人工记忆或 worktree 私有缓存。
+9. 环境创建必须由研发人员对精确名称和目标显式授权；Agent 不得自行生成授权。
 
 ## 4. 当前机器登记
 
