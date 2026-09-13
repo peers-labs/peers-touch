@@ -258,6 +258,16 @@ export function installAcceptanceHarness(): void {
       commandId?: string;
     }) => nativeAcceptanceBridge.engineInteractionSnapshot(input),
 
+    prepareSubmittedCommand: (input: {
+      actorPtid: string;
+      conversationId: string;
+      messageId: string;
+      commandId: string;
+    }) => nativeAcceptanceBridge.prepareSubmittedCommand(input),
+
+    resumeMessagingLifecycle: (input: { actorPtid: string }) =>
+      nativeAcceptanceBridge.resumeMessagingLifecycle(input),
+
     engineMessages: (input: {
       actorPtid: string;
       conversationId: string;

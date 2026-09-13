@@ -1690,6 +1690,20 @@ impl MessagingEngine {
     }
 
     #[cfg(feature = "acceptance-webdriver")]
+    pub fn acceptance_prepare_submitted_command_fixture(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+        command_id: &str,
+    ) -> Result<serde_json::Value, String> {
+        self.store.acceptance_prepare_submitted_command_fixture(
+            conversation_id,
+            message_id,
+            command_id,
+        )
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
     pub fn acceptance_interaction_snapshot(
         &self,
         conversation_id: &str,

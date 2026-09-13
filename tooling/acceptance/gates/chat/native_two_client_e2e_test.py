@@ -26,9 +26,11 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
     CURRENT_PROFILE_GATE_ID,
     NativeTwoClientGate,
     SUBMITTED_COMMAND_RECOVERY_GATE_ID,
+    SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS,
     avatar_evidence_is_valid,
     is_current_profile_gate,
     reconciled_command_snapshot_outcome,
+    submitted_command_snapshot_is_exact,
 )
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
@@ -331,6 +333,43 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                 "command-1",
                 "message-1",
                 "a" * 64,
+            )
+        )
+
+    def test_submitted_command_fixture_requires_exact_pending_state(self) -> None:
+        snapshot = {
+            "messageId": "message-1",
+            "projection": None,
+            "outbox": {
+                "state": "submitted",
+                "lastErrorCode": "",
+                "commandSha256": "a" * 64,
+            },
+            "commandLedger": [
+                {
+                    "commandId": "command-1",
+                    "messageId": "message-1",
+                    "attemptState": "submitted",
+                    "localState": "submitted",
+                    "outboxState": "submitted",
+                    "draftState": "submitted",
+                }
+            ],
+        }
+
+        self.assertTrue(
+            submitted_command_snapshot_is_exact(
+                snapshot,
+                "command-1",
+                "message-1",
+            )
+        )
+        snapshot["commandLedger"][0]["localState"] = "superseded"
+        self.assertFalse(
+            submitted_command_snapshot_is_exact(
+                snapshot,
+                "command-1",
+                "message-1",
             )
         )
 
@@ -747,6 +786,22 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertTrue(is_current_profile_gate(SUBMITTED_COMMAND_RECOVERY_GATE_ID))
         self.assertFalse(is_current_profile_gate(self.module.GATE_ID))
         self.assertEqual(gate.direction_order, ["bob", "alice"])
+        self.assertIn(
+            "submitted_command_fixture_exact",
+            SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS,
+        )
+        source = (
+            Path(__file__).with_name("native_two_client_runner.py")
+            .read_text(encoding="utf-8")
+        )
+        fixture = source.index('"command.reconciliation.fixture"')
+        activation = source.index('"command.reconciliation.activate"', fixture)
+        convergence = source.index(
+            '"command.reconciliation",',
+            activation + len('"command.reconciliation.activate"'),
+        )
+        self.assertLess(fixture, activation)
+        self.assertLess(activation, convergence)
 
     def test_current_profile_accepts_cross_worktree_group_initiator(self) -> None:
         report = self.valid_report()

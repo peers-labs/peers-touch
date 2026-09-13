@@ -219,6 +219,8 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         for command in (
             "auth::acceptance_logout_window_session",
             "messaging_commands::messaging_acceptance_current_endpoint",
+            "messaging_commands::messaging_acceptance_prepare_submitted_command",
+            "messaging_commands::messaging_acceptance_resume_lifecycle",
             "messaging_commands::messaging_acceptance_interaction_snapshot",
         ):
             with self.subTest(command=command):

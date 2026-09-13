@@ -74,6 +74,7 @@ EXPECTED_RECONCILIATION_COMMAND_ENV = (
 EXPECTED_RECONCILIATION_OUTCOME_ENV = (
     "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_OUTCOME"
 )
+PREPARE_SUBMITTED_COMMAND_ENV = "PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND"
 RECONCILIATION_OUTCOMES = {
     "accepted",
     "terminal_failed",
@@ -105,6 +106,7 @@ SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS = {
     "current_profile_persistent_device_state",
     "native_runtime",
     "actor_isolation",
+    "submitted_command_fixture_exact",
     "submitted_command_converged",
     "resources_released",
 }
@@ -297,6 +299,34 @@ def reconciled_command_snapshot_outcome(
     ):
         return "terminal_failed"
     return None
+
+
+def submitted_command_snapshot_is_exact(
+    snapshot: dict[str, Any],
+    command_id: str,
+    message_id: str,
+) -> bool:
+    outbox = snapshot.get("outbox")
+    matching = [
+        item
+        for item in snapshot.get("commandLedger", [])
+        if isinstance(item, dict)
+        and item.get("commandId") == command_id
+        and item.get("messageId") == message_id
+    ]
+    return (
+        snapshot.get("messageId") == message_id
+        and snapshot.get("projection") is None
+        and isinstance(outbox, dict)
+        and bool(outbox.get("commandSha256"))
+        and outbox.get("state") == "submitted"
+        and outbox.get("lastErrorCode") == ""
+        and len(matching) == 1
+        and matching[0].get("attemptState") == "submitted"
+        and matching[0].get("localState") == "submitted"
+        and matching[0].get("outboxState") == "submitted"
+        and matching[0].get("draftState") == "submitted"
+    )
 
 
 def send_text(client: TauriSession, text: str) -> dict[str, Any]:
@@ -1001,6 +1031,7 @@ class NativeTwoClientGate(AcceptanceGate):
 
     def prove_expected_command_reconciliation(
         self,
+        initial: dict[str, Any],
     ) -> dict[str, Any] | None:
         target = self.expected_reconciliation_target()
         if target is None:
@@ -1026,7 +1057,6 @@ class NativeTwoClientGate(AcceptanceGate):
                 )
             return value
 
-        initial = read_sender_snapshot()
         original_rows = [
             item
             for item in initial.get("commandLedger", [])
@@ -1219,6 +1249,14 @@ class NativeTwoClientGate(AcceptanceGate):
             and os.environ.get("CHAT_ACCEPTANCE_RESET") != "1"
         ):
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
+        if (
+            self.gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID
+            and os.environ.get(PREPARE_SUBMITTED_COMMAND_ENV, "").strip() != "1"
+        ):
+            raise GateError(
+                f"{PREPARE_SUBMITTED_COMMAND_ENV}=1 is required for the "
+                "isolated exact-command recovery fixture"
+            )
 
         order = list(self.direction_order)
         if not is_current_profile_gate(self.gate_id):
@@ -1372,10 +1410,53 @@ class NativeTwoClientGate(AcceptanceGate):
                 and len({client.storage_root for client in self.clients.values()}) == 2,
             )
             if self.expected_reconciliation_target() is not None:
+                target = self.expected_reconciliation_target()
+                prepared = self.step(
+                    "command.reconciliation.fixture",
+                    lambda: async_harness(
+                        self.clients[target["actor"]],
+                        "prepareSubmittedCommand",
+                        {
+                            "actorPtid": self.ptids[target["actor"]],
+                            "conversationId": target["conversationId"],
+                            "messageId": target["messageId"],
+                            "commandId": target["commandId"],
+                        },
+                    ),
+                    target["actor"],
+                )
+                initial = (
+                    prepared.get("snapshot")
+                    if isinstance(prepared, dict)
+                    else None
+                )
+                self.assert_condition(
+                    "submitted_command_fixture_exact",
+                    isinstance(initial, dict)
+                    and submitted_command_snapshot_is_exact(
+                        initial,
+                        target["commandId"],
+                        target["messageId"],
+                    ),
+                    json.dumps(prepared, sort_keys=True),
+                )
+                resumed = self.step(
+                    "command.reconciliation.activate",
+                    lambda: async_harness(
+                        self.clients[target["actor"]],
+                        "resumeMessagingLifecycle",
+                        {"actorPtid": self.ptids[target["actor"]]},
+                    ),
+                    target["actor"],
+                )
+                if not isinstance(resumed, dict) or resumed.get("activated") is not True:
+                    raise GateError(
+                        "submitted-command lifecycle activation failed"
+                    )
                 self.step(
                     "command.reconciliation",
-                    self.prove_expected_command_reconciliation,
-                    self.expected_reconciliation_target()["actor"],
+                    lambda: self.prove_expected_command_reconciliation(initial),
+                    target["actor"],
                 )
             conversation_id = ""
             if self.gate_id != SUBMITTED_COMMAND_RECOVERY_GATE_ID:
