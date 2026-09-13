@@ -956,6 +956,8 @@ fn main() {
             #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_current_endpoint,
             #[cfg(feature = "acceptance-webdriver")]
+            messaging_commands::messaging_acceptance_create_restorable_command,
+            #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_prepare_submitted_command,
             #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_resume_lifecycle,

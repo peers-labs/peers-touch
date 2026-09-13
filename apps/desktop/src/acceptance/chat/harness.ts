@@ -265,6 +265,12 @@ export function installAcceptanceHarness(): void {
       commandId: string;
     }) => nativeAcceptanceBridge.prepareSubmittedCommand(input),
 
+    createRestorableCommand: (input: {
+      actorPtid: string;
+      conversationId: string;
+      plaintext: string;
+    }) => nativeAcceptanceBridge.createRestorableCommand(input),
+
     resumeMessagingLifecycle: (input: { actorPtid: string }) =>
       nativeAcceptanceBridge.resumeMessagingLifecycle(input),
 

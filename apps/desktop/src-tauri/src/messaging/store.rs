@@ -7101,6 +7101,158 @@ impl MessagingStore {
     }
 
     #[cfg(any(test, feature = "acceptance-webdriver"))]
+    pub fn acceptance_stage_restorable_command_fixture(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+        command_id: &str,
+    ) -> Result<serde_json::Value, String> {
+        if conversation_id.trim().is_empty()
+            || message_id.trim().is_empty()
+            || command_id.trim().is_empty()
+        {
+            return Err("restorable-command fixture identity is incomplete".to_string());
+        }
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let before_cursor = transaction
+            .query_row(
+                "SELECT lane_sequence, consumer_epoch
+                 FROM messaging_lane_cursor WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .unwrap_or_default();
+        let state = transaction
+            .query_row(
+                "SELECT local.command_bytes, local.conversation_id, local.state,
+                        outbox.command_bytes, outbox.conversation_id, outbox.state,
+                        attempt.message_id, attempt.state, pending.state
+                 FROM messaging_local_commands local
+                 JOIN messaging_command_outbox outbox USING(command_id)
+                 JOIN messaging_command_attempts attempt USING(command_id)
+                 JOIN messaging_pending_messages pending
+                   ON pending.conversation_id = attempt.conversation_id
+                  AND pending.message_id = attempt.message_id
+                 WHERE local.command_id = ?1
+                   AND local.conversation_id = ?2
+                   AND attempt.message_id = ?3",
+                params![command_id, conversation_id, message_id],
+                |row| {
+                    Ok((
+                        row.get::<_, Vec<u8>>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Vec<u8>>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, String>(6)?,
+                        row.get::<_, String>(7)?,
+                        row.get::<_, String>(8)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "restorable-command fixture target is unavailable".to_string())?;
+        if state.0 != state.3 || state.1 != conversation_id || state.4 != conversation_id {
+            return Err("restorable-command fixture bytes or conversation mismatch".to_string());
+        }
+        if state.2 != "prepared"
+            || state.5 != "pending"
+            || state.7 != "prepared"
+            || state.8 != "pending"
+        {
+            return Err("restorable-command fixture target is not freshly prepared".to_string());
+        }
+        let projection_count = transaction
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_message_projections
+                 WHERE conversation_id = ?1 AND message_id = ?2",
+                params![conversation_id, message_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let active_replacement_count = transaction
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_command_attempts
+                 WHERE conversation_id = ?1 AND message_id = ?2
+                   AND command_id <> ?3
+                   AND state NOT IN ('failed', 'superseded')",
+                params![conversation_id, message_id, command_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if projection_count != 0 || active_replacement_count != 0 {
+            return Err(
+                "restorable-command fixture refuses projected or active replacement state"
+                    .to_string(),
+            );
+        }
+        let local_changed = transaction
+            .execute(
+                "UPDATE messaging_local_commands SET state = 'superseded'
+                 WHERE command_id = ?1 AND command_bytes = ?2
+                   AND state = 'prepared'",
+                params![command_id, &state.0],
+            )
+            .map_err(|error| error.to_string())?;
+        let outbox_changed = transaction
+            .execute(
+                "UPDATE messaging_command_outbox
+                 SET state = 'superseded', next_attempt_at_unix_ms = 0,
+                     last_error_code = 'stale_delivery_plan'
+                 WHERE command_id = ?1 AND command_bytes = ?2
+                   AND state = 'pending'",
+                params![command_id, &state.0],
+            )
+            .map_err(|error| error.to_string())?;
+        let attempt_changed = transaction
+            .execute(
+                "UPDATE messaging_command_attempts SET state = 'superseded'
+                 WHERE command_id = ?1 AND message_id = ?2
+                   AND state = 'prepared'",
+                params![command_id, message_id],
+            )
+            .map_err(|error| error.to_string())?;
+        let pending_changed = transaction
+            .execute(
+                "UPDATE messaging_pending_messages
+                 SET state = 'failed', next_attempt_at_unix_ms = 0,
+                     last_error_code = 'stale_delivery_plan'
+                 WHERE conversation_id = ?1 AND message_id = ?2
+                   AND state = 'pending'",
+                params![conversation_id, message_id],
+            )
+            .map_err(|error| error.to_string())?;
+        let after_cursor = transaction
+            .query_row(
+                "SELECT lane_sequence, consumer_epoch
+                 FROM messaging_lane_cursor WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .unwrap_or_default();
+        if local_changed != 1
+            || outbox_changed != 1
+            || attempt_changed != 1
+            || pending_changed != 1
+            || before_cursor != after_cursor
+        {
+            return Err("restorable-command fixture transition was not fenced".to_string());
+        }
+        transaction.commit().map_err(|error| error.to_string())?;
+        drop(connection);
+        self.acceptance_interaction_snapshot(conversation_id, message_id, command_id)
+    }
+
+    #[cfg(any(test, feature = "acceptance-webdriver"))]
     pub fn acceptance_prepare_submitted_command_fixture(
         &self,
         conversation_id: &str,
@@ -7170,7 +7322,7 @@ impl MessagingStore {
             && state.5 == "superseded"
             && state.6 == "stale_delivery_plan"
             && state.8 == "superseded"
-            && state.9 == "draft";
+            && matches!(state.9.as_str(), "draft" | "failed");
         if !already_submitted && !restorable_terminal {
             return Err("submitted-command fixture target is not safely restorable".to_string());
         }
@@ -7230,7 +7382,7 @@ impl MessagingStore {
                  SET state = 'submitted', next_attempt_at_unix_ms = 0,
                      last_error_code = ''
                  WHERE conversation_id = ?1 AND message_id = ?2
-                   AND state IN ('submitted', 'draft')",
+                   AND state IN ('submitted', 'draft', 'failed')",
                 params![conversation_id, message_id],
             )
             .map_err(|error| error.to_string())?;
@@ -10800,6 +10952,15 @@ mod tests {
         store
             .mark_command_superseded(command_id, command_bytes, 0)
             .unwrap();
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "UPDATE messaging_pending_messages SET state = 'failed'
+                 WHERE conversation_id = ?1 AND message_id = ?2",
+                params!["conversation-1", command_id],
+            )
+            .unwrap();
         let before_cursor = store.lane_checkpoint().unwrap();
 
         let snapshot = store
@@ -10819,6 +10980,45 @@ mod tests {
             snapshot["outbox"]["commandSha256"],
             hex::encode(Sha256::digest(command_bytes)),
         );
+    }
+
+    #[test]
+    fn acceptance_fixture_stages_a_fresh_command_for_recovery() {
+        let store = MessagingStore::in_memory().unwrap();
+        let command_id = "command-fresh";
+        let command_bytes = b"exact-fresh-command";
+        persist_direct_command(&store, command_id, command_bytes, 10).unwrap();
+        let before_cursor = store.lane_checkpoint().unwrap();
+
+        let staged = store
+            .acceptance_stage_restorable_command_fixture("conversation-1", command_id, command_id)
+            .unwrap();
+
+        assert_eq!(store.lane_checkpoint().unwrap(), before_cursor);
+        assert!(staged.get("projection").unwrap().is_null());
+        assert_eq!(staged["outbox"]["state"], "superseded");
+        assert_eq!(staged["outbox"]["lastErrorCode"], "stale_delivery_plan",);
+        assert_eq!(staged["commandLedger"][0]["attemptState"], "superseded");
+        assert_eq!(staged["commandLedger"][0]["localState"], "superseded");
+        assert_eq!(staged["commandLedger"][0]["outboxState"], "superseded");
+        assert_eq!(staged["commandLedger"][0]["draftState"], "failed");
+
+        let restored = store
+            .acceptance_prepare_submitted_command_fixture("conversation-1", command_id, command_id)
+            .unwrap();
+        assert_eq!(store.lane_checkpoint().unwrap(), before_cursor);
+        assert!(restored.get("projection").unwrap().is_null());
+        assert_eq!(restored["outbox"]["state"], "submitted");
+        assert_eq!(restored["outbox"]["lastErrorCode"], "");
+        assert_eq!(
+            restored["outbox"]["commandSha256"],
+            hex::encode(Sha256::digest(command_bytes)),
+        );
+        assert_eq!(restored["commandLedger"][0]["commandId"], command_id);
+        assert_eq!(restored["commandLedger"][0]["attemptState"], "submitted");
+        assert_eq!(restored["commandLedger"][0]["localState"], "submitted");
+        assert_eq!(restored["commandLedger"][0]["outboxState"], "submitted");
+        assert_eq!(restored["commandLedger"][0]["draftState"], "submitted");
     }
 
     #[test]

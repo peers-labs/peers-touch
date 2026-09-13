@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import random
@@ -75,6 +76,12 @@ EXPECTED_RECONCILIATION_OUTCOME_ENV = (
     "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_OUTCOME"
 )
 PREPARE_SUBMITTED_COMMAND_ENV = "PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND"
+CREATE_RESTORABLE_COMMAND_ENV = (
+    "PT_CHAT_NATIVE_CREATE_RESTORABLE_COMMAND"
+)
+RESTORABLE_COMMAND_PLAINTEXT_ENV = (
+    "PT_CHAT_NATIVE_RESTORABLE_COMMAND_PLAINTEXT"
+)
 RECONCILIATION_OUTCOMES = {
     "accepted",
     "terminal_failed",
@@ -268,7 +275,7 @@ def reconciled_command_snapshot_outcome(
         and original.get("attemptState") == "committed"
         and original.get("localState") == "committed"
         and original.get("outboxState") == "committed"
-        and original.get("draftState") == "accepted"
+        and original.get("draftState") in {"", "accepted"}
     ):
         return "accepted"
     if (
@@ -499,6 +506,7 @@ class NativeTwoClientGate(AcceptanceGate):
         self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
+        self._reconciliation_target: dict[str, str] | None = None
         self.report.station_url = self.station_url
         self.report.manifest = self.manifest
         self.report.runtime.update(
@@ -993,6 +1001,8 @@ class NativeTwoClientGate(AcceptanceGate):
     def expected_reconciliation_target(
         self,
     ) -> dict[str, str] | None:
+        if self._reconciliation_target is not None:
+            return dict(self._reconciliation_target)
         target = {
             "actor": os.environ.get(
                 EXPECTED_RECONCILIATION_ACTOR_ENV,
@@ -1017,6 +1027,21 @@ class NativeTwoClientGate(AcceptanceGate):
         }
         if not any(target.values()):
             return None
+        if os.environ.get(CREATE_RESTORABLE_COMMAND_ENV, "").strip() == "1":
+            if (
+                not target["actor"]
+                or not target["conversationId"]
+                or target["messageId"]
+                or target["commandId"]
+                or target["actor"] not in self.clients
+                or target["outcome"] != "accepted"
+            ):
+                raise GateError(
+                    "fresh submitted-command setup requires an actor, "
+                    "conversation, accepted outcome, and no preselected "
+                    "message or command identity"
+                )
+            return None
         if (
             not all(target.values())
             or target["actor"] not in self.clients
@@ -1028,6 +1053,84 @@ class NativeTwoClientGate(AcceptanceGate):
                 "an accepted, terminal_failed, or terminal_superseded outcome"
             )
         return target
+
+    def create_restorable_command_target(self) -> dict[str, str] | None:
+        if os.environ.get(CREATE_RESTORABLE_COMMAND_ENV, "").strip() != "1":
+            return None
+        actor = os.environ.get(
+            EXPECTED_RECONCILIATION_ACTOR_ENV,
+            "",
+        ).strip()
+        conversation_id = os.environ.get(
+            EXPECTED_RECONCILIATION_CONVERSATION_ENV,
+            "",
+        ).strip()
+        outcome = os.environ.get(
+            EXPECTED_RECONCILIATION_OUTCOME_ENV,
+            "",
+        ).strip()
+        if (
+            actor not in self.clients
+            or not conversation_id
+            or outcome != "accepted"
+            or os.environ.get(
+                EXPECTED_RECONCILIATION_MESSAGE_ENV,
+                "",
+            ).strip()
+            or os.environ.get(
+                EXPECTED_RECONCILIATION_COMMAND_ENV,
+                "",
+            ).strip()
+        ):
+            raise GateError(
+                "fresh submitted-command setup requires an actor, "
+                "conversation, accepted outcome, and no preselected "
+                "message or command identity"
+            )
+        plaintext = os.environ.get(
+            RESTORABLE_COMMAND_PLAINTEXT_ENV,
+            "W8A exact submitted-command recovery",
+        )
+        if not plaintext:
+            raise GateError("fresh submitted-command plaintext is required")
+        created = self.step(
+            "command.reconciliation.seed",
+            lambda: async_harness(
+                self.clients[actor],
+                "createRestorableCommand",
+                {
+                    "actorPtid": self.ptids[actor],
+                    "conversationId": conversation_id,
+                    "plaintext": plaintext,
+                },
+            ),
+            actor,
+        )
+        if not isinstance(created, dict):
+            raise GateError(
+                "fresh submitted-command setup returned invalid evidence"
+            )
+        message_id = str(created.get("messageId") or "")
+        command_id = str(created.get("commandId") or "")
+        if not message_id or not command_id:
+            raise GateError(
+                "fresh submitted-command setup omitted its exact identity"
+            )
+        target = {
+            "actor": actor,
+            "conversationId": conversation_id,
+            "messageId": message_id,
+            "commandId": command_id,
+            "outcome": outcome,
+        }
+        self._reconciliation_target = target
+        self.report.runtime["createdSubmittedCommand"] = {
+            **target,
+            "plaintextSha256": hashlib.sha256(
+                plaintext.encode("utf-8")
+            ).hexdigest(),
+        }
+        return dict(target)
 
     def prove_expected_command_reconciliation(
         self,
@@ -1409,6 +1512,7 @@ class NativeTwoClientGate(AcceptanceGate):
                 and len({client.gateway_port for client in self.clients.values()}) == 2
                 and len({client.storage_root for client in self.clients.values()}) == 2,
             )
+            self.create_restorable_command_target()
             if self.expected_reconciliation_target() is not None:
                 target = self.expected_reconciliation_target()
                 prepared = self.step(
