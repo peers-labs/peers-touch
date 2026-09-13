@@ -1095,6 +1095,13 @@ The 2026-09-13 continuation is carried by Draft PR `#111`. The current source
 checkpoint before this plan update is
 `2ff2cd9ca3cce83b501f08c16163f4c543ea9de2`; `peers-group-chat` and
 `peers-chat-high-chat` are clean and synchronized to the same commit/tree.
+CA-W6 resumes under Development Workflow function-first ordering: after
+exact-source deployment, the W8A submitted-command entrypoint and W8B Native
+typing runner each execute first as one bounded product-functional journey.
+Their formal validators and catalog Gates run only after the corresponding
+journey reaches `FUNCTIONAL_PASS`; a first actionable failure returns to the
+owning implementation and focused checks rather than starting a broader
+Acceptance matrix.
 Profiles `chat-native-four` and `chat-native-five` are healthy at build
 `1db3461b354a`, but the accepted Local Development Control Plane now rejects
 their next deployment because the corresponding definitions in the external

@@ -5714,6 +5714,21 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   command also failed. The fixture now accepts that terminal shape only under
   the existing no-projection/no-active-replacement fences; its focused Rust
   regression passes.
+- The continuation follows Development Workflow function-first ordering. After
+  exact-source deployment, run only
+  `tooling.acceptance.gates.chat.native_submitted_command_recovery_entry` as
+  the bounded W8A Native functional journey. Run its formal validator and
+  catalog Gate only after that journey reaches `FUNCTIONAL_PASS`. Apply the
+  same split to W8B: run `tooling.acceptance.gates.chat.native_typing_runner`
+  as the bounded Direct/Group functional journey first, and invoke the formal
+  `chat-native-typing-e2e` Gate only after the product journey passes. Any
+  first actionable failure returns to owner-layer implementation and focused
+  checks; it does not trigger a broad Acceptance matrix.
+- Current-source focused preflight found and corrected one stale static
+  assertion that rejected the production-safe
+  `cfg(any(test, feature = "acceptance-webdriver"))` boundary. The focused
+  assertion and the 97-test Native Chat contract suite pass; this is
+  `SOURCE_CHECK`, not runtime proof.
 - Final exact-source redeployment is currently blocked by the Local Development
   Control Plane: the external `env` repository contains
   `peers-touch/chat-native-four` and `peers-touch/chat-native-five`, but those
