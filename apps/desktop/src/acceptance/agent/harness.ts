@@ -13548,16 +13548,88 @@ async function runFoundationInterruptedScenario(input: {
   const sourceReadback = await foundationConversationReadback(
     handoff.conversationId,
   );
-  const sourceAssistant = [...sourceReadback.messages].reverse().find(
+  const sourceAssistants = sourceReadback.messages.filter(
     (message) =>
       message.role === 'assistant' && message.turnId === handoff.turnId,
   );
+  const sourceAssistant = sourceAssistants[sourceAssistants.length - 1];
+  // #region debug-point V-W:interrupted-message-readback
+  await reportFoundationF06TerminalRaceDebug(
+    'V-W',
+    'interrupted-message-readback',
+    {
+      platform: input.platform,
+      locale: input.locale,
+      scenarioKey: input.scenarioKey,
+      conversationStatus: String(sourceReadback.conversation.status ?? ''),
+      messageCount: sourceReadback.messages.length,
+      matchingAssistantCount: sourceAssistants.length,
+      selectedAssistantPresent: sourceAssistant !== undefined,
+      selectedAssistantStatus: sourceAssistant?.status ?? null,
+      selectedAssistantErrorJsonPresent:
+        Boolean(String(sourceAssistant?.errorJson ?? '').trim()),
+      selectedAssistantErrorJsonLength:
+        String(sourceAssistant?.errorJson ?? '').length,
+      matchingAssistantShapes: sourceAssistants.map((message) => ({
+        status: message.status,
+        seq: message.seq,
+        errorJsonPresent: Boolean(String(message.errorJson ?? '').trim()),
+        errorJsonLength: String(message.errorJson ?? '').length,
+      })),
+    },
+  );
+  // #endregion
   if (!sourceAssistant) {
     throw new Error('agent.acceptance.foundationInterruptedMessageMissing');
   }
-  const persistedOutcome = projectAgentTypedErrorPayload(
-    JSON.parse(String(sourceAssistant.errorJson || '{}')),
+  const persistedOutcomeCandidate = JSON.parse(
+    String(sourceAssistant.errorJson || '{}'),
   );
+  const persistedOutcome = projectAgentTypedErrorPayload(
+    persistedOutcomeCandidate,
+  );
+  const persistedOutcomeRecord = (
+    persistedOutcomeCandidate
+    && typeof persistedOutcomeCandidate === 'object'
+    && !Array.isArray(persistedOutcomeCandidate)
+  )
+    ? persistedOutcomeCandidate as Record<string, unknown>
+    : {};
+  const persistedOutcomeDetails = (
+    persistedOutcomeRecord.details
+    && typeof persistedOutcomeRecord.details === 'object'
+    && !Array.isArray(persistedOutcomeRecord.details)
+  )
+    ? persistedOutcomeRecord.details as Record<string, unknown>
+    : {};
+  // #region debug-point X-Y:interrupted-outcome-projection
+  await reportFoundationF06TerminalRaceDebug(
+    'X-Y',
+    'interrupted-outcome-projection',
+    {
+      platform: input.platform,
+      locale: input.locale,
+      scenarioKey: input.scenarioKey,
+      candidateType: Array.isArray(persistedOutcomeCandidate)
+        ? 'array'
+        : typeof persistedOutcomeCandidate,
+      candidateKeys: Object.keys(persistedOutcomeRecord).sort(),
+      detailsKeys: Object.keys(persistedOutcomeDetails).sort(),
+      errorTypeType: typeof (
+        persistedOutcomeRecord.error_type
+        ?? persistedOutcomeRecord.errorType
+        ?? persistedOutcomeRecord.error_code
+      ),
+      localeKeyType: typeof (
+        persistedOutcomeRecord.locale_key
+        ?? persistedOutcomeRecord.localeKey
+      ),
+      retryableType: typeof persistedOutcomeRecord.retryable,
+      terminalType: typeof persistedOutcomeRecord.terminal,
+      persistedOutcomePresent: persistedOutcome !== undefined,
+    },
+  );
+  // #endregion
   if (!persistedOutcome) {
     throw new Error(
       'agent.acceptance.foundationInterruptedPersistedOutcomeMissing',

@@ -164,3 +164,44 @@ the explicit client restart. Browser continues proving its native persistence
 path. The imported object is scope-checked and strict-parser validated, is not
 published as product evidence, and cannot replace Station snapshot, cursor
 replay, or receiver assertions.
+
+## Iteration 4: Interrupted Persisted Outcome Readback
+
+Exact-source C08 run
+`20260912T234312907224Z-d1244d088d9980940826c8f449985217`
+on `7e148f83bd7b90805d95cb3b3bbbec2e18bdb01e` completed
+`DONE / PROVEN`. The same-source Foundation run
+`20260912T234615828770Z-2f4a011183adcc54ad3a57d694361c27`
+proved all AS-F06 and both `BASE-CONTEXT_OVERFLOW` locale tuples, then failed
+first at Browser English `BASE-INTERRUPTED` with
+`agent.acceptance.foundationInterruptedPersistedOutcomeMissing`.
+Provisioner cleanup completed `DONE / PROVEN / passed`.
+
+Read-only PostgreSQL inspection after cleanup shows the two latest
+`station_restart_interrupted` Turns each have one Assistant Message with
+`status=interrupted` and a non-empty 276-byte `error_json`. The persisted JSON
+contains the accepted `LIFECYCLE_INTERRUPTED`,
+`agent.errors.lifecycleInterrupted`, retryable/terminal flags, and string
+`turn_id`/`reason_code` details. Station startup logs also record one reclaimed
+interrupted Chat step for each restart.
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| V | Browser Conversation readback omits or transforms the persisted `error_json` even though Station storage contains it. | High | Low | Selected Assistant Message is interrupted but `errorJson` is absent, empty, or has an unexpected runtime type. |
+| W | The Harness selects a different Assistant Message for the same Turn. | Medium | Low | Multiple matching Assistant Messages exist and the selected final candidate lacks the persisted outcome. |
+| X | The response contains the typed payload but the strict projector rejects its shape. | Medium | Low | Parsed keys are present while `persistedOutcomePresent=false`; field types or detail keys identify the mismatch. |
+| Y | The failure is an early readback race before startup recovery commits the interrupted Message outcome. | Low | Medium | First readback reports pending/missing outcome while later readback or Station storage reports interrupted/present. |
+| Z | The provider completes after the client fault boundary but before Station restart takes ownership, so restart recovery has no running Turn to interrupt. | High | Low | The selected Assistant Message is `completed` with no error JSON, and Station logs have no reclaimed interrupted step at this tuple's restart. |
+
+The next instrumentation records only Conversation status, message counts,
+message status, error JSON presence/length/runtime type, parsed key names,
+typed-field runtime types, detail key names, and projector acceptance. It does
+not record message content, raw error payload values, actor identity,
+credentials, or provider data.
+
+The failed run's Station logs record interrupted-step reclamation during the
+earlier AS-F06 restart window but none during the later `BASE-INTERRUPTED`
+window. Recent read-only database grouping shows valid 276-byte typed outcomes
+for actually interrupted Turns and completed Assistant Messages without
+`error_json` for later Turns. This raises Z but does not identify the Harness
+Turn without the bounded readback-shape instrumentation.
