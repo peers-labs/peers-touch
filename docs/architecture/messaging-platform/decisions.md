@@ -1,8 +1,8 @@
 # Messaging Platform — 设计决策
 
 > **Status**: active
-> **Version**: v1.4
-> **Created**: 2026-08-08 | **Updated**: 2026-09-06
+> **Version**: v1.5
+> **Created**: 2026-08-08 | **Updated**: 2026-09-13
 > **Owner**: Messaging Platform Team
 
 ---
@@ -41,6 +41,8 @@
 | MP-D28 | 采用行业基线：pending retry + accepted 后留痕 retract | accepted |
 | MP-D29 | Home Station 使用 authority-signed follower membership projection | accepted |
 | MP-D30 | Conversation DDD 与 Device Messaging Engine 分离 | accepted |
+| MP-D31 | Submitted command 通过 canonical existing truth 收敛 | accepted |
+| MP-D32 | 跨 Station typing 使用 Authority-mediated ephemeral Federation | accepted |
 
 `MP-D29` remains accepted historical design evidence under the Conversation
 owner. Its implementation and proof are governed only by the active CA-HC plan,
@@ -286,6 +288,122 @@ Command response 只更新 durable command submission state，不改变 authorit
 ### Acceptance
 
 Owner accepted on 2026-08-09.
+
+## MP-D31: Submitted Command 通过 Canonical Existing Truth 收敛
+
+**Status**: accepted
+**Date**: 2026-09-13
+
+### Context
+
+Native evidence proved that a command can remain locally `submitted` after its HTTP
+response or `COMMAND_RESULT` Device Inbox item is lost. Blind replay is unsafe while
+the Home Station still owns a durable remote-authority attempt, but treating the
+outcome as terminally unknown conflicts with AO-D07, Federated IM D-17, and MP-D28.
+
+### Decision
+
+Conversation exposes one authenticated, bounded batch result read for at most 64
+`(conversation_id, command_id, command_sha256)` references. The Home Station resolves
+each reference from canonical state only:
+
+- local authority `conversation_command_receipts`;
+- addressed `COMMAND_RESULT` Device Inbox items;
+- the existing Federation authority-command outbox;
+- otherwise `NOT_FOUND`.
+
+The result state is one of `HOME_PENDING`, `ACCEPTED`, `TERMINAL_REJECTED`, or
+`NOT_FOUND`. `HOME_PENDING` remains owned by the Home durable worker. `NOT_FOUND`
+permits only the same exact command bytes, command ID, ciphertext, hash, and actor
+signature to return to `retry_wait`. Accepted readback settles local command, outbox,
+attempt, and logical-intent state but cannot advance the authority head or Device
+Inbox cursor; the ordered public event remains the only committed-projection input.
+
+No proposal-specific result table or retired proposal polling route is restored.
+
+### Rationale
+
+The existing receipt, Federation outbox, and Device Inbox rows already express every
+authoritative outcome. Reading those rows closes the recovery gap without creating a
+second truth owner or inventing a synthetic lane sequence.
+
+### Alternatives Considered
+
+- Terminal unknown-outcome UI state: rejected; accepted architecture requires
+  authoritative recovery and exact replay.
+- Blind replay of every submitted command: rejected; it races the Home durable worker.
+- Restore the retired proposal result store/route: rejected; it creates split truth.
+- Apply readback as a synthetic Inbox item: rejected; no legitimate lane sequence or
+  consumer epoch exists.
+
+### Consequences
+
+- Model, Station, and Device Messaging Engine gain one bounded reconciliation
+  contract and lifecycle worker.
+- Result readback and committed event delivery remain intentionally separate.
+- Hash or endpoint conflict is an integrity failure and leaves local state unchanged.
+
+Owner accepted on 2026-09-13 by directing implementation of the reviewed MP-D31/MP-D32
+package.
+
+## MP-D32: 跨 Station Typing 使用 Authority-Mediated Ephemeral Federation
+
+**Status**: accepted
+**Date**: 2026-09-13
+
+### Context
+
+Conversation currently validates typing membership but publishes only to its
+process-local Event Bus. A receiver on another Home Station therefore sees no typing
+state. MP-D27 requires authenticated, bounded, best-effort fan-out outside every
+durable message lane, while Conversation Authority is the only current-membership
+truth.
+
+### Decision
+
+Register `CONVERSATION_TYPING` as a typed payload in the existing signed
+`FederatedDomainFrame`. QoS is selected by the receiver registry from payload kind,
+never by a sender-controlled field:
+
+- durable payload kinds retain Federation outbox/inbox and retry;
+- `CONVERSATION_TYPING` verifies signature, route, expiry, and bounded admission,
+  dispatches directly to a typed receiver, and writes no Federation outbox/inbox row.
+
+Typing is authority-mediated. The sender Home submits an `AUTHORITY_ADMISSION` signal
+to the current Conversation Authority. The Authority validates the sender endpoint,
+membership, generation, and expiry, groups active recipients by verified Home
+Station, and emits one `HOME_FANOUT` signal per recipient Home. Same-Station delivery
+uses the same typed receiver through a local adapter. Recipient Homes revalidate
+source, target, authority, recipient, generation, and expiry before publishing to the
+process-local Event Bus.
+
+The signal binds federation, conversation, authority Station and epoch, sender
+endpoint and Home Station, pulse generation, expiry, typing state, phase, and bounded
+recipient PTIDs. It uses `ordering_sequence=0`; receiver deduplication and TTL state
+are bounded in memory.
+
+### Rationale
+
+Authority-mediated fan-out preserves one membership owner. Direct Home-to-Home
+fan-out would let stale follower membership decide recipients and would create a
+second authorization truth.
+
+### Alternatives Considered
+
+- Durable short-lived typing frames: rejected; they consume durable capacity and
+  replay stale presence.
+- Direct Home-to-Home fan-out: rejected; follower membership may be stale.
+- A Conversation-specific peer transport: rejected; Federation already owns Station
+  authentication and routing.
+
+### Consequences
+
+- A sender whose Home is not Authority incurs one additional Station hop.
+- Remote failure may drop typing while durable Chat remains unaffected.
+- A lost stop pulse is cleared by receiver TTL; no retry or recovery record exists.
+
+Owner accepted on 2026-09-13 by directing implementation of the reviewed MP-D31/MP-D32
+package.
 
 ## MP-D30: Conversation API 与 Device Messaging Delivery Plane 分离
 

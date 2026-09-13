@@ -12,11 +12,12 @@
 //	                         through to the network path.
 //
 //	Upsert(ctx, in)        - writes a verified envelope back into the
-//	                         touch_actor row keyed by FederatedHandle.
-//	                         Idempotent — repeated upserts of identical
-//	                         envelopes are no-ops; older-seq envelopes
-//	                         are rejected so a buggy caller cannot
-//	                         silently downgrade the cache.
+//	                         touch_actor row resolved by canonical PTID
+//	                         and FederatedHandle. Historical handle drift
+//	                         refreshes the same remote Actor row; conflicting
+//	                         rows fail closed. Repeated identical upserts are
+//	                         idempotent, and older locator sequences cannot
+//	                         downgrade the cache.
 //
 // The package deliberately exposes a tiny surface. It does NOT verify
 // signatures (that is fedprofile.Verify's job upstream) or perform DHT

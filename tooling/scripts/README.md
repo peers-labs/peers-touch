@@ -48,8 +48,11 @@ export VITE_PORT=3000
 | `proto-gen-mobile.sh` | 可用 | 生成 Mobile proto 产物 | 支持 `kotlin` / `swift` / `web` / `all`；`web` 通过临时目录生成，只替换真实变化并统一新文件/变化文件的 EOF |
 | `verify-worktree-binding.py` | 推荐 | capture/verify 当前执行 worktree 的 fail-closed identity | 校验 canonical root、branch、`workspaceId`、expected HEAD 与 worktree-set digest；必须从被绑定 root 运行 |
 | `verify-worktree-binding-test.py` | 可用 | 回归验证 worktree identity guard 与 Goal 队列契约 | 覆盖 wrong cwd、detached HEAD、identity drift、持久 schema、synthetic worktree-set digest 变化，以及 Ready/Parked queue 与 exhaustion-proof 阻塞语义；不创建真实 worktree |
-| `tooling/devctl/checks.mjs` | 推荐 | 校验双端社交 wire 与 Runtime 边界 | 由 Desktop/Mobile package scripts 调用，不依赖 Bash |
-| `check-frontend-runtime-registry.mjs` | 推荐 | 校验 Frontend Runtime registry 门禁 | 检查必填字段、枚举和 evidence，并支持 review diff-range warning |
+| `local-dev/environment-creation-authorization.py` | 内部依赖 | 管理 human-only environment creation grant | `make profile-authorize` 交互创建 30 分钟 exact-tuple grant；`profile-init` 单次消费并保留 profile digest receipt；Agent 不得创建 grant |
+| `check-social-runtime-boundaries.sh` | 可用 | 校验双端社交 Runtime 边界 | 禁止页面/组件直接拥有社交实时流、reconcile、长期 freshness |
+| `check-frontend-runtime-registry.sh` | 可用 | 校验 Frontend Runtime registry 门禁 | 检查 registry 必填字段、alive/status 枚举、evidence、`needs audit` owner/revisit wording，并支持 review diff-range warning |
+| `apps/mobile/scripts/check-social-wire-contract.sh` | 可用 | 校验 Mobile 社交实时协议契约 | 禁止回退到手写 protobuf wire decoder |
+| `apps/desktop/scripts/check-social-wire-contract.sh` | 可用 | 校验 Desktop 社交实时协议契约 | 禁止回退到手写 protobuf wire decoder |
 | `review/run.sh` | 推荐 | 运行 Code Review Framework 门禁 | 统一调用变更路由、硬规则、知识库匹配、Review Skill 保鲜检查；也可通过 `make review` 使用 |
 | `review/route-change.sh` | 推荐 | 将 git diff 映射到 Review profiles | 输出每类变更需要关注的规则和验证命令 |
 | `review/hard-rules.sh` | 推荐 | 自动拦截 Review 铁律违规 | 检查 debug 语句、泄密、生成物手改、mock API、硬编码 UI 文案、静默吞错；无 Proto diff 时仅允许与隔离目录内 canonical Mobile Web regeneration 完全一致的生成物变更 |
@@ -65,10 +68,6 @@ export VITE_PORT=3000
 | `acceptance-infra-boundary-test.py` | 推荐 | 校验 Acceptance Infra / 业务注入责任防火墙、Agent 开发手册路由和 Quality Evidence direction 隔离 | 由 `acceptance-runtime-provisioning-self` Gate 调用 |
 | `acceptance-coverage-report.py` | 推荐 | 从当前 workspace 的 durable latest manifests 汇总项目产品域接入状态；校验 proof/redaction/artifact identity，跨平台 Gate 只接受完整 runtime-cell matrix | 通过 `make acceptance-coverage-report` 调用；回归测试为 `acceptance-coverage-report-test.py` |
 | `acceptance-capability-report.py` | 推荐 | 汇总 feature contract、capability graph、mutual validation 与 gate 结果，产出产品能力验收报告 | 通过 `make acceptance-federation-report` 调用 |
-| `agent-lobehub-parity-evidence-chain-gate.py` | 可用 | 校验 Agent LobeHub parity 账本、原型 pending-review 状态和 PLAN-P5 fail-closed 入口控制 | 通过 `python3 tooling/scripts/agent-lobehub-parity-evidence-chain-gate.py` 调用；只证明 evidence-chain 自洽，不确认原型、不创建 EVID-012、不证明 GATE-008 |
-| `agent-lobehub-parity-evidence-chain-gate-test.py` | 可用 | 回归验证 Agent LobeHub parity evidence-chain gate 的 fail-closed 判定 | 通过 `python3 tooling/scripts/agent-lobehub-parity-evidence-chain-gate-test.py` 调用 |
-| `agent-lobehub-owner-review-readiness-gate.py` | 可用 | 校验 Agent LobeHub parity Owner review preparation 包是否完整：OR-001..OR-012、决策结果、输入材料、drafting/revision-required 或 pending-review fail-closed 状态，以及 PLAN-P5 blocked 边界 | 通过 `python3 tooling/scripts/agent-lobehub-owner-review-readiness-gate.py` 调用；只证明 Owner review preparation 一致性，不确认原型、不创建 EVID-012、不证明 GATE-008 |
-| `agent-lobehub-owner-review-readiness-gate-test.py` | 可用 | 回归验证 Agent LobeHub Owner review preparation gate 的缺场景、真实确认行、EVID-012 前置失败判定 | 通过 `python3 tooling/scripts/agent-lobehub-owner-review-readiness-gate-test.py` 调用 |
 | `tooling/acceptance/gates/federation/surface_smoke.py` | 可用 | agent 主动验收 Federation app surface：Station 健康、Dashboard Federation bundle、Desktop gateway Station 绑定 | 通过 `make federation-surface-smoke` 调用 |
 | `tooling/acceptance/gates/dashboard/federation_visible_surface.py` | 可用 | Headless Chrome 可见面验收 Dashboard；自动读取本地 `.localenv` 的 admin 环境变量，缺凭据时验收 login gate | 通过 `make federation-dashboard-visible-surface` 调用 |
 | `tooling/acceptance/gates/dashboard/federation_operational_drilldown.py` | 可用 | 验证 Dashboard Federation operations API 与 sync/recovery/discovery drilldown 可见面 | 通过 `make federation-dashboard-operational-drilldown` 调用 |

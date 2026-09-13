@@ -148,6 +148,21 @@ capabilities:
       - peers_touch.model.chat.v1.ConversationCommand
       - peers_touch.model.chat.v1.CommittedConversationEvent
 
+  - id: chat.command.results
+    domain_owner: station.conversation
+    truth_owner: conversation.authority
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/command/results }
+    request_proto: peers_touch.model.chat.v1.ResolveConversationCommandResultsRequest
+    response_proto: peers_touch.model.chat.v1.ResolveConversationCommandResultsResponse
+    truth_stores: [conversation_command_receipts]
+    allowed_dependencies:
+      - conversation.delivery.read
+      - federation.delivery.read
+    forbidden_aliases:
+      - { method: GET, path: /conversation/command-proposal/result }
+    superseded_symbols: []
+
   - id: chat.group.genesis.prepare
     domain_owner: station.conversation
     truth_owner: conversation.authority

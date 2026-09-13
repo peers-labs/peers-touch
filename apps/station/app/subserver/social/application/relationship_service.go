@@ -202,6 +202,7 @@ func (s *RelationshipService) GetFollowers(ctx context.Context, actorPTID string
 			FollowedAt:        timestamppb.New(follow.CreatedAt),
 			FederatedHandle:   federatedHandleOf(follow.Follower),
 			HomeStationDomain: homeStationDomainOf(follow.Follower),
+			HomeStationPeerId: homeStationPeerIDOf(follow.Follower),
 		}
 		followers = append(followers, follower)
 	}
@@ -274,6 +275,7 @@ func (s *RelationshipService) GetFollowing(ctx context.Context, actorPTID string
 			FollowedAt:        timestamppb.New(follow.CreatedAt),
 			FederatedHandle:   federatedHandleOf(follow.Following),
 			HomeStationDomain: homeStationDomainOf(follow.Following),
+			HomeStationPeerId: homeStationPeerIDOf(follow.Following),
 		}
 		logger.Info(ctx, "Following user", "actorPtid", f.ActorPtid, "username", f.Username, "displayName", f.DisplayName, "displayNameBytes", []byte(f.DisplayName))
 		following = append(following, f)
@@ -338,4 +340,13 @@ func homeStationDomainOf(a *db.Actor) string {
 		return ""
 	}
 	return a.HomeStationDomain
+}
+
+// homeStationPeerIDOf returns the authoritative Station routing identity.
+// Empty remains a valid projection for legacy rows pending backfill.
+func homeStationPeerIDOf(a *db.Actor) string {
+	if a == nil {
+		return ""
+	}
+	return a.HomeStationPeerID
 }

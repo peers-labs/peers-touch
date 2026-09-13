@@ -565,6 +565,39 @@ class EvidenceStoreTests(unittest.TestCase):
         self.assertEqual(persisted["result"]["reason"], REDACTED)
         run.close()
 
+    def test_finalize_preserves_valid_json_for_embedded_assignment_label(
+        self,
+    ) -> None:
+        blocked_resource = (
+            "fixture-authorization:env:CHAT_ACCEPTANCE_RESET"
+        )
+        run = self.store.begin_run(
+            "embedded-assignment-label-redaction",
+            source={},
+        )
+
+        manifest = run.finalize(
+            result={
+                "status": "blocked",
+                "completionStatus": "BLOCKED",
+                "proofStatus": "UNPROVEN",
+                "blockedResource": blocked_resource,
+            }
+        )
+
+        persisted_text = (
+            run.run_dir / "manifest.json"
+        ).read_text(encoding="utf-8")
+        persisted = json.loads(persisted_text)
+        self.assertEqual(
+            manifest["result"]["blockedResource"],
+            f"fixture-authorization:{REDACTED}",
+        )
+        self.assertEqual(persisted, manifest)
+        self.assertNotIn(blocked_resource, persisted_text)
+        self.assertNotIn("CHAT_ACCEPTANCE_RESET", persisted_text)
+        run.close()
+
     def test_runtime_cell_latest_pointers_are_isolated_and_protected(
         self,
     ) -> None:

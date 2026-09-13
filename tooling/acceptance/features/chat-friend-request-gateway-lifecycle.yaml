@@ -1,36 +1,44 @@
 {
   "id": "chat-friend-request-gateway-lifecycle",
-  "status": "pending",
-  "status_reason": "blocked by Station access-gate (/actor/access/start) support — gateway auth_login cannot complete",
+  "status": "active",
   "product_area": "chat",
   "owners": [
-    "apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs",
-    "apps/station/app/subserver/social/handler.go"
+    "apps/desktop/src-tauri/src/interface/tauri_commands/social.rs",
+    "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+    "apps/station/app/subserver/social/handler.go",
+    "apps/station/app/subserver/social/domain/federated_friend_request.go",
+    "apps/station/app/subserver/social/infrastructure/federated_friend_request_store.go",
+    "apps/station/frame/touch/actor/seed_dev_federation.go"
   ],
   "truth_sources": [
     "running Desktop HTTP gateway",
-    "running Station /api/v1/social/friend-request/* API"
+    "running Station /api/v1/social/friend-request/* API",
+    "running Station federation subserver"
   ],
   "visible_surfaces": [
-    {"type": "desktop-gateway", "command": "friend_chat_send_friend_request"},
-    {"type": "desktop-gateway", "command": "friend_chat_list_friend_requests"},
-    {"type": "desktop-gateway", "command": "friend_chat_accept_friend_request"},
-    {"type": "desktop-gateway", "command": "friend_chat_get_friendship_status"}
+    {"type": "desktop-gateway", "command": "social_friend_request_send"},
+    {"type": "desktop-gateway", "command": "social_friend_request_list"},
+    {"type": "desktop-gateway", "command": "social_friend_request_accept"},
+    {"type": "desktop-gateway", "command": "social_friend_request_reject"},
+    {"type": "desktop-gateway", "command": "social_get_relationship"},
+    {"type": "desktop-gateway", "command": "acceptance_friend_request_context"}
   ],
   "required_gates": ["chat-friend-request-gateway-e2e"],
   "acceptance": {
     "service": [
-      "actor A can send a friend request to actor B via Desktop gateway",
-      "actor B can list pending friend requests via Desktop gateway",
-      "actor B can accept a friend request via Desktop gateway",
-      "friendship status confirms the relationship is established"
+      "actor A can login and send a friend request to actor B via Desktop gateway",
+      "actor B can list pending friend requests and find A's request via Desktop gateway",
+      "actor B can accept a friend request from actor A via Desktop gateway",
+      "friendship status confirms the relationship is established after acceptance",
+      "federation must be available for friend request lifecycle to operate"
     ],
     "visible": [
-      "Desktop gateway friend-request commands prove the social friendship lifecycle through the BFF"
+      "Desktop gateway social_friend_request_* commands prove the friend-request lifecycle through the BFF and Station social API"
     ]
   },
   "negative": [
     "gateway-level friend-request proof must not be reported as DOM-level UI E2E",
-    "friend-request acceptance must not be reported as bidirectional chat session creation"
+    "friend-request acceptance must not be reported as bidirectional chat session creation",
+    "friend-request acceptance must not be reported as message delivery proof"
   ]
 }

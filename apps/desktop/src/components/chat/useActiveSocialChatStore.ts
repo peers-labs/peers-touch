@@ -1,11 +1,13 @@
 import { shallow } from 'zustand/shallow';
 import { usePageActiveStoreSelector } from '../../kernel/PageActivityContext';
 import { useFederationStore } from '../../store/federation';
+import { useRelationshipsStore } from '../../store/relationships';
 import { useSessionStore } from '../../store/session';
 import { useSettingsStore } from '../../store/settings';
 import { useSocialChatStore } from '../../store/socialChat';
 
 type FederationState = ReturnType<typeof useFederationStore.getState>;
+type RelationshipsState = ReturnType<typeof useRelationshipsStore.getState>;
 type SessionState = ReturnType<typeof useSessionStore.getState>;
 type SettingsState = ReturnType<typeof useSettingsStore.getState>;
 type SocialChatState = ReturnType<typeof useSocialChatStore.getState>;
@@ -25,6 +27,12 @@ export function useActiveSocialChatSlice<TSelected>(
 
 export function useActiveChatFederationSlice<TSelected>(selector: (state: FederationState) => TSelected): TSelected {
   return usePageActiveStoreSelector(useFederationStore, selector, shallow);
+}
+
+export function useActiveChatRelationshipsSlice<TSelected>(
+  selector: (state: RelationshipsState) => TSelected,
+): TSelected {
+  return usePageActiveStoreSelector(useRelationshipsStore, selector, shallow);
 }
 
 export function useActiveChatSessionSlice<TSelected>(selector: (state: SessionState) => TSelected): TSelected {

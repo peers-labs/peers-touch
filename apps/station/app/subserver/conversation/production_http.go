@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,8 +11,8 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
-	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
-	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
+	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
+	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
@@ -855,6 +856,23 @@ func (s *subServer) handleSubmitTyping(
 		return nil, err
 	}
 	response, err := s.composition.InteractionHandler.SubmitTyping(
+		ctx,
+		authenticated,
+		request,
+	)
+
+	return response, mapProductionConversationError(ctx, err)
+}
+
+func (s *subServer) handleResolveCommandResults(
+	ctx context.Context,
+	request *chatmodel.ResolveConversationCommandResultsRequest,
+) (*chatmodel.ResolveConversationCommandResultsResponse, error) {
+	authenticated, _, err := authenticatedConversationActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.composition.CommandResultHandler.Resolve(
 		ctx,
 		authenticated,
 		request,
@@ -2052,64 +2070,94 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 
 		return server.Forbidden("Conversation policy rejected the request")
 	}
-	switch delivery.CodeOf(err) {
-	case delivery.ErrorCodeInvalidArgument,
-		delivery.ErrorCodePayloadHashMismatch:
-		return server.BadRequestWithCause("invalid Device Inbox request", err)
-	case delivery.ErrorCodeUnauthorized,
-		delivery.ErrorCodeItemOwnerMismatch:
-		return server.NewHandlerErrorWithCause(
+	deliveryCode := deliveryapp.CodeOf(err)
+	switch deliveryCode {
+	case deliveryapp.ErrorCodeInvalidArgument:
+		return productionDeviceInboxHandlerError(
+			http.StatusBadRequest,
+			"invalid Device Inbox request",
+			deliveryCode,
+			err,
+		)
+	case deliveryapp.ErrorCodeUnauthorized:
+		return productionDeviceInboxHandlerError(
 			http.StatusForbidden,
 			"Device Inbox operation is not authorized",
+			deliveryCode,
 			err,
 		)
-	case delivery.ErrorCodeItemNotFound:
-		return server.NewHandlerErrorWithCause(
+	case deliveryapp.ErrorCodeItemNotFound:
+		return productionDeviceInboxHandlerError(
 			http.StatusNotFound,
 			"Device Inbox item was not found",
+			deliveryCode,
 			err,
 		)
-	case delivery.ErrorCodeConsumerFenced,
-		delivery.ErrorCodeItemNotHead,
-		delivery.ErrorCodeItemNotClaimed,
-		delivery.ErrorCodeIdempotencyConflict,
-		delivery.ErrorCodeLeaseExpired:
-		return server.NewHandlerErrorWithCause(
+	case deliveryapp.ErrorCodeConsumerFenced,
+		deliveryapp.ErrorCodeItemOwnerMismatch,
+		deliveryapp.ErrorCodeItemNotHead,
+		deliveryapp.ErrorCodeItemNotClaimed,
+		deliveryapp.ErrorCodePayloadHashMismatch,
+		deliveryapp.ErrorCodeIdempotencyConflict,
+		deliveryapp.ErrorCodeLeaseExpired:
+		return productionDeviceInboxHandlerError(
 			http.StatusConflict,
 			"Device Inbox state conflicts with the request",
+			deliveryCode,
 			err,
 		)
-	case delivery.ErrorCodeQuotaExceeded:
-		return server.NewHandlerErrorWithCause(
+	case deliveryapp.ErrorCodeQuotaExceeded:
+		return productionDeviceInboxHandlerError(
 			http.StatusTooManyRequests,
 			"Device Inbox quota exceeded",
+			deliveryCode,
+			err,
+		)
+	case deliveryapp.ErrorCodePersistence:
+		return productionDeviceInboxHandlerError(
+			http.StatusServiceUnavailable,
+			"Device Inbox persistence is unavailable",
+			deliveryCode,
 			err,
 		)
 	}
-	switch interaction.CodeOf(err) {
-	case interaction.ErrorCodeInvalidArgument,
-		interaction.ErrorCodeIntegrityFailed:
-		return server.BadRequestWithCause(
+	interactionCode := interactionapp.CodeOf(err)
+	switch interactionCode {
+	case interactionapp.ErrorCodeInvalidArgument:
+		return productionInteractionHandlerError(
+			http.StatusBadRequest,
 			"invalid Conversation interaction request",
+			interactionCode,
 			err,
 		)
-	case interaction.ErrorCodeUnauthorized:
-		return server.NewHandlerErrorWithCause(
+	case interactionapp.ErrorCodeUnauthorized:
+		return productionInteractionHandlerError(
 			http.StatusForbidden,
 			"Conversation interaction is not authorized",
+			interactionCode,
 			err,
 		)
-	case interaction.ErrorCodeStalePulse,
-		interaction.ErrorCodeIdempotencyConflict:
-		return server.NewHandlerErrorWithCause(
+	case interactionapp.ErrorCodeStalePulse,
+		interactionapp.ErrorCodeIdempotencyConflict,
+		interactionapp.ErrorCodeIntegrityFailed:
+		return productionInteractionHandlerError(
 			http.StatusConflict,
-			"Conversation interaction state conflicts with the request",
+			"Conversation interaction conflicts with committed state",
+			interactionCode,
 			err,
 		)
-	case interaction.ErrorCodeQuotaExceeded:
-		return server.NewHandlerErrorWithCause(
+	case interactionapp.ErrorCodeQuotaExceeded:
+		return productionInteractionHandlerError(
 			http.StatusTooManyRequests,
 			"Conversation interaction quota exceeded",
+			interactionCode,
+			err,
+		)
+	case interactionapp.ErrorCodePersistence:
+		return productionInteractionHandlerError(
+			http.StatusServiceUnavailable,
+			"Conversation interaction persistence is unavailable",
+			interactionCode,
 			err,
 		)
 	}
@@ -2118,17 +2166,24 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 	case conversationdomain.ErrorCodeInvalidArgument,
 		conversationdomain.ErrorCodeDeliverySetMismatch,
 		conversationdomain.ErrorCodeUnsupportedTransition:
-		return server.BadRequestWithCause("invalid Conversation request", err)
+		return productionConversationHandlerError(
+			http.StatusBadRequest,
+			"invalid Conversation request",
+			code,
+			err,
+		)
 	case conversationdomain.ErrorCodeUnauthorized:
-		return server.NewHandlerErrorWithCause(
+		return productionConversationHandlerError(
 			http.StatusForbidden,
 			"Conversation operation is not authorized",
+			code,
 			err,
 		)
 	case conversationdomain.ErrorCodeNotFound:
-		return server.NewHandlerErrorWithCause(
+		return productionConversationHandlerError(
 			http.StatusNotFound,
 			"Conversation was not found",
+			code,
 			err,
 		)
 	case conversationdomain.ErrorCodeCommandConflict,
@@ -2149,15 +2204,17 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 		conversationdomain.ErrorCodeFederationInactive,
 		conversationdomain.ErrorCodeInactive,
 		conversationdomain.ErrorCodeReadOnly:
-		return server.NewHandlerErrorWithCause(
+		return productionConversationHandlerError(
 			http.StatusConflict,
 			"Conversation state conflicts with the request",
+			code,
 			err,
 		)
 	case conversationdomain.ErrorCodeActorKeyUnavailable:
-		return server.NewHandlerErrorWithCause(
+		return productionConversationHandlerError(
 			http.StatusServiceUnavailable,
 			"Conversation identity dependency is unavailable",
+			code,
 			err,
 		)
 	default:
@@ -2165,4 +2222,76 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 
 		return server.InternalErrorWithCause("Conversation operation failed", err)
 	}
+}
+
+func productionDeviceInboxHandlerError(
+	status int,
+	message string,
+	code deliveryapp.ErrorCode,
+	err error,
+) *server.HandlerError {
+	handlerError := server.NewHandlerErrorWithCause(status, message, err)
+	handlerError.Headers = map[string]string{
+		"X-Peers-Error-Code": string(code),
+	}
+	var typed *deliveryapp.Error
+	if errors.As(err, &typed) {
+		details, encodeErr := json.Marshal(map[string]string{
+			"operation": typed.Operation,
+			"field":     typed.Field,
+			"reason":    typed.Message,
+		})
+		if encodeErr == nil && len(details) <= 4096 {
+			handlerError.Headers["X-Peers-Error-Details"] = string(details)
+		}
+	}
+	return handlerError
+}
+
+func productionInteractionHandlerError(
+	status int,
+	message string,
+	code interactionapp.ErrorCode,
+	err error,
+) *server.HandlerError {
+	handlerError := server.NewHandlerErrorWithCause(status, message, err)
+	handlerError.Headers = map[string]string{
+		"X-Peers-Error-Code": string(code),
+	}
+	var typed *interactionapp.Error
+	if errors.As(err, &typed) {
+		details, encodeErr := json.Marshal(map[string]string{
+			"operation": typed.Operation,
+			"field":     typed.Field,
+			"reason":    typed.Message,
+		})
+		if encodeErr == nil && len(details) <= 4096 {
+			handlerError.Headers["X-Peers-Error-Details"] = string(details)
+		}
+	}
+	return handlerError
+}
+
+func productionConversationHandlerError(
+	status int,
+	message string,
+	code conversationdomain.ErrorCode,
+	err error,
+) *server.HandlerError {
+	handlerError := server.NewHandlerErrorWithCause(status, message, err)
+	handlerError.Headers = map[string]string{
+		"X-Peers-Error-Code": string(code),
+	}
+	var typed *conversationdomain.Error
+	if errors.As(err, &typed) {
+		details, encodeErr := json.Marshal(map[string]string{
+			"operation": typed.Operation,
+			"field":     typed.Field,
+			"reason":    typed.Message,
+		})
+		if encodeErr == nil && len(details) <= 4096 {
+			handlerError.Headers["X-Peers-Error-Details"] = string(details)
+		}
+	}
+	return handlerError
 }

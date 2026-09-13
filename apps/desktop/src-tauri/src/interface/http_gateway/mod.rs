@@ -9,11 +9,13 @@
 // 2026-04-09: Initial creation. Full 1:1 mapping of all 237 tauri commands.
 
 use std::io::{self, Read};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 use x25519_dalek::{PublicKey, StaticSecret};
 
@@ -74,6 +76,35 @@ use ulid::Ulid;
 const DEFAULT_PORT: u16 = 3030;
 const POOL_SIZE: usize = 8;
 const MAX_FRONTEND_TELEMETRY_BATCH_EVENTS: usize = 500;
+static IDENTITY_TRANSITION_WAITERS: AtomicUsize = AtomicUsize::new(0);
+static IDENTITY_TRANSITION_MAX_WAITERS: AtomicUsize = AtomicUsize::new(0);
+
+struct IdentityTransitionAttempt;
+
+impl IdentityTransitionAttempt {
+    fn enter() -> Self {
+        let waiters = IDENTITY_TRANSITION_WAITERS.fetch_add(1, Ordering::SeqCst) + 1;
+        let mut observed = IDENTITY_TRANSITION_MAX_WAITERS.load(Ordering::SeqCst);
+        while waiters > observed {
+            match IDENTITY_TRANSITION_MAX_WAITERS.compare_exchange(
+                observed,
+                waiters,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => break,
+                Err(actual) => observed = actual,
+            }
+        }
+        Self
+    }
+}
+
+impl Drop for IdentityTransitionAttempt {
+    fn drop(&mut self) {
+        IDENTITY_TRANSITION_WAITERS.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 
 struct GatewayRequestDiagnostics {
     active_workers_at_enqueue: usize,
@@ -1244,6 +1275,36 @@ fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
     })
 }
 
+fn friend_request_projection(request: &model::social::SocialFriendRequest) -> Value {
+    json!({
+        "request_id": request.request_id.as_str(),
+        "sender_ptid": request
+            .sender
+            .as_ref()
+            .map(|actor| actor.ptid.as_str())
+            .unwrap_or_default(),
+        "receiver_ptid": request
+            .receiver
+            .as_ref()
+            .map(|actor| actor.ptid.as_str())
+            .unwrap_or_default(),
+        "state": request.state,
+        "federation_id": request.federation_id.as_str(),
+        "sender_home_station_peer_id":
+            request.sender_home_station_peer_id.as_str(),
+        "receiver_home_station_peer_id":
+            request.receiver_home_station_peer_id.as_str(),
+    })
+}
+
+fn relationship_projection(relationship: &model::social::Relationship) -> Value {
+    json!({
+        "target_actor_ptid": relationship.target_actor_ptid.as_str(),
+        "following": relationship.following,
+        "followed_by": relationship.followed_by,
+    })
+}
+
 fn extract_latest_ulid(payload: &Value) -> Option<String> {
     payload
         .get("messages")?
@@ -2347,25 +2408,168 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(app_auth::auth_validate_token(input, state))
         }
         "acceptance_current_session" => {
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
+            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
             };
-            let actor_ptid = match actor_ptid_from_state(state) {
-                Some(id) if !id.trim().is_empty() => id,
-                Some(_) | None => {
-                    return to_json(AppResult::<StubPayload>::fail(
-                        ErrorCode::Unauthorized,
-                        "authentication required",
-                        None,
-                    ));
-                }
-            };
+            let messaging_profile_matches = state
+                .messaging_engines
+                .profile_worker_token(&account_id)
+                .map(|worker_token| worker_token.as_deref() == Some(token.as_str()))
+                .unwrap_or(false);
             to_json(to_stub(
                 "acceptance_current_session",
                 json!({
                     "actor_ptid": actor_ptid,
-                    "token": token,
+                    "token_fingerprint": hex::encode(Sha256::digest(token.as_bytes())),
+                    "account_id": account_id,
+                    "messaging_profile_matches": messaging_profile_matches,
+                }),
+            ))
+        }
+        "acceptance_identity_transition_metrics" => {
+            if args.get("reset").and_then(Value::as_bool).unwrap_or(false) {
+                IDENTITY_TRANSITION_MAX_WAITERS.store(
+                    IDENTITY_TRANSITION_WAITERS.load(Ordering::SeqCst),
+                    Ordering::SeqCst,
+                );
+            }
+            to_json(to_stub(
+                "acceptance_identity_transition_metrics",
+                json!({
+                    "current_waiters": IDENTITY_TRANSITION_WAITERS.load(Ordering::SeqCst),
+                    "max_waiters": IDENTITY_TRANSITION_MAX_WAITERS.load(Ordering::SeqCst),
+                }),
+            ))
+        }
+        "acceptance_federation_context" => {
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            let active_station_peer_id = match station_client::active_station_peer_id() {
+                Some(peer_id) => peer_id,
+                None => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        "active Station peer ID is unavailable",
+                        None,
+                    ))
+                }
+            };
+            match app_federation::list_federations(&token) {
+                Ok(view) => to_json(to_stub(
+                    "acceptance_federation_context",
+                    json!({
+                        "active_station_peer_id": active_station_peer_id,
+                        "federations": view
+                            .federations
+                            .iter()
+                            .map(|federation| json!({
+                                "federation_id": federation.federation_id,
+                                "name": federation.name,
+                                "status": federation.status,
+                            }))
+                            .collect::<Vec<_>>(),
+                    }),
+                )),
+                Err(error) => to_json(
+                    error.into_app_result::<StubPayload>("acceptance_federation_context failed"),
+                ),
+            }
+        }
+        "social_get_relationship" => {
+            let input = match parse_args::<SocialGetRelationshipInput>(args) {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            if input.target_actor_ptid.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "target_actor_ptid is required",
+                    None,
+                ));
+            }
+            let query = vec![("target_actor_ptid", input.target_actor_ptid)];
+            let response =
+                match station_client::request_proto::<(), model::social::GetRelationshipResponse>(
+                    Method::GET,
+                    "/api/v1/social/relationships",
+                    &token,
+                    Some(&query),
+                    None::<&()>,
+                ) {
+                    Ok(response) => response,
+                    Err(error) => {
+                        return to_json(error.into_app_result::<Vec<u8>>("get relationship failed"))
+                    }
+                };
+            to_json(AppResult::success(response.encode_to_vec()))
+        }
+        "acceptance_friend_request_context" => {
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            let target_actor_ptid = string_arg(&args, "target_actor_ptid", "targetActorPtid");
+            let pending_query = vec![
+                (
+                    "state",
+                    (model::social::FriendRequestState::Pending as i32).to_string(),
+                ),
+                ("limit", "200".to_string()),
+                ("offset", "0".to_string()),
+            ];
+            let pending =
+                match station_client::request_proto::<
+                    (),
+                    model::social::ListSocialFriendRequestsResponse,
+                >(
+                    Method::GET,
+                    "/api/v1/social/friend-requests",
+                    &token,
+                    Some(&pending_query),
+                    None::<&()>,
+                ) {
+                    Ok(response) => response,
+                    Err(error) => {
+                        return to_json(error.into_app_result::<StubPayload>(
+                            "acceptance friend-request list failed",
+                        ))
+                    }
+                };
+            let relationship = if target_actor_ptid.is_empty() {
+                None
+            } else {
+                let query = vec![("target_actor_ptid", target_actor_ptid)];
+                match station_client::request_proto::<(), model::social::GetRelationshipResponse>(
+                    Method::GET,
+                    "/api/v1/social/relationships",
+                    &token,
+                    Some(&query),
+                    None::<&()>,
+                ) {
+                    Ok(response) => response.relationship.as_ref().map(relationship_projection),
+                    Err(error) => {
+                        return to_json(error.into_app_result::<StubPayload>(
+                            "acceptance relationship readback failed",
+                        ))
+                    }
+                }
+            };
+            to_json(to_stub(
+                "acceptance_friend_request_context",
+                json!({
+                    "pending_requests": pending
+                        .requests
+                        .iter()
+                        .map(friend_request_projection)
+                        .collect::<Vec<_>>(),
+                    "relationship": relationship,
                 }),
             ))
         }
@@ -4768,41 +4972,163 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "account_switch" => {
+            let acceptance_hold_ms = args
+                .get("acceptance_hold_ms")
+                .and_then(Value::as_u64)
+                .unwrap_or_default()
+                .min(1_000);
+            #[cfg(feature = "acceptance-webdriver")]
+            let acceptance_fail_identity_commit = args
+                .get("acceptance_fail_identity_commit")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let input = match parse_args::<AccountIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let account_id = input.id.clone();
+            let _attempt = IdentityTransitionAttempt::enter();
+            let _transition = match state.identity_transition.lock() {
+                Ok(guard) => guard,
+                Err(_) => {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        "Failed to coordinate identity transition",
+                        None,
+                    ))
+                }
+            };
+            if acceptance_hold_ms > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(acceptance_hold_ms));
+            }
+            let previous_identity_state = match crate::infrastructure::auth_identity::read_state() {
+                Ok(identity_state) => identity_state,
+                Err(error) => {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        error,
+                        None,
+                    ))
+                }
+            };
+            let previous_session = gateway_session(state);
+            let prevalidated = match app_auth::prepare_account_switch_session(&input.id) {
+                Ok(prevalidated) => prevalidated,
+                Err(error) => return to_json(error),
+            };
+            let prepared = match app_auth::acquire_account_switch_session(prevalidated) {
+                Ok(prepared) => prepared,
+                Err(error) => return to_json(error),
+            };
+            if let Err(error) = app_auth::persist_prepared_account_switch_session(&prepared) {
+                return to_json(error);
+            }
+            #[cfg(feature = "acceptance-webdriver")]
+            if acceptance_fail_identity_commit {
+                return to_json(AppResult::<AuthSessionPayload>::fail(
+                    ErrorCode::InternalError,
+                    "Failed to commit authenticated identity",
+                    Some(json!({
+                        "command": "account_switch",
+                        "reason": "identity_commit_failed",
+                    })),
+                ));
+            }
+            let engine_existed = match state.messaging_engines.get(&prepared.account_id) {
+                Ok(engine) => engine.is_some(),
+                Err(error) => {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        error,
+                        None,
+                    ))
+                }
+            };
+            if let Err(error) = app_auth::prepare_messaging_profile(
+                state,
+                &prepared.account_id,
+                &prepared.actor_ptid,
+            ) {
+                return to_json(AppResult::<AuthSessionPayload>::fail(
+                    ErrorCode::InternalError,
+                    format!("Failed to prepare messaging identity: {error}"),
+                    None,
+                ));
+            }
             let switched = app_account::account_switch(input);
             if !switched.ok {
+                let _ = crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                if !engine_existed {
+                    let _ = app_auth::deactivate_messaging_profile(state, &prepared.account_id);
+                }
                 return to_json(switched);
             }
-            let restored = app_auth::auth_restore_session(state);
-            let Some(session) = restored.data else {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::Unauthorized,
-                    "selected account session is unavailable",
-                    None,
-                ));
+            let binding = match state.sessions.try_bind_exclusive(
+                crate::domain::identity::ActiveSession::new(
+                    HTTP_GATEWAY_SESSION_LABEL,
+                    prepared.account_id.clone(),
+                    crate::domain::identity::ActorRef::new_person(prepared.actor_ptid.clone()),
+                    prepared.token.clone(),
+                ),
+            ) {
+                Ok(binding) => binding,
+                Err(error) => {
+                    let _ =
+                        crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                    if !engine_existed {
+                        let _ = app_auth::deactivate_messaging_profile(state, &prepared.account_id);
+                    }
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to bind authenticated identity: {error}"),
+                        Some(json!({
+                            "command": "account_switch",
+                            "reason": "identity_commit_failed",
+                        })),
+                    ));
+                }
             };
-            let Some(actor_ptid) = session.actor_ptid else {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::Unauthorized,
-                    "selected account has no canonical actor PTID",
-                    None,
+            if let Err(error) = app_auth::activate_messaging_profile_worker(
+                state,
+                &prepared.account_id,
+                &prepared.token,
+            ) {
+                let _ = state.sessions.rollback_exclusive(binding);
+                let _ = crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                if !engine_existed {
+                    let _ = app_auth::deactivate_messaging_profile(state, &prepared.account_id);
+                }
+                return to_json(AppResult::<AuthSessionPayload>::fail(
+                    ErrorCode::InternalError,
+                    format!("Failed to activate messaging identity: {error}"),
+                    Some(json!({
+                        "command": "account_switch",
+                        "reason": "identity_commit_failed",
+                    })),
                 ));
-            };
-            let Some(token) = session.session_token else {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::Unauthorized,
-                    "selected account session token is unavailable",
-                    None,
-                ));
-            };
-            if let Err(error) = bind_gateway_session(state, account_id, actor_ptid, token) {
-                return error;
             }
-            to_json(switched)
+            if let Some(previous) = previous_session {
+                if previous.account_id != prepared.account_id {
+                    if let Err(error) =
+                        app_auth::deactivate_messaging_profile(state, &previous.account_id)
+                    {
+                        let _ = state.sessions.rollback_exclusive(binding);
+                        let _ = crate::infrastructure::auth_identity::write_state(
+                            &previous_identity_state,
+                        );
+                        let _ = app_auth::deactivate_messaging_profile(state, &prepared.account_id);
+                        return to_json(AppResult::<AuthSessionPayload>::fail(
+                            ErrorCode::InternalError,
+                            format!("Failed to detach previous messaging identity: {error}"),
+                            Some(json!({
+                                "command": "account_switch",
+                                "reason": "identity_commit_failed",
+                            })),
+                        ));
+                    }
+                }
+            }
+            let _ = binding.into_kicked();
+            to_json(AppResult::success(prepared.payload))
         }
         "account_upsert_oauth" => {
             let input = match parse_args::<AccountUpsertOAuthInput>(args) {
@@ -4828,6 +5154,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let input = match parse_args::<AccountUnlockInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
+            };
+            let _attempt = IdentityTransitionAttempt::enter();
+            let _transition = match state.identity_transition.lock() {
+                Ok(guard) => guard,
+                Err(_) => {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        "Failed to coordinate identity transition",
+                        None,
+                    ))
+                }
             };
             let result = app_account::account_unlock(input.clone());
             if !result.ok {
@@ -4865,24 +5202,115 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         None,
                     ));
                 };
+                let previous_identity_state =
+                    match crate::infrastructure::auth_identity::read_state() {
+                        Ok(identity_state) => identity_state,
+                        Err(error) => {
+                            return to_json(AppResult::<AuthSessionPayload>::fail(
+                                ErrorCode::InternalError,
+                                error,
+                                None,
+                            ))
+                        }
+                    };
+                let previous_session = gateway_session(state);
+                let engine_existed = match state.messaging_engines.get(&input.account_id) {
+                    Ok(engine) => engine.is_some(),
+                    Err(error) => {
+                        return to_json(AppResult::<AuthSessionPayload>::fail(
+                            ErrorCode::InternalError,
+                            error,
+                            None,
+                        ))
+                    }
+                };
                 let session =
                     crate::domain::auth::session::from_station_response(actor_ptid, token.clone());
-                if let Err(error) = bind_gateway_session(
+                if let Err(error) = app_auth::prepare_messaging_profile(
                     state,
-                    input.account_id.clone(),
-                    session.actor_ptid.clone(),
-                    session.token.clone(),
-                ) {
-                    return error;
-                }
-                let _ = crate::infrastructure::session_vault::save_encrypted_session_and_purge_raw(
                     &input.account_id,
-                    &input.pin,
-                    &token,
-                );
-                let _ = app_account::account_switch(AccountIdInput {
+                    &session.actor_ptid,
+                ) {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to prepare messaging identity: {error}"),
+                        None,
+                    ));
+                }
+                if let Err(error) =
+                    crate::infrastructure::session_vault::save_encrypted_session_and_purge_raw(
+                        &input.account_id,
+                        &input.pin,
+                        &token,
+                    )
+                {
+                    if !engine_existed {
+                        let _ = app_auth::deactivate_messaging_profile(state, &input.account_id);
+                    }
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        error,
+                        None,
+                    ));
+                }
+                let switched = app_account::account_switch(AccountIdInput {
                     id: input.account_id.clone(),
                 });
+                if !switched.ok {
+                    let _ =
+                        crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                    if !engine_existed {
+                        let _ = app_auth::deactivate_messaging_profile(state, &input.account_id);
+                    }
+                    return to_json(switched);
+                }
+                let binding = match state.sessions.try_bind_exclusive(
+                    crate::domain::identity::ActiveSession::new(
+                        HTTP_GATEWAY_SESSION_LABEL,
+                        input.account_id.clone(),
+                        crate::domain::identity::ActorRef::new_person(session.actor_ptid.clone()),
+                        session.token.clone(),
+                    ),
+                ) {
+                    Ok(binding) => binding,
+                    Err(error) => {
+                        let _ = crate::infrastructure::auth_identity::write_state(
+                            &previous_identity_state,
+                        );
+                        if !engine_existed {
+                            let _ =
+                                app_auth::deactivate_messaging_profile(state, &input.account_id);
+                        }
+                        return to_json(AppResult::<AuthSessionPayload>::fail(
+                            ErrorCode::InternalError,
+                            format!("Failed to bind authenticated identity: {error}"),
+                            None,
+                        ));
+                    }
+                };
+                if let Err(error) = app_auth::activate_messaging_profile_worker(
+                    state,
+                    &input.account_id,
+                    &session.token,
+                ) {
+                    let _ = state.sessions.rollback_exclusive(binding);
+                    let _ =
+                        crate::infrastructure::auth_identity::write_state(&previous_identity_state);
+                    if !engine_existed {
+                        let _ = app_auth::deactivate_messaging_profile(state, &input.account_id);
+                    }
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("Failed to activate messaging identity: {error}"),
+                        None,
+                    ));
+                }
+                if let Some(previous) = previous_session {
+                    if previous.account_id != input.account_id {
+                        let _ = app_auth::deactivate_messaging_profile(state, &previous.account_id);
+                    }
+                }
+                let _ = binding.into_kicked();
                 let profile = crate::infrastructure::auth_identity::find_profile_by_actor_ptid(
                     &session.actor_ptid,
                 );
@@ -7264,7 +7692,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "messaging_hydrate" => {
-            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+            let (account_id, _actor_ptid, token) = match gateway_access_context(state) {
                 Ok(context) => context,
                 Err(error) => return error,
             };
@@ -7278,81 +7706,18 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ))
                 }
             };
-            let station_resp = match crate::infrastructure::station_client::request_json_auth(
-                reqwest::Method::GET,
-                "/conversation/list",
-                &token,
-                None,
-                None::<&serde_json::Value>,
-            ) {
-                Ok(v) => v,
-                Err(e) => {
-                    return to_json(AppResult::<Value>::fail(
+            match crate::messaging::hydrate_projections_from_station(&engine, &token) {
+                Ok(count) => match engine.conversations() {
+                    Ok(conversations) => to_json(AppResult::success(json!({
+                        "hydrated": count,
+                        "total_station_conversations": conversations.len(),
+                    }))),
+                    Err(error) => to_json(AppResult::<Value>::fail(
                         ErrorCode::InternalError,
-                        &format!("station fetch: {}", e.message),
+                        error,
                         None,
-                    ))
-                }
-            };
-            let conversations_raw = station_resp
-                .get("conversations")
-                .and_then(|c| c.as_array())
-                .cloned()
-                .unwrap_or_default();
-            let mut projections: Vec<crate::messaging::ConversationProjection> = Vec::new();
-            for conv in &conversations_raw {
-                let conv_id = conv
-                    .get("conversation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default();
-                let kind_str = conv.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-                let kind_i32: i32 = if kind_str.contains("GROUP") { 2 } else { 1 };
-                let authority = conv
-                    .get("authority_station_peer_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default();
-                let federation_id = conv
-                    .get("federation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default();
-                if conv_id.is_empty() || authority.is_empty() || federation_id.is_empty() {
-                    continue;
-                }
-                projections.push(crate::messaging::ConversationProjection {
-                    conversation_id: conv_id.to_string(),
-                    authority_station_id: authority.to_string(),
-                    federation_id: federation_id.to_string(),
-                    kind: kind_i32,
-                    name: conv
-                        .get("name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    owner_ptid: conv
-                        .get("owner_ptid")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    members: Vec::new(),
-                    membership_epoch: conv
-                        .get("membership_epoch")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(0),
-                    mls_epoch: conv
-                        .get("mls_epoch")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(0),
-                    active: true,
-                    updated_at_unix_ms: 0,
-                });
-            }
-            match engine.hydrate_conversation_projections(&projections) {
-                Ok(count) => to_json(AppResult::success(json!({
-                    "hydrated": count,
-                    "total_station_conversations": conversations_raw.len(),
-                }))),
+                    )),
+                },
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
         }
@@ -7597,8 +7962,21 @@ mod tests {
             Some("ptid:test:actor-http-gateway-test")
         );
         assert_eq!(
-            status.get("token").and_then(Value::as_str),
-            Some("token-http-gateway-test")
+            status.get("account_id").and_then(Value::as_str),
+            Some("account-http-gateway-test")
+        );
+        assert_eq!(
+            status
+                .get("token_fingerprint")
+                .and_then(Value::as_str)
+                .map(str::len),
+            Some(64)
+        );
+        assert_eq!(
+            status
+                .get("messaging_profile_matches")
+                .and_then(Value::as_bool),
+            Some(false)
         );
     }
 
@@ -7623,6 +8001,46 @@ mod tests {
                 .and_then(Value::as_str),
             Some("UNAUTHORIZED")
         );
+    }
+
+    #[test]
+    fn friend_request_acceptance_projection_preserves_canonical_identity() {
+        let request = model::social::SocialFriendRequest {
+            request_id: "request-1".to_string(),
+            sender: Some(model::actor::ActorRef {
+                ptid: "ptid:alice".to_string(),
+                ..Default::default()
+            }),
+            receiver: Some(model::actor::ActorRef {
+                ptid: "ptid:bob".to_string(),
+                ..Default::default()
+            }),
+            state: model::social::FriendRequestState::Pending as i32,
+            federation_id: "federation-1".to_string(),
+            sender_home_station_peer_id: "station-four".to_string(),
+            receiver_home_station_peer_id: "station-five".to_string(),
+            ..Default::default()
+        };
+        let request_json = friend_request_projection(&request);
+        assert_eq!(request_json["request_id"], "request-1");
+        assert_eq!(request_json["sender_ptid"], "ptid:alice");
+        assert_eq!(request_json["receiver_ptid"], "ptid:bob");
+        assert_eq!(request_json["sender_home_station_peer_id"], "station-four");
+        assert_eq!(
+            request_json["receiver_home_station_peer_id"],
+            "station-five"
+        );
+
+        let relationship = model::social::Relationship {
+            target_actor_ptid: "ptid:bob".to_string(),
+            following: true,
+            followed_by: true,
+            ..Default::default()
+        };
+        let relationship_json = relationship_projection(&relationship);
+        assert_eq!(relationship_json["target_actor_ptid"], "ptid:bob");
+        assert_eq!(relationship_json["following"], true);
+        assert_eq!(relationship_json["followed_by"], true);
     }
 
     #[test]

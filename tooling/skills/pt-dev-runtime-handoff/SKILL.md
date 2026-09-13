@@ -2,7 +2,8 @@
 name: pt-dev-runtime-handoff
 description: >
   Use after code changes when the user wants to prepare a Peers-Touch dev
-  runtime and run native Tauri Acceptance through the embedded WebDriver.
+  runtime for an exact-source functional Journey or formal native Tauri
+  Acceptance through the embedded WebDriver.
 ---
 
 # Dev Runtime Handoff
@@ -11,9 +12,15 @@ description: >
 
 ## Goal
 
-Prepare the required Station/Desktop runtime, run the standardized Python
-Acceptance Gate, and report source-bound evidence. The user does not perform
-manual clicks.
+Prepare the required Station/Desktop runtime under one of two policies:
+
+- `development`: run one exact-source product Journey, report the first failure,
+  and write only Development diagnostics.
+- `acceptance`: run formal Native Tauri Acceptance and publish source-bound
+  Evidence Store artifacts.
+
+Both policies consume the same business Journey. They must not duplicate or
+weaken product actions and assertions.
 
 ## Native Desktop Acceptance Architecture
 
@@ -43,6 +50,15 @@ Restart Station when changes touch Station, schema, or generated protocol code.
 Rebuild the Acceptance binary when changes touch Desktop Rust, Desktop UI, the
 Acceptance harness, or driver feature wiring.
 
+Before either policy:
+
+```bash
+make dev-check WORK_ITEM=<id>
+```
+
+The public declaration must name the Profile, local slot, client storage and
+Station capability intent. The declaration does not replace Local Dev leases.
+
 ## Agent Station Safety Gate
 
 Local and compose-managed Station modes are human-developer-only capabilities.
@@ -63,7 +79,32 @@ values. After this preflight, `make station` is the correct command for the
 remote deploy/restart/health closure. Do not replace it with ad hoc SSH or
 local process commands.
 
-## Standard Chat Workflow
+## Development Policy
+
+Use after focused checks and an authorized checkpoint:
+
+```text
+make config
+  -> verify approved remote profile
+make station                # only when Station source changed
+make desktop                # interactive Native development runtime
+run one declared Journey
+  -> PASS: FUNCTIONAL_CHECK for that Journey
+  -> FAIL: first actionable product failure only
+  -> BLOCKED: environment/driver/authorization owner
+reverse-order cleanup
+```
+
+Development policy:
+
+- does not allocate an Acceptance Evidence Store run;
+- does not run coverage, Gap Detector, broad Gate bundles or cross-platform
+  matrices;
+- persists transient logs/screenshots under the workspace Development path;
+- cannot publish `PROVEN`;
+- must use the product runtime required by the Journey.
+
+## Acceptance Policy
 
 ```bash
 make config
@@ -122,9 +163,25 @@ mask a missing runtime transition.
 
 Report:
 
+- policy: `development` or `acceptance`;
 - Station URL and live commit;
 - exact Gate commands and PASS/FAIL;
 - conversation/message IDs;
 - evidence paths;
 - process/port/storage cleanup result;
 - explicit unproven scope.
+
+For development policy, report only verification class, Journey, first failure,
+runtime identity and cleanup. For Acceptance policy, include immutable evidence
+references and proof state.
+
+## Anti-Patterns
+
+Never:
+
+- Run without a current public Development declaration.
+- Use Acceptance policy to diagnose the first product failure.
+- Publish Development diagnostics as Acceptance proof.
+- Maintain separate Dev and Acceptance Journey implementations.
+- Replace Native actions with browser, coordinate-only, Harness-only or
+  API-only shortcuts.

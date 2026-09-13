@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import socket
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -21,8 +23,8 @@ class DevRuntimePortIsolationTest(unittest.TestCase):
         src = self.source("tooling/scripts/local-dev/desktop-dev.sh")
         self.assertIn("_wt_offset", src)
         self.assertIn("WORKTREE_ID", src)
-        self.assertRegex(src, r'GATEWAY_PORT="\$\(\(_base_gw\s*\+\s*_wt_offset\)\)"')
-        self.assertRegex(src, r'WEB_PORT="\$\(\(_base_web\s*\+\s*_wt_offset\)\)"')
+        self.assertIn('$((_base_gw + _wt_offset))', src)
+        self.assertIn('$((_base_web + _wt_offset))', src)
 
     def test_desktop_dev_does_not_use_profile_port_directly(self) -> None:
         src = self.source("tooling/scripts/local-dev/desktop-dev.sh")
@@ -32,6 +34,16 @@ class DevRuntimePortIsolationTest(unittest.TestCase):
             "Profile port must not be used directly — it would cause "
             "cross-worktree collisions when two worktrees share a profile",
         )
+
+    def test_acceptance_owned_runtime_preserves_explicit_resources(self) -> None:
+        src = self.source("tooling/scripts/local-dev/desktop-dev.sh")
+        self.assertIn('PT_ACCEPTANCE_NATIVE_DEV', src)
+        self.assertIn('_caller_gw="${PT_GATEWAY_PORT:-}"', src)
+        self.assertIn('_caller_web="${PT_RENDERER_PORT:-}"', src)
+        self.assertIn('_caller_profile="${PT_PROFILE:-}"', src)
+        self.assertIn('GATEWAY_PORT="${_caller_gw:-', src)
+        self.assertIn('WEB_PORT="${_caller_web:-', src)
+        self.assertIn('PT_PROFILE="${_caller_profile:-', src)
 
     def test_rust_pid_file_includes_worktree_id(self) -> None:
         src = self.source("tooling/scripts/_ensure-desktop-rust.sh")
@@ -66,6 +78,53 @@ class DevRuntimePortIsolationTest(unittest.TestCase):
             "A hidden WebView still boots the Desktop frontend and competes "
             "with the Browser gateway for session ownership",
         )
+
+    def test_native_startup_timeout_fails_closed(self) -> None:
+        port = self._unused_port()
+        completed = subprocess.run(
+            [
+                "bash",
+                "-c",
+                (
+                    "source tooling/scripts/_ensure-desktop-rust.sh; set +e; "
+                    "sleep 5 & child=$!; "
+                    f"wait_for_gateway {port} 1 \"$child\"; status=$?; "
+                    "kill \"$child\" 2>/dev/null || true; "
+                    "wait \"$child\" 2>/dev/null || true; "
+                    "exit \"$status\""
+                ),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 124, completed.stdout + completed.stderr)
+
+    def test_native_startup_preserves_child_exit_status(self) -> None:
+        port = self._unused_port()
+        completed = subprocess.run(
+            [
+                "bash",
+                "-c",
+                (
+                    "source tooling/scripts/_ensure-desktop-rust.sh; set +e; "
+                    "(sleep 0.1; exit 73) & child=$!; "
+                    f"wait_for_gateway {port} 3 \"$child\""
+                ),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 73, completed.stdout + completed.stderr)
+
+    @staticmethod
+    def _unused_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", 0))
+            return int(listener.getsockname()[1])
 
     def test_distinct_worktrees_produce_distinct_ports(self) -> None:
         worktrees = [
@@ -184,17 +243,28 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
             "env.sh must exit 1 when the active profile target is invalid",
         )
 
-    def test_env_sh_resolves_from_env_repo_before_active_profile_fallback(self) -> None:
+    def test_env_sh_rejects_unreviewed_env_and_unauthorized_local_fallback(self) -> None:
         src = self.source("tooling/scripts/local-dev/env.sh")
-        env_repo_check = src.find("profile.env.example")
-        local_fallback = src.find('elif [[ -f "$ACTIVE_PROFILE" ]]', env_repo_check)
-        self.assertGreater(
-            env_repo_check, 0,
-            "env.sh must check the env repo (profile.env.example) first",
+        self.assertIn(
+            "git -C \"$ENV_REPO\" ls-files --error-unmatch",
+            src,
+            "env.sh must reject untracked env-repository profiles",
         )
-        self.assertGreater(
-            local_fallback, env_repo_check,
-            "local profiles/ must be the fallback after the env repo",
+        self.assertIn(
+            'AUTHORIZATION_SCRIPT="$SCRIPT_DIR/environment-creation-authorization.py"',
+            src,
+            "env.sh must resolve the machine authorization verifier",
+        )
+        self.assertIn(
+            'python3 "$AUTHORIZATION_SCRIPT" verify',
+            src,
+            "env.sh must require a consumed human authorization receipt for "
+            "a machine-local profile",
+        )
+        self.assertNotIn(
+            'PROFILE_FILE="$ACTIVE_PROFILE"\n  else',
+            src,
+            "env.sh must not silently accept a local profile fallback",
         )
 
     def test_env_sh_scopes_runtime_dirs_by_profile(self) -> None:
@@ -219,6 +289,37 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
             symlink_pos, 0,
             "profile.sh must activate the profile through the worktree-specific "
             "symlink",
+        )
+
+    def test_profile_init_consumes_human_authorization(self) -> None:
+        src = self.source("tooling/scripts/local-dev/profile.sh")
+        self.assertIn(
+            '"$AUTHORIZATION_SCRIPT" consume',
+            src,
+            "profile-init must consume an exact machine authorization before "
+            "creating a local profile",
+        )
+        self.assertIn(
+            "profile-init never overwrites an existing environment",
+            src,
+            "profile-init must not turn one authorization into overwrite authority",
+        )
+
+    def test_remote_deploy_resolves_reviewed_env_repository_definition(self) -> None:
+        src = self.source("tooling/scripts/deploy/deploy.sh")
+        self.assertIn("resolve_reviewed_deploy_env", src)
+        self.assertIn("ls-files --error-unmatch", src)
+        self.assertNotIn(
+            'ENV_FILE="$ENVS_DIR/$env_name.env"',
+            src,
+            "remote deploy must not treat .local/deploy/envs as topology authority",
+        )
+        warm_cache = self.source("tooling/docker/warm-builder-cache.sh")
+        self.assertIn('"$DEPLOY_SCRIPT" resolve', warm_cache)
+        self.assertNotIn(
+            ".local/deploy/envs",
+            warm_cache,
+            "builder cache mutation must use the reviewed deploy resolver",
         )
 
 

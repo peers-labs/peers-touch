@@ -19,11 +19,11 @@ func TestMapProductionConversationErrorMapsDeviceInboxFailures(t *testing.T) {
 	}{
 		{"invalid", delivery.ErrorCodeInvalidArgument, http.StatusBadRequest},
 		{"unauthorized", delivery.ErrorCodeUnauthorized, http.StatusForbidden},
-		{"owner mismatch", delivery.ErrorCodeItemOwnerMismatch, http.StatusForbidden},
+		{"owner mismatch", delivery.ErrorCodeItemOwnerMismatch, http.StatusConflict},
 		{"not found", delivery.ErrorCodeItemNotFound, http.StatusNotFound},
 		{"consumer fenced", delivery.ErrorCodeConsumerFenced, http.StatusConflict},
 		{"quota", delivery.ErrorCodeQuotaExceeded, http.StatusTooManyRequests},
-		{"persistence", delivery.ErrorCodePersistence, http.StatusInternalServerError},
+		{"persistence", delivery.ErrorCodePersistence, http.StatusServiceUnavailable},
 	}
 
 	for _, test := range tests {
@@ -50,12 +50,12 @@ func TestMapProductionConversationErrorMapsInteractionFailures(t *testing.T) {
 		want int
 	}{
 		{"invalid", interaction.ErrorCodeInvalidArgument, http.StatusBadRequest},
-		{"integrity", interaction.ErrorCodeIntegrityFailed, http.StatusBadRequest},
+		{"integrity", interaction.ErrorCodeIntegrityFailed, http.StatusConflict},
 		{"unauthorized", interaction.ErrorCodeUnauthorized, http.StatusForbidden},
 		{"stale", interaction.ErrorCodeStalePulse, http.StatusConflict},
 		{"idempotency", interaction.ErrorCodeIdempotencyConflict, http.StatusConflict},
 		{"quota", interaction.ErrorCodeQuotaExceeded, http.StatusTooManyRequests},
-		{"persistence", interaction.ErrorCodePersistence, http.StatusInternalServerError},
+		{"persistence", interaction.ErrorCodePersistence, http.StatusServiceUnavailable},
 	}
 
 	for _, test := range tests {

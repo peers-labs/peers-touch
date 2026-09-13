@@ -17,6 +17,8 @@ gap_detector="tooling/scripts/acceptance-gap-detect.py"
 plan_skill="tooling/skills/pt-plan-and-document/SKILL.md"
 english_workflow_skill="tooling/skills/pt-ew/SKILL.md"
 execution_guardian_skill="tooling/skills/pt-execution-plan-guardian/SKILL.md"
+dev_workflow_skill="tooling/skills/pt-dev-workflow/SKILL.md"
+dev_work_script="tooling/scripts/local-dev/dev-work.mjs"
 context_anchor_skill="tooling/skills/pt-context-anchor/SKILL.md"
 god_view_skill="tooling/skills/pt-god-view/SKILL.md"
 goal_orchestrator_skill="tooling/skills/pt-trae-goal-orchestrator/SKILL.md"
@@ -46,6 +48,8 @@ require_file "$gap_detector"
 require_file "$plan_skill"
 require_file "$english_workflow_skill"
 require_file "$execution_guardian_skill"
+require_file "$dev_workflow_skill"
+require_file "$dev_work_script"
 require_file "$context_anchor_skill"
 require_file "$god_view_skill"
 require_file "$goal_orchestrator_skill"
@@ -89,6 +93,9 @@ required_rules=(
   "generated"
   "runtime projection"
   "CODEOWNERS"
+  "repository-debug-artifact"
+  "station-profile-bypass"
+  "unauthorized-environment-creation"
   "Proto Review"
   "Station Review"
   "Desktop Review"
@@ -171,6 +178,9 @@ fi
 if grep -Fq "User can deactivate by switching to Chinese" "$english_workflow_skill"; then
   fail "$english_workflow_skill must require explicit English-mode deactivation"
 fi
+if ! grep -Fq "^(tooling/skills/|" "$review_runner"; then
+  fail "$review_runner must run skill-check for every canonical project skill change"
+fi
 
 for marker in \
   "Mandatory Concurrency Decision" \
@@ -182,6 +192,65 @@ for marker in \
     fail "$execution_guardian_skill missing parallel execution marker: $marker"
   fi
 done
+
+for marker in \
+  "single entry point" \
+  "make dev-start" \
+  "make dev-check" \
+  "make dev-release" \
+  "FUNCTIONAL_PASS" \
+  "first actionable failure" \
+  "Acceptance Promotion" \
+  "PROVEN"; do
+  if ! grep -Fq "$marker" "$dev_workflow_skill"; then
+    fail "$dev_workflow_skill missing Development Workflow marker: $marker"
+  fi
+done
+
+workflow_entry_files="$(
+  (rg -l -F \
+    "This is the single entry point for non-trivial Peers-Touch development." \
+    tooling/skills/pt-*/SKILL.md || true) | sort
+)"
+workflow_entry_count="$(
+  printf '%s\n' "$workflow_entry_files" | sed '/^$/d' | wc -l | tr -d ' '
+)"
+if [[ "$workflow_entry_count" -ne 1 || "$workflow_entry_files" != "$dev_workflow_skill" ]]; then
+  fail "Development Workflow must have exactly one complete-development entry point"
+fi
+
+for marker in \
+  "RESOURCE_DECLARATION_CONFLICT" \
+  "MACHINE_WORK_LEDGER_INVALID" \
+  "startOrUpdateDeclaration" \
+  "releaseDeclaration"; do
+  if ! grep -Fq "$marker" tooling/scripts/local-dev/dev-work-*.mjs; then
+    fail "Development work ledger implementation missing marker: $marker"
+  fi
+done
+
+if find . -path './node_modules' -prune -o -path './.git' -prune -o \
+  -name work.json -print | grep -q .; then
+  fail "repository contains a Development work ledger; use ~/.peers-touch/dev/work.json"
+fi
+
+if rg -n \
+  '\.local[^[:space:]`"]*work\.json|workspaces/[^[:space:]`"]*/work\.json' \
+  tooling/scripts tooling/skills AGENTS.md docs/global \
+  docs/architecture/development-workflow \
+  docs/architecture/local-dev-control-plane >/tmp/pt-private-work-ledger.$$; then
+  cat /tmp/pt-private-work-ledger.$$
+  fail "Development work declarations must not use a private worktree path"
+fi
+rm -f /tmp/pt-private-work-ledger.$$
+
+if rg -n \
+  'PT_ACCEPTANCE_ARTIFACT_ROOT|acceptance-artifact|evidence_store|dev/acceptance|Application Support/PeersTouch' \
+  tooling/scripts/local-dev/dev-work-*.mjs >/tmp/pt-dev-work-acceptance-writer.$$; then
+  cat /tmp/pt-dev-work-acceptance-writer.$$
+  fail "Development work ledger code must not write Acceptance evidence"
+fi
+rm -f /tmp/pt-dev-work-acceptance-writer.$$
 
 for marker in \
   "Completed since previous anchor" \

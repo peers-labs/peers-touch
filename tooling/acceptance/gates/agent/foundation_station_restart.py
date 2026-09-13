@@ -253,6 +253,80 @@ class _ArmedRemoteKill:
                 self._process.communicate()
 
 
+def _reviewed_environment_file(
+    repo_root: Path,
+    *,
+    profile_name: str,
+    deployment_name: str | None = None,
+) -> Path:
+    identifier_pattern = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+    if not identifier_pattern.fullmatch(profile_name) or (
+        deployment_name is not None
+        and not identifier_pattern.fullmatch(deployment_name)
+    ):
+        raise FoundationStationRestartError(
+            "AS-F06 environment identity is invalid"
+        )
+    env_root = Path(
+        os.environ.get("PT_ENV_REPO", "").strip()
+        or repo_root.parent / "env"
+    ).expanduser().resolve()
+    if not (env_root / "peers-touch").is_dir():
+        raise FoundationStationRestartError(
+            f"AS-F06 reviewed environment repository is unavailable: {env_root}"
+        )
+    if deployment_name is None:
+        candidates = [
+            env_root / "peers-touch" / profile_name / "profile.env.example"
+        ]
+    else:
+        candidates = sorted(
+            (env_root / "peers-touch").glob(
+                f"*/deploy/{deployment_name}.env.example"
+            )
+        )
+    if len(candidates) != 1 or not candidates[0].is_file():
+        identity = deployment_name or profile_name
+        raise FoundationStationRestartError(
+            f"AS-F06 environment identity {identity!r} must resolve to exactly "
+            f"one env-repository definition"
+        )
+    path = candidates[0].resolve()
+    relative = path.relative_to(env_root).as_posix()
+    relative_parts = Path(relative).parts
+    profile_dir = "/".join(relative_parts[:2])
+    tracked = subprocess.run(
+        ["git", "-C", str(env_root), "ls-files", "--error-unmatch", relative],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if tracked.returncode != 0:
+        raise FoundationStationRestartError(
+            f"AS-F06 environment definition is not Git-tracked: {relative}"
+        )
+    dirty = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(env_root),
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+            "--",
+            profile_dir,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    if dirty.stdout.strip():
+        raise FoundationStationRestartError(
+            f"AS-F06 environment definition is dirty or untracked: {profile_dir}"
+        )
+    return path
+
+
 def _load_bound_environment(
     runtime_manifest: Mapping[str, Any],
     repo_root: Path,
@@ -285,20 +359,21 @@ def _load_bound_environment(
             "PT_ACCEPTANCE_DISPOSABLE=1 is required for AS-F06"
         )
 
-    profile_path = repo_root / ".local" / "dev" / "profiles" / f"{profile_name}.env"
-    if not profile_path.is_file():
-        raise FoundationStationRestartError(
-            f"AS-F06 requires local profile {profile_name}"
-        )
+    profile_path = _reviewed_environment_file(
+        repo_root,
+        profile_name=profile_name,
+    )
     profile_env = load_env_file(profile_path)
     deployment_name = profile_env.get("PT_STATION_DEPLOY_ENV", "").strip()
-    deployment_path = (
-        repo_root / ".local" / "deploy" / "envs" / f"{deployment_name}.env"
-    )
-    if not deployment_name or not deployment_path.is_file():
+    if not deployment_name:
         raise FoundationStationRestartError(
             "AS-F06 requires the approved profile deployment identity"
         )
+    deployment_path = _reviewed_environment_file(
+        repo_root,
+        profile_name=profile_name,
+        deployment_name=deployment_name,
+    )
     deployment_env = load_env_file(deployment_path)
     if (
         profile_env.get("PT_DEV_PROFILE") != profile_name

@@ -144,6 +144,42 @@ Each selected profile supplies its Station endpoint and
 local/remote lifecycle. Missing, unknown, or duplicate bindings fail closed
 before Station provisioning.
 
+`chat-native-current-profile-two-client-e2e` reuses non-destructive Desktop
+actor identity instead of resetting Station. Alice launches from
+`peers-chat-high-chat`; Bob launches first from `peers-group-chat`; both
+worktrees must be clean and resolve the same Git tree. By default each client
+uses its worktree's `.local/dev/data/<profile>/desktop-app` as a read-only
+bootstrap seed. `PT_CHAT_NATIVE_STORAGE_SEEDS` can override those two seed
+directories in Alice, Bob order.
+
+The Provisioner initializes one dedicated persistent Acceptance storage root
+per actor under that actor's worktree `.local/acceptance/state/` directory.
+`PT_CHAT_NATIVE_PERSISTENT_STORAGE_ROOTS` can override those roots in Alice,
+Bob order. Initial bootstrap retains the actor identity but excludes copied
+live `chat.main.db` and session-device bindings, so the Gate enrolls a dedicated
+device instead of reusing rollback-prone crypto state. Later runs reuse that
+same persistent state. This is required because Station OPK publication and
+consumption are durable and the matching private OPK, ratchet, inbox cursor,
+authority head, and projections must advance together. Runtime cleanup removes
+processes, ports, temporary logs, and ephemeral storage while verifying that
+the declared persistent device roots remain present.
+
+After an explicitly authorized destructive reset of the same active Station
+profile, reset the two dedicated Acceptance device states exactly once by
+running the Gate with:
+
+```bash
+CHAT_ACCEPTANCE_RESET=1 \
+CHAT_ACCEPTANCE_RESET_PROFILE=<active-profile> \
+PT_CHAT_NATIVE_RESET_PERSISTENT_STATE=1 \
+python3 tooling/scripts/acceptance-run.py \
+  --gate chat-native-current-profile-two-client-e2e
+```
+
+The Provisioner validates each existing marker against the actor, worktree, and
+profile before deletion, then rebuilds the persistent state from the read-only
+identity seed. The reset flag must not remain set for normal repeated runs.
+
 ### Agent R6 Stream Resilience
 
 `agent-stream-resilience-e2e` is the stable native Gate for R6. It requires the

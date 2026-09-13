@@ -87,6 +87,20 @@ cutovers, gates, and evidence.
 
 ## Required Discipline
 
+This Skill executes the `EXECUTE` portion of
+`docs/architecture/development-workflow/README.md`. `pt-dev-workflow` remains
+the sole complete-development orchestrator.
+
+Before the first planned write, require:
+
+```bash
+make dev-check WORK_ITEM=<id>
+```
+
+The public declaration must include every exclusive write set and runtime
+resource selected by the concurrency decision. Update it before scope changes
+and after every authorized operation that changes the current source HEAD.
+
 The agent must not say "done", "completed", "ready", or "usable" without naming
 the exact scope that is done and the evidence that proves it.
 
@@ -341,6 +355,15 @@ independent units and check whether they can run concurrently:
 
 **During implementation:**
 
+- Bind one product Journey to the active workstream. For product behavior,
+  execute `reproduce -> root fix -> focused checks -> checkpoint -> exact-source
+  deploy -> real functional Journey`.
+- Stop on the first actionable Journey failure and return to implementation.
+- Do not dispatch Acceptance injection, broad Gate bundles, coverage, Gap
+  Detector, Completion Auditor or submit review until the Journey reaches
+  `FUNCTIONAL_PASS`.
+- After functional pass, promote the same business Journey into formal
+  Acceptance; never create a Harness/API-only substitute.
 - Do not broaden scope silently.
 - Execute only dependency-ready task IDs.
 - Fix root causes at the architecture-assigned layer. Do not patch: no
@@ -455,6 +478,11 @@ a `## Context Anchor` section to the execution plan.
 
 ## Claim Rules
 
+- `SOURCE_CHECK`, `STRUCTURAL_CHECK`, and `UX_REVIEW` cannot establish
+  `FUNCTIONAL_PASS`.
+- `FUNCTIONAL_PASS` means one named exact-source product Journey passed in its
+  required real runtime and receiver perspective.
+- `PROVEN` remains reserved for formal Acceptance evidence.
 - "Works" means a named product path was executed successfully.
 - "Ready" means the relevant plan gates passed.
 - "Completed" means all deliverables and pass criteria for a named formal
@@ -473,6 +501,8 @@ a `## Context Anchor` section to the execution plan.
 
 Never:
 
+- Mutate outside the confirmed machine-wide resource declaration.
+- Run broad Acceptance before the required Journey reaches `FUNCTIONAL_PASS`.
 - Select an execution worktree from the skill source path.
 - Continue after `WORKTREE_IDENTITY_MISMATCH` or repair it with implicit
   directory, branch, or worktree operations.

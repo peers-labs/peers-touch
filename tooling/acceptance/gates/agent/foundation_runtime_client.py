@@ -561,6 +561,8 @@ class FoundationRuntimeClient:
             "WORKTREE_ID": self.spec.worktree.name,
             "PT_DEV_PROFILE": self.dev_profile,
             "PT_DEV_PROFILE_FILE": str(self.runtime_profile),
+            "PT_DEV_PROFILE_FILE_AUTHORITY": "acceptance-runtime-manifest",
+            "PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT": str(self.run_root),
             "PT_PROFILE": self.spec.profile,
             "GATEWAY_PORT": str(self.spec.gateway_port),
             "WEB_PORT": str(self.spec.renderer_port),

@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-09
-covered_docs_hash: ff3bea87e0b21dab8559301bbf14a6cc50730e788890dc821182907db1d2a73f
+last_verified_at: 2026-09-13
+covered_docs_hash: b7d36ba0fe25c29d5a626a08b1c67902e33dba7aabfc98e6fd9723da30c638dd
 
 covered_docs:
   - AGENTS.md
@@ -11,6 +11,9 @@ covered_docs:
   - docs/global/code-review-framework.md
   - docs/architecture/quality-framework
   - docs/architecture/acceptance-framework
+  - docs/architecture/development-workflow
+  - docs/architecture/local-dev-control-plane
+  - docs/global/local-dev-environment.md
   - docs/global/architecture.md
   - docs/client/desktop/base.md
   - docs/client/desktop/runtime-projections.md
@@ -163,3 +166,30 @@ The Conversation Authority and native Desktop runtime-cell consolidation
 strengthens existing ownership, exact-source, platform identity, and cleanup
 requirements. The review skill already covers those checks, so no workflow or
 fixture change is required.
+
+## 2026-09-13 Review
+
+Development Workflow now separates public resource intent, exact-source
+functional Journeys, formal Acceptance proof and delivery review. This changes
+execution and completion discipline, while PR review continues to consume
+formal Acceptance and quality evidence rather than machine-local Development
+records. `pt-dev-workflow`, its specialist Skills and `pt-completion-auditor`
+were updated; `pt-github-review/SKILL.md` needs no behavior change. The canonical
+skill check now enforces declaration, functional-fence, first-failure and
+release markers directly.
+
+Machine Dev Control Plane and Acceptance Evidence Store changes make
+repository-root debug artifacts, Station profile bypasses, and unauthorized
+environment creation explicit violations. `pt-github-review/SKILL.md` now
+treats all three as blocking hard rules, and `review/skill-check.sh` pins their
+markers. Local Dev architecture and the global environment specification are
+now covered freshness sources.
+
+No new golden fixture is required for unauthorized environment creation because
+the decisive approval is a human-created exact-tuple machine grant rather than
+diff content. Focused Local Dev tests prove non-interactive grant rejection,
+single-use consumption, untracked env rejection, and profile-digest binding.
+Remote deployment and Foundation restart now resolve only unique,
+Git-tracked-clean env-repository definitions; arbitrary profile-file overrides
+are confined to declared Acceptance runtime roots. Existing repository hygiene
+checks and profile-only startup invariants own the other two rules.

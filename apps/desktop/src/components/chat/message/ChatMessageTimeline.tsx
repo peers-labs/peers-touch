@@ -17,6 +17,7 @@ import {
 } from './ChatMessageActionOverlay';
 import { ChatMessageRow, ChatMessageRowInteractionStyle } from './ChatMessageRow';
 import { blocksMessageActionOverlay } from './messageReactionState';
+import { chatMessageTimelineContainerStyle } from './chatMessageTimelinePolicy';
 
 const { Text } = Typography;
 
@@ -230,11 +231,8 @@ export function ChatMessageTimeline({
         viewportElement={scrollContainerRef.current}
       />
       <div
-        style={{
-          height: virtualizer.getTotalSize(),
-          width: '100%',
-          position: 'relative',
-        }}
+        data-chat-message-timeline
+        style={chatMessageTimelineContainerStyle(virtualizer.getTotalSize())}
       >
         {virtualItems.map((virtualItem) => {
           const item = surfaceItems[virtualItem.index];

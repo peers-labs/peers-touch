@@ -196,6 +196,12 @@
 - 语音 / 视频通话架构：`architecture/realtime/voice-video-calls.md`
 - Chat 端到端加密、设备级投递与恢复：`architecture/encryption/README.md`
 - 服务协调（Relay/Station/Desktop/Mobile 依赖 DAG 与凭据契约）：`architecture/service-coordination.md`
+- 本机多 worktree 开发控制面：`architecture/local-dev-control-plane/README.md`
+  （active；定义 `~/.peers-touch/dev/` 机器级注册表、独立 worktree 绑定、slot 与
+  Station capability lease，当前仅有 observed snapshot，尚未接管运行时）
+- 开发工作流控制面：`architecture/development-workflow/README.md`
+  （active；定义从首次写入前资源声明到 `EXECUTE` 内以 Journey 为单位的产品优先开发循环、checkpoint
+  授权、exact-source 功能验证与 Acceptance 晋级边界）
 - 联邦 IM 历史架构：`architecture/federated-im/README.md`（superseded；保留
   consolidation 前的决策与实现证据，当前 Chat 架构以 Messaging Platform 和
   API Ownership 为准）
@@ -247,6 +253,7 @@
 
 ### 4.3 规范层真源
 
+- 本地开发环境与 Profile 规范：`global/local-dev-environment.md`
 - 通用规范：`global/coding-guide/common/`
 - **API 字段放置标准**：`global/coding-guide/api-field-placement.md`
 - Desktop 规范：`global/coding-guide/desktop/`

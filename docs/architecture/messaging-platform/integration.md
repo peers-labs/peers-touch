@@ -1,8 +1,8 @@
 # Messaging Platform — 集成与原子切换
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-08 | **Updated**: 2026-09-06
+> **Version**: v1.2
+> **Created**: 2026-08-08 | **Updated**: 2026-09-13
 > **Owner**: Messaging Platform Team
 
 ---
@@ -63,6 +63,8 @@ precedent or extended by new callers.
 | Station authority | Conversation DDD command/event domain | Direct/Group command gates pass | flat Conversation + Messaging authority owners zero |
 | Device inbox | Conversation delivery lane/lease service | replay/crash/fencing gates pass | superseded queue and envelope ACK/resume paths zero |
 | Federation routing | signed endpoint manifest + authority outbox | D19 accepted；two-Station disconnect/restart gate passes | old Envelope/Conversation federation messaging zero |
+| Submitted command reconciliation | canonical receipt/Federation outbox/Device Inbox readback | D31 accepted；loss/restart/exact-retry gates pass | proposal-specific result route/store zero |
+| Cross-Station typing | Authority-mediated signed ephemeral Federation frame | D32 accepted；Direct/Group deny/TTL/overload gates pass | durable typing rows and per-domain peer transport zero |
 | Follower membership | authority-signed public event projection at Home Station | D29 accepted；create/remove/gap/restart/settings gate passes | legacy Conversation membership authorization for Messaging IDs zero |
 | Device Engine | native Messaging Engine | receive/send transaction gates pass | Web crypto/inbox ownership zero |
 | Direct crypto | endpoint-pair engine | two/three-device gates pass | actor-wide session keys zero |
@@ -157,7 +159,45 @@ signed Home Station endpoint manifests
 不能把现有outbox/dispatcher单测当成跨Station能力证明；必须有authority producer、
 Home Station route truth、target ingest和两个独立数据库的native receiver evidence。
 
-#### 3.3.1 Home Station Follower Membership Cutover
+#### 3.3.1 Submitted Command Reconciliation Cutover
+
+> `MP-D31` amendment status: accepted (Owner accepted 2026-09-13)
+
+```text
+bounded result proto generated
+  -> Conversation resolver reads canonical receipt/outbox/Device Inbox only
+  -> Device Engine reconciles submitted commands on owned lifecycle wake
+  -> exact NOT_FOUND retry and accepted/rejected local transactions pass
+  -> loss/restart Native evidence passes
+  -> proposal-specific result route/store remains absent
+```
+
+The resolver is read-only over shared truth. It must not claim an Inbox item, advance
+an authority or lane cursor, mint a command ID, or create another result table.
+Startup performs a one-time hard-cut normalization of historical payload-hash
+command-result item IDs to the canonical
+`(recipient endpoint, conversation_id, command_id)` identity. It preserves lane
+sequence, payload, state, and receipt binding; malformed or conflicting rows fail
+startup instead of enabling a permanent compatibility lookup.
+
+#### 3.3.2 Authority-Mediated Ephemeral Typing Cutover
+
+> `MP-D32` amendment status: accepted (Owner accepted 2026-09-13)
+
+```text
+typing payload proto generated
+  -> Federation registry fixes CONVERSATION_TYPING to ephemeral QoS
+  -> sender Home routes admission to Conversation Authority
+  -> Authority validates membership and fans out by verified Home Station
+  -> recipient Home typed receiver publishes to local Event Bus
+  -> Direct/Group Native and zero-durable-row evidence passes
+```
+
+The cutover extends the existing signed Federation transport. It must not retain a
+Conversation-specific peer client, durable typing fallback, or follower-owned member
+fan-out.
+
+#### 3.3.3 Home Station Follower Membership Cutover
 
 > `MP-D29` amendment status: accepted (Owner accepted 2026-09-05)
 

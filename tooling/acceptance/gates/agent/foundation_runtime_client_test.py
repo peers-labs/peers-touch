@@ -227,6 +227,14 @@ class FoundationClientSpecTest(unittest.TestCase):
         self.assertEqual(environment["PT_DEV_PROFILE"], "one")
         self.assertEqual(client.runtime_profile.name, "one.env")
         self.assertEqual(environment["PT_PROFILE"], "foundation-browser")
+        self.assertEqual(
+            environment["PT_DEV_PROFILE_FILE_AUTHORITY"],
+            "acceptance-runtime-manifest",
+        )
+        self.assertEqual(
+            environment["PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT"],
+            str(client.run_root),
+        )
         self.assertEqual(environment["GATEWAY_PORT"], "23030")
         self.assertEqual(environment["WEB_PORT"], "23210")
         self.assertEqual(environment["PT_DESKTOP_E2E"], "true")

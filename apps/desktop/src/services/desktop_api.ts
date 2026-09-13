@@ -2164,6 +2164,11 @@ export interface MessagingAcceptanceInteractionSnapshot {
   consumerEpoch: number;
 }
 
+export interface MessagingAcceptancePreparedCommand {
+  actorPtid: string;
+  snapshot: MessagingAcceptanceInteractionSnapshot;
+}
+
 export const DESKTOP_TAURI_CONTRACT_VERSION = '2026-03-24.desktop-tauri-rust.v1';
 
 export interface AuthLoginInput {
@@ -5997,6 +6002,35 @@ export const api = {
       conversation_id: input.conversationId,
       message_id: input.messageId,
       command_id: input.commandId ?? '',
+    }),
+
+  messagingAcceptancePrepareSubmittedCommand: (input: {
+    actorPtid: string;
+    conversationId: string;
+    messageId: string;
+    commandId: string;
+  }) =>
+    invokeRustData<
+      {
+        expected_actor_ptid: string;
+        conversation_id: string;
+        message_id: string;
+        command_id: string;
+      },
+      MessagingAcceptancePreparedCommand
+    >('messaging_acceptance_prepare_submitted_command', {
+      expected_actor_ptid: input.actorPtid,
+      conversation_id: input.conversationId,
+      message_id: input.messageId,
+      command_id: input.commandId,
+    }),
+
+  messagingAcceptanceResumeLifecycle: (expectedActorPtid: string) =>
+    invokeRustData<
+      { expected_actor_ptid: string },
+      { actorPtid: string; activated: boolean }
+    >('messaging_acceptance_resume_lifecycle', {
+      expected_actor_ptid: expectedActorPtid,
     }),
 
   messagingAcceptanceCurrentEndpoint: (expectedActorPtid: string) =>

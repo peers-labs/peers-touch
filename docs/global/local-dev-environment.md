@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-07-23 | **Updated**: 2026-09-12
+> **Created**: 2026-07-23 | **Updated**: 2026-09-13
 > **Owner**: Platform Team
 
 ---
@@ -19,32 +19,66 @@ This document defines:
 - Profile system: what a profile is, field semantics, mode types
 - Deploy model: how code reaches remote stations
 - Runtime topology: ports, services, connections per profile
-- `devctl` commands and compatibility entrypoints
+- Make targets: what each command does under each mode
 
 This document does NOT define:
 - When to restart vs hot-reload (see `pt-dev-runtime-handoff` skill for decision logic)
 - How to create/switch profiles (see `pt-local-dev-env` skill for interactive workflow)
 - CI/CD pipeline (out of scope for local dev)
 
-The canonical daily-development control plane is
-`node tooling/devctl/index.mjs`. Windows users invoke the same implementation
-through `tooling/dev.ps1`; `make` targets are compatibility forwarders for Unix
-workflows and contain no Station/Desktop lifecycle policy.
+The machine-global ownership and allocation architecture is defined in
+[`docs/architecture/local-dev-control-plane/`](../architecture/local-dev-control-plane/README.md).
+Until its runtime migration is implemented, this document describes the current
+command behavior.
 
-```powershell
-.\tooling\dev.ps1 config
-.\tooling\dev.ps1 doctor
-.\tooling\dev.ps1 station start
-.\tooling\dev.ps1 desktop start --mode app
-.\tooling\dev.ps1 status
-.\tooling\dev.ps1 stop all
+### 1.1 Current Machine-State Boundary
+
+The current implementation has no authoritative machine-global registry.
+Each worktree may have its own `.local` directory and
+`.local/dev/active/<worktree-name>.env` pointer. This keeps profile selection
+worktree-specific, but it does not prevent another worktree from selecting the
+same profile or local slot.
+
+Do not interpret discovered worktrees or profile pointers as active usage.
+Under the target control plane:
+
+- registration is an explicit Owner action;
+- `active` requires a matching live process/listener or valid lease;
+- a registered worktree without live resources is `idle`;
+- an unregistered worktree remains an observation only.
+
+An initial machine audit snapshot is registered at:
+
+```text
+~/.peers-touch/dev/registry.json
 ```
 
-```bash
-node tooling/devctl/index.mjs config
-node tooling/devctl/index.mjs station start
-node tooling/devctl/index.mjs desktop start --mode web
+It is marked `authority: observed-snapshot`. Existing Make targets do not read
+it, and it must not authorize profile selection, Station deploy, restart, or
+reset.
+
+Acceptance evidence is also development state. Its canonical local target is:
+
+```text
+~/.peers-touch/dev/acceptance
 ```
+
+`~/Library/Application Support/PeersTouch/` is reserved for formal product
+data. The existing `acceptance/` child there is legacy data pending a verified
+resolver cutover and one-time migration. The migration is not complete until
+every current Git worktree uses the canonical root, the old directory is
+deleted, and the live registry plus active docs remove their legacy fields and
+migration branches.
+
+Development task intent is separately published at:
+
+```text
+~/.peers-touch/dev/work.json
+```
+
+It is machine-visible source/runtime intent owned by Development Workflow, not
+Profile allocation or a live lease. Read-only intake may precede it; non-trivial
+tasks must publish and confirm it before the first write or runtime acquisition.
 
 ---
 
@@ -56,15 +90,55 @@ A deployable profile is a `.env` source at
 `../env/peers-touch/<name>/profile.env.example` that configures one complete
 development topology: which Station to use, which ports, and which mode.
 `.local/dev/profiles/<name>.env` is an imported cache, not a competing source
-for a same-named deployable profile.
+for a same-named deployable profile. The only local-authority exception is a
+human-authorized compose profile whose bytes match its consumed machine receipt.
 
-Each git worktree selects its profile through
+In the current implementation, each git worktree selects its profile through
 `.local/dev/active/<worktree-name>.env`. Runtime commands derive the selected
 name from that worktree-specific pointer and load the sibling `env` repository
 source when it exists. The shared `.local/dev/profile` selector is not part of
 the runtime contract.
 
-### 2.2 Profile Fields
+The target architecture keeps the selection independent but moves its durable
+binding to `~/.peers-touch/dev/`, keyed by canonical `workspaceId`. See
+[`local-dev-control-plane/design.md`](../architecture/local-dev-control-plane/design.md).
+
+### 2.2 Environment Creation Authorization
+
+AI agents may inspect and activate an existing approved profile, but MUST NOT
+create, copy, derive, or register a profile or deploy environment without
+explicit human developer approval for the exact environment name and target.
+This includes `env/peers-touch/<name>/`, `.local/dev/profiles/`,
+`.local/deploy/envs/`, `make profile-authorize`, and `make profile-init`.
+
+A missing profile or deploy environment fails closed and must be reported. A
+task, execution plan, available host, old profile pointer, or Acceptance need
+does not imply creation permission. Untracked env-repository definitions and
+local definitions without a matching consumed authorization receipt cannot
+authorize profile selection, deployment, restart, or reset.
+
+Human local-profile creation is a two-step, single-use flow:
+
+```bash
+make profile-authorize PROFILE=<name> SLOT=<n>
+make profile-init PROFILE=<name> SLOT=<n>
+```
+
+The first command requires an interactive exact-tuple confirmation and writes a
+30-minute pending grant under
+`~/.peers-touch/dev/authorizations/environment-creation/`. The second consumes
+that grant, creates one compose profile, and records its digest. It never
+overwrites an existing profile. Agents may consume an already approved grant
+for the exact requested tuple but must not run the authorization command or
+create its files.
+
+`PT_DEV_PROFILE_FILE` is not a general override. It is accepted only with
+`PT_DEV_PROFILE_FILE_AUTHORITY=acceptance-runtime-manifest`, and the owned
+regular profile file must be directly contained by the absolute
+`PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT`. Normal development resolves reviewed
+env-repository topology or an authorized local compose profile.
+
+### 2.3 Profile Fields
 
 | Field | Required | Example | Semantics |
 |-------|----------|---------|-----------|
@@ -85,11 +159,13 @@ the runtime contract.
 | `PT_DESKTOP_WEB_WEB_PORT` | yes | `3211` | Desktop browser web port |
 | `PT_MOBILE_WEB_PORT` | if mobile | `5173` | Mobile dev server port |
 
-### 2.3 Deploy Env Files
+### 2.4 Deploy Env Files
 
 Canonical definitions live at
-`../env/peers-touch/<profile>/deploy/<name>.env.example` and are imported to
-`.local/deploy/envs/<name>.env`. These define remote host connection:
+`../env/peers-touch/<profile>/deploy/<name>.env.example`. Remote deploy commands
+resolve exactly one Git-tracked, clean definition directly from the env
+repository. `.local/deploy/envs/<name>.env` is legacy cache/observation only
+and cannot authorize deployment. These definitions contain:
 
 | Field | Semantics |
 |-------|-----------|
@@ -169,34 +245,37 @@ With profile active, the developer's machine runs:
 
 ---
 
-## 5. Command Reference
+## 5. Make Targets Reference
 
 All commands run from repository root. Profile must be active.
 
 ### Core
 
-| Command | What it does |
+| Target | What it does |
 |--------|-------------|
-| `devctl station start` | Ready Station for the active profile |
-| `devctl desktop start --mode app` | Start Desktop Tauri app |
-| `devctl desktop start --mode web` | Start Desktop Web runtime |
+| `make dev-start ...` | Publish and conflict-check this task's source/runtime intent |
+| `make dev-update WORK_ITEM=<id>` | Replace supplied scope or refresh the declared branch/HEAD |
+| `make dev-status [WORK_ITEM=<id>]` | Show declarations for the current worktree |
+| `make dev-status-all` | Show machine-wide task declarations |
+| `make dev-check WORK_ITEM=<id>` | Verify current declaration before mutation |
+| `make dev-heartbeat WORK_ITEM=<id>` | Extend the current declaration expiry |
+| `make dev-release WORK_ITEM=<id>` | Release declaration after runtime cleanup |
+| `make station` | Ready Station (local start or remote deploy, per mode) |
+| `make desktop` | Start Desktop Tauri app |
+| `make desktop-web` | Start Desktop in browser |
 | `make mobile` | Start Mobile iOS simulator |
 
 ### Lifecycle
 
-| Command | What it does |
+| Target | What it does |
 |--------|-------------|
-| `devctl status` | Show Station and Desktop App/Web state |
-| `devctl stop all` | Stop all devctl-managed services |
-| `devctl restart all` | Restart all devctl-managed services |
-| `devctl station restart` | Restart Station only |
-| `devctl desktop restart --mode app` | Restart Desktop App only |
-| `devctl station check` | Health-check Station |
+| `make status` | Show all running services |
+| `make stop` | Stop all services |
+| `make restart` | Restart all services |
+| `make station-restart` | Restart Station only |
+| `make desktop-restart` | Restart Desktop only |
+| `make station-check` | Health-check Station |
 | `make station-logs` | Tail Station logs |
-
-With pnpm, use `pnpm devctl -- <arguments>`. The matching `make station`,
-`make desktop`, `make desktop-web`, `make status`, `make stop`, and restart
-targets forward to these commands.
 
 ### Deploy (explicit)
 
@@ -295,9 +374,17 @@ SELECT id, conversation_id, created_at FROM device_queue_lanes ORDER BY created_
 
 1. **Never SSH manually to deploy** — always use `make station` or `make deploy ENV=x`.
 2. **Never edit code on remote hosts** — deploy env discipline (AGENTS.md §12).
-3. **Profile per worktree** — each git worktree has its own profile, avoids port conflicts.
+3. **Profile selection per worktree** — each git worktree selects independently.
+   The current implementation does not by itself prevent two worktrees from
+   selecting the same profile or slot; check the machine registry snapshot and
+   live ports before starting clients.
 4. **Health check is the contract** — `make station` is not done until health passes.
 5. **Current branch deploys** — remote mode pushes HEAD, not necessarily main.
 6. **Environment repository is authoritative** — do not repurpose a canonical
-   profile by editing only its `.local` cache; create a distinctly named
-   environment profile instead.
+   profile by editing only its `.local` cache. If no approved profile fits,
+   stop and request explicit human authorization before creating a distinctly
+   named environment profile or deploy environment.
+7. **No implicit global fallback** — an unbound worktree must fail closed; do
+   not infer profile or slot from another worktree.
+8. **Local creation consumes authorization** — `profile-init` requires one
+   unexpired exact-tuple machine grant and produces a digest-bound receipt.

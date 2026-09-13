@@ -122,17 +122,27 @@ ensure_desktop_vite_ready() {
   local gateway_port="$3"
   local profile="$4"
   local web_url="http://localhost:$web_port"
+  local native_dev="${PT_ACCEPTANCE_NATIVE_DEV:-0}"
 
   VITE_PID=""
   local wt_id="${WORKTREE_ID:-default}"
   VITE_PID_FILE="/tmp/peers-touch-desktop-vite-${profile}-${wt_id}.pid"
   VITE_META_FILE="/tmp/peers-touch-desktop-vite-${profile}-${wt_id}.meta"
+  if [[ "$native_dev" == "1" ]]; then
+    local instance_key
+    instance_key="$(printf '%s\n' "$(cd "$desktop_dir" && pwd -P)" "$wt_id" "$profile" "$web_port" "$gateway_port" "${PEERS_STORAGE_ROOT:-}" "${PT_ACCEPTANCE_WEBDRIVER_PORT:-}" | shasum -a 256 | awk '{print $1}')"
+    VITE_PID_FILE="${TMPDIR:-/tmp}/peers-touch-desktop-vite-${instance_key}.pid"
+    VITE_META_FILE="${VITE_PID_FILE%.pid}.meta"
+  fi
 
   local desired_fp
   desired_fp="$(vite_compute_fingerprint "$desktop_dir" "$web_port" "$gateway_port" "$profile")"
 
   if vite_port_is_listening "$web_port"; then
-    if vite_is_healthy "$web_port" && vite_meta_matches "$VITE_META_FILE" "$desired_fp" "$web_port" "$gateway_port" "$profile" "${PEERS_STATION_URL:-}" "${VITE_ACCEPTANCE_HARNESS:-}"; then
+    if [[ "$native_dev" == "1" ]]; then
+      echo "[ERROR] Native Desktop renderer port :$web_port is already occupied"
+      return 1
+    elif vite_is_healthy "$web_port" && vite_meta_matches "$VITE_META_FILE" "$desired_fp" "$web_port" "$gateway_port" "$profile" "${PEERS_STATION_URL:-}" "${VITE_ACCEPTANCE_HARNESS:-}"; then
       echo "[INFO] Vite already running and reusable on $web_url"
       return 0
     else
@@ -142,9 +152,10 @@ ensure_desktop_vite_ready() {
   fi
 
   echo "[INFO] Starting Vite on :$web_port..."
-  if [[ ! -d "$desktop_dir/node_modules" ]]; then
-    echo "[INFO] node_modules missing — running pnpm install ..."
-    (cd "$desktop_dir/../.." && pnpm install --no-frozen-lockfile)
+  local repo_root="$desktop_dir/../.."
+  if [[ ! -d "$repo_root/node_modules/.pnpm" ]]; then
+    echo "[INFO] Root node_modules missing — running pnpm install ..."
+    (cd "$repo_root" && pnpm install --no-frozen-lockfile)
   fi
   (cd "$desktop_dir" && VITE_GATEWAY_PORT="$gateway_port" VITE_ACCEPTANCE_HARNESS="${VITE_ACCEPTANCE_HARNESS:-}" pnpm dev --port "$web_port") &
   VITE_PID=$!
@@ -161,11 +172,20 @@ EOF
 
   local startup_timeout="${VITE_STARTUP_TIMEOUT_SECONDS:-180}"
   for (( i=1; i<=startup_timeout; i++ )); do
-    if ! ps -p "$VITE_PID" >/dev/null 2>&1; then
-      echo "[ERROR] Vite process exited unexpectedly"
-      return 1
+    local process_state exit_status
+    process_state="$(ps -o stat= -p "$VITE_PID" 2>/dev/null | tr -d ' ' || true)"
+    if [[ -z "$process_state" || "$process_state" == Z* ]]; then
+      exit_status=0
+      wait "$VITE_PID" 2>/dev/null || exit_status=$?
+      [[ "$exit_status" -ne 0 ]] || exit_status=1
+      echo "[ERROR] Vite process exited before readiness (exit: $exit_status)"
+      return "$exit_status"
     fi
     if vite_is_healthy "$web_port"; then
+      if [[ "$native_dev" == "1" ]] && ! desktop_process_owns_port "$web_port" "$VITE_PID"; then
+        echo "[ERROR] Renderer port :$web_port belongs to another process"
+        return 1
+      fi
       echo "[INFO] Vite ready: $web_url"
       return 0
     fi
@@ -173,5 +193,5 @@ EOF
   done
 
   echo "[ERROR] Vite did not become healthy within ${startup_timeout}s"
-  return 1
+  return 124
 }

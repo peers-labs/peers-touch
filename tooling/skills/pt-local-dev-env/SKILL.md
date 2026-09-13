@@ -11,22 +11,42 @@ description: >
 
 ## Goal
 
-Prepare the development environment through the cross-platform `devctl`
-control plane. On Windows use `tooling/dev.ps1`; on every platform the direct
-Node entrypoint has the same contract:
+Prepare the development environment so the user can simply run:
 
 ```bash
-node tooling/devctl/index.mjs config
-node tooling/devctl/index.mjs doctor
-node tooling/devctl/index.mjs station start
-node tooling/devctl/index.mjs desktop start --mode app
-node tooling/devctl/index.mjs desktop start --mode web
-node tooling/devctl/index.mjs status
-node tooling/devctl/index.mjs stop all
+make station       # Ready Station (local start / remote deploy)
+make relay         # Ready Relay (remote deploy)
+make desktop       # Start Desktop (Tauri app)
+make desktop-web   # Start Desktop (browser)
+make mobile        # Start Mobile iOS Simulator
+make status        # Check what's running
+make stop          # Stop everything
+make restart       # Restart everything
 ```
 
-Make targets are compatibility forwarders. Relay and Mobile iOS remain legacy,
-platform-specific workflows and are outside devctl ownership.
+The agent's job is to resolve and activate an existing approved **profile** for
+the user's scenario. Creating or registering a profile or deploy environment is
+permitted only after a human developer explicitly authorizes the exact
+environment name and target in the current conversation.
+
+## Environment Creation Authorization
+
+AI agents MUST NOT create, copy, derive, or register a development profile or
+deploy environment without that explicit authorization. This includes:
+
+- adding `env/peers-touch/<name>/` definitions;
+- writing local-only `.local/dev/profiles/` or `.local/deploy/envs/` entries;
+- supplying an arbitrary `PT_DEV_PROFILE_FILE` outside a bounded Acceptance
+  runtime-manifest profile root;
+- running `make profile-authorize`, minting an authorization file, or running
+  `make profile-init` without a pre-existing exact grant; and
+- inferring permission from an execution plan, Acceptance requirement,
+  available host, old pointer, or task scope.
+
+A missing environment is a fail-closed blocker to report. Untracked or
+dirty env-repository definitions cannot authorize profile selection,
+deployment, restart, or reset. A machine-local compose profile is usable only
+when it matches a consumed human-created authorization receipt.
 
 ## Agent Station Safety Boundary
 
@@ -62,7 +82,13 @@ remote deploy/restart/health closure.
 A deployable profile is canonically defined in the sibling environment
 repository at `env/peers-touch/<name>/profile.env.example`. The
 `.local/dev/profiles/<name>.env` file is an imported cache and is never the
-authority for a same-named environment-repository profile.
+authority for a same-named environment-repository profile. The only
+machine-local authority is a human-authorized compose profile whose bytes match
+its consumed environment-creation receipt.
+
+Remote deploy environments resolve directly from exactly one Git-tracked, clean
+`env/peers-touch/<profile>/deploy/<name>.env.example`. A
+`.local/deploy/envs/` copy is not deployment authority.
 
 One profile is **active** per worktree. The symlink at
 `.local/dev/active/<worktree-name>.env` selects its name; all `make` commands
@@ -107,35 +133,32 @@ Use `make relay-check` only when the user explicitly wants health-check only.
 
 ```bash
 # Profile management
-node tooling/devctl/index.mjs profile list
-node tooling/devctl/index.mjs profile activate <name>
-node tooling/devctl/index.mjs profile init <name> --slot <n>
-node tooling/devctl/index.mjs config
-node tooling/devctl/index.mjs doctor
+make profiles                               # List/import approved canonical profiles
+make profile <name>                         # Activate profile
+make profile-authorize <name> SLOT=<n>      # Human-only interactive grant
+make profile-init <name> SLOT=<n>           # Consume a pre-existing exact grant
+make config                                 # Show active config
 
-# Managed services
-node tooling/devctl/index.mjs station start
-node tooling/devctl/index.mjs station check
-node tooling/devctl/index.mjs station status
-node tooling/devctl/index.mjs desktop start --mode app
-node tooling/devctl/index.mjs desktop start --mode web
-
-# Managed lifecycle
-node tooling/devctl/index.mjs status
-node tooling/devctl/index.mjs stop all
-node tooling/devctl/index.mjs restart all
-node tooling/devctl/index.mjs station stop
-node tooling/devctl/index.mjs station restart
-node tooling/devctl/index.mjs desktop stop --mode app
-node tooling/devctl/index.mjs desktop restart --mode web
-
-# Legacy non-devctl workflows
+# Services
+make station                                # Start/verify Station
+make station-check                          # Health-check Station only
+make station-status                         # Station deployment/runtime status
 make station-logs                           # Station logs
 make relay                                  # Prepare Relay
 make relay-check                            # Health-check Relay only
 make relay-status                           # Relay deployment/runtime status
 make relay-logs                             # Relay logs
+make desktop                                # Desktop Tauri app
+make desktop-web                            # Desktop in browser
 make mobile                                 # Mobile iOS Simulator
+
+# Lifecycle
+make status                                 # Show running services
+make stop                                   # Stop all
+make restart                                # Restart all
+make station-stop                           # Stop Station only
+make station-restart                        # Restart Station only
+make desktop-stop / desktop-restart
 make mobile-stop / mobile-restart
 ```
 
@@ -182,6 +205,7 @@ PT_MOBILE_DEFAULT_STATION_URL=http://<host>:<port>
 This recipe is documentation for human developers. Agents MUST NOT execute it.
 
 ```bash
+make profile-authorize PROFILE=local-dev SLOT=0
 make profile-init PROFILE=local-dev SLOT=0
 make profile PROFILE=local-dev
 # Profile defaults are correct for local development
@@ -217,6 +241,7 @@ instead configure and preflight an approved remote Station profile.
 
 ```bash
 # In worktree-2, use slot=1 to avoid port conflicts
+make profile-authorize PROFILE=worktree-2 SLOT=1
 make profile-init PROFILE=worktree-2 SLOT=1
 make profile PROFILE=worktree-2
 make station   # Runs on :18180
@@ -239,10 +264,14 @@ These variables are passed to Station at startup.
 ### Recipe: Multi-Station (e.g. cross-Station chat acceptance)
 
 When acceptance scenarios require two Stations (e.g. Alice on station-four,
-Bob on station-five-arm), deploy both using separate profiles:
+Bob on station-five-arm), deploy both using separate approved profiles. The
+creation commands below are human-developer examples; an agent may execute them
+only when the human developer has already created grants for both exact profile
+names and targets:
 
 ```bash
 # 1. Create/activate profile for station-four
+make profile-authorize PROFILE=multi-four SLOT=0
 make profile-init PROFILE=multi-four SLOT=0
 make profile PROFILE=multi-four
 # Set in env/peers-touch/four/profile.env:
@@ -252,6 +281,7 @@ make profile PROFILE=multi-four
 make station          # Deploy/restart/check station-four
 
 # 2. Switch to profile for station-five-arm
+make profile-authorize PROFILE=multi-five-arm SLOT=1
 make profile-init PROFILE=multi-five-arm SLOT=1
 make profile PROFILE=multi-five-arm
 # Set in env/peers-touch/fiveArm/profile.env:
@@ -289,11 +319,13 @@ When the user says "set up environment for X" or "I want to debug against Y":
 1. **Bootstrap/check existing profiles**: `make profiles`
 2. **Select remote only**: reuse a canonical environment-repository profile that sets
    `PT_STATION_MODE=remote`.
-3. **Create if needed**: add a distinctly named profile and deploy environment
-   under `env/peers-touch/<name>/`; do not repurpose an existing environment
-   name or edit only its `.local` cache.
+3. **Missing profile means stop**: report the missing topology and request
+   explicit human developer authorization. Do not run `make profile-authorize`,
+   create authorization files, create `env/peers-touch/<name>/`, or add a
+   local-only fallback.
 4. **Configure**: set the approved remote Station URL and deploy environment in
-   that canonical environment source.
+   that canonical environment source only when the developer explicitly
+   authorized creating or changing it.
 5. **Activate**: `make profile <name>`.
 6. **Fail-closed preflight**: run `make config` and verify remote mode,
    non-loopback URL, and approved non-empty deploy environment.
@@ -377,8 +409,15 @@ Source modes:
 
 - `.local/` is its own git repo (gitignored by main repo, versioned separately)
 - Deployable profiles and deploy envs are authoritative in the sibling `env`
-  repository; `.local/` stores imported caches and runtime state
-- `make profiles` and `make profile <name>` bootstrap missing profiles/deploy envs from the shared `.local/` used by sibling worktrees.
+  repository; remote deploy resolves them directly, while `.local/` stores
+  non-authoritative caches and runtime state
+- Agents must not create or register profiles or deploy environments without
+  explicit human developer approval for the exact name and target.
+- `make profile-authorize` is human-only. Agents may consume only an existing,
+  unexpired exact-tuple grant through `make profile-init`.
+- Agents may import only approved canonical env-repository definitions; a
+  local-only fallback discovered by `make profiles` or `make profile <name>`
+  must fail closed.
 - Runtime artifacts (pids/logs/data) and active pointers are gitignored within `.local/`
 - Each worktree has its own active profile pointer (keyed by worktree basename)
 - Multiple worktrees share one `.local/` via symlink; pids/logs/data are profile-scoped

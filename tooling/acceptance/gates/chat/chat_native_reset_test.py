@@ -17,6 +17,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     acceptance_station_environment,
     duplicate_acceptance_queue_delivery,
     fixture_friendship_federation_id,
+    prepare_local_friend_request_lifecycle,
     read_fixture_actor,
     reset_local_client_storage,
     restart_acceptance_station,
@@ -146,6 +147,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                         "chat-native-acceptance",
                     )
 
+    @patch.dict(os.environ, {}, clear=True)
     def test_hard_rejects_protected_station_and_webdriver_ports(self) -> None:
         for port in (18080, 4445):
             environment = {
@@ -168,6 +170,89 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                             f"http://10.37.94.156:{port}",
                             "chat-native-acceptance",
                         )
+
+    def test_accepts_exact_profile_authorized_protected_station(self) -> None:
+        deployment = {
+            "PT_DEPLOY_HOST": "10.37.245.247",
+            "PT_DEPLOY_USER": "acceptance",
+            "PT_DEPLOY_RESTART_CMD": (
+                "docker compose -p pt-station -f compose.yml "
+                "up -d station"
+            ),
+        }
+        profile = {
+            "PT_DEV_PROFILE": "four",
+            "PT_STATION_DEPLOY_ENV": "station-four",
+            "PT_STATION_URL": "http://10.37.245.247:18080",
+        }
+        with patch.dict(
+            os.environ,
+            {"CHAT_ACCEPTANCE_RESET_PROFILE": "four"},
+            clear=True,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "active_profile_environment",
+            return_value=profile,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset.deploy_environment",
+            return_value=deployment,
+        ):
+            resolved = acceptance_station_environment(
+                "",
+                "station-four",
+            )
+
+        self.assertEqual(
+            resolved["PT_ACCEPTANCE_STATION_URL"],
+            "http://10.37.245.247:18080",
+        )
+        self.assertEqual(
+            resolved["PT_ACCEPTANCE_STATION_CONTAINER"],
+            "pt-station-station-1",
+        )
+        self.assertEqual(
+            resolved["PT_ACCEPTANCE_POSTGRES_CONTAINER"],
+            "pt-station-postgres-1",
+        )
+        self.assertEqual(
+            resolved["PT_ACCEPTANCE_POSTGRES_VOLUME"],
+            "pt-station_pg_data",
+        )
+
+    def test_rejects_profile_authorization_for_another_target(self) -> None:
+        deployment = {
+            "PT_DEPLOY_HOST": "10.37.245.247",
+            "PT_DEPLOY_USER": "acceptance",
+            "PT_DEPLOY_RESTART_CMD": (
+                "docker compose -p pt-station -f compose.yml "
+                "up -d station"
+            ),
+        }
+        profile = {
+            "PT_DEV_PROFILE": "four",
+            "PT_STATION_DEPLOY_ENV": "station-four",
+            "PT_STATION_URL": "http://10.37.245.247:18080",
+        }
+        with patch.dict(
+            os.environ,
+            {"CHAT_ACCEPTANCE_RESET_PROFILE": "five"},
+            clear=True,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "active_profile_environment",
+            return_value=profile,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset.deploy_environment",
+            return_value=deployment,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Profile-authorized Chat Acceptance reset target mismatch",
+            ):
+                acceptance_station_environment(
+                    "http://10.37.245.247:18080",
+                    "station-four",
+                )
 
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset.deploy_environment",
@@ -795,6 +880,44 @@ ORDER BY owner_ptid
             ):
                 reset_local_client_storage(["../outside"], Path(directory))
 
+    def test_friend_request_lifecycle_removes_only_the_selected_pair(
+        self,
+    ) -> None:
+        sender_ptid = "ptid:v1:actor:peers:p:alice:fingerprint"
+        receiver_ptid = "ptid:v1:actor:peers:p:bob:fingerprint"
+        with patch.dict(
+            os.environ,
+            {"CHAT_ACCEPTANCE_RESET": "1"},
+            clear=True,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "deploy_environment",
+            return_value=DISPOSABLE_ENVIRONMENT,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "acceptance_station_environment",
+            return_value=DISPOSABLE_ENVIRONMENT,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "verify_disposable_station_runtime",
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset._remote_psql",
+        ) as remote_psql:
+            prepare_local_friend_request_lifecycle(
+                "chat-native-acceptance",
+                sender_ptid,
+                receiver_ptid,
+            )
+
+        sql = remote_psql.call_args.args[1]
+        self.assertIn("DELETE FROM follows", sql)
+        self.assertIn(sender_ptid, sql)
+        self.assertIn(receiver_ptid, sql)
+        self.assertIn(
+            "friend-request lifecycle relationship reset is incomplete",
+            sql,
+        )
+
     def test_remote_transport_requires_strict_host_verification(self) -> None:
         transport = _remote_transport(DISPOSABLE_ENVIRONMENT)
         command = transport.command_prefix()
@@ -924,6 +1047,12 @@ ORDER BY owner_ptid
         )
         self.assertIn("updated_count <> 3", sql)
         self.assertIn("mutual_follow_count <> 6", sql)
+        self.assertIn("WITH preset_edges(follower_id, following_id)", sql)
+        self.assertIn("INSERT INTO follows", sql)
+        self.assertIn(
+            "WHERE NOT EXISTS",
+            sql,
+        )
         self.assertNotIn("INSERT INTO friend_chat_friend_requests", sql)
         self.assertNotIn("INSERT INTO social_friend_requests", sql)
         for actor in ("alice", "bob", "carol"):

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Tag } from '@lobehub/ui';
 import {
@@ -8,23 +8,33 @@ import {
   List,
   Modal,
   Popconfirm,
+  Spin,
   Space,
   Typography,
   message,
+  theme,
 } from 'antd';
-import { Pencil, Plus, Trash2, UsersRound } from 'lucide-react';
-import { useActiveMomentsSlice } from '../../components/moments/useActiveMomentsStore';
+import { Pencil, Plus, Search, Trash2, UserPlus, UsersRound, X } from 'lucide-react';
+import {
+  useActiveDiscoverySlice,
+  useActiveMomentsSlice,
+} from '../../components/moments/useActiveMomentsStore';
+import { UserSquareAvatar } from '../../components/common/UserSquareAvatar';
+import { FederatedHandle } from '../../components/FederatedHandle';
+import { SocialEmptyState } from '../../components/moments/surfaces';
+import type { DiscoveryUser } from '../../store/discovery';
 
-const { Text } = Typography;
+const { Paragraph, Text } = Typography;
 
-// CircleManageView — list publisher's own circles + add/rename/
-// delete + member management.
+// CircleManageView — publisher-private audience lists + add/rename/
+// delete + member management. "Circle" remains the protocol term;
+// the UI uses audience language and resolves people through search.
 //
 // What works in P2:
 //   - Create / rename / delete circle (full CRUD against the
 //     `social_circles` table).
-//   - Add / remove members by DID (bulk via `add_members` / paginated
-//     listing via `list_members`).
+//   - Add / remove members selected by identity search (the selected
+//     PTID remains an internal command value).
 //
 // What doesn't (deferred to P3):
 //   - PUBLISHING to a circle audience — the AudiencePicker greys
@@ -40,6 +50,7 @@ interface CircleEditState {
 
 export function CircleManageView() {
   const { t } = useTranslation('moments');
+  const { token } = theme.useToken();
   const {
     circles,
     circlesLoading,
@@ -59,9 +70,14 @@ export function CircleManageView() {
     addCircleMember: s.addCircleMember,
     removeCircleMember: s.removeCircleMember,
   }));
+  const { usersById, profileLoadingById, loadUserProfile } = useActiveDiscoverySlice((s) => ({
+    usersById: s.usersById,
+    profileLoadingById: s.profileLoadingById,
+    loadUserProfile: s.loadUserProfile,
+  }));
 
   const [editing, setEditing] = useState<CircleEditState | null>(null);
-  const [memberInput, setMemberInput] = useState<Record<string, string>>({});
+  const [memberPickerCircleId, setMemberPickerCircleId] = useState<string | null>(null);
 
   const handleSave = async () => {
     if (!editing) return;
@@ -87,15 +103,11 @@ export function CircleManageView() {
     }
   };
 
-  const handleAddMember = async (circleId: string) => {
-    const did = (memberInput[circleId] ?? '').trim();
-    if (!did) {
-      message.warning(t('moments.circle.memberDidRequired'));
-      return;
-    }
+  const handleAddMember = async (circleId: string, actorPtid: string) => {
     try {
-      await addCircleMember(circleId, did);
-      setMemberInput((m) => ({ ...m, [circleId]: '' }));
+      await addCircleMember(circleId, actorPtid);
+      await loadUserProfile(actorPtid);
+      setMemberPickerCircleId(null);
     } catch (err) {
       message.error(String(err));
     }
@@ -118,6 +130,12 @@ export function CircleManageView() {
           {t('moments.circle.create')}
         </Button>
       </Space>
+      <Paragraph
+        type="secondary"
+        style={{ margin: '-4px 0 16px', maxWidth: 680, lineHeight: 1.6 }}
+      >
+        {t('moments.circle.explanation')}
+      </Paragraph>
 
       {!circlesLoading && circles.length === 0 && (
         <Empty description={t('moments.placeholder.circleEmpty')} />
@@ -199,7 +217,12 @@ export function CircleManageView() {
                     </Button>,
                   ]}
                 >
-                  <Text style={{ fontSize: 13 }}>{m.actorPtid}</Text>
+                  <CircleMemberIdentity
+                    actorPtid={m.actorPtid}
+                    user={usersById[m.actorPtid]}
+                    loading={!!profileLoadingById[m.actorPtid]}
+                    fallbackLabel={t('moments.circle.memberUnavailable')}
+                  />
                 </List.Item>
               )}
               locale={{
@@ -211,17 +234,40 @@ export function CircleManageView() {
               }}
               style={{ marginTop: 8 }}
             />
-            <Space.Compact style={{ width: '100%', marginTop: 8 }}>
-              <Input
-                placeholder={t('moments.circle.addMemberPlaceholder')}
-                value={memberInput[id] ?? ''}
-                onChange={(e) => setMemberInput((m) => ({ ...m, [id]: e.target.value }))}
-                onPressEnter={() => handleAddMember(id)}
-              />
-              <Button onClick={() => handleAddMember(id)}>
-                {t('moments.circle.addMember')}
+            {memberPickerCircleId === id ? (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: 10,
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  borderRadius: token.borderRadiusLG,
+                  background: token.colorFillQuaternary,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<X size={14} />}
+                    aria-label={t('moments.compose.close')}
+                    onClick={() => setMemberPickerCircleId(null)}
+                  />
+                </div>
+                <CircleMemberPicker
+                  excludedPtids={new Set(members.map((member) => member.actorPtid))}
+                  onAdd={(actorPtid) => handleAddMember(id, actorPtid)}
+                />
+              </div>
+            ) : (
+              <Button
+                type="text"
+                icon={<UserPlus size={14} />}
+                style={{ marginTop: 8 }}
+                onClick={() => setMemberPickerCircleId(id)}
+              >
+                {t('moments.circle.addPeople')}
               </Button>
-            </Space.Compact>
+            )}
           </Card>
         );
       })}
@@ -256,6 +302,153 @@ export function CircleManageView() {
           />
         </Space>
       </Modal>
+    </div>
+  );
+}
+
+function CircleMemberPicker({
+  excludedPtids,
+  onAdd,
+}: {
+  excludedPtids: ReadonlySet<string>;
+  onAdd: (actorPtid: string) => Promise<void>;
+}) {
+  const { t } = useTranslation('moments');
+  const [query, setQuery] = useState('');
+  const [addingPtid, setAddingPtid] = useState<string | null>(null);
+  const { resultQuery, results, searching, searchError, searchUsers } = useActiveDiscoverySlice((s) => ({
+    resultQuery: s.query,
+    results: s.results,
+    searching: s.searching,
+    searchError: s.searchError,
+    searchUsers: s.searchUsers,
+  }));
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      void searchUsers(query);
+    }, 280);
+    return () => window.clearTimeout(handle);
+  }, [query, searchUsers]);
+
+  const normalizedQuery = query.trim();
+  const candidates = resultQuery === normalizedQuery
+    ? results.filter((user) => !excludedPtids.has(user.id))
+    : [];
+
+  return (
+    <div data-moments-circle-person-picker>
+      <Input
+        prefix={<Search size={15} />}
+        placeholder={t('moments.circle.searchPeoplePlaceholder')}
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        autoFocus
+        allowClear
+      />
+      {searching && resultQuery === normalizedQuery && (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 14 }}>
+          <Spin size="small" />
+        </div>
+      )}
+      {!searching && normalizedQuery && searchError && resultQuery === normalizedQuery && (
+        <SocialEmptyState
+          compact
+          kind="degraded"
+          primaryAction={{
+            label: t('moments.empty.try-again'),
+            onClick: () => void searchUsers(normalizedQuery),
+          }}
+        />
+      )}
+      {!searching && normalizedQuery && !searchError && resultQuery === normalizedQuery && candidates.length === 0 && (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={t('moments.circle.noPeopleFound')}
+          styles={{ image: { height: 36 } }}
+        />
+      )}
+      {!searching && normalizedQuery && !searchError && candidates.length > 0 && (
+        <List
+          size="small"
+          dataSource={candidates}
+          renderItem={(user) => (
+            <List.Item
+              key={user.id}
+              actions={[
+                <Button
+                  key="add"
+                  size="small"
+                  type="primary"
+                  loading={addingPtid === user.id}
+                  disabled={!!addingPtid}
+                  onClick={async () => {
+                    setAddingPtid(user.id);
+                    try {
+                      await onAdd(user.id);
+                    } finally {
+                      setAddingPtid(null);
+                    }
+                  }}
+                >
+                  {t('moments.circle.addMember')}
+                </Button>,
+              ]}
+            >
+              <CircleMemberIdentity
+                actorPtid={user.id}
+                user={user}
+                fallbackLabel={t('moments.circle.memberUnavailable')}
+              />
+            </List.Item>
+          )}
+        />
+      )}
+    </div>
+  );
+}
+
+function CircleMemberIdentity({
+  actorPtid,
+  user,
+  loading,
+  fallbackLabel,
+}: {
+  actorPtid: string;
+  user?: DiscoveryUser;
+  loading?: boolean;
+  fallbackLabel: string;
+}) {
+  if (loading && !user) {
+    return <Spin size="small" />;
+  }
+
+  const displayName = user?.displayName || user?.username || fallbackLabel;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+      <UserSquareAvatar
+        remoteUrl={user?.avatar}
+        name={displayName}
+        size={32}
+        radius={8}
+      />
+      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <Text strong ellipsis style={{ maxWidth: 320 }}>
+          {displayName}
+        </Text>
+        {user?.username && (
+          <FederatedHandle
+            localPart={user.username}
+            home={user.homeStationDomain}
+            fontSize={12}
+          />
+        )}
+        {!user?.username && actorPtid && (
+          <Text type="secondary" ellipsis style={{ maxWidth: 320, fontSize: 12 }}>
+            {actorPtid}
+          </Text>
+        )}
+      </div>
     </div>
   );
 }

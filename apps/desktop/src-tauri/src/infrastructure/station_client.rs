@@ -15,11 +15,14 @@ use std::time::Duration;
 const INTERACTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const TURN_EXECUTION_WALL_TIME: Duration = Duration::from_secs(300);
 const TURN_EXECUTION_RESPONSE_MARGIN: Duration = Duration::from_secs(5);
-const SAFE_ERROR_DETAIL_FIELDS: [&str; 4] = [
+const SAFE_ERROR_DETAIL_FIELDS: [&str; 7] = [
     "resource_kind",
     "resource_id",
     "expected_revision",
     "actual_revision",
+    "operation",
+    "field",
+    "reason",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -175,7 +178,15 @@ impl StationClientError {
 
 impl fmt::Display for StationClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.message)
+        let error_code = self
+            .details
+            .as_ref()
+            .and_then(|details| details.get("error_code"))
+            .and_then(Value::as_str);
+        match error_code {
+            Some(code) => write!(f, "{} [code={}]", self.message, code),
+            None => write!(f, "{}", self.message),
+        }
     }
 }
 
@@ -764,6 +775,7 @@ where
             )
         })?;
     let status = response.status();
+    let headers = headers_to_json(response.headers());
     let bytes = response.bytes().map_err(|error| {
         StationClientError::new(
             StationClientErrorKind::Decode,
@@ -773,7 +785,19 @@ where
     })?;
     if !status.is_success() {
         let body = String::from_utf8_lossy(&bytes).to_string();
-        return Err(build_error_for_status(status.as_u16(), path, &body));
+        tracing::warn!(
+            path = %path,
+            status = status.as_u16(),
+            elapsed_ms = start.elapsed().as_millis(),
+            body = %body,
+            "← station FAIL (profile-scoped proto)",
+        );
+        return Err(build_error_for_status_with_headers(
+            status.as_u16(),
+            path,
+            &body,
+            Some(&headers),
+        ));
     }
     tracing::debug!(
         path = %path,
@@ -1591,6 +1615,23 @@ mod tests {
     }
 
     #[test]
+    fn station_error_display_includes_typed_error_code() {
+        let error = build_error_for_status_with_headers(
+            400,
+            "/conversation/direct",
+            "",
+            Some(&json!({
+                "x-peers-error-code": "CONVERSATION_INVALID_ARGUMENT",
+            })),
+        );
+
+        assert_eq!(
+            error.to_string(),
+            "station returned 400 :  [code=CONVERSATION_INVALID_ARGUMENT]"
+        );
+    }
+
+    #[test]
     fn typed_station_error_details_survive_json_transport() {
         let headers = json!({
             "x-peers-error-code": "ADMISSION_ACTIVE_MUTATION_CONFLICT",
@@ -1602,6 +1643,9 @@ mod tests {
                 "resource_id":"agent-1",
                 "expected_revision":"7",
                 "actual_revision":"8",
+                "operation":"application.prepare_group",
+                "field":"home_station",
+                "reason":"is not an active Federation Station",
                 "ignored_string":"not-safe",
                 "ignored_number":9
             }"#,
@@ -1624,6 +1668,9 @@ mod tests {
         assert_eq!(details["resource_id"], "agent-1");
         assert_eq!(details["expected_revision"], "7");
         assert_eq!(details["actual_revision"], "8");
+        assert_eq!(details["operation"], "application.prepare_group");
+        assert_eq!(details["field"], "home_station");
+        assert_eq!(details["reason"], "is not an active Federation Station");
         assert!(details.get("ignored_string").is_none());
         assert!(details.get("ignored_number").is_none());
     }

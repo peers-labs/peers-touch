@@ -1490,6 +1490,12 @@ class NativeDesktopWindowsProvisioner:
             str(state["runId"]),
             actor,
         )
+        actor_state_root = _windows_join(
+            str(state["brokerRoot"]),
+            "state",
+            str(state["runId"]),
+            actor,
+        )
         return self._broker_from_state(
             state,
             "launch-actor",
@@ -1504,7 +1510,7 @@ class NativeDesktopWindowsProvisioner:
                 "webdriverPort": webdriver_port,
                 "gatewayPort": gateway_port,
                 "profile": profile,
-                "storageRoot": _windows_join(actor_root, "storage"),
+                "storageRoot": actor_state_root,
                 "logPath": _windows_join(actor_root, "logs", "desktop.log"),
             },
         )

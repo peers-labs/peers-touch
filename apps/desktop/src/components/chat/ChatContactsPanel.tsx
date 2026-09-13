@@ -2,16 +2,25 @@ import { useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Tag } from '@lobehub/ui';
-import { Collapse, Empty, theme, Typography } from 'antd';
+import { Alert, Collapse, Empty, Spin, theme, Typography } from 'antd';
 import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
 import { currentAuthenticatedActorPtid } from '../../store/session';
+import {
+  projectChatFriendContacts,
+  type ChatActorIdentityProjection,
+} from '../../store/friendshipProjection';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { log } from '../../utils/logger';
-import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
+import {
+  useActiveChatFederationSlice,
+  useActiveChatRelationshipsSlice,
+  useActiveSocialChatSlice,
+} from './useActiveSocialChatStore';
 import {
   friendContactSelection,
   type ContactSelection,
 } from './contactSelection';
+import { ChatActorIdentityRow } from './ChatActorIdentityRow';
 
 const { Text } = Typography;
 
@@ -55,6 +64,20 @@ export function ChatContactsPanel({
     acceptFriendRequest: s.acceptFriendRequest,
     rejectFriendRequest: s.rejectFriendRequest,
   }));
+  const {
+    mutualFriends,
+    mutualFriendsActorPtid,
+    mutualFriendsLoading,
+    mutualFriendsLoadedAt,
+    mutualFriendsError,
+  } = useActiveChatRelationshipsSlice((s) => ({
+    mutualFriends: s.mutualFriends,
+    mutualFriendsActorPtid: s.mutualFriendsActorPtid,
+    mutualFriendsLoading: s.mutualFriendsLoading,
+    mutualFriendsLoadedAt: s.mutualFriendsLoadedAt,
+    mutualFriendsError: s.mutualFriendsError,
+  }));
+  const federations = useActiveChatFederationSlice((s) => s.federations);
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
   const conversations = useMemo(
@@ -84,22 +107,42 @@ export function ChatContactsPanel({
   const friendConversations = conversations.filter((conversation) => conversation.kind === 'friend');
 
   const myDid = currentUserPtid || currentAuthenticatedActorPtid() || '';
+  const friendshipReady = Boolean(
+    myDid
+    && mutualFriendsActorPtid === myDid
+    && mutualFriendsLoadedAt,
+  );
+  const friendContacts = useMemo(
+    () => projectChatFriendContacts({
+      mutualFriends,
+      conversations,
+      friendRequests,
+      peerProfiles,
+      currentUserPtid: myDid,
+      federations,
+    }),
+    [
+      conversations,
+      federations,
+      friendRequests,
+      mutualFriends,
+      myDid,
+      peerProfiles,
+    ],
+  );
+  const friendContactsByPtid = useMemo(
+    () => new Map(friendContacts.map((contact) => [contact.actorPtid, contact])),
+    [friendContacts],
+  );
+  const federationNames = useMemo(
+    () => new Map(federations.map((federation) => [
+      federation.federationId,
+      federation.name,
+    ])),
+    [federations],
+  );
 
-  const acceptedContacts = (() => {
-    const existingPeerIds = new Set(friendConversations.map((c) => c.peerPtid).filter(Boolean));
-    return friendRequests
-      .filter((r) => r.status === 2)
-      .map((r) => {
-        const isSender = r.senderPtid === myDid;
-        const peerId = isSender ? r.receiverPtid : r.senderPtid;
-        const peerName = isSender ? r.receiverDisplayName : r.senderDisplayName;
-        const peerAvatar = isSender ? r.receiverAvatar : r.senderAvatar;
-        return { peerId, peerName, peerAvatar, federationId: r.federationId };
-      })
-      .filter(({ peerId }) => !existingPeerIds.has(peerId));
-  })();
-
-  const totalContacts = friendConversations.length + acceptedContacts.length;
+  const totalContacts = friendContacts.length;
 
   const unifiedRequests = useMemo(() => {
     if (!myDid) return [];
@@ -168,19 +211,8 @@ export function ChatContactsPanel({
     return null;
   }
 
-  const selectAcceptedActor = (
-    peerPtid: string,
-    federationId: string,
-    displayName: string,
-    avatar?: string,
-  ) => {
-    const selection = friendContactSelection(
-      peerPtid,
-      federationId,
-      displayName,
-      avatar,
-      friendConversations,
-    );
+  const selectAcceptedActor = (identity: ChatActorIdentityProjection) => {
+    const selection = friendContactSelection(identity, friendConversations);
     if (selection.conversationId) selectSession(selection.conversationId);
     onSelectContact(selection);
   };
@@ -206,6 +238,19 @@ export function ChatContactsPanel({
           || peerName
           || t('chat.social.sessionList.unknown');
         const resolvedAvatar = cachedProfile?.avatar?.trim() || peerAvatar;
+        const projectedIdentity = friendContactsByPtid.get(peerPtid) ?? {
+          actorPtid: peerPtid,
+          username: cachedProfile?.username?.trim() || '',
+          displayName: peerLabel,
+          avatarUrl: resolvedAvatar,
+          federatedHandle: '',
+          homeStationDomain: '',
+          homeStationPeerId: direction === 'incoming'
+            ? request.senderHomeStationPeerId
+            : request.receiverHomeStationPeerId,
+          federationId,
+          federationName: federationNames.get(federationId) || '',
+        };
         const isPendingIncoming = direction === 'incoming' && request.status === 1;
         const isAccepted = request.status === 2;
         const isSelected = selectedContact?.kind === 'friend'
@@ -220,13 +265,13 @@ export function ChatContactsPanel({
             role={isAccepted ? 'button' : undefined}
             tabIndex={isAccepted ? 0 : undefined}
             onClick={isAccepted
-              ? () => selectAcceptedActor(peerPtid, federationId, peerLabel, resolvedAvatar)
+              ? () => selectAcceptedActor(projectedIdentity)
               : undefined}
             onKeyDown={isAccepted
               ? (event) => {
                   if (event.key !== 'Enter' && event.key !== ' ') return;
                   event.preventDefault();
-                  selectAcceptedActor(peerPtid, federationId, peerLabel, resolvedAvatar);
+                  selectAcceptedActor(projectedIdentity);
                 }
               : undefined}
             style={{
@@ -419,94 +464,44 @@ export function ChatContactsPanel({
         </Flexbox>
       ),
       children:
-        totalContacts === 0 ? (
+        mutualFriendsError ? (
+          <Alert
+            type="error"
+            showIcon
+            message={t('chat.social.findPeople.friendshipUnavailable')}
+          />
+        ) : !friendshipReady || mutualFriendsLoading ? (
+          <Flexbox align="center" justify="center" style={{ padding: '14px 8px' }}>
+            <Spin size="small" />
+          </Flexbox>
+        ) : totalContacts === 0 ? (
           <Flexbox align="center" justify="center" style={{ padding: '14px 8px' }}>
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.contacts.noFriends')} />
           </Flexbox>
         ) : (
           <Flexbox gap={3} style={rowListStyle}>
-            {friendConversations.map((conversation) => {
-              const label = conversation.title || t('chat.social.sessionList.unknown');
+            {friendContacts.map((friend) => {
               const isSelected = selectedContact?.kind === 'friend'
-                && selectedContact.conversationId === conversation.id;
-              return (
-                <Flexbox
-                  key={conversation.id}
-                  horizontal
-                  align="center"
-                  gap={9}
-                  onClick={() => {
-                    selectSession(conversation.id);
-                    onSelectContact({
-                      kind: 'friend',
-                      conversationId: conversation.id,
-                      peerPtid: conversation.peerPtid || '',
-                      federationId: conversation.federationId || '',
-                      displayName: label,
-                      avatar: conversation.avatar,
-                    });
-                  }}
-                  onDoubleClick={() => {
-                    onStartChat?.({
-                      kind: 'friend',
-                      conversationId: conversation.id,
-                      peerPtid: conversation.peerPtid || '',
-                      federationId: conversation.federationId || '',
-                      displayName: label,
-                      avatar: conversation.avatar,
-                    });
-                  }}
-                  style={{
-                    ...rowBaseStyle,
-                    ...(isSelected ? selectedRowStyle : {}),
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) e.currentTarget.style.background = token.colorFillQuaternary;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = isSelected ? token.colorPrimaryBg : 'transparent';
-                  }}
-                >
-                  <UserSquareAvatar remoteUrl={conversation.avatar} name={label} size={avatarSize} />
-                  <Flexbox flex={1} style={{ minWidth: 0 }}>
-                    <Text strong ellipsis style={{ fontSize: 13, color: isSelected ? token.colorPrimary : undefined }}>
-                      {label}
-                    </Text>
-                  </Flexbox>
-                  <ChevronRight
-                    size={14}
-                    style={{
-                      color: isSelected ? token.colorPrimary : token.colorTextQuaternary,
-                      flexShrink: 0,
-                    }}
-                  />
-                </Flexbox>
+                && selectedContact.peerPtid === friend.actorPtid;
+              const selection = friendContactSelection(
+                friend,
+                friendConversations,
               );
-            })}
-            {acceptedContacts.map(({ peerId, peerName, peerAvatar, federationId }) => {
-              const cachedProfile = peerProfiles[peerId];
-              const label = cachedProfile?.display_name?.trim()
-                || cachedProfile?.username?.trim()
-                || peerName
-                || t('chat.social.sessionList.unknown');
-              const avatar = cachedProfile?.avatar?.trim() || peerAvatar;
-              const isSelected = selectedContact?.kind === 'friend'
-                && !selectedContact.conversationId
-                && selectedContact.peerPtid === peerId;
               return (
                 <Flexbox
-                  key={peerId}
-                  data-chat-contact-ptid={peerId}
+                  key={friend.actorPtid}
+                  data-chat-contact-ptid={friend.actorPtid}
+                  data-chat-contact-conversation-id={friend.conversationId ?? ''}
+                  data-chat-contact-federation-id={friend.federationId}
+                  data-chat-contact-federated-handle={friend.federatedHandle}
+                  data-chat-contact-home-station-domain={friend.homeStationDomain}
+                  data-chat-contact-home-station-peer-id={friend.homeStationPeerId}
+                  data-chat-contact-avatar-src={friend.avatarUrl}
                   horizontal
                   align="center"
                   gap={9}
-                  onClick={() => onSelectContact({
-                    kind: 'friend',
-                    peerPtid: peerId,
-                    federationId,
-                    displayName: label,
-                    avatar,
-                  })}
+                  onClick={() => selectAcceptedActor(friend)}
+                  onDoubleClick={() => onStartChat?.(selection)}
                   style={{
                     ...rowBaseStyle,
                     ...(isSelected ? selectedRowStyle : {}),
@@ -518,12 +513,11 @@ export function ChatContactsPanel({
                     e.currentTarget.style.background = isSelected ? token.colorPrimaryBg : 'transparent';
                   }}
                 >
-                  <UserSquareAvatar remoteUrl={avatar} name={label} size={avatarSize} />
-                  <Flexbox flex={1} style={{ minWidth: 0 }}>
-                    <Text strong ellipsis style={{ fontSize: 13, color: isSelected ? token.colorPrimary : undefined }}>
-                      {label}
-                    </Text>
-                  </Flexbox>
+                  <ChatActorIdentityRow
+                    identity={friend}
+                    avatarSize={avatarSize}
+                    nameColor={isSelected ? token.colorPrimary : undefined}
+                  />
                   <ChevronRight
                     size={14}
                     style={{
@@ -541,6 +535,10 @@ export function ChatContactsPanel({
 
   return (
     <Flexbox
+      data-chat-contacts
+      data-chat-friendship-state={
+        mutualFriendsError ? 'error' : friendshipReady ? 'ready' : 'loading'
+      }
       style={{
         width: PANEL_WIDTH,
         minWidth: PANEL_WIDTH,

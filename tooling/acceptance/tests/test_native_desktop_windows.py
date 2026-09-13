@@ -521,7 +521,7 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         payload = provisioner._broker_from_state.call_args.args[2]
         self.assertEqual(
             payload["storageRoot"],
-            "C:\\runtime\\actors\\run-1\\alice\\storage",
+            "C:\\runtime\\state\\run-1\\alice",
         )
         self.assertEqual(
             payload["logPath"],

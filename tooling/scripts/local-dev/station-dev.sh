@@ -3,6 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
 source "$SCRIPT_DIR/env.sh"
 
 STATION_DIR="$PROJECT_ROOT/apps/station/app"
@@ -176,10 +177,40 @@ if [[ "$STATION_MODE" == "remote" ]]; then
     exit 1
   fi
 
+  if ! deploy_env_file="$("$DEPLOY_SCRIPT" resolve "$deploy_env")"; then
+    echo "[ERROR] Reviewed deploy env is unavailable for PT_STATION_DEPLOY_ENV=$deploy_env."
+    echo "        Referenced by PT_STATION_DEPLOY_ENV=$deploy_env in the active profile."
+    exit 1
+  fi
+
+  # Host consistency guard: the deploy env's target host must match the
+  # profile's PT_STATION_URL host.  Without this check, a stale or
+  # cross-profile deploy env silently deploys to the wrong machine.
+  deploy_host="$(sed -n 's/^PT_DEPLOY_HOST=//p' "$deploy_env_file" | tail -n 1)"
+  profile_host="$(echo "$STATION_URL" | sed -E 's|https?://([^:/]+).*|\1|')"
+  if [[ -n "$deploy_host" && -n "$profile_host" && "$deploy_host" != "$profile_host" ]]; then
+    echo "[ERROR] Deploy env host mismatch!"
+    echo ""
+    echo "  Profile PT_STATION_URL host : $profile_host"
+    echo "  Deploy env PT_DEPLOY_HOST   : $deploy_host  ($deploy_env_file)"
+    echo ""
+    echo "  The active profile expects Station at $profile_host,"
+    echo "  but deploy env '$deploy_env' would deploy to $deploy_host."
+    echo ""
+    echo "  Likely causes:"
+    echo "    - PT_STATION_DEPLOY_ENV=$deploy_env points to a deploy env owned by another profile"
+    echo "    - The deploy env file was overwritten by another worktree or profile activation"
+    echo ""
+    echo "  Fix: set PT_STATION_DEPLOY_ENV to a deploy env that targets $profile_host,"
+    echo "  or update $deploy_env_file to point to $profile_host."
+    exit 1
+  fi
+
   branch="${PT_STATION_DEPLOY_BRANCH:-$(git -C "$PROJECT_ROOT" branch --show-current 2>/dev/null || echo main)}"
   echo "[INFO] Station mode: remote ready closure"
   echo "       URL        : $STATION_URL"
   echo "       Deploy env : $deploy_env"
+  echo "       Deploy host: $deploy_host"
   echo "       Branch     : $branch"
   echo ""
 

@@ -63,15 +63,26 @@ def is_native_tauri_url(value: str) -> bool:
         port = parsed.port
     except ValueError:
         return False
+    native_dev = os.environ.get("PT_ACCEPTANCE_NATIVE_DEV", "") == "1"
     return (
         parsed.username is None
         and parsed.password is None
-        and port is None
         and (
-            (parsed.scheme == "tauri" and parsed.hostname == "localhost")
+            (
+                port is None
+                and parsed.scheme == "tauri"
+                and parsed.hostname == "localhost"
+            )
             or (
-                parsed.scheme == "http"
+                port is None
+                and parsed.scheme == "http"
                 and parsed.hostname == "tauri.localhost"
+            )
+            or (
+                native_dev
+                and parsed.scheme == "http"
+                and parsed.hostname == "localhost"
+                and port is not None
             )
         )
     )

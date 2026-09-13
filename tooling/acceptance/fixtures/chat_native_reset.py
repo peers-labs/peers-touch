@@ -28,6 +28,7 @@ SAFE_RUNTIME_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
 APPROVED_DISPOSABLE_STATION_PORT = 18132
 PROTECTED_CLEANUP_PORTS = frozenset({4445, 18080})
 LOCAL_SOURCE_RUNTIME = "local-source"
+RESET_PROFILE_AUTHORIZATION_ENV = "CHAT_ACCEPTANCE_RESET_PROFILE"
 SOCIAL_RELATIONSHIP_PROTO = "domain/social/relationship.proto"
 SOCIAL_PROTO_ROOT = REPO_ROOT / "model"
 FIXTURE_FRIENDSHIP_CREATED_AT_UNIX = 1788739200
@@ -244,6 +245,86 @@ def _local_source_environment(
     return environment
 
 
+def _deployment_compose_project(environment: dict[str, str]) -> str:
+    for key in ("PT_DEPLOY_RESTART_CMD", "PT_DEPLOY_BUILD_CMD"):
+        command = environment.get(key, "").strip()
+        if not command:
+            continue
+        tokens = shlex.split(command)
+        for index, token in enumerate(tokens):
+            if token in {"-p", "--project-name"} and index + 1 < len(tokens):
+                project = tokens[index + 1]
+                if SAFE_RUNTIME_NAME.fullmatch(project):
+                    return project
+            if token.startswith("--project-name="):
+                project = token.split("=", 1)[1]
+                if SAFE_RUNTIME_NAME.fullmatch(project):
+                    return project
+    raise RuntimeError(
+        "Profile-authorized Chat Acceptance reset requires one safe Docker "
+        "Compose project in the deployment command"
+    )
+
+
+def _profile_authorized_reset_environment(
+    station_url: str,
+    selected_environment: str,
+    environment: dict[str, str],
+) -> tuple[str, dict[str, str]] | None:
+    authorized_profile = os.environ.get(
+        RESET_PROFILE_AUTHORIZATION_ENV,
+        "",
+    ).strip()
+    if not authorized_profile:
+        return None
+
+    profile = active_profile_environment()
+    active_profile = profile.get("PT_DEV_PROFILE", "").strip()
+    active_environment = profile.get("PT_STATION_DEPLOY_ENV", "").strip()
+    active_station = profile.get("PT_STATION_URL", "").rstrip("/")
+    requested_station = station_url.rstrip("/") or active_station
+    if (
+        authorized_profile != active_profile
+        or selected_environment != active_environment
+        or not active_station
+        or requested_station != active_station
+    ):
+        raise RuntimeError(
+            "Profile-authorized Chat Acceptance reset target mismatch: "
+            f"authorized_profile={authorized_profile or 'missing'} "
+            f"active_profile={active_profile or 'missing'} "
+            f"deployment_environment={selected_environment} "
+            f"active_environment={active_environment or 'missing'}"
+        )
+
+    parsed = urllib.parse.urlparse(active_station)
+    host = environment.get("PT_DEPLOY_HOST", "").strip()
+    if (
+        parsed.scheme not in {"http", "https"}
+        or parsed.hostname != host
+        or parsed.path not in {"", "/"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RuntimeError(
+            "Profile-authorized Chat Acceptance reset Station URL does not "
+            "match the deployment host"
+        )
+
+    compose_project = _deployment_compose_project(environment)
+    authorized_environment = {
+        **environment,
+        "PT_ACCEPTANCE_DISPOSABLE": "1",
+        "PT_ACCEPTANCE_STATION_URL": active_station,
+        "PT_ACCEPTANCE_COMPOSE_PROJECT": compose_project,
+        "PT_ACCEPTANCE_STATION_CONTAINER": f"{compose_project}-station-1",
+        "PT_ACCEPTANCE_POSTGRES_CONTAINER": f"{compose_project}-postgres-1",
+        "PT_ACCEPTANCE_POSTGRES_VOLUME": f"{compose_project}_pg_data",
+    }
+    return active_station, authorized_environment
+
+
 def acceptance_station_environment(
     station_url: str,
     environment_name: str | None = None,
@@ -256,12 +337,22 @@ def acceptance_station_environment(
         return local_environment
     selected_environment = environment_name or active_deployment_environment()
     environment = deploy_environment(selected_environment)
+    profile_authorized = _profile_authorized_reset_environment(
+        station_url,
+        selected_environment,
+        environment,
+    )
+    if profile_authorized is not None:
+        station_url, environment = profile_authorized
     host = environment.get("PT_DEPLOY_HOST", "").strip()
     user = environment.get("PT_DEPLOY_USER", "").strip()
     expected_url = environment.get("PT_ACCEPTANCE_STATION_URL", "").rstrip("/")
     parsed_url = urllib.parse.urlparse(station_url)
     expected = urllib.parse.urlparse(expected_url)
-    if parsed_url.port in PROTECTED_CLEANUP_PORTS:
+    if (
+        parsed_url.port in PROTECTED_CLEANUP_PORTS
+        and profile_authorized is None
+    ):
         raise RuntimeError(
             "Disposable Chat Acceptance refuses protected cleanup target port: "
             f"{parsed_url.port}"
@@ -276,8 +367,14 @@ def acceptance_station_environment(
         or parsed_url.scheme != expected.scheme
         or parsed_url.hostname != host
         or parsed_url.hostname != expected.hostname
-        or parsed_url.port != APPROVED_DISPOSABLE_STATION_PORT
-        or expected.port != APPROVED_DISPOSABLE_STATION_PORT
+        or (
+            profile_authorized is None
+            and parsed_url.port != APPROVED_DISPOSABLE_STATION_PORT
+        )
+        or (
+            profile_authorized is None
+            and expected.port != APPROVED_DISPOSABLE_STATION_PORT
+        )
         or parsed_url.port != expected.port
         or parsed_url.path not in {"", "/"}
         or parsed_url.params
@@ -1887,6 +1984,81 @@ def reset_local_client_storage(
     return reset
 
 
+def prepare_local_friend_request_lifecycle(
+    environment_name: str,
+    sender_ptid: str,
+    receiver_ptid: str,
+) -> None:
+    if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
+        raise RuntimeError(
+            "CHAT_ACCEPTANCE_RESET=1 is required for destructive Chat reset"
+        )
+    if (
+        not sender_ptid.startswith("ptid:")
+        or not receiver_ptid.startswith("ptid:")
+        or sender_ptid == receiver_ptid
+    ):
+        raise RuntimeError(
+            "friend-request lifecycle requires two distinct canonical PTIDs"
+        )
+
+    deployment = deploy_environment(environment_name)
+    station_url = deployment.get(
+        "PT_ACCEPTANCE_STATION_URL",
+        "",
+    ).strip()
+    environment = acceptance_station_environment(
+        station_url,
+        environment_name,
+    )
+    verify_disposable_station_runtime(environment)
+    sql = f"""
+BEGIN;
+DELETE FROM follows
+WHERE (follower_id, following_id) IN (
+  SELECT sender.id, receiver.id
+  FROM touch_actor AS sender
+  JOIN touch_actor AS receiver
+    ON receiver.ptid = {_sql_literal(receiver_ptid)}
+  WHERE sender.ptid = {_sql_literal(sender_ptid)}
+  UNION ALL
+  SELECT receiver.id, sender.id
+  FROM touch_actor AS sender
+  JOIN touch_actor AS receiver
+    ON receiver.ptid = {_sql_literal(receiver_ptid)}
+  WHERE sender.ptid = {_sql_literal(sender_ptid)}
+);
+DO $acceptance$
+DECLARE
+  remaining_count integer;
+BEGIN
+  SELECT count(*)
+  INTO remaining_count
+  FROM follows
+  WHERE (follower_id, following_id) IN (
+    SELECT sender.id, receiver.id
+    FROM touch_actor AS sender
+    JOIN touch_actor AS receiver
+      ON receiver.ptid = {_sql_literal(receiver_ptid)}
+    WHERE sender.ptid = {_sql_literal(sender_ptid)}
+    UNION ALL
+    SELECT receiver.id, sender.id
+    FROM touch_actor AS sender
+    JOIN touch_actor AS receiver
+      ON receiver.ptid = {_sql_literal(receiver_ptid)}
+    WHERE sender.ptid = {_sql_literal(sender_ptid)}
+  );
+  IF remaining_count <> 0 THEN
+    RAISE EXCEPTION
+      'friend-request lifecycle relationship reset is incomplete';
+  END IF;
+END
+$acceptance$;
+COMMIT;
+"""
+    _remote_psql(environment, sql)
+
+
 def reset_station_chat_state(environment_name: str) -> None:
     if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
         raise RuntimeError(
@@ -1975,6 +2147,7 @@ BEGIN
 END
 $acceptance_reset$;
 DELETE FROM touch_actor WHERE origin = 'remote_cached';
+LOCK TABLE follows IN SHARE ROW EXCLUSIVE MODE;
 DO $acceptance$
 DECLARE
   preset_hash text;
@@ -2017,7 +2190,48 @@ BEGIN
     RAISE EXCEPTION 'native Chat preset actor PTIDs are invalid';
   END IF;
 
-
+  WITH preset_edges(follower_id, following_id) AS (
+    VALUES
+      (alice_actor_id, bob_actor_id),
+      (bob_actor_id, alice_actor_id),
+      (alice_actor_id, carol_actor_id),
+      (carol_actor_id, alice_actor_id),
+      (bob_actor_id, carol_actor_id),
+      (carol_actor_id, bob_actor_id)
+  ),
+  missing_edges AS (
+    SELECT
+      preset_edges.follower_id,
+      preset_edges.following_id,
+      row_number() OVER (
+        ORDER BY preset_edges.follower_id, preset_edges.following_id
+      ) AS id_offset
+    FROM preset_edges
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM follows
+      WHERE follows.follower_id = preset_edges.follower_id
+        AND follows.following_id = preset_edges.following_id
+    )
+  ),
+  next_follow_id AS (
+    SELECT coalesce(max(id), 0) AS max_id
+    FROM follows
+  )
+  INSERT INTO follows (
+    id,
+    follower_id,
+    following_id,
+    created_at
+  )
+  SELECT
+    next_follow_id.max_id + missing_edges.id_offset,
+    missing_edges.follower_id,
+    missing_edges.following_id,
+    clock_timestamp()
+  FROM missing_edges
+  CROSS JOIN next_follow_id
+  ORDER BY missing_edges.id_offset;
   SELECT count(*) INTO mutual_follow_count
   FROM follows
   WHERE (follower_id, following_id) IN (
