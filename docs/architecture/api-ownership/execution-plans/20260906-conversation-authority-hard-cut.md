@@ -1411,3 +1411,16 @@ correctly returns `401 authenticated Key Exchange device required`. Runtime and
 Provisioner cleanup are `DONE/PROVEN`. This Desktop-owned correction is parked
 behind the same active MCA Desktop write claim as the W8B revoke fix; CA-W6
 remains `PARTIAL/UNPROVEN`.
+
+The owner audit confirms that `keypackage_count` must resolve the current
+window's Messaging engine, verify that its endpoint PTID matches the
+authenticated session actor, send canonical
+`CountMlsKeyPackagesRequest.device`, and bind the same endpoint device ID as
+`X-Device-ID`. Adding only a header or using process-global device state would
+remain invalid. The legacy Desktop KeyPackage upload/fetch adapters require the
+same canonical endpoint review, while the production
+`StationMlsKeyPackageTransport` already sends a canonical request and matching
+device header. Declaration expansion failed closed with
+`RESOURCE_DECLARATION_CONFLICT` on MCA workspace `65e7b6da4dc9be85`;
+neither Desktop path may be edited until that owner releases or hands off the
+claim.
