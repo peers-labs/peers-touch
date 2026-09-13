@@ -5358,13 +5358,53 @@ async function runFoundationAttachmentRejectedScenario(input: {
         'rejected attachment draft',
         10_000,
       );
-      await waitFor(
-        () => Boolean(document.querySelector(
-          '[data-pt-agent-message-error="agent.errors.attachmentRejected"]',
-        )),
-        'attachment rejection receiver',
-        10_000,
-      );
+      try {
+        await waitFor(
+          () => Boolean(document.querySelector(
+            '[data-pt-agent-message-error="agent.errors.attachmentRejected"]',
+          )),
+          'attachment rejection receiver',
+          10_000,
+        );
+      } catch (error) {
+        const chatState = useChatStore.getState();
+        const projectMessage = (message: {
+          id: string;
+          role: string;
+          loading?: boolean;
+          error?: string;
+          typedError?: { error_type?: string };
+        }) => ({
+          optimistic: message.id.startsWith('temp-'),
+          role: message.role,
+          loading: message.loading === true,
+          errorPresent: Boolean(message.error),
+          typedError: message.typedError?.error_type ?? null,
+        });
+        await reportFoundationAttachmentTimeoutDebug(
+          'N-Q',
+          'rejection-receiver-timeout',
+          {
+            currentSessionMatches:
+              chatState.currentSessionKey === conversation.conversation_id,
+            isStreaming: chatState.isStreaming,
+            operationRunState:
+              chatState.operations[conversation.conversation_id]?.runState
+              ?? null,
+            currentMessages: chatState.messages.map(projectMessage),
+            bufferedMessages: (
+              chatState.sessionBuffers[conversation.conversation_id] ?? []
+            ).map(projectMessage),
+            assistantDomCount: document.querySelectorAll(
+              '[data-pt-agent-message="assistant"]',
+            ).length,
+            attachmentErrorDomCount: document.querySelectorAll(
+              '[data-pt-agent-message-error="agent.errors.attachmentRejected"]',
+            ).length,
+          },
+        );
+        throw error;
+      }
     } finally {
       unsubscribe();
     }

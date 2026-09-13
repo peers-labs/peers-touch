@@ -258,3 +258,26 @@ selectors, timeout, Gate assertions, or cleanup.
 Local verification passes Desktop strict check, Desktop `622/622` with one
 existing environment-only skip, Agent Acceptance `419/419`, Python compilation,
 and diff hygiene. Exact-source C08 proof remains pending.
+
+## 2026-09-13 Pre-Admission Receiver Retention Race
+
+Exact-source run
+`20260913T120523849457Z-b85d27f82f092f8e5bee255c91eddaac`
+on `a5c80d2c7528a6e7f3452c8dd89f6ee57477c53a` passed the positive
+attachment admission and completed upload plus owner-side tombstone readback
+for the rejected attachment. Desktop then logged
+`Send message failed` with `agent.errors.attachmentRejected`, but the Harness
+timed out waiting for the corresponding receiver DOM. Provisioner cleanup
+completed `DONE / PROVEN / passed`.
+
+| ID | Hypothesis | Likelihood | Effort | Expected signal |
+|----|------------|------------|--------|-----------------|
+| N | The pre-admission error callback runs before the optimistic Assistant Message is installed, so its state update has no target and the later install overwrites it. | Medium | Low | Error callback sees no matching optimistic Assistant Message; the post-install snapshot contains a loading message without the typed error. |
+| O | A later authoritative conversation sync drops the client-only pre-admission failure projection. | High | Low | Error callback and post-error snapshots contain the typed error, but the receiver-timeout snapshot no longer contains it. |
+| P | The current conversation changes while the error is projected, sending the retained failure only to a session buffer. | Medium | Low | Error callback or timeout snapshot reports a current-session mismatch and the matching error exists only in the buffer. |
+| Q | The message retains the typed error but the renderer does not mount the stable error selector. | Medium | Low | Store and buffer retain one matching typed error while the DOM error count remains zero. |
+
+The next instrumentation records only ordering flags, session equality,
+optimistic-message presence, typed-error presence, operation state, and DOM
+counts. It does not record message content or change send, retry, timeout,
+matrix, or cleanup behavior.

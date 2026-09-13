@@ -244,6 +244,28 @@ function reportApprovalExpiryRetryDebug(
 }
 // #endregion
 
+// #region debug-point N-Q:foundation-attachment-receiver
+function reportFoundationAttachmentReceiverDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown>,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7787/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-attachment-timeout',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'chat.ts:sendMessage',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 const agentChatCache = getDesktopAgentChatCache();
 
 function cachedConversationToSession(conversation: CachedAgentConversation): Session {
@@ -1527,11 +1549,24 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     const assistantId = assistantMsg.id;
     let resolvedSessionKey = currentSessionKey;
     let acceptedByStation = false;
+    const attachmentDiagnostic = attachments.length > 0;
     const notifyAccepted = () => {
       if (acceptedByStation) return;
       acceptedByStation = true;
       lifecycle?.onAccepted?.();
     };
+    if (attachmentDiagnostic) {
+      reportFoundationAttachmentReceiverDebug('N-P', 'stream-started', {
+        currentSessionPresent: currentSessionKey.length > 0,
+        currentSessionMatches: get().currentSessionKey === currentSessionKey,
+        assistantPresent: get().messages.some(
+          (message) => message.id === assistantId,
+        ),
+        bufferedAssistantPresent: (
+          get().sessionBuffers[currentSessionKey] ?? []
+        ).some((message) => message.id === assistantId),
+      });
+    }
 
     const controller = agentService.streamTurn(
       buildAgentTurnInput(
@@ -1665,6 +1700,31 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
       (err: AgentTurnStreamError) => {
+        const attachmentRejected =
+          err.typedError?.error_type === 'CONTEXT_ATTACHMENT_REJECTED';
+        if (attachmentDiagnostic && attachmentRejected) {
+          const stateBeforeError = get();
+          reportFoundationAttachmentReceiverDebug(
+            'N-P',
+            'error-callback-entered',
+            {
+              acceptedByStation,
+              currentSessionMatches:
+                stateBeforeError.currentSessionKey === resolvedSessionKey,
+              assistantPresent: stateBeforeError.messages.some(
+                (message) => message.id === assistantId,
+              ),
+              bufferedAssistantPresent: (
+                stateBeforeError.sessionBuffers[resolvedSessionKey] ?? []
+              ).some((message) => message.id === assistantId),
+              operationPresent:
+                stateBeforeError.operations[resolvedSessionKey] !== undefined,
+              operationRunState:
+                stateBeforeError.operations[resolvedSessionKey]?.runState
+                ?? null,
+            },
+          );
+        }
         if (!acceptedByStation) lifecycle?.onRejected?.(err.typedError);
         log.error('chat', 'Send message failed', { error: err.message });
         const resolution = err.resolution as ErrorResolutionAction | undefined;
@@ -1707,6 +1767,35 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             operations: failOperationInMap(state.operations, resolvedSessionKey, err.message),
           };
         });
+        if (attachmentDiagnostic && attachmentRejected) {
+          const stateAfterError = get();
+          const currentAssistant = stateAfterError.messages.find(
+            (message) => message.id === assistantId,
+          );
+          const bufferedAssistant = (
+            stateAfterError.sessionBuffers[resolvedSessionKey] ?? []
+          ).find((message) => message.id === assistantId);
+          reportFoundationAttachmentReceiverDebug(
+            'N-Q',
+            'error-state-projected',
+            {
+              currentSessionMatches:
+                stateAfterError.currentSessionKey === resolvedSessionKey,
+              assistantPresent: currentAssistant !== undefined,
+              assistantErrorPresent: Boolean(currentAssistant?.error),
+              assistantTypedError:
+                currentAssistant?.typedError?.error_type ?? null,
+              bufferedAssistantPresent: bufferedAssistant !== undefined,
+              bufferedAssistantErrorPresent: Boolean(bufferedAssistant?.error),
+              bufferedAssistantTypedError:
+                bufferedAssistant?.typedError?.error_type ?? null,
+              operationRunState:
+                stateAfterError.operations[resolvedSessionKey]?.runState
+                ?? null,
+              isStreaming: stateAfterError.isStreaming,
+            },
+          );
+        }
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
       currentAuthenticatedActorPtid() || '',
@@ -1736,6 +1825,32 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         sessionBuffers: { ...state.sessionBuffers, [currentSessionKey]: baseMessages },
       };
     });
+    if (attachmentDiagnostic) {
+      const installedState = get();
+      const currentAssistant = installedState.messages.find(
+        (message) => message.id === assistantId,
+      );
+      const bufferedAssistant = (
+        installedState.sessionBuffers[currentSessionKey] ?? []
+      ).find((message) => message.id === assistantId);
+      reportFoundationAttachmentReceiverDebug(
+        'N-P',
+        'optimistic-state-installed',
+        {
+          currentSessionMatches:
+            installedState.currentSessionKey === currentSessionKey,
+          assistantPresent: currentAssistant !== undefined,
+          assistantErrorPresent: Boolean(currentAssistant?.error),
+          bufferedAssistantPresent: bufferedAssistant !== undefined,
+          bufferedAssistantErrorPresent: Boolean(bufferedAssistant?.error),
+          operationPresent:
+            installedState.operations[currentSessionKey] !== undefined,
+          operationRunState:
+            installedState.operations[currentSessionKey]?.runState ?? null,
+          isStreaming: installedState.isStreaming,
+        },
+      );
+    }
     return true;
   },
 
