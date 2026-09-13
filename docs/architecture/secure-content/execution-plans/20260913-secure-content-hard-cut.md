@@ -1158,11 +1158,11 @@ observations is invalid.
 | Workstream | Journey | State | Checkpoint | Functional | Acceptance | Blocker |
 |---|---|---|---|---|---|---|
 | W0 | governance | complete | plan-review-v14 | N/A | N/A | none |
-| W0R | machine runtime control | in_progress | none | NOT_RUN | NOT_RUN | implementing canonical registry/lease owner |
+| W0R | machine runtime control | complete | `8a7722c93` | PASS | NOT_RUN | none |
 | W1 | contracts | parked | none | NOT_RUN | NOT_RUN | focused Desktop generated paths overlap active MCA owner |
 | W2 | atomic kernels/Chat | parked | none | NOT_RUN | NOT_RUN | W0R/W1/W4; active MCA Desktop source and Station deploy/slot owner |
 | W3 | PreKeys | parked | none | NOT_RUN | NOT_RUN | W2 |
-| W4 | auth | in_progress | none | NOT_RUN | NOT_RUN | implementing Optional JWT and Development runner |
+| W4 | auth | complete | `8a7722c93` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
 | W5 | recovery | parked | none | NOT_RUN | NOT_RUN | W1/W2/W3 |
 | W6 | Social minimum | parked | none | NOT_RUN | NOT_RUN | W2/W3/W4 |
 | W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | W6; active MCA Desktop claim and Station runtime owner |
@@ -1173,7 +1173,22 @@ observations is invalid.
 | W12 | physical schema/data cut + full functional | parked | none | NOT_RUN | NOT_RUN | W5/W11; exact two-profile reset/deploy authorization |
 | W13 | Acceptance | parked | none | NOT_RUN | NOT_RUN | W12 FUNCTIONAL_PASS; active Acceptance owner |
 
-Overall: `1/15`. W0R and W4 are the dependency-ready execution frontier.
+Overall: `3/15`. W1 is next but remains parked while the active MCA declaration
+owns focused Desktop generated paths. The execution guardian must recompute the
+remaining non-conflicting frontier before waiting.
+
+Current evidence:
+
+- W0R: 33 Node control-plane tests, 23 profile/lease Python tests, independent
+  review PASS, and authoritative `four` / slot 5 registration readback for
+  workspace `9eb2cb904c9ae460`.
+- W4: Auth/Social Go race suites PASS, 14 Development runner/projector tests
+  PASS, independent review PASS, and
+  `~/.peers-touch/dev/workspaces/9eb2cb904c9ae460/development/secure-content/W4/SC-AS02/result.json`
+  records an exact-source `FUNCTIONAL_CHECK/PASS` at checkpoint `8a7722c93`.
+- Formal Acceptance remains `NOT_RUN`. The Acceptance Gap Detector itself
+  passes 22 tests, but a claim scan remains unavailable until the canonical
+  Acceptance plan artifact exists; no `PROVEN` claim is made.
 
 ## 16. Risks And Escalation
 
