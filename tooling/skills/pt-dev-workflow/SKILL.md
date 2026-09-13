@@ -1,229 +1,215 @@
 ---
 name: pt-dev-workflow
-description: "Drives Peers-Touch work from planning through implementation and PR delivery. Invoke for complete development tasks requiring stage tracking."
+description: >-
+  Orchestrates Peers-Touch development from requirement classification through
+  public resource declaration, product-first execution, Acceptance promotion,
+  review and delivery. Invoke for every non-trivial task or tracked-work resume.
 stage: orchestrator
 requires: []
-produces: ["completed task with merged PR"]
+produces: ["declared and closed development work item", "product-functional evidence", "formal delivery evidence"]
 ---
 
-# Dev Workflow — Stage Orchestrator
+# Dev Workflow
 
-This skill is the **single entry point** for any non-trivial development task.
-It detects the current stage, dispatches to the correct skill, tracks progress,
-and manages cross-session continuity.
+This is the single entry point for non-trivial Peers-Touch development. It owns
+workflow order and claim discipline; specialist Skills own their stages.
 
-## Stage Pipeline
+Architecture source:
+`docs/architecture/development-workflow/README.md`.
 
-```
-PRODUCT → DESIGN → PLAN → EXECUTE → DELIVER
-```
+## Invoke When
 
-Each stage has a dedicated skill, a gate, and an artifact. See AGENTS.md §13.5
-for the authoritative dispatch table. This skill's job is to **detect + dispatch
-+ track**, not to perform the work of individual stages.
+- Starting or resuming a non-trivial feature, bug fix, refactor, migration, or
+  cross-module task.
+- The user asks to implement, continue, finish, verify, submit, or deliver
+  tracked work.
+- A task needs PRODUCT, DESIGN, PLAN, EXECUTE, Acceptance, or DELIVER routing.
 
----
+Do not use for read-only discussion or trivial typo/comment changes with no
+product or runtime impact.
 
-## 1. Entry Point
+## Core Rule
 
-This skill is invoked by `pt-god-view` after it determines the stage and either
-classifies new pre-plan work or selects tracked work. For tracked work, it receives:
-
-- The execution plan path
-- The current stage
-- The current step
-
-It then dispatches to the stage-specific skill (§3) and manages progress tracking (§5).
-
-If invoked directly by the user (without god-view), it assumes the user knows
-what they want to do and proceeds with task classification (§2).
-
----
-
-## 2. Task Classification
-
-| Signal | Starting stage | Rationale |
-|--------|---------------|-----------|
-| User requests a new product/module/capability, workflow redesign, or benchmark rebuild | PRODUCT | Needs product outcome, experience, and acceptance contract |
-| User requests Acceptance Infra optimization or audit | CROSS-STAGE via `pt-acceptance-infra-engineering` | Framework responsibility must remain separate from business injection |
-| User requests business Domain Acceptance injection or proof | CROSS-STAGE via `pt-acceptance-engineering` | Product contracts and runtime evidence own the closure |
-| Product contract accepted; user mentions new architecture / boundary / ownership / protocol | DESIGN | Needs architecture methodology |
-| Product and architecture accepted; user says "plan" / "execute" / "implement" | PLAN | Needs execution breakdown |
-| Plan exists and is accepted, user says "start coding" / "do it" | EXECUTE | Plan already passed review |
-| Code is done, user says "PR" / "submit" / "deliver" | DELIVER | Needs commit + PR |
-| Single-file bug fix / cosmetic tweak / "just fix X" | EXECUTE (via `pt-small-fix-discipline`) | Skip PRODUCT+DESIGN+PLAN |
-
-If ambiguous, ask whether this is a new product/capability, a new architecture
-decision, or implementation of something already accepted and planned.
-
----
-
-## 3. Stage Dispatch
-
-Invoke by the classified stage. For tracked work, `active_work.stage` must agree
-with that classification:
-
-### Stage: PRODUCT
-
-```
-Invoke: pt-product-design-methodology
-Also:   pt-prototype-design (when UI/interaction is material)
-Gate:   Product review passes; required prototype is confirmed or explicitly blocked
-Output: Product definition, benchmark disposition, experience/state contracts,
-        acceptance matrix, and optional executable prototype
-Next:   → DESIGN
+```text
+read-only intake
+  -> public resource declaration before first write/runtime acquisition
+  -> PRODUCT -> DESIGN -> PLAN
+  -> product-first EXECUTE
+  -> exact-source FUNCTIONAL_PASS
+  -> Acceptance promotion and proof
+  -> Quality and DELIVER
+  -> release declaration and leases
 ```
 
-### Stage: DESIGN
+Never enter broad Acceptance while a required product Journey is not
+`FUNCTIONAL_PASS`.
 
-```
-Invoke: pt-architecture-design-methodology
-Gate:   Architecture review prompt generated + review passes
-Output: docs/architecture/<module>/ (design.md, decisions.md, etc.)
-Next:   → PLAN
-```
+## 1. Read-Only Intake
 
-### Stage: PLAN
+Before mutation:
 
-```
-Invoke: pt-architecture-execution-methodology (dependency analysis)
-Then:   pt-plan-and-document (落盘 + review prompt generation)
-Gate:   Plan review prompt generated + review passes
-Output: execution-plans/<plan>.md + active_work registration
-Next:   → EXECUTE
-```
+1. Bind and verify the explicit worktree.
+2. Classify the task: product behavior, infrastructure, refactor, or docs.
+3. Resolve existing product, architecture, plan, Journey and `active_work`
+   sources.
+4. Derive preliminary source and runtime claims.
+5. Record the authorization envelope for local checkpoint, push, PR, deploy,
+   reset and history rewrite.
 
-### Stage: EXECUTE
+Read-only inspection does not require a declaration.
 
-```
-Invoke: pt-execution-plan-guardian (keeps work on plan rails)
-Also:   pt-read-before-edit (before any file edit)
-        pt-desktop-runtime-projections (if touching Desktop kernel)
-Gate:   All completion criteria in plan checked + pt-completion-auditor passes
-Output: Code + tests + evidence
-Next:   → DELIVER
-```
+## 2. Public Resource Declaration
 
-### Stage: DELIVER
+Before the first repository write or runtime acquisition:
 
-```
-Invoke: pt-github-commit (standardized commits)
-Then:   pt-github-pr (create PR with template)
-Then:   pt-github-review (self-review or request review)
-Gate:   PR merged
-Output: Merged PR
-Next:   → complete
+```bash
+make dev-start \
+  WORK_ITEM=<stable-id> \
+  PURPOSE='<short purpose>' \
+  SOURCE_CLAIMS='<shared-read|exclusive-write>:<repo-path>[;...]' \
+  RUNTIME_CLAIMS='<shared|exclusive>:<kind>:<resource-id>[;...]' \
+  [JOURNEY=<id>] [SESSION=<id>]
 ```
 
----
+Requirements:
 
-## 4. Gate Protocol
+- `~/.peers-touch/dev/work.json` is the machine-wide public intent ledger.
+- `make dev-start` must atomically publish, conflict-check and read back the
+  declaration.
+- Run `make dev-check WORK_ITEM=<id>` before each mutation slice.
+- Use `make dev-update` before writing outside the declared source claims or
+  acquiring an undeclared resource.
+- After an authorized commit, rebase or merge, use `make dev-update` to publish
+  the new source HEAD before the next mutation slice.
+- `make dev-status-all` is the cross-worktree public view.
+- A declaration is intent, not a runtime lease or authorization.
+- `RESOURCE_DECLARATION_CONFLICT` blocks the overlapping action. Do not select
+  another worktree, Profile, path or resource as a workaround.
 
-Every stage gate follows the same pattern:
+## 3. Outer Stage Dispatch
 
-1. Generate a structured review prompt (per skill's template)
-2. Present prompt to user
-3. User decides: send to reviewer, iterate, or accept
-4. If review returns "needs modification" → iterate within current stage
-5. If review passes → move to the next stage; update `active_work.stage` only
-   when a registered plan row exists
+| Stage | Owner Skill | Exit Gate |
+|---|---|---|
+| PRODUCT | `pt-product-design-methodology`; `pt-prototype-design` when needed | accepted journeys, states and product acceptance |
+| DESIGN | `pt-architecture-design-methodology` | accepted ownership, contracts, failures and decisions |
+| PLAN | `pt-architecture-execution-methodology` then `pt-plan-and-document` | approved plan, Journey mapping and authorization envelope |
+| EXECUTE | `pt-execution-plan-guardian` | required Journeys reach functional pass and formal proof |
+| DELIVER | commit/PR/review Skills | merged or explicitly held/rejected |
 
-**Agent MUST NOT auto-advance past a gate.** Gate passage requires either:
-- User explicitly says "pass" / "approved" / "move on"
-- A review result says "通过" / "有条件通过" (conditions resolved)
+Update the public declaration whenever stage scope or resources change. Create
+`active_work` only after the formal plan exists.
 
----
+## 4. Product-First EXECUTE
 
-## 5. Progress Tracking
+For each dependency-ready workstream, select one Journey and enforce:
 
-### active_work registry (project_memory.md)
-
-Maintained as a table — one row per in-flight task:
-
-```markdown
-## active_work
-
-| id | plan | stage | current_step | branch | workspace_id | initial_head | expected_head | worktree_set_digest | blocked | last_session |
-|----|------|-------|--------------|--------|--------------|--------------|---------------|---------------------|---------|--------------|
-| 1 | docs/.../20260723-phase1-station-api.md | EXECUTE | Step 1 | main | 0123456789abcdef | `<full-head>` | `<full-head>` | `<sha256>` | false | 2026-07-23 |
+```text
+REPRODUCING -> REPRODUCED
+  -> IMPLEMENTING
+  -> FOCUSED_CHECKING -> FOCUSED_PASS
+  -> CHECKPOINTING -> CHECKPOINTED
+  -> DEPLOYING -> DEPLOYED
+  -> FUNCTIONAL_RUNNING
+       -> FAILED: return first actionable failure to IMPLEMENTING
+       -> BLOCKED: park the environment/authorization edge
+       -> FUNCTIONAL_PASS
 ```
 
-**Update rules:**
-- PRODUCT/DESIGN work without a formal execution plan has no row and no Context Anchor
-- Plan creation → capture and verify the selected worktree once, then register
-  the repo-relative plan path with `stage: PLAN`, branch, `workspace_id`,
-  immutable `initial_head`, initially equal `expected_head`, and
-  `worktree_set_digest`
-- Stage transition → update `stage` + `current_step`
-- Session end → update `last_session`
-- All phases complete → set `stage: complete`
-- Branch merged with remaining phases → update `branch` to merge target
-- User says "close this" → set `stage: complete`
-- Stale (>14 days idle) → ask user on next session
-- Resume/context compaction → verify persisted identity; never recapture it as a
-  replacement baseline
-- Explicitly authorized commit/rebase/merge → refresh only `expected_head`
-- Explicitly requested worktree operation → refresh only
-  `worktree_set_digest`
+Rules:
 
-Capture and verification use
-`tooling/scripts/verify-worktree-binding.py`. Its `workspaceId` output maps to
-`workspace_id`, and its worktree-set digest maps to
-`worktree_set_digest`. Missing identity stops with
-`WORKTREE_IDENTITY_UNAVAILABLE`; drift stops with
-`WORKTREE_IDENTITY_MISMATCH`.
+- Reproduce once and identify the owning layer before fixing.
+- Run focused unit/type/contract checks, not broad Acceptance.
+- Remote/exact-source runtime requires an authorized clean checkpoint commit.
+- Deployment and runtime startup use Local Dev Control Plane and Make owners.
+- Functional verification must use the required real product runtime and
+  receiver perspective.
+- Stop on the first actionable failure.
+- Every command declares one purpose and a bounded budget.
+- Do not run coverage, Gap Detector, Completion Auditor, cross-platform
+  matrices, submit pipeline or broad Gate bundles before `FUNCTIONAL_PASS`.
 
-### Execution plan status table
+## 5. Acceptance Promotion
 
-Each execution plan has an "Implementation Status" table at the bottom.
-Update individual step status as work progresses:
+After `FUNCTIONAL_PASS`:
 
-```markdown
-| Step | Status | Completed | Notes |
-|------|--------|-----------|-------|
-| Step 1 | ✅ done | 2026-07-23 | commit abc123 |
-| Step 2 | 🔄 in progress | — | |
-| Step 3 | ⬜ pending | — | |
-```
+1. Check whether the formal Gate consumes the same business Journey.
+2. Use `pt-acceptance-engineering` to add or complete missing business
+   injection.
+3. Promote the Dev Journey adapter; do not copy actions/assertions into another
+   implementation.
+4. Create a final checkpoint.
+5. If product code or Journey semantics changed, return to focused checking and
+   functional execution.
+6. Run formal Acceptance on final exact source.
+7. Preserve `UNPROVEN` for every required Gate not run.
 
----
+Development records are diagnostics and cannot satisfy Acceptance proof.
 
-## 6. Cross-Session Resume
+## 6. Verification Classes And Claims
 
-When resuming a previous session:
+| Class | Legal claim |
+|---|---|
+| `SOURCE_CHECK` | named source check passed |
+| `STRUCTURAL_CHECK` | named structural relation passed |
+| `UX_REVIEW` | named UX/prototype review passed |
+| `FUNCTIONAL_CHECK` | named exact-source Journey works |
+| `ACCEPTANCE_PROOF` | declared capability scope is formally proven |
 
-1. Read `active_work` from project memory
-2. Read the referenced execution plan
-3. Invoke `pt-context-anchor` and verify actual worktree identity against the
-   persisted branch, `workspace_id`, `expected_head`, and
-   `worktree_set_digest`
-4. Reconcile the plan status table with `active_work`
-5. Emit the required fenced chat projection
-6. Dispatch to the correct stage skill
+`PROVEN` is reserved for formal Acceptance interpretation. Static/typecheck,
+Harness-only, API-only, browser-only or prototype results never imply
+`FUNCTIONAL_PASS`.
 
-**Key principle**: The execution plan's status table is ground truth for "what's done".
-Project memory's `active_work` is just an index pointing to it.
+## 7. Delivery
 
----
+Only after required formal proof:
 
-## 7. Skill Dependencies (Dispatch Map)
+1. Run `pt-completion-auditor`.
+2. Run `pt-quality-check` / submit pipeline once for final source.
+3. Use `pt-github-commit`, `pt-github-pr`, and `pt-github-review`.
+4. Keep unrun product scope explicit.
 
-| Stage | Primary skill | Supporting skills |
-|-------|--------------|-------------------|
-| PRODUCT | `pt-product-design-methodology` | `pt-prototype-design`, `pt-plan-and-document` (document routing only) |
-| DESIGN | `pt-architecture-design-methodology` | `pt-plan-and-document` (for doc落盘) |
-| PLAN | `pt-architecture-execution-methodology` + `pt-plan-and-document` | `pt-context-anchor` after plan registration |
-| EXECUTE | `pt-execution-plan-guardian` | `pt-context-anchor`, `pt-read-before-edit`, `pt-desktop-runtime-projections`, `pt-small-fix-discipline`, `pt-completion-auditor` |
-| DELIVER | `pt-github-commit` + `pt-github-pr` + `pt-github-review` | `pt-quality-check` |
+A checkpoint commit is deployment identity, not delivery approval. Local
+checkpoint, push, PR, reset and history rewrite are separate authorizations.
 
----
+## 8. Close And Resume
 
-## 8. Anti-Patterns
+On resume:
 
-- **Skip a gate** — never advance to next stage without explicit gate passage
-- **Premature active_work** — never create a placeholder row before a formal plan exists
-- **Untracked planned execution** — after plan creation, never execute without a matching `active_work` row
-- **Forget to update status** — every step completion / stage transition must be recorded
-- **Resume without reading plan** — always re-read execution plan status table before continuing
-- **Invoke stage skill without context** — always tell the skill what plan you're executing and what step you're on
-- **Self-approve a review** — agent generates prompts, user decides whether to send; agent never marks its own review as "passed"
+- verify worktree binding;
+- read plan status and `active_work`;
+- run `make dev-check WORK_ITEM=<id>`;
+- heartbeat or update the declaration;
+- continue from the earliest non-stale state.
+
+On completion, cancellation, abandonment, or handoff:
+
+1. stop/release owned runtime resources;
+2. run `make dev-release WORK_ITEM=<id> [SESSION=<id>]`;
+3. delete transient Development artifacts after promoting durable conclusions;
+4. update plan status and `active_work`;
+5. never leave a live declaration as conversational memory.
+
+## Verification
+
+Before claiming workflow completion:
+
+- Public declaration was visible and conflict-free.
+- Required focused checks passed.
+- Required Journey has current exact-source `FUNCTIONAL_CHECK`.
+- Required formal Gates have current `ACCEPTANCE_PROOF`.
+- Quality/CI gaps are explicit.
+- Runtime resources and public declaration are released.
+
+## Anti-Patterns
+
+Never:
+
+- Write or acquire runtime resources before `dev-start`.
+- Add a second workflow orchestrator Skill.
+- Treat `active_work`, branch name, process discovery or a private `.local` file
+  as public resource intent.
+- Run broad Acceptance to diagnose the first product failure.
+- Copy a business Journey into separate Dev and Acceptance scripts.
+- Use dirty overlays, manual Station execution or ad hoc SSH deployment.
+- Claim functionality from Gate count, test count, static checks or old proof.
+- Leave the work declaration active after closure.

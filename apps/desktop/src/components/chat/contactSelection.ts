@@ -1,14 +1,23 @@
 import type { DesktopIMConversationProjection } from '../../store/socialProjection';
+import type { ChatActorIdentityProjection } from '../../store/friendshipProjection';
 import type { PresentedError } from '../../services/errorPresenter';
 
+interface FriendIdentitySelection {
+  peerPtid: string;
+  federationId: string;
+  federationName: string;
+  displayName: string;
+  avatar?: string;
+  username: string;
+  federatedHandle: string;
+  homeStationDomain: string;
+  homeStationPeerId: string;
+}
+
 export type ContactSelection =
-  | {
+  | FriendIdentitySelection & {
       kind: 'friend';
       conversationId?: string;
-      peerPtid: string;
-      federationId: string;
-      displayName: string;
-      avatar?: string;
     }
   | {
       kind: 'group';
@@ -21,19 +30,11 @@ export type ContactSelection =
 export type FriendContactSelection = Extract<ContactSelection, { kind: 'friend' }>;
 
 export type DirectConversationOpenIntent =
-  | {
+  | FriendIdentitySelection & {
       phase: 'creating';
-      peerPtid: string;
-      federationId: string;
-      displayName: string;
-      avatar?: string;
     }
-  | {
+  | FriendIdentitySelection & {
       phase: 'failed';
-      peerPtid: string;
-      federationId: string;
-      displayName: string;
-      avatar?: string;
       error: PresentedError;
     };
 
@@ -44,8 +45,13 @@ export function beginDirectConversationOpen(
     phase: 'creating',
     peerPtid: contact.peerPtid,
     federationId: contact.federationId,
+    federationName: contact.federationName,
     displayName: contact.displayName,
     avatar: contact.avatar,
+    username: contact.username,
+    federatedHandle: contact.federatedHandle,
+    homeStationDomain: contact.homeStationDomain,
+    homeStationPeerId: contact.homeStationPeerId,
   };
 }
 
@@ -84,21 +90,23 @@ export function findContactConversation(
 }
 
 export function friendContactSelection(
-  peerPtid: string,
-  federationId: string,
-  displayName: string,
-  avatar: string | undefined,
+  identity: ChatActorIdentityProjection,
   conversations: DesktopIMConversationProjection[],
 ): ContactSelection {
   const conversation = conversations.find(
-    (item) => item.kind === 'friend' && item.peerPtid === peerPtid,
+    (item) => item.kind === 'friend' && item.peerPtid === identity.actorPtid,
   );
   return {
     kind: 'friend',
     ...(conversation ? { conversationId: conversation.id } : {}),
-    peerPtid,
-    federationId,
-    displayName,
-    avatar,
+    peerPtid: identity.actorPtid,
+    federationId: identity.federationId,
+    federationName: identity.federationName,
+    displayName: identity.displayName,
+    avatar: identity.avatarUrl,
+    username: identity.username,
+    federatedHandle: identity.federatedHandle,
+    homeStationDomain: identity.homeStationDomain,
+    homeStationPeerId: identity.homeStationPeerId,
   };
 }

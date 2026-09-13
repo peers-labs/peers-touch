@@ -1,5 +1,5 @@
 use super::EngineEndpoint;
-use crate::infrastructure::station_client;
+use crate::infrastructure::station_client::{self, StationClientError};
 use crate::model::chat::{PrepareConversationGroupRequest, PrepareConversationGroupResponse};
 use messaging_core::proto::{actor_device_ref, actor_ref};
 use reqwest::Method;
@@ -10,12 +10,16 @@ pub struct StationGroupGenesisTransport {
 }
 
 impl StationGroupGenesisTransport {
-    pub fn new(token: String, endpoint: EngineEndpoint) -> Result<Self, String> {
+    pub fn new(token: String, endpoint: EngineEndpoint) -> Result<Self, StationClientError> {
         if token.trim().is_empty()
             || endpoint.ptid.trim().is_empty()
             || endpoint.device_id.trim().is_empty()
         {
-            return Err("messaging group genesis transport is incomplete".to_string());
+            return Err(StationClientError::new(
+                station_client::StationClientErrorKind::InvalidResponse,
+                "messaging group genesis transport is incomplete",
+                None,
+            ));
         }
         Ok(Self { token, endpoint })
     }
@@ -26,13 +30,17 @@ impl StationGroupGenesisTransport {
         name: &str,
         member_ptids: &[String],
         federation_id: &str,
-    ) -> Result<PrepareConversationGroupResponse, String> {
+    ) -> Result<PrepareConversationGroupResponse, StationClientError> {
         if conversation_id.trim().is_empty()
             || name.trim().is_empty()
             || member_ptids.is_empty()
             || federation_id.trim().is_empty()
         {
-            return Err("messaging group genesis input is incomplete".to_string());
+            return Err(StationClientError::new(
+                station_client::StationClientErrorKind::InvalidResponse,
+                "messaging group genesis input is incomplete",
+                None,
+            ));
         }
         station_client::request_proto_for_device::<
             PrepareConversationGroupRequest,
@@ -57,6 +65,5 @@ impl StationGroupGenesisTransport {
             }),
             &self.endpoint.device_id,
         )
-        .map_err(|error| error.to_string())
     }
 }

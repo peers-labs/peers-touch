@@ -34,6 +34,7 @@ func newReceiptPersistenceFixture(t *testing.T) *receiptPersistenceFixture {
 
 	fixture := newDeliveryFixture(t, standardLimits(), standardPolicy())
 	if err := fixture.db.AutoMigrate(
+		&persistence.ConversationModel{},
 		&persistence.ConversationEventModel{},
 		&persistence.ConversationMemberDeviceModel{},
 		&persistence.ConversationReadCursorModel{},
@@ -158,6 +159,13 @@ func newReceiptPersistenceFixture(t *testing.T) *receiptPersistenceFixture {
 		t.Fatalf("claim receipt item: %v", err)
 	}
 	if err := persistReceiptEvent(t, fixture.db, event); err != nil {
+		t.Fatal(err)
+	}
+	if err := persistReceiptConversation(
+		fixture.db,
+		event,
+		valueobject.ConversationKindDirect,
+	); err != nil {
 		t.Fatal(err)
 	}
 	authorityLedger, err := deliveryinfra.NewAuthorityLedgerWriter(fixture.db)
@@ -295,6 +303,28 @@ func persistReceiptEvent(
 	}).Error
 }
 
+func persistReceiptConversation(
+	db *gorm.DB,
+	record domainevent.Record,
+	kind valueobject.ConversationKind,
+) error {
+	return db.Create(&persistence.ConversationModel{
+		ConversationID:         string(record.ConversationID),
+		Kind:                   string(kind),
+		Status:                 string(valueobject.ConversationStatusActive),
+		FederationID:           "federation-1",
+		AuthorityStationPeerID: string(record.AuthorityStation),
+		AuthorityEpoch:         1,
+		OwnerPTID:              string(record.Actor.Actor),
+		CurrentSequence:        uint64(record.Sequence),
+		CurrentEventHash:       record.Hash.Bytes(),
+		MembershipEpoch:        uint64(record.MembershipEpoch),
+		MLSEpoch:               uint64(record.MLSEpoch),
+		CreatedAt:              record.CommittedAt,
+		UpdatedAt:              record.CommittedAt,
+	}).Error
+}
+
 type crossStationReceiptFixture struct {
 	*deliveryFixture
 	recorder     *deliveryinfra.ReceiptRecorder
@@ -311,6 +341,7 @@ func newCrossStationReceiptFixture(t *testing.T) *crossStationReceiptFixture {
 
 	fixture := newDeliveryFixture(t, standardLimits(), standardPolicy())
 	if err := fixture.db.AutoMigrate(
+		&persistence.ConversationModel{},
 		&persistence.ConversationEventModel{},
 		&persistence.ConversationMemberDeviceModel{},
 		&persistence.ConversationReadCursorModel{},
@@ -420,6 +451,13 @@ func newCrossStationReceiptFixture(t *testing.T) *crossStationReceiptFixture {
 		t.Fatalf("seal cross-Station event: %v", err)
 	}
 	if err := persistReceiptEvent(t, fixture.db, event); err != nil {
+		t.Fatal(err)
+	}
+	if err := persistReceiptConversation(
+		fixture.db,
+		event,
+		valueobject.ConversationKindGroup,
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -690,6 +728,78 @@ func TestReceiptRecorderAggregatesRemoteEndpointsAndExcludesOriginatorMarkers(
 	}
 }
 
+func TestReceiptRecorderUsesDirectCommitmentsOutsideGroupDeviceProjection(
+	t *testing.T,
+) {
+	fixture := newCrossStationReceiptFixture(t)
+	if err := fixture.db.Model(&persistence.ConversationModel{}).
+		Where("conversation_id = ?", string(fixture.event.ConversationID)).
+		Update("kind", string(valueobject.ConversationKindDirect)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.
+		Where("conversation_id = ?", string(fixture.event.ConversationID)).
+		Delete(&persistence.ConversationMemberDeviceModel{}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	first := fixture.receipts[fixture.firstRemote]
+	firstResult, err := fixture.recorder.Record(context.Background(), first)
+	if err != nil {
+		t.Fatalf("record first current Direct endpoint receipt: %v", err)
+	}
+	if firstResult.Aggregate.RequiredDeviceCount != 2 ||
+		firstResult.Aggregate.ConsumedDeviceCount != 1 ||
+		firstResult.Aggregate.RevokedDeviceCount != 0 ||
+		!firstResult.Aggregate.Delivered ||
+		firstResult.Aggregate.FullyDelivered ||
+		len(firstResult.OriginatorRoutes) != 2 {
+		t.Fatalf("first current Direct receipt result = %+v", firstResult)
+	}
+
+	second := fixture.receipts[fixture.secondRemote]
+	secondResult, err := fixture.recorder.Record(context.Background(), second)
+	if err != nil {
+		t.Fatalf("record second current Direct endpoint receipt: %v", err)
+	}
+	if secondResult.Aggregate.RequiredDeviceCount != 2 ||
+		secondResult.Aggregate.ConsumedDeviceCount != 2 ||
+		secondResult.Aggregate.RevokedDeviceCount != 0 ||
+		!secondResult.Aggregate.Delivered ||
+		!secondResult.Aggregate.FullyDelivered ||
+		len(secondResult.OriginatorRoutes) != 2 {
+		t.Fatalf("second current Direct receipt result = %+v", secondResult)
+	}
+}
+
+func TestReceiptRecorderKeepsReadAheadOfDeliveredMonotonic(t *testing.T) {
+	fixture := newCrossStationReceiptFixture(t)
+	if err := fixture.db.Create(&persistence.ConversationReadCursorModel{
+		ConversationID: string(fixture.event.ConversationID),
+		PTID:           string(fixture.firstRemote.Actor),
+		Sequence:       uint64(fixture.event.Sequence),
+		UpdatedAt:      fixture.clock.now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := fixture.recorder.Record(
+		context.Background(),
+		fixture.receipts[fixture.originator],
+	)
+	if err != nil {
+		t.Fatalf("record originator marker after recipient read: %v", err)
+	}
+	if result.Aggregate.RequiredDeviceCount != 2 ||
+		result.Aggregate.ConsumedDeviceCount != 0 ||
+		result.Aggregate.RevokedDeviceCount != 0 ||
+		!result.Aggregate.Delivered ||
+		result.Aggregate.FullyDelivered ||
+		!result.Aggregate.Read {
+		t.Fatalf("read-ahead delivery aggregate = %+v", result.Aggregate)
+	}
+}
+
 func TestReceiptRecorderAdmitsExactFollowerConsumptionBeforeForwarding(
 	t *testing.T,
 ) {
@@ -831,6 +941,11 @@ func TestReceiptRecorderExactReplayAndConflict(t *testing.T) {
 
 func TestReceiptRecorderRollsBackWhenAggregateValidationFails(t *testing.T) {
 	fixture := newReceiptPersistenceFixture(t)
+	if err := fixture.db.Model(&persistence.ConversationModel{}).
+		Where("conversation_id = ?", string(fixture.item.ConversationID)).
+		Update("kind", string(valueobject.ConversationKindGroup)).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := fixture.db.
 		Where(
 			"conversation_id = ? AND ptid = ? AND device_id = ?",

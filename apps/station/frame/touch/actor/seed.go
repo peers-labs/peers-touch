@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -15,14 +16,16 @@ import (
 )
 
 const presetActorNamespace = "peers"
+const legacyGeneratedPresetAvatarPrefix = "https://avatar.example.invalid/api/ide/v1/text_to_image?"
 
 type PresetActorConfig struct {
-	Username    string
-	Email       string
-	Password    string
-	DisplayName string
-	Avatar      string
-	Endpoints   map[string]string
+	Username      string
+	Email         string
+	Password      string
+	DisplayName   string
+	Avatar        string
+	LegacyAvatars []string
+	Endpoints     map[string]string
 }
 
 func SeedPresetActors(ctx context.Context, presets []PresetActorConfig) error {
@@ -43,7 +46,6 @@ func SeedPresetActors(ctx context.Context, presets []PresetActorConfig) error {
 		if displayName == "" {
 			displayName = p.Username
 		}
-
 		email := p.Email
 		if email == "" {
 			if p.Endpoints != nil {
@@ -57,11 +59,23 @@ func SeedPresetActors(ctx context.Context, presets []PresetActorConfig) error {
 		}
 
 		var exists db.Actor
-		if err := rds.Where("email = ?", email).Or("preferred_username = ?", p.Username).First(&exists).Error; err == nil {
+		if err := rds.
+			Where(
+				"origin = ? AND (email = ? OR preferred_username = ?)",
+				OriginLocal,
+				email,
+				p.Username,
+			).
+			First(&exists).Error; err == nil {
 			if err := ensurePresetActorIdentity(ctx, rds, &exists); err != nil {
 				return fmt.Errorf("seed preset actor %s identity: %w", p.Username, err)
 			}
-			if err := backfillPresetAvatar(rds, &exists, p.Avatar); err != nil {
+			if err := backfillPresetAvatar(
+				rds,
+				&exists,
+				p.Avatar,
+				p.LegacyAvatars,
+			); err != nil {
 				log.Warnf(ctx, "seed preset avatar for %s: %v", p.Username, err)
 			}
 			var meta db.ActorTouchMeta
@@ -119,11 +133,30 @@ func SeedPresetActors(ctx context.Context, presets []PresetActorConfig) error {
 	return nil
 }
 
-func backfillPresetAvatar(rds *gorm.DB, actor *db.Actor, avatar string) error {
-	if actor.Icon != "" || avatar == "" {
+func backfillPresetAvatar(
+	rds *gorm.DB,
+	actor *db.Actor,
+	avatar string,
+	legacyAvatars []string,
+) error {
+	if actor.Origin != OriginLocal ||
+		avatar == "" ||
+		(actor.Icon != "" && !isRetiredPresetAvatar(actor.Icon, legacyAvatars)) {
 		return nil
 	}
 	return rds.Model(actor).Update("icon", avatar).Error
+}
+
+func isRetiredPresetAvatar(avatar string, legacyAvatars []string) bool {
+	if strings.HasPrefix(avatar, legacyGeneratedPresetAvatarPrefix) {
+		return true
+	}
+	for _, legacyAvatar := range legacyAvatars {
+		if avatar == legacyAvatar {
+			return true
+		}
+	}
+	return false
 }
 
 func ensurePresetActorIdentity(ctx context.Context, rds *gorm.DB, actorRecord *db.Actor) error {

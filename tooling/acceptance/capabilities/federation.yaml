@@ -105,7 +105,8 @@
       "required_gates": ["desktop-check", "federation-desktop-gateway-smoke"],
       "synthetic_paths": [
         "apps/desktop/src/components/common/StationPicker.tsx",
-        "apps/desktop/src/components/chat/FindPeopleModal.tsx"
+        "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+        "apps/desktop/src-tauri/src/application/federation/mod.rs"
       ],
       "evidence": {
         "truth_sources": ["StationRegistry", "Federation Plaza projection", "Federation catalog projection"],
@@ -113,12 +114,14 @@
         "proven_by": ["desktop-check", "federation-desktop-gateway-smoke"],
         "proven_scope": [
           "Desktop gateway active Station is bound to expected fedp5 station",
-          "station probe returns online peer identity"
+          "station probe returns online peer identity",
+          "Federation Catalog transport is statically constrained to direct typed protobuf decoding"
         ],
         "unproven_scope": [
           "Desktop DOM-level StationPicker assertion",
           "Desktop DOM-level Federation page assertion",
-          "Desktop DOM-level Find People assertion"
+          "Desktop DOM-level Find People assertion",
+          "Authenticated Native Federation Catalog response and result rendering"
         ]
       }
     },

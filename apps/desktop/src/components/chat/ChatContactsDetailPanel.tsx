@@ -70,7 +70,14 @@ export function ChatContactsDetailPanel({
     const sessionFallback: PublicProfileModel = {
       displayName: selectedContact.displayName,
       avatar: selectedContact.avatar || '',
+      username: selectedContact.username || undefined,
       did: peerPtid,
+      identityMetadata: [
+        selectedContact.federationName || selectedContact.federationId,
+        selectedContact.federatedHandle
+          || selectedContact.homeStationDomain
+          || selectedContact.homeStationPeerId,
+      ].filter(Boolean),
       relationLabel: t('chat.social.contacts.friendLabel'),
       relationTone: 'success',
     };

@@ -3,7 +3,6 @@ from __future__ import annotations
 import dataclasses
 import os
 import subprocess
-from pathlib import Path
 
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.attestation import (
@@ -22,39 +21,18 @@ from tooling.acceptance.core.provisioning import (
     ServiceAttestation,
 )
 from tooling.acceptance.fixtures.chat_native_actors import (
+    fixture_password,
     produce_bound_actor_manifest,
 )
 
 from .home_station import HomeStationProvisioner
+from .remote_source_identity import resolve_remote_source_identity
 
 
-ACTOR_FIXTURE = REPO_ROOT / "apps" / "station" / "app" / "conf" / "actor.yml"
 _SERVICE_PROFILES = {
     "station-four": ("chat-native-four", "chat-native-four"),
     "station-five": ("chat-native-five", "chat-native-five"),
 }
-
-
-def _fixture_password(path: Path) -> str:
-    current_email = ""
-    passwords: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if line.startswith("email:"):
-            current_email = line.split(":", 1)[1].strip().strip("'\"")
-        elif current_email and line.startswith("password:"):
-            passwords[current_email] = line.split(":", 1)[1].strip().strip("'\"")
-            current_email = ""
-
-    values = {passwords.get("alice@p.t"), passwords.get("bob@p.t")}
-    values.discard(None)
-    values.discard("")
-    if len(values) != 1:
-        raise BlockedError(
-            reason="Committed Alice/Bob Acceptance fixture passwords are missing or inconsistent",
-            resource="fixture:apps/station/app/conf/actor.yml",
-        )
-    return values.pop()
 
 
 class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
@@ -66,7 +44,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
     def _resolve_credentials(self) -> tuple[tuple[str, ...], dict[str, str]]:
         return self._remember_resolved_credentials(
             ("fixture:apps/station/app/conf/actor.yml#preset_users",),
-            {"chat-password": _fixture_password(ACTOR_FIXTURE)},
+            {"chat-password": fixture_password()},
             sensitive=False,
         )
 
@@ -165,6 +143,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 station_url=station_url,
                 profile_env=attestation_env,
                 require_runtime_identity=True,
+                remote_source_identity_provider=resolve_remote_source_identity,
             )
             if not commits_match(
                 attestation.live_commit,
