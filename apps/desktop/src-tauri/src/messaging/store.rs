@@ -7253,6 +7253,7 @@ impl MessagingStore {
             return Err("submitted-command fixture transition was not fenced".to_string());
         }
         transaction.commit().map_err(|error| error.to_string())?;
+        drop(connection);
         self.acceptance_interaction_snapshot(conversation_id, message_id, command_id)
     }
 
