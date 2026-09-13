@@ -1192,3 +1192,12 @@ exclusive with the single-profile authorization. Each target still must match
 its reviewed URL origin, host, Compose project, containers, and PostgreSQL
 volume before mutation. This projects the Owner's existing two-environment
 reset decision; it does not authorize any additional Station.
+
+Initial W8B run
+`20260913T170741743805Z-9709474e3fb32082d62e4187644731d2`
+is `BLOCKED/UNPROVEN` before Fixture mutation because the isolated reset child
+receives the reviewed deployment name without a redundant Station URL
+argument. The authorization owner now derives the exact Station origin from
+that deployment's reviewed health URL and revalidates all existing target
+identity fields. The focused reset suite passes 20/20; no W8B product behavior
+is claimed from the blocked run.

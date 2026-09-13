@@ -273,13 +273,29 @@ def _authorized_reset_environment(
                 "Environment-authorized Chat Acceptance reset target mismatch: "
                 f"deployment_environment={selected_environment}"
             )
-        requested_station = station_url.rstrip("/")
         health_url = environment.get("PT_DEPLOY_HEALTH_URL", "").strip()
         parsed_health = urllib.parse.urlparse(health_url)
+        if (
+            parsed_health.scheme not in {"http", "https"}
+            or not parsed_health.hostname
+            or parsed_health.port is None
+            or parsed_health.path != "/sub-oss/healthz"
+            or parsed_health.params
+            or parsed_health.query
+            or parsed_health.fragment
+            or parsed_health.username
+            or parsed_health.password
+        ):
+            raise RuntimeError(
+                "Environment-authorized Chat Acceptance reset health target "
+                f"is invalid: deployment_environment={selected_environment}"
+            )
+        requested_station = station_url.rstrip("/") or (
+            f"{parsed_health.scheme}://{parsed_health.netloc}"
+        )
         parsed_requested = urllib.parse.urlparse(requested_station)
         if (
-            not requested_station
-            or parsed_requested.scheme not in {"http", "https"}
+            parsed_requested.scheme not in {"http", "https"}
             or parsed_requested.scheme != parsed_health.scheme
             or parsed_requested.hostname != parsed_health.hostname
             or parsed_requested.port != parsed_health.port

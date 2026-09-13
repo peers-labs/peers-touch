@@ -5860,3 +5860,11 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   PostgreSQL containers, and PostgreSQL volume before any reset. The Owner's
   existing authorization covers exactly `station-four,station-five-arm`; it
   does not extend to another environment.
+- Initial W8B run
+  `20260913T170741743805Z-9709474e3fb32082d62e4187644731d2`
+  is `BLOCKED/UNPROVEN` before Fixture mutation: the reset child receives the
+  reviewed deployment name but no redundant Station URL argument. The
+  authorization owner now derives the exact Station origin from that
+  deployment's reviewed health URL and revalidates scheme, host, port, path,
+  Compose project, containers, and volume. The focused reset suite passes
+  20/20.

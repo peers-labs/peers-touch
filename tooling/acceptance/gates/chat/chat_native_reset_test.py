@@ -218,6 +218,10 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                 "http://10.37.221.38:18080",
                 "station-five-arm",
             )
+            five_from_environment = acceptance_station_environment(
+                "",
+                "station-five-arm",
+            )
 
         self.assertEqual(
             four["PT_ACCEPTANCE_STATION_URL"],
@@ -225,6 +229,10 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         )
         self.assertEqual(
             five["PT_ACCEPTANCE_STATION_URL"],
+            "http://10.37.221.38:18080",
+        )
+        self.assertEqual(
+            five_from_environment["PT_ACCEPTANCE_STATION_URL"],
             "http://10.37.221.38:18080",
         )
         self.assertEqual(four["PT_ACCEPTANCE_COMPOSE_PROJECT"], "pt-station")
