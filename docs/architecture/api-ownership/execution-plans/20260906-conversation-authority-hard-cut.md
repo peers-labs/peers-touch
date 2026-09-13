@@ -1134,3 +1134,11 @@ its empty retained `conversations` table still includes legacy `current_seq`.
 The shared `:18080` reset prohibition remains in force; W8A is parked until an
 owner-approved data operation or another accepted topology makes `fiveArm`
 canonical-schema healthy.
+
+The Owner then authorized the exact canonical `four`/`fiveArm` execution path.
+The only permitted `fiveArm` recovery is an empty-schema clean-slate operation:
+stop the Station, prove every `conversation*` table has zero rows, preserve a
+schema-only backup, transactionally drop only that empty Conversation table
+family, and restart the exact source. Any non-empty table aborts the operation.
+This does not authorize a database-volume reset or mutation of non-Conversation
+state.

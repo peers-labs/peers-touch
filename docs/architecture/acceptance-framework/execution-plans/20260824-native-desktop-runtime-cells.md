@@ -5793,3 +5793,11 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   resetting shared `:18080` Stations, so fiveArm recovery requires an explicit
   owner-approved data operation or a different accepted topology before W8A
   functional execution can begin.
+- The Owner subsequently authorized the exact canonical `four`/`fiveArm`
+  execution path. For `fiveArm` only, the approved recovery is an empty-schema
+  clean-slate operation: stop the Station, prove every `conversation*` table has
+  zero rows, save a schema-only backup, transactionally drop only that empty
+  Conversation table family, then restart exact source and require the
+  canonical schema guard plus health check to pass. Abort before mutation if
+  any Conversation row exists. This does not authorize a database-volume reset,
+  non-Conversation mutation, or reset of canonical `four`.
