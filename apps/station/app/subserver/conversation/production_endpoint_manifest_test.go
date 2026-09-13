@@ -376,6 +376,28 @@ func TestProductionEndpointRoutesUseSignedRemoteManifest(t *testing.T) {
 			routesByActor[bob] != productionManifestTestRemoteStation {
 			t.Fatalf("resolved routes = %+v", routes)
 		}
+
+		typingRoutes, err := (productionTypingRouteDirectory{
+			composition: server.composition,
+		}).ListActiveEndpoints(
+			context.Background(),
+			[]valueobject.PTID{alice, bob},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		typingRoutesByActor := make(
+			map[valueobject.PTID]valueobject.StationID,
+			len(typingRoutes),
+		)
+		for _, route := range typingRoutes {
+			typingRoutesByActor[route.Endpoint.Actor] = route.HomeStation
+		}
+		if len(typingRoutes) != 2 ||
+			typingRoutesByActor[alice] != productionManifestTestLocalStation ||
+			typingRoutesByActor[bob] != productionManifestTestRemoteStation {
+			t.Fatalf("typing routes = %+v", typingRoutes)
+		}
 	})
 
 	for _, testCase := range []struct {

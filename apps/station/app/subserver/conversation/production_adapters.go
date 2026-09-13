@@ -396,22 +396,22 @@ func (d *productionIdentityDirectory) ListActiveEndpoints(
 }
 
 type productionTypingRouteDirectory struct {
-	identity *productionIdentityDirectory
+	composition *ProductionComposition
 }
 
 func (d productionTypingRouteDirectory) ListActiveEndpoints(
 	ctx context.Context,
 	actors []valueobject.PTID,
 ) ([]interactionapp.EndpointRoute, error) {
-	if d.identity == nil {
+	if d.composition == nil {
 		return nil, conversationdomain.NewError(
 			conversationdomain.ErrorCodeInvalidArgument,
 			"production_typing_routes.list_active_endpoints",
-			"identity",
+			"composition",
 			"is required",
 		)
 	}
-	routes, err := d.identity.ListActiveEndpoints(ctx, actors)
+	routes, err := d.composition.productionEndpointRoutes(ctx, actors)
 	if err != nil {
 		return nil, err
 	}

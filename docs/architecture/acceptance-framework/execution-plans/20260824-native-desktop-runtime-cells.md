@@ -5913,3 +5913,20 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   runtime-cell repair keeps exact-PID point ownership mandatory while selecting
   from a bounded set of interior points; a fully occluded target still fails
   closed.
+- Exact-source run
+  `20260913T175848391418Z-3b5935130122198e6f2c2136d44e63ee`
+  then reached `LEASED`, authenticated all three Native clients, created Direct
+  Conversation `direct-6358c09fed2e2b37704e656c4a11029b`, and accepted
+  Alice's typing submission, but timed out waiting for Bob's active typing
+  projection. Live Station and PostgreSQL inspection found the first missing
+  owner edge: the Authority snapshot held Bob's verified active member device
+  and Home Station while its local Actor Identity device table correctly held
+  only Alice. `productionTypingRouteDirectory` incorrectly queried that
+  local-only table, selected no remote recipient, and therefore emitted no
+  `HOME_FANOUT` frame.
+- The owner-layer correction resolves current typing routes through the existing
+  signed Actor endpoint-manifest capability, then converts those verified
+  routes for Authority fan-out. It does not create remote Actor device rows,
+  change Conversation membership ownership, persist typing, or add a transport
+  fallback. The focused Conversation typing and manifest-route tests pass;
+  exact-source W8B functional and formal proof remain pending.

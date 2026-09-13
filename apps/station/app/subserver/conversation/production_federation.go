@@ -70,7 +70,7 @@ func (c *ProductionComposition) RegisterFederationReceivers(ctx context.Context)
 	}
 	typingService, err := c.InteractionService.BindFederatedTyping(
 		productionTypingRouteDirectory{
-			identity: &productionIdentityDirectory{db: c.database},
+			composition: c,
 		},
 		typingSender,
 	)

@@ -1226,3 +1226,17 @@ Federation relay/bootstrap fabric and require ready DHT plus live relay mounts
 before rerunning the bounded W8B product journey. Conversation remains the
 sole Chat authority; no default Federation, direct-route fallback, remote
 Actor shadow row, or weakened Gate is permitted.
+
+After both canonical Stations reached ready DHT and live relay mounts,
+exact-source run
+`20260913T175848391418Z-3b5935130122198e6f2c2136d44e63ee`
+reached the real Direct typing action. Alice's submission was accepted, but Bob
+never projected active typing. The Authority's Conversation snapshot contained
+Bob's verified active member device and Home Station, while the local Actor
+Identity device table intentionally contained only Alice. The production typing
+route adapter incorrectly queried that local-only table, selected no remote
+recipient, and emitted no `HOME_FANOUT` frame. The correction resolves typing
+routes through the existing signed Actor endpoint-manifest capability and keeps
+remote devices out of local Actor truth. Focused Conversation tests pass;
+W8B remains `UNPROVEN` until the corrected exact source reaches
+`FUNCTIONAL_PASS` and the formal Gate passes.
