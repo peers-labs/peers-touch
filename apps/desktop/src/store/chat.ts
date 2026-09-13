@@ -1036,12 +1036,22 @@ export function isMessageRetryBlocked(
   isStreaming: boolean,
   operation: ChatOperation | undefined,
   sourceTurnId: string | undefined,
+  sourceTerminalStatus?: ChatMessage['terminalStatus'],
 ): boolean {
   if (!isStreaming) return false;
+  const matchesActiveTurn = Boolean(
+    sourceTurnId && operation?.turnId === sourceTurnId,
+  );
+  if (
+    matchesActiveTurn
+    && sourceTerminalStatus === 'interrupted'
+    && operation?.runState === 'replaying'
+  ) {
+    return false;
+  }
   return (
     operation?.runState !== 'recovery_failed'
-    || !sourceTurnId
-    || operation.turnId !== sourceTurnId
+    || !matchesActiveTurn
   );
 }
 
@@ -1753,6 +1763,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       isStreaming,
       operation,
       sourceTurnId,
+      source?.terminalStatus,
     );
     const retryKey = `${currentSessionKey}:${messageId}`;
     const pending = pendingMessageRetries.get(retryKey);

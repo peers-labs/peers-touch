@@ -736,15 +736,29 @@ describe('Agent turn event identity projection', () => {
     expect(isTerminalEvent(event)).toBe(false);
   });
 
-  it('allows RetryTurn only for the matching recovery-failed operation', () => {
+  it('allows RetryTurn only for a matching recoverable operation', () => {
     const recoveryFailed: ChatOperation = {
       ...operation(),
       runState: 'recovery_failed',
       turnId: 'turn-1',
     };
+    const replaying: ChatOperation = {
+      ...operation(),
+      runState: 'replaying',
+      turnId: 'turn-1',
+    };
 
     expect(isMessageRetryBlocked(true, recoveryFailed, 'turn-1')).toBe(false);
     expect(isMessageRetryBlocked(true, recoveryFailed, 'turn-2')).toBe(true);
+    expect(
+      isMessageRetryBlocked(true, replaying, 'turn-1', 'interrupted'),
+    ).toBe(false);
+    expect(
+      isMessageRetryBlocked(true, replaying, 'turn-2', 'interrupted'),
+    ).toBe(true);
+    expect(
+      isMessageRetryBlocked(true, replaying, 'turn-1', 'failed'),
+    ).toBe(true);
     expect(isMessageRetryBlocked(true, operation(), 'turn-1')).toBe(true);
     expect(isMessageRetryBlocked(false, operation(), 'turn-1')).toBe(false);
   });

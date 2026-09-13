@@ -452,3 +452,45 @@ Local verification:
 - Foundation scenario runner tests: `51/51` PASS.
 - Agent static tests: `85/85` PASS.
 - `git diff --check`: PASS.
+
+## Iteration 9: Interrupted Retry Admission
+
+Checkpoint `e3898247d9ecde17fe93cf7d21503e182636353e` passed exact-source
+C08 run `20260913T111254145835Z-891c6e97f3fd0fb0d92531f7588c1f19`
+with `DONE / PROVEN` and complete cleanup. Its fully authorized Foundation run
+`20260913T111427745125Z-61f4cca222a29bacfa35a64021ef81dc`
+crossed AS-F01, AS-F03, all AS-F06 tuples, and the earlier typed-error
+verticals. Browser English `BASE-INTERRUPTED` then proved:
+
+- the pre-armed kill produced a source-bound Station restart;
+- the source Assistant Message was `interrupted`;
+- the persisted typed outcome was present and 276 bytes;
+- the localized error and Recover action were visible;
+- the Recover click was dispatched exactly once.
+
+The run failed only because no second Attempt appeared within the existing
+30-second bound. Existing `chat.ts` instrumentation is decisive:
+
+- `retry-entry` was emitted for the matching source Turn;
+- `sourceTerminalStatus=interrupted`;
+- `operationRunState=replaying`;
+- `isStreaming=true`;
+- `retryBlocked=true`;
+- no `retry-api-start` followed.
+
+AE is confirmed. AF, AG, AH, and AI are rejected. Station retry authority was
+never called. The Desktop projection guard currently admits a retry while
+streaming only for `recovery_failed`, even when Station-backed message
+reconciliation has already established an `interrupted` terminal and the same
+operation is still finishing replay. The correction must admit only this
+matching `interrupted + replaying` handoff. It must continue rejecting a
+different Turn, an ordinary active stream, and duplicate retry dispatch.
+
+The local owner-layer correction adds that exact admission case to
+`isMessageRetryBlocked`. The existing single-flight map still prevents a
+duplicate command, and a newly streaming retry remains blocked because its
+operation state is no longer `replaying`. Desktop tests pass `622/622` with one
+existing environment-only skip, Agent Acceptance tests pass `422/422`, the
+focused retry guard passes, Desktop strict check and Agent static `85/85` pass,
+and diff hygiene passes. Exact-source post-fix C08 and Foundation proof remain
+pending.
