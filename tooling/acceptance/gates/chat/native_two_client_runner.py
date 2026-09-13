@@ -13,6 +13,7 @@ import time
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlsplit
 from xml.etree import ElementTree
 
 from selenium.webdriver.common.by import By
@@ -49,6 +50,18 @@ CURRENT_PROFILE_ACTOR_WORKTREES = {
     "bob": "peers-group-chat",
 }
 CURRENT_PROFILE_INITIAL_SENDER = "bob"
+EXPECTED_RECONCILIATION_ACTOR_ENV = (
+    "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_ACTOR"
+)
+EXPECTED_RECONCILIATION_CONVERSATION_ENV = (
+    "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_CONVERSATION_ID"
+)
+EXPECTED_RECONCILIATION_MESSAGE_ENV = (
+    "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_MESSAGE_ID"
+)
+EXPECTED_RECONCILIATION_COMMAND_ENV = (
+    "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_COMMAND_ID"
+)
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 REQUIRED_ASSERTIONS = {
     "native_runtime",
@@ -121,9 +134,17 @@ def wait_until(
     raise GateError(f"timed out waiting for {description}{suffix}")
 
 
-def bundled_avatar_evidence_is_valid(
+def avatar_evidence_is_valid(
     evidence: dict[str, dict[str, Any]],
+    allowed_station_urls: set[str],
 ) -> bool:
+    allowed_origins = {
+        (parsed.scheme, parsed.netloc)
+        for value in allowed_station_urls
+        if (parsed := urlsplit(value))
+        and parsed.scheme in {"http", "https"}
+        and parsed.netloc
+    }
     for identity_evidence in evidence.values():
         rendered = [
             snapshot
@@ -133,12 +154,7 @@ def bundled_avatar_evidence_is_valid(
         if not rendered:
             return False
         if any(
-            not is_bundled_square_avatar(
-                str(snapshot.get("declared") or ""),
-            )
-            or snapshot.get("rendered") != snapshot.get("declared")
-            or snapshot.get("complete") is not True
-            or int(snapshot.get("naturalWidth") or 0) <= 0
+            not avatar_snapshot_is_valid(snapshot, allowed_origins)
             for snapshot in rendered
         ):
             return False
@@ -148,6 +164,61 @@ def bundled_avatar_evidence_is_valid(
         }) != 1:
             return False
     return True
+
+
+def avatar_snapshot_is_valid(
+    snapshot: dict[str, Any],
+    allowed_origins: set[tuple[str, str]],
+) -> bool:
+    declared = str(snapshot.get("declared") or "")
+    rendered = str(snapshot.get("rendered") or "")
+    if snapshot.get("complete") is not True or int(
+        snapshot.get("naturalWidth") or 0
+    ) <= 0:
+        return False
+    if is_bundled_square_avatar(declared):
+        return rendered == declared
+    parsed = urlsplit(declared)
+    return (
+        (parsed.scheme, parsed.netloc) in allowed_origins
+        and parsed.path == "/sub-oss/file"
+        and rendered.startswith("asset://localhost/")
+    )
+
+
+def reconciled_command_snapshot_is_final(
+    snapshot: dict[str, Any],
+    command_id: str,
+    message_id: str,
+) -> bool:
+    projection = snapshot.get("projection")
+    intent = snapshot.get("intent")
+    outbox = snapshot.get("outbox")
+    matching = [
+        item
+        for item in snapshot.get("commandLedger", [])
+        if isinstance(item, dict)
+        and item.get("commandId") == command_id
+        and item.get("messageId") == message_id
+    ]
+    return (
+        snapshot.get("messageId") == message_id
+        and isinstance(projection, dict)
+        and bool(projection.get("eventId"))
+        and int(projection.get("eventSequence") or 0) > 0
+        and projection.get("deliveryState")
+        in {"sent", "delivered", "read", "consumed"}
+        and isinstance(intent, dict)
+        and intent.get("commandId") == command_id
+        and intent.get("state") == "committed"
+        and isinstance(outbox, dict)
+        and outbox.get("state") == "committed"
+        and len(matching) == 1
+        and matching[0].get("attemptState") == "committed"
+        and matching[0].get("localState") == "committed"
+        and matching[0].get("outboxState") == "committed"
+        and matching[0].get("draftState") == "accepted"
+    )
 
 
 def send_text(client: TauriSession, text: str) -> dict[str, Any]:
@@ -803,12 +874,128 @@ class NativeTwoClientGate(AcceptanceGate):
                 identity_evidence[client_name] = snapshot
             evidence[identity] = identity_evidence
 
-        valid = bundled_avatar_evidence_is_valid(evidence)
+        valid = avatar_evidence_is_valid(evidence, {self.station_url})
         self.assert_condition(
             "demo_avatar_bundled",
             valid,
             json.dumps(evidence, sort_keys=True),
         )
+        return evidence
+
+    def expected_reconciliation_target(
+        self,
+    ) -> dict[str, str] | None:
+        target = {
+            "actor": os.environ.get(
+                EXPECTED_RECONCILIATION_ACTOR_ENV,
+                "",
+            ).strip(),
+            "conversationId": os.environ.get(
+                EXPECTED_RECONCILIATION_CONVERSATION_ENV,
+                "",
+            ).strip(),
+            "messageId": os.environ.get(
+                EXPECTED_RECONCILIATION_MESSAGE_ENV,
+                "",
+            ).strip(),
+            "commandId": os.environ.get(
+                EXPECTED_RECONCILIATION_COMMAND_ENV,
+                "",
+            ).strip(),
+        }
+        if not any(target.values()):
+            return None
+        if not all(target.values()) or target["actor"] not in self.clients:
+            raise GateError(
+                "expected submitted-command reconciliation requires a "
+                "complete actor/conversation/message/command identity"
+            )
+        return target
+
+    def prove_expected_command_reconciliation(
+        self,
+        conversation_id: str,
+    ) -> dict[str, Any] | None:
+        target = self.expected_reconciliation_target()
+        if target is None:
+            return None
+        if target["conversationId"] != conversation_id:
+            raise GateError(
+                "expected submitted command belongs to a different conversation"
+            )
+        actor = target["actor"]
+        receiver = next(name for name in self.clients if name != actor)
+
+        def final_snapshot() -> dict[str, Any] | None:
+            value = async_harness(
+                self.clients[actor],
+                "engineInteractionSnapshot",
+                {
+                    "actorPtid": self.ptids[actor],
+                    "conversationId": conversation_id,
+                    "messageId": target["messageId"],
+                    "commandId": target["commandId"],
+                },
+            )
+            if not isinstance(value, dict):
+                return None
+            return (
+                value
+                if reconciled_command_snapshot_is_final(
+                    value,
+                    target["commandId"],
+                    target["messageId"],
+                )
+                else None
+            )
+
+        snapshot = wait_until(
+            final_snapshot,
+            "historical submitted command convergence",
+        )
+
+        def receiver_message() -> dict[str, Any] | None:
+            value = async_harness(
+                self.clients[receiver],
+                "engineMessages",
+                {
+                    "actorPtid": self.ptids[receiver],
+                    "conversationId": conversation_id,
+                },
+            )
+            messages = (
+                value.get("messages")
+                if isinstance(value, dict)
+                else None
+            )
+            if not isinstance(messages, list):
+                return None
+            return next(
+                (
+                    message
+                    for message in messages
+                    if isinstance(message, dict)
+                    and message.get("messageId") == target["messageId"]
+                ),
+                None,
+            )
+
+        received = wait_until(
+            receiver_message,
+            "historical submitted message on peer",
+        )
+        evidence = {
+            "target": target,
+            "senderSnapshot": snapshot,
+            "receiverMessage": received,
+        }
+        self.assert_condition(
+            "submitted_command_converged",
+            bool(received)
+            and received.get("messageId") == target["messageId"],
+            json.dumps(evidence, sort_keys=True),
+        )
+        self.report.runtime["submittedCommandReconciliation"] = evidence
         return evidence
 
     def collect_client_evidence(self, actor: str) -> None:
@@ -1030,6 +1217,14 @@ class NativeTwoClientGate(AcceptanceGate):
                 "conversation.open",
                 self.open_conversation,
             )
+            if self.expected_reconciliation_target() is not None:
+                self.step(
+                    "command.reconciliation",
+                    lambda: self.prove_expected_command_reconciliation(
+                        conversation_id,
+                    ),
+                    self.expected_reconciliation_target()["actor"],
+                )
             self.step(
                 "avatar.bundled",
                 self.prove_demo_avatar_sources,

@@ -8,6 +8,7 @@
     "apps/desktop/src-tauri/src/messaging/direct.rs",
     "apps/desktop/src-tauri/src/messaging/direct_session.rs",
     "apps/desktop/src-tauri/src/messaging/drain.rs",
+    "apps/desktop/src-tauri/src/messaging/command_reconciliation.rs",
     "apps/desktop/src-tauri/src/messaging/engine.rs",
     "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
     "apps/desktop/src-tauri/src/messaging/store.rs",
@@ -62,7 +63,8 @@
       "Station routing failure is returned to the Desktop worker",
       "Direct receipt aggregation uses immutable authority delivery commitments for current endpoints outside the Group MLS device projection",
       "a committed recipient read cursor preserves monotonic delivered state without fabricating a device receipt",
-      "typed Conversation interaction failures preserve their stable code and safe details at the HTTP boundary"
+      "typed Conversation interaction failures preserve their stable code and safe details at the HTTP boundary",
+      "a retained submitted command converges using the original command and message identities before new Native sends"
     ],
     "visible": [
       "Alice sends one Direct message and Bob renders the exact plaintext",
@@ -81,6 +83,7 @@
     "read-ahead repair must not fabricate consumed-device or fully-delivered counts",
     "typed Conversation interaction failures must not collapse into generic HTTP 500 responses",
     "static or gateway evidence must not replace two native Desktop clients",
-    "receipt evidence must not expose plaintext, credentials, tokens, or key material"
+    "receipt evidence must not expose plaintext, credentials, tokens, or key material",
+    "submitted-command recovery must not mint a replacement command or message identity"
   ]
 }
