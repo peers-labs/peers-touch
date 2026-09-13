@@ -41,6 +41,7 @@ permanent dual-read precedence between global registry and `.local/dev/active`.
         ├── runtime/
         ├── pids/
         ├── logs/
+        ├── debug/
         └── data/
 ```
 
@@ -99,6 +100,12 @@ This permits immediate visibility without silently changing active runtimes.
   Evidence Store to the legacy product path.
 - CI retains explicit `PT_ACCEPTANCE_ARTIFACT_ROOT`; local development uses the
   canonical Dev Control Plane root without configuration.
+- Repository root must not contain tracked or untracked `debug-*`, `.dbg/`,
+  runtime logs, traces, screenshots, DOM dumps, or ad-hoc test prompts.
+- New debug sessions write under
+  `~/.peers-touch/dev/workspaces/<workspaceId>/debug/<sessionId>/` and are
+  removed when closed. Durable findings are promoted to formal docs,
+  operational knowledge, or Acceptance evidence.
 
 ## 6. Verification
 
