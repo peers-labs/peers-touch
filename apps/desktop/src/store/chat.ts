@@ -766,13 +766,32 @@ function presentChatRuntimeError(message: string): string {
 export function applyStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMessage {
   const reduced = reduceStreamEvent(msg, event as TurnStreamEvent);
   const toolCalls = toolRuntime.reduceToolCalls(reduced.toolCalls, event);
-  return mergeToolProjection(reduced, toolCalls);
+  return bindStreamEventTurnIdentity(
+    mergeToolProjection(reduced, toolCalls),
+    event,
+  );
 }
 
 function applyProjectedStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMessage {
   const reduced = reduceStreamEvent(msg, event as TurnStreamEvent);
   const toolCalls = toolRuntime.projectToolCalls(reduced.toolCalls, event);
-  return mergeToolProjection(reduced, toolCalls);
+  return bindStreamEventTurnIdentity(
+    mergeToolProjection(reduced, toolCalls),
+    event,
+  );
+}
+
+function bindStreamEventTurnIdentity(
+  message: ChatMessage,
+  event: StreamEvent,
+): ChatMessage {
+  const turnId = typeof event.data?.turnId === 'string'
+    ? event.data.turnId
+    : typeof event.data?.turn_id === 'string'
+      ? event.data.turn_id
+      : '';
+  if (!turnId || message.turnId === turnId) return message;
+  return { ...message, turnId };
 }
 
 function mergeToolProjection(

@@ -10,8 +10,10 @@ import type {
 } from '../services/desktop_api';
 import {
   applyOperationEventIdentity,
+  applyStreamEvent,
   cachedMessageToChatMessage,
   isMessageRetryBlocked,
+  mergeServerMessages,
   shouldUseSessionBuffer,
   type ChatMessage,
   type ChatOperation,
@@ -78,6 +80,42 @@ function lifecycleInterruptedOutcome(): Record<string, unknown> {
 }
 
 describe('Agent turn event identity projection', () => {
+  it('reconciles a completed optimistic reply by its Station turn identity', () => {
+    const optimistic = applyStreamEvent({
+      id: 'temp-assistant-1',
+      role: 'assistant',
+      content: 'TEST_OK',
+      loading: true,
+      timestamp: Date.now(),
+    }, {
+      event: 'done',
+      data: {
+        turnId: 'turn-1',
+        model: 'model-1',
+      },
+    });
+    const authoritative: ChatMessage = {
+      id: 'message-1',
+      role: 'assistant',
+      content: 'TEST_OK',
+      loading: false,
+      terminalStatus: 'completed',
+      timestamp: optimistic.timestamp,
+      turnId: 'turn-1',
+    };
+
+    const merged = mergeServerMessages([optimistic], [authoritative]);
+
+    expect(optimistic.turnId).toBe('turn-1');
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      id: 'message-1',
+      content: 'TEST_OK',
+      turnId: 'turn-1',
+      terminalStatus: 'completed',
+    });
+  });
+
   it('increments the composer focus intent without mutating the draft', () => {
     const before = useChatStore.getState().composerFocusNonce;
 

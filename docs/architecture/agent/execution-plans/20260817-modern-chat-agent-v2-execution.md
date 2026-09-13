@@ -1289,9 +1289,18 @@ and zero local-path leakage.
   - Desktop validates the exact payload, keeps draft ownership in the composer,
     removes every matching token only after the user action, preserves
     unrelated text and attachments, and restores focus without navigation.
+  - Exact-source native run on checkpoint `41b23ab6e79d246a36d105616b76be20eb374292`
+    reached the real Station rejection, preserved the full draft, removed only
+    `@file:/missing/reference`, and completed the corrected Ark turn with
+    `TEST_OK`; the run remains below `FUNCTIONAL_PASS` because Desktop rendered
+    both the optimistic and authoritative assistant projections.
+  - Root cause: the direct stream projection did not copy the Station `turnId`
+    onto the optimistic assistant message, so authoritative reconciliation
+    could not identify both records as one response. The focused fix binds
+    stream events to that canonical Turn identity before message merge.
   - `go test ./app/subserver/agent/service ./app/subserver/agent/handler
     -count=1`: PASS.
-  - focused Desktop Vitest: 57/57 PASS.
+  - focused Desktop Vitest after the reconciliation fix: 62/62 PASS.
   - `pnpm run check`: PASS.
   - Prototype disposition: no drift; the implementation follows the confirmed
     attachment-failure preservation/removal behavior. No prototype source
