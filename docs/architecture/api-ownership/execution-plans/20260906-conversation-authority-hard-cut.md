@@ -1311,3 +1311,14 @@ route, remote Actor device row, or Social policy weakening is permitted.
 The combined Fixture owner, reset, Native runtime contract, and
 interaction-static regression cohort passes 118 tests; CA-W6 remains
 `PARTIAL/UNPROVEN` pending the clean exact-source W8B rerun.
+
+Exact-source Linux run
+`20260913T202839608169Z-ba24c341d2887a86c03ffdf9dc1b96a6`
+then proved Group preparation and creation with the complete three-actor
+Fixture baseline. The first recipient `syncGroup` observed the accepted
+temporary `conversation_members_unavailable` projection state, but the W8B
+runner treated it as terminal. The Gate now requires bounded reconciliation to
+the exact Alice/Bob/Charlie member set before typing assertions, matching the
+existing Group/MLS journey without weakening timeout or permanent-failure
+behavior. Cleanup and exact-source Linux attestation passed; CA-W6 remains
+`PARTIAL/UNPROVEN`.

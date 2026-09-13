@@ -1186,6 +1186,16 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self.assertIn('"memberPtid": self.ptids["charlie"]', group_runner)
         self.assertNotIn('"memberDid":', group_runner)
 
+    def test_typing_group_sync_waits_for_exact_member_projection(self) -> None:
+        sync = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
+            "sync",
+        )
+        self.assertIn("expected_members = sorted(self.ptids.values())", sync)
+        self.assertIn('result.get("memberPtids", [])', sync)
+        self.assertIn("return wait_until(", sync)
+        self.assertIn("STEP_TIMEOUT", sync)
+
     def test_direct_creation_uses_current_production_harness_contract(
         self,
     ) -> None:

@@ -6012,3 +6012,13 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   permitted. The combined Fixture owner, reset, Native runtime contract, and
   interaction-static regression cohort passes 118 tests; W8B remains
   `UNPROVEN` pending the clean exact-source Native rerun.
+- Exact-source Linux run
+  `20260913T202839608169Z-ba24c341d2887a86c03ffdf9dc1b96a6`
+  proved the Fixture correction: Group preparation and creation advanced with
+  all three bound actors present. The first recipient `syncGroup` then observed
+  the already specified temporary `conversation_members_unavailable` projection
+  state and the W8B runner treated it as terminal. The runner must use the
+  existing bounded Group projection reconciliation pattern, require the exact
+  Alice/Bob/Charlie member set before proceeding, and continue to fail closed
+  on timeout or a permanent product error. Cleanup and exact-source Linux
+  attestation passed; W8B remains `UNPROVEN`.

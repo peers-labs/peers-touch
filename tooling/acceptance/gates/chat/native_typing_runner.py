@@ -457,10 +457,50 @@ class NativeTypingGate(AcceptanceGate):
             raise GateError(device_error)
         enter_chat_page(replacement)
 
-    def sync(self, actor: str, kind: str, conversation_id: str) -> None:
+    def sync(
+        self,
+        actor: str,
+        kind: str,
+        conversation_id: str,
+    ) -> dict[str, Any]:
         method = "syncFriendSession" if kind == "friend" else "syncGroup"
         key = "sessionUlid" if kind == "friend" else "groupUlid"
-        async_harness(self.clients[actor], method, {key: conversation_id})
+        if kind == "friend":
+            result = async_harness(
+                self.clients[actor],
+                method,
+                {key: conversation_id},
+            )
+            if not isinstance(result, dict):
+                raise GateError(
+                    f"{actor} returned an invalid Direct projection"
+                )
+            return result
+
+        expected_members = sorted(self.ptids.values())
+
+        def group_ready() -> dict[str, Any] | None:
+            result = async_harness(
+                self.clients[actor],
+                method,
+                {key: conversation_id},
+                timeout=30,
+            )
+            if not isinstance(result, dict):
+                return None
+            members = sorted(
+                str(member)
+                for member in result.get("memberPtids", [])
+                if member
+            )
+            return result if members == expected_members else None
+
+        return wait_until(
+            group_ready,
+            f"{actor} projected Group {conversation_id}",
+            STEP_TIMEOUT,
+            1,
+        )
 
     def seed_message(
         self,
