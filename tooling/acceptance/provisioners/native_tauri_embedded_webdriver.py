@@ -30,8 +30,8 @@ from .remote_source_identity import resolve_remote_source_identity
 
 
 _SERVICE_PROFILES = {
-    "station-four": ("chat-native-four", "chat-native-four"),
-    "station-five": ("chat-native-five", "chat-native-five"),
+    "station-four": ("four", "station-four"),
+    "station-five": ("fiveArm", "station-five-arm"),
 }
 
 

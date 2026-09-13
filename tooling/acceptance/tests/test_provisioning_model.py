@@ -260,6 +260,19 @@ class EnvironmentContractTests(unittest.TestCase):
             all(service.kind == "station" for service in contract.services.values())
         )
 
+    def test_native_tauri_services_use_canonical_profiles(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_embedded_webdriver,
+        )
+
+        self.assertEqual(
+            native_tauri_embedded_webdriver._SERVICE_PROFILES,
+            {
+                "station-four": ("four", "station-four"),
+                "station-five": ("fiveArm", "station-five-arm"),
+            },
+        )
+
     def test_load_native_tauri_current_profile_contract(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "native-tauri-current-profile.yaml"
