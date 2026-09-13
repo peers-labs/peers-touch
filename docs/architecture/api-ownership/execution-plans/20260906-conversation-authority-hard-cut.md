@@ -1142,3 +1142,12 @@ schema-only backup, transactionally drop only that empty Conversation table
 family, and restart the exact source. Any non-empty table aborts the operation.
 This does not authorize a database-volume reset or mutation of non-Conversation
 state.
+
+After that scoped operation exposed stale device ownership on canonical `four`,
+the Owner explicitly authorized a full reset of both canonical development
+environments with no data preservation. Reset scope is limited to the
+`pt-station` Compose project's `pg_data` and `peers_data` volumes on each
+declared host. Both Stations and Native client identities must be rebuilt from
+the same exact source afterward. The historical W8A command tuple is retired;
+runtime closure requires a newly created exact tuple rather than a continuity
+claim across the authorized reset.

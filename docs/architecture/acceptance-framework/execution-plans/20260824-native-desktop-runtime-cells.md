@@ -5801,3 +5801,11 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   canonical schema guard plus health check to pass. Abort before mutation if
   any Conversation row exists. This does not authorize a database-volume reset,
   non-Conversation mutation, or reset of canonical `four`.
+- After the scoped reset exposed stale device ownership on canonical `four`,
+  the Owner explicitly authorized a full reset of both `four` and `fiveArm`
+  development environments with no data preservation. The approved operation
+  removes only each `pt-station` Compose project's `pg_data` and `peers_data`
+  volumes, redeploys exact source, and rebuilds Native client state from clean
+  development identities. The historical W8A command tuple is retired after
+  this reset; the next W8A proof must create and bind a new exact tuple before
+  exercising submitted-command recovery.
