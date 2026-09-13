@@ -10460,6 +10460,27 @@ function reportFoundationQueueCapacityDebug(
 }
 // #endregion
 
+// #region debug-point A-D:foundation-queue-projection
+function reportFoundationQueueProjectionDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  return fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-queue-projection',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:foundationDirectProbe:AS-F02',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 // #region debug-point A-D:foundation-attachment-timeout
 function reportFoundationAttachmentTimeoutDebug(
   hypothesisId: string,
@@ -20546,22 +20567,81 @@ export function installAcceptanceHarness(): void {
           queueAtCapacity.conversation_version,
         );
         const queueReceiverPromise = (async () => {
+          const projectionObservation = () => {
+            const chatState = useChatStore.getState();
+            const portalState = usePortalStore.getState();
+            const storedQueue =
+              chatState.turnQueues[conversation.conversation_id];
+            const dom = foundationDomSnapshot();
+            return {
+              conversationId: conversation.conversation_id,
+              currentSessionKey: chatState.currentSessionKey,
+              selectedConversationMatches:
+                chatState.currentSessionKey === conversation.conversation_id,
+              activeViewType: portalState.activeView?.type ?? 'none',
+              portalExpanded: portalState.expanded,
+              authoritativeQueueSize: queueAtCapacity.entries.length,
+              authoritativeQueuePositions: queueAtCapacity.entries.map(
+                (entry) => entry.queue_position,
+              ),
+              storedQueueSize: storedQueue?.entries.length ?? -1,
+              storedQueuePositions: storedQueue?.entries.map(
+                (entry) => entry.queue_position,
+              ) ?? [],
+              queueTrayPresent: Boolean(
+                document.querySelector('[data-pt-agent-turn-queue]'),
+              ),
+              composerPresent: Boolean(
+                document.querySelector('[data-pt-agent-composer]'),
+              ),
+              domQueueEntryCount: dom.queueEntries.visibleCount,
+              domQueuePositionCount: dom.queuePositions.visibleCount,
+              documentVisibilityState: document.visibilityState,
+            };
+          };
+          await reportFoundationQueueProjectionDebug(
+            'B,C',
+            'queue-sync-started',
+            projectionObservation(),
+          );
           await useChatStore.getState().syncTurnQueue(
             conversation.conversation_id,
           );
-          await waitFor(
-            () => {
-              const queueProjection = foundationDomSnapshot();
-              return (
-                queueProjection.queueEntries.visibleCount > 0
-                && queueProjection.queuePositions.visibleCount
-                  === queueAtCapacity.entries.length
-              );
-            },
-            'Foundation AS-F02 queue projection',
-            30_000,
+          await reportFoundationQueueProjectionDebug(
+            'A-D',
+            'queue-sync-completed',
+            projectionObservation(),
           );
-          return foundationDomSnapshot();
+          try {
+            await waitFor(
+              () => {
+                const queueProjection = foundationDomSnapshot();
+                return (
+                  queueProjection.queueEntries.visibleCount > 0
+                  && queueProjection.queuePositions.visibleCount
+                    === queueAtCapacity.entries.length
+                );
+              },
+              'Foundation AS-F02 queue projection',
+              30_000,
+            );
+            await reportFoundationQueueProjectionDebug(
+              'A-D',
+              'queue-projection-visible',
+              projectionObservation(),
+            );
+            return foundationDomSnapshot();
+          } catch (error) {
+            await reportFoundationQueueProjectionDebug(
+              'A-D',
+              'queue-projection-timeout',
+              {
+                ...projectionObservation(),
+                error: String(error),
+              },
+            );
+            throw error;
+          }
         })();
         const [
           overflowResult,
