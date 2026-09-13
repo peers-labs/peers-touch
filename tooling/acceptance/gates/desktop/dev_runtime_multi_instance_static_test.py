@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import socket
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -21,8 +23,8 @@ class DevRuntimePortIsolationTest(unittest.TestCase):
         src = self.source("tooling/scripts/local-dev/desktop-dev.sh")
         self.assertIn("_wt_offset", src)
         self.assertIn("WORKTREE_ID", src)
-        self.assertRegex(src, r'GATEWAY_PORT="\$\(\(_base_gw\s*\+\s*_wt_offset\)\)"')
-        self.assertRegex(src, r'WEB_PORT="\$\(\(_base_web\s*\+\s*_wt_offset\)\)"')
+        self.assertIn('$((_base_gw + _wt_offset))', src)
+        self.assertIn('$((_base_web + _wt_offset))', src)
 
     def test_desktop_dev_does_not_use_profile_port_directly(self) -> None:
         src = self.source("tooling/scripts/local-dev/desktop-dev.sh")
@@ -32,6 +34,16 @@ class DevRuntimePortIsolationTest(unittest.TestCase):
             "Profile port must not be used directly — it would cause "
             "cross-worktree collisions when two worktrees share a profile",
         )
+
+    def test_acceptance_owned_runtime_preserves_explicit_resources(self) -> None:
+        src = self.source("tooling/scripts/local-dev/desktop-dev.sh")
+        self.assertIn('PT_ACCEPTANCE_NATIVE_DEV', src)
+        self.assertIn('_caller_gw="${PT_GATEWAY_PORT:-}"', src)
+        self.assertIn('_caller_web="${PT_RENDERER_PORT:-}"', src)
+        self.assertIn('_caller_profile="${PT_PROFILE:-}"', src)
+        self.assertIn('GATEWAY_PORT="${_caller_gw:-', src)
+        self.assertIn('WEB_PORT="${_caller_web:-', src)
+        self.assertIn('PT_PROFILE="${_caller_profile:-', src)
 
     def test_rust_pid_file_includes_worktree_id(self) -> None:
         src = self.source("tooling/scripts/_ensure-desktop-rust.sh")
@@ -66,6 +78,53 @@ class DevRuntimePortIsolationTest(unittest.TestCase):
             "A hidden WebView still boots the Desktop frontend and competes "
             "with the Browser gateway for session ownership",
         )
+
+    def test_native_startup_timeout_fails_closed(self) -> None:
+        port = self._unused_port()
+        completed = subprocess.run(
+            [
+                "bash",
+                "-c",
+                (
+                    "source tooling/scripts/_ensure-desktop-rust.sh; set +e; "
+                    "sleep 5 & child=$!; "
+                    f"wait_for_gateway {port} 1 \"$child\"; status=$?; "
+                    "kill \"$child\" 2>/dev/null || true; "
+                    "wait \"$child\" 2>/dev/null || true; "
+                    "exit \"$status\""
+                ),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 124, completed.stdout + completed.stderr)
+
+    def test_native_startup_preserves_child_exit_status(self) -> None:
+        port = self._unused_port()
+        completed = subprocess.run(
+            [
+                "bash",
+                "-c",
+                (
+                    "source tooling/scripts/_ensure-desktop-rust.sh; set +e; "
+                    "(sleep 0.1; exit 73) & child=$!; "
+                    f"wait_for_gateway {port} 3 \"$child\""
+                ),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 73, completed.stdout + completed.stderr)
+
+    @staticmethod
+    def _unused_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", 0))
+            return int(listener.getsockname()[1])
 
     def test_distinct_worktrees_produce_distinct_ports(self) -> None:
         worktrees = [

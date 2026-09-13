@@ -6,6 +6,10 @@ import { DetailPanel } from '../components/DetailPanel';
 import { FindPeopleModal } from '../components/FindPeopleModal';
 import { useChatState } from '../state';
 import { Contact, MessageCircle } from 'lucide-react';
+import { Flexbox } from 'react-layout-kit';
+import { theme, Typography } from 'antd';
+import { CONTACTS } from '../mock';
+import { ContactIdentityRow } from '../components/ContactIdentityRow';
 
 type SocialChatTab = 'chat' | 'contacts';
 
@@ -62,25 +66,48 @@ function ChatRail({ activeTab, onSelect }: { activeTab: SocialChatTab; onSelect:
 }
 
 function ContactsPane() {
+  const { token } = theme.useToken();
   return (
-    <div
+    <Flexbox
+      horizontal
+      flex={1}
       style={{
-        flex: 1,
         minWidth: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: T.bg,
-        color: T.textTertiary,
+        background: token.colorBgContainer,
       }}
     >
-      <div style={{ maxWidth: 360, textAlign: 'center', lineHeight: 1.6 }}>
-        <div style={{ fontSize: T.fontHeading, color: T.text, fontWeight: 800, marginBottom: T.space2 }}>Contacts</div>
-        <div style={{ fontSize: T.fontSm }}>
-          Contacts is the sibling tab of Chat in this surface. It stays in the Chat module rail instead of becoming a Desktop Shell route.
-        </div>
-      </div>
-    </div>
+      <Flexbox
+        gap={4}
+        style={{
+          width: 320,
+          minWidth: 320,
+          padding: 12,
+          borderRight: `1px solid ${token.colorBorderSecondary}`,
+        }}
+      >
+        <Typography.Title level={5} style={{ margin: '0 0 8px' }}>
+          Contacts
+        </Typography.Title>
+        {CONTACTS.map((contact) => (
+          <Flexbox
+            key={contact.id}
+            horizontal
+            align="center"
+            style={{
+              padding: '9px 10px',
+              borderRadius: 8,
+            }}
+          >
+            <ContactIdentityRow contact={contact} />
+          </Flexbox>
+        ))}
+      </Flexbox>
+      <Flexbox flex={1} align="center" justify="center" gap={6}>
+        <Typography.Text strong>
+          Select a contact
+        </Typography.Text>
+      </Flexbox>
+    </Flexbox>
   );
 }
 

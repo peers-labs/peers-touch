@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,8 +18,19 @@ from tooling.acceptance.core import (
     GateError,
     REPO_ROOT,
 )
+from tooling.acceptance.gates.chat.native_current_profile_two_client_e2e import (
+    validate_current_profile_topology,
+)
 from tooling.acceptance.gates.chat.native_two_client_runner import (
+    CURRENT_PROFILE_REQUIRED_ASSERTIONS,
+    CURRENT_PROFILE_GATE_ID,
     NativeTwoClientGate,
+    SUBMITTED_COMMAND_RECOVERY_GATE_ID,
+    SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS,
+    avatar_evidence_is_valid,
+    is_current_profile_gate,
+    reconciled_command_snapshot_outcome,
+    submitted_command_snapshot_is_exact,
 )
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
@@ -105,6 +118,261 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.environment = patch.dict(os.environ, environment)
         self.environment.start()
 
+    def test_avatar_evidence_requires_each_actor_on_a_remote_client(self) -> None:
+        alice = "data:image/svg+xml;base64,alice"
+        bob = "data:image/svg+xml;base64,bob"
+        evidence = {
+            "alice": {
+                "alice": None,
+                "bob": {
+                    "declared": alice,
+                    "rendered": alice,
+                    "complete": True,
+                    "naturalWidth": 36,
+                },
+            },
+            "bob": {
+                "alice": {
+                    "declared": bob,
+                    "rendered": bob,
+                    "complete": True,
+                    "naturalWidth": 36,
+                },
+                "bob": None,
+            },
+        }
+
+        with patch(
+            "tooling.acceptance.gates.chat.native_two_client_runner."
+            "is_bundled_square_avatar",
+            return_value=True,
+        ):
+            self.assertTrue(
+                avatar_evidence_is_valid(
+                    evidence,
+                    {"http://station.example"},
+                )
+            )
+            evidence["bob"]["alice"] = None
+            self.assertFalse(
+                avatar_evidence_is_valid(
+                    evidence,
+                    {"http://station.example"},
+                )
+            )
+
+    def test_avatar_evidence_accepts_only_local_cache_for_station_source(self) -> None:
+        station_avatar = (
+            "http://station.example/sub-oss/file?key=avatars%2Falice.png"
+        )
+        snapshot = {
+            "declared": station_avatar,
+            "rendered": "asset://localhost/avatar.png",
+            "complete": True,
+            "naturalWidth": 384,
+        }
+        evidence = {"alice": {"alice": None, "bob": snapshot}}
+
+        self.assertTrue(
+            avatar_evidence_is_valid(
+                evidence,
+                {"http://station.example"},
+            )
+        )
+        self.assertFalse(
+            avatar_evidence_is_valid(
+                evidence,
+                {"http://other-station.example"},
+            )
+        )
+
+    def test_reconciled_command_snapshot_distinguishes_architecture_outcomes(
+        self,
+    ) -> None:
+        snapshot = {
+            "messageId": "message-1",
+            "projection": {
+                "eventId": "event-1",
+                "eventSequence": 34,
+                "deliveryState": "read",
+            },
+            "intent": {
+                "commandId": "command-1",
+                "state": "committed",
+            },
+            "outbox": {
+                "state": "committed",
+                "lastErrorCode": "",
+                "commandSha256": "a" * 64,
+            },
+            "commandLedger": [
+                {
+                    "commandId": "command-1",
+                    "messageId": "message-1",
+                    "attemptState": "committed",
+                    "localState": "committed",
+                    "outboxState": "committed",
+                    "draftState": "accepted",
+                }
+            ],
+        }
+
+        self.assertEqual(
+            reconciled_command_snapshot_outcome(
+                snapshot,
+                "command-1",
+                "message-1",
+                "a" * 64,
+            ),
+            "accepted",
+        )
+        snapshot["projection"] = None
+        snapshot["intent"] = None
+        snapshot["outbox"].update(
+            {
+                "state": "retry_wait",
+                "lastErrorCode": "canonical_not_found",
+            }
+        )
+        snapshot["commandLedger"][0].update(
+            {
+                "attemptState": "retry_wait",
+                "localState": "submitted",
+                "outboxState": "retry_wait",
+                "draftState": "retry_wait",
+            }
+        )
+        self.assertEqual(
+            reconciled_command_snapshot_outcome(
+                snapshot,
+                "command-1",
+                "message-1",
+                "a" * 64,
+            ),
+            "retrying",
+        )
+        snapshot["outbox"].update(
+            {
+                "state": "superseded",
+                "lastErrorCode": "stale_delivery_plan",
+            }
+        )
+        snapshot["commandLedger"][0].update(
+            {
+                "attemptState": "superseded",
+                "localState": "superseded",
+                "outboxState": "superseded",
+                "draftState": "draft",
+            }
+        )
+        self.assertEqual(
+            reconciled_command_snapshot_outcome(
+                snapshot,
+                "command-1",
+                "message-1",
+                "a" * 64,
+            ),
+            "terminal_superseded",
+        )
+        snapshot["commandLedger"].append(
+            {
+                "commandId": "command-2",
+                "messageId": "message-1",
+                "attemptState": "committed",
+                "localState": "committed",
+                "outboxState": "committed",
+                "draftState": "accepted",
+            }
+        )
+        self.assertEqual(
+            reconciled_command_snapshot_outcome(
+                snapshot,
+                "command-1",
+                "message-1",
+                "a" * 64,
+            ),
+            "terminal_superseded",
+        )
+
+    def test_reconciled_command_snapshot_rejects_identity_or_byte_replacement(
+        self,
+    ) -> None:
+        snapshot = {
+            "messageId": "message-1",
+            "projection": None,
+            "intent": None,
+            "outbox": {
+                "state": "retry_wait",
+                "lastErrorCode": "canonical_not_found",
+                "commandSha256": "a" * 64,
+            },
+            "commandLedger": [
+                {
+                    "commandId": "command-1",
+                    "messageId": "message-1",
+                    "attemptState": "retry_wait",
+                    "localState": "submitted",
+                    "outboxState": "retry_wait",
+                    "draftState": "retry_wait",
+                }
+            ],
+        }
+
+        self.assertIsNone(
+            reconciled_command_snapshot_outcome(
+                snapshot,
+                "command-1",
+                "message-1",
+                "b" * 64,
+            )
+        )
+        snapshot["commandLedger"][0]["commandId"] = "replacement-command"
+        self.assertIsNone(
+            reconciled_command_snapshot_outcome(
+                snapshot,
+                "command-1",
+                "message-1",
+                "a" * 64,
+            )
+        )
+
+    def test_submitted_command_fixture_requires_exact_pending_state(self) -> None:
+        snapshot = {
+            "messageId": "message-1",
+            "projection": None,
+            "outbox": {
+                "state": "submitted",
+                "lastErrorCode": "",
+                "commandSha256": "a" * 64,
+            },
+            "commandLedger": [
+                {
+                    "commandId": "command-1",
+                    "messageId": "message-1",
+                    "attemptState": "submitted",
+                    "localState": "submitted",
+                    "outboxState": "submitted",
+                    "draftState": "submitted",
+                }
+            ],
+        }
+
+        self.assertTrue(
+            submitted_command_snapshot_is_exact(
+                snapshot,
+                "command-1",
+                "message-1",
+            )
+        )
+        snapshot["commandLedger"][0]["localState"] = "superseded"
+        self.assertFalse(
+            submitted_command_snapshot_is_exact(
+                snapshot,
+                "command-1",
+                "message-1",
+            )
+        )
+
     def tearDown(self) -> None:
         self.environment.stop()
         self.run.close()
@@ -144,6 +412,11 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                 "id": actor,
                 "actor": actor,
                 "runtime": "native-tauri",
+                "worktree": (
+                    "/workspace/peers-chat-high-chat"
+                    if actor == "alice"
+                    else "/workspace/peers-group-chat"
+                ),
                 "webdriver_port": 4445 + index,
                 "gateway_port": 3030 + index,
                 "renderer_port": 14310 + index,
@@ -462,6 +735,353 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             gate.report.runtime["cleanup"]["portsReleased"],
         )
 
+    def test_current_profile_gate_accepts_verified_existing_fixture(self) -> None:
+        manifest = self.valid_report()["manifest"]
+        actors = {
+            "initialState": "existing",
+            "actors": [
+                {
+                    "role": actor,
+                    "accountRef": f"station-account:{actor}@p.t",
+                    "ptid": f"ptid:{actor}",
+                }
+                for actor in ("alice", "bob")
+            ],
+            "reset": {"authorized": False, "targetVerified": True},
+        }
+        gate = NativeTwoClientGate(
+            manifest=manifest,
+            actor_manifest=actors,
+            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+            gate_id=CURRENT_PROFILE_GATE_ID,
+            allow_existing_fixture=True,
+        )
+
+        self.assertTrue(gate.verify_fixture_ready())
+        self.assertEqual(gate.direction_order, ["bob", "alice"])
+
+    def test_submitted_recovery_uses_current_profile_contract(self) -> None:
+        manifest = self.valid_report()["manifest"]
+        actors = {
+            "initialState": "existing",
+            "actors": [
+                {
+                    "role": actor,
+                    "accountRef": f"station-account:{actor}@p.t",
+                    "ptid": f"ptid:{actor}",
+                }
+                for actor in ("alice", "bob")
+            ],
+            "reset": {"authorized": False, "targetVerified": True},
+        }
+        gate = NativeTwoClientGate(
+            manifest=manifest,
+            actor_manifest=actors,
+            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+            gate_id=SUBMITTED_COMMAND_RECOVERY_GATE_ID,
+            allow_existing_fixture=True,
+        )
+
+        self.assertTrue(is_current_profile_gate(CURRENT_PROFILE_GATE_ID))
+        self.assertTrue(is_current_profile_gate(SUBMITTED_COMMAND_RECOVERY_GATE_ID))
+        self.assertFalse(is_current_profile_gate(self.module.GATE_ID))
+        self.assertEqual(gate.direction_order, ["bob", "alice"])
+        self.assertIn(
+            "submitted_command_fixture_exact",
+            SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS,
+        )
+        source = (
+            Path(__file__).with_name("native_two_client_runner.py")
+            .read_text(encoding="utf-8")
+        )
+        fixture = source.index('"command.reconciliation.fixture"')
+        activation = source.index('"command.reconciliation.activate"', fixture)
+        convergence = source.index(
+            '"command.reconciliation",',
+            activation + len('"command.reconciliation.activate"'),
+        )
+        self.assertLess(fixture, activation)
+        self.assertLess(activation, convergence)
+
+    def test_current_profile_accepts_cross_worktree_group_initiator(self) -> None:
+        report = self.valid_report()
+        source_commit = "a" * 40
+        report["manifest"]["source"]["commit"] = source_commit
+        for client in report["manifest"]["clients"]:
+            client["storage_lifecycle"] = "persistent"
+        report["runtime"]["launchOrder"] = ["bob", "alice"]
+        report["runtime"]["directionOrder"] = ["bob", "alice"]
+        report["runtime"]["persistentDeviceState"] = {
+            actor: {
+                "storageRoot": f"/tmp/{actor}",
+                "storageLifecycle": "persistent",
+            }
+            for actor in ("alice", "bob")
+        }
+        report["runtime"]["worktreeTopology"] = {
+            "alice": {
+                "clientId": "alice",
+                "logicalName": "peers-chat-high-chat",
+                "expectedLogicalName": "peers-chat-high-chat",
+                "workspaceId": "1" * 16,
+                "repositoryId": "3" * 16,
+                "canonicalRoot": "/workspace/peers-chat-high-chat",
+                "head": "b" * 40,
+                "tree": "c" * 40,
+                "clean": True,
+            },
+            "bob": {
+                "clientId": "bob",
+                "logicalName": "peers-group-chat",
+                "expectedLogicalName": "peers-group-chat",
+                "workspaceId": "2" * 16,
+                "repositoryId": "3" * 16,
+                "canonicalRoot": "/workspace/peers-group-chat",
+                "head": source_commit,
+                "tree": "c" * 40,
+                "clean": True,
+            },
+        }
+        report["assertions"].extend(
+            {
+                "name": name,
+                "passed": True,
+                "detail": "",
+            }
+            for name in CURRENT_PROFILE_REQUIRED_ASSERTIONS
+        )
+
+        validate_current_profile_topology(report)
+
+    def test_current_profile_rejects_ephemeral_device_state(self) -> None:
+        report = self.valid_report()
+        source_commit = "a" * 40
+        report["manifest"]["source"]["commit"] = source_commit
+        report["runtime"]["launchOrder"] = ["bob", "alice"]
+        report["runtime"]["directionOrder"] = ["bob", "alice"]
+        report["runtime"]["worktreeTopology"] = {
+            "alice": {
+                "clientId": "alice",
+                "logicalName": "peers-chat-high-chat",
+                "expectedLogicalName": "peers-chat-high-chat",
+                "workspaceId": "1" * 16,
+                "repositoryId": "3" * 16,
+                "canonicalRoot": "/workspace/peers-chat-high-chat",
+                "head": "b" * 40,
+                "tree": "c" * 40,
+                "clean": True,
+            },
+            "bob": {
+                "clientId": "bob",
+                "logicalName": "peers-group-chat",
+                "expectedLogicalName": "peers-group-chat",
+                "workspaceId": "2" * 16,
+                "repositoryId": "3" * 16,
+                "canonicalRoot": "/workspace/peers-group-chat",
+                "head": source_commit,
+                "tree": "c" * 40,
+                "clean": True,
+            },
+        }
+        report["runtime"]["persistentDeviceState"] = {
+            actor: {
+                "storageRoot": f"/tmp/{actor}",
+                "storageLifecycle": "ephemeral",
+            }
+            for actor in ("alice", "bob")
+        }
+        report["assertions"].extend(
+            {
+                "name": name,
+                "passed": True,
+                "detail": "",
+            }
+            for name in CURRENT_PROFILE_REQUIRED_ASSERTIONS
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "persistent device state",
+        ):
+            validate_current_profile_topology(report)
+
+    def test_current_profile_rejects_same_worktree_evidence(self) -> None:
+        report = self.valid_report()
+        source_commit = "a" * 40
+        report["manifest"]["source"]["commit"] = source_commit
+        report["manifest"]["clients"][0]["worktree"] = (
+            "/workspace/peers-group-chat"
+        )
+        report["runtime"]["launchOrder"] = ["bob", "alice"]
+        report["runtime"]["directionOrder"] = ["bob", "alice"]
+        report["runtime"]["worktreeTopology"] = {
+            actor: {
+                "clientId": actor,
+                "logicalName": (
+                    "peers-chat-high-chat"
+                    if actor == "alice"
+                    else "peers-group-chat"
+                ),
+                "expectedLogicalName": (
+                    "peers-chat-high-chat"
+                    if actor == "alice"
+                    else "peers-group-chat"
+                ),
+                "workspaceId": "2" * 16,
+                "repositoryId": "3" * 16,
+                "canonicalRoot": "/workspace/peers-group-chat",
+                "head": source_commit,
+                "tree": "c" * 40,
+                "clean": True,
+            }
+            for actor in ("alice", "bob")
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "distinct worktrees"):
+            validate_current_profile_topology(report)
+
+    def test_current_profile_rejects_high_chat_initiator(self) -> None:
+        report = self.valid_report()
+        source_commit = "a" * 40
+        report["manifest"]["source"]["commit"] = source_commit
+        report["runtime"]["launchOrder"] = ["alice", "bob"]
+        report["runtime"]["directionOrder"] = ["alice", "bob"]
+        report["runtime"]["worktreeTopology"] = {
+            "alice": {
+                "clientId": "alice",
+                "logicalName": "peers-chat-high-chat",
+                "expectedLogicalName": "peers-chat-high-chat",
+                "workspaceId": "1" * 16,
+                "repositoryId": "3" * 16,
+                "canonicalRoot": "/workspace/peers-chat-high-chat",
+                "head": "b" * 40,
+                "tree": "c" * 40,
+                "clean": True,
+            },
+            "bob": {
+                "clientId": "bob",
+                "logicalName": "peers-group-chat",
+                "expectedLogicalName": "peers-group-chat",
+                "workspaceId": "2" * 16,
+                "repositoryId": "3" * 16,
+                "canonicalRoot": "/workspace/peers-group-chat",
+                "head": source_commit,
+                "tree": "c" * 40,
+                "clean": True,
+            },
+        }
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "must launch and initiate",
+        ):
+            validate_current_profile_topology(report)
+
+    def test_client_readiness_requires_active_station_device(self) -> None:
+        runner_source = (
+            REPO_ROOT
+            / "tooling"
+            / "acceptance"
+            / "gates"
+            / "chat"
+            / "native_two_client_runner.py"
+        ).read_text(encoding="utf-8")
+        harness_source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src"
+            / "acceptance"
+            / "chat"
+            / "harness.ts"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('current.get("active") is not True', runner_source)
+        self.assertIn("imServiceV1.device.list()", harness_source)
+        self.assertIn("ActorDeviceStatus.ACTIVE", harness_source)
+
+    def test_desktop_hydration_preserves_conversation_members(self) -> None:
+        lifecycle_source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "messaging"
+            / "lifecycle.rs"
+        ).read_text(encoding="utf-8")
+        gateway_source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "interface"
+            / "http_gateway"
+            / "mod.rs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"/conversation/members"', lifecycle_source)
+        self.assertIn("GetConversationMembersResponse", lifecycle_source)
+        self.assertNotIn(
+            "members: Vec::<ConversationMemberProjection>::new()",
+            lifecycle_source,
+        )
+        self.assertIn(
+            "hydrate_projections_from_station(&engine, &token)",
+            gateway_source,
+        )
+
+    def test_prekey_publication_reconciles_station_inventory(self) -> None:
+        core_source = (
+            REPO_ROOT
+            / "packages"
+            / "messaging-core"
+            / "src"
+            / "crypto"
+            / "prekeys.rs"
+        ).read_text(encoding="utf-8")
+        transport_source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "messaging"
+            / "prekeys.rs"
+        ).read_text(encoding="utf-8")
+        store_source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src-tauri"
+            / "src"
+            / "messaging"
+            / "store.rs"
+        ).read_text(encoding="utf-8")
+        station_store_source = (
+            REPO_ROOT
+            / "apps"
+            / "station"
+            / "app"
+            / "subserver"
+            / "key_exchange"
+            / "infrastructure"
+            / "canonical_store.go"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("pending_prekey_replenishment", core_source)
+        self.assertIn("RemotePreKeyInventory::MissingBundle", core_source)
+        self.assertIn("transport.replenish(&replenish_request)", core_source)
+        self.assertIn('"/key-exchange/keys/count"', transport_source)
+        self.assertIn('"/key-exchange/keys/replenish"', transport_source)
+        self.assertIn("'awaiting_replenishment'", store_source)
+        self.assertIn(
+            "state IN ('available', 'awaiting_replenishment')",
+            store_source,
+        )
+        self.assertIn("requireCompleteDirectBundle", station_store_source)
+
     def test_source_identity_rejects_malformed_station_protocol_digest(self) -> None:
         manifest = self.valid_report()["manifest"]
         manifest["services"]["station-four"]["protocolDigest"] = "z" * 64
@@ -505,6 +1125,21 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             "resources_released",
         )
         self.assertFalse(gate.report.assertions[-1].passed)
+
+    def test_visible_evidence_defers_mutable_app_log_until_cleanup(self) -> None:
+        client = object()
+        saved_logs: list[str] = []
+        gate = object.__new__(NativeTwoClientGate)
+        gate.clients = {"alice": client}
+        gate.save_screenshot = lambda _client, _actor: None
+        gate.save_dom = lambda _client, _actor: None
+        gate.save_app_log = (
+            lambda _client, actor: saved_logs.append(actor)
+        )
+
+        gate.collect_client_evidence("alice")
+
+        self.assertEqual(saved_logs, [])
 
     def test_cleanup_exports_remote_log_before_binding_cleanup(self) -> None:
         log_path = self.root / "alice.log"
@@ -573,6 +1208,39 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         harness = (
             root / "apps/desktop/src/acceptance/chat/harness.ts"
         ).read_text(encoding="utf-8")
+        timeline = (
+            root
+            / "apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx"
+        ).read_text(encoding="utf-8")
+        timeline_policy = (
+            root
+            / "apps/desktop/src/components/chat/message/chatMessageTimelinePolicy.ts"
+        ).read_text(encoding="utf-8")
+        message_area = (
+            root / "apps/desktop/src/components/chat/ChatMessageArea.tsx"
+        ).read_text(encoding="utf-8")
+        avatar = (
+            root / "apps/desktop/src/components/common/SquareAvatar.tsx"
+        ).read_text(encoding="utf-8")
+        social_chat = (
+            root / "apps/desktop/src/store/socialChat.ts"
+        ).read_text(encoding="utf-8")
+        profile_projection = (
+            root / "apps/desktop/src/store/socialProfileProjection.ts"
+        ).read_text(encoding="utf-8")
+        message_store = (
+            root / "apps/desktop/src-tauri/src/messaging/store.rs"
+        ).read_text(encoding="utf-8")
+        federation_resolver = (
+            root
+            / "apps/station/frame/touch/federation/resolver/resolver.go"
+        ).read_text(encoding="utf-8")
+        actor_seed = (
+            root / "apps/station/frame/touch/actor/seed.go"
+        ).read_text(encoding="utf-8")
+        actor_config = (
+            root / "apps/station/app/conf/actor.yml"
+        ).read_text(encoding="utf-8")
         friend_sync = harness.split(
             "    async syncFriendSession(",
             maxsplit=1,
@@ -596,6 +1264,72 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                 maxsplit=1,
             )[0],
         )
+        self.assertIn('"federationContext"', runner)
+        self.assertIn('"federationId": federation_id', runner)
+        self.assertIn(
+            "Alice and Bob have no shared Federation",
+            runner,
+        )
+        self.assertIn("async federationContext()", harness)
+        self.assertIn(
+            'received.get("messageUlid") == sent.get("messageUlid")',
+            runner,
+        )
+        self.assertIn("def message_composer_geometry(", runner)
+        self.assertIn("timelineFlexShrink", runner)
+        self.assertIn("row[\"bottom\"] <= composer[\"top\"] - 8", runner)
+        self.assertIn("def prove_demo_avatar_sources(", runner)
+        self.assertIn('"avatar.bundled"', runner)
+        self.assertIn('"message.layout"', runner)
+        direction = runner.split(
+            "    def prove_direction(",
+            maxsplit=1,
+        )[1].split(
+            "    def prove_demo_avatar_sources(",
+            maxsplit=1,
+        )[0]
+        self.assertLess(
+            direction.index('"message.layout"'),
+            direction.index('"message.received"'),
+        )
+        self.assertIn("data-chat-message-timeline", timeline)
+        self.assertIn("chatMessageTimelineContainerStyle", timeline)
+        self.assertIn("behavior: 'auto'", timeline_policy)
+        self.assertIn("useLayoutEffect", message_area)
+        self.assertIn(
+            "scrollIntoView(chatMessageTailScrollOptions())",
+            message_area,
+        )
+        self.assertIn("RETIRED_GENERATED_AVATAR_PREFIX", avatar)
+        self.assertIn("inlineAvatarSource", avatar)
+        self.assertNotIn("avatar.example.invalid", actor_config)
+        avatar_payloads = re.findall(
+            r'^\s*avatar: "data:image/svg\+xml;base64,([^"]+)"',
+            actor_config,
+            flags=re.MULTILINE,
+        )
+        self.assertEqual(len(avatar_payloads), 3)
+        for payload in avatar_payloads:
+            svg = base64.b64decode(payload, validate=True).decode("utf-8")
+            self.assertIn('<rect width="128" height="128" fill="', svg)
+            self.assertNotIn('rx="64"', svg)
+        legacy_payloads = re.findall(
+            r'^\s*-\s+"data:image/svg\+xml;base64,([^"]+)"',
+            actor_config,
+            flags=re.MULTILINE,
+        )
+        self.assertEqual(len(legacy_payloads), 3)
+        for payload in legacy_payloads:
+            svg = base64.b64decode(payload, validate=True).decode("utf-8")
+            self.assertIn('rx="64"', svg)
+        self.assertIn("is_bundled_square_avatar", runner)
+        self.assertIn("len({", runner)
+        self.assertIn("remoteProfileHandle", profile_projection)
+        self.assertIn("accountProfileFromFederationResolve", profile_projection)
+        self.assertIn("await api.federationResolve(federatedHandle)", social_chat)
+        self.assertIn("merge_message_projection_rows", message_store)
+        self.assertNotIn("CacheVerifiedRemoteDeviceSigningKeys", federation_resolver)
+        self.assertNotIn("migrateLegacyPresetAvatarRows", actor_seed)
         self.assertIn(
             "await refreshConversation('friend', sessionUlid)",
             friend_sync,

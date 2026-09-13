@@ -1,8 +1,8 @@
 # Messaging Platform — 数据模型
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-08-08 | **Updated**: 2026-09-05
+> **Version**: v1.3
+> **Created**: 2026-08-08 | **Updated**: 2026-09-13
 > **Owner**: Messaging Platform Team
 
 ---
@@ -198,6 +198,14 @@ actor membership和device leaf membership必须独立存储。actor暂时没有a
 event中的deterministic post-state value，进入event hash。Fresh MLS endpoint以明确添加
 自己的Welcome event作为首个checkpoint时，使用该snapshot在同一SQLCipher transaction
 初始化conversation/member projection；snapshot之外不得推断或补写共享membership。
+
+Fresh Direct endpoint 不追补加入前的endpoint-private queue item。若本地尚无该
+conversation的authority head、Direct session、message projection、consumption marker或
+command state，Engine从authenticated public event log读取sequence 1到当前
+send-preparation head，验证完整hash chain，并使用sequence-1
+`ConversationCreatedFact.post_state`建立actor-level projection。该projection与最终验证的
+`authority_sequence/event_hash`在同一SQLCipher transaction写入；中间event不生成历史
+message projection、cursor、receipt或session。
 
 `ConversationAuthorityMember` target contract增加verified `home_station_id`。
 Authority membership admission从signed actor/endpoint directory绑定该route，持久化到
@@ -606,6 +614,97 @@ local_commands / command_outbox
 - accepted 之后的撤回由新的 `RetractMessage` command 与 Authority event 表达。
 - ratchet/MLS state在任何 timeout、retry 或 terminal failure中都不回滚。
 
+### 3.7 Submitted Command Result Reconciliation
+
+> **Status**: accepted by `MP-D31`
+
+```text
+ResolveConversationCommandResultsRequest {
+  commands[] {
+    conversation_id
+    command_id
+    command_sha256
+  }
+}
+
+ResolveConversationCommandResultsResponse {
+  results[] {
+    conversation_id
+    command_id
+    state =
+      HOME_PENDING |
+      ACCEPTED |
+      TERMINAL_REJECTED |
+      NOT_FOUND
+    result?
+    terminal_error_code?
+  }
+}
+```
+
+The request contains at most 64 references. Caller PTID and device identity come from
+the authenticated request context. Each response preserves request identity and binds
+the exact command SHA-256.
+
+Canonical `COMMAND_RESULT` Device Inbox item identity is:
+
+```text
+SHA-256(canonical_tuple(
+  "peers-touch/conversation-command-result",
+  version=1,
+  recipient_ptid,
+  recipient_device_id,
+  conversation_id,
+  command_id
+))
+```
+
+Historical payload-hash IDs are normalized transactionally at startup. The
+migration preserves the existing row and lane position; it does not create a
+synthetic Inbox item or a second result index.
+
+State transitions:
+
+```text
+submitted + HOME_PENDING -> submitted
+submitted + ACCEPTED -> committed local command lifecycle
+submitted + TERMINAL_REJECTED -> failed or superseded with typed reason
+submitted + NOT_FOUND -> retry_wait with identical exact command bytes
+```
+
+`ACCEPTED` does not insert a consumption marker, synthesize an Inbox item, or move an
+authority/lane cursor. A later canonical Inbox delivery remains idempotent.
+
+### 3.8 Federated Conversation Typing Signal
+
+> **Status**: accepted by `MP-D32`
+
+```text
+FederatedConversationTypingSignal {
+  version
+  phase = AUTHORITY_ADMISSION | HOME_FANOUT
+  federation_id
+  conversation_id
+  authority_station_peer_id
+  authority_epoch
+  sender_endpoint
+  sender_home_station_peer_id
+  pulse_generation
+  expires_at
+  is_typing
+  recipient_actor_ptids[]
+}
+```
+
+`AUTHORITY_ADMISSION` has no recipients and targets the current Authority.
+`HOME_FANOUT` originates from that Authority and includes only active recipients whose
+verified Home Station equals the frame target. The Federation frame uses payload kind
+`CONVERSATION_TYPING`, `ordering_sequence=0`, deterministic pulse identity, and the
+same bounded expiry as the accepted typing TTL.
+
+Receiver memory is bounded by `(conversation_id, sender endpoint)` and stores only
+the latest generation and expiry. It is not durable state.
+
 ## 4. Device SQLCipher Persistence
 
 ```sql
@@ -704,6 +803,8 @@ PENDING/CLAIMED --terminal--> DEAD_LETTER
 | Federation | `(target_station, idempotency_key)` |
 | Local consumption | `(item_id, payload_hash)` |
 | Receipt | `(endpoint, event_id, receipt_kind)` |
+| Command result reconciliation | `(conversation_id, command_id, command_sha256)` |
+| Ephemeral typing | `(conversation_id, sender endpoint, pulse_generation, is_typing)` |
 
 重复 receive：
 

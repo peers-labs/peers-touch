@@ -116,6 +116,13 @@ type DeviceDirectory interface {
 	) ([]domain.DeviceRoute, error)
 }
 
+type ActorHomeStationDirectory interface {
+	ResolveActorHomeStationPeerID(
+		ctx context.Context,
+		actorPTID string,
+	) (string, error)
+}
+
 type DeviceInboxPort interface {
 	EnqueueDirectKeyExchange(
 		ctx context.Context,
@@ -161,6 +168,7 @@ type CanonicalService struct {
 	directStore  DirectMaterialStore
 	mlsStore     MLSMaterialStore
 	devices      DeviceDirectory
+	actorHomes   ActorHomeStationDirectory
 	deviceInbox  DeviceInboxPort
 	federation   FederationPort
 	clock        Clock
@@ -172,6 +180,7 @@ func NewCanonicalService(
 	directStore DirectMaterialStore,
 	mlsStore MLSMaterialStore,
 	devices DeviceDirectory,
+	actorHomes ActorHomeStationDirectory,
 	deviceInbox DeviceInboxPort,
 	federation FederationPort,
 	clock Clock,
@@ -181,6 +190,7 @@ func NewCanonicalService(
 	if directStore == nil ||
 		mlsStore == nil ||
 		devices == nil ||
+		actorHomes == nil ||
 		deviceInbox == nil ||
 		federation == nil ||
 		clock == nil ||
@@ -197,6 +207,7 @@ func NewCanonicalService(
 		directStore:  directStore,
 		mlsStore:     mlsStore,
 		devices:      devices,
+		actorHomes:   actorHomes,
 		deviceInbox:  deviceInbox,
 		federation:   federation,
 		clock:        clock,
@@ -1069,6 +1080,14 @@ func (s *CanonicalService) requireLocalActiveEndpoint(
 ) (domain.DeviceRoute, error) {
 	route, err := s.resolveActiveDevice(ctx, operation, endpoint)
 	if err != nil {
+		if domain.IsCode(err, domain.ErrorCodeNotFound) {
+			return domain.DeviceRoute{}, domain.NewError(
+				domain.ErrorCodeUnauthorized,
+				operation,
+				"device",
+				"endpoint is not active",
+			)
+		}
 		return domain.DeviceRoute{}, err
 	}
 	if route.HomeStationID != s.localStation {
@@ -1134,6 +1153,44 @@ func (s *CanonicalService) resolveActorRoutes(
 			"exceeds the length limit",
 		)
 	}
+	homeStationID, err := s.actorHomes.ResolveActorHomeStationPeerID(
+		ctx,
+		actorPTID,
+	)
+	if err != nil {
+		return nil, "", wrapDependencyError(operation, err)
+	}
+	homeStationID = strings.TrimSpace(homeStationID)
+	if homeStationID == "" || len(homeStationID) > domain.MaxStationIDBytes {
+		return nil, "", domain.NewError(
+			domain.ErrorCodeConflict,
+			operation,
+			"home_station_peer_id",
+			"Actor Identity returned an invalid Home Station",
+		)
+	}
+	if requestedHomeStationID != "" &&
+		requestedHomeStationID != homeStationID {
+		return nil, "", domain.NewError(
+			domain.ErrorCodeConflict,
+			operation,
+			"home_station_peer_id",
+			"does not match the Actor Identity route",
+		)
+	}
+	if targetDeviceID != "" && homeStationID != s.localStation {
+		route := domain.DeviceRoute{
+			Endpoint: domain.Endpoint{
+				ActorPTID: actorPTID,
+				DeviceID:  targetDeviceID,
+			},
+			HomeStationID: homeStationID,
+		}
+		if err := route.Validate(operation); err != nil {
+			return nil, "", err
+		}
+		return []domain.DeviceRoute{route}, homeStationID, nil
+	}
 
 	var routes []domain.DeviceRoute
 	if targetDeviceID != "" {
@@ -1168,7 +1225,6 @@ func (s *CanonicalService) resolveActorRoutes(
 	sort.Slice(routes, func(i, j int) bool {
 		return routes[i].Endpoint.Key() < routes[j].Endpoint.Key()
 	})
-	homeStationID := ""
 	seenDevices := make(map[string]struct{}, len(routes))
 	for _, route := range routes {
 		if err := route.Validate(operation); err != nil {
@@ -1191,9 +1247,7 @@ func (s *CanonicalService) resolveActorRoutes(
 			)
 		}
 		seenDevices[route.Endpoint.DeviceID] = struct{}{}
-		if homeStationID == "" {
-			homeStationID = route.HomeStationID
-		} else if route.HomeStationID != homeStationID {
+		if route.HomeStationID != homeStationID {
 			return nil, "", domain.NewError(
 				domain.ErrorCodeConflict,
 				operation,
@@ -1201,15 +1255,6 @@ func (s *CanonicalService) resolveActorRoutes(
 				"active actor devices disagree on Home Station ownership",
 			)
 		}
-	}
-	if requestedHomeStationID != "" &&
-		requestedHomeStationID != homeStationID {
-		return nil, "", domain.NewError(
-			domain.ErrorCodeConflict,
-			operation,
-			"home_station_peer_id",
-			"does not match the active device directory",
-		)
 	}
 	return routes, homeStationID, nil
 }

@@ -91,6 +91,16 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         ):
             with self.subTest(url=url):
                 self.assertFalse(is_native_tauri_url(url))
+        with patch.dict(
+            os.environ,
+            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+        ):
+            self.assertTrue(
+                is_native_tauri_url("http://localhost:3410/#/chat")
+            )
+            self.assertFalse(
+                is_native_tauri_url("https://localhost:3410/#/chat")
+            )
 
     def test_selected_runtime_fails_closed_and_uses_binding(self) -> None:
         support = (
@@ -209,6 +219,8 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         for command in (
             "auth::acceptance_logout_window_session",
             "messaging_commands::messaging_acceptance_current_endpoint",
+            "messaging_commands::messaging_acceptance_prepare_submitted_command",
+            "messaging_commands::messaging_acceptance_resume_lifecycle",
             "messaging_commands::messaging_acceptance_interaction_snapshot",
         ):
             with self.subTest(command=command):
@@ -726,6 +738,10 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             )
         )["gates"]
         command = gates["chat-native-visible-static"]["command"]
+        self.assertIn(
+            "src/acceptance/chat/passwordLogin.test.ts",
+            command,
+        )
         for suite in (
             "native_runtime_cell_runner_test",
             "native_recovery_runner_test",
@@ -826,6 +842,48 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                     "http://127.0.0.1:3030",
                     actor,
                 )
+
+    def test_desktop_gateway_identity_state_uses_manifest_storage_root(
+        self,
+    ) -> None:
+        account_id = "oauth-account"
+        state = {
+            "accounts": [
+                {
+                    "id": account_id,
+                    "encrypted_session": {
+                        "actor_ptid": "ptid:test:bob",
+                        "ciphertext": "ciphertext",
+                    },
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            storage_root = Path(directory) / "peers-touch"
+            expected = (
+                storage_root
+                / "desktop"
+                / "data"
+                / "account"
+                / "station-four"
+                / "identities.json"
+            )
+            expected.parent.mkdir(parents=True)
+            expected.write_text(json.dumps(state), encoding="utf-8")
+            with patch.object(
+                desktop_gateway_e2e,
+                "runtime_manifest",
+                return_value={
+                    "clients": [
+                        {"storage_root": str(storage_root)},
+                    ],
+                },
+            ):
+                selected = desktop_gateway_e2e.identity_state_path(
+                    account_id,
+                )
+
+        self.assertEqual(selected, expected)
 
     def test_desktop_gateway_legacy_pin_fixture_removes_actor_ptid(self) -> None:
         state = {
@@ -1003,7 +1061,6 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self,
     ) -> None:
         for filename in (
-            "native_group_mls_runner.py",
             "native_interactions_runner.py",
             "native_typing_runner.py",
         ):
@@ -1033,8 +1090,6 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                     [ast.literal_eval(key) for key in payload.keys],
                 )
 
-                if filename == "native_group_mls_runner.py":
-                    continue
                 group_id_assignment = next(
                     node
                     for node in ast.walk(tree)
@@ -1064,24 +1119,48 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             ROOT
             / "tooling/acceptance/gates/chat/native_group_mls_runner.py"
         ).read_text(encoding="utf-8")
+        group_create = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_group_mls_runner.py",
+            "create_group",
+        )
+        self.assertIn('SELECTORS["create_group_contact"]', group_create)
+        self.assertIn('SELECTORS["create_group_submit"]', group_create)
+        self.assertIn("data-chat-create-group-state", group_create)
+        self.assertNotIn('"createGroup"', group_create)
         self.assertIn('"memberPtid": self.ptids["charlie"]', group_runner)
         self.assertNotIn('"memberDid":', group_runner)
 
-    def test_typing_start_stop_waits_for_receiver_evidence(self) -> None:
+    def test_typing_lifecycle_uses_native_surface_events(self) -> None:
         source = (
             ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py"
         ).read_text(encoding="utf-8")
+        start_client = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
+            "start_client",
+        )
         prove_direct = self.function_source(
             ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
             "prove_direct",
         )
-
-        self.assertIn("def submit_typing_and_wait(", source)
-        self.assertEqual(
-            prove_direct.count("self.submit_typing_and_wait("),
-            2,
+        prove_group = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
+            "prove_group",
         )
-        self.assertNotIn("or self.wait_typing(", prove_direct)
+
+        self.assertIn("self.start_injected_client(actor)", start_client)
+        self.assertNotIn("enter_chat_page(client)", start_client)
+        self.assertNotIn("def submit_typing_and_wait(", source)
+        for lifecycle in (prove_direct, prove_group):
+            self.assertIn("set_composer(", lifecycle)
+            self.assertIn('"[data-chat-send]"', lifecycle)
+            self.assertIn('"arguments[0].blur()"', lifecycle)
+            self.assertIn("select_conversation(", lifecycle)
+        self.assertNotIn('"submitTyping"', prove_direct)
+        self.assertEqual(
+            prove_group.count('"submitTyping"'),
+            1,
+            "only the removed-member rejection may submit typing directly",
+        )
 
     def test_multi_device_contract_is_unchanged(self) -> None:
         self.assertEqual(

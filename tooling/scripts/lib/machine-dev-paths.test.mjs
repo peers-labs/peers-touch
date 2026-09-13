@@ -5,8 +5,11 @@ import test from 'node:test';
 import path from 'node:path';
 
 import {
+  developmentWorkLedgerPath,
+  developmentWorkLockPath,
   machineDevRoot,
   workspaceIdForRoot,
+  workspaceWorkflowPath,
   workspaceRuntimeRef,
   workspaceRuntimePath,
 } from './machine-dev-paths.mjs';
@@ -38,7 +41,37 @@ test('resolves runtime state under the machine Dev Control Plane', () => {
   );
 });
 
+test('resolves the public work ledger and workspace workflow state', () => {
+  const root = realpathSync(process.cwd());
+  const workspaceId = workspaceIdForRoot(root);
+
+  assert.equal(
+    developmentWorkLedgerPath('/home/tester'),
+    '/home/tester/.peers-touch/dev/work.json',
+  );
+  assert.equal(
+    developmentWorkLockPath('/home/tester'),
+    '/home/tester/.peers-touch/dev/work.lock',
+  );
+  assert.equal(
+    workspaceWorkflowPath('chat-group', {
+      home: '/home/tester',
+      repoRoot: root,
+    }),
+    path.join(
+      '/home/tester/.peers-touch/dev/workspaces',
+      workspaceId,
+      'workflow',
+      'chat-group',
+    ),
+  );
+});
+
 test('rejects runtime names that can escape the workspace root', () => {
   assert.throws(() => workspaceRuntimePath('../outside'), /Invalid workspace runtime name/);
   assert.throws(() => workspaceRuntimePath('/absolute'), /Invalid workspace runtime name/);
+  assert.throws(
+    () => workspaceWorkflowPath('../outside'),
+    /Invalid development work item/,
+  );
 });

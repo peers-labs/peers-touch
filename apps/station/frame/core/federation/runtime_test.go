@@ -159,6 +159,12 @@ func TestRuntimeComposesSharedLocalDeliveryAndCanonicalRoutes(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := runtime.DeliverConversationTyping(
+		context.Background(),
+		frame,
+	); !errors.Is(err, delivery.ErrInvalidFrame) {
+		t.Fatalf("durable payload ephemeral delivery error = %v", err)
+	}
 	if _, err := runtime.repository.Enqueue(
 		context.Background(),
 		frame,

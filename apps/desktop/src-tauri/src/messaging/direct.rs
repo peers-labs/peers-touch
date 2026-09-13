@@ -563,10 +563,10 @@ mod tests {
         let mut event = ConversationEvent {
             event_id: "event-1".to_string(),
             conversation_id: "conversation-1".to_string(),
-            sequence: 1,
+            sequence: 3,
             command_id: "command-1".to_string(),
             actor: Some(sender.clone()),
-            previous_hash: Vec::new(),
+            previous_hash: vec![8; 32],
             event_hash: Vec::new(),
             committed_at: Some(prost_types::Timestamp {
                 seconds: 0,
@@ -595,6 +595,7 @@ mod tests {
         );
         event.delivery_commitments = vec![commitment.to_vec()];
         event.event_hash = Sha256::digest(event.encode_to_vec()).to_vec();
+        let event_hash = event.event_hash.clone();
         let delivery = DeviceEventDelivery {
             event: Some(event),
             recipient: Some(recipient_proto.clone()),
@@ -624,11 +625,18 @@ mod tests {
         store
             .install_test_conversation_projection("conversation-1", 1, 0)
             .unwrap();
+        store
+            .install_test_authority_head("conversation-1", 2, &[8; 32])
+            .unwrap();
 
         processor.consume(&item, 3).unwrap();
         let committed = store.load_direct_session(session_id).unwrap().unwrap();
         assert_eq!(committed.ratchet.n_recv, 1);
         assert_eq!(store.lane_checkpoint().unwrap(), (1, 3));
+        assert_eq!(
+            store.authority_head("conversation-1").unwrap(),
+            (3, event_hash)
+        );
         assert!(store
             .consumption_marker_matches(&item.item_id, &item.payload_sha256)
             .unwrap());

@@ -910,6 +910,109 @@ pub fn messaging_acceptance_current_endpoint(
 
 #[cfg(feature = "acceptance-webdriver")]
 #[tauri::command]
+pub fn messaging_acceptance_prepare_submitted_command(
+    input: MessagingAcceptanceInteractionSnapshotInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    if std::env::var("PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND")
+        .ok()
+        .as_deref()
+        != Some("1")
+    {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "acceptance.chat.submittedCommandFixtureUnauthorized",
+            Some(json!({ "reason": "submitted_command_fixture_unauthorized" })),
+        );
+    }
+    let session = match state.sessions.get(window.label()) {
+        Some(session) => session,
+        None => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "acceptance.chat.windowSessionMissing",
+                Some(json!({ "reason": "window_session_missing" })),
+            )
+        }
+    };
+    let actor_ptid = match require_acceptance_actor(&input.expected_actor_ptid, &session.actor.ptid)
+    {
+        Ok(actor_ptid) => actor_ptid,
+        Err(error) => return error,
+    };
+    let engine = match state.messaging_engines.get(&session.account_id) {
+        Ok(Some(engine)) => engine,
+        Ok(None) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "acceptance.chat.messagingEngineInactive",
+                Some(json!({ "reason": "messaging_engine_inactive" })),
+            )
+        }
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("read active messaging engine for acceptance: {error}"),
+                Some(json!({ "reason": "messaging_engine_lookup_failed" })),
+            )
+        }
+    };
+    if let Err(error) = state
+        .messaging_engines
+        .deactivate_profile_worker(&session.account_id)
+    {
+        return AppResult::fail(ErrorCode::InternalError, error, None);
+    }
+    match engine.acceptance_prepare_submitted_command_fixture(
+        &input.conversation_id,
+        &input.message_id,
+        &input.command_id,
+    ) {
+        Ok(snapshot) => AppResult::success(json!({
+            "actorPtid": actor_ptid,
+            "snapshot": snapshot,
+        })),
+        Err(error) => AppResult::fail(ErrorCode::Conflict, error, None),
+    }
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn messaging_acceptance_resume_lifecycle(
+    input: MessagingAcceptanceActorInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let session = match state.sessions.get(window.label()) {
+        Some(session) => session,
+        None => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "acceptance.chat.windowSessionMissing",
+                Some(json!({ "reason": "window_session_missing" })),
+            )
+        }
+    };
+    let actor_ptid = match require_acceptance_actor(&input.expected_actor_ptid, &session.actor.ptid)
+    {
+        Ok(actor_ptid) => actor_ptid,
+        Err(error) => return error,
+    };
+    match state
+        .messaging_engines
+        .activate_profile_worker(&session.account_id, session.jwt.clone())
+    {
+        Ok(()) => AppResult::success(json!({
+            "actorPtid": actor_ptid,
+            "activated": true,
+        })),
+        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    }
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
 pub fn messaging_acceptance_interaction_snapshot(
     input: MessagingAcceptanceInteractionSnapshotInput,
     state: State<'_, Arc<AppState>>,
@@ -990,7 +1093,7 @@ pub(crate) fn messaging_create_group_with_engine(
         &input.federation_id,
     ) {
         Ok(prepared) => prepared,
-        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+        Err(error) => return error.into_app_result("Failed to create group"),
     };
     let progress = match engine.dispatch_command_once(
         token,

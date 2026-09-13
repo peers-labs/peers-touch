@@ -1,9 +1,13 @@
 import { useState, type ReactNode } from 'react';
-import { Pin, BellOff, EyeOff, Trash2, CheckCheck, Volume2, VolumeX, Clock3, Plus, UserPlus, Users, X } from 'lucide-react';
+import { Pin, BellOff, EyeOff, Trash2, CheckCheck, Volume2, VolumeX, Clock3, Plus, RefreshCw, UserPlus, Users, X } from 'lucide-react';
+import { Button } from '@lobehub/ui';
+import { Alert } from 'antd';
+import { Flexbox } from 'react-layout-kit';
 import { T } from '../theme';
 import { Avatar } from './Avatar';
+import { ContactIdentityRow } from './ContactIdentityRow';
 import { ContextMenu } from './ContextMenu';
-import type { MockConversation } from '../mock';
+import { CONTACTS, type MockConversation } from '../mock';
 
 interface SessionListProps {
   conversations: MockConversation[];
@@ -140,7 +144,10 @@ export function SessionList({
   const [friendName, setFriendName] = useState('');
   const [friendPeerId, setFriendPeerId] = useState('');
   const [groupName, setGroupName] = useState('');
-  const [groupInvitees, setGroupInvitees] = useState('');
+  const [groupSelectedIds, setGroupSelectedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [groupError, setGroupError] = useState('');
 
   const closeCreateSurface = () => {
     setCreateMenuOpen(false);
@@ -148,7 +155,8 @@ export function SessionList({
     setFriendName('');
     setFriendPeerId('');
     setGroupName('');
-    setGroupInvitees('');
+    setGroupSelectedIds(new Set());
+    setGroupError('');
   };
 
   const submitCreate = () => {
@@ -157,9 +165,31 @@ export function SessionList({
       closeCreateSurface();
     }
     if (createMode === 'group') {
-      onCreateGroup(groupName, groupInvitees.split(/[,\n]/));
+      if (groupSelectedIds.size === 0) return;
+      if (!groupError) {
+        const unavailable = CONTACTS.find(
+          (contact) => groupSelectedIds.has(contact.id),
+        );
+        setGroupError(
+          `${unavailable?.name || 'Selected member'} · `
+          + `${unavailable?.federatedHandle || unavailable?.homeStation || ''} `
+          + 'is not ready for encrypted group chat.',
+        );
+        return;
+      }
+      onCreateGroup(groupName, [...groupSelectedIds]);
       closeCreateSurface();
     }
+  };
+
+  const toggleGroupContact = (contactId: string) => {
+    setGroupSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(contactId)) next.delete(contactId);
+      else next.add(contactId);
+      return next;
+    });
+    setGroupError('');
   };
 
   return (
@@ -287,26 +317,106 @@ export function SessionList({
           ) : (
             <>
               <CreateInput label="Group name" value={groupName} onChange={setGroupName} placeholder="Release Review" />
-              <CreateInput label="Invitees" value={groupInvitees} onChange={setGroupInvitees} placeholder="alice, bob, station/carol" />
+              <Flexbox gap={6} style={{ marginTop: T.space2 }}>
+                {CONTACTS.map((contact) => {
+                  const selected = groupSelectedIds.has(contact.id);
+                  const station = contact.homeStation
+                    || contact.federatedHandle
+                    || contact.homeStationPeerId
+                    || contact.id;
+                  return (
+                    <button
+                      key={contact.id}
+                      type="button"
+                      data-prototype-create-group-contact={contact.id}
+                      aria-label={`Select ${contact.name} from ${station}`}
+                      aria-pressed={selected}
+                      onClick={() => toggleGroupContact(contact.id)}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '7px 8px',
+                        border: 'none',
+                        borderRadius: T.radiusMd,
+                        background: selected ? T.bgHover : T.bg,
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        font: 'inherit',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: T.radiusFull,
+                          border: selected
+                            ? `1px solid ${T.primary}`
+                            : `1px solid ${T.border}`,
+                          background: selected ? T.primary : T.bg,
+                          color: T.textOnPrimary,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {selected ? '✓' : ''}
+                      </span>
+                      <ContactIdentityRow
+                        contact={contact}
+                        selected={selected}
+                      />
+                    </button>
+                  );
+                })}
+              </Flexbox>
+              {groupError ? (
+                <Alert
+                  type="error"
+                  showIcon
+                  message={groupError}
+                  style={{ marginTop: T.space2 }}
+                />
+              ) : null}
             </>
           )}
-          <button
+          <Button
+            block
+            type="primary"
+            icon={
+              createMode === 'group' && groupError
+                ? <RefreshCw size={13} />
+                : undefined
+            }
+            disabled={
+              createMode === 'group' && groupSelectedIds.size === 0
+            }
             onClick={submitCreate}
             style={{
-              width: '100%',
               height: 32,
-              border: 'none',
               borderRadius: T.radiusMd,
-              background: T.primary,
-              color: T.textOnPrimary,
-              fontSize: T.fontSm,
-              fontWeight: 800,
-              cursor: 'pointer',
               marginTop: T.space2,
+              border: 'none',
+              background:
+                createMode === 'group' && groupSelectedIds.size === 0
+                  ? T.bgActive
+                  : T.primary,
+              color:
+                createMode === 'group' && groupSelectedIds.size === 0
+                  ? T.textQuaternary
+                  : T.textOnPrimary,
             }}
           >
-            {createMode === 'friend' ? 'Create friend chat' : 'Create group'}
-          </button>
+            {createMode === 'friend'
+              ? 'Create friend chat'
+              : groupError
+                ? 'Retry'
+                : 'Create group'}
+          </Button>
         </div>
       )}
 

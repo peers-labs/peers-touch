@@ -18,7 +18,7 @@
 //     /relay/forward/<peer_id>/..., and verify the returned envelope
 //     against the signing_key_pem the locator record pinned (TOFU).
 //
-// The resolver does NOT cache verified envelopes today (that is Phase D
-// when remote_cached actor rows land). It is intentionally a pure
-// read-through layer.
+// Verified remote envelopes are written through to the federation profile
+// cache. Device signing-key persistence remains exclusively owned by Actor
+// Identity and is not performed by this resolver.
 package resolver

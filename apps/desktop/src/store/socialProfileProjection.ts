@@ -1,5 +1,6 @@
 import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMember } from '../gen/proto/domain/chat/group_chat_pb';
+import type { FederationResolveView } from '../gen/proto/domain/federation/federation_resolve_pb';
 import type { AccountProfile } from '../services/desktop_api';
 
 export interface CurrentActorProfileProjection {
@@ -31,6 +32,61 @@ export interface GroupAvatarSlotProjection {
   ptid: string;
   name: string;
   avatar: string;
+}
+
+export function remoteProfileHandle(
+  profile: Pick<AccountProfile, 'acct' | 'username'>,
+): string {
+  for (const candidate of [profile.acct, profile.username]) {
+    const value = candidate.trim();
+    if (
+      value.startsWith('@')
+      && value.indexOf('@', 1) > 1
+    ) {
+      return value;
+    }
+  }
+  return '';
+}
+
+export function accountProfileFromFederationResolve(
+  view: FederationResolveView,
+  expectedPtid: string,
+): AccountProfile | null {
+  const profile = view.profile;
+  const actorPtid = profile?.peersTouch?.networkId.trim() ?? '';
+  if (!profile || !actorPtid || actorPtid !== expectedPtid.trim()) {
+    return null;
+  }
+  return {
+    id: profile.id,
+    username: profile.username,
+    acct: profile.acct,
+    display_name: profile.displayName,
+    note: profile.note,
+    url: profile.url,
+    avatar: profile.avatar,
+    header: profile.header,
+    locked: profile.locked,
+    created_at: profile.createdAt,
+    statuses_count: Number(profile.statusesCount),
+    following_count: Number(profile.followingCount),
+    followers_count: Number(profile.followersCount),
+    region: profile.region,
+    timezone: profile.timezone,
+    tags: [...profile.tags],
+    links: profile.links.map((link) => ({
+      label: link.label,
+      url: link.url,
+    })),
+    default_visibility: profile.defaultVisibility,
+    manually_approves_followers: profile.manuallyApprovesFollowers,
+    message_permission: profile.messagePermission,
+    auto_expire_days: Number(profile.autoExpireDays),
+    peers_touch: {
+      network_id: actorPtid,
+    },
+  };
 }
 
 function exactSessionProfile(

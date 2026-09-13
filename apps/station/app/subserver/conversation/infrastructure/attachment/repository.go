@@ -2067,7 +2067,7 @@ func requireMutationAuthorization(
 ) error {
 	var conversation conversationpersistence.ConversationModel
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Select("conversation_id", "status").
+		Select("conversation_id", "kind", "status").
 		Where("conversation_id = ?", string(authorization.ConversationID)).
 		First(&conversation).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -2120,31 +2120,33 @@ func requireMutationAuthorization(
 		)
 	}
 
-	var memberDevice conversationpersistence.ConversationMemberDeviceModel
-	err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Select("conversation_id", "ptid", "device_id").
-		Where(
-			"conversation_id = ? AND ptid = ? AND device_id = ? AND active = ?",
-			string(authorization.ConversationID),
-			string(authorization.Endpoint.Actor),
-			string(authorization.Endpoint.Device),
-			true,
-		).
-		First(&memberDevice).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return attachment.NewError(
-			attachment.ErrorCodeUnauthorized,
-			operation,
-			"membership",
-			"endpoint is not active in the Conversation",
-		)
-	}
-	if err != nil {
-		return attachment.WrapError(
-			attachment.ErrorCodePersistence,
-			operation+".authorize_member_device",
-			err,
-		)
+	if conversation.Kind != string(valueobject.ConversationKindDirect) {
+		var memberDevice conversationpersistence.ConversationMemberDeviceModel
+		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("conversation_id", "ptid", "device_id").
+			Where(
+				"conversation_id = ? AND ptid = ? AND device_id = ? AND active = ?",
+				string(authorization.ConversationID),
+				string(authorization.Endpoint.Actor),
+				string(authorization.Endpoint.Device),
+				true,
+			).
+			First(&memberDevice).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return attachment.NewError(
+				attachment.ErrorCodeUnauthorized,
+				operation,
+				"membership",
+				"endpoint is not active in the Conversation",
+			)
+		}
+		if err != nil {
+			return attachment.WrapError(
+				attachment.ErrorCodePersistence,
+				operation+".authorize_member_device",
+				err,
+			)
+		}
 	}
 
 	if err := lockActorIdentity(tx, authorization.Endpoint.Actor, operation); err != nil {

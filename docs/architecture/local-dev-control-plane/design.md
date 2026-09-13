@@ -45,6 +45,7 @@ Sibling env repository
 Machine Dev Control Plane
   ~/.peers-touch/dev/
   - workspace registry
+  - public development work declarations
   - human environment-creation authorizations
   - local slot allocation
   - Station capability leases
@@ -86,6 +87,7 @@ not remain as a symlink, fallback, or second read owner.
 | Machine-local environment creation approval | Human developer | `~/.peers-touch/dev/authorizations/environment-creation/` |
 | Worktree identity | Git + canonical filesystem path | `workspaceId = sha256(realpath(root))[0:16]` |
 | Worktree profile selection | Machine Dev Control Plane | `bindings[workspaceId].profile` |
+| Development source/runtime intent | Development Workflow | `~/.peers-touch/dev/work.json` |
 | Local port slot | Machine Dev Control Plane | `bindings[workspaceId].slot` |
 | Station connection/deploy/reset permission | Machine Dev Control Plane | capability lease |
 | Live process and port state | OS observation | PID identity + listening socket |
@@ -171,7 +173,18 @@ reports, and reproduction notes. A session must be deleted after closure.
 Reusable conclusions move to the governing design, operational knowledge, or
 Acceptance Evidence Store; transient files do not move into the repository.
 
-### 4.5 Lease Manager
+### 4.5 Development Work Ledger
+
+`~/.peers-touch/dev/work.json` is the machine-wide public intent projection
+owned by Development Workflow. It advertises work item, workspace, branch,
+source write scope and planned runtime resources before mutation.
+
+The ledger does not allocate resources and cannot grant deploy/reset authority.
+Local Dev Control Plane leases remain the live exclusivity owner. A work
+declaration and lease may reference the same resource, but they answer different
+questions: planned use versus current possession.
+
+### 4.6 Lease Manager
 
 Owns bounded live exclusivity. Required lease classes:
 
@@ -186,7 +199,7 @@ Owns bounded live exclusivity. Required lease classes:
 A durable binding does not prove a live lease. A live lease does not rewrite the
 durable binding.
 
-### 4.6 Runtime Observer
+### 4.7 Runtime Observer
 
 Projects current OS facts:
 
@@ -221,6 +234,7 @@ or whichever `.local` directory happens to contain a file.
 
 Allowed:
 
+- Multiple worktrees observe the same public Development work ledger.
 - Multiple worktrees share one remote Station with `station.connect`.
 - One worktree holds `station.deploy` while other clients remain connected,
   provided the deployment policy explicitly allows it.
@@ -232,6 +246,8 @@ Allowed:
 
 Forbidden:
 
+- A private worktree declaration replaces the machine public ledger.
+- A Development declaration is treated as a held runtime lease.
 - Two live worktrees use the same local slot.
 - Two owners hold `station.deploy` or `station.reset` for the same resource.
 - A profile's static `PT_DEV_SLOT` silently overrides the machine allocation.

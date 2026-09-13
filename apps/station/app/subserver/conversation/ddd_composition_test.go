@@ -1445,6 +1445,213 @@ func TestConversationDDDDirectFanoutUsesCurrentActiveActorDevices(t *testing.T) 
 	}
 }
 
+func TestConversationDDDDirectRecoversMissingDeviceProjectionFromVerifiedGenesis(
+	t *testing.T,
+) {
+	fixture := newDDDComposition(t)
+	aliceOriginal := dddEndpoint("ptid:direct-recovery-alice", "alice-original")
+	bobOriginal := dddEndpoint("ptid:direct-recovery-bob", "bob-original")
+	seedDDDDevices(
+		t,
+		fixture.db,
+		dddDevice(aliceOriginal, "station-a"),
+		dddDevice(bobOriginal, "station-a"),
+	)
+	created, err := fixture.commands.CreateDirect(
+		context.Background(),
+		command.CreateDirectRequest{
+			Creator:           aliceOriginal,
+			Peer:              bobOriginal.Actor,
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			CommandID:         "direct-recovery-create",
+			VerifiedRoutes:    dddDirectRoutes(aliceOriginal, "station-a", bobOriginal, "station-a"),
+			ExactCommandBytes: []byte("direct-recovery-create"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.Model(&dddActorDeviceModel{}).
+		Where(
+			"(ptid = ? AND device_id = ?) OR (ptid = ? AND device_id = ?)",
+			string(aliceOriginal.Actor),
+			string(aliceOriginal.Device),
+			string(bobOriginal.Actor),
+			string(bobOriginal.Device),
+		).
+		Update("active", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	aliceCurrent := dddEndpoint(string(aliceOriginal.Actor), "alice-current")
+	bobCurrent := dddEndpoint(string(bobOriginal.Actor), "bob-current")
+	seedDDDDevices(
+		t,
+		fixture.db,
+		dddDevice(aliceCurrent, "station-a"),
+		dddDevice(bobCurrent, "station-a"),
+	)
+	if err := fixture.db.
+		Where("conversation_id = ?", string(created.Conversation.ID)).
+		Delete(&persistence.ConversationMemberDeviceModel{}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	views, err := fixture.queries.List(context.Background(), aliceOriginal.Actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(views) != 1 ||
+		!snapshotHasEndpoint(views[0].Conversation, aliceOriginal) ||
+		!snapshotHasEndpoint(views[0].Conversation, bobOriginal) {
+		t.Fatalf("recovered Direct projection = %+v", views)
+	}
+
+	preparation, err := fixture.commands.PrepareCommand(
+		context.Background(),
+		dddPrepareCommandRequest(
+			t,
+			fixture,
+			created.Conversation.ID,
+			aliceCurrent,
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEndpoints := valueobject.SortEndpoints([]valueobject.Endpoint{
+		aliceCurrent,
+		bobCurrent,
+	})
+	if !valueobject.EqualEndpointSets(preparation.RequiredEndpoints, wantEndpoints) {
+		t.Fatalf(
+			"recovered Direct required endpoints = %+v, want %+v",
+			preparation.RequiredEndpoints,
+			wantEndpoints,
+		)
+	}
+	at := fixture.clock.Now()
+	commandBytes := dddSendCommandBytes(
+		t,
+		created.Conversation.ID,
+		"direct-recovery-send",
+		aliceCurrent,
+		preparation,
+		at,
+	)
+	result, err := fixture.commands.Submit(
+		context.Background(),
+		command.SubmitRequest{
+			Command: aggregate.Command{
+				ID:                      "direct-recovery-send",
+				ConversationID:          created.Conversation.ID,
+				AuthorityStation:        "station-a",
+				Sender:                  aliceCurrent,
+				ObservedMembershipEpoch: preparation.Head.MembershipEpoch,
+				ObservedMLSEpoch:        preparation.Head.MLSEpoch,
+				DeliveryPlanHash:        preparation.DeliveryPlanHash,
+				Kind:                    domainevent.KindMessageCommitted,
+				MessageID:               "message-direct-recovery-send",
+				Payload:                 commandBytes,
+				Deliveries: []valueobject.PreparedDelivery{
+					dddDelivery(
+						t,
+						aliceCurrent,
+						"station-a",
+						valueobject.DeliveryKindPublicEvent,
+						"direct-recovery-alice",
+					),
+					dddDelivery(
+						t,
+						bobCurrent,
+						"station-a",
+						valueobject.DeliveryKindDirectCiphertext,
+						"direct-recovery-bob",
+					),
+				},
+				CommittedAt: at,
+			},
+			VerifiedRoutes: dddDirectRoutes(
+				aliceCurrent,
+				"station-a",
+				bobCurrent,
+				"station-a",
+			),
+			ExactCommandBytes: commandBytes,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var delivered []dddDeviceInboxModel
+	if err := fixture.db.
+		Where("event_id = ?", string(result.Event.ID)).
+		Find(&delivered).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(delivered) != 2 {
+		t.Fatalf("recovered Direct delivery count = %d, want 2", len(delivered))
+	}
+	for _, item := range delivered {
+		endpoint := valueobject.Endpoint{
+			Actor:  valueobject.PTID(item.RecipientPTID),
+			Device: valueobject.DeviceID(item.RecipientDevice),
+		}
+		if endpoint != aliceCurrent && endpoint != bobCurrent {
+			t.Fatalf("recovered Direct delivered to stale endpoint %s", endpoint.Key())
+		}
+	}
+	assertCount(t, fixture.db, &persistence.ConversationMemberDeviceModel{}, 2)
+}
+
+func TestConversationDDDDirectProjectionRecoveryRejectsTamperedGenesis(t *testing.T) {
+	fixture := newDDDComposition(t)
+	alice := dddEndpoint("ptid:direct-recovery-tampered-alice", "alice-1")
+	bob := dddEndpoint("ptid:direct-recovery-tampered-bob", "bob-1")
+	seedDDDDevices(
+		t,
+		fixture.db,
+		dddDevice(alice, "station-a"),
+		dddDevice(bob, "station-a"),
+	)
+	created, err := fixture.commands.CreateDirect(
+		context.Background(),
+		command.CreateDirectRequest{
+			Creator:           alice,
+			Peer:              bob.Actor,
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			CommandID:         "direct-recovery-tampered-create",
+			VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-a"),
+			ExactCommandBytes: []byte("direct-recovery-tampered-create"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.
+		Where("conversation_id = ?", string(created.Conversation.ID)).
+		Delete(&persistence.ConversationMemberDeviceModel{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.Model(&persistence.ConversationEventModel{}).
+		Where(
+			"conversation_id = ? AND sequence = ?",
+			string(created.Conversation.ID),
+			1,
+		).
+		Update("event_bytes", []byte("tampered-genesis")).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := fixture.queries.List(
+		context.Background(),
+		alice.Actor,
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeHashChainInvalid) {
+		t.Fatalf("tampered Direct genesis recovery error = %v", err)
+	}
+}
+
 func TestConversationDDDCommandRoutesUseVerifiedRemoteActorWithoutShadowRow(t *testing.T) {
 	fixture := newDDDComposition(t)
 	alice := dddEndpoint("ptid:verified-command-alice", "alice-1")

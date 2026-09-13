@@ -19,6 +19,8 @@ func TestBackfillPresetAvatar(t *testing.T) {
 		t.Fatalf("migrate actor: %v", err)
 	}
 
+	const presetAvatar = "data:image/svg+xml;base64,PHN2Zz4="
+	const legacyInlineAvatar = "data:image/svg+xml;base64,bGVnYWN5"
 	empty := db.Actor{
 		ID:                1,
 		PTID:              "alice",
@@ -36,19 +38,80 @@ func TestBackfillPresetAvatar(t *testing.T) {
 		FederatedHandle:   "@bob@station.local",
 		Icon:              "https://example.test/custom-bob.png",
 	}
+	legacy := db.Actor{
+		ID:                3,
+		PTID:              "carol",
+		PreferredUsername: "carol",
+		Email:             "carol@p.t",
+		PasswordHash:      "hash",
+		FederatedHandle:   "@carol@station.local",
+		Icon:              legacyGeneratedPresetAvatarPrefix + "prompt=carol",
+	}
+	legacyInline := db.Actor{
+		ID:                4,
+		PTID:              "alice-inline",
+		PreferredUsername: "dave",
+		Email:             "alice-inline@p.t",
+		PasswordHash:      "hash",
+		FederatedHandle:   "@alice-inline@station.local",
+		Icon:              legacyInlineAvatar,
+	}
+	customInline := db.Actor{
+		ID:                5,
+		PTID:              "bob-inline",
+		PreferredUsername: "erin",
+		Email:             "bob-inline@p.t",
+		PasswordHash:      "hash",
+		FederatedHandle:   "@bob-inline@station.local",
+		Icon:              "data:image/svg+xml;base64,Y3VzdG9t",
+	}
+	remoteCached := db.Actor{
+		ID:                6,
+		PTID:              "remote-bob",
+		PreferredUsername: "@bob@remote.example",
+		Email:             "remote-bob@cache.invalid",
+		PasswordHash:      "unusable",
+		FederatedHandle:   "@bob@remote.example",
+		Icon:              legacyGeneratedPresetAvatarPrefix + "prompt=remote-bob",
+		Origin:            OriginRemoteCached,
+	}
 	if err := rds.Create(&empty).Error; err != nil {
 		t.Fatalf("create actor without avatar: %v", err)
 	}
 	if err := rds.Create(&custom).Error; err != nil {
 		t.Fatalf("create actor with custom avatar: %v", err)
 	}
+	if err := rds.Create(&legacy).Error; err != nil {
+		t.Fatalf("create actor with legacy preset avatar: %v", err)
+	}
+	if err := rds.Create(&legacyInline).Error; err != nil {
+		t.Fatalf("create actor with legacy inline avatar: %v", err)
+	}
+	if err := rds.Create(&customInline).Error; err != nil {
+		t.Fatalf("create actor with custom inline avatar: %v", err)
+	}
+	if err := rds.Create(&remoteCached).Error; err != nil {
+		t.Fatalf("create remote cached actor: %v", err)
+	}
 
-	const presetAvatar = "https://example.test/preset.png"
-	if err := backfillPresetAvatar(rds, &empty, presetAvatar); err != nil {
+	legacyAvatars := []string{legacyInlineAvatar}
+	if err := backfillPresetAvatar(rds, &empty, presetAvatar, legacyAvatars); err != nil {
 		t.Fatalf("backfill empty avatar: %v", err)
 	}
-	if err := backfillPresetAvatar(rds, &custom, presetAvatar); err != nil {
+	if err := backfillPresetAvatar(rds, &custom, presetAvatar, legacyAvatars); err != nil {
 		t.Fatalf("preserve custom avatar: %v", err)
+	}
+	if err := backfillPresetAvatar(rds, &legacy, presetAvatar, legacyAvatars); err != nil {
+		t.Fatalf("migrate legacy preset avatar: %v", err)
+	}
+	if err := backfillPresetAvatar(rds, &legacyInline, presetAvatar, legacyAvatars); err != nil {
+		t.Fatalf("migrate legacy inline avatar: %v", err)
+	}
+	if err := backfillPresetAvatar(rds, &customInline, presetAvatar, legacyAvatars); err != nil {
+		t.Fatalf("preserve custom inline avatar: %v", err)
+	}
+	if err := backfillPresetAvatar(rds, &remoteCached, presetAvatar, legacyAvatars); err != nil {
+		t.Fatalf("preserve remote cached avatar: %v", err)
 	}
 
 	var actors []db.Actor
@@ -60,6 +123,18 @@ func TestBackfillPresetAvatar(t *testing.T) {
 	}
 	if got := actors[1].Icon; got != custom.Icon {
 		t.Fatalf("custom avatar = %q, want %q", got, custom.Icon)
+	}
+	if got := actors[2].Icon; got != presetAvatar {
+		t.Fatalf("migrated avatar = %q, want %q", got, presetAvatar)
+	}
+	if got := actors[3].Icon; got != presetAvatar {
+		t.Fatalf("migrated inline avatar = %q, want %q", got, presetAvatar)
+	}
+	if got := actors[4].Icon; got != customInline.Icon {
+		t.Fatalf("custom inline avatar = %q, want %q", got, customInline.Icon)
+	}
+	if got := actors[5].Icon; got != remoteCached.Icon {
+		t.Fatalf("remote cached avatar = %q, want %q", got, remoteCached.Icon)
 	}
 }
 

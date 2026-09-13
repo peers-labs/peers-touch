@@ -8,6 +8,12 @@ export interface MockUser {
   name: string;
   avatar: string;
   online: boolean;
+  username?: string;
+  federatedHandle?: string;
+  homeStation?: string;
+  homeStationPeerId?: string;
+  federationId?: string;
+  federationName?: string;
 }
 
 export interface MockMessage {
@@ -68,7 +74,48 @@ export const USERS: Record<string, MockUser> = {
   'user-6': { id: 'user-6', name: 'Michael Xu', avatar: '', online: true },
   'user-7': { id: 'user-7', name: 'Nina Patel', avatar: '', online: false },
   'user-8': { id: 'user-8', name: 'Owen Reed', avatar: '', online: true },
+  'bob-aspen': {
+    id: 'ptid:bob:aspen',
+    name: 'Bob',
+    username: 'bob',
+    avatar: '',
+    online: true,
+    federatedHandle: '@bob@aspen.social',
+    homeStation: 'aspen.social',
+    homeStationPeerId: '12D3KooW-aspen',
+    federationId: 'fed-friends',
+    federationName: 'Friends Federation',
+  },
+  'bob-harbor': {
+    id: 'ptid:bob:harbor',
+    name: 'Bob',
+    username: 'bob',
+    avatar: '',
+    online: false,
+    federatedHandle: '@bob@harbor.social',
+    homeStation: 'harbor.social',
+    homeStationPeerId: '12D3KooW-harbor',
+    federationId: 'fed-friends',
+    federationName: 'Friends Federation',
+  },
 };
+
+export const CONTACTS = [
+  USERS['bob-aspen'],
+  USERS['bob-harbor'],
+  {
+    id: 'ptid:carol:aspen',
+    name: 'Carol',
+    username: 'carol',
+    avatar: '',
+    online: true,
+    federatedHandle: '@carol@aspen.social',
+    homeStation: 'aspen.social',
+    homeStationPeerId: '12D3KooW-aspen',
+    federationId: 'fed-friends',
+    federationName: 'Friends Federation',
+  },
+] satisfies MockUser[];
 
 export const CONVERSATIONS: MockConversation[] = [
   {

@@ -69,6 +69,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	composition, err := newCanonicalComposition(ctx, canonicalCompositionConfig{
 		database:       rds,
 		devices:        newActorDeviceDirectory(rds),
+		actorHomes:     actorHomeStationDirectory{},
 		deviceInbox:    deviceInbox,
 		federation:     federationPort,
 		clock:          clock,

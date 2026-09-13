@@ -28,12 +28,13 @@ type TouchConfig struct {
 }
 
 type PresetActorConfig struct {
-	Username    string            `json:"username" pconf:"username" yaml:"username"`
-	Email       string            `json:"email" pconf:"email" yaml:"email"`
-	Password    string            `json:"password" pconf:"password" yaml:"password"`
-	DisplayName string            `json:"display_name" pconf:"display_name" yaml:"display_name"`
-	Avatar      string            `json:"avatar" pconf:"avatar" yaml:"avatar"`
-	Endpoints   map[string]string `json:"endpoints" pconf:"endpoints" yaml:"endpoints"`
+	Username      string            `json:"username" pconf:"username" yaml:"username"`
+	Email         string            `json:"email" pconf:"email" yaml:"email"`
+	Password      string            `json:"password" pconf:"password" yaml:"password"`
+	DisplayName   string            `json:"display_name" pconf:"display_name" yaml:"display_name"`
+	Avatar        string            `json:"avatar" pconf:"avatar" yaml:"avatar"`
+	LegacyAvatars []string          `json:"legacy_avatars" pconf:"legacy_avatars" yaml:"legacy_avatars"`
+	Endpoints     map[string]string `json:"endpoints" pconf:"endpoints" yaml:"endpoints"`
 }
 
 // RouterConfig controls which routers are enabled

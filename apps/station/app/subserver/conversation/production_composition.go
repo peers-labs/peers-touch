@@ -15,12 +15,14 @@ import (
 	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
+	reconciliationapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/reconciliation"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	attachmentinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/attachment"
 	deliveryinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/delivery"
 	conversationfederation "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/federation"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/persistence"
+	reconciliationinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/reconciliation"
 	conversationhttp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/interface/http"
 	keyexchangedomain "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	keyexchangemodel "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model"
@@ -66,6 +68,10 @@ type ProductionRealtime interface {
 // initialized before Federation.
 type ProductionFederationRuntime interface {
 	RegisterReceivers(sharedfederation.ReceiverRegistrar) error
+	DeliverConversationTyping(
+		context.Context,
+		*federationdelivery.Frame,
+	) (federationdelivery.Result, error)
 	CallPeer(context.Context, sharedfederation.PeerCall) error
 	OpenPeerStream(
 		context.Context,
@@ -152,9 +158,10 @@ type ProductionComposition struct {
 	AttachmentService  *attachmentapp.Service
 	InteractionService *interactionapp.Service
 
-	DeviceInboxHandler *conversationhttp.DeviceInboxHandler
-	AttachmentHandler  *conversationhttp.AttachmentHandler
-	InteractionHandler *conversationhttp.InteractionHandler
+	DeviceInboxHandler   *conversationhttp.DeviceInboxHandler
+	CommandResultHandler *conversationhttp.CommandResultHandler
+	AttachmentHandler    *conversationhttp.AttachmentHandler
+	InteractionHandler   *conversationhttp.InteractionHandler
 
 	DeliveryRepository   *deliveryinfra.Repository
 	AttachmentRepository *attachmentinfra.Repository
@@ -306,6 +313,25 @@ func NewProductionComposition(
 	if err != nil {
 		return nil, fmt.Errorf("compose Conversation query service: %w", err)
 	}
+	reconciliationReader, err := reconciliationinfra.NewReader(
+		config.Database,
+		eventSealer,
+		string(config.LocalStationID),
+		config.Clock,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("compose Conversation command reconciliation reader: %w", err)
+	}
+	reconciliationService, err := reconciliationapp.NewService(reconciliationReader)
+	if err != nil {
+		return nil, fmt.Errorf("compose Conversation command reconciliation service: %w", err)
+	}
+	commandResultHandler, err := conversationhttp.NewCommandResultHandler(
+		reconciliationService,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("compose Conversation command-result handler: %w", err)
+	}
 
 	identityDirectory := &productionIdentityDirectory{db: config.Database}
 	deliveryRepository, err := deliveryinfra.NewRepository(
@@ -401,6 +427,7 @@ func NewProductionComposition(
 		AttachmentService:     attachmentService,
 		InteractionService:    interactionService,
 		DeviceInboxHandler:    deviceInboxHandler,
+		CommandResultHandler:  commandResultHandler,
 		AttachmentHandler:     attachmentHandler,
 		InteractionHandler:    interactionHandler,
 		DeliveryRepository:    deliveryRepository,
@@ -467,7 +494,7 @@ func migrateProductionConversationSchema(
 	database *gorm.DB,
 ) error {
 	err := database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return tx.AutoMigrate(
+		if err := tx.AutoMigrate(
 			&persistence.ConversationModel{},
 			&persistence.ConversationMemberModel{},
 			&persistence.ConversationMemberDeviceModel{},
@@ -490,7 +517,10 @@ func migrateProductionConversationSchema(
 			&attachmentinfra.ObjectModel{},
 			&attachmentinfra.GrantModel{},
 			&attachmentinfra.AuditModel{},
-		)
+		); err != nil {
+			return err
+		}
+		return deliveryinfra.MigrateCommandResultItemIdentities(ctx, tx)
 	})
 	if err != nil {
 		return fmt.Errorf("migrate canonical Conversation production schema: %w", err)

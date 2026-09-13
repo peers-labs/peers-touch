@@ -41,12 +41,13 @@ func onAfterStart() error {
 		configs := make([]actor.PresetActorConfig, len(presets))
 		for i, p := range presets {
 			configs[i] = actor.PresetActorConfig{
-				Username:    p.Username,
-				Email:       p.Email,
-				Password:    p.Password,
-				DisplayName: p.DisplayName,
-				Avatar:      p.Avatar,
-				Endpoints:   p.Endpoints,
+				Username:      p.Username,
+				Email:         p.Email,
+				Password:      p.Password,
+				DisplayName:   p.DisplayName,
+				Avatar:        p.Avatar,
+				LegacyAvatars: p.LegacyAvatars,
+				Endpoints:     p.Endpoints,
 			}
 		}
 		if err := actor.SeedPresetActors(ctx, configs); err != nil {

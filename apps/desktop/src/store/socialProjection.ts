@@ -37,6 +37,11 @@ export interface DesktopUnifiedConversationLike {
   lastActivity: Date;
   unread: number;
   peerPtid?: string;
+  username?: string;
+  federatedHandle?: string;
+  homeStationDomain?: string;
+  homeStationPeerId?: string;
+  federationName?: string;
   memberCount?: number;
   muted?: boolean;
   alertEnabled?: boolean;
@@ -181,6 +186,11 @@ export type DesktopIMConversationProjection = IMConversationProjection & {
   authorityStationId?: string;
   federationId?: string;
   peerPtid?: string;
+  username?: string;
+  federatedHandle?: string;
+  homeStationDomain?: string;
+  homeStationPeerId?: string;
+  federationName?: string;
   memberCount?: number;
 };
 
@@ -302,6 +312,11 @@ export function projectDesktopIMConversation(conversation: DesktopUnifiedConvers
     authorityStationId: conversation.authorityStationId ?? '',
     federationId: conversation.federationId ?? '',
     peerPtid: conversation.peerPtid,
+    username: conversation.username,
+    federatedHandle: conversation.federatedHandle,
+    homeStationDomain: conversation.homeStationDomain,
+    homeStationPeerId: conversation.homeStationPeerId,
+    federationName: conversation.federationName,
     memberCount: conversation.memberCount,
   };
 }
@@ -345,19 +360,9 @@ export function projectDesktopIMMessages(
   conversationId: string,
   messages: SocialMessage[],
 ): DesktopIMMessageProjection[] {
-  return messages
-    .map((message) => projectDesktopIMMessage(kind, conversationId, message))
-    .sort((a, b) => {
-      if (a.eventSequence > 0 && b.eventSequence > 0) {
-        const sequenceDelta = a.eventSequence - b.eventSequence;
-        if (sequenceDelta !== 0) return sequenceDelta;
-      } else if (a.eventSequence > 0 || b.eventSequence > 0) {
-        return a.eventSequence > 0 ? -1 : 1;
-      }
-      const timestampDelta = a.sentAtMs - b.sentAtMs;
-      if (timestampDelta !== 0) return timestampDelta;
-      return a.id.localeCompare(b.id);
-    });
+  return messages.map((message) => (
+    projectDesktopIMMessage(kind, conversationId, message)
+  ));
 }
 
 export function applyPresenceToMap(

@@ -12,6 +12,7 @@ import (
 type canonicalCompositionConfig struct {
 	database       *gorm.DB
 	devices        application.DeviceDirectory
+	actorHomes     application.ActorHomeStationDirectory
 	deviceInbox    application.DeviceInboxPort
 	federation     application.FederationPort
 	clock          application.Clock
@@ -40,6 +41,7 @@ func newCanonicalComposition(
 		store,
 		store,
 		config.devices,
+		config.actorHomes,
 		config.deviceInbox,
 		config.federation,
 		config.clock,

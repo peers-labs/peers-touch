@@ -196,6 +196,7 @@ type attachmentRuntime struct {
 	service       *attachment.Service
 	repository    *attachmentinfra.Repository
 	conversations *conversationReader
+	activeDevices map[valueobject.Endpoint]bool
 	database      *gorm.DB
 	blobs         *deleteFaultBlobStore
 	clock         *fixedClock
@@ -1420,6 +1421,71 @@ func failNextObjectCreate(t *testing.T, database *gorm.DB) {
 	})
 }
 
+func TestServiceDirectAllowsCurrentDeviceOutsideGenesisProjection(t *testing.T) {
+	aliceOriginal := valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-original"}
+	bobOriginal := valueobject.Endpoint{Actor: "ptid:bob", Device: "bob-original"}
+	aliceCurrent := valueobject.Endpoint{Actor: aliceOriginal.Actor, Device: "alice-current"}
+	snapshot := directAttachmentConversationSnapshot(
+		t,
+		aliceOriginal,
+		bobOriginal,
+	)
+	runtime := newAttachmentRuntime(t, snapshot)
+	runtime.activeDevices[aliceCurrent] = true
+	if err := runtime.database.Create(&actoridentitypersistence.ActorDeviceModel{
+		PTID:               string(aliceCurrent.Actor),
+		ActorAccount:       string(aliceCurrent.Actor),
+		ActorKind:          1,
+		DeviceID:           string(aliceCurrent.Device),
+		Label:              "attachment-current-direct-device",
+		HomeStationPeerID:  "station:local",
+		SigningKeyID:       "attachment-current-direct-signing-key",
+		PublicKey:          bytes.Repeat([]byte{0x44}, 32),
+		ProfileVersion:     2,
+		VerificationSource: 1,
+		CreatedAt:          attachmentTestTime,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	ciphertext := bytes.Repeat([]byte{0x7a}, 32)
+	ciphertextHash := valueobject.HashBytes(ciphertext)
+	canonicalSpec := []byte("direct-current-device-spec")
+	_, err := runtime.service.Begin(
+		context.Background(),
+		aliceCurrent,
+		attachment.BeginRequest{
+			ConversationID: snapshot.ID,
+			MessageID:      "message-direct-current-device",
+			AttachmentID:   "attachment-direct-current-device",
+			Uploader:       aliceCurrent,
+			Spec: attachment.UploadSpec{
+				CiphertextSize: uint64(len(ciphertext)),
+				CiphertextHash: ciphertextHash,
+				MediaType:      "application/octet-stream",
+				ChunkSize:      attachment.ChunkSize,
+				ChunkCount:     1,
+				Encryption:     attachment.EncryptionSuiteAES256GCMChunked,
+				TagSize:        attachment.TagSize,
+				NonceStrategy:  attachment.NonceStrategyCounter32BE,
+				ChunkHashes:    []valueobject.Hash{ciphertextHash},
+			},
+			CanonicalSpecBytes: canonicalSpec,
+			DescriptorCommitment: attachment.UploadCommitment(
+				snapshot.ID,
+				"message-direct-current-device",
+				"attachment-direct-current-device",
+				"station:local",
+				canonicalSpec,
+			),
+			IdempotencyKey:   "upload-direct-current-device",
+			AuthorityStation: "station:local",
+		},
+	)
+	if err != nil {
+		t.Fatalf("current Direct endpoint begin upload: %v", err)
+	}
+}
+
 func newAttachmentFixture(
 	t *testing.T,
 ) (*attachment.Service, *attachmentinfra.Repository, *conversationReader) {
@@ -1513,6 +1579,7 @@ func newAttachmentRuntime(
 		service:       service,
 		repository:    repository,
 		conversations: conversations,
+		activeDevices: activeDevices,
 		database:      database,
 		blobs:         blobs,
 		clock:         clock,
@@ -1712,6 +1779,60 @@ func validConversationSnapshot(
 	bob valueobject.Endpoint,
 ) aggregate.Snapshot {
 	return conversationSnapshotForEndpoints([]valueobject.Endpoint{alice, bob})
+}
+
+func directAttachmentConversationSnapshot(
+	t *testing.T,
+	alice valueobject.Endpoint,
+	bob valueobject.Endpoint,
+) aggregate.Snapshot {
+	t.Helper()
+	conversationID, err := valueobject.DirectConversationID(alice.Actor, bob.Actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventHash := sha256.Sum256([]byte("event-3"))
+	owner := alice.Actor
+	if bob.Actor < owner {
+		owner = bob.Actor
+	}
+	return aggregate.Snapshot{
+		ID:               conversationID,
+		Kind:             valueobject.ConversationKindDirect,
+		Status:           valueobject.ConversationStatusActive,
+		FederationID:     "federation-1",
+		AuthorityStation: "station:local",
+		AuthorityEpoch:   1,
+		Owner:            owner,
+		Head: valueobject.AuthorityHead{
+			Sequence:        3,
+			EventHash:       eventHash,
+			MembershipEpoch: 1,
+			MLSEpoch:        0,
+		},
+		Members: []entity.Member{
+			{
+				Actor:       alice.Actor,
+				Role:        valueobject.MemberRoleMember,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station:local",
+				JoinedAt:    1,
+			},
+			{
+				Actor:       bob.Actor,
+				Role:        valueobject.MemberRoleMember,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station:local",
+				JoinedAt:    1,
+			},
+		},
+		Devices: []entity.MemberDevice{
+			{Endpoint: alice, HomeStation: "station:local", Active: true, JoinedAt: 1},
+			{Endpoint: bob, HomeStation: "station:local", Active: true, JoinedAt: 1},
+		},
+		CreatedAt: attachmentTestTime.Add(-time.Hour),
+		UpdatedAt: attachmentTestTime,
+	}
 }
 
 func conversationSnapshotForEndpoints(

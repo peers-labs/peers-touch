@@ -314,6 +314,94 @@ func TestReceiverPersistsUnsupportedPayloadAsTerminalReceipt(t *testing.T) {
 	}
 }
 
+func TestReceiverDispatchesEphemeralWithoutRowsAndDropsOverload(t *testing.T) {
+	fixture := newFrameFixture(t)
+	db, repository := newSQLiteRepository(t, fixture.clock)
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	registry := delivery.NewRegistry()
+	if err := delivery.RegisterEphemeralProtoReceiver(
+		registry,
+		delivery.PayloadKindConversationTyping,
+		func() *wrapperspb.StringValue {
+			return &wrapperspb.StringValue{}
+		},
+		func(
+			_ context.Context,
+			payload *wrapperspb.StringValue,
+			_ *delivery.Frame,
+		) (delivery.Result, error) {
+			if payload.GetValue() == "blocking" {
+				started <- struct{}{}
+				<-release
+			}
+
+			return delivery.AcceptedResult(), nil
+		},
+	); err != nil {
+		t.Fatalf("register ephemeral receiver: %v", err)
+	}
+	receiver, err := delivery.NewReceiver(delivery.ReceiverConfig{
+		Policy:               fixture.policy,
+		Verifier:             fixture.verifier,
+		Registry:             registry,
+		UnitOfWork:           repository,
+		Clock:                fixture.clock,
+		MaxEphemeralInFlight: 1,
+	})
+	if err != nil {
+		t.Fatalf("create receiver: %v", err)
+	}
+	blocking := fixture.signedFrame(
+		t,
+		"typing-blocking",
+		"typing-blocking",
+		delivery.PayloadKindConversationTyping,
+		"typing-blocking",
+		wrapperspb.String("blocking"),
+	)
+	completed := make(chan delivery.Result, 1)
+	go func() {
+		result, receiveErr := receiver.Receive(context.Background(), blocking)
+		if receiveErr != nil {
+			t.Errorf("receive blocking typing: %v", receiveErr)
+		}
+		completed <- result
+	}()
+	<-started
+
+	overload := fixture.signedFrame(
+		t,
+		"typing-overload",
+		"typing-overload",
+		delivery.PayloadKindConversationTyping,
+		"typing-overload",
+		wrapperspb.String("overload"),
+	)
+	result, err := receiver.Receive(context.Background(), overload)
+	if err != nil {
+		t.Fatalf("receive overload typing: %v", err)
+	}
+	if result != delivery.TerminalResult(delivery.FrameErrorOverloaded) {
+		t.Fatalf("overload result = %+v", result)
+	}
+	close(release)
+	if result = <-completed; result != delivery.AcceptedResult() {
+		t.Fatalf("ephemeral result = %+v", result)
+	}
+
+	var inboxCount, outboxCount int64
+	if err := db.Model(&delivery.InboxRecord{}).Count(&inboxCount).Error; err != nil {
+		t.Fatalf("count inbox: %v", err)
+	}
+	if err := db.Model(&delivery.OutboxRecord{}).Count(&outboxCount).Error; err != nil {
+		t.Fatalf("count outbox: %v", err)
+	}
+	if inboxCount != 0 || outboxCount != 0 {
+		t.Fatalf("ephemeral rows inbox=%d outbox=%d", inboxCount, outboxCount)
+	}
+}
+
 func TestRegistryRejectsDuplicateKind(t *testing.T) {
 	registry := delivery.NewRegistry()
 	receiver := delivery.ReceiverFunc(func(

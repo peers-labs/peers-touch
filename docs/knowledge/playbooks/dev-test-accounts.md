@@ -13,8 +13,8 @@ detected: 2026-07-06
 # Dev Test Accounts
 
 > **Status**: active
-> **Version**: v2.1
-> **Created**: 2026-07-06 | **Updated**: 2026-08-04
+> **Version**: v2.2
+> **Created**: 2026-07-06 | **Updated**: 2026-09-12
 > **Owner**: Peers-Touch Engineering
 
 ---
@@ -38,12 +38,12 @@ detected: 2026-07-06
 | Account | Email | Display Name | Avatar | 角色定位 | 默认互为好友 |
 |---------|-------|--------------|--------|---------|-------------|
 | **alice** | `alice@p.t` | Alice ${LABEL} | Coral | 主测试用户 / 发起方 | ✅ |
-| **bob** | `bob@p.t` | Bob ${LABEL} | Blue | 对端用户 / 接收方 | ✅ |
+| **bob** | `bob@p.t` | Bob ${LABEL} | Teal | 对端用户 / 接收方 | ✅ |
 | **carol** | `carol@p.t` | Carol ${LABEL} | Violet | 第三方 / 跨站联邦用户 | ✅ |
 
 > `${LABEL}` 展开为 `PEERS_NODE_LABEL` 环境变量（如 "One"、"Two"），方便区分多站同名用户。
 >
-> Station 为每个 demo account 提供不同的默认头像。启动时只回填空头像，不覆盖开发者已自定义的头像。
+> Station 为每个 demo account 提供不同的内联默认头像。preset 图像必须是满幅方形素材，不得在素材内部烘焙圆形 mask；各客户端统一由 `UserSquareAvatar` 控制圆角。启动时只迁移本 Station 本地 demo Actor 的空头像、已退役外部 URL 或旧版圆形 preset；`remote_cached` Actor 必须通过签名 Home-Station profile 刷新，不能按用户名改写。开发者已自定义的其他头像保持不变。
 
 ### 2.2 命名来源
 

@@ -86,7 +86,11 @@ import {
   type FriendRequestData,
 } from './socialNormalizers';
 import { currentAuthenticatedActorPtid } from './session';
-import { resolveActorIdentity } from './socialProfileProjection';
+import {
+  accountProfileFromFederationResolve,
+  remoteProfileHandle,
+  resolveActorIdentity,
+} from './socialProfileProjection';
 
 function hasAuthenticatedActor(): boolean {
   return Boolean(currentAuthenticatedActorPtid());
@@ -650,6 +654,7 @@ interface SocialChatState {
     messageUlid: string,
     kind: 'DELIVERED' | 'READ',
   ) => void;
+  markFriendRead: (sessionUlid: string) => Promise<void>;
   markGroupRead: (groupUlid: string) => Promise<void>;
   updateConversationLocalState: (
     kind: 'friend' | 'group',
@@ -1251,18 +1256,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
       // Advance the canonical actor read cursor. Delivery receipts remain
       // device-scoped DELIVERED facts; READ is conversation/actor-scoped.
-      if (did) {
-        const loadedMsgs = state.messages[ulid];
-        if (loadedMsgs && loadedMsgs.length > 0) {
-          const lastReadSequence = loadedMsgs.reduce(
-            (max, message) => Math.max(max, messageGroupSeq(message)),
-            0,
-          );
-          if (lastReadSequence > 0) {
-            api.messagingReadCursor(ulid, lastReadSequence).catch(() => {});
-          }
-        }
-      }
+      if (did) get().markFriendRead(ulid).catch(() => {});
     },
   selectGroup: (ulid) => {
       set((prev) => ({
@@ -1536,6 +1530,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     try {
       await get().loadSessions();
       if (!Object.prototype.hasOwnProperty.call(get().groupMembers, groupUlid)) {
+        if (get().pendingGroupCreations[groupUlid]) {
+          get().setGroupSecurityState(groupUlid, 'establishing');
+          return;
+        }
         throw new Error(`conversation_members_unavailable:${groupUlid}`);
       }
     } catch (error) {
@@ -1732,7 +1730,26 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       peerProfileLoading: { ...prev.peerProfileLoading, [did]: true },
     }));
     try {
-      const profile = await api.peerProfileGet(did);
+      let profile = await api.peerProfileGet(did);
+      const federatedHandle = remoteProfileHandle(profile);
+      if (federatedHandle) {
+        try {
+          const resolved = await api.federationResolve(federatedHandle);
+          const authoritative = accountProfileFromFederationResolve(
+            resolved,
+            did,
+          );
+          if (authoritative) {
+            profile = authoritative;
+          }
+        } catch (error) {
+          log.warn('socialChat', 'authoritative peer profile refresh failed', {
+            peerPtid: did,
+            federatedHandle,
+            error,
+          });
+        }
+      }
       set((prev) => ({
         peerProfiles: { ...prev.peerProfiles, [did]: profile ?? null },
         peerProfileLoading: { ...prev.peerProfileLoading, [did]: false },
@@ -1886,6 +1903,18 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   ingestRealtimeMessage: async (kind, conversationUlid, message) => {
     if (!conversationUlid || !message.ulid) return;
     await get().loadMessages(conversationUlid, kind);
+  },
+
+  markFriendRead: async (sessionUlid) => {
+    try {
+      const lastReadSequence = (get().messages[sessionUlid] ?? [])
+        .reduce((max, message) => Math.max(max, messageGroupSeq(message)), 0);
+      if (lastReadSequence <= 0) return;
+      await api.messagingReadCursor(sessionUlid, lastReadSequence);
+    } catch (error) {
+      log.error('socialChat', 'markFriendRead failed', error);
+      throw error;
+    }
   },
 
   markGroupRead: async (groupUlid) => {

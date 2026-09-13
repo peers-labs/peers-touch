@@ -4,6 +4,7 @@ import { Empty, theme, type GlobalToken } from 'antd';
 import { Search } from 'lucide-react';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import type { DesktopIMConversationProjection } from '../../store/socialProjection';
+import { chatActorIdentityMetadata } from '../../store/friendshipProjection';
 
 interface ChatSearchDropdownProps {
   searchText: string;
@@ -123,6 +124,16 @@ function ResultRow({
 }) {
   const { t } = useTranslation('chat');
   const name = conversation.title || t('chat.social.sessionList.unknown');
+  const identityMetadata = conversation.kind === 'friend' && conversation.peerPtid
+    ? chatActorIdentityMetadata({
+        actorPtid: conversation.peerPtid,
+        federatedHandle: conversation.federatedHandle || '',
+        homeStationDomain: conversation.homeStationDomain || '',
+        homeStationPeerId: conversation.homeStationPeerId || '',
+        federationId: conversation.federationId || '',
+        federationName: conversation.federationName || '',
+      })
+    : '';
   return (
     <button
       type="button"
@@ -131,6 +142,10 @@ function ResultRow({
       data-chat-search-result-id={conversation.id}
       data-chat-search-result-kind={conversation.kind}
       data-chat-search-result-peer-ptid={conversation.peerPtid || ''}
+      data-chat-identity-federated-handle={conversation.federatedHandle || ''}
+      data-chat-identity-home-station-domain={conversation.homeStationDomain || ''}
+      data-chat-identity-home-station-peer-id={conversation.homeStationPeerId || ''}
+      data-chat-identity-federation-id={conversation.federationId || ''}
       onClick={() => onSelect(conversation)}
       style={{
         display: 'flex',
@@ -150,19 +165,35 @@ function ResultRow({
       onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
     >
       <UserSquareAvatar remoteUrl={conversation.avatar} name={name} size={30} />
-      <span
-        style={{
-          fontSize: 13,
-          fontWeight: 500,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          flex: 1,
-          minWidth: 0,
-        }}
-      >
-        {name}
-      </span>
+      <Flexbox flex={1} gap={2} style={{ minWidth: 0 }}>
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 500,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {name}
+        </span>
+        {identityMetadata ? (
+          <span
+            data-chat-identity-metadata
+            title={identityMetadata}
+            style={{
+              color: token.colorTextSecondary,
+              fontSize: 11,
+              lineHeight: 1.2,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {identityMetadata}
+          </span>
+        ) : null}
+      </Flexbox>
     </button>
   );
 }

@@ -122,6 +122,43 @@
       }
     },
     {
+      "id": "chat-friend-request-gateway-lifecycle",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-friend-request-gateway-lifecycle"],
+      "required_gates": ["chat-friend-request-gateway-e2e"],
+      "synthetic_paths": [
+        "apps/desktop/src-tauri/src/interface/tauri_commands/social.rs",
+        "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+        "apps/station/app/subserver/social/handler.go",
+        "apps/station/app/subserver/social/domain/federated_friend_request.go",
+        "apps/station/app/subserver/social/infrastructure/federated_friend_request_store.go",
+        "apps/station/frame/touch/actor/seed_dev_federation.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "running Desktop HTTP gateway",
+          "Station Social friend-request repository",
+          "Station Federation transport"
+        ],
+        "surfaces": [
+          "social_friend_request_send",
+          "social_friend_request_list",
+          "social_friend_request_accept",
+          "social_get_relationship",
+          "acceptance_friend_request_context"
+        ],
+        "proven_by": ["chat-friend-request-gateway-e2e"],
+        "proven_scope": [
+          "Desktop gateway sends, lists, accepts and reads back one friend-request lifecycle through Station Social and Federation owners"
+        ],
+        "unproven_scope": [
+          "Native Desktop DOM rendering of friend-request controls and states",
+          "Friend-request acceptance does not prove Direct message delivery"
+        ]
+      }
+    },
+    {
       "id": "chat-direct-delivery-receipt",
       "domain": "chat",
       "direction": "acceptance_validates_product",
@@ -131,19 +168,32 @@
         "messaging-platform-contract",
         "desktop-check",
         "chat-native-visible-static",
+        "chat-native-current-profile-two-client-e2e",
+        "chat-native-submitted-command-recovery-e2e",
         "chat-native-two-client-e2e"
       ],
       "synthetic_paths": [
+        "tooling/acceptance/core/provisioning.py",
+        "tooling/acceptance/drivers/native/runtime.py",
+        "tooling/acceptance/provisioners/native_tauri_current_profile.py",
+        "tooling/acceptance/gates/chat/native_two_client_runner.py",
+        "tooling/acceptance/gates/chat/native_current_profile_two_client_e2e.py",
         "apps/desktop/src-tauri/src/messaging/direct.rs",
+        "apps/desktop/src-tauri/src/messaging/drain.rs",
+        "apps/desktop/src-tauri/src/messaging/engine.rs",
+        "apps/desktop/src-tauri/src/messaging/store.rs",
         "apps/desktop/src-tauri/src/messaging/receipt.rs",
         "apps/desktop/src/store/socialChat.ts",
         "apps/station/app/subserver/conversation/application/interaction/service.go",
         "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder.go",
-        "apps/station/app/subserver/conversation/interface/http/interaction.go"
+        "apps/station/app/subserver/conversation/interface/http/interaction.go",
+        "apps/station/app/subserver/conversation/production_http.go"
       ],
       "evidence": {
         "truth_sources": [
           "Desktop Rust messaging receive transaction",
+          "Portable prekey publication reconciliation",
+          "Station Key Exchange public bundle inventory",
           "Desktop durable receipt outbox",
           "Station Conversation per-device receipt queue",
           "Desktop Rust delivery receipt processor",
@@ -154,8 +204,18 @@
           "Bob native Direct message row",
           "DELIVERED receipt projection"
         ],
-        "proven_by": ["chat-native-two-client-e2e"],
+        "proven_by": [
+          "chat-native-current-profile-two-client-e2e",
+          "chat-native-submitted-command-recovery-e2e",
+          "chat-native-two-client-e2e"
+        ],
         "proven_scope": [
+          "Direct prekey bootstrap self-heals missing Station public material without reusing consumed OPKs",
+          "Repeated current-profile native runs preserve each actor's isolated device-private state while retaining process and port cleanup",
+          "Fresh Direct receivers verify and install only the public predecessor authority head before consuming the current private delivery",
+          "Direct receipt aggregation accepts exact event-time commitments for current actor devices without treating Group MLS device rows as Direct truth",
+          "Committed read state preserves monotonic delivered status without changing exact consumed-device or fully-delivered counts",
+          "Conversation interaction failures preserve typed HTTP error codes and safe details",
           "Direct decrypt produces a durable DELIVERED receipt and the sender observes it in a native Desktop message row"
         ],
         "unproven_scope": [
@@ -168,9 +228,15 @@
       "id": "chat-native-visible-clients",
       "domain": "chat",
       "direction": "acceptance_validates_product",
-      "features": ["chat-native-visible-clients"],
+      "features": [
+        "chat-native-visible-clients",
+        "chat-native-friendship-projection"
+      ],
       "required_gates": [
+        "proto-build",
+        "desktop-check",
         "chat-native-visible-static",
+        "chat-native-current-profile-two-client-e2e",
         "chat-native-two-client-e2e",
         "chat-native-multi-device-e2e",
         "chat-native-recovery-e2e",
@@ -181,7 +247,34 @@
         "tooling/acceptance/gates/chat/native_recovery_runner.py",
         "tooling/acceptance/gates/chat/native_group_mls_runner.py",
         "apps/desktop/src/acceptance/chat/identity.ts",
+        "model/domain/social/relationship.proto",
+        "apps/station/frame/touch/federation/cache/cache.go",
+        "apps/station/app/subserver/social/application/relationship_service.go",
+        "apps/station/app/subserver/social/infrastructure/follow_repo.go",
+        "apps/desktop/src/store/federation.ts",
+        "apps/desktop/src/store/relationships.ts",
+        "apps/desktop/src/store/friendshipProjection.ts",
+        "apps/desktop/src/services/socialRealtime.ts",
+        "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
+        "apps/desktop/src-tauri/src/messaging/group_genesis.rs",
+        "apps/desktop/src-tauri/src/messaging/engine.rs",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
+        "apps/desktop/src/acceptance/chat/harness.ts",
+        "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+        "apps/desktop/src/components/chat/CreateGroupModal.tsx",
+        "apps/desktop/src/components/chat/ChatActorIdentityRow.tsx",
+        "apps/desktop/src/components/chat/ChatContactsPanel.tsx",
+        "apps/desktop/src/components/chat/ChatSessionList.tsx",
+        "apps/desktop/src/components/chat/contactSelection.ts",
+        "apps/desktop/src/components/profile/PublicProfileCard.tsx",
+        "apps/desktop/src/pages/SocialChatPage.tsx",
+        "packages/prototypes/desktop/features/social-chat/**",
         "apps/desktop/src/components/chat/ChatComposer.tsx",
+        "apps/desktop/src/components/chat/ChatMessageArea.tsx",
+        "apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx",
+        "apps/desktop/src/components/common/SquareAvatar.tsx",
+        "apps/station/app/conf/actor.yml",
+        "apps/station/frame/touch/actor/seed.go",
         "apps/desktop/src/components/settings/RecoverySettings.tsx"
       ],
       "evidence": {
@@ -189,25 +282,34 @@
           "visible native Desktop windows",
           "per-client embedded Tauri WebDriver sessions",
           "Station deployment attestation and live app metadata",
-          "per-client source and workspace identity"
+          "per-client source and workspace identity",
+          "Station Social mutual follow edges",
+          "signed Home-Station Actor profile and remote_cached PTID row"
         ],
         "surfaces": [
           "two-client direct messages",
           "multi-device direct delivery",
           "reinstall recovery",
-          "three-device MLS"
+          "three-device MLS",
+          "Native Contacts, Find People, and Create Group friendship projection",
+          "recoverable visible Group creation failure"
         ],
         "proven_by": [
+        "chat-native-current-profile-two-client-e2e",
           "chat-native-two-client-e2e",
           "chat-native-multi-device-e2e",
           "chat-native-recovery-e2e",
           "chat-native-group-mls-e2e"
         ],
         "proven_scope": [
-          "Only successful live runs with complete current source-bound reports prove W8 journeys"
+          "Only successful live runs with complete current source-bound reports prove W8 journeys",
+          "Current-source Native Direct sends keep the newest row clear of the composer and render seeded peer avatars from bundled image data",
+          "Three source-bound Native clients distinguish same-name PTIDs by Federation and Home Station, render one avatar identity per PTID, converge on the UI-created MLS Group, and restore that Group after a member restart",
+          "Unavailable-member Group preparation preserves the visible selection and exposes typed inline retry"
         ],
         "unproven_scope": [
-          "W8 remains unproven until all four environment-evidence gates pass"
+          "W8 remains unproven until all four environment-evidence gates pass",
+          "The corrected friendship and Group creation projections remain Native-UI UNPROVEN until chat-native-group-mls-e2e passes on exact source"
         ]
       }
     },

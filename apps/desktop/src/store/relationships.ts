@@ -13,8 +13,13 @@ import type {
 } from '../gen/proto/domain/social/relationship_pb';
 import { EVENT, eventBus } from '../kernel/events';
 import { log } from '../utils/logger';
+import {
+  projectMutualFriends,
+  type MutualFriendProjection,
+} from './friendshipProjection';
 
 const TAG = 'relationships-store';
+const RELATIONSHIP_PAGE_SIZE = 100;
 
 // Per-actor relationship cache:
 //   - `relations[actorPtid]` — the viewer's edge to that actor
@@ -51,6 +56,11 @@ interface RelationshipsState {
 
   followersByActor: Record<string, RelationListState<Follower>>;
   followingByActor: Record<string, RelationListState<Following>>;
+  mutualFriends: MutualFriendProjection[];
+  mutualFriendsActorPtid: string | null;
+  mutualFriendsLoading: boolean;
+  mutualFriendsLoadedAt?: number;
+  mutualFriendsError: string | null;
 
   loadRelationship: (targetActorPtid: string) => Promise<Relationship | undefined>;
   follow: (targetActorPtid: string) => Promise<void>;
@@ -58,19 +68,82 @@ interface RelationshipsState {
 
   loadFollowers: (actorPtid: string, refresh?: boolean) => Promise<void>;
   loadFollowing: (actorPtid: string, refresh?: boolean) => Promise<void>;
+  loadMutualFriends: (actorPtid: string, refresh?: boolean) => Promise<void>;
+  resetMutualFriends: () => void;
 
   reset: () => void;
 }
 
 const initialState: Pick<
   RelationshipsState,
-  'relations' | 'loading' | 'followersByActor' | 'followingByActor'
+  | 'relations'
+  | 'loading'
+  | 'followersByActor'
+  | 'followingByActor'
+  | 'mutualFriends'
+  | 'mutualFriendsActorPtid'
+  | 'mutualFriendsLoading'
+  | 'mutualFriendsLoadedAt'
+  | 'mutualFriendsError'
 > = {
   relations: {},
   loading: {},
   followersByActor: {},
   followingByActor: {},
+  mutualFriends: [],
+  mutualFriendsActorPtid: null,
+  mutualFriendsLoading: false,
+  mutualFriendsLoadedAt: undefined,
+  mutualFriendsError: null,
 };
+
+async function loadAllFollowers(actorPtid: string): Promise<Follower[]> {
+  const followers: Follower[] = [];
+  const seenActorPtids = new Set<string>();
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+
+  do {
+    const response = await socialGetFollowers(actorPtid, cursor, RELATIONSHIP_PAGE_SIZE);
+    for (const follower of response.followers) {
+      if (!follower.actorPtid || seenActorPtids.has(follower.actorPtid)) continue;
+      seenActorPtids.add(follower.actorPtid);
+      followers.push(follower);
+    }
+    const nextCursor = response.nextCursor || undefined;
+    if (nextCursor && seenCursors.has(nextCursor)) {
+      throw new Error('social_get_followers returned a repeated cursor');
+    }
+    if (nextCursor) seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  } while (cursor);
+
+  return followers;
+}
+
+async function loadAllFollowing(actorPtid: string): Promise<Following[]> {
+  const following: Following[] = [];
+  const seenActorPtids = new Set<string>();
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+
+  do {
+    const response = await socialGetFollowing(actorPtid, cursor, RELATIONSHIP_PAGE_SIZE);
+    for (const candidate of response.following) {
+      if (!candidate.actorPtid || seenActorPtids.has(candidate.actorPtid)) continue;
+      seenActorPtids.add(candidate.actorPtid);
+      following.push(candidate);
+    }
+    const nextCursor = response.nextCursor || undefined;
+    if (nextCursor && seenCursors.has(nextCursor)) {
+      throw new Error('social_get_following returned a repeated cursor');
+    }
+    if (nextCursor) seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  } while (cursor);
+
+  return following;
+}
 
 export const useRelationshipsStore = createDesktopStore<RelationshipsState>('relationships', (set, get) => ({
   ...initialState,
@@ -244,6 +317,64 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
       throw err;
     }
   },
+
+  loadMutualFriends: async (actorPtid, refresh = false) => {
+    const normalizedActorPtid = actorPtid.trim();
+    if (!normalizedActorPtid) return;
+    const current = get();
+    if (
+      current.mutualFriendsLoading
+      && current.mutualFriendsActorPtid === normalizedActorPtid
+    ) {
+      return;
+    }
+    if (
+      !refresh
+      && current.mutualFriendsActorPtid === normalizedActorPtid
+      && current.mutualFriendsLoadedAt
+    ) {
+      return;
+    }
+
+    set({
+      mutualFriendsActorPtid: normalizedActorPtid,
+      mutualFriendsLoading: true,
+      mutualFriendsError: null,
+    });
+    try {
+      const [followers, following] = await Promise.all([
+        loadAllFollowers(normalizedActorPtid),
+        loadAllFollowing(normalizedActorPtid),
+      ]);
+      if (get().mutualFriendsActorPtid !== normalizedActorPtid) return;
+      set({
+        mutualFriends: projectMutualFriends(followers, following),
+        mutualFriendsLoading: false,
+        mutualFriendsLoadedAt: Date.now(),
+        mutualFriendsError: null,
+      });
+    } catch (err) {
+      log.warn(TAG, 'loadMutualFriends failed', {
+        actorPtid: normalizedActorPtid,
+        err: String(err),
+      });
+      if (get().mutualFriendsActorPtid === normalizedActorPtid) {
+        set({
+          mutualFriendsLoading: false,
+          mutualFriendsError: err instanceof Error ? err.message : String(err),
+        });
+      }
+      throw err;
+    }
+  },
+
+  resetMutualFriends: () => set({
+    mutualFriends: [],
+    mutualFriendsActorPtid: null,
+    mutualFriendsLoading: false,
+    mutualFriendsLoadedAt: undefined,
+    mutualFriendsError: null,
+  }),
 
   reset: () => set({ ...initialState }),
 }));

@@ -17,6 +17,20 @@ function gatewayAvatarUrl(remoteUrl: string): string {
 type CacheEntry = string | null;
 const resolveCache = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<CacheEntry>>();
+const RETIRED_GENERATED_AVATAR_PREFIX = 'https://avatar.example.invalid/api/ide/v1/text_to_image?';
+
+export function inlineAvatarSource(remoteUrl?: string): string | null {
+  const value = remoteUrl?.trim() ?? '';
+  return value.startsWith('data:image/') ? value : null;
+}
+
+export function downloadableAvatarSource(remoteUrl?: string): string | null {
+  const value = remoteUrl?.trim() ?? '';
+  if (!value || inlineAvatarSource(value) || value.startsWith(RETIRED_GENERATED_AVATAR_PREFIX)) {
+    return null;
+  }
+  return value;
+}
 
 async function resolveLocalPath(remoteUrl: string): Promise<CacheEntry> {
   if (resolveCache.has(remoteUrl)) {
@@ -64,50 +78,53 @@ export function SquareAvatar({
   children,
 }: SquareAvatarProps) {
   const rounded = radius ?? Math.max(8, Math.floor(size * 0.25));
+  const inlineSource = inlineAvatarSource(remoteUrl);
+  const downloadableSource = downloadableAvatarSource(remoteUrl);
   const [localPath, setLocalPath] = useState<string | null>(() =>
-    remoteUrl ? resolveCache.get(remoteUrl) ?? null : null,
+    downloadableSource ? resolveCache.get(downloadableSource) ?? null : null,
   );
   const [imgError, setImgError] = useState(false);
   const requestedFor = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     setImgError(false);
-    if (!remoteUrl) {
+    if (!downloadableSource) {
       setLocalPath(null);
       return;
     }
     if (isBrowserGateway()) {
-      setLocalPath(remoteUrl);
+      setLocalPath(downloadableSource);
       return;
     }
-    const cached = resolveCache.get(remoteUrl);
+    const cached = resolveCache.get(downloadableSource);
     if (cached !== undefined) {
       setLocalPath(cached);
       return;
     }
     let cancelled = false;
-    requestedFor.current = remoteUrl;
-    resolveLocalPath(remoteUrl).then((path) => {
-      if (cancelled || requestedFor.current !== remoteUrl) return;
+    requestedFor.current = downloadableSource;
+    resolveLocalPath(downloadableSource).then((path) => {
+      if (cancelled || requestedFor.current !== downloadableSource) return;
       setLocalPath(path);
     });
     return () => {
       cancelled = true;
     };
-  }, [remoteUrl]);
+  }, [downloadableSource, inlineSource]);
 
-  const showImage = !!localPath && !imgError;
+  const showImage = !!(inlineSource || localPath) && !imgError;
 
   if (showImage) {
-    const src = isBrowserGateway()
-      ? gatewayAvatarUrl(remoteUrl as string)
-      : convertFileSrc(localPath as string);
+    const src = inlineSource
+      ?? (isBrowserGateway()
+        ? gatewayAvatarUrl(downloadableSource as string)
+        : convertFileSrc(localPath as string));
     return (
       <img
         src={src}
         alt={name}
         onError={() => {
-          if (remoteUrl && !isBrowserGateway()) resolveCache.delete(remoteUrl);
+          if (downloadableSource && !isBrowserGateway()) resolveCache.delete(downloadableSource);
           setImgError(true);
         }}
         style={{

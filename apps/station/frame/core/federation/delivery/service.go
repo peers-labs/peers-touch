@@ -18,6 +18,7 @@ const (
 	PayloadKindSocialFriendRequestEvent     = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_EVENT
 	PayloadKindSocialFriendRequestResult    = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_FRIEND_REQUEST_RESULT
 	PayloadKindConversationDeliveryReceipt  = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_DELIVERY_RECEIPT
+	PayloadKindConversationTyping           = federationmodel.FederatedDomainPayloadKind_FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_TYPING
 
 	DispositionUnspecified         = federationmodel.FederatedDomainFrameDisposition_FEDERATED_DOMAIN_FRAME_DISPOSITION_UNSPECIFIED
 	DispositionAccepted            = federationmodel.FederatedDomainFrameDisposition_FEDERATED_DOMAIN_FRAME_DISPOSITION_ACCEPTED
@@ -35,6 +36,8 @@ const (
 	FrameErrorExpired             = federationmodel.FederatedDomainFrameErrorCode_FEDERATED_DOMAIN_FRAME_ERROR_CODE_EXPIRED
 	FrameErrorOverloaded          = federationmodel.FederatedDomainFrameErrorCode_FEDERATED_DOMAIN_FRAME_ERROR_CODE_OVERLOADED
 	FrameErrorDomainRejected      = federationmodel.FederatedDomainFrameErrorCode_FEDERATED_DOMAIN_FRAME_ERROR_CODE_DOMAIN_REJECTED
+
+	defaultMaxEphemeralInFlight = 64
 )
 
 // Clock supplies deterministic time to validation, persistence, and dispatch.
@@ -57,6 +60,8 @@ type ReceiverConfig struct {
 	Registry   *Registry
 	UnitOfWork UnitOfWork
 	Clock      Clock
+	// MaxEphemeralInFlight bounds verified non-durable dispatch. Zero uses the default.
+	MaxEphemeralInFlight int
 }
 
 // FrameReceiver is the transport-independent authenticated receive boundary.
@@ -71,6 +76,7 @@ type DeliveryReceiver struct {
 	registry   *Registry
 	unitOfWork UnitOfWork
 	clock      Clock
+	ephemeral  chan struct{}
 }
 
 // NewReceiver creates the single receive path used by remote and local transports.
@@ -84,32 +90,57 @@ func NewReceiver(config ReceiverConfig) (*DeliveryReceiver, error) {
 	if err := validateFramePolicy(config.Policy, true); err != nil {
 		return nil, err
 	}
+	maxEphemeralInFlight := config.MaxEphemeralInFlight
+	if maxEphemeralInFlight == 0 {
+		maxEphemeralInFlight = defaultMaxEphemeralInFlight
+	}
+	if maxEphemeralInFlight < 0 {
+		return nil, NewError(
+			FailureInvalidArgument,
+			"create receiver",
+			errorsText("ephemeral in-flight bound must be positive"),
+		)
+	}
+
 	return &DeliveryReceiver{
 		policy:     config.Policy,
 		verifier:   config.Verifier,
 		registry:   config.Registry,
 		unitOfWork: config.UnitOfWork,
 		clock:      config.Clock,
+		ephemeral:  make(chan struct{}, maxEphemeralInFlight),
 	}, nil
 }
 
-// Receive invokes one authenticated, atomic domain delivery.
+// Receive invokes authenticated durable or bounded ephemeral domain delivery.
 func (r *DeliveryReceiver) Receive(ctx context.Context, frame *Frame) (Result, error) {
 	now := r.clock.Now().UTC()
 	if err := VerifyFrame(ctx, frame, r.policy, now, r.verifier); err != nil {
 		return resultForVerificationError(err), nil
 	}
 	immutableFrame := proto.Clone(frame).(*Frame)
+	registered, registeredKind := r.registry.lookup(immutableFrame.PayloadKind)
+	if registeredKind && registered.qos == QoSEphemeral {
+		return r.receiveEphemeral(ctx, registered.receiver, immutableFrame)
+	}
+
 	result, err := r.unitOfWork.Receive(
 		ctx,
 		immutableFrame,
 		now,
 		func(dispatchContext context.Context, tx Transaction, received *Frame) (Result, error) {
-			receiver, ok := r.registry.Lookup(received.PayloadKind)
+			registered, ok := r.registry.lookup(received.PayloadKind)
 			if !ok {
 				return TerminalResult(FrameErrorUnsupportedPayload), nil
 			}
-			result, err := receiver.Receive(dispatchContext, tx, received)
+			if registered.qos != QoSDurable {
+				return Result{}, NewError(
+					FailureInvalidResult,
+					"dispatch domain receiver",
+					errorsText("ephemeral receiver entered durable unit of work"),
+				)
+			}
+			result, err := registered.receiver.Receive(dispatchContext, tx, received)
 			if err != nil {
 				return Result{}, NewError(FailureDomainDispatch, "dispatch domain receiver", err)
 			}
@@ -125,6 +156,35 @@ func (r *DeliveryReceiver) Receive(ctx context.Context, frame *Frame) (Result, e
 	if err := validateResult(result); err != nil {
 		return Result{}, err
 	}
+	return result, nil
+}
+
+func (r *DeliveryReceiver) receiveEphemeral(
+	ctx context.Context,
+	receiver Receiver,
+	frame *Frame,
+) (Result, error) {
+	select {
+	case r.ephemeral <- struct{}{}:
+		defer func() {
+			<-r.ephemeral
+		}()
+	default:
+		return TerminalResult(FrameErrorOverloaded), nil
+	}
+
+	result, err := receiver.Receive(ctx, nil, frame)
+	if err != nil {
+		return Result{}, NewError(
+			FailureDomainDispatch,
+			"dispatch ephemeral domain receiver",
+			err,
+		)
+	}
+	if err := validateResult(result); err != nil {
+		return Result{}, err
+	}
+
 	return result, nil
 }
 

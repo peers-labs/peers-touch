@@ -49,7 +49,8 @@ acceptance-driver-build:
 	@mv "$(ACCEPTANCE_DRIVER_BINARY).tmp" "$(ACCEPTANCE_DRIVER_BINARY)"
 
 acceptance-driver-smoke:
-	python3 -m tooling.acceptance.drivers.tauri
+	python3 -m tooling.acceptance.drivers.tauri \
+		--port "$${PT_ACCEPTANCE_WEBDRIVER_PORT:-0}"
 
 acceptance-cell-ready:
 	python3 tooling/scripts/acceptance-cell.py ready \
@@ -131,6 +132,12 @@ acceptance-chat-native-two-client:
 	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
 		python3 tooling/scripts/acceptance-run.py \
 		--gate chat-native-two-client-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
+
+acceptance-chat-native-submitted-command-recovery:
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-submitted-command-recovery-e2e \
 		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-interactions:

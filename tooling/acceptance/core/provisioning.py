@@ -629,6 +629,7 @@ class ClientRuntime:
     webdriver_port: int
     profile: str
     storage_root: str
+    storage_lifecycle: str = "ephemeral"
     id: str = ""
     required_service_roles: tuple[str, ...] = ()
     service_bindings: dict[str, ClientServiceBinding] = field(default_factory=dict)
@@ -717,6 +718,10 @@ def _validate_runtime_client_bindings(
 
     client_ids: set[str] = set()
     for client in clients:
+        if client.storage_lifecycle not in {"ephemeral", "persistent"}:
+            raise ProvisioningError(
+                "runtime client storage_lifecycle must be ephemeral or persistent"
+            )
         if not CLIENT_BINDING_ID_PATTERN.fullmatch(client.id):
             raise _client_binding_error(
                 "MISSING_REQUIRED_BINDING",
@@ -1008,6 +1013,13 @@ def _validate_loaded_runtime_clients(
     clients_by_id: dict[str, dict[str, Any]] = {}
     for client in d18_clients:
         client_id = str(client.get("id") or "")
+        if client.get("storage_lifecycle", "ephemeral") not in {
+            "ephemeral",
+            "persistent",
+        }:
+            raise ProvisioningError(
+                "runtime client storage_lifecycle must be ephemeral or persistent"
+            )
         if not CLIENT_BINDING_ID_PATTERN.fullmatch(client_id):
             raise _client_binding_error(
                 "MISSING_REQUIRED_BINDING",

@@ -191,12 +191,28 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertIn("chat-native-two-client-e2e", selected)
         self.assertIn("chat-desktop-gateway-e2e", selected)
 
-    def test_unrelated_messaging_file_does_not_select_native_two_client(self) -> None:
+    def test_prekey_owner_selects_native_two_client(self) -> None:
         selected = self.selected_ids(
             "apps/desktop/src-tauri/src/messaging/prekeys.rs"
         )
-        self.assertNotIn("chat-native-two-client-e2e", selected)
+        self.assertIn("chat-native-current-profile-two-client-e2e", selected)
+        self.assertIn("chat-native-two-client-e2e", selected)
         self.assertIn("chat-desktop-gateway-e2e", selected)
+
+    def test_friend_request_owners_select_gateway_lifecycle(self) -> None:
+        for path in (
+            "apps/desktop/src-tauri/src/interface/tauri_commands/social.rs",
+            "apps/station/app/subserver/social/domain/"
+            "federated_friend_request.go",
+            "apps/station/app/subserver/social/infrastructure/"
+            "federated_friend_request_store.go",
+        ):
+            with self.subTest(path=path):
+                selected = self.selected_ids(path)
+                self.assertIn(
+                    "chat-friend-request-gateway-e2e",
+                    selected,
+                )
 
     def test_agent_tool_surfaces_select_governed_tool_and_foundation_gates(
         self,
@@ -217,7 +233,14 @@ class BehaviorRuleTests(unittest.TestCase):
 
     def test_proto_only_change_does_not_select_native_two_client(self) -> None:
         selected = self.selected_ids("model/domain/chat/receipt.proto")
+        self.assertIn("station-api-ownership", selected)
         self.assertNotIn("chat-native-two-client-e2e", selected)
+
+    def test_station_chat_change_selects_api_ownership(self) -> None:
+        selected = self.selected_ids(
+            "apps/station/app/subserver/conversation/production_http.go"
+        )
+        self.assertIn("station-api-ownership", selected)
 
     def test_gateway_only_handler_does_not_select_native_two_client(self) -> None:
         selected = self.selected_ids(

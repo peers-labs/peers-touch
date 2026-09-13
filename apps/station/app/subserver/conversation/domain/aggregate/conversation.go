@@ -545,6 +545,16 @@ func (c *Conversation) IsActiveMember(actor valueobject.PTID) bool {
 	return exists && member.Active()
 }
 
+func (c *Conversation) IsActiveMemberEndpoint(endpoint valueobject.Endpoint) bool {
+	if endpoint.Validate() != nil || !c.IsActiveMember(endpoint.Actor) {
+		return false
+	}
+	if c.kind == valueobject.ConversationKindDirect {
+		return true
+	}
+	return c.isActiveEndpoint(endpoint)
+}
+
 func (c *Conversation) PrepareCommand(
 	sender valueobject.Endpoint,
 	requiredEndpoints []valueobject.Endpoint,
@@ -1110,12 +1120,7 @@ func (c *Conversation) requireWritableSender(sender valueobject.Endpoint) error 
 			"is not writable",
 		)
 	}
-	member, exists := c.members[sender.Actor]
-	activeEndpoint := c.isActiveEndpoint(sender)
-	if c.kind == valueobject.ConversationKindDirect {
-		activeEndpoint = sender.Validate() == nil
-	}
-	if !exists || !member.Active() || !activeEndpoint {
+	if !c.IsActiveMemberEndpoint(sender) {
 		return conversationdomain.NewError(
 			conversationdomain.ErrorCodeUnauthorized,
 			"aggregate.require_writable_sender",
@@ -1138,12 +1143,8 @@ func (c *Conversation) validateRequiredEndpoints(required []valueobject.Endpoint
 	seen := make(map[string]struct{}, len(required))
 	for _, endpoint := range required {
 		key := endpoint.Key()
-		member, memberExists := c.members[endpoint.Actor]
-		activeEndpoint := c.isActiveEndpoint(endpoint)
-		if c.kind == valueobject.ConversationKindDirect {
-			activeEndpoint = endpoint.Validate() == nil && memberExists && member.Active()
-		}
-		if _, duplicate := seen[key]; duplicate || !activeEndpoint {
+		if _, duplicate := seen[key]; duplicate ||
+			!c.IsActiveMemberEndpoint(endpoint) {
 			return conversationdomain.NewError(
 				conversationdomain.ErrorCodeDeliverySetMismatch,
 				"aggregate.validate_required_endpoints",

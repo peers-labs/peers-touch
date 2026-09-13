@@ -25,9 +25,9 @@ Do not invoke for:
 
 ## Core Rule
 
-Every bug fix that touches product behavior MUST leave behind an acceptance
-Gate that proves the bug is fixed and won't regress. This includes UI and
-interaction defects — a visual regression is still a regression.
+Every bug fix that touches product behavior MUST first pass its exact-source
+functional Journey, then leave behind an Acceptance Gate that prevents
+regression. This includes UI and interaction defects.
 
 ## Step 0: Classify the Defect
 
@@ -43,6 +43,8 @@ Before anything else, classify the bug. This determines which path to follow.
 
 ## Phase 1: Debug & Fix
 
+0. **Declare before mutation** — publish and confirm the work item's source and
+   runtime intent through `make dev-start`; use `make dev-update` if scope grows.
 1. **Locate governing spec** — `pt-small-fix-discipline` §1: which layer owns this?
 2. **Layer-ownership audit** — `pt-god-view` §3.3.1: is the fix at the correct layer?
 3. **Debug** — use `TRAE-debugger` workflow: hypothesize → instrument → reproduce → analyze
@@ -124,11 +126,29 @@ Instead:
 3. Record the gap as a growth signal (Phase 4)
 4. Proceed with the best available contract
 
+## Phase 1c: Functional Closure
+
+Before Acceptance injection:
+
+1. Run focused unit/type/contract checks for the owning layer.
+2. Create an authorized clean checkpoint commit when the Journey needs remote
+   or exact-source runtime.
+3. Deploy and launch only through Local Dev Control Plane / Make owners.
+4. Run the real product Journey in its required runtime and receiver
+   perspective.
+5. On failure, return only the first actionable failure to Phase 1.
+6. On runtime or authorization failure, park it as `BLOCKED`; do not classify
+   the product behavior.
+7. Continue to Phase 2 only after `FUNCTIONAL_PASS`.
+
+Static, Harness-only, API-only, browser-only and prototype checks cannot satisfy
+this phase.
+
 ---
 
 ## Phase 2: Acceptance Injection
 
-After the fix is verified:
+After exact-source functional verification:
 
 1. **Identify the affected module** — which domain/feature/capability does this
    bug belong to?
@@ -148,11 +168,13 @@ After the fix is verified:
 
 ## Phase 3: Verify
 
-1. Run the acceptance Gate against the fixed code → must pass
-2. Run the acceptance Gate against the unfixed code (conceptually) → must fail
-3. Assertions: all `then` clauses from the interaction contract pass
-4. Forbidden: all `forbidden` clauses are absent
-5. Visual invariants: all `visual_invariants` are satisfied
+1. Create a final checkpoint after Acceptance packaging.
+2. If product code or shared Journey semantics changed, rerun Phase 1c.
+3. Run the Acceptance Gate against final exact source → must pass.
+4. Run the Acceptance Gate against the unfixed behavior (conceptually) → must fail.
+5. Assertions: all `then` clauses from the interaction contract pass.
+6. Forbidden: all `forbidden` clauses are absent.
+7. Visual invariants: all `visual_invariants` are satisfied.
 
 ---
 
@@ -236,11 +258,13 @@ After recording the growth asset:
 ## Anti-Patterns
 
 Never:
+- Write or acquire runtime resources before the public declaration.
 - Fix a bug without checking which layer owns the state
 - Fix a UI defect without writing an interaction contract
 - Skip prototype sync for UI changes
 - Skip Phase 4 growth assessment
 - Add a Gate that only checks the happy path (it must verify the bug scenario)
+- Inject or run broad Acceptance before `FUNCTIONAL_PASS`
 - Skip acceptance injection "because it's a small fix"
 - Use `pt-acceptance-infra-engineering` for business-domain injection
 - Treat product implementation as the design source when it differs from prototype

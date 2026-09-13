@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
+	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
@@ -392,6 +393,36 @@ func (d *productionIdentityDirectory) ListActiveEndpoints(
 	}
 
 	return routes, nil
+}
+
+type productionTypingRouteDirectory struct {
+	identity *productionIdentityDirectory
+}
+
+func (d productionTypingRouteDirectory) ListActiveEndpoints(
+	ctx context.Context,
+	actors []valueobject.PTID,
+) ([]interactionapp.EndpointRoute, error) {
+	if d.identity == nil {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"production_typing_routes.list_active_endpoints",
+			"identity",
+			"is required",
+		)
+	}
+	routes, err := d.identity.ListActiveEndpoints(ctx, actors)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]interactionapp.EndpointRoute, 0, len(routes))
+	for _, route := range routes {
+		result = append(result, interactionapp.EndpointRoute{
+			Endpoint:    route.Endpoint,
+			HomeStation: route.HomeStation,
+		})
+	}
+	return result, nil
 }
 
 func (d *productionIdentityDirectory) activeRoute(

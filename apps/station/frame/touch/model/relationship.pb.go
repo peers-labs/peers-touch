@@ -942,6 +942,7 @@ type Follower struct {
 	// for pre-backfill rows, and ignored by older clients.
 	FederatedHandle   string `protobuf:"bytes,6,opt,name=federated_handle,proto3" json:"federated_handle,omitempty"`
 	HomeStationDomain string `protobuf:"bytes,7,opt,name=home_station_domain,proto3" json:"home_station_domain,omitempty"`
+	HomeStationPeerId string `protobuf:"bytes,8,opt,name=home_station_peer_id,proto3" json:"home_station_peer_id,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1025,6 +1026,13 @@ func (x *Follower) GetHomeStationDomain() string {
 	return ""
 }
 
+func (x *Follower) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
+	}
+	return ""
+}
+
 type Following struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	ActorPtid   string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
@@ -1036,6 +1044,7 @@ type Following struct {
 	// in post.proto for the contract.
 	FederatedHandle   string `protobuf:"bytes,6,opt,name=federated_handle,proto3" json:"federated_handle,omitempty"`
 	HomeStationDomain string `protobuf:"bytes,7,opt,name=home_station_domain,proto3" json:"home_station_domain,omitempty"`
+	HomeStationPeerId string `protobuf:"bytes,8,opt,name=home_station_peer_id,proto3" json:"home_station_peer_id,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1115,6 +1124,13 @@ func (x *Following) GetFederatedHandle() string {
 func (x *Following) GetHomeStationDomain() string {
 	if x != nil {
 		return x.HomeStationDomain
+	}
+	return ""
+}
+
+func (x *Following) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
 	}
 	return ""
 }
@@ -2192,7 +2208,7 @@ const file_domain_social_relationship_proto_rawDesc = "" +
 	"\tfollowing\x18\x01 \x03(\v2&.peers_touch.model.social.v1.FollowingR\tfollowing\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
 	"nextCursor\x12\x14\n" +
-	"\x05total\x18\x03 \x01(\x05R\x05total\"\xa2\x02\n" +
+	"\x05total\x18\x03 \x01(\x05R\x05total\"\xd6\x02\n" +
 	"\bFollower\x12\x1d\n" +
 	"\n" +
 	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x1a\n" +
@@ -2203,7 +2219,8 @@ const file_domain_social_relationship_proto_rawDesc = "" +
 	"\vfollowed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"followedAt\x12*\n" +
 	"\x10federated_handle\x18\x06 \x01(\tR\x10federated_handle\x120\n" +
-	"\x13home_station_domain\x18\a \x01(\tR\x13home_station_domain\"\xa3\x02\n" +
+	"\x13home_station_domain\x18\a \x01(\tR\x13home_station_domain\x122\n" +
+	"\x14home_station_peer_id\x18\b \x01(\tR\x14home_station_peer_id\"\xd7\x02\n" +
 	"\tFollowing\x12\x1d\n" +
 	"\n" +
 	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x1a\n" +
@@ -2214,7 +2231,8 @@ const file_domain_social_relationship_proto_rawDesc = "" +
 	"\vfollowed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"followedAt\x12*\n" +
 	"\x10federated_handle\x18\x06 \x01(\tR\x10federated_handle\x120\n" +
-	"\x13home_station_domain\x18\a \x01(\tR\x13home_station_domain\"\xe6\x05\n" +
+	"\x13home_station_domain\x18\a \x01(\tR\x13home_station_domain\x122\n" +
+	"\x14home_station_peer_id\x18\b \x01(\tR\x14home_station_peer_id\"\xe6\x05\n" +
 	"\x13SocialFriendRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12<\n" +

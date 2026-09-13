@@ -162,6 +162,7 @@ func (r *followRepository) GetFollowers(ctx context.Context, actorPTID string, c
 		return nil, err
 	}
 	q := r.db.WithContext(ctx).
+		Preload("Follower").
 		Where("following_id = ?", actorID).
 		Order("created_at DESC, id DESC")
 	if !c.IsZero() {
@@ -178,6 +179,7 @@ func (r *followRepository) GetFollowing(ctx context.Context, actorPTID string, c
 		return nil, err
 	}
 	q := r.db.WithContext(ctx).
+		Preload("Following").
 		Where("follower_id = ?", actorID).
 		Order("created_at DESC, id DESC")
 	if !c.IsZero() {

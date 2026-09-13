@@ -68,26 +68,58 @@ type ProtoReceiver[T proto.Message] func(
 	frame *Frame,
 ) (Result, error)
 
+// EphemeralProtoReceiver receives a verified payload outside durable storage.
+type EphemeralProtoReceiver[T proto.Message] func(
+	ctx context.Context,
+	payload T,
+	frame *Frame,
+) (Result, error)
+
+// QoS is fixed by the registry for each payload kind.
+type QoS uint8
+
+const (
+	QoSDurable QoS = iota + 1
+	QoSEphemeral
+)
+
+type registration struct {
+	receiver Receiver
+	qos      QoS
+}
+
 // Registry maps each generated payload kind to exactly one domain receiver.
 type Registry struct {
 	mu        sync.RWMutex
-	receivers map[PayloadKind]Receiver
+	receivers map[PayloadKind]registration
 	sealed    bool
 }
 
 // NewRegistry creates an empty receiver registry without global mutable state.
 func NewRegistry() *Registry {
-	return &Registry{receivers: make(map[PayloadKind]Receiver)}
+	return &Registry{receivers: make(map[PayloadKind]registration)}
 }
 
 // Register binds kind once and rejects unspecified or duplicate registrations.
 func (r *Registry) Register(kind PayloadKind, receiver Receiver) error {
+	return r.register(kind, QoSDurable, receiver)
+}
+
+// RegisterEphemeral binds kind to verified, bounded, non-durable dispatch.
+func (r *Registry) RegisterEphemeral(kind PayloadKind, receiver Receiver) error {
+	return r.register(kind, QoSEphemeral, receiver)
+}
+
+func (r *Registry) register(kind PayloadKind, qos QoS, receiver Receiver) error {
 	if r == nil {
 		return NewError(FailureInvalidArgument, "register receiver", errorsText("registry is nil"))
 	}
 	if kind == PayloadKindUnspecified ||
 		kind.Descriptor().Values().ByNumber(kind.Number()) == nil {
 		return NewError(FailureInvalidArgument, "register receiver", errorsText("payload kind is unspecified or unknown"))
+	}
+	if qos != QoSDurable && qos != QoSEphemeral {
+		return NewError(FailureInvalidArgument, "register receiver", errorsText("receiver QoS is invalid"))
 	}
 	if isNil(receiver) {
 		return NewError(FailureInvalidArgument, "register receiver", errorsText("receiver is nil"))
@@ -109,7 +141,7 @@ func (r *Registry) Register(kind PayloadKind, receiver Receiver) error {
 			fmt.Errorf("payload kind %s is already registered", kind),
 		)
 	}
-	r.receivers[kind] = receiver
+	r.receivers[kind] = registration{receiver: receiver, qos: qos}
 	return nil
 }
 
@@ -137,8 +169,19 @@ func (r *Registry) Lookup(kind PayloadKind) (Receiver, bool) {
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	receiver, ok := r.receivers[kind]
-	return receiver, ok
+	registered, ok := r.receivers[kind]
+	return registered.receiver, ok
+}
+
+func (r *Registry) lookup(kind PayloadKind) (registration, bool) {
+	if r == nil {
+		return registration{}, false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	registered, ok := r.receivers[kind]
+
+	return registered, ok
 }
 
 // RegisterProtoReceiver binds a generated payload kind to a compile-time typed decoder.
@@ -172,6 +215,46 @@ func RegisterProtoReceiver[T proto.Message](
 			return TerminalResult(FrameErrorInvalidFrame), nil
 		}
 		return receiver(ctx, tx, payload, frame)
+	}))
+}
+
+// RegisterEphemeralProtoReceiver binds a generated payload kind to non-durable dispatch.
+func RegisterEphemeralProtoReceiver[T proto.Message](
+	registry *Registry,
+	kind PayloadKind,
+	newPayload func() T,
+	receiver EphemeralProtoReceiver[T],
+) error {
+	if newPayload == nil || receiver == nil {
+		return NewError(
+			FailureInvalidArgument,
+			"register ephemeral protobuf receiver",
+			errorsText("factory and receiver are required"),
+		)
+	}
+
+	return registry.RegisterEphemeral(kind, ReceiverFunc(func(
+		ctx context.Context,
+		_ Transaction,
+		frame *Frame,
+	) (Result, error) {
+		payload := newPayload()
+		value := reflect.ValueOf(payload)
+		if !value.IsValid() || (value.Kind() == reflect.Ptr && value.IsNil()) {
+			return Result{}, NewError(
+				FailureInvalidArgument,
+				"construct ephemeral protobuf payload",
+				errorsText("payload factory returned nil"),
+			)
+		}
+		if err := proto.Unmarshal(frame.OpaquePayload, payload); err != nil {
+			return TerminalResult(FrameErrorInvalidFrame), nil
+		}
+		if len(payload.ProtoReflect().GetUnknown()) != 0 {
+			return TerminalResult(FrameErrorInvalidFrame), nil
+		}
+
+		return receiver(ctx, payload, frame)
 	}))
 }
 

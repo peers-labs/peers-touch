@@ -2,24 +2,31 @@ import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Input, toast } from '@lobehub/ui';
-import { theme } from 'antd';
+import { Alert, Spin, theme } from 'antd';
 import { Search, X } from 'lucide-react';
-import { peerOfSession, useSocialChatStore } from '../../store/socialChat';
+import { useSocialChatStore } from '../../store/socialChat';
+import {
+  chatActorIdentityMetadata,
+  projectChatFriendContacts,
+  type ChatActorIdentityProjection,
+} from '../../store/friendshipProjection';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { imServiceV1 } from '../../services/im-service';
 import { log } from '../../utils/logger';
-import { useActiveChatSessionSlice, useActiveSocialChatSlice } from './useActiveSocialChatStore';
+import { ChatActorIdentityRow } from './ChatActorIdentityRow';
+import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
+import { presentError, type PresentedError } from '../../services/errorPresenter';
+import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
+import {
+  useActiveChatFederationSlice,
+  useActiveChatRelationshipsSlice,
+  useActiveChatSessionSlice,
+  useActiveSocialChatSlice,
+} from './useActiveSocialChatStore';
 
 interface Props {
   open: boolean;
   onClose: () => void;
-}
-
-interface Contact {
-  did: string;
-  name: string;
-  avatar: string;
-  federationId: string;
 }
 
 function getFirstLetter(name: string): string {
@@ -33,91 +40,86 @@ export function CreateGroupModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
-    sessions,
     friendRequests,
     currentUserPtid,
+    conversationRecords,
+    conversationMembers,
+    groupMembers,
+    peerProfiles,
     loadGroups,
     selectGroup,
     setActiveTab,
     getIMConversations,
     trackPendingGroupCreation,
   } = useActiveSocialChatSlice((s) => ({
-    sessions: s.sessions,
     friendRequests: s.friendRequests,
     currentUserPtid: s.currentUserPtid,
+    conversationRecords: s.conversations,
+    conversationMembers: s.conversationMembers,
+    groupMembers: s.groupMembers,
+    peerProfiles: s.peerProfiles,
     loadGroups: s.loadGroups,
     selectGroup: s.selectGroup,
     setActiveTab: s.setActiveTab,
     getIMConversations: s.getIMConversations,
     trackPendingGroupCreation: s.trackPendingGroupCreation,
   }));
+  const {
+    mutualFriends,
+    mutualFriendsActorPtid,
+    mutualFriendsLoading,
+    mutualFriendsLoadedAt,
+    mutualFriendsError,
+  } = useActiveChatRelationshipsSlice((s) => ({
+    mutualFriends: s.mutualFriends,
+    mutualFriendsActorPtid: s.mutualFriendsActorPtid,
+    mutualFriendsLoading: s.mutualFriendsLoading,
+    mutualFriendsLoadedAt: s.mutualFriendsLoadedAt,
+    mutualFriendsError: s.mutualFriendsError,
+  }));
+  const federations = useActiveChatFederationSlice((s) => s.federations);
   const sessionActorPtid = useActiveChatSessionSlice((s) => s.currentUser?.actorPtid ?? null);
   const ownDid = currentUserPtid || sessionActorPtid;
+  const friendshipReady = Boolean(
+    ownDid
+    && mutualFriendsActorPtid === ownDid
+    && mutualFriendsLoadedAt,
+  );
 
   const [searchText, setSearchText] = useState('');
   const [selectedDids, setSelectedDids] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
+  const [creationError, setCreationError] = useState<PresentedError | null>(null);
+  const [draftConversationId, setDraftConversationId] = useState<string | null>(null);
 
-  const contacts: Contact[] = useMemo(() => {
+  const contacts = useMemo(() => {
     if (!ownDid) return [];
-    const seen = new Map<string, Contact>();
-    const federationByPtid = new Map<string, string>();
-
-    for (const req of friendRequests) {
-      if (req.status !== 2) continue;
-      const peerId = req.senderPtid === ownDid ? req.receiverPtid : req.senderPtid;
-      if (peerId && req.federationId) {
-        federationByPtid.set(peerId, req.federationId);
-      }
-    }
-    for (const conversation of getIMConversations()) {
-      if (conversation.kind === 'friend' && conversation.peerPtid && conversation.federationId) {
-        federationByPtid.set(conversation.peerPtid, conversation.federationId);
-      }
-    }
-
-    for (const s of sessions) {
-      const peer = peerOfSession(s, ownDid);
-      if (!peer.did || peer.did === ownDid || seen.has(peer.did)) continue;
-      seen.set(peer.did, {
-        did: peer.did,
-        name: peer.name || t('chat.social.sessionList.unknown'),
-        avatar: peer.avatar,
-        federationId: federationByPtid.get(peer.did) || '',
-      });
-    }
-
-    const conversations = getIMConversations();
-    for (const conv of conversations) {
-      if (conv.kind !== 'friend' || !conv.peerPtid || conv.peerPtid === ownDid || seen.has(conv.peerPtid)) continue;
-      seen.set(conv.peerPtid, {
-        did: conv.peerPtid,
-        name: conv.title || t('chat.social.sessionList.unknown'),
-        avatar: conv.avatar || '',
-        federationId: conv.federationId || '',
-      });
-    }
-
-    for (const req of friendRequests) {
-      if (req.status !== 2) continue;
-      const isSender: boolean = req.senderPtid === ownDid;
-      const peerId: string = isSender ? req.receiverPtid : req.senderPtid;
-      if (!peerId || peerId === ownDid || seen.has(peerId)) continue;
-      const peerName: string = isSender ? req.receiverDisplayName : req.senderDisplayName;
-      const peerAvatar: string = isSender ? req.receiverAvatar : req.senderAvatar;
-      seen.set(peerId, {
-        did: peerId,
-        name: peerName || t('chat.social.sessionList.unknown'),
-        avatar: peerAvatar || '',
-        federationId: req.federationId,
-      });
-    }
-
-    return Array.from(seen.values());
-  }, [sessions, friendRequests, ownDid, t, getIMConversations]);
+    void conversationRecords;
+    void conversationMembers;
+    void groupMembers;
+    return projectChatFriendContacts({
+      mutualFriends,
+      conversations: getIMConversations(),
+      friendRequests,
+      peerProfiles,
+      currentUserPtid: ownDid,
+      federations,
+    });
+  }, [
+    conversationMembers,
+    conversationRecords,
+    federations,
+    friendRequests,
+    getIMConversations,
+    groupMembers,
+    mutualFriends,
+    ownDid,
+    peerProfiles,
+    t,
+  ]);
 
   const selectedContacts = useMemo(() => {
-    return contacts.filter((c) => selectedDids.has(c.did));
+    return contacts.filter((contact) => selectedDids.has(contact.actorPtid));
   }, [contacts, selectedDids]);
 
   const filteredContacts = useMemo(() => {
@@ -125,24 +127,34 @@ export function CreateGroupModal({ open, onClose }: Props) {
     if (searchText.trim()) {
       const q = searchText.toLowerCase();
       result = contacts.filter(
-        (c) => c.name.toLowerCase().includes(q) || c.did.toLowerCase().includes(q),
+        (contact) => [
+          contact.displayName,
+          contact.username,
+          contact.actorPtid,
+          contact.federatedHandle,
+          contact.homeStationDomain,
+          contact.homeStationPeerId,
+          contact.federationId,
+          contact.federationName,
+        ].some((value) => value.toLowerCase().includes(q)),
       );
     }
     const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
     return [...result].sort((a, b) => {
-      const letterA = getFirstLetter(a.name);
-      const letterB = getFirstLetter(b.name);
+      const letterA = getFirstLetter(a.displayName);
+      const letterB = getFirstLetter(b.displayName);
       if (letterA === '#' && letterB !== '#') return 1;
       if (letterA !== '#' && letterB === '#') return -1;
       if (letterA !== letterB) return letterA.localeCompare(letterB);
-      return collator.compare(a.name, b.name);
+      const nameOrder = collator.compare(a.displayName, b.displayName);
+      return nameOrder || a.actorPtid.localeCompare(b.actorPtid);
     });
   }, [contacts, searchText]);
 
   const groupedContacts = useMemo(() => {
-    const groups = new Map<string, Contact[]>();
+    const groups = new Map<string, ChatActorIdentityProjection[]>();
     for (const contact of filteredContacts) {
-      const letter = getFirstLetter(contact.name);
+      const letter = getFirstLetter(contact.displayName);
       if (!groups.has(letter)) {
         groups.set(letter, []);
       }
@@ -179,6 +191,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
     if (!ownDid) return;
     if (selectedDids.size === 0) return;
     setCreating(true);
+    setCreationError(null);
 
     const memberPtids = Array.from(selectedDids).filter((did) => did !== ownDid);
     if (memberPtids.length === 0) { setCreating(false); return; }
@@ -191,21 +204,28 @@ export function CreateGroupModal({ open, onClose }: Props) {
       || selectedFederationIds.size !== 1
     ) {
       setCreating(false);
-      toast.error(t('chat.social.createGroup.failed'));
+      setCreationError({
+        code: 'chat.groupFederationUnavailable',
+        title: t('chat.social.createGroup.failed'),
+        message: t('chat.social.createGroup.invalidFederation'),
+        severity: 'error',
+        recoverable: true,
+      });
       return;
     }
     const [federationId] = selectedFederationIds;
 
-    const namesByDid = new Map(contacts.map((c) => [c.did, c.name]));
+    const namesByDid = new Map(contacts.map((contact) => [
+      contact.actorPtid,
+      contact.displayName,
+    ]));
     const groupName =
       memberPtids.length <= 3
         ? memberPtids.map((d) => namesByDid.get(d) ?? d.slice(0, 8)).join(', ')
         : t('chat.social.createGroup.defaultName', { count: memberPtids.length + 1 });
 
-    handleClose();
-
-    const conversationId = crypto.randomUUID();
-    useSocialChatStore.getState().setGroupSecurityState(conversationId, 'establishing');
+    const conversationId = draftConversationId ?? crypto.randomUUID();
+    setDraftConversationId(conversationId);
     try {
       const created = await imServiceV1.messaging.createGroup(
         conversationId,
@@ -214,32 +234,49 @@ export function CreateGroupModal({ open, onClose }: Props) {
         federationId,
       );
       if (created.state === 'failed') {
-        useSocialChatStore.getState().setGroupSecurityState(conversationId, 'error');
-        toast.error(t('chat.social.createGroup.failed'));
-        return;
-      }
-      trackPendingGroupCreation(conversationId, created.commandId);
-      await loadGroups();
-      const projectionReady = useSocialChatStore.getState().conversations.some(
-        conversation => conversation.conversationId === conversationId,
-      );
-      if (!projectionReady) {
-        toast.info({
-          description: t('chat.social.encryption.establishing'),
-          placement: 'top',
+        setCreationError({
+          code: 'chat.createGroupFailed',
+          title: t('chat.social.createGroup.failed'),
+          message: t('chat.social.createGroup.failed'),
+          severity: 'error',
+          recoverable: true,
         });
         return;
       }
+      useSocialChatStore.getState().setGroupSecurityState(conversationId, 'establishing');
+      trackPendingGroupCreation(conversationId, created.commandId);
       setActiveTab('group');
       selectGroup(conversationId);
-      toast.success({
-        description: t('chat.social.createGroup.success'),
-        placement: 'top',
+      handleClose();
+      void loadGroups().then(() => {
+        const projectionReady = useSocialChatStore.getState().conversations.some(
+          conversation => conversation.conversationId === conversationId,
+        );
+        if (projectionReady) {
+          toast.success({
+            description: t('chat.social.createGroup.success'),
+            placement: 'top',
+          });
+        }
+      }).catch((error) => {
+        log.warn('chat', 'createGroup accepted; projection reconcile pending', {
+          conversationId,
+          error,
+        });
       });
+      if (created.state === 'pending') {
+        toast.info({
+          description: t('chat.social.createGroup.accepted'),
+          placement: 'top',
+        });
+      }
     } catch (err) {
-      useSocialChatStore.getState().setGroupSecurityState(conversationId, 'error');
       log.error('chat', 'createGroup failed', { conversationId, error: err });
-      toast.error(t('chat.social.createGroup.failed'));
+      setCreationError(presentError(err, {
+        mode: 'inline',
+        mapper: mapChatError,
+        context: { operation: 'createGroup' },
+      }));
     } finally {
       setCreating(false);
     }
@@ -248,6 +285,8 @@ export function CreateGroupModal({ open, onClose }: Props) {
   const handleClose = () => {
     setSearchText('');
     setSelectedDids(new Set());
+    setCreationError(null);
+    setDraftConversationId(null);
     onClose();
   };
 
@@ -256,6 +295,12 @@ export function CreateGroupModal({ open, onClose }: Props) {
   return (
     <div
       data-chat-create-group
+      data-chat-friendship-state={
+        mutualFriendsError ? 'error' : friendshipReady ? 'ready' : 'loading'
+      }
+      data-chat-create-group-state={
+        creating ? 'creating' : creationError ? 'failed' : 'editing'
+      }
       style={{
         position: 'fixed',
         inset: 0,
@@ -266,7 +311,10 @@ export function CreateGroupModal({ open, onClose }: Props) {
       }}
     >
       <div
-        onClick={handleClose}
+        data-chat-create-group-close
+        onClick={() => {
+          if (!creating) handleClose();
+        }}
         style={{
           position: 'absolute',
           inset: 0,
@@ -305,7 +353,18 @@ export function CreateGroupModal({ open, onClose }: Props) {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {filteredContacts.length === 0 ? (
+            {mutualFriendsError ? (
+              <Alert
+                type="error"
+                showIcon
+                message={t('chat.social.findPeople.friendshipUnavailable')}
+                style={{ margin: '8px 16px' }}
+              />
+            ) : !friendshipReady || mutualFriendsLoading ? (
+              <Flexbox align="center" justify="center" style={{ padding: '40px 20px', height: '100%' }}>
+                <Spin size="small" />
+              </Flexbox>
+            ) : filteredContacts.length === 0 ? (
               <Flexbox align="center" justify="center" style={{ padding: '40px 20px', height: '100%' }}>
                 <span style={{ color: token.colorTextTertiary, fontSize: 13 }}>
                   {t('chat.social.createGroup.noContacts')}
@@ -329,15 +388,21 @@ export function CreateGroupModal({ open, onClose }: Props) {
                     {letter}
                   </div>
                   {items.map((contact) => {
-                    const selected = selectedDids.has(contact.did);
+                    const selected = selectedDids.has(contact.actorPtid);
                     return (
                       <button
                         type="button"
-                        key={contact.did}
-                        data-chat-create-group-contact={contact.did}
-                        aria-label={contact.name}
+                        key={contact.actorPtid}
+                        data-chat-create-group-contact={contact.actorPtid}
+                        data-chat-contact-ptid={contact.actorPtid}
+                        data-chat-contact-federated-handle={contact.federatedHandle}
+                        data-chat-contact-home-station-domain={contact.homeStationDomain}
+                        data-chat-contact-home-station-peer-id={contact.homeStationPeerId}
+                        data-chat-contact-federation-id={contact.federationId}
+                        data-chat-contact-avatar-src={contact.avatarUrl}
+                        aria-label={`${contact.displayName}, ${chatActorIdentityMetadata(contact)}`}
                         aria-pressed={selected}
-                        onClick={() => toggleSelect(contact.did)}
+                        onClick={() => toggleSelect(contact.actorPtid)}
                         style={{
                           width: '100%',
                           display: 'flex',
@@ -379,25 +444,10 @@ export function CreateGroupModal({ open, onClose }: Props) {
                             </svg>
                           )}
                         </div>
-                        <UserSquareAvatar
-                          remoteUrl={contact.avatar}
-                          name={contact.name}
-                          size={34}
-                          radius={4}
+                        <ChatActorIdentityRow
+                          identity={contact}
+                          avatarSize={34}
                         />
-                        <span
-                          style={{
-                            fontSize: 13,
-                            color: token.colorText,
-                            flex: 1,
-                            minWidth: 0,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {contact.name}
-                        </span>
                       </button>
                     );
                   })}
@@ -417,6 +467,14 @@ export function CreateGroupModal({ open, onClose }: Props) {
           </div>
 
           <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+            {creationError ? (
+              <div data-chat-create-group-error style={{ marginBottom: 16 }}>
+                <PresentedErrorAlert
+                  error={creationError}
+                  onClose={() => setCreationError(null)}
+                />
+              </div>
+            ) : null}
             {selectedContacts.length === 0 ? (
               <Flexbox align="center" justify="center" style={{ height: '100%' }}>
                 <span style={{ color: token.colorTextQuaternary, fontSize: 13 }}>
@@ -427,16 +485,17 @@ export function CreateGroupModal({ open, onClose }: Props) {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 {selectedContacts.map((contact) => (
                   <div
-                    key={contact.did}
+                    key={contact.actorPtid}
+                    title={chatActorIdentityMetadata(contact)}
                     style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 52, position: 'relative' }}
                   >
                     <div
-                      onClick={() => removeSelected(contact.did)}
+                      onClick={() => removeSelected(contact.actorPtid)}
                       style={{ cursor: 'pointer' }}
                     >
                       <UserSquareAvatar
-                        remoteUrl={contact.avatar}
-                        name={contact.name}
+                        remoteUrl={contact.avatarUrl}
+                        name={contact.displayName}
                         size={42}
                         radius={4}
                       />
@@ -453,7 +512,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
                         textAlign: 'center',
                       }}
                     >
-                      {contact.name}
+                      {contact.displayName}
                     </span>
                   </div>
                 ))}
@@ -472,6 +531,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
           >
             <button
               onClick={handleClose}
+              disabled={creating}
               style={{
                 padding: '6px 20px',
                 fontSize: 13,
@@ -486,6 +546,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
             </button>
             <button
               data-chat-create-group-submit
+              data-chat-create-group-retry={creationError ? 'true' : 'false'}
               onClick={handleFinish}
               disabled={selectedDids.size === 0 || creating}
               style={{
@@ -500,7 +561,11 @@ export function CreateGroupModal({ open, onClose }: Props) {
                 opacity: creating ? 0.6 : 1,
               }}
             >
-              {creating ? '...' : t('chat.social.createGroup.finish')}
+              {creating
+                ? '...'
+                : creationError
+                  ? t('chat.social.createGroup.retry')
+                  : t('chat.social.createGroup.finish')}
             </button>
           </div>
         </div>

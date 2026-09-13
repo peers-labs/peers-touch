@@ -35,10 +35,36 @@ ACTOR_ACCOUNTS = {
     "charlie": "carol@p.t",
 }
 
+ACTOR_FIXTURE = REPO_ROOT / "apps" / "station" / "app" / "conf" / "actor.yml"
 ACTOR_PASSWORD = "1"
 RESET_TIMEOUT_SECONDS = 120.0
 RESET_TERMINATION_RESERVE_SECONDS = 1.0
 RESET_POLL_INTERVAL_SECONDS = 0.05
+
+
+def fixture_password(path: Path = ACTOR_FIXTURE) -> str:
+    current_email = ""
+    passwords: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if line.startswith("email:"):
+            current_email = line.split(":", 1)[1].strip().strip("'\"")
+        elif current_email and line.startswith("password:"):
+            passwords[current_email] = line.split(":", 1)[1].strip().strip("'\"")
+            current_email = ""
+
+    values = {passwords.get("alice@p.t"), passwords.get("bob@p.t")}
+    values.discard(None)
+    values.discard("")
+    if len(values) != 1:
+        raise BlockedError(
+            reason=(
+                "Committed Alice/Bob Acceptance fixture passwords are "
+                "missing or inconsistent"
+            ),
+            resource="fixture:apps/station/app/conf/actor.yml",
+        )
+    return values.pop()
 
 
 def _remaining_timeout(
@@ -376,6 +402,12 @@ def produce_bound_actor_manifest(
         reset_authorized=True,
         target_verified=True,
     )
+    return persist_actor_manifest(manifest)
+
+
+def persist_actor_manifest(
+    manifest: ActorManifest,
+) -> tuple[ActorManifest, Path, dict[str, str]]:
     relative_path = "runtime/actor-manifest.json"
     path = write_current_artifact(
         relative_path,

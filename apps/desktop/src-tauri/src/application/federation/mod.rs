@@ -180,7 +180,7 @@ pub fn catalog_search(
         page_size: page_size.unwrap_or(20),
         ..Default::default()
     };
-    station_client::request_peers_proto::<
+    station_client::request_proto::<
         FederationCatalogSearchRequest,
         FederationCatalogSearchResponse,
     >(Method::POST, ROUTE_CATALOG_SEARCH, token, None, Some(&body))

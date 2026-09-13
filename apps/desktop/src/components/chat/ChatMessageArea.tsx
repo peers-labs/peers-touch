@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Tooltip, toast } from '@lobehub/ui';
@@ -30,6 +30,7 @@ import {
   replyPreviewForMessage,
 } from './message/chatMessageModel';
 import { ChatMessageTimeline } from './message/ChatMessageTimeline';
+import { chatMessageTailScrollOptions } from './message/chatMessageTimelinePolicy';
 import {
   loadedThreadReplyCount,
   loadedThreadReplyIds,
@@ -253,7 +254,7 @@ export function ChatMessageArea({
     });
   }, [activeTab, activeUlid, loadGroupMembers]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (prependRestoreRef.current && scrollContainerRef.current) {
       const { previousHeight } = prependRestoreRef.current;
       const container = scrollContainerRef.current;
@@ -261,7 +262,7 @@ export function ChatMessageArea({
       prependRestoreRef.current = null;
       return;
     }
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView(chatMessageTailScrollOptions());
   }, [mainTimelineMessages.length]);
 
   useEffect(() => {
@@ -1056,7 +1057,11 @@ export function ChatMessageArea({
             }}
           />
         )}
-        <div ref={bottomRef} />
+        <div
+          ref={bottomRef}
+          data-chat-message-bottom-sentinel
+          style={{ flex: '0 0 1px', height: 1 }}
+        />
       </Flexbox>
 
       {composerError && (

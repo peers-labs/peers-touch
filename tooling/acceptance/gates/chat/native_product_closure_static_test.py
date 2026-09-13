@@ -2042,12 +2042,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn('self.report.runtime["cleanup"] = result', self.source)
 
-    def test_group_creation_waits_for_exact_projected_state_once(self) -> None:
+    def test_group_creation_tracks_accepted_pending_projection(self) -> None:
         self.assertIn(
             "trackPendingGroupCreation(conversationId, created.commandId);",
             self.create_group_modal,
         )
-        self.assertNotIn(
+        self.assertIn(
             "if (created.state === 'pending')",
             self.create_group_modal,
         )
@@ -2060,10 +2060,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.create_group_modal,
         )
         self.assertIn(
-            "t('chat.social.encryption.establishing')",
+            "t('chat.social.createGroup.accepted')",
             self.create_group_modal,
         )
-        self.assertEqual(self.create_group_modal.count("await loadGroups();"), 1)
+        self.assertIn("void loadGroups().then(() => {", self.create_group_modal)
+        self.assertNotIn("await loadGroups();", self.create_group_modal)
         self.assertNotIn("await loadSessions();", self.create_group_modal)
         browser_group_create = self.http_gateway[
             self.http_gateway.index('"messaging_create_group" => {'):
@@ -2179,10 +2180,22 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "data-chat-search-result-peer-ptid={conversation.peerPtid || ''}",
             self.chat_search_dropdown,
         )
-        self.assertIn("const profile = peerProfiles[peerId];", self.chat_session_list)
-        self.assertIn("|| profile?.display_name", self.chat_session_list)
-        self.assertIn("|| profile?.username", self.chat_session_list)
-        self.assertIn("|| peerId;", self.chat_session_list)
+        self.assertIn(
+            "const friendIdentities = useMemo(",
+            self.chat_session_list,
+        )
+        self.assertIn(
+            "projectChatFriendContacts({",
+            self.chat_session_list,
+        )
+        self.assertIn(
+            "conversationWithActorIdentity(conversation, identity)",
+            self.chat_session_list,
+        )
+        self.assertNotIn(
+            "const profile = peerProfiles[peerId];",
+            self.chat_session_list,
+        )
         self.assertIn(
             'data-chat-search-result-peer-ptid="{peer_ptid}"',
             self.source,

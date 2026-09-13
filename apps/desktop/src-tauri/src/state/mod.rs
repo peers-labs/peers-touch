@@ -17,6 +17,10 @@ pub struct RealtimeState {
 }
 
 pub struct AppState {
+    /// Serializes process-wide identity commits across Tauri and HTTP gateway
+    /// entry points so account, window session, and messaging profile cannot
+    /// expose different actors.
+    pub identity_transition: Mutex<()>,
     pub settings: Mutex<SettingsState>,
     pub realtime: Mutex<RealtimeState>,
     pub storage: StorageLayout,
@@ -29,6 +33,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(layout: StorageLayout, i18n: I18nService) -> Self {
         Self {
+            identity_transition: Mutex::new(()),
             settings: Mutex::new(SettingsState::default()),
             realtime: Mutex::new(RealtimeState::default()),
             storage: layout,

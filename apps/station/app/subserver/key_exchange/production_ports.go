@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	federationmodel "github.com/peers-labs/peers-touch/station/frame/core/federation/model"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	chatmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
@@ -48,6 +50,43 @@ func (uuidGenerator) NewID() string {
 
 type actorDeviceDirectory struct {
 	store *touchactor.DeviceStore
+}
+
+type actorHomeStationCapability interface {
+	ResolveActorHomeStationPeerID(
+		context.Context,
+		string,
+	) (string, error)
+}
+
+type actorHomeStationDirectory struct{}
+
+func (actorHomeStationDirectory) ResolveActorHomeStationPeerID(
+	ctx context.Context,
+	actorPTID string,
+) (string, error) {
+	instance := server.GetOptions().SubserverInstances["actor_identity"]
+	provider, ok := instance.(actorHomeStationCapability)
+	if !ok || provider == nil {
+		return "", domain.NewError(
+			domain.ErrorCodeDependency,
+			"key_exchange.actor_home_station.resolve",
+			"actor_identity",
+			"canonical Actor Identity capability is unavailable",
+		)
+	}
+	homeStationID, err := provider.ResolveActorHomeStationPeerID(
+		ctx,
+		strings.TrimSpace(actorPTID),
+	)
+	if err != nil {
+		return "", domain.WrapError(
+			domain.ErrorCodeDependency,
+			"key_exchange.actor_home_station.resolve",
+			fmt.Errorf("resolve Actor Home Station: %w", err),
+		)
+	}
+	return strings.TrimSpace(homeStationID), nil
 }
 
 func newActorDeviceDirectory(db *gorm.DB) *actorDeviceDirectory {

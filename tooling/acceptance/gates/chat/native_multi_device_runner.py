@@ -630,7 +630,6 @@ class NativeMultiDeviceGate(AcceptanceGate):
             for actor in self.clients:
                 self.save_screenshot(self.clients[actor], actor)
                 self.save_dom(self.clients[actor], actor)
-                self.save_app_log(self.clients[actor], actor)
         finally:
             cleanup_preserving_primary_failure(
                 self.cleanup_runtime,

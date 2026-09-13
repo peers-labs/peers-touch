@@ -26,6 +26,21 @@ GATE_ID = "federation-desktop-gateway-smoke"
 DEFAULT_URL = "http://localhost:3210/"
 DEFAULT_GATEWAY = "http://127.0.0.1:3030"
 DEFAULT_STATION = "http://10.37.94.156:18180"
+FEDERATION_APPLICATION = (
+    REPO_ROOT / "apps/desktop/src-tauri/src/application/federation/mod.rs"
+)
+
+
+def catalog_search_uses_direct_typed_proto(source: str) -> bool:
+    start_marker = "pub fn catalog_search("
+    end_marker = "pub fn encode_catalog_search("
+    if start_marker not in source or end_marker not in source:
+        return False
+    catalog_search = source.split(start_marker, 1)[1].split(end_marker, 1)[0]
+    return (
+        "station_client::request_proto::<" in catalog_search
+        and "station_client::request_peers_proto::<" not in catalog_search
+    )
 
 
 def runtime_endpoints(manifest: dict[str, Any]) -> tuple[str, str, str]:
@@ -74,8 +89,18 @@ def station_status(data: dict[str, Any]) -> dict[str, Any]:
 
 class DesktopGatewaySmokeGate(AcceptanceGate):
     gate_id = "federation-desktop-gateway-smoke"
+    phase = "WS-6"
+    bom = ("desktop-federation-context-surface",)
+    spec = ("desktop-federation-surfaces",)
 
     def run(self) -> dict[str, Any]:
+        federation_application = FEDERATION_APPLICATION.read_text(encoding="utf-8")
+        self.assert_condition(
+            "catalog_search_direct_typed_proto",
+            catalog_search_uses_direct_typed_proto(federation_application),
+            "Federation Catalog must decode NewTypedHandler's direct protobuf response",
+        )
+
         target_url = os.environ.get("FEDERATION_DESKTOP_VISUAL_URL", DEFAULT_URL)
         gateway_url = os.environ.get(
             "FEDERATION_SMOKE_DESKTOP_GATEWAY",

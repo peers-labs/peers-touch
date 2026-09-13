@@ -30,11 +30,25 @@ if [[ ! -d "$DESKTOP_DIR" ]]; then
   exit 1
 fi
 
+cleanup() {
+  if [[ -n "${VITE_PID:-}" ]] && ps -p "$VITE_PID" >/dev/null 2>&1; then
+    kill "$VITE_PID" 2>/dev/null || true
+  fi
+  [[ -z "${VITE_PID_FILE:-}" ]] || rm -f "$VITE_PID_FILE"
+  [[ -z "${VITE_META_FILE:-}" ]] || rm -f "$VITE_META_FILE"
+  if [[ -n "${TAURI_PID:-}" ]] && ps -p "$TAURI_PID" >/dev/null 2>&1; then
+    kill "$TAURI_PID" 2>/dev/null || true
+  fi
+  [[ -z "${DESKTOP_RUST_PID_FILE:-}" ]] || rm -f "$DESKTOP_RUST_PID_FILE"
+  [[ -z "${DESKTOP_RUST_META_FILE:-}" ]] || rm -f "$DESKTOP_RUST_META_FILE"
+}
+trap cleanup EXIT INT TERM
+
 # ── 1. Station ────────────────────────────────────────────────
 ensure_station_ready "$PROJECT_ROOT"
 
 # ── 2. Vite (frontend dev server) ────────────────────────────
-if [[ "${PT_DESKTOP_E2E:-false}" == "true" ]]; then
+if [[ "${PT_DESKTOP_E2E:-false}" == "true" || "${PT_ACCEPTANCE_NATIVE_DEV:-0}" == "1" ]]; then
   export VITE_ACCEPTANCE_HARNESS=1
   export VITE_RUNTIME_EVIDENCE_HARNESS=1
 fi
@@ -65,24 +79,10 @@ echo "  └───────────────────────
 echo ""
 
 # ── cleanup & wait ────────────────────────────────────────────
-cleanup() {
-  if [[ -n "${VITE_PID:-}" ]] && ps -p "$VITE_PID" >/dev/null 2>&1; then
-    kill "$VITE_PID" 2>/dev/null || true
-  fi
-  rm -f "$VITE_PID_FILE"
-  rm -f "${VITE_META_FILE:-}"
-  if [[ -n "${TAURI_PID:-}" ]] && ps -p "$TAURI_PID" >/dev/null 2>&1; then
-    kill "$TAURI_PID" 2>/dev/null || true
-  fi
-  rm -f "$DESKTOP_RUST_PID_FILE"
-  rm -f "${DESKTOP_RUST_META_FILE:-}"
-}
-trap cleanup EXIT INT TERM
-
 if [[ -n "${TAURI_PID:-}" ]]; then
-  wait "$TAURI_PID" || true
+  wait "$TAURI_PID"
 elif [[ -n "${VITE_PID:-}" ]]; then
-  wait "$VITE_PID" || true
+  wait "$VITE_PID"
 else
   echo "[INFO] All processes were already running. Press Ctrl+C to exit."
   while true; do sleep 60; done

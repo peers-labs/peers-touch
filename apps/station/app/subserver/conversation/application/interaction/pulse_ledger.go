@@ -10,6 +10,7 @@ type pulseLedgerKey struct {
 	conversation string
 	ptid         string
 	deviceID     string
+	scope        string
 }
 
 type pulseLedgerEntry struct {
@@ -56,6 +57,7 @@ func (l *MemoryTypingPulseLedger) Admit(
 		conversation: string(pulse.ConversationID),
 		ptid:         string(pulse.Sender.Actor),
 		deviceID:     string(pulse.Sender.Device),
+		scope:        pulse.Scope,
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()

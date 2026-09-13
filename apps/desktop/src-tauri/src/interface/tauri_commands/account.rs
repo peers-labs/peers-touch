@@ -101,6 +101,16 @@ pub fn account_switch(
     app: AppHandle,
     window: Window,
 ) -> AppResult<StubPayload> {
+    let _transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
     let switched_id = input.id.clone();
     let prepared = match run_account_switch_transition(
         || auth_service::prepare_account_switch_session(&switched_id).map_err(auth_failure_to_stub),
@@ -227,6 +237,16 @@ pub fn account_unlock(
     app: AppHandle,
     window: Window,
 ) -> AppResult<AuthSessionPayload> {
+    let _transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
     let account_id_clone = input.account_id.clone();
     let pin_clone = input.pin.clone();
 
