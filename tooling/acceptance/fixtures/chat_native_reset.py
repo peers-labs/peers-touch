@@ -986,6 +986,10 @@ def seed_bound_contact(
   )"""
         for member in members_by_station.values()
     )
+    membership_station_ids = ",\n      ".join(
+        _sql_literal(station_id)
+        for station_id in members_by_station
+    )
     peer_is_remote = (
         peer.home_station_peer_id != actor.home_station_peer_id
     )
@@ -1282,11 +1286,10 @@ BEGIN
   FROM federation_station_membership
   WHERE federation_id = {_sql_literal(friendship.federation_id)}
     AND station_peer_id IN (
-      {_sql_literal(friendship.sender.home_station_peer_id)},
-      {_sql_literal(friendship.receiver.home_station_peer_id)}
+      {membership_station_ids}
     )
     AND status = 'active';
-  IF federation_membership_count <> 2 THEN
+  IF federation_membership_count <> {len(members_by_station)} THEN
     RAISE EXCEPTION 'Chat fixture Federation membership is incomplete';
   END IF;
 END

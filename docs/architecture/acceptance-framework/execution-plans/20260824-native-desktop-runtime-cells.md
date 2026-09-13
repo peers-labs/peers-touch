@@ -6077,3 +6077,9 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   seeds every directed relationship, while local peers reuse local Actor rows
   and remote peers retain identity-stable cache upserts. The 120-test combined
   Fixture and Native contract cohort passes; W8C runtime proof remains pending.
+- W8C retry
+  `20260913T220152092562Z-1854af5aca651bec0ef38d27e710f70f`
+  failed closed during Fixture provisioning because the membership verifier
+  still filtered by the current pair instead of the full bound Station set.
+  The verifier now derives both its Station IDs and expected count from the
+  shared Federation members; focused one-Station and two-Station tests pass.

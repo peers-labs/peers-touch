@@ -564,6 +564,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         self.assertIn("authority_confirmed", sql)
         self.assertIn("canonical accepted Friend Request projection", sql)
         self.assertIn("Chat fixture Federation membership", sql)
+        self.assertIn("federation_membership_count <> 2", sql)
         self.assertIn("LOCK TABLE follows IN SHARE ROW EXCLUSIVE MODE", sql)
         self.assertIn(
             "ON CONFLICT (follower_id, following_id) DO NOTHING",
@@ -641,6 +642,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         self.assertIn("same-Station peer Actor projection is incomplete", sql)
         self.assertIn("INSERT INTO social_relationship_projections", sql)
         self.assertIn("fed_chat_", sql)
+        self.assertIn("federation_membership_count <> 1", sql)
 
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset.SshTransport.run_argv"

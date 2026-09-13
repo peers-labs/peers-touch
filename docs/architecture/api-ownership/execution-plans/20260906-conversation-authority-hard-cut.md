@@ -1371,3 +1371,10 @@ accepted relationship projection. The Fixture correction now shares one
 deterministic Federation across the bound actor set and seeds every directed
 relationship without creating local remote-cache rows. Its 120 focused tests
 pass; CA-W6 remains `PARTIAL/UNPROVEN` pending exact-source reruns.
+
+W8C retry
+`20260913T220152092562Z-1854af5aca651bec0ef38d27e710f70f`
+failed closed during Fixture provisioning because its post-write check still
+counted only the current pair's Stations. The check now validates the complete
+bound Station set and its derived cardinality; no product runtime claim is made
+from this pre-client failure.
