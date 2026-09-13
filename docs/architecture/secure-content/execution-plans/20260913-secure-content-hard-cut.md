@@ -1187,7 +1187,7 @@ observations is invalid.
 |---|---|---|---|---|---|---|
 | W0 | governance | complete | plan-review-v14 | N/A | N/A | none |
 | W0R | machine runtime control | complete | `8a7722c93` | PASS | NOT_RUN | none |
-| W14 | scoped generator groundwork | in_progress | none | NOT_RUN | N/A | none |
+| W14 | scoped generator groundwork | complete | `69fe979b3` | SOURCE_CHECK/PASS | N/A | none |
 | W1 | contracts | parked | none | NOT_RUN | NOT_RUN | focused Desktop generated paths overlap active MCA owner |
 | W2 | atomic kernels/Chat | parked | none | NOT_RUN | NOT_RUN | W0R/W1/W4; active MCA Desktop source and Station deploy/slot owner |
 | W3 | PreKeys | parked | none | NOT_RUN | NOT_RUN | W2 |
@@ -1202,8 +1202,8 @@ observations is invalid.
 | W12 | physical schema/data cut + full functional | parked | none | NOT_RUN | NOT_RUN | W5/W11; exact two-profile reset/deploy authorization |
 | W13 | Acceptance | parked | none | NOT_RUN | NOT_RUN | W12 FUNCTIONAL_PASS; active Acceptance owner |
 
-Overall: `3/16`. W14 is the dependency-ready execution frontier. W1 remains
-parked while the active MCA declaration owns focused Desktop generated paths.
+Overall: `4/16`. W1 remains parked while the active MCA declaration owns
+focused Desktop generated paths.
 
 Current evidence:
 
@@ -1214,6 +1214,10 @@ Current evidence:
   PASS, independent review PASS, and
   `~/.peers-touch/dev/workspaces/9eb2cb904c9ae460/development/secure-content/W4/SC-AS02/result.json`
   records an exact-source `FUNCTIONAL_CHECK/PASS` at checkpoint `8260e4330`.
+- W14: 13 isolated generator tests, hard-rules, shell/Node syntax and work-item
+  schema checks PASS at `69fe979b3`; final independent review PASS. The real
+  check entry fails closed with `PROTO_INPUT_MISSING` until W1 adds the accepted
+  contract roots, and that expected failure leaves the repository unchanged.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level
