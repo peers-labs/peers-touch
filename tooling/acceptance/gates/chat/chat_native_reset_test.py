@@ -172,6 +172,116 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                     "station-four",
                 )
 
+    def test_accepts_exact_environment_authorized_protected_stations(self) -> None:
+        deployments = {
+            "station-four": {
+                "PT_DEPLOY_HOST": "10.37.245.247",
+                "PT_DEPLOY_USER": "acceptance",
+                "PT_DEPLOY_HEALTH_URL": (
+                    "http://10.37.245.247:18080/sub-oss/healthz"
+                ),
+                "PT_DEPLOY_RESTART_CMD": (
+                    "docker compose -p pt-station -f compose.yml "
+                    "up -d station"
+                ),
+            },
+            "station-five-arm": {
+                "PT_DEPLOY_HOST": "10.37.221.38",
+                "PT_DEPLOY_USER": "acceptance",
+                "PT_DEPLOY_HEALTH_URL": (
+                    "http://10.37.221.38:18080/sub-oss/healthz"
+                ),
+                "PT_DEPLOY_RESTART_CMD": (
+                    "docker compose -p pt-station -f compose.yml "
+                    "up -d station"
+                ),
+            },
+        }
+        with patch.dict(
+            os.environ,
+            {
+                "CHAT_ACCEPTANCE_RESET_ENVIRONMENTS": (
+                    "station-four,station-five-arm"
+                )
+            },
+            clear=True,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "deploy_environment",
+            side_effect=lambda name: deployments[name],
+        ):
+            four = acceptance_station_environment(
+                "http://10.37.245.247:18080",
+                "station-four",
+            )
+            five = acceptance_station_environment(
+                "http://10.37.221.38:18080",
+                "station-five-arm",
+            )
+
+        self.assertEqual(
+            four["PT_ACCEPTANCE_STATION_URL"],
+            "http://10.37.245.247:18080",
+        )
+        self.assertEqual(
+            five["PT_ACCEPTANCE_STATION_URL"],
+            "http://10.37.221.38:18080",
+        )
+        self.assertEqual(four["PT_ACCEPTANCE_COMPOSE_PROJECT"], "pt-station")
+        self.assertEqual(five["PT_ACCEPTANCE_COMPOSE_PROJECT"], "pt-station")
+
+    def test_rejects_unlisted_environment_authorization(self) -> None:
+        deployment = {
+            "PT_DEPLOY_HOST": "10.37.221.38",
+            "PT_DEPLOY_USER": "acceptance",
+            "PT_DEPLOY_HEALTH_URL": (
+                "http://10.37.221.38:18080/sub-oss/healthz"
+            ),
+            "PT_DEPLOY_RESTART_CMD": (
+                "docker compose -p pt-station -f compose.yml "
+                "up -d station"
+            ),
+        }
+        with patch.dict(
+            os.environ,
+            {"CHAT_ACCEPTANCE_RESET_ENVIRONMENTS": "station-four"},
+            clear=True,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "deploy_environment",
+            return_value=deployment,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Environment-authorized Chat Acceptance reset target mismatch",
+            ):
+                acceptance_station_environment(
+                    "http://10.37.221.38:18080",
+                    "station-five-arm",
+                )
+
+    def test_rejects_ambiguous_reset_authorization_modes(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CHAT_ACCEPTANCE_RESET_PROFILE": "four",
+                "CHAT_ACCEPTANCE_RESET_ENVIRONMENTS": "station-four",
+            },
+            clear=True,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "deploy_environment",
+            return_value={},
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "exactly one authorization mode",
+            ):
+                acceptance_station_environment(
+                    "http://10.37.245.247:18080",
+                    "station-four",
+                )
+
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset.deploy_environment",
         return_value={

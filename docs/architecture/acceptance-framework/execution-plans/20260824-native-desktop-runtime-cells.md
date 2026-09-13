@@ -5851,3 +5851,12 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   `fiveArm` / `station-five-arm`. The 58-test provisioning model suite and
   Python compilation pass. This is a mechanical environment-injection repair;
   it does not change MP-D32 or product behavior.
+- The same preflight found that protected-port reset authorization could name
+  only the active profile, while W8B binds actors to two approved Stations in
+  one Runtime Manifest. The reset owner now accepts an explicit, comma-delimited
+  `CHAT_ACCEPTANCE_RESET_ENVIRONMENTS` allowlist that is mutually exclusive
+  with the single-profile authorization. Every listed deployment is still
+  checked against its exact URL origin, host, Compose project, Station and
+  PostgreSQL containers, and PostgreSQL volume before any reset. The Owner's
+  existing authorization covers exactly `station-four,station-five-arm`; it
+  does not extend to another environment.

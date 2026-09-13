@@ -1182,3 +1182,13 @@ stable Runtime Manifest service IDs while selecting canonical
 provisioning model suite and Python compilation pass. This does not change
 Conversation or Federation ownership; it only restores the plan-approved
 environment binding required for the W8B functional journey.
+
+The preflight also exposed a mechanical authorization gap: the destructive
+Fixture contract could authorize only the active profile, but W8B binds actors
+to two approved protected-port Stations in one run. The reset owner now accepts
+the exact deployment-environment allowlist
+`CHAT_ACCEPTANCE_RESET_ENVIRONMENTS=station-four,station-five-arm`, mutually
+exclusive with the single-profile authorization. Each target still must match
+its reviewed URL origin, host, Compose project, containers, and PostgreSQL
+volume before mutation. This projects the Owner's existing two-environment
+reset decision; it does not authorize any additional Station.

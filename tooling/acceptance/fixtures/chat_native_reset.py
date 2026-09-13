@@ -26,6 +26,9 @@ SAFE_RUNTIME_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
 APPROVED_DISPOSABLE_STATION_PORT = 18132
 PROTECTED_CLEANUP_PORTS = frozenset({4445, 18080})
 RESET_PROFILE_AUTHORIZATION_ENV = "CHAT_ACCEPTANCE_RESET_PROFILE"
+RESET_ENVIRONMENTS_AUTHORIZATION_ENV = (
+    "CHAT_ACCEPTANCE_RESET_ENVIRONMENTS"
+)
 SOCIAL_RELATIONSHIP_PROTO = "domain/social/relationship.proto"
 SOCIAL_PROTO_ROOT = REPO_ROOT / "model"
 FIXTURE_FRIENDSHIP_CREATED_AT_UNIX = 1788739200
@@ -209,7 +212,7 @@ def _deployment_compose_project(environment: dict[str, str]) -> str:
     )
 
 
-def _profile_authorized_reset_environment(
+def _authorized_reset_environment(
     station_url: str,
     selected_environment: str,
     environment: dict[str, str],
@@ -218,29 +221,79 @@ def _profile_authorized_reset_environment(
         RESET_PROFILE_AUTHORIZATION_ENV,
         "",
     ).strip()
-    if not authorized_profile:
+    authorized_environments_raw = os.environ.get(
+        RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
+        "",
+    ).strip()
+    if authorized_profile and authorized_environments_raw:
+        raise RuntimeError(
+            "Chat Acceptance reset requires exactly one authorization mode"
+        )
+    if not authorized_profile and not authorized_environments_raw:
         return None
 
-    profile = active_profile_environment()
-    active_profile = profile.get("PT_DEV_PROFILE", "").strip()
-    active_environment = profile.get("PT_STATION_DEPLOY_ENV", "").strip()
-    active_station = profile.get("PT_STATION_URL", "").rstrip("/")
-    requested_station = station_url.rstrip("/") or active_station
-    if (
-        authorized_profile != active_profile
-        or selected_environment != active_environment
-        or not active_station
-        or requested_station != active_station
-    ):
-        raise RuntimeError(
-            "Profile-authorized Chat Acceptance reset target mismatch: "
-            f"authorized_profile={authorized_profile or 'missing'} "
-            f"active_profile={active_profile or 'missing'} "
-            f"deployment_environment={selected_environment} "
-            f"active_environment={active_environment or 'missing'}"
-        )
+    if authorized_profile:
+        profile = active_profile_environment()
+        active_profile = profile.get("PT_DEV_PROFILE", "").strip()
+        active_environment = profile.get("PT_STATION_DEPLOY_ENV", "").strip()
+        active_station = profile.get("PT_STATION_URL", "").rstrip("/")
+        requested_station = station_url.rstrip("/") or active_station
+        if (
+            authorized_profile != active_profile
+            or selected_environment != active_environment
+            or not active_station
+            or requested_station != active_station
+        ):
+            raise RuntimeError(
+                "Profile-authorized Chat Acceptance reset target mismatch: "
+                f"authorized_profile={authorized_profile or 'missing'} "
+                f"active_profile={active_profile or 'missing'} "
+                f"deployment_environment={selected_environment} "
+                f"active_environment={active_environment or 'missing'}"
+            )
+    else:
+        authorized_environments = [
+            value.strip()
+            for value in authorized_environments_raw.split(",")
+        ]
+        if (
+            not authorized_environments
+            or any(
+                not value or not SAFE_RUNTIME_NAME.fullmatch(value)
+                for value in authorized_environments
+            )
+            or len(set(authorized_environments))
+            != len(authorized_environments)
+        ):
+            raise RuntimeError(
+                "Environment-authorized Chat Acceptance reset list is invalid"
+            )
+        if selected_environment not in authorized_environments:
+            raise RuntimeError(
+                "Environment-authorized Chat Acceptance reset target mismatch: "
+                f"deployment_environment={selected_environment}"
+            )
+        requested_station = station_url.rstrip("/")
+        health_url = environment.get("PT_DEPLOY_HEALTH_URL", "").strip()
+        parsed_health = urllib.parse.urlparse(health_url)
+        parsed_requested = urllib.parse.urlparse(requested_station)
+        if (
+            not requested_station
+            or parsed_requested.scheme not in {"http", "https"}
+            or parsed_requested.scheme != parsed_health.scheme
+            or parsed_requested.hostname != parsed_health.hostname
+            or parsed_requested.port != parsed_health.port
+            or parsed_requested.path not in {"", "/"}
+            or parsed_requested.params
+            or parsed_requested.query
+            or parsed_requested.fragment
+        ):
+            raise RuntimeError(
+                "Environment-authorized Chat Acceptance reset target mismatch: "
+                f"deployment_environment={selected_environment}"
+            )
 
-    parsed = urllib.parse.urlparse(active_station)
+    parsed = urllib.parse.urlparse(requested_station)
     host = environment.get("PT_DEPLOY_HOST", "").strip()
     if (
         parsed.scheme not in {"http", "https"}
@@ -251,21 +304,21 @@ def _profile_authorized_reset_environment(
         or parsed.fragment
     ):
         raise RuntimeError(
-            "Profile-authorized Chat Acceptance reset Station URL does not "
-            "match the deployment host"
+            "Authorized Chat Acceptance reset Station URL does not match "
+            "the deployment host"
         )
 
     compose_project = _deployment_compose_project(environment)
     authorized_environment = {
         **environment,
         "PT_ACCEPTANCE_DISPOSABLE": "1",
-        "PT_ACCEPTANCE_STATION_URL": active_station,
+        "PT_ACCEPTANCE_STATION_URL": requested_station,
         "PT_ACCEPTANCE_COMPOSE_PROJECT": compose_project,
         "PT_ACCEPTANCE_STATION_CONTAINER": f"{compose_project}-station-1",
         "PT_ACCEPTANCE_POSTGRES_CONTAINER": f"{compose_project}-postgres-1",
         "PT_ACCEPTANCE_POSTGRES_VOLUME": f"{compose_project}_pg_data",
     }
-    return active_station, authorized_environment
+    return requested_station, authorized_environment
 
 
 def acceptance_station_environment(
@@ -274,13 +327,13 @@ def acceptance_station_environment(
 ) -> dict[str, str]:
     selected_environment = environment_name or active_deployment_environment()
     environment = deploy_environment(selected_environment)
-    profile_authorized = _profile_authorized_reset_environment(
+    explicit_authorization = _authorized_reset_environment(
         station_url,
         selected_environment,
         environment,
     )
-    if profile_authorized is not None:
-        station_url, environment = profile_authorized
+    if explicit_authorization is not None:
+        station_url, environment = explicit_authorization
     host = environment.get("PT_DEPLOY_HOST", "").strip()
     user = environment.get("PT_DEPLOY_USER", "").strip()
     expected_url = environment.get("PT_ACCEPTANCE_STATION_URL", "").rstrip("/")
@@ -288,7 +341,7 @@ def acceptance_station_environment(
     expected = urllib.parse.urlparse(expected_url)
     if (
         parsed_url.port in PROTECTED_CLEANUP_PORTS
-        and profile_authorized is None
+        and explicit_authorization is None
     ):
         raise RuntimeError(
             "Disposable Chat Acceptance refuses protected cleanup target port: "
@@ -305,11 +358,11 @@ def acceptance_station_environment(
         or parsed_url.hostname != host
         or parsed_url.hostname != expected.hostname
         or (
-            profile_authorized is None
+            explicit_authorization is None
             and parsed_url.port != APPROVED_DISPOSABLE_STATION_PORT
         )
         or (
-            profile_authorized is None
+            explicit_authorization is None
             and expected.port != APPROVED_DISPOSABLE_STATION_PORT
         )
         or parsed_url.port != expected.port

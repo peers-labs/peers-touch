@@ -165,6 +165,22 @@ The Provisioner validates each existing marker against the actor, worktree, and
 profile before deletion, then rebuilds the persistent state from the read-only
 identity seed. The reset flag must not remain set for normal repeated runs.
 
+Multi-Station Chat Gates on explicitly approved protected development Stations
+use an exact deployment-environment allowlist:
+
+```bash
+CHAT_ACCEPTANCE_RESET=1 \
+CHAT_ACCEPTANCE_RESET_ENVIRONMENTS=station-four,station-five-arm \
+python3 tooling/scripts/acceptance-run.py \
+  --gate chat-native-typing-e2e \
+  --runtime-cell desktop-macos-native
+```
+
+`CHAT_ACCEPTANCE_RESET_ENVIRONMENTS` and
+`CHAT_ACCEPTANCE_RESET_PROFILE` are mutually exclusive. Every listed target
+must match its reviewed deployment host, health endpoint origin, Compose
+project, Station/PostgreSQL containers, and PostgreSQL volume before mutation.
+
 ### Agent R6 Stream Resilience
 
 `agent-stream-resilience-e2e` is the stable native Gate for R6. It requires the
