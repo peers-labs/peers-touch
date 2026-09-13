@@ -1378,3 +1378,24 @@ failed closed during Fixture provisioning because its post-write check still
 counted only the current pair's Stations. The check now validates the complete
 bound Station set and its derived cardinality; no product runtime claim is made
 from this pre-client failure.
+
+Exact-source W8C run
+`20260913T220857646292Z-22e49e67e2f67982b2c5c03b8ae2a433`
+at `1f30fb6522e0821579fb08c422df43c5b3fa7c1c` proves the complete shared
+Federation fixture, all three Native clients, and the default friendship
+projection. Its first identity-parity assertion then fails because the same
+Bob PTID projects as `bob@host` through Alice's remote cache and
+`@bob@host` through Charlie's local Actor row. The Social relationship wire
+owner currently returns the routing-normalized cache value unchanged despite
+the canonical `@user@host` wire contract. Cleanup is `DONE/PROVEN`; CA-W6
+remains `PARTIAL/UNPROVEN` pending the owner-layer projection correction,
+focused regression, exact-source deployment, and bounded W8C rerun.
+
+The Social relationship projection correction now preserves empty legacy
+values, rejects malformed local-only values, and adds the missing leading `@`
+only when projecting a routing-normalized `user@host` value onto the canonical
+wire contract. The focused application race suite, complete Social race suite,
+`go vet`, Go style, 52-test W8C Fixture/runner cohort, and `git diff --check`
+pass. The existing W8C `friendship.identity_parity` assertion remains the
+product regression Gate; CA-W6 still requires checkpoint deployment and the
+bounded exact-source rerun.

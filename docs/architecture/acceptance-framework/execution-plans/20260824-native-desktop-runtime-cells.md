@@ -6083,3 +6083,23 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   still filtered by the current pair instead of the full bound Station set.
   The verifier now derives both its Station IDs and expected count from the
   shared Federation members; focused one-Station and two-Station tests pass.
+- Exact-source W8C run
+  `20260913T220857646292Z-22e49e67e2f67982b2c5c03b8ae2a433`
+  at `1f30fb6522e0821579fb08c422df43c5b3fa7c1c` proves the corrected complete
+  Federation fixture, all three Native client launches, and the default
+  friendship projection. It then fails at the first identity-parity assertion:
+  Alice receives Bob's cross-Station handle as `bob@host`, while Charlie
+  receives the same PTID's local handle as `@bob@host`. The Social relationship
+  projection currently returns the cache's routing-normalized handle unchanged
+  even though its wire contract requires canonical `@user@host`. Cleanup is
+  `DONE/PROVEN`; W8C remains `PARTIAL/UNPROVEN` pending an owner-layer Social
+  projection correction, focused regression, checkpoint, deployment, and
+  bounded rerun.
+- The Social relationship projection correction now preserves empty legacy
+  values, rejects malformed local-only values, and adds the missing leading
+  `@` only when projecting a routing-normalized `user@host` value onto the
+  canonical wire contract. The focused application race suite, complete Social
+  race suite, `go vet`, Go style, 52-test W8C Fixture/runner cohort, and
+  `git diff --check` pass. The existing W8C `friendship.identity_parity`
+  assertion remains the product regression Gate; runtime proof still requires
+  checkpoint deployment and the bounded exact-source rerun.
