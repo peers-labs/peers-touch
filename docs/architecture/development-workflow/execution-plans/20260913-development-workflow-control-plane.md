@@ -55,6 +55,7 @@ Out of scope:
 | Requirement | Decision | Workstream | Evidence |
 |---|---|---|---|
 | Public pre-write declaration | DWF-D11 | DWF-W1 | CLI tests and two-worktree conflict scenario |
+| Independent-branch source coordination | DWF-D13 | DWF-W4 | cross-branch overlap warning plus same-workspace, same-branch and runtime hard-conflict regressions |
 | One workflow Skill | DWF-D12 | DWF-W2 | Skill contract check |
 | Product-first state machine | DWF-D01/D02/D03 | DWF-W2 | required marker checks |
 | Shared Journey semantics | DWF-D04 | DWF-W2 | Skill dependency and anti-pattern checks |
@@ -274,4 +275,5 @@ git diff --check
 | DWF-W0 | done | 2026-09-13 | accepted design; public bootstrap declaration |
 | DWF-W1 | done | 2026-09-13 | focused Node tests 20/20; closed schema/session/HEAD and atomic lock regressions; live concurrent status/check PASS |
 | DWF-W2 | done | 2026-09-13 | one complete-development entry point; specialist Skill contracts cut over; skill-check PASS |
-| DWF-W3 | done | 2026-09-13 | cross-worktree conflict blocked without ledger mutation; forbidden-pattern checks, syntax and diff hygiene PASS |
+| DWF-W3 | done | 2026-09-13 | initial conflict policy and workflow checks passed; its cross-branch source-lock behavior is superseded by DWF-W4/DWF-D13. |
+| DWF-W4 | done | 2026-09-14 | Independent-branch overlap emits `SOURCE_OVERLAP_WARNING` and publishes both declarations; same-workspace, same-branch and runtime conflicts remain fail-closed; focused Node tests 21/21 PASS and live ledger warning/readback PASS. |

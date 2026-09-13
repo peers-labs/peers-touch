@@ -245,7 +245,10 @@ The Development Workflow never translates `SOURCE_CHECK`,
 
 ## 11. Concurrency And Resource Semantics
 - One Dev Session owns one active Journey.
-- Product source work may use parallel lanes only for disjoint write sets.
+- Overlapping source writes inside one workspace or on the same branch block.
+- Different worktrees on different branches may edit overlapping source paths;
+  the ledger emits a coordination warning because Git still isolates their
+  files and semantic reconciliation belongs to the later merge.
 - Checkpoint creation, deployment, shared Fixture mutation and final Journey
   execution have one integrator owner.
 - Worktrees may share `station.connect`; deploy/reset remain exclusive.

@@ -105,14 +105,50 @@ test('publishes one declaration and exposes it to all workspaces', () => {
   }
 });
 
-test('rejects overlapping exclusive source claims across workspaces', () => {
+test('warns but allows overlapping source claims on independent branches', () => {
+  const scope = fixture();
+  try {
+    const first = startOrUpdateDeclaration(options(scope));
+    const warnings = [];
+    const second = startOrUpdateDeclaration(
+      options(scope, {
+        workspaceRoot: scope.workspaceB,
+        workItemId: 'other-work',
+        sessionId: 'session-b',
+        branch: 'feat/other',
+        sourceHead: '2'.repeat(40),
+        sourceClaims: 'exclusive-write:tooling/skills/pt-dev-workflow',
+      }),
+      { onWarning: (warning) => warnings.push(warning) },
+    );
+
+    assert.equal(
+      statusAll({ home: scope.home }).declarations.length,
+      2,
+    );
+    assert.notEqual(second.workspaceId, first.workspaceId);
+    assert.deepEqual(warnings, [
+      {
+        declarationId: first.declarationId,
+        workspaceId: first.workspaceId,
+        branch: first.branch,
+        kind: 'SOURCE_OVERLAP_WARNING',
+        resource: 'tooling/skills/pt-dev-workflow',
+        otherPathPrefix: 'tooling/skills',
+      },
+    ]);
+  } finally {
+    scope.close();
+  }
+});
+
+test('rejects overlapping exclusive source claims inside one workspace', () => {
   const scope = fixture();
   try {
     startOrUpdateDeclaration(options(scope));
     expectCode('RESOURCE_DECLARATION_CONFLICT', () =>
       startOrUpdateDeclaration(
         options(scope, {
-          workspaceRoot: scope.workspaceB,
           workItemId: 'other-work',
           sessionId: 'session-b',
           branch: 'feat/other',
@@ -120,10 +156,6 @@ test('rejects overlapping exclusive source claims across workspaces', () => {
           sourceClaims: 'exclusive-write:tooling/skills/pt-dev-workflow',
         }),
       ),
-    );
-    assert.equal(
-      statusAll({ home: scope.home }).declarations.length,
-      1,
     );
   } finally {
     scope.close();

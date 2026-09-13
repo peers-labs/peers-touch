@@ -83,8 +83,13 @@ Requirements:
   the new source HEAD before the next mutation slice.
 - `make dev-status-all` is the cross-worktree public view.
 - A declaration is intent, not a runtime lease or authorization.
-- `RESOURCE_DECLARATION_CONFLICT` blocks the overlapping action. Do not select
-  another worktree, Profile, path or resource as a workaround.
+- Different worktrees on different branches may declare overlapping source
+  paths; `SOURCE_OVERLAP_WARNING` makes the later merge risk visible without
+  blocking either branch.
+- `RESOURCE_DECLARATION_CONFLICT` remains a hard stop for same-workspace source
+  overlap, same-branch parallel writes, and exclusive runtime-resource
+  overlap. Do not select another worktree, Profile, path or resource as a
+  workaround.
 
 ## 3. Outer Stage Dispatch
 

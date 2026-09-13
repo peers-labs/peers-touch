@@ -68,12 +68,16 @@ make dev-release WORK_ITEM=<id>
 ```
 
 `make dev-start` atomically publishes the current worktree's source and runtime
-claims to `~/.peers-touch/dev/work.json`, reads the declaration back and refuses
-to start on conflict. `make dev-status-all` gives every worktree the same public
-view of declarations, owners, expiry and observed leases. `make dev-update`
-replaces explicitly supplied scope and refreshes branch/HEAD; an explicit empty
-`RUNTIME_CLAIMS=` clears planned runtime intent. `make dev-check` verifies
-workspace, optional session, branch and HEAD before a mutation slice.
+claims to `~/.peers-touch/dev/work.json` and reads the declaration back. It
+refuses same-workspace source conflicts, same-branch parallel writes and
+exclusive runtime conflicts. Source overlap between different worktrees on
+different branches is allowed and reported as `SOURCE_OVERLAP_WARNING` for
+later semantic reconciliation. `make dev-status-all` gives every worktree the
+same public view of declarations, owners, expiry and observed leases.
+`make dev-update` replaces explicitly supplied scope and refreshes branch/HEAD;
+an explicit empty `RUNTIME_CLAIMS=` clears planned runtime intent.
+`make dev-check` verifies workspace, optional session, branch and HEAD before a
+mutation slice.
 
 The current control-plane implementation does not include a generic Journey
 runner. A future `make dev-run` may perform one orchestrated transition, but it

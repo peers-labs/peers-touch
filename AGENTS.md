@@ -149,7 +149,10 @@ Example:
     source/runtime intent through `make dev-start` before the first repository
     write or runtime acquisition. Scope growth uses `make dev-update`;
     completion/cancellation uses `make dev-release`. See
-    `docs/architecture/development-workflow/README.md`.
+    `docs/architecture/development-workflow/README.md`. Source overlap across
+    different worktrees on different branches is a coordination warning, not a
+    lock; same-workspace, same-branch, and exclusive runtime conflicts still
+    block.
 
 ---
 

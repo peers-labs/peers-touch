@@ -72,14 +72,35 @@ function output(value) {
   process.stdout.write(`${JSON.stringify(canonicalize(value), null, 2)}\n`);
 }
 
+function outputWarning(warning) {
+  process.stderr.write(
+    `${JSON.stringify(
+      canonicalize({
+        status: 'WARNING',
+        code: warning.kind,
+        message:
+          'source paths overlap with an independent worktree; coordinate before merge',
+        detail: warning,
+      }),
+      null,
+      2,
+    )}\n`,
+  );
+}
+
 export function runCli(argv) {
   const { action, options } = parseArguments(argv);
   switch (action) {
     case 'start':
-      output(startOrUpdateDeclaration(options));
+      output(startOrUpdateDeclaration(options, { onWarning: outputWarning }));
       break;
     case 'update':
-      output(startOrUpdateDeclaration(options, { requireExisting: true }));
+      output(
+        startOrUpdateDeclaration(options, {
+          requireExisting: true,
+          onWarning: outputWarning,
+        }),
+      );
       break;
     case 'status':
       output(statusCurrent(options));

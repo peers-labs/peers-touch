@@ -27,6 +27,11 @@ use. An authorized operation that changes Git HEAD MUST publish the new HEAD
 before the next mutation slice. Closure or cancellation MUST release the
 declaration after runtime cleanup.
 
+A source overlap between different worktrees on different branches is
+coordination information, not a lock: it emits `SOURCE_OVERLAP_WARNING` and
+allows both declarations. Same-workspace source overlap, same-branch parallel
+writes, and exclusive runtime-resource overlap remain hard conflicts.
+
 A declaration is public intent only. It MUST NOT replace worktree binding,
 operation authorization, Local Dev leases, process observation, or formal
 Acceptance evidence.
@@ -48,7 +53,8 @@ authority.
 - `make dev-status-all` succeeds and displays every current declaration.
 - `make dev-check WORK_ITEM=<id>` succeeds before a mutation slice.
 - `node --test tooling/scripts/local-dev/dev-work.test.mjs` passes the
-  cross-worktree conflict, expiry, ownership and malformed-ledger cases.
+  cross-branch warning, same-workspace/same-branch conflict, runtime conflict,
+  expiry, ownership and malformed-ledger cases.
 - `rg -n "dev-start|FUNCTIONAL_PASS|dev-release" tooling/skills/pt-dev-workflow/SKILL.md tooling/scripts/review/skill-check.sh`
   finds the enforced workflow markers.
 - `find . -name work.json -not -path './node_modules/*'` returns no
