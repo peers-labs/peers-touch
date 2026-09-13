@@ -5944,3 +5944,29 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   are restored byte-for-byte from their last reviewed source. The 88 focused
   runtime/provisioning tests and the 8-test Acceptance Infra ownership boundary
   pass; the Linux W8B retry remains pending on a clean checkpoint.
+- Linux retries then exposed three independent pre-product infrastructure
+  defects. `pnpm install --frozen-lockfile` rejected a missing
+  `@lobehub/ui@5.25.0` peer snapshot, the runtime host exhausted `/data00`
+  while copying the Desktop bundle, and structured evidence redacted the
+  required public `hostKeySha256` attestation digest. The lockfile was repaired
+  with `pnpm@9.12.0 --fix-lockfile`, 140.9 GB of reclaimable Docker build cache
+  was removed without touching active containers or volumes, and the redaction
+  allowlist now preserves that exact public-key digest. Frozen install, the
+  Desktop production build, 27 redaction tests, 48 Native runner tests, and the
+  8-test Acceptance Infra ownership boundary pass.
+- Exact-source Linux run
+  `20260913T191930463781Z-d79f99f73123baed02b21b7a1b4f70c8`
+  reached a fully attested `LEASED` runtime cell and three authenticated Native
+  clients at `d0e71cfc5579f50fc903b1d26457d9d4624e8ff4`. Its first Direct
+  typing request was rejected with
+  `CONVERSATION_INTERACTION_INVALID_ARGUMENT` before Authority admission.
+  Runtime clocks proved the Linux client host approximately 25 seconds ahead
+  of both Stations: its five-second expiry therefore appeared approximately
+  30 seconds in the future. Conversation policy already declares a one-minute
+  `MaximumFutureClockSkew`, but typing submission and federated-frame
+  validation compared expiry only with `MaximumTypingTTL`. The owner-layer
+  correction now applies the accepted future-skew bound to both validation
+  hops while retaining the existing expiry/TTL fields and zero-durable-write
+  design. The focused interaction regression, race-enabled interaction suite,
+  complete Conversation suite, and Go style check pass; the next action is the
+  corrected exact-source W8B journey.

@@ -369,6 +369,37 @@ func TestServiceTypingIsMembershipBoundedEphemeralAndIdempotent(t *testing.T) {
 	}
 }
 
+func TestServiceTypingAcceptsConfiguredFutureClockSkew(t *testing.T) {
+	service, _, _, typing, _, _ := newInteractionFixture(t)
+	pulse := interaction.TypingPulse{
+		ConversationID: "conversation-1",
+		Sender:         valueobject.Endpoint{Actor: "ptid:bob", Device: "bob-1"},
+		Generation:     1,
+		ExpiresAt:      interactionTestTime.Add(35 * time.Second),
+		IsTyping:       true,
+	}
+
+	result, err := service.SubmitTyping(context.Background(), pulse)
+	if err != nil || !result.Accepted || len(typing.events) != 1 {
+		t.Fatalf(
+			"clock-skewed typing result=%+v events=%+v err=%v",
+			result,
+			typing.events,
+			err,
+		)
+	}
+
+	tooFarFuture := pulse
+	tooFarFuture.Generation++
+	tooFarFuture.ExpiresAt = interactionTestTime.Add(71 * time.Second)
+	if _, err := service.SubmitTyping(
+		context.Background(),
+		tooFarFuture,
+	); !interaction.IsCode(err, interaction.ErrorCodeInvalidArgument) {
+		t.Fatalf("future typing error = %v", err)
+	}
+}
+
 func TestServiceDelegatesReadCursorToCAW2Port(t *testing.T) {
 	service, _, _, _, readCursors, _ := newInteractionFixture(t)
 	request := interaction.ReadCursorRequest{

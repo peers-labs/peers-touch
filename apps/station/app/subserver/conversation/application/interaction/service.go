@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
@@ -140,13 +141,12 @@ func (s *Service) SubmitTyping(
 	}
 	now := s.clock.Now().UTC()
 	expiresAt := pulse.ExpiresAt.UTC()
-	if !expiresAt.After(now) ||
-		expiresAt.After(now.Add(s.policy.MaximumTypingTTL)) {
+	if !s.typingExpiryWithinBounds(expiresAt, now) {
 		return TypingResult{}, NewError(
 			ErrorCodeInvalidArgument,
 			"interaction.submit_typing",
 			"expires_at",
-			"must be fresh and within the configured typing TTL",
+			"must be fresh and within the configured typing TTL and clock skew",
 		)
 	}
 	pulse.ExpiresAt = expiresAt
@@ -462,8 +462,7 @@ func (s *Service) validateFederatedTypingSignal(
 		signal.SenderHomeStation == "" ||
 		signal.Generation == 0 ||
 		signal.ExpiresAt.IsZero() ||
-		!signal.ExpiresAt.After(now) ||
-		signal.ExpiresAt.After(now.Add(s.policy.MaximumTypingTTL)) ||
+		!s.typingExpiryWithinBounds(signal.ExpiresAt, now) ||
 		len(signal.Recipients) > maximumTypingRecipients {
 		return NewError(
 			ErrorCodeInvalidArgument,
@@ -562,6 +561,17 @@ func (s *Service) admitFederatedPulse(
 		s.clock.Now().UTC(),
 		s.policy.MinimumPulseInterval,
 	)
+}
+
+func (s *Service) typingExpiryWithinBounds(
+	expiresAt time.Time,
+	now time.Time,
+) bool {
+	latest := now.
+		Add(s.policy.MaximumTypingTTL).
+		Add(s.policy.MaximumFutureClockSkew)
+
+	return expiresAt.After(now) && !expiresAt.After(latest)
 }
 
 func typingPulseFromSignal(

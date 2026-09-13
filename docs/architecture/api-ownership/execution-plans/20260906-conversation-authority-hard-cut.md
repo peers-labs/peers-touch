@@ -1251,3 +1251,20 @@ registered while its declared image/control directory was absent. The missing
 files are restored from their last reviewed source and focused runtime,
 provisioning, and Acceptance Infra boundary tests pass. Neither run changes
 the CA-W6 product proof state.
+
+Subsequent Linux preflight repaired the repository's broken pnpm peer snapshots,
+reclaimed only Docker build cache after whole-host disk accounting found
+`/data00` full, and preserved the public `hostKeySha256` runtime attestation
+through structured evidence redaction. Exact-source run
+`20260913T191930463781Z-d79f99f73123baed02b21b7a1b4f70c8`
+then reached the fully attested Linux cell and all three Native clients at
+`d0e71cfc5579f50fc903b1d26457d9d4624e8ff4`. Its first Direct typing request
+was rejected before Authority admission because the Linux client clock was
+approximately 25 seconds ahead of both Stations: a five-second expiry appeared
+approximately 30 seconds in the future. The accepted interaction policy already
+declares one minute of `MaximumFutureClockSkew`, but typing submission and
+federated signal validation ignored it. The owner-layer correction now applies
+that accepted bound at both validation hops without changing Conversation
+ownership, persistence, or Federation QoS. Focused interaction, race-enabled
+interaction, complete Conversation, and Go style checks pass. CA-W6 remains
+`UNPROVEN` until the corrected exact-source W8B journey succeeds.
