@@ -6,7 +6,6 @@ import type {
   ConversationServiceContract,
   KeyPackageServiceContract,
   DeviceServiceContract,
-  DeviceInfo,
   IMServiceV1,
   ThreadCountResult,
   MemberSettingsResult,
@@ -24,6 +23,7 @@ import {
   ConversationEventSchema,
   type ConversationEvent,
 } from '../gen/proto/domain/chat/event_pb'
+import { ActorDeviceSchema } from '../gen/proto/domain/actor/actor_pb'
 
 async function cmd<TInput, TData>(command: string, input?: TInput): Promise<TData> {
   const payload = input === undefined ? undefined : { input }
@@ -263,8 +263,8 @@ const keyPackageService: KeyPackageServiceContract = {
 
 const deviceService: DeviceServiceContract = {
   async list() {
-    const resp = await cmd<void, { devices: DeviceInfo[] }>('device_list')
-    return resp.devices ?? []
+    const resp = await cmd<void, { devices: JsonValue[] }>('device_list')
+    return (resp.devices ?? []).map(device => fromJson(ActorDeviceSchema, device))
   },
 
   async revoke(deviceId) {

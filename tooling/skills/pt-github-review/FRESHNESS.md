@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-13
-covered_docs_hash: 66fa2a83f3779bb4acfa1336b222d94f501693fd469b620ec620a964496a4e6c
+covered_docs_hash: b7d36ba0fe25c29d5a626a08b1c67902e33dba7aabfc98e6fd9723da30c638dd
 
 covered_docs:
   - AGENTS.md
@@ -11,6 +11,7 @@ covered_docs:
   - docs/global/code-review-framework.md
   - docs/architecture/quality-framework
   - docs/architecture/acceptance-framework
+  - docs/architecture/development-workflow
   - docs/architecture/local-dev-control-plane
   - docs/global/local-dev-environment.md
   - docs/global/architecture.md
@@ -167,6 +168,15 @@ requirements. The review skill already covers those checks, so no workflow or
 fixture change is required.
 
 ## 2026-09-13 Review
+
+Development Workflow now separates public resource intent, exact-source
+functional Journeys, formal Acceptance proof and delivery review. This changes
+execution and completion discipline, while PR review continues to consume
+formal Acceptance and quality evidence rather than machine-local Development
+records. `pt-dev-workflow`, its specialist Skills and `pt-completion-auditor`
+were updated; `pt-github-review/SKILL.md` needs no behavior change. The canonical
+skill check now enforces declaration, functional-fence, first-failure and
+release markers directly.
 
 Machine Dev Control Plane and Acceptance Evidence Store changes make
 repository-root debug artifacts, Station profile bypasses, and unauthorized

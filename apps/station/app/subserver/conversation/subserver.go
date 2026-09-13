@@ -300,6 +300,13 @@ func (s *subServer) Handlers() []server.Handler {
 			authenticatedDevice...,
 		),
 		server.NewTypedHandler(
+			"conversation-command-results-resolve",
+			"/conversation/command/results",
+			server.POST,
+			s.handleResolveCommandResults,
+			authenticatedDevice...,
+		),
+		server.NewTypedHandler(
 			"conversation-list",
 			"/conversation/list",
 			server.GET,

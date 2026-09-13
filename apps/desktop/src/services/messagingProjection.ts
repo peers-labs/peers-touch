@@ -52,6 +52,9 @@ async function refreshProjection(payload: MessagingProjectionChangedPayload): Pr
   await store.loadMessages(conversationId, conversation.kind === 2 ? 'group' : 'friend');
 
   if (isActiveConversation) {
+    if (conversation.kind === 1) {
+      await useSocialChatStore.getState().markFriendRead(conversationId);
+    }
     badgeState.clearChatUnread(conversationId);
     return;
   }

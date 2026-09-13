@@ -32,6 +32,12 @@ cross any of the following boundaries:
 - Tauri command parameters or return types
 - Frontend store keys visible to components
 
+Verified remote device-key persistence is owned exclusively by the Actor
+Identity subserver. Federation profile resolution may verify and cache the
+signed public Actor profile, but it MUST NOT write `actor_devices` through the
+legacy `frame/touch/actor.DeviceStore`; cryptographic consumers hydrate keys
+through Actor Identity capabilities on demand.
+
 ## Canonical Source
 
 `docs/architecture/identity/unified-actor-system.md` defines the three-layer

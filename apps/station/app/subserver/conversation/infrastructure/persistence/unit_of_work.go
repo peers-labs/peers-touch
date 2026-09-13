@@ -482,7 +482,7 @@ func (u *UnitOfWork) bindTransaction(tx *gorm.DB) (ports.Transaction, error) {
 
 	return ports.Transaction{
 		Repositories: repository.Repositories{
-			Authority:      newAuthorityRepository(tx),
+			Authority:      newAuthorityRepository(tx, u.sealer),
 			Events:         newEventRepository(tx, u.sealer),
 			Receipts:       newReceiptRepository(tx),
 			AuthorityPlans: newAuthorityPlanRepository(tx),

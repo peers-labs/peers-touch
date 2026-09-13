@@ -1,6 +1,7 @@
 mod attachment;
 mod attachment_transfer;
 mod command_outbox;
+mod command_reconciliation;
 mod command_result;
 mod consumer;
 mod conversation_state;
@@ -85,6 +86,9 @@ pub use command_outbox::{
     CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy, CommandSubmitFailure,
     CommandTransport,
 };
+pub use command_reconciliation::{
+    CommandReconciliationProgress, CommandReconciliationWorker, CommandResultTransport,
+};
 pub use command_result::CommandResultProcessor;
 pub use consumer::MessagingItemConsumer;
 pub use conversation_state::ConversationStateProcessor;
@@ -104,6 +108,7 @@ pub use engine::{
 };
 pub use group_genesis::StationGroupGenesisTransport;
 pub use inbox::{InboxWorker, QueueAcknowledger};
+pub(crate) use lifecycle::hydrate_projections_from_station;
 pub use lifecycle::MessagingLifecycleWorker;
 pub use membership_transition::StationMembershipTransitionTransport;
 pub use messaging_core::codec::private_content::{
@@ -126,14 +131,16 @@ pub use recovery::{
 pub use send::{DirectSessionBootstrap, EditTextIntent, SendPreparer, SendTextIntent};
 pub use store::{
     ActorReadReceiveCommit, AttachmentDownloadProjection, CommandOutboxEntry,
-    CommandResultDisposition, CommandResultReceiveCommit, CommandStatusProjection,
-    ConversationMemberProjection, ConversationMessageProjection, ConversationProjection,
-    ConversationStateReceiveCommit, DeliveryReceiptReceiveCommit, DirectEditCommit,
-    DirectReceiveCommit, DirectSendCommit, InteractionCommandCommit, MessageProjection,
-    MessagingStore, MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit,
-    MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, PendingAttachmentUpload,
-    PendingMembershipIntent, PendingMessageDraft, PendingMlsTransitionState,
-    PendingSenderProjection, PublicEventReceiveCommit, ReceiveCommitResult, ThreadCountProjection,
+    CommandReconciliation, CommandReconciliationDisposition, CommandResultDisposition,
+    CommandResultReceiveCommit, CommandStatusProjection, ConversationMemberProjection,
+    ConversationMessageProjection, ConversationProjection, ConversationStateReceiveCommit,
+    DeliveryReceiptReceiveCommit, DirectEditCommit, DirectReceiveCommit, DirectSendCommit,
+    InteractionCommandCommit, MessageProjection, MessagingStore, MlsReceiveCommit,
+    MlsRetirementReceiveCommit, MlsSendCommit, MlsSenderTransitionReceiveCommit,
+    MlsTransitionReceiveCommit, PendingAttachmentUpload, PendingMembershipIntent,
+    PendingMessageDraft, PendingMlsTransitionState, PendingSenderProjection,
+    PublicEventReceiveCommit, ReceiveCommitResult, SubmittedCommand, ThreadCountProjection,
+    COMMAND_RECONCILIATION_BATCH_LIMIT,
 };
 pub use transport::{
     StationCommandTransport, StationDeliveryReceiptTransport, StationDeviceTransport,

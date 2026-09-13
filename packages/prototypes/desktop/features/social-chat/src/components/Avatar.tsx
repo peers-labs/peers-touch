@@ -6,6 +6,7 @@ interface AvatarProps {
   size?: number;
   online?: boolean;
   groupIcon?: boolean;
+  identityKey?: string;
 }
 
 function getInitials(name: string): string {
@@ -21,10 +22,18 @@ function hashColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-export function Avatar({ name, src, size = 40, online, groupIcon }: AvatarProps) {
+export function Avatar({
+  name,
+  src,
+  size = 40,
+  online,
+  groupIcon,
+  identityKey,
+}: AvatarProps) {
   const initials = getInitials(name);
-  const bgColor = hashColor(name);
+  const bgColor = hashColor(identityKey || src || name);
   const fontSize = size * 0.38;
+  const radius = groupIcon ? T.radiusLg : T.radiusMd;
 
   return (
     <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
@@ -32,14 +41,14 @@ export function Avatar({ name, src, size = 40, online, groupIcon }: AvatarProps)
         <img
           src={src}
           alt={name}
-          style={{ width: size, height: size, borderRadius: T.radiusFull, objectFit: 'cover' }}
+          style={{ width: size, height: size, borderRadius: radius, objectFit: 'cover' }}
         />
       ) : (
         <div
           style={{
             width: size,
             height: size,
-            borderRadius: groupIcon ? T.radiusLg : T.radiusFull,
+            borderRadius: radius,
             background: bgColor,
             display: 'flex',
             alignItems: 'center',
@@ -47,7 +56,7 @@ export function Avatar({ name, src, size = 40, online, groupIcon }: AvatarProps)
             color: T.textOnPrimary,
             fontSize,
             fontWeight: 600,
-            letterSpacing: -0.5,
+            letterSpacing: 0,
           }}
         >
           {initials}

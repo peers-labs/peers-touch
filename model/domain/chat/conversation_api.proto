@@ -93,6 +93,37 @@ message SubmitConversationAuthorityCommandResponse {
   bool accepted_for_forwarding = 4;
 }
 
+enum ConversationCommandResolutionState {
+  CONVERSATION_COMMAND_RESOLUTION_STATE_UNSPECIFIED = 0;
+  CONVERSATION_COMMAND_RESOLUTION_STATE_HOME_PENDING = 1;
+  CONVERSATION_COMMAND_RESOLUTION_STATE_ACCEPTED = 2;
+  CONVERSATION_COMMAND_RESOLUTION_STATE_TERMINAL_REJECTED = 3;
+  CONVERSATION_COMMAND_RESOLUTION_STATE_NOT_FOUND = 4;
+}
+
+message ConversationCommandResultRef {
+  string conversation_id = 1;
+  string command_id = 2;
+  bytes command_sha256 = 3;
+}
+
+message ResolveConversationCommandResultsRequest {
+  repeated ConversationCommandResultRef commands = 1;
+}
+
+message ResolvedConversationCommandResult {
+  string conversation_id = 1;
+  string command_id = 2;
+  bytes command_sha256 = 3;
+  ConversationCommandResolutionState state = 4;
+  ConversationCommandProposalResult result = 5;
+  ConversationCommandRejectCode terminal_error_code = 6;
+}
+
+message ResolveConversationCommandResultsResponse {
+  repeated ResolvedConversationCommandResult results = 1;
+}
+
 enum ConversationMembershipAction {
   CONVERSATION_MEMBERSHIP_ACTION_UNSPECIFIED = 0;
   CONVERSATION_MEMBERSHIP_ACTION_ADD_ACTOR = 1;
@@ -186,6 +217,27 @@ message SubmitConversationTypingRequest {
 message SubmitConversationTypingResponse {
   bool accepted = 1;
   google.protobuf.Timestamp expires_at = 2;
+}
+
+enum FederatedConversationTypingPhase {
+  FEDERATED_CONVERSATION_TYPING_PHASE_UNSPECIFIED = 0;
+  FEDERATED_CONVERSATION_TYPING_PHASE_AUTHORITY_ADMISSION = 1;
+  FEDERATED_CONVERSATION_TYPING_PHASE_HOME_FANOUT = 2;
+}
+
+message FederatedConversationTypingSignal {
+  uint32 format_version = 1;
+  FederatedConversationTypingPhase phase = 2;
+  string federation_id = 3;
+  string conversation_id = 4;
+  string authority_station_peer_id = 5;
+  uint64 authority_epoch = 6;
+  peers_touch.model.actor.v1.ActorDeviceRef sender = 7;
+  string sender_home_station_peer_id = 8;
+  uint64 pulse_generation = 9;
+  google.protobuf.Timestamp expires_at = 10;
+  bool is_typing = 11;
+  repeated string recipient_actor_ptids = 12;
 }
 
 message SubmitMlsLeaveIntentRequest {

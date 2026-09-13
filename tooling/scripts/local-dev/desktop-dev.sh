@@ -11,27 +11,31 @@ MODE="${1:-app}"
 # Derive a stable port offset from WORKTREE_ID so each worktree gets
 # deterministic, non-conflicting ports without explicit configuration.
 # Range: 0–99, giving base+offset within safe ephemeral territory.
-# In E2E acceptance mode the caller already chose exact ports — skip offset.
-if [[ "${PT_DESKTOP_E2E:-}" == "true" ]]; then
+# In an Acceptance-owned runtime the caller already chose exact resources.
+if [[ "${PT_DESKTOP_E2E:-}" == "true" || "${PT_ACCEPTANCE_NATIVE_DEV:-0}" == "1" ]]; then
   _wt_offset=0
 else
   _wt_offset=$(printf '%s' "${WORKTREE_ID}" | cksum | awk '{print $1 % 100}')
 fi
 
+_caller_gw="${PT_GATEWAY_PORT:-}"
+_caller_web="${PT_RENDERER_PORT:-}"
+_caller_profile="${PT_PROFILE:-}"
+
 case "$MODE" in
   app)
-    export PT_PROFILE="${PT_DEV_PROFILE:-desktop}-app"
+    export PT_PROFILE="${_caller_profile:-${PT_DEV_PROFILE:-desktop}-app}"
     _base_gw="${PT_DESKTOP_APP_GATEWAY_PORT:-3030}"
     _base_web="${PT_DESKTOP_APP_WEB_PORT:-3210}"
-    export GATEWAY_PORT="$((_base_gw + _wt_offset))"
-    export WEB_PORT="$((_base_web + _wt_offset))"
+    export GATEWAY_PORT="${_caller_gw:-$((_base_gw + _wt_offset))}"
+    export WEB_PORT="${_caller_web:-$((_base_web + _wt_offset))}"
     ;;
   web)
-    export PT_PROFILE="${PT_DEV_PROFILE:-desktop}-web"
+    export PT_PROFILE="${_caller_profile:-${PT_DEV_PROFILE:-desktop}-web}"
     _base_gw="${PT_DESKTOP_WEB_GATEWAY_PORT:-3031}"
     _base_web="${PT_DESKTOP_WEB_WEB_PORT:-3211}"
-    export GATEWAY_PORT="$((_base_gw + _wt_offset))"
-    export WEB_PORT="$((_base_web + _wt_offset))"
+    export GATEWAY_PORT="${_caller_gw:-$((_base_gw + _wt_offset))}"
+    export WEB_PORT="${_caller_web:-$((_base_web + _wt_offset))}"
     ;;
   *)
     echo "[ERROR] Usage: desktop-dev.sh [app|web]"

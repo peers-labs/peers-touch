@@ -328,23 +328,12 @@ func (s *CanonicalStore) ReplenishDirectOneTimePreKeys(
 			return err
 		}
 
-		var identityCount int64
-		if err := tx.Model(&IdentityKeyModel{}).
-			Where(
-				"actor_ptid = ? AND device_id = ?",
-				device.ActorPTID,
-				device.DeviceID,
-			).
-			Count(&identityCount).Error; err != nil {
-			return storeFailure("check Direct bundle identity", err)
-		}
-		if identityCount != 1 {
-			return domain.NewError(
-				domain.ErrorCodeNotFound,
-				"key_exchange.store.replenish_direct_one_time_pre_keys",
-				"device",
-				"has no Direct bundle",
-			)
+		if err := requireCompleteDirectBundle(
+			tx,
+			device,
+			"key_exchange.store.replenish_direct_one_time_pre_keys",
+		); err != nil {
+			return err
 		}
 		return insertCanonicalDirectOneTimePreKeys(
 			tx,
@@ -360,16 +349,28 @@ func (s *CanonicalStore) CountDirectOneTimePreKeys(
 	device domain.Endpoint,
 ) (int64, error) {
 	var count int64
-	if err := s.db.WithContext(ctx).
-		Model(&OneTimePreKeyModel{}).
-		Where(
-			"actor_ptid = ? AND device_id = ? AND consumed = ?",
-			device.ActorPTID,
-			device.DeviceID,
-			false,
-		).
-		Count(&count).Error; err != nil {
-		return 0, storeFailure("count Direct one-time pre-keys", err)
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := requireCompleteDirectBundle(
+			tx,
+			device,
+			"key_exchange.store.count_direct_one_time_pre_keys",
+		); err != nil {
+			return err
+		}
+		if err := tx.Model(&OneTimePreKeyModel{}).
+			Where(
+				"actor_ptid = ? AND device_id = ? AND consumed = ?",
+				device.ActorPTID,
+				device.DeviceID,
+				false,
+			).
+			Count(&count).Error; err != nil {
+			return storeFailure("count Direct one-time pre-keys", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
 	}
 	return count, nil
 }
@@ -1243,6 +1244,42 @@ func upsertCanonicalIdentityKey(
 		}
 		return nil
 	}
+}
+
+func requireCompleteDirectBundle(
+	tx *gorm.DB,
+	device domain.Endpoint,
+	operation string,
+) error {
+	var identityCount int64
+	if err := tx.Model(&IdentityKeyModel{}).
+		Where(
+			"actor_ptid = ? AND device_id = ?",
+			device.ActorPTID,
+			device.DeviceID,
+		).
+		Count(&identityCount).Error; err != nil {
+		return storeFailure("check Direct bundle identity", err)
+	}
+	var signedPreKeyCount int64
+	if err := tx.Model(&SignedPreKeyModel{}).
+		Where(
+			"actor_ptid = ? AND device_id = ?",
+			device.ActorPTID,
+			device.DeviceID,
+		).
+		Count(&signedPreKeyCount).Error; err != nil {
+		return storeFailure("check Direct bundle signed pre-key", err)
+	}
+	if identityCount != 1 || signedPreKeyCount != 1 {
+		return domain.NewError(
+			domain.ErrorCodeNotFound,
+			operation,
+			"device",
+			"has no complete Direct bundle",
+		)
+	}
+	return nil
 }
 
 func upsertCanonicalSignedPreKey(
