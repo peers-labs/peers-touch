@@ -1091,10 +1091,11 @@ deployment to station-four, station-five, and sixwin, and a Product
 Closure-only rerun. Dependent Windows Gates and PostgreSQL contention remain
 deferred.
 
-The 2026-09-13 continuation is carried by Draft PR `#111`. The current source
-checkpoint before this plan update is
-`2ff2cd9ca3cce83b501f08c16163f4c543ea9de2`; `peers-group-chat` and
-`peers-chat-high-chat` are clean and synchronized to the same commit/tree.
+PR `#111` merged as `2d54851f95994d717928105aca6470c30adf3657`.
+The post-merge function-first continuation checkpoint is
+`eb0c803afde939ca678f9bafccf0efdc7d4efe32` in `peers-group-chat`;
+`peers-chat-high-chat` remains clean at `7c7575001` and must be reconciled to
+the exact checkpoint before the next Native launch.
 CA-W6 resumes under Development Workflow function-first ordering: after
 exact-source deployment, the W8A submitted-command entrypoint and W8B Native
 typing runner each execute first as one bounded product-functional journey.

@@ -5680,14 +5680,14 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
 
 ### 2026-09-13 W8A/W8B continuation checkpoint
 
-- Draft PR `#111` contains the Development Workflow control plane, W8A/W8B
-  Acceptance repairs, the exact submitted-command fixture, and the synchronized
-  Native client history. The latest code checkpoint before this plan update is
-  `2ff2cd9ca3cce83b501f08c16163f4c543ea9de2`.
-- `peers-group-chat` and `peers-chat-high-chat` are clean at the same commit and
-  tree. The synchronization preserved both histories and retained the
-  Conversation Authority integration tree as canonical; no reset, force update,
-  or new worktree was used.
+- PR `#111` merged as `2d54851f95994d717928105aca6470c30adf3657`
+  with the Development Workflow control plane, W8A/W8B Acceptance repairs, the
+  exact submitted-command fixture, and synchronized Native client history.
+  The post-merge function-first checkpoint is
+  `eb0c803afde939ca678f9bafccf0efdc7d4efe32`.
+- `peers-group-chat` is clean at `eb0c803af`; `peers-chat-high-chat` remains
+  clean at `7c7575001`. Before the next Native launch, reconcile high-chat to
+  the exact current checkpoint without reset, force update, or a new worktree.
 - `chat-native-four` and `chat-native-five` were non-destructively deployed and
   attest build commit `1db3461b354a`. They do not yet attest the later
   `2ff2cd9ca` source checkpoint.
