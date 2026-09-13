@@ -13,9 +13,10 @@
 | Existing path | Current role | Target role |
 |---------------|--------------|-------------|
 | `env/peers-touch/<profile>/` | Profile and deploy topology | Remains canonical topology owner |
-| `<worktree>/.local/dev/profiles/` | Imported cache | Removed as allocation authority |
+| `<worktree>/.local/dev/profiles/` | Imported cache or authorized local compose profile | Cache is not authority; local profile requires a digest-bound receipt |
 | `<worktree>/.local/dev/active/` | Worktree profile pointer | Replaced by machine registry binding |
 | `<worktree>/.local/dev/pids|logs|data/` | Worktree/profile runtime state | Moves under workspace-scoped global dev root where applicable |
+| `<worktree>/.local/deploy/envs/` | Legacy imported deploy cache | Never deployment authority; deploy resolves a unique tracked-clean env-repository definition |
 | `/tmp/peers-touch-profile-leases/` | Acceptance/deploy live locks | Replaced by one machine control-plane lease root |
 | `~/.peers-touch/dev/registry.json` | Initial observed snapshot | Target machine allocation registry |
 | `~/Library/Application Support/PeersTouch/acceptance/` | Legacy Acceptance Evidence Store | One-time verified move to `~/.peers-touch/dev/acceptance/` |
@@ -32,6 +33,11 @@ permanent dual-read precedence between global registry and `.local/dev/active`.
 ├── registry.lock
 ├── work.json
 ├── work.lock
+├── authorizations/
+│   └── environment-creation/
+│       ├── pending/
+│       ├── claims/
+│       └── receipts/
 ├── acceptance/
 │   └── <workspaceId>/<gateId>/<runId>/
 ├── leases/
@@ -62,6 +68,8 @@ Target command behavior:
 | `make dev-status-all` | Show all worktree declarations beside observed leases |
 | `make dev-check` | Verify current worktree/branch/HEAD owns a live declaration |
 | `make dev-release` | Release the work declaration after cleanup |
+| `make profile-authorize <name> SLOT=<n>` | Human-only interactive grant for one exact local compose profile |
+| `make profile-init <name> SLOT=<n>` | Consume the exact pending grant and persist a digest-bound receipt |
 | `make profile <name>` | Update only current `workspaceId` binding |
 | `make config` | Resolve current binding + env definition + allocation |
 | `make status` | Show current worktree declared and observed state |
@@ -90,6 +98,16 @@ This permits immediate visibility without silently changing active runtimes.
 - Preserve each worktree's independent profile choice.
 - Do not select a default profile for unbound worktrees.
 - Do not assign slot 0 as a fallback.
+- Do not create, copy, derive, or register an environment-repository profile,
+  deploy environment, or local-only profile cache without explicit human
+  developer approval for the exact environment name and target. A missing
+  environment blocks execution and must be reported.
+- Agents must not run `make profile-authorize` or create authorization files.
+  Pending authorizations are short-lived and single-use; authorized local
+  profiles must continue to match their consumed receipt digest.
+- `PT_DEV_PROFILE_FILE` is reserved for a profile directly contained by a
+  declared Acceptance runtime profile root with
+  `acceptance-runtime-manifest` authority.
 - Do not activate untracked env profiles as deploy authority.
 - Do not move product data into the dev root.
 - Move Acceptance evidence into the dedicated `acceptance/` child; do not mix
@@ -135,6 +153,8 @@ Required negative fixtures:
 - Live process whose PID file points to another executable.
 - Missing registry, malformed registry, and unsupported schema.
 - Dirty/untracked environment repository definition.
+- Missing profile with no explicit human authorization to create it.
+- Expired, mismatched, reused, or digest-invalid environment authorization.
 
 ## 7. Acceptance Root Closure Contract
 

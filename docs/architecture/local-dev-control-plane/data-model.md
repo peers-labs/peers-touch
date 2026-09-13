@@ -78,8 +78,14 @@ interface ProfileDefinition {
   stationDeployEnvironment?: string;
   relayUrl?: string;
   relayDeployEnvironment?: string;
-  sourceCommit: string;
-  sourceState: 'tracked' | 'tracked-clean' | 'tracked-dirty' | 'untracked';
+  sourceCommit?: string;
+  authorizationReceipt?: string;
+  sourceState:
+    | 'tracked'
+    | 'tracked-clean'
+    | 'tracked-dirty'
+    | 'untracked'
+    | 'authorized-local';
 }
 ```
 
@@ -132,7 +138,48 @@ type WorkspaceActivity = 'active' | 'idle' | 'stale';
 An unregistered discovered worktree has no `WorkspaceActivity`; it is simply
 outside the managed cohort.
 
-## 5. Lease Record
+## 5. Environment Creation Authorization
+
+An interactive human grant is short-lived and exact:
+
+```ts
+interface EnvironmentCreationAuthorization {
+  schemaVersion: 1;
+  kind: 'peers-touch-environment-creation-authorization';
+  state: 'pending' | 'consumed';
+  workspaceId: string;
+  workspaceRoot: string;
+  profile: string;
+  target: {
+    mode: 'compose';
+    slot: number;
+  };
+  approvedBy: string;
+  approvedAt: string;
+  expiresAt: string;
+  nonce: string;
+  consumedAt?: string;
+  profileSha256?: string;
+}
+```
+
+Rules:
+
+- Only a human developer may create `pending` authorization through an
+  interactive terminal confirmation of the exact tuple.
+- An Agent may not invoke the grant command or write the authorization file.
+- `profile-init` atomically claims one pending authorization and produces one
+  immutable consumed receipt bound to the generated profile bytes.
+- A pending grant expires after 30 minutes and cannot be reused.
+- A machine-local profile whose current digest does not match a consumed
+  receipt is unavailable.
+- Git-tracked, clean env-repository profiles remain canonical and do not use
+  this machine-local authorization path.
+- `PT_DEV_PROFILE_FILE` is reserved for run-scoped Acceptance composition and
+  must declare `acceptance-runtime-manifest` authority plus an absolute profile
+  root containing the owned regular file.
+
+## 6. Lease Record
 
 ```ts
 interface LeaseRecord {
@@ -151,7 +198,7 @@ The lock is enforced by an OS advisory lock. JSON metadata is diagnostic and
 cannot establish a held lease without the live lock and matching process
 identity.
 
-## 6. Runtime Observation
+## 7. Runtime Observation
 
 ```ts
 interface RuntimeObservation {
@@ -172,7 +219,7 @@ Declared and observed state must remain separate. A declared slot with no
 listener is allocated but idle; a listener without a matching binding is an
 unowned runtime conflict.
 
-## 7. Conflict Model
+## 8. Conflict Model
 
 ```ts
 interface RegistryConflict {
@@ -195,7 +242,7 @@ interface RegistryConflict {
 Static slot reuse is reported during migration. It becomes blocking when two
 workspaces attempt to run local clients on the same slot.
 
-## 8. Development Work Intent
+## 9. Development Work Intent
 
 Development Workflow publishes machine-visible intent in:
 
@@ -217,7 +264,7 @@ Rules:
   fabricate process cleanup.
 - Secrets and raw runtime handles are invalid in both registry and work ledger.
 
-## 9. Atomicity
+## 10. Atomicity
 
 Registry mutation must:
 
@@ -231,7 +278,7 @@ Registry mutation must:
 
 Unknown schema versions or unknown mutation variants fail closed.
 
-## 10. Acceptance Evidence Root
+## 11. Acceptance Evidence Root
 
 The local developer default is:
 
@@ -294,7 +341,7 @@ auto-register the result. Every discovered worktree must either prove
 before `cut-over`. The readiness matrix belongs to the migration manifest, not
 the long-lived machine registry.
 
-### 9.1 Terminal State
+### 11.1 Terminal State
 
 Migration has no persistent terminal `legacy-removed` state. After the old
 directory is removed and absence is verified:

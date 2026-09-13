@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-13
-covered_docs_hash: 74963c0e1210c19661f8b23e1dd0890acb840878d137e9bedd7aa23d8c4a2ed6
+covered_docs_hash: b7d36ba0fe25c29d5a626a08b1c67902e33dba7aabfc98e6fd9723da30c638dd
 
 covered_docs:
   - AGENTS.md
@@ -12,6 +12,8 @@ covered_docs:
   - docs/architecture/quality-framework
   - docs/architecture/acceptance-framework
   - docs/architecture/development-workflow
+  - docs/architecture/local-dev-control-plane
+  - docs/global/local-dev-environment.md
   - docs/global/architecture.md
   - docs/client/desktop/base.md
   - docs/client/desktop/runtime-projections.md
@@ -175,3 +177,19 @@ records. `pt-dev-workflow`, its specialist Skills and `pt-completion-auditor`
 were updated; `pt-github-review/SKILL.md` needs no behavior change. The canonical
 skill check now enforces declaration, functional-fence, first-failure and
 release markers directly.
+
+Machine Dev Control Plane and Acceptance Evidence Store changes make
+repository-root debug artifacts, Station profile bypasses, and unauthorized
+environment creation explicit violations. `pt-github-review/SKILL.md` now
+treats all three as blocking hard rules, and `review/skill-check.sh` pins their
+markers. Local Dev architecture and the global environment specification are
+now covered freshness sources.
+
+No new golden fixture is required for unauthorized environment creation because
+the decisive approval is a human-created exact-tuple machine grant rather than
+diff content. Focused Local Dev tests prove non-interactive grant rejection,
+single-use consumption, untracked env rejection, and profile-digest binding.
+Remote deployment and Foundation restart now resolve only unique,
+Git-tracked-clean env-repository definitions; arbitrary profile-file overrides
+are confined to declared Acceptance runtime roots. Existing repository hygiene
+checks and profile-only startup invariants own the other two rules.

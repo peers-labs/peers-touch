@@ -570,11 +570,17 @@ make config
 
 If no appropriate profile exists:
 
-```bash
-make profile-init PROFILE=<name> SLOT=<unused-slot>
-make profile PROFILE=<name>
-make config
-```
+1. Stop with `PROFILE_UNAVAILABLE`.
+2. Request explicit human developer approval for the exact profile name,
+   target, and slot.
+3. Do not run `make profile-authorize` or create an authorization file.
+4. Only after the developer creates the exact pending grant may the Agent run:
+
+   ```bash
+   make profile-init PROFILE=<name> SLOT=<approved-slot>
+   make profile PROFILE=<name>
+   make config
+   ```
 
 Verify configured Station URL, mode, slot, and Desktop ports. Do not edit a
 shared active profile to fit one Gate when a dedicated profile is required.

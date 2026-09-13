@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -71,13 +74,20 @@ class FoundationStationRestartTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.repo_root = Path(self.temporary_directory.name)
-        profile = self.repo_root / f".local/dev/profiles/{PROFILE}.env"
-        deployment = (
-            self.repo_root / f".local/deploy/envs/{DEPLOYMENT}.env"
+        self.env_root = self.repo_root / "env"
+        self.profile = (
+            self.env_root / "peers-touch" / PROFILE / "profile.env.example"
         )
-        profile.parent.mkdir(parents=True)
-        deployment.parent.mkdir(parents=True)
-        profile.write_text(
+        self.deployment = (
+            self.env_root
+            / "peers-touch"
+            / PROFILE
+            / "deploy"
+            / f"{DEPLOYMENT}.env.example"
+        )
+        self.profile.parent.mkdir(parents=True)
+        self.deployment.parent.mkdir(parents=True)
+        self.profile.write_text(
             "\n".join(
                 (
                     f"PT_DEV_PROFILE={PROFILE}",
@@ -90,7 +100,7 @@ class FoundationStationRestartTest(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
-        deployment.write_text(
+        self.deployment.write_text(
             "\n".join(
                 (
                     "PT_DEPLOY_HOST=station.example",
@@ -102,9 +112,41 @@ class FoundationStationRestartTest(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
+        subprocess.run(["git", "init", "-q"], cwd=self.env_root, check=True)
+        subprocess.run(
+            ["git", "config", "user.name", "Foundation Test"],
+            cwd=self.env_root,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "foundation-test@example.invalid"],
+            cwd=self.env_root,
+            check=True,
+        )
+        subprocess.run(["git", "add", "."], cwd=self.env_root, check=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "test: add Foundation env"],
+            cwd=self.env_root,
+            check=True,
+        )
+        self.authorized_env = {
+            **AUTHORIZED_ENV,
+            "PT_ENV_REPO": str(self.env_root),
+        }
 
     def tearDown(self) -> None:
-        self.temporary_directory.cleanup()
+        path = Path(self.temporary_directory.name)
+        self.temporary_directory._finalizer.detach()
+        for attempt in range(5):
+            try:
+                shutil.rmtree(path)
+                return
+            except FileNotFoundError:
+                return
+            except OSError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.05)
 
     def test_commit_match_rejects_short_or_malformed_prefixes(self) -> None:
         self.assertTrue(
@@ -169,7 +211,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                AUTHORIZED_ENV,
+                self.authorized_env,
             ),
             patch.object(
                 foundation_station_restart,
@@ -228,7 +270,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                AUTHORIZED_ENV,
+                self.authorized_env,
             ),
             patch.object(
                 foundation_station_restart,
@@ -314,7 +356,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                AUTHORIZED_ENV,
+                self.authorized_env,
             ),
             patch.object(
                 foundation_station_restart,
@@ -364,7 +406,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                AUTHORIZED_ENV,
+                self.authorized_env,
             ),
             patch.object(
                 foundation_station_restart,
@@ -420,7 +462,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                AUTHORIZED_ENV,
+                self.authorized_env,
             ),
             patch.object(
                 foundation_station_restart,
@@ -438,10 +480,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         remote.assert_not_called()
 
     def test_restart_rejects_non_disposable_deployment(self) -> None:
-        deployment = (
-            self.repo_root / f".local/deploy/envs/{DEPLOYMENT}.env"
-        )
-        deployment.write_text(
+        self.deployment.write_text(
             "\n".join(
                 (
                     "PT_DEPLOY_HOST=station.example",
@@ -452,8 +491,18 @@ class FoundationStationRestartTest(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
+        subprocess.run(
+            ["git", "add", "."],
+            cwd=self.env_root,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-qm", "test: remove disposable marker"],
+            cwd=self.env_root,
+            check=True,
+        )
         with (
-            patch.dict(os.environ, AUTHORIZED_ENV),
+            patch.dict(os.environ, self.authorized_env),
             patch.object(
                 foundation_station_restart,
                 "_remote_command",
@@ -469,13 +518,36 @@ class FoundationStationRestartTest(unittest.TestCase):
                 )
         remote.assert_not_called()
 
+    def test_restart_rejects_dirty_env_definition(self) -> None:
+        self.deployment.write_text(
+            self.deployment.read_text(encoding="utf-8")
+            + "PT_DEPLOY_PORT=22\n",
+            encoding="utf-8",
+        )
+        with (
+            patch.dict(os.environ, self.authorized_env),
+            patch.object(
+                foundation_station_restart,
+                "_remote_command",
+            ) as remote,
+        ):
+            with self.assertRaisesRegex(
+                foundation_station_restart.FoundationStationRestartError,
+                "dirty or untracked",
+            ):
+                foundation_station_restart.restart_foundation_station(
+                    runtime_manifest(),
+                    repo_root=self.repo_root,
+                )
+        remote.assert_not_called()
+
     def test_restart_rejects_wrong_profile_before_remote_command(self) -> None:
         manifest = runtime_manifest()
         manifest["profile"] = {"resolvedName": "one"}
         with (
             patch.dict(
                 os.environ,
-                AUTHORIZED_ENV,
+                self.authorized_env,
             ),
             patch.object(
                 foundation_station_restart,
@@ -496,7 +568,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                AUTHORIZED_ENV,
+                self.authorized_env,
             ),
             patch.object(
                 foundation_station_restart,
@@ -539,7 +611,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                AUTHORIZED_ENV,
+                self.authorized_env,
             ),
             patch.object(
                 foundation_station_restart,
