@@ -1000,6 +1000,7 @@ async fn stream_station_turn(
                 &mut conversation_id,
                 &mut last_sequence,
             );
+            let data = bind_turn_stream_identity(data, &turn_id, &conversation_id);
             match live_stream_control(cancellation) {
                 LiveStreamControl::CancelTurn => {
                     if turn_id.is_empty() {
@@ -1041,6 +1042,7 @@ async fn stream_station_turn(
                 &mut conversation_id,
                 &mut last_sequence,
             );
+            let data = bind_turn_stream_identity(data, &turn_id, &conversation_id);
             if matches!(event.as_str(), "done" | "error" | "cancelled") {
                 terminal_received = true;
             }
@@ -1213,6 +1215,22 @@ fn update_turn_cursor(
     if sequence > *last_sequence {
         *last_sequence = sequence;
     }
+}
+
+fn bind_turn_stream_identity(mut data: Value, turn_id: &str, conversation_id: &str) -> Value {
+    let Some(payload) = data.as_object_mut() else {
+        return data;
+    };
+    if !turn_id.is_empty() && !payload.contains_key("turnId") && !payload.contains_key("turn_id") {
+        payload.insert("turnId".to_string(), json!(turn_id));
+    }
+    if !conversation_id.is_empty()
+        && !payload.contains_key("conversationId")
+        && !payload.contains_key("conversation_id")
+    {
+        payload.insert("conversationId".to_string(), json!(conversation_id));
+    }
+    data
 }
 
 fn replay_is_cancelled(cancellation: &watch::Receiver<bool>) -> bool {
@@ -2667,6 +2685,47 @@ mod tests {
         assert_eq!(event, "text");
         assert_eq!(data.get("type").and_then(Value::as_str), Some("text"));
         assert_eq!(data.get("text").and_then(Value::as_str), Some("hello"));
+    }
+
+    #[test]
+    fn live_stream_identity_binds_header_turn_to_forwarded_payload() {
+        let payload = bind_turn_stream_identity(
+            json!({ "type": "done", "model": "model-1" }),
+            "turn-1",
+            "conversation-1",
+        );
+
+        assert_eq!(
+            payload.get("turnId").and_then(Value::as_str),
+            Some("turn-1")
+        );
+        assert_eq!(
+            payload.get("conversationId").and_then(Value::as_str),
+            Some("conversation-1"),
+        );
+    }
+
+    #[test]
+    fn live_stream_identity_preserves_station_payload_identity() {
+        let payload = bind_turn_stream_identity(
+            json!({
+                "turn_id": "turn-station",
+                "conversationId": "conversation-station",
+            }),
+            "turn-header",
+            "conversation-request",
+        );
+
+        assert_eq!(
+            payload.get("turn_id").and_then(Value::as_str),
+            Some("turn-station"),
+        );
+        assert_eq!(
+            payload.get("conversationId").and_then(Value::as_str),
+            Some("conversation-station"),
+        );
+        assert!(payload.get("turnId").is_none());
+        assert!(payload.get("conversation_id").is_none());
     }
 
     #[test]
