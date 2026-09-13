@@ -1268,3 +1268,14 @@ that accepted bound at both validation hops without changing Conversation
 ownership, persistence, or Federation QoS. Focused interaction, race-enabled
 interaction, complete Conversation, and Go style checks pass. CA-W6 remains
 `UNPROVEN` until the corrected exact-source W8B journey succeeds.
+
+Exact-source Linux run
+`20260913T193744123578Z-eab0d94c15b1d61ed948a3977deba835`
+then proved Direct typing start and explicit stop at Bob in 51 ms each. The
+next immediate start was accepted by the HTTP API but suppressed by the
+ephemeral pulse ledger because its minimum-interval rule did not distinguish a
+real `false -> true` transition from a repeated active heartbeat. CA-W6 remains
+`UNPROVEN`. The owner-layer correction now makes explicit state transitions
+eligible immediately while preserving generation fences, stop priority,
+bounded memory, and zero durable writes. Focused, race-enabled, complete
+Conversation, and Go style checks pass.

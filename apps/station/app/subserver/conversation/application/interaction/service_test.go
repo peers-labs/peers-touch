@@ -349,6 +349,19 @@ func TestServiceTypingIsMembershipBoundedEphemeralAndIdempotent(t *testing.T) {
 	if err != nil || !result.Accepted || len(typing.events) != 2 {
 		t.Fatalf("stop result=%+v events=%d err=%v", result, len(typing.events), err)
 	}
+	restarted := stop
+	restarted.Generation = 4
+	restarted.ExpiresAt = first.ExpiresAt.Add(2 * time.Second)
+	restarted.IsTyping = true
+	result, err = service.SubmitTyping(context.Background(), restarted)
+	if err != nil || !result.Accepted || len(typing.events) != 3 {
+		t.Fatalf(
+			"restarted typing result=%+v events=%d err=%v",
+			result,
+			len(typing.events),
+			err,
+		)
+	}
 	if _, err := service.SubmitTyping(
 		context.Background(),
 		throttled,
@@ -358,12 +371,12 @@ func TestServiceTypingIsMembershipBoundedEphemeralAndIdempotent(t *testing.T) {
 
 	clock.Advance(10 * time.Second)
 	devices.active[bob] = false
-	restarted := first
-	restarted.Generation = 1
-	restarted.ExpiresAt = clock.Now().Add(6 * time.Second)
+	inactiveRestart := first
+	inactiveRestart.Generation = 1
+	inactiveRestart.ExpiresAt = clock.Now().Add(6 * time.Second)
 	if _, err := service.SubmitTyping(
 		context.Background(),
-		restarted,
+		inactiveRestart,
 	); !interaction.IsCode(err, interaction.ErrorCodeUnauthorized) {
 		t.Fatalf("inactive endpoint error = %v", err)
 	}

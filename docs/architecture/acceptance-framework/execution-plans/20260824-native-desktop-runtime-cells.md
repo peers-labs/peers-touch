@@ -5970,3 +5970,13 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   design. The focused interaction regression, race-enabled interaction suite,
   complete Conversation suite, and Go style check pass; the next action is the
   corrected exact-source W8B journey.
+- Exact-source Linux run
+  `20260913T193744123578Z-eab0d94c15b1d61ed948a3977deba835`
+  proved the clock-skew correction: Direct typing start and explicit stop both
+  reached Bob in 51 ms. The next immediate start was accepted by the HTTP API
+  but not dispatched because `MemoryTypingPulseLedger` throttled every
+  `is_typing=true` pulse within the minimum interval, including the legitimate
+  `false -> true` state transition. The owner-layer correction now throttles
+  only repeated active heartbeats while preserving stop priority and
+  generation fencing. Focused, race-enabled, complete Conversation, and Go
+  style checks pass; the next action is the corrected exact-source W8B journey.
