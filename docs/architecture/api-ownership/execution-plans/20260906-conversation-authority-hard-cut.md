@@ -1332,3 +1332,29 @@ before further product assertions because the diagnostic SQL queried removed
 The evidence helper must read and order by `ptid`, retaining the external JSON
 field `readerPtid`. Runtime attestation and cleanup passed; CA-W6 remains
 `PARTIAL/UNPROVEN`.
+
+Exact-source Linux run
+`20260913T205014307722Z-e8e9ca6e38c5ba98f4aec6166d5cc96a`
+passed all Direct and Group typing lifecycle assertions through disconnect,
+then failed at `removeGroupMember`. Station `four` returned
+`CONVERSATION_INVALID_ARGUMENT` from membership preparation because that path
+still enumerated the authority-local `actor_devices` table. The committed
+Group contained Alice, Bob, and Charlie, but the local device table correctly
+contained only Alice.
+
+Accepted MP-D19 requires send, genesis, and membership preparation to consume
+signed Home Station endpoint manifests. The owner-layer correction passes
+server-resolved verified routes into membership prepare and submit, binds
+manifest set and stable-state hashes into the Authority Plan, and removes
+authority-local remote-device lookup from this path. It adds no remote Actor
+device row and no routing fallback. Cleanup and exact-source attestation
+passed; CA-W6 remains `PARTIAL/UNPROVEN`.
+
+The source correction now uses one signed-manifest submit-route owner for both
+local HTTP and forwarded Federation commands. DDD regression proves
+Alice-local/Bob-and-Charlie-manifest-only Group membership removal with zero
+remote Actor device rows, and proves changed manifest stable state supersedes
+the plan with zero Conversation mutation. The complete Conversation suite,
+race suite, `go vet`, Go style, and `git diff --check` pass. CA-W6 remains
+`PARTIAL/UNPROVEN` until this checkpoint is deployed and the bounded W8B Native
+journey reaches `FUNCTIONAL_PASS`.

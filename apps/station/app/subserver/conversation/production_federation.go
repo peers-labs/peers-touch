@@ -275,8 +275,15 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 	if err != nil {
 		return productionAuthorityRejection(wireCommand, err), nil
 	}
-	if mapped.Membership == nil {
-		mapped.VerifiedRoutes = verifiedRoutes
+	mapped.VerifiedRoutes, mapped.ManifestStateHash, err =
+		p.composition.productionSubmitCommandRoutes(
+			ctx,
+			plan,
+			mapped.Membership != nil,
+			verifiedRoutes,
+		)
+	if err != nil {
+		return productionAuthorityRejection(wireCommand, err), nil
 	}
 	commandHash, err := valueobject.NewHash(proposal.GetCommandSha256())
 	if err != nil {

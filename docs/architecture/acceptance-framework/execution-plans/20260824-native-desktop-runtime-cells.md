@@ -6031,3 +6031,31 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   The evidence helper must read and order by `ptid`, retaining the external
   JSON field `readerPtid`. Runtime attestation and cleanup passed; W8B remains
   `UNPROVEN`.
+- Exact-source Linux run
+  `20260913T205014307722Z-e8e9ca6e38c5ba98f4aec6166d5cc96a`
+  passed all Direct and Group typing lifecycle assertions through disconnect,
+  then failed at `removeGroupMember`. Station `four` returned
+  `CONVERSATION_INVALID_ARGUMENT` from membership preparation because that path
+  still enumerated the authority-local `actor_devices` table. The committed
+  Group contained Alice, Bob, and Charlie, but the local device table correctly
+  contained only Alice.
+- Accepted MP-D19 requires send, genesis, and membership preparation to consume
+  signed Home Station endpoint manifests. The owner-layer correction passes
+  server-resolved verified routes into membership prepare and submit, binds
+  manifest set and stable-state hashes into the Authority Plan, and removes
+  authority-local remote-device lookup from this path. It adds no remote Actor
+  device row and no routing fallback. Cleanup and exact-source attestation
+  passed; W8B remains `UNPROVEN`.
+- Concurrency decision for this MP-D19 correction is serial. The membership
+  request contract, production HTTP/Federation adapters, DDD fixtures, commit,
+  deployment, and W8B rerun share one Go package and one exact-source boundary;
+  no independent write lane can avoid overlapping those contracts. Read-only
+  inspection remains parallel-safe.
+- The source correction now binds both manifest hashes during prepare, refreshes
+  one shared signed-manifest route snapshot for local and forwarded submit,
+  rejects changed stable directory state before mutation, and filters that full
+  snapshot only when validating the locked pre-transition actor set. Focused
+  manifest-only remote removal and stale-state tests, the complete Conversation
+  suite, the complete Conversation race suite, `go vet`, Go style, and
+  `git diff --check` pass. This is source readiness only; W8B still requires the
+  checkpoint deployment and bounded Native functional rerun.

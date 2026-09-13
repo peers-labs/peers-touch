@@ -400,6 +400,52 @@ func TestProductionEndpointRoutesUseSignedRemoteManifest(t *testing.T) {
 		}
 	})
 
+	t.Run("membership submit refreshes the plan actor manifests", func(t *testing.T) {
+		server := newProductionManifestTestServer(
+			alice,
+			bob,
+			localManifest,
+			validRemoteManifest,
+			remotePrivateKey.Public().(ed25519.PublicKey),
+		)
+		aliceEndpoint := valueobject.Endpoint{
+			Actor:  alice,
+			Device: "alice-device",
+		}
+		bobEndpoint := valueobject.Endpoint{
+			Actor:  bob,
+			Device: "bob-device",
+		}
+		plan := entity.AuthorityPlan{
+			Requester: aliceEndpoint,
+			Changes: []entity.MembershipChange{{
+				Action: entity.MembershipActionRemoveActor,
+				Actor:  bob,
+			}},
+			PreEndpoints:  []valueobject.Endpoint{aliceEndpoint, bobEndpoint},
+			PostEndpoints: []valueobject.Endpoint{aliceEndpoint},
+		}
+
+		routes, stateHash, err := server.composition.productionSubmitCommandRoutes(
+			context.Background(),
+			&plan,
+			true,
+			nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, expectedStateHash, err := productionEndpointManifestSetHashes(
+			[]*actormodel.ActorEndpointManifest{localManifest, validRemoteManifest},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(routes) != 2 || stateHash != expectedStateHash {
+			t.Fatalf("membership submit routes = %+v, state hash = %x", routes, stateHash)
+		}
+	})
+
 	for _, testCase := range []struct {
 		name   string
 		mutate func(*actormodel.ActorEndpointManifest)
