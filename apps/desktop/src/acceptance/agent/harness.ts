@@ -5444,6 +5444,49 @@ async function runFoundationAttachmentRejectedScenario(input: {
       ?? removeAction.getAttribute('title')
       ?? '';
     const draftTextAfterRejection = textarea.value;
+    // #region debug-point I-L:attachment-removal-visibility
+    const rejectedDraftRect = rejectedDraft.getBoundingClientRect();
+    const removeActionRect = removeAction.getBoundingClientRect();
+    const rejectedDraftStyle = window.getComputedStyle(rejectedDraft);
+    const removeActionStyle = window.getComputedStyle(removeAction);
+    const expectedRemovalText = i18n.t(
+      'chat.input.attachmentRemove',
+      { ns: 'chat' },
+    );
+    await reportFoundationAttachmentTimeoutDebug(
+      'I-L',
+      'rejected-removal-snapshot',
+      {
+        locale: i18n.language,
+        attachmentDraftCount: document.querySelectorAll(
+          '[data-pt-agent-composer-attachment]',
+        ).length,
+        rejectedDraftCount: document.querySelectorAll(
+          '[data-pt-agent-composer-attachment-status="rejected"]',
+        ).length,
+        removeActionCount: document.querySelectorAll(
+          '[data-pt-agent-composer-attachment-remove]',
+        ).length,
+        rejectedDraftConnected: rejectedDraft.isConnected,
+        rejectedDraftRectCount: rejectedDraft.getClientRects().length,
+        rejectedDraftWidth: Math.round(rejectedDraftRect.width),
+        rejectedDraftHeight: Math.round(rejectedDraftRect.height),
+        rejectedDraftDisplay: rejectedDraftStyle.display,
+        rejectedDraftVisibility: rejectedDraftStyle.visibility,
+        removeActionConnected: removeAction.isConnected,
+        removeActionRectCount: removeAction.getClientRects().length,
+        removeActionWidth: Math.round(removeActionRect.width),
+        removeActionHeight: Math.round(removeActionRect.height),
+        removeActionDisplay: removeActionStyle.display,
+        removeActionVisibility: removeActionStyle.visibility,
+        removeActionOpacity: removeActionStyle.opacity,
+        removalTextPresent: removalText.length > 0,
+        removalTextMatches: removalText === expectedRemovalText,
+        selectedAttachmentMatches:
+          rejectedDraft.dataset.ptAgentComposerAttachment === attachmentId,
+      },
+    );
+    // #endregion
     removeAction.click();
     await waitFor(
       () => !Array.from(
@@ -5455,6 +5498,22 @@ async function runFoundationAttachmentRejectedScenario(input: {
       'attachment removal',
       10_000,
     );
+    // #region debug-point I-L:attachment-removal-completed
+    await reportFoundationAttachmentTimeoutDebug(
+      'I-L',
+      'rejected-removal-completed',
+      {
+        selectedDraftConnected: rejectedDraft.isConnected,
+        selectedRemoveActionConnected: removeAction.isConnected,
+        attachmentPresentAfterRemoval: Array.from(
+          document.querySelectorAll<HTMLElement>(
+            '[data-pt-agent-composer-attachment]',
+          ),
+        ).some((element) =>
+          element.dataset.ptAgentComposerAttachment === attachmentId),
+      },
+    );
+    // #endregion
 
     const deletionReadback =
       await foundationAttachmentDeletionReadback(objectRef);

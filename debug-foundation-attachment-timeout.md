@@ -203,3 +203,31 @@ submits a Turn and cannot observe a Station rejection.
   inside `withFoundationCapabilitiesDisabled` and remove its single-binding
   mutation path. Product ToolCall behavior, provider configuration, timeouts,
   matrix rows, and assertions remain unchanged.
+
+## 2026-09-13 Rejected Attachment Removal Visibility
+
+### Reproduction
+
+- Exact source:
+  `2daee9556a68974c4a3cec688a31f366f3db975c`.
+- C08 run:
+  `20260913T074523829296Z-d20e989bf3f387f7324b708643290a0a`.
+- The eleven primary AS-F05 assertions and every setup step passed, including
+  upload, tombstone readback, typed Station rejection, rejected draft, and
+  localized error surface.
+- The independent `BASE-ATTACHMENT_REJECTED` oracle failed only
+  `localizedRemovalVisible`. Gate-process and Provisioner cleanup passed.
+
+### Hypotheses
+
+| ID | Hypothesis | Likelihood | Effort | Expected signal |
+|----|------------|------------|--------|-----------------|
+| I | The remove action exists but its rendered box is temporarily zero when sampled. | High | Low | Connected button with matching label and zero client rects/size. |
+| J | The remove action is visible but its accessible label differs from the active locale expectation. | Medium | Low | Positive geometry with unequal label and expected text. |
+| K | The rejected draft is present but hidden by parent style or detached between waits. | Medium | Low | Rejected draft has zero geometry or disconnected child. |
+| L | Multiple attachment drafts exist and the global selector samples a stale hidden draft. | Medium | Low | More than one rejected/remove element with mixed visibility. |
+
+The next exact-source run records sanitized draft/button geometry, connection,
+computed visibility, locale, selector counts, and label equality immediately
+before the production remove click. No behavior, timeout, Gate assertion, or
+cleanup rule changes during this diagnostic iteration.
