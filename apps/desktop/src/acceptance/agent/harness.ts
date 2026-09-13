@@ -10143,6 +10143,149 @@ function reportFoundationApprovalRetryCancellationDebug(
 }
 // #endregion
 
+// #region debug-point A-E:foundation-readiness-timeout
+function reportFoundationF01Debug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7790/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-readiness-timeout',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:foundationDirectProbe:AS-F01',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+
+async function reportFoundationF01FailureReadback(
+  conversationId: string,
+  turnId: string,
+): Promise<void> {
+  try {
+    const conversationReadback =
+      await foundationConversationReadback(conversationId);
+    if (!turnId) {
+      await reportFoundationF01Debug('C-E', 'failure-readback', {
+        turnIdPresent: false,
+        conversationStatus: conversationReadback.conversation.status,
+        messages: conversationReadback.messages.map((message) => ({
+          role: message.role,
+          status: message.status,
+          turnIdPresent: Boolean(message.turnId),
+          errorPresent: message.errorJson.length > 0,
+        })),
+      });
+      return;
+    }
+
+    const turnEvidence = await foundationTurnEvidence(conversationId, turnId);
+    const evidence = evidenceRecord(turnEvidence, 'foundationF01TurnEvidence');
+    const diagnostics = evidenceRecord(
+      evidence.diagnostics,
+      'foundationF01Diagnostics',
+    );
+    const replay = evidenceRecord(
+      diagnostics.replay,
+      'foundationF01DiagnosticReplay',
+    );
+    const attempts = foundationTurnAttemptFacts(turnEvidence);
+    const latestAttempt = attempts[attempts.length - 1];
+    const latestAttemptRecord = latestAttempt
+      ? evidenceRecord(latestAttempt.record, 'foundationF01Attempt')
+      : null;
+    const runtimeSnapshotValue = latestAttemptRecord
+      ? evidenceField(
+        latestAttemptRecord,
+        'runtimeSnapshot',
+        'runtime_snapshot',
+      )
+      : null;
+    const runtimeSnapshot = runtimeSnapshotValue
+      ? evidenceRecord(runtimeSnapshotValue, 'foundationF01RuntimeSnapshot')
+      : null;
+    const replayEvents = optionalEvidenceArray(
+      replay.events,
+      'foundationF01ReplayEvents',
+    ).map((value) => {
+      const event = evidenceRecord(value, 'foundationF01ReplayEvent');
+      const dataValue = event.data;
+      const data = dataValue && typeof dataValue === 'object'
+        && !Array.isArray(dataValue)
+        ? dataValue as Record<string, unknown>
+        : {};
+      return {
+        eventType: String(
+          evidenceField(event, 'eventType', 'event_type')
+          ?? event.event
+          ?? event.type
+          ?? '',
+        ),
+        sequence: Number(event.sequence ?? event.seq ?? 0),
+        stage: String(data.stage ?? event.stage ?? ''),
+      };
+    });
+    const toolCalls = optionalEvidenceArray(
+      evidenceField(replay, 'toolCalls', 'tool_calls'),
+      'foundationF01ToolCalls',
+    );
+    await reportFoundationF01Debug('A-E', 'failure-readback', {
+      turnIdPresent: true,
+      conversationStatus: conversationReadback.conversation.status,
+      replayStatus: foundationTurnStatusName(replay.status),
+      replayKeys: Object.keys(replay).sort(),
+      attemptCount: attempts.length,
+      attemptStatuses: attempts.map((attempt) =>
+        foundationTurnStatusName(attempt.status)),
+      attemptErrorCodes: attempts.map((attempt) => attempt.errorCode),
+      runtime: runtimeSnapshot
+        ? {
+            providerId: evidenceField(
+              runtimeSnapshot,
+              'providerId',
+              'provider_id',
+            ),
+            modelId: evidenceField(
+              runtimeSnapshot,
+              'modelId',
+              'model_id',
+            ),
+            thinkingMode: evidenceField(
+              runtimeSnapshot,
+              'thinkingMode',
+              'thinking_mode',
+            ),
+          }
+        : null,
+      diagnosticEventCount: replayEvents.length,
+      diagnosticEvents: replayEvents,
+      providerStarted: replayEvents.some(
+        (event) => event.stage === 'provider_call_started',
+      ),
+      toolCallCount: toolCalls.length,
+      recoveryKeys: Object.keys(replay)
+        .filter((key) => key.toLowerCase().includes('recovery'))
+        .sort(),
+      messages: conversationReadback.messages.map((message) => ({
+        role: message.role,
+        status: message.status,
+        turnIdMatches: message.turnId === turnId,
+        errorPresent: message.errorJson.length > 0,
+      })),
+    });
+  } catch (error) {
+    await reportFoundationF01Debug('C-E', 'failure-readback-error', {
+      errorCode: observedErrorCode(error),
+    });
+  }
+}
+// #endregion
+
 // #region debug-point A-D:as-f03-cancel-race
 function reportFoundationF03CancelDebug(
   hypothesisId: string,
@@ -19346,6 +19489,13 @@ export function installAcceptanceHarness(): void {
               authoritativeAgent,
               capabilitySessionId,
               async (toolIsolation) => {
+                await reportFoundationF01Debug('A-E', 'scenario-started', {
+                  platform,
+                  locale,
+                  sampleId,
+                  disabledBindingCount: toolIsolation.disabledBindingCount,
+                  readyCapabilityCount: toolIsolation.readyCapabilityCount,
+                });
                 const conversation = await api.createAgentConversation({
                   agent_id: authoritativeAgentId,
                   title: `Foundation ${sampleId}`,
@@ -19367,14 +19517,52 @@ export function installAcceptanceHarness(): void {
                   effort: 'low',
                   thinkingMode: 'disabled',
                   clientCapabilitySessionId: capabilitySessionId,
+                  onEvent: (event, events) => {
+                    void reportFoundationF01Debug(
+                      'A-E',
+                      'turn-event-observed',
+                      {
+                        eventType: event.event,
+                        sequence: Number(event.data.seq ?? 0),
+                        stage: String(event.data.stage ?? ''),
+                        terminal:
+                          classifyAgentTurnTerminalEvent({
+                            event: event.event,
+                            data: event.data,
+                          }),
+                        eventCount: events.length,
+                        sourceDelivery: event.sourceDelivery ?? null,
+                      },
+                    );
+                  },
                 });
                 const result = await observed.result;
+                const turnId = observedTurnId(result.events);
+                await reportFoundationF01Debug('A-E', 'turn-settled', {
+                  ok: result.ok,
+                  error: result.error,
+                  turnIdPresent: turnId.length > 0,
+                  eventCount: result.events.length,
+                  observedEvents: result.events.map((event) => ({
+                    eventType: event.event,
+                    sequence: Number(event.data.seq ?? 0),
+                    stage: String(event.data.stage ?? ''),
+                    terminal:
+                      classifyAgentTurnTerminalEvent({
+                        event: event.event,
+                        data: event.data,
+                      }),
+                  })),
+                });
                 if (!result.ok) {
+                  await reportFoundationF01FailureReadback(
+                    conversation.conversation_id,
+                    turnId,
+                  );
                   throw new Error(
                     result.error || 'agent.acceptance.foundationTurnFailed',
                   );
                 }
-                const turnId = observedTurnId(result.events);
                 const terminal = [...result.events].reverse().find((event) =>
                   classifyAgentTurnTerminalEvent(event) === 'completed');
                 if (!turnId || !terminal) {
