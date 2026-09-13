@@ -121,6 +121,35 @@ def wait_until(
     raise GateError(f"timed out waiting for {description}{suffix}")
 
 
+def bundled_avatar_evidence_is_valid(
+    evidence: dict[str, dict[str, Any]],
+) -> bool:
+    for identity_evidence in evidence.values():
+        rendered = [
+            snapshot
+            for snapshot in identity_evidence.values()
+            if isinstance(snapshot, dict)
+        ]
+        if not rendered:
+            return False
+        if any(
+            not is_bundled_square_avatar(
+                str(snapshot.get("declared") or ""),
+            )
+            or snapshot.get("rendered") != snapshot.get("declared")
+            or snapshot.get("complete") is not True
+            or int(snapshot.get("naturalWidth") or 0) <= 0
+            for snapshot in rendered
+        ):
+            return False
+        if len({
+            str(snapshot.get("declared") or "")
+            for snapshot in rendered
+        }) != 1:
+            return False
+    return True
+
+
 def send_text(client: TauriSession, text: str) -> dict[str, Any]:
     composer = client.find_element('[data-pt-text-input="chat-composer"]', 30)
     client.execute_script(
@@ -774,24 +803,7 @@ class NativeTwoClientGate(AcceptanceGate):
                 identity_evidence[client_name] = snapshot
             evidence[identity] = identity_evidence
 
-        valid = all(
-            all(
-                isinstance(snapshot, dict)
-                and is_bundled_square_avatar(
-                    str(snapshot.get("declared") or ""),
-                )
-                and snapshot.get("rendered") == snapshot.get("declared")
-                and snapshot.get("complete") is True
-                and int(snapshot.get("naturalWidth") or 0) > 0
-                for snapshot in identity_evidence.values()
-            )
-            and len({
-                str(snapshot.get("declared") or "")
-                for snapshot in identity_evidence.values()
-                if isinstance(snapshot, dict)
-            }) == 1
-            for identity_evidence in evidence.values()
-        )
+        valid = bundled_avatar_evidence_is_valid(evidence)
         self.assert_condition(
             "demo_avatar_bundled",
             valid,

@@ -5494,6 +5494,16 @@ Runtime preflight on 2026-09-13:
 - Acceptance Gap Detector correctly remains `UNPROVEN`: exact-source Native
   receiver evidence has not run. Hard Rules pass. Existing debugger probes and
   their two local notes remain outside the W8A/W8B commit scope.
+- Current-source Native run
+  `20260913T044313706662Z-7989d692b28abfa2f4bac52c5ce92758`
+  proved both client launches, authentication, source/tree/Station identity,
+  persistent storage isolation, conversation opening, peer bundled-avatar
+  rendering, and complete cleanup. It stopped before message delivery because
+  the Gate treated the intentionally absent self participant avatar as a
+  failure. The business Gate now requires every seeded actor to render
+  correctly on at least one remote client and preserves cross-client source
+  equality whenever multiple renderings exist; the focused 20-test suite
+  passes. Product delivery remains `UNPROVEN` until the corrected Gate reruns.
 
 Concurrency Decision: hybrid. The integrator serially owns authoritative docs,
 shared proto, generated artifacts, composition/registry files, final reconciliation,
