@@ -240,6 +240,10 @@ fn run_cycle(
         engine.resume_message_draft_once(token, super::engine::now_unix_ms())
     );
     run_step!(
+        "submitted command reconciliation",
+        engine.reconcile_submitted_commands_once(token, super::engine::now_unix_ms())
+    );
+    run_step!(
         "command dispatch",
         engine.dispatch_command_once(
             token,

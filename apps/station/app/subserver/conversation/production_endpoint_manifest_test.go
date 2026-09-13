@@ -265,6 +265,15 @@ func (productionManifestTestRuntime) RegisterReceivers(
 	return errors.New("receiver registration is outside this test")
 }
 
+func (productionManifestTestRuntime) DeliverConversationTyping(
+	context.Context,
+	*federationdelivery.Frame,
+) (federationdelivery.Result, error) {
+	return federationdelivery.Result{}, errors.New(
+		"typing delivery is outside this test",
+	)
+}
+
 func (r productionManifestTestRuntime) CallPeer(
 	_ context.Context,
 	call federationruntime.PeerCall,

@@ -3,6 +3,7 @@ package interaction_test
 import (
 	"context"
 	"crypto/sha256"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -79,6 +80,57 @@ func (d *testDeviceDirectory) IsActive(
 	endpoint valueobject.Endpoint,
 ) (bool, error) {
 	return d.active[endpoint], nil
+}
+
+type testTypingRouteDirectory struct {
+	devices *testDeviceDirectory
+}
+
+func (d testTypingRouteDirectory) ListActiveEndpoints(
+	_ context.Context,
+	actors []valueobject.PTID,
+) ([]interaction.EndpointRoute, error) {
+	allowed := make(map[valueobject.PTID]struct{}, len(actors))
+	for _, actor := range actors {
+		allowed[actor] = struct{}{}
+	}
+	routes := make([]interaction.EndpointRoute, 0, len(d.devices.active))
+	for endpoint, active := range d.devices.active {
+		if !active {
+			continue
+		}
+		if _, exists := allowed[endpoint.Actor]; !exists {
+			continue
+		}
+		routes = append(routes, interaction.EndpointRoute{
+			Endpoint:    endpoint,
+			HomeStation: "station:local",
+		})
+	}
+	sort.Slice(routes, func(left int, right int) bool {
+		return routes[left].Endpoint.Key() < routes[right].Endpoint.Key()
+	})
+	return routes, nil
+}
+
+type testTypingDispatcher struct {
+	receiver *interaction.Service
+}
+
+func (d *testTypingDispatcher) DispatchTyping(
+	ctx context.Context,
+	target valueobject.StationID,
+	signal interaction.FederatedTypingSignal,
+) (interaction.FederatedTypingResult, error) {
+	if target != "station:local" || d.receiver == nil {
+		return interaction.FederatedTypingResult{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"test.typing_dispatch",
+			"target",
+			"is not the local test Station",
+		)
+	}
+	return d.receiver.ReceiveFederatedTyping(ctx, "station:local", signal)
 }
 
 type testReadCursorAdvancer struct {
@@ -272,9 +324,11 @@ func TestServiceTypingIsMembershipBoundedEphemeralAndIdempotent(t *testing.T) {
 	if err != nil || !result.Accepted {
 		t.Fatalf("first typing result=%+v err=%v", result, err)
 	}
+	expectedPublished := first
+	expectedPublished.Scope = "recipient-publish"
 	if len(typing.events) != 1 ||
 		typing.events[0].recipient != "ptid:alice" ||
-		typing.events[0].pulse != first {
+		typing.events[0].pulse != expectedPublished {
 		t.Fatalf("typing events = %+v", typing.events)
 	}
 	replay, err := service.SubmitTyping(context.Background(), first)
@@ -458,13 +512,11 @@ func newInteractionFixture(
 	if len(readers) > 0 {
 		reader = readers[0]
 	}
-	devices := &testDeviceDirectory{
-		active: map[valueobject.Endpoint]bool{
-			aliceOne: true,
-			aliceTwo: true,
-			bob:      true,
-		},
+	activeDevices := make(map[valueobject.Endpoint]bool, len(reader.snapshot.Devices))
+	for _, device := range reader.snapshot.Devices {
+		activeDevices[device.Endpoint] = device.Active
 	}
+	devices := &testDeviceDirectory{active: activeDevices}
 	readCursors := &testReadCursorAdvancer{}
 	receipts := &testReceiptRecorder{}
 	forwarder := &testDeliveryReceiptForwarder{}
@@ -493,6 +545,15 @@ func newInteractionFixture(
 	if err != nil {
 		t.Fatal(err)
 	}
+	dispatcher := &testTypingDispatcher{}
+	service, err = service.BindFederatedTyping(
+		testTypingRouteDirectory{devices: devices},
+		dispatcher,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatcher.receiver = service
 
 	return service, clock, devices, typing, readCursors, forwarder
 }
