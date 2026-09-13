@@ -25,6 +25,7 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
     CURRENT_PROFILE_REQUIRED_ASSERTIONS,
     CURRENT_PROFILE_GATE_ID,
     NativeTwoClientGate,
+    bundled_avatar_evidence_is_valid,
 )
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
@@ -111,6 +112,39 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         )
         self.environment = patch.dict(os.environ, environment)
         self.environment.start()
+
+    def test_avatar_evidence_requires_each_actor_on_a_remote_client(self) -> None:
+        alice = "data:image/svg+xml;base64,alice"
+        bob = "data:image/svg+xml;base64,bob"
+        evidence = {
+            "alice": {
+                "alice": None,
+                "bob": {
+                    "declared": alice,
+                    "rendered": alice,
+                    "complete": True,
+                    "naturalWidth": 36,
+                },
+            },
+            "bob": {
+                "alice": {
+                    "declared": bob,
+                    "rendered": bob,
+                    "complete": True,
+                    "naturalWidth": 36,
+                },
+                "bob": None,
+            },
+        }
+
+        with patch(
+            "tooling.acceptance.gates.chat.native_two_client_runner."
+            "is_bundled_square_avatar",
+            return_value=True,
+        ):
+            self.assertTrue(bundled_avatar_evidence_is_valid(evidence))
+            evidence["bob"]["alice"] = None
+            self.assertFalse(bundled_avatar_evidence_is_valid(evidence))
 
     def tearDown(self) -> None:
         self.environment.stop()
