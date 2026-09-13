@@ -6022,3 +6022,12 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   Alice/Bob/Charlie member set before proceeding, and continue to fail closed
   on timeout or a permanent product error. Cleanup and exact-source Linux
   attestation passed; W8B remains `UNPROVEN`.
+- Exact-source Linux run
+  `20260913T203959427403Z-c037f553f13e623df00b8f40cde9c419`
+  proved the bounded Group projection reconciliation and resumed Direct typing,
+  including start and stop. It then failed in the Gate's zero-write readback
+  before further product assertions because the diagnostic SQL queried removed
+  `conversation_read_cursors.reader_ptid`; the canonical schema stores `ptid`.
+  The evidence helper must read and order by `ptid`, retaining the external
+  JSON field `readerPtid`. Runtime attestation and cleanup passed; W8B remains
+  `UNPROVEN`.

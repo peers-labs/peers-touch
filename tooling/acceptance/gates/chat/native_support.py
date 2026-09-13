@@ -797,9 +797,9 @@ SELECT json_build_object(
   ), '[]'::json),
   'readCursors', COALESCE((
     SELECT json_agg(json_build_object(
-      'readerPtid', reader_ptid,
+      'readerPtid', ptid,
       'lastReadSequence', last_read_sequence
-    ) ORDER BY reader_ptid)
+    ) ORDER BY ptid)
     FROM conversation_read_cursors
     WHERE conversation_id = {conversation}
   ), '[]'::json)

@@ -1025,6 +1025,9 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("SshTransport(", support)
         self.assertIn("SshTarget(", support)
+        self.assertIn("'readerPtid', ptid", support)
+        self.assertIn("ORDER BY ptid", support)
+        self.assertNotIn("reader_ptid", support)
         self.assertNotIn("StrictHostKeyChecking=no", support)
 
     def test_shared_federation_requires_one_id_for_every_actor(self) -> None:
