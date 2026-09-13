@@ -7877,6 +7877,26 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   loop, no timeout increase, and no provider substitution. Local verification
   passes Desktop `622/622`, Agent `419/419`, strict check, restart `13/13`,
   scenario runner `51/51`, static `85/85`, production build, and diff hygiene.
+- The exact-source diagnostic checkpoint
+  `949db8bfeafb4118db853e4cf872407073592434` passed C08 run
+  `20260913T044659655544Z-0ea49420274739d9fa5702f8291f78b6`.
+  Fully authorized same-source Foundation run
+  `20260913T044822781627Z-fdf5f8888571425b8f35372d39250d24`
+  crossed all AS-F06 tuples and both Browser AS-F07 locale tuples, then advanced
+  Browser English `BASE-INTERRUPTED` through persisted interruption, the typed
+  outcome, localized visible error, and visible Recover action before failing
+  at recovery-attempt creation. Provisioner cleanup completed
+  `DONE / PROVEN / passed`. A subsequent same-source run
+  `20260913T053738347832Z-0991bc6cc7ae542d9870d9c75bb5bb47`
+  reproduced the remaining AS-F06 fault-control race: the first durable text
+  arrived at 2245 ms, terminal at 2247 ms, and the real proxy cut acknowledged
+  at 2248 ms. The local correction retains the TCP proxy as sole fault owner
+  but performs the loopback cut request synchronously, so Browser JavaScript
+  cannot consume terminal data between the acknowledged text prefix and the
+  completed external socket cut. Existing post-ack transport disconnect remains
+  only a buffered-frame discard. Desktop strict check, Agent static `85/85`,
+  and diff hygiene pass; exact-source post-fix C08/Foundation proof remains
+  pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

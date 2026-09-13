@@ -258,6 +258,47 @@ The AA-AD snapshot is decisive:
 - the store projection and Turn identity are present;
 - only `errorElementPresent=false`.
 
+## Iteration 6: Interrupted Recovery Attempt
+
+Exact-source Foundation run
+`20260913T044822781627Z-fdf5f8888571425b8f35372d39250d24`
+on `949db8bfeafb4118db853e4cf872407073592434` crossed all AS-F06
+tuples and both Browser AS-F07 locale tuples. Browser English
+`BASE-INTERRUPTED` then proved the interrupted message, typed outcome, visible
+localized error, and visible Recover action before failing with
+`agent.acceptance.foundationInterruptedRecoveryAttemptMissing`. Provisioner
+cleanup completed `DONE / PROVEN / passed`.
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| AE | The Recover click reaches `retryMessage`, but its streaming/operation guard returns without starting a retry. | High | Low | `retry-entry` is present with `retryBlocked=true` and no `retry-api-start`. |
+| AF | The visible message is no longer in the selected conversation store when the click is handled. | Medium | Low | The pre-click snapshot has a session mismatch or missing source message/Turn. |
+| AG | The retry request starts but Station rejects it before creating a new attempt. | High | Low | `retry-api-start` is followed by `retry-api-error` and no attempt delta. |
+| AH | The DOM click is observed but React does not dispatch the recovery handler. | Low | Low | Harness click count is one while no `retry-entry` is emitted. |
+| AI | Retry succeeds, but the evidence readback remains stale for the full bounded wait. | Low | Medium | `retry-api-complete` is present while the final attempt count remains unchanged. |
+
+The next instrumentation records only session equality, source-message/Turn
+presence, streaming state, operation state, recovery-record state, click count,
+retry API stage, and attempt counts. Existing `chat.ts` retry instrumentation
+is reused through the restored `approval-expiry-retry` collector; no product
+logic, assertion, timeout, or cleanup rule changes in this diagnostic.
+
+Exact-source rerun
+`20260913T053738347832Z-0991bc6cc7ae542d9870d9c75bb5bb47`
+did not reach `BASE-INTERRUPTED`. Browser English AS-F06 observed its first
+durable text at 2245 ms, requested the proxy cut, and consumed the terminal
+event at 2247 ms while the loopback control request was still pending. The
+proxy acknowledged at 2248 ms, after the terminal projection had removed the
+recovery record. This confirms the fault-control race without weakening the
+AS-F06 partial-prefix requirement.
+
+The local correction keeps the run-local TCP proxy as the sole fault owner but
+makes the Browser-to-loopback cut request synchronous. JavaScript therefore
+cannot consume a terminal frame between the first real text event and the
+proxy's completed socket cut. The existing post-ack
+`disconnectTransport()` remains only a buffered-frame discard. No timeout,
+prompt, provider, tuple, retry, or assertion changes are introduced.
+
 AA is confirmed. AB, AC, and AD are rejected. The user-visible primary error
 copy already renders `presentedError`, but only the collapsed Diagnostics copy
 owns `data-pt-agent-message-error-text`. The correction places that stable

@@ -7669,8 +7669,10 @@ async function requestFoundationF06TransportCut(
   if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') {
     throw new Error('agent.acceptance.foundationFaultControlInvalid');
   }
-  const response = await fetch(url, { method: 'POST' });
-  if (!response.ok) {
+  const request = new XMLHttpRequest();
+  request.open('POST', url, false);
+  request.send();
+  if (request.status < 200 || request.status >= 300) {
     throw new Error('agent.acceptance.foundationFaultControlRejected');
   }
 }
@@ -13917,9 +13919,61 @@ async function runFoundationInterruptedScenario(input: {
   const observeRecovery = () => {
     recoveryClickCount += 1;
   };
+  const recoveryChatBefore = useChatStore.getState();
+  const recoveryOperationBefore =
+    recoveryChatBefore.operations[handoff.conversationId];
+  const recoveryRecordBefore =
+    useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
+  // #region debug-point AE-AI:interrupted-recovery-click
+  await reportFoundationF06TerminalRaceDebug(
+    'AE-AI',
+    'interrupted-recovery-click-started',
+    {
+      ...input,
+      currentSessionMatches:
+        recoveryChatBefore.currentSessionKey === handoff.conversationId,
+      sourceMessagePresent: recoveryChatBefore.messages.some(
+        (message) => message.id === sourceAssistant.messageId,
+      ),
+      sourceTurnMatches: recoveryChatBefore.messages.some(
+        (message) =>
+          message.id === sourceAssistant.messageId
+          && message.turnId === handoff.turnId,
+      ),
+      isStreaming: recoveryChatBefore.isStreaming,
+      operationPresent: recoveryOperationBefore !== undefined,
+      operationRunState: recoveryOperationBefore?.runState ?? 'MISSING',
+      operationTurnMatches:
+        recoveryOperationBefore?.turnId === handoff.turnId,
+      recoveryRecordPresent: recoveryRecordBefore !== undefined,
+      recoveryPhase: recoveryRecordBefore?.phase ?? 'MISSING',
+    },
+  );
+  // #endregion
   recoveryAction.addEventListener('click', observeRecovery);
   recoveryAction.click();
   recoveryAction.removeEventListener('click', observeRecovery);
+  await Promise.resolve();
+  // #region debug-point AE-AI:interrupted-recovery-click
+  const recoveryChatAfter = useChatStore.getState();
+  const recoveryOperationAfter =
+    recoveryChatAfter.operations[handoff.conversationId];
+  await reportFoundationF06TerminalRaceDebug(
+    'AE-AI',
+    'interrupted-recovery-click-dispatched',
+    {
+      ...input,
+      recoveryClickCount,
+      currentSessionMatches:
+        recoveryChatAfter.currentSessionKey === handoff.conversationId,
+      isStreaming: recoveryChatAfter.isStreaming,
+      operationPresent: recoveryOperationAfter !== undefined,
+      operationRunState: recoveryOperationAfter?.runState ?? 'MISSING',
+      operationTurnMatches:
+        recoveryOperationAfter?.turnId === handoff.turnId,
+    },
+  );
+  // #endregion
 
   const recoveryDeadline = Date.now() + 30_000;
   let recoveryEvidence = await foundationTurnEvidence(
@@ -13944,6 +13998,31 @@ async function runFoundationInterruptedScenario(input: {
     || recoveryAttempts.length !== sourceAttempts.length + 1
     || recoveryAttempt.attemptId === sourceAttempt.attemptId
   ) {
+    const recoveryChatAtDeadline = useChatStore.getState();
+    const recoveryOperationAtDeadline =
+      recoveryChatAtDeadline.operations[handoff.conversationId];
+    // #region debug-point AE-AI:interrupted-recovery-attempt
+    await reportFoundationF06TerminalRaceDebug(
+      'AE-AI',
+      'interrupted-recovery-attempt-missing',
+      {
+        ...input,
+        recoveryClickCount,
+        attemptCountBefore: sourceAttempts.length,
+        attemptCountAfter: recoveryAttempts.length,
+        sourceAttemptStillLatest:
+          recoveryAttempt?.attemptId === sourceAttempt.attemptId,
+        currentSessionMatches:
+          recoveryChatAtDeadline.currentSessionKey === handoff.conversationId,
+        isStreaming: recoveryChatAtDeadline.isStreaming,
+        operationPresent: recoveryOperationAtDeadline !== undefined,
+        operationRunState:
+          recoveryOperationAtDeadline?.runState ?? 'MISSING',
+        operationTurnMatches:
+          recoveryOperationAtDeadline?.turnId === handoff.turnId,
+      },
+    );
+    // #endregion
     throw new Error(
       'agent.acceptance.foundationInterruptedRecoveryAttemptMissing',
     );

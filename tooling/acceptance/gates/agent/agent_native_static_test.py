@@ -420,6 +420,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "requestFoundationF06TransportCut(input.faultControlUrl)",
             handoff_publish,
         )
+        fault_control_start = self.source.index(
+            "async function requestFoundationF06TransportCut",
+        )
+        fault_control_end = self.source.index(
+            "async function finalizeFoundationF06Preparation",
+            fault_control_start,
+        )
+        fault_control = self.source[fault_control_start:fault_control_end]
+        self.assertIn("request.open('POST', url, false)", fault_control)
+        self.assertNotIn("await fetch(", fault_control)
         transport_disconnect = self.source.index(
             "controller.disconnectTransport()",
             fault_request,
