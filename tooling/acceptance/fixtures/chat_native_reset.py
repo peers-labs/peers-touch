@@ -1011,12 +1011,6 @@ ON CONFLICT (federation_id, station_peer_id) DO UPDATE SET
   status = EXCLUDED.status;
 LOCK TABLE touch_actor IN SHARE ROW EXCLUSIVE MODE;
 LOCK TABLE follows IN SHARE ROW EXCLUSIVE MODE;
-DELETE FROM touch_actor
-WHERE origin = 'remote_cached'
-  AND (
-    ptid = {_sql_literal(peer.ptid)}
-    OR federated_handle = {_sql_literal(peer.federated_handle)}
-  );
 INSERT INTO touch_actor (
   id,
   ptid,
@@ -1063,7 +1057,28 @@ INSERT INTO touch_actor (
   (extract(epoch FROM clock_timestamp() + interval '1 hour') * 1000)::bigint,
   clock_timestamp(),
   clock_timestamp()
-);
+)
+ON CONFLICT (federated_handle) DO UPDATE SET
+  ptid = EXCLUDED.ptid,
+  namespace = EXCLUDED.namespace,
+  preferred_username = EXCLUDED.preferred_username,
+  name = EXCLUDED.name,
+  type = EXCLUDED.type,
+  summary = EXCLUDED.summary,
+  icon = EXCLUDED.icon,
+  image = EXCLUDED.image,
+  email = EXCLUDED.email,
+  password_hash = EXCLUDED.password_hash,
+  kind = EXCLUDED.kind,
+  url = EXCLUDED.url,
+  home_station_peer_id = EXCLUDED.home_station_peer_id,
+  home_station_domain = EXCLUDED.home_station_domain,
+  visibility = EXCLUDED.visibility,
+  locator_seq = EXCLUDED.locator_seq,
+  cached_until_unix_ms = EXCLUDED.cached_until_unix_ms,
+  updated_at = EXCLUDED.updated_at
+WHERE touch_actor.origin = 'remote_cached'
+  AND touch_actor.ptid = EXCLUDED.ptid;
 WITH actor_pair AS (
   SELECT
     actor.id AS actor_id,
@@ -1173,10 +1188,21 @@ ON CONFLICT (owner_ptid, peer_ptid) DO UPDATE SET
   accepted_at = EXCLUDED.accepted_at;
 DO $acceptance$
 DECLARE
+  remote_actor_count integer;
   relationship_edge_count integer;
   accepted_request_count integer;
   federation_membership_count integer;
 BEGIN
+  SELECT count(*) INTO remote_actor_count
+  FROM touch_actor
+  WHERE ptid = {_sql_literal(peer.ptid)}
+    AND federated_handle = {_sql_literal(peer.federated_handle)}
+    AND home_station_peer_id = {_sql_literal(peer.home_station_peer_id)}
+    AND origin = 'remote_cached';
+  IF remote_actor_count <> 1 THEN
+    RAISE EXCEPTION 'cross-Station remote Actor projection is incomplete';
+  END IF;
+
   SELECT count(*) INTO relationship_edge_count
   FROM follows
   WHERE (follower_id, following_id) IN (

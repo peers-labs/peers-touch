@@ -5990,3 +5990,25 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   Direct lifecycle checks and uses that authorized Conversation as the switch
   target. It does not add friendship state, weaken `create_direct` policy, or
   change product behavior.
+- Exact-source Linux run
+  `20260913T200454558427Z-b3ff47afc56c7e699932520f250be3ce`
+  reached all three authenticated Native clients at
+  `47fa9efe15df5f39b4d53f4cbfcbb38258c614d9`, then failed before Direct
+  lifecycle proof when the required three-member Group was prepared. Station
+  `four` request `0f682ff7-4185-4c32-a221-9379af09d746` failed with
+  `actor_identity.resolve_actor_home_station: home_station_peer_id: is not
+  available from Actor Identity`. Readback proves the Fixture materialized
+  Alice locally and Bob as a remote cache entry on `four`, but omitted
+  Charlie's actual `fiveArm` PTID; `fiveArm` held Bob and Charlie locally and
+  Alice remotely. The nearby Direct bundle 403 belongs to independent
+  background Direct-session loading and is not the Group failure.
+- This is a Fixture ownership gap against the already accepted
+  Alice/Bob/Charlie contact baseline, not a Conversation routing defect. The
+  correction expands the bound-actor Fixture to every declared cross-Station
+  actor pair and makes repeated remote-cache seeding preserve the existing
+  Actor row and relationships. Conversation continues to require Actor
+  Identity-owned Home Station routing and signed endpoint manifests; no
+  fallback route, remote Actor device row, or Social policy weakening is
+  permitted. The combined Fixture owner, reset, Native runtime contract, and
+  interaction-static regression cohort passes 118 tests; W8B remains
+  `UNPROVEN` pending the clean exact-source Native rerun.

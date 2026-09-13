@@ -553,6 +553,13 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         self.assertIn("INSERT INTO social_friend_requests", sql)
         self.assertIn("INSERT INTO social_relationship_projections", sql)
         self.assertNotIn("INSERT INTO friend_chat_friend_requests", sql)
+        self.assertNotIn("DELETE FROM touch_actor", sql)
+        self.assertIn("ON CONFLICT (federated_handle) DO UPDATE SET", sql)
+        self.assertIn("touch_actor.origin = 'remote_cached'", sql)
+        self.assertIn(
+            "cross-Station remote Actor projection is incomplete",
+            sql,
+        )
         self.assertIn("authority_confirmed", sql)
         self.assertIn("canonical accepted Friend Request projection", sql)
         self.assertIn("Chat fixture Federation membership", sql)

@@ -22,6 +22,7 @@ from tooling.acceptance.core.provisioning import (
     utc_now,
 )
 from tooling.acceptance.fixtures.chat_native_reset import (
+    FixtureActorRecord,
     acceptance_station_environment,
     read_fixture_actor,
     seed_cross_station_contact,
@@ -298,39 +299,38 @@ def prepare_bound_friendships(
     role_targets: Mapping[str, tuple[str, str]],
     actors: tuple[ActorIdentity, ...],
 ) -> None:
-    if "alice" not in role_targets or "bob" not in role_targets:
-        return
-    if role_targets["alice"] == role_targets["bob"]:
+    if len(set(role_targets.values())) < 2:
         return
 
     by_role = {actor.role: actor for actor in actors}
-    alice = by_role["alice"]
-    bob = by_role["bob"]
-    alice_station_url, alice_environment = role_targets["alice"]
-    bob_station_url, bob_environment = role_targets["bob"]
-    alice_record = read_fixture_actor(
-        alice_station_url,
-        alice_environment,
-        ACTOR_ACCOUNTS["alice"],
-    )
-    bob_record = read_fixture_actor(
-        bob_station_url,
-        bob_environment,
-        ACTOR_ACCOUNTS["bob"],
-    )
+    records: dict[str, FixtureActorRecord] = {}
+    for role, (station_url, environment) in role_targets.items():
+        record = read_fixture_actor(
+            station_url,
+            environment,
+            ACTOR_ACCOUNTS[role],
+        )
+        identity = by_role.get(role)
+        if identity is None or identity.ptid != record.ptid:
+            raise BlockedError(
+                reason=(
+                    f"Fixture actor identity drifted while preparing contacts "
+                    f"for role {role}"
+                ),
+                resource=f"fixture-actor:{role}",
+            )
+        records[role] = record
 
-    seed_cross_station_contact(
-        alice_station_url,
-        alice_environment,
-        alice_record,
-        bob_record,
-    )
-    seed_cross_station_contact(
-        bob_station_url,
-        bob_environment,
-        bob_record,
-        alice_record,
-    )
+    for actor_role, (station_url, environment) in role_targets.items():
+        for peer_role, peer_target in role_targets.items():
+            if actor_role == peer_role or peer_target == (station_url, environment):
+                continue
+            seed_cross_station_contact(
+                station_url,
+                environment,
+                records[actor_role],
+                records[peer_role],
+            )
 
 
 def produce_actor_manifest(

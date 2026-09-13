@@ -1288,3 +1288,26 @@ Production correctly denied that unrelated Direct because the authorized
 fixture establishes only the Alice-Bob friendship. The Gate correction reuses
 its already-required three-member Group as the alternate session; no Social
 relationship, Conversation authorization, or product behavior is weakened.
+
+Exact-source Linux run
+`20260913T200454558427Z-b3ff47afc56c7e699932520f250be3ce`
+reached all three authenticated Native clients at
+`47fa9efe15df5f39b4d53f4cbfcbb38258c614d9`, then failed before Direct
+lifecycle proof when the required three-member Group was prepared. Station
+`four` request `0f682ff7-4185-4c32-a221-9379af09d746` failed with
+`actor_identity.resolve_actor_home_station: home_station_peer_id: is not
+available from Actor Identity`. Readback proves the Fixture materialized Alice
+locally and Bob remotely on `four` but omitted Charlie's actual `fiveArm`
+identity route. The nearby Direct bundle 403 belongs to independent background
+Direct-session loading and is not the Group failure.
+
+The accepted Alice/Bob/Charlie contact baseline already requires every
+cross-Station participant to be materialized at each observing Station. This
+is therefore a Fixture owner correction: seed every declared cross-Station
+actor pair and preserve remote Actor row identity when the same remote peer is
+seeded for multiple local actors. Conversation continues to require Actor
+Identity-owned Home Station routing and signed endpoint manifests; no fallback
+route, remote Actor device row, or Social policy weakening is permitted.
+The combined Fixture owner, reset, Native runtime contract, and
+interaction-static regression cohort passes 118 tests; CA-W6 remains
+`PARTIAL/UNPROVEN` pending the clean exact-source W8B rerun.
