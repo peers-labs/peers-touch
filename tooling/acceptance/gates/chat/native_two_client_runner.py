@@ -978,15 +978,11 @@ class NativeTwoClientGate(AcceptanceGate):
 
     def prove_expected_command_reconciliation(
         self,
-        conversation_id: str,
     ) -> dict[str, Any] | None:
         target = self.expected_reconciliation_target()
         if target is None:
             return None
-        if target["conversationId"] != conversation_id:
-            raise GateError(
-                "expected submitted command belongs to a different conversation"
-            )
+        conversation_id = target["conversationId"]
         actor = target["actor"]
         receiver = next(name for name in self.clients if name != actor)
 
@@ -1352,18 +1348,16 @@ class NativeTwoClientGate(AcceptanceGate):
                 and len({client.gateway_port for client in self.clients.values()}) == 2
                 and len({client.storage_root for client in self.clients.values()}) == 2,
             )
+            if self.expected_reconciliation_target() is not None:
+                self.step(
+                    "command.reconciliation",
+                    self.prove_expected_command_reconciliation,
+                    self.expected_reconciliation_target()["actor"],
+                )
             conversation_id = self.step(
                 "conversation.open",
                 self.open_conversation,
             )
-            if self.expected_reconciliation_target() is not None:
-                self.step(
-                    "command.reconciliation",
-                    lambda: self.prove_expected_command_reconciliation(
-                        conversation_id,
-                    ),
-                    self.expected_reconciliation_target()["actor"],
-                )
             self.step(
                 "avatar.bundled",
                 self.prove_demo_avatar_sources,
