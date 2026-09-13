@@ -10,6 +10,7 @@
     "apps/desktop/src/components/GlobalOperationTray.tsx",
     "apps/desktop/src/components/OpStatusTray.tsx",
     "apps/desktop/src/kernel/identityRuntime.ts",
+    "apps/desktop/src/runtimes/chatRuntime.ts",
     "apps/desktop/src/services/desktop_api.ts",
     "apps/desktop/src/services/eventStream.ts",
     "apps/desktop/src/services/identityHandlers.ts",

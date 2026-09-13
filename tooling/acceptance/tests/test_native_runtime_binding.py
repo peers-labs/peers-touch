@@ -6,7 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import (
     AppLaunchMetadata,
@@ -124,11 +124,15 @@ class SyntheticRemoteNativeLifecycle:
             "activate_process",
             "focused_control",
             "reveal_file_chooser_location_to_process",
+            "select_file_chooser_path_to_process",
         }:
             return {
                 "kind": (
                     "text-field"
-                    if operation == "reveal_file_chooser_location_to_process"
+                    if operation in {
+                        "reveal_file_chooser_location_to_process",
+                        "select_file_chooser_path_to_process",
+                    }
                     else "window"
                 ),
                 "actualFrontmostPid": payload["processId"],
@@ -228,10 +232,16 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         revealed_control = (
             binding.native_adapter.reveal_file_chooser_location_to_process(712)
         )
+        path_control = binding.native_adapter.select_file_chooser_path_to_process(
+            712,
+            r"C:\acceptance\fixture.png",
+        )
         activated_control = binding.native_adapter.activate_and_focused_control(712)
         control = binding.native_adapter.focused_control(712)
         self.assertIsNotNone(revealed_control)
         self.assertEqual(revealed_control.kind, "text-field")
+        self.assertIsNotNone(path_control)
+        self.assertEqual(path_control.kind, "text-field")
         self.assertTrue(activated_control.frontmost)
         self.assertTrue(control.frontmost)
         self.assertEqual(control.actual_frontmost_pid, 712)
@@ -279,6 +289,19 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             (
                 "execute_adapter",
                 (
+                    "select_file_chooser_path_to_process",
+                    {
+                        "processId": 712,
+                        "path": r"C:\acceptance\fixture.png",
+                    },
+                ),
+            ),
+            lifecycle.calls,
+        )
+        self.assertIn(
+            (
+                "execute_adapter",
+                (
                     "post_key_sequence_to_process",
                     {
                         "processId": 712,
@@ -316,6 +339,29 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         self.assertEqual(
             binding.native_file_sha256("alice", staged),
             "b" * 64,
+        )
+
+    def test_windows_clipboard_write_retries_one_broker_failure(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            r"C:\acceptance\actors\alice\fixture.png"
+        )
+        lifecycle.execute_adapter = Mock(
+            side_effect=[DriverError("broker timeout"), {}],
+        )
+        binding = WindowsNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+
+        binding.native_adapter.write_clipboard(b"replacement")
+
+        self.assertEqual(lifecycle.execute_adapter.call_count, 2)
+        lifecycle.execute_adapter.assert_called_with(
+            "write_clipboard",
+            {
+                "content": base64.b64encode(b"replacement").decode("ascii"),
+            },
         )
 
     def test_remote_binding_delegates_session_endpoint_and_cleanup(self) -> None:

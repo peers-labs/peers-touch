@@ -5,6 +5,7 @@ import os
 import shutil
 import socket
 import subprocess
+import tempfile
 from pathlib import Path
 
 from tooling.acceptance.core._paths import REPO_ROOT
@@ -118,7 +119,10 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         gateway_base = 3330 + slot * 100
         renderer_base = 3510 + slot * 100
         webdriver_base = 4445 + slot * 10
-        run_root = Path(f"/tmp/pt-chat-native-{run_id}-{gate_id}")
+        run_root = (
+            Path(tempfile.gettempdir())
+            / f"pt-chat-native-{run_id}-{gate_id}"
+        )
         clients = tuple(
             ClientRuntime(
                 actor=(
@@ -427,7 +431,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             run_id=manifest.run_id,
             station_url=station_url,
             deployment_environment=deployment_environment,
-            roles=("alice",),
+            roles=("alice", "bob"),
             credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
             reset_authorized=True,
         )

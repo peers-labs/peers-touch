@@ -70,6 +70,18 @@ func (s *ConversationService) SubscribeTurnEvents(
 	conversationID string,
 	turnID string,
 ) (<-chan struct{}, int64, *TurnEventReplayFence, func(), error) {
+	return s.SubscribeTurnAttemptEvents(ctx, ptid, conversationID, turnID, "")
+}
+
+// SubscribeTurnAttemptEvents binds replay and snapshot projection to one
+// retained attempt. An empty attempt ID preserves current-attempt behavior.
+func (s *ConversationService) SubscribeTurnAttemptEvents(
+	ctx context.Context,
+	ptid string,
+	conversationID string,
+	turnID string,
+	attemptID string,
+) (<-chan struct{}, int64, *TurnEventReplayFence, func(), error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, 0, nil, nil, err
@@ -77,6 +89,7 @@ func (s *ConversationService) SubscribeTurnEvents(
 	ptid = strings.TrimSpace(ptid)
 	conversationID = strings.TrimSpace(conversationID)
 	turnID = strings.TrimSpace(turnID)
+	attemptID = strings.TrimSpace(attemptID)
 	var count int64
 	if err := db.WithContext(ctx).Table("agent_turns AS turn").
 		Joins("JOIN agent_conversations AS conversation ON conversation.id = turn.conversation_id").
@@ -123,8 +136,16 @@ func (s *ConversationService) SubscribeTurnEvents(
 		return nil, 0, nil, nil, turnEventSubscriptionLimitError("turn")
 	}
 
-	fence, err := loadCurrentTurnEventFence(db.WithContext(ctx), turnID)
+	fence, err := loadTurnEventFence(db.WithContext(ctx), turnID, attemptID)
 	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, 0, nil, nil, errcode.New(
+				errcode.AgentNotFound,
+				http.StatusNotFound,
+				"turn attempt not found",
+				err,
+			)
+		}
 		return nil, 0, nil, nil, errcode.New(
 			errcode.AgentInternal,
 			http.StatusInternalServerError,
@@ -276,6 +297,24 @@ func (s *ConversationService) GetConversation(ctx context.Context, ptid, convers
 	ptid = strings.TrimSpace(ptid)
 	if conversationID == "" || ptid == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "ptid and conversation_id are required", nil)
+	}
+	var ownership persistence.Conversation
+	if err := db.WithContext(ctx).
+		Select("actor_ptid").
+		Where("id = ?", conversationID).
+		Take(&ownership).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "conversation not found", err)
+		}
+		return nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to inspect conversation ownership",
+			err,
+		)
+	}
+	if ownership.ActorPTID != ptid {
+		return nil, errcode.NewOwnershipForbiddenActor("conversation", conversationID)
 	}
 	var row persistence.Conversation
 	if err := db.WithContext(ctx).Where("id = ? AND actor_ptid = ?", conversationID, ptid).First(&row).Error; err != nil {
@@ -1303,8 +1342,9 @@ func (s *ConversationService) getTurnEventSnapshotAtFence(
 }
 
 type TurnEventReplayFence struct {
-	attemptID string
-	startedAt time.Time
+	attemptID      string
+	startedAt      time.Time
+	includeUnbound bool
 }
 
 func loadCurrentTurnEventFence(db *gorm.DB, turnID string) (*TurnEventReplayFence, error) {
@@ -1320,6 +1360,29 @@ func loadCurrentTurnEventFence(db *gorm.DB, turnID string) (*TurnEventReplayFenc
 		return nil, err
 	}
 	return &TurnEventReplayFence{
+		attemptID:      strings.TrimSpace(attempt.ID),
+		startedAt:      attempt.StartedAt,
+		includeUnbound: true,
+	}, nil
+}
+
+func loadTurnEventFence(
+	db *gorm.DB,
+	turnID string,
+	attemptID string,
+) (*TurnEventReplayFence, error) {
+	attemptID = strings.TrimSpace(attemptID)
+	if attemptID == "" {
+		return loadCurrentTurnEventFence(db, turnID)
+	}
+	var attempt persistence.TurnAttempt
+	if err := db.
+		Select("id", "started_at").
+		Where("id = ? AND turn_id = ?", attemptID, turnID).
+		First(&attempt).Error; err != nil {
+		return nil, err
+	}
+	return &TurnEventReplayFence{
 		attemptID: strings.TrimSpace(attempt.ID),
 		startedAt: attempt.StartedAt,
 	}, nil
@@ -1330,6 +1393,9 @@ func applyTurnEventFence(query *gorm.DB, table string, fence *TurnEventReplayFen
 		return query
 	}
 	prefix := table + "."
+	if !fence.includeUnbound {
+		return query.Where(prefix+"attempt_id = ?", fence.attemptID)
+	}
 	return query.Where(
 		"("+prefix+"attempt_id = ? OR ("+prefix+"attempt_id = '' AND "+prefix+"created_at >= ?))",
 		fence.attemptID,

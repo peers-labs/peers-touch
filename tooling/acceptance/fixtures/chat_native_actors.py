@@ -119,6 +119,7 @@ def reset_fixture(
     deployment_environment: str,
     actors: Iterable[str],
     *,
+    reset_authorized: bool | None = None,
     deadline_monotonic: float | None = None,
     cancellation: threading.Event | None = None,
 ) -> None:
@@ -135,6 +136,12 @@ def reset_fixture(
     )
     operation_deadline = effective_deadline - termination_reserve
     try:
+        child_environment = os.environ.copy()
+        if reset_authorized is not None:
+            if reset_authorized:
+                child_environment["CHAT_ACCEPTANCE_RESET"] = "1"
+            else:
+                child_environment.pop("CHAT_ACCEPTANCE_RESET", None)
         process = subprocess.Popen(
             [
                 sys.executable,
@@ -146,6 +153,7 @@ def reset_fixture(
                 *accounts,
             ],
             cwd=REPO_ROOT,
+            env=child_environment,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -228,7 +236,10 @@ def _terminate_reset_process(
     try:
         process.communicate(timeout=min(0.25, remaining))
     except subprocess.TimeoutExpired:
-        _signal_reset_process_group(process, signal.SIGKILL)
+        if os.name == "posix":
+            _signal_reset_process_group(process, signal.SIGKILL)
+        else:
+            process.kill()
         remaining = max(0.0, deadline_monotonic - time.monotonic())
         try:
             process.communicate(timeout=remaining)
@@ -243,9 +254,9 @@ def _kill_remaining_reset_group(
     process: subprocess.Popen[str],
     deadline_monotonic: float,
 ) -> None:
-    _signal_reset_process_group(process, signal.SIGKILL)
     if os.name != "posix":
         return
+    _signal_reset_process_group(process, signal.SIGKILL)
     while True:
         try:
             os.killpg(process.pid, 0)
@@ -299,9 +310,6 @@ def prepare_bound_friendships(
     role_targets: Mapping[str, tuple[str, str]],
     actors: tuple[ActorIdentity, ...],
 ) -> None:
-    if len(set(role_targets.values())) < 2:
-        return
-
     by_role = {actor.role: actor for actor in actors}
     records: dict[str, FixtureActorRecord] = {}
     for role, (station_url, environment) in role_targets.items():
@@ -384,7 +392,11 @@ def produce_bound_actor_manifest(
         ).append(role)
     for (station_url, deployment_environment), target_roles in grouped_roles.items():
         verify_reset_target(station_url, deployment_environment)
-        reset_fixture(deployment_environment, target_roles)
+        reset_fixture(
+            deployment_environment,
+            target_roles,
+            reset_authorized=reset_authorized,
+        )
     actors = tuple(
         resolve_actor_identity(
             role_targets[role][0],

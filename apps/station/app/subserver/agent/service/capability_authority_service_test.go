@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -791,7 +792,19 @@ func TestCapabilityBackfillKnowledgeSurvivesDatabaseRestart(t *testing.T) {
 	}
 }
 
-func TestCapabilityToolManifestSeedUsesClientExecutionIdentity(t *testing.T) {
+func TestCapabilityToolManifestSeedUsesCanonicalExecutionRequirements(t *testing.T) {
+	builtin := capabilityToolManifestSeed(&domain.ToolDefinition{
+		Name:        "skills_list",
+		Description: "List available skills",
+		JSONSchema:  json.RawMessage(`{"type":"object"}`),
+	}).manifest
+	if builtin.GetSourceKind() !=
+		model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_BUILTIN_TOOL ||
+		len(builtin.GetRequiredRuntimeCapabilities()) != 1 ||
+		builtin.GetRequiredRuntimeCapabilities()[0] != "native-tools" {
+		t.Fatalf("builtin tool manifest must require native-tools: %+v", builtin)
+	}
+
 	fileRead := capabilityToolManifestSeed(&domain.ToolDefinition{
 		Name:        "local_file_read",
 		Description: "Read one local file",
@@ -801,6 +814,7 @@ func TestCapabilityToolManifestSeedUsesClientExecutionIdentity(t *testing.T) {
 		fileRead.GetVersion() != "1" ||
 		fileRead.GetExecutionOwner() !=
 			model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY ||
+		len(fileRead.GetRequiredRuntimeCapabilities()) != 0 ||
 		fileRead.GetAvailability() !=
 			model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE {
 		t.Fatalf("local tool manifest does not match executor protocol: %+v", fileRead)
@@ -813,9 +827,157 @@ func TestCapabilityToolManifestSeedUsesClientExecutionIdentity(t *testing.T) {
 	}).manifest
 	if mcp.GetCapabilityId() != "mcp.invoke" ||
 		mcp.GetVersion() != "1" ||
+		len(mcp.GetRequiredRuntimeCapabilities()) != 0 ||
 		mcp.GetAvailability() !=
 			model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNAVAILABLE {
 		t.Fatalf("MCP must stay canonically unavailable before W4: %+v", mcp)
+	}
+}
+
+func TestCapabilityBackfillRebindsBuiltinToolToNewManifestVersion(t *testing.T) {
+	authority := newCapabilityAuthorityTestService(t, "builtin-tool-manifest-upgrade")
+	seedCapabilityAuthorityAgent(
+		t,
+		authority.db,
+		"agent-1",
+		"ptid:person:owner",
+		1,
+	)
+	definition := &domain.ToolDefinition{
+		Name:        "skills_list",
+		Description: "List available skills",
+		JSONSchema:  json.RawMessage(`{"type":"object"}`),
+	}
+	current := capabilityToolManifestSeed(definition).manifest
+	previous := proto.Clone(current).(*model.CapabilityManifest)
+	previous.Version = shortCapabilityHash(
+		definition.Name,
+		definition.Description,
+		string(definition.JSONSchema),
+		strconv.Itoa(
+			int(model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_BUILTIN_TOOL),
+		),
+	)
+	previous.RequiredRuntimeCapabilities = nil
+	if previous.GetVersion() == current.GetVersion() {
+		t.Fatal("runtime requirement did not advance the builtin manifest version")
+	}
+	if _, err := upsertBackfillManifest(
+		authority.db,
+		previous,
+		authority.now(),
+	); err != nil {
+		t.Fatalf("seed previous builtin manifest: %v", err)
+	}
+	binding := capabilityBindingSeed{
+		source:            "agent_config",
+		sourceID:          "agent-1:tool:skills_list",
+		ptid:              "ptid:person:owner",
+		agentID:           "agent-1",
+		agentVersion:      1,
+		capabilityID:      current.GetCapabilityId(),
+		capabilityVersion: previous.GetVersion(),
+		enabled:           true,
+		approvalPolicy:    current.GetDefaultApprovalPolicy(),
+		reconcileVersion:  true,
+	}
+	if _, err := upsertBackfillBinding(
+		authority.db,
+		binding,
+		authority.now(),
+	); err != nil {
+		t.Fatalf("seed previous builtin binding: %v", err)
+	}
+	if _, err := upsertBackfillManifest(
+		authority.db,
+		current,
+		authority.now(),
+	); err != nil {
+		t.Fatalf("persist current builtin manifest: %v", err)
+	}
+	binding.capabilityVersion = current.GetVersion()
+	if _, err := upsertBackfillBinding(
+		authority.db,
+		binding,
+		authority.now(),
+	); err != nil {
+		t.Fatalf("reconcile builtin binding version: %v", err)
+	}
+
+	var reloaded persistence.AgentCapabilityBinding
+	if err := authority.db.First(
+		&reloaded,
+		"ptid = ? AND agent_id = ? AND capability_id = ?",
+		binding.ptid,
+		binding.agentID,
+		binding.capabilityID,
+	).Error; err != nil {
+		t.Fatalf("load reconciled builtin binding: %v", err)
+	}
+	if reloaded.CapabilityVersion != current.GetVersion() ||
+		reloaded.Revision != 2 ||
+		!reloaded.Enabled ||
+		reloaded.ApprovalPolicy != int32(current.GetDefaultApprovalPolicy()) {
+		t.Fatalf("reconciled builtin binding = %+v", reloaded)
+	}
+	var manifestCount int64
+	if err := authority.db.Model(&persistence.CapabilityManifest{}).
+		Where("capability_id = ?", current.GetCapabilityId()).
+		Count(&manifestCount).Error; err != nil {
+		t.Fatalf("count builtin manifest versions: %v", err)
+	}
+	if manifestCount != 2 {
+		t.Fatalf("builtin manifest version count = %d, want 2", manifestCount)
+	}
+}
+
+func TestRuntimeCapabilityReadinessErrorMapsOnlyExactRuntimeIncompatibility(t *testing.T) {
+	incompatible := &model.CapabilityReadinessSnapshot{
+		Capabilities: []*model.CapabilityReadiness{{
+			CapabilityId: "tool:skills_list",
+			State:        model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
+			ReasonCode:   runtimeCapabilityUnavailableReasonCode,
+		}},
+	}
+	err := runtimeCapabilityReadinessError(incompatible)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) {
+		t.Fatalf("runtime incompatibility error = %T: %v", err, err)
+	}
+	if bizErr.Code != errcode.AgentRuntimeIncompatibleCapability ||
+		bizErr.Payload == nil ||
+		bizErr.Payload.GetError() != errcode.AgentRuntimeIncompatibleCapabilityLocaleKey ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentRuntimeIncompatibleCapability) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentRuntimeIncompatibleCapabilityLocaleKey ||
+		bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		len(bizErr.Payload.GetDetails()) != 2 ||
+		bizErr.Payload.GetDetails()["capability_id"] != "tool:skills_list" ||
+		bizErr.Payload.GetDetails()["reason_code"] != runtimeCapabilityUnavailableReasonCode {
+		t.Fatalf("runtime incompatibility payload = %+v", bizErr)
+	}
+
+	for name, readiness := range map[string]*model.CapabilityReadiness{
+		"different unavailable reason": {
+			CapabilityId: "tool:skills_list",
+			State:        model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
+			ReasonCode:   "manifest_unavailable",
+		},
+		"different state": {
+			CapabilityId: "tool:skills_list",
+			State:        model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_BLOCKED,
+			ReasonCode:   runtimeCapabilityUnavailableReasonCode,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := runtimeCapabilityReadinessError(
+				&model.CapabilityReadinessSnapshot{
+					Capabilities: []*model.CapabilityReadiness{readiness},
+				},
+			); err != nil {
+				t.Fatalf("non-runtime incompatibility was remapped: %v", err)
+			}
+		})
 	}
 }
 

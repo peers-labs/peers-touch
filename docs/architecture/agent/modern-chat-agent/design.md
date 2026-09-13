@@ -247,7 +247,7 @@ branch selection is separate from message existence.
 Accepted command closure (`MCA-D08A`): all five revision mutations are Station
 commands:
 
-- `RetryTurn` adds one `TurnAttempt` under the same failed/cancelled Turn.
+- `RetryTurn` adds one `TurnAttempt` under the same failed/cancelled/interrupted Turn.
 - `RegenerateTurn` creates a new Turn and sibling assistant branch from one
   immutable source assistant message.
 - `EditAndResend` creates a revised user sibling and a new Turn; it never

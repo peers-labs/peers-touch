@@ -151,6 +151,9 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 	} else if h.convService != nil {
 		ptid := subjectActorID(ctx)
 		existing, getErr := h.convService.GetConversation(ctx, ptid, req.GetConversationId())
+		if getErr != nil && !isAgentErrorCode(getErr, errcode.AgentNotFound) {
+			return nil, toHandlerError(getErr)
+		}
 		if getErr != nil || existing == nil {
 			if preflightErr := h.turnService.PreflightTurn(ctx, ptid, req); preflightErr != nil {
 				return nil, toHandlerError(preflightErr)
@@ -326,6 +329,15 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 	} else if h.convService != nil {
 		ptid := subjectActorID(ctx)
 		existing, getErr := h.convService.GetConversation(ctx, ptid, input.GetConversationId())
+		if getErr != nil && !isAgentErrorCode(getErr, errcode.AgentNotFound) {
+			_ = writeTurnStreamErrorWithIdentity(
+				resp,
+				getErr,
+				input.GetConversationId(),
+				input.GetAgentId(),
+			)
+			return nil
+		}
 		if getErr != nil || existing == nil {
 			if preflightErr := h.turnService.PreflightTurn(ctx, ptid, &input); preflightErr != nil {
 				_ = writeTurnStreamErrorWithIdentity(
@@ -745,6 +757,11 @@ func turnStreamErrorPayload(err error) map[string]any {
 	payload["terminal"] = biz.Payload.GetTerminal()
 	payload["details"] = details
 	return payload
+}
+
+func isAgentErrorCode(err error, code errcode.Code) bool {
+	var biz *errcode.BizError
+	return errors.As(err, &biz) && biz.Code == code
 }
 
 func firstTurnAttachmentID(attachments []*model.AgentAttachmentRef) string {

@@ -23,9 +23,15 @@ import {
 import { useMentionTrigger } from './chat/composer/useMentionTrigger';
 import { MentionPopup } from './chat/MentionPopup';
 import { MentionTagBar } from './chat/MentionTag';
-import type { AvailableModel, Agent } from '../services/desktop_api';
+import {
+  isAgentAttachmentRejectedError,
+  type AvailableModel,
+  type Agent,
+} from '../services/desktop_api';
 import { ProviderIcon } from './settings/ProviderIcon';
 import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning';
+import { removeRejectedInlineReferences } from './composer/invalidReferenceRecovery';
+import { log } from '../utils/logger';
 
 const COMPOSER_COLORS = {
   border: '#d1d1d1',
@@ -34,6 +40,27 @@ const COMPOSER_COLORS = {
   textTertiary: '#9b9b9b',
   toolButtonShadow: '0 1px 4px rgba(15,23,42,0.04)',
 } as const;
+
+// #region debug-point N-Q:context-overflow-composer-owner
+function reportContextOverflowComposerDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7792/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'context-overflow-recovery-locale',
+      runId: 'owner-pre-fix',
+      hypothesisId,
+      location: 'ChatInput.tsx:composer-owner',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
 
 export interface ChatInputProps {
   placeholder?: string;
@@ -63,8 +90,12 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
   const readinessErrorKey = useChatStore(s => s.readinessErrorKey);
   const composerFill = useChatStore(s => s.composerFill);
+  const composerReferenceRemoval = useChatStore(s => s.composerReferenceRemoval);
   const composerFocusNonce = useChatStore(s => s.composerFocusNonce);
   const consumeComposerFill = useChatStore(s => s.consumeComposerFill);
+  const consumeComposerReferenceRemoval = useChatStore(
+    s => s.consumeComposerReferenceRemoval,
+  );
   const consumeComposerFocus = useChatStore(s => s.consumeComposerFocus);
   const selectedModel = useAgentStore(s => s.selectedModel);
   const selectedProviderId = useAgentStore(s => s.selectedProviderId);
@@ -103,18 +134,43 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   useEffect(() => {
     const previousKey = prevSessionKeyRef.current;
     if (previousKey) topicDraftRef.current[previousKey] = input;
-    setInput(topicDraftRef.current[currentSessionKey] || '');
+    const restoredDraft = topicDraftRef.current[currentSessionKey] || '';
+    // #region debug-point O:context-overflow-session-draft
+    void reportContextOverflowComposerDebug('O', 'session-draft-restore', {
+      previousSessionPresent: previousKey.length > 0,
+      currentSessionPresent: currentSessionKey.length > 0,
+      sessionChanged: previousKey !== currentSessionKey,
+      restoredDraftLength: restoredDraft.length,
+    });
+    // #endregion
+    setInput(restoredDraft);
     prevSessionKeyRef.current = currentSessionKey;
   }, [currentSessionKey]);
 
   useEffect(() => {
     if (currentSessionKey) topicDraftRef.current[currentSessionKey] = input;
+    // #region debug-point N-P:context-overflow-input-state
+    void reportContextOverflowComposerDebug('N-P', 'input-state-committed', {
+      currentSessionPresent: currentSessionKey.length > 0,
+      inputEmpty: input.length === 0,
+      inputLength: input.length,
+      storedDraftLength:
+        (topicDraftRef.current[currentSessionKey] || '').length,
+    });
+    // #endregion
   }, [currentSessionKey, input]);
 
   // I2 follow-up: consume a pending composer-fill request (fill-not-send), aligning
   // with LobeHub `fillInputMessage`. Populate the draft, focus, then clear the request.
   useEffect(() => {
     if (!composerFill) return;
+    // #region debug-point N-Q:context-overflow-composer-fill
+    void reportContextOverflowComposerDebug('N-Q', 'composer-fill-observed', {
+      currentSessionPresent: currentSessionKey.length > 0,
+      requestedEmpty: composerFill.text.length === 0,
+      requestedLength: composerFill.text.length,
+    });
+    // #endregion
     setInput(composerFill.text);
     consumeComposerFill();
     requestAnimationFrame(() => {
@@ -123,9 +179,64 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         el.focus();
         const end = composerFill.text.length;
         el.setSelectionRange(end, end);
+        // #region debug-point N-P:context-overflow-composer-fill-frame
+        void reportContextOverflowComposerDebug(
+          'N-P',
+          'composer-fill-animation-frame',
+          {
+            currentNodePresent: true,
+            currentNodeConnected: el.isConnected,
+            domEmpty: el.value.length === 0,
+            domLength: el.value.length,
+            requestStillPending:
+              useChatStore.getState().composerFill !== null,
+          },
+        );
+        // #endregion
       }
     });
   }, [composerFill, consumeComposerFill]);
+
+  // Invalid references remain composer-owned: remove only the Station-selected
+  // inline token after the user invokes recovery, without touching attachments.
+  useEffect(() => {
+    if (
+      !composerReferenceRemoval
+      || composerReferenceRemoval.sessionKey !== currentSessionKey
+    ) {
+      return;
+    }
+    let active = true;
+    const request = composerReferenceRemoval;
+    const sourceDraft = input;
+
+    void removeRejectedInlineReferences(
+      sourceDraft,
+      request.referenceKind,
+      request.referenceHash,
+    ).then(({ draft }) => {
+      if (!active) return;
+      consumeComposerReferenceRemoval(request.nonce);
+      setInput((current) => current === sourceDraft ? draft : current);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }).catch((error: unknown) => {
+      if (!active) return;
+      consumeComposerReferenceRemoval(request.nonce);
+      log.error('chat', 'Failed to remove invalid inline reference', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    composerReferenceRemoval,
+    consumeComposerReferenceRemoval,
+    currentSessionKey,
+    input,
+  ]);
 
   useEffect(() => {
     if (composerFocusNonce === 0) return;
@@ -165,7 +276,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
       },
       onRejected: (error) => {
-        if (error?.error_type !== 'CONTEXT_ATTACHMENT_REJECTED') return;
+        if (!isAgentAttachmentRejectedError(error)) return;
         rejectDraft(
           error.details.attachment_id,
           error.locale_key || 'agent.errors.attachmentRejected',
@@ -177,6 +288,12 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   // Scan the draft for "@" triggers whenever it changes, driving the popup.
   const handleInputChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
     const value = event.target.value;
+    // #region debug-point Q:context-overflow-native-input
+    void reportContextOverflowComposerDebug('Q', 'native-input-observed', {
+      nextEmpty: value.length === 0,
+      nextLength: value.length,
+    });
+    // #endregion
     setInput(value);
     mentionScan(value, event.target.selectionStart ?? value.length);
   }, [mentionScan]);

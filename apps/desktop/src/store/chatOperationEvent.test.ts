@@ -10,7 +10,10 @@ import type {
 } from '../services/desktop_api';
 import {
   applyOperationEventIdentity,
+  applyStreamEvent,
+  cachedMessageToChatMessage,
   isMessageRetryBlocked,
+  mergeServerMessages,
   shouldUseSessionBuffer,
   type ChatMessage,
   type ChatOperation,
@@ -34,7 +37,85 @@ function operation(): ChatOperation {
   };
 }
 
+function forbiddenActorData(): Record<string, unknown> {
+  return {
+    error: 'agent.errors.forbiddenActor',
+    error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+    locale_key: 'agent.errors.forbiddenActor',
+    retryable: false,
+    terminal: true,
+    details: {
+      resource_kind: 'conversation',
+      resource_id: 'conversation-owned-by-bob',
+    },
+  };
+}
+
+function incompatibleCapabilityData(): Record<string, unknown> {
+  return {
+    error: 'agent.errors.incompatibleCapability',
+    error_type: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+    locale_key: 'agent.errors.incompatibleCapability',
+    retryable: false,
+    terminal: true,
+    details: {
+      capability_id: 'tool:skills_list',
+      reason_code: 'runtime_capability_unavailable',
+    },
+  };
+}
+
+function lifecycleInterruptedOutcome(): Record<string, unknown> {
+  return {
+    error: 'agent.errors.lifecycleInterrupted',
+    error_type: 'LIFECYCLE_INTERRUPTED',
+    locale_key: 'agent.errors.lifecycleInterrupted',
+    retryable: true,
+    terminal: true,
+    details: {
+      turn_id: 'turn-interrupted',
+      reason_code: 'station_restart_interrupted',
+    },
+  };
+}
+
 describe('Agent turn event identity projection', () => {
+  it('reconciles a completed optimistic reply by its Station turn identity', () => {
+    const optimistic = applyStreamEvent({
+      id: 'temp-assistant-1',
+      role: 'assistant',
+      content: 'TEST_OK',
+      loading: true,
+      timestamp: Date.now(),
+    }, {
+      event: 'done',
+      data: {
+        turnId: 'turn-1',
+        model: 'model-1',
+      },
+    });
+    const authoritative: ChatMessage = {
+      id: 'message-1',
+      role: 'assistant',
+      content: 'TEST_OK',
+      loading: false,
+      terminalStatus: 'completed',
+      timestamp: optimistic.timestamp,
+      turnId: 'turn-1',
+    };
+
+    const merged = mergeServerMessages([optimistic], [authoritative]);
+
+    expect(optimistic.turnId).toBe('turn-1');
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      id: 'message-1',
+      content: 'TEST_OK',
+      turnId: 'turn-1',
+      terminalStatus: 'completed',
+    });
+  });
+
   it('increments the composer focus intent without mutating the draft', () => {
     const before = useChatStore.getState().composerFocusNonce;
 
@@ -136,6 +217,30 @@ describe('Agent turn event identity projection', () => {
       turnId: 'turn-1',
       conversationId: 'conversation-1',
       lastEventSeq: 3,
+    });
+  });
+
+  it('projects a typed interruption into the operation lifecycle', () => {
+    const result = applyOperationEventIdentity(
+      { 'conversation-1': operation() },
+      'conversation-1',
+      {
+        event: 'error',
+        data: {
+          seq: 4,
+          turnId: 'turn-interrupted',
+          conversationId: 'conversation-1',
+          streamGeneration: 10,
+          outcome_error: lifecycleInterruptedOutcome(),
+        },
+      },
+    );
+
+    expect(result.accepted).toBe(true);
+    expect(result.operations['conversation-1']).toMatchObject({
+      turnId: 'turn-interrupted',
+      runState: 'interrupted',
+      status: 'interrupted',
     });
   });
 
@@ -313,6 +418,326 @@ describe('Agent turn event identity projection', () => {
     });
   });
 
+  it('projects a live lifecycle interruption as interrupted with Recover', () => {
+    const data = {
+      error: 'station_restart_interrupted',
+      terminal_reason: 'station_restart_interrupted',
+      outcome_error: lifecycleInterruptedOutcome(),
+    };
+    const projected = reduceStreamEvent({
+      id: 'message-1',
+      role: 'assistant',
+      content: 'partial',
+      loading: true,
+      timestamp: 1,
+      turnId: 'turn-interrupted',
+    }, {
+      event: 'error',
+      data,
+    });
+
+    expect(projected).toMatchObject({
+      content: 'partial',
+      error: 'agent.errors.lifecycleInterrupted',
+      errorDetail: 'station_restart_interrupted',
+      terminalStatus: 'interrupted',
+      loading: false,
+      typedError: lifecycleInterruptedOutcome(),
+      resolution: {
+        type: 'recover',
+        turnId: 'turn-interrupted',
+        reasonCode: 'station_restart_interrupted',
+        label: 'agent.recovery.recover',
+      },
+    });
+    expect(isTerminalEvent({ event: 'error', data })).toBe(true);
+  });
+
+  it('keeps malformed lifecycle interruption events failed without Recover', () => {
+    const projected = reduceStreamEvent({
+      id: 'message-1',
+      role: 'assistant',
+      content: 'partial',
+      loading: true,
+      timestamp: 1,
+    }, {
+      event: 'error',
+      data: {
+        error: 'station_restart_interrupted',
+        outcome_error: {
+          ...lifecycleInterruptedOutcome(),
+          details: {
+            turn_id: 'turn-interrupted',
+            reason_code: 'station_restart_interrupted',
+            internal_error: 'must-not-enable-recovery',
+          },
+        },
+      },
+    });
+
+    expect(projected.terminalStatus).toBe('failed');
+    expect(projected.resolution).toBeNull();
+
+    const nonStationShape = reduceStreamEvent({
+      id: 'message-2',
+      role: 'assistant',
+      content: 'partial',
+      loading: true,
+      timestamp: 1,
+    }, {
+      event: 'error',
+      data: lifecycleInterruptedOutcome(),
+    });
+
+    expect(nonStationShape.terminalStatus).toBe('failed');
+    expect(nonStationShape.resolution).toBeNull();
+  });
+
+  it('projects lifecycle interruption recovery from an authoritative snapshot', () => {
+    const projected = reduceStreamEvent({
+      id: 'message-1',
+      role: 'assistant',
+      content: 'partial',
+      loading: true,
+      timestamp: 1,
+      turnId: 'turn-interrupted',
+    }, {
+      event: 'snapshot',
+      data: {
+        status: 'interrupted',
+        terminal_reason: 'station_restart_interrupted',
+        outcome_error: lifecycleInterruptedOutcome(),
+      },
+    });
+
+    expect(projected).toMatchObject({
+      error: 'agent.errors.lifecycleInterrupted',
+      terminalStatus: 'interrupted',
+      typedError: lifecycleInterruptedOutcome(),
+      resolution: {
+        type: 'recover',
+        turnId: 'turn-interrupted',
+        reasonCode: 'station_restart_interrupted',
+        label: 'agent.recovery.recover',
+      },
+    });
+  });
+
+  it('does not invent Recover for an interrupted snapshot without a typed outcome', () => {
+    const projected = reduceStreamEvent({
+      id: 'message-1',
+      role: 'assistant',
+      content: 'partial',
+      loading: true,
+      timestamp: 1,
+    }, {
+      event: 'snapshot',
+      data: {
+        status: 'interrupted',
+        terminal_reason: 'station_restart_interrupted',
+      },
+    });
+
+    expect(projected.terminalStatus).toBe('interrupted');
+    expect(projected.typedError).toBeUndefined();
+    expect(projected.resolution).toBeNull();
+  });
+
+  it('restores lifecycle interruption recovery from a persisted typed error', () => {
+    const projected = cachedMessageToChatMessage({
+      messageId: 'message-1',
+      conversationId: 'conversation-1',
+      turnId: 'turn-interrupted',
+      role: 'assistant',
+      status: 'interrupted',
+      content: 'partial',
+      seq: 1,
+      errorJson: JSON.stringify(lifecycleInterruptedOutcome()),
+      createdAt: '2026-09-11T00:00:00.000Z',
+      updatedAt: '2026-09-11T00:00:00.000Z',
+    });
+
+    expect(projected).toMatchObject({
+      error: 'agent.errors.lifecycleInterrupted',
+      terminalStatus: 'interrupted',
+      typedError: lifecycleInterruptedOutcome(),
+      resolution: {
+        type: 'recover',
+        turnId: 'turn-interrupted',
+        reasonCode: 'station_restart_interrupted',
+        label: 'agent.recovery.recover',
+      },
+    });
+  });
+
+  it('projects forbidden-actor recovery from a live error event', () => {
+    const projected = reduceStreamEvent({
+      id: 'message-1',
+      role: 'assistant',
+      content: '',
+      loading: true,
+      timestamp: 1,
+    }, {
+      event: 'error',
+      data: forbiddenActorData(),
+    });
+
+    expect(projected).toMatchObject({
+      error: 'agent.errors.forbiddenActor',
+      terminalStatus: 'failed',
+      loading: false,
+      typedError: forbiddenActorData(),
+      resolution: {
+        type: 'switchAccount',
+        resourceKind: 'conversation',
+        resourceId: 'conversation-owned-by-bob',
+        label: 'agent.recovery.switchAccount',
+      },
+    });
+  });
+
+  it('restores forbidden-actor recovery from a persisted typed error', () => {
+    const projected = cachedMessageToChatMessage({
+      messageId: 'message-1',
+      conversationId: 'conversation-owned-by-bob',
+      turnId: 'turn-1',
+      role: 'assistant',
+      status: 'failed',
+      content: '',
+      seq: 1,
+      errorJson: JSON.stringify(forbiddenActorData()),
+      createdAt: '2026-09-11T00:00:00.000Z',
+      updatedAt: '2026-09-11T00:00:00.000Z',
+    });
+
+    expect(projected).toMatchObject({
+      error: 'agent.errors.forbiddenActor',
+      terminalStatus: 'failed',
+      typedError: forbiddenActorData(),
+      resolution: {
+        type: 'switchAccount',
+        resourceKind: 'conversation',
+        resourceId: 'conversation-owned-by-bob',
+        label: 'agent.recovery.switchAccount',
+      },
+    });
+  });
+
+  it('preserves forbidden-actor recovery through replay projection', () => {
+    useChatStore.getState().reset();
+    useChatStore.setState({ currentSessionKey: 'conversation-owned-by-bob' });
+
+    try {
+      useChatStore.getState().applyRecoveredTurnEvent(
+        'conversation-owned-by-bob',
+        'agent-owned-by-bob',
+        'turn-rejected',
+        {
+          event: 'error',
+          data: forbiddenActorData(),
+        },
+      );
+
+      expect(useChatStore.getState().messages).toContainEqual(expect.objectContaining({
+        turnId: 'turn-rejected',
+        error: 'agent.errors.forbiddenActor',
+        typedError: forbiddenActorData(),
+        resolution: {
+          type: 'switchAccount',
+          resourceKind: 'conversation',
+          resourceId: 'conversation-owned-by-bob',
+          label: 'agent.recovery.switchAccount',
+        },
+      }));
+    } finally {
+      useChatStore.getState().reset();
+    }
+  });
+
+  it('projects incompatible-capability recovery from a live error event', () => {
+    const projected = reduceStreamEvent({
+      id: 'message-1',
+      role: 'assistant',
+      content: '',
+      loading: true,
+      timestamp: 1,
+    }, {
+      event: 'error',
+      data: incompatibleCapabilityData(),
+    });
+
+    expect(projected).toMatchObject({
+      error: 'agent.errors.incompatibleCapability',
+      terminalStatus: 'failed',
+      loading: false,
+      typedError: incompatibleCapabilityData(),
+      resolution: {
+        type: 'chooseCompatibleModel',
+        capabilityId: 'tool:skills_list',
+        reasonCode: 'runtime_capability_unavailable',
+        label: 'agent.recovery.chooseCompatibleModel',
+      },
+    });
+  });
+
+  it('restores incompatible-capability recovery from a persisted typed error', () => {
+    const projected = cachedMessageToChatMessage({
+      messageId: 'message-1',
+      conversationId: 'conversation-1',
+      turnId: 'turn-1',
+      role: 'assistant',
+      status: 'failed',
+      content: '',
+      seq: 1,
+      errorJson: JSON.stringify(incompatibleCapabilityData()),
+      createdAt: '2026-09-11T00:00:00.000Z',
+      updatedAt: '2026-09-11T00:00:00.000Z',
+    });
+
+    expect(projected).toMatchObject({
+      error: 'agent.errors.incompatibleCapability',
+      terminalStatus: 'failed',
+      typedError: incompatibleCapabilityData(),
+      resolution: {
+        type: 'chooseCompatibleModel',
+        capabilityId: 'tool:skills_list',
+        reasonCode: 'runtime_capability_unavailable',
+        label: 'agent.recovery.chooseCompatibleModel',
+      },
+    });
+  });
+
+  it('preserves incompatible-capability recovery through replay projection', () => {
+    useChatStore.getState().reset();
+    useChatStore.setState({ currentSessionKey: 'conversation-1' });
+
+    try {
+      useChatStore.getState().applyRecoveredTurnEvent(
+        'conversation-1',
+        'agent-1',
+        'turn-rejected',
+        {
+          event: 'error',
+          data: incompatibleCapabilityData(),
+        },
+      );
+
+      expect(useChatStore.getState().messages).toContainEqual(expect.objectContaining({
+        turnId: 'turn-rejected',
+        error: 'agent.errors.incompatibleCapability',
+        typedError: incompatibleCapabilityData(),
+        resolution: {
+          type: 'chooseCompatibleModel',
+          capabilityId: 'tool:skills_list',
+          reasonCode: 'runtime_capability_unavailable',
+          label: 'agent.recovery.chooseCompatibleModel',
+        },
+      }));
+    } finally {
+      useChatStore.getState().reset();
+    }
+  });
+
   it('keeps transport EOF in a non-terminal reconciling state', () => {
     const current = operation();
     const event = {
@@ -349,15 +774,29 @@ describe('Agent turn event identity projection', () => {
     expect(isTerminalEvent(event)).toBe(false);
   });
 
-  it('allows RetryTurn only for the matching recovery-failed operation', () => {
+  it('allows RetryTurn only for a matching recoverable operation', () => {
     const recoveryFailed: ChatOperation = {
       ...operation(),
       runState: 'recovery_failed',
       turnId: 'turn-1',
     };
+    const replaying: ChatOperation = {
+      ...operation(),
+      runState: 'replaying',
+      turnId: 'turn-1',
+    };
 
     expect(isMessageRetryBlocked(true, recoveryFailed, 'turn-1')).toBe(false);
     expect(isMessageRetryBlocked(true, recoveryFailed, 'turn-2')).toBe(true);
+    expect(
+      isMessageRetryBlocked(true, replaying, 'turn-1', 'interrupted'),
+    ).toBe(false);
+    expect(
+      isMessageRetryBlocked(true, replaying, 'turn-2', 'interrupted'),
+    ).toBe(true);
+    expect(
+      isMessageRetryBlocked(true, replaying, 'turn-1', 'failed'),
+    ).toBe(true);
     expect(isMessageRetryBlocked(true, operation(), 'turn-1')).toBe(true);
     expect(isMessageRetryBlocked(false, operation(), 'turn-1')).toBe(false);
   });

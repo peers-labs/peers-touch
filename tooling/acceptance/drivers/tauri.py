@@ -259,6 +259,7 @@ class LocalTauriLauncher(AppLauncher):
         profile: str | None = None,
         storage_root: str | None = None,
         environment: Mapping[str, str] | None = None,
+        log_path: str | Path | None = None,
     ) -> None:
         self.app_binary = app_binary or find_app_binary()
         self.port = port
@@ -271,7 +272,11 @@ class LocalTauriLauncher(AppLauncher):
         self._owns_storage_root = storage_root is None
         self._process: subprocess.Popen[bytes] | None = None
         self._log_file: Any | None = None
-        self.log_path: Path | None = None
+        self.log_path = (
+            Path(log_path).expanduser()
+            if log_path is not None
+            else None
+        )
 
     @property
     def metadata(self) -> AppLaunchMetadata:
@@ -294,12 +299,16 @@ class LocalTauriLauncher(AppLauncher):
         env["PT_PROFILE"] = self.profile
         env["PEERS_STORAGE_ROOT"] = self.storage_root
         env.update(self.environment)
-        self._log_file = tempfile.NamedTemporaryFile(
-            prefix=f"peers-touch-webdriver-{self.port}-",
-            suffix=".log",
-            delete=False,
-        )
-        self.log_path = Path(self._log_file.name)
+        if self.log_path is None:
+            self._log_file = tempfile.NamedTemporaryFile(
+                prefix=f"peers-touch-webdriver-{self.port}-",
+                suffix=".log",
+                delete=False,
+            )
+            self.log_path = Path(self._log_file.name)
+        else:
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            self._log_file = self.log_path.open("wb")
         self._process = subprocess.Popen(
             [self.app_binary],
             env=env,

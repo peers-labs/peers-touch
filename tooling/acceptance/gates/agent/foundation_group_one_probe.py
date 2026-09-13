@@ -26,6 +26,11 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_context_overflow,
     evaluate_base_credential_missing,
     evaluate_base_duplicate_conflict,
+    evaluate_base_executor_unavailable,
+    evaluate_base_forbidden_actor,
+    evaluate_base_incompatible_capability,
+    evaluate_base_interrupted,
+    evaluate_base_invalid_reference,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -211,6 +216,21 @@ def assert_group_one_capture(
         "BASE-DUPLICATE_CONFLICT": (
             lambda facts: evaluate_base_duplicate_conflict(facts)
         ),
+        "BASE-EXECUTOR_UNAVAILABLE": (
+            lambda facts: evaluate_base_executor_unavailable(facts)
+        ),
+        "BASE-FORBIDDEN_ACTOR": (
+            lambda facts: evaluate_base_forbidden_actor(facts)
+        ),
+        "BASE-INCOMPATIBLE_CAPABILITY": (
+            lambda facts: evaluate_base_incompatible_capability(facts)
+        ),
+        "BASE-INTERRUPTED": (
+            lambda facts: evaluate_base_interrupted(facts)
+        ),
+        "BASE-INVALID_REFERENCE": (
+            lambda facts: evaluate_base_invalid_reference(facts)
+        ),
         "AS-F02": lambda facts: evaluate_as_f02(facts),
         "AS-F03": lambda facts: evaluate_as_f03(facts),
         "AS-F04": lambda facts: evaluate_as_f04(
@@ -255,6 +275,10 @@ def assert_group_one_capture(
         "BASE-CONTEXT_OVERFLOW",
         "BASE-CREDENTIAL_MISSING",
         "BASE-DUPLICATE_CONFLICT",
+        "BASE-FORBIDDEN_ACTOR",
+        "BASE-INCOMPATIBLE_CAPABILITY",
+        "BASE-INTERRUPTED",
+        "BASE-INVALID_REFERENCE",
     }:
         runtime_event = scenario_facts.get("runtimeEvent")
         runtime_role = capture.get("runtime-events")
@@ -281,6 +305,10 @@ def assert_group_one_capture(
             "BASE-CONTEXT_OVERFLOW",
             "BASE-CREDENTIAL_MISSING",
             "BASE-DUPLICATE_CONFLICT",
+            "BASE-FORBIDDEN_ACTOR",
+            "BASE-INCOMPATIBLE_CAPABILITY",
+            "BASE-INTERRUPTED",
+            "BASE-INVALID_REFERENCE",
         }:
             expected_role.update(
                 {

@@ -138,7 +138,7 @@ Unsupported local device capabilities are absent or explicitly unavailable.
 2. Product distinguishes cancellation from connection loss.
 3. Reconnect replays events and reconciles from durable state.
 4. Partial output is labeled partial when retained.
-5. Retry starts from an explicit failed/cancelled source.
+5. Retry starts from an explicit failed/cancelled/interrupted source.
 
 The product never asks the user to resend when Station already accepted the
 intent.

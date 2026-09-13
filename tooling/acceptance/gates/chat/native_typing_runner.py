@@ -40,6 +40,7 @@ from tooling.acceptance.gates.chat.native_support import (
     shared_federation_id,
     station_readback,
     verify_runtime_fixture_ready,
+    wait_for_peer_key_bundle,
     wait_until,
 )
 
@@ -962,6 +963,10 @@ class NativeTypingGate(AcceptanceGate):
                 lambda: shared_federation_id(self.clients, ACTORS),
             )
 
+            wait_for_peer_key_bundle(
+                self.clients["alice"],
+                self.ptids["bob"],
+            )
             direct = async_harness(
                 self.clients["alice"],
                 "createDirectConversation",

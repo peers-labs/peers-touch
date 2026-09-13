@@ -36,7 +36,7 @@ from tooling.acceptance.core import (
 )
 from tooling.acceptance.core.harness import call_async_harness
 from tooling.acceptance.core.provisioner import load_env_file
-from tooling.acceptance.drivers.tauri import TauriDriver
+from tooling.acceptance.drivers.tauri import LocalTauriLauncher, TauriSession
 from tooling.acceptance.gates.agent.foundation_direct_adapter import (
     DirectRuntimeProbeInput,
 )
@@ -220,7 +220,7 @@ class AgentNativeJourney:
         self.runtime_profile = self.run_root / f"{APPROVED_PROFILE}.env"
         self.desktop_log = self.run_root / "desktop.log"
         self.proxy = TcpFaultProxy.from_url(self.station_url)
-        self.tauri_driver: TauriDriver | None = None
+        self.tauri_driver: TauriSession | None = None
         self.desktop_log_bytes = b""
         self.driver: Any = None
         self.steps: list[dict[str, Any]] = []
@@ -304,16 +304,18 @@ class AgentNativeJourney:
             "PT_STATION_HEALTH_URL": f"{self.proxy.url}/app-meta/version",
             "PT_DESKTOP_E2E": "true",
         }
-        self.tauri_driver = TauriDriver(
-            port=self.webdriver_port,
-            gateway_port=self.gateway_port,
-            profile=self.profile_env.get(
-                "PT_PROFILE",
-                f"{APPROVED_PROFILE}-app",
-            ),
-            storage_root=str(self.storage_root),
-            environment=environment,
-            log_path=self.desktop_log,
+        self.tauri_driver = TauriSession(
+            LocalTauriLauncher(
+                port=self.webdriver_port,
+                gateway_port=self.gateway_port,
+                profile=self.profile_env.get(
+                    "PT_PROFILE",
+                    f"{APPROVED_PROFILE}-app",
+                ),
+                storage_root=str(self.storage_root),
+                environment=environment,
+                log_path=self.desktop_log,
+            )
         )
         self.driver = self.tauri_driver.start()
         self.tauri_driver.wait_for_ready()

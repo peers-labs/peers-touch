@@ -73,4 +73,37 @@ describe('ToolCallsBlock approval visibility', () => {
     );
     expect(decisionSubmission).toBe(-1);
   });
+
+  it('renders executor-unavailable recovery without claiming or executing the ToolCall', () => {
+    const source = readFileSync(
+      new URL('./ToolCallCard.tsx', import.meta.url),
+      'utf8',
+    );
+    const runtimeSource = readFileSync(
+      new URL('../../runtimes/toolRuntime.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toContain(
+      "tool.error === 'agent.errors.executorUnavailable'",
+    );
+    expect(source).toContain(
+      'data-pt-agent-tool-decision="approve"',
+    );
+    expect(source).toContain('disabled={!canApprove}');
+    expect(source).toContain(
+      'data-pt-agent-tool-recovery="reconnect-executor"',
+    );
+    expect(source).toContain(
+      "t('agent.recovery.reconnectExecutor', { ns: 'agent' })",
+    );
+    expect(source).toContain('void reconnectAgentToolExecutor(tool.id)');
+    expect(source).not.toContain('fetch(');
+    expect(source).not.toContain('openBrowserCapabilitySession');
+    expect(runtimeSource).not.toContain('api.openBrowserCapabilitySession()');
+    expect(runtimeSource).toContain('api.startAgentClientExecutorSupervisor()');
+    expect(runtimeSource).toContain('api.listAgentCapabilitySessions()');
+    expect(runtimeSource).not.toContain('claimAgentTool');
+    expect(runtimeSource).not.toContain('executeAgentTool');
+  });
 });

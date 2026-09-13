@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from contextlib import closing
 import hashlib
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import time
@@ -33,6 +35,7 @@ from tooling.acceptance.drivers.native import (
 from tooling.acceptance.drivers.station import StationDriver
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import (
+    LOCAL_SOURCE_RUNTIME,
     acceptance_station_environment,
 )
 from tooling.acceptance.transports import SshTarget, SshTransport
@@ -526,6 +529,33 @@ def shared_federation_id(
     return federation_id
 
 
+def wait_for_peer_key_bundle(
+    client: TauriSession,
+    peer_ptid: str,
+    *,
+    timeout: float = 60.0,
+) -> dict[str, Any]:
+    def ready() -> dict[str, Any] | None:
+        state = async_harness(
+            client,
+            "peerKeyBundleState",
+            {"peerPtid": peer_ptid},
+            timeout=10,
+        )
+        return (
+            state
+            if isinstance(state, dict)
+            and int(state.get("bundleCount") or 0) > 0
+            else None
+        )
+
+    return wait_until(
+        ready,
+        f"peer key bundle for {peer_ptid}",
+        timeout=timeout,
+    )
+
+
 def is_station_authorization_rejection(error: BaseException | str) -> bool:
     message = str(error).lower()
     return any(
@@ -750,6 +780,91 @@ def station_readback(
     if not station_url:
         raise GateError("Station readback requires an explicit bound service URL")
     environment = acceptance_station_environment(station_url)
+    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
+        database = environment.get("PT_ACCEPTANCE_LOCAL_DATABASE", "").strip()
+        if not database:
+            raise GateError("Local source Station database is unavailable")
+        with closing(sqlite3.connect(database, timeout=10)) as connection:
+            connection.row_factory = sqlite3.Row
+            events = connection.execute(
+                """
+SELECT event_id, sequence, command_id, message_id, event_hash
+FROM conversation_events
+WHERE conversation_id = ? AND message_id = ?
+ORDER BY sequence
+""",
+                (conversation_id, message_id),
+            ).fetchall()
+            authority_events = connection.execute(
+                """
+SELECT event_id, sequence, command_id
+FROM conversation_events
+WHERE conversation_id = ?
+ORDER BY sequence
+""",
+                (conversation_id,),
+            ).fetchall()
+            queue = connection.execute(
+                """
+SELECT item_id, event_id, recipient_ptid, recipient_device_id,
+       lane_sequence, state, attempt_count, payload_sha256
+FROM device_queue_items
+WHERE conversation_id = ?
+ORDER BY recipient_ptid, recipient_device_id, lane_sequence
+""",
+                (conversation_id,),
+            ).fetchall()
+            read_cursors = connection.execute(
+                """
+SELECT ptid AS reader_ptid, last_read_sequence
+FROM conversation_read_cursors
+WHERE conversation_id = ?
+ORDER BY ptid
+""",
+                (conversation_id,),
+            ).fetchall()
+        return {
+            "events": [
+                {
+                    "eventId": row["event_id"],
+                    "sequence": row["sequence"],
+                    "commandId": row["command_id"],
+                    "messageId": row["message_id"],
+                    "hashBytes": len(row["event_hash"] or b""),
+                }
+                for row in events
+            ],
+            "authorityEvents": [
+                {
+                    "eventId": row["event_id"],
+                    "sequence": row["sequence"],
+                    "commandId": row["command_id"],
+                }
+                for row in authority_events
+            ],
+            "queue": [
+                {
+                    "itemId": row["item_id"],
+                    "eventId": row["event_id"],
+                    "recipientPtid": row["recipient_ptid"],
+                    "recipientDeviceId": row["recipient_device_id"],
+                    "laneSequence": row["lane_sequence"],
+                    "state": row["state"],
+                    "attemptCount": row["attempt_count"],
+                    "payloadSha256": bytes(
+                        row["payload_sha256"] or b""
+                    ).hex(),
+                }
+                for row in queue
+            ],
+            "readCursors": [
+                {
+                    "readerPtid": row["reader_ptid"],
+                    "lastReadSequence": row["last_read_sequence"],
+                }
+                for row in read_cursors
+            ],
+        }
     host = environment.get("PT_DEPLOY_HOST", "").strip()
     user = environment.get("PT_DEPLOY_USER", "").strip()
     if not host or not user:

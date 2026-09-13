@@ -3,8 +3,7 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 use tauri::{State, Window};
 
-use crate::application::key_exchange::{device_install, wire};
-use crate::application::session_resolver;
+use crate::application::key_exchange::wire;
 use crate::contracts::{KeyExchangeFetchInput, KeyExchangeUploadInput, StubPayload};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -14,23 +13,44 @@ use messaging_core::proto::{actor_device_ptid, actor_device_ref, actor_ref};
 use reqwest::Method;
 use ulid::Ulid;
 
-fn token_from_state(
+fn active_key_exchange_context(
     state: &State<'_, Arc<AppState>>,
     window: &Window,
-) -> Result<String, AppResult<StubPayload>> {
-    let token = session_resolver::token_for_window(state.inner(), window).unwrap_or_default();
-    if token.trim().is_empty() {
+) -> Result<(String, String, String), AppResult<StubPayload>> {
+    let session = state
+        .sessions
+        .get(window.label())
+        .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))?;
+    if session.jwt.trim().is_empty() || session.actor.ptid.trim().is_empty() {
         return Err(AppResult::fail(
             ErrorCode::Unauthorized,
-            "authentication required",
+            "authenticated profile is incomplete",
             None,
         ));
     }
-    Ok(token)
-}
-
-fn actor_ptid_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Option<String> {
-    session_resolver::ptid_for_window(state.inner(), window)
+    let engine = state
+        .messaging_engines
+        .get(&session.account_id)
+        .map_err(|error| AppResult::fail(ErrorCode::InternalError, error, None))?
+        .ok_or_else(|| {
+            AppResult::fail(
+                ErrorCode::InternalError,
+                "messaging profile engine is not active",
+                None,
+            )
+        })?;
+    if engine.endpoint().ptid != session.actor.ptid {
+        return Err(AppResult::fail(
+            ErrorCode::Forbidden,
+            "messaging endpoint actor does not match authenticated actor",
+            None,
+        ));
+    }
+    Ok((
+        session.jwt,
+        engine.endpoint().ptid.clone(),
+        engine.endpoint().device_id.clone(),
+    ))
 }
 
 fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
@@ -46,27 +66,17 @@ pub fn key_exchange_upload_bundle(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let actor_ptid = match actor_ptid_from_state(&state, &window) {
-        Some(id) if !id.trim().is_empty() => id,
-        _ => {
-            return AppResult::fail(
-                ErrorCode::Unauthorized,
-                "Authentication required — please log in",
-                None,
-            );
-        }
+    let (token, actor_ptid, device_id) = match active_key_exchange_context(&state, &window) {
+        Ok(context) => context,
+        Err(error) => return error,
     };
-    let token = match token_from_state(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let device_id = match device_install::get_or_create_device_id(actor_ptid.as_str()) {
-        Ok(s) => s,
-        Err(e) => {
-            return AppResult::fail(ErrorCode::InternalError, format!("device_id: {e}"), None);
-        }
-    };
-    station_client::set_device_id(device_id.clone());
+    if device_id.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "messaging profile device is not active",
+            None,
+        );
+    }
     if input.opk_ids.len() != input.opk_pubs.len() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -75,7 +85,7 @@ pub fn key_exchange_upload_bundle(
         );
     }
     let req = kemodel::UploadDirectKeyBundleRequest {
-        device: Some(actor_device_ref(actor_ptid, device_id)),
+        device: Some(actor_device_ref(actor_ptid, device_id.clone())),
         identity_key_public: input.ik_pub,
         signed_pre_key_id: input.spk_id,
         signed_pre_key_public: input.spk_pub,
@@ -88,7 +98,7 @@ pub fn key_exchange_upload_bundle(
             .collect(),
         supported_wire_versions: vec![1],
     };
-    match station_client::request_proto::<
+    match station_client::request_proto_for_device::<
         kemodel::UploadDirectKeyBundleRequest,
         kemodel::UploadDirectKeyBundleResponse,
     >(
@@ -97,6 +107,7 @@ pub fn key_exchange_upload_bundle(
         &token,
         None,
         Some(&req),
+        &device_id,
     ) {
         Ok(_r) => to_stub("key_exchange_upload_bundle", json!({})),
         Err(e) => e.into_app_result("Station request failed"),
@@ -109,29 +120,13 @@ pub fn key_exchange_fetch_bundle(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let actor_ptid = match actor_ptid_from_state(&state, &window) {
-        Some(id) if !id.trim().is_empty() => id,
-        _ => {
-            return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
-        }
-    };
-    let token = match token_from_state(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
+    let (token, actor_ptid, device_id) = match active_key_exchange_context(&state, &window) {
+        Ok(context) => context,
+        Err(error) => return error,
     };
     if input.ptid.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "ptid is required", None);
     }
-    let device_id = match device_install::get_or_create_device_id(&actor_ptid) {
-        Ok(device_id) => device_id,
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("device_id: {error}"),
-                None,
-            );
-        }
-    };
     let req = kemodel::FetchDirectKeyBundlesRequest {
         actor: Some(actor_ref(input.ptid)),
         target_device_id: input.device_id.unwrap_or_default(),

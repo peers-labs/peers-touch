@@ -3512,6 +3512,42 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 supervisor.inner(),
             ))
         }
+        "agent_client_executor_supervisor_start" => {
+            if http_gateway_bearer_token(state).is_none() {
+                return to_json(unauthorized_error());
+            }
+            let app = match runtime.app_handle("agent_client_executor_supervisor_start") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                app_runtime_evidence::set_client_executor_supervisor_available(
+                    supervisor.inner(),
+                    true,
+                ),
+            )
+        }
+        "agent_client_executor_supervisor_stop" => {
+            if http_gateway_bearer_token(state).is_none() {
+                return to_json(unauthorized_error());
+            }
+            let app = match runtime.app_handle("agent_client_executor_supervisor_stop") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                app_runtime_evidence::set_client_executor_supervisor_available(
+                    supervisor.inner(),
+                    false,
+                ),
+            )
+        }
         "agent_runtime_activity_station" => {
             let input = match parse_args::<AgentRuntimeActivityInput>(args) {
                 Ok(input) => input,
@@ -6858,6 +6894,10 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             None,
             Some(json!({
                 "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "observed_profile_version": args
+                    .get("observed_profile_version")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0),
             })),
             "device revoke",
         ),

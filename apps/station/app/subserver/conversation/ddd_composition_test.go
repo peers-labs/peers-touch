@@ -3778,6 +3778,56 @@ func TestConversationDDDPlanConsumptionRollsBackWithTransition(t *testing.T) {
 	}
 }
 
+func TestConversationDDDMemberSettingsClearCursorIsMonotonic(t *testing.T) {
+	fixture := newDDDComposition(t)
+	ctx := context.Background()
+	alice := dddEndpoint("ptid:alice", "alice-1")
+	bob := dddEndpoint("ptid:bob", "bob-1")
+	seedDDDDevices(t, fixture.db, dddDevice(alice, "station-a"), dddDevice(bob, "station-a"))
+	created, err := fixture.commands.CreateDirect(ctx, command.CreateDirectRequest{
+		Creator:           alice,
+		Peer:              bob.Actor,
+		FederationID:      dddFederationID,
+		AuthorityEpoch:    dddAuthorityEpoch,
+		CommandID:         "create-settings",
+		VerifiedRoutes:    dddDirectRoutes(alice, "station-a", bob, "station-a"),
+		ExactCommandBytes: []byte("create-settings"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversationID := created.Conversation.ID
+	clearedAt := dddTestTime.UnixMilli()
+	muted := true
+	if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, alice.Actor,
+		command.MemberSettingsPatch{ClearedAtUnixMillis: &clearedAt, Muted: &muted},
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, rejected := range []int64{-1, 0, clearedAt - 1} {
+		if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, alice.Actor,
+			command.MemberSettingsPatch{ClearedAtUnixMillis: &rejected},
+		); err == nil {
+			t.Fatalf("accepted invalid clear cursor %d", rejected)
+		}
+	}
+	advancedAt := clearedAt + 1
+	if _, err := fixture.commands.UpdateMemberSettings(ctx, conversationID, "ptid:outsider",
+		command.MemberSettingsPatch{ClearedAtUnixMillis: &advancedAt},
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeUnauthorized) {
+		t.Fatalf("nonmember update error = %v", err)
+	}
+	var persisted persistence.ConversationMemberSettingsModel
+	if err := fixture.db.First(&persisted, "conversation_id = ? AND ptid = ?",
+		string(conversationID), string(alice.Actor),
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if persisted.ClearedAtUnixMillis != clearedAt || !persisted.Muted {
+		t.Fatalf("persisted settings = %+v", persisted)
+	}
+}
+
 func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *testing.T) {
 	fixture := newDDDComposition(t)
 	owner := dddEndpoint("ptid:owner", "owner-1")

@@ -11,6 +11,7 @@ import {
   AuthCommandException,
   classifyAgentTurnTerminalEvent,
   isAgentCapabilityReady,
+  projectAgentTypedErrorPayload,
   streamAgentTurn,
   streamAgentTurnReplay,
   submitAgentFeedback,
@@ -235,7 +236,9 @@ type FoundationTurnReplayLocator = Pick<
   | 'streamGeneration'
   | 'actorPtid'
   | 'acknowledgedCursor'
->;
+> & {
+  attemptId?: string;
+};
 
 interface FoundationF06FaultBoundary {
   handoff: FoundationF06Handoff;
@@ -410,6 +413,75 @@ function readFoundationF06Handoff(scenarioKey: string): FoundationF06Handoff | n
   return readFoundationF06Handoffs()[scenarioKey] ?? null;
 }
 
+function foundationF06HandoffStorageSnapshot(
+  scenarioKey: string,
+): Record<string, unknown> {
+  const raw = window.localStorage.getItem(FOUNDATION_F06_STORAGE_KEY);
+  if (!raw) {
+    return {
+      storagePresent: false,
+      serializedLength: 0,
+      containerValid: false,
+      entryCount: 0,
+      scenarioPresent: false,
+      topLevelNullFields: [],
+      toolIsolationPresent: false,
+      toolIsolationNullFields: [],
+    };
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    const containerValid = Boolean(
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed),
+    );
+    const entries = containerValid
+      ? parsed as Record<string, unknown>
+      : {};
+    const candidate = entries[scenarioKey];
+    const candidateValid = Boolean(
+      candidate && typeof candidate === 'object' && !Array.isArray(candidate),
+    );
+    const candidateRecord = candidateValid
+      ? candidate as Record<string, unknown>
+      : {};
+    const toolIsolation = candidateRecord.toolIsolation;
+    const toolIsolationValid = Boolean(
+      toolIsolation
+      && typeof toolIsolation === 'object'
+      && !Array.isArray(toolIsolation),
+    );
+    const toolIsolationRecord = toolIsolationValid
+      ? toolIsolation as Record<string, unknown>
+      : {};
+    return {
+      storagePresent: true,
+      serializedLength: raw.length,
+      containerValid,
+      entryCount: Object.keys(entries).length,
+      scenarioPresent: candidateValid,
+      topLevelNullFields: Object.entries(candidateRecord)
+        .filter(([, value]) => value === null)
+        .map(([key]) => key),
+      toolIsolationPresent: toolIsolationValid,
+      toolIsolationNullFields: Object.entries(toolIsolationRecord)
+        .filter(([, value]) => value === null)
+        .map(([key]) => key),
+    };
+  } catch (error) {
+    return {
+      storagePresent: true,
+      serializedLength: raw.length,
+      containerValid: false,
+      entryCount: 0,
+      scenarioPresent: false,
+      parseErrorType: error instanceof Error ? error.name : typeof error,
+      topLevelNullFields: [],
+      toolIsolationPresent: false,
+      toolIsolationNullFields: [],
+    };
+  }
+}
+
 function readFoundationF06CleanupLocators(): Record<
   string,
   FoundationF06CleanupLocator
@@ -469,6 +541,35 @@ function writeFoundationF06Handoff(value: FoundationF06Handoff): void {
   const handoffs = readFoundationF06Handoffs();
   handoffs[value.scenarioKey] = value;
   window.localStorage.setItem(FOUNDATION_F06_STORAGE_KEY, JSON.stringify(handoffs));
+}
+
+function importFoundationF06RestartHandoff(
+  scenarioKey: string,
+  platform: string,
+  value: unknown,
+): FoundationF06Handoff {
+  if (
+    platform !== 'desktop_app'
+    || !value
+    || typeof value !== 'object'
+    || Array.isArray(value)
+  ) {
+    throw new Error('agent.acceptance.foundationRecoveryScopeMismatch');
+  }
+  const candidate = value as Partial<FoundationF06Handoff>;
+  if (
+    candidate.scenarioKey !== scenarioKey
+    || candidate.platform !== platform
+  ) {
+    throw new Error('agent.acceptance.foundationRecoveryScopeMismatch');
+  }
+  writeFoundationF06Handoff(candidate as FoundationF06Handoff);
+  const imported = readFoundationF06Handoff(scenarioKey);
+  if (!imported) {
+    removeFoundationF06Handoff(scenarioKey);
+    throw new Error('agent.acceptance.foundationRecoveryHandoffInvalid');
+  }
+  return imported;
 }
 
 async function updateFoundationF06RecoveryFailure(
@@ -717,6 +818,7 @@ async function foundationStationReplayReadback(
       conversation_id: handoff.conversationId,
       turn_id: handoff.turnId,
       after_seq: handoff.acknowledgedCursor,
+      attempt_id: handoff.attemptId,
     }, (event) => {
       const sourceDelivery = event.sourceDelivery;
       if (
@@ -942,6 +1044,17 @@ function observedErrorCode(error: unknown): string {
   return message;
 }
 
+function isFoundationResourceNotFound(error: unknown): boolean {
+  return (
+    (
+      error !== null
+      && typeof error === 'object'
+      && (error as { code?: unknown }).code === 'NOT_FOUND'
+    )
+    || observedErrorCode(error).includes('AGENT_4004')
+  );
+}
+
 function redactedAuthError(error: unknown): Record<string, string | null> {
   if (!(error instanceof AuthCommandException)) {
     return {
@@ -1005,7 +1118,7 @@ async function deleteFoundationConversation(
       return '';
     } catch (error) {
       const code = observedErrorCode(error);
-      if (code.includes('AGENT_4004')) return code;
+      if (isFoundationResourceNotFound(error)) return 'AGENT_4004';
       if (code !== 'VERSION_CONFLICT' && code !== 'ACTIVE_DEPENDENCY') {
         try {
           await api.getAgentConversation(conversationId);
@@ -1070,15 +1183,44 @@ function clearFoundationLocalConversationProjection(
     const sessionBuffers = { ...state.sessionBuffers };
     delete sessionBuffers[conversationId];
     const isCurrent = state.currentSessionKey === conversationId;
+    const sessions = state.sessions.filter(
+      (session) =>
+        session.id !== conversationId && session.key !== conversationId,
+    );
     return {
       operations,
       sessionBuffers,
+      sessions,
+      currentSessionKey:
+        isCurrent ? sessions[0]?.key || 'main' : state.currentSessionKey,
       messages: isCurrent ? [] : state.messages,
       isStreaming: isCurrent ? false : state.isStreaming,
       streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
       abortController: isCurrent ? null : state.abortController,
     };
   });
+}
+
+async function setFoundationComposerDraft(
+  value: string,
+  label: string,
+): Promise<HTMLTextAreaElement> {
+  const textarea = document.querySelector<HTMLTextAreaElement>(
+    '[data-pt-agent-composer-input]',
+  );
+  if (!textarea) {
+    throw new Error('agent.acceptance.foundationComposerInputMissing');
+  }
+  useChatStore.getState().fillComposer(value);
+  await waitFor(
+    () => (
+      useChatStore.getState().composerFill === null
+      && textarea.value === value
+    ),
+    label,
+    10_000,
+  );
+  return textarea;
 }
 
 async function cancelFoundationQueuedTurns(
@@ -1546,6 +1688,46 @@ interface FoundationToolTurn {
   observed: ObservedFoundationTurn;
 }
 
+interface FoundationExecutorUnavailableScenario {
+  scenarioKey: string;
+  platform: string;
+  sampleId: string;
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  fixture: FoundationToolFixture;
+  originalBinding: AgentCapabilityBinding | null;
+  currentBinding: AgentCapabilityBinding;
+  turn: FoundationToolTurn;
+  approvalId: string;
+  toolCallId: string;
+  expectedRevision: number;
+  targetCapabilitySessionId: string;
+  targetDeviceId: string;
+  targetCapabilityId: string;
+  startedAt: number;
+  bindingRestored: boolean;
+}
+
+const foundationExecutorUnavailableScenarios =
+  new Map<string, FoundationExecutorUnavailableScenario>();
+
+interface FoundationForbiddenActorOwnerScenario {
+  scenarioKey: string;
+  agentId: string;
+  conversationId: string;
+  priorSelection: string;
+  ownerActorHash: string;
+  beforeHash: string;
+  beforeVersion: number;
+  beforeMessageCount: number;
+  beforeQueueCount: number;
+  beforeTurnCount: number;
+  beforeProviderCallCount: number;
+}
+
+const foundationForbiddenActorOwnerScenarios =
+  new Map<string, FoundationForbiddenActorOwnerScenario>();
+const foundationForbiddenActorReceiverResources = new Map<string, string>();
+
 interface FoundationToolTurnSession {
   capabilitySessionId: string;
   facts: Record<string, unknown>;
@@ -1673,7 +1855,11 @@ async function foundationToolFixture(
   ]);
   const manifest = manifests.find((candidate) =>
     candidate.sourceKind === sourceKind
-    && candidate.sourceInstanceId === toolName);
+    && candidate.sourceInstanceId === toolName
+    && (
+      sourceKind !== CapabilitySourceKind.BUILTIN_TOOL
+      || candidate.requiredRuntimeCapabilities.includes('native-tools')
+    ));
   if (!manifest) {
     throw new Error('agent.acceptance.foundationToolManifestMissing');
   }
@@ -2883,6 +3069,516 @@ async function runFoundationF04Scenario(input: {
   }
 }
 
+async function restoreFoundationExecutorUnavailableBinding(
+  scenario: FoundationExecutorUnavailableScenario,
+): Promise<boolean> {
+  if (scenario.originalBinding) {
+    await updateFoundationToolPolicy(
+      scenario.agent,
+      scenario.fixture,
+      scenario.currentBinding,
+      scenario.originalBinding.approvalPolicy,
+      scenario.originalBinding.enabled,
+    );
+  } else {
+    await api.deleteAgentCapabilityBinding(
+      scenario.currentBinding.bindingId,
+      scenario.currentBinding.revision,
+      crypto.randomUUID(),
+      'acceptance_fixture_cleanup',
+    );
+  }
+  const bindings = await api.listAgentCapabilityBindings(
+    scenario.agent.id || scenario.agent.name,
+  );
+  const restored = bindings.find((candidate) =>
+    candidate.capabilityId === scenario.fixture.manifest.capabilityId
+    && candidate.capabilityVersion === scenario.fixture.manifest.version
+    && !candidate.tombstonedAt) ?? null;
+  return scenario.originalBinding
+    ? (
+        restored?.approvalPolicy === scenario.originalBinding.approvalPolicy
+        && restored.enabled === scenario.originalBinding.enabled
+      )
+    : restored === null;
+}
+
+async function cleanupFoundationExecutorUnavailableScenario(
+  scenarioKey: string,
+): Promise<void> {
+  const scenario = foundationExecutorUnavailableScenarios.get(scenarioKey);
+  if (!scenario) return;
+  foundationExecutorUnavailableScenarios.delete(scenarioKey);
+  const failures: unknown[] = [];
+  if (!scenario.bindingRestored) {
+    try {
+      await restoreFoundationExecutorUnavailableBinding(scenario);
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  try {
+    await cleanupFoundationToolConversation(
+      scenario.turn.conversationId,
+      scenario.turn.turnId,
+    );
+  } catch (error) {
+    failures.push(error);
+  }
+  if (failures.length > 0) {
+    throw Object.assign(
+      new Error('agent.acceptance.foundationExecutorUnavailableCleanupFailed'),
+      { failures },
+    );
+  }
+}
+
+async function prepareFoundationExecutorUnavailableScenario(input: {
+  scenarioKey: string;
+  platform: string;
+  sampleId: string;
+  targetCapabilitySessionId: string;
+  targetDeviceId: string;
+  targetCapabilityId: string;
+}): Promise<Record<string, unknown>> {
+  if (foundationExecutorUnavailableScenarios.has(input.scenarioKey)) {
+    throw new Error('agent.acceptance.foundationExecutorScenarioConflict');
+  }
+  const agent = selectedAgent();
+  if (!agent) throw new Error('agent.acceptance.agentMissing');
+  const agentId = agent.id || agent.name;
+  const targetSession = (
+    await api.listAgentCapabilitySessions()
+  ).sessions.find((session) =>
+    session.session_id === input.targetCapabilitySessionId
+    && session.device_id === input.targetDeviceId
+    && session.typed_capabilities.some(
+      (capability) => capability.capability_id === input.targetCapabilityId,
+    ));
+  if (!targetSession) {
+    throw new Error('agent.acceptance.foundationExecutorTargetUnavailable');
+  }
+
+  const fixture = await foundationToolFixture(agentId, 'desktop_app');
+  if (fixture.manifest.capabilityId !== input.targetCapabilityId) {
+    throw new Error('agent.acceptance.foundationExecutorCapabilityMismatch');
+  }
+  let currentBinding = fixture.binding;
+  let turn: FoundationToolTurn | null = null;
+  try {
+    currentBinding = await updateFoundationToolPolicy(
+      agent,
+      fixture,
+      currentBinding,
+      CapabilityApprovalPolicy.MANUAL,
+    );
+    turn = await startFoundationToolTurn({
+      agent,
+      capabilitySessionId: input.targetCapabilitySessionId,
+      fixture,
+      sampleId: input.sampleId,
+      label: 'executor-unavailable',
+    });
+    await useChatStore.getState().selectSession(turn.conversationId);
+    const approval = await waitForToolApprovalEvent(turn);
+    const approvalId = String(
+      evidenceField(approval, 'approvalId', 'approval_id') ?? '',
+    );
+    const toolCallId = String(
+      evidenceField(approval, 'toolCallId', 'tool_call_id') ?? '',
+    );
+    const expectedRevision = Number(
+      evidenceField(approval, 'decisionRevision', 'decision_revision') ?? 0,
+    );
+    if (!approvalId || !toolCallId || !Number.isInteger(expectedRevision)) {
+      throw new Error('agent.acceptance.foundationToolApprovalInvalid');
+    }
+    await waitFor(
+      () => Boolean(document.querySelector(
+        `[data-pt-agent-tool-call="${toolCallId}"]`,
+      )),
+      'executor-unavailable ToolCall receiver',
+      30_000,
+    );
+    foundationExecutorUnavailableScenarios.set(input.scenarioKey, {
+      scenarioKey: input.scenarioKey,
+      platform: input.platform,
+      sampleId: input.sampleId,
+      agent,
+      fixture,
+      originalBinding: fixture.binding,
+      currentBinding,
+      turn,
+      approvalId,
+      toolCallId,
+      expectedRevision,
+      targetCapabilitySessionId: input.targetCapabilitySessionId,
+      targetDeviceId: input.targetDeviceId,
+      targetCapabilityId: input.targetCapabilityId,
+      startedAt: performance.now(),
+      bindingRestored: false,
+    });
+    return {
+      scenarioKey: input.scenarioKey,
+      conversationId: turn.conversationId,
+      turnId: turn.turnId,
+      approvalId,
+      toolCallId,
+      expectedRevision,
+      targetCapabilitySessionId: input.targetCapabilitySessionId,
+      targetDeviceId: input.targetDeviceId,
+      targetCapabilityId: input.targetCapabilityId,
+    };
+  } catch (error) {
+    if (turn) {
+      await cleanupFoundationToolConversation(
+        turn.conversationId,
+        turn.turnId,
+      ).catch(() => undefined);
+    }
+    if (currentBinding) {
+      if (fixture.binding) {
+        await updateFoundationToolPolicy(
+          agent,
+          fixture,
+          currentBinding,
+          fixture.binding.approvalPolicy,
+          fixture.binding.enabled,
+        ).catch(() => undefined);
+      } else {
+        await api.deleteAgentCapabilityBinding(
+          currentBinding.bindingId,
+          currentBinding.revision,
+          crypto.randomUUID(),
+          'acceptance_fixture_cleanup',
+        ).catch(() => undefined);
+      }
+    }
+    throw error;
+  }
+}
+
+function executorUnavailableStationFact(
+  fact: Record<string, unknown>,
+): Record<string, unknown> {
+  const stringField = (camelCase: string, snakeCase: string): string =>
+    String(evidenceField(fact, camelCase, snakeCase) ?? '');
+  const numberField = (camelCase: string, snakeCase: string): number =>
+    Number(evidenceField(fact, camelCase, snakeCase) ?? 0);
+  return {
+    policy: String(
+      evidenceField(fact, 'approvalPolicy', 'approval_policy') ?? '',
+    ),
+    states: ['policy_check', 'awaiting_user'],
+    errorCode: stringField('errorCode', 'error_code'),
+    executionOwner: toolExecutionOwnerName(
+      evidenceField(fact, 'executionOwner', 'execution_owner'),
+    ),
+    executionAttemptCount: numberField(
+      'executionAttemptCount',
+      'execution_attempt_count',
+    ),
+    sideEffectCount: stringField(
+      'sideEffectReceiptId',
+      'side_effect_receipt_id',
+    ) ? 1 : 0,
+    resultCount: stringField('resultId', 'result_id') ? 1 : 0,
+    continuationCount: stringField('continuationId', 'continuation_id') ? 1 : 0,
+    lineage: {
+      toolCallId: stringField('toolCallId', 'tool_call_id'),
+      approvalId: stringField('approvalId', 'approval_id'),
+      decisionId: stringField('decisionId', 'decision_id'),
+      decisionRevision: numberField(
+        'decisionRevision',
+        'decision_revision',
+      ),
+      executionClaimId: stringField(
+        'executionClaimId',
+        'execution_claim_id',
+      ),
+      fencingToken: numberField('fencingToken', 'fencing_token'),
+      sideEffectReceiptId: stringField(
+        'sideEffectReceiptId',
+        'side_effect_receipt_id',
+      ),
+      resultId: stringField('resultId', 'result_id'),
+      continuationId: stringField('continuationId', 'continuation_id'),
+      dispatchCommittedAt: evidenceField(
+        fact,
+        'dispatchCommittedAt',
+        'dispatch_committed_at',
+      ) ?? null,
+    },
+  };
+}
+
+async function rejectFoundationExecutorUnavailableScenario(
+  scenarioKey: string,
+  executorStop: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const scenario = foundationExecutorUnavailableScenarios.get(scenarioKey);
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationExecutorScenarioMissing');
+  }
+  const toolCallElement = document.querySelector<HTMLElement>(
+    `[data-pt-agent-tool-call="${scenario.toolCallId}"]`,
+  );
+  if (!toolCallElement) {
+    throw new Error('agent.acceptance.foundationToolCallSurfaceMissing');
+  }
+  let approve = toolCallElement.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-tool-decision="approve"]',
+  );
+  if (!approve) {
+    toolCallElement.querySelector<HTMLElement>(
+      '[data-pt-agent-tool-call-toggle]',
+    )?.click();
+    await waitFor(
+      () => Boolean(toolCallElement.querySelector(
+        '[data-pt-agent-tool-decision="approve"]',
+      )),
+      'executor-unavailable approve action',
+      10_000,
+    );
+    approve = toolCallElement.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-tool-decision="approve"]',
+    );
+  }
+  if (!approve) {
+    throw new Error('agent.acceptance.foundationToolApproveMissing');
+  }
+  approve.click();
+  await waitFor(
+    () => (
+      toolRuntime.getProjection(scenario.toolCallId)
+        ?.decisionOutcome?.error_type === 'CLIENT_EXECUTOR_UNAVAILABLE'
+    ),
+    'executor-unavailable typed outcome',
+    30_000,
+  );
+  const projection = toolRuntime.getProjection(scenario.toolCallId);
+  const attempt = toolRuntime.getDecisionAttempt(scenario.toolCallId);
+  if (!projection?.decisionOutcome || !attempt) {
+    throw new Error('agent.acceptance.foundationExecutorOutcomeMissing');
+  }
+  const replayedAcknowledgement = await api.submitAgentToolDecision(
+    attempt.input,
+  );
+  let repeatedApprovalBlocked = false;
+  try {
+    await toolRuntime.submitDecision(scenario.toolCallId, true);
+  } catch (error) {
+    repeatedApprovalBlocked =
+      observedErrorCode(error).includes('agent.errors.executorUnavailable');
+  }
+  const source = await waitForFoundationToolFacts(
+    scenario.turn.turnId,
+    (facts) => (
+      facts.length === 1
+      && Number(facts[0].status) === ToolCallStatus.WAITING_APPROVAL
+    ),
+    'executor-unavailable Station source readback',
+  );
+  const replayed = await waitForFoundationToolFacts(
+    scenario.turn.turnId,
+    (facts) => (
+      facts.length === 1
+      && Number(facts[0].status) === ToolCallStatus.WAITING_APPROVAL
+    ),
+    'executor-unavailable Station replay readback',
+  );
+  const station = executorUnavailableStationFact(replayed.facts[0]);
+  const errorSelector =
+    '[data-pt-agent-tool-error="agent.errors.executorUnavailable"]';
+  const recoverySelector =
+    '[data-pt-agent-tool-recovery="reconnect-executor"]';
+  await waitFor(
+    () => Boolean(toolCallElement.querySelector(errorSelector))
+      && Boolean(toolCallElement.querySelector(recoverySelector)),
+    'executor-unavailable recovery surface',
+    10_000,
+  );
+  const errorElement = toolCallElement.querySelector<HTMLElement>(errorSelector);
+  const recovery = toolCallElement.querySelector<HTMLButtonElement>(
+    recoverySelector,
+  );
+  const firstAcknowledgementHash = await sha256Hex(
+    stableJson(attempt.response),
+  );
+  const replayedAcknowledgementHash = await sha256Hex(
+    stableJson(replayedAcknowledgement),
+  );
+  const sourceReplayHash = await sha256Hex(stableJson(
+    withoutDiagnosticGenerationTime(source.replay),
+  ));
+  const diagnosticReplayHash = await sha256Hex(stableJson(
+    withoutDiagnosticGenerationTime(replayed.replay),
+  ));
+  const runtimeEvent = [...scenario.turn.observed.events]
+    .reverse()
+    .map((event) => ({
+      eventType: event.event,
+      sequence: Number(event.data.seq ?? 0),
+      observedAt: event.observedAt,
+    }))
+    .find((event) => event.sequence > 0);
+  if (!runtimeEvent) {
+    throw new Error('agent.acceptance.foundationToolRuntimeEventMissing');
+  }
+
+  return {
+    conversationId: scenario.turn.conversationId,
+    turnId: scenario.turn.turnId,
+    durationMs: performance.now() - scenario.startedAt,
+    runtimeEvent,
+    facts: {
+      outcome: projection.decisionOutcome,
+      receiver: {
+        errorVisible: Boolean(
+          errorElement && errorElement.getClientRects().length > 0,
+        ),
+        errorText: errorElement?.textContent?.trim() ?? '',
+        expectedErrorText: i18n.t(
+          'agent.errors.executorUnavailable',
+          { ns: 'agent' },
+        ),
+        recoveryVisible: Boolean(
+          recovery && recovery.getClientRects().length > 0,
+        ),
+        recoveryText: recovery?.textContent?.trim() ?? '',
+        expectedRecoveryText: i18n.t(
+          'agent.recovery.reconnectExecutor',
+          { ns: 'agent' },
+        ),
+        approveDisabled: approve.disabled,
+        repeatedApprovalBlocked,
+        recoveryExecuted: false,
+      },
+      decision: {
+        accepted: attempt.response.accepted,
+        approved: attempt.response.approved,
+        errorCode: attempt.response.error_code,
+        approvalId: attempt.response.approval_id,
+        toolCallId: attempt.response.tool_call_id,
+        decisionId: attempt.response.decision_id,
+        decisionRevision: attempt.response.decision_revision,
+      },
+      station,
+      executor: {
+        ...executorStop,
+        targetCapabilitySessionId: scenario.targetCapabilitySessionId,
+        targetDeviceId: scenario.targetDeviceId,
+        targetCapabilityId: scenario.targetCapabilityId,
+      },
+      replay: {
+        acknowledgementSourceHash: firstAcknowledgementHash,
+        acknowledgementReplayHash: replayedAcknowledgementHash,
+        diagnosticSourceHash: sourceReplayHash,
+        diagnosticReplayHash,
+        equal:
+          firstAcknowledgementHash === replayedAcknowledgementHash
+          && sourceReplayHash === diagnosticReplayHash,
+      },
+      cleanup: {
+        bindingRestored: false,
+        conversationDeleted: false,
+        executorRestored: false,
+      },
+    },
+  };
+}
+
+async function recoverFoundationExecutorUnavailableScenario(input: {
+  scenarioKey: string;
+  rejectedScenario: Record<string, unknown>;
+  executorStart: Record<string, unknown>;
+}): Promise<Record<string, unknown>> {
+  const scenario = foundationExecutorUnavailableScenarios.get(input.scenarioKey);
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationExecutorScenarioMissing');
+  }
+  const facts = evidenceRecord(
+    input.rejectedScenario.facts,
+    'foundationExecutorUnavailableFacts',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationExecutorUnavailableReceiver',
+  );
+  const toolCallElement = document.querySelector<HTMLElement>(
+    `[data-pt-agent-tool-call="${scenario.toolCallId}"]`,
+  );
+  const recovery = toolCallElement?.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-tool-recovery="reconnect-executor"]',
+  );
+  if (!toolCallElement || !recovery) {
+    throw new Error('agent.acceptance.foundationToolRecoveryMissing');
+  }
+  recovery.click();
+  await waitFor(
+    () => {
+      const projection = toolRuntime.getProjection(scenario.toolCallId);
+      return projection?.status === 'approval_required'
+        && projection.error === undefined
+        && projection.decisionOutcome === undefined;
+    },
+    'executor-unavailable reconnect reconciliation',
+    30_000,
+  );
+  const approve = toolCallElement.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-tool-decision="approve"]',
+  );
+  const postRecovery = await waitForFoundationToolFacts(
+    scenario.turn.turnId,
+    (toolFacts) => (
+      toolFacts.length === 1
+      && Number(toolFacts[0].status) === ToolCallStatus.WAITING_APPROVAL
+    ),
+    'executor-unavailable post-recovery readback',
+  );
+  const stationAfterRecovery = executorUnavailableStationFact(
+    postRecovery.facts[0],
+  );
+  const cancellation = await api.cancelAgentTurn(scenario.turn.turnId);
+  const turnCancelled =
+    String(cancellation.status ?? '').toLowerCase() === 'cancelled';
+  if (!turnCancelled) {
+    throw new Error('agent.acceptance.foundationExecutorTurnCleanupFailed');
+  }
+  const bindingRestored =
+    await restoreFoundationExecutorUnavailableBinding(scenario);
+  scenario.bindingRestored = bindingRestored;
+
+  return {
+    ...input.rejectedScenario,
+    facts: {
+      ...facts,
+      receiver: {
+        ...receiver,
+        recoveryExecuted: true,
+        approvalEnabledAfterRecovery: approve?.disabled === false,
+      },
+      stationAfterRecovery,
+      executor: {
+        ...evidenceRecord(
+          facts.executor,
+          'foundationExecutorUnavailableExecutor',
+        ),
+        ...input.executorStart,
+      },
+      cleanup: {
+        ...evidenceRecord(
+          facts.cleanup,
+          'foundationExecutorUnavailableCleanup',
+        ),
+        bindingRestored,
+        executorRestored: true,
+        turnCancelled,
+      },
+    },
+  };
+}
+
 async function runFoundationApprovalDeniedScenario(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   platform: string;
@@ -3819,6 +4515,77 @@ async function foundationExecutionSnapshot(
   };
 }
 
+async function foundationIncompatibleExecutionSnapshot(
+  agentId: string,
+  conversationId: string,
+): Promise<{
+  turnCount: number;
+  providerCallCount: number;
+  toolCallCount: number;
+  toolExecutionCount: number;
+  sideEffectCount: number;
+}> {
+  const traces = await api.listAgentTurnTraces(agentId, {
+    conversationId,
+    page: 1,
+    pageSize: 200,
+  });
+  const toolFacts = (
+    await Promise.all(traces.entries.map(async (entry) => {
+      const turnId = entry.turn?.turnId ?? '';
+      if (!turnId) return [];
+      const diagnostics = evidenceRecord(
+        evidenceValue(await api.exportAgentTurnDiagnostics(turnId)),
+        'foundationIncompatibleDiagnostics',
+      );
+      const replay = evidenceRecord(
+        diagnostics.replay,
+        'foundationIncompatibleReplay',
+      );
+      return optionalEvidenceArray(
+        evidenceField(replay, 'toolCalls', 'tool_calls'),
+        'foundationIncompatibleToolCalls',
+      ).map((value) =>
+        evidenceRecord(value, 'foundationIncompatibleToolCall'));
+    }))
+  ).flat();
+  return {
+    turnCount: Number(traces.total ?? traces.entries.length),
+    providerCallCount: traces.entries.reduce(
+      (total, entry) => {
+        if (!entry.trace) return total;
+        const trace = evidenceRecord(
+          evidenceValue(entry.trace),
+          'foundationIncompatibleExecutionTrace',
+        );
+        return total + optionalEvidenceArray(
+          evidenceField(trace, 'providerCalls', 'provider_calls'),
+          'foundationIncompatibleProviderCalls',
+        ).length;
+      },
+      0,
+    ),
+    toolCallCount: toolFacts.length,
+    toolExecutionCount: toolFacts.reduce(
+      (total, fact) =>
+        total + Number(
+          evidenceField(
+            fact,
+            'executionAttemptCount',
+            'execution_attempt_count',
+          ) ?? 0,
+        ),
+      0,
+    ),
+    sideEffectCount: toolFacts.filter((fact) =>
+      Boolean(evidenceField(
+        fact,
+        'sideEffectReceiptId',
+        'side_effect_receipt_id',
+      ))).length,
+  };
+}
+
 async function runFoundationAttachmentTurn(input: {
   agentId: string;
   conversationId: string;
@@ -3831,6 +4598,15 @@ async function runFoundationAttachmentTurn(input: {
   result: ObservedFoundationTurnResult;
   turnId: string;
 }> {
+  const startedAt = performance.now();
+  // #region debug-point I-L:foundation-f05-turn
+  void reportFoundationAttachmentTimeoutDebug('I-L', 'turn-submission-started', {
+    attachmentCount: input.attachments.length,
+    capabilitySessionPresent: Boolean(input.capabilitySessionId),
+    providerPresent: Boolean(input.provider),
+    modelPresent: Boolean(input.model),
+  });
+  // #endregion
   const observed = startObservedFoundationTurn({
     conversationId: input.conversationId,
     agentId: input.agentId,
@@ -3838,10 +4614,32 @@ async function runFoundationAttachmentTurn(input: {
     idempotencyKey: crypto.randomUUID(),
     provider: input.provider,
     model: input.model,
+    thinkingMode: 'disabled',
     clientCapabilitySessionId: input.capabilitySessionId,
     attachments: input.attachments,
+    // #region debug-point J-K:foundation-f05-events
+    onEvent: (event, events) => {
+      void reportFoundationAttachmentTimeoutDebug('J-K', 'turn-event-observed', {
+        eventCount: events.length,
+        eventType: event.event,
+        sequence: Number(event.data.seq ?? event.data.sequence ?? 0),
+        terminal: classifyAgentTurnTerminalEvent(event),
+      });
+    },
+    // #endregion
   });
   const result = await observed.result;
+  // #region debug-point J-K:foundation-f05-settled
+  await reportFoundationAttachmentTimeoutDebug('J-K', 'turn-submission-settled', {
+    elapsedMs: Math.round(performance.now() - startedAt),
+    errorCode: result.error
+      ? observedErrorCode(new Error(result.error))
+      : '',
+    eventCount: result.events.length,
+    lastEventType: result.events[result.events.length - 1]?.event ?? '',
+    ok: result.ok,
+  });
+  // #endregion
   return {
     result,
     turnId: observedTurnId(result.events),
@@ -3958,22 +4756,10 @@ async function runFoundationF05Scenario(input: {
     model_name: input.agent.model,
   });
   const uploaded: AgentAttachmentRefInput[] = [];
-  const toolFixture = await foundationToolFixture(agentId, input.platform);
-  const originalToolBinding = toolFixture.binding;
-  let currentToolBinding = originalToolBinding;
   const startedAt = performance.now();
   let scenarioError: unknown = null;
 
   try {
-    if (currentToolBinding?.enabled) {
-      currentToolBinding = await updateFoundationToolPolicy(
-        input.agent,
-        toolFixture,
-        currentToolBinding,
-        currentToolBinding.approvalPolicy,
-        false,
-      );
-    }
     const png = await api.ossUploadAgentAttachmentBytes({
       filename: 'foundation.png',
       mime_type: 'image/png',
@@ -4025,15 +4811,34 @@ async function runFoundationF05Scenario(input: {
         `sha256:${await sha256Bytes(await foundationResolvedBytes(attachment.object_ref))}`),
     );
 
-    const valid = await runFoundationAttachmentTurn({
-      agentId,
-      conversationId: conversation.conversation_id,
-      provider: input.agent.provider || undefined,
-      model: input.agent.model || undefined,
-      capabilitySessionId: input.capabilitySessionId,
-      attachments: [png, pdf],
-      content: 'Acknowledge the attached files in one short sentence.',
+    // #region debug-point I-L:foundation-f05-positive-turn
+    void reportFoundationAttachmentTimeoutDebug('I-L', 'positive-turn-started', {
+      capabilitySessionPresent: Boolean(input.capabilitySessionId),
+      platform: input.platform,
+      uploadedAttachmentCount: 2,
     });
+    // #endregion
+    const valid = await withFoundationCapabilitiesDisabled(
+      input.agent,
+      input.capabilitySessionId,
+      () => runFoundationAttachmentTurn({
+        agentId,
+        conversationId: conversation.conversation_id,
+        provider: input.agent.provider || undefined,
+        model: input.agent.model || undefined,
+        capabilitySessionId: input.capabilitySessionId,
+        attachments: [png, pdf],
+        content: 'Acknowledge the attached files in one short sentence.',
+      }),
+    );
+    // #region debug-point I-L:foundation-f05-positive-turn-result
+    void reportFoundationAttachmentTimeoutDebug('I-L', 'positive-turn-finished', {
+      eventCount: valid.result.events.length,
+      ok: valid.result.ok,
+      platform: input.platform,
+      turnIdPresent: Boolean(valid.turnId),
+    });
+    // #endregion
     if (!valid.result.ok || !valid.turnId) {
       throw new Error(
         valid.result.error || 'agent.acceptance.foundationAttachmentTurnFailed',
@@ -4284,22 +5089,6 @@ async function runFoundationF05Scenario(input: {
         }
         throw new Error('agent.acceptance.foundationAttachmentCleanupFailed');
       });
-    if (
-      originalToolBinding
-      && currentToolBinding
-      && (
-        currentToolBinding.enabled !== originalToolBinding.enabled
-        || currentToolBinding.approvalPolicy !== originalToolBinding.approvalPolicy
-      )
-    ) {
-      cleanupTasks.push(updateFoundationToolPolicy(
-        input.agent,
-        toolFixture,
-        currentToolBinding,
-        originalToolBinding.approvalPolicy,
-        originalToolBinding.enabled,
-      ));
-    }
     const cleanup = await Promise.allSettled(cleanupTasks);
     const failed = cleanup.find((result) => result.status === 'rejected');
     if (failed?.status === 'rejected' && scenarioError === null) {
@@ -4572,13 +5361,53 @@ async function runFoundationAttachmentRejectedScenario(input: {
         'rejected attachment draft',
         10_000,
       );
-      await waitFor(
-        () => Boolean(document.querySelector(
-          '[data-pt-agent-message-error="agent.errors.attachmentRejected"]',
-        )),
-        'attachment rejection receiver',
-        10_000,
-      );
+      try {
+        await waitFor(
+          () => Boolean(document.querySelector(
+            '[data-pt-agent-message-error="agent.errors.attachmentRejected"]',
+          )),
+          'attachment rejection receiver',
+          10_000,
+        );
+      } catch (error) {
+        const chatState = useChatStore.getState();
+        const projectMessage = (message: {
+          id: string;
+          role: string;
+          loading?: boolean;
+          error?: string;
+          typedError?: { error_type?: string };
+        }) => ({
+          optimistic: message.id.startsWith('temp-'),
+          role: message.role,
+          loading: message.loading === true,
+          errorPresent: Boolean(message.error),
+          typedError: message.typedError?.error_type ?? null,
+        });
+        await reportFoundationAttachmentTimeoutDebug(
+          'N-Q',
+          'rejection-receiver-timeout',
+          {
+            currentSessionMatches:
+              chatState.currentSessionKey === conversation.conversation_id,
+            isStreaming: chatState.isStreaming,
+            operationRunState:
+              chatState.operations[conversation.conversation_id]?.runState
+              ?? null,
+            currentMessages: chatState.messages.map(projectMessage),
+            bufferedMessages: (
+              chatState.sessionBuffers[conversation.conversation_id] ?? []
+            ).map(projectMessage),
+            assistantDomCount: document.querySelectorAll(
+              '[data-pt-agent-message="assistant"]',
+            ).length,
+            attachmentErrorDomCount: document.querySelectorAll(
+              '[data-pt-agent-message-error="agent.errors.attachmentRejected"]',
+            ).length,
+          },
+        );
+        throw error;
+      }
     } finally {
       unsubscribe();
     }
@@ -4652,12 +5481,71 @@ async function runFoundationAttachmentRejectedScenario(input: {
 
     const attachmentVisibleAfterReject =
       rejectedDraft.getClientRects().length > 0;
+    const errorVisible = errorText.getClientRects().length > 0;
+    const errorTextValue = errorText.textContent?.trim() ?? '';
+    const expectedErrorText = i18n.t(
+      'agent.errors.attachmentRejected',
+      { ns: 'agent' },
+    );
     const removalVisible = removeAction.getClientRects().length > 0;
     const removalText =
       removeAction.getAttribute('aria-label')
       ?? removeAction.getAttribute('title')
       ?? '';
     const draftTextAfterRejection = textarea.value;
+    // #region debug-point I-L:attachment-removal-visibility
+    const rejectedDraftRect = rejectedDraft.getBoundingClientRect();
+    const removeActionRect = removeAction.getBoundingClientRect();
+    const rejectedDraftStyle = window.getComputedStyle(rejectedDraft);
+    const removeActionStyle = window.getComputedStyle(removeAction);
+    const errorTextRect = errorText.getBoundingClientRect();
+    const errorTextStyle = window.getComputedStyle(errorText);
+    const expectedRemovalText = i18n.t(
+      'chat.input.attachmentRemove',
+      { ns: 'chat' },
+    );
+    await reportFoundationAttachmentTimeoutDebug(
+      'I-L',
+      'rejected-removal-snapshot',
+      {
+        locale: i18n.language,
+        attachmentDraftCount: document.querySelectorAll(
+          '[data-pt-agent-composer-attachment]',
+        ).length,
+        rejectedDraftCount: document.querySelectorAll(
+          '[data-pt-agent-composer-attachment-status="rejected"]',
+        ).length,
+        removeActionCount: document.querySelectorAll(
+          '[data-pt-agent-composer-attachment-remove]',
+        ).length,
+        rejectedDraftConnected: rejectedDraft.isConnected,
+        rejectedDraftRectCount: rejectedDraft.getClientRects().length,
+        rejectedDraftWidth: Math.round(rejectedDraftRect.width),
+        rejectedDraftHeight: Math.round(rejectedDraftRect.height),
+        rejectedDraftDisplay: rejectedDraftStyle.display,
+        rejectedDraftVisibility: rejectedDraftStyle.visibility,
+        errorTextConnected: errorText.isConnected,
+        errorTextRectCount: errorText.getClientRects().length,
+        errorTextWidth: Math.round(errorTextRect.width),
+        errorTextHeight: Math.round(errorTextRect.height),
+        errorTextDisplay: errorTextStyle.display,
+        errorTextVisibility: errorTextStyle.visibility,
+        errorTextPresent: errorTextValue.length > 0,
+        errorTextMatches: errorTextValue === expectedErrorText,
+        removeActionConnected: removeAction.isConnected,
+        removeActionRectCount: removeAction.getClientRects().length,
+        removeActionWidth: Math.round(removeActionRect.width),
+        removeActionHeight: Math.round(removeActionRect.height),
+        removeActionDisplay: removeActionStyle.display,
+        removeActionVisibility: removeActionStyle.visibility,
+        removeActionOpacity: removeActionStyle.opacity,
+        removalTextPresent: removalText.length > 0,
+        removalTextMatches: removalText === expectedRemovalText,
+        selectedAttachmentMatches:
+          rejectedDraft.dataset.ptAgentComposerAttachment === attachmentId,
+      },
+    );
+    // #endregion
     removeAction.click();
     await waitFor(
       () => !Array.from(
@@ -4669,6 +5557,22 @@ async function runFoundationAttachmentRejectedScenario(input: {
       'attachment removal',
       10_000,
     );
+    // #region debug-point I-L:attachment-removal-completed
+    await reportFoundationAttachmentTimeoutDebug(
+      'I-L',
+      'rejected-removal-completed',
+      {
+        selectedDraftConnected: rejectedDraft.isConnected,
+        selectedRemoveActionConnected: removeAction.isConnected,
+        attachmentPresentAfterRemoval: Array.from(
+          document.querySelectorAll<HTMLElement>(
+            '[data-pt-agent-composer-attachment]',
+          ),
+        ).some((element) =>
+          element.dataset.ptAgentComposerAttachment === attachmentId),
+      },
+    );
+    // #endregion
 
     const deletionReadback =
       await foundationAttachmentDeletionReadback(objectRef);
@@ -4706,12 +5610,9 @@ async function runFoundationAttachmentRejectedScenario(input: {
         runtimeEvent: rejectionRuntimeEvent,
         outcome: typedOutcome,
         receiver: {
-          errorVisible: errorText.getClientRects().length > 0,
-          errorText: errorText.textContent?.trim() ?? '',
-          expectedErrorText: i18n.t(
-            'agent.errors.attachmentRejected',
-            { ns: 'agent' },
-          ),
+          errorVisible,
+          errorText: errorTextValue,
+          expectedErrorText,
           attachmentVisibleAfterReject,
           attachmentStatusAfterReject:
             rejectedDraft.dataset.ptAgentComposerAttachmentStatus,
@@ -4719,10 +5620,7 @@ async function runFoundationAttachmentRejectedScenario(input: {
           draftTextAfterRejection,
           removalVisible,
           removalText,
-          expectedRemovalText: i18n.t(
-            'chat.input.attachmentRemove',
-            { ns: 'chat' },
-          ),
+          expectedRemovalText,
           removalExecuted: true,
           attachmentPresentAfterRemoval: false,
         },
@@ -4794,22 +5692,6 @@ async function runFoundationContextOverflowScenario(input: {
     + 'bounded-input '.repeat(32);
   const reducedDraft = `Reduced context ${input.sampleId}`;
   let baselineTurnId = '';
-
-  const setComposerDraft = (value: string) => {
-    const textarea = document.querySelector<HTMLTextAreaElement>(
-      '[data-pt-agent-composer-input]',
-    );
-    const setTextareaValue = Object.getOwnPropertyDescriptor(
-      window.HTMLTextAreaElement.prototype,
-      'value',
-    )?.set;
-    if (!textarea || !setTextareaValue) {
-      throw new Error('agent.acceptance.foundationComposerInputMissing');
-    }
-    setTextareaValue.call(textarea, value);
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    return textarea;
-  };
 
   try {
     await useChatStore.getState().selectSession(conversation.conversation_id);
@@ -4955,6 +5837,44 @@ async function runFoundationContextOverflowScenario(input: {
         'agent.acceptance.foundationContextOverflowSurfaceMissing',
       );
     }
+    const expectedErrorText = i18n.t(
+      'agent.errors.contextOverflow',
+      { ns: 'agent' },
+    );
+    const expectedRecoveryText = i18n.t(
+      'agent.recovery.reduceContext',
+      { ns: 'agent' },
+    );
+    const receiverErrorVisible = errorText.getClientRects().length > 0;
+    const receiverErrorText = errorText.textContent?.trim() ?? '';
+    const receiverRecoveryVisible =
+      recoveryAction.getClientRects().length > 0;
+    const receiverRecoveryText = recoveryAction.textContent?.trim() ?? '';
+    // #region debug-point A-D:context-overflow-pre-recovery
+    await reportFoundationContextOverflowRecoveryDebug(
+      'A-D',
+      'pre-recovery-snapshot',
+      {
+        locale: i18n.language,
+        matchingSurfaceCount: document.querySelectorAll(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="CONTEXT_OVERFLOW"]',
+        ).length,
+        errorVisible: errorText.getClientRects().length > 0,
+        errorTextMatches:
+          (errorText.textContent?.trim() ?? '') === expectedErrorText,
+        errorTextHash: await sha256Hex(errorText.textContent?.trim() ?? ''),
+        expectedErrorTextHash: await sha256Hex(expectedErrorText),
+        recoveryPresent: recoveryAction.isConnected,
+        recoveryVisible: recoveryAction.getClientRects().length > 0,
+        recoveryTextMatches:
+          (recoveryAction.textContent?.trim() ?? '') === expectedRecoveryText,
+        recoveryTextHash:
+          await sha256Hex(recoveryAction.textContent?.trim() ?? ''),
+        expectedRecoveryTextHash: await sha256Hex(expectedRecoveryText),
+      },
+    );
+    // #endregion
     if (
       !errorEvent.streamId
       || errorEvent.streamGeneration <= 0
@@ -4994,12 +5914,29 @@ async function runFoundationContextOverflowScenario(input: {
       10_000,
     );
     const composerFocusedAfterRecovery = document.activeElement === textarea;
-    setComposerDraft(reducedDraft);
-    await waitFor(
-      () => textarea.value === reducedDraft,
+    await setFoundationComposerDraft(
+      reducedDraft,
       'context overflow reduced draft',
-      10_000,
     );
+    // #region debug-point A-D:context-overflow-post-recovery
+    await reportFoundationContextOverflowRecoveryDebug(
+      'A-D',
+      'post-recovery-snapshot',
+      {
+        locale: i18n.language,
+        matchingSurfaceCount: document.querySelectorAll(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="CONTEXT_OVERFLOW"]',
+        ).length,
+        errorConnected: errorText.isConnected,
+        errorVisible: errorText.getClientRects().length > 0,
+        recoveryConnected: recoveryAction.isConnected,
+        recoveryVisible: recoveryAction.getClientRects().length > 0,
+        composerFocused: document.activeElement === textarea,
+        reducedDraftApplied: textarea.value === reducedDraft,
+      },
+    );
+    // #endregion
 
     const after = await foundationExecutionSnapshot(
       agentId,
@@ -5042,10 +5979,36 @@ async function runFoundationContextOverflowScenario(input: {
       sourceSequence: sourceDelivery.sequence,
       sourceEventType: sourceDelivery.rawPayload.eventType,
     };
-    setComposerDraft('');
     clearFoundationLocalConversationProjection(
       conversation.conversation_id,
     );
+    const cleanupTextarea = await setFoundationComposerDraft(
+      '',
+      'context overflow composer cleanup',
+    );
+    // #region debug-point E-H:context-overflow-scenario-cleanup
+    await reportFoundationContextOverflowRecoveryDebug(
+      'E-H',
+      'scenario-cleanup-sampled',
+      {
+        composerConnected: cleanupTextarea.isConnected,
+        composerMatchesCurrent:
+          document.querySelector('[data-pt-agent-composer-input]')
+          === cleanupTextarea,
+        composerLength: cleanupTextarea.value.length,
+        composerFillPresent:
+          useChatStore.getState().composerFill !== null,
+        draftCleared: cleanupTextarea.value === '',
+        localProjectionCleared:
+          !useChatStore.getState().sessionBuffers[
+            conversation.conversation_id
+          ]
+          && !useChatStore.getState().operations[
+            conversation.conversation_id
+          ],
+      },
+    );
+    // #endregion
 
     return {
       conversationId: conversation.conversation_id,
@@ -5056,14 +6019,14 @@ async function runFoundationContextOverflowScenario(input: {
         outcome: typedOutcome,
         runtimeEvent,
         receiver: {
-          errorVisible: errorText.getClientRects().length > 0,
-          errorText: errorText.textContent?.trim() ?? '',
+          errorVisible: receiverErrorVisible,
+          errorText: receiverErrorText,
           expectedErrorText: i18n.t(
             'agent.errors.contextOverflow',
             { ns: 'agent' },
           ),
-          recoveryVisible: recoveryAction.getClientRects().length > 0,
-          recoveryText: recoveryAction.textContent?.trim() ?? '',
+          recoveryVisible: receiverRecoveryVisible,
+          recoveryText: receiverRecoveryText,
           expectedRecoveryText: i18n.t(
             'agent.recovery.reduceContext',
             { ns: 'agent' },
@@ -5096,7 +6059,7 @@ async function runFoundationContextOverflowScenario(input: {
           equal: beforeHash === afterHash,
         },
         cleanup: {
-          draftCleared: textarea.value === '',
+          draftCleared: cleanupTextarea.value === '',
           localProjectionCleared:
             !useChatStore.getState().sessionBuffers[
               conversation.conversation_id
@@ -5110,13 +6073,18 @@ async function runFoundationContextOverflowScenario(input: {
     };
   } catch (error) {
     try {
-      const textarea = document.querySelector<HTMLTextAreaElement>(
-        '[data-pt-agent-composer-input]',
-      );
-      if (textarea) setComposerDraft('');
       clearFoundationLocalConversationProjection(
         conversation.conversation_id,
       );
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        '[data-pt-agent-composer-input]',
+      );
+      if (textarea) {
+        await setFoundationComposerDraft(
+          '',
+          'context overflow failed-scenario composer cleanup',
+        );
+      }
       await deleteFoundationConversation(conversation.conversation_id);
     } catch (cleanupError) {
       throw Object.assign(
@@ -5127,6 +6095,520 @@ async function runFoundationContextOverflowScenario(input: {
           primaryError: error,
           cleanupError,
         },
+      );
+    }
+    throw error;
+  }
+}
+
+async function runFoundationInvalidReferenceScenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  facts: Record<string, unknown>;
+}> {
+  const agentId = input.agent.id || input.agent.name;
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation invalid reference ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  const conversationId = conversation.conversation_id;
+  const referenceToken = `@file:/missing/${input.sampleId}`;
+  const responseMarker =
+    `INVALID_REFERENCE_RECOVERED_${input.sampleId.replace(/[^a-z0-9]/gi, '_')}`;
+  const correctedDraft = `Reply with exactly ${responseMarker}.`;
+  const rejectedDraft = `${correctedDraft} ${referenceToken}`;
+  let successfulTurnId = '';
+  const startedAt = performance.now();
+
+  try {
+    await useChatStore.getState().selectSession(conversationId);
+    await useChatStore.getState().syncMessages();
+    const [beforeExecution, beforeReadback, beforeQueue] = await Promise.all([
+      foundationExecutionSnapshot(agentId, conversationId),
+      foundationConversationReadback(conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    const rejectionHashBefore = await sha256Hex(stableJson(beforeReadback));
+    const textarea = await setFoundationComposerDraft(
+      rejectedDraft,
+      'invalid reference composer draft',
+    );
+
+    let observationSequence = 0;
+    const rejectedOutcomeRef: {
+      current: Record<string, unknown> | null;
+    } = { current: null };
+    const rejectionEventRef: {
+      current: FoundationPreAdmissionErrorEvent | null;
+    } = { current: null };
+    const unsubscribeRejection = eventBus.subscribe(
+      EVENT.AGENT_TURN_STREAM_EVENT,
+      (payload) => {
+        const sourceDelivery = (
+          payload as typeof payload & {
+            sourceDelivery?: AgentTurnSourceDelivery;
+          }
+        ).sourceDelivery;
+        if (payload.conversationId !== conversationId) return;
+        observationSequence += 1;
+        if (
+          payload.event !== 'error'
+          || payload.data.error_type !== 'CONTEXT_INVALID_REFERENCE'
+        ) return;
+        rejectionEventRef.current = {
+          data: evidenceValue(payload.data) as Record<string, unknown>,
+          eventType: payload.event,
+          observedAt: new Date(payload.timestampMs).toISOString(),
+          streamId: payload.streamId,
+          streamGeneration: payload.streamGeneration,
+          conversationId: payload.conversationId,
+          observationSequence,
+          timestampMs: payload.timestampMs,
+          sourceDelivery,
+        };
+      },
+    );
+    try {
+      const send = document.querySelector<HTMLElement>(
+        '[data-pt-agent-composer-send]',
+      );
+      if (!send) {
+        throw new Error('agent.acceptance.foundationComposerSendMissing');
+      }
+      send.click();
+      await waitFor(
+        () => rejectionEventRef.current !== null,
+        'typed invalid reference rejection',
+        60_000,
+      );
+      await waitFor(
+        () => Boolean(document.querySelector(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="CONTEXT_INVALID_REFERENCE"]',
+        )),
+        'invalid reference receiver',
+        10_000,
+      );
+      const operation = useChatStore.getState().operations[conversationId];
+      const rejectedMessage = useChatStore.getState().messages.find(
+        (message) => (
+          message.role === 'assistant'
+          && message.typedError?.error_type === 'CONTEXT_INVALID_REFERENCE'
+        ),
+      );
+      rejectedOutcomeRef.current = rejectedMessage?.typedError
+        ? evidenceValue(rejectedMessage.typedError) as Record<string, unknown>
+        : null;
+      if (!operation || !rejectedOutcomeRef.current) {
+        throw new Error(
+          'agent.acceptance.foundationInvalidReferenceProjectionMissing',
+        );
+      }
+    } finally {
+      unsubscribeRejection();
+    }
+
+    const errorSurface = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="CONTEXT_INVALID_REFERENCE"]',
+      ),
+    ).reverse().find((element) => element.getClientRects().length > 0);
+    const errorToggle = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-toggle]',
+    );
+    const errorSelector =
+      '[data-pt-agent-message-error-text="agent.errors.contextInvalidReference"]';
+    if (!errorSurface?.querySelector(errorSelector)) {
+      errorToggle?.click();
+      await waitFor(
+        () => Boolean(errorSurface?.querySelector(errorSelector)),
+        'localized invalid reference text',
+        10_000,
+      );
+    }
+    const errorText = errorSurface?.querySelector<HTMLElement>(errorSelector);
+    const removalAction = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-recovery="remove-reference"]',
+    );
+    const rejectionEvent =
+      rejectionEventRef.current as FoundationPreAdmissionErrorEvent | null;
+    if (
+      !errorSurface
+      || !errorText
+      || !removalAction
+      || !rejectionEvent
+      || !rejectedOutcomeRef.current
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceSurfaceMissing',
+      );
+    }
+    const sourceDelivery = rejectionEvent.sourceDelivery;
+    const actorPtid = authenticatedFoundationActorPtid();
+    if (
+      !sourceDelivery
+      || sourceDelivery.transport !== 'station-sse'
+      || sourceDelivery.ptid !== actorPtid
+      || sourceDelivery.conversationId !== conversationId
+      || sourceDelivery.turnId !== ''
+      || sourceDelivery.sequence !== 0
+      || sourceDelivery.rawPayload.eventType !== 'error'
+      || stableJson(
+        normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+      ) !== stableJson(
+        normalizeProjectedStationPayload(rejectionEvent.data),
+      )
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceSourceIdentityMismatch',
+      );
+    }
+
+    const draftAfterRejection = textarea.value;
+    const receiverErrorVisible = errorText.getClientRects().length > 0;
+    const receiverErrorText = errorText.textContent?.trim() ?? '';
+    const receiverRemovalVisible =
+      removalAction.getClientRects().length > 0;
+    const receiverRemovalText = removalAction.textContent?.trim() ?? '';
+    removalAction.click();
+    await waitFor(
+      () => (
+        textarea.value === correctedDraft
+        && document.activeElement === textarea
+      ),
+      'invalid reference removal',
+      10_000,
+    );
+    const draftAfterRemoval = textarea.value;
+
+    const [afterRejectedExecution, afterRejectedReadback, afterRejectedQueue] =
+      await Promise.all([
+        foundationExecutionSnapshot(agentId, conversationId),
+        foundationConversationReadback(conversationId),
+        api.listAgentTurnQueue(conversationId),
+      ]);
+    const rejectionHashAfter = await sha256Hex(
+      stableJson(afterRejectedReadback),
+    );
+
+    let completionObservationSequence = 0;
+    const completionEventRef: {
+      current: FoundationPreAdmissionErrorEvent | null;
+    } = { current: null };
+    const unsubscribeCompletion = eventBus.subscribe(
+      EVENT.AGENT_TURN_STREAM_EVENT,
+      (payload) => {
+        if (payload.conversationId !== conversationId) return;
+        completionObservationSequence += 1;
+        const event = {
+          event: payload.event,
+          data: payload.data,
+        };
+        if (classifyAgentTurnTerminalEvent(event) !== 'completed') return;
+        completionEventRef.current = {
+          data: evidenceValue(payload.data) as Record<string, unknown>,
+          eventType: payload.event,
+          observedAt: new Date(payload.timestampMs).toISOString(),
+          streamId: payload.streamId,
+          streamGeneration: payload.streamGeneration,
+          conversationId: payload.conversationId,
+          observationSequence: completionObservationSequence,
+          timestampMs: payload.timestampMs,
+          sourceDelivery: (
+            payload as typeof payload & {
+              sourceDelivery?: AgentTurnSourceDelivery;
+            }
+          ).sourceDelivery,
+        };
+      },
+    );
+    const countVisibleSuccessfulAssistants = () => Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]',
+      ),
+    ).filter((element) => (
+      element.getClientRects().length > 0
+      && element.textContent?.includes(responseMarker)
+    )).length;
+    let successfulAssistantPeakCount = countVisibleSuccessfulAssistants();
+    const assistantObserver = new MutationObserver(() => {
+      successfulAssistantPeakCount = Math.max(
+        successfulAssistantPeakCount,
+        countVisibleSuccessfulAssistants(),
+      );
+    });
+    assistantObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+    try {
+      await withFoundationCapabilitiesDisabled(
+        input.agent,
+        input.capabilitySessionId,
+        async () => {
+          const send = document.querySelector<HTMLElement>(
+            '[data-pt-agent-composer-send]',
+          );
+          if (!send) {
+            throw new Error('agent.acceptance.foundationComposerSendMissing');
+          }
+          send.click();
+          await waitFor(
+            () => completionEventRef.current !== null,
+            'invalid reference corrected resend',
+            FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
+          );
+        },
+      );
+    } finally {
+      unsubscribeCompletion();
+      assistantObserver.disconnect();
+      successfulAssistantPeakCount = Math.max(
+        successfulAssistantPeakCount,
+        countVisibleSuccessfulAssistants(),
+      );
+    }
+
+    const completionEvent =
+      completionEventRef.current as FoundationPreAdmissionErrorEvent | null;
+    successfulTurnId = String(
+      completionEvent?.data.turnId
+      ?? completionEvent?.data.turn_id
+      ?? '',
+    );
+    if (!completionEvent || !successfulTurnId) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceCompletionMissing',
+      );
+    }
+    const completionSourceDelivery = completionEvent.sourceDelivery;
+    if (
+      !completionSourceDelivery
+      || completionSourceDelivery.transport !== 'station-sse'
+      || completionSourceDelivery.ptid !== actorPtid
+      || completionSourceDelivery.conversationId !== conversationId
+      || completionSourceDelivery.turnId !== successfulTurnId
+      || completionSourceDelivery.sequence <= 0
+      || completionSourceDelivery.rawPayload.eventType !== 'done'
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceCompletionIdentityMismatch',
+      );
+    }
+    await useChatStore.getState().syncMessages();
+    await waitFor(
+      () => {
+        const matching = useChatStore.getState().messages.filter(
+          (message) => (
+            message.role === 'assistant'
+            && message.turnId === successfulTurnId
+            && message.loading !== true
+            && message.content.trim() === responseMarker
+          ),
+        );
+        return matching.length === 1 && !matching[0].id.startsWith('temp-');
+      },
+      'invalid reference canonical assistant response',
+      30_000,
+    );
+
+    const successfulAssistants = useChatStore.getState().messages.filter(
+      (message) => (
+        message.role === 'assistant'
+        && message.turnId === successfulTurnId
+      ),
+    );
+    const successfulAssistant = successfulAssistants[0];
+    const visibleAssistantCount = countVisibleSuccessfulAssistants();
+    const [finalExecution, finalReadback, finalQueue] = await Promise.all([
+      foundationExecutionSnapshot(agentId, conversationId),
+      foundationConversationReadback(conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    const replayReadback = await foundationConversationReadback(conversationId);
+    const finalReadbackHash = await sha256Hex(stableJson(finalReadback));
+    const replayReadbackHash = await sha256Hex(stableJson(replayReadback));
+    const authoritativeAssistant = finalReadback.messages.find(
+      (message) => (
+        message.role === 'assistant'
+        && message.turnId === successfulTurnId
+      ),
+    );
+    if (!successfulAssistant || !authoritativeAssistant) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceAssistantMissing',
+      );
+    }
+    const typedOutcome = evidenceRecord(
+      rejectedOutcomeRef.current,
+      'foundationInvalidReferenceOutcome',
+    );
+    const runtimeEvent: FoundationRuntimeEventObservation = {
+      eventId: await sha256Hex(stableJson({
+        streamId: rejectionEvent.streamId,
+        streamGeneration: rejectionEvent.streamGeneration,
+        conversationId: rejectionEvent.conversationId,
+        observationSequence: rejectionEvent.observationSequence,
+        eventType: rejectionEvent.eventType,
+        timestampMs: rejectionEvent.timestampMs,
+        data: rejectionEvent.data,
+      })),
+      eventType: rejectionEvent.eventType,
+      sequence: rejectionEvent.observationSequence,
+      observedAt: rejectionEvent.observedAt,
+      streamGeneration: rejectionEvent.streamGeneration,
+      streamIdHash: await sha256Hex(rejectionEvent.streamId),
+      conversationIdHash: await sha256Hex(rejectionEvent.conversationId),
+      payloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+      errorType: String(rejectionEvent.data.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    };
+
+    clearFoundationLocalConversationProjection(conversationId);
+    const cleanupTextarea = await setFoundationComposerDraft(
+      '',
+      'invalid reference composer cleanup',
+    );
+    return {
+      conversationId,
+      turnId: successfulTurnId,
+      durationMs: performance.now() - startedAt,
+      runtimeEvent,
+      facts: {
+        outcome: typedOutcome,
+        runtimeEvent,
+        receiver: {
+          errorVisible: receiverErrorVisible,
+          errorText: receiverErrorText,
+          expectedErrorText: i18n.t(
+            'agent.errors.contextInvalidReference',
+            { ns: 'agent' },
+          ),
+          removalVisible: receiverRemovalVisible,
+          removalText: receiverRemovalText,
+          expectedRemovalText: i18n.t(
+            'agent.recovery.removeReference',
+            { ns: 'agent' },
+          ),
+          draftLengthBefore: rejectedDraft.length,
+          draftLengthAfterRejection: draftAfterRejection.length,
+          draftHashBefore: await sha256Hex(rejectedDraft),
+          draftHashAfterRejection: await sha256Hex(draftAfterRejection),
+          draftHashAfterRemoval: await sha256Hex(draftAfterRemoval),
+          correctedDraftHash: await sha256Hex(correctedDraft),
+          referencePresentAfterRemoval:
+            draftAfterRemoval.includes(referenceToken),
+          composerFocusedAfterRemoval:
+            document.activeElement === textarea,
+          removalExecuted: true,
+          successfulAssistantVisible: visibleAssistantCount === 1,
+          successfulAssistantCount: successfulAssistants.length,
+          successfulAssistantPeakCount,
+          successfulAssistantId: successfulAssistant.id,
+          successfulAssistantTurnId: successfulAssistant.turnId ?? '',
+          successfulAssistantOptimistic:
+            successfulAssistant.id.startsWith('temp-'),
+        },
+        station: {
+          conversationId,
+          referenceKind: 'file',
+          referenceHash: await sha256Hex(referenceToken),
+          rejectionVersionBefore: beforeReadback.conversation.version,
+          rejectionVersionAfter: afterRejectedReadback.conversation.version,
+          rejectionHashBefore,
+          rejectionHashAfter,
+          rejectedTurnDelta:
+            afterRejectedExecution.turnCount - beforeExecution.turnCount,
+          rejectedMessageDelta:
+            afterRejectedReadback.messages.length
+            - beforeReadback.messages.length,
+          rejectedQueueDelta:
+            afterRejectedQueue.entries.length - beforeQueue.entries.length,
+          rejectedProviderExecutionDelta:
+            afterRejectedExecution.providerCallCount
+            - beforeExecution.providerCallCount,
+          successfulTurnId,
+          successfulAssistantMessageId:
+            authoritativeAssistant.messageId,
+          successfulTurnDelta:
+            finalExecution.turnCount - afterRejectedExecution.turnCount,
+          successfulMessageDelta:
+            finalReadback.messages.length
+            - afterRejectedReadback.messages.length,
+          successfulQueueDelta:
+            finalQueue.entries.length - afterRejectedQueue.entries.length,
+          successfulProviderExecutionDelta:
+            finalExecution.providerCallCount
+            - afterRejectedExecution.providerCallCount,
+          successfulConversationVersion:
+            finalReadback.conversation.version,
+          successfulReadbackHash: finalReadbackHash,
+        },
+        completion: {
+          status: 'completed',
+          turnId: successfulTurnId,
+          assistantMessageId: authoritativeAssistant.messageId,
+          sourceTransport: completionSourceDelivery.transport,
+          sourceConversationId: completionSourceDelivery.conversationId,
+          sourceTurnId: completionSourceDelivery.turnId,
+          sourceSequence: completionSourceDelivery.sequence,
+          sourceEventType: completionSourceDelivery.rawPayload.eventType,
+          responseHash: await sha256Hex(
+            authoritativeAssistant.content.trim(),
+          ),
+          expectedResponseHash: await sha256Hex(responseMarker),
+        },
+        replay: {
+          sourceHash: finalReadbackHash,
+          replayHash: replayReadbackHash,
+          equal: finalReadbackHash === replayReadbackHash,
+        },
+        cleanup: {
+          draftCleared: cleanupTextarea.value === '',
+          localProjectionCleared: (
+            useChatStore.getState().sessionBuffers[conversationId] === undefined
+            && useChatStore.getState().operations[conversationId] === undefined
+          ),
+          conversationDeleted: false,
+        },
+      },
+    };
+  } catch (error) {
+    try {
+      clearFoundationLocalConversationProjection(conversationId);
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        '[data-pt-agent-composer-input]',
+      );
+      if (textarea) {
+        await setFoundationComposerDraft(
+          '',
+          'invalid reference failed-scenario composer cleanup',
+        );
+      }
+      await cleanupFoundationToolConversation(
+        conversationId,
+        successfulTurnId,
+      );
+    } catch (cleanupError) {
+      throw Object.assign(
+        new Error(
+          'agent.acceptance.foundationInvalidReferenceCleanupFailed',
+        ),
+        { primaryError: error, cleanupError },
       );
     }
     throw error;
@@ -5212,6 +6694,60 @@ async function runFoundationDuplicateConflictScenario(input: {
       .map((message) => message.messageId)
       .sort();
 
+    // #region debug-point F-I:duplicate-conflict-receiver
+    const duplicateConflictReceiverSnapshot = (): Record<string, unknown> => {
+      const chatState = useChatStore.getState();
+      const currentMessages = chatState.messages;
+      const bufferedMessages =
+        chatState.sessionBuffers[conversationId] ?? [];
+      const domAssistants = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-pt-agent-message="assistant"]',
+        ),
+      );
+      return {
+        locale: i18n.language,
+        currentSessionMatches:
+          chatState.currentSessionKey === conversationId,
+        currentMessageCount: currentMessages.length,
+        currentAssistantCount: currentMessages.filter(
+          (message) => message.role === 'assistant',
+        ).length,
+        currentAssistantLoadingCount: currentMessages.filter(
+          (message) => (
+            message.role === 'assistant' && message.loading === true
+          ),
+        ).length,
+        currentAssistantTypedErrorTypes: currentMessages
+          .filter((message) => message.role === 'assistant')
+          .map((message) => message.typedError?.error_type ?? '')
+          .filter((errorType) => errorType.length > 0)
+          .sort(),
+        bufferedMessageCount: bufferedMessages.length,
+        bufferedAssistantTypedErrorTypes: bufferedMessages
+          .filter((message) => message.role === 'assistant')
+          .map((message) => message.typedError?.error_type ?? '')
+          .filter((errorType) => errorType.length > 0)
+          .sort(),
+        operationPresent:
+          chatState.operations[conversationId] !== undefined,
+        operationStatus:
+          chatState.operations[conversationId]?.status ?? 'absent',
+        isStreaming: chatState.isStreaming,
+        domAssistantCount: domAssistants.length,
+        domAssistantErrorTypes: domAssistants
+          .map((element) => (
+            element.getAttribute('data-pt-agent-error-type') ?? ''
+          ))
+          .filter((errorType) => errorType.length > 0)
+          .sort(),
+        domConflictCount: document.querySelectorAll(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="ADMISSION_DUPLICATE_CONFLICT"]',
+        ).length,
+      };
+    };
+    // #endregion
     const rejectedOutcomeRef: {
       current: Record<string, unknown> | null;
     } = { current: null };
@@ -5219,6 +6755,33 @@ async function runFoundationDuplicateConflictScenario(input: {
     const errorEventRef: {
       current: FoundationPreAdmissionErrorEvent | null;
     } = { current: null };
+    let receiverDomConflictCount = Number(
+      duplicateConflictReceiverSnapshot().domConflictCount,
+    );
+    let receiverDomConflictPeak = receiverDomConflictCount;
+    const receiverObserver = new MutationObserver(() => {
+      const snapshot = duplicateConflictReceiverSnapshot();
+      const nextCount = Number(snapshot.domConflictCount);
+      if (nextCount === receiverDomConflictCount) return;
+      receiverDomConflictCount = nextCount;
+      receiverDomConflictPeak = Math.max(receiverDomConflictPeak, nextCount);
+      // #region debug-point I:duplicate-conflict-receiver-dom-transition
+      void reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'I',
+        'receiver-dom-transition',
+        {
+          ...snapshot,
+          receiverDomConflictPeak,
+        },
+      );
+      // #endregion
+    });
+    receiverObserver.observe(document.body, {
+      attributes: true,
+      attributeFilter: ['data-pt-agent-error-type'],
+      childList: true,
+      subtree: true,
+    });
     const unsubscribe = eventBus.subscribe(
       EVENT.AGENT_TURN_STREAM_EVENT,
       (payload) => {
@@ -5244,9 +6807,23 @@ async function runFoundationDuplicateConflictScenario(input: {
           timestampMs: payload.timestampMs,
           sourceDelivery,
         };
+        // #region debug-point F-I:duplicate-conflict-event
+        void reportFoundationDuplicateConflictOriginalDetailsDebug(
+          'F-I',
+          'typed-rejection-event-observed',
+          duplicateConflictReceiverSnapshot(),
+        );
+        // #endregion
       },
     );
     try {
+      // #region debug-point F-I:duplicate-conflict-before-send
+      await reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'F-I',
+        'before-conflicting-send',
+        duplicateConflictReceiverSnapshot(),
+      );
+      // #endregion
       const sent = useChatStore.getState().sendMessage(
         conflictingContent,
         [],
@@ -5256,6 +6833,13 @@ async function runFoundationDuplicateConflictScenario(input: {
             if (error) {
               rejectedOutcomeRef.current =
                 evidenceValue(error) as Record<string, unknown>;
+              // #region debug-point F-I:duplicate-conflict-rejection-callback
+              void reportFoundationDuplicateConflictOriginalDetailsDebug(
+                'F-I',
+                'rejection-callback-observed',
+                duplicateConflictReceiverSnapshot(),
+              );
+              // #endregion
             }
           },
         },
@@ -5273,15 +6857,46 @@ async function runFoundationDuplicateConflictScenario(input: {
         'typed duplicate conflict rejection',
         60_000,
       );
-      await waitFor(
-        () => Boolean(document.querySelector(
-          '[data-pt-agent-message="assistant"]'
-          + '[data-pt-agent-error-type="ADMISSION_DUPLICATE_CONFLICT"]',
-        )),
-        'duplicate conflict receiver',
-        10_000,
+      // #region debug-point F-I:duplicate-conflict-typed-ready
+      await reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'F-I',
+        'typed-rejection-ready',
+        duplicateConflictReceiverSnapshot(),
       );
+      // #endregion
+      try {
+        await waitFor(
+          () => Boolean(document.querySelector(
+            '[data-pt-agent-message="assistant"]'
+            + '[data-pt-agent-error-type="ADMISSION_DUPLICATE_CONFLICT"]',
+          )),
+          'duplicate conflict receiver',
+          10_000,
+        );
+      } catch (error) {
+        // #region debug-point F-I:duplicate-conflict-receiver-timeout
+        await reportFoundationDuplicateConflictOriginalDetailsDebug(
+          'F-I',
+          'receiver-timeout',
+          {
+            ...duplicateConflictReceiverSnapshot(),
+            errorEventPresent: errorEventRef.current !== null,
+            rejectedOutcomePresent: rejectedOutcomeRef.current !== null,
+            receiverDomConflictPeak,
+          },
+        );
+        // #endregion
+        throw error;
+      }
+      // #region debug-point F-I:duplicate-conflict-receiver-observed
+      await reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'F-I',
+        'receiver-observed',
+        duplicateConflictReceiverSnapshot(),
+      );
+      // #endregion
     } finally {
+      receiverObserver.disconnect();
       unsubscribe();
     }
 
@@ -5355,15 +6970,131 @@ async function runFoundationDuplicateConflictScenario(input: {
     const receiverRecoveryVisible =
       recoveryAction.getClientRects().length > 0;
     const receiverRecoveryText = recoveryAction.textContent?.trim() ?? '';
-    recoveryAction.click();
-    await waitFor(
-      () => {
-        const view = usePortalStore.getState().activeView;
-        return view?.type === 'turnDetails' && view.turnId === originalTurnId;
-      },
-      'duplicate conflict original turn details',
-      30_000,
+    const recoverySelector =
+      '[data-pt-agent-message-error-recovery="open-original"]';
+    const liveRecoveryAction =
+      errorSurface.querySelector<HTMLElement>(recoverySelector);
+    const projectedOriginalMessages = useChatStore.getState().messages.filter(
+      (candidate) => candidate.turnId === originalTurnId,
     );
+    // #region debug-point A-E:duplicate-conflict-recovery-click
+    await reportFoundationDuplicateConflictOriginalDetailsDebug(
+      'A-E',
+      'pre-click-snapshot',
+      {
+        locale: i18n.language,
+        recoveryConnected: recoveryAction.isConnected,
+        recoveryVisible: recoveryAction.getClientRects().length > 0,
+        recoveryNodeIsLive:
+          Boolean(liveRecoveryAction)
+          && recoveryAction.isSameNode(liveRecoveryAction),
+        recoveryTargetMatchesOriginal:
+          String(rejectedDetails.existing_command_id ?? '') === originalTurnId,
+        projectedOriginalMessageCount: projectedOriginalMessages.length,
+        projectedOriginalAssistantCount: projectedOriginalMessages.filter(
+          (candidate) => candidate.role === 'assistant',
+        ).length,
+        activeViewType: usePortalStore.getState().activeView?.type ?? 'none',
+        portalExpanded: usePortalStore.getState().expanded,
+      },
+    );
+    let clickObserved = false;
+    let portalTransitionCount = 0;
+    const observeRecoveryClick = () => {
+      clickObserved = true;
+      void reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'A-C',
+        'recovery-click-observed',
+        {
+          recoveryConnected: recoveryAction.isConnected,
+          recoveryNodeIsLive:
+            Boolean(
+              errorSurface.querySelector<HTMLElement>(recoverySelector),
+            )
+            && recoveryAction.isSameNode(
+              errorSurface.querySelector<HTMLElement>(recoverySelector),
+            ),
+        },
+      );
+    };
+    recoveryAction.addEventListener('click', observeRecoveryClick, {
+      once: true,
+    });
+    const unsubscribePortalDebug = usePortalStore.subscribe((state) => {
+      portalTransitionCount += 1;
+      const view = state.activeView;
+      void reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'C-D',
+        'portal-transition',
+        {
+          transitionCount: portalTransitionCount,
+          activeViewType: view?.type ?? 'none',
+          turnMatchesOriginal:
+            view?.type === 'turnDetails' && view.turnId === originalTurnId,
+          expanded: state.expanded,
+        },
+      );
+    });
+    try {
+      recoveryAction.click();
+      try {
+        await waitFor(
+          () => {
+            const view = usePortalStore.getState().activeView;
+            return (
+              view?.type === 'turnDetails'
+              && view.turnId === originalTurnId
+            );
+          },
+          'duplicate conflict original turn details',
+          30_000,
+        );
+      } catch (error) {
+        const failedView = usePortalStore.getState().activeView;
+        const failedOriginalMessages =
+          useChatStore.getState().messages.filter(
+            (candidate) => candidate.turnId === originalTurnId,
+          );
+        await reportFoundationDuplicateConflictOriginalDetailsDebug(
+          'A-E',
+          'original-details-timeout',
+          {
+            clickObserved,
+            portalTransitionCount,
+            activeViewType: failedView?.type ?? 'none',
+            turnMatchesOriginal:
+              failedView?.type === 'turnDetails'
+              && failedView.turnId === originalTurnId,
+            projectedOriginalMessageCount: failedOriginalMessages.length,
+            projectedOriginalAssistantCount: failedOriginalMessages.filter(
+              (candidate) => candidate.role === 'assistant',
+            ).length,
+            turnDetailsState:
+              document.querySelector<HTMLElement>(
+                '[data-agent-turn-details] [data-turn-details-state]',
+              )?.dataset.turnDetailsState ?? 'absent',
+          },
+        );
+        throw error;
+      }
+      const observedView = usePortalStore.getState().activeView;
+      await reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'C-E',
+        'original-details-observed',
+        {
+          clickObserved,
+          portalTransitionCount,
+          activeViewType: observedView?.type ?? 'none',
+          turnMatchesOriginal:
+            observedView?.type === 'turnDetails'
+            && observedView.turnId === originalTurnId,
+        },
+      );
+    } finally {
+      recoveryAction.removeEventListener('click', observeRecoveryClick);
+      unsubscribePortalDebug();
+    }
+    // #endregion
     await waitFor(
       () => Boolean(document.querySelector(
         `[data-agent-turn-details="${originalTurnId}"]`
@@ -5913,6 +7644,7 @@ async function runFoundationF06Prepare(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
   faultControlUrl: string;
+  faultBoundary?: 'text-prefix' | 'provider-started';
   scenarioKey: string;
   platform: string;
   locale: string;
@@ -5981,38 +7713,9 @@ async function runFoundationF06Prepare(input: {
       },
     );
     // #endregion
-    try {
-      await cleanupFoundationF06Scenario({
-        scenarioKey: input.scenarioKey,
-        conversationId: conversation.conversation_id,
-        turnId: activeTurnId,
-      });
-    } catch (cleanupError) {
-      const cleanup = cleanupError instanceof Error
-        ? cleanupError.message
-        : String(cleanupError);
-      // #region debug-point D:f06-terminal-race-cleanup-error
-      void reportFoundationF06TerminalRaceDebug(
-        'D',
-        'preparation-cleanup-failed',
-        {
-          platform: input.platform,
-          locale: input.locale,
-          scenarioKey: input.scenarioKey,
-          terminalRace:
-            primary.includes('foundationRecoveryTurnAlreadyTerminal'),
-          cleanupErrorType:
-            cleanupError instanceof Error
-              ? cleanupError.constructor.name
-              : typeof cleanupError,
-          cleanupTurnPresent: activeTurnId.length > 0,
-        },
-      );
-      // #endregion
-      throw new Error(
-        `CLEANUP_FAILED:${primary}; auth=${JSON.stringify(authDiagnostic)}; cleanup=${cleanup}`,
-      );
-    }
+    // The coordinator restores the cut proxy before invoking the registered
+    // cleanup locator. Cleanup through the intentionally severed transport
+    // would hide the primary failure and can lose the locator on client restart.
     throw new Error(`${primary}; auth=${JSON.stringify(authDiagnostic)}`);
   }
 }
@@ -6022,6 +7725,7 @@ async function prepareFoundationF06Conversation(
     agent: NonNullable<ReturnType<typeof selectedAgent>>;
     capabilitySessionId: string;
     faultControlUrl: string;
+    faultBoundary?: 'text-prefix' | 'provider-started';
     scenarioKey: string;
     platform: string;
     locale: string;
@@ -6037,6 +7741,7 @@ async function prepareFoundationF06Conversation(
   const streamId = `foundation-f06-${crypto.randomUUID()}`;
   const idempotencyKey = crypto.randomUUID();
   const actorId = authenticatedFoundationActorPtid();
+  const faultBoundaryMode = input.faultBoundary ?? 'text-prefix';
   let boundarySettled = false;
   let boundaryRequested = false;
   let cleanupTurnId = '';
@@ -6114,11 +7819,24 @@ async function prepareFoundationF06Conversation(
       const hasText = observedDurableEvents.some(
         (candidate) => candidate.event === 'text',
       );
+      const providerStarted = observedDurableEvents.some(
+        (candidate) => (
+          candidate.event === 'progress'
+          && candidate.data.stage === 'provider_call_started'
+        ),
+      );
       const uniqueSequences = new Set(
         observedDurableEvents.map((candidate) =>
           Number(candidate.data.seq ?? 0)),
       );
-      if (!hasText || uniqueSequences.size < 2) return;
+      if (
+        uniqueSequences.size < 2
+        || (
+          faultBoundaryMode === 'provider-started'
+            ? !providerStarted
+            : !hasText
+        )
+      ) return;
 
       const turnId = observedTurnId(events);
       if (!turnId) {
@@ -6201,6 +7919,8 @@ async function prepareFoundationF06Conversation(
         textEventCount: observedDurableEvents.filter(
           (candidate) => candidate.event === 'text',
         ).length,
+        faultBoundaryMode,
+        providerStarted,
         requestedCursor,
         activePhase: active.phase,
       });
@@ -6216,6 +7936,8 @@ async function prepareFoundationF06Conversation(
       );
       void requestFoundationF06TransportCut(input.faultControlUrl)
         .then(async () => {
+          // The proxy owns the fault; abort only discards post-cut buffered frames.
+          await controller.disconnectTransport();
           const activeAfterAcknowledgement = useAgentTurnRecoveryStore.getState()
             .active[conversation.conversation_id];
           // #region debug-point C:f06-fault-ack
@@ -6337,13 +8059,15 @@ async function prepareFoundationF06Conversation(
             prefixLength: prefix.length,
           });
           if (!prefix) {
-            void reportFoundationF06PrefixDebug('A-D', 'prefix-missing', {
-              acknowledgedCursor,
-              textEventFacts,
-            });
-            throw new Error(
-              'agent.acceptance.foundationRecoveryPrefixMissing',
-            );
+            if (faultBoundaryMode === 'text-prefix') {
+              void reportFoundationF06PrefixDebug('A-D', 'prefix-missing', {
+                acknowledgedCursor,
+                textEventFacts,
+              });
+              throw new Error(
+                'agent.acceptance.foundationRecoveryPrefixMissing',
+              );
+            }
           }
           void reportFoundationF06PrefixDebug('A-C', 'prefix-ready', {
             acknowledgedCursor,
@@ -6542,8 +8266,10 @@ async function requestFoundationF06TransportCut(
   if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') {
     throw new Error('agent.acceptance.foundationFaultControlInvalid');
   }
-  const response = await fetch(url, { method: 'POST' });
-  if (!response.ok) {
+  const request = new XMLHttpRequest();
+  request.open('POST', url, false);
+  request.send();
+  if (request.status < 200 || request.status >= 300) {
     throw new Error('agent.acceptance.foundationFaultControlRejected');
   }
 }
@@ -6586,6 +8312,13 @@ async function finalizeFoundationF06Preparation(
   foundationF06PendingHandoffs.delete(scenarioKey);
   foundationF06FaultBoundaries.delete(scenarioKey);
   writeFoundationF06Handoff(handoff);
+  // #region debug-point R-U:f06-handoff-storage
+  void reportFoundationF06TerminalRaceDebug(
+    'R-U',
+    'handoff-persisted-before-navigation',
+    foundationF06HandoffStorageSnapshot(scenarioKey),
+  );
+  // #endregion
 
   void reportFoundationF06PageSwitchDebug(
     'A-D',
@@ -6628,6 +8361,16 @@ async function restoreFoundationF06CapabilityIsolation(
   scenarioKey: string,
 ): Promise<FoundationF06Handoff> {
   const handoff = readFoundationF06Handoff(scenarioKey);
+  // #region debug-point R-U:f06-handoff-storage
+  void reportFoundationF06TerminalRaceDebug(
+    'R-U',
+    'handoff-read-after-station-restart',
+    {
+      ...foundationF06HandoffStorageSnapshot(scenarioKey),
+      parsedHandoffPresent: handoff !== null,
+    },
+  );
+  // #endregion
   if (!handoff) {
     throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
   }
@@ -7023,24 +8766,47 @@ async function cleanupFoundationF06Scenario(input: {
     throw new Error('agent.acceptance.foundationCleanupIdentityMismatch');
   }
   if (cleanupLocator?.state === 'deleted') {
+    clearFoundationLocalConversationProjection(cleanupLocator.conversationId);
     useAgentTurnRecoveryStore.getState().clear(
       cleanupLocator.conversationId,
       cleanupLocator.turnId,
     );
-    removeFoundationF06Handoff(input.scenarioKey, false);
+    removeFoundationF06Handoff(input.scenarioKey);
     const handoffCleared =
       readFoundationF06Handoff(input.scenarioKey) === null;
     const recoveryRecordCleared =
       useAgentTurnRecoveryStore.getState()
         .active[cleanupLocator.conversationId] === undefined;
-    if (!handoffCleared || !recoveryRecordCleared) {
+    const cleanupLocatorCleared =
+      readFoundationF06CleanupLocators()[input.scenarioKey] === undefined;
+    const cleanedChatState = useChatStore.getState();
+    const localProjectionCleared = (
+      !cleanedChatState.sessions.some(
+        (session) =>
+          session.id === cleanupLocator.conversationId
+          || session.key === cleanupLocator.conversationId,
+      )
+      && !cleanedChatState.messages.some(
+        (message) => message.turnId === cleanupLocator.turnId,
+      )
+      && cleanedChatState.operations[cleanupLocator.conversationId] === undefined
+      && cleanedChatState.sessionBuffers[cleanupLocator.conversationId] === undefined
+    );
+    if (
+      !handoffCleared
+      || !cleanupLocatorCleared
+      || !recoveryRecordCleared
+      || !localProjectionCleared
+    ) {
       throw new Error('CLEANUP_FAILED:foundationCleanupVerificationFailed');
     }
     return {
       cleanupComplete: true,
       handoffCleared,
+      cleanupLocatorCleared,
       conversationDeleted: true,
       recoveryRecordCleared,
+      localProjectionCleared,
     };
   }
   const conversationId = input.conversationId
@@ -7055,14 +8821,24 @@ async function cleanupFoundationF06Scenario(input: {
     throw new Error('CLEANUP_FAILED:foundationCleanupLocatorMissing');
   }
   let cleanupError: unknown = null;
+  let turnCancellationErrorCode = '';
+  let queueCancellationErrorCode = '';
   let deletionErrorCode = '';
   let cleanupStage = 'turn-cancel';
-  try {
-    if (turnId) {
+  if (turnId) {
+    try {
       await api.cancelAgentTurn(turnId);
+    } catch (error) {
+      turnCancellationErrorCode = observedErrorCode(error);
     }
-    cleanupStage = 'queue-cancel';
+  }
+  cleanupStage = 'queue-cancel';
+  try {
     await cancelFoundationQueuedTurns(conversationId);
+  } catch (error) {
+    queueCancellationErrorCode = observedErrorCode(error);
+  }
+  try {
     cleanupStage = 'conversation-delete';
     deletionErrorCode = await deleteFoundationConversation(conversationId);
     // #region debug-point D:f06-cleanup-actions
@@ -7072,6 +8848,10 @@ async function cleanupFoundationF06Scenario(input: {
       {
         scenarioKey: input.scenarioKey,
         inputTurnPresent: turnId.length > 0,
+        turnCancellationErrorCodePresent:
+          turnCancellationErrorCode.length > 0,
+        queueCancellationErrorCodePresent:
+          queueCancellationErrorCode.length > 0,
         deletionErrorCodePresent: deletionErrorCode.length > 0,
       },
     );
@@ -7119,19 +8899,33 @@ async function cleanupFoundationF06Scenario(input: {
     if (!conversationDeleted && cleanupError === null) cleanupError = error;
   }
   if (conversationDeleted) {
-    writeFoundationF06CleanupLocator({
-      scenarioKey: input.scenarioKey,
-      conversationId,
-      turnId,
-      state: 'deleted',
-    });
-    removeFoundationF06Handoff(input.scenarioKey, false);
+    cleanupError = null;
+    clearFoundationLocalConversationProjection(conversationId);
+    removeFoundationF06Handoff(input.scenarioKey);
   }
   const handoffCleared = readFoundationF06Handoff(input.scenarioKey) === null;
+  const cleanupLocatorCleared =
+    readFoundationF06CleanupLocators()[input.scenarioKey] === undefined;
   const recoveryRecordCleared =
     useAgentTurnRecoveryStore.getState().active[conversationId] === undefined;
+  const cleanedChatState = useChatStore.getState();
+  const localProjectionCleared = (
+    !cleanedChatState.sessions.some(
+      (session) =>
+        session.id === conversationId || session.key === conversationId,
+    )
+    && !cleanedChatState.messages.some(
+      (message) => message.turnId === turnId,
+    )
+    && cleanedChatState.operations[conversationId] === undefined
+    && cleanedChatState.sessionBuffers[conversationId] === undefined
+  );
   const cleanupComplete =
-    conversationDeleted && handoffCleared && recoveryRecordCleared;
+    conversationDeleted
+    && handoffCleared
+    && cleanupLocatorCleared
+    && recoveryRecordCleared
+    && localProjectionCleared;
   // #region debug-point D:f06-cleanup-result
   void reportFoundationF06TerminalRaceDebug('D', 'cleanup-result-sampled', {
     scenarioKey: input.scenarioKey,
@@ -7139,7 +8933,9 @@ async function cleanupFoundationF06Scenario(input: {
     cleanupErrorPresent: cleanupError !== null,
     conversationDeleted,
     handoffCleared,
+    cleanupLocatorCleared,
     recoveryRecordCleared,
+    localProjectionCleared,
     cleanupComplete,
   });
   // #endregion
@@ -7152,8 +8948,10 @@ async function cleanupFoundationF06Scenario(input: {
   return {
     cleanupComplete,
     handoffCleared,
+    cleanupLocatorCleared,
     conversationDeleted,
     recoveryRecordCleared,
+    localProjectionCleared,
     deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
   };
 }
@@ -7179,6 +8977,16 @@ async function runFoundationF06Complete(
   facts: Record<string, unknown>;
 }> {
   const handoff = readFoundationF06Handoff(input.scenarioKey);
+  // #region debug-point R-U:f06-handoff-storage
+  void reportFoundationF06TerminalRaceDebug(
+    'R-U',
+    'handoff-read-after-client-restart',
+    {
+      ...foundationF06HandoffStorageSnapshot(input.scenarioKey),
+      parsedHandoffPresent: handoff !== null,
+    },
+  );
+  // #endregion
   if (!handoff) {
     throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
   }
@@ -8682,7 +10490,7 @@ function reportFoundationF07Debug(
   return fetch('http://127.0.0.1:7783/event', {
     method: 'POST',
     body: JSON.stringify({
-      sessionId: 'as-f07-revision-flow',
+      sessionId: 'revision-retry-cancellation',
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationF07Scenario',
@@ -8745,8 +10553,8 @@ function reportFoundationF06TerminalRaceDebug(
   return fetch('http://127.0.0.1:7780/event', {
     method: 'POST',
     body: JSON.stringify({
-      sessionId: 'foundation-f06-terminal-race',
-      runId: 'pre-fix',
+      sessionId: 'foundation-f06-terminal-race-v2',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:AS-F06-terminal-race',
       msg: `[DEBUG] ${stage}`,
@@ -8892,6 +10700,149 @@ function reportFoundationApprovalRetryCancellationDebug(
 }
 // #endregion
 
+// #region debug-point A-E:foundation-readiness-timeout
+function reportFoundationF01Debug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7790/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-readiness-timeout',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:foundationDirectProbe:AS-F01',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+
+async function reportFoundationF01FailureReadback(
+  conversationId: string,
+  turnId: string,
+): Promise<void> {
+  try {
+    const conversationReadback =
+      await foundationConversationReadback(conversationId);
+    if (!turnId) {
+      await reportFoundationF01Debug('C-E', 'failure-readback', {
+        turnIdPresent: false,
+        conversationStatus: conversationReadback.conversation.status,
+        messages: conversationReadback.messages.map((message) => ({
+          role: message.role,
+          status: message.status,
+          turnIdPresent: Boolean(message.turnId),
+          errorPresent: message.errorJson.length > 0,
+        })),
+      });
+      return;
+    }
+
+    const turnEvidence = await foundationTurnEvidence(conversationId, turnId);
+    const evidence = evidenceRecord(turnEvidence, 'foundationF01TurnEvidence');
+    const diagnostics = evidenceRecord(
+      evidence.diagnostics,
+      'foundationF01Diagnostics',
+    );
+    const replay = evidenceRecord(
+      diagnostics.replay,
+      'foundationF01DiagnosticReplay',
+    );
+    const attempts = foundationTurnAttemptFacts(turnEvidence);
+    const latestAttempt = attempts[attempts.length - 1];
+    const latestAttemptRecord = latestAttempt
+      ? evidenceRecord(latestAttempt.record, 'foundationF01Attempt')
+      : null;
+    const runtimeSnapshotValue = latestAttemptRecord
+      ? evidenceField(
+        latestAttemptRecord,
+        'runtimeSnapshot',
+        'runtime_snapshot',
+      )
+      : null;
+    const runtimeSnapshot = runtimeSnapshotValue
+      ? evidenceRecord(runtimeSnapshotValue, 'foundationF01RuntimeSnapshot')
+      : null;
+    const replayEvents = optionalEvidenceArray(
+      replay.events,
+      'foundationF01ReplayEvents',
+    ).map((value) => {
+      const event = evidenceRecord(value, 'foundationF01ReplayEvent');
+      const dataValue = event.data;
+      const data = dataValue && typeof dataValue === 'object'
+        && !Array.isArray(dataValue)
+        ? dataValue as Record<string, unknown>
+        : {};
+      return {
+        eventType: String(
+          evidenceField(event, 'eventType', 'event_type')
+          ?? event.event
+          ?? event.type
+          ?? '',
+        ),
+        sequence: Number(event.sequence ?? event.seq ?? 0),
+        stage: String(data.stage ?? event.stage ?? ''),
+      };
+    });
+    const toolCalls = optionalEvidenceArray(
+      evidenceField(replay, 'toolCalls', 'tool_calls'),
+      'foundationF01ToolCalls',
+    );
+    await reportFoundationF01Debug('A-E', 'failure-readback', {
+      turnIdPresent: true,
+      conversationStatus: conversationReadback.conversation.status,
+      replayStatus: foundationTurnStatusName(replay.status),
+      replayKeys: Object.keys(replay).sort(),
+      attemptCount: attempts.length,
+      attemptStatuses: attempts.map((attempt) =>
+        foundationTurnStatusName(attempt.status)),
+      attemptErrorCodes: attempts.map((attempt) => attempt.errorCode),
+      runtime: runtimeSnapshot
+        ? {
+            providerId: evidenceField(
+              runtimeSnapshot,
+              'providerId',
+              'provider_id',
+            ),
+            modelId: evidenceField(
+              runtimeSnapshot,
+              'modelId',
+              'model_id',
+            ),
+            thinkingMode: evidenceField(
+              runtimeSnapshot,
+              'thinkingMode',
+              'thinking_mode',
+            ),
+          }
+        : null,
+      diagnosticEventCount: replayEvents.length,
+      diagnosticEvents: replayEvents,
+      providerStarted: replayEvents.some(
+        (event) => event.stage === 'provider_call_started',
+      ),
+      toolCallCount: toolCalls.length,
+      recoveryKeys: Object.keys(replay)
+        .filter((key) => key.toLowerCase().includes('recovery'))
+        .sort(),
+      messages: conversationReadback.messages.map((message) => ({
+        role: message.role,
+        status: message.status,
+        turnIdMatches: message.turnId === turnId,
+        errorPresent: message.errorJson.length > 0,
+      })),
+    });
+  } catch (error) {
+    await reportFoundationF01Debug('C-E', 'failure-readback-error', {
+      errorCode: observedErrorCode(error),
+    });
+  }
+}
+// #endregion
+
 // #region debug-point A-D:as-f03-cancel-race
 function reportFoundationF03CancelDebug(
   hypothesisId: string,
@@ -8905,6 +10856,132 @@ function reportFoundationF03CancelDebug(
       runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:foundationDirectProbe:AS-F03',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:base-cancelled-race
+function reportFoundationBaseCancelledDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7781/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-cancel-race',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationCancelledScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:forbidden-actor-account-gate
+function reportFoundationForbiddenActorAccountGateDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7795/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-forbidden-actor-account-gate',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:rejectFoundationForbiddenActor',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:incompatible-capability-cleanup
+function reportFoundationIncompatibleCleanupDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7787/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'incompatible-capability-cleanup',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationIncompatibleCapabilityScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:incompatible-capability-turn-count
+function reportFoundationIncompatibleTurnCountDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7791/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'incompatible-capability-turn-count',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationIncompatibleCapabilityScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-D:context-overflow-recovery-locale
+function reportFoundationContextOverflowRecoveryDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7792/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'context-overflow-recovery-locale',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationContextOverflowScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:duplicate-conflict-original-details
+function reportFoundationDuplicateConflictOriginalDetailsDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7793/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'duplicate-conflict-original-details',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationDuplicateConflictScenario',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),
@@ -8994,9 +11071,25 @@ function foundationTurnAttemptFacts(value: unknown): Record<string, unknown>[] {
       turnId: String(evidenceField(attempt, 'turnId', 'turn_id') ?? ''),
       index: Number(attempt.index ?? 0),
       status: Number(attempt.status ?? 0),
+      errorCode: String(
+        evidenceField(attempt, 'errorCode', 'error_code') ?? '',
+      ),
       usage: evidenceValue(attempt.usage ?? null),
+      record: evidenceValue(attempt),
     };
   });
+}
+
+function foundationTurnStatusName(value: unknown): string {
+  return ({
+    [AgentTurnStatus.RUNNING]: 'running',
+    [AgentTurnStatus.WAITING_LOCAL_TOOL]: 'waiting_local_tool',
+    [AgentTurnStatus.COMPLETED]: 'completed',
+    [AgentTurnStatus.FAILED]: 'failed',
+    [AgentTurnStatus.CANCELLED]: 'cancelled',
+    [AgentTurnStatus.INTERRUPTED]: 'interrupted',
+    [AgentTurnStatus.REJECTED]: 'rejected',
+  } as Record<number, string>)[Number(value)] ?? 'unknown';
 }
 
 async function runFoundationF07Scenario(input: {
@@ -9090,6 +11183,9 @@ async function runFoundationF07Scenario(input: {
     elapsedMs: performance.now() - scenarioStartedAt,
     sourceCancellationStatus,
     sourceCancellationStatusType: typeof cancellationResponse?.status,
+    responseTurnPresent: Boolean(cancellationResponse?.turn_id),
+    responseTurnMatchesTarget:
+      cancellationResponse?.turn_id === cancellationAttempt.turnId,
     responseFields: Object.keys(cancellationResponse ?? {}).sort(),
   });
   if (sourceCancellationStatus !== 'cancelled') {
@@ -9245,13 +11341,82 @@ async function runFoundationF07Scenario(input: {
     'foundationF07OriginalEvidenceBefore',
   );
 
-  const firstRegenerate = evidenceRecord(
-    await api.regenerateAgentTurn({
+  // #region debug-point Y-AB:as-f07-regenerate-failure
+  const reportRegenerateFailure = async (
+    operation: 'first' | 'second',
+    expectedConversationVersion: number,
+    operationStartedAt: number,
+    error: unknown,
+  ) => {
+    const codedError = error as {
+      code?: unknown;
+      details?: {
+        body?: unknown;
+        reason?: unknown;
+        status?: unknown;
+      };
+    };
+    const responseBody = typeof codedError.details?.body === 'string'
+      ? codedError.details.body
+      : '';
+    let stationError: Record<string, unknown> = {};
+    try {
+      stationError = responseBody
+        ? evidenceRecord(
+            JSON.parse(responseBody),
+            'foundationF07RegenerateErrorBody',
+          )
+        : {};
+    } catch {
+      stationError = {};
+    }
+    await reportFoundationF07Debug('Y-AB', 'regenerate-failed', {
+      operation,
+      elapsedMs: performance.now() - scenarioStartedAt,
+      operationElapsedMs: performance.now() - operationStartedAt,
+      expectedConversationVersion,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorCode: typeof codedError.code === 'string' ? codedError.code : '',
+      httpStatus: Number(codedError.details?.status ?? 0),
+      stationErrorCode: String(
+        evidenceField(stationError, 'errorCode', 'error_code') ?? '',
+      ),
+      stationErrorMessage: String(stationError.message ?? ''),
+      errorReason: typeof codedError.details?.reason === 'string'
+        ? codedError.details.reason
+        : '',
+    });
+  };
+  // #endregion
+
+  const firstRegenerateStartedAt = performance.now();
+  await reportFoundationF07Debug('Y-AB', 'regenerate-started', {
+    operation: 'first',
+    elapsedMs: firstRegenerateStartedAt - scenarioStartedAt,
+    expectedConversationVersion: sourceReadback.conversation.version,
+  });
+  let firstRegenerateValue: Awaited<
+    ReturnType<typeof api.regenerateAgentTurn>
+  >;
+  try {
+    firstRegenerateValue = await api.regenerateAgentTurn({
       conversation_id: conversation.conversation_id,
       source_assistant_message_id: sourceAssistant.messageId,
       client_idempotency_key: crypto.randomUUID(),
       expected_conversation_version: sourceReadback.conversation.version,
-    }),
+    });
+  } catch (error) {
+    await reportRegenerateFailure(
+      'first',
+      sourceReadback.conversation.version,
+      firstRegenerateStartedAt,
+      error,
+    );
+    throw error;
+  }
+  const firstRegenerate = evidenceRecord(
+    firstRegenerateValue,
     'foundationF07FirstRegenerate',
   );
   const firstRegenerateMessage = await foundationRevisionMessageFact(
@@ -9261,14 +11426,41 @@ async function runFoundationF07Scenario(input: {
   const afterFirstRegenerate = await api.getAgentConversation(
     conversation.conversation_id,
   );
+  await reportFoundationF07Debug('Y-AB', 'regenerate-finished', {
+    operation: 'first',
+    elapsedMs: performance.now() - scenarioStartedAt,
+    operationElapsedMs: performance.now() - firstRegenerateStartedAt,
+    conversationVersion: afterFirstRegenerate.version,
+    messagePresent: Boolean(firstRegenerateMessage.messageId),
+  });
 
-  const secondRegenerate = evidenceRecord(
-    await api.regenerateAgentTurn({
+  const secondRegenerateStartedAt = performance.now();
+  await reportFoundationF07Debug('Y-AB', 'regenerate-started', {
+    operation: 'second',
+    elapsedMs: secondRegenerateStartedAt - scenarioStartedAt,
+    expectedConversationVersion: afterFirstRegenerate.version,
+  });
+  let secondRegenerateValue: Awaited<
+    ReturnType<typeof api.regenerateAgentTurn>
+  >;
+  try {
+    secondRegenerateValue = await api.regenerateAgentTurn({
       conversation_id: conversation.conversation_id,
       source_assistant_message_id: sourceAssistant.messageId,
       client_idempotency_key: crypto.randomUUID(),
       expected_conversation_version: afterFirstRegenerate.version,
-    }),
+    });
+  } catch (error) {
+    await reportRegenerateFailure(
+      'second',
+      afterFirstRegenerate.version,
+      secondRegenerateStartedAt,
+      error,
+    );
+    throw error;
+  }
+  const secondRegenerate = evidenceRecord(
+    secondRegenerateValue,
     'foundationF07SecondRegenerate',
   );
   const secondRegenerateMessage = await foundationRevisionMessageFact(
@@ -9278,6 +11470,13 @@ async function runFoundationF07Scenario(input: {
   const afterSecondRegenerate = await api.getAgentConversation(
     conversation.conversation_id,
   );
+  await reportFoundationF07Debug('Y-AB', 'regenerate-finished', {
+    operation: 'second',
+    elapsedMs: performance.now() - scenarioStartedAt,
+    operationElapsedMs: performance.now() - secondRegenerateStartedAt,
+    conversationVersion: afterSecondRegenerate.version,
+    messagePresent: Boolean(secondRegenerateMessage.messageId),
+  });
   reportFoundationF07Debug('D', 'regenerations-finished', {
     elapsedMs: performance.now() - scenarioStartedAt,
     firstMessagePresent: Boolean(firstRegenerateMessage.messageId),
@@ -9372,6 +11571,7 @@ async function runFoundationF07Scenario(input: {
       'version',
     ) ?? 0,
   );
+  const branchStoreBefore = useChatStore.getState();
   await reportFoundationF07Debug('V-X', 'selected-branch-started', {
     expectedVersion: selectedExpectedVersion,
     activeBranchIsOriginal:
@@ -9380,7 +11580,18 @@ async function runFoundationF07Scenario(input: {
     activeBranchIsTarget:
       originalBranchConversation.active_branch_message_id
       === firstRegenerateMessage.messageId,
+    currentSessionMatchesScenario:
+      branchStoreBefore.currentSessionKey === conversation.conversation_id,
+    targetInStore: branchStoreBefore.messages.some(
+      (message) => message.id === firstRegenerateMessage.messageId,
+    ),
+    targetInOriginalReadback: originalReadbackAfter.messages.some(
+      (message) => message.messageId === firstRegenerateMessage.messageId,
+    ),
   });
+  if (branchStoreBefore.currentSessionKey !== conversation.conversation_id) {
+    await branchStoreBefore.selectSession(conversation.conversation_id);
+  }
   try {
     await useChatStore.getState().branchFromMessage(
       String(firstRegenerateMessage.messageId),
@@ -9424,6 +11635,15 @@ async function runFoundationF07Scenario(input: {
       activeBranchIsTarget:
         failedConversation?.active_branch_message_id
         === firstRegenerateMessage.messageId,
+      currentSessionMatchesScenario:
+        useChatStore.getState().currentSessionKey
+        === conversation.conversation_id,
+      targetInStore: useChatStore.getState().messages.some(
+        (message) => message.id === firstRegenerateMessage.messageId,
+      ),
+      targetInOriginalReadback: originalReadbackAfter.messages.some(
+        (message) => message.messageId === firstRegenerateMessage.messageId,
+      ),
       errorCode: typeof codedError.code === 'string' ? codedError.code : '',
       httpStatus: Number(codedError.details?.status ?? 0),
       stationErrorCode:
@@ -9915,6 +12135,14 @@ interface FoundationCancelledResult {
   facts: Record<string, unknown>;
 }
 
+interface FoundationInterruptedResult {
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  facts: Record<string, unknown>;
+}
+
 interface FoundationCancelledReceiverSnapshot {
   messageId: string | null;
   visible: boolean;
@@ -10026,6 +12254,120 @@ async function foundationCancelledReceiverSnapshot(
   return snapshot;
 }
 
+async function foundationInterruptedReceiverSnapshot(
+  messageId: string,
+  description: string,
+  debugContext: {
+    platform: string;
+    locale: string;
+    scenarioKey: string;
+  },
+): Promise<{
+  messageId: string;
+  turnId: string;
+  visible: boolean;
+  terminalStatus: string;
+  errorType: string;
+  reasonCode: string;
+  errorText: string;
+  expectedErrorText: string;
+  recoveryVisible: boolean;
+  recoveryText: string;
+  expectedRecoveryText: string;
+  recoveryExecuted: boolean;
+}> {
+  const selector =
+    '[data-pt-agent-message="assistant"]'
+    + `[data-pt-agent-message-id="${messageId}"]`;
+  const recoverySelector =
+    '[data-pt-agent-message-error-recovery="recover"]';
+  let waitReadyObserved = false;
+  await waitFor(
+    () => {
+      const element = document.querySelector<HTMLElement>(selector);
+      const recovery = element?.querySelector<HTMLElement>(recoverySelector);
+      waitReadyObserved = Boolean(
+        element
+        && element.getAttribute('data-pt-agent-terminal-status')
+          === 'interrupted'
+        && element.getAttribute('data-pt-agent-error-type')
+          === 'LIFECYCLE_INTERRUPTED'
+        && recovery
+        && recovery.getClientRects().length > 0,
+      );
+      return waitReadyObserved;
+    },
+    description,
+    30_000,
+  );
+  const messageElement = document.querySelector<HTMLElement>(selector);
+  const recovery = messageElement?.querySelector<HTMLElement>(
+    recoverySelector,
+  );
+  const error = messageElement?.querySelector<HTMLElement>(
+    '[data-pt-agent-message-error-text="agent.errors.lifecycleInterrupted"]',
+  );
+  const projected = [...useChatStore.getState().messages]
+    .reverse()
+    .find((message) => message.id === messageId);
+  // #region debug-point AA-AD:interrupted-receiver-snapshot
+  await reportFoundationF06TerminalRaceDebug(
+    'AA-AD',
+    'interrupted-receiver-post-wait',
+    {
+      ...debugContext,
+      waitReadyObserved,
+      messageElementPresent: messageElement !== null,
+      messageVisible:
+        Boolean(messageElement && messageElement.getClientRects().length > 0),
+      terminalStatus:
+        messageElement?.getAttribute('data-pt-agent-terminal-status') ?? null,
+      errorType:
+        messageElement?.getAttribute('data-pt-agent-error-type') ?? null,
+      recoveryPresent: recovery !== null && recovery !== undefined,
+      recoveryVisible:
+        Boolean(recovery && recovery.getClientRects().length > 0),
+      errorElementPresent: error !== null && error !== undefined,
+      errorElementVisible:
+        Boolean(error && error.getClientRects().length > 0),
+      projectedPresent: projected !== undefined,
+      projectedTurnPresent: Boolean(projected?.turnId),
+      currentSessionPresent:
+        useChatStore.getState().currentSessionKey.length > 0,
+      projectedMessageCount: useChatStore.getState().messages.length,
+    },
+  );
+  // #endregion
+  if (!messageElement || !recovery || !error || !projected?.turnId) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedReceiverMissing',
+    );
+  }
+  return {
+    messageId,
+    turnId: projected.turnId,
+    visible: messageElement.getClientRects().length > 0,
+    terminalStatus:
+      messageElement.getAttribute('data-pt-agent-terminal-status') ?? '',
+    errorType:
+      messageElement.getAttribute('data-pt-agent-error-type') ?? '',
+    reasonCode:
+      messageElement.getAttribute('data-pt-agent-error-reason-code') ?? '',
+    errorText: error.textContent?.trim() ?? '',
+    expectedErrorText: i18n.t(
+      'agent.errors.lifecycleInterrupted',
+      { ns: 'agent' },
+    ),
+    recoveryVisible: recovery.getClientRects().length > 0,
+    recoveryText: recovery.textContent?.trim() ?? '',
+    expectedRecoveryText: i18n.t(
+      'agent.recovery.recover',
+      { ns: 'agent' },
+    ),
+    recoveryExecuted: false,
+  };
+}
+
 function typedActiveMutationConflict(error: unknown): Record<string, unknown> {
   const record = evidenceRecord(error, 'activeMutationConflictError');
   const details = evidenceRecord(record.details, 'activeMutationConflictDetails');
@@ -10047,20 +12389,1509 @@ async function agentAuthorityHash(agent: Awaited<ReturnType<typeof api.getAgent>
   return sha256Hex(stableJson(agent));
 }
 
+async function prepareFoundationForbiddenActorOwner(input: {
+  scenarioKey: string;
+  sampleId: string;
+}): Promise<Record<string, unknown>> {
+  if (foundationForbiddenActorOwnerScenarios.has(input.scenarioKey)) {
+    throw new Error('agent.acceptance.foundationForbiddenActorScenarioConflict');
+  }
+  const ownerActor = authenticatedFoundationActorPtid();
+  const store = useAgentStore.getState();
+  const priorSelection = store.selectedAgent;
+  const agent = await store.createAgent({
+    name: `foundation-owner-${input.sampleId}-${crypto.randomUUID()}`,
+    title: `Foundation owner ${input.sampleId}`,
+    description: 'Foundation forbidden actor private fixture',
+    visibility: 'private',
+  });
+  let conversationId = '';
+  try {
+    const conversation = await api.createAgentConversation({
+      agent_id: agent.id,
+      title: `Foundation forbidden actor ${input.sampleId}`,
+      provider_id: agent.provider,
+      model_name: agent.model,
+    });
+    conversationId = conversation.conversation_id;
+    const [readback, execution, queue] = await Promise.all([
+      foundationConversationReadback(conversationId),
+      foundationExecutionSnapshot(agent.id, conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    const scenario: FoundationForbiddenActorOwnerScenario = {
+      scenarioKey: input.scenarioKey,
+      agentId: agent.id,
+      conversationId,
+      priorSelection,
+      ownerActorHash: await sha256Hex(ownerActor),
+      beforeHash: await sha256Hex(stableJson(readback)),
+      beforeVersion: readback.conversation.version,
+      beforeMessageCount: readback.messages.length,
+      beforeQueueCount: queue.entries.length,
+      beforeTurnCount: execution.turnCount,
+      beforeProviderCallCount: execution.providerCallCount,
+    };
+    foundationForbiddenActorOwnerScenarios.set(input.scenarioKey, scenario);
+    return {
+      scenarioKey: input.scenarioKey,
+      resourceKind: 'conversation',
+      conversationId,
+      agentId: agent.id,
+      ownerActorHash: scenario.ownerActorHash,
+      beforeHash: scenario.beforeHash,
+      beforeVersion: scenario.beforeVersion,
+    };
+  } catch (error) {
+    if (conversationId) {
+      await deleteFoundationConversation(conversationId).catch(() => undefined);
+    }
+    await api.deleteAgent(agent.id).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function readFoundationForbiddenActorOwner(
+  scenarioKey: string,
+): Promise<Record<string, unknown>> {
+  const scenario = foundationForbiddenActorOwnerScenarios.get(scenarioKey);
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationForbiddenActorScenarioMissing');
+  }
+  const [readback, execution, queue] = await Promise.all([
+    foundationConversationReadback(scenario.conversationId),
+    foundationExecutionSnapshot(scenario.agentId, scenario.conversationId),
+    api.listAgentTurnQueue(scenario.conversationId),
+  ]);
+  return {
+    resourceKind: 'conversation',
+    resourceId: scenario.conversationId,
+    ownerActorHash: scenario.ownerActorHash,
+    beforeHash: scenario.beforeHash,
+    afterHash: await sha256Hex(stableJson(readback)),
+    versionBefore: scenario.beforeVersion,
+    versionAfter: readback.conversation.version,
+    messageDelta: readback.messages.length - scenario.beforeMessageCount,
+    queueDelta: queue.entries.length - scenario.beforeQueueCount,
+    turnDelta: execution.turnCount - scenario.beforeTurnCount,
+    providerExecutionDelta:
+      execution.providerCallCount - scenario.beforeProviderCallCount,
+  };
+}
+
+// #region debug-point A-E:forbidden-actor-cleanup
+function reportForbiddenActorCleanupDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7784/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'forbidden-actor-cleanup',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:cleanupFoundationForbiddenActorOwner',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+async function cleanupFoundationForbiddenActorOwner(
+  scenarioKey: string,
+): Promise<Record<string, unknown>> {
+  const scenario = foundationForbiddenActorOwnerScenarios.get(scenarioKey);
+  await reportForbiddenActorCleanupDebug('A-E', 'cleanup-started', {
+    scenarioPresent: scenario !== undefined,
+    priorSelectionPresent: Boolean(scenario?.priorSelection),
+    currentSelectionMatchesPrior:
+      scenario !== undefined
+      && useAgentStore.getState().selectedAgent === scenario.priorSelection,
+  });
+  if (!scenario) {
+    return {
+      scenarioKey,
+      resourceDeleted: true,
+      agentDeleted: true,
+      priorSelectionRestored: true,
+    };
+  }
+  const failures: unknown[] = [];
+  let resourceDeleted = false;
+  let agentDeleted = false;
+  try {
+    const deletionCode = await deleteFoundationConversation(
+      scenario.conversationId,
+    );
+    resourceDeleted = deletionCode === ''
+      || deletionCode === 'CONVERSATION_DELETED'
+      || deletionCode.includes('AGENT_4004');
+    await reportForbiddenActorCleanupDebug('A', 'conversation-delete-finished', {
+      deletionCode,
+      resourceDeleted,
+    });
+  } catch (error) {
+    failures.push(error);
+    await reportForbiddenActorCleanupDebug('A-D', 'conversation-delete-failed', {
+      errorCode: observedErrorCode(error),
+    });
+  }
+  try {
+    await api.deleteAgent(scenario.agentId).catch((error: unknown) => {
+      if (!isFoundationResourceNotFound(error)) throw error;
+    });
+    agentDeleted = await api.getAgent(scenario.agentId).then(
+      () => false,
+      (error: unknown) => isFoundationResourceNotFound(error),
+    );
+    await reportForbiddenActorCleanupDebug('B-D', 'agent-delete-finished', {
+      agentDeleted,
+    });
+  } catch (error) {
+    failures.push(error);
+    await reportForbiddenActorCleanupDebug('B-D', 'agent-delete-failed', {
+      errorCode: observedErrorCode(error),
+    });
+  }
+  try {
+    await useAgentStore.getState().loadAgents();
+    if (scenario.priorSelection) {
+      useAgentStore.getState().setSelectedAgent(scenario.priorSelection);
+      await api.setSelectedAgent(scenario.priorSelection);
+    }
+  } catch (error) {
+    failures.push(error);
+    await reportForbiddenActorCleanupDebug('C', 'selection-restore-failed', {
+      errorCode: observedErrorCode(error),
+    });
+  }
+  const priorSelectionRestored =
+    useAgentStore.getState().selectedAgent === scenario.priorSelection;
+  await reportForbiddenActorCleanupDebug('A-E', 'cleanup-evaluated', {
+    failureCount: failures.length,
+    failureCodes: failures.map(observedErrorCode),
+    resourceDeleted,
+    agentDeleted,
+    priorSelectionRestored,
+  });
+  if (
+    failures.length > 0
+    || !resourceDeleted
+    || !agentDeleted
+    || !priorSelectionRestored
+  ) {
+    throw Object.assign(
+      new Error('agent.acceptance.foundationForbiddenActorOwnerCleanupFailed'),
+      {
+        failures,
+        resourceDeleted,
+        agentDeleted,
+        priorSelectionRestored,
+      },
+    );
+  }
+  foundationForbiddenActorOwnerScenarios.delete(scenarioKey);
+  return {
+    scenarioKey,
+    resourceDeleted,
+    agentDeleted,
+    priorSelectionRestored,
+  };
+}
+
+async function runFoundationForbiddenActorAttempt(input: {
+  conversationId: string;
+  idempotencyKey: string;
+  content: string;
+}): Promise<{
+  outcome: Record<string, unknown>;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  rawPayloadHash: string;
+  foreignContentFieldCount: number;
+}> {
+  const rejectedRef: { current: Record<string, unknown> | null } = {
+    current: null,
+  };
+  const errorEventRef: {
+    current: FoundationPreAdmissionErrorEvent | null;
+  } = { current: null };
+  let observationSequence = 0;
+  const unsubscribe = eventBus.subscribe(
+    EVENT.AGENT_TURN_STREAM_EVENT,
+    (payload) => {
+      const sourceDelivery = (
+        payload as typeof payload & {
+          sourceDelivery?: AgentTurnSourceDelivery;
+        }
+      ).sourceDelivery;
+      if (payload.conversationId !== input.conversationId) return;
+      observationSequence += 1;
+      if (
+        payload.event !== 'error'
+        || payload.data.error_type !== 'OWNERSHIP_FORBIDDEN_ACTOR'
+      ) return;
+      errorEventRef.current = {
+        data: evidenceValue(payload.data) as Record<string, unknown>,
+        eventType: payload.event,
+        observedAt: new Date(payload.timestampMs).toISOString(),
+        streamId: payload.streamId,
+        streamGeneration: payload.streamGeneration,
+        conversationId: payload.conversationId,
+        observationSequence,
+        timestampMs: payload.timestampMs,
+        sourceDelivery,
+      };
+    },
+  );
+  try {
+    const sent = useChatStore.getState().sendMessage(
+      input.content,
+      [],
+      {
+        clientIdempotencyKey: input.idempotencyKey,
+        onRejected: (error) => {
+          if (error) {
+            rejectedRef.current = evidenceValue(error) as Record<string, unknown>;
+          }
+        },
+      },
+    );
+    if (!sent) {
+      throw new Error('agent.acceptance.foundationForbiddenActorSendRejected');
+    }
+    await waitFor(
+      () => (
+        rejectedRef.current !== null
+        && errorEventRef.current !== null
+      ),
+      'typed forbidden actor rejection',
+      60_000,
+    );
+  } finally {
+    unsubscribe();
+  }
+
+  const outcome = rejectedRef.current;
+  const errorEvent =
+    errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
+  const sourceDelivery = errorEvent?.sourceDelivery;
+  const actorPtid = authenticatedFoundationActorPtid();
+  if (
+    !outcome
+    || !errorEvent
+    || !sourceDelivery
+    || sourceDelivery.transport !== 'station-sse'
+    || sourceDelivery.ptid !== actorPtid
+    || sourceDelivery.conversationId !== input.conversationId
+    || sourceDelivery.turnId !== ''
+    || sourceDelivery.sequence !== 0
+    || sourceDelivery.rawPayload.eventType !== 'error'
+    || stableJson(
+      normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+    ) !== stableJson(
+      normalizeProjectedStationPayload(errorEvent.data),
+    )
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationForbiddenActorSourceIdentityMismatch',
+    );
+  }
+  const foreignContentFields = new Set([
+    'title',
+    'description',
+    'messages',
+    'runtime_binding',
+    'runtimeBinding',
+    'provider_id',
+    'providerId',
+    'model_name',
+    'modelName',
+  ]);
+  return {
+    outcome,
+    runtimeEvent: {
+      eventId: await sha256Hex(stableJson({
+        streamId: errorEvent.streamId,
+        streamGeneration: errorEvent.streamGeneration,
+        conversationId: errorEvent.conversationId,
+        observationSequence: errorEvent.observationSequence,
+        eventType: errorEvent.eventType,
+        timestampMs: errorEvent.timestampMs,
+        data: errorEvent.data,
+      })),
+      eventType: errorEvent.eventType,
+      sequence: errorEvent.observationSequence,
+      observedAt: errorEvent.observedAt,
+      streamGeneration: errorEvent.streamGeneration,
+      streamIdHash: await sha256Hex(errorEvent.streamId),
+      conversationIdHash: await sha256Hex(errorEvent.conversationId),
+      payloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+      errorType: String(errorEvent.data.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    },
+    rawPayloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+    foreignContentFieldCount: Object.keys(errorEvent.data)
+      .filter((key) => foreignContentFields.has(key)).length,
+  };
+}
+
+async function rejectFoundationForbiddenActor(input: {
+  scenarioKey: string;
+  platform: string;
+  sampleId: string;
+  ownerFixture: Record<string, unknown>;
+}): Promise<Record<string, unknown>> {
+  const resourceKind = String(input.ownerFixture.resourceKind ?? '');
+  const resourceId = String(input.ownerFixture.conversationId ?? '');
+  const ownerActorHash = String(input.ownerFixture.ownerActorHash ?? '');
+  if (
+    resourceKind !== 'conversation'
+    || !resourceId
+    || !String(input.ownerFixture.agentId ?? '')
+    || !ownerActorHash
+  ) {
+    throw new Error('agent.acceptance.foundationForbiddenActorOwnerInvalid');
+  }
+  const receiverActorHash = await sha256Hex(authenticatedFoundationActorPtid());
+  if (receiverActorHash === ownerActorHash) {
+    throw new Error('agent.acceptance.foundationForbiddenActorActorsCollapsed');
+  }
+
+  clearFoundationLocalConversationProjection(resourceId);
+  foundationForbiddenActorReceiverResources.set(input.scenarioKey, resourceId);
+  useChatStore.setState({
+    currentSessionKey: resourceId,
+    messages: [],
+    isStreaming: false,
+    streamingStartedAt: null,
+    abortController: null,
+  });
+  const idempotencyKey = crypto.randomUUID();
+  const content = `Forbidden actor ${input.sampleId}`;
+  const startedAt = performance.now();
+  const first = await runFoundationForbiddenActorAttempt({
+    conversationId: resourceId,
+    idempotencyKey,
+    content,
+  });
+  const replayed = await runFoundationForbiddenActorAttempt({
+    conversationId: resourceId,
+    idempotencyKey,
+    content,
+  });
+
+  await waitFor(
+    () => Boolean(document.querySelector(
+      '[data-pt-agent-message="assistant"]'
+      + '[data-pt-agent-error-type="OWNERSHIP_FORBIDDEN_ACTOR"]',
+    )),
+    'forbidden actor receiver',
+    10_000,
+  );
+  const errorSurface = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '[data-pt-agent-message="assistant"]'
+      + '[data-pt-agent-error-type="OWNERSHIP_FORBIDDEN_ACTOR"]',
+    ),
+  ).reverse().find((element) => element.getClientRects().length > 0);
+  const errorToggle = errorSurface?.querySelector<HTMLElement>(
+    '[data-pt-agent-message-error-toggle]',
+  );
+  const errorSelector =
+    '[data-pt-agent-message-error-text="agent.errors.forbiddenActor"]';
+  if (!errorSurface?.querySelector(errorSelector)) {
+    errorToggle?.click();
+    await waitFor(
+      () => Boolean(errorSurface?.querySelector(errorSelector)),
+      'localized forbidden actor text',
+      10_000,
+    );
+  }
+  const errorText = errorSurface?.querySelector<HTMLElement>(errorSelector);
+  const recovery = errorSurface?.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-message-error-recovery="switch-account"]',
+  );
+  if (!errorSurface || !errorText || !recovery) {
+    throw new Error('agent.acceptance.foundationForbiddenActorSurfaceMissing');
+  }
+  const receiver = {
+    errorVisible: errorText.getClientRects().length > 0,
+    errorText: errorText.textContent?.trim() ?? '',
+    expectedErrorText: i18n.t(
+      'agent.errors.forbiddenActor',
+      { ns: 'agent' },
+    ),
+    recoveryVisible: recovery.getClientRects().length > 0,
+    recoveryText: recovery.textContent?.trim() ?? '',
+    expectedRecoveryText: i18n.t(
+      'agent.recovery.switchAccount',
+      { ns: 'agent' },
+    ),
+    accountGateObserved: false,
+    recoveryExecuted: false,
+    receiverActorHash,
+  };
+  const identityBeforeRecovery = identityRuntime.getSnapshot();
+  // #region debug-point A-E:forbidden-actor-recovery-click
+  await reportFoundationForbiddenActorAccountGateDebug(
+    'A-E',
+    'before-recovery-click',
+    {
+      phaseKind: identityBeforeRecovery.phase.kind,
+      lifecycleState: identityBeforeRecovery.lifecycle.state,
+      dataReady: identityBeforeRecovery.lifecycle.dataReady,
+      authenticated: useSessionStore.getState().authenticated,
+      currentActorPresent:
+        Boolean(useSessionStore.getState().currentUser?.actorPtid),
+      knownAccountCount: identityBeforeRecovery.lifecycle.knownAccounts.length,
+      recoveryConnected: recovery.isConnected,
+      recoveryVisible: recovery.getClientRects().length > 0,
+      recoveryDisabled: recovery.disabled,
+    },
+  );
+  const observeRecoveryClick = () => {
+    void reportFoundationForbiddenActorAccountGateDebug(
+      'C-D',
+      'recovery-click-observed',
+      {
+        recoveryConnected: recovery.isConnected,
+        recoveryDisabled: recovery.disabled,
+      },
+    );
+  };
+  recovery.addEventListener('click', observeRecoveryClick, { once: true });
+  try {
+    recovery.click();
+    const identityAfterRecovery = identityRuntime.getSnapshot();
+    void reportFoundationForbiddenActorAccountGateDebug(
+      'C-D',
+      'after-recovery-click',
+      {
+        phaseKind: identityAfterRecovery.phase.kind,
+        lifecycleState: identityAfterRecovery.lifecycle.state,
+        dataReady: identityAfterRecovery.lifecycle.dataReady,
+        authenticated: useSessionStore.getState().authenticated,
+      },
+    );
+    try {
+      await waitFor(
+        () => (
+          identityRuntime.getSnapshot().phase.kind === 'accountGate'
+          && !useSessionStore.getState().authenticated
+        ),
+        'forbidden actor account gate',
+        30_000,
+      );
+    } catch (error) {
+      const identityAtTimeout = identityRuntime.getSnapshot();
+      await reportFoundationForbiddenActorAccountGateDebug(
+        'A-E',
+        'account-gate-timeout',
+        {
+          phaseKind: identityAtTimeout.phase.kind,
+          lifecycleState: identityAtTimeout.lifecycle.state,
+          dataReady: identityAtTimeout.lifecycle.dataReady,
+          authenticated: useSessionStore.getState().authenticated,
+          currentActorPresent:
+            Boolean(useSessionStore.getState().currentUser?.actorPtid),
+          knownAccountCount: identityAtTimeout.lifecycle.knownAccounts.length,
+          errorType: error instanceof Error ? error.name : typeof error,
+        },
+      );
+      throw error;
+    }
+    const identityAtGate = identityRuntime.getSnapshot();
+    await reportFoundationForbiddenActorAccountGateDebug(
+      'A-E',
+      'account-gate-observed',
+      {
+        phaseKind: identityAtGate.phase.kind,
+        lifecycleState: identityAtGate.lifecycle.state,
+        dataReady: identityAtGate.lifecycle.dataReady,
+        authenticated: useSessionStore.getState().authenticated,
+        knownAccountCount: identityAtGate.lifecycle.knownAccounts.length,
+      },
+    );
+  } finally {
+    recovery.removeEventListener('click', observeRecoveryClick);
+  }
+  // #endregion
+  receiver.accountGateObserved = true;
+  receiver.recoveryExecuted = true;
+
+  return {
+    scenarioKey: input.scenarioKey,
+    durationMs: performance.now() - startedAt,
+    runtimeEvent: first.runtimeEvent,
+    facts: {
+      runtimeEvent: first.runtimeEvent,
+      outcome: first.outcome,
+      receiver,
+      foreignAccess: {
+        resourceKind,
+        resourceId,
+        ownerActorHash,
+        receiverActorHash,
+        requestCount: 2,
+        foreignPayloadCount:
+          first.foreignContentFieldCount + replayed.foreignContentFieldCount,
+      },
+      replay: {
+        sourceHash: first.rawPayloadHash,
+        replayHash: replayed.rawPayloadHash,
+        equal: first.rawPayloadHash === replayed.rawPayloadHash,
+      },
+      cleanup: {
+        localProjectionCleared:
+          useChatStore.getState().currentSessionKey !== resourceId,
+        conversationDeleted: false,
+      },
+    },
+  };
+}
+
+async function completeFoundationForbiddenActorRecovery(input: {
+  scenarioKey: string;
+  rejectedScenario: Record<string, unknown>;
+  ownerReadback: Record<string, unknown>;
+  ownerCleanup: Record<string, unknown>;
+}): Promise<Record<string, unknown>> {
+  const facts = evidenceRecord(
+    input.rejectedScenario.facts,
+    'foundationForbiddenActorFacts',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationForbiddenActorReceiver',
+  );
+  const foreignAccess = evidenceRecord(
+    facts.foreignAccess,
+    'foundationForbiddenActorAccess',
+  );
+  const receiverActorHash = await sha256Hex(authenticatedFoundationActorPtid());
+  foundationForbiddenActorReceiverResources.delete(input.scenarioKey);
+  return {
+    ...input.rejectedScenario,
+    scenarioKey: input.scenarioKey,
+    facts: {
+      ...facts,
+      receiver: {
+        ...receiver,
+        receiverRestored:
+          receiverActorHash === foreignAccess.receiverActorHash
+          && identityRuntime.getSnapshot().lifecycle.state === 'ready',
+      },
+      owner: input.ownerReadback,
+      station: {
+        conversationDelta: 0,
+        turnDelta: input.ownerReadback.turnDelta,
+        messageDelta: input.ownerReadback.messageDelta,
+        queueDelta: input.ownerReadback.queueDelta,
+        providerExecutionDelta: input.ownerReadback.providerExecutionDelta,
+      },
+      cleanup: {
+        ...evidenceRecord(
+          facts.cleanup,
+          'foundationForbiddenActorCleanup',
+        ),
+        foreignResourceDeleted: input.ownerCleanup.resourceDeleted,
+        foreignAgentDeleted: input.ownerCleanup.agentDeleted,
+        ownerSelectionRestored: input.ownerCleanup.priorSelectionRestored,
+        receiverRestored:
+          receiverActorHash === foreignAccess.receiverActorHash,
+      },
+    },
+  };
+}
+
+async function runFoundationIncompatibleCapabilityAttempt(input: {
+  conversationId: string;
+  idempotencyKey: string;
+  content: string;
+}): Promise<{
+  outcome: Record<string, unknown>;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  rawPayloadHash: string;
+}> {
+  const errorEventRef: {
+    current: FoundationPreAdmissionErrorEvent | null;
+  } = { current: null };
+  let observationSequence = 0;
+  const unsubscribe = eventBus.subscribe(
+    EVENT.AGENT_TURN_STREAM_EVENT,
+    (payload) => {
+      const sourceDelivery = (
+        payload as typeof payload & {
+          sourceDelivery?: AgentTurnSourceDelivery;
+        }
+      ).sourceDelivery;
+      if (payload.conversationId !== input.conversationId) return;
+      observationSequence += 1;
+      if (
+        payload.event !== 'error'
+        || payload.data.error_type !== 'RUNTIME_INCOMPATIBLE_CAPABILITY'
+      ) {
+        return;
+      }
+      errorEventRef.current = {
+        data: evidenceValue(payload.data) as Record<string, unknown>,
+        eventType: payload.event,
+        observedAt: new Date(payload.timestampMs).toISOString(),
+        streamId: payload.streamId,
+        streamGeneration: payload.streamGeneration,
+        conversationId: payload.conversationId,
+        observationSequence,
+        timestampMs: payload.timestampMs,
+        sourceDelivery,
+      };
+    },
+  );
+  try {
+    const sent = useChatStore.getState().sendMessage(
+      input.content,
+      [],
+      { clientIdempotencyKey: input.idempotencyKey },
+    );
+    if (!sent) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilitySendRejected',
+      );
+    }
+    await waitFor(
+      () => errorEventRef.current !== null,
+      'typed incompatible capability rejection',
+      60_000,
+    );
+  } finally {
+    unsubscribe();
+  }
+
+  const errorEvent =
+    errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
+  const sourceDelivery = errorEvent?.sourceDelivery;
+  const actorPtid = authenticatedFoundationActorPtid();
+  if (
+    !errorEvent
+    || !sourceDelivery
+    || sourceDelivery.transport !== 'station-sse'
+    || sourceDelivery.ptid !== actorPtid
+    || sourceDelivery.conversationId !== input.conversationId
+    || !sourceDelivery.turnId
+    || sourceDelivery.sequence <= 0
+    || sourceDelivery.rawPayload.eventType !== 'error'
+    || stableJson(
+      normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+    ) !== stableJson(
+      normalizeProjectedStationPayload(errorEvent.data),
+    )
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationIncompatibleCapabilitySourceIdentityMismatch',
+    );
+  }
+  return {
+    outcome: errorEvent.data,
+    runtimeEvent: {
+      eventId: await sha256Hex(stableJson({
+        streamId: errorEvent.streamId,
+        streamGeneration: errorEvent.streamGeneration,
+        conversationId: errorEvent.conversationId,
+        observationSequence: errorEvent.observationSequence,
+        eventType: errorEvent.eventType,
+        timestampMs: errorEvent.timestampMs,
+        data: errorEvent.data,
+      })),
+      eventType: errorEvent.eventType,
+      sequence: errorEvent.observationSequence,
+      observedAt: errorEvent.observedAt,
+      streamGeneration: errorEvent.streamGeneration,
+      streamIdHash: await sha256Hex(errorEvent.streamId),
+      conversationIdHash: await sha256Hex(errorEvent.conversationId),
+      payloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+      errorType: String(errorEvent.data.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    },
+    rawPayloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+  };
+}
+
+async function runFoundationIncompatibleCapabilityScenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  facts: Record<string, unknown>;
+}> {
+  const store = useAgentStore.getState();
+  const priorSelection = store.selectedAgent;
+  const priorSurface = store.getAgentSurface(priorSelection);
+  const sourceProvider = await api.getProvider(input.agent.provider);
+  const configuredModel = sourceProvider.models.find(
+    (model) => model.id === input.agent.model && model.enabled,
+  );
+  const fixtureProviderId = 'anthropic';
+  let catalogCandidate = await api.getProvider(fixtureProviderId);
+  let sourceModel = catalogCandidate.models.find(
+    (model) => (
+      model.id === 'claude-sonnet-4-20250514'
+      && model.enabled
+    ),
+  );
+  if (
+    input.agent.provider !== 'ark'
+    || !sourceProvider.base_url
+    || !sourceProvider.api_key
+    || !configuredModel
+    || configuredModel.type !== 'chat'
+    || !catalogCandidate.base_url
+    || !sourceModel
+    || sourceModel.type !== 'chat'
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationIncompatibleCapabilityProviderFixtureMissing',
+    );
+  }
+  if (catalogCandidate.version > 0) {
+    // #region debug-point C:stale-incompatible-provider-reset
+    await reportFoundationIncompatibleCleanupDebug(
+      'C',
+      'stale-provider-reset-started',
+      {
+        fixtureProviderVersion: catalogCandidate.version,
+        candidateCredentialPresent: catalogCandidate.has_api_key,
+      },
+    );
+    // #endregion
+    await api.deleteProvider(fixtureProviderId);
+    catalogCandidate = await api.getProvider(fixtureProviderId);
+    sourceModel = catalogCandidate.models.find(
+      (model) => (
+        model.id === 'claude-sonnet-4-20250514'
+        && model.enabled
+      ),
+    );
+    // #region debug-point C:stale-incompatible-provider-reset-readback
+    await reportFoundationIncompatibleCleanupDebug(
+      'C',
+      'stale-provider-reset-completed',
+      {
+        fixtureProviderVersion: catalogCandidate.version,
+        candidateCredentialPresent: catalogCandidate.has_api_key,
+      },
+    );
+    // #endregion
+  }
+  // #region debug-point A-C:incompatible-capability-precondition
+  await reportFoundationIncompatibleCleanupDebug(
+    'A-C',
+    'provider-precondition',
+    {
+      sourceProviderIsArk: input.agent.provider === 'ark',
+      sourceBaseUrlPresent: Boolean(sourceProvider.base_url),
+      sourceCredentialPresent: Boolean(sourceProvider.api_key),
+      configuredModelPresent: Boolean(configuredModel),
+      configuredModelType: configuredModel?.type ?? null,
+      fixtureProviderVersion: catalogCandidate.version,
+      candidateCredentialPresent: catalogCandidate.has_api_key,
+      fixtureBaseUrlPresent: Boolean(catalogCandidate.base_url),
+      fixtureModelPresent: Boolean(sourceModel),
+      fixtureModelType: sourceModel?.type ?? null,
+    },
+  );
+  // #endregion
+  if (
+    catalogCandidate.version !== 0
+    || catalogCandidate.has_api_key
+    || !catalogCandidate.base_url
+    || !sourceModel
+    || sourceModel.type !== 'chat'
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationIncompatibleCapabilityProviderFixtureMissing',
+    );
+  }
+
+  let providerSetupAttempted = false;
+  let disposableAgentId = '';
+  let rejectedConversationId = '';
+  let capabilityBindingId = '';
+  let scenarioError: unknown = null;
+  let cleanupError: unknown = null;
+  let facts: Record<string, unknown> | null = null;
+  const startedAt = performance.now();
+
+  try {
+    providerSetupAttempted = true;
+    await api.createProvider({
+      id: fixtureProviderId,
+      name: fixtureProviderId,
+      description: 'Foundation incompatible capability fixture',
+      logo: '',
+      base_url: catalogCandidate.base_url,
+      api_key: sourceProvider.api_key,
+    });
+    const configuredCandidateModel = (
+      await api.listAvailableModels()
+    ).models.find(
+      (model) => (
+        model.provider_id === fixtureProviderId
+        && model.id === sourceModel.id
+        && model.enabled
+      ),
+    );
+    if (!configuredCandidateModel) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityModelFixtureMissing',
+      );
+    }
+
+    const disposable = await store.createAgent({
+      name: `foundation-incompatible-${input.sampleId}-${crypto.randomUUID()}`,
+      title: `Foundation incompatible ${input.sampleId}`,
+      description: 'Foundation runtime capability mismatch fixture',
+      provider: fixtureProviderId,
+      model: sourceModel.id,
+    });
+    disposableAgentId = disposable.id || disposable.name;
+    const toolFixture = await foundationToolFixture(disposableAgentId, 'browser');
+    if (
+      !toolFixture.manifest.requiredRuntimeCapabilities.includes(
+        'native-tools',
+      )
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityManifestInvalid',
+      );
+    }
+    const binding = await updateFoundationToolPolicy(
+      disposable,
+      toolFixture,
+      toolFixture.binding,
+      CapabilityApprovalPolicy.AUTO,
+    );
+    capabilityBindingId = binding.bindingId;
+
+    await api.setSelectedAgent(disposable.name);
+    useAgentStore.getState().setSelectedAgent(disposable.name);
+    useAgentStore.getState().setAgentSurface(disposable.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await waitFor(
+      () => Boolean(
+        document.querySelector('[data-pt-agent-composer]')
+          ?.getClientRects().length,
+      ),
+      'incompatible capability composer',
+      30_000,
+    );
+
+    const conversation = await api.createAgentConversation({
+      agent_id: disposableAgentId,
+      title: `Foundation incompatible capability ${input.sampleId}`,
+      provider_id: fixtureProviderId,
+      model_name: sourceModel.id,
+    });
+    rejectedConversationId = conversation.conversation_id;
+    await useChatStore.getState().selectSession(rejectedConversationId);
+    await useChatStore.getState().syncMessages();
+
+    const readinessBefore = await api.getAgentCapabilityReadiness({
+      agent_id: disposableAgentId,
+      client_capability_session_id: input.capabilitySessionId,
+    });
+    const readinessEntryBefore = readinessBefore.capabilities.find(
+      (entry) => entry.capability_id === binding.capabilityId,
+    );
+    if (
+      !readinessEntryBefore
+      || readinessEntryBefore.state
+        !== 'CAPABILITY_READINESS_STATE_UNAVAILABLE'
+      || readinessEntryBefore.reason_code
+        !== 'runtime_capability_unavailable'
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityReadinessMissing',
+      );
+    }
+
+    const beforeExecution = await foundationIncompatibleExecutionSnapshot(
+      disposableAgentId,
+      rejectedConversationId,
+    );
+    const beforeReadback = await foundationConversationReadback(
+      rejectedConversationId,
+    );
+    const beforeQueue = await api.listAgentTurnQueue(rejectedConversationId);
+    const idempotencyKey = crypto.randomUUID();
+    const content = `Incompatible capability ${input.sampleId}`;
+    const first = await runFoundationIncompatibleCapabilityAttempt({
+      conversationId: rejectedConversationId,
+      idempotencyKey,
+      content,
+    });
+    const replayDeliveries = await foundationStationReplayReadback({
+      conversationId: rejectedConversationId,
+      turnId: first.runtimeEvent.sourceTurnId ?? '',
+      streamId: `foundation-incompatible-${idempotencyKey}`,
+      streamGeneration: first.runtimeEvent.streamGeneration ?? 1,
+      actorPtid: authenticatedFoundationActorPtid(),
+      acknowledgedCursor: 0,
+    });
+    const replayed = replayDeliveries.find((delivery) => (
+      delivery.eventType === 'error'
+      && delivery.sourceTurnId === first.runtimeEvent.sourceTurnId
+      && delivery.sourceSequence === first.runtimeEvent.sourceSequence
+    ));
+    if (!replayed) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityReplayMissing',
+      );
+    }
+
+    await waitFor(
+      () => Boolean(document.querySelector(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="RUNTIME_INCOMPATIBLE_CAPABILITY"]',
+      )),
+      'incompatible capability receiver',
+      10_000,
+    );
+    const errorSurface = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="RUNTIME_INCOMPATIBLE_CAPABILITY"]',
+      ),
+    ).reverse().find((element) => element.getClientRects().length > 0);
+    const errorToggle = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-toggle]',
+    );
+    const errorSelector =
+      '[data-pt-agent-message-error-text="agent.errors.incompatibleCapability"]';
+    if (!errorSurface?.querySelector(errorSelector)) {
+      errorToggle?.click();
+      await waitFor(
+        () => Boolean(errorSurface?.querySelector(errorSelector)),
+        'localized incompatible capability text',
+        10_000,
+      );
+    }
+    const errorText = errorSurface?.querySelector<HTMLElement>(errorSelector);
+    const recovery = errorSurface?.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-message-error-recovery="choose-compatible-model"]',
+    );
+    if (!errorSurface || !errorText || !recovery) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilitySurfaceMissing',
+      );
+    }
+    const receiver = {
+      errorVisible: errorText.getClientRects().length > 0,
+      errorText: errorText.textContent?.trim() ?? '',
+      expectedErrorText: i18n.t(
+        'agent.errors.incompatibleCapability',
+        { ns: 'agent' },
+      ),
+      recoveryVisible: recovery.getClientRects().length > 0,
+      recoveryLocaleKey: 'agent.recovery.chooseCompatibleModel',
+      recoveryText: recovery.textContent?.trim() ?? '',
+      expectedRecoveryText: i18n.t(
+        'agent.recovery.chooseCompatibleModel',
+        { ns: 'agent' },
+      ),
+      recoveryExecuted: false,
+      profileVisible: false,
+      profileAgentId: '',
+      modelSelectionVisible: false,
+      selectedModelId: '',
+    };
+    recovery.click();
+    await waitFor(
+      () => Boolean(
+        document.querySelector(
+          `[data-pt-agent-profile="${disposableAgentId}"]`,
+        )?.getClientRects().length
+        && document.querySelector(
+          `[data-pt-agent-profile-model="${disposableAgentId}"]`,
+        )?.getClientRects().length,
+      ),
+      'incompatible capability model configuration',
+      30_000,
+    );
+    const agentAfterRecovery = await api.getAgent(disposableAgentId);
+    receiver.recoveryExecuted = true;
+    receiver.profileVisible = true;
+    receiver.profileAgentId = disposableAgentId;
+    receiver.modelSelectionVisible = true;
+    receiver.selectedModelId = agentAfterRecovery.model;
+
+    const readinessAfter = await api.getAgentCapabilityReadiness({
+      agent_id: disposableAgentId,
+      client_capability_session_id: input.capabilitySessionId,
+    });
+    const readinessEntryAfter = readinessAfter.capabilities.find(
+      (entry) => entry.capability_id === binding.capabilityId,
+    );
+    if (
+      !readinessEntryAfter
+      || readinessEntryAfter.state
+        !== 'CAPABILITY_READINESS_STATE_UNAVAILABLE'
+      || readinessEntryAfter.reason_code
+        !== 'runtime_capability_unavailable'
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityReadinessChanged',
+      );
+    }
+
+    const afterExecution = await foundationIncompatibleExecutionSnapshot(
+      disposableAgentId,
+      rejectedConversationId,
+    );
+    let directTraceAvailable = false;
+    let directTraceTurnPresent = false;
+    let directTracePayloadPresent = false;
+    let directTraceErrorCode = '';
+    let diagnosticReplayAvailable = false;
+    let diagnosticReplayStatus = 0;
+    let diagnosticAttemptCount = 0;
+    let diagnosticRuntimeSnapshotPresent = false;
+    let diagnosticErrorCode = '';
+    try {
+      const traceResponse = evidenceRecord(
+        evidenceValue(await api.getAgentTurnTrace({
+          turnId: first.runtimeEvent.sourceTurnId ?? '',
+        })),
+        'foundationIncompatibleDirectTraceResponse',
+      );
+      const traceEntry = evidenceRecord(
+        traceResponse.entry,
+        'foundationIncompatibleDirectTraceEntry',
+      );
+      directTraceAvailable = true;
+      directTraceTurnPresent = Boolean(traceEntry.turn);
+      directTracePayloadPresent = Boolean(traceEntry.trace);
+    } catch (error) {
+      directTraceErrorCode = observedErrorCode(error);
+    }
+    try {
+      const diagnostics = evidenceRecord(
+        evidenceValue(await api.exportAgentTurnDiagnostics(
+          first.runtimeEvent.sourceTurnId ?? '',
+        )),
+        'foundationIncompatibleDirectDiagnostics',
+      );
+      const replay = evidenceRecord(
+        diagnostics.replay,
+        'foundationIncompatibleDirectReplay',
+      );
+      const attempts = optionalEvidenceArray(
+        evidenceField(replay, 'attempts', 'attempts'),
+        'foundationIncompatibleDirectAttempts',
+      ).map((value) =>
+        evidenceRecord(value, 'foundationIncompatibleDirectAttempt'));
+      diagnosticReplayAvailable = true;
+      diagnosticReplayStatus = Number(replay.status ?? 0);
+      diagnosticAttemptCount = attempts.length;
+      diagnosticRuntimeSnapshotPresent = attempts.some((attempt) =>
+        Boolean(evidenceField(
+          attempt,
+          'runtimeSnapshot',
+          'runtime_snapshot',
+        )));
+    } catch (error) {
+      diagnosticErrorCode = observedErrorCode(error);
+    }
+    const tracedTurnDelta =
+      afterExecution.turnCount - beforeExecution.turnCount;
+    const diagnosticRejectedTurnCount = (
+      diagnosticReplayAvailable
+      && diagnosticReplayStatus === AgentTurnStatus.FAILED
+      && diagnosticAttemptCount === 1
+      && diagnosticRuntimeSnapshotPresent
+    )
+      ? 1
+      : 0;
+    const turnDelta = Math.max(
+      tracedTurnDelta,
+      diagnosticRejectedTurnCount,
+    );
+    // #region debug-point A-D:incompatible-capability-turn-count-boundary
+    await reportFoundationIncompatibleTurnCountDebug(
+      'A-D',
+      'turn-count-boundary',
+      {
+        beforeTurnCount: beforeExecution.turnCount,
+        afterTurnCount: afterExecution.turnCount,
+        tracedTurnDelta,
+        diagnosticRejectedTurnCount,
+        projectedTurnDelta: turnDelta,
+        directTraceAvailable,
+        directTraceTurnPresent,
+        directTracePayloadPresent,
+        directTraceErrorCode,
+        diagnosticReplayAvailable,
+        diagnosticReplayStatus,
+        diagnosticAttemptCount,
+        diagnosticRuntimeSnapshotPresent,
+        diagnosticErrorCode,
+      },
+    );
+    // #endregion
+    const afterReadback = await foundationConversationReadback(
+      rejectedConversationId,
+    );
+    const afterQueue = await api.listAgentTurnQueue(rejectedConversationId);
+    const beforeHash = await sha256Hex(stableJson(beforeReadback.messages));
+    const afterHash = await sha256Hex(stableJson(afterReadback.messages));
+    const providerCallDelta =
+      afterExecution.providerCallCount - beforeExecution.providerCallCount;
+    // #region debug-point E-H:incompatible-capability-readiness
+    await reportFoundationIncompatibleCleanupDebug(
+      'E-H',
+      'readiness-readback-boundary',
+      {
+        snapshotBeforePresent: Boolean(readinessBefore.snapshot_id),
+        snapshotAfterPresent: Boolean(readinessAfter.snapshot_id),
+        runtimeSnapshotStable:
+          readinessBefore.runtime_snapshot_id
+          === readinessAfter.runtime_snapshot_id,
+        bindingRevisionBefore: Number(readinessEntryBefore.binding_revision),
+        bindingRevisionAfter: Number(readinessEntryAfter.binding_revision),
+        selectedModelStable: agentAfterRecovery.model === sourceModel.id,
+        conversationVersionDelta:
+          afterReadback.conversation.version
+          - beforeReadback.conversation.version,
+        messageHashStable: beforeHash === afterHash,
+      },
+    );
+    // #endregion
+
+    facts = {
+      outcome: first.outcome,
+      receiver,
+      readiness: {
+        source: 'station-capability-readiness',
+        capabilityId: binding.capabilityId,
+        reasonCode: readinessEntryBefore.reason_code,
+        incompatibleModelId: sourceModel.id,
+        snapshotIdBefore: readinessBefore.snapshot_id,
+        snapshotIdAfter: readinessAfter.snapshot_id,
+        runtimeSnapshotIdBefore: readinessBefore.runtime_snapshot_id,
+        runtimeSnapshotIdAfter: readinessAfter.runtime_snapshot_id,
+        bindingRevisionBefore: Number(readinessEntryBefore.binding_revision),
+        bindingRevisionAfter: Number(readinessEntryAfter.binding_revision),
+        stateBefore: 'unavailable',
+        stateAfter: 'unavailable',
+      },
+      station: {
+        agentId: disposableAgentId,
+        conversationId: rejectedConversationId,
+        turnId: first.runtimeEvent.sourceTurnId,
+        selectedModelIdBefore: sourceModel.id,
+        selectedModelIdAfter: agentAfterRecovery.model,
+        conversationVersionBefore: beforeReadback.conversation.version,
+        conversationVersionAfter: afterReadback.conversation.version,
+        beforeHash,
+        afterHash,
+        turnDelta,
+        messageDelta:
+          afterReadback.messages.length - beforeReadback.messages.length,
+        queueDelta: afterQueue.entries.length - beforeQueue.entries.length,
+      },
+      execution: {
+        runtimeExecutionDelta: providerCallDelta,
+        providerCallDelta,
+        toolCallDelta:
+          afterExecution.toolCallCount - beforeExecution.toolCallCount,
+        toolExecutionDelta:
+          afterExecution.toolExecutionCount
+          - beforeExecution.toolExecutionCount,
+        sideEffectDelta:
+          afterExecution.sideEffectCount - beforeExecution.sideEffectCount,
+      },
+      runtimeEvent: first.runtimeEvent,
+      replay: {
+        sourceHash: first.rawPayloadHash,
+        replayHash: replayed.payloadHash,
+        equal: first.rawPayloadHash === replayed.payloadHash,
+      },
+      cleanup: {
+        localProjectionCleared: false,
+        conversationDeleted: false,
+        disposableAgentDeleted: false,
+        capabilityBindingRemoved: false,
+        fixtureProviderRestored: false,
+        modelConfigurationUnchanged:
+          agentAfterRecovery.model === sourceModel.id,
+        priorSelection,
+        restoredSelection: '',
+      },
+    };
+  } catch (error) {
+    scenarioError = error;
+  } finally {
+    let cleanupStage = 'start';
+    let activeBindingCount = 0;
+    let capabilityBindingRemoved = capabilityBindingId.length === 0;
+    try {
+      await reportFoundationIncompatibleCleanupDebug(
+        'A-D',
+        'cleanup-started',
+        {
+          scenarioErrorPresent: scenarioError !== null,
+          factsPresent: facts !== null,
+          conversationPresent: rejectedConversationId.length > 0,
+          agentPresent: disposableAgentId.length > 0,
+          bindingPresent: capabilityBindingId.length > 0,
+          providerSetupAttempted,
+          priorSelectionPresent: priorSelection.length > 0,
+        },
+      );
+      if (rejectedConversationId) {
+        cleanupStage = 'conversation-delete';
+        clearFoundationLocalConversationProjection(rejectedConversationId);
+        await deleteFoundationConversation(rejectedConversationId);
+        await reportFoundationIncompatibleCleanupDebug(
+          'A',
+          'conversation-delete-completed',
+        );
+      }
+      if (disposableAgentId) {
+        if (capabilityBindingId) {
+          cleanupStage = 'binding-readback';
+          const currentBinding = (
+            await api.listAgentCapabilityBindings(disposableAgentId)
+          ).find((binding) => (
+            binding.bindingId === capabilityBindingId
+            && !binding.tombstonedAt
+          ));
+          await reportFoundationIncompatibleCleanupDebug(
+            'B',
+            'binding-readback-completed',
+            { activeBindingPresent: Boolean(currentBinding) },
+          );
+          if (currentBinding) {
+            cleanupStage = 'binding-delete';
+            await api.deleteAgentCapabilityBinding(
+              currentBinding.bindingId,
+              currentBinding.revision,
+              crypto.randomUUID(),
+              'acceptance_fixture_cleanup',
+            );
+            await reportFoundationIncompatibleCleanupDebug(
+              'B',
+              'binding-delete-completed',
+            );
+          }
+          cleanupStage = 'binding-delete-readback';
+          activeBindingCount = (
+            await api.listAgentCapabilityBindings(disposableAgentId)
+          ).filter((binding) => (
+            binding.bindingId === capabilityBindingId
+            && !binding.tombstonedAt
+          )).length;
+          capabilityBindingRemoved = activeBindingCount === 0;
+          await reportFoundationIncompatibleCleanupDebug(
+            'B',
+            'binding-delete-readback-completed',
+            { activeBindingCount },
+          );
+        }
+        cleanupStage = 'agent-delete';
+        await api.deleteAgent(disposableAgentId);
+        await reportFoundationIncompatibleCleanupDebug(
+          'A-D',
+          'agent-delete-completed',
+        );
+      }
+      if (providerSetupAttempted) {
+        cleanupStage = 'provider-readback';
+        const configuredFixture = (await api.listProviders()).find(
+          (provider) => (
+            provider.id === fixtureProviderId
+            && provider.version > 0
+          ),
+        );
+        await reportFoundationIncompatibleCleanupDebug(
+          'C',
+          'provider-readback-completed',
+          { configuredFixturePresent: Boolean(configuredFixture) },
+        );
+        if (configuredFixture) {
+          cleanupStage = 'provider-delete';
+          await api.deleteProvider(fixtureProviderId);
+          await reportFoundationIncompatibleCleanupDebug(
+            'C',
+            'provider-delete-completed',
+          );
+        }
+      }
+      cleanupStage = 'agent-store-reload';
+      await useAgentStore.getState().loadAgents();
+      if (priorSelection) {
+        cleanupStage = 'selection-restore';
+        useAgentStore.getState().setSelectedAgent(priorSelection);
+        useAgentStore.getState().setAgentSurface(priorSelection, priorSurface);
+        await api.setSelectedAgent(priorSelection);
+        await reportFoundationIncompatibleCleanupDebug(
+          'D',
+          'selection-restore-completed',
+          {
+            selectedAgentMatches:
+              useAgentStore.getState().selectedAgent === priorSelection,
+          },
+        );
+      }
+      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+      if (facts) {
+        cleanupStage = 'cleanup-proof';
+        const cleanup = evidenceRecord(
+          facts.cleanup,
+          'foundationIncompatibleCapabilityCleanup',
+        );
+        const cleanedChatState = useChatStore.getState();
+        cleanup.localProjectionCleared = rejectedConversationId
+          ? (
+              cleanedChatState.operations[rejectedConversationId] === undefined
+              && cleanedChatState.sessionBuffers[rejectedConversationId]
+                === undefined
+              && (
+                cleanedChatState.currentSessionKey !== rejectedConversationId
+                || (
+                  cleanedChatState.messages.length === 0
+                  && cleanedChatState.isStreaming === false
+                )
+              )
+            )
+          : true;
+        let conversationReadbackStatus = '';
+        let conversationReadbackErrorCode = '';
+        cleanup.conversationDeleted = rejectedConversationId
+          ? await api.getAgentConversation(rejectedConversationId).then(
+              (conversation) => {
+                conversationReadbackStatus = conversation.status;
+                return conversation.status === 'deleted';
+              },
+              (error: unknown) => {
+                conversationReadbackErrorCode = observedErrorCode(error);
+                return isFoundationResourceNotFound(error);
+              },
+            )
+          : true;
+        let agentReadbackErrorCode = '';
+        cleanup.disposableAgentDeleted = disposableAgentId
+          ? await api.getAgent(disposableAgentId).then(
+              () => false,
+              (error: unknown) => {
+                agentReadbackErrorCode = observedErrorCode(error);
+                return isFoundationResourceNotFound(error);
+              },
+            )
+          : true;
+        cleanup.capabilityBindingRemoved = capabilityBindingRemoved;
+        const restoredProvider = await api.getProvider(fixtureProviderId);
+        cleanup.fixtureProviderRestored =
+          restoredProvider.version === 0
+          && restoredProvider.has_api_key === false;
+        cleanup.restoredSelection = useAgentStore.getState().selectedAgent;
+        await reportFoundationIncompatibleCleanupDebug(
+          'A-D',
+          'cleanup-proof-completed',
+          {
+            localProjectionCleared: cleanup.localProjectionCleared,
+            conversationDeleted: cleanup.conversationDeleted,
+            disposableAgentDeleted: cleanup.disposableAgentDeleted,
+            capabilityBindingRemoved: cleanup.capabilityBindingRemoved,
+            fixtureProviderRestored: cleanup.fixtureProviderRestored,
+            restoredSelectionMatches:
+              cleanup.restoredSelection === priorSelection,
+            conversationReadbackStatus,
+            conversationReadbackErrorCode,
+            agentReadbackErrorCode,
+            activeBindingCount,
+          },
+        );
+      }
+    } catch (error) {
+      await reportFoundationIncompatibleCleanupDebug(
+        'A-D',
+        'cleanup-failed',
+        {
+          cleanupStage,
+          errorCode: observedErrorCode(error),
+        },
+      );
+      cleanupError = error;
+    }
+  }
+
+  if (cleanupError) {
+    throw Object.assign(
+      new Error(
+        'agent.acceptance.foundationIncompatibleCapabilityCleanupFailed',
+      ),
+      { primaryError: scenarioError, cleanupError },
+    );
+  }
+  if (scenarioError) throw scenarioError;
+  if (!facts) {
+    throw new Error(
+      'agent.acceptance.foundationIncompatibleCapabilityFactsMissing',
+    );
+  }
+  const attestation = await runFoundationDirectAttestationTurn({
+    agent: input.agent,
+    capabilitySessionId: input.capabilitySessionId,
+    sampleId: input.sampleId,
+  });
+  return {
+    conversationId: attestation.conversationId,
+    turnId: attestation.turnId,
+    durationMs: performance.now() - startedAt,
+    runtimeEvent: evidenceRecord(
+      facts.runtimeEvent,
+      'foundationIncompatibleCapabilityRuntimeEvent',
+    ) as unknown as FoundationRuntimeEventObservation,
+    facts,
+  };
+}
+
 async function runFoundationCancelledScenario(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
   sampleId: string;
+  attemptIndex?: number;
+  terminalRaceStatuses?: string[];
 }): Promise<FoundationCancelledResult> {
   const agentId = input.agent.id || input.agent.name;
   const actorPtid = authenticatedFoundationActorPtid();
+  const maxCancellationAttempts = 2;
+  const attemptIndex = input.attemptIndex ?? 1;
+  const terminalRaceStatuses = input.terminalRaceStatuses ?? [];
   const conversation = await api.createAgentConversation({
     agent_id: agentId,
-    title: `Foundation cancelled ${input.sampleId}`,
+    title: `Foundation cancelled ${input.sampleId} attempt ${attemptIndex}`,
     provider_id: input.agent.provider,
     model_name: input.agent.model,
   });
   let turnId = '';
+  let conversationCleaned = false;
 
   try {
       await useChatStore.getState().selectSession(conversation.conversation_id);
@@ -10068,6 +13899,17 @@ async function runFoundationCancelledScenario(input: {
       let cancellationRequestedAt = 0;
       let cancellationRequestCount = 0;
       const streamId = crypto.randomUUID();
+
+      // #region debug-point D:base-cancelled-start
+      void reportFoundationBaseCancelledDebug('D', 'scenario-started', {
+        attemptIndex,
+        sampleId: input.sampleId,
+        documentLocale: document.documentElement.lang,
+        selectedSessionMatches:
+          useChatStore.getState().currentSessionKey
+          === conversation.conversation_id,
+      });
+      // #endregion
 
       const result = await withFoundationCapabilitiesDisabled(
         input.agent,
@@ -10108,6 +13950,30 @@ async function runFoundationCancelledScenario(input: {
               turnId = observedTurn;
               cancellationRequestCount += 1;
               cancellationRequestedAt = performance.now();
+              // #region debug-point B-D:base-cancelled-request
+              void reportFoundationBaseCancelledDebug(
+                'B-D',
+                'cancel-requested',
+                {
+                  attemptIndex,
+                  elapsedMs: cancellationRequestedAt - startedAt,
+                  eventSequence: Number(event.data.seq ?? 0),
+                  eventTurnIdPresent: Boolean(
+                    event.data.turn_id ?? event.data.turnId,
+                  ),
+                  selectedTurnIdPresent: turnId.length > 0,
+                  eventTurnMatchesSelected:
+                    String(event.data.turn_id ?? event.data.turnId ?? '')
+                    === turnId,
+                  selectedSessionMatches:
+                    useChatStore.getState().currentSessionKey
+                    === conversation.conversation_id,
+                  observedEventTypes: events.map(
+                    (candidate) => candidate.event,
+                  ),
+                },
+              );
+              // #endregion
               resolveCancellation({
                 turnId,
                 result: api.cancelAgentTurn(turnId),
@@ -10136,10 +14002,40 @@ async function runFoundationCancelledScenario(input: {
             ['done', 'error', 'cancelled'].includes(event.event));
           const terminalEvent = terminalEvents[terminalEvents.length - 1];
 
+          // #region debug-point A-D:base-cancelled-result
+          await reportFoundationBaseCancelledDebug(
+            'A-D',
+            'cancel-and-terminal-observed',
+            {
+              attemptIndex,
+              elapsedMs: performance.now() - startedAt,
+              cancelLatencyMs: performance.now() - cancellationRequestedAt,
+              cancellationStatus,
+              cancellationRequestCount,
+              terminalEventType: terminalEvent?.event ?? null,
+              terminalSequence: terminalEvent?.sourceDelivery?.sequence ?? null,
+              selectedSessionMatches:
+                useChatStore.getState().currentSessionKey
+                === conversation.conversation_id,
+              observedEvents: turnResult.events.map((event) => ({
+                eventType: event.event,
+                sequence: Number(event.data.seq ?? 0),
+                sourceDelivered: Boolean(event.sourceDelivery),
+              })),
+            },
+          );
+          // #endregion
+
           if (
             cancellationStatus === 'completed'
-            || terminalEvent?.event === 'done'
+            && terminalEvent?.event === 'done'
           ) {
+            return {
+              result: null,
+              terminalRaceStatus: cancellationStatus,
+            };
+          }
+          if (terminalEvent?.event === 'done') {
             throw new Error('agent.acceptance.foundationCancellationLostRace');
           }
           if (
@@ -10512,20 +14408,51 @@ async function runFoundationCancelledScenario(input: {
                 cancellation: {
                   status: cancellationStatus,
                   latencyMs: performance.now() - cancellationRequestedAt,
+                  attemptCount: attemptIndex,
+                  terminalRaceCount: terminalRaceStatuses.length,
                 },
                 runtimeEvent,
               },
             } satisfies FoundationCancelledResult,
+            terminalRaceStatus: '',
           };
         },
       );
+    if (result.terminalRaceStatus) {
+      terminalRaceStatuses.push(result.terminalRaceStatus);
+      await deleteFoundationConversation(conversation.conversation_id);
+      conversationCleaned = true;
+      await reportFoundationBaseCancelledDebug(
+        'A-B',
+        'cancel-window-retry',
+        {
+          attemptIndex,
+          terminalRaceCount: terminalRaceStatuses.length,
+        },
+      );
+      if (attemptIndex >= maxCancellationAttempts) {
+        throw new Error(
+          'agent.acceptance.foundationCancellationWindowUnavailable',
+        );
+      }
+      return runFoundationCancelledScenario({
+        ...input,
+        attemptIndex: attemptIndex + 1,
+        terminalRaceStatuses,
+      });
+    }
+    if (!result.result) {
+      throw new Error('agent.acceptance.foundationCancellationFactsMissing');
+    }
     return result.result;
   } catch (error) {
     try {
-      await cleanupFoundationToolConversation(
-        conversation.conversation_id,
-        turnId,
-      );
+      if (!conversationCleaned) {
+        await cleanupFoundationToolConversation(
+          conversation.conversation_id,
+          turnId,
+        );
+      }
     } catch (cleanupError) {
       throw Object.assign(
         new Error('agent.acceptance.foundationCancellationCleanupFailed'),
@@ -10534,6 +14461,517 @@ async function runFoundationCancelledScenario(input: {
     }
     throw error;
   }
+}
+
+async function runFoundationInterruptedScenario(input: {
+  scenarioKey: string;
+  platform: string;
+  locale: string;
+  sampleId: string;
+  stationRestart: Record<string, unknown>;
+}): Promise<FoundationInterruptedResult> {
+  const handoff = readFoundationF06Handoff(input.scenarioKey);
+  if (!handoff) {
+    throw new Error('agent.acceptance.foundationInterruptedHandoffMissing');
+  }
+  if (
+    handoff.platform !== input.platform
+    || handoff.locale !== input.locale
+    || handoff.sampleId !== input.sampleId
+  ) {
+    throw new Error('agent.acceptance.foundationInterruptedScopeMismatch');
+  }
+
+  await foundationF06ReplayRecording;
+  await useChatStore.getState().selectSession(handoff.conversationId);
+  await useChatStore.getState().syncMessages();
+
+  const sourceReadback = await foundationConversationReadback(
+    handoff.conversationId,
+  );
+  const sourceAssistants = sourceReadback.messages.filter(
+    (message) =>
+      message.role === 'assistant' && message.turnId === handoff.turnId,
+  );
+  const sourceAssistant = sourceAssistants[sourceAssistants.length - 1];
+  // #region debug-point V-W:interrupted-message-readback
+  await reportFoundationF06TerminalRaceDebug(
+    'V-W',
+    'interrupted-message-readback',
+    {
+      platform: input.platform,
+      locale: input.locale,
+      scenarioKey: input.scenarioKey,
+      conversationStatus: String(sourceReadback.conversation.status ?? ''),
+      messageCount: sourceReadback.messages.length,
+      matchingAssistantCount: sourceAssistants.length,
+      selectedAssistantPresent: sourceAssistant !== undefined,
+      selectedAssistantStatus: sourceAssistant?.status ?? null,
+      selectedAssistantErrorJsonPresent:
+        Boolean(String(sourceAssistant?.errorJson ?? '').trim()),
+      selectedAssistantErrorJsonLength:
+        String(sourceAssistant?.errorJson ?? '').length,
+      matchingAssistantShapes: sourceAssistants.map((message) => ({
+        status: message.status,
+        seq: message.seq,
+        errorJsonPresent: Boolean(String(message.errorJson ?? '').trim()),
+        errorJsonLength: String(message.errorJson ?? '').length,
+      })),
+    },
+  );
+  // #endregion
+  if (!sourceAssistant) {
+    throw new Error('agent.acceptance.foundationInterruptedMessageMissing');
+  }
+  const persistedOutcomeCandidate = JSON.parse(
+    String(sourceAssistant.errorJson || '{}'),
+  );
+  const persistedOutcome = projectAgentTypedErrorPayload(
+    persistedOutcomeCandidate,
+  );
+  const persistedOutcomeRecord = (
+    persistedOutcomeCandidate
+    && typeof persistedOutcomeCandidate === 'object'
+    && !Array.isArray(persistedOutcomeCandidate)
+  )
+    ? persistedOutcomeCandidate as Record<string, unknown>
+    : {};
+  const persistedOutcomeDetails = (
+    persistedOutcomeRecord.details
+    && typeof persistedOutcomeRecord.details === 'object'
+    && !Array.isArray(persistedOutcomeRecord.details)
+  )
+    ? persistedOutcomeRecord.details as Record<string, unknown>
+    : {};
+  // #region debug-point X-Y:interrupted-outcome-projection
+  await reportFoundationF06TerminalRaceDebug(
+    'X-Y',
+    'interrupted-outcome-projection',
+    {
+      platform: input.platform,
+      locale: input.locale,
+      scenarioKey: input.scenarioKey,
+      candidateType: Array.isArray(persistedOutcomeCandidate)
+        ? 'array'
+        : typeof persistedOutcomeCandidate,
+      candidateKeys: Object.keys(persistedOutcomeRecord).sort(),
+      detailsKeys: Object.keys(persistedOutcomeDetails).sort(),
+      errorTypeType: typeof (
+        persistedOutcomeRecord.error_type
+        ?? persistedOutcomeRecord.errorType
+        ?? persistedOutcomeRecord.error_code
+      ),
+      localeKeyType: typeof (
+        persistedOutcomeRecord.locale_key
+        ?? persistedOutcomeRecord.localeKey
+      ),
+      retryableType: typeof persistedOutcomeRecord.retryable,
+      terminalType: typeof persistedOutcomeRecord.terminal,
+      persistedOutcomePresent: persistedOutcome !== undefined,
+    },
+  );
+  // #endregion
+  if (!persistedOutcome) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedPersistedOutcomeMissing',
+    );
+  }
+  const sourceEvidence = evidenceRecord(
+    await foundationTurnEvidence(
+      handoff.conversationId,
+      handoff.turnId,
+    ),
+    'foundationInterruptedTurnEvidence',
+  );
+  const sourceDiagnostics = evidenceRecord(
+    sourceEvidence.diagnostics,
+    'foundationInterruptedDiagnostics',
+  );
+  const sourceDiagnosticReplay = evidenceRecord(
+    sourceDiagnostics.replay,
+    'foundationInterruptedDiagnosticReplay',
+  );
+  const sourceAttempts = foundationTurnAttemptFacts(sourceEvidence);
+  const sourceAttempt = sourceAttempts[sourceAttempts.length - 1];
+  if (!sourceAttempt) {
+    throw new Error('agent.acceptance.foundationInterruptedAttemptMissing');
+  }
+
+  const replayDeliveries = await foundationStationReplayReadback({
+    conversationId: handoff.conversationId,
+    turnId: handoff.turnId,
+    streamId: handoff.streamId,
+    streamGeneration: handoff.streamGeneration,
+    actorPtid: handoff.actorPtid,
+    acknowledgedCursor: 0,
+  }, { finishOnTerminal: false });
+  const terminalDeliveries = replayDeliveries.filter((delivery) =>
+    ['done', 'error', 'cancelled'].includes(delivery.eventType));
+  const interruptedDelivery = terminalDeliveries.find(
+    (delivery) => delivery.eventType === 'error',
+  );
+  if (!interruptedDelivery) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedTerminalEventMissing',
+    );
+  }
+  const interruptedEventData = evidenceRecord(
+    interruptedDelivery.rawPayload.data,
+    'foundationInterruptedEventData',
+  );
+  const outcome = projectAgentTypedErrorPayload(evidenceRecord(
+    evidenceField(
+      interruptedEventData,
+      'outcomeError',
+      'outcome_error',
+    ),
+    'foundationInterruptedOutcomeCandidate',
+  ));
+  if (!outcome) {
+    throw new Error('agent.acceptance.foundationInterruptedOutcomeMissing');
+  }
+  const sourceTerminalHash = await sha256Hex(
+    stableJson(interruptedDelivery.rawPayload),
+  );
+  const sourceState = {
+    turnId: handoff.turnId,
+    attemptId: String(sourceAttempt.attemptId),
+    attemptStatus: foundationTurnStatusName(sourceAttempt.status),
+    attemptErrorCode: String(sourceAttempt.errorCode),
+    attemptRecordHash: await sha256Hex(stableJson(sourceAttempt.record)),
+    terminalEventSequence: interruptedDelivery.sequence,
+    terminalEventHash: sourceTerminalHash,
+  };
+  const sourceStateHash = await sha256Hex(stableJson(sourceState));
+  const receiver = await foundationInterruptedReceiverSnapshot(
+    sourceAssistant.messageId,
+    'Foundation interrupted receiver',
+    {
+      platform: input.platform,
+      locale: input.locale,
+      scenarioKey: input.scenarioKey,
+    },
+  );
+  const recoveryAction = document.querySelector<HTMLElement>(
+    '[data-pt-agent-message="assistant"]'
+    + `[data-pt-agent-message-id="${sourceAssistant.messageId}"] `
+    + '[data-pt-agent-message-error-recovery="recover"]',
+  );
+  if (!recoveryAction) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedRecoveryActionMissing',
+    );
+  }
+
+  let recoveryClickCount = 0;
+  const observeRecovery = () => {
+    recoveryClickCount += 1;
+  };
+  const recoveryChatBefore = useChatStore.getState();
+  const recoveryOperationBefore =
+    recoveryChatBefore.operations[handoff.conversationId];
+  const recoveryRecordBefore =
+    useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
+  // #region debug-point AE-AI:interrupted-recovery-click
+  await reportFoundationF06TerminalRaceDebug(
+    'AE-AI',
+    'interrupted-recovery-click-started',
+    {
+      ...input,
+      currentSessionMatches:
+        recoveryChatBefore.currentSessionKey === handoff.conversationId,
+      sourceMessagePresent: recoveryChatBefore.messages.some(
+        (message) => message.id === sourceAssistant.messageId,
+      ),
+      sourceTurnMatches: recoveryChatBefore.messages.some(
+        (message) =>
+          message.id === sourceAssistant.messageId
+          && message.turnId === handoff.turnId,
+      ),
+      isStreaming: recoveryChatBefore.isStreaming,
+      operationPresent: recoveryOperationBefore !== undefined,
+      operationRunState: recoveryOperationBefore?.runState ?? 'MISSING',
+      operationTurnMatches:
+        recoveryOperationBefore?.turnId === handoff.turnId,
+      recoveryRecordPresent: recoveryRecordBefore !== undefined,
+      recoveryPhase: recoveryRecordBefore?.phase ?? 'MISSING',
+    },
+  );
+  // #endregion
+  recoveryAction.addEventListener('click', observeRecovery);
+  recoveryAction.click();
+  recoveryAction.removeEventListener('click', observeRecovery);
+  await Promise.resolve();
+  // #region debug-point AE-AI:interrupted-recovery-click
+  const recoveryChatAfter = useChatStore.getState();
+  const recoveryOperationAfter =
+    recoveryChatAfter.operations[handoff.conversationId];
+  await reportFoundationF06TerminalRaceDebug(
+    'AE-AI',
+    'interrupted-recovery-click-dispatched',
+    {
+      ...input,
+      recoveryClickCount,
+      currentSessionMatches:
+        recoveryChatAfter.currentSessionKey === handoff.conversationId,
+      isStreaming: recoveryChatAfter.isStreaming,
+      operationPresent: recoveryOperationAfter !== undefined,
+      operationRunState: recoveryOperationAfter?.runState ?? 'MISSING',
+      operationTurnMatches:
+        recoveryOperationAfter?.turnId === handoff.turnId,
+    },
+  );
+  // #endregion
+
+  const recoveryDeadline = Date.now() + 30_000;
+  let recoveryEvidence = await foundationTurnEvidence(
+    handoff.conversationId,
+    handoff.turnId,
+  );
+  let recoveryAttempts = foundationTurnAttemptFacts(recoveryEvidence);
+  while (
+    recoveryAttempts.length !== sourceAttempts.length + 1
+    && Date.now() < recoveryDeadline
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    recoveryEvidence = await foundationTurnEvidence(
+      handoff.conversationId,
+      handoff.turnId,
+    );
+    recoveryAttempts = foundationTurnAttemptFacts(recoveryEvidence);
+  }
+  const recoveryAttempt = recoveryAttempts[recoveryAttempts.length - 1];
+  if (
+    !recoveryAttempt
+    || recoveryAttempts.length !== sourceAttempts.length + 1
+    || recoveryAttempt.attemptId === sourceAttempt.attemptId
+  ) {
+    const recoveryChatAtDeadline = useChatStore.getState();
+    const recoveryOperationAtDeadline =
+      recoveryChatAtDeadline.operations[handoff.conversationId];
+    // #region debug-point AE-AI:interrupted-recovery-attempt
+    await reportFoundationF06TerminalRaceDebug(
+      'AE-AI',
+      'interrupted-recovery-attempt-missing',
+      {
+        ...input,
+        recoveryClickCount,
+        attemptCountBefore: sourceAttempts.length,
+        attemptCountAfter: recoveryAttempts.length,
+        sourceAttemptStillLatest:
+          recoveryAttempt?.attemptId === sourceAttempt.attemptId,
+        currentSessionMatches:
+          recoveryChatAtDeadline.currentSessionKey === handoff.conversationId,
+        isStreaming: recoveryChatAtDeadline.isStreaming,
+        operationPresent: recoveryOperationAtDeadline !== undefined,
+        operationRunState:
+          recoveryOperationAtDeadline?.runState ?? 'MISSING',
+        operationTurnMatches:
+          recoveryOperationAtDeadline?.turnId === handoff.turnId,
+      },
+    );
+    // #endregion
+    throw new Error(
+      'agent.acceptance.foundationInterruptedRecoveryAttemptMissing',
+    );
+  }
+
+  const cancellation = await api.cancelAgentTurn(handoff.turnId);
+  const settlementDeadline = Date.now() + 30_000;
+  while (Date.now() < settlementDeadline) {
+    recoveryEvidence = await foundationTurnEvidence(
+      handoff.conversationId,
+      handoff.turnId,
+    );
+    recoveryAttempts = foundationTurnAttemptFacts(recoveryEvidence);
+    const latest = recoveryAttempts[recoveryAttempts.length - 1];
+    if (
+      latest
+      && [
+        AgentTurnStatus.CANCELLED,
+        AgentTurnStatus.FAILED,
+        AgentTurnStatus.INTERRUPTED,
+        AgentTurnStatus.COMPLETED,
+      ].includes(Number(latest.status))
+    ) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  const settledRecoveryAttempt = recoveryAttempts[
+    recoveryAttempts.length - 1
+  ];
+  if (!settledRecoveryAttempt) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedRecoverySettlementMissing',
+    );
+  }
+  const sourceAttemptAfter = recoveryAttempts.find(
+    (attempt) => attempt.attemptId === sourceAttempt.attemptId,
+  );
+  if (!sourceAttemptAfter) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedSourceAttemptMissing',
+    );
+  }
+  const replayAfterRecovery = await foundationStationReplayReadback({
+    conversationId: handoff.conversationId,
+    turnId: handoff.turnId,
+    attemptId: String(sourceAttempt.attemptId),
+    streamId: handoff.streamId,
+    streamGeneration: handoff.streamGeneration,
+    actorPtid: handoff.actorPtid,
+    acknowledgedCursor: 0,
+  }, { finishOnTerminal: false });
+  const sourceDeliveryAfter = replayAfterRecovery.find(
+    (delivery) =>
+      delivery.eventType === interruptedDelivery.eventType
+      && delivery.sequence === interruptedDelivery.sequence,
+  );
+  if (!sourceDeliveryAfter) {
+    throw new Error(
+      'agent.acceptance.foundationInterruptedSourceEventMissingAfterRecovery',
+    );
+  }
+  const sourceStateAfter = {
+    turnId: handoff.turnId,
+    attemptId: String(sourceAttemptAfter.attemptId),
+    attemptStatus: foundationTurnStatusName(sourceAttemptAfter.status),
+    attemptErrorCode: String(sourceAttemptAfter.errorCode),
+    attemptRecordHash: await sha256Hex(
+      stableJson(sourceAttemptAfter.record),
+    ),
+    terminalEventSequence: sourceDeliveryAfter.sequence,
+    terminalEventHash: await sha256Hex(
+      stableJson(sourceDeliveryAfter.rawPayload),
+    ),
+  };
+  const runtimeEvent: FoundationRuntimeEventObservation = {
+    eventId: await sha256Hex(stableJson({
+      turnId: handoff.turnId,
+      sequence: interruptedDelivery.sequence,
+      payloadHash: interruptedDelivery.payloadHash,
+    })),
+    eventType: interruptedDelivery.eventType,
+    sequence: interruptedDelivery.sequence,
+    observedAt: interruptedDelivery.observedAt,
+    streamGeneration: interruptedDelivery.streamGeneration,
+    streamIdHash: await sha256Hex(interruptedDelivery.streamId),
+    conversationIdHash: await sha256Hex(handoff.conversationId),
+    payloadHash: interruptedDelivery.payloadHash,
+    errorType: String(outcome.error_type ?? ''),
+    sourceTransport: interruptedDelivery.sourceTransport,
+    sourcePtidHash: interruptedDelivery.sourcePtidHash,
+    sourceConversationId: interruptedDelivery.sourceConversationId,
+    sourceTurnId: interruptedDelivery.sourceTurnId,
+    sourceSequence: interruptedDelivery.sourceSequence,
+    sourceEventType: interruptedDelivery.sourceEventType,
+  };
+  const recoveryStatus = foundationTurnStatusName(
+    settledRecoveryAttempt.status,
+  );
+
+  return {
+    conversationId: handoff.conversationId,
+    turnId: handoff.turnId,
+    durationMs: Date.now() - Date.parse(handoff.preparedAt),
+    runtimeEvent,
+    facts: {
+      outcome,
+      receiver: {
+        ...receiver,
+        recoveryExecuted: recoveryClickCount === 1,
+      },
+      recovery: {
+        action: 'recover',
+        executed: recoveryClickCount === 1,
+        attemptCountBefore: sourceAttempts.length,
+        attemptCountAfter: recoveryAttempts.length,
+        sourceTurnId: handoff.turnId,
+        sourceAttemptId: String(sourceAttempt.attemptId),
+        recoveryAttemptId: String(settledRecoveryAttempt.attemptId),
+        recoveryAttemptStatus: recoveryStatus,
+        cancellationStatus: String(cancellation.status ?? '').toLowerCase(),
+        sourceAttemptStatusAfter: foundationTurnStatusName(
+          sourceAttemptAfter.status,
+        ),
+        sourceTerminalHashBefore: sourceTerminalHash,
+        sourceTerminalHashAfter: sourceStateAfter.terminalEventHash,
+        completedInferenceCount:
+          recoveryStatus === 'completed' ? 1 : 0,
+      },
+      station: {
+        conversationId: handoff.conversationId,
+        turnId: handoff.turnId,
+        attemptId: String(sourceAttempt.attemptId),
+        messageId: sourceAssistant.messageId,
+        turnStatus: foundationTurnStatusName(sourceDiagnosticReplay.status),
+        attemptStatus: foundationTurnStatusName(sourceAttempt.status),
+        attemptErrorCode: String(sourceAttempt.errorCode),
+        messageStatus: String(sourceAssistant.status).toLowerCase(),
+        terminalReason: String(
+          evidenceField(
+            sourceDiagnosticReplay,
+            'terminalReason',
+            'terminal_reason',
+          ) ?? '',
+        ),
+        persistedOutcome,
+        terminalEventCount: terminalDeliveries.length,
+        errorEventCount: terminalDeliveries.filter(
+          (delivery) => delivery.eventType === 'error',
+        ).length,
+        doneEventCount: terminalDeliveries.filter(
+          (delivery) => delivery.eventType === 'done',
+        ).length,
+        liveDoneEventCount: handoff.replayDeliveries.filter(
+          (delivery) => delivery.eventType === 'done',
+        ).length,
+        recoveryAttemptCount: recoveryAttempts.length - sourceAttempts.length,
+        recoveryAttemptId: String(settledRecoveryAttempt.attemptId),
+        sourceBeforeRecovery: {
+          ...sourceState,
+          stateHash: sourceStateHash,
+        },
+        sourceAfterRecovery: {
+          ...sourceStateAfter,
+          stateHash: await sha256Hex(stableJson(sourceStateAfter)),
+        },
+      },
+      replay: {
+        sourceHash: await sha256Hex(stableJson(outcome)),
+        replayHash: await sha256Hex(stableJson(persistedOutcome)),
+        equal: stableJson(outcome) === stableJson(persistedOutcome),
+        snapshot: {
+          sourceTransport: interruptedDelivery.sourceTransport,
+          sourcePtidHash: interruptedDelivery.sourcePtidHash,
+          sourceConversationId: interruptedDelivery.sourceConversationId,
+          sourceTurnId: interruptedDelivery.sourceTurnId,
+          sourceSequence: interruptedDelivery.sourceSequence,
+          sourceEventType: interruptedDelivery.sourceEventType,
+          status: foundationTurnStatusName(sourceDiagnosticReplay.status),
+          reasonCode: String(
+            evidenceField(
+              sourceDiagnosticReplay,
+              'terminalReason',
+              'terminal_reason',
+            ) ?? '',
+          ),
+          attemptId: String(sourceAttempt.attemptId),
+          messageId: sourceAssistant.messageId,
+        },
+      },
+      restart: input.stationRestart,
+      cleanup: {
+        recoveryAttemptSettled: [
+          'cancelled',
+          'failed',
+          'interrupted',
+        ].includes(recoveryStatus),
+      },
+      runtimeEvent,
+    },
+  };
 }
 
 async function runFoundationDirectAttestationTurn(input: {
@@ -11112,14 +15550,24 @@ async function evaluateDirectCellAssertions(
       return evaluateF12(ctx);
     case 'BASE-ACTIVE_MUTATION_CONFLICT':
       return evaluateBaseActiveMutationConflict(ctx);
+    case 'BASE-FORBIDDEN_ACTOR':
+      return evaluateBaseForbiddenActor(ctx);
+    case 'BASE-INCOMPATIBLE_CAPABILITY':
+      return evaluateBaseIncompatibleCapability(ctx);
     case 'BASE-CANCELLED':
       return evaluateBaseCancelled(ctx);
+    case 'BASE-INTERRUPTED':
+      return evaluateBaseInterrupted(ctx);
     case 'BASE-CONTEXT_OVERFLOW':
       return evaluateBaseContextOverflow(ctx);
+    case 'BASE-INVALID_REFERENCE':
+      return evaluateBaseInvalidReference(ctx);
     case 'BASE-DUPLICATE_CONFLICT':
       return evaluateBaseDuplicateConflict(ctx);
     case 'BASE-CREDENTIAL_MISSING':
       return evaluateBaseCredentialMissing(ctx);
+    case 'BASE-EXECUTOR_UNAVAILABLE':
+      return evaluateBaseExecutorUnavailable(ctx);
     case 'BASE-APPROVAL_DENIED':
       return evaluateBaseApprovalDenied(ctx);
     case 'BASE-APPROVAL_EXPIRED':
@@ -11129,6 +15577,347 @@ async function evaluateDirectCellAssertions(
     default:
       throw new Error(`agent.acceptance.unsupportedFoundationCell:${ctx.cell}`);
   }
+}
+
+function evaluateBaseForbiddenActor(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationForbiddenActorFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationForbiddenActorOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationForbiddenActorDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationForbiddenActorReceiver',
+  );
+  const foreignAccess = evidenceRecord(
+    facts.foreignAccess,
+    'foundationForbiddenActorAccess',
+  );
+  const owner = evidenceRecord(
+    facts.owner,
+    'foundationForbiddenActorOwner',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationForbiddenActorStation',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationForbiddenActorReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationForbiddenActorCleanup',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+  return {
+    typedForbiddenActorRejected: (
+      outcome.error_type === 'OWNERSHIP_FORBIDDEN_ACTOR'
+      && outcome.locale_key === 'agent.errors.forbiddenActor'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && stableJson(safeDetailKeys)
+        === stableJson(['resource_id', 'resource_kind'])
+      && details.resource_kind === 'conversation'
+      && details.resource_id === owner.resourceId
+    ),
+    localizedRecoveryVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    switchAccountExecuted: (
+      receiver.recoveryExecuted === true
+      && receiver.accountGateObserved === true
+      && receiver.receiverRestored === true
+    ),
+    foreignReadRejected: (
+      Number(foreignAccess.requestCount) === 2
+      && Number(foreignAccess.foreignPayloadCount) === 0
+      && foreignAccess.resourceKind === 'conversation'
+      && foreignAccess.resourceId === owner.resourceId
+      && foreignAccess.ownerActorHash === owner.ownerActorHash
+      && foreignAccess.receiverActorHash !== owner.ownerActorHash
+    ),
+    ownerStatePreserved: (
+      owner.beforeHash === owner.afterHash
+      && Number(owner.versionBefore) === Number(owner.versionAfter)
+    ),
+    zeroCrossMutation: (
+      Number(station.conversationDelta) === 0
+      && Number(station.turnDelta) === 0
+      && Number(station.messageDelta) === 0
+      && Number(station.queueDelta) === 0
+      && Number(station.providerExecutionDelta) === 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+    ),
+    cleanupComplete: (
+      cleanup.localProjectionCleared === true
+      && cleanup.foreignResourceDeleted === true
+      && cleanup.foreignAgentDeleted === true
+      && cleanup.ownerSelectionRestored === true
+      && cleanup.receiverRestored === true
+      && cleanup.conversationDeleted === true
+    ),
+  };
+}
+
+function evaluateBaseIncompatibleCapability(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationIncompatibleCapabilityFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationIncompatibleCapabilityOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationIncompatibleCapabilityDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationIncompatibleCapabilityReceiver',
+  );
+  const readiness = evidenceRecord(
+    facts.readiness,
+    'foundationIncompatibleCapabilityReadiness',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationIncompatibleCapabilityStation',
+  );
+  const execution = evidenceRecord(
+    facts.execution,
+    'foundationIncompatibleCapabilityExecution',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationIncompatibleCapabilityReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationIncompatibleCapabilityCleanup',
+  );
+  return {
+    typedIncompatibleCapabilityRejected: (
+      outcome.error === 'agent.errors.incompatibleCapability'
+      && outcome.error_type === 'RUNTIME_INCOMPATIBLE_CAPABILITY'
+      && outcome.locale_key === 'agent.errors.incompatibleCapability'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && stableJson(Object.keys(details).sort())
+        === stableJson(['capability_id', 'reason_code'])
+      && details.capability_id === readiness.capabilityId
+      && details.reason_code === readiness.reasonCode
+    ),
+    localizedChooseCompatibleModelRecovery: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryLocaleKey
+        === 'agent.recovery.chooseCompatibleModel'
+      && receiver.recoveryText === receiver.expectedRecoveryText
+      && receiver.recoveryExecuted === true
+      && receiver.profileVisible === true
+      && receiver.profileAgentId === station.agentId
+      && receiver.modelSelectionVisible === true
+      && receiver.selectedModelId === readiness.incompatibleModelId
+    ),
+    stationReadinessReadback: (
+      readiness.source === 'station-capability-readiness'
+      && readiness.stateBefore === 'unavailable'
+      && readiness.stateAfter === 'unavailable'
+      && readiness.reasonCode === 'runtime_capability_unavailable'
+      && Boolean(readiness.snapshotIdBefore)
+      && Boolean(readiness.snapshotIdAfter)
+      && readiness.runtimeSnapshotIdBefore
+        === readiness.runtimeSnapshotIdAfter
+      && Number(readiness.bindingRevisionBefore)
+        === Number(readiness.bindingRevisionAfter)
+      && station.selectedModelIdBefore === readiness.incompatibleModelId
+      && station.selectedModelIdAfter === readiness.incompatibleModelId
+      && Number(station.conversationVersionAfter)
+        === Number(station.conversationVersionBefore) + 1
+      && station.beforeHash === station.afterHash
+    ),
+    zeroRejectedPathSideEffects: (
+      Number(station.turnDelta) === 1
+      && Number(station.messageDelta) === 0
+      && Number(station.queueDelta) === 0
+      && Number(execution.runtimeExecutionDelta) === 0
+      && Number(execution.providerCallDelta) === 0
+      && Number(execution.toolCallDelta) === 0
+      && Number(execution.toolExecutionDelta) === 0
+      && Number(execution.sideEffectDelta) === 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+    ),
+    cleanupComplete: (
+      cleanup.localProjectionCleared === true
+      && cleanup.conversationDeleted === true
+      && cleanup.disposableAgentDeleted === true
+      && cleanup.capabilityBindingRemoved === true
+      && cleanup.fixtureProviderRestored === true
+      && cleanup.modelConfigurationUnchanged === true
+      && cleanup.restoredSelection === cleanup.priorSelection
+    ),
+  };
+}
+
+function evaluateBaseExecutorUnavailable(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationExecutorUnavailableFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationExecutorUnavailableOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationExecutorUnavailableDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationExecutorUnavailableReceiver',
+  );
+  const decision = evidenceRecord(
+    facts.decision,
+    'foundationExecutorUnavailableDecision',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationExecutorUnavailableStation',
+  );
+  const stationAfterRecovery = evidenceRecord(
+    facts.stationAfterRecovery,
+    'foundationExecutorUnavailableStationAfterRecovery',
+  );
+  const lineage = evidenceRecord(
+    station.lineage,
+    'foundationExecutorUnavailableLineage',
+  );
+  const recoveryLineage = evidenceRecord(
+    stationAfterRecovery.lineage,
+    'foundationExecutorUnavailableRecoveryLineage',
+  );
+  const executor = evidenceRecord(
+    facts.executor,
+    'foundationExecutorUnavailableExecutor',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationExecutorUnavailableReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationExecutorUnavailableCleanup',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+  const zeroStationOutcome = (value: Record<string, unknown>) => (
+    Number(value.executionAttemptCount) === 0
+    && Number(value.sideEffectCount) === 0
+    && Number(value.resultCount) === 0
+    && Number(value.continuationCount) === 0
+  );
+  return {
+    typedExecutorUnavailable: (
+      outcome.error_type === 'CLIENT_EXECUTOR_UNAVAILABLE'
+      && outcome.locale_key === 'agent.errors.executorUnavailable'
+      && outcome.retryable === true
+      && outcome.terminal === true
+      && safeDetailKeys.length === 2
+      && safeDetailKeys[0] === 'capability_id'
+      && safeDetailKeys[1] === 'target_device_id'
+      && details.target_device_id === executor.targetDeviceId
+      && details.capability_id === executor.targetCapabilityId
+    ),
+    localizedRecoveryVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    singleRejectedApproval: (
+      decision.accepted === false
+      && decision.approved === true
+      && decision.errorCode
+        === 'TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE'
+      && receiver.approveDisabled === true
+      && receiver.repeatedApprovalBlocked === true
+    ),
+    waitingApprovalPreserved: (
+      station.policy === 'manual'
+      && stableJson(station.states)
+        === stableJson(['policy_check', 'awaiting_user'])
+      && station.executionOwner === 'client_capability'
+      && lineage.toolCallId === decision.toolCallId
+      && lineage.approvalId === decision.approvalId
+      && lineage.decisionId === ''
+      && Number(lineage.decisionRevision) === decision.decisionRevision
+    ),
+    zeroExecutionClaim: (
+      lineage.executionClaimId === ''
+      && Number(lineage.fencingToken) === 0
+      && lineage.sideEffectReceiptId === ''
+      && lineage.dispatchCommittedAt === null
+      && recoveryLineage.executionClaimId === ''
+      && Number(recoveryLineage.fencingToken) === 0
+      && recoveryLineage.sideEffectReceiptId === ''
+      && recoveryLineage.dispatchCommittedAt === null
+    ),
+    zeroSideEffect: (
+      zeroStationOutcome(station)
+      && zeroStationOutcome(stationAfterRecovery)
+      && Number(executor.withdrawnExecutionAttemptCount) >= 0
+      && Number(executor.withdrawnSideEffectCount) >= 0
+      && Number(executor.restoredExecutionAttemptCount)
+        === Number(executor.withdrawnExecutionAttemptCount)
+      && Number(executor.restoredSideEffectCount)
+        === Number(executor.withdrawnSideEffectCount)
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.acknowledgementSourceHash
+        === replay.acknowledgementReplayHash
+      && replay.diagnosticSourceHash === replay.diagnosticReplayHash
+    ),
+    executorReconnected: (
+      executor.sessionRemoved === true
+      && executor.localSessionRemoved === true
+      && executor.sessionRestored === true
+      && executor.restoredDeviceId === executor.targetDeviceId
+      && executor.restoredCapabilityId === executor.targetCapabilityId
+      && receiver.recoveryExecuted === true
+      && receiver.approvalEnabledAfterRecovery === true
+    ),
+    cleanupComplete: (
+      cleanup.bindingRestored === true
+      && cleanup.executorRestored === true
+      && cleanup.turnCancelled === true
+      && cleanup.conversationDeleted === true
+    ),
+  };
 }
 
 function evaluateBaseCancelled(
@@ -11298,6 +16087,195 @@ function evaluateBaseCancelled(
   };
 }
 
+function evaluateBaseInterrupted(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationInterruptedFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationInterruptedOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationInterruptedDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationInterruptedReceiver',
+  );
+  const recovery = evidenceRecord(
+    facts.recovery,
+    'foundationInterruptedRecovery',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationInterruptedStation',
+  );
+  const persistedOutcome = evidenceRecord(
+    station.persistedOutcome,
+    'foundationInterruptedPersistedOutcome',
+  );
+  const persistedDetails = evidenceRecord(
+    persistedOutcome.details,
+    'foundationInterruptedPersistedDetails',
+  );
+  const sourceBefore = evidenceRecord(
+    station.sourceBeforeRecovery,
+    'foundationInterruptedSourceBefore',
+  );
+  const sourceAfter = evidenceRecord(
+    station.sourceAfterRecovery,
+    'foundationInterruptedSourceAfter',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationInterruptedReplay',
+  );
+  const replaySnapshot = evidenceRecord(
+    replay.snapshot,
+    'foundationInterruptedReplaySnapshot',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationInterruptedCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationInterruptedRuntimeEvent',
+  );
+  const restart = evidenceRecord(
+    facts.restart,
+    'foundationInterruptedRestart',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+
+  return {
+    typedInterruptionProjected: (
+      outcome.error === 'agent.errors.lifecycleInterrupted'
+      && outcome.error_type === 'LIFECYCLE_INTERRUPTED'
+      && outcome.locale_key === 'agent.errors.lifecycleInterrupted'
+      && outcome.retryable === true
+      && outcome.terminal === true
+      && stableJson(safeDetailKeys)
+        === stableJson(['reason_code', 'turn_id'])
+      && details.turn_id === station.turnId
+      && details.reason_code === 'station_restart_interrupted'
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'LIFECYCLE_INTERRUPTED'
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === station.turnId
+      && runtimeEvent.sourceSequence === runtimeEvent.sequence
+      && runtimeEvent.sourceEventType === 'error'
+      && Number(runtimeEvent.sequence) > 0
+    ),
+    localizedRecoveryVisible: (
+      receiver.visible === true
+      && receiver.terminalStatus === 'interrupted'
+      && receiver.errorType === 'LIFECYCLE_INTERRUPTED'
+      && receiver.turnId === station.turnId
+      && receiver.messageId === station.messageId
+      && receiver.reasonCode === 'station_restart_interrupted'
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    recoverExecuted: (
+      receiver.recoveryExecuted === true
+      && recovery.action === 'recover'
+      && recovery.executed === true
+      && Number(recovery.attemptCountAfter)
+        === Number(recovery.attemptCountBefore) + 1
+      && Number(station.recoveryAttemptCount) === 1
+      && recovery.sourceTurnId === station.turnId
+      && recovery.sourceAttemptId === station.attemptId
+      && String(recovery.recoveryAttemptId).length > 0
+      && recovery.recoveryAttemptId !== station.attemptId
+      && recovery.recoveryAttemptId === station.recoveryAttemptId
+      && recovery.recoveryAttemptStatus === 'cancelled'
+      && recovery.cancellationStatus === 'cancelled'
+      && recovery.sourceAttemptStatusAfter === 'interrupted'
+      && recovery.sourceTerminalHashBefore
+        === recovery.sourceTerminalHashAfter
+      && String(sourceBefore.attemptRecordHash).length === 64
+      && sourceBefore.attemptRecordHash === sourceAfter.attemptRecordHash
+    ),
+    interruptedPersisted: (
+      station.turnStatus === 'interrupted'
+      && station.attemptStatus === 'interrupted'
+      && station.attemptErrorCode === 'station_restart_interrupted'
+      && station.messageStatus === 'interrupted'
+      && station.terminalReason === 'station_restart_interrupted'
+      && persistedOutcome.error === outcome.error
+      && persistedOutcome.error_type === outcome.error_type
+      && persistedOutcome.locale_key === outcome.locale_key
+      && persistedOutcome.retryable === outcome.retryable
+      && persistedOutcome.terminal === outcome.terminal
+      && stableJson(Object.keys(persistedDetails).sort())
+        === stableJson(safeDetailKeys)
+      && persistedDetails.turn_id === details.turn_id
+      && persistedDetails.reason_code === details.reason_code
+      && restart.outageObserved === true
+      && restart.beforeStartedAt !== restart.afterStartedAt
+      && restart.beforeCommit === restart.afterCommit
+      && (
+        String(restart.sourceCommit).startsWith(
+          String(restart.beforeCommit),
+        )
+        || String(restart.beforeCommit).startsWith(
+          String(restart.sourceCommit),
+        )
+      )
+    ),
+    exactlyOneAuthoritativeTerminal: (
+      Number(station.terminalEventCount) === 1
+      && Number(station.errorEventCount) === 1
+    ),
+    zeroCompletedInference: (
+      Number(station.doneEventCount) === 0
+      && Number(station.liveDoneEventCount) === 0
+      && Number(recovery.completedInferenceCount) === 0
+      && recovery.recoveryAttemptStatus !== 'completed'
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+      && replaySnapshot.sourceTransport === 'station-sse'
+      && replaySnapshot.sourcePtidHash === runtimeEvent.sourcePtidHash
+      && replaySnapshot.sourceConversationId === station.conversationId
+      && replaySnapshot.sourceTurnId === station.turnId
+      && replaySnapshot.sourceSequence === runtimeEvent.sourceSequence
+      && replaySnapshot.sourceEventType === 'error'
+      && replaySnapshot.status === 'interrupted'
+      && replaySnapshot.reasonCode === 'station_restart_interrupted'
+      && replaySnapshot.attemptId === station.attemptId
+      && replaySnapshot.messageId === station.messageId
+      && sourceBefore.turnId === sourceAfter.turnId
+      && sourceBefore.attemptId === sourceAfter.attemptId
+      && sourceBefore.attemptStatus === 'interrupted'
+      && sourceAfter.attemptStatus === 'interrupted'
+      && sourceBefore.attemptErrorCode === 'station_restart_interrupted'
+      && sourceAfter.attemptErrorCode === 'station_restart_interrupted'
+      && sourceBefore.attemptRecordHash === sourceAfter.attemptRecordHash
+      && sourceBefore.terminalEventSequence
+        === sourceAfter.terminalEventSequence
+      && sourceBefore.terminalEventHash === sourceAfter.terminalEventHash
+    ),
+    cleanupComplete: (
+      cleanup.recoveryAttemptSettled === true
+      && cleanup.localProjectionCleared === true
+      && cleanup.conversationDeleted === true
+      && cleanup.cleanupComplete === true
+      && cleanup.handoffCleared === true
+      && cleanup.recoveryRecordCleared === true
+    ),
+  };
+}
+
 function evaluateBaseContextOverflow(
   ctx: DirectCellAssertionContext,
 ): Record<string, boolean> {
@@ -11390,6 +16368,134 @@ function evaluateBaseContextOverflow(
       && Number(station.messageDelta) === 0
       && Number(station.queueDelta) === 0
       && Number(station.providerExecutionDelta) === 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+    ),
+    cleanupComplete: (
+      cleanup.draftCleared === true
+      && cleanup.localProjectionCleared === true
+      && cleanup.conversationDeleted === true
+    ),
+  };
+}
+
+function evaluateBaseInvalidReference(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationInvalidReferenceFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationInvalidReferenceOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationInvalidReferenceDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationInvalidReferenceReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationInvalidReferenceStation',
+  );
+  const completion = evidenceRecord(
+    facts.completion,
+    'foundationInvalidReferenceCompletion',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationInvalidReferenceReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationInvalidReferenceCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationInvalidReferenceRuntimeEvent',
+  );
+  const detailKeys = Object.keys(details).sort();
+  const referenceHash = String(station.referenceHash ?? '');
+
+  return {
+    typedInvalidReferenceRejected: (
+      outcome.error === 'agent.errors.contextInvalidReference'
+      && outcome.error_type === 'CONTEXT_INVALID_REFERENCE'
+      && outcome.locale_key === 'agent.errors.contextInvalidReference'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && detailKeys.length === 2
+      && detailKeys[0] === 'reference_hash'
+      && detailKeys[1] === 'reference_kind'
+      && details.reference_kind === station.referenceKind
+      && details.reference_hash === referenceHash
+      && station.referenceKind === 'file'
+      && /^[0-9a-f]{64}$/.test(referenceHash)
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'CONTEXT_INVALID_REFERENCE'
+      && Number(runtimeEvent.sequence) > 0
+      && Number(runtimeEvent.streamGeneration) > 0
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === ''
+      && Number(runtimeEvent.sourceSequence) === 0
+      && runtimeEvent.sourceEventType === 'error'
+    ),
+    localizedRemovalVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.removalVisible === true
+      && receiver.removalText === receiver.expectedRemovalText
+    ),
+    rejectedDraftPreserved: (
+      receiver.draftHashAfterRejection === receiver.draftHashBefore
+      && Number(receiver.draftLengthAfterRejection)
+        === Number(receiver.draftLengthBefore)
+    ),
+    onlyRejectedReferenceRemoved: (
+      receiver.removalExecuted === true
+      && receiver.referencePresentAfterRemoval === false
+      && receiver.composerFocusedAfterRemoval === true
+      && receiver.draftHashAfterRemoval === receiver.correctedDraftHash
+    ),
+    correctedResendCompleted: (
+      completion.status === 'completed'
+      && completion.turnId === station.successfulTurnId
+      && completion.assistantMessageId === station.successfulAssistantMessageId
+      && completion.responseHash === completion.expectedResponseHash
+      && Number(station.successfulTurnDelta) === 1
+      && Number(station.successfulMessageDelta) === 2
+      && Number(station.successfulQueueDelta) === 0
+      && Number(station.successfulProviderExecutionDelta) === 1
+      && completion.sourceTransport === 'station-sse'
+      && completion.sourceConversationId === station.conversationId
+      && completion.sourceTurnId === station.successfulTurnId
+      && Number(completion.sourceSequence) > 0
+      && completion.sourceEventType === 'done'
+    ),
+    exactlyOneAuthoritativeAssistant: (
+      receiver.successfulAssistantVisible === true
+      && Number(receiver.successfulAssistantCount) === 1
+      && Number(receiver.successfulAssistantPeakCount) === 1
+      && receiver.successfulAssistantId
+        === station.successfulAssistantMessageId
+      && receiver.successfulAssistantTurnId === station.successfulTurnId
+      && receiver.successfulAssistantOptimistic === false
+    ),
+    zeroRejectedPathSideEffects: (
+      station.rejectionVersionAfter === station.rejectionVersionBefore
+      && station.rejectionHashAfter === station.rejectionHashBefore
+      && Number(station.rejectedTurnDelta) === 0
+      && Number(station.rejectedMessageDelta) === 0
+      && Number(station.rejectedQueueDelta) === 0
+      && Number(station.rejectedProviderExecutionDelta) === 0
     ),
     replayEqual: (
       replay.equal === true
@@ -13078,6 +18184,52 @@ function evaluateF12(ctx: DirectCellAssertionContext): Record<string, boolean | 
     facts.toolIsolation,
     'foundationF12ToolIsolation',
   );
+  const referenceDiagnostics = (
+    messages: Record<string, unknown>[],
+    messageIds: Set<string>,
+    conversationId: string,
+  ) => ({
+    wrongConversationCount: messages.filter((message) =>
+      message.conversationId !== conversationId).length,
+    missingParentCount: messages.filter((message) =>
+      Boolean(message.parentMessageId)
+      && !messageIds.has(String(message.parentMessageId))).length,
+    missingReplacementCount: messages.filter((message) =>
+      Boolean(message.replacesMessageId)
+      && !messageIds.has(String(message.replacesMessageId))).length,
+  });
+  const alphaReferenceDiagnostics = referenceDiagnostics(
+    alphaMessages,
+    alphaMessageIds,
+    String(alphaConversation.conversationId),
+  );
+  const betaReferenceDiagnostics = referenceDiagnostics(
+    betaMessages,
+    betaMessageIds,
+    String(betaConversation.conversationId),
+  );
+  // #region debug-point F-K:as-f12-cross-topic
+  void reportFoundationF12ProjectionDebug('F-K', 'cross-topic-checks', {
+    alphaForeignFactHidden: alphaReceiver.foreignFactVisible === false,
+    alphaOwnFactVisible: alphaReceiver.ownFactVisible === true,
+    alphaReferencesOwned: referencesStayWithin(
+      alphaMessages,
+      alphaMessageIds,
+      String(alphaConversation.conversationId),
+    ),
+    alphaRuntimeMatches: runtimeMatches(alpha),
+    alphaReferenceDiagnostics,
+    betaForeignFactHidden: betaReceiver.foreignFactVisible === false,
+    betaOwnFactVisible: betaReceiver.ownFactVisible === true,
+    betaReferencesOwned: referencesStayWithin(
+      betaMessages,
+      betaMessageIds,
+      String(betaConversation.conversationId),
+    ),
+    betaRuntimeMatches: runtimeMatches(beta),
+    betaReferenceDiagnostics,
+  });
+  // #endregion
 
   return {
     twoTopicsDistinct:
@@ -13654,6 +18806,190 @@ export function installAcceptanceHarness(): void {
       return { opened: true };
     },
 
+    async getFoundationClientExecutorTarget() {
+      const agent = selectedAgent();
+      if (!agent) throw new Error('agent.acceptance.agentMissing');
+      const fixture = await foundationToolFixture(
+        agent.id || agent.name,
+        'desktop_app',
+      );
+      const session = await resolveFoundationToolTurnSession();
+      const stationSessions = await api.listAgentCapabilitySessions();
+      const target = stationSessions.sessions.find((candidate) =>
+        candidate.session_id === session.capabilitySessionId
+        && candidate.typed_capabilities.some(
+          (capability) =>
+            capability.capability_id === fixture.manifest.capabilityId,
+        ));
+      if (!target) {
+        throw new Error('agent.acceptance.foundationExecutorTargetUnavailable');
+      }
+      return {
+        capabilitySessionId: target.session_id,
+        targetDeviceId: target.device_id,
+        targetCapabilityId: fixture.manifest.capabilityId,
+      };
+    },
+
+    async setFoundationClientExecutorAvailable({
+      available,
+      targetCapabilitySessionId,
+      targetDeviceId,
+      targetCapabilityId,
+    }: {
+      available: boolean;
+      targetCapabilitySessionId: string;
+      targetDeviceId: string;
+      targetCapabilityId: string;
+    }) {
+      const [before, beforeLocal] = await Promise.all([
+        api.listAgentCapabilitySessions(),
+        api.getAgentCapabilitySessionSnapshot(),
+      ]);
+      const [targetDeviceIdHash, targetCapabilitySessionIdHash] =
+        await Promise.all([
+          sha256Hex(targetDeviceId),
+          sha256Hex(targetCapabilitySessionId),
+        ]);
+      if (available) {
+        await api.startAgentClientExecutorSupervisor();
+      } else {
+        await api.stopAgentClientExecutorSupervisor();
+      }
+      let after = await api.listAgentCapabilitySessions();
+      let afterLocal = await api.getAgentCapabilitySessionSnapshot();
+      const deadline = Date.now() + 30_000;
+      const matchesTarget = () => after.sessions.find((session) =>
+        session.device_id === targetDeviceId
+        && session.typed_capabilities.some(
+          (capability) => capability.capability_id === targetCapabilityId,
+        ));
+      const matchesLocalTarget = () => afterLocal.sessions.find((session) =>
+        session.device_id_hash === targetDeviceIdHash
+        && session.capability_ids.includes(targetCapabilityId));
+      while (
+        (
+          available
+            ? !matchesTarget() || !matchesLocalTarget()
+            : after.sessions.some(
+                (session) => session.session_id === targetCapabilitySessionId,
+              ) || afterLocal.sessions.some(
+                (session) =>
+                  session.capability_session_id_hash
+                    === targetCapabilitySessionIdHash,
+              )
+        )
+        && Date.now() < deadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        [after, afterLocal] = await Promise.all([
+          api.listAgentCapabilitySessions(),
+          api.getAgentCapabilitySessionSnapshot(),
+        ]);
+      }
+      const restored = matchesTarget();
+      const restoredLocal = matchesLocalTarget();
+      const sessionRemoved = !after.sessions.some(
+        (session) => session.session_id === targetCapabilitySessionId,
+      );
+      const localSessionRemoved = !afterLocal.sessions.some(
+        (session) =>
+          session.capability_session_id_hash === targetCapabilitySessionIdHash,
+      );
+      if (
+        (available && (!restored || !restoredLocal))
+        || (!available && (!sessionRemoved || !localSessionRemoved))
+      ) {
+        throw new Error(
+          available
+            ? 'agent.acceptance.foundationExecutorRestoreTimeout'
+            : 'agent.acceptance.foundationExecutorWithdrawalTimeout',
+        );
+      }
+      const beforeTargetLocal = beforeLocal.sessions.find(
+        (session) =>
+          session.capability_session_id_hash === targetCapabilitySessionIdHash,
+      );
+      return {
+        requestedAvailable: available,
+        targetCapabilitySessionId,
+        targetDeviceId,
+        targetCapabilityId,
+        sessionPresentBefore: before.sessions.some(
+          (session) => session.session_id === targetCapabilitySessionId,
+        ),
+        sessionRemoved,
+        localSessionRemoved,
+        sessionRestored: Boolean(restored),
+        restoredCapabilitySessionId: restored?.session_id ?? '',
+        restoredDeviceId: restored?.device_id ?? '',
+        restoredCapabilityId: restored
+          ?.typed_capabilities.find(
+            (capability) => capability.capability_id === targetCapabilityId,
+          )?.capability_id ?? '',
+        ...(available
+          ? {
+              restoredExecutionAttemptCount:
+                restoredLocal?.local_execution_attempt_count ?? -1,
+              restoredSideEffectCount:
+                restoredLocal?.local_side_effect_count ?? -1,
+            }
+          : {
+              withdrawnExecutionAttemptCount:
+                beforeTargetLocal?.local_execution_attempt_count ?? -1,
+              withdrawnSideEffectCount:
+                beforeTargetLocal?.local_side_effect_count ?? -1,
+            }),
+      };
+    },
+
+    async prepareFoundationExecutorUnavailable(input: {
+      scenarioKey: string;
+      platform: string;
+      sampleId: string;
+      targetCapabilitySessionId: string;
+      targetDeviceId: string;
+      targetCapabilityId: string;
+    }) {
+      return evidenceValue(
+        await prepareFoundationExecutorUnavailableScenario(input),
+      );
+    },
+
+    async rejectFoundationExecutorUnavailable({
+      scenarioKey,
+      executorStop,
+    }: {
+      scenarioKey: string;
+      executorStop: Record<string, unknown>;
+    }) {
+      return evidenceValue(
+        await rejectFoundationExecutorUnavailableScenario(
+          scenarioKey,
+          executorStop,
+        ),
+      );
+    },
+
+    async recoverFoundationExecutorUnavailable(input: {
+      scenarioKey: string;
+      rejectedScenario: Record<string, unknown>;
+      executorStart: Record<string, unknown>;
+    }) {
+      return evidenceValue(
+        await recoverFoundationExecutorUnavailableScenario(input),
+      );
+    },
+
+    async abortFoundationExecutorUnavailable({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      await cleanupFoundationExecutorUnavailableScenario(scenarioKey);
+      return { scenarioKey, cleaned: true };
+    },
+
     async runFoundationCapabilityNegativeControl({
       control,
       capabilitySessionIdHash,
@@ -13721,6 +19057,72 @@ export function installAcceptanceHarness(): void {
       return {
         locale: i18n.language,
         receiverDom: foundationDomSnapshot(),
+      };
+    },
+
+    async prepareFoundationForbiddenActorOwner(input: {
+      scenarioKey: string;
+      sampleId: string;
+    }) {
+      return evidenceValue(
+        await prepareFoundationForbiddenActorOwner(input),
+      );
+    },
+
+    async readFoundationForbiddenActorOwner({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      return evidenceValue(
+        await readFoundationForbiddenActorOwner(scenarioKey),
+      );
+    },
+
+    async cleanupFoundationForbiddenActorOwner({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      return evidenceValue(
+        await cleanupFoundationForbiddenActorOwner(scenarioKey),
+      );
+    },
+
+    async rejectFoundationForbiddenActor(input: {
+      scenarioKey: string;
+      platform: string;
+      sampleId: string;
+      ownerFixture: Record<string, unknown>;
+    }) {
+      return evidenceValue(await rejectFoundationForbiddenActor(input));
+    },
+
+    async completeFoundationForbiddenActorRecovery(input: {
+      scenarioKey: string;
+      rejectedScenario: Record<string, unknown>;
+      ownerReadback: Record<string, unknown>;
+      ownerCleanup: Record<string, unknown>;
+    }) {
+      return evidenceValue(
+        await completeFoundationForbiddenActorRecovery(input),
+      );
+    },
+
+    async abortFoundationForbiddenActor({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      const conversationId =
+        foundationForbiddenActorReceiverResources.get(scenarioKey);
+      if (conversationId) {
+        clearFoundationLocalConversationProjection(conversationId);
+        foundationForbiddenActorReceiverResources.delete(scenarioKey);
+      }
+      return {
+        scenarioKey,
+        cleaned: true,
       };
     },
 
@@ -14149,12 +19551,14 @@ export function installAcceptanceHarness(): void {
       locale,
       sampleId,
       faultControlUrl,
+      faultBoundary,
     }: {
       scenarioKey: string;
       platform: string;
       locale: string;
       sampleId: string;
       faultControlUrl: string;
+      faultBoundary?: 'text-prefix' | 'provider-started';
     }) {
       try {
         const agent = selectedAgent();
@@ -14173,6 +19577,7 @@ export function installAcceptanceHarness(): void {
           locale,
           sampleId,
           faultControlUrl,
+          faultBoundary,
         }));
       } catch (error) {
         const primary = error instanceof Error ? error.message : String(error);
@@ -14211,6 +19616,37 @@ export function installAcceptanceHarness(): void {
     }) {
       return evidenceValue(
         await restoreFoundationF06CapabilityIsolation(scenarioKey),
+      );
+    },
+
+    async foundationF06ExportRestartHandoff({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      await foundationF06ReplayRecording;
+      const handoff = readFoundationF06Handoff(scenarioKey);
+      if (!handoff) {
+        throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
+      }
+      return evidenceValue(handoff);
+    },
+
+    async foundationF06ImportRestartHandoff({
+      scenarioKey,
+      platform,
+      handoff,
+    }: {
+      scenarioKey: string;
+      platform: string;
+      handoff: unknown;
+    }) {
+      return evidenceValue(
+        importFoundationF06RestartHandoff(
+          scenarioKey,
+          platform,
+          handoff,
+        ),
       );
     },
 
@@ -14301,6 +19737,7 @@ export function installAcceptanceHarness(): void {
       scenarioKey,
       stationRestart,
       durableReloadEvidence,
+      preparedScenario,
     }: {
       platform: string;
       locale: string;
@@ -14309,6 +19746,7 @@ export function installAcceptanceHarness(): void {
       scenarioKey?: string;
       stationRestart?: Record<string, unknown>;
       durableReloadEvidence?: Record<string, unknown>;
+      preparedScenario?: Record<string, unknown>;
     }) {
       await reportFoundationCapabilityIsolationDebug(
         'C-D',
@@ -14362,6 +19800,124 @@ export function installAcceptanceHarness(): void {
         | null = null;
 
       try {
+      if (cell === 'BASE-FORBIDDEN_ACTOR') {
+        const scenario = evidenceRecord(
+          preparedScenario,
+          'foundationForbiddenActorPreparedScenario',
+        );
+        scenarioFacts = evidenceRecord(
+          scenario.facts,
+          'foundationForbiddenActorFacts',
+        );
+        const forbiddenRuntimeEvent = evidenceRecord(
+          scenario.runtimeEvent,
+          'foundationForbiddenActorRuntimeEvent',
+        );
+        preparedRuntimeEvent.current = {
+          eventId: String(forbiddenRuntimeEvent.eventId ?? ''),
+          eventType: String(forbiddenRuntimeEvent.eventType ?? ''),
+          sequence: Number(forbiddenRuntimeEvent.sequence ?? 0),
+          observedAt: String(forbiddenRuntimeEvent.observedAt ?? ''),
+          streamGeneration: Number(
+            forbiddenRuntimeEvent.streamGeneration ?? 0,
+          ),
+          streamIdHash: String(forbiddenRuntimeEvent.streamIdHash ?? ''),
+          conversationIdHash: String(
+            forbiddenRuntimeEvent.conversationIdHash ?? '',
+          ),
+          payloadHash: String(forbiddenRuntimeEvent.payloadHash ?? ''),
+          errorType: String(forbiddenRuntimeEvent.errorType ?? ''),
+          sourceTransport: String(
+            forbiddenRuntimeEvent.sourceTransport ?? '',
+          ),
+          sourcePtidHash: String(forbiddenRuntimeEvent.sourcePtidHash ?? ''),
+          sourceConversationId: String(
+            forbiddenRuntimeEvent.sourceConversationId ?? '',
+          ),
+          sourceTurnId: String(forbiddenRuntimeEvent.sourceTurnId ?? ''),
+          sourceSequence: Number(forbiddenRuntimeEvent.sourceSequence ?? 0),
+          sourceEventType: String(
+            forbiddenRuntimeEvent.sourceEventType ?? '',
+          ),
+        };
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const attestation = await runFoundationDirectAttestationTurn({
+          agent,
+          capabilitySessionId,
+          sampleId,
+        });
+        preparedConversationId = attestation.conversationId;
+        preparedTurnId = attestation.turnId;
+        turnDurationMs =
+          Number(scenario.durationMs ?? 0) + attestation.durationMs;
+        if (
+          !preparedRuntimeEvent.current.eventType
+          || preparedRuntimeEvent.current.sequence <= 0
+          || !preparedRuntimeEvent.current.observedAt
+        ) {
+          throw new Error(
+            'agent.acceptance.foundationForbiddenActorPreparedScenarioInvalid',
+          );
+        }
+      }
+
+      if (cell === 'BASE-INCOMPATIBLE_CAPABILITY') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenario = await runFoundationIncompatibleCapabilityScenario({
+          agent,
+          capabilitySessionId,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
+      if (cell === 'BASE-EXECUTOR_UNAVAILABLE') {
+        const scenario = evidenceRecord(
+          preparedScenario,
+          'foundationExecutorUnavailablePreparedScenario',
+        );
+        preparedConversationId = String(scenario.conversationId ?? '');
+        preparedTurnId = String(scenario.turnId ?? '');
+        turnDurationMs = Number(scenario.durationMs ?? 0);
+        scenarioFacts = evidenceRecord(
+          scenario.facts,
+          'foundationExecutorUnavailableFacts',
+        );
+        const runtimeEvent = evidenceRecord(
+          scenario.runtimeEvent,
+          'foundationExecutorUnavailableRuntimeEvent',
+        );
+        preparedRuntimeEvent.current = {
+          eventType: String(runtimeEvent.eventType ?? ''),
+          sequence: Number(runtimeEvent.sequence ?? 0),
+          observedAt: String(runtimeEvent.observedAt ?? ''),
+        };
+        if (
+          !preparedConversationId
+          || !preparedTurnId
+          || !turnDurationMs
+          || !preparedRuntimeEvent.current.eventType
+          || preparedRuntimeEvent.current.sequence <= 0
+          || !preparedRuntimeEvent.current.observedAt
+        ) {
+          throw new Error(
+            'agent.acceptance.foundationExecutorPreparedScenarioInvalid',
+          );
+        }
+      }
+
       if (cell === 'BASE-DUPLICATE_CONFLICT') {
         const capabilitySessionId =
           capabilitySessions.selectedStationSession?.session_id;
@@ -14416,6 +19972,26 @@ export function installAcceptanceHarness(): void {
         scenarioFacts = scenario.facts;
       }
 
+      if (cell === 'BASE-INTERRUPTED') {
+        if (!stationRestart || !scenarioKey) {
+          throw new Error(
+            'agent.acceptance.foundationInterruptedStationRestartMissing',
+          );
+        }
+        const scenario = await runFoundationInterruptedScenario({
+          scenarioKey,
+          platform,
+          locale,
+          sampleId,
+          stationRestart,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
       if (cell === 'BASE-CONTEXT_OVERFLOW') {
         const capabilitySessionId =
           capabilitySessions.selectedStationSession?.session_id;
@@ -14423,6 +19999,42 @@ export function installAcceptanceHarness(): void {
           throw new Error('agent.acceptance.capabilitySessionUnavailable');
         }
         const scenario = await runFoundationContextOverflowScenario({
+          agent,
+          capabilitySessionId,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+        // #region debug-point E-H:context-overflow-scenario-return
+        await reportFoundationContextOverflowRecoveryDebug(
+          'E-H',
+          'scenario-returned',
+          {
+            conversationIdPresent: scenario.conversationId.length > 0,
+            conversationIdHash: scenario.conversationId
+              ? await sha256Hex(scenario.conversationId)
+              : '',
+            turnIdPresent: scenario.turnId.length > 0,
+            scenarioFactsPresent: scenarioFacts !== null,
+            cleanupPresent:
+              scenarioFacts !== null
+              && typeof scenarioFacts.cleanup === 'object'
+              && scenarioFacts.cleanup !== null,
+          },
+        );
+        // #endregion
+      }
+
+      if (cell === 'BASE-INVALID_REFERENCE') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenario = await runFoundationInvalidReferenceScenario({
           agent,
           capabilitySessionId,
           sampleId,
@@ -14583,6 +20195,13 @@ export function installAcceptanceHarness(): void {
               authoritativeAgent,
               capabilitySessionId,
               async (toolIsolation) => {
+                await reportFoundationF01Debug('A-E', 'scenario-started', {
+                  platform,
+                  locale,
+                  sampleId,
+                  disabledBindingCount: toolIsolation.disabledBindingCount,
+                  readyCapabilityCount: toolIsolation.readyCapabilityCount,
+                });
                 const conversation = await api.createAgentConversation({
                   agent_id: authoritativeAgentId,
                   title: `Foundation ${sampleId}`,
@@ -14604,14 +20223,56 @@ export function installAcceptanceHarness(): void {
                   effort: 'low',
                   thinkingMode: 'disabled',
                   clientCapabilitySessionId: capabilitySessionId,
+                  onEvent: (event, events) => {
+                    void reportFoundationF01Debug(
+                      'A-E',
+                      'turn-event-observed',
+                      {
+                        eventType: event.event,
+                        sequence: Number(event.data.seq ?? 0),
+                        stage: String(event.data.stage ?? ''),
+                        terminal:
+                          classifyAgentTurnTerminalEvent({
+                            event: event.event,
+                            data: event.data,
+                          }),
+                        eventCount: events.length,
+                        sourceDelivered: Boolean(event.sourceDelivery),
+                        sourceTransport:
+                          event.sourceDelivery?.transport ?? null,
+                        sourceSequence:
+                          event.sourceDelivery?.sequence ?? null,
+                      },
+                    );
+                  },
                 });
                 const result = await observed.result;
+                const turnId = observedTurnId(result.events);
+                await reportFoundationF01Debug('A-E', 'turn-settled', {
+                  ok: result.ok,
+                  error: result.error,
+                  turnIdPresent: turnId.length > 0,
+                  eventCount: result.events.length,
+                  observedEvents: result.events.map((event) => ({
+                    eventType: event.event,
+                    sequence: Number(event.data.seq ?? 0),
+                    stage: String(event.data.stage ?? ''),
+                    terminal:
+                      classifyAgentTurnTerminalEvent({
+                        event: event.event,
+                        data: event.data,
+                      }),
+                  })),
+                });
                 if (!result.ok) {
+                  await reportFoundationF01FailureReadback(
+                    conversation.conversation_id,
+                    turnId,
+                  );
                   throw new Error(
                     result.error || 'agent.acceptance.foundationTurnFailed',
                   );
                 }
-                const turnId = observedTurnId(result.events);
                 const terminal = [...result.events].reverse().find((event) =>
                   classifyAgentTurnTerminalEvent(event) === 'completed');
                 if (!turnId || !terminal) {
@@ -15020,7 +20681,7 @@ export function installAcceptanceHarness(): void {
         if (!active.events.some((event) =>
           event.event === 'cancelled'
           || classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
-          active.controller.disconnectTransport();
+          await active.controller.disconnectTransport();
         }
         const [
           firstActiveEvent,
@@ -15629,13 +21290,88 @@ export function installAcceptanceHarness(): void {
         });
       }
       if (
+        cell === 'BASE-INTERRUPTED'
+        && scenarioFacts
+        && scenarioKey
+        && currentConversationId
+        && turnId
+      ) {
+        preservedReplayReadback = conversationReadback;
+        const interruptionCleanup = await cleanupFoundationF06Scenario({
+          scenarioKey,
+          conversationId: currentConversationId,
+          turnId,
+        });
+        scenarioFacts.cleanup = {
+          ...evidenceRecord(
+            scenarioFacts.cleanup,
+            'foundationInterruptedCleanup',
+          ),
+          ...interruptionCleanup,
+          localProjectionCleared: (
+            !useChatStore.getState().sessions.some(
+              (session) => session.id === currentConversationId,
+            )
+            && !useChatStore.getState().messages.some(
+              (message) => message.turnId === turnId,
+            )
+          ),
+        };
+      }
+      if (cell === 'BASE-CONTEXT_OVERFLOW') {
+        // #region debug-point E-H:context-overflow-cleanup-branch
+        await reportFoundationContextOverflowRecoveryDebug(
+          'E-H',
+          'cleanup-branch-evaluated',
+          {
+            scenarioFactsPresent: scenarioFacts !== null,
+            preparedConversationIdPresent:
+              Boolean(preparedConversationId),
+            currentConversationIdPresent:
+              Boolean(currentConversationId),
+            currentConversationMatchesPrepared:
+              Boolean(currentConversationId)
+              && currentConversationId === preparedConversationId,
+          },
+        );
+        // #endregion
+      }
+      if (
+        cell === 'BASE-CONTEXT_OVERFLOW'
+        && scenarioFacts
+        && currentConversationId
+      ) {
+        const contextOverflowCleanup = evidenceRecord(
+          scenarioFacts.cleanup,
+          'foundationContextOverflowCleanup',
+        );
+        // #region debug-point E-H:context-overflow-cleanup-dispatch
+        await reportFoundationContextOverflowRecoveryDebug(
+          'E-H',
+          'cleanup-dispatch-entered',
+          {
+            conversationIdHash: await sha256Hex(currentConversationId),
+            draftCleared: contextOverflowCleanup.draftCleared === true,
+            localProjectionCleared:
+              contextOverflowCleanup.localProjectionCleared === true,
+            conversationDeleted:
+              contextOverflowCleanup.conversationDeleted === true,
+          },
+        );
+        // #endregion
+      }
+      if (
         (
-          cell === 'BASE-APPROVAL_DENIED'
+          cell === 'BASE-FORBIDDEN_ACTOR'
+          || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
+          || cell === 'BASE-EXECUTOR_UNAVAILABLE'
+          || cell === 'BASE-APPROVAL_DENIED'
           || cell === 'BASE-APPROVAL_EXPIRED'
           || cell === 'BASE-ATTACHMENT_REJECTED'
           || cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
           || cell === 'BASE-CANCELLED'
           || cell === 'BASE-CONTEXT_OVERFLOW'
+          || cell === 'BASE-INVALID_REFERENCE'
           || cell === 'BASE-DUPLICATE_CONFLICT'
           || cell === 'BASE-CREDENTIAL_MISSING'
         )
@@ -15661,14 +21397,22 @@ export function installAcceptanceHarness(): void {
             scenarioFacts.cleanup,
             cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
               ? 'foundationActiveMutationConflictCleanup'
+              : cell === 'BASE-FORBIDDEN_ACTOR'
+                ? 'foundationForbiddenActorCleanup'
+              : cell === 'BASE-INCOMPATIBLE_CAPABILITY'
+                ? 'foundationIncompatibleCapabilityCleanup'
               : cell === 'BASE-CANCELLED'
                 ? 'foundationCancelledCleanup'
               : cell === 'BASE-CONTEXT_OVERFLOW'
                 ? 'foundationContextOverflowCleanup'
+              : cell === 'BASE-INVALID_REFERENCE'
+                ? 'foundationInvalidReferenceCleanup'
               : cell === 'BASE-DUPLICATE_CONFLICT'
                 ? 'foundationDuplicateConflictCleanup'
               : cell === 'BASE-CREDENTIAL_MISSING'
                 ? 'foundationCredentialMissingCleanup'
+              : cell === 'BASE-EXECUTOR_UNAVAILABLE'
+                ? 'foundationExecutorUnavailableCleanup'
               : cell === 'BASE-APPROVAL_DENIED'
                 ? 'foundationApprovalDeniedCleanup'
                 : cell === 'BASE-APPROVAL_EXPIRED'
@@ -15678,6 +21422,26 @@ export function installAcceptanceHarness(): void {
           conversationDeleted,
           deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
         };
+        if (cell === 'BASE-CONTEXT_OVERFLOW') {
+          const contextOverflowCleanup = evidenceRecord(
+            scenarioFacts.cleanup,
+            'foundationContextOverflowCleanup',
+          );
+          // #region debug-point E-H:context-overflow-cleanup-result
+          await reportFoundationContextOverflowRecoveryDebug(
+            'E-H',
+            'cleanup-deletion-completed',
+            {
+              deletionErrorCodePresent: deletionErrorCode.length > 0,
+              draftCleared: contextOverflowCleanup.draftCleared === true,
+              localProjectionCleared:
+                contextOverflowCleanup.localProjectionCleared === true,
+              conversationDeleted:
+                contextOverflowCleanup.conversationDeleted === true,
+            },
+          );
+          // #endregion
+        }
         if (cell === 'BASE-ACTIVE_MUTATION_CONFLICT') {
           await reportActiveMutationConflictDebug(
             'attestation-cleanup-complete',
@@ -15716,6 +21480,25 @@ export function installAcceptanceHarness(): void {
         locale,
         sampleId,
       };
+      if (cell === 'BASE-CONTEXT_OVERFLOW') {
+        const contextOverflowCleanup = evidenceRecord(
+          scenarioFacts?.cleanup,
+          'foundationContextOverflowCleanup',
+        );
+        // #region debug-point E-H:context-overflow-assertion-input
+        await reportFoundationContextOverflowRecoveryDebug(
+          'E-H',
+          'assertion-input',
+          {
+            draftCleared: contextOverflowCleanup.draftCleared === true,
+            localProjectionCleared:
+              contextOverflowCleanup.localProjectionCleared === true,
+            conversationDeleted:
+              contextOverflowCleanup.conversationDeleted === true,
+          },
+        );
+        // #endregion
+      }
       const assertions = await evaluateDirectCellAssertions(assertionContext);
 
       const receiverDom = foundationDomSnapshot();
@@ -15787,6 +21570,55 @@ export function installAcceptanceHarness(): void {
         stationReadback.revision = Number(winner.revisionAfterReload);
         stationReadback.stateHash = String(winner.hashAfterReload);
       }
+      if (cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts) {
+        const owner = evidenceRecord(
+          scenarioFacts.owner,
+          'foundationForbiddenActorOwner',
+        );
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationForbiddenActorStation',
+        );
+        stationReadback.entityKind = 'agent-conversation-owner-boundary';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(owner.resourceId),
+        );
+        stationReadback.revision = Number(owner.versionAfter);
+        stationReadback.stateHash = String(owner.afterHash);
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          conversation: station.conversationDelta,
+          turn: station.turnDelta,
+          message: station.messageDelta,
+          queue: station.queueDelta,
+          providerExecution: station.providerExecutionDelta,
+        };
+      }
+      if (cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationIncompatibleCapabilityStation',
+        );
+        stationReadback.entityKind = 'agent-capability-readiness';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.agentId),
+        );
+        stationReadback.revision = Number(
+          station.conversationVersionAfter,
+        );
+        stationReadback.stateHash = String(station.afterHash);
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.readiness = scenarioFacts.readiness;
+        stationReadback.deltas = {
+          turn: station.turnDelta,
+          message: station.messageDelta,
+          queue: station.queueDelta,
+          providerExecution: evidenceRecord(
+            scenarioFacts.execution,
+            'foundationIncompatibleCapabilityExecution',
+          ).providerCallDelta,
+        };
+      }
       if (cell === 'BASE-CANCELLED' && scenarioFacts) {
         const station = evidenceRecord(
           scenarioFacts.station,
@@ -15794,6 +21626,19 @@ export function installAcceptanceHarness(): void {
         );
         stationReadback.entityKind = 'agent-turn-cancellation';
         stationReadback.entityIdHash = await sha256Hex(String(station.turnId));
+        stationReadback.revision = Number(station.terminalEventCount);
+        stationReadback.stateHash = await sha256Hex(stableJson(station));
+        stationReadback.typedError = scenarioFacts.outcome;
+      }
+      if (cell === 'BASE-INTERRUPTED' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationInterruptedStation',
+        );
+        stationReadback.entityKind = 'agent-turn-interruption';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.turnId),
+        );
         stationReadback.revision = Number(station.terminalEventCount);
         stationReadback.stateHash = await sha256Hex(stableJson(station));
         stationReadback.typedError = scenarioFacts.outcome;
@@ -15817,6 +21662,33 @@ export function installAcceptanceHarness(): void {
           message: station.messageDelta,
           queue: station.queueDelta,
           providerExecution: station.providerExecutionDelta,
+        };
+      }
+      if (cell === 'BASE-INVALID_REFERENCE' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationInvalidReferenceStation',
+        );
+        stationReadback.entityKind = 'agent-reference-recovery';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.successfulTurnId),
+        );
+        stationReadback.revision = Number(
+          station.successfulConversationVersion,
+        );
+        stationReadback.stateHash = String(station.successfulReadbackHash);
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          rejectedTurn: station.rejectedTurnDelta,
+          rejectedMessage: station.rejectedMessageDelta,
+          rejectedQueue: station.rejectedQueueDelta,
+          rejectedProviderExecution:
+            station.rejectedProviderExecutionDelta,
+          successfulTurn: station.successfulTurnDelta,
+          successfulMessage: station.successfulMessageDelta,
+          successfulQueue: station.successfulQueueDelta,
+          successfulProviderExecution:
+            station.successfulProviderExecutionDelta,
         };
       }
       if (cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts) {
@@ -15861,6 +21733,23 @@ export function installAcceptanceHarness(): void {
           providerExecution: station.providerExecutionDelta,
         };
         stationReadback.credentialStatus = station.credentialStatusAfter;
+      }
+      if (cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationExecutorUnavailableStation',
+        );
+        const lineage = evidenceRecord(
+          station.lineage,
+          'foundationExecutorUnavailableLineage',
+        );
+        stationReadback.entityKind = 'agent-tool-call';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(lineage.toolCallId),
+        );
+        stationReadback.revision = Number(lineage.decisionRevision);
+        stationReadback.stateHash = await sha256Hex(stableJson(station));
+        stationReadback.typedError = scenarioFacts.outcome;
       }
       if (
         (
@@ -15975,8 +21864,12 @@ export function installAcceptanceHarness(): void {
             }
           : (
             cell === 'BASE-ATTACHMENT_REJECTED'
+            || cell === 'BASE-FORBIDDEN_ACTOR'
+            || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
             || cell === 'BASE-CANCELLED'
+            || cell === 'BASE-INTERRUPTED'
             || cell === 'BASE-CONTEXT_OVERFLOW'
+            || cell === 'BASE-INVALID_REFERENCE'
             || cell === 'BASE-DUPLICATE_CONFLICT'
             || cell === 'BASE-CREDENTIAL_MISSING'
           ) && observedRuntimeEvent
@@ -15993,7 +21886,11 @@ export function installAcceptanceHarness(): void {
                 ...(
                   (
                     cell === 'BASE-CANCELLED'
+                    || cell === 'BASE-INTERRUPTED'
+                    || cell === 'BASE-FORBIDDEN_ACTOR'
+                    || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
                     || cell === 'BASE-CONTEXT_OVERFLOW'
+                    || cell === 'BASE-INVALID_REFERENCE'
                     || cell === 'BASE-DUPLICATE_CONFLICT'
                     || cell === 'BASE-CREDENTIAL_MISSING'
                   )
@@ -16043,6 +21940,7 @@ export function installAcceptanceHarness(): void {
         || cell === 'BASE-APPROVAL_EXPIRED'
           ? 900_000
           : cell === 'AS-F06'
+            || cell === 'BASE-INVALID_REFERENCE'
             ? 300_000
             : 120_000;
       const measurementReport: Record<string, unknown> = {
@@ -16059,7 +21957,53 @@ export function installAcceptanceHarness(): void {
 
       const queueEntryCount = turnQueue?.entries?.length ?? 0;
       const sideEffectCount: Record<string, unknown> =
-        cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
+        cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts
+          ? (() => {
+              const station = evidenceRecord(
+                scenarioFacts.station,
+                'foundationForbiddenActorStation',
+              );
+              return {
+                counterId: String(
+                  evidenceRecord(
+                    scenarioFacts.owner,
+                    'foundationForbiddenActorOwner',
+                  ).resourceId,
+                ),
+                count:
+                  Number(station.conversationDelta)
+                  + Number(station.turnDelta)
+                  + Number(station.messageDelta)
+                  + Number(station.queueDelta)
+                  + Number(station.providerExecutionDelta),
+                maximum: 0,
+                measurements: station,
+              };
+            })()
+          : cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts
+            ? (() => {
+                const execution = evidenceRecord(
+                  scenarioFacts.execution,
+                  'foundationIncompatibleCapabilityExecution',
+                );
+                return {
+                  counterId: String(
+                    evidenceRecord(
+                      scenarioFacts.station,
+                      'foundationIncompatibleCapabilityStation',
+                    ).turnId,
+                  ),
+                  count:
+                    Number(execution.runtimeExecutionDelta)
+                    + Number(execution.providerCallDelta)
+                    + Number(execution.toolCallDelta)
+                    + Number(execution.toolExecutionDelta)
+                    + Number(execution.sideEffectDelta),
+                  maximum: 0,
+                  measurements: execution,
+                };
+              })()
+          : cell === 'BASE-ACTIVE_MUTATION_CONFLICT' && scenarioFacts
           ? {
               counterId: await sha256Hex(stableJson({
                 cell,
@@ -16092,6 +22036,32 @@ export function installAcceptanceHarness(): void {
                     cancelledEventCount: station.cancelledEventCount,
                     liveTerminalEventCount: station.liveTerminalEventCount,
                     liveDoneEventCount: station.liveDoneEventCount,
+                  },
+                };
+              })()
+          : cell === 'BASE-INTERRUPTED' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationInterruptedStation',
+                );
+                const recovery = evidenceRecord(
+                  scenarioFacts.recovery,
+                  'foundationInterruptedRecovery',
+                );
+                return {
+                  counterId: String(station.turnId),
+                  count:
+                    Number(station.doneEventCount)
+                    + Number(station.liveDoneEventCount)
+                    + Number(recovery.completedInferenceCount),
+                  maximum: 0,
+                  measurements: {
+                    terminalEventCount: station.terminalEventCount,
+                    errorEventCount: station.errorEventCount,
+                    recoveryAttemptCount: station.recoveryAttemptCount,
+                    recoveryAttemptStatus:
+                      recovery.recoveryAttemptStatus,
                   },
                 };
               })()
@@ -16137,6 +22107,34 @@ export function installAcceptanceHarness(): void {
                   },
                 };
               })()
+          : cell === 'BASE-INVALID_REFERENCE' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationInvalidReferenceStation',
+                );
+                const count =
+                  Number(station.rejectedTurnDelta)
+                  + Number(station.rejectedMessageDelta)
+                  + Number(station.rejectedQueueDelta)
+                  + Number(station.rejectedProviderExecutionDelta);
+                return {
+                  counterId: String(station.referenceHash),
+                  count,
+                  maximum: 0,
+                  measurements: {
+                    rejectedTurnDelta: station.rejectedTurnDelta,
+                    rejectedMessageDelta: station.rejectedMessageDelta,
+                    rejectedQueueDelta: station.rejectedQueueDelta,
+                    rejectedProviderExecutionDelta:
+                      station.rejectedProviderExecutionDelta,
+                    successfulTurnDelta: station.successfulTurnDelta,
+                    successfulMessageDelta: station.successfulMessageDelta,
+                    successfulProviderExecutionDelta:
+                      station.successfulProviderExecutionDelta,
+                  },
+                };
+              })()
           : cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
             ? (() => {
                 const station = evidenceRecord(
@@ -16178,6 +22176,26 @@ export function installAcceptanceHarness(): void {
                     providerExecutionDelta:
                       station.providerExecutionDelta,
                   },
+                };
+              })()
+          : cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationExecutorUnavailableStation',
+                );
+                const lineage = evidenceRecord(
+                  station.lineage,
+                  'foundationExecutorUnavailableLineage',
+                );
+                return {
+                  counterId: String(lineage.toolCallId),
+                  count:
+                    Number(station.executionAttemptCount)
+                    + Number(station.sideEffectCount)
+                    + Number(station.resultCount)
+                    + Number(station.continuationCount),
+                  maximum: 0,
                 };
               })()
           : (
@@ -16314,6 +22332,20 @@ export function installAcceptanceHarness(): void {
               'foundationActiveMutationConflictCleanup',
             )
           : null;
+      const forbiddenActorCleanup =
+        cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationForbiddenActorCleanup',
+            )
+          : null;
+      const incompatibleCapabilityCleanup =
+        cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationIncompatibleCapabilityCleanup',
+            )
+          : null;
       const cancellationCleanup =
         cell === 'BASE-CANCELLED' && scenarioFacts
           ? evidenceRecord(
@@ -16321,11 +22353,25 @@ export function installAcceptanceHarness(): void {
               'foundationCancelledCleanup',
             )
           : null;
+      const interruptionCleanup =
+        cell === 'BASE-INTERRUPTED' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationInterruptedCleanup',
+            )
+          : null;
       const contextOverflowCleanup =
         cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts
           ? evidenceRecord(
               scenarioFacts.cleanup,
               'foundationContextOverflowCleanup',
+            )
+          : null;
+      const invalidReferenceCleanup =
+        cell === 'BASE-INVALID_REFERENCE' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationInvalidReferenceCleanup',
             )
           : null;
       const duplicateConflictCleanup =
@@ -16344,7 +22390,27 @@ export function installAcceptanceHarness(): void {
           : null;
       const cleanup: Record<string, unknown> = {
         status: (
-          activeMutationCleanup
+          forbiddenActorCleanup
+            ? (
+                forbiddenActorCleanup.localProjectionCleared === true
+                && forbiddenActorCleanup.foreignResourceDeleted === true
+                && forbiddenActorCleanup.foreignAgentDeleted === true
+                && forbiddenActorCleanup.ownerSelectionRestored === true
+                && forbiddenActorCleanup.receiverRestored === true
+                && forbiddenActorCleanup.conversationDeleted === true
+              )
+            : incompatibleCapabilityCleanup
+              ? (
+                  incompatibleCapabilityCleanup.localProjectionCleared === true
+                  && incompatibleCapabilityCleanup.conversationDeleted === true
+                  && incompatibleCapabilityCleanup.disposableAgentDeleted === true
+                  && incompatibleCapabilityCleanup.capabilityBindingRemoved === true
+                  && incompatibleCapabilityCleanup.fixtureProviderRestored === true
+                  && incompatibleCapabilityCleanup.modelConfigurationUnchanged === true
+                  && incompatibleCapabilityCleanup.restoredSelection
+                    === incompatibleCapabilityCleanup.priorSelection
+                )
+            : activeMutationCleanup
             ? (
                 activeMutationCleanup.deletedFromRoster === true
                 && activeMutationCleanup.deletedFromStation === true
@@ -16358,11 +22424,26 @@ export function installAcceptanceHarness(): void {
                   && Number(cancellationCleanup.terminalCleanupCount) === 1
                   && cancellationCleanup.conversationDeleted === true
                 )
+            : interruptionCleanup
+              ? (
+                  interruptionCleanup.recoveryAttemptSettled === true
+                  && interruptionCleanup.cleanupComplete === true
+                  && interruptionCleanup.handoffCleared === true
+                  && interruptionCleanup.conversationDeleted === true
+                  && interruptionCleanup.recoveryRecordCleared === true
+                  && interruptionCleanup.localProjectionCleared === true
+                )
             : contextOverflowCleanup
               ? (
                   contextOverflowCleanup.draftCleared === true
                   && contextOverflowCleanup.localProjectionCleared === true
                   && contextOverflowCleanup.conversationDeleted === true
+                )
+            : invalidReferenceCleanup
+              ? (
+                  invalidReferenceCleanup.draftCleared === true
+                  && invalidReferenceCleanup.localProjectionCleared === true
+                  && invalidReferenceCleanup.conversationDeleted === true
                 )
             : duplicateConflictCleanup
               ? (
@@ -16392,6 +22473,25 @@ export function installAcceptanceHarness(): void {
                     scenarioFacts.cleanup,
                     'foundationAttachmentRejectedCleanup',
                   ).conversationDeleted === true
+                )
+            : cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts
+              ? (
+                  evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationExecutorUnavailableCleanup',
+                  ).conversationDeleted === true
+                  && evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationExecutorUnavailableCleanup',
+                  ).bindingRestored === true
+                  && evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationExecutorUnavailableCleanup',
+                  ).executorRestored === true
+                  && evidenceRecord(
+                    scenarioFacts.cleanup,
+                    'foundationExecutorUnavailableCleanup',
+                  ).turnCancelled === true
                 )
             : (
               cell === 'BASE-APPROVAL_DENIED'
@@ -16456,6 +22556,12 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-ATTACHMENT_REJECTED' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : (
             cell === 'BASE-APPROVAL_DENIED'
             || cell === 'BASE-APPROVAL_EXPIRED'
@@ -16465,7 +22571,11 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-CANCELLED' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-INTERRUPTED' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-INVALID_REFERENCE' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
@@ -16475,12 +22585,17 @@ export function installAcceptanceHarness(): void {
       };
 
       const receiver = (
-        cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
+        cell === 'BASE-FORBIDDEN_ACTOR'
+        || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
+        || cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
         || cell === 'BASE-CANCELLED'
+        || cell === 'BASE-INTERRUPTED'
+        || cell === 'BASE-EXECUTOR_UNAVAILABLE'
         || cell === 'BASE-APPROVAL_DENIED'
         || cell === 'BASE-APPROVAL_EXPIRED'
         || cell === 'BASE-ATTACHMENT_REJECTED'
         || cell === 'BASE-CONTEXT_OVERFLOW'
+        || cell === 'BASE-INVALID_REFERENCE'
         || cell === 'BASE-DUPLICATE_CONFLICT'
         || cell === 'BASE-CREDENTIAL_MISSING'
       ) && scenarioFacts
@@ -16500,7 +22615,47 @@ export function installAcceptanceHarness(): void {
         receiverSelector = '[data-pt-agent-message-attachment]';
         receiverText = receiverDom.messageAttachments.text;
       } else if (receiver) {
-        if (
+        if (cell === 'BASE-FORBIDDEN_ACTOR') {
+          receiverVisible =
+            receiver.recoveryVisible === true
+            && receiver.errorVisible === true
+            && receiver.recoveryExecuted === true
+            && receiver.accountGateObserved === true;
+          receiverSelector =
+            '[data-pt-agent-message-error-recovery="switch-account"],'
+            + '[data-pt-agent-message-error-text="agent.errors.forbiddenActor"]';
+          receiverText = {
+            recoveryText: receiver.recoveryText,
+            errorText: receiver.errorText,
+          };
+        } else if (cell === 'BASE-INCOMPATIBLE_CAPABILITY') {
+          receiverVisible =
+            receiver.recoveryVisible === true
+            && receiver.errorVisible === true
+            && receiver.recoveryExecuted === true
+            && receiver.profileVisible === true
+            && receiver.modelSelectionVisible === true;
+          receiverSelector =
+            '[data-pt-agent-message-error-recovery="choose-compatible-model"],'
+            + '[data-pt-agent-message-error-text="agent.errors.incompatibleCapability"],'
+            + '[data-pt-agent-profile-model]';
+          receiverText = {
+            recoveryText: receiver.recoveryText,
+            errorText: receiver.errorText,
+          };
+        } else if (cell === 'BASE-EXECUTOR_UNAVAILABLE') {
+          receiverVisible =
+            receiver.recoveryVisible === true
+            && receiver.errorVisible === true
+            && receiver.recoveryExecuted === true;
+          receiverSelector =
+            '[data-pt-agent-tool-recovery="reconnect-executor"],'
+            + '[data-pt-agent-tool-error="agent.errors.executorUnavailable"]';
+          receiverText = {
+            recoveryText: receiver.recoveryText,
+            errorText: receiver.errorText,
+          };
+        } else if (
           cell === 'BASE-APPROVAL_DENIED'
           || cell === 'BASE-APPROVAL_EXPIRED'
         ) {
@@ -16538,6 +22693,21 @@ export function installAcceptanceHarness(): void {
             errorText: receiver.errorText,
             recoveryVisible: receiver.recoveryVisible,
           };
+        } else if (cell === 'BASE-INTERRUPTED') {
+          receiverVisible =
+            receiver.visible === true
+            && receiver.terminalStatus === 'interrupted'
+            && receiver.errorType === 'LIFECYCLE_INTERRUPTED'
+            && receiver.recoveryVisible === true
+            && receiver.recoveryExecuted === true;
+          receiverSelector =
+            '[data-pt-agent-terminal-status="interrupted"]'
+            + '[data-pt-agent-error-type="LIFECYCLE_INTERRUPTED"] '
+            + '[data-pt-agent-message-error-recovery="recover"]';
+          receiverText = {
+            errorText: receiver.errorText,
+            recoveryText: receiver.recoveryText,
+          };
         } else if (cell === 'BASE-CONTEXT_OVERFLOW') {
           receiverVisible =
             receiver.errorVisible === true
@@ -16548,6 +22718,22 @@ export function installAcceptanceHarness(): void {
           receiverText = {
             errorText: receiver.errorText,
             recoveryText: receiver.recoveryText,
+          };
+        } else if (cell === 'BASE-INVALID_REFERENCE') {
+          receiverVisible =
+            receiver.errorVisible === true
+            && receiver.removalVisible === true
+            && receiver.removalExecuted === true
+            && receiver.successfulAssistantVisible === true
+            && Number(receiver.successfulAssistantCount) === 1;
+          receiverSelector =
+            '[data-pt-agent-message-error-text="agent.errors.contextInvalidReference"],'
+            + '[data-pt-agent-message-error-recovery="remove-reference"],'
+            + '[data-pt-agent-message="assistant"]';
+          receiverText = {
+            errorText: receiver.errorText,
+            removalText: receiver.removalText,
+            successfulAssistantId: receiver.successfulAssistantId,
           };
         } else if (cell === 'BASE-DUPLICATE_CONFLICT') {
           receiverVisible =
@@ -16602,6 +22788,29 @@ export function installAcceptanceHarness(): void {
         replayEvidence.equal = winner.hashBeforeStale === winner.hashAfterReload;
         replayEvidence.turnId = null;
       }
+      if (cell === 'BASE-FORBIDDEN_ACTOR' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationForbiddenActorReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+        replayEvidence.turnId = null;
+      }
+      if (cell === 'BASE-INCOMPATIBLE_CAPABILITY' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationIncompatibleCapabilityReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+        replayEvidence.turnId = evidenceRecord(
+          scenarioFacts.station,
+          'foundationIncompatibleCapabilityStation',
+        ).turnId;
+      }
       if (cell === 'BASE-CANCELLED' && scenarioFacts) {
         const replay = evidenceRecord(
           scenarioFacts.replay,
@@ -16609,6 +22818,24 @@ export function installAcceptanceHarness(): void {
         );
         replayEvidence.sourceHash = replay.sourceHash;
         replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+      }
+      if (cell === 'BASE-INTERRUPTED' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationInterruptedReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+      }
+      if (cell === 'BASE-EXECUTOR_UNAVAILABLE' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationExecutorUnavailableReplay',
+        );
+        replayEvidence.sourceHash = replay.acknowledgementSourceHash;
+        replayEvidence.replayHash = replay.acknowledgementReplayHash;
         replayEvidence.equal = replay.equal;
       }
       if (
@@ -16645,6 +22872,19 @@ export function installAcceptanceHarness(): void {
         replayEvidence.sourceHash = replay.sourceHash;
         replayEvidence.replayHash = replay.replayHash;
         replayEvidence.equal = replay.equal;
+      }
+      if (cell === 'BASE-INVALID_REFERENCE' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationInvalidReferenceReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+        replayEvidence.turnId = evidenceRecord(
+          scenarioFacts.station,
+          'foundationInvalidReferenceStation',
+        ).successfulTurnId;
       }
       if (cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts) {
         const replay = evidenceRecord(
@@ -16754,6 +22994,28 @@ export function installAcceptanceHarness(): void {
           }
         }
         if (
+          cell === 'BASE-INTERRUPTED'
+          && scenarioKey
+        ) {
+          try {
+            await cleanupFoundationF06Scenario({
+              scenarioKey,
+              conversationId: preparedConversationId ?? '',
+              turnId: preparedTurnId ?? '',
+            });
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationInterruptionCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
           cell === 'BASE-CANCELLED'
           && preparedConversationId
         ) {
@@ -16791,6 +23053,42 @@ export function installAcceptanceHarness(): void {
           }
         }
         if (
+          cell === 'BASE-FORBIDDEN_ACTOR'
+          && preparedConversationId
+        ) {
+          try {
+            await deleteFoundationConversation(preparedConversationId);
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationForbiddenActorAttestationCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-INCOMPATIBLE_CAPABILITY'
+          && preparedConversationId
+        ) {
+          try {
+            await deleteFoundationConversation(preparedConversationId);
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationIncompatibleCapabilityAttestationCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
           cell === 'BASE-ATTACHMENT_REJECTED'
           && preparedConversationId
         ) {
@@ -16813,22 +23111,56 @@ export function installAcceptanceHarness(): void {
           && preparedConversationId
         ) {
           try {
+            clearFoundationLocalConversationProjection(
+              preparedConversationId,
+            );
             const textarea = document.querySelector<HTMLTextAreaElement>(
               '[data-pt-agent-composer-input]',
             );
             if (textarea) {
-              const setTextareaValue = Object.getOwnPropertyDescriptor(
-                window.HTMLTextAreaElement.prototype,
-                'value',
-              )?.set;
-              setTextareaValue?.call(textarea, '');
-              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+              await setFoundationComposerDraft(
+                '',
+                'context overflow outer composer cleanup',
+              );
             }
             await deleteFoundationConversation(preparedConversationId);
           } catch (cleanupError) {
             throw Object.assign(
               new Error(
                 'agent.acceptance.foundationContextOverflowCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-INVALID_REFERENCE'
+          && preparedConversationId
+        ) {
+          try {
+            clearFoundationLocalConversationProjection(
+              preparedConversationId,
+            );
+            const textarea = document.querySelector<HTMLTextAreaElement>(
+              '[data-pt-agent-composer-input]',
+            );
+            if (textarea) {
+              await setFoundationComposerDraft(
+                '',
+                'invalid reference outer composer cleanup',
+              );
+            }
+            await cleanupFoundationToolConversation(
+              preparedConversationId,
+              preparedTurnId ?? '',
+            );
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationInvalidReferenceCleanupFailed',
               ),
               {
                 primaryError: error,
@@ -16847,6 +23179,27 @@ export function installAcceptanceHarness(): void {
             throw Object.assign(
               new Error(
                 'agent.acceptance.foundationCredentialMissingAttestationCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-EXECUTOR_UNAVAILABLE'
+          && preparedConversationId
+        ) {
+          try {
+            await cleanupFoundationToolConversation(
+              preparedConversationId,
+              preparedTurnId ?? '',
+            );
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationExecutorUnavailableCleanupFailed',
               ),
               {
                 primaryError: error,

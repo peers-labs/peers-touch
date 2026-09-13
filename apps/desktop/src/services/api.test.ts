@@ -8,6 +8,7 @@ import {
   api,
   classifyAgentTurnTerminalEvent,
   createAgentTurnSourceDelivery,
+  normalizeAgentTurnStreamError,
   streamAgentTurn,
   streamAgentTurnReplay,
   toAgentTurnReplayWireInput,
@@ -153,6 +154,250 @@ describe('agentTurnStreamErrorFromData', () => {
 
     expect(error.resolution).toBeUndefined()
   })
+
+  it('maps the exact forbidden-actor payload to switch-account recovery', () => {
+    const error = agentTurnStreamErrorFromData({
+      type: 'error',
+      error: 'agent.errors.forbiddenActor',
+      error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+      locale_key: 'agent.errors.forbiddenActor',
+      retryable: false,
+      terminal: true,
+      details: {
+        resource_kind: 'conversation',
+        resource_id: 'conversation-owned-by-bob',
+      },
+    })
+
+    expect(error.typedError).toEqual({
+      error: 'agent.errors.forbiddenActor',
+      error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+      locale_key: 'agent.errors.forbiddenActor',
+      retryable: false,
+      terminal: true,
+      details: {
+        resource_kind: 'conversation',
+        resource_id: 'conversation-owned-by-bob',
+      },
+    })
+    expect(error.resolution).toEqual({
+      type: 'switchAccount',
+      resourceKind: 'conversation',
+      resourceId: 'conversation-owned-by-bob',
+      label: 'agent.recovery.switchAccount',
+    })
+  })
+
+  it('normalizes an immediate native forbidden-actor rejection without widening details', () => {
+    const error = normalizeAgentTurnStreamError(Object.assign(
+      new Error('Agent turn rejected'),
+      {
+        details: {
+          error_code: 'OWNERSHIP_FORBIDDEN_ACTOR',
+          locale_key: 'agent.errors.forbiddenActor',
+          retryable: 'false',
+          terminal: 'true',
+          resource_kind: 'conversation',
+          resource_id: 'conversation-owned-by-bob',
+          body: 'must not enter the typed payload',
+        },
+      },
+    ))
+
+    expect(error.typedError).toEqual({
+      error: 'Agent turn rejected',
+      error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+      locale_key: 'agent.errors.forbiddenActor',
+      retryable: false,
+      terminal: true,
+      details: {
+        resource_kind: 'conversation',
+        resource_id: 'conversation-owned-by-bob',
+      },
+    })
+    expect(error.resolution?.type).toBe('switchAccount')
+  })
+
+  it('does not map malformed forbidden-actor details to account recovery', () => {
+    const error = agentTurnStreamErrorFromData({
+      error: 'agent.errors.forbiddenActor',
+      error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+      locale_key: 'agent.errors.forbiddenActor',
+      retryable: false,
+      terminal: true,
+      details: {
+        resource_kind: 'conversation',
+      },
+    })
+
+    expect(error.typedError?.details).toEqual({
+      resource_kind: 'conversation',
+    })
+    expect(error.resolution).toBeUndefined()
+  })
+
+  it('maps the exact incompatible-capability contract to model recovery', () => {
+    const error = agentTurnStreamErrorFromData({
+      type: 'error',
+      error: 'agent.errors.incompatibleCapability',
+      error_type: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+      locale_key: 'agent.errors.incompatibleCapability',
+      retryable: false,
+      terminal: true,
+      details: {
+        capability_id: 'tool:skills_list',
+        reason_code: 'runtime_capability_unavailable',
+      },
+    })
+
+    expect(error.typedError).toEqual({
+      error: 'agent.errors.incompatibleCapability',
+      error_type: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+      locale_key: 'agent.errors.incompatibleCapability',
+      retryable: false,
+      terminal: true,
+      details: {
+        capability_id: 'tool:skills_list',
+        reason_code: 'runtime_capability_unavailable',
+      },
+    })
+    expect(error.resolution).toEqual({
+      type: 'chooseCompatibleModel',
+      capabilityId: 'tool:skills_list',
+      reasonCode: 'runtime_capability_unavailable',
+      label: 'agent.recovery.chooseCompatibleModel',
+    })
+  })
+
+  it('requires the exact incompatible-capability booleans and safe details', () => {
+    const malformed = agentTurnStreamErrorFromData({
+      error: 'agent.errors.incompatibleCapability',
+      error_type: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+      locale_key: 'agent.errors.incompatibleCapability',
+      retryable: true,
+      terminal: true,
+      details: {
+        capability_id: 'tool:skills_list',
+        reason_code: 'runtime_capability_unavailable',
+        private_detail: 'must-not-enable-recovery',
+      },
+    })
+
+    expect(malformed.resolution).toBeUndefined()
+  })
+
+  it('normalizes an immediate native incompatible-capability rejection', () => {
+    const error = normalizeAgentTurnStreamError(Object.assign(
+      new Error('Agent turn rejected'),
+      {
+        details: {
+          error_code: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+          locale_key: 'agent.errors.incompatibleCapability',
+          retryable: 'false',
+          terminal: 'true',
+          capability_id: 'tool:skills_list',
+          reason_code: 'runtime_capability_unavailable',
+          body: 'must not enter the typed payload',
+        },
+      },
+    ))
+
+    expect(error.typedError).toEqual({
+      error: 'Agent turn rejected',
+      error_type: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+      locale_key: 'agent.errors.incompatibleCapability',
+      retryable: false,
+      terminal: true,
+      details: {
+        capability_id: 'tool:skills_list',
+        reason_code: 'runtime_capability_unavailable',
+      },
+    })
+    expect(error.resolution).toEqual({
+      type: 'chooseCompatibleModel',
+      capabilityId: 'tool:skills_list',
+      reasonCode: 'runtime_capability_unavailable',
+      label: 'agent.recovery.chooseCompatibleModel',
+    })
+  })
+
+  it('projects the exact nested lifecycle interruption and Recover resolution', () => {
+    const error = agentTurnStreamErrorFromData({
+      error: 'station_restart_interrupted',
+      terminal_reason: 'station_restart_interrupted',
+      outcome_error: {
+        error: 'agent.errors.lifecycleInterrupted',
+        error_type: 'LIFECYCLE_INTERRUPTED',
+        locale_key: 'agent.errors.lifecycleInterrupted',
+        retryable: true,
+        terminal: true,
+        details: {
+          turn_id: 'turn-interrupted',
+          reason_code: 'station_restart_interrupted',
+        },
+      },
+    })
+
+    expect(error.message).toBe('agent.errors.lifecycleInterrupted')
+    expect(error.typedError).toEqual({
+      error: 'agent.errors.lifecycleInterrupted',
+      error_type: 'LIFECYCLE_INTERRUPTED',
+      locale_key: 'agent.errors.lifecycleInterrupted',
+      retryable: true,
+      terminal: true,
+      details: {
+        turn_id: 'turn-interrupted',
+        reason_code: 'station_restart_interrupted',
+      },
+    })
+    expect(error.resolution).toEqual({
+      type: 'recover',
+      turnId: 'turn-interrupted',
+      reasonCode: 'station_restart_interrupted',
+      label: 'agent.recovery.recover',
+    })
+  })
+
+  it.each([
+    ['non-retryable', {
+      turn_id: 'turn-interrupted',
+      reason_code: 'station_restart_interrupted',
+    }, false, true],
+    ['non-terminal', {
+      turn_id: 'turn-interrupted',
+      reason_code: 'station_restart_interrupted',
+    }, true, false],
+    ['missing turn id', {
+      reason_code: 'station_restart_interrupted',
+    }, true, true],
+    ['unsafe extra detail', {
+      turn_id: 'turn-interrupted',
+      reason_code: 'station_restart_interrupted',
+      internal_error: 'must-not-enable-recovery',
+    }, true, true],
+    ['unsafe non-string detail', {
+      turn_id: 'turn-interrupted',
+      reason_code: 'station_restart_interrupted',
+      internal_error: { diagnostic: 'must-not-enable-recovery' },
+    }, true, true],
+  ])('rejects %s lifecycle interruption recovery', (_case, details, retryable, terminal) => {
+    const error = agentTurnStreamErrorFromData({
+      outcome_error: {
+        error: 'agent.errors.lifecycleInterrupted',
+        error_type: 'LIFECYCLE_INTERRUPTED',
+        locale_key: 'agent.errors.lifecycleInterrupted',
+        retryable,
+        terminal,
+        details,
+      },
+      resolution: {
+        type: 'recover',
+        label: 'agent.recovery.recover',
+      },
+    })
+
+    expect(error.resolution).toBeUndefined()
+  })
 })
 
 describe('api.health', () => {
@@ -220,6 +465,48 @@ describe('Agent turn stream completion', () => {
     expect(classifyAgentTurnTerminalEvent({ event: 'cancelled', data: {} })).toBe('cancelled')
   })
 
+  it('classifies only a strict nested lifecycle interruption as interrupted', () => {
+    const interruption = {
+      error: 'agent.errors.lifecycleInterrupted',
+      error_type: 'LIFECYCLE_INTERRUPTED',
+      locale_key: 'agent.errors.lifecycleInterrupted',
+      retryable: true,
+      terminal: true,
+      details: {
+        turn_id: 'turn-interrupted',
+        reason_code: 'station_restart_interrupted',
+      },
+    }
+
+    expect(classifyAgentTurnTerminalEvent({
+      event: 'error',
+      data: { outcome_error: interruption },
+    })).toBe('interrupted')
+    expect(classifyAgentTurnTerminalEvent({
+      event: 'error',
+      data: interruption,
+    })).toBe('failed')
+    expect(classifyAgentTurnTerminalEvent({
+      event: 'error',
+      data: {
+        outcome_error: {
+          ...interruption,
+          details: {
+            ...interruption.details,
+            internal_error: 'must-not-enable-interrupted',
+          },
+        },
+      },
+    })).toBe('failed')
+    expect(classifyAgentTurnTerminalEvent({
+      event: 'error',
+      data: {
+        error: 'provider failed',
+        error_type: 'PROVIDER_FAILURE',
+      },
+    })).toBe('failed')
+  })
+
   it('uses replay snapshot status as the terminal authority', () => {
     expect(classifyAgentTurnTerminalEvent({
       event: 'snapshot',
@@ -281,6 +568,152 @@ describe('Agent turn stream completion', () => {
 
     expect(source.conversationId).toBe('')
     expect(source.turnId).toBe('')
+  })
+
+  it('keeps a Browser lifecycle interruption out of the failed callback', async () => {
+    const browserWindow = Object.assign(new EventTarget(), {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    })
+    vi.stubGlobal('window', browserWindow)
+    ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
+      'http://127.0.0.1:3030'
+    const rawData = {
+      error: 'station_restart_interrupted',
+      terminal_reason: 'station_restart_interrupted',
+      conversation_id: 'conversation-1',
+      turn_id: 'turn-interrupted',
+      seq: 9,
+      outcome_error: {
+        error: 'agent.errors.lifecycleInterrupted',
+        error_type: 'LIFECYCLE_INTERRUPTED',
+        locale_key: 'agent.errors.lifecycleInterrupted',
+        retryable: true,
+        terminal: true,
+        details: {
+          turn_id: 'turn-interrupted',
+          reason_code: 'station_restart_interrupted',
+        },
+      },
+    }
+    mockFetch.mockResolvedValue(new Response(
+      `event: error\ndata: ${JSON.stringify(rawData)}\n\n`,
+      {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      },
+    ))
+    const onEvent = vi.fn()
+    const onDone = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurn(
+      {
+        client_idempotency_key: 'request-browser-interrupted',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'resume after restart',
+      },
+      onEvent,
+      onDone,
+      onError,
+      'ptid:person:owner',
+    )
+
+    await vi.waitFor(() => expect(onEvent).toHaveBeenCalledTimes(1))
+    expect(onEvent.mock.calls[0]?.[0]).toMatchObject({
+      event: 'error',
+      data: {
+        ...rawData,
+        streamGeneration: expect.any(Number),
+      },
+    })
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('settles a Native lifecycle interruption without reporting failure', async () => {
+    type NativeStreamEvent = {
+      payload: {
+        streamId: string
+        ptid: string
+        event: string
+        data: Record<string, unknown>
+      }
+    }
+    let listener: ((event: NativeStreamEvent) => void) | undefined
+    let startedStreamId = ''
+    const unlisten = vi.fn()
+    mockListen.mockImplementation(async (_event, callback) => {
+      listener = callback as (event: NativeStreamEvent) => void
+      return unlisten
+    })
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      if (command !== 'agent_execute_turn_stream') {
+        return Promise.reject(new Error(`unexpected command: ${command}`))
+      }
+      startedStreamId = String(
+        (args as { input: { stream_id: string } }).input.stream_id,
+      )
+      return Promise.resolve({
+        ok: true,
+        data: {
+          command,
+          status: JSON.stringify({ stream_id: startedStreamId }),
+        },
+      })
+    })
+    const onEvent = vi.fn()
+    const onDone = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurn(
+      {
+        client_idempotency_key: 'request-native-interrupted',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'resume after restart',
+      },
+      onEvent,
+      onDone,
+      onError,
+      'ptid:person:owner',
+    )
+    await vi.waitFor(() => {
+      expect(listener).toBeTypeOf('function')
+      expect(startedStreamId).not.toBe('')
+    })
+
+    listener?.({
+      payload: {
+        streamId: startedStreamId,
+        ptid: 'ptid:person:owner',
+        event: 'error',
+        data: {
+          error: 'station_restart_interrupted',
+          terminal_reason: 'station_restart_interrupted',
+          conversation_id: 'conversation-1',
+          turn_id: 'turn-interrupted',
+          seq: 9,
+          outcome_error: {
+            error: 'agent.errors.lifecycleInterrupted',
+            error_type: 'LIFECYCLE_INTERRUPTED',
+            locale_key: 'agent.errors.lifecycleInterrupted',
+            retryable: true,
+            terminal: true,
+            details: {
+              turn_id: 'turn-interrupted',
+              reason_code: 'station_restart_interrupted',
+            },
+          },
+        },
+      },
+    })
+
+    expect(onEvent).toHaveBeenCalledTimes(1)
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect(onError).not.toHaveBeenCalled()
+    expect(unlisten).toHaveBeenCalledTimes(1)
   })
 
   it('source-binds a Browser pre-admission error before projection metadata', async () => {
@@ -347,6 +780,139 @@ describe('Agent turn stream completion', () => {
         },
       },
     }))
+  })
+
+  it('source-binds an immediate Browser typed HTTP rejection', async () => {
+    const browserWindow = Object.assign(new EventTarget(), {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    })
+    vi.stubGlobal('window', browserWindow)
+    ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
+      'http://127.0.0.1:3030'
+    mockFetch.mockResolvedValue(new Response(
+      JSON.stringify({ error: 'agent.errors.forbiddenActor' }),
+      {
+        status: 403,
+        headers: {
+          'x-peers-error-code': 'OWNERSHIP_FORBIDDEN_ACTOR',
+          'x-peers-error-locale-key': 'agent.errors.forbiddenActor',
+          'x-peers-error-retryable': 'false',
+          'x-peers-error-terminal': 'true',
+          'x-peers-error-details': JSON.stringify({
+            resource_kind: 'conversation',
+            resource_id: 'conversation-owned-by-bob',
+          }),
+        },
+      },
+    ))
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurn(
+      {
+        client_idempotency_key: 'request-browser-forbidden',
+        conversation_id: 'conversation-owned-by-bob',
+        agent_id: 'agent-1',
+        user_input: 'forbidden',
+      },
+      onEvent,
+      vi.fn(),
+      onError,
+      'ptid:person:alice',
+    )
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'error',
+      data: expect.objectContaining({
+        error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+        locale_key: 'agent.errors.forbiddenActor',
+        retryable: false,
+        terminal: true,
+      }),
+    }))
+    expect(onError.mock.calls[0]?.[0]).toMatchObject({
+      typedError: {
+        error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+        details: {
+          resource_kind: 'conversation',
+          resource_id: 'conversation-owned-by-bob',
+        },
+      },
+      resolution: {
+        type: 'switchAccount',
+      },
+    })
+  })
+
+  it('preserves incompatible-capability details from an immediate Browser rejection', async () => {
+    const browserWindow = Object.assign(new EventTarget(), {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    })
+    vi.stubGlobal('window', browserWindow)
+    ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
+      'http://127.0.0.1:3030'
+    mockFetch.mockResolvedValue(new Response(
+      JSON.stringify({ error: 'agent.errors.incompatibleCapability' }),
+      {
+        status: 409,
+        headers: {
+          'x-peers-error-code': 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+          'x-peers-error-locale-key': 'agent.errors.incompatibleCapability',
+          'x-peers-error-retryable': 'false',
+          'x-peers-error-terminal': 'true',
+          'x-peers-error-details': JSON.stringify({
+            capability_id: 'tool:skills_list',
+            reason_code: 'runtime_capability_unavailable',
+          }),
+        },
+      },
+    ))
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurn(
+      {
+        client_idempotency_key: 'request-browser-incompatible-capability',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'inspect this image',
+      },
+      onEvent,
+      vi.fn(),
+      onError,
+      'ptid:person:alice',
+    )
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'error',
+      data: expect.objectContaining({
+        error_type: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+        locale_key: 'agent.errors.incompatibleCapability',
+        retryable: false,
+        terminal: true,
+        details: {
+          capability_id: 'tool:skills_list',
+          reason_code: 'runtime_capability_unavailable',
+        },
+      }),
+    }))
+    expect(onError.mock.calls[0]?.[0]).toMatchObject({
+      typedError: {
+        error_type: 'RUNTIME_INCOMPATIBLE_CAPABILITY',
+        details: {
+          capability_id: 'tool:skills_list',
+          reason_code: 'runtime_capability_unavailable',
+        },
+      },
+      resolution: {
+        type: 'chooseCompatibleModel',
+        label: 'agent.recovery.chooseCompatibleModel',
+      },
+    })
   })
 
   it('source-binds a native pre-admission error before projection metadata', async () => {
@@ -445,6 +1011,94 @@ describe('Agent turn stream completion', () => {
     expect(unlisten).toHaveBeenCalledTimes(1)
   })
 
+  it('source-binds an immediate native typed rejection from the start command', async () => {
+    mockListen.mockResolvedValue(() => undefined)
+    vi.mocked(invoke).mockImplementation((command) => {
+      if (command !== 'agent_execute_turn_stream') {
+        return Promise.reject(new Error(`unexpected command: ${command}`))
+      }
+      return Promise.resolve({
+        ok: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'agent.errors.forbiddenActor',
+          details: {
+            error_code: 'OWNERSHIP_FORBIDDEN_ACTOR',
+            locale_key: 'agent.errors.forbiddenActor',
+            retryable: 'false',
+            terminal: 'true',
+            resource_kind: 'conversation',
+            resource_id: 'conversation-owned-by-bob',
+          },
+        },
+      })
+    })
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurn(
+      {
+        client_idempotency_key: 'request-native-forbidden',
+        conversation_id: 'conversation-owned-by-bob',
+        agent_id: 'agent-1',
+        user_input: 'forbidden',
+      },
+      onEvent,
+      vi.fn(),
+      onError,
+      'ptid:person:alice',
+    )
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'error',
+      data: expect.objectContaining({
+        error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+        locale_key: 'agent.errors.forbiddenActor',
+        retryable: false,
+        terminal: true,
+        conversationId: 'conversation-owned-by-bob',
+        agentId: 'agent-1',
+        streamGeneration: expect.any(Number),
+      }),
+      sourceDelivery: {
+        transport: 'station-sse',
+        ptid: 'ptid:person:alice',
+        conversationId: 'conversation-owned-by-bob',
+        turnId: '',
+        sequence: 0,
+        rawPayload: {
+          eventType: 'error',
+          data: {
+            error: 'agent.errors.forbiddenActor',
+            error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+            locale_key: 'agent.errors.forbiddenActor',
+            retryable: false,
+            terminal: true,
+            details: {
+              resource_kind: 'conversation',
+              resource_id: 'conversation-owned-by-bob',
+            },
+            conversationId: 'conversation-owned-by-bob',
+            agentId: 'agent-1',
+          },
+        },
+      },
+    }))
+    expect(onError.mock.calls[0]?.[0]).toMatchObject({
+      typedError: {
+        error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
+        details: {
+          resource_kind: 'conversation',
+          resource_id: 'conversation-owned-by-bob',
+        },
+      },
+      resolution: {
+        type: 'switchAccount',
+      },
+    })
+  })
+
   it('cancels a native transport aborted while its start command is pending', async () => {
     let resolveStart: (() => void) | undefined
     let startedStreamId = ''
@@ -499,9 +1153,23 @@ describe('Agent turn stream completion', () => {
   })
 
   it('disconnects a native transport without cancelling the durable turn', async () => {
-    mockListen.mockResolvedValue(() => undefined)
+    type NativeTurnEvent = {
+      payload: {
+        streamId: string
+        ptid: string
+        event: string
+        data: Record<string, unknown>
+      }
+    }
+    let listener: ((event: NativeTurnEvent) => void) | undefined
+    let startedStreamId = ''
+    mockListen.mockImplementation(async (_event, callback) => {
+      listener = callback as (event: NativeTurnEvent) => void
+      return () => undefined
+    })
     vi.mocked(invoke).mockImplementation((command, args) => {
       const streamId = String((args as { input?: { stream_id?: string } })?.input?.stream_id || '')
+      if (command === 'agent_execute_turn_stream') startedStreamId = streamId
       if (command === 'agent_execute_turn_stream' || command === 'agent_disconnect_turn_stream') {
         return Promise.resolve({
           ok: true,
@@ -514,6 +1182,8 @@ describe('Agent turn stream completion', () => {
       return Promise.reject(new Error(`unexpected command: ${command}`))
     })
 
+    const onEvent = vi.fn()
+    const onDone = vi.fn()
     const controller = streamAgentTurn(
       {
         client_idempotency_key: 'request-transport-disconnect',
@@ -521,8 +1191,8 @@ describe('Agent turn stream completion', () => {
         agent_id: 'agent-1',
         user_input: 'hello',
       },
-      vi.fn(),
-      vi.fn(),
+      onEvent,
+      onDone,
       vi.fn(),
       'ptid:person:owner',
     )
@@ -534,13 +1204,49 @@ describe('Agent turn stream completion', () => {
       })
     })
 
-    controller.disconnectTransport()
+    let disconnectSettled = false
+    const disconnect = controller.disconnectTransport().then(() => {
+      disconnectSettled = true
+    })
 
     await vi.waitFor(() => {
       expect(invoke).toHaveBeenCalledWith('agent_disconnect_turn_stream', {
         input: { stream_id: expect.any(String) },
       })
     })
+    listener?.({
+      payload: {
+        streamId: startedStreamId,
+        ptid: 'ptid:person:owner',
+        event: 'done',
+        data: {
+          turnId: 'turn-1',
+          conversationId: 'conversation-1',
+          seq: 4,
+        },
+      },
+    })
+    expect(onDone).not.toHaveBeenCalled()
+    expect(disconnectSettled).toBe(false)
+
+    listener?.({
+      payload: {
+        streamId: startedStreamId,
+        ptid: 'ptid:person:owner',
+        event: 'connection_lost',
+        data: {
+          turnId: 'turn-1',
+          conversationId: 'conversation-1',
+          seq: 3,
+          recoveryHandoff: true,
+        },
+      },
+    })
+    await disconnect
+    expect(disconnectSettled).toBe(true)
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'connection_lost',
+    }))
     expect(invoke).not.toHaveBeenCalledWith('agent_cancel_turn', expect.anything())
     expect(invoke).not.toHaveBeenCalledWith('agent_cancel_turn_stream', expect.anything())
   })
@@ -703,6 +1409,44 @@ describe('api.startAgentTurnReplayStream', () => {
     expect(AGENT_REPLAY_RETRY_DELAYS_MS.length + 1).toBe(6)
   })
 
+  it('retries an untyped Browser HTTP failure instead of projecting a terminal error', async () => {
+    vi.useFakeTimers()
+    try {
+      const browserWindow = Object.assign(new EventTarget(), {
+        setTimeout: globalThis.setTimeout.bind(globalThis),
+        clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      })
+      vi.stubGlobal('window', browserWindow)
+      ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
+        'http://127.0.0.1:3030'
+      mockFetch.mockImplementation(() => Promise.resolve(
+        new Response('upstream unavailable', { status: 502 }),
+      ))
+      const onEvent = vi.fn()
+      const onError = vi.fn()
+
+      streamAgentTurnReplay(
+        {
+          conversation_id: 'conversation-1',
+          turn_id: 'turn-1',
+          after_seq: 4,
+        },
+        onEvent,
+        onError,
+        'ptid:person:owner',
+      )
+
+      await vi.runAllTimersAsync()
+      expect(mockFetch).toHaveBeenCalledTimes(AGENT_REPLAY_RETRY_DELAYS_MS.length + 1)
+      expect(onEvent.mock.calls.some(([event]) => event.event === 'error')).toBe(false)
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Agent stream returned HTTP 502' }),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('fails a Browser replay when the Station SSE tail stops producing heartbeats', async () => {
     vi.useFakeTimers()
     try {
@@ -758,6 +1502,20 @@ describe('api.startAgentTurnReplayStream', () => {
       conversation_id: 'conversation-1',
       turn_id: 'turn-1',
       afterSequence: 4,
+    })
+  })
+
+  it('selects a retained source attempt only when replay requests it', () => {
+    expect(toAgentTurnReplayWireInput({
+      conversation_id: 'conversation-1',
+      turn_id: 'turn-1',
+      after_seq: 0,
+      attempt_id: 'attempt-1',
+    })).toEqual({
+      conversation_id: 'conversation-1',
+      turn_id: 'turn-1',
+      afterSequence: 0,
+      attempt_id: 'attempt-1',
     })
   })
 

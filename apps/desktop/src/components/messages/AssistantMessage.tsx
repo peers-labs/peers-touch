@@ -19,16 +19,24 @@ import {
   Braces,
   Workflow,
   ExternalLink,
+  LogOut,
   Minimize2,
+  RotateCcw,
   Settings,
+  X,
 } from 'lucide-react';
 import type { ChatMessage, DelegationTaskInfo, MessageArtifact } from '../../store/chat';
 import { extractMessageArtifacts, useChatStore } from '../../store/chat';
 import { useAgentStore } from '../../store/agent';
 import { usePortalStore } from '../../store/portal';
 import { useTTSStore } from '../../store/tts';
-import { parseAgentChatConfig, api } from '../../services/desktop_api';
+import {
+  api,
+  isAgentContextOverflowError,
+  parseAgentChatConfig,
+} from '../../services/desktop_api';
 import { EVENT, eventBus } from '../../kernel/events';
+import { identityRuntime } from '../../kernel/identityRuntime';
 import { LazyMarkdown as Markdown } from '../LazyMarkdown';
 import { AgentIconTile } from '../agent/AgentIconTile';
 import { ProviderIcon } from '../settings/ProviderIcon';
@@ -351,6 +359,9 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const retryTurnRecovery = useChatStore(s => s.retryTurnRecovery);
   const reloadTurnSnapshot = useChatStore(s => s.reloadTurnSnapshot);
   const requestComposerFocus = useChatStore(s => s.requestComposerFocus);
+  const requestComposerReferenceRemoval = useChatStore(
+    s => s.requestComposerReferenceRemoval,
+  );
   const sendMessage = useChatStore(s => s.sendMessage);
   const translateMessage = useChatStore(s => s.translateMessage);
   const openThread = usePortalStore(s => s.openThread);
@@ -369,13 +380,13 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const agents = useAgentStore(s => s.agents);
   const availableModels = useAgentStore(s => s.availableModels);
   const selectedAgent = useAgentStore(s => s.selectedAgent);
+  const setAgentSurface = useAgentStore(s => s.setAgentSurface);
   const activeAgent = agents.find((agent) => agent.name === selectedAgent);
   const activeChatConfig = activeAgent ? parseAgentChatConfig(activeAgent) : {};
   const messageModel = message.model ? availableModels.find((model) => model.id === message.model) : undefined;
   const providerName = messageModel?.provider_name || messageModel?.provider_id || activeAgent?.provider || '';
   const agentDisplayName = activeAgent?.title || activeAgent?.name;
-  const isContextOverflow =
-    message.typedError?.error_type === 'CONTEXT_OVERFLOW';
+  const isContextOverflow = isAgentContextOverflowError(message.typedError);
   const resolutionLabel = message.resolution?.label.startsWith('agent.')
     ? t(message.resolution.label, { ns: 'agent' })
     : message.resolution?.label;
@@ -383,7 +394,15 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     ? 'configure-credential'
     : message.resolution?.type === 'openOriginal'
       ? 'open-original'
-      : 'true';
+      : message.resolution?.type === 'switchAccount'
+        ? 'switch-account'
+        : message.resolution?.type === 'chooseCompatibleModel'
+          ? 'choose-compatible-model'
+          : message.resolution?.type === 'recover'
+            ? 'recover'
+            : message.resolution?.type === 'removeReference'
+              ? 'remove-reference'
+            : 'true';
   const artifacts = useMemo(() => extractMessageArtifacts(message), [message]);
 
   const handleCopy = useCallback(() => {
@@ -439,6 +458,15 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     openTurnDetails(originalMessage.id, turnId);
   }, [message.id, openTurnDetails, t]);
 
+  const handleChooseCompatibleModel = useCallback(() => {
+    if (!activeAgent) {
+      toast.error(t('chat.message.resolution.actionFailed'));
+      return;
+    }
+    setAgentSurface(activeAgent.name, 'profile');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  }, [activeAgent, setAgentSurface, t]);
+
   const handleDelAndRegenerate = useCallback(() => {
     deleteAndRegenerateMessage(message.id);
   }, [deleteAndRegenerateMessage, message.id]);
@@ -471,6 +499,11 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-error-type={message.typedError?.error_type}
       data-pt-agent-error-resource-kind={message.typedError?.details.resource_kind}
       data-pt-agent-error-resource-id={message.typedError?.details.resource_id}
+      data-pt-agent-error-capability-id={message.typedError?.details.capability_id}
+      data-pt-agent-error-turn-id={message.typedError?.details.turn_id}
+      data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
+      data-pt-agent-error-reference-kind={message.typedError?.details.reference_kind}
+      data-pt-agent-error-reference-hash={message.typedError?.details.reference_hash}
       id={`agent-message-${message.id}`}
       align="flex-start"
       gap={8}
@@ -699,7 +732,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             >
               <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
               <div style={{ flex: 1 }}>
-                <div>{presentedError}</div>
+                <div data-pt-agent-message-error-text={message.error}>{presentedError}</div>
                 {isContextOverflow && (
                   <Button
                     data-pt-agent-message-error-recovery="reduce-context"
@@ -718,13 +751,25 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                     data-pt-agent-message-error-recovery={resolutionTarget}
                     type="primary"
                     size="small"
-                    danger={message.resolution.type !== 'openOriginal'}
+                    danger={
+                      message.resolution.type !== 'openOriginal'
+                      && message.resolution.type !== 'switchAccount'
+                      && message.resolution.type !== 'chooseCompatibleModel'
+                      && message.resolution.type !== 'recover'
+                    }
                     icon={
                       message.resolution.type === 'openProviderSettings'
+                      || message.resolution.type === 'chooseCompatibleModel'
                         ? <Settings size={14} />
                         : message.resolution.type === 'openOriginal'
                           ? <ExternalLink size={14} />
-                          : undefined
+                          : message.resolution.type === 'switchAccount'
+                            ? <LogOut size={14} />
+                            : message.resolution.type === 'recover'
+                              ? <RotateCcw size={14} />
+                              : message.resolution.type === 'removeReference'
+                                ? <X size={14} />
+                                : undefined
                     }
                     style={{ marginTop: 8 }}
                     onClick={async () => {
@@ -740,6 +785,25 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         if (message.resolution!.type === 'openOriginal') {
                           handleOpenOriginal(
                             message.resolution!.existingCommandId ?? '',
+                          );
+                          return;
+                        }
+                        if (message.resolution!.type === 'switchAccount') {
+                          await identityRuntime.logout();
+                          return;
+                        }
+                        if (message.resolution!.type === 'chooseCompatibleModel') {
+                          handleChooseCompatibleModel();
+                          return;
+                        }
+                        if (message.resolution!.type === 'recover') {
+                          await handleRetry();
+                          return;
+                        }
+                        if (message.resolution!.type === 'removeReference') {
+                          requestComposerReferenceRemoval(
+                            message.resolution!.referenceKind ?? '',
+                            message.resolution!.referenceHash ?? '',
                           );
                           return;
                         }

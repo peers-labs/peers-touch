@@ -45,6 +45,7 @@ from tooling.acceptance.gates.chat.native_support import (
     station_readback as shared_station_readback,
     stop_client,
     verify_runtime_fixture_ready,
+    wait_for_peer_key_bundle,
     wait_until,
 )
 
@@ -621,6 +622,16 @@ class NativeInteractionsGate(AcceptanceGate):
             "bob",
         )
         reply_id = str(reply["messageId"])
+        wait_until(
+            lambda: self.projection(
+                "alice",
+                kind,
+                conversation_id,
+                reply_id,
+            ),
+            f"alice {claim_kind} reply authority projection",
+            STEP_TIMEOUT,
+        )
         thread = self.step(
             f"{claim_kind}.thread.send",
             lambda: self.send(
@@ -633,6 +644,16 @@ class NativeInteractionsGate(AcceptanceGate):
             "bob",
         )
         thread_id = str(thread["messageId"])
+        wait_until(
+            lambda: self.projection(
+                "alice",
+                kind,
+                conversation_id,
+                thread_id,
+            ),
+            f"alice {claim_kind} thread authority projection",
+            STEP_TIMEOUT,
+        )
         nested = self.step(
             f"{claim_kind}.thread.nested.send",
             lambda: self.send(
@@ -1270,7 +1291,7 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         if not edit_command:
             raise GateError(f"{claim_kind} offline edit returned no command ID")
-        async_harness(
+        reaction = async_harness(
             self.clients["alice"],
             "submitMetadataInteraction",
             {
@@ -1281,6 +1302,32 @@ class NativeInteractionsGate(AcceptanceGate):
                 "reaction": "👍",
                 "remove": False,
             },
+        )
+        reaction_command = str(
+            (reaction or {}).get("command_id")
+            or (reaction or {}).get("commandId")
+            or ""
+        )
+        if not reaction_command:
+            raise GateError(
+                f"{claim_kind} offline reaction returned no command ID"
+            )
+        wait_until(
+            lambda: (
+                snapshot
+                if (
+                    snapshot := self.engine_snapshot(
+                        "alice",
+                        conversation_id,
+                        message_id,
+                        reaction_command,
+                    )
+                )
+                and (snapshot.get("intent") or {}).get("state") == "committed"
+                else None
+            ),
+            f"alice {claim_kind} offline reaction commit",
+            STEP_TIMEOUT,
         )
         async_harness(
             self.clients["alice"],
@@ -2308,6 +2355,10 @@ class NativeInteractionsGate(AcceptanceGate):
                 lambda: shared_federation_id(self.clients, ACTORS),
             )
 
+            wait_for_peer_key_bundle(
+                self.clients["alice"],
+                self.ptids["bob"],
+            )
             direct = async_harness(
                 self.clients["alice"],
                 "createDirectConversation",
