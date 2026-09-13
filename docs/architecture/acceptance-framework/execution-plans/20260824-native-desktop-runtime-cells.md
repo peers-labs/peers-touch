@@ -860,7 +860,9 @@ committed to this plan.
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
-| NDR-W8 macOS regression | in progress | Current-profile Direct, reply/thread, reaction, edit, recall, fresh Alice-to-Bob Native delivery at authority sequence 34, and cross-Station Alice/Bob avatar parity pass while formal Gate execution remains paused. One older Alice command remains `submitted` with no authority event and is absent on Bob, so submitted-command recovery and transcript convergence remain `PARTIAL/UNPROVEN`. Typing, multi-device, backup recovery, and three-client Group/MLS runtime cells remain. |
+| NDR-W8 macOS regression | in progress | Current-profile Direct, reply/thread, reaction, edit, recall, fresh Alice-to-Bob Native delivery at authority sequence 34, and cross-Station Alice/Bob avatar parity pass while formal Gate execution remains paused. One older Alice command remains `submitted` with no authority event and is absent on Bob, so submitted-command recovery and transcript convergence remain `PARTIAL/UNPROVEN`. MP-D31/MP-D32 are accepted; NDR-W8A/W8B implementation is in progress. Multi-device, backup recovery, and three-client Group/MLS runtime cells remain. |
+| NDR-W8A submitted-command reconciliation | source-complete; Native proof pending | MP-D31 contract, generated bindings, authenticated `/conversation/command/results`, canonical receipt/outbox/exact Device Inbox resolver, transactional hard-cut migration from historical payload-hash result IDs, deterministic endpoint/command result identity, and Device Engine startup reconciliation are implemented. Conversation packages, migration regression, two static contract tests, Desktop bounded/cursor-neutral reconciliation, and rollback-on-integrity-failure tests pass. Exact-source deployment and stale Native command convergence remain `UNPROVEN`. |
+| NDR-W8B federated ephemeral typing | source-complete; Native proof pending | MP-D32 signal, receiver-fixed ephemeral QoS, bounded no-row receiver dispatch, Runtime payload-kind-restricted transport, Authority-mediated routing, production identity-directory binding, and local/remote common receiver composition are implemented. Conversation and Federation package tests pass. Exact-source cross-Station Direct/Group typing, TTL/session/disconnect, deny, partial-failure, and durable-row runtime evidence remain `UNPROVEN`. |
 | NDR-W9 Windows cell | W9-A/B/C done; Product Closure reaches `reaction.ui`; W9-D remains partial | Exact-source Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` at `2ae0254691d97f16c3c08ef3e8639bdd91a91eac` proves Direct open/reopen, canonical Group genesis, Alice sequence 2, Bob sequence 3, Alice thread-reply sequence 4, toolbar geometry, and authority reaction sequence 5. Bob's Device Inbox lane 7 contains a canonical `ActorReadCursor` whose event identity is the payload SHA-256; the client expected a retired `read:` prefix, rejected the cursor as `MessageReceipt`, and blocked the lane-8 reaction. The shared Messaging Core decoder correction and four local Chat Gates pass, but exact-source deployment and Product Closure rerun remain pending. |
 | NDR-W10 D-18 multi-Station binding infrastructure | W10-A/B/C done; current-source W10-D proves Windows distinct bindings, exact Direct create/reopen, bidirectional Group transcript/thread delivery, follower receipt return, and durable remote-command authority commit | Authority sequence 5 and Alice consumption prove the cross-Station mutation path through reaction commit. Bob's queue remains blocked by the read-cursor discriminator defect, so reaction convergence, multi-device aggregation, PostgreSQL recovery, fault replay, and final Windows closure remain unproven pending the locally verified client correction. |
 
@@ -5400,27 +5402,106 @@ with message `01M2BBD09646PDAD3MPQ3VWGD6`, event
 the current send path is live; it does not resolve the stale submitted-command
 recovery defect. Chronological projection is therefore a verified sub-fix, but
 Direct transcript convergence remains `PARTIAL/UNPROVEN` until submitted
-commands obtain terminal authority readback or an explicit recoverable
-unknown-outcome state.
+commands obtain authoritative result readback and exact-command recovery.
 
-The submitted-command recovery branch is parked as
-`DESIGN_AMENDMENT_REQUIRED`. AO-D07 and the Federated IM design require
-reconnect recovery through durable Device Inbox delivery or a
-`(conversation_id, command_id)` result query, but the CA-W5 hard cut deleted
-the former result route/store without defining its replacement. Desktop
-correctly excludes `submitted` commands from blind replay, so this cannot be
-fixed by retrying or hiding the local row. The architecture owner must choose
-and specify either restored authoritative result readback or an explicit
-terminal unknown-outcome product contract before this branch resumes.
+The submitted-command recovery and cross-Station typing branches are no longer
+design-blocked. The Owner accepted MP-D31 and MP-D32 on 2026-09-13 by directing
+implementation of the reviewed package. Their authoritative contracts now live
+in the Messaging Platform `design.md`, `decisions.md`, `data-model.md`, and
+`integration.md`; the temporary proposal was removed to preserve one source of
+truth.
 
-Direct typing is independently `DESIGN_AMENDMENT_REQUIRED`. A live Native
-Alice-to-Bob test submitted `typing=true` successfully through
-`/conversation/typing`, but Bob's profile-five client remained
-`data-chat-typing="inactive"`. The Conversation service selected Bob correctly,
-then the production `TypingPublisher` emitted only to profile four's
-process-local Event Bus. D-10 and MP-D27 require cross-Station best-effort
-ephemeral signaling, but no peer wire contract defines Home-to-Home versus
-authority-mediated routing, authenticated bindings, remote validation, partial
-fan-out, or overload behavior. Desktop receive/TTL projection is already
-present and is not the missing owner. This branch remains parked until that
-Station signaling topology is accepted.
+### NDR-W8A: Submitted-Command Canonical Reconciliation
+
+Deliver:
+
+- Proto-first bounded result request/response for at most 64 exact command refs.
+- Conversation-owned resolver backed only by authority receipt, Federation
+  authority-command outbox, and canonical Device Inbox command-result state.
+- Device Engine lifecycle reconciliation on startup, reconnect, and explicit wake.
+- `HOME_PENDING` retention, accepted/rejected local settlement, and exact-byte
+  `NOT_FOUND` retry under the same command ID.
+- No synthetic Inbox item, lane cursor, authority-head mutation, or restored
+  proposal result route/store.
+
+Evidence:
+
+- Local accepted-response loss, remote pending restart, accepted/rejected result
+  loss, exact replay, hash/endpoint conflict, and later Inbox idempotency tests.
+- Native convergence of command `01M2B43C65M3QRQVK529SZTMSS` without hiding or
+  replacing message `01M2B43C1WNPRK9JHACMFZ4DA4`.
+
+### NDR-W8B: Authority-Mediated Federated Typing
+
+Deliver:
+
+- Proto-first `CONVERSATION_TYPING` payload and typed admission/fan-out signal.
+- Shared Federation receiver registry fixes this payload to bounded in-memory,
+  no-outbox, no-inbox, no-retry execution.
+- Sender Home routes admission to Conversation Authority; Authority selects active
+  recipients and groups them by verified Home Station.
+- Recipient Home validates source, target, authority, recipient, generation, and
+  expiry before local Event Bus publication.
+
+Evidence:
+
+- Direct start/stop/lost-stop TTL/session-switch/disconnect across profiles four and
+  five.
+- Group fan-out across at least two Stations, deny paths, partial failure, overload,
+  and zero durable typing-row proof.
+
+Source verification on 2026-09-13:
+
+- `go test ./subserver/conversation/...` from `apps/station/app`: PASS.
+- `go test ./core/federation/...` from `apps/station/frame`: PASS.
+- Desktop
+  `submitted_command_reconciliation_is_bounded_exact_and_cursor_neutral`: PASS.
+- Desktop `reconciliation_integrity_failure_rolls_back_the_whole_batch`: PASS.
+- Messaging Platform MP-D31/MP-D32 static contract tests: 2/2 PASS.
+- Historical command-result item identity migration regression: PASS, including
+  lane/state/receipt preservation and idempotent restart.
+- `station-api-ownership`: PASS with 64 declared capabilities, 64 governed
+  routes, and zero diagnostics after moving protobuf decoding out of the
+  Conversation application layer and registering `chat.command.results`.
+- `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop`:
+  PASS with existing warnings.
+- `pnpm --dir apps/desktop run check`: PASS after proto generation completed.
+- Source-bound Acceptance runs PASS for `proto-build`,
+  `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`,
+  `chat-native-visible-static`, `station-federation-unit`,
+  `acceptance-plan-self`, `acceptance-infra-validation`, and
+  `acceptance-runtime-provisioning-self`.
+- `git diff --check`: PASS.
+
+These checks prove current-source composition and deterministic behavior only.
+They do not prove the historical stale command or cross-Station Native typing
+journeys until exact source is deployed to the authorized profiles.
+
+Runtime preflight on 2026-09-13:
+
+- `chat-native-four` resolves to remote Station
+  `http://10.37.245.247:18132`, deploy env `chat-native-four`, and is healthy,
+  but still runs old source `7d5137c7`.
+- `chat-native-five` resolves to remote Station
+  `http://10.37.221.38:18132`, deploy env `chat-native-five`, and is healthy,
+  but still runs old source `eecb3e62`.
+- The canonical source-sync path deploys `git rev-parse HEAD` only. W8A/W8B
+  remain uncommitted at HEAD `98943699e45a42f6e1fd7a9bd203c69f0442f501`;
+  running `make station` now would deploy the old tree and cannot produce
+  source-equal evidence.
+- No Station deploy, restart, reset, commit, push, or retained-data mutation
+  occurred during this preflight.
+- Acceptance Gap Detector correctly remains `UNPROVEN`: exact-source Native
+  receiver evidence has not run. Hard Rules pass. Existing debugger probes and
+  their two local notes remain outside the W8A/W8B commit scope.
+
+Concurrency Decision: hybrid. The integrator serially owns authoritative docs,
+shared proto, generated artifacts, composition/registry files, final reconciliation,
+commit, deployment, and Native proof. After proto generation freezes the contract,
+NDR-W8A Station/Desktop implementation and NDR-W8B Federation/Conversation
+implementation may proceed in parallel only with disjoint write sets and focused
+checks. Deployment and shared runtime evidence remain serial.
+
+Carol three-client Group/MLS remains parked because creating another worktree is a
+separate Git topology operation. No reset, commit, push, deployment, branch switch,
+or worktree creation is implied by MP-D31/MP-D32 acceptance.

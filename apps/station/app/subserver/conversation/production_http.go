@@ -864,6 +864,23 @@ func (s *subServer) handleSubmitTyping(
 	return response, mapProductionConversationError(ctx, err)
 }
 
+func (s *subServer) handleResolveCommandResults(
+	ctx context.Context,
+	request *chatmodel.ResolveConversationCommandResultsRequest,
+) (*chatmodel.ResolveConversationCommandResultsResponse, error) {
+	authenticated, _, err := authenticatedConversationActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.composition.CommandResultHandler.Resolve(
+		ctx,
+		authenticated,
+		request,
+	)
+
+	return response, mapProductionConversationError(ctx, err)
+}
+
 func (s *subServer) handleSubmitReadCursor(
 	ctx context.Context,
 	request *chatmodel.SubmitConversationReadCursorRequest,

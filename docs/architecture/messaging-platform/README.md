@@ -1,8 +1,8 @@
 # Messaging Platform
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-08-08 | **Updated**: 2026-09-06
+> **Version**: v1.4
+> **Created**: 2026-08-08 | **Updated**: 2026-09-13
 > **Owner**: Messaging Platform Team
 > **Module**: `model/domain/chat/`, `apps/station/app/subserver/`, `apps/desktop/`, `apps/mobile/`
 >
@@ -86,10 +86,11 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
 ## 5. 当前门状态
 
 - Product：`PRODUCT_ACCEPTED`
-- Architecture：`ARCHITECTURE_ACCEPTED` through revised `MP-D30` and
+- Architecture：`ARCHITECTURE_ACCEPTED` through revised `MP-D32` and
   `AO-D01..AO-D06`; `MP-D29` follower projection evidence remains valid under
   the Conversation owner, and Conversation DDD plus resource-owned APIs are
-  accepted.
+  accepted. `MP-D31` defines canonical submitted-command reconciliation and
+  `MP-D32` defines Authority-mediated cross-Station ephemeral typing.
 - Plan：CA-HC hard-cut plan `PLAN_APPROVED`; the older Messaging Platform plan is
   superseded for Station authority/API ownership while its Device Messaging Engine
   and MP-W14 follower-projection work remain historical input, not a second

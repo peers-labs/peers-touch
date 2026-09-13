@@ -47,6 +47,8 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::{Mutex, MutexGuard};
 
+pub const COMMAND_RECONCILIATION_BATCH_LIMIT: usize = 64;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandOutboxEntry {
     pub command_id: String,
@@ -54,6 +56,32 @@ pub struct CommandOutboxEntry {
     pub command_bytes: Vec<u8>,
     pub attempt_count: u32,
     pub next_attempt_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubmittedCommand {
+    pub command_id: String,
+    pub conversation_id: String,
+    pub command_bytes: Vec<u8>,
+    pub command_sha256: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandReconciliationDisposition {
+    HomePending,
+    Accepted,
+    Failed(String),
+    Superseded(String),
+    NotFound,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandReconciliation {
+    pub command_id: String,
+    pub conversation_id: String,
+    pub command_bytes: Vec<u8>,
+    pub command_sha256: Vec<u8>,
+    pub disposition: CommandReconciliationDisposition,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1021,6 +1049,120 @@ impl MessagingStore {
             )
             .optional()
             .map_err(|error| error.to_string())
+    }
+
+    pub fn submitted_commands(&self) -> Result<Vec<SubmittedCommand>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT o.command_id, o.conversation_id, o.command_bytes
+                 FROM messaging_command_outbox o
+                 JOIN messaging_local_commands l ON l.command_id = o.command_id
+                 WHERE o.state = 'submitted'
+                   AND l.state = 'submitted'
+                   AND l.conversation_id = o.conversation_id
+                   AND l.command_bytes = o.command_bytes
+                 ORDER BY o.created_at_unix_ms ASC, o.command_id ASC
+                 LIMIT 64",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([], |row| {
+                let command_bytes = row.get::<_, Vec<u8>>(2)?;
+                Ok(SubmittedCommand {
+                    command_id: row.get(0)?,
+                    conversation_id: row.get(1)?,
+                    command_sha256: Sha256::digest(&command_bytes).to_vec(),
+                    command_bytes,
+                })
+            })
+            .map_err(|error| error.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn apply_command_reconciliations(
+        &self,
+        reconciliations: &[CommandReconciliation],
+        retry_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        if reconciliations.len() > COMMAND_RECONCILIATION_BATCH_LIMIT
+            || (!reconciliations.is_empty() && retry_at_unix_ms <= 0)
+        {
+            return Err("messaging command reconciliation batch is invalid".to_string());
+        }
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let mut identities = HashSet::with_capacity(reconciliations.len());
+        for reconciliation in reconciliations {
+            if reconciliation.command_id.trim().is_empty()
+                || reconciliation.conversation_id.trim().is_empty()
+                || reconciliation.command_bytes.is_empty()
+                || reconciliation.command_sha256.len() != 32
+                || Sha256::digest(&reconciliation.command_bytes).as_slice()
+                    != reconciliation.command_sha256
+                || !identities.insert((
+                    reconciliation.conversation_id.as_str(),
+                    reconciliation.command_id.as_str(),
+                ))
+                || matches!(
+                    &reconciliation.disposition,
+                    CommandReconciliationDisposition::Failed(code)
+                        | CommandReconciliationDisposition::Superseded(code)
+                        if code.trim().is_empty()
+                )
+            {
+                return Err("messaging command reconciliation binding is invalid".to_string());
+            }
+            let state = load_command_transition_state(
+                &transaction,
+                &reconciliation.command_id,
+                &reconciliation.command_bytes,
+            )?;
+            if state.conversation_id != reconciliation.conversation_id
+                || state.local_state != "submitted"
+                || state.outbox_state != "submitted"
+            {
+                return Err("messaging command reconciliation state mismatch".to_string());
+            }
+        }
+
+        for reconciliation in reconciliations {
+            match &reconciliation.disposition {
+                CommandReconciliationDisposition::HomePending => {}
+                CommandReconciliationDisposition::Accepted => {
+                    apply_accepted_command_result(&transaction, &reconciliation.command_id)?;
+                }
+                CommandReconciliationDisposition::Failed(error_code) => {
+                    apply_terminal_command_result(
+                        &transaction,
+                        &reconciliation.command_id,
+                        error_code,
+                        false,
+                        false,
+                    )?;
+                }
+                CommandReconciliationDisposition::Superseded(error_code) => {
+                    apply_terminal_command_result(
+                        &transaction,
+                        &reconciliation.command_id,
+                        error_code,
+                        true,
+                        false,
+                    )?;
+                }
+                CommandReconciliationDisposition::NotFound => {
+                    apply_not_found_command_result(
+                        &transaction,
+                        &reconciliation.command_id,
+                        retry_at_unix_ms,
+                    )?;
+                }
+            }
+        }
+        transaction.commit().map_err(|error| error.to_string())
     }
 
     pub fn command_status(
@@ -8351,6 +8493,7 @@ fn validate_pending_sender_projection(
 }
 
 struct CommandTransitionState {
+    conversation_id: String,
     local_state: String,
     outbox_state: String,
     attempt_count: u32,
@@ -8366,7 +8509,8 @@ fn load_command_transition_state(
     }
     let row = transaction
         .query_row(
-            "SELECT l.command_bytes, l.state, o.command_bytes, o.state, o.attempt_count
+            "SELECT l.command_bytes, l.conversation_id, l.state,
+                    o.command_bytes, o.conversation_id, o.state, o.attempt_count
              FROM messaging_local_commands l
              JOIN messaging_command_outbox o ON o.command_id = l.command_id
              WHERE l.command_id = ?1",
@@ -8375,22 +8519,25 @@ fn load_command_transition_state(
                 Ok((
                     row.get::<_, Vec<u8>>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, Vec<u8>>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, i64>(4)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Vec<u8>>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, i64>(6)?,
                 ))
             },
         )
         .optional()
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "messaging command transition state is unavailable".to_string())?;
-    if row.0 != command_bytes || row.2 != command_bytes {
+    if row.0 != command_bytes || row.3 != command_bytes || row.1 != row.4 {
         return Err("messaging command transition bytes mismatch".to_string());
     }
     Ok(CommandTransitionState {
-        local_state: row.1,
-        outbox_state: row.3,
-        attempt_count: u32::try_from(row.4)
+        conversation_id: row.1,
+        local_state: row.2,
+        outbox_state: row.5,
+        attempt_count: u32::try_from(row.6)
             .map_err(|_| "messaging command attempt count is invalid".to_string())?,
     })
 }
@@ -8481,6 +8628,67 @@ fn apply_accepted_command_result(
         return Err("messaging accepted command result was not fenced".to_string());
     }
 
+    Ok(())
+}
+
+fn apply_not_found_command_result(
+    transaction: &Transaction<'_>,
+    command_id: &str,
+    retry_at_unix_ms: i64,
+) -> Result<(), String> {
+    let outbox_changed = transaction
+        .execute(
+            "UPDATE messaging_command_outbox
+             SET state = 'retry_wait',
+                 next_attempt_at_unix_ms = ?2,
+                 last_error_code = 'canonical_not_found'
+             WHERE command_id = ?1 AND state = 'submitted'",
+            params![command_id, retry_at_unix_ms],
+        )
+        .map_err(|error| error.to_string())?;
+    let attempt_changed = transaction
+        .execute(
+            "UPDATE messaging_command_attempts
+             SET state = 'retry_wait'
+             WHERE command_id = ?1 AND state = 'submitted'",
+            params![command_id],
+        )
+        .map_err(|error| error.to_string())?;
+    let pending_changed = transaction
+        .execute(
+            "UPDATE messaging_pending_messages AS pending
+             SET state = 'retry_wait',
+                 next_attempt_at_unix_ms = ?2,
+                 last_error_code = 'canonical_not_found'
+             WHERE state = 'submitted'
+               AND EXISTS (
+                   SELECT 1 FROM messaging_command_attempts attempt
+                   WHERE attempt.command_id = ?1
+                     AND attempt.conversation_id = pending.conversation_id
+                     AND attempt.message_id = pending.message_id
+               )",
+            params![command_id, retry_at_unix_ms],
+        )
+        .map_err(|error| error.to_string())?;
+    let interaction_changed = transaction
+        .execute(
+            "UPDATE messaging_interaction_intents
+             SET state = 'retry_wait'
+             WHERE command_id = ?1 AND state = 'submitted'",
+            params![command_id],
+        )
+        .map_err(|error| error.to_string())?;
+    if outbox_changed != 1
+        || attempt_changed != 1
+        || !pending_owner_transition_is_valid(
+            transaction,
+            command_id,
+            pending_changed,
+            interaction_changed,
+        )?
+    {
+        return Err("messaging command retry reconciliation was not fenced".to_string());
+    }
     Ok(())
 }
 
@@ -10323,6 +10531,106 @@ mod tests {
                 })
                 .unwrap();
             assert_eq!(count, 1, "table {table}");
+        }
+    }
+
+    #[test]
+    fn submitted_command_reconciliation_is_bounded_exact_and_cursor_neutral() {
+        let store = MessagingStore::in_memory().unwrap();
+        for index in 0..65 {
+            let command_id = format!("command-{index:02}");
+            let command_bytes = format!("exact-command-{index:02}").into_bytes();
+            persist_direct_command(&store, &command_id, &command_bytes, 10 + index).unwrap();
+            store
+                .mark_command_submitted(&command_id, &command_bytes, 0)
+                .unwrap();
+        }
+
+        let submitted = store.submitted_commands().unwrap();
+        assert_eq!(submitted.len(), COMMAND_RECONCILIATION_BATCH_LIMIT);
+        assert_eq!(submitted[0].command_id, "command-00");
+        assert_eq!(
+            submitted[0].command_sha256,
+            Sha256::digest(&submitted[0].command_bytes).to_vec()
+        );
+
+        let first = submitted[0].clone();
+        store
+            .apply_command_reconciliations(
+                &[CommandReconciliation {
+                    command_id: first.command_id.clone(),
+                    conversation_id: first.conversation_id.clone(),
+                    command_bytes: first.command_bytes.clone(),
+                    command_sha256: first.command_sha256.clone(),
+                    disposition: CommandReconciliationDisposition::NotFound,
+                }],
+                500,
+            )
+            .unwrap();
+
+        let retried = store.next_command(500).unwrap().unwrap();
+        assert_eq!(retried.command_id, first.command_id);
+        assert_eq!(retried.command_bytes, first.command_bytes);
+        assert_eq!(retried.attempt_count, 0);
+        assert_eq!(store.lane_checkpoint().unwrap(), (0, 0));
+        let marker_count: i64 = store
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_consumption_markers",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(marker_count, 0);
+    }
+
+    #[test]
+    fn reconciliation_integrity_failure_rolls_back_the_whole_batch() {
+        let store = MessagingStore::in_memory().unwrap();
+        for command_id in ["command-accepted", "command-mismatch"] {
+            let command_bytes = format!("exact-{command_id}").into_bytes();
+            persist_direct_command(&store, command_id, &command_bytes, 10).unwrap();
+            store
+                .mark_command_submitted(command_id, &command_bytes, 0)
+                .unwrap();
+        }
+        let submitted = store.submitted_commands().unwrap();
+        let accepted = submitted
+            .iter()
+            .find(|command| command.command_id == "command-accepted")
+            .unwrap();
+        let mismatch = submitted
+            .iter()
+            .find(|command| command.command_id == "command-mismatch")
+            .unwrap();
+
+        assert!(store
+            .apply_command_reconciliations(
+                &[
+                    CommandReconciliation {
+                        command_id: accepted.command_id.clone(),
+                        conversation_id: accepted.conversation_id.clone(),
+                        command_bytes: accepted.command_bytes.clone(),
+                        command_sha256: accepted.command_sha256.clone(),
+                        disposition: CommandReconciliationDisposition::Accepted,
+                    },
+                    CommandReconciliation {
+                        command_id: mismatch.command_id.clone(),
+                        conversation_id: mismatch.conversation_id.clone(),
+                        command_bytes: mismatch.command_bytes.clone(),
+                        command_sha256: vec![9; 32],
+                        disposition: CommandReconciliationDisposition::NotFound,
+                    },
+                ],
+                500,
+            )
+            .is_err());
+        for command_id in ["command-accepted", "command-mismatch"] {
+            assert_eq!(
+                store.command_status(command_id).unwrap().unwrap().state,
+                "submitted"
+            );
         }
     }
 

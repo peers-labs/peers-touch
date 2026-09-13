@@ -61,6 +61,26 @@ func (c *ProductionComposition) RegisterFederationReceivers(ctx context.Context)
 	if err != nil {
 		return err
 	}
+	typingSender, err := conversationfederation.NewTypingSender(
+		c.federationSender,
+		shared.Federation,
+	)
+	if err != nil {
+		return err
+	}
+	typingService, err := c.InteractionService.BindFederatedTyping(
+		productionTypingRouteDirectory{
+			identity: &productionIdentityDirectory{db: c.database},
+		},
+		typingSender,
+	)
+	if err != nil {
+		return err
+	}
+	typingHandler, err := conversationhttp.NewInteractionHandler(typingService)
+	if err != nil {
+		return err
+	}
 	receiver, err := conversationfederation.NewReceiver(
 		conversationfederation.ReceiverConfig{
 			LocalStationPeerID: shared.Federation.LocalStationPeerID(),
@@ -70,6 +90,7 @@ func (c *ProductionComposition) RegisterFederationReceivers(ctx context.Context)
 			AuthorityResults:   &productionAuthorityResultPort{composition: c},
 			DeviceDeliveries:   &productionDeviceDeliveryPort{composition: c},
 			DeliveryReceipts:   &productionDeliveryReceiptPort{composition: c},
+			Typing:             typingService,
 			Sender:             c.federationSender,
 			Clock:              c.clock,
 		},
@@ -110,6 +131,8 @@ func (c *ProductionComposition) RegisterFederationReceivers(ctx context.Context)
 	if err != nil {
 		return err
 	}
+	c.InteractionService = typingService
+	c.InteractionHandler = typingHandler
 	c.federationRegistered = true
 
 	return nil
@@ -377,7 +400,18 @@ func (p *productionAuthorityResultPort) ApplyAuthorityResult(
 		return false, err
 	}
 	payloadHash := valueobject.HashBytes(payload)
-	itemID := "conversation-command-result:" + payloadHash.String()
+	recipient := valueobject.Endpoint{
+		Actor:  valueobject.PTID(proposal.GetActorPtid()),
+		Device: valueobject.DeviceID(proposal.GetActorDeviceId()),
+	}
+	itemID, err := deliveryinfra.CommandResultItemID(
+		recipient,
+		valueobject.ConversationID(result.GetConversationId()),
+		valueobject.CommandID(result.GetCommandId()),
+	)
+	if err != nil {
+		return false, err
+	}
 	var existing deliveryinfra.DeviceQueueItemModel
 	existingErr := transaction.DB().WithContext(ctx).
 		Where(
@@ -419,10 +453,7 @@ func (p *productionAuthorityResultPort) ApplyAuthorityResult(
 		ConversationID: valueobject.ConversationID(result.GetConversationId()),
 		EventID:        eventID,
 		EventSequence:  eventSequence,
-		Recipient: valueobject.Endpoint{
-			Actor:  valueobject.PTID(proposal.GetActorPtid()),
-			Device: valueobject.DeviceID(proposal.GetActorDeviceId()),
-		},
+		Recipient:      recipient,
 		IdempotencyKey: itemID,
 		PayloadKind:    ports.DeviceInboxPayloadCommandResult,
 		OpaquePayload:  payload,
