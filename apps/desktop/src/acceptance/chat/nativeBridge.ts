@@ -5,6 +5,7 @@ import {
   api,
   type AuthSessionResponse,
   type MessagingAcceptanceInteractionSnapshot,
+  type MessagingAcceptancePreparedCommand,
 } from '../../services/desktop_api';
 import {
   type MemberSettingsResult,
@@ -33,6 +34,13 @@ export interface NativeAcceptanceConversationInput
   conversationId: string;
 }
 
+export interface NativeAcceptanceSubmittedCommandInput
+  extends NativeAcceptanceActorInput {
+  conversationId: string;
+  messageId: string;
+  commandId: string;
+}
+
 export interface NativeAcceptanceAttachmentInput
   extends NativeAcceptanceActorInput {
   attachmentId: string;
@@ -58,6 +66,13 @@ interface NativeAcceptanceBridgeDependencies {
   readInteractionSnapshot(
     input: NativeAcceptanceInteractionSnapshotInput,
   ): Promise<MessagingAcceptanceInteractionSnapshot>;
+  prepareSubmittedCommand(
+    input: NativeAcceptanceSubmittedCommandInput,
+  ): Promise<MessagingAcceptancePreparedCommand>;
+  resumeMessagingLifecycle(actorPtid: string): Promise<{
+    actorPtid: string;
+    activated: boolean;
+  }>;
   readMessages(conversationId: string): Promise<MessagingProjection[]>;
   readConversations(): Promise<MessagingConversationProjection[]>;
   readMemberSettings(conversationId: string): Promise<MemberSettingsResult>;
@@ -72,6 +87,12 @@ export interface NativeAcceptanceBridge {
   engineInteractionSnapshot(
     input: NativeAcceptanceInteractionSnapshotInput,
   ): Promise<MessagingAcceptanceInteractionSnapshot>;
+  prepareSubmittedCommand(
+    input: NativeAcceptanceSubmittedCommandInput,
+  ): Promise<MessagingAcceptancePreparedCommand>;
+  resumeMessagingLifecycle(
+    input: NativeAcceptanceActorInput,
+  ): Promise<{ actorPtid: string; activated: boolean }>;
   engineMessages(
     input: NativeAcceptanceConversationInput,
   ): Promise<{ messages: MessagingProjection[] }>;
@@ -147,6 +168,36 @@ export function createNativeAcceptanceBridge(
       });
     },
 
+    async prepareSubmittedCommand(input) {
+      const actorPtid = requireMatchingActor(
+        input.actorPtid,
+        dependencies.activeActorPtid(),
+      );
+      return dependencies.prepareSubmittedCommand({
+        actorPtid,
+        conversationId: requireEvidenceIdentity(
+          input.conversationId,
+          'acceptance.chat.conversationIdRequired',
+        ),
+        messageId: requireEvidenceIdentity(
+          input.messageId,
+          'acceptance.chat.messageIdRequired',
+        ),
+        commandId: requireEvidenceIdentity(
+          input.commandId,
+          'acceptance.chat.commandIdRequired',
+        ),
+      });
+    },
+
+    async resumeMessagingLifecycle(input) {
+      const actorPtid = requireMatchingActor(
+        input.actorPtid,
+        dependencies.activeActorPtid(),
+      );
+      return dependencies.resumeMessagingLifecycle(actorPtid);
+    },
+
     async engineMessages(input) {
       requireMatchingActor(
         input.actorPtid,
@@ -220,6 +271,10 @@ export const nativeAcceptanceBridge = createNativeAcceptanceBridge({
   },
   readInteractionSnapshot: (input) =>
     api.messagingAcceptanceInteractionSnapshot(input),
+  prepareSubmittedCommand: (input) =>
+    api.messagingAcceptancePrepareSubmittedCommand(input),
+  resumeMessagingLifecycle: (actorPtid) =>
+    api.messagingAcceptanceResumeLifecycle(actorPtid),
   readMessages: (conversationId) =>
     imServiceV1.messaging.listMessages(conversationId),
   readConversations: () =>

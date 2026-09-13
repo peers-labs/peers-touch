@@ -63,9 +63,47 @@ impl KeyBundleTransport for StationKeyBundleTransport {
             .into_iter()
             .next()
             .ok_or_else(|| "messaging endpoint key bundle is unavailable".to_string())?;
-        if bundle.device.as_ref() != Some(endpoint) {
+        let returned_endpoint = bundle
+            .device
+            .as_ref()
+            .ok_or_else(|| "messaging endpoint key bundle has no device".to_string())?;
+        if !same_actor_device_identity(endpoint, returned_endpoint)? {
             return Err("messaging endpoint key bundle binding mismatch".to_string());
         }
         Ok(bundle)
+    }
+}
+
+fn same_actor_device_identity(
+    expected: &ActorDeviceRef,
+    actual: &ActorDeviceRef,
+) -> Result<bool, String> {
+    Ok(actor_device_ptid(expected)? == actor_device_ptid(actual)?
+        && expected.device_id == actual.device_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_actor_device_identity;
+    use messaging_core::proto::actor_device_ref;
+
+    #[test]
+    fn endpoint_binding_ignores_non_identity_actor_metadata() {
+        let expected = actor_device_ref("ptid:alice", "alice-device");
+        let mut returned = expected.clone();
+        returned.actor.as_mut().expect("actor").acct = "alice@example.test".to_string();
+
+        assert_ne!(expected, returned);
+        assert!(same_actor_device_identity(&expected, &returned).expect("identity"));
+    }
+
+    #[test]
+    fn endpoint_binding_rejects_different_actor_or_device() {
+        let expected = actor_device_ref("ptid:alice", "alice-device");
+        let other_actor = actor_device_ref("ptid:bob", "alice-device");
+        let other_device = actor_device_ref("ptid:alice", "other-device");
+
+        assert!(!same_actor_device_identity(&expected, &other_actor).expect("actor"));
+        assert!(!same_actor_device_identity(&expected, &other_device).expect("device"));
     }
 }

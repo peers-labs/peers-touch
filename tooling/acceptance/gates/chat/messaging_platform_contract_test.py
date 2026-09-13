@@ -218,6 +218,18 @@ class MessagingPlatformContractTest(unittest.TestCase):
             "projection.federation_id.trim().is_empty()",
             desktop_lifecycle,
         )
+        self.assertIn(
+            "request_proto_for_device::<",
+            desktop_lifecycle,
+        )
+        self.assertIn(
+            "ListConversationsRequest",
+            desktop_lifecycle,
+        )
+        self.assertNotIn(
+            "request_json_auth_with_device_id",
+            desktop_lifecycle,
+        )
         self.assertNotIn(
             "if !self.store.conversation_projections()?.is_empty()",
             desktop_engine,
@@ -771,6 +783,59 @@ class MessagingPlatformContractTest(unittest.TestCase):
             "message MessagingFederationFrame",
             conversation_federation,
         )
+
+    def test_submitted_command_reconciliation_uses_canonical_truth(self) -> None:
+        api = (CHAT_PROTO / "conversation_api.proto").read_text(encoding="utf-8")
+        conversation_root = ROOT / "apps/station/app/subserver/conversation"
+        production_source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in conversation_root.rglob("*.go")
+            if not path.name.endswith("_test.go")
+        )
+
+        self.assertIn("message ConversationCommandResultRef", api)
+        self.assertIn("bytes command_sha256 = 3;", api)
+        self.assertIn("message ResolveConversationCommandResultsRequest", api)
+        self.assertIn("message ResolveConversationCommandResultsResponse", api)
+        self.assertIn(
+            "CONVERSATION_COMMAND_RESOLUTION_STATE_HOME_PENDING = 1;",
+            api,
+        )
+        self.assertIn(
+            "CONVERSATION_COMMAND_RESOLUTION_STATE_NOT_FOUND = 4;",
+            api,
+        )
+        self.assertNotIn("/conversation/command-proposal/result", production_source)
+        self.assertNotIn("conversation_command_proposal_results", production_source)
+
+    def test_cross_station_typing_is_ephemeral_federation_payload(self) -> None:
+        api = (CHAT_PROTO / "conversation_api.proto").read_text(encoding="utf-8")
+        delivery = (
+            ROOT / "model/domain/federation/delivery.proto"
+        ).read_text(encoding="utf-8")
+        persistence_sources = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                ROOT / "apps/station/app/subserver/conversation/infrastructure/persistence"
+            ).rglob("*.go")
+            if not path.name.endswith("_test.go")
+        )
+
+        self.assertIn("message FederatedConversationTypingSignal", api)
+        self.assertIn(
+            "FEDERATED_CONVERSATION_TYPING_PHASE_AUTHORITY_ADMISSION = 1;",
+            api,
+        )
+        self.assertIn(
+            "FEDERATED_CONVERSATION_TYPING_PHASE_HOME_FANOUT = 2;",
+            api,
+        )
+        self.assertIn(
+            "FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_TYPING = 8;",
+            delivery,
+        )
+        self.assertNotIn("ConversationTypingModel", persistence_sources)
+        self.assertNotIn("conversation_typing", persistence_sources)
 
     def test_inter_station_messaging_control_plane_uses_protobuf(self) -> None:
         frame = (

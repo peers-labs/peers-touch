@@ -22,11 +22,15 @@ import (
 )
 
 type authorityRepository struct {
-	db *gorm.DB
+	db     *gorm.DB
+	sealer domainevent.Sealer
 }
 
-func newAuthorityRepository(db *gorm.DB) *authorityRepository {
-	return &authorityRepository{db: db}
+func newAuthorityRepository(
+	db *gorm.DB,
+	sealer domainevent.Sealer,
+) *authorityRepository {
+	return &authorityRepository{db: db, sealer: sealer}
 }
 
 func (r *authorityRepository) Create(
@@ -230,6 +234,13 @@ func (r *authorityRepository) loadSnapshot(
 			LeftAt:      valueobject.Sequence(device.LeftSequence),
 		})
 	}
+	if len(devices) == 0 &&
+		model.Kind == string(valueobject.ConversationKindDirect) {
+		devices, err = r.recoverDirectGenesisDevices(ctx, model, members)
+		if err != nil {
+			return aggregate.Snapshot{}, err
+		}
+	}
 	snapshot := aggregate.Snapshot{
 		ID:               valueobject.ConversationID(model.ConversationID),
 		Kind:             valueobject.ConversationKind(model.Kind),
@@ -260,6 +271,88 @@ func (r *authorityRepository) loadSnapshot(
 		return aggregate.Snapshot{}, err
 	}
 	return snapshot, nil
+}
+
+func (r *authorityRepository) recoverDirectGenesisDevices(
+	ctx context.Context,
+	model ConversationModel,
+	members []entity.Member,
+) ([]entity.MemberDevice, error) {
+	genesis, err := newEventRepository(r.db, r.sealer).GetBySequence(
+		ctx,
+		valueobject.ConversationID(model.ConversationID),
+		1,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"conversation persistence: recover Direct device projection: %w",
+			err,
+		)
+	}
+	state := genesis.Fact.PostState
+	if genesis.Fact.Kind != domainevent.KindConversationCreated ||
+		state == nil ||
+		state.Kind != valueobject.ConversationKindDirect ||
+		genesis.ConversationID != valueobject.ConversationID(model.ConversationID) ||
+		genesis.AuthorityStation != valueobject.StationID(model.AuthorityStationPeerID) ||
+		state.FederationID != valueobject.FederationID(model.FederationID) ||
+		state.AuthorityEpoch != valueobject.AuthorityEpoch(model.AuthorityEpoch) ||
+		state.Owner != valueobject.PTID(model.OwnerPTID) ||
+		state.MembershipEpoch != valueobject.Epoch(model.MembershipEpoch) ||
+		state.MLSEpoch != valueobject.Epoch(model.MLSEpoch) ||
+		len(state.ActiveDevices) == 0 ||
+		!sameActiveMembers(members, state.ActiveMembers) ||
+		!valueobject.EqualEndpointSets(
+			activeDeviceEndpoints(state.ActiveDevices),
+			state.ActiveEndpoints,
+		) {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeHashChainInvalid,
+			"persistence.recover_direct_projection",
+			"genesis_event",
+			"does not match the persisted Direct aggregate",
+		)
+	}
+	devices := append([]entity.MemberDevice(nil), state.ActiveDevices...)
+	sort.Slice(devices, func(i int, j int) bool {
+		return devices[i].Endpoint.Key() < devices[j].Endpoint.Key()
+	})
+	return devices, nil
+}
+
+func sameActiveMembers(left []entity.Member, right []entity.Member) bool {
+	leftActive := make([]entity.Member, 0, len(left))
+	for _, member := range left {
+		if member.Active() {
+			leftActive = append(leftActive, member)
+		}
+	}
+	rightActive := append([]entity.Member(nil), right...)
+	sort.Slice(leftActive, func(i int, j int) bool {
+		return leftActive[i].Actor < leftActive[j].Actor
+	})
+	sort.Slice(rightActive, func(i int, j int) bool {
+		return rightActive[i].Actor < rightActive[j].Actor
+	})
+	if len(leftActive) != len(rightActive) {
+		return false
+	}
+	for index := range leftActive {
+		if leftActive[index] != rightActive[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func activeDeviceEndpoints(devices []entity.MemberDevice) []valueobject.Endpoint {
+	endpoints := make([]valueobject.Endpoint, 0, len(devices))
+	for _, device := range devices {
+		if device.Active {
+			endpoints = append(endpoints, device.Endpoint)
+		}
+	}
+	return valueobject.SortEndpoints(endpoints)
 }
 
 type eventRepository struct {

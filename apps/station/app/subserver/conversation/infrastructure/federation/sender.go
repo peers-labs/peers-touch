@@ -6,10 +6,13 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	conversationports "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	chatmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
@@ -22,6 +25,8 @@ const (
 	authorityResultFrameDomain  = "conversation-authority-result"
 	deviceDeliveryFrameDomain   = "conversation-device-delivery"
 	deliveryReceiptFrameDomain  = "conversation-delivery-receipt"
+	typingFrameDomain           = "conversation-typing"
+	conversationTypingVersion   = uint32(1)
 )
 
 // Sender converts canonical Conversation protobufs into immutable, signed
@@ -58,6 +63,100 @@ func NewSender(
 		clock:              clock,
 		frameLifetime:      frameLifetime,
 	}, nil
+}
+
+// TypingSender signs and immediately dispatches ephemeral typing frames.
+type TypingSender struct {
+	sender    *Sender
+	transport TypingTransport
+}
+
+// TypingTransport exposes only the shared Federation runtime's ephemeral path.
+type TypingTransport interface {
+	DeliverConversationTyping(
+		context.Context,
+		*federationdelivery.Frame,
+	) (federationdelivery.Result, error)
+}
+
+// NewTypingSender creates the no-outbox, no-retry Conversation typing sender.
+func NewTypingSender(
+	sender *Sender,
+	transport TypingTransport,
+) (*TypingSender, error) {
+	if sender == nil || transport == nil {
+		return nil, federationdelivery.NewError(
+			federationdelivery.FailureInvalidArgument,
+			"create Conversation typing sender",
+			fmt.Errorf("frame signer and ephemeral transport are required"),
+		)
+	}
+
+	return &TypingSender{sender: sender, transport: transport}, nil
+}
+
+// DispatchTyping sends one signed frame directly and never writes or retries it.
+func (s *TypingSender) DispatchTyping(
+	ctx context.Context,
+	target valueobject.StationID,
+	signal interactionapp.FederatedTypingSignal,
+) (interactionapp.FederatedTypingResult, error) {
+	wire, err := typingSignalToWire(signal)
+	if err != nil {
+		return interactionapp.FederatedTypingResult{}, err
+	}
+	payload, err := canonicalPayloadBytes(wire)
+	if err != nil {
+		return interactionapp.FederatedTypingResult{}, err
+	}
+	payloadID := typingPayloadID(wire)
+	issuedAt := s.sender.clock.Now().UTC()
+	frame, err := s.sender.signedFrame(
+		ctx,
+		federationdelivery.PayloadKindConversationTyping,
+		string(target),
+		payloadID,
+		typingFrameDomain+":"+payloadID,
+		conversationOrderingKey(typingFrameDomain, wire.GetConversationId()),
+		0,
+		payload,
+		issuedAt,
+		wire.GetExpiresAt().AsTime().UTC(),
+	)
+	if err != nil {
+		return interactionapp.FederatedTypingResult{}, err
+	}
+	result, err := s.transport.DeliverConversationTyping(ctx, frame)
+	if err != nil {
+		return interactionapp.FederatedTypingResult{}, err
+	}
+	switch {
+	case result.Disposition == federationdelivery.DispositionAccepted,
+		result.Disposition == federationdelivery.DispositionDuplicate:
+		return interactionapp.FederatedTypingResult{
+			Accepted:  true,
+			Duplicate: result.Disposition == federationdelivery.DispositionDuplicate,
+			Attempted: 1,
+			Delivered: 1,
+		}, nil
+	case result.Disposition == federationdelivery.DispositionTerminal &&
+		result.ErrorCode == federationdelivery.FrameErrorOverloaded:
+		return interactionapp.FederatedTypingResult{
+			Accepted:  true,
+			Attempted: 1,
+			Dropped:   1,
+		}, nil
+	default:
+		return interactionapp.FederatedTypingResult{}, federationdelivery.NewError(
+			federationdelivery.FailureDomainRejected,
+			"dispatch Conversation typing",
+			fmt.Errorf(
+				"receiver disposition=%s error_code=%s",
+				result.Disposition,
+				result.ErrorCode,
+			),
+		)
+	}
 }
 
 // EnqueueAuthorityCommand writes one exact D-17 proposal to a transaction-bound outbox.
@@ -366,6 +465,83 @@ func deviceInboxPayloadType(
 				fmt.Errorf("payload kind is not owned by Conversation delivery"),
 			)
 	}
+}
+
+func typingSignalToWire(
+	signal interactionapp.FederatedTypingSignal,
+) (*chatmodel.FederatedConversationTypingSignal, error) {
+	phase := chatmodel.FederatedConversationTypingPhase_FEDERATED_CONVERSATION_TYPING_PHASE_UNSPECIFIED
+	switch signal.Phase {
+	case interactionapp.FederatedTypingPhaseAuthorityAdmission:
+		phase = chatmodel.FederatedConversationTypingPhase_FEDERATED_CONVERSATION_TYPING_PHASE_AUTHORITY_ADMISSION
+	case interactionapp.FederatedTypingPhaseHomeFanout:
+		phase = chatmodel.FederatedConversationTypingPhase_FEDERATED_CONVERSATION_TYPING_PHASE_HOME_FANOUT
+	default:
+		return nil, federationdelivery.NewError(
+			federationdelivery.FailureInvalidFrame,
+			"encode Conversation typing signal",
+			fmt.Errorf("typing phase is invalid"),
+		)
+	}
+	if signal.FederationID == "" ||
+		signal.ConversationID == "" ||
+		signal.AuthorityStation == "" ||
+		signal.AuthorityEpoch <= 0 ||
+		signal.Sender.Validate() != nil ||
+		signal.SenderHomeStation == "" ||
+		signal.Generation == 0 ||
+		signal.ExpiresAt.IsZero() {
+		return nil, federationdelivery.NewError(
+			federationdelivery.FailureInvalidFrame,
+			"encode Conversation typing signal",
+			fmt.Errorf("typing signal is incomplete"),
+		)
+	}
+	recipients := make([]string, 0, len(signal.Recipients))
+	for _, recipient := range signal.Recipients {
+		recipients = append(recipients, string(recipient))
+	}
+
+	return &chatmodel.FederatedConversationTypingSignal{
+		FormatVersion:  conversationTypingVersion,
+		Phase:          phase,
+		FederationId:   string(signal.FederationID),
+		ConversationId: string(signal.ConversationID),
+		AuthorityStationPeerId: string(
+			signal.AuthorityStation,
+		),
+		AuthorityEpoch: uint64(signal.AuthorityEpoch),
+		Sender: &actormodel.ActorDeviceRef{
+			Actor: &actormodel.ActorRef{
+				Ptid: string(signal.Sender.Actor),
+			},
+			DeviceId: string(signal.Sender.Device),
+		},
+		SenderHomeStationPeerId: string(signal.SenderHomeStation),
+		PulseGeneration:         signal.Generation,
+		ExpiresAt:               timestamppb.New(signal.ExpiresAt.UTC()),
+		IsTyping:                signal.IsTyping,
+		RecipientActorPtids:     recipients,
+	}, nil
+}
+
+func typingPayloadID(signal *chatmodel.FederatedConversationTypingSignal) string {
+	recipients := strings.Join(signal.GetRecipientActorPtids(), ",")
+
+	return typingFrameDomain + ":" + stableIdentifier(
+		signal.GetFederationId(),
+		signal.GetConversationId(),
+		signal.GetAuthorityStationPeerId(),
+		strconv.FormatUint(signal.GetAuthorityEpoch(), 10),
+		signal.GetSender().GetActor().GetPtid(),
+		signal.GetSender().GetDeviceId(),
+		signal.GetSenderHomeStationPeerId(),
+		strconv.FormatUint(signal.GetPulseGeneration(), 10),
+		strconv.FormatBool(signal.GetIsTyping()),
+		strconv.FormatInt(signal.GetExpiresAt().AsTime().UnixNano(), 10),
+		strconv.Itoa(int(signal.GetPhase())),
+		recipients,
+	)
 }
 
 func (s *Sender) signedFrame(

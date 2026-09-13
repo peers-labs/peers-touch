@@ -24,6 +24,7 @@ export interface PublicProfileModel {
   did?: string;
   createdAt?: string;
   region?: string;
+  identityMetadata?: string[];
   tags?: string[];
   links?: { label?: string; url?: string }[];
   relationLabel?: string;
@@ -132,6 +133,25 @@ export function PublicProfileCard({ compact, profile, avatarNode, actions }: Pub
           @{profile.username}
         </Text>
       )}
+
+      {profile.identityMetadata && profile.identityMetadata.length > 0 ? (
+        <Flexbox align="center" gap={2} style={{ maxWidth: 320 }}>
+          {profile.identityMetadata.filter(Boolean).map((value) => (
+            <Text
+              key={value}
+              type="secondary"
+              ellipsis={{ tooltip: value }}
+              style={{
+                fontSize: 11,
+                lineHeight: 1.25,
+                maxWidth: '100%',
+              }}
+            >
+              {value}
+            </Text>
+          ))}
+        </Flexbox>
+      ) : null}
 
       {/* Relation label / online indicator */}
       {profile.relationLabel && (

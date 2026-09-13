@@ -245,7 +245,7 @@ def identity_state_path(account_id: str) -> Path:
     storage_root = Path(str(clients[0].get("storage_root") or ""))
     require(storage_root.is_absolute(), "gateway storage root must be absolute")
     candidates = list(
-        (storage_root / "peers-touch" / "desktop" / "data" / "account").glob(
+        (storage_root / "desktop" / "data" / "account").glob(
             "*/identities.json"
         )
     )
@@ -525,11 +525,26 @@ def run_gateway_flow(report: EvidenceReport) -> dict[str, Any]:
     # Refresh A after PIN takeover testing, then create a direct conversation with B.
     gateway_login(gateway, actor_a, timeout=30)
     time.sleep(8)
+    federation_context = gateway_status(
+        gateway,
+        "acceptance_federation_context",
+    )
+    federations = federation_context.get("federations")
+    require(
+        isinstance(federations, list) and bool(federations),
+        "gateway actor has no Federation context",
+    )
+    federation_id = str(federations[0].get("federation_id") or "")
+    require(bool(federation_id), "gateway Federation ID is missing")
+    receiver_identity = {"actor_ptid": actor_b.actor_ptid}
 
     create_result = gateway_command(
         gateway,
         "messaging_create_direct",
-        {"peer_ptid": actor_b.actor_ptid},
+        {
+            "peer_ptid": actor_b.actor_ptid,
+            "federation_id": federation_id,
+        },
         timeout=30,
     )
     conv_id = create_result.get("conversation_id") or ""
@@ -632,6 +647,7 @@ def run_gateway_flow(report: EvidenceReport) -> dict[str, Any]:
     return {
         "conversationId": conv_id,
         "messageId": msg_id,
+        "receiver": receiver_identity,
         "journey": "desktop-gateway-direct-message",
     }
 

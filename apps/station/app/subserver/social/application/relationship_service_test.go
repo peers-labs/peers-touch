@@ -87,6 +87,70 @@ func TestRelationshipStatusSuppressesBlockedEdges(t *testing.T) {
 	}
 }
 
+func TestRelationshipListsHydrateActorProjections(t *testing.T) {
+	f := newRelationshipFixture(t)
+	ctx := context.Background()
+	const (
+		alice = "ptid:v1:actor:peers:p:user-1:fingerprint-1"
+		bob   = "ptid:v1:actor:peers:p:user-2:fingerprint-2"
+	)
+	if err := f.gdb.Model(&db.Actor{}).
+		Where("ptid = ?", bob).
+		Updates(map[string]any{
+			"icon":                 "data:image/svg+xml,bob",
+			"home_station_domain":  "station-b.example",
+			"home_station_peer_id": "station-b-peer",
+		}).Error; err != nil {
+		t.Fatalf("seed Bob identity projection: %v", err)
+	}
+	if err := f.repos.Follows.Follow(ctx, alice, bob); err != nil {
+		t.Fatalf("seed follow alice->bob: %v", err)
+	}
+	if err := f.repos.Follows.Follow(ctx, bob, alice); err != nil {
+		t.Fatalf("seed follow bob->alice: %v", err)
+	}
+
+	followers, _, followerTotal, err := f.service.GetFollowers(ctx, alice, "", 20)
+	if err != nil {
+		t.Fatalf("get followers: %v", err)
+	}
+	if followerTotal != 1 || len(followers) != 1 {
+		t.Fatalf(
+			"followers must include hydrated actor projection: total=%d len=%d",
+			followerTotal,
+			len(followers),
+		)
+	}
+	if followers[0].ActorPtid != bob {
+		t.Fatalf("follower actor PTID = %q, want %q", followers[0].ActorPtid, bob)
+	}
+	if followers[0].AvatarUrl != "data:image/svg+xml,bob" ||
+		followers[0].HomeStationDomain != "station-b.example" ||
+		followers[0].HomeStationPeerId != "station-b-peer" {
+		t.Fatalf("follower identity projection = %+v", followers[0])
+	}
+
+	following, _, followingTotal, err := f.service.GetFollowing(ctx, alice, "", 20)
+	if err != nil {
+		t.Fatalf("get following: %v", err)
+	}
+	if followingTotal != 1 || len(following) != 1 {
+		t.Fatalf(
+			"following must include hydrated actor projection: total=%d len=%d",
+			followingTotal,
+			len(following),
+		)
+	}
+	if following[0].ActorPtid != bob {
+		t.Fatalf("following actor PTID = %q, want %q", following[0].ActorPtid, bob)
+	}
+	if following[0].AvatarUrl != "data:image/svg+xml,bob" ||
+		following[0].HomeStationDomain != "station-b.example" ||
+		following[0].HomeStationPeerId != "station-b-peer" {
+		t.Fatalf("following identity projection = %+v", following[0])
+	}
+}
+
 func TestRelationshipListsFilterBlockedEdges(t *testing.T) {
 	f := newRelationshipFixture(t)
 	ctx := context.Background()
