@@ -29,6 +29,7 @@ const (
 	AgentClientExecutorUnavailable     Code = "CLIENT_EXECUTOR_UNAVAILABLE"
 	AgentToolBudgetExhausted           Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
 	AgentContextOverflow               Code = "CONTEXT_OVERFLOW"
+	AgentContextInvalidReference       Code = "CONTEXT_INVALID_REFERENCE"
 	AgentLifecycleCancelled            Code = "LIFECYCLE_CANCELLED"
 	AgentLifecycleInterrupted          Code = "LIFECYCLE_INTERRUPTED"
 	AgentProviderCredentialMissing     Code = "PROVIDER_CREDENTIAL_MISSING"
@@ -54,6 +55,7 @@ const (
 	AgentClientExecutorUnavailableLocaleKey     = "agent.errors.executorUnavailable"
 	AgentToolBudgetExhaustedLocaleKey           = "agent.errors.toolLoopBudgetExhausted"
 	AgentContextOverflowLocaleKey               = "agent.errors.contextOverflow"
+	AgentContextInvalidReferenceLocaleKey       = "agent.errors.contextInvalidReference"
 	AgentLifecycleCancelledLocaleKey            = "agent.errors.lifecycleCancelled"
 	AgentLifecycleInterruptedLocaleKey          = "agent.errors.lifecycleInterrupted"
 	AgentProviderCredentialMissingLocaleKey     = "agent.errors.providerCredentialMissing"
@@ -244,6 +246,29 @@ func NewContextOverflow(limitTokens, actualTokens uint64) *BizError {
 			Details: map[string]string{
 				"limit_tokens":  strconv.FormatUint(limitTokens, 10),
 				"actual_tokens": strconv.FormatUint(actualTokens, 10),
+			},
+		},
+	}
+}
+
+// NewContextInvalidReference returns the typed rejection for retired inline
+// context syntax without exposing the reference token to clients.
+func NewContextInvalidReference(referenceKind, referenceToken string) *BizError {
+	referenceHash := sha256.Sum256([]byte(referenceToken))
+
+	return &BizError{
+		Code:       AgentContextInvalidReference,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    AgentContextInvalidReferenceLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentContextInvalidReferenceLocaleKey,
+			ErrorType: string(AgentContextInvalidReference),
+			LocaleKey: AgentContextInvalidReferenceLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"reference_kind": referenceKind,
+				"reference_hash": fmt.Sprintf("%x", referenceHash),
 			},
 		},
 	}

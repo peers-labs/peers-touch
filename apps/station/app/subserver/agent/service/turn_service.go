@@ -256,9 +256,9 @@ func (l *executionLifecycle) stop(ctx context.Context) error {
 // ---------------------------------------------------------------------------
 
 // TurnService orchestrates the full lifecycle of a single agent turn:
-// context reference preprocessing → prompt assembly → compression check →
-// credential lease → provider call → error recovery → tool dispatch →
-// nudge evaluation → persistence.
+// input validation → prompt assembly → compression check → credential lease →
+// provider call → error recovery → tool dispatch → nudge evaluation →
+// persistence.
 type TurnService struct {
 	errorClassifier      *ErrorClassifierService
 	memoryService        *MemoryService
@@ -315,6 +315,9 @@ func (s *TurnService) PreflightTurn(
 ) error {
 	if request == nil {
 		return nil
+	}
+	if err := validateNoRetiredInlineContextReference(request.GetUserInput()); err != nil {
+		return err
 	}
 	config, err := s.queuedTurnConfig(actorID, request, "")
 	if err != nil {
@@ -1101,17 +1104,17 @@ func (s *TurnService) SettleAdmittedTurnAfterError(
 // ExecuteTurn runs the complete turn loop and returns the finished Turn domain
 // object. The loop follows these stages:
 //
+//	Admission — reject retired inline context references
 //	Step 1  — create turn record (status=running)
 //	Step 2  — persist user message
-//	Step 3  — preprocess context references (@file, @url, …)
+//	Step 3  — load conversation messages
 //	Step 4  — assemble system prompt
-//	Step 5  — load conversation messages
-//	Step 6  — check / run compression
-//	Step 7  — credential lease + provider call with error recovery loop
-//	Step 8  — tool call iteration loop (includes delegation)
-//	Step 9  — nudge state counters
-//	Step 10 — persist assistant message + complete turn
-//	Step 11 — save TurnTrace
+//	Step 5  — check / run compression
+//	Step 6  — credential lease + provider call with error recovery loop
+//	Step 7  — tool call iteration loop (includes delegation)
+//	Step 8  — nudge state counters
+//	Step 9  — persist assistant message + complete turn
+//	Step 10 — save TurnTrace
 func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userInput string) (*domain.Turn, error) {
 	if config == nil {
 		return nil, errcode.New(
@@ -1120,6 +1123,9 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 			"turn config is required",
 			nil,
 		)
+	}
+	if err := validateNoRetiredInlineContextReference(userInput); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(config.TurnID) == "" {
 		switch {

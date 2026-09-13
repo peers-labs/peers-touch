@@ -7,7 +7,8 @@
 > **Plan type**: PRODUCT → DESIGN → PLAN → EXECUTE（Owner approval 已收到）
 > **Predecessor**: `20260816-lobehub-parity-full-landing.md`
 > **Governing product**: `../modern-chat-agent/`
-> **Benchmark evidence**: `../lobehub-feature-topology.md`、`../lobehub-parity/`
+> **Benchmark evidence**: `../lobehub-feature-topology.md`、
+> `../modern-chat-agent/lobehub-v2-reference-analysis.md`
 
 ---
 
@@ -21,22 +22,22 @@
 | Worktree | `<repo-root>` |
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
-| Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Verify deterministic Browser `BASE-INTERRUPTED` Station restart after the provider-completion race |
+| Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
+| Current step | `BASE-INVALID_REFERENCE` focused implementation passes; create exact-source checkpoint, deploy, and run MCA-J06 reject→preserve→remove→resend |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source C08 run `20260913T032341973486Z-0e8f949da6e64423747d4206ff53c3f0` on `d5bfa071a260116a1c5f1f25a48cb45cec0920d6` completed `DONE / PROVEN`; same-source fully authorized Foundation run `20260913T032512505621Z-53d0a764362fb2dc00ce9d4ecc93c1b2` crossed AS-F06 and both Duplicate Conflict locale cells, then exposed a provider-completion race before `BASE-INTERRUPTED` restart |
-| Current action | Keep AS-F06 on its text-prefix boundary; prepare the one real `BASE-INTERRUPTED` Turn only after restart preflight and cut transport at durable `provider_call_started` |
-| Next action | Create a clean fix checkpoint, rebuild/smoke, deploy exact source, run C08 first, and rerun Foundation through `BASE-INTERRUPTED` |
-| Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
-| Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
+| Last completed | Checkpoint `d3e6feaa3051763c79f1252593c7bbcfff06f6b1` preserves retained-Attempt replay; C08 run `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN`; fully authorized Foundation run `20260913T150542388406Z-46ced7c0b785bb9094b7b948a34b86d3` crossed all AS-F06 and both-locale `BASE-INTERRUPTED` cells before exposing unimplemented `BASE-INVALID_REFERENCE` |
+| Current action | Checkpoint the focused Station/Desktop implementation and prepare the approved remote Station plus native Desktop development runtime |
+| Next action | Reach exact-source Desktop `FUNCTIONAL_PASS` for invalid reference removal and successful resend; only then promote the same Journey into Foundation Acceptance |
+| Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
+| Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
-| Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
-| Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
+| Overnight stop conditions | `WORKTREE_IDENTITY_MISMATCH`、undefined PRODUCT/DESIGN semantics、unauthorized destructive reset、secret leak、or exhausted external runtime resources park the affected action；focused implementation failures return to the owner layer |
+| Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, new PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | none；the selector correction is locally verified, and the provider-completion race is addressed at the source-bound restart coordinator without retry or provider substitution；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
+| Blockers | none for the MCA-J06 source slice；AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 run `20260913T032341973486Z-0e8f949da6e64423747d4206ff53c3f0` is `DONE / PROVEN` on `d5bfa071a260116a1c5f1f25a48cb45cec0920d6`；Foundation run `20260913T032512505621Z-53d0a764362fb2dc00ce9d4ecc93c1b2` crosses Duplicate Conflict and reaches Browser English `BASE-INTERRUPTED`, where readback is `completed` with no typed outcome；Provisioner cleanup is `DONE / PROVEN / passed` |
-| Last updated | 2026-09-13 |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN` on `d3e6feaa3`；Foundation `20260913T150542388406Z-46ced7c0b785bb9094b7b948a34b86d3` first fails at Browser English `BASE-INVALID_REFERENCE`；current Station service/handler packages, 57 focused Desktop tests, and Desktop typecheck pass for the product implementation |
+| Last updated | 2026-09-14 |
 
 ---
 

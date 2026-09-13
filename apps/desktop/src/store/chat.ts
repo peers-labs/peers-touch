@@ -123,6 +123,13 @@ export interface AgentSendLifecycle {
   clientIdempotencyKey?: string;
 }
 
+export interface ComposerReferenceRemovalIntent {
+  sessionKey: string;
+  referenceKind: string;
+  referenceHash: string;
+  nonce: number;
+}
+
 export type BudgetExhaustionKind =
   | 'tool_calls'
   | 'wall_time'
@@ -675,6 +682,7 @@ interface ChatState {
   // draft WITHOUT sending, aligning with LobeHub `fillInputMessage`. ChatInput consumes
   // the pending value, writes it into its draft, focuses, and clears the request.
   composerFill: { text: string; nonce: number } | null;
+  composerReferenceRemoval: ComposerReferenceRemovalIntent | null;
   composerFocusNonce: number;
 
   loadSessions: () => Promise<void>;
@@ -720,6 +728,11 @@ interface ChatState {
   setWideScreen: (wide: boolean) => void;
   fillComposer: (text: string) => void;
   consumeComposerFill: () => void;
+  requestComposerReferenceRemoval: (
+    referenceKind: string,
+    referenceHash: string,
+  ) => void;
+  consumeComposerReferenceRemoval: (nonce: number) => void;
   requestComposerFocus: () => void;
   consumeComposerFocus: () => void;
   toggleSessionMemory: (sessionKey?: string) => void;
@@ -728,6 +741,7 @@ interface ChatState {
 }
 
 let messageCounter = 0;
+let composerReferenceRemovalCounter = 0;
 const pendingMessageRetries = new Map<string, Promise<void>>();
 
 function tempId() {
@@ -1123,6 +1137,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   wideScreen: false,
   composerFill: null,
+  composerReferenceRemoval: null,
   composerFocusNonce: 0,
 
   reset: () => {
@@ -1145,6 +1160,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       draftPromotions: {},
       readinessErrorKey: null,
       composerFill: null,
+      composerReferenceRemoval: null,
       composerFocusNonce: 0,
     });
   },
@@ -1727,7 +1743,12 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         }
         if (!acceptedByStation) lifecycle?.onRejected?.(err.typedError);
         log.error('chat', 'Send message failed', { error: err.message });
-        const resolution = err.resolution as ErrorResolutionAction | undefined;
+        const mappedResolution = resolveAgentTypedErrorAction(err.typedError);
+        const resolution = mappedResolution ?? (
+          err.resolution?.type === 'removeReference'
+            ? undefined
+            : err.resolution
+        );
         set((state) => {
           const isCurrent = state.currentSessionKey === resolvedSessionKey;
           const applyError = (m: ChatMessage): ChatMessage => {
@@ -1747,6 +1768,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
               ...m,
               error: presentChatRuntimeError(err.message),
               typedError: err.typedError ?? m.typedError,
+              resolution: undefined,
               loading: false,
             };
           };
@@ -2119,6 +2141,26 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   consumeComposerFill: () => {
     set({ composerFill: null });
+  },
+
+  requestComposerReferenceRemoval: (referenceKind, referenceHash) => {
+    composerReferenceRemovalCounter += 1;
+    set({
+      composerReferenceRemoval: {
+        sessionKey: get().currentSessionKey,
+        referenceKind,
+        referenceHash,
+        nonce: composerReferenceRemovalCounter,
+      },
+    });
+  },
+
+  consumeComposerReferenceRemoval: (nonce) => {
+    set((state) => (
+      state.composerReferenceRemoval?.nonce === nonce
+        ? { composerReferenceRemoval: null }
+        : {}
+    ));
   },
 
   requestComposerFocus: () => {

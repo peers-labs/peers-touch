@@ -177,6 +177,47 @@ func TestTurnAdmissionRejectsAttachmentBeforePersistence(t *testing.T) {
 	}
 }
 
+func TestTurnAdmissionRejectsRetiredContextReferenceBeforePersistence(t *testing.T) {
+	db := openTurnAdmissionDB(t, "turn_admission_invalid_reference_preflight")
+	seedAdmissionConversation(t, db)
+	svc := newTurnAdmissionServiceWithDB(db)
+	turnService := &TurnService{}
+	svc.SetRequestPreflight(turnService.PreflightTurn)
+	const token = "@file:private/notes.txt"
+
+	_, err := svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequest("invalid-reference", "Inspect "+token),
+	)
+	assertContextInvalidReferenceError(t, err, "file", token)
+
+	for name, record := range map[string]interface{}{
+		"turn":        &persistence.AgentTurn{},
+		"attempt":     &persistence.TurnAttempt{},
+		"queue entry": &persistence.TurnQueueEntry{},
+		"message":     &persistence.AgentMessage{},
+	} {
+		var count int64
+		if err := db.Model(record).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("invalid reference persisted %d %s rows", count, name)
+		}
+	}
+	var conversation persistence.Conversation
+	if err := db.First(&conversation, "id = ?", "conversation-1").Error; err != nil {
+		t.Fatalf("read conversation: %v", err)
+	}
+	if conversation.Version != 1 {
+		t.Fatalf(
+			"invalid reference changed conversation version to %d",
+			conversation.Version,
+		)
+	}
+}
+
 func TestTurnAdmissionRejectsInputOverflowBeforePersistence(t *testing.T) {
 	db := openTurnAdmissionDB(t, "turn_admission_input_overflow")
 	seedAdmissionConversation(t, db)

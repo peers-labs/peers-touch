@@ -30,6 +30,8 @@ import {
 } from '../services/desktop_api';
 import { ProviderIcon } from './settings/ProviderIcon';
 import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning';
+import { removeRejectedInlineReferences } from './composer/invalidReferenceRecovery';
+import { log } from '../utils/logger';
 
 const COMPOSER_COLORS = {
   border: '#d1d1d1',
@@ -88,8 +90,12 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
   const readinessErrorKey = useChatStore(s => s.readinessErrorKey);
   const composerFill = useChatStore(s => s.composerFill);
+  const composerReferenceRemoval = useChatStore(s => s.composerReferenceRemoval);
   const composerFocusNonce = useChatStore(s => s.composerFocusNonce);
   const consumeComposerFill = useChatStore(s => s.consumeComposerFill);
+  const consumeComposerReferenceRemoval = useChatStore(
+    s => s.consumeComposerReferenceRemoval,
+  );
   const consumeComposerFocus = useChatStore(s => s.consumeComposerFocus);
   const selectedModel = useAgentStore(s => s.selectedModel);
   const selectedProviderId = useAgentStore(s => s.selectedProviderId);
@@ -190,6 +196,47 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
       }
     });
   }, [composerFill, consumeComposerFill]);
+
+  // Invalid references remain composer-owned: remove only the Station-selected
+  // inline token after the user invokes recovery, without touching attachments.
+  useEffect(() => {
+    if (
+      !composerReferenceRemoval
+      || composerReferenceRemoval.sessionKey !== currentSessionKey
+    ) {
+      return;
+    }
+    let active = true;
+    const request = composerReferenceRemoval;
+    const sourceDraft = input;
+
+    void removeRejectedInlineReferences(
+      sourceDraft,
+      request.referenceKind,
+      request.referenceHash,
+    ).then(({ draft }) => {
+      if (!active) return;
+      consumeComposerReferenceRemoval(request.nonce);
+      setInput((current) => current === sourceDraft ? draft : current);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }).catch((error: unknown) => {
+      if (!active) return;
+      consumeComposerReferenceRemoval(request.nonce);
+      log.error('chat', 'Failed to remove invalid inline reference', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    composerReferenceRemoval,
+    consumeComposerReferenceRemoval,
+    currentSessionKey,
+    input,
+  ]);
 
   useEffect(() => {
     if (composerFocusNonce === 0) return;

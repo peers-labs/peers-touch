@@ -23,6 +23,7 @@ import {
   Minimize2,
   RotateCcw,
   Settings,
+  X,
 } from 'lucide-react';
 import type { ChatMessage, DelegationTaskInfo, MessageArtifact } from '../../store/chat';
 import { extractMessageArtifacts, useChatStore } from '../../store/chat';
@@ -358,6 +359,9 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const retryTurnRecovery = useChatStore(s => s.retryTurnRecovery);
   const reloadTurnSnapshot = useChatStore(s => s.reloadTurnSnapshot);
   const requestComposerFocus = useChatStore(s => s.requestComposerFocus);
+  const requestComposerReferenceRemoval = useChatStore(
+    s => s.requestComposerReferenceRemoval,
+  );
   const sendMessage = useChatStore(s => s.sendMessage);
   const translateMessage = useChatStore(s => s.translateMessage);
   const openThread = usePortalStore(s => s.openThread);
@@ -396,6 +400,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           ? 'choose-compatible-model'
           : message.resolution?.type === 'recover'
             ? 'recover'
+            : message.resolution?.type === 'removeReference'
+              ? 'remove-reference'
             : 'true';
   const artifacts = useMemo(() => extractMessageArtifacts(message), [message]);
 
@@ -496,6 +502,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-error-capability-id={message.typedError?.details.capability_id}
       data-pt-agent-error-turn-id={message.typedError?.details.turn_id}
       data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
+      data-pt-agent-error-reference-kind={message.typedError?.details.reference_kind}
+      data-pt-agent-error-reference-hash={message.typedError?.details.reference_hash}
       id={`agent-message-${message.id}`}
       align="flex-start"
       gap={8}
@@ -759,7 +767,9 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                             ? <LogOut size={14} />
                             : message.resolution.type === 'recover'
                               ? <RotateCcw size={14} />
-                              : undefined
+                              : message.resolution.type === 'removeReference'
+                                ? <X size={14} />
+                                : undefined
                     }
                     style={{ marginTop: 8 }}
                     onClick={async () => {
@@ -788,6 +798,13 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         }
                         if (message.resolution!.type === 'recover') {
                           await handleRetry();
+                          return;
+                        }
+                        if (message.resolution!.type === 'removeReference') {
+                          requestComposerReferenceRemoval(
+                            message.resolution!.referenceKind ?? '',
+                            message.resolution!.referenceHash ?? '',
+                          );
                           return;
                         }
                         const result = await api.resolveErrorAction(message.resolution!);

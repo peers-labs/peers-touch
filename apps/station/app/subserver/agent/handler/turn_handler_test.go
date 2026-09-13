@@ -754,6 +754,76 @@ func TestExecuteTurnStreamPreflightsBeforeCreatingMissingConversation(t *testing
 	assertConversationCount(t, db, 0)
 }
 
+func TestExecuteTurnStreamRejectsRetiredContextReferenceWithTypedPayloadBeforePersistence(
+	t *testing.T,
+) {
+	db := openTurnHandlerTestDB(t, "turn_handler_invalid_reference_stream")
+	ctx := coreauth.WithSubject(
+		context.Background(),
+		&coreauth.Subject{ID: "ptid:person:owner"},
+	)
+	handlers := NewTurnHandlers(
+		&service.TurnService{},
+		service.NewToolRegistryService(nil, nil),
+		nil,
+		service.NewConversationService(),
+	)
+	const token = "@url:https://example.test/private"
+	requestBody, err := protojson.Marshal(&model.ExecuteTurnRequest{
+		ConversationId: "missing-invalid-reference-conversation",
+		AgentId:        "agent-1",
+		UserInput:      "Read " + token,
+	})
+	if err != nil {
+		t.Fatalf("encode invalid reference stream request: %v", err)
+	}
+	response := &fakeStreamResponse{}
+	if err := handlers.HandleExecuteTurnStream(
+		ctx,
+		&fakeTurnRequest{body: requestBody},
+		response,
+	); err != nil {
+		t.Fatalf("execute invalid reference stream handler: %v", err)
+	}
+
+	var payload struct {
+		Type           string            `json:"type"`
+		Error          string            `json:"error"`
+		ErrorType      string            `json:"error_type"`
+		LocaleKey      string            `json:"locale_key"`
+		Retryable      bool              `json:"retryable"`
+		Terminal       bool              `json:"terminal"`
+		Details        map[string]string `json:"details"`
+		ConversationID string            `json:"conversationId"`
+		AgentID        string            `json:"agentId"`
+	}
+	dataLine := strings.TrimPrefix(
+		strings.TrimSpace(strings.Split(response.body.String(), "\n")[1]),
+		"data: ",
+	)
+	if err := json.Unmarshal([]byte(dataLine), &payload); err != nil {
+		t.Fatalf("decode invalid reference stream payload: %v", err)
+	}
+	referenceHash := sha256.Sum256([]byte(token))
+	if payload.Type != "error" ||
+		payload.Error != errcode.AgentContextInvalidReferenceLocaleKey ||
+		payload.ErrorType != string(errcode.AgentContextInvalidReference) ||
+		payload.LocaleKey != errcode.AgentContextInvalidReferenceLocaleKey ||
+		payload.Retryable ||
+		!payload.Terminal ||
+		len(payload.Details) != 2 ||
+		payload.Details["reference_kind"] != "url" ||
+		payload.Details["reference_hash"] != fmt.Sprintf("%x", referenceHash) ||
+		payload.ConversationID != "missing-invalid-reference-conversation" ||
+		payload.AgentID != "agent-1" {
+		t.Fatalf("invalid reference stream payload = %+v", payload)
+	}
+	if response.headers["X-Agent-Turn-ID"] != "" {
+		t.Fatalf("invalid reference stream exposed turn identity: %+v", response.headers)
+	}
+	assertNoTurnHandlerPersistence(t, db)
+}
+
 func assertConversationNotCreated(t *testing.T, db *gorm.DB, conversationID string) {
 	t.Helper()
 	var count int64
@@ -764,6 +834,25 @@ func assertConversationNotCreated(t *testing.T, db *gorm.DB, conversationID stri
 	}
 	if count != 0 {
 		t.Fatalf("preflight rejection persisted conversation %q", conversationID)
+	}
+}
+
+func assertNoTurnHandlerPersistence(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	for name, record := range map[string]interface{}{
+		"conversation": &persistence.Conversation{},
+		"message":      &persistence.AgentMessage{},
+		"turn":         &persistence.AgentTurn{},
+		"queue entry":  &persistence.TurnQueueEntry{},
+	} {
+		var count int64
+		if err := db.Model(record).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("invalid reference persisted %d %s rows", count, name)
+		}
 	}
 }
 

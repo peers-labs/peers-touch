@@ -2506,12 +2506,15 @@ export interface AgentErrorResolutionAction {
     | 'openOriginal'
     | 'switchAccount'
     | 'chooseCompatibleModel'
+    | 'removeReference'
     | 'recover';
   cliId?: string;
   providerId?: string;
   existingCommandId?: string;
   resourceKind?: string;
   resourceId?: string;
+  referenceKind?: string;
+  referenceHash?: string;
   capabilityId?: string;
   turnId?: string;
   reasonCode?: string;
@@ -2521,6 +2524,9 @@ export interface AgentErrorResolutionAction {
 export const AGENT_ATTACHMENT_REJECTED_ERROR_TYPE =
   'CONTEXT_ATTACHMENT_REJECTED';
 export const AGENT_CONTEXT_LIMIT_ERROR_TYPE = 'CONTEXT_OVERFLOW';
+export const AGENT_INVALID_REFERENCE_ERROR_TYPE = 'CONTEXT_INVALID_REFERENCE';
+export const AGENT_INVALID_REFERENCE_LOCALE_KEY =
+  'agent.errors.contextInvalidReference';
 export const AGENT_FORBIDDEN_ACTOR_ERROR_TYPE = 'OWNERSHIP_FORBIDDEN_ACTOR';
 export const AGENT_FORBIDDEN_ACTOR_LOCALE_KEY = 'agent.errors.forbiddenActor';
 export const AGENT_INCOMPATIBLE_CAPABILITY_ERROR_TYPE =
@@ -2552,6 +2558,13 @@ export type AgentLifecycleInterruptedError = AgentTypedErrorPayload & {
   };
 };
 
+export type AgentInvalidReferenceError = AgentTypedErrorPayload & {
+  details: {
+    reference_kind: string;
+    reference_hash: string;
+  };
+};
+
 const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'resource_kind',
   'resource_id',
@@ -2560,7 +2573,19 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'capability_id',
   'turn_id',
   'reason_code',
+  'reference_kind',
+  'reference_hash',
 ] as const;
+
+const AGENT_INVALID_REFERENCE_KINDS = new Set([
+  'file',
+  'folder',
+  'url',
+  'diff',
+  'staged',
+  'git',
+]);
+const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/u;
 
 function agentTypedErrorBoolean(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
@@ -2698,6 +2723,27 @@ export function isAgentLifecycleInterruptedError(
   );
 }
 
+export function isAgentInvalidReferenceError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentInvalidReferenceError {
+  if (
+    error?.error_type !== AGENT_INVALID_REFERENCE_ERROR_TYPE
+    || error.locale_key !== AGENT_INVALID_REFERENCE_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'reference_hash'
+    && detailKeys[1] === 'reference_kind'
+    && AGENT_INVALID_REFERENCE_KINDS.has(error.details.reference_kind)
+    && SHA256_HEX_PATTERN.test(error.details.reference_hash)
+  );
+}
+
 export function resolveAgentTypedErrorAction(
   error: AgentTypedErrorPayload | null | undefined,
 ): AgentErrorResolutionAction | undefined {
@@ -2723,6 +2769,14 @@ export function resolveAgentTypedErrorAction(
       turnId: error.details.turn_id,
       reasonCode: error.details.reason_code,
       label: 'agent.recovery.recover',
+    };
+  }
+  if (isAgentInvalidReferenceError(error)) {
+    return {
+      type: 'removeReference',
+      referenceKind: error.details.reference_kind,
+      referenceHash: error.details.reference_hash,
+      label: 'agent.recovery.removeReference',
     };
   }
   if (
@@ -6867,7 +6921,10 @@ export function agentTurnStreamErrorFromData(
     error.resolution = mappedResolution;
   } else if (data.resolution && typeof data.resolution === 'object') {
     const suppliedResolution = data.resolution as AgentErrorResolutionAction;
-    if (suppliedResolution.type !== 'recover') {
+    if (
+      suppliedResolution.type !== 'recover'
+      && suppliedResolution.type !== 'removeReference'
+    ) {
       error.resolution = suppliedResolution;
     }
   }

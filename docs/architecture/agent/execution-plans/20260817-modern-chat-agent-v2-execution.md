@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260913T122723703780Z-3c46e80a6f615d4110b062ef50fb1f41` on `80358d815ccdb031582517134e6a2bb563d96760` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260913T122942301669Z-a65d8f1a59c417365f070daa3dc3a6d1` proved the interrupted source outcome, visible recovery, retry admission, and one new recovery Attempt, then failed first because default current-Attempt replay could not read the retained source Attempt terminal event after retry; the local owner correction adds exact retained-Attempt replay selection without changing default current-Attempt recovery; Station focused tests, Desktop strict check, Desktop `623/623`, and focused Agent contract/scenario tests pass; clean-checkpoint exact-source proof is pending | W8a |
+| G-F Complete Foundation Gate | partial / unproven; checkpoint `d3e6feaa3051763c79f1252593c7bbcfff06f6b1` preserves retained-Attempt replay; C08 run `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN`; fully authorized Foundation run `20260913T150542388406Z-46ced7c0b785bb9094b7b948a34b86d3` crossed all AS-F06 and both-locale `BASE-INTERRUPTED` cells, then first failed at Browser English `BASE-INVALID_REFERENCE` because the real product vertical is absent; G-FE1 now executes that accepted MCA-J06 behavior as a product-first DevelopmentWorkItem before Acceptance promotion | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1237,6 +1237,65 @@ and zero local-path leakage.
   execution claim, zero side effect, replay equality, cleanup, and an
   independent Python oracle. The staged C13 `CapabilityOperation` routes remain
   inactive until W8b. G-F remains `PARTIAL / UNPROVEN`.
+
+#### G-FE1 DevelopmentWorkItem: MCA-J06 Invalid Reference Recovery
+
+- **ID**: `G-FE1-J06-INVALID-REFERENCE`.
+- **Status**: `FOCUSED_PASS`; exact-source product Journey pending.
+- **Product Journey**: `MCA-J06 Work With Files And Images`.
+- **Accepted behavior**: a user submits a draft containing an invalid or
+  unavailable context reference; Station rejects it with
+  `CONTEXT_INVALID_REFERENCE / agent.errors.contextInvalidReference`,
+  `retryable=false`, `terminal=true`, and only
+  `reference_kind,reference_hash`; the Desktop receiver preserves the draft,
+  exposes localized `Remove reference`, removes only the rejected reference,
+  and can resend the remaining draft successfully.
+- **Authority**: Station validates and hashes the reference before context
+  inclusion or provider execution. Desktop owns the local draft and the
+  remove-reference interaction; it cannot fabricate the typed error.
+- **Existing contract reuse**: the retired explicit
+  `@file/@folder/@url/@diff/@staged/@git` syntax in `user_input` is recognized
+  only as invalid presentation input and is never restored as filesystem,
+  network, Git, or shared-path authority. Station rejects it before
+  persistence; the typed error envelope and accepted
+  `agent.recovery.removeReference` copy drive local draft recovery. Valid files
+  continue through the existing opaque `AgentAttachmentRef` path. A future
+  valid client-local context picker requires a separate `ClientResourceRef`
+  product slice rather than a fake sidecar in this negative Journey.
+- **Focused checks**: Station invalid-reference admission and zero-inclusion /
+  zero-provider regressions; Desktop typed-error projection, draft
+  preservation, exact reference removal, and resend input; Rust transport only
+  if the existing request envelope cannot carry the accepted contract.
+- **Functional fence**: one exact-source Desktop product Journey must visibly
+  reject, preserve, remove, and resend through the real Station path before
+  any Foundation adapter/oracle work or broad Gate execution.
+- **Prototype disposition**: implementation must match the confirmed
+  `modern-attachment-failure` behavior; update the prototype only if the
+  accepted visible contract changes.
+- **Acceptance promotion**: after `FUNCTIONAL_PASS`, promote this same business
+  Journey into the existing `BASE-INVALID_REFERENCE` Foundation cell without a
+  second Harness-only implementation.
+- **Scope boundary**: no Home, MCP, Connector, Evaluation, W8b, version,
+  provider, timeout, matrix, or destructive Fixture changes.
+- **Concurrency decision**: `hybrid`; after this contract freeze, the Station
+  admission/error lane and Desktop Web draft/recovery lane own disjoint files
+  and run focused checks independently. Desktop Rust, Proto/generated output,
+  locales, prototype source, Acceptance, Git index, deployment, and functional
+  runtime remain integrator-owned or untouched.
+- **Focused evidence (2026-09-14)**:
+  - Station rejects only retired explicit reference tokens before Turn ID,
+    conversation, message, attempt, queue, ContextLedger, or provider work and
+    returns the exact hash-only typed payload.
+  - Desktop validates the exact payload, keeps draft ownership in the composer,
+    removes every matching token only after the user action, preserves
+    unrelated text and attachments, and restores focus without navigation.
+  - `go test ./app/subserver/agent/service ./app/subserver/agent/handler
+    -count=1`: PASS.
+  - focused Desktop Vitest: 57/57 PASS.
+  - `pnpm run check`: PASS.
+  - Prototype disposition: no drift; the implementation follows the confirmed
+    attachment-failure preservation/removal behavior. No prototype source
+    change is required.
 
 #### G-FE1 Concurrency Decision
 
