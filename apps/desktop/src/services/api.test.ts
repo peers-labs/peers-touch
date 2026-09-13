@@ -1153,9 +1153,23 @@ describe('Agent turn stream completion', () => {
   })
 
   it('disconnects a native transport without cancelling the durable turn', async () => {
-    mockListen.mockResolvedValue(() => undefined)
+    type NativeTurnEvent = {
+      payload: {
+        streamId: string
+        ptid: string
+        event: string
+        data: Record<string, unknown>
+      }
+    }
+    let listener: ((event: NativeTurnEvent) => void) | undefined
+    let startedStreamId = ''
+    mockListen.mockImplementation(async (_event, callback) => {
+      listener = callback as (event: NativeTurnEvent) => void
+      return () => undefined
+    })
     vi.mocked(invoke).mockImplementation((command, args) => {
       const streamId = String((args as { input?: { stream_id?: string } })?.input?.stream_id || '')
+      if (command === 'agent_execute_turn_stream') startedStreamId = streamId
       if (command === 'agent_execute_turn_stream' || command === 'agent_disconnect_turn_stream') {
         return Promise.resolve({
           ok: true,
@@ -1168,6 +1182,8 @@ describe('Agent turn stream completion', () => {
       return Promise.reject(new Error(`unexpected command: ${command}`))
     })
 
+    const onEvent = vi.fn()
+    const onDone = vi.fn()
     const controller = streamAgentTurn(
       {
         client_idempotency_key: 'request-transport-disconnect',
@@ -1175,8 +1191,8 @@ describe('Agent turn stream completion', () => {
         agent_id: 'agent-1',
         user_input: 'hello',
       },
-      vi.fn(),
-      vi.fn(),
+      onEvent,
+      onDone,
       vi.fn(),
       'ptid:person:owner',
     )
@@ -1188,13 +1204,49 @@ describe('Agent turn stream completion', () => {
       })
     })
 
-    controller.disconnectTransport()
+    let disconnectSettled = false
+    const disconnect = controller.disconnectTransport().then(() => {
+      disconnectSettled = true
+    })
 
     await vi.waitFor(() => {
       expect(invoke).toHaveBeenCalledWith('agent_disconnect_turn_stream', {
         input: { stream_id: expect.any(String) },
       })
     })
+    listener?.({
+      payload: {
+        streamId: startedStreamId,
+        ptid: 'ptid:person:owner',
+        event: 'done',
+        data: {
+          turnId: 'turn-1',
+          conversationId: 'conversation-1',
+          seq: 4,
+        },
+      },
+    })
+    expect(onDone).not.toHaveBeenCalled()
+    expect(disconnectSettled).toBe(false)
+
+    listener?.({
+      payload: {
+        streamId: startedStreamId,
+        ptid: 'ptid:person:owner',
+        event: 'connection_lost',
+        data: {
+          turnId: 'turn-1',
+          conversationId: 'conversation-1',
+          seq: 3,
+          recoveryHandoff: true,
+        },
+      },
+    })
+    await disconnect
+    expect(disconnectSettled).toBe(true)
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'connection_lost',
+    }))
     expect(invoke).not.toHaveBeenCalledWith('agent_cancel_turn', expect.anything())
     expect(invoke).not.toHaveBeenCalledWith('agent_cancel_turn_stream', expect.anything())
   })

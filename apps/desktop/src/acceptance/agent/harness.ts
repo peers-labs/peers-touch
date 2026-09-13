@@ -7146,38 +7146,9 @@ async function runFoundationF06Prepare(input: {
       },
     );
     // #endregion
-    try {
-      await cleanupFoundationF06Scenario({
-        scenarioKey: input.scenarioKey,
-        conversationId: conversation.conversation_id,
-        turnId: activeTurnId,
-      });
-    } catch (cleanupError) {
-      const cleanup = cleanupError instanceof Error
-        ? cleanupError.message
-        : String(cleanupError);
-      // #region debug-point D:f06-terminal-race-cleanup-error
-      void reportFoundationF06TerminalRaceDebug(
-        'D',
-        'preparation-cleanup-failed',
-        {
-          platform: input.platform,
-          locale: input.locale,
-          scenarioKey: input.scenarioKey,
-          terminalRace:
-            primary.includes('foundationRecoveryTurnAlreadyTerminal'),
-          cleanupErrorType:
-            cleanupError instanceof Error
-              ? cleanupError.constructor.name
-              : typeof cleanupError,
-          cleanupTurnPresent: activeTurnId.length > 0,
-        },
-      );
-      // #endregion
-      throw new Error(
-        `CLEANUP_FAILED:${primary}; auth=${JSON.stringify(authDiagnostic)}; cleanup=${cleanup}`,
-      );
-    }
+    // The coordinator restores the cut proxy before invoking the registered
+    // cleanup locator. Cleanup through the intentionally severed transport
+    // would hide the primary failure and can lose the locator on client restart.
     throw new Error(`${primary}; auth=${JSON.stringify(authDiagnostic)}`);
   }
 }
@@ -7399,7 +7370,7 @@ async function prepareFoundationF06Conversation(
       void requestFoundationF06TransportCut(input.faultControlUrl)
         .then(async () => {
           // The proxy owns the fault; abort only discards post-cut buffered frames.
-          controller.disconnectTransport();
+          await controller.disconnectTransport();
           const activeAfterAcknowledgement = useAgentTurnRecoveryStore.getState()
             .active[conversation.conversation_id];
           // #region debug-point C:f06-fault-ack
@@ -8284,6 +8255,7 @@ async function cleanupFoundationF06Scenario(input: {
   }
   let cleanupError: unknown = null;
   let turnCancellationErrorCode = '';
+  let queueCancellationErrorCode = '';
   let deletionErrorCode = '';
   let cleanupStage = 'turn-cancel';
   if (turnId) {
@@ -8293,9 +8265,13 @@ async function cleanupFoundationF06Scenario(input: {
       turnCancellationErrorCode = observedErrorCode(error);
     }
   }
+  cleanupStage = 'queue-cancel';
   try {
-    cleanupStage = 'queue-cancel';
     await cancelFoundationQueuedTurns(conversationId);
+  } catch (error) {
+    queueCancellationErrorCode = observedErrorCode(error);
+  }
+  try {
     cleanupStage = 'conversation-delete';
     deletionErrorCode = await deleteFoundationConversation(conversationId);
     // #region debug-point D:f06-cleanup-actions
@@ -8307,6 +8283,8 @@ async function cleanupFoundationF06Scenario(input: {
         inputTurnPresent: turnId.length > 0,
         turnCancellationErrorCodePresent:
           turnCancellationErrorCode.length > 0,
+        queueCancellationErrorCodePresent:
+          queueCancellationErrorCode.length > 0,
         deletionErrorCodePresent: deletionErrorCode.length > 0,
       },
     );
@@ -8354,6 +8332,7 @@ async function cleanupFoundationF06Scenario(input: {
     if (!conversationDeleted && cleanupError === null) cleanupError = error;
   }
   if (conversationDeleted) {
+    cleanupError = null;
     clearFoundationLocalConversationProjection(conversationId);
     removeFoundationF06Handoff(input.scenarioKey);
   }
@@ -19794,7 +19773,7 @@ export function installAcceptanceHarness(): void {
         if (!active.events.some((event) =>
           event.event === 'cancelled'
           || classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
-          active.controller.disconnectTransport();
+          await active.controller.disconnectTransport();
         }
         const [
           firstActiveEvent,

@@ -6513,7 +6513,7 @@ export interface AgentTurnSourceDelivery {
 
 export interface AgentTurnStreamController extends AbortController {
   readonly streamGeneration: number;
-  disconnectTransport(): void;
+  disconnectTransport(): Promise<void>;
 }
 
 export interface ChatImageInput {
@@ -6778,6 +6778,10 @@ async function consumeAgentSSE(
           data = parsed as Record<string, unknown>;
         }
       }
+      if (signal.aborted) {
+        await reader.cancel();
+        return terminal;
+      }
       terminal = onFrame({ event, data }) || terminal;
       if (signal.aborted) {
         await reader.cancel();
@@ -7013,14 +7017,23 @@ export function streamAgentTurn(
   if (isHttpGatewayMode()) {
     const transportController = new AbortController();
     let transportDisconnectRequested = false;
+    let resolveTransportDisconnect = () => {};
+    let rejectTransportDisconnect = (_error: Error) => {};
+    const transportDisconnectCompletion = new Promise<void>((resolve, reject) => {
+      resolveTransportDisconnect = resolve;
+      rejectTransportDisconnect = reject;
+    });
     const foundationFaultProbe =
       input.user_input === FOUNDATION_F06_STREAM_PROBE_INPUT;
     const foundationFaultProbeStartedAt = performance.now();
     Object.defineProperty(controller, 'disconnectTransport', {
       value: () => {
-        if (transportDisconnectRequested || controller.signal.aborted) return;
-        transportDisconnectRequested = true;
-        transportController.abort();
+        if (controller.signal.aborted) return Promise.resolve();
+        if (!transportDisconnectRequested) {
+          transportDisconnectRequested = true;
+          transportController.abort();
+        }
+        return transportDisconnectCompletion;
       },
       enumerable: true,
     });
@@ -7051,6 +7064,7 @@ export function streamAgentTurn(
         onEvent(projectedEvent);
         const terminal = classifyAgentTurnTerminalEvent(projectedEvent);
         if (terminal === 'failed') {
+          resolveTransportDisconnect();
           onError(agentTurnStreamErrorFromData(projectedEvent.data));
           settled = true;
           return true;
@@ -7061,6 +7075,7 @@ export function streamAgentTurn(
           || terminal === 'queued'
           || terminal === 'interrupted'
         ) {
+          resolveTransportDisconnect();
           onDone();
           settled = true;
           return true;
@@ -7166,8 +7181,14 @@ export function streamAgentTurn(
                 : liveTransportError?.message || 'station_stream_closed',
             },
           });
+          resolveTransportDisconnect();
         }
       } catch (err: unknown) {
+        if (transportDisconnectRequested) {
+          rejectTransportDisconnect(
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        }
         if (!controller.signal.aborted && !settled) {
           onError(err instanceof Error ? err : new Error(String(err)));
         }
@@ -7176,13 +7197,20 @@ export function streamAgentTurn(
     return controller;
   }
   let transportDisconnectRequested = false;
-  let disconnectNativeTransport = () => {
+  let resolveTransportDisconnect = () => {};
+  let rejectTransportDisconnect = (_error: Error) => {};
+  const transportDisconnectCompletion = new Promise<void>((resolve, reject) => {
+    resolveTransportDisconnect = resolve;
+    rejectTransportDisconnect = reject;
+  });
+  let disconnectNativeTransport = (): Promise<void> => {
     transportDisconnectRequested = true;
+    return transportDisconnectCompletion;
   };
   Object.defineProperty(controller, 'disconnectTransport', {
     value: () => {
-      if (controller.signal.aborted) return;
-      disconnectNativeTransport();
+      if (controller.signal.aborted) return Promise.resolve();
+      return disconnectNativeTransport();
     },
     enumerable: true,
   });
@@ -7212,18 +7240,24 @@ export function streamAgentTurn(
       });
     };
     const disconnectTransport = () => {
-      if (!startCompleted || transportCancellationSent) return;
+      if (!startCompleted || transportCancellationSent) {
+        return transportDisconnectCompletion;
+      }
       transportCancellationSent = true;
       void api.disconnectAgentTurnStream(streamId).catch((error) => {
         log.warn('api', 'Agent turn transport disconnect failed', {
           streamId,
           error: String(error),
         });
+        rejectTransportDisconnect(
+          error instanceof Error ? error : new Error(String(error)),
+        );
       });
+      return transportDisconnectCompletion;
     };
     disconnectNativeTransport = () => {
       transportDisconnectRequested = true;
-      disconnectTransport();
+      return disconnectTransport();
     };
     const cancelSemanticTurn = () => {
       if (!capturedTurnId) return;
@@ -7313,8 +7347,15 @@ export function streamAgentTurn(
           unlistenLive?.();
           return;
         }
+        if (
+          transportDisconnectRequested
+          && payload.event !== 'connection_lost'
+        ) {
+          return;
+        }
         forwardEvent(payload);
         if (payload.event === 'connection_lost' && payload.data?.recoveryHandoff === true) {
+          resolveTransportDisconnect();
           cleanup();
           return;
         }
@@ -7328,12 +7369,14 @@ export function streamAgentTurn(
           || terminal === 'queued'
           || terminal === 'interrupted'
         ) {
+          resolveTransportDisconnect();
           unlistenLive?.();
           unlistenLive = undefined;
           onDone();
           settle();
         }
         if (terminal === 'failed') {
+          resolveTransportDisconnect();
           unlistenLive?.();
           unlistenLive = undefined;
           onError(agentTurnStreamErrorFromData(payload.data || {}));
@@ -7356,9 +7399,14 @@ export function streamAgentTurn(
         return;
       }
       if (transportDisconnectRequested) {
-        disconnectTransport();
+        await disconnectTransport();
       }
     } catch (err: unknown) {
+      if (transportDisconnectRequested) {
+        rejectTransportDisconnect(
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
       cleanup();
       if (!settled) {
         const normalized = normalizeAgentTurnStreamError(err);

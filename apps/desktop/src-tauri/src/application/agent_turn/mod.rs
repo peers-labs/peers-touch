@@ -1029,7 +1029,7 @@ async fn stream_station_turn(
             }
         }
     }
-    if !buffer.is_empty() {
+    if should_flush_live_stream_tail(transport_disconnect_requested, &buffer) {
         let frame = String::from_utf8(buffer)
             .map_err(|error| format!("Station turn stream returned invalid UTF-8: {error}"))?;
         if let Some((event, data)) = parse_sse_frame(&frame) {
@@ -1356,6 +1356,10 @@ fn take_sse_frame(buffer: &mut Vec<u8>) -> Result<Option<(String, Value)>, Strin
     let frame = String::from_utf8(frame[..index].to_vec())
         .map_err(|error| format!("Station turn replay returned invalid UTF-8: {error}"))?;
     Ok(parse_sse_frame(&frame))
+}
+
+fn should_flush_live_stream_tail(transport_disconnect_requested: bool, buffer: &[u8]) -> bool {
+    !transport_disconnect_requested && !buffer.is_empty()
 }
 
 fn emit_replay_event(
@@ -2802,6 +2806,15 @@ mod tests {
             read,
             LiveStreamItem::Control(LiveStreamControl::DisconnectTransport)
         ));
+    }
+
+    #[test]
+    fn live_stream_disconnect_discards_buffered_tail() {
+        let buffered_terminal = b"event: done\ndata: {\"seq\":4}\n\n";
+
+        assert!(!should_flush_live_stream_tail(true, buffered_terminal));
+        assert!(should_flush_live_stream_tail(false, buffered_terminal));
+        assert!(!should_flush_live_stream_tail(false, &[]));
     }
 
     #[tokio::test(flavor = "current_thread")]

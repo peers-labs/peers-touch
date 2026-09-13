@@ -1035,12 +1035,9 @@ class FoundationF06Coordinator:
         except BaseException as error:
             primary_error = error
 
-        cleanup_errors = (
-            self._restore_clients_for_cleanup()
-            if primary_error is not None
-            else []
-        )
-        cleanup_errors.extend(self._cleanup_prepared(prepared))
+        cleanup_errors = self._cleanup_prepared(prepared)
+        if primary_error is not None:
+            cleanup_errors.extend(self._restore_clients_for_cleanup())
         if cleanup_errors:
             detail = "; ".join(cleanup_errors)
             if primary_error is not None:

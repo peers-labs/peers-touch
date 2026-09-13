@@ -305,6 +305,48 @@ owns `data-pt-agent-message-error-text`. The correction places that stable
 evidence selector on the visible error copy while preserving the same
 localized text, layout, recovery action, and store/runtime ownership.
 
+## Iteration 7: Native Post-Cut Tail Delivery
+
+Exact-source C08 run
+`20260913T075803443865Z-d1a56d648ae18c96f5b9882049efc172`
+on `0f27dfe8b04aef76d4ceae74d8f612a3208c0d4a` completed
+`DONE / PROVEN`. The same-source Foundation run
+`20260913T080127364286Z-6fa2e05eadc98216bc934794fe1c5ce5`
+crossed both Browser AS-F06 tuples and failed at Desktop English AS-F06.
+
+The timing evidence isolates a Native-only owner race:
+
+1. the first text boundary was reached at 18240 ms;
+2. the run-local proxy acknowledged the real socket cut at 18247 ms while the
+   matching recovery record was still `CONNECTED`;
+3. five milliseconds later the observed Turn settled terminal and removed the
+   recovery record before the recovery phase changed;
+4. cleanup through the intentionally cut proxy then failed queue readback and
+   a later retry no longer had the in-memory locator.
+
+Source inspection confirms the Native Rust stream owner continued parsing its
+tail buffer after `DisconnectTransport`, while the TypeScript controller's
+`disconnectTransport()` returned before the Rust owner emitted
+`connection_lost`. Browser already aborts its reader synchronously.
+
+The owner-layer correction:
+
+- discards Native tail-buffer frames after an explicit transport disconnect;
+- makes the shared stream controller return a Promise that settles only after
+  the production `connection_lost` handoff is observed;
+- ignores non-handoff Native events after disconnect was requested;
+- waits for that completion in the Harness before freezing the AS-F06 boundary;
+- restores the run-local proxy and performs registered scenario cleanup before
+  any client restart;
+- lets Conversation deletion proceed even if queue listing through a transient
+  transport state failed, while final residue verification still fails closed.
+
+No provider, prompt, timeout, matrix tuple, retry, terminal inference, or Gate
+assertion changes. Local verification passes Desktop strict check, focused Web
+tests `112/112`, Foundation/runner/static tests `266/266`, Agent static
+`85/85`, Native Rust disconnect regressions `2/2`, Rust formatting, and diff
+hygiene. Exact-source post-fix C08 and Foundation proof remain pending.
+
 ## Iteration 6: Provider Completion Before Restart
 
 The selector-correction source
