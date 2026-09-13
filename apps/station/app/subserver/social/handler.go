@@ -83,6 +83,7 @@ const (
 func (s *subServer) Handlers() []server.Handler {
 	cw := s.commonWrapper
 	jw := s.jwtWrapper
+	ojw := s.optionalJWTWrapper
 	deviceIDWrapper := serverwrapper.DeviceID()
 
 	return []server.Handler{
@@ -95,19 +96,19 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-repost-post", routeSocialPostRepost, server.POST, s.handleRepostPost, cw, jw),
 
 		// Moments / Posts (read)
-		server.NewTypedHandler("social-get-post", routeSocialPost, server.GET, s.handleGetPost, cw),
-		server.NewTypedHandler("social-get-moment", routeSocialMoment, server.GET, s.handleGetPost, cw),
-		server.NewTypedHandler("social-get-timeline", routeSocialTimeline, server.GET, s.handleGetTimeline, cw, jw),
+		server.NewTypedHandler("social-get-post", routeSocialPost, server.GET, s.handleGetPost, cw, ojw),
+		server.NewTypedHandler("social-get-moment", routeSocialMoment, server.GET, s.handleGetPost, cw, ojw),
+		server.NewTypedHandler("social-get-timeline", routeSocialTimeline, server.GET, s.handleGetTimeline, cw, ojw),
 		server.NewTypedHandler("social-sync-moments-projection", routeSocialMomentsSync, server.POST, s.handleSyncMomentsProjection, cw, jw),
-		server.NewTypedHandler("social-get-user-posts", routeSocialUserPosts, server.GET, s.handleGetUserPosts, cw, jw),
+		server.NewTypedHandler("social-get-user-posts", routeSocialUserPosts, server.GET, s.handleGetUserPosts, cw, ojw),
 
 		// Reactions
 		server.NewTypedHandler("social-react", routeSocialPostReact, server.POST, s.handleReact, cw, jw),
 		server.NewTypedHandler("social-unreact", routeSocialPostUnreact, server.POST, s.handleUnreact, cw, jw),
 
 		// Comments
-		server.NewTypedHandler("social-get-post-comments", routeSocialPostComments, server.GET, s.handleGetPostComments, cw),
-		server.NewTypedHandler("social-get-moment-comments", routeSocialMomentComment, server.GET, s.handleGetPostComments, cw),
+		server.NewTypedHandler("social-get-post-comments", routeSocialPostComments, server.GET, s.handleGetPostComments, cw, ojw),
+		server.NewTypedHandler("social-get-moment-comments", routeSocialMomentComment, server.GET, s.handleGetPostComments, cw, ojw),
 		server.NewTypedHandler("social-create-comment", routeSocialPostComments, server.POST, s.handleCreateComment, cw, jw),
 		server.NewTypedHandler("social-create-moment-comment", routeSocialMomentComment, server.POST, s.handleCreateComment, cw, jw),
 		server.NewTypedHandler("social-delete-comment", routeSocialComment, server.DELETE, s.handleDeleteComment, cw, jw),

@@ -21,21 +21,33 @@ SCRIPT_DIR = Path(__file__).resolve().parent / "local-dev"
 class LocalDevProfileResolutionTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-        workspace = Path(self.temp_dir.name)
+        workspace = Path(self.temp_dir.name).resolve()
         self.project_root = workspace / "project"
         self.env_root = workspace / "env"
         scripts = self.project_root / "tooling" / "scripts" / "local-dev"
         scripts.mkdir(parents=True)
-        shutil.copy2(SCRIPT_DIR / "env.sh", scripts / "env.sh")
-        shutil.copy2(SCRIPT_DIR / "config.sh", scripts / "config.sh")
-        shutil.copy2(SCRIPT_DIR / "profile.sh", scripts / "profile.sh")
-        shutil.copy2(SCRIPT_DIR / "redact-env.sh", scripts / "redact-env.sh")
+        for name in (
+            "config.sh",
+            "dev-work-ledger.mjs",
+            "dev-work-schema.mjs",
+            "environment-creation-authorization.py",
+            "env.sh",
+            "machine-dev-lease.py",
+            "machine-dev-registry.mjs",
+            "machine-dev.mjs",
+            "profile.sh",
+            "redact-env.sh",
+        ):
+            shutil.copy2(SCRIPT_DIR / name, scripts / name)
+        library = self.project_root / "tooling" / "scripts" / "lib"
+        library.mkdir(parents=True)
         shutil.copy2(
-            SCRIPT_DIR / "environment-creation-authorization.py",
-            scripts / "environment-creation-authorization.py",
+            SCRIPT_DIR.parent / "lib" / "machine-dev-paths.mjs",
+            library / "machine-dev-paths.mjs",
         )
         self.config_script = scripts / "config.sh"
         self.profile_script = scripts / "profile.sh"
+        self.machine_script = scripts / "machine-dev.mjs"
         self.authorization_script = scripts / "environment-creation-authorization.py"
         self.machine_dev_root = workspace / "machine-dev"
 
@@ -96,6 +108,29 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
         )
         (active / "project.env").symlink_to("../profiles/three.env")
 
+        subprocess.run(
+            ["git", "init", "-qb", "feat/test"],
+            cwd=self.project_root,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Local Dev Test"],
+            cwd=self.project_root,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "local-dev-test@example.invalid"],
+            cwd=self.project_root,
+            check=True,
+        )
+        (self.project_root / "README.md").write_text("fixture\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README.md"], cwd=self.project_root, check=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "test: initialize workspace"],
+            cwd=self.project_root,
+            check=True,
+        )
+
     def tearDown(self) -> None:
         path = Path(self.temp_dir.name)
         self.temp_dir._finalizer.detach()
@@ -145,6 +180,48 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             env=self.process_environment(**environment),
             text=True,
             check=False,
+        )
+
+    def run_machine(
+        self,
+        action: str,
+        *arguments: str,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                "node",
+                str(self.machine_script),
+                action,
+                "--workspace-root",
+                str(self.project_root),
+                "--env-repo",
+                str(self.env_root),
+                *arguments,
+            ],
+            capture_output=True,
+            env=self.process_environment(),
+            text=True,
+            check=False,
+        )
+
+    def register_profile(
+        self,
+        profile: str,
+        *,
+        slot: int = 5,
+    ) -> subprocess.CompletedProcess[str]:
+        return self.run_machine(
+            "register",
+            "--profile",
+            profile,
+            "--slot",
+            str(slot),
+            "--capabilities",
+            "station.connect",
+            "--purpose",
+            "local dev profile resolution test",
+            "--owner",
+            "local-dev-test@example.invalid",
         )
 
     def write_pending_authorization(
@@ -197,9 +274,11 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
         return path
 
     def test_config_uses_same_canonical_env_profile_as_runtime(self) -> None:
+        registered = self.register_profile("three")
+        self.assertEqual(registered.returncode, 0, registered.stderr)
         output = self.run_config()
 
-        self.assertIn(f"File: {self.canonical_profile}", output)
+        self.assertIn(f"Profile file : {self.canonical_profile}", output)
         self.assertIn(
             "PT_STATION_URL=http://canonical.example:18080",
             output,
@@ -210,6 +289,8 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
         self.assertNotIn("canonical-secret-token", output)
 
     def test_explicit_profile_override_remains_authoritative(self) -> None:
+        registered = self.register_profile("three")
+        self.assertEqual(registered.returncode, 0, registered.stderr)
         override = Path(self.temp_dir.name) / "override.env"
         override.write_text(
             "\n".join(
@@ -229,7 +310,7 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT=str(override.parent),
         )
 
-        self.assertIn(f"File: {override.resolve()}", output)
+        self.assertIn(f"Profile file : {override.resolve()}", output)
         self.assertIn(
             "PT_STATION_URL=http://override.example:19080",
             output,
@@ -237,6 +318,8 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
         self.assertNotIn("canonical.example", output)
 
     def test_explicit_profile_override_rejects_missing_runtime_authority(self) -> None:
+        registered = self.register_profile("three")
+        self.assertEqual(registered.returncode, 0, registered.stderr)
         override = Path(self.temp_dir.name) / "override.env"
         override.write_text(
             "PT_DEV_PROFILE=override\nPT_STATION_MODE=remote\n",
@@ -251,16 +334,21 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             result.stderr + result.stdout,
         )
 
-    def test_activation_refreshes_local_cache_from_env_source(self) -> None:
+    def test_legacy_activation_command_is_removed(self) -> None:
+        local_profile = (
+            self.project_root / ".local" / "dev" / "profiles" / "three.env"
+        )
+        before = local_profile.read_text(encoding="utf-8")
         result = self.run_profile("activate", "three")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "Usage: profile.sh {authorize|init|list}",
+            result.stderr + result.stdout,
+        )
 
-        local_dev = self.project_root / ".local" / "dev"
-        local_profile = local_dev / "profiles" / "three.env"
-        active_profile = local_dev / "active" / "project.env"
-        self.assertEqual(
-            local_profile.read_text(encoding="utf-8"),
-            self.canonical_profile.read_text(encoding="utf-8"),
+        self.assertEqual(local_profile.read_text(encoding="utf-8"), before)
+        active_profile = (
+            self.project_root / ".local" / "dev" / "active" / "project.env"
         )
         self.assertEqual(os.readlink(active_profile), "../profiles/three.env")
 
@@ -279,16 +367,13 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        local_profile = self.project_root / ".local" / "dev" / "profiles" / "untracked.env"
-        shutil.copy2(untracked_dir / "profile.env.example", local_profile)
-        active_profile = self.project_root / ".local" / "dev" / "active" / "project.env"
-        active_profile.unlink()
-        active_profile.symlink_to("../profiles/untracked.env")
-
-        result = self.run_config_result()
+        result = self.register_profile("untracked")
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("not Git-tracked", result.stderr + result.stdout)
+        self.assertIn(
+            "cannot resolve profile definition",
+            result.stderr + result.stdout,
+        )
 
     def test_config_rejects_dirty_tracked_env_profile(self) -> None:
         self.canonical_profile.write_text(
@@ -297,11 +382,11 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-        result = self.run_config_result()
+        result = self.register_profile("three")
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(
-            "dirty or untracked env definitions",
+            "dirty or untracked environment definitions",
             result.stderr + result.stdout,
         )
 
@@ -319,14 +404,13 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        active_profile = self.project_root / ".local" / "dev" / "active" / "project.env"
-        active_profile.unlink()
-        active_profile.symlink_to("../profiles/local.env")
-
-        result = self.run_config_result()
+        result = self.register_profile("local")
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("not human-authorized", result.stderr + result.stdout)
+        self.assertIn(
+            "valid consumed authorization receipt",
+            result.stderr + result.stdout,
+        )
 
     def test_profile_init_requires_matching_single_use_authorization(self) -> None:
         missing = self.run_profile("init", "local-one", SLOT="5")
@@ -350,8 +434,8 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
         self.assertEqual(len(receipts), 1)
         self.assertEqual(stat.S_IMODE(receipts[0].stat().st_mode), 0o400)
 
-        activated = self.run_profile("activate", "local-one")
-        self.assertEqual(activated.returncode, 0, activated.stderr)
+        registered = self.register_profile("local-one", slot=5)
+        self.assertEqual(registered.returncode, 0, registered.stderr)
         output = self.run_config()
         self.assertIn("PT_DEV_PROFILE=local-one", output)
         self.assertIn("PT_DEV_SLOT=5", output)
@@ -421,8 +505,8 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
         self.write_pending_authorization("local-four", 9)
         created = self.run_profile("init", "local-four", SLOT="9")
         self.assertEqual(created.returncode, 0, created.stderr)
-        activated = self.run_profile("activate", "local-four")
-        self.assertEqual(activated.returncode, 0, activated.stderr)
+        registered = self.register_profile("local-four", slot=9)
+        self.assertEqual(registered.returncode, 0, registered.stderr)
 
         profile = self.project_root / ".local" / "dev" / "profiles" / "local-four.env"
         profile.write_text(
@@ -433,7 +517,10 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
         result = self.run_config_result()
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("not human-authorized", result.stderr + result.stdout)
+        self.assertIn(
+            "valid consumed authorization receipt",
+            result.stderr + result.stdout,
+        )
 
 
 if __name__ == "__main__":

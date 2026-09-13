@@ -28,34 +28,33 @@ This document does NOT define:
 
 The machine-global ownership and allocation architecture is defined in
 [`docs/architecture/local-dev-control-plane/`](../architecture/local-dev-control-plane/README.md).
-Until its runtime migration is implemented, this document describes the current
-command behavior.
+The registration, binding, slot, and capability-lease runtime is implemented by
+`tooling/scripts/local-dev/machine-dev.mjs`. Evidence-root relocation remains a
+separate migration.
 
 ### 1.1 Current Machine-State Boundary
 
-The current implementation has no authoritative machine-global registry.
-Each worktree may have its own `.local` directory and
-`.local/dev/active/<worktree-name>.env` pointer. This keeps profile selection
-worktree-specific, but it does not prevent another worktree from selecting the
-same profile or local slot.
+The authoritative machine-global registry path is:
 
-Do not interpret discovered worktrees or profile pointers as active usage.
-Under the target control plane:
+```text
+~/.peers-touch/dev/registry.json
+```
+
+It becomes runtime authority only through explicit `make env-register`.
+An existing `authority: observed-snapshot` remains diagnostic and makes normal
+runtime resolution fail closed. Legacy `.local/dev/active/` pointers have no
+runtime authority.
+
+Do not interpret discovered worktrees or profile pointers as active usage:
 
 - registration is an explicit Owner action;
 - `active` requires a matching live process/listener or valid lease;
 - a registered worktree without live resources is `idle`;
 - an unregistered worktree remains an observation only.
 
-An initial machine audit snapshot is registered at:
-
-```text
-~/.peers-touch/dev/registry.json
-```
-
-It is marked `authority: observed-snapshot`. Existing Make targets do not read
-it, and it must not authorize profile selection, Station deploy, restart, or
-reset.
+`make env-status-all` reports registration and live OS-held leases separately.
+Lease JSON is metadata only; the held advisory lock plus matching
+PID/process-start identity establishes possession.
 
 Acceptance evidence is also development state. Its canonical local target is:
 
@@ -93,14 +92,14 @@ development topology: which Station to use, which ports, and which mode.
 for a same-named deployable profile. The only local-authority exception is a
 human-authorized compose profile whose bytes match its consumed machine receipt.
 
-In the current implementation, each git worktree selects its profile through
-`.local/dev/active/<worktree-name>.env`. Runtime commands derive the selected
-name from that worktree-specific pointer and load the sibling `env` repository
-source when it exists. The shared `.local/dev/profile` selector is not part of
-the runtime contract.
+Each Git worktree selects its profile through the machine registry binding keyed
+by canonical `workspaceId`. `make profile PROFILE=<name>` updates only an
+already registered workspace and never writes a legacy active-profile pointer.
+Runtime commands load the sibling `env` repository source directly.
 
-The target architecture keeps the selection independent but moves its durable
-binding to `~/.peers-touch/dev/`, keyed by canonical `workspaceId`. See
+Local slot and Desktop/Mobile ports come from the machine binding. A profile's
+`PT_DEV_SLOT` and local client port fields are legacy topology observations and
+cannot override the allocation. See
 [`local-dev-control-plane/design.md`](../architecture/local-dev-control-plane/design.md).
 
 ### 2.2 Environment Creation Authorization
@@ -247,12 +246,17 @@ With profile active, the developer's machine runs:
 
 ## 5. Make Targets Reference
 
-All commands run from repository root. Profile must be active.
+All commands run from repository root. The workspace must be explicitly
+registered and its binding must resolve.
 
 ### Core
 
 | Target | What it does |
 |--------|-------------|
+| `make env-register ...` | Explicitly register this verified workspace and allocate profile, slot, and allowed capabilities |
+| `make env-update ...` | Update requested binding fields and refresh current branch/HEAD while no lease is held |
+| `make env-check ...` | Verify workspace binding, tracked-clean topology, slot, capabilities, target match, and budget |
+| `make env-status-all` | Report all registrations and observed OS-held leases |
 | `make dev-start ...` | Publish and conflict-check this task's source/runtime intent |
 | `make dev-update WORK_ITEM=<id>` | Replace supplied scope or refresh the declared branch/HEAD |
 | `make dev-status [WORK_ITEM=<id>]` | Show declarations for the current worktree |
@@ -264,6 +268,36 @@ All commands run from repository root. Profile must be active.
 | `make desktop` | Start Desktop Tauri app |
 | `make desktop-web` | Start Desktop in browser |
 | `make mobile` | Start Mobile iOS simulator |
+
+Initial registration is explicit:
+
+```bash
+make env-register \
+  PROFILE=<name> \
+  SLOT=<n> \
+  CAPABILITIES='station.connect,station.deploy' \
+  PURPOSE='<owner-approved purpose>'
+make env-check \
+  PROFILE=<name> \
+  SLOT=<n> \
+  CAPABILITIES='station.connect,station.deploy' \
+  BUDGET_SECONDS=1200
+```
+
+Registration does not create or edit an environment definition. A later
+destructive wrapper uses the generic lease API only after separately proving
+the exact reset authorization:
+
+```bash
+node tooling/scripts/local-dev/machine-dev.mjs lease \
+  --resource-kind station.reset \
+  --resource-id <station-fixture-scope> \
+  --reset-authorized-scope <station-fixture-scope> \
+  --budget-seconds <seconds> \
+  -- <reset-command>
+```
+
+The reset API owns lease lifetime only; it does not grant deletion authority.
 
 ### Lifecycle
 
@@ -372,19 +406,26 @@ SELECT id, conversation_id, created_at FROM device_queue_lanes ORDER BY created_
 
 ## 8. Conventions
 
-1. **Never SSH manually to deploy** — always use `make station` or `make deploy ENV=x`.
+1. **Never SSH manually to deploy** — Station deployment always uses
+   `make station`, which owns the canonical deploy lease and health closure.
 2. **Never edit code on remote hosts** — deploy env discipline (AGENTS.md §12).
-3. **Profile selection per worktree** — each git worktree selects independently.
-   The current implementation does not by itself prevent two worktrees from
-   selecting the same profile or slot; check the machine registry snapshot and
-   live ports before starting clients.
+3. **Profile selection per worktree** — each Git worktree selects independently
+   through its authoritative `workspaceId` binding. Profiles may be shared;
+   slots may not.
 4. **Health check is the contract** — `make station` is not done until health passes.
 5. **Current branch deploys** — remote mode pushes HEAD, not necessarily main.
 6. **Environment repository is authoritative** — do not repurpose a canonical
    profile by editing only its `.local` cache. If no approved profile fits,
    stop and request explicit human authorization before creating a distinctly
    named environment profile or deploy environment.
-7. **No implicit global fallback** — an unbound worktree must fail closed; do
-   not infer profile or slot from another worktree.
+7. **No implicit global fallback** — an unregistered or stale worktree fails
+   closed; do not infer profile or slot from another worktree, a legacy pointer,
+   profile metadata, basename, or branch.
 8. **Local creation consumes authorization** — `profile-init` requires one
    unexpired exact-tuple machine grant and produces a digest-bound receipt.
+9. **Declare intent, then lease** — a matching active `work.json` declaration
+   is required before `local.slot`, `station.deploy`, or `station.reset`
+   acquisition. The declaration does not replace the OS-held lease.
+10. **Station deploy lease covers the closure** — `make station` holds
+    `station.deploy` across deploy, restart, and health readback, and releases
+    on success, failure, signal, or timeout.

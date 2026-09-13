@@ -53,6 +53,8 @@ type authTestProvider struct {
 	err     error
 }
 
+type optionalAuthTestProvider struct{}
+
 type rejectingSessionValidator struct {
 	reason string
 }
@@ -69,6 +71,89 @@ func (p authTestProvider) Validate(context.Context, string) (*coreauth.Subject, 
 	return p.subject, p.err
 }
 func (p authTestProvider) Revoke(context.Context, string) error { return errors.New("not implemented") }
+
+func (optionalAuthTestProvider) Method() coreauth.Method { return coreauth.MethodJWT }
+func (optionalAuthTestProvider) Authenticate(context.Context, coreauth.Credentials) (*coreauth.Subject, *coreauth.Token, error) {
+	return nil, nil, errors.New("not implemented")
+}
+func (optionalAuthTestProvider) Validate(_ context.Context, token string) (*coreauth.Subject, error) {
+	switch token {
+	case "valid-token":
+		return &coreauth.Subject{ID: "ptid:actor:canonical"}, nil
+	case "revoked-token":
+		return &coreauth.Subject{ID: "ptid:actor:revoked", SessionID: "revoked-session"}, nil
+	default:
+		return nil, errors.New("invalid or expired token")
+	}
+}
+func (optionalAuthTestProvider) Revoke(context.Context, string) error {
+	return errors.New("not implemented")
+}
+
+func TestOptionalJWTTraversesRealHTTPRequest(t *testing.T) {
+	handlerCalls := 0
+	handler := OptionalJWT(
+		optionalAuthTestProvider{},
+		rejectingSessionValidator{reason: "revoked"},
+	)(context.Background(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handlerCalls++
+		subject := coreauth.GetSubject(r.Context())
+		if subject == nil {
+			w.Header().Set("X-Auth-Subject", "anonymous")
+		} else {
+			w.Header().Set("X-Auth-Subject", subject.ID)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	testServer := httptest.NewServer(handler)
+	t.Cleanup(testServer.Close)
+
+	tests := []struct {
+		name            string
+		authorization   string
+		wantStatus      int
+		wantSubject     string
+		wantHandlerCall bool
+	}{
+		{name: "absent is anonymous", wantStatus: http.StatusNoContent, wantSubject: "anonymous", wantHandlerCall: true},
+		{name: "valid bearer injects subject", authorization: "Bearer valid-token", wantStatus: http.StatusNoContent, wantSubject: "ptid:actor:canonical", wantHandlerCall: true},
+		{name: "wrong scheme is rejected", authorization: "Basic credential", wantStatus: http.StatusUnauthorized},
+		{name: "empty bearer is rejected", authorization: "Bearer ", wantStatus: http.StatusUnauthorized},
+		{name: "invalid bearer is rejected", authorization: "Bearer invalid-token", wantStatus: http.StatusUnauthorized},
+		{name: "expired bearer is rejected", authorization: "Bearer expired-token", wantStatus: http.StatusUnauthorized},
+		{name: "revoked bearer is rejected", authorization: "Bearer revoked-token", wantStatus: http.StatusUnauthorized},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			before := handlerCalls
+			request, err := http.NewRequest(http.MethodGet, testServer.URL+"/public", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.authorization != "" {
+				request.Header.Set("Authorization", test.authorization)
+			}
+
+			response, err := testServer.Client().Do(request)
+			if err != nil {
+				t.Fatalf("request optional auth endpoint: %v", err)
+			}
+			defer response.Body.Close()
+
+			if response.StatusCode != test.wantStatus {
+				t.Fatalf("status = %d, want %d", response.StatusCode, test.wantStatus)
+			}
+			if got := response.Header.Get("X-Auth-Subject"); got != test.wantSubject {
+				t.Fatalf("subject = %q, want %q", got, test.wantSubject)
+			}
+			called := handlerCalls == before+1
+			if called != test.wantHandlerCall {
+				t.Fatalf("downstream called = %t, want %t", called, test.wantHandlerCall)
+			}
+		})
+	}
+}
 
 func TestRequireJWTLogsOutcomeAndCorrelationWithoutCredentialsOrIdentity(t *testing.T) {
 	const (

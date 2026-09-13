@@ -199,6 +199,29 @@ Owns bounded live exclusivity. Required lease classes:
 A durable binding does not prove a live lease. A live lease does not rewrite the
 durable binding.
 
+The canonical implementation is split by responsibility:
+
+- `machine-dev-registry.mjs` owns registration, binding, topology validation,
+  slot allocation, capability checks, Development-intent matching, and status
+  projection.
+- `machine-dev-lease.py` owns the OS advisory-lock file descriptor and the
+  bounded child process group; the mutation child inherits that descriptor and
+  verifies the exact held lease before entering the critical section.
+- `machine-dev.mjs` is the only CLI composition point used by Make and runtime
+  scripts.
+
+This is one control plane, not a Secure Content lease implementation.
+`station.deploy` is keyed by the exact reviewed deploy-environment name.
+`station.reset` is keyed by the exact Station/Fixture reset scope and requires
+that same value as run-scoped authorization input. `local.slot` is keyed by the
+machine binding's slot.
+
+Lease acquisition also requires one live Development declaration for the same
+workspace, branch, HEAD, profile, and exclusive runtime claim. The declaration
+proves intent; the OS lock proves possession.
+The binding and intent are revalidated after OS-lock acquisition under the
+registry update lock, closing the registration-update/acquisition race.
+
 ### 4.7 Runtime Observer
 
 Projects current OS facts:

@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,6 +17,7 @@ import (
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -184,6 +189,289 @@ func textPostReq(audience *model.Audience, text string) *model.CreatePostRequest
 		Type:     model.PostType_TEXT,
 		Audience: audience,
 		Content:  &model.CreatePostRequest_Text{Text: &model.CreateTextPostRequest{Text: text}},
+	}
+}
+
+type socialHTTPRequest struct {
+	request *http.Request
+	body    []byte
+}
+
+func (r *socialHTTPRequest) Context() context.Context { return r.request.Context() }
+func (r *socialHTTPRequest) Header() map[string]string {
+	headers := make(map[string]string, len(r.request.Header))
+	for key, values := range r.request.Header {
+		if len(values) > 0 {
+			headers[key] = values[0]
+		}
+	}
+	return headers
+}
+func (r *socialHTTPRequest) Method() server.Method { return server.Method(r.request.Method) }
+func (r *socialHTTPRequest) Path() string          { return r.request.URL.RequestURI() }
+func (r *socialHTTPRequest) Body() []byte          { return r.body }
+
+type socialHTTPResponse struct {
+	writer http.ResponseWriter
+	status int
+}
+
+func (r *socialHTTPResponse) Header() map[string]string {
+	headers := make(map[string]string, len(r.writer.Header()))
+	for key, values := range r.writer.Header() {
+		if len(values) > 0 {
+			headers[key] = values[0]
+		}
+	}
+	return headers
+}
+func (r *socialHTTPResponse) SetHeader(key, value string) { r.writer.Header().Set(key, value) }
+func (r *socialHTTPResponse) Write(body []byte) (int, error) {
+	return r.writer.Write(body)
+}
+func (r *socialHTTPResponse) Flush() error { return nil }
+func (r *socialHTTPResponse) WriteHeader(status int) {
+	r.status = status
+	r.writer.WriteHeader(status)
+}
+func (r *socialHTTPResponse) Status() int { return r.status }
+
+type socialSessionValidator struct{}
+
+func (socialSessionValidator) CheckSessionValid(_ context.Context, sessionID string) (bool, string) {
+	if sessionID == "revoked-session" {
+		return false, "revoked"
+	}
+	return true, ""
+}
+
+func socialHandlerByName(t *testing.T, handlers []server.Handler, name string) server.Handler {
+	t.Helper()
+	for _, handler := range handlers {
+		if handler.Name() == name {
+			return handler
+		}
+	}
+	t.Fatalf("handler %q not found", name)
+	return nil
+}
+
+func serveSocialHandler(t *testing.T, handler server.Handler) *httptest.Server {
+	return serveSocialHandlerWithEndpoint(t, handler, handler.Handler())
+}
+
+func serveSocialHandlerWithEndpoint(
+	t *testing.T,
+	handler server.Handler,
+	endpoint server.EndpointHandler,
+) *httptest.Server {
+	t.Helper()
+	for _, wrapper := range handler.Wrappers() {
+		endpoint = wrapper(endpoint)
+	}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			http.Error(w, "read request", http.StatusBadRequest)
+			return
+		}
+		response := &socialHTTPResponse{writer: w}
+		if err := endpoint(
+			request.Context(),
+			&socialHTTPRequest{request: request, body: body},
+			response,
+		); err != nil {
+			http.Error(w, "handler failed", http.StatusInternalServerError)
+		}
+	}))
+}
+
+func TestSocialPublicReadRoutesUseStrictOptionalJWT(t *testing.T) {
+	fixture := newHandlerFixture(t)
+	const secret = "test-secret-that-is-long-enough-for-auth"
+	provider := coreauth.NewJWTProvider(secret, time.Hour)
+	fixture.subserver.commonWrapper = func(next server.EndpointHandler) server.EndpointHandler {
+		return next
+	}
+	fixture.subserver.jwtWrapper = server.HTTPWrapperAdapter(
+		httpadapter.RequireJWT(provider, socialSessionValidator{}),
+	)
+	fixture.subserver.optionalJWTWrapper = server.HTTPWrapperAdapter(
+		httpadapter.OptionalJWT(provider, socialSessionValidator{}),
+	)
+
+	publicPost, err := fixture.subserver.handleCreatePost(
+		fixture.withViewer(41),
+		textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "public"),
+	)
+	if err != nil {
+		t.Fatalf("seed public post: %v", err)
+	}
+	privatePost, err := fixture.subserver.handleCreatePost(
+		fixture.withViewer(42),
+		textPostReq(&model.Audience{Kind: model.Audience_SELF}, "private"),
+	)
+	if err != nil {
+		t.Fatalf("seed private post: %v", err)
+	}
+
+	_, validToken, err := provider.Authenticate(context.Background(), coreauth.Credentials{
+		SubjectID: privatePost.Post.AuthorPtid,
+		SessionID: "live-session",
+	})
+	if err != nil {
+		t.Fatalf("mint valid token: %v", err)
+	}
+	_, revokedToken, err := provider.Authenticate(context.Background(), coreauth.Credentials{
+		SubjectID: privatePost.Post.AuthorPtid,
+		SessionID: "revoked-session",
+	})
+	if err != nil {
+		t.Fatalf("mint revoked token: %v", err)
+	}
+	expiredProvider := coreauth.NewJWTProvider(secret, -time.Minute)
+	_, expiredToken, err := expiredProvider.Authenticate(context.Background(), coreauth.Credentials{
+		SubjectID: privatePost.Post.AuthorPtid,
+	})
+	if err != nil {
+		t.Fatalf("mint expired token: %v", err)
+	}
+
+	handler := socialHandlerByName(t, fixture.subserver.Handlers(), "social-get-moment")
+	testServer := serveSocialHandler(t, handler)
+	t.Cleanup(testServer.Close)
+
+	tests := []struct {
+		name          string
+		postID        string
+		authorization string
+		wantStatus    int
+	}{
+		{name: "absent credential reads public as anonymous", postID: publicPost.Post.Id, wantStatus: http.StatusOK},
+		{name: "valid credential projects canonical subject", postID: privatePost.Post.Id, authorization: "Bearer " + validToken.Value, wantStatus: http.StatusOK},
+		{name: "malformed credential never retries anonymous", postID: publicPost.Post.Id, authorization: "Basic malformed", wantStatus: http.StatusUnauthorized},
+		{name: "invalid credential never retries anonymous", postID: publicPost.Post.Id, authorization: "Bearer invalid-token", wantStatus: http.StatusUnauthorized},
+		{name: "expired credential never retries anonymous", postID: publicPost.Post.Id, authorization: "Bearer " + expiredToken.Value, wantStatus: http.StatusUnauthorized},
+		{name: "revoked credential never retries anonymous", postID: publicPost.Post.Id, authorization: "Bearer " + revokedToken.Value, wantStatus: http.StatusUnauthorized},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request, err := http.NewRequest(
+				http.MethodGet,
+				testServer.URL+"/api/v1/social/moments/"+test.postID,
+				strings.NewReader(fmt.Sprintf(`{"postId":%q}`, test.postID)),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Content-Type", "application/json")
+			if test.authorization != "" {
+				request.Header.Set("Authorization", test.authorization)
+			}
+
+			response, err := testServer.Client().Do(request)
+			if err != nil {
+				t.Fatalf("request Social route: %v", err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != test.wantStatus {
+				body, _ := io.ReadAll(response.Body)
+				t.Fatalf("status = %d, want %d, body=%s", response.StatusCode, test.wantStatus, body)
+			}
+		})
+	}
+}
+
+func TestSocialPublicCapableCollectionsUseStrictOptionalJWT(t *testing.T) {
+	fixture := newHandlerFixture(t)
+	const secret = "test-secret-that-is-long-enough-for-auth"
+	provider := coreauth.NewJWTProvider(secret, time.Hour)
+	fixture.subserver.commonWrapper = func(next server.EndpointHandler) server.EndpointHandler {
+		return next
+	}
+	fixture.subserver.optionalJWTWrapper = server.HTTPWrapperAdapter(
+		httpadapter.OptionalJWT(provider),
+	)
+
+	routes := []struct {
+		name string
+		path string
+	}{
+		{
+			name: "social-get-timeline",
+			path: "/api/v1/social/timeline",
+		},
+		{
+			name: "social-get-user-posts",
+			path: "/api/v1/social/users/ptid:actor:public/posts",
+		},
+		{
+			name: "social-get-post-comments",
+			path: "/api/v1/social/posts/1/comments",
+		},
+		{
+			name: "social-get-moment-comments",
+			path: "/api/v1/social/moments/1/comments",
+		},
+	}
+
+	for _, route := range routes {
+		t.Run(route.name, func(t *testing.T) {
+			handler := socialHandlerByName(t, fixture.subserver.Handlers(), route.name)
+			testServer := serveSocialHandlerWithEndpoint(
+				t,
+				handler,
+				func(_ context.Context, _ server.Request, response server.Response) error {
+					response.WriteHeader(http.StatusNoContent)
+					return nil
+				},
+			)
+			t.Cleanup(testServer.Close)
+
+			for _, requestCase := range []struct {
+				name          string
+				authorization string
+				wantStatus    int
+			}{
+				{name: "anonymous", wantStatus: http.StatusNoContent},
+				{
+					name:          "supplied-invalid-credential",
+					authorization: "Bearer invalid-token",
+					wantStatus:    http.StatusUnauthorized,
+				},
+			} {
+				t.Run(requestCase.name, func(t *testing.T) {
+					request, err := http.NewRequest(
+						http.MethodGet,
+						testServer.URL+route.path,
+						nil,
+					)
+					if err != nil {
+						t.Fatal(err)
+					}
+					request.Header.Set("Content-Type", "application/json")
+					if requestCase.authorization != "" {
+						request.Header.Set("Authorization", requestCase.authorization)
+					}
+
+					response, err := testServer.Client().Do(request)
+					if err != nil {
+						t.Fatalf("request Social route: %v", err)
+					}
+					defer response.Body.Close()
+					if response.StatusCode != requestCase.wantStatus {
+						body, _ := io.ReadAll(response.Body)
+						t.Fatalf(
+							"status = %d, want %d, body=%s",
+							response.StatusCode,
+							requestCase.wantStatus,
+							body,
+						)
+					}
+				})
+			}
+		})
 	}
 }
 

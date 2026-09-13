@@ -24,8 +24,9 @@ type subServer struct {
 	status server.Status
 
 	// Wrappers
-	commonWrapper server.Wrapper
-	jwtWrapper    server.Wrapper
+	commonWrapper      server.Wrapper
+	jwtWrapper         server.Wrapper
+	optionalJWTWrapper server.Wrapper
 
 	// Application services
 	momentSvc       *application.MomentService
@@ -55,6 +56,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	s.commonWrapper = touch.CommonAccessControlWrapper(model.RouteNameSocial)
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
+	s.optionalJWTWrapper = server.HTTPWrapperAdapter(httpadapter.OptionalJWT(provider))
 
 	rds, err := store.GetRDS(ctx)
 	if err != nil {

@@ -16,7 +16,7 @@ The machine registry is stored at:
 ~/.peers-touch/dev/registry.json
 ```
 
-Current bootstrap state uses:
+Bootstrap audit state may use:
 
 ```json
 {
@@ -27,7 +27,24 @@ Current bootstrap state uses:
 ```
 
 `observed-snapshot` means the file is diagnostic only. Future implementation
-may promote it to runtime authority only through an accepted migration.
+does not read those registrations as authority. The first explicit
+`env-register` atomically promotes the document to:
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "peers-touch-machine-dev-registry",
+  "authority": "machine-control-plane",
+  "updatedAt": "2026-09-13T00:00:00.000Z",
+  "registrations": []
+}
+```
+
+Bootstrap audit and D07 evidence-migration fields may remain as diagnostic
+fields during their owning migration. Runtime resolution consumes only the
+closed authoritative registration schema. Unknown authoritative fields,
+duplicate workspace IDs, duplicate slots, malformed timestamps, and identity
+mismatches fail closed.
 
 The root projection distinguishes target and legacy evidence locations:
 
@@ -52,19 +69,25 @@ lookup key because two worktrees may have the same basename.
 ```ts
 interface WorkspaceRecord {
   workspaceId: string;
-  canonicalRoot?: string;
+  canonicalRoot: string;
   name: string;
   branch: string;
   head: string;
-  profile: string | null;
-  slot: number | null;
-  stationUrl: string | null;
-  localState: 'global-managed' | 'private-directory' | 'missing';
+  profile: string;
+  slot: number;
+  allowedCapabilities: StationCapability[];
+  purpose: string;
+  owner: string;
+  registeredAt: string;
+  updatedAt: string;
+  updatedBy: string;
 }
 ```
 
-An `observed-snapshot` may omit `canonicalRoot` while retaining its derived
-`workspaceId`. An authoritative registry must persist and re-verify both.
+An `observed-snapshot` may contain additional diagnostic projections. An
+authoritative registration persists and re-verifies canonical root, workspace
+ID, branch, and HEAD before every resolved command. Source movement or Git
+identity drift makes the registration `stale` until `env-update` refreshes it.
 
 ## 3. Profile Definition
 
@@ -194,9 +217,21 @@ interface LeaseRecord {
 }
 ```
 
-The lock is enforced by an OS advisory lock. JSON metadata is diagnostic and
-cannot establish a held lease without the live lock and matching process
-identity.
+The lock is enforced by `flock(2)` through
+`tooling/scripts/local-dev/machine-dev-lease.py`. The holder owns the file
+descriptor while its child process group executes. It forwards termination
+signals, enforces the declared budget, terminates the process group on timeout,
+and clears metadata before unlocking on success, command failure, signal, or
+timeout. The mutation child inherits the locked descriptor, so supervisor
+`SIGKILL` cannot release exclusivity while the child continues. After acquiring
+the resource lock and before launching the mutation, the holder revalidates the
+registry, source identity, capability and Development intent under the registry
+lock; binding updates inspect leases under the same lock order.
+
+JSON metadata is diagnostic and cannot establish a held lease without the live
+OS lock and matching PID/process-start identity. Metadata left by `SIGKILL` or
+machine failure is stale: status reports it separately, and the next successful
+OS lock acquisition replaces it.
 
 ## 7. Runtime Observation
 

@@ -10,6 +10,16 @@
 > 本文档是 architecture-layer source（见 `AGENTS.md §3`），
 > 描述边界与约束；具体 proto 字段、表 DDL、handler 路由由实施 PR
 > 落地，不在本文锁定。
+>
+> **Security ownership amendment (2026-09-13)**: private payload encryption,
+> key envelopes, opaque object transfer, recovery integration, optional
+> authentication, and legacy plaintext removal are governed by the proposed
+> [`../secure-content/`](../secure-content/README.md) architecture. This document
+> continues to own Social audience and Moment semantics; its older media-key and
+> private-storage implementation sketches do not override Secure Content.
+> Specifically, the key-envelope shape in §4, private plaintext schema in §6,
+> authentication wiring in §8, media path in §10, legacy route aliases, and
+> phased implementation notes are superseded for this security hard cut.
 
 ## 1. 目标与非目标
 

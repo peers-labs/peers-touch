@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# profile.sh — Manage worktree dev profiles
+# profile.sh — Manage human-authorized local profile definitions
 # Usage:
-#   profile.sh activate <name>
 #   profile.sh authorize <name> [SLOT=N]
 #   profile.sh init <name> [SLOT=N]
 #   profile.sh list
@@ -14,14 +13,8 @@ source "$SCRIPT_DIR/redact-env.sh"
 AUTHORIZATION_SCRIPT="$SCRIPT_DIR/environment-creation-authorization.py"
 LOCAL_DEV_DIR="$PROJECT_ROOT/.local/dev"
 PROFILES_DIR="$LOCAL_DEV_DIR/profiles"
-ACTIVE_DIR="$LOCAL_DEV_DIR/active"
-DEPLOY_SCRIPT="$PROJECT_ROOT/tooling/scripts/deploy/deploy.sh"
 
-# Worktree ID for per-worktree active profile pointer
-WORKTREE_ID="$(basename "$PROJECT_ROOT")"
-ACTIVE_FILE="$ACTIVE_DIR/$WORKTREE_ID.env"
-
-mkdir -p "$PROFILES_DIR" "$ACTIVE_DIR"
+mkdir -p "$PROFILES_DIR"
 
 cmd="${1:-}"
 name="${2:-}"
@@ -107,117 +100,7 @@ verify_authorized_local_profile() {
     --profile-file "$profile_file"
 }
 
-import_profile_from_env_repo() {
-  local profile_name="$1"
-  local env_repo="$2"
-  local env_profile_dir="$env_repo/peers-touch/$profile_name"
-
-  if [[ ! -d "$env_profile_dir" ]]; then
-    echo "[ERROR] Profile '$profile_name' not found in env repo at: $env_profile_dir"
-    echo "        Observed profile directories (approval not implied):"
-    list_profile_directories "$env_repo" | sed 's/^/          /'
-    return 1
-  fi
-
-  local profile_src="$env_profile_dir/profile.env.example"
-  if [[ ! -f "$profile_src" ]]; then
-    echo "[ERROR] No profile.env.example in: $env_profile_dir"
-    return 1
-  fi
-  require_reviewed_env_profile "$profile_name" "$env_repo" || return 1
-
-  mkdir -p "$PROFILES_DIR"
-  cp "$profile_src" "$PROFILES_DIR/$profile_name.env"
-  echo "[OK] Imported profile: $profile_name → $PROFILES_DIR/$profile_name.env"
-
-  # Remember the env repo path for next time
-  echo "$env_repo" > "$ENV_REPO_HINT_FILE"
-  return 0
-}
-
 case "$cmd" in
-  activate)
-    if [[ -z "$name" ]]; then
-      echo "[ERROR] Usage: profile.sh activate <name>"
-      exit 1
-    fi
-    validate_profile_name "$name"
-    src="$PROFILES_DIR/$name.env"
-    env_repo=""
-    if resolved="$(resolve_env_repo)"; then
-      env_repo="$resolved"
-    fi
-    if [[ -n "$env_repo" && -f "$env_repo/peers-touch/$name/profile.env.example" ]]; then
-      import_profile_from_env_repo "$name" "$env_repo"
-      src="$PROFILES_DIR/$name.env"
-    elif [[ -f "$src" ]]; then
-      if ! receipt="$(verify_authorized_local_profile "$name" "$src")"; then
-        echo "[ERROR] Local profile '$name' is not human-authorized."
-        echo "        Missing topology is a blocker; do not create a fallback."
-        exit 1
-      fi
-      echo "[OK] Authorized local profile receipt: $receipt"
-    else
-      echo "[ERROR] Profile '$name' is unavailable."
-      echo "        No reviewed env-repository definition or authorized local profile exists."
-      exit 1
-    fi
-    declared_profile="$(
-      sed -n 's/^PT_DEV_PROFILE=//p' "$src" | tail -n 1
-    )"
-    if [[ -z "$declared_profile" ]]; then
-      echo "[ERROR] Profile '$name' is missing PT_DEV_PROFILE: $src"
-      exit 1
-    fi
-    if [[ "$declared_profile" != "$name" ]]; then
-      echo "[ERROR] Profile identity mismatch: filename=$name.env PT_DEV_PROFILE=$declared_profile"
-      echo "        Regenerate or repair the profile before activation."
-      exit 1
-    fi
-    # The worktree-specific symlink is the only active-profile selector.
-    ln -sfn "../profiles/$name.env" "$ACTIVE_FILE"
-    echo "[OK] Active profile: $name (worktree: $WORKTREE_ID)"
-    echo ""
-    print_redacted_env_file "$src" | grep -E '^PT_' | sed 's/^/  /'
-
-    # Post-activation: validate that referenced deploy envs exist and their
-    # target hosts are consistent with the profile's declared URLs.
-    # This catches cross-profile deploy env collisions at activation time
-    # rather than at deploy time.
-    warn_count=0
-    validate_deploy_env_host() {
-      local var_name="$1" url_var="$2" role="$3"
-      local env_name url host deploy_file deploy_host
-      env_name="$(sed -n "s/^${var_name}=//p" "$src" | tail -n 1)"
-      url="$(sed -n "s/^${url_var}=//p" "$src" | tail -n 1)"
-      [[ -n "$env_name" ]] || return 0
-      if ! deploy_file="$(PT_ENV_REPO="$env_repo" "$DEPLOY_SCRIPT" resolve "$env_name")"; then
-        echo ""
-        echo "  [WARN] $role: $var_name=$env_name has no reviewed deploy env"
-        warn_count=$((warn_count + 1))
-        return 0
-      fi
-      [[ -n "$url" ]] || return 0
-      host="$(echo "$url" | sed -E 's|https?://([^:/]+).*|\1|')"
-      deploy_host="$(sed -n 's/^PT_DEPLOY_HOST=//p' "$deploy_file" | tail -n 1)"
-      if [[ -n "$host" && -n "$deploy_host" && "$host" != "$deploy_host" ]]; then
-        echo ""
-        echo "  [WARN] $role host mismatch!"
-        echo "         Profile ${url_var} host : $host"
-        echo "         Deploy env $env_name host: $deploy_host"
-        echo "         Deploy to '$env_name' would target the wrong machine."
-        echo "         Fix $var_name in the profile or update $deploy_file."
-        warn_count=$((warn_count + 1))
-      fi
-    }
-    validate_deploy_env_host PT_STATION_DEPLOY_ENV PT_STATION_URL Station
-    validate_deploy_env_host PT_RELAY_DEPLOY_ENV PT_RELAY_URL Relay
-    if [[ "$warn_count" -gt 0 ]]; then
-      echo ""
-      echo "  ⚠ $warn_count deploy env issue(s) detected. 'make station' will refuse to deploy until fixed."
-    fi
-    ;;
-
   authorize)
     if [[ -z "$name" ]]; then
       echo "[ERROR] Usage: profile.sh authorize <name> [SLOT=N]"
@@ -313,7 +196,7 @@ EOF
     trap - EXIT
     echo "[OK] Created profile: $dest"
     echo "     Authorization receipt: $receipt"
-    echo "     Activate with: make profile PROFILE=$name"
+    echo "     Register with: make env-register PROFILE=$name SLOT=$slot CAPABILITIES=station.connect PURPOSE='<purpose>'"
     ;;
 
   list)
@@ -335,11 +218,6 @@ EOF
       } | sort -u
     )"
     if [[ -n "$profile_names" ]]; then
-      # Get current active profile for this worktree
-      active_target=""
-      if [[ -L "$ACTIVE_FILE" ]]; then
-        active_target="$(readlink "$ACTIVE_FILE" 2>/dev/null || true)"
-      fi
       while IFS= read -r pname; do
         [[ -n "$pname" ]] || continue
         f="$PROFILES_DIR/$pname.env"
@@ -351,11 +229,7 @@ EOF
           && verify_authorized_local_profile "$pname" "$f" >/dev/null 2>&1; then
           source_kind="authorized-local"
         fi
-        if [[ "$active_target" == "../profiles/$pname.env" ]]; then
-          echo "  * $pname ($source_kind; active in $WORKTREE_ID)"
-        else
-          echo "    $pname ($source_kind)"
-        fi
+        echo "    $pname ($source_kind)"
       done <<< "$profile_names"
     else
       echo "  (none)"
@@ -369,7 +243,7 @@ EOF
     ;;
 
   *)
-    echo "Usage: profile.sh {activate|authorize|init|list} [name]"
+    echo "Usage: profile.sh {authorize|init|list} [name]"
     exit 1
     ;;
 esac

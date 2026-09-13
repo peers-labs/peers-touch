@@ -13,16 +13,63 @@ export function workspaceIdForRoot(root = repoRoot) {
   return createHash('sha256').update(canonicalRoot).digest('hex').slice(0, 16);
 }
 
-export function machineDevRoot(home = homedir()) {
-  return path.join(home, '.peers-touch', 'dev');
+export function machineDevRoot(home) {
+  if (home !== undefined) {
+    return path.join(home, '.peers-touch', 'dev');
+  }
+  const override = process.env.PT_MACHINE_DEV_ROOT?.trim();
+  if (override) {
+    if (!path.isAbsolute(override)) {
+      throw new Error('PT_MACHINE_DEV_ROOT must be absolute');
+    }
+    return path.resolve(override);
+  }
+  return path.join(homedir(), '.peers-touch', 'dev');
 }
 
-export function developmentWorkLedgerPath(home = homedir()) {
+export function developmentWorkLedgerPath(home) {
   return path.join(machineDevRoot(home), 'work.json');
 }
 
-export function developmentWorkLockPath(home = homedir()) {
+export function developmentWorkLockPath(home) {
   return path.join(machineDevRoot(home), 'work.lock');
+}
+
+export function machineRegistryPath(home) {
+  return path.join(machineDevRoot(home), 'registry.json');
+}
+
+export function machineRegistryLockPath(home) {
+  return path.join(machineDevRoot(home), 'registry.lock');
+}
+
+export function machineLeaseRoot(home) {
+  return path.join(machineDevRoot(home), 'leases');
+}
+
+function requiredLeaseIdentifier(value, field) {
+  if (
+    typeof value !== 'string' ||
+    !/^[a-z0-9][a-z0-9._-]{0,127}$/i.test(value)
+  ) {
+    throw new Error(`Invalid ${field}: ${value}`);
+  }
+  return value;
+}
+
+export function machineLeasePath(resourceKind, resourceId, home = homedir()) {
+  const kind = requiredLeaseIdentifier(resourceKind, 'lease resource kind');
+  const id = requiredLeaseIdentifier(resourceId, 'lease resource id');
+  return path.join(machineLeaseRoot(home), `${kind.replaceAll('.', '-')}-${id}.lock`);
+}
+
+export function workspaceStatePath(options = {}) {
+  const root = options.repoRoot ?? repoRoot;
+  return path.join(
+    machineDevRoot(options.home),
+    'workspaces',
+    workspaceIdForRoot(root),
+  );
 }
 
 export function workspaceWorkflowPath(workItemId, options = {}) {
@@ -30,11 +77,8 @@ export function workspaceWorkflowPath(workItemId, options = {}) {
     throw new Error(`Invalid development work item: ${workItemId}`);
   }
 
-  const root = options.repoRoot ?? repoRoot;
   return path.join(
-    machineDevRoot(options.home),
-    'workspaces',
-    workspaceIdForRoot(root),
+    workspaceStatePath(options),
     'workflow',
     workItemId,
   );
@@ -45,11 +89,8 @@ export function workspaceRuntimePath(name, options = {}) {
     throw new Error(`Invalid workspace runtime name: ${name}`);
   }
 
-  const root = options.repoRoot ?? repoRoot;
   return path.join(
-    machineDevRoot(options.home),
-    'workspaces',
-    workspaceIdForRoot(root),
+    workspaceStatePath(options),
     'runtime',
     name,
   );

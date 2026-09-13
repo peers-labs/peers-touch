@@ -195,6 +195,9 @@
 - 实时平面：`architecture/realtime/event-stream.md`
 - 语音 / 视频通话架构：`architecture/realtime/voice-video-calls.md`
 - Chat 端到端加密、设备级投递与恢复：`architecture/encryption/README.md`
+- 跨领域 Secure Content：`architecture/secure-content/README.md`
+  （active；定义 Social/Conversation 共用的 Native 加密、endpoint key envelope、
+  opaque object 协议、stateless validation、恢复与 hard-cut 边界；不新建业务 authority）
 - 服务协调（Relay/Station/Desktop/Mobile 依赖 DAG 与凭据契约）：`architecture/service-coordination.md`
 - 本机多 worktree 开发控制面：`architecture/local-dev-control-plane/README.md`
   （active；定义 `~/.peers-touch/dev/` 机器级注册表、独立 worktree 绑定、slot 与
@@ -210,6 +213,8 @@
   Conversation 是唯一 Chat 入口，Device、Inbox、Recovery、Key Exchange 与
   Federation API 由各自资源 owner 暴露；CA-HC hard-cut plan 已批准）
 - 双端社交 Runtime 架构：`architecture/social-runtime/README.md`
+- Social 私密 Moments 产品合同：`architecture/social/product-definition.md`
+  （active；定义好友/关注者语义、私密内容 E2EE、设备恢复、Browser 降级和验收矩阵）
 - Mobile Shell 产品与跨运行时架构：`architecture/mobile/README.md`
   （active；W2-E2 physical OAuth proof amendment 见
   `architecture/mobile/native-oauth-proof/README.md`；MOP-D01..MOP-D04 与
