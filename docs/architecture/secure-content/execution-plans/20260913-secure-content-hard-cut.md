@@ -1162,7 +1162,7 @@ observations is invalid.
 | W1 | contracts | parked | none | NOT_RUN | NOT_RUN | focused Desktop generated paths overlap active MCA owner |
 | W2 | atomic kernels/Chat | parked | none | NOT_RUN | NOT_RUN | W0R/W1/W4; active MCA Desktop source and Station deploy/slot owner |
 | W3 | PreKeys | parked | none | NOT_RUN | NOT_RUN | W2 |
-| W4 | auth | complete | `8a7722c93` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
+| W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
 | W5 | recovery | parked | none | NOT_RUN | NOT_RUN | W1/W2/W3 |
 | W6 | Social minimum | parked | none | NOT_RUN | NOT_RUN | W2/W3/W4 |
 | W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | W6; active MCA Desktop claim and Station runtime owner |
@@ -1185,7 +1185,11 @@ Current evidence:
 - W4: Auth/Social Go race suites PASS, 14 Development runner/projector tests
   PASS, independent review PASS, and
   `~/.peers-touch/dev/workspaces/9eb2cb904c9ae460/development/secure-content/W4/SC-AS02/result.json`
-  records an exact-source `FUNCTIONAL_CHECK/PASS` at checkpoint `8a7722c93`.
+  records an exact-source `FUNCTIONAL_CHECK/PASS` at checkpoint `8260e4330`.
+- PR #111 continuation `b5f42f721` was integrated by merge commit
+  `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
+  the 13 incoming files and the 62-file Secure Content delta; blob-level
+  verification preserved both sides without an overwrite resolution.
 - Formal Acceptance remains `NOT_RUN`. The Acceptance Gap Detector itself
   passes 22 tests, but a claim scan remains unavailable until the canonical
   Acceptance plan artifact exists; no `PROVEN` claim is made.
