@@ -4,7 +4,7 @@
 > **Version**: v1.1
 > **Created**: 2026-08-24 | **Updated**: 2026-09-13
 > **Owner**: Acceptance Infrastructure + Desktop Platform + Chat Domain
-> **Branch**: `fix/windows-native-chat-closure`
+> **Branch**: `fix/deploy-env-host-guard`
 > **Parent Design**: [../design.md](../design.md)
 > **Approved Decisions**: D-13, D-14, D-15, D-16, D-17, D-18
 
@@ -12,19 +12,17 @@
 
 ## 1. Goal And Claims
 
-### Current Windows Execution Scope
+### Completed Windows Sixwin Scope (2026-09-10 to 2026-09-11)
 
-The Owner's 2026-09-10 single-host instruction supersedes the historical
-Windows distinct-Station requirements below. Use sixwin for the orchestrator,
-Windows Native runtime, and the single local source Station. Inject
-`--station-profile station-primary=sixwin` at execution time; omission fails
-closed. No secondary Station, station-four, or station-five is authorized.
-Gate and provisioner definitions must remain host-neutral.
+The Owner's 2026-09-10 single-host instruction governed the completed Windows
+sixwin Goal only. It did not supersede the later NDR-W8 and CA-W6
+multi-Station work, which uses the canonical `four` and `fiveArm` profiles.
+Historical Windows Gate and provisioner definitions remain host-neutral.
 
-NDR-W1-W7 remain closed Linux history; NDR-W8 is out of scope. Single-Station
-Windows proof must not be represented as cross-Station or cross-platform proof.
-Historical evidence and amendments below remain traceable, not instructions
-to redeploy historical hosts.
+NDR-W1-W7 remain closed Linux history. Single-Station Windows proof must not be
+represented as cross-Station or cross-platform proof. Historical evidence and
+amendments below remain traceable, not instructions to redeploy historical
+hosts.
 
 Current Goal: `6aa2282c0ad37e7b2b10927d`. The Windows sixwin closure is
 `DONE/PROVEN` at product source
@@ -956,10 +954,10 @@ committed to this plan.
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
-| NDR-W8 macOS regression | in progress / source-complete, runtime-unproven | Current-profile Direct, reply/thread, reaction, edit, recall, fresh Alice-to-Bob Native delivery at authority sequence 34, and historical cross-Station Alice/Bob avatar parity evidence exist while formal remaining Gates are incomplete. W8A/W8B/W8C source checks pass. The Owner selected canonical `four` and `fiveArm`; `four` is exact-source healthy while `fiveArm` fails closed on a retained legacy Conversation schema. W8C also requires separately authorized third-client topology. Multi-device, backup recovery, and full three-client Group/MLS runtime cells remain. |
+| NDR-W8 macOS regression | in progress / W8A proven; W8B-W8C partial | The Owner selected canonical `four` and `fiveArm`. W8A is proven. W8B reached 15/16 assertions and W8C reached MLS readiness; their Desktop revoke and KeyPackage endpoint-identity corrections are integrated after PR #111 and await exact-source deployment and bounded reruns. |
 | NDR-W8A submitted-command reconciliation | done | MP-D31 contract, generated bindings, authenticated `/conversation/command/results`, canonical receipt/outbox/exact Device Inbox resolver, transactional hard-cut migration from historical payload-hash result IDs, deterministic endpoint/command result identity, and Device Engine startup reconciliation are implemented. Exact-source macOS Native Gate `20260913T164933497898Z-87194509f71e18677704f12aea7e5805` is `PASS/DONE/PROVEN` at `638679c0e54a2c657fa208cff390210d6fa47322`: generated command `01M2DTWRTS6JBMBSN4WTKSHX5Q` / message `01M2DTWRQ7FVRJ24EZRQB3V7X9` retained exact identity and bytes, converged to committed/delivered authority truth, rendered on Bob, and released both clients and all six ports. |
-| NDR-W8B federated ephemeral typing | source-ready after canonical-profile correction; Native proof pending | MP-D32 signal, receiver-fixed ephemeral QoS, bounded no-row receiver dispatch, Runtime payload-kind-restricted transport, Authority-mediated routing, production identity-directory binding, and local/remote common receiver composition are implemented. The Chat Native Provisioner now maps stable `station-four` / `station-five` service IDs to canonical `four` / `fiveArm` profiles and reviewed `station-four` / `station-five-arm` deployment definitions; 58 provisioning-model tests pass. Exact-source cross-Station Direct/Group typing, TTL/session/disconnect, deny, partial-failure, overload, and durable-row runtime evidence remain `UNPROVEN`. |
-| NDR-W8C federated contact identity and Group genesis reliability | source-complete; Native proof pending | Station remote-cache refresh, relationship identity contract, one PTID-keyed Desktop projection, readable Federation/Home Station rows, recoverable Group creation, accepted-Group convergence, typed errors, prototype parity, and UI-driven Native Gate logic are implemented and statically proven. Exact-source three-client Native Group/MLS proof remains `UNPROVEN`. |
+| NDR-W8B federated ephemeral typing | partial; final Native assertion pending rerun | Run `20260913T212936487149Z-ed835cb01d6862ff711e0845bd9588a1` proves Direct/Group typing lifecycle, removed-member rejection, and zero durable writes. PR #111 post-merge integration supplies the endpoint-scoped revoke request and profile-version fence; exact-source revoked-device proof remains `UNPROVEN`. |
+| NDR-W8C federated contact identity and Group genesis reliability | partial; MLS continuation pending rerun | Run `20260913T222630465438Z-dafc69d1f5d7c5fae174abfa28bab614` proves three-client identity/avatar/contact parity. Checkpoint `579ca4924c3cfeb74d553ff0c652989a4682ba18` moves MLS KeyPackage upload/fetch/count to the Key Exchange adapter and binds canonical protobuf endpoint identity plus `X-Device-ID`; exact-source Group/MLS proof remains `UNPROVEN`. |
 | NDR-W9 Windows cell | done for Windows sixwin scope | Product Closure run `20260911T171023157955Z-dec53283a4ae9dbb4124c94a00ba6a24` is `PASS/DONE/PROVEN` at clean source `283832a7`; runtime identity, 1920x1080 Win32 evidence, Station binding, and cleanup are proven. |
 | NDR-W10 D-18 binding infrastructure | done for current Windows single-Station scope | Eight-Gate Native aggregate `20260911T171022643174Z-8601dca380d9a904041d72fa46bafad6`, PostgreSQL run `20260911T1915491502940Z-f3a7eb606a6e401980e62336ea6d6524`, two zero-gap reports, and audit `20260911T193908424196Z-daccebe8f7c6c434bcc1e07c767562b9` close the Owner-approved sixwin scope. Historical distinct-Station claims remain outside this closure. |
 
@@ -6403,3 +6401,21 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   `RESOURCE_DECLARATION_CONFLICT` on MCA workspace `65e7b6da4dc9be85`;
   neither Desktop path may be edited until that owner releases or hands off the
   claim.
+- PR #111's archived head was already an ancestor of the current branch. The
+  published post-merge Agent continuation
+  `7b548118441b1b3909baa54aca027a109a86e555` was integrated by merge commit
+  `09f073e0c11ec2dce8e3f9e2f6e1b0f40554044f` without history rewrite.
+  Semantic reconciliation preserved the complete shared-Federation fixture,
+  canonical `four`/`fiveArm` service bindings, typing restart/clock-skew
+  behavior, monotonic member-history cursors, and all later W8 evidence while
+  admitting the Agent recovery, device-revoke, peer-key readiness, devctl, and
+  completed Windows W9/W10 evidence.
+- Checkpoint `579ca4924c3cfeb74d553ff0c652989a4682ba18` removes the stale MLS
+  KeyPackage commands from the Conversation adapter and routes upload, fetch,
+  and count through the Key Exchange adapter. Tauri and HTTP Gateway now
+  resolve the authenticated window/account Messaging endpoint, verify its PTID,
+  send the canonical protobuf endpoint identity, and bind the matching
+  `X-Device-ID`. Device revoke now rejects a caller device that differs from
+  the active Messaging endpoint. Desktop tests, Rust compilation, the focused
+  Chat/provisioning cohort, Conversation/Agent race suites, and devctl ledger
+  tests pass. W8B/W8C still require exact-source deployment and Native reruns.
