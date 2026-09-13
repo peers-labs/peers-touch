@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Skeleton, Space, Typography, theme } from 'antd';
+import { Skeleton, Space, Spin, Typography, theme } from 'antd';
 import type { Follower, Following } from '../../gen/proto/domain/social/relationship_pb';
 import type { PostAuthor } from '../../gen/proto/domain/social/post_pb';
 import { FollowButton } from './FollowButton';
@@ -29,8 +29,11 @@ interface UserProfileHeaderProps {
   followingCount?: number;
   postCount?: number;
   loading?: boolean;
+  refreshing?: boolean;
   /** When provided, renders inline-style header for embedded contexts (e.g. user search). */
   inline?: boolean;
+  onAvatarClick?: () => void;
+  avatarActionLabel?: string;
 }
 
 function actorPtidOf(a: any): string {
@@ -77,7 +80,10 @@ export function UserProfileHeader({
   followingCount,
   postCount,
   loading,
+  refreshing,
   inline,
+  onAvatarClick,
+  avatarActionLabel,
 }: UserProfileHeaderProps) {
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
@@ -134,16 +140,45 @@ export function UserProfileHeader({
         borderBottom: inline ? undefined : `1px solid ${token.colorBorderSecondary}`,
       }}
     >
-      <UserSquareAvatar
-        remoteUrl={avatar}
-        name={display}
-        size={inline ? 36 : 64}
-        radius={inline ? 9 : 16}
-      />
+      {onAvatarClick ? (
+        <button
+          type="button"
+          data-moments-avatar-link
+          onClick={onAvatarClick}
+          aria-label={avatarActionLabel}
+          title={avatarActionLabel}
+          style={{
+            display: 'inline-flex',
+            padding: 0,
+            border: 'none',
+            borderRadius: inline ? 9 : 16,
+            background: 'transparent',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <UserSquareAvatar
+            remoteUrl={avatar}
+            name={display}
+            size={inline ? 36 : 64}
+            radius={inline ? 9 : 16}
+          />
+        </button>
+      ) : (
+        <UserSquareAvatar
+          remoteUrl={avatar}
+          name={display}
+          size={inline ? 36 : 64}
+          radius={inline ? 9 : 16}
+        />
+      )}
       <div style={{ flex: '1 1 220px', minWidth: 0 }}>
         {inline ? (
           <Space direction="vertical" size={0}>
-            <Text strong>{display}</Text>
+            <Space size={6}>
+              <Text strong>{display}</Text>
+              {refreshing && <Spin size="small" aria-label={t('moments.profile.refreshing')} />}
+            </Space>
             {username && (
               <FederatedHandle
                 localPart={username}
@@ -157,9 +192,12 @@ export function UserProfileHeader({
           </Space>
         ) : (
           <>
-            <Title level={4} style={{ margin: 0 }}>
-              {display}
-            </Title>
+            <Space size={8} align="center">
+              <Title level={4} style={{ margin: 0 }}>
+                {display}
+              </Title>
+              {refreshing && <Spin size="small" aria-label={t('moments.profile.refreshing')} />}
+            </Space>
             {username && (
               <FederatedHandle
                 localPart={username}
