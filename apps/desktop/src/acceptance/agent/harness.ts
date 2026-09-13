@@ -11351,6 +11351,11 @@ async function foundationCancelledReceiverSnapshot(
 async function foundationInterruptedReceiverSnapshot(
   messageId: string,
   description: string,
+  debugContext: {
+    platform: string;
+    locale: string;
+    scenarioKey: string;
+  },
 ): Promise<{
   messageId: string;
   turnId: string;
@@ -11370,11 +11375,12 @@ async function foundationInterruptedReceiverSnapshot(
     + `[data-pt-agent-message-id="${messageId}"]`;
   const recoverySelector =
     '[data-pt-agent-message-error-recovery="recover"]';
+  let waitReadyObserved = false;
   await waitFor(
     () => {
       const element = document.querySelector<HTMLElement>(selector);
       const recovery = element?.querySelector<HTMLElement>(recoverySelector);
-      return Boolean(
+      waitReadyObserved = Boolean(
         element
         && element.getAttribute('data-pt-agent-terminal-status')
           === 'interrupted'
@@ -11383,6 +11389,7 @@ async function foundationInterruptedReceiverSnapshot(
         && recovery
         && recovery.getClientRects().length > 0,
       );
+      return waitReadyObserved;
     },
     description,
     30_000,
@@ -11397,6 +11404,34 @@ async function foundationInterruptedReceiverSnapshot(
   const projected = [...useChatStore.getState().messages]
     .reverse()
     .find((message) => message.id === messageId);
+  // #region debug-point AA-AD:interrupted-receiver-snapshot
+  await reportFoundationF06TerminalRaceDebug(
+    'AA-AD',
+    'interrupted-receiver-post-wait',
+    {
+      ...debugContext,
+      waitReadyObserved,
+      messageElementPresent: messageElement !== null,
+      messageVisible:
+        Boolean(messageElement && messageElement.getClientRects().length > 0),
+      terminalStatus:
+        messageElement?.getAttribute('data-pt-agent-terminal-status') ?? null,
+      errorType:
+        messageElement?.getAttribute('data-pt-agent-error-type') ?? null,
+      recoveryPresent: recovery !== null && recovery !== undefined,
+      recoveryVisible:
+        Boolean(recovery && recovery.getClientRects().length > 0),
+      errorElementPresent: error !== null && error !== undefined,
+      errorElementVisible:
+        Boolean(error && error.getClientRects().length > 0),
+      projectedPresent: projected !== undefined,
+      projectedTurnPresent: Boolean(projected?.turnId),
+      currentSessionPresent:
+        useChatStore.getState().currentSessionKey.length > 0,
+      projectedMessageCount: useChatStore.getState().messages.length,
+    },
+  );
+  // #endregion
   if (!messageElement || !recovery || !error || !projected?.turnId) {
     throw new Error(
       'agent.acceptance.foundationInterruptedReceiverMissing',
@@ -13705,6 +13740,11 @@ async function runFoundationInterruptedScenario(input: {
   const receiver = await foundationInterruptedReceiverSnapshot(
     sourceAssistant.messageId,
     'Foundation interrupted receiver',
+    {
+      platform: input.platform,
+      locale: input.locale,
+      scenarioKey: input.scenarioKey,
+    },
   );
   const recoveryAction = document.querySelector<HTMLElement>(
     '[data-pt-agent-message="assistant"]'

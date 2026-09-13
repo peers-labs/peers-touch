@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260912T234312907224Z-d1244d088d9980940826c8f449985217` on `7e148f83bd7b90805d95cb3b3bbbec2e18bdb01e` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260912T234615828770Z-2f4a011183adcc54ad3a57d694361c27` proved all four AS-F06 and both `BASE-CONTEXT_OVERFLOW` locale tuples, then failed first at Browser English `BASE-INTERRUPTED` with `foundationInterruptedPersistedOutcomeMissing`; Provisioner cleanup passed; read-only Station evidence shows valid typed outcomes for actually interrupted Turns but no interrupted-step reclamation in the failing tuple's restart window, so bounded V-Z readback-shape instrumentation is pending exact-source diagnosis; the `chatRuntime` generation fence remains locally verified | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260913T003619586251Z-f9d282299dedcaf1e19e40c011255774` on `bf1af73241b76e4e7b3b857aa29091dbf63fcda9` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260913T003753703208Z-727e7fa98b35bbad6ac31bf02f8ed1be` proved all four AS-F06 and both `BASE-CONTEXT_OVERFLOW` locale tuples; V-Z instrumentation proved one interrupted Assistant Message with a valid 276-byte typed outcome and strict projector acceptance; the first failure moved to Browser English `BASE-INTERRUPTED / foundationInterruptedReceiverMissing`; Provisioner cleanup passed; bounded AA-AD DOM/store shape instrumentation is pending exact-source diagnosis; the `chatRuntime` generation fence remains locally verified | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7800,6 +7800,20 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   completing between the client fault boundary and Station restart. No
   product behavior, matrix tuple, timeout, cleanup, provider, or assertion is
   changed.
+  Diagnostic checkpoint `bf1af73241b76e4e7b3b857aa29091dbf63fcda9`
+  passed exact-source C08 run
+  `20260913T003619586251Z-f9d282299dedcaf1e19e40c011255774`.
+  Fully authorized Foundation run
+  `20260913T003753703208Z-727e7fa98b35bbad6ac31bf02f8ed1be`
+  proves V-Z are not the current failure: Browser readback contains exactly
+  one matching `interrupted` Assistant Message, its `error_json` is present
+  at 276 bytes, parsed keys and detail keys match the accepted contract, all
+  strict field types match, and `persistedOutcomePresent=true`. The first
+  failure moved to `foundationInterruptedReceiverMissing`; cleanup remains
+  `DONE / PROVEN / passed`. The next AA-AD instrumentation samples the
+  post-wait message, recovery, primary-error selector, store projection, and
+  current-session presence using only booleans, counts, and typed
+  status/attribute values.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

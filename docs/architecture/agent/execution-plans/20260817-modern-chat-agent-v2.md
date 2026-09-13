@@ -22,10 +22,10 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Diagnose Browser English `BASE-INTERRUPTED` persisted-outcome readback after the Gate proved the context-overflow cleanup fix |
+| Current step | Diagnose Browser English `BASE-INTERRUPTED` receiver sampling after typed persisted-outcome readback succeeded |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source C08 run `20260912T234312907224Z-d1244d088d9980940826c8f449985217` on `7e148f83bd7b90805d95cb3b3bbbec2e18bdb01e` completed `DONE / PROVEN`; same-source Foundation run `20260912T234615828770Z-2f4a011183adcc54ad3a57d694361c27` proved all AS-F06 and both `BASE-CONTEXT_OVERFLOW` locale tuples |
-| Current action | Instrument only the `BASE-INTERRUPTED` Station message readback shape to distinguish API omission, message selection, strict projection, readback timing, and post-fault provider completion |
+| Last completed | Exact-source C08 run `20260913T003619586251Z-f9d282299dedcaf1e19e40c011255774` on `bf1af73241b76e4e7b3b857aa29091dbf63fcda9` completed `DONE / PROVEN`; same-source Foundation run `20260913T003753703208Z-727e7fa98b35bbad6ac31bf02f8ed1be` proved AS-F06, both context-overflow locales, and strict interrupted persisted-outcome readback |
+| Current action | Instrument only the post-wait `BASE-INTERRUPTED` message, recovery, primary-error selector, store projection, and current-session shape |
 | Next action | Create a clean diagnostic checkpoint, rebuild/smoke, deploy exact source, run C08 first, and rerun Foundation through `BASE-INTERRUPTED` |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
@@ -35,7 +35,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | none；the current context-overflow draft writeback is a recoverable Harness owner-path defect；the `BASE-INTERRUPTED` `chatRuntime` fix remains locally verified and awaits runtime proof after this earlier cell crosses；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 run `20260912T234312907224Z-d1244d088d9980940826c8f449985217` is `DONE / PROVEN` on `7e148f83bd7b90805d95cb3b3bbbec2e18bdb01e`；Foundation run `20260912T234615828770Z-2f4a011183adcc54ad3a57d694361c27` proves AS-F06 plus both context-overflow locales and fails first at Browser English `BASE-INTERRUPTED / foundationInterruptedPersistedOutcomeMissing`；Provisioner cleanup is `DONE / PROVEN / passed` |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 run `20260913T003619586251Z-f9d282299dedcaf1e19e40c011255774` is `DONE / PROVEN` on `bf1af73241b76e4e7b3b857aa29091dbf63fcda9`；Foundation run `20260913T003753703208Z-727e7fa98b35bbad6ac31bf02f8ed1be` proves AS-F06, both context-overflow locales, and valid interrupted persisted outcome, then fails first at `foundationInterruptedReceiverMissing`；Provisioner cleanup is `DONE / PROVEN / passed` |
 | Last updated | 2026-09-13 |
 
 ---

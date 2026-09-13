@@ -205,3 +205,37 @@ window. Recent read-only database grouping shows valid 276-byte typed outcomes
 for actually interrupted Turns and completed Assistant Messages without
 `error_json` for later Turns. This raises Z but does not identify the Harness
 Turn without the bounded readback-shape instrumentation.
+
+Exact-source C08 run
+`20260913T003619586251Z-f9d282299dedcaf1e19e40c011255774`
+on `bf1af73241b76e4e7b3b857aa29091dbf63fcda9` completed
+`DONE / PROVEN`. The same-source Foundation run
+`20260913T003753703208Z-727e7fa98b35bbad6ac31bf02f8ed1be`
+proved all AS-F06 and both context-overflow locale tuples, then failed at
+Browser English `BASE-INTERRUPTED` with
+`agent.acceptance.foundationInterruptedReceiverMissing`. Provisioner cleanup
+completed `DONE / PROVEN / passed`.
+
+The V-Z readback evidence is decisive:
+
+- one matching Assistant Message exists;
+- its status is `interrupted`;
+- its `error_json` is present and 276 bytes;
+- parsed keys and detail keys match the accepted typed contract;
+- all strict field types are correct;
+- `persistedOutcomePresent=true`.
+
+V, W, X, Y, and Z are rejected for this exact-source run. The prior
+`foundationInterruptedPersistedOutcomeMissing` did not reproduce, and the Gate
+advanced to receiver sampling.
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| AA | The visible primary error copy lacks `data-pt-agent-message-error-text`; that selector exists only inside the collapsed diagnostics panel. | High | Low | Wait readiness succeeds from message/recovery attributes, but post-wait `errorElementPresent=false` while message and recovery remain present. |
+| AB | The message element is removed between wait completion and final sampling. | Medium | Low | `waitReadyObserved=true` followed by `messageElementPresent=false` or a changed current session. |
+| AC | The store projection is removed or lacks the Turn identity after the DOM becomes ready. | Medium | Low | DOM remains present while `projectedPresent=false` or `projectedTurnPresent=false`. |
+| AD | The recovery element is replaced between wait completion and final sampling. | Low | Low | Message remains present while `recoveryPresent=false` after readiness. |
+
+The next instrumentation captures only booleans, counts, terminal/error
+attributes, and the current-session-presence flag after the ready boundary. It
+records no text, IDs, actor identity, credentials, or provider payload.
