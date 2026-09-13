@@ -30,6 +30,8 @@ permanent dual-read precedence between global registry and `.local/dev/active`.
 ├── README.md
 ├── registry.json
 ├── registry.lock
+├── work.json
+├── work.lock
 ├── acceptance/
 │   └── <workspaceId>/<gateId>/<runId>/
 ├── leases/
@@ -55,6 +57,11 @@ Target command behavior:
 
 | Command | Control-plane action |
 |---------|----------------------|
+| `make dev-start` | Publish and confirm source/runtime intent before mutation |
+| `make dev-update` | Atomically replace the current work item's intent |
+| `make dev-status-all` | Show all worktree declarations beside observed leases |
+| `make dev-check` | Verify current worktree/branch/HEAD owns a live declaration |
+| `make dev-release` | Release the work declaration after cleanup |
 | `make profile <name>` | Update only current `workspaceId` binding |
 | `make config` | Resolve current binding + env definition + allocation |
 | `make status` | Show current worktree declared and observed state |

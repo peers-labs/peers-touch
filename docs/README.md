@@ -199,6 +199,9 @@
 - 本机多 worktree 开发控制面：`architecture/local-dev-control-plane/README.md`
   （active；定义 `~/.peers-touch/dev/` 机器级注册表、独立 worktree 绑定、slot 与
   Station capability lease，当前仅有 observed snapshot，尚未接管运行时）
+- 开发工作流控制面：`architecture/development-workflow/README.md`
+  （active；定义从首次写入前资源声明到 `EXECUTE` 内以 Journey 为单位的产品优先开发循环、checkpoint
+  授权、exact-source 功能验证与 Acceptance 晋级边界）
 - 联邦 IM 历史架构：`architecture/federated-im/README.md`（superseded；保留
   consolidation 前的决策与实现证据，当前 Chat 架构以 Messaging Platform 和
   API Ownership 为准）

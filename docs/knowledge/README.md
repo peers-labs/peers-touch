@@ -160,6 +160,7 @@ Pick one based on intent:
 - [`invariants/access-gate-wire-contract.md`](invariants/access-gate-wire-contract.md) — `AccessDecision` consumers must tolerate snake_case-first keys and match enums by both number and string name across Go→Rust→TS.
 - [`invariants/actor-presence-ownership.md`](invariants/actor-presence-ownership.md) — actor presence belongs to the global presence owner, not chat subservers or chat proto models.
 - [`invariants/direct-receipt-endpoint-truth.md`](invariants/direct-receipt-endpoint-truth.md) — Direct receipt aggregation uses immutable event commitments, not Group/MLS device rows.
+- [`invariants/dev-resource-declaration-before-write.md`](invariants/dev-resource-declaration-before-write.md) — non-trivial work publishes machine-visible source/runtime intent before mutation and releases it after cleanup.
 
 ### Pitfalls
 

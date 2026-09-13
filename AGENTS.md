@@ -144,6 +144,12 @@ Example:
     branch, `workspaceId`, initial HEAD, expected HEAD, and worktree-set digest.
     The verified binding remains immutable unless the user explicitly
     authorizes one of the refresh operations defined in §13.5.1.
+12. **Development declaration first** — Read-only intake may inspect any
+    permitted source, but every non-trivial task MUST publish and confirm its
+    source/runtime intent through `make dev-start` before the first repository
+    write or runtime acquisition. Scope growth uses `make dev-update`;
+    completion/cancellation uses `make dev-release`. See
+    `docs/architecture/development-workflow/README.md`.
 
 ---
 
@@ -212,6 +218,21 @@ Why: the profile system enforces host consistency guards, deploy env binding,
 compose project isolation, and health-check contracts. Bypassing it has caused
 silent deployment to the wrong remote machine and schema mismatches that took
 hours to diagnose.
+
+### Development Resources Are Declared Before Use
+
+- `~/.peers-touch/dev/work.json` is the machine-wide public intent ledger.
+- Non-trivial work MUST use `make dev-start` before its first write or runtime
+  acquisition and `make dev-check` before each mutation slice.
+- An authorized commit, rebase or merge MUST be followed by `make dev-update`
+  before the next mutation so the public declaration exposes the current HEAD.
+- `RESOURCE_DECLARATION_CONFLICT` blocks the overlapping action. Do not evade it
+  by changing worktree, Profile, path or resource.
+- A declaration exposes intent only. Runtime exclusivity still requires Local
+  Dev Control Plane leases; destructive/reset/delivery/history operations still
+  require their explicit authorizations.
+- `active_work`, branch names, process discovery and private `.local` files are
+  not substitutes for public resource intent.
 
 ### No Mocking
 
@@ -330,7 +351,9 @@ Error code ranges: `10000s` (business), `20000s` (protocol), `30000s` (content).
 | Mobile | `pnpm mobile:check` (target script during Tauri Mobile migration; use `docs/.agent/mobile.md` for current fallback checks) |
 | Proto | `./model/build.sh`, `./tooling/scripts/proto-gen-mobile.sh` |
 
-**Completion criteria**: Implementation complete + lint pass + build success + tests pass + functional verification.
+**Completion criteria**: Implementation complete + focused source checks +
+required exact-source Journeys at `FUNCTIONAL_PASS` + required formal
+Acceptance proof + released Development declaration and runtime resources.
 
 ---
 
@@ -375,7 +398,7 @@ Current project skills:
 
 | Skill | Purpose |
 |-------|---------|
-| `pt-dev-workflow` | Drive a complete development task from planning to PR |
+| `pt-dev-workflow` | Orchestrate a complete development task from requirement intake and public resource declaration through product-functional proof, Acceptance, review, and delivery |
 | `pt-god-view` | God view: explicitly invoked to show global work status, route to correct stage skill, manage work lifecycle |
 | `pt-trae-goal-orchestrator` | Build one bounded, conflict-aware adaptive Goal queue that drains ready work, parks blockers, reconciles live agents, and preserves integration ownership |
 | `pt-acceptance-infra-engineering` | Optimize and audit Acceptance Infra while enforcing the responsibility firewall against business Domain injection |
@@ -440,23 +463,30 @@ Any non-trivial development task (cross-module, new feature, architecture change
 
 | Stage | Entry condition | Skill(s) to invoke | Gate (exit condition) | Artifact |
 |-------|----------------|--------------------|-----------------------|----------|
+| **PRODUCT** | New capability, workflow, user journey, or visible state is undefined | `pt-product-design-methodology` | Product contract accepted; required prototype confirmed or explicitly blocked | Product docs + optional prototype |
 | **DESIGN** | New architecture / boundary / ownership decision needed | `pt-architecture-design-methodology` | Architecture review prompt generated → user initiates review → review passes | `docs/architecture/<module>/` |
 | **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-architecture-execution-methodology` (analysis) → `pt-plan-and-document` (落盘 + `active_work` registration + review prompt) | Plan review prompt generated → user initiates review → review passes | `execution-plans/<plan>.md` |
-| **EXECUTE** | Plan accepted | `pt-execution-plan-guardian` | `pt-completion-auditor` passes OR completion criteria in plan all checked | Code + tests + evidence |
+| **EXECUTE** | Plan accepted | `pt-execution-plan-guardian` | required Journeys reach `FUNCTIONAL_PASS`, formal proof obligations pass, and `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
 | **DELIVER** | Code complete, tests pass | `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
 
 **Dispatch rules:**
 
-1. Each stage MUST pass its gate before entering the next. No skipping gates.
-2. Review pattern is uniform across stages: generate structured review prompt → user decides whether to send → iterate if needed → pass.
-3. **Small fixes** (single-file bug fix, cosmetic tweak) skip DESIGN + PLAN, enter directly at EXECUTE via `pt-small-fix-discipline`.
-4. **Stage detection**: check `active_work` in project memory → read the referenced execution plan status table → determine current stage.
-5. If no active work exists and user's request is ambiguous, ask: "Is this a new architecture decision, or implementation of an existing plan?"
-6. **Acceptance ownership dispatch**:
+1. `pt-dev-workflow` is the single orchestrator for non-trivial development.
+   Read-only intake may precede declaration; the first write/runtime acquisition
+   requires a confirmed public declaration.
+2. Each stage MUST pass its gate before entering the next. No skipping gates.
+3. Review pattern is uniform across stages: generate structured review prompt → user decides whether to send → iterate if needed → pass.
+4. **Small fixes** (single-file bug fix, cosmetic tweak) skip DESIGN + PLAN, enter directly at EXECUTE via `pt-small-fix-discipline`.
+5. **Stage detection**: check `active_work` in project memory → read the referenced execution plan status table → determine current stage.
+6. If no active work exists and user's request is ambiguous, ask: "Is this a new architecture decision, or implementation of an existing plan?"
+7. **Acceptance ownership dispatch**:
    - Core/runtime/planner/validator/runner/Evidence Store/framework optimization → `pt-acceptance-infra-engineering`.
    - Domain/Feature/Capability/Registry rule/concrete Gate/Environment/Provisioner/Fixture/product proof → `pt-acceptance-engineering`.
    - Mixed requests MUST be split. Infra reports business gaps as `BUSINESS_INJECTION_REQUIRED`; it does not implement them.
-7. **Anchor creation boundary**: PRODUCT/DESIGN work without a formal execution plan is not tracked work and has no Context Anchor. After `pt-plan-and-document` creates the plan, register `active_work`; only then may `pt-context-anchor` emit a chat projection.
+8. **Functional fence**: focused source checks and one exact-source Journey
+   precede Acceptance expansion. `SOURCE_CHECK`, `STRUCTURAL_CHECK`, `UX_REVIEW`,
+   Gate count and test count cannot establish `FUNCTIONAL_PASS`.
+9. **Anchor creation boundary**: PRODUCT/DESIGN work without a formal execution plan is not tracked work and has no Context Anchor. After `pt-plan-and-document` creates the plan, register `active_work`; only then may `pt-context-anchor` emit a chat projection.
 
 #### 13.5.1 Execution Worktree Binding Contract
 
