@@ -5868,3 +5868,13 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   deployment's reviewed health URL and revalidates scheme, host, port, path,
   Compose project, containers, and volume. The focused reset suite passes
   20/20.
+- Exact-source W8B run
+  `20260913T171324341841Z-e084a3bc6581dc49f375c28c34f86113`
+  reached all three isolated Native clients after resetting both approved
+  Stations, then stopped at its first product action because the runner omitted
+  the now-required `federationId` from `createDirectConversation`; cleanup
+  released all clients, ports, storage, and sessions. Native Chat runners now
+  resolve one Federation shared by their participating clients and supply that
+  stable ID to every programmatic Direct or Group creation. The 161-test
+  focused Native suite passes. No product API fallback or inferred default
+  Federation is added.

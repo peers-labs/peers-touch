@@ -16,6 +16,7 @@ from tooling.acceptance.gates.chat.native_support import (
     cleanup_preserving_primary_failure,
     is_native_tauri_url,
     is_station_authorization_rejection,
+    shared_federation_id,
 )
 from tooling.acceptance.gates.chat.native_multi_device_runner import (
     NativeMultiDeviceGate,
@@ -1026,6 +1027,38 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self.assertIn("SshTarget(", support)
         self.assertNotIn("StrictHostKeyChecking=no", support)
 
+    def test_shared_federation_requires_one_id_for_every_actor(self) -> None:
+        clients = {
+            "alice": object(),
+            "bob": object(),
+            "charlie": object(),
+        }
+        contexts = {
+            clients["alice"]: {
+                "federations": [
+                    {"federationId": "fed-other"},
+                    {"federationId": "fed-shared"},
+                ]
+            },
+            clients["bob"]: {
+                "federations": [{"federationId": "fed-shared"}]
+            },
+            clients["charlie"]: {
+                "federations": [{"federationId": "fed-shared"}]
+            },
+        }
+        with patch(
+            "tooling.acceptance.gates.chat.native_support.async_harness",
+            side_effect=lambda client, *_args, **_kwargs: contexts[client],
+        ):
+            self.assertEqual(
+                shared_federation_id(
+                    clients,  # type: ignore[arg-type]
+                    ("alice", "bob", "charlie"),
+                ),
+                "fed-shared",
+            )
+
     def test_typing_contract_is_unchanged(self) -> None:
         self.assertEqual(
             self.assignment("typing", "ACTORS"),
@@ -1056,6 +1089,25 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 "resources_released",
             },
         )
+        tree = ast.parse(self.source("typing"))
+        create_direct_calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "async_harness"
+            and len(node.args) >= 3
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == "createDirectConversation"
+        ]
+        self.assertEqual(len(create_direct_calls), 2)
+        for call in create_direct_calls:
+            payload = call.args[2]
+            self.assertIsInstance(payload, ast.Dict)
+            self.assertIn(
+                "federationId",
+                [ast.literal_eval(key) for key in payload.keys],
+            )
 
     def test_group_creation_uses_current_production_harness_contract(
         self,
@@ -1083,6 +1135,10 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 self.assertIsInstance(payload, ast.Dict)
                 self.assertIn(
                     "memberPtids",
+                    [ast.literal_eval(key) for key in payload.keys],
+                )
+                self.assertIn(
+                    "federationId",
                     [ast.literal_eval(key) for key in payload.keys],
                 )
                 self.assertNotIn(
@@ -1129,6 +1185,40 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self.assertNotIn('"createGroup"', group_create)
         self.assertIn('"memberPtid": self.ptids["charlie"]', group_runner)
         self.assertNotIn('"memberDid":', group_runner)
+
+    def test_direct_creation_uses_current_production_harness_contract(
+        self,
+    ) -> None:
+        for filename in (
+            "native_interactions_runner.py",
+            "native_multi_device_runner.py",
+            "native_recovery_runner.py",
+            "native_typing_runner.py",
+            "native_two_client_runner.py",
+        ):
+            with self.subTest(runner=filename):
+                source = (
+                    ROOT / "tooling/acceptance/gates/chat" / filename
+                ).read_text(encoding="utf-8")
+                tree = ast.parse(source)
+                create_direct_calls = [
+                    node
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "async_harness"
+                    and len(node.args) >= 3
+                    and isinstance(node.args[1], ast.Constant)
+                    and node.args[1].value == "createDirectConversation"
+                ]
+                self.assertTrue(create_direct_calls)
+                for call in create_direct_calls:
+                    payload = call.args[2]
+                    self.assertIsInstance(payload, ast.Dict)
+                    self.assertIn(
+                        "federationId",
+                        [ast.literal_eval(key) for key in payload.keys],
+                    )
 
     def test_typing_lifecycle_uses_native_surface_events(self) -> None:
         source = (

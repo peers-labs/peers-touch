@@ -41,6 +41,7 @@ from tooling.acceptance.gates.chat.native_support import (
     read_station_version,
     runtime_station_service,
     selected_native_runtime,
+    shared_federation_id,
     station_readback as shared_station_readback,
     stop_client,
     verify_runtime_fixture_ready,
@@ -2302,11 +2303,18 @@ class NativeInteractionsGate(AcceptanceGate):
                 and len({client.gateway_port for client in self.clients.values()}) == len(ACTORS)
                 and len({client.storage_root for client in self.clients.values()}) == len(ACTORS),
             )
+            federation_id = self.step(
+                "federation.shared",
+                lambda: shared_federation_id(self.clients, ACTORS),
+            )
 
             direct = async_harness(
                 self.clients["alice"],
                 "createDirectConversation",
-                {"peerPtid": self.ptids["bob"]},
+                {
+                    "peerPtid": self.ptids["bob"],
+                    "federationId": federation_id,
+                },
             )
             direct_id = str((direct or {}).get("conversationId") or "")
             if not direct_id:
@@ -2346,6 +2354,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 "createGroup",
                 {
                     "name": f"acceptance-{time.time_ns()}",
+                    "federationId": federation_id,
                     "memberPtids": [
                         self.ptids["bob"],
                         self.ptids["charlie"],

@@ -37,6 +37,7 @@ from tooling.acceptance.gates.chat.native_support import (
     runtime_station_service,
     selected_native_runtime,
     send_text,
+    shared_federation_id,
     verify_runtime_fixture_ready,
     wait_until,
 )
@@ -293,10 +294,17 @@ class NativeRecoveryGate(AcceptanceGate):
         bob = self.clients["bob"]
         for client in (alice, bob):
             enter_chat_page(client)
+        federation_id = shared_federation_id(
+            self.clients,
+            ("alice", "bob"),
+        )
         created = async_harness(
             alice,
             "createDirectConversation",
-            {"peerPtid": self.ptids["bob"]},
+            {
+                "peerPtid": self.ptids["bob"],
+                "federationId": federation_id,
+            },
         )
         conversation_id = str((created or {}).get("conversationId") or "")
         if not conversation_id:

@@ -483,6 +483,49 @@ def async_harness(
     )
 
 
+def shared_federation_id(
+    clients: dict[str, TauriSession],
+    actors: tuple[str, ...],
+) -> str:
+    if len(actors) < 2 or any(actor not in clients for actor in actors):
+        raise GateError("shared Federation lookup requires known Native actors")
+    contexts = {
+        actor: async_harness(
+            clients[actor],
+            "federationContext",
+            {},
+        )
+        for actor in actors
+    }
+    ordered_candidates = [
+        str(item.get("federationId") or "")
+        for item in (contexts[actors[0]] or {}).get("federations", [])
+        if isinstance(item, dict) and item.get("federationId")
+    ]
+    remaining = [
+        {
+            str(item.get("federationId") or "")
+            for item in (contexts[actor] or {}).get("federations", [])
+            if isinstance(item, dict) and item.get("federationId")
+        }
+        for actor in actors[1:]
+    ]
+    federation_id = next(
+        (
+            candidate
+            for candidate in ordered_candidates
+            if all(candidate in values for values in remaining)
+        ),
+        "",
+    )
+    if not federation_id:
+        raise GateError(
+            "Native actors have no shared Federation: "
+            f"{', '.join(actors)}"
+        )
+    return federation_id
+
+
 def is_station_authorization_rejection(error: BaseException | str) -> bool:
     message = str(error).lower()
     return any(

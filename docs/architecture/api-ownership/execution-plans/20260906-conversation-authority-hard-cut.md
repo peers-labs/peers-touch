@@ -1201,3 +1201,12 @@ argument. The authorization owner now derives the exact Station origin from
 that deployment's reviewed health URL and revalidates all existing target
 identity fields. The focused reset suite passes 20/20; no W8B product behavior
 is claimed from the blocked run.
+
+Exact-source W8B run
+`20260913T171324341841Z-e084a3bc6581dc49f375c28c34f86113`
+then reached all three isolated Native clients and failed at the first product
+action because the Gate omitted the required `federationId` from
+`createDirectConversation`. Cleanup passed. The Chat business adapter now
+resolves one Federation shared by each Native journey's participating clients
+and passes that stable ID to every programmatic Direct or Group creation. The
+161-test focused Native suite passes; no default-Federation fallback is added.

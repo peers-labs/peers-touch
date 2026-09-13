@@ -37,6 +37,7 @@ from tooling.acceptance.gates.chat.native_support import (
     read_station_version,
     runtime_station_service,
     selected_native_runtime,
+    shared_federation_id,
     station_readback,
     verify_runtime_fixture_ready,
     wait_until,
@@ -527,7 +528,11 @@ class NativeTypingGate(AcceptanceGate):
                 raise GateError(description)
             threading.Event().wait(0.1)
 
-    def prove_direct(self, conversation_id: str) -> None:
+    def prove_direct(
+        self,
+        conversation_id: str,
+        federation_id: str,
+    ) -> None:
         alice = self.clients["alice"]
         self._typing_cid = conversation_id
         set_composer(alice, f"direct-start-stop-{time.time_ns()}")
@@ -583,7 +588,10 @@ class NativeTypingGate(AcceptanceGate):
         alternate = async_harness(
             alice,
             "createDirectConversation",
-            {"peerPtid": self.ptids["charlie"]},
+            {
+                "peerPtid": self.ptids["charlie"],
+                "federationId": federation_id,
+            },
         )
         alternate_id = str((alternate or {}).get("conversationId") or "")
         if not alternate_id:
@@ -919,11 +927,18 @@ class NativeTypingGate(AcceptanceGate):
                 and len(set(self.device_ids.values())) == len(ACTORS)
                 and len({client.storage_root for client in self.clients.values()}) == len(ACTORS),
             )
+            federation_id = self.step(
+                "federation.shared",
+                lambda: shared_federation_id(self.clients, ACTORS),
+            )
 
             direct = async_harness(
                 self.clients["alice"],
                 "createDirectConversation",
-                {"peerPtid": self.ptids["bob"]},
+                {
+                    "peerPtid": self.ptids["bob"],
+                    "federationId": federation_id,
+                },
             )
             direct_id = str((direct or {}).get("conversationId") or "")
             if not direct_id:
@@ -935,7 +950,7 @@ class NativeTypingGate(AcceptanceGate):
             self.message_ids["direct"] = direct_seed
             for actor in ("alice", "bob"):
                 self.sync(actor, "friend", direct_id)
-            self.prove_direct(direct_id)
+            self.prove_direct(direct_id, federation_id)
             direct_before_station = station_readback(
                 direct_id,
                 direct_seed,
@@ -966,6 +981,7 @@ class NativeTypingGate(AcceptanceGate):
                 "createGroup",
                 {
                     "name": f"typing-{time.time_ns()}",
+                    "federationId": federation_id,
                     "memberPtids": [
                         self.ptids["bob"],
                         self.ptids["charlie"],
