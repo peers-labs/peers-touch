@@ -218,7 +218,7 @@ const files = {
   contract: 'apps/applets/atelier/contracts/atelier-projection.contract.json',
   malformedResponseFixtures: 'apps/applets/atelier/contracts/atelier-malformed-response-fixtures.json',
   contractGenerator: 'tooling/scripts/generate-atelier-projection-contract.mjs',
-  masterGoal: 'tmp/atelier-master-goal.md',
+  masterGoal: 'docs/architecture/atelier/execution-plans/master-goal.md',
   atelierAcceptanceEvidenceReport: 'tooling/acceptance/evidence/applets/official-applet/atelier-acceptance-evidence-report-2026-07-06.md',
   atelierCompletionAudit: 'tooling/acceptance/evidence/applets/official-applet/atelier-completion-audit-2026-07-06.md',
   atelierDevRuntimeOpenSmoke: 'tooling/acceptance/evidence/applets/official-applet/atelier-dev-runtime-open-smoke.json',
@@ -9968,7 +9968,7 @@ for (const requiredReadinessAuditAnchor of [
 }
 for (const requiredReadinessAuditControlledGateAnchor of [
   'atelier-completion-readiness-audit-controlled-gate.json',
-  "tmp/atelier-completion-readiness-audit-controlled-gate",
+  "workspaceRuntimePath('atelier-completion-readiness-audit-controlled-gate')",
   'evidence-root',
   'isolatedEvidenceRoot',
   'isolatedRequiredEvidencePaths',
@@ -10308,7 +10308,7 @@ for (const requiredPreflightAnchor of [
 }
 for (const requiredPreflightControlledGateAnchor of [
   'atelier-full-e2e-preflight-controlled-gate.json',
-  'tmp/atelier-full-e2e-preflight-controlled-gate',
+  "workspaceRuntimePath('atelier-full-e2e-preflight-controlled-gate')",
   'PEERS_ATELIER_FULL_E2E_PREFLIGHT_EVIDENCE_PATH',
   'expectedSourceInstrumentationGapIds',
   'full E2E preflight records final side evidence source instrumentation gaps without claiming readiness',
@@ -10523,7 +10523,7 @@ for (const requiredFullE2EAnchor of [
 }
 for (const requiredFullE2EFailClosedControlledGateAnchor of [
   'atelier-full-e2e-fail-closed-controlled-gate.json',
-  'tmp/atelier-full-e2e-fail-closed-controlled-gate',
+  "workspaceRuntimePath('atelier-full-e2e-fail-closed-controlled-gate')",
   'PEERS_ATELIER_FULL_E2E_EVIDENCE_PATH',
   'PEERS_ATELIER_FULL_E2E_PREFLIGHT_PATH',
   'PEERS_ATELIER_FULL_E2E_DESKTOP_READY_EVIDENCE',
@@ -10561,7 +10561,7 @@ for (const requiredFullE2EFailClosedControlledGateAnchor of [
 }
 for (const requiredFullE2EFinalEvidenceControlledGateAnchor of [
   'atelier-full-e2e-final-evidence-controlled-gate.json',
-  'tmp/atelier-full-e2e-final-evidence-controlled-gate',
+  "workspaceRuntimePath('atelier-full-e2e-final-evidence-controlled-gate')",
   'fake-desktop-app.mjs',
   'valid-final-evidence',
   'workspace-open-claims-real-ide-launch',
