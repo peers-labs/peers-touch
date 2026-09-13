@@ -64,7 +64,8 @@
       "Direct receipt aggregation uses immutable authority delivery commitments for current endpoints outside the Group MLS device projection",
       "a committed recipient read cursor preserves monotonic delivered state without fabricating a device receipt",
       "typed Conversation interaction failures preserve their stable code and safe details at the HTTP boundary",
-      "a retained submitted command converges using the original command and message identities before new Native sends"
+      "a retained submitted command converges to accepted, failed, or superseded canonical truth before new Native sends",
+      "NOT_FOUND retries the exact command identity and bytes; a later stale delivery plan supersedes only that transport attempt while preserving the logical message identity"
     ],
     "visible": [
       "Alice sends one Direct message and Bob renders the exact plaintext",
@@ -84,6 +85,7 @@
     "typed Conversation interaction failures must not collapse into generic HTTP 500 responses",
     "static or gateway evidence must not replace two native Desktop clients",
     "receipt evidence must not expose plaintext, credentials, tokens, or key material",
-    "submitted-command recovery must not mint a replacement command or message identity"
+    "NOT_FOUND submitted-command recovery must not mint a replacement command or message identity",
+    "stale-delivery-plan recovery must not reuse stale ciphertext or replace the logical message identity"
   ]
 }
