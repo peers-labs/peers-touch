@@ -238,7 +238,57 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             "request_json_auth_with_device_id(",
             revoke_source,
         )
+        self.assertIn(
+            "active_key_exchange_context::<Value>",
+            revoke_source,
+        )
+        self.assertIn(
+            "input.device_id != context.device_id",
+            revoke_source,
+        )
         self.assertIn("&input.device_id", revoke_source)
+
+    def test_mls_keypackage_commands_bind_window_endpoint_identity(self) -> None:
+        conversation_commands = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/conversation.rs"
+        ).read_text(encoding="utf-8")
+        key_exchange_commands = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/key_exchange.rs"
+        ).read_text(encoding="utf-8")
+        main = (
+            ROOT / "apps/desktop/src-tauri/src/main.rs"
+        ).read_text(encoding="utf-8")
+        gateway = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
+        ).read_text(encoding="utf-8")
+
+        for command in (
+            "keypackage_upload",
+            "keypackage_fetch",
+            "keypackage_count",
+        ):
+            self.assertNotIn(f"pub fn {command}(", conversation_commands)
+            self.assertIn(f"pub fn {command}(", key_exchange_commands)
+            self.assertIn(f"key_exchange::{command}", main)
+        self.assertIn(
+            "active_key_exchange_context_for_account",
+            key_exchange_commands,
+        )
+        self.assertIn(
+            "kemodel::CountMlsKeyPackagesRequest",
+            key_exchange_commands,
+        )
+        self.assertIn(
+            "request_proto_for_device::<",
+            key_exchange_commands,
+        )
+        self.assertIn(
+            "execute_keypackage_count(context)",
+            gateway,
+        )
 
     def test_native_acceptance_commands_are_registered_with_tauri(self) -> None:
         main = (

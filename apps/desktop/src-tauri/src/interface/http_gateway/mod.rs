@@ -947,6 +947,20 @@ fn gateway_access_context(state: &AppState) -> Result<(String, String, String), 
     Ok((session.account_id, session.actor.ptid, session.jwt))
 }
 
+fn gateway_key_exchange_context(
+    state: &AppState,
+) -> Result<crate::interface::tauri_commands::key_exchange::ActiveKeyExchangeContext, Value> {
+    let (account_id, actor_ptid, token) = gateway_access_context(state)?;
+    crate::interface::tauri_commands::key_exchange::
+        active_key_exchange_context_for_account::<Value>(
+            state,
+            &account_id,
+            &actor_ptid,
+            &token,
+        )
+        .map_err(to_json)
+}
+
 fn token_from_state(state: &AppState) -> Result<String, Value> {
     let Some(session) = gateway_session(state) else {
         return Err(serde_json::to_value(AppResult::<StubPayload>::fail(
@@ -6849,36 +6863,51 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
 
-        "keypackage_upload" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/key-exchange/mls/key-package/upload",
-            None,
-            Some(json!({
-                "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "data": args.get("data").and_then(|v| v.as_str()).unwrap_or(""),
-            })),
-            "key package upload",
-        ),
-        "keypackage_fetch" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/key-exchange/mls/key-package/fetch",
-            None,
-            Some(json!({
-                "ptid": args.get("ptid").and_then(|v| v.as_str()).unwrap_or(""),
-                "home_station_peer_id": args.get("home_station_peer_id").and_then(|v| v.as_str()).unwrap_or(""),
-            })),
-            "key package fetch",
-        ),
-        "keypackage_count" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::GET,
-            "/key-exchange/mls/key-package/count",
-            None,
-            None,
-            "key package count",
-        ),
+        "keypackage_upload" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::key_exchange::KeyPackageUploadInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let context = match gateway_key_exchange_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(
+                crate::interface::tauri_commands::key_exchange::execute_keypackage_upload(
+                    context, input,
+                ),
+            )
+        }
+        "keypackage_fetch" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::key_exchange::KeyPackageFetchInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let context = match gateway_key_exchange_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(
+                crate::interface::tauri_commands::key_exchange::execute_keypackage_fetch(
+                    context, input,
+                ),
+            )
+        }
+        "keypackage_count" => {
+            let context = match gateway_key_exchange_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            to_json(
+                crate::interface::tauri_commands::key_exchange::execute_keypackage_count(context),
+            )
+        }
         "device_list" => proxy_authenticated_station_json(
             state,
             reqwest::Method::GET,
@@ -6887,20 +6916,45 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             None,
             "device list",
         ),
-        "device_revoke" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/device/revoke",
-            None,
-            Some(json!({
-                "device_id": args.get("device_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "observed_profile_version": args
-                    .get("observed_profile_version")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0),
-            })),
-            "device revoke",
-        ),
+        "device_revoke" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::conversation::DeviceRevokeInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let context = match gateway_key_exchange_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            if input.device_id != context.device_id {
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Forbidden,
+                    "revoked device does not match the active Messaging endpoint",
+                    None,
+                ));
+            }
+            let body = json!({
+                "device_id": input.device_id,
+                "observed_profile_version": input.observed_profile_version,
+            });
+            match crate::infrastructure::station_client::request_json_auth_with_device_id(
+                reqwest::Method::POST,
+                "/device/revoke",
+                &context.token,
+                None,
+                Some(&body),
+                &context.device_id,
+            ) {
+                Ok(response) => to_json(AppResult::success(response)),
+                Err(error) => to_json(AppResult::<Value>::fail(
+                    ErrorCode::InternalError,
+                    format!("device revoke: {error}"),
+                    None,
+                )),
+            }
+        }
         "dkx_send" => proxy_authenticated_station_json(
             state,
             reqwest::Method::POST,
