@@ -1240,3 +1240,14 @@ routes through the existing signed Actor endpoint-manifest capability and keeps
 remote devices out of local Actor truth. Focused Conversation tests pass;
 W8B remains `UNPROVEN` until the corrected exact source reaches
 `FUNCTIONAL_PASS` and the formal Gate passes.
+
+Corrected-source macOS run
+`20260913T182125546615Z-35457b8cb2e21fce52d06f9a497d196e`
+was `BLOCKED/UNPROVEN` before product execution because another declared Goal's
+Native Desktop process retained the global foreground. The independent Linux
+retry `20260913T182722850347Z-3ee750b6db838f8fde0a74a3af71df57`
+then exposed an NDR infrastructure regression: the Linux provisioner remained
+registered while its declared image/control directory was absent. The missing
+files are restored from their last reviewed source and focused runtime,
+provisioning, and Acceptance Infra boundary tests pass. Neither run changes
+the CA-W6 product proof state.

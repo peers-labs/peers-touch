@@ -5930,3 +5930,17 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   change Conversation membership ownership, persist typing, or add a transport
   fallback. The focused Conversation typing and manifest-route tests pass;
   exact-source W8B functional and formal proof remain pending.
+- Corrected-source macOS run
+  `20260913T182125546615Z-35457b8cb2e21fce52d06f9a497d196e`
+  remained `BLOCKED/UNPROVEN` before product execution because another
+  declared Goal's Native Desktop process retained the global foreground.
+  Exact-source service attestation and reverse cleanup passed; the W8B product
+  fix was not classified by this run.
+- The independent Linux cell run
+  `20260913T182722850347Z-3ee750b6db838f8fde0a74a3af71df57`
+  then exposed source drift in NDR-W5: the active tree retained the Linux
+  provisioner and runtime-cell contract but omitted the five declared
+  `tooling/acceptance/images/desktop-linux/` image/control files. Those files
+  are restored byte-for-byte from their last reviewed source. The 88 focused
+  runtime/provisioning tests and the 8-test Acceptance Infra ownership boundary
+  pass; the Linux W8B retry remains pending on a clean checkpoint.
