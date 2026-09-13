@@ -243,17 +243,28 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
             "env.sh must exit 1 when the active profile target is invalid",
         )
 
-    def test_env_sh_resolves_from_env_repo_before_active_profile_fallback(self) -> None:
+    def test_env_sh_rejects_unreviewed_env_and_unauthorized_local_fallback(self) -> None:
         src = self.source("tooling/scripts/local-dev/env.sh")
-        env_repo_check = src.find("profile.env.example")
-        local_fallback = src.find('elif [[ -f "$ACTIVE_PROFILE" ]]', env_repo_check)
-        self.assertGreater(
-            env_repo_check, 0,
-            "env.sh must check the env repo (profile.env.example) first",
+        self.assertIn(
+            "git -C \"$ENV_REPO\" ls-files --error-unmatch",
+            src,
+            "env.sh must reject untracked env-repository profiles",
         )
-        self.assertGreater(
-            local_fallback, env_repo_check,
-            "local profiles/ must be the fallback after the env repo",
+        self.assertIn(
+            'AUTHORIZATION_SCRIPT="$SCRIPT_DIR/environment-creation-authorization.py"',
+            src,
+            "env.sh must resolve the machine authorization verifier",
+        )
+        self.assertIn(
+            'python3 "$AUTHORIZATION_SCRIPT" verify',
+            src,
+            "env.sh must require a consumed human authorization receipt for "
+            "a machine-local profile",
+        )
+        self.assertNotIn(
+            'PROFILE_FILE="$ACTIVE_PROFILE"\n  else',
+            src,
+            "env.sh must not silently accept a local profile fallback",
         )
 
     def test_env_sh_scopes_runtime_dirs_by_profile(self) -> None:
@@ -278,6 +289,37 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
             symlink_pos, 0,
             "profile.sh must activate the profile through the worktree-specific "
             "symlink",
+        )
+
+    def test_profile_init_consumes_human_authorization(self) -> None:
+        src = self.source("tooling/scripts/local-dev/profile.sh")
+        self.assertIn(
+            '"$AUTHORIZATION_SCRIPT" consume',
+            src,
+            "profile-init must consume an exact machine authorization before "
+            "creating a local profile",
+        )
+        self.assertIn(
+            "profile-init never overwrites an existing environment",
+            src,
+            "profile-init must not turn one authorization into overwrite authority",
+        )
+
+    def test_remote_deploy_resolves_reviewed_env_repository_definition(self) -> None:
+        src = self.source("tooling/scripts/deploy/deploy.sh")
+        self.assertIn("resolve_reviewed_deploy_env", src)
+        self.assertIn("ls-files --error-unmatch", src)
+        self.assertNotIn(
+            'ENV_FILE="$ENVS_DIR/$env_name.env"',
+            src,
+            "remote deploy must not treat .local/deploy/envs as topology authority",
+        )
+        warm_cache = self.source("tooling/docker/warm-builder-cache.sh")
+        self.assertIn('"$DEPLOY_SCRIPT" resolve', warm_cache)
+        self.assertNotIn(
+            ".local/deploy/envs",
+            warm_cache,
+            "builder cache mutation must use the reviewed deploy resolver",
         )
 
 

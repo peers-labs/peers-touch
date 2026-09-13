@@ -3,7 +3,7 @@
 > Single authoritative source for all AI coding agents.
 > `docs/.agent/<platform>.md` is the agent entry layer: use it to find the real source documents, hard constraints, and verification commands.
 >
-> Last updated: 2026-09-09
+> Last updated: 2026-09-13
 
 ---
 
@@ -233,6 +233,28 @@ hours to diagnose.
   require their explicit authorizations.
 - `active_work`, branch names, process discovery and private `.local` files are
   not substitutes for public resource intent.
+
+### No Unauthorized Development Environments
+
+AI agents MUST NOT create, copy, derive, or register a development profile or
+deploy environment unless a human developer explicitly authorizes the exact
+environment name and target in the current conversation. This prohibition
+includes:
+
+- adding files under the sibling `env/peers-touch/<name>/` repository;
+- creating local-only definitions under `.local/dev/profiles/` or
+  `.local/deploy/envs/`;
+- supplying an arbitrary `PT_DEV_PROFILE_FILE`; run-scoped overrides require
+  the Acceptance runtime-manifest authority and containment checks;
+- running `make profile-authorize`, minting an authorization receipt, or
+  running `make profile-init` without a pre-existing matching grant; and
+- turning an ad-hoc host, port, existing pointer, execution plan, or Acceptance
+  need into implied creation permission.
+
+A missing environment is a blocker to report, not permission to create one.
+Untracked env-repository definitions and local profiles without a matching
+consumed human authorization receipt cannot authorize profile selection,
+deployment, restart, or reset.
 
 ### No Mocking
 
