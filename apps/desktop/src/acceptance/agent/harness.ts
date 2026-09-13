@@ -19571,7 +19571,11 @@ export function installAcceptanceHarness(): void {
                             data: event.data,
                           }),
                         eventCount: events.length,
-                        sourceDelivery: event.sourceDelivery ?? null,
+                        sourceDelivered: Boolean(event.sourceDelivery),
+                        sourceTransport:
+                          event.sourceDelivery?.transport ?? null,
+                        sourceSequence:
+                          event.sourceDelivery?.sequence ?? null,
                       },
                     );
                   },
