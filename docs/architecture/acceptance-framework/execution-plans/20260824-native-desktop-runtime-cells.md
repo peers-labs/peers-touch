@@ -5528,6 +5528,32 @@ Runtime preflight on 2026-09-13:
   exact source but remains parked because its retained database still contains
   the forbidden pre-CA-W5 `conversations.current_seq` column; startup fails
   closed and no reset or data rewrite was performed.
+- Exact-source current-profile runs
+  `20260913T052304409661Z-4c3bbe7d7133732d356f082ec55230ad` and
+  `20260913T053306894661Z-748dbecc1ed1c9055cb0ed9d1dad3836`
+  correctly failed `command.reconciliation` and completed cleanup. The supplied
+  tuple belonged to the separate `chat-native-four` retained client, while the
+  selected `four` Acceptance storage had been initialized under its own actor,
+  Station, and Device Engine identity and contained no matching command or
+  message row. This is a proof-binding defect, not evidence that the W8A worker
+  failed.
+- Read-only SQLCipher inspection of the original `chat-native-four` retained
+  store proves command `01M2B43C65M3QRQVK529SZTMSS` retained byte-identical
+  local/outbox payloads and the original message
+  `01M2B43C1WNPRK9JHACMFZ4DA4`. The command is no longer `submitted`: exact
+  replay reached typed `STALE_DELIVERY_PLAN`, the original attempt became
+  `superseded`, and the logical message remained for the MP-D17 fresh-plan
+  attempt. This is terminal convergence, not accepted delivery, and must not be
+  reported as receiver-visible success.
+- NDR-W8A Native proof is mechanically amended to create or bind a
+  run-controlled retained submitted state before launch and to assert one of
+  the architecture-defined terminal outcomes. `NOT_FOUND` must retry the exact
+  command ID and bytes; only a later typed `STALE_DELIVERY_PLAN` may supersede
+  that attempt and prepare a new command while preserving the message ID.
+  Missing target state must fail during preflight instead of polling for two
+  minutes. Accepted convergence additionally requires the same message ID on
+  the peer; terminal convergence requires explicit failure/supersession
+  evidence and no false receiver projection.
 
 Concurrency Decision: hybrid. The integrator serially owns authoritative docs,
 shared proto, generated artifacts, composition/registry files, final reconciliation,

@@ -62,6 +62,14 @@ EXPECTED_RECONCILIATION_MESSAGE_ENV = (
 EXPECTED_RECONCILIATION_COMMAND_ENV = (
     "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_COMMAND_ID"
 )
+EXPECTED_RECONCILIATION_OUTCOME_ENV = (
+    "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_OUTCOME"
+)
+RECONCILIATION_OUTCOMES = {
+    "accepted",
+    "terminal_failed",
+    "terminal_superseded",
+}
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 REQUIRED_ASSERTIONS = {
     "native_runtime",
@@ -186,11 +194,12 @@ def avatar_snapshot_is_valid(
     )
 
 
-def reconciled_command_snapshot_is_final(
+def reconciled_command_snapshot_outcome(
     snapshot: dict[str, Any],
     command_id: str,
     message_id: str,
-) -> bool:
+    command_sha256: str = "",
+) -> str | None:
     projection = snapshot.get("projection")
     intent = snapshot.get("intent")
     outbox = snapshot.get("outbox")
@@ -201,24 +210,70 @@ def reconciled_command_snapshot_is_final(
         and item.get("commandId") == command_id
         and item.get("messageId") == message_id
     ]
-    return (
-        snapshot.get("messageId") == message_id
-        and isinstance(projection, dict)
+    if (
+        snapshot.get("messageId") != message_id
+        or not isinstance(outbox, dict)
+        or len(matching) != 1
+        or (
+            command_sha256
+            and outbox.get("commandSha256") != command_sha256
+        )
+    ):
+        return None
+    original = matching[0]
+    intent_matches = (
+        intent is None
+        or (
+            isinstance(intent, dict)
+            and intent.get("commandId") == command_id
+        )
+    )
+    if (
+        isinstance(projection, dict)
         and bool(projection.get("eventId"))
         and int(projection.get("eventSequence") or 0) > 0
         and projection.get("deliveryState")
         in {"sent", "delivered", "read", "consumed"}
-        and isinstance(intent, dict)
-        and intent.get("commandId") == command_id
-        and intent.get("state") == "committed"
-        and isinstance(outbox, dict)
+        and intent_matches
+        and (
+            intent is None
+            or intent.get("state") == "committed"
+        )
         and outbox.get("state") == "committed"
-        and len(matching) == 1
-        and matching[0].get("attemptState") == "committed"
-        and matching[0].get("localState") == "committed"
-        and matching[0].get("outboxState") == "committed"
-        and matching[0].get("draftState") == "accepted"
-    )
+        and original.get("attemptState") == "committed"
+        and original.get("localState") == "committed"
+        and original.get("outboxState") == "committed"
+        and original.get("draftState") == "accepted"
+    ):
+        return "accepted"
+    if (
+        outbox.get("state") == "retry_wait"
+        and outbox.get("lastErrorCode") == "canonical_not_found"
+        and original.get("attemptState") == "retry_wait"
+        and original.get("localState") == "submitted"
+        and original.get("outboxState") == "retry_wait"
+        and original.get("draftState") == "retry_wait"
+    ):
+        return "retrying"
+    if (
+        outbox.get("state") == "superseded"
+        and outbox.get("lastErrorCode") == "stale_delivery_plan"
+        and original.get("attemptState") == "superseded"
+        and original.get("localState") == "superseded"
+        and original.get("outboxState") == "superseded"
+        and bool(original.get("draftState"))
+    ):
+        return "terminal_superseded"
+    if (
+        outbox.get("state") == "failed"
+        and bool(outbox.get("lastErrorCode"))
+        and original.get("attemptState") == "failed"
+        and original.get("localState") == "failed"
+        and original.get("outboxState") == "failed"
+        and original.get("draftState") == "failed"
+    ):
+        return "terminal_failed"
+    return None
 
 
 def send_text(client: TauriSession, text: str) -> dict[str, Any]:
@@ -902,13 +957,22 @@ class NativeTwoClientGate(AcceptanceGate):
                 EXPECTED_RECONCILIATION_COMMAND_ENV,
                 "",
             ).strip(),
+            "outcome": os.environ.get(
+                EXPECTED_RECONCILIATION_OUTCOME_ENV,
+                "",
+            ).strip(),
         }
         if not any(target.values()):
             return None
-        if not all(target.values()) or target["actor"] not in self.clients:
+        if (
+            not all(target.values())
+            or target["actor"] not in self.clients
+            or target["outcome"] not in RECONCILIATION_OUTCOMES
+        ):
             raise GateError(
                 "expected submitted-command reconciliation requires a "
-                "complete actor/conversation/message/command identity"
+                "complete actor/conversation/message/command identity and "
+                "an accepted, terminal_failed, or terminal_superseded outcome"
             )
         return target
 
@@ -926,7 +990,7 @@ class NativeTwoClientGate(AcceptanceGate):
         actor = target["actor"]
         receiver = next(name for name in self.clients if name != actor)
 
-        def final_snapshot() -> dict[str, Any] | None:
+        def read_sender_snapshot() -> dict[str, Any]:
             value = async_harness(
                 self.clients[actor],
                 "engineInteractionSnapshot",
@@ -938,23 +1002,79 @@ class NativeTwoClientGate(AcceptanceGate):
                 },
             )
             if not isinstance(value, dict):
-                return None
-            return (
-                value
-                if reconciled_command_snapshot_is_final(
-                    value,
-                    target["commandId"],
-                    target["messageId"],
+                raise GateError(
+                    "historical command snapshot returned invalid evidence"
                 )
-                else None
+            return value
+
+        initial = read_sender_snapshot()
+        original_rows = [
+            item
+            for item in initial.get("commandLedger", [])
+            if isinstance(item, dict)
+            and item.get("commandId") == target["commandId"]
+            and item.get("messageId") == target["messageId"]
+        ]
+        initial_outbox = initial.get("outbox")
+        command_sha256 = str(
+            initial_outbox.get("commandSha256")
+            if isinstance(initial_outbox, dict)
+            else ""
+        )
+        if len(original_rows) != 1 or not command_sha256:
+            raise GateError(
+                "expected historical command is absent from the bound "
+                "retained Device Engine store"
             )
+
+        observed_retry = (
+            reconciled_command_snapshot_outcome(
+                initial,
+                target["commandId"],
+                target["messageId"],
+                command_sha256,
+            )
+            == "retrying"
+        )
+
+        def final_snapshot() -> dict[str, Any] | None:
+            nonlocal observed_retry
+            value = read_sender_snapshot()
+            outcome = reconciled_command_snapshot_outcome(
+                value,
+                target["commandId"],
+                target["messageId"],
+                command_sha256,
+            )
+            observed_retry = observed_retry or outcome == "retrying"
+            return value if outcome == target["outcome"] else None
 
         snapshot = wait_until(
             final_snapshot,
             "historical submitted command convergence",
         )
+        final_outcome = reconciled_command_snapshot_outcome(
+            snapshot,
+            target["commandId"],
+            target["messageId"],
+            command_sha256,
+        )
+        later_attempts = [
+            item
+            for item in snapshot.get("commandLedger", [])
+            if isinstance(item, dict)
+            and item.get("messageId") == target["messageId"]
+            and item.get("commandId") != target["commandId"]
+        ]
+        later_committed = [
+            item
+            for item in later_attempts
+            if item.get("attemptState") == "committed"
+            and item.get("localState") == "committed"
+            and item.get("outboxState") == "committed"
+        ]
 
-        def receiver_message() -> dict[str, Any] | None:
+        def read_receiver_message() -> dict[str, Any] | None:
             value = async_harness(
                 self.clients[receiver],
                 "engineMessages",
@@ -980,19 +1100,38 @@ class NativeTwoClientGate(AcceptanceGate):
                 None,
             )
 
-        received = wait_until(
-            receiver_message,
-            "historical submitted message on peer",
+        if final_outcome == "accepted" or later_committed:
+            received = wait_until(
+                read_receiver_message,
+                "historical submitted message on peer",
+            )
+        else:
+            received = read_receiver_message()
+        receiver_matches_outcome = (
+            received is not None
+            if final_outcome == "accepted" or later_committed
+            else received is None
         )
         evidence = {
-            "target": target,
+            "target": {
+                **target,
+                "commandSha256": command_sha256,
+            },
+            "initialSenderSnapshot": initial,
             "senderSnapshot": snapshot,
             "receiverMessage": received,
+            "outcome": final_outcome,
+            "observedCanonicalNotFoundRetry": observed_retry,
+            "laterAttempts": later_attempts,
         }
         self.assert_condition(
             "submitted_command_converged",
-            bool(received)
-            and received.get("messageId") == target["messageId"],
+            final_outcome == target["outcome"]
+            and receiver_matches_outcome
+            and (
+                received is None
+                or received.get("messageId") == target["messageId"]
+            ),
             json.dumps(evidence, sort_keys=True),
         )
         self.report.runtime["submittedCommandReconciliation"] = evidence

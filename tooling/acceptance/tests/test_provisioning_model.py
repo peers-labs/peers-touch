@@ -603,6 +603,115 @@ class EnvironmentContractTests(unittest.TestCase):
                     ._persistent_storage_reset_authorized("four")
                 )
 
+    def test_current_profile_can_copy_retained_engine_state_without_session(
+        self,
+    ) -> None:
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seed = root / "seed"
+            storage = root / "storage"
+            database = (
+                seed
+                / "peers-touch"
+                / "four-app"
+                / "data"
+                / "db"
+                / "users"
+                / "alice"
+                / "chat.main.db"
+            )
+            database.parent.mkdir(parents=True)
+            database.write_bytes(b"retained-engine-state")
+            device_id = (
+                seed
+                / "peers-touch"
+                / "four-app"
+                / "data"
+                / "auth"
+                / "sessions"
+                / "alice"
+                / "device_id"
+            )
+            device_id.parent.mkdir(parents=True)
+            device_id.write_text("revoked-session-device", encoding="utf-8")
+
+            result = (
+                native_tauri_current_profile
+                .NativeTauriCurrentProfileProvisioner
+                ._persistent_storage(
+                    role="alice",
+                    actor=ActorIdentity(
+                        role="alice",
+                        account_ref="station-account:alice@p.t",
+                        ptid="ptid:alice",
+                        device_policy="persistent-acceptance",
+                    ),
+                    profile_name="four",
+                    worktree=(
+                        native_tauri_current_profile
+                        .ClientWorktreeIdentity(
+                            root=root / "peers-chat-high-chat",
+                            logical_name="peers-chat-high-chat",
+                            common_dir=root / "common",
+                            head="a" * 40,
+                            tree="b" * 40,
+                            clean=True,
+                        )
+                    ),
+                    seed_root=seed,
+                    storage_root=storage,
+                    run_id="retained-state",
+                    preserve_retained_engine_state=True,
+                )
+            )
+
+            self.assertEqual(result, storage)
+            self.assertEqual(
+                (
+                    storage
+                    / database.relative_to(seed)
+                ).read_bytes(),
+                b"retained-engine-state",
+            )
+            self.assertFalse(
+                (storage / device_id.relative_to(seed)).exists()
+            )
+            marker = json.loads(
+                (
+                    storage
+                    / native_tauri_current_profile
+                    .PERSISTENT_STORAGE_MARKER
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                marker["devicePolicy"],
+                "retained-engine-acceptance",
+            )
+
+    def test_current_profile_rejects_unknown_retained_engine_role(self) -> None:
+        from tooling.acceptance.provisioners import (
+            native_tauri_current_profile,
+        )
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                native_tauri_current_profile
+                .RETAINED_ENGINE_STATE_ROLES_ENV: "alice,mallory",
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(BlockedError, "mallory"):
+                (
+                    native_tauri_current_profile
+                    .NativeTauriCurrentProfileProvisioner
+                    ._retained_engine_state_roles()
+                )
+
     def test_current_profile_defaults_to_each_worktree_storage_seed(self):
         from tooling.acceptance.provisioners import (
             native_tauri_current_profile,

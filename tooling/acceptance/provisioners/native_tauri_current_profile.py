@@ -46,6 +46,9 @@ CLIENT_WORKTREES_ENV = "PT_CHAT_NATIVE_CLIENT_WORKTREES"
 PERSISTENT_STORAGE_ROOTS_ENV = "PT_CHAT_NATIVE_PERSISTENT_STORAGE_ROOTS"
 PERSISTENT_STORAGE_MARKER = ".pt-current-profile-state.json"
 PERSISTENT_STORAGE_RESET_ENV = "PT_CHAT_NATIVE_RESET_PERSISTENT_STATE"
+RETAINED_ENGINE_STATE_ROLES_ENV = (
+    "PT_CHAT_NATIVE_RETAINED_ENGINE_STATE_ROLES"
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -179,6 +182,7 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
         storage_root: Path,
         run_id: str,
         reset_authorized: bool = False,
+        preserve_retained_engine_state: bool = False,
     ) -> Path:
         marker = storage_root / PERSISTENT_STORAGE_MARKER
         expected_marker = {
@@ -188,7 +192,11 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
             "actorPtid": actor.ptid,
             "profile": f"{profile_name}-app",
             "sourceWorktree": str(worktree.root),
-            "devicePolicy": "persistent-acceptance",
+            "devicePolicy": (
+                "retained-engine-acceptance"
+                if preserve_retained_engine_state
+                else "persistent-acceptance"
+            ),
         }
         if storage_root.exists():
             if storage_root.is_symlink() or not storage_root.is_dir():
@@ -266,7 +274,10 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 / "db"
                 / "users"
             )
-            if database_root.is_dir():
+            if (
+                not preserve_retained_engine_state
+                and database_root.is_dir()
+            ):
                 for database in database_root.glob("*/chat.main.db*"):
                     if database.is_file():
                         database.unlink()
@@ -304,6 +315,27 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 resource=f"client-persistent-storage:{role}",
             ) from error
         return storage_root
+
+    @staticmethod
+    def _retained_engine_state_roles() -> set[str]:
+        raw = os.environ.get(RETAINED_ENGINE_STATE_ROLES_ENV, "").strip()
+        if not raw:
+            return set()
+        roles = {
+            role.strip()
+            for role in raw.split(",")
+            if role.strip()
+        }
+        invalid = roles - set(CLIENT_ROLES)
+        if invalid:
+            raise BlockedError(
+                reason=(
+                    "Current-profile retained Engine state roles are invalid: "
+                    f"{', '.join(sorted(invalid))}"
+                ),
+                resource="client-isolation:retained-engine-state",
+            )
+        return roles
 
     @staticmethod
     def _persistent_storage_reset_authorized(profile_name: str) -> bool:
@@ -681,6 +713,7 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
         reset_persistent_storage = (
             self._persistent_storage_reset_authorized(profile_name)
         )
+        retained_engine_state_roles = self._retained_engine_state_roles()
         actors_by_role = {actor.role: actor for actor in actors}
         if set(actors_by_role) != set(CLIENT_ROLES):
             raise BlockedError(
@@ -732,6 +765,9 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 storage_root=persistent_root,
                 run_id=run_id,
                 reset_authorized=reset_persistent_storage,
+                preserve_retained_engine_state=(
+                    role in retained_engine_state_roles
+                ),
             )
             client = ClientRuntime(
                 actor=declared[role].actor,
