@@ -860,7 +860,7 @@ committed to this plan.
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
-| NDR-W8 macOS regression | blocked / source-complete, runtime-unproven | Current-profile Direct, reply/thread, reaction, edit, recall, fresh Alice-to-Bob Native delivery at authority sequence 34, and historical cross-Station Alice/Bob avatar parity evidence exist while formal remaining Gates are incomplete. W8A/W8B/W8C source checks pass, but exact-source deployment is blocked by untracked Environment Owner profiles; W8C also requires separately authorized third-client topology. Multi-device, backup recovery, and full three-client Group/MLS runtime cells remain. |
+| NDR-W8 macOS regression | in progress / source-complete, runtime-unproven | Current-profile Direct, reply/thread, reaction, edit, recall, fresh Alice-to-Bob Native delivery at authority sequence 34, and historical cross-Station Alice/Bob avatar parity evidence exist while formal remaining Gates are incomplete. W8A/W8B/W8C source checks pass. The Owner selected canonical `four` and `fiveArm`; `four` is exact-source healthy while `fiveArm` fails closed on a retained legacy Conversation schema. W8C also requires separately authorized third-client topology. Multi-device, backup recovery, and full three-client Group/MLS runtime cells remain. |
 | NDR-W8A submitted-command reconciliation | source-complete; Native proof pending | MP-D31 contract, generated bindings, authenticated `/conversation/command/results`, canonical receipt/outbox/exact Device Inbox resolver, transactional hard-cut migration from historical payload-hash result IDs, deterministic endpoint/command result identity, and Device Engine startup reconciliation are implemented. The dedicated Acceptance-only fixture is actor-bound, authorization-gated, byte-preserving, cursor-neutral, and accepts the retained terminal shape `superseded/stale_delivery_plan` plus a failed logical pending row only when no projection or active replacement exists. Focused Rust, TypeScript, and Python checks pass. Exact-source Native convergence remains `UNPROVEN`; see the 2026-09-13 continuation checkpoint below. |
 | NDR-W8B federated ephemeral typing | source-complete; Native proof pending | MP-D32 signal, receiver-fixed ephemeral QoS, bounded no-row receiver dispatch, Runtime payload-kind-restricted transport, Authority-mediated routing, production identity-directory binding, and local/remote common receiver composition are implemented. Conversation and Federation package tests pass. Exact-source cross-Station Direct/Group typing, TTL/session/disconnect, deny, partial-failure, and durable-row runtime evidence remain `UNPROVEN`. |
 | NDR-W8C federated contact identity and Group genesis reliability | source-complete; Native proof pending | Station remote-cache refresh, relationship identity contract, one PTID-keyed Desktop projection, readable Federation/Home Station rows, recoverable Group creation, accepted-Group convergence, typed errors, prototype parity, and UI-driven Native Gate logic are implemented and statically proven. Exact-source three-client Native Group/MLS proof remains `UNPROVEN`. |
@@ -5772,3 +5772,24 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
 - The Goal is therefore blocked without weakening runtime identity, bypassing
   the profile resolver, crossing the selected worktree ownership boundary, or
   substituting static/simulator evidence for required Native proof.
+
+### 2026-09-13 Canonical Four/Five Resume
+
+- The Owner selected the existing canonical `four` and `fiveArm` profiles in
+  place of `chat-native-four` and `chat-native-five`.
+- Environment commit `55b4985` promotes the pre-existing
+  `station-four` and `station-five-arm` deploy definitions into the reviewed
+  env repository without staging unrelated env changes.
+- `peers-group-chat` and `peers-chat-high-chat` are synchronized to
+  `2c95f8d14f15bcda51b05f0335937ed275c91d59`; group-chat selects `four` and
+  high-chat selects `fiveArm`.
+- Canonical `four` deployed successfully and `/app-meta/version` reports
+  `2c95f8d14f15`.
+- Canonical `fiveArm` source sync and image build completed at the same commit,
+  but startup fails closed because its retained `conversations` table still
+  contains the forbidden pre-CA-W5 `current_seq` column. Read-only inspection
+  shows both `current_seq` and canonical `current_sequence` and zero rows.
+- No database reset or DDL was performed. The accepted hard-cut plan forbids
+  resetting shared `:18080` Stations, so fiveArm recovery requires an explicit
+  owner-approved data operation or a different accepted topology before W8A
+  functional execution can begin.
