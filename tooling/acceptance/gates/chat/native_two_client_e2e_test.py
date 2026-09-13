@@ -25,7 +25,8 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
     CURRENT_PROFILE_REQUIRED_ASSERTIONS,
     CURRENT_PROFILE_GATE_ID,
     NativeTwoClientGate,
-    bundled_avatar_evidence_is_valid,
+    avatar_evidence_is_valid,
+    reconciled_command_snapshot_is_final,
 )
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
@@ -142,9 +143,87 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             "is_bundled_square_avatar",
             return_value=True,
         ):
-            self.assertTrue(bundled_avatar_evidence_is_valid(evidence))
+            self.assertTrue(
+                avatar_evidence_is_valid(
+                    evidence,
+                    {"http://station.example"},
+                )
+            )
             evidence["bob"]["alice"] = None
-            self.assertFalse(bundled_avatar_evidence_is_valid(evidence))
+            self.assertFalse(
+                avatar_evidence_is_valid(
+                    evidence,
+                    {"http://station.example"},
+                )
+            )
+
+    def test_avatar_evidence_accepts_only_local_cache_for_station_source(self) -> None:
+        station_avatar = (
+            "http://station.example/sub-oss/file?key=avatars%2Falice.png"
+        )
+        snapshot = {
+            "declared": station_avatar,
+            "rendered": "asset://localhost/avatar.png",
+            "complete": True,
+            "naturalWidth": 384,
+        }
+        evidence = {"alice": {"alice": None, "bob": snapshot}}
+
+        self.assertTrue(
+            avatar_evidence_is_valid(
+                evidence,
+                {"http://station.example"},
+            )
+        )
+        self.assertFalse(
+            avatar_evidence_is_valid(
+                evidence,
+                {"http://other-station.example"},
+            )
+        )
+
+    def test_reconciled_command_snapshot_requires_original_committed_identity(
+        self,
+    ) -> None:
+        snapshot = {
+            "messageId": "message-1",
+            "projection": {
+                "eventId": "event-1",
+                "eventSequence": 34,
+                "deliveryState": "read",
+            },
+            "intent": {
+                "commandId": "command-1",
+                "state": "committed",
+            },
+            "outbox": {"state": "committed"},
+            "commandLedger": [
+                {
+                    "commandId": "command-1",
+                    "messageId": "message-1",
+                    "attemptState": "committed",
+                    "localState": "committed",
+                    "outboxState": "committed",
+                    "draftState": "accepted",
+                }
+            ],
+        }
+
+        self.assertTrue(
+            reconciled_command_snapshot_is_final(
+                snapshot,
+                "command-1",
+                "message-1",
+            )
+        )
+        snapshot["commandLedger"][0]["commandId"] = "replacement-command"
+        self.assertFalse(
+            reconciled_command_snapshot_is_final(
+                snapshot,
+                "command-1",
+                "message-1",
+            )
+        )
 
     def tearDown(self) -> None:
         self.environment.stop()

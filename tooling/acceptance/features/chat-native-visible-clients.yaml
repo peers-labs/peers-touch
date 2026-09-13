@@ -40,6 +40,7 @@
       "a newly sent optimistic message row is placed above the visible composer on its first rendered frame and remains clear as timestamp and receipt projections settle",
       "unresolved local drafts remain at their creation position relative to newer committed authority messages",
       "seeded Alice, Bob, and Carol avatars render as the standard rounded-square shape from bundled full-bleed image data without an external image origin",
+      "retained custom avatars preserve their canonical Home-Station URL and render from the Desktop local asset cache",
       "the same Actor PTID renders the same signed Home-Station avatar source on every Native client"
     ],
     "surfaces": [
