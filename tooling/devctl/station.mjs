@@ -158,6 +158,49 @@ function runCompose(root, resolved, action) {
   }
 }
 
+function runRemoteStationBridge(root, resolved, environment) {
+  if (process.platform === 'win32') {
+    throw new DevctlError(
+      ERROR_CODES.UNSUPPORTED_MODE,
+      'Remote Station deployment requires the reviewed Unix deployment adapter',
+      { profile: resolved.reference.profileName },
+    );
+  }
+  const runtimeEnv = runtimeEnvironment(resolved, environment);
+  const bash = findExecutable('bash', runtimeEnv);
+  const script = path.join(
+    root,
+    'tooling',
+    'scripts',
+    'local-dev',
+    'station-dev.sh',
+  );
+  if (!bash || !fs.existsSync(script)) {
+    throw new DevctlError(
+      ERROR_CODES.DEPENDENCY_MISSING,
+      'Remote Station deployment adapter is unavailable',
+      { profile: resolved.reference.profileName },
+    );
+  }
+  const result = spawnSync(bash, [script], {
+    cwd: root,
+    env: runtimeEnv,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  if (result.status !== 0) {
+    throw new DevctlError(
+      ERROR_CODES.DEPENDENCY_MISSING,
+      'Remote Station deployment failed',
+      {
+        profile: resolved.reference.profileName,
+        stderr: result.stderr.trim(),
+        stdout: result.stdout.trim(),
+      },
+    );
+  }
+}
+
 export async function stationStatus(root, environment = process.env) {
   const resolved = resolveProfile(root, environment);
   const values = stationValues(resolved);
@@ -175,6 +218,18 @@ export async function stationStatus(root, environment = process.env) {
 export async function startStation(root, environment = process.env) {
   const resolved = resolveProfile(root, environment);
   const values = stationValues(resolved);
+  if (values.mode === 'remote') {
+    runRemoteStationBridge(root, resolved, environment);
+    const status = await stationStatus(root, environment);
+    if (!status.health.ok) {
+      throw new DevctlError(
+        ERROR_CODES.START_TIMEOUT,
+        `Remote Station is not healthy after deployment: ${values.healthUrl}`,
+        status,
+      );
+    }
+    return { ...status, delegated: true };
+  }
   const existing = await stationStatus(root, environment);
   if (existing.health.ok) {
     if (values.mode === 'compose' || existing.process.status === 'running') {
@@ -199,14 +254,6 @@ export async function startStation(root, environment = process.env) {
     await waitForHttp(values.healthUrl, { label: 'Station' });
     return stationStatus(root, environment);
   }
-  if (values.mode === 'remote') {
-    throw new DevctlError(
-      ERROR_CODES.UNSUPPORTED_MODE,
-      `Remote Station deployment is not available through native devctl on ${process.platform}`,
-      { profile: resolved.reference.profileName },
-    );
-  }
-
   const runtimeEnv = runtimeEnvironment(resolved, environment);
   const go = findExecutable('go', runtimeEnv);
   if (!go) {
@@ -302,6 +349,10 @@ export async function stopStation(root, environment = process.env) {
 }
 
 export async function restartStation(root, environment = process.env) {
+  const resolved = resolveProfile(root, environment);
+  if (resolved.profile.PT_STATION_MODE === 'remote') {
+    return startStation(root, environment);
+  }
   await stopStation(root, environment);
   return startStation(root, environment);
 }

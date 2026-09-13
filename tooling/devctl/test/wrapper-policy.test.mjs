@@ -59,3 +59,23 @@ test('cross-platform package gates do not invoke shell scripts', () => {
     assert.doesNotMatch(script, /\.sh(?:\s|$)/u);
   }
 });
+
+test('remote Station mode delegates to the reviewed compatibility adapter', () => {
+  const station = fs.readFileSync(
+    path.join(root, 'tooling', 'devctl', 'station.mjs'),
+    'utf8',
+  );
+  const bridge = station.slice(
+    station.indexOf('function runRemoteStationBridge('),
+    station.indexOf('export async function stationStatus('),
+  );
+  const start = station.slice(
+    station.indexOf('export async function startStation('),
+    station.indexOf('export async function stopStation('),
+  );
+
+  assert.match(bridge, /tooling.*scripts.*local-dev.*station-dev\.sh/su);
+  assert.match(bridge, /spawnSync\(bash, \[script\]/u);
+  assert.match(start, /values\.mode === 'remote'/u);
+  assert.match(start, /runRemoteStationBridge\(root, resolved, environment\)/u);
+});
