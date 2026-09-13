@@ -5504,6 +5504,30 @@ Runtime preflight on 2026-09-13:
   correctly on at least one remote client and preserves cross-client source
   equality whenever multiple renderings exist; the focused 20-test suite
   passes. Product delivery remains `UNPROVEN` until the corrected Gate reruns.
+- Corrected current-source run
+  `20260913T045407959841Z-0fda933ef3fa02ade261538a57bf4769`
+  is `PASS/DONE/PROVEN`: both synchronized worktrees authenticated persistent
+  Alice/Bob devices, rendered bundled peer avatars, sent and decrypted exact
+  plaintext in both directions, observed `read` receipts, preserved message
+  geometry, and released all six ports and both client processes without
+  resetting persistent storage.
+- Retained profile `four` run
+  `20260913T050317260685Z-605561cd95e5adb8e69d53f5b749911c`
+  proved both historical client identities and conversation opening, then
+  exposed a Gate classification gap: retained custom Home-Station avatars
+  render from the local `asset://localhost` cache and must not be treated as
+  seeded inline fixtures. The corrected assertion preserves the strict bundled
+  requirement for seeded sources and accepts retained custom sources only from
+  the bound Station when the rendered image is a completed local asset.
+- W8A retained proof now accepts an explicit
+  actor/conversation/message/command tuple and requires the original command
+  identity, committed ledger/outbox/intent, positive authority event sequence,
+  preserved message identity, and peer projection before it can emit
+  `submitted_command_converged`.
+- `station-four` is healthy on the exact source. `station-five-arm` built the
+  exact source but remains parked because its retained database still contains
+  the forbidden pre-CA-W5 `conversations.current_seq` column; startup fails
+  closed and no reset or data rewrite was performed.
 
 Concurrency Decision: hybrid. The integrator serially owns authoritative docs,
 shared proto, generated artifacts, composition/registry files, final reconciliation,
