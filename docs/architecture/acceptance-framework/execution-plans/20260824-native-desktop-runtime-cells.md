@@ -6103,3 +6103,14 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   `git diff --check` pass. The existing W8C `friendship.identity_parity`
   assertion remains the product regression Gate; runtime proof still requires
   checkpoint deployment and the bounded exact-source rerun.
+- Exact-source W8C run
+  `20260913T222630465438Z-dafc69d1f5d7c5fae174abfa28bab614`
+  at `8126b05ab63353664cb3faba14857064279256bc` proves the canonical
+  relationship-handle correction: identity metadata and avatar parity, selected
+  contact routing, and existing-friend search all pass across three Native
+  clients. It then times out at `mls.readiness` because Desktop
+  `keypackage_count` omits the current window-scoped `X-Device-ID`; Station
+  correctly returns `401 authenticated Key Exchange device required`.
+  Runtime and Provisioner cleanup are `DONE/PROVEN`. This Desktop-owned
+  correction is parked behind the same active MCA Desktop write claim as the
+  W8B revoke fix; W8C remains `PARTIAL/UNPROVEN`.
