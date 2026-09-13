@@ -9883,8 +9883,8 @@ function reportFoundationF07Debug(
   return fetch('http://127.0.0.1:7783/event', {
     method: 'POST',
     body: JSON.stringify({
-      sessionId: 'as-f07-revision-flow',
-      runId: 'post-fix',
+      sessionId: 'revision-retry-cancellation',
+      runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationF07Scenario',
       msg: `[DEBUG] ${stage}`,
@@ -10433,6 +10433,9 @@ async function runFoundationF07Scenario(input: {
     elapsedMs: performance.now() - scenarioStartedAt,
     sourceCancellationStatus,
     sourceCancellationStatusType: typeof cancellationResponse?.status,
+    responseTurnPresent: Boolean(cancellationResponse?.turn_id),
+    responseTurnMatchesTarget:
+      cancellationResponse?.turn_id === cancellationAttempt.turnId,
     responseFields: Object.keys(cancellationResponse ?? {}).sort(),
   });
   if (sourceCancellationStatus !== 'cancelled') {
