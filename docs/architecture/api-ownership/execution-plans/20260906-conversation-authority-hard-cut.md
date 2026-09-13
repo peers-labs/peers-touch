@@ -1459,3 +1459,31 @@ Key Exchange fetch. It retains the readiness fence and does not infer routes
 from display fields or introduce a fallback. Focused Chat/provisioning tests,
 Desktop tests, Rust compilation, and Python compilation pass; CA-W6 remains
 `PARTIAL/UNPROVEN` pending checkpoint deployment and the W8B/W8C reruns.
+
+Exact-source W8B run
+`20260913T234025297971Z-4865bcb672111d68a4314cbfdb93d33b`
+at `74a0135b8a9e3ff26dac3576a81fbfd7737a5579` proves both Station
+attestations, three Native client authentications, and the complete shared
+Federation fixture. It then fails at Direct peer-key readiness even though
+Alice supplies Bob's attested Home Station ID. The Key Exchange route resolver
+still attempts to enumerate Bob through Alice's local Actor Device directory
+when `target_device_id` is empty, so the no-shadow-device topology returns
+`404` before Federation. Cleanup is `DONE/PROVEN`.
+
+CA-W6 mechanically admits the owner-layer correction already implied by AO-D02
+and AO-D05: after Actor Identity resolves a remote Home Station, all-active
+Direct and MLS key fetches delegate endpoint enumeration to that authenticated
+Home Station. The source Station neither creates nor requires remote Actor
+Device rows and validates the federated result by actor plus any explicit
+target device. Focused Key Exchange service/Federation regressions, checkpoint
+deployment, and the bounded exact-source W8B rerun remain required.
+
+The canonical Key Exchange service now implements that routing contract.
+Remote all-active-device Direct and MLS reads bypass the source Station's local
+Actor Device directory, delegate endpoint selection to the authenticated target
+Home Station, and retain source-side validation of actor identity, any explicit
+device constraint, canonical key material, duplicate endpoints, and irreversible
+MLS consumption. The Key Exchange race suite, focused `go vet`, Go style, and
+`git diff --check` pass. CA-W6 remains `PARTIAL/UNPROVEN` until this source is
+checkpointed, deployed to `four` and `fiveArm`, and the bounded W8B journey
+passes.

@@ -6432,3 +6432,29 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   from display fields or introduce a fallback. Focused Chat/provisioning tests,
   Desktop tests, Rust compilation, and Python compilation pass; W8B remains
   `PARTIAL/UNPROVEN` pending checkpoint deployment and rerun.
+- Exact-source W8B run
+  `20260913T234025297971Z-4865bcb672111d68a4314cbfdb93d33b`
+  at `74a0135b8a9e3ff26dac3576a81fbfd7737a5579` proves both Station
+  attestations, three Native client authentications, and the complete shared
+  Federation fixture, then fails at Direct peer-key readiness. Alice now sends
+  Bob's attested Home Station ID correctly, but Key Exchange
+  `resolveActorRoutes` still asks Alice's local Actor Device directory to
+  enumerate Bob when `target_device_id` is empty. The local Station has no
+  remote shadow-device rows by design, so it returns `404` before entering the
+  authenticated Federation query. Cleanup is `DONE/PROVEN`.
+- Mechanical W8B remediation is admitted under the existing Key Exchange and
+  Federation contracts: after Actor Identity resolves a remote Home Station,
+  an all-active-device Direct or MLS fetch delegates enumeration to that Home
+  Station. The source Station must not create or require remote Actor Device
+  rows; it validates the authenticated federated result by requested actor and
+  optional target device. Focused Key Exchange service/Federation regressions,
+  checkpoint deployment, and the bounded W8B rerun are required before any
+  functional claim.
+- The owner-layer correction is implemented in canonical Key Exchange route
+  resolution. Remote all-active-device Direct and MLS reads no longer consult
+  the source Station's Actor Device directory; the authenticated target Home
+  Station selects active endpoints, while the source validates actor identity,
+  any explicit device constraint, canonical key material, duplicate endpoints,
+  and irreversible MLS consumption. The Key Exchange race suite, focused
+  `go vet`, Go style, and `git diff --check` pass. This is source evidence only;
+  checkpoint deployment and the exact-source W8B rerun remain next.
