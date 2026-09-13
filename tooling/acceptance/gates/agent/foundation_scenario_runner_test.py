@@ -2067,6 +2067,10 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             )
 
         station_restart.assert_called_once()
+        self.assertIs(
+            station_restart.call_args.kwargs["prearm_outage"],
+            True,
+        )
         authenticate.assert_called_once()
         self.assertEqual(native.prepare_calls, [])
         self.assertEqual(len(browser.prepare_calls), 1)

@@ -1419,6 +1419,7 @@ class FoundationInterruptedCoordinator:
                 repo_root=REPO_ROOT,
                 before_outage=prepare_before_outage,
                 during_outage=finalize_during_outage,
+                prearm_outage=True,
             )
             if handoff is None:
                 raise ScenarioRunnerError(

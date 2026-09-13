@@ -395,6 +395,29 @@ runtime behavior changes. Local verification passes Agent Acceptance
 Python compilation, and diff hygiene. Exact-source C08 and Foundation reruns
 remain pending.
 
+Checkpoint `3f062e8da70953a6ba9db048b2db8920e101c199` passed exact-source
+C08 run `20260913T100421067985Z-be06e19a8f362e0d5f1f9c5435d5a128`
+with `19/19`, `DONE / PROVEN`, and complete cleanup. Same-source Foundation run
+`20260913T100607947763Z-b2186175461fc138cee363710e1745ad`
+again crossed all AS-F06 tuples, then reproduced Browser English
+`BASE-INTERRUPTED` with a completed Assistant Message and no `error_json`.
+The provider-started boundary completed at 3992 ms, but handoff finalization
+did not begin until roughly 1.5 seconds later, after the remote kill command
+returned. Moving finalization into the outage removed local post-boundary work,
+but did not remove the Python-to-SSH connection latency before `docker kill`.
+
+The next correction pre-arms one source-bound SSH command before starting the
+Turn. The remote shell emits `READY`, waits for exactly one `KILL` or `ABORT`
+signal, and executes the verified container kill only for `KILL`. The
+provider-started callback can therefore trigger an established control channel
+without a new SSH handshake. Prepare failure sends `ABORT`; timeout or protocol
+failure terminates the helper fail closed.
+
+Local verification passes Agent Acceptance `422/422`, Agent static `85/85`,
+focused restart/coordinator tests `67/67`, Python compilation, diff hygiene,
+and a real remote arm/abort drill that preserved both container ID and
+`StartedAt`. Exact-source C08 and Foundation reruns remain pending.
+
 ## Iteration 6: Provider Completion Before Restart
 
 The selector-correction source

@@ -8,6 +8,7 @@ import json
 from math import ceil
 import os
 import re
+import selectors
 import shlex
 import subprocess
 import time
@@ -137,6 +138,119 @@ def _remote_command(
         timeout=timeout,
     )
     return completed.stdout.strip()
+
+
+class _ArmedRemoteKill:
+    def __init__(
+        self,
+        environment: Mapping[str, str],
+        container_id: str,
+        *,
+        deadline: float,
+    ) -> None:
+        host = environment.get("PT_DEPLOY_HOST", "").strip()
+        user = environment.get("PT_DEPLOY_USER", "").strip()
+        if not host or not user:
+            raise FoundationStationRestartError(
+                "AS-F06 deployment must define PT_DEPLOY_HOST and PT_DEPLOY_USER"
+            )
+        timeout = _remaining_seconds(deadline, "arming Station abrupt stop")
+        connect_timeout = max(1, min(10, ceil(timeout)))
+        remote_command = (
+            "printf 'READY\\n'; "
+            "if IFS= read -r trigger && [ \"$trigger\" = KILL ]; then "
+            f"docker kill --signal KILL {shlex.quote(container_id)}; "
+            "fi"
+        )
+        self._process = subprocess.Popen(
+            [
+                "ssh",
+                "-T",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                f"ConnectTimeout={connect_timeout}",
+                f"{user}@{host}",
+                remote_command,
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        self._settled = False
+        stdout = self._process.stdout
+        if stdout is None:
+            self.abort()
+            raise FoundationStationRestartError(
+                "AS-F06 pre-armed Station stop has no stdout"
+            )
+        selector = selectors.DefaultSelector()
+        try:
+            selector.register(stdout, selectors.EVENT_READ)
+            if not selector.select(timeout):
+                self.abort()
+                raise FoundationStationRestartError(
+                    "AS-F06 pre-armed Station stop did not become ready"
+                )
+            ready = stdout.readline().strip()
+        finally:
+            selector.close()
+        if ready != "READY":
+            self.abort()
+            raise FoundationStationRestartError(
+                "AS-F06 pre-armed Station stop returned invalid readiness"
+            )
+
+    def _settle(self, signal: str, deadline: float) -> str:
+        if self._settled:
+            raise FoundationStationRestartError(
+                "AS-F06 pre-armed Station stop was already settled"
+            )
+        self._settled = True
+        stdin = self._process.stdin
+        if stdin is None:
+            raise FoundationStationRestartError(
+                "AS-F06 pre-armed Station stop has no stdin"
+            )
+        stdin.write(f"{signal}\n")
+        stdin.flush()
+        stdin.close()
+        self._process.stdin = None
+        try:
+            stdout, stderr = self._process.communicate(
+                timeout=_remaining_seconds(
+                    deadline,
+                    "pre-armed Station abrupt stop",
+                ),
+            )
+        except subprocess.TimeoutExpired as error:
+            self._process.kill()
+            self._process.communicate()
+            raise FoundationStationRestartError(
+                "AS-F06 pre-armed Station stop timed out"
+            ) from error
+        if self._process.returncode != 0:
+            raise FoundationStationRestartError(
+                "AS-F06 pre-armed Station stop failed: "
+                f"{stderr.strip()[:512]}"
+            )
+        return stdout.strip()
+
+    def trigger(self, *, deadline: float) -> str:
+        return self._settle("KILL", deadline)
+
+    def abort(self) -> None:
+        if self._settled:
+            return
+        abort_deadline = time.monotonic() + 10
+        try:
+            self._settle("ABORT", abort_deadline)
+        except Exception:
+            if self._process.poll() is None:
+                self._process.kill()
+                self._process.communicate()
 
 
 def _load_bound_environment(
@@ -339,6 +453,7 @@ def restart_foundation_station(
     before_outage: Callable[[], None] | None = None,
     during_outage: Callable[[float], None] | None = None,
     after_restart: Callable[[float], None] | None = None,
+    prearm_outage: bool = False,
 ) -> dict[str, Any]:
     (
         _profile_env,
@@ -363,11 +478,27 @@ def restart_foundation_station(
         project_label=project_label,
         station_port=station_port,
     )
-    if before_outage is not None:
-        before_outage()
-
     operation_started_at = time.monotonic()
     operation_deadline = operation_started_at + RESTART_TIMEOUT_SECONDS
+    armed_kill: _ArmedRemoteKill | None = None
+    if prearm_outage:
+        if during_outage is None:
+            raise FoundationStationRestartError(
+                "AS-F06 pre-armed Station stop requires an outage callback"
+            )
+        armed_kill = _ArmedRemoteKill(
+            deployment_env,
+            before["containerId"],
+            deadline=operation_deadline,
+        )
+    try:
+        if before_outage is not None:
+            before_outage()
+    except BaseException:
+        if armed_kill is not None:
+            armed_kill.abort()
+        raise
+
     outage_error: BaseException | None = None
     if during_outage is None:
         restarted = _remote_command(
@@ -383,11 +514,15 @@ def restart_foundation_station(
         try:
             stop_deadline = operation_deadline - RESTORE_RESERVE_SECONDS
             _remaining_seconds(stop_deadline, "Station abrupt stop")
-            stopped = _remote_command(
-                deployment_env,
-                "docker kill --signal KILL "
-                f"{shlex.quote(before['containerId'])}",
-                deadline=stop_deadline,
+            stopped = (
+                armed_kill.trigger(deadline=stop_deadline)
+                if armed_kill is not None
+                else _remote_command(
+                    deployment_env,
+                    "docker kill --signal KILL "
+                    f"{shlex.quote(before['containerId'])}",
+                    deadline=stop_deadline,
+                )
             )
             if not _container_ids_match(stopped, before["containerId"]):
                 raise FoundationStationRestartError(
