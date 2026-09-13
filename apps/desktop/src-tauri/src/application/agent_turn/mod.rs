@@ -797,6 +797,7 @@ pub async fn agent_replay_turn_stream(
     ptid: String,
     conversation_id: String,
     turn_id: String,
+    attempt_id: String,
     after_sequence: i64,
     mut cancellation: ReplayCancellation,
 ) {
@@ -808,6 +809,7 @@ pub async fn agent_replay_turn_stream(
         &ptid,
         &conversation_id,
         &turn_id,
+        &attempt_id,
         after_sequence,
         &mut cancellation.receiver,
     )
@@ -1237,6 +1239,7 @@ async fn replay_station_turn_events_with_retry(
     ptid: &str,
     conversation_id: &str,
     turn_id: &str,
+    attempt_id: &str,
     after_sequence: i64,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<(), String> {
@@ -1289,6 +1292,7 @@ async fn replay_station_turn_events_with_retry(
             ptid,
             conversation_id,
             turn_id,
+            attempt_id,
             after_sequence,
             cancellation,
         )
@@ -1330,12 +1334,21 @@ fn replay_event_closes_stream(event: &str, data: &Value, live_tail_established: 
     replay_event_is_terminal(event, data) && (live_tail_established || event == "snapshot")
 }
 
-fn build_replay_request_body(conversation_id: &str, turn_id: &str, after_sequence: i64) -> Value {
-    json!({
+fn build_replay_request_body(
+    conversation_id: &str,
+    turn_id: &str,
+    attempt_id: &str,
+    after_sequence: i64,
+) -> Value {
+    let mut body = json!({
         "conversation_id": conversation_id,
         "turn_id": turn_id,
         "afterSequence": after_sequence,
-    })
+    });
+    if !attempt_id.trim().is_empty() {
+        body["attempt_id"] = json!(attempt_id.trim());
+    }
+    body
 }
 
 fn take_sse_frame(buffer: &mut Vec<u8>) -> Result<Option<(String, Value)>, String> {
@@ -1451,6 +1464,7 @@ async fn replay_station_turn_events(
     ptid: &str,
     conversation_id: &str,
     turn_id: &str,
+    attempt_id: &str,
     after_sequence: i64,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<ReplayOutcome, String> {
@@ -1477,6 +1491,7 @@ async fn replay_station_turn_events(
                 .json(&build_replay_request_body(
                     conversation_id,
                     turn_id,
+                    attempt_id,
                     after_sequence,
                 ))
                 .send(),
@@ -2679,11 +2694,24 @@ mod tests {
     #[test]
     fn replay_request_uses_the_canonical_protojson_cursor_name() {
         assert_eq!(
-            build_replay_request_body("conversation-1", "turn-1", 4),
+            build_replay_request_body("conversation-1", "turn-1", "", 4),
             json!({
                 "conversation_id": "conversation-1",
                 "turn_id": "turn-1",
                 "afterSequence": 4,
+            }),
+        );
+    }
+
+    #[test]
+    fn replay_request_can_select_a_retained_source_attempt() {
+        assert_eq!(
+            build_replay_request_body("conversation-1", "turn-1", "attempt-1", 0),
+            json!({
+                "conversation_id": "conversation-1",
+                "turn_id": "turn-1",
+                "attempt_id": "attempt-1",
+                "afterSequence": 0,
             }),
         );
     }

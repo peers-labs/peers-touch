@@ -174,6 +174,17 @@ func TestTurnEventReplayFencesReopenedTurnToCurrentAttempt(t *testing.T) {
 			t.Fatalf("persist %s event: %v", event.attemptID, err)
 		}
 	}
+	if err := db.Create(&persistence.TurnEvent{
+		ID:             "event-unbound-between-attempts",
+		ConversationID: conversation.ID,
+		TurnID:         turn.ID,
+		EventSeq:       5,
+		EventType:      "progress",
+		Payload:        `{"stage":"legacy_unbound"}`,
+		CreatedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("persist unbound event: %v", err)
+	}
 
 	replayed, err := service.ReplayTurnEvents(ctx, owner, conversation.ID, turn.ID, 0)
 	if err != nil {
@@ -194,13 +205,70 @@ func TestTurnEventReplayFencesReopenedTurnToCurrentAttempt(t *testing.T) {
 		snapshot.LastSequence != replayed[1].EventSeq {
 		t.Fatalf("snapshot crossed attempt fence: %+v", snapshot)
 	}
+	_, sourceBoundary, sourceFence, unsubscribe, err := service.SubscribeTurnAttemptEvents(
+		ctx,
+		owner,
+		conversation.ID,
+		turn.ID,
+		"attempt-1",
+	)
+	if err != nil {
+		t.Fatalf("subscribe retained source attempt: %v", err)
+	}
+	defer unsubscribe()
+	sourceReplay, err := service.ReplayTurnEventsThroughFence(
+		ctx,
+		owner,
+		conversation.ID,
+		turn.ID,
+		0,
+		sourceBoundary,
+		sourceFence,
+	)
+	if err != nil {
+		t.Fatalf("replay retained source attempt: %v", err)
+	}
+	if len(sourceReplay) != 2 ||
+		sourceReplay[0].AttemptID != "attempt-1" ||
+		sourceReplay[1].AttemptID != "attempt-1" ||
+		sourceReplay[1].EventType != "error" {
+		t.Fatalf("source replay crossed attempt fence: %+v", sourceReplay)
+	}
+	sourceSnapshot, err := service.GetTurnEventSnapshotAtFence(
+		ctx,
+		owner,
+		conversation.ID,
+		turn.ID,
+		sourceBoundary,
+		sourceFence,
+	)
+	if err != nil {
+		t.Fatalf("snapshot retained source attempt: %v", err)
+	}
+	if sourceSnapshot.Status != string(domain.TurnStatusFailed) ||
+		sourceSnapshot.Text != "old" ||
+		sourceSnapshot.TerminalReason != "old failure" ||
+		sourceSnapshot.LastSequence != sourceReplay[1].EventSeq {
+		t.Fatalf("source snapshot crossed attempt fence: %+v", sourceSnapshot)
+	}
+	if _, _, _, _, err := service.SubscribeTurnAttemptEvents(
+		ctx,
+		owner,
+		conversation.ID,
+		turn.ID,
+		"attempt-missing",
+	); err == nil {
+		t.Fatal("missing retained attempt was accepted")
+	} else {
+		requireBizCode(t, err, errcode.AgentNotFound)
+	}
 	var auditCount int64
 	if err := db.Model(&persistence.TurnEvent{}).
 		Where("turn_id = ?", turn.ID).
 		Count(&auditCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if auditCount != 4 {
+	if auditCount != 5 {
 		t.Fatalf("attempt fencing removed audit history: count=%d", auditCount)
 	}
 }

@@ -2829,6 +2829,7 @@ export interface AgentTurnReplayStreamInput {
   conversation_id: string;
   turn_id: string;
   after_seq: number;
+  attempt_id?: string;
 }
 
 export interface AgentTurnReplayStreamCancelInput {
@@ -2839,11 +2840,13 @@ export function toAgentTurnReplayWireInput(input: Omit<AgentTurnReplayStreamInpu
   conversation_id: string;
   turn_id: string;
   afterSequence: number;
+  attempt_id?: string;
 } {
   return {
     conversation_id: input.conversation_id,
     turn_id: input.turn_id,
     afterSequence: input.after_seq,
+    ...(input.attempt_id ? { attempt_id: input.attempt_id } : {}),
   };
 }
 

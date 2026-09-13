@@ -236,7 +236,9 @@ type FoundationTurnReplayLocator = Pick<
   | 'streamGeneration'
   | 'actorPtid'
   | 'acknowledgedCursor'
->;
+> & {
+  attemptId?: string;
+};
 
 interface FoundationF06FaultBoundary {
   handoff: FoundationF06Handoff;
@@ -816,6 +818,7 @@ async function foundationStationReplayReadback(
       conversation_id: handoff.conversationId,
       turn_id: handoff.turnId,
       after_seq: handoff.acknowledgedCursor,
+      attempt_id: handoff.attemptId,
     }, (event) => {
       const sourceDelivery = event.sourceDelivery;
       if (
@@ -14300,6 +14303,7 @@ async function runFoundationInterruptedScenario(input: {
   const replayAfterRecovery = await foundationStationReplayReadback({
     conversationId: handoff.conversationId,
     turnId: handoff.turnId,
+    attemptId: String(sourceAttempt.attemptId),
     streamId: handoff.streamId,
     streamGeneration: handoff.streamGeneration,
     actorPtid: handoff.actorPtid,

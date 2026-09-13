@@ -1050,6 +1050,7 @@ pub struct AgentTurnReplayStreamInput {
     pub conversation_id: String,
     pub turn_id: String,
     pub after_seq: i64,
+    pub attempt_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

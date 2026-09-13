@@ -251,7 +251,7 @@ Parallel policy:
 | W0 Contract/Evidence/Gates | complete | Owner EXECUTE approval received; W0 verification and completion audit PASS |
 | F1 Agent/Conversation Authority | complete | W0 complete |
 | F2 Runtime/Stream/Capability/Portability | implementation checks complete: Q4 C06 and Q5/Q6 C10 source closures pass; product proof remains pending G-F | F1 |
-| F3 Context/Resource Intelligence | C04 core and C08 product source complete; exact-source C08 run `20260910T185939301238Z-7e4f05f12a702632660e732aee6c476f` on `d18a40cb4` is `DONE / PROVEN` with 19/19 assertions | F2 |
+| F3 Context/Resource Intelligence | C04 core and C08 product source complete; exact-source C08 run `20260913T122723703780Z-3c46e80a6f615d4110b062ef50fb1f41` on `80358d815ccdb031582517134e6a2bb563d96760` is `DONE / PROVEN` with 19/19 assertions and complete cleanup | F2 |
 | F4 Tool Policy/Observability | G1-A through G1-F and pre-W1 G1-XR diagnostic complete through AS-F03; post-W8a G-F pending | F2 + accepted D19A/D19B/D19C |
 | W1 Capability Authority | implementation checks complete; product proof UNPROVEN until W9 Gate | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
 | W2 Home Projection | pending | G-F complete 419-cell Foundation Gate |
@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260913T032341973486Z-0e8f949da6e64423747d4206ff53c3f0` on `d5bfa071a260116a1c5f1f25a48cb45cec0920d6` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260913T032512505621Z-53d0a764362fb2dc00ce9d4ecc93c1b2` crossed all AS-F06 and both Duplicate Conflict locale cells, then failed first at Browser English `BASE-INTERRUPTED` because the provider completed before the Station restart could interrupt it; the local coordinator correction uses the persisted `provider_call_started` boundary and preflights the restart target before starting the one real Turn; Desktop `622/622`, Agent `419/419`, strict check, restart `13/13`, scenario runner `51/51`, static `85/85`, production build, and diff hygiene pass; exact-source post-fix proof is pending | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260913T122723703780Z-3c46e80a6f615d4110b062ef50fb1f41` on `80358d815ccdb031582517134e6a2bb563d96760` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260913T122942301669Z-a65d8f1a59c417365f070daa3dc3a6d1` proved the interrupted source outcome, visible recovery, retry admission, and one new recovery Attempt, then failed first because default current-Attempt replay could not read the retained source Attempt terminal event after retry; the local owner correction adds exact retained-Attempt replay selection without changing default current-Attempt recovery; Station focused tests, Desktop strict check, Desktop `623/623`, and focused Agent contract/scenario tests pass; clean-checkpoint exact-source proof is pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -4848,7 +4848,7 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   without reaching `retry-source-cancel-requested`; cleanup and exact-source
   attestation passed. The retry fixture currently waits for the external
   provider's first text token before requesting cancellation, although the
-  accepted retry contract requires only a durable failed/cancelled source.
+  accepted retry contract requires only a durable failed/cancelled/interrupted source.
   The producer will instead cancel at the production
   `provider_call_started` progress event, which occurs after the source user
   message is durable and before external first-token latency, while retaining
@@ -7896,6 +7896,30 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   completed external socket cut. Existing post-ack transport disconnect remains
   only a buffered-frame discard. Desktop strict check, Agent static `85/85`,
   and diff hygiene pass; exact-source post-fix C08/Foundation proof remains
+  pending.
+- Exact-source checkpoint `80358d815ccdb031582517134e6a2bb563d96760`
+  passed C08 run
+  `20260913T122723703780Z-3c46e80a6f615d4110b062ef50fb1f41`
+  with `19/19`, `DONE / PROVEN`, and complete cleanup. Fully authorized
+  same-source Foundation run
+  `20260913T122942301669Z-a65d8f1a59c417365f070daa3dc3a6d1`
+  advanced Browser English `BASE-INTERRUPTED` through the real Station restart,
+  persisted typed interruption, localized receiver, Recover dispatch, and one
+  new recovery Attempt. After cancelling the recovery Attempt, the Gate retained
+  the source Attempt in diagnostic replay but failed to find its original
+  terminal event by sequence. Station event rows are append-only; the defect is
+  that every new SSE replay automatically reloads the latest Attempt fence, so
+  retry makes the retained source event invisible even though it remains in
+  storage. The local owner correction keeps default recovery fenced to the
+  current Attempt and adds optional, actor-scoped `attempt_id` selection for
+  immutable retained-Attempt events and snapshot. Explicit historical selection
+  excludes unbound legacy events. Browser and Native transports forward the
+  selector only for the source-lineage readback. Station service/handler tests,
+  Desktop strict check, Desktop `623/623`, focused Web `95/95`, and focused
+  Agent contract/scenario `268/268`, Native Rust replay request `2/2`, and the
+  Desktop production build pass. The full Agent suite passes `421/422`; only
+  its clean-source candidate identity check is expectedly blocked by the
+  uncommitted fix. Clean-checkpoint exact-source C08/Foundation proof remains
   pending.
 
 ### AS-F08 Context Attribution And Omission

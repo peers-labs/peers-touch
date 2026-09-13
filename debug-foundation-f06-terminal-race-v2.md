@@ -494,3 +494,42 @@ existing environment-only skip, Agent Acceptance tests pass `422/422`, the
 focused retry guard passes, Desktop strict check and Agent static `85/85` pass,
 and diff hygiene passes. Exact-source post-fix C08 and Foundation proof remain
 pending.
+
+## Iteration 10: Retained Source Attempt Replay
+
+Checkpoint `80358d815ccdb031582517134e6a2bb563d96760` passed exact-source
+C08 run `20260913T122723703780Z-3c46e80a6f615d4110b062ef50fb1f41`
+with `DONE / PROVEN` and complete cleanup. Fully authorized same-source
+Foundation run
+`20260913T122942301669Z-a65d8f1a59c417365f070daa3dc3a6d1`
+then proved the interrupted source outcome and the corrected retry admission.
+It observed one new recovery Attempt, cancelled that Attempt, retained the
+source Attempt in diagnostic readback, and failed only with
+`agent.acceptance.foundationInterruptedSourceEventMissingAfterRecovery`.
+
+The retained evidence and source inspection distinguish four possibilities:
+
+| ID | Hypothesis | Result | Evidence |
+|----|------------|--------|----------|
+| AJ | Retry deleted or overwrote the source terminal event. | Rejected | `agent_turn_events` is append-only and the reopened-Turn regression retains all audit rows. |
+| AK | Replay automatically fences to the latest Attempt and filters the retained source event. | Confirmed | `loadCurrentTurnEventFence` selects the highest Attempt index for every new replay request; the existing regression requires default replay to return only that Attempt. |
+| AL | Retry changed the source Attempt record or terminal event identity. | Rejected | Diagnostic replay still returned the source Attempt with its original terminal status and record; failure occurred only when locating its event by sequence. |
+| AM | Browser or Native replay transport dropped the source event after Station returned it. | Rejected | The Station query cannot return the source Attempt under the automatically selected latest-Attempt fence. |
+
+The owner-layer correction keeps default recovery fenced to the current
+Attempt and extends `StreamTurnEventsRequest` with an optional `attempt_id` for
+read-only retained lineage. Station validates the selected Attempt belongs to
+the Turn and fences events and snapshot to that exact Attempt. Explicit
+historical selection excludes unbound legacy events; the default current
+projection retains the existing compatibility rule. Browser and Native
+transports forward the selector only when requested, and the Foundation
+immutability readback supplies the source Attempt ID.
+
+Local verification currently passes Station service/handler tests, Desktop
+strict check, Desktop `623/623` unit tests with one existing environment-only
+skip, focused Web replay/retry tests `95/95`, Agent focused contract/scenario
+tests `268/268`, Native Rust replay request tests `2/2`, generated
+Desktop/Mobile binding checks, production build, and diff hygiene. The full
+Agent suite passes `421/422`; its sole failure is the expected clean-source
+candidate identity rejection while the fix is uncommitted. Clean-checkpoint
+exact-source C08/Foundation proof remains pending.

@@ -1505,6 +1505,20 @@ describe('api.startAgentTurnReplayStream', () => {
     })
   })
 
+  it('selects a retained source attempt only when replay requests it', () => {
+    expect(toAgentTurnReplayWireInput({
+      conversation_id: 'conversation-1',
+      turn_id: 'turn-1',
+      after_seq: 0,
+      attempt_id: 'attempt-1',
+    })).toEqual({
+      conversation_id: 'conversation-1',
+      turn_id: 'turn-1',
+      afterSequence: 0,
+      attempt_id: 'attempt-1',
+    })
+  })
+
   it('reads the authoritative snapshot after a catch-up terminal event', async () => {
     const browserWindow = Object.assign(new EventTarget(), {
       setTimeout: globalThis.setTimeout.bind(globalThis),
