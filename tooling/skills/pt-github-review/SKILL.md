@@ -220,10 +220,14 @@ Treat these as blocking unless the user explicitly asks for exploratory review:
 | `architecture-boundary` | lower layer redefines architecture or platform ownership |
 | `duplicate-side-effect-import` | same dynamic import path appears 2+ times in a single file |
 | `user-home-absolute-path` | committed documentation-like text contains a developer or CI user-home absolute path instead of a repo-relative path or portable placeholder |
+| `repository-debug-artifact` | repository-root `debug-*`, `.dbg/`, ad-hoc prompt, runtime log, trace, screenshot, DOM dump, or temporary report |
+| `station-profile-bypass` | Station start, deployment, restart, or direct execution bypasses `make station` and the active profile pipeline |
+| `unauthorized-environment-creation` | an agent creates, copies, derives, or registers a profile or deploy environment without explicit human approval for the exact name and target |
 
 Keywords intentionally present for freshness checks: hardcoded secrets, No mock,
 hardcoded-ui-string, silent error, generated, runtime projection, CODEOWNERS,
-user-home-absolute-path.
+user-home-absolute-path, repository-debug-artifact, station-profile-bypass,
+unauthorized-environment-creation.
 
 ## Operational Knowledge
 

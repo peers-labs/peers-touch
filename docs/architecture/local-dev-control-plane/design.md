@@ -27,6 +27,10 @@
 8. **Repository cleanliness**: transient debug sessions, logs, traces,
    screenshots, DOM dumps, and ad-hoc reports are machine development state,
    not repository-root content.
+9. **Human-authorized environment lifecycle**: an AI agent may select an
+   existing approved environment, but may not create, copy, derive, or register
+   a profile or deploy environment without explicit human developer approval
+   for the exact name and target.
 
 ## 2. System Architecture
 
@@ -41,6 +45,7 @@ Sibling env repository
 Machine Dev Control Plane
   ~/.peers-touch/dev/
   - workspace registry
+  - human environment-creation authorizations
   - local slot allocation
   - Station capability leases
   - observed process/port projection
@@ -78,6 +83,7 @@ not remain as a symlink, fallback, or second read owner.
 | State | Owner | Canonical source |
 |-------|-------|------------------|
 | Deployable Station/Relay topology | Environment repository | `env/peers-touch/<profile>/` |
+| Machine-local environment creation approval | Human developer | `~/.peers-touch/dev/authorizations/environment-creation/` |
 | Worktree identity | Git + canonical filesystem path | `workspaceId = sha256(realpath(root))[0:16]` |
 | Worktree profile selection | Machine Dev Control Plane | `bindings[workspaceId].profile` |
 | Local port slot | Machine Dev Control Plane | `bindings[workspaceId].slot` |
@@ -94,6 +100,22 @@ the authority for machine-local slot allocation.
 
 Owns named, reviewable environment definitions. It must not record which local
 worktree currently uses an environment.
+
+Missing topology is a fail-closed boundary. It does not authorize an agent to
+create `env/peers-touch/<name>/`, a local-only profile cache, or a deploy
+environment. Creation requires explicit human developer approval naming the
+environment and target; task scope, an execution plan, an existing host, or an
+Acceptance requirement is not implied approval.
+
+Remote deployment resolves exactly one Git-tracked, clean deploy definition
+directly from this repository. A `.local/deploy/envs/` copy is never topology
+authority.
+
+Human developers may create a short-lived, exact machine authorization for one
+`workspaceId + profile + mode + slot` tuple. `profile-init` consumes it once
+and writes a digest-bound receipt. Agents may consume a pre-existing grant when
+the requested tuple matches, but may not create the grant. A machine-local
+compose profile is selectable only while its bytes match that consumed receipt.
 
 ### 4.2 Machine Registry
 
@@ -203,6 +225,8 @@ Allowed:
 - One worktree holds `station.deploy` while other clients remain connected,
   provided the deployment policy explicitly allows it.
 - Each worktree has its own profile and slot binding.
+- A human-authorized machine-local compose profile has one consumed,
+  digest-bound authorization receipt for its exact workspace and slot.
 - Acceptance acquires stronger temporary leases without changing the user's
   durable worktree binding.
 
@@ -213,6 +237,12 @@ Forbidden:
 - A profile's static `PT_DEV_SLOT` silently overrides the machine allocation.
 - One worktree's `.local/dev/active` acts as global truth.
 - Runtime commands read untracked environment definitions as approved topology.
+- An AI agent creates or registers a profile or deploy environment without
+  explicit human developer approval for the exact environment and target.
+- An Agent runs `profile-authorize`, creates an authorization file, reuses a
+  consumed grant, or edits an authorized local profile after receipt creation.
+- An arbitrary `PT_DEV_PROFILE_FILE` bypasses reviewed topology; only a
+  contained Acceptance runtime-manifest profile is allowed.
 - Machine registry stores secrets or product data.
 - Acceptance or other development artifacts write under
   `~/Library/Application Support/PeersTouch/`.
@@ -225,6 +255,8 @@ Forbidden:
 | Worktree not registered | `WORKSPACE_UNREGISTERED` |
 | Binding absent | `WORKSPACE_BINDING_MISSING` |
 | Profile missing or unreviewed | `PROFILE_UNAVAILABLE` |
+| Environment creation lacks explicit human approval | `ENVIRONMENT_CREATION_UNAUTHORIZED` |
+| Authorization is expired, mismatched, reused, or digest-invalid | `ENVIRONMENT_CREATION_AUTHORIZATION_INVALID` |
 | Slot already live | `LOCAL_SLOT_CONFLICT` |
 | Station capability held | `STATION_CAPABILITY_CONFLICT` |
 | Deploy host/URL mismatch | `DEPLOY_TARGET_MISMATCH` |
