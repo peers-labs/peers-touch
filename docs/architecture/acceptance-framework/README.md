@@ -1,8 +1,8 @@
 # Acceptance Framework
 
 > **Status**: active
-> **Version**: v2.1
-> **Created**: 2026-06-03 | **Updated**: 2026-09-02
+> **Version**: v2.2
+> **Created**: 2026-06-03 | **Updated**: 2026-09-13
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -96,7 +96,8 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 当前Evidence Store architecture由`D-11`约束：
 
 - Runtime-generated artifacts必须位于repository之外；
-- canonical platform default加可选`PT_ACCEPTANCE_ARTIFACT_ROOT` override；
+- local canonical default为`~/.peers-touch/dev/acceptance`，CI和隔离测试使用
+  `PT_ACCEPTANCE_ARTIFACT_ROOT` override；
 - immutable run manifests与atomic `latest.json` pointer；
 - writer/readers/validators/cleanup共享唯一resolver；
 - source tree只保留code、schemas、templates和intentional fixtures。
