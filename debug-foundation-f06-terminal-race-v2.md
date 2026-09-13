@@ -347,6 +347,54 @@ tests `112/112`, Foundation/runner/static tests `266/266`, Agent static
 `85/85`, Native Rust disconnect regressions `2/2`, Rust formatting, and diff
 hygiene. Exact-source post-fix C08 and Foundation proof remain pending.
 
+## Iteration 8: Interrupted Restart Ownership Window
+
+Checkpoint `818a067f3944320fdda02eafc465043a5f1e11a7` passed exact-source
+C08 run `20260913T090442000798Z-f62270f890853e0759e745cec18f40d1`
+with `19/19`, `DONE / PROVEN`, and complete cleanup. Fully authorized
+same-source Foundation run
+`20260913T090636256719Z-cd15b6710348724123a5bf2e333935f1`
+crossed all four AS-F06 tuples. Both Native tuples observed the production
+transport handoff in `REPLAYING` and settled their cut boundary without a
+post-cut terminal frame, proving the Iteration 7 fix.
+
+The run then failed first at Browser English `BASE-INTERRUPTED`. The retained
+V-Z evidence shows:
+
+- the provider-started boundary was observed at 3725 ms;
+- transport disconnect completed at 3735 ms with recovery already
+  `RECONNECTING`;
+- the strict handoff was persisted at 3754 ms;
+- after the real Station restart, the sole matching Assistant Message was
+  already `completed` with no `error_json`;
+- the readback happened more than 11 seconds after the boundary, so this is not
+  an early projection sample;
+- cleanup and outer Provisioner cleanup both completed.
+
+V, W, X, and Y are rejected for this run. Z is confirmed again: Station had
+already completed the provider Turn before the restart took ownership. Source
+inspection identifies the remaining coordinator window:
+`before_outage` performs both Turn preparation and local handoff finalization
+before `restart_foundation_station` issues `docker kill`.
+
+The correction keeps all target and authorization preflight before the Turn,
+but moves local handoff finalization into the existing `during_outage`
+callback. The required order is now:
+
+```text
+source/container preflight
+-> provider-started handoff
+-> real docker KILL
+-> local handoff finalization while Station is down
+-> docker start and source-matched recovery
+```
+
+No prompt, provider, timeout, retry, tuple, persisted-outcome oracle, or product
+runtime behavior changes. Local verification passes Agent Acceptance
+`419/419`, Agent static `85/85`, focused restart/coordinator tests `64/64`,
+Python compilation, and diff hygiene. Exact-source C08 and Foundation reruns
+remain pending.
+
 ## Iteration 6: Provider Completion Before Restart
 
 The selector-correction source

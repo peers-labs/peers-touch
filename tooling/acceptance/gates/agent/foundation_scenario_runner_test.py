@@ -2033,7 +2033,9 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         def restart_station(*_args: object, **kwargs: object) -> dict[str, object]:
             event_log.append("station:preflight")
             kwargs["before_outage"]()
-            event_log.append("station:restart")
+            event_log.append("station:kill")
+            kwargs["during_outage"](time.monotonic() + 165)
+            event_log.append("station:start")
             return restart_evidence
 
         with (
@@ -2090,11 +2092,15 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         )
         self.assertLess(
             event_log.index("browser:transport-cut"),
+            event_log.index("station:kill"),
+        )
+        self.assertLess(
+            event_log.index("station:kill"),
             event_log.index("browser:boundary-finalized"),
         )
         self.assertLess(
             event_log.index("browser:boundary-finalized"),
-            event_log.index("station:restart"),
+            event_log.index("station:start"),
         )
 
     def test_base_interrupted_failure_runs_explicit_cleanup(self) -> None:
@@ -2125,6 +2131,7 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
 
         def restart_station(*_args: object, **kwargs: object) -> dict[str, object]:
             kwargs["before_outage"]()
+            kwargs["during_outage"](time.monotonic() + 165)
             return restart_evidence
 
         with (

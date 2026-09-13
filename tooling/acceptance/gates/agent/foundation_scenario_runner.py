@@ -1391,6 +1391,13 @@ class FoundationInterruptedCoordinator:
                         f"{scenario_key}: {prepared!r}"
                     )
                 handoff = prepared
+
+            def finalize_during_outage(_deadline: float) -> None:
+                if handoff is None:
+                    raise ScenarioRunnerError(
+                        "BASE-INTERRUPTED restart did not prepare a handoff for "
+                        f"{scenario_key}"
+                    )
                 finalized = client.harness(
                     "foundationF06FinalizePreparation",
                     {"scenarioKey": scenario_key},
@@ -1411,7 +1418,7 @@ class FoundationInterruptedCoordinator:
                 self._runtime_manifest,
                 repo_root=REPO_ROOT,
                 before_outage=prepare_before_outage,
-                during_outage=lambda _deadline: None,
+                during_outage=finalize_during_outage,
             )
             if handoff is None:
                 raise ScenarioRunnerError(
