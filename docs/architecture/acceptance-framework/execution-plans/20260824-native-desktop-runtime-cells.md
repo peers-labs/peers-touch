@@ -5980,3 +5980,13 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   only repeated active heartbeats while preserving stop priority and
   generation fencing. Focused, race-enabled, complete Conversation, and Go
   style checks pass; the next action is the corrected exact-source W8B journey.
+- Exact-source Linux run
+  `20260913T195024793204Z-4a1b87d2b764219f6f23c903a2876abf`
+  then passed Direct start/stop, send-clear, and blur-clear. It stopped when
+  the typing Gate tried to create an Alice-Charlie Direct solely as a
+  session-switch target; production correctly returned 403 because the
+  authorized reset fixture establishes only the Alice-Bob friendship.
+  The Gate correction creates its already-required three-member Group before
+  Direct lifecycle checks and uses that authorized Conversation as the switch
+  target. It does not add friendship state, weaken `create_direct` policy, or
+  change product behavior.

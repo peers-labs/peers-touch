@@ -531,10 +531,11 @@ class NativeTypingGate(AcceptanceGate):
     def prove_direct(
         self,
         conversation_id: str,
-        federation_id: str,
+        alternate_group_id: str,
     ) -> None:
         alice = self.clients["alice"]
         self._typing_cid = conversation_id
+        self.sync("alice", "friend", conversation_id)
         set_composer(alice, f"direct-start-stop-{time.time_ns()}")
         self.step(
             "direct.typing.start",
@@ -585,24 +586,13 @@ class NativeTypingGate(AcceptanceGate):
         self.assert_condition("direct_typing_blur_clear", True)
         set_composer(alice, "")
 
-        alternate = async_harness(
-            alice,
-            "createDirectConversation",
-            {
-                "peerPtid": self.ptids["charlie"],
-                "federationId": federation_id,
-            },
-        )
-        alternate_id = str((alternate or {}).get("conversationId") or "")
-        if not alternate_id:
-            raise GateError("alternate Direct conversation returned no ID")
         self.sync("alice", "friend", conversation_id)
         set_composer(alice, f"direct-switch-clear-{time.time_ns()}")
         self.wait_typing("bob", True, "Bob Direct typing before switch")
         select_conversation(
             alice,
-            "friend",
-            alternate_id,
+            "group",
+            alternate_group_id,
         )
         self.wait_typing("bob", False, "Bob Direct typing cleared by switch")
         self.assert_condition("direct_typing_switch_clear", True)
@@ -950,7 +940,31 @@ class NativeTypingGate(AcceptanceGate):
             self.message_ids["direct"] = direct_seed
             for actor in ("alice", "bob"):
                 self.sync(actor, "friend", direct_id)
-            self.prove_direct(direct_id, federation_id)
+
+            group = async_harness(
+                self.clients["alice"],
+                "createGroup",
+                {
+                    "name": f"typing-{time.time_ns()}",
+                    "federationId": federation_id,
+                    "memberPtids": [
+                        self.ptids["bob"],
+                        self.ptids["charlie"],
+                    ],
+                },
+            )
+            group_id = str((group or {}).get("groupUlid") or "")
+            if not group_id:
+                raise GateError("Group creation returned no conversation_id")
+            self.conversations["group"] = group_id
+            for actor in ACTORS:
+                self.sync(actor, "group", group_id)
+            group_seed = self.seed_message("alice", "group", group_id)
+            self.message_ids["group"] = group_seed
+            for actor in ACTORS:
+                self.sync(actor, "group", group_id)
+
+            self.prove_direct(direct_id, group_id)
             direct_before_station = station_readback(
                 direct_id,
                 direct_seed,
@@ -976,28 +990,6 @@ class NativeTypingGate(AcceptanceGate):
             )
             direct_after_engine = self.engine_snapshot("bob", direct_id, direct_seed)
 
-            group = async_harness(
-                self.clients["alice"],
-                "createGroup",
-                {
-                    "name": f"typing-{time.time_ns()}",
-                    "federationId": federation_id,
-                    "memberPtids": [
-                        self.ptids["bob"],
-                        self.ptids["charlie"],
-                    ],
-                },
-            )
-            group_id = str((group or {}).get("groupUlid") or "")
-            if not group_id:
-                raise GateError("Group creation returned no conversation_id")
-            self.conversations["group"] = group_id
-            for actor in ACTORS:
-                self.sync(actor, "group", group_id)
-            group_seed = self.seed_message("alice", "group", group_id)
-            self.message_ids["group"] = group_seed
-            for actor in ACTORS:
-                self.sync(actor, "group", group_id)
             self.prove_group(group_id, direct_id)
             group_event_count: int | None = None
             stable_group_observations = 0

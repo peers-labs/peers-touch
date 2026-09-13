@@ -1279,3 +1279,12 @@ real `false -> true` transition from a repeated active heartbeat. CA-W6 remains
 eligible immediately while preserving generation fences, stop priority,
 bounded memory, and zero durable writes. Focused, race-enabled, complete
 Conversation, and Go style checks pass.
+
+Exact-source Linux run
+`20260913T195024793204Z-4a1b87d2b764219f6f23c903a2876abf`
+then passed Direct start/stop, send-clear, and blur-clear before the Gate tried
+to create an Alice-Charlie Direct solely as a session-switch target.
+Production correctly denied that unrelated Direct because the authorized
+fixture establishes only the Alice-Bob friendship. The Gate correction reuses
+its already-required three-member Group as the alternate session; no Social
+relationship, Conversation authorization, or product behavior is weakened.

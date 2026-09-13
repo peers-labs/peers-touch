@@ -1100,7 +1100,7 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             and isinstance(node.args[1], ast.Constant)
             and node.args[1].value == "createDirectConversation"
         ]
-        self.assertEqual(len(create_direct_calls), 2)
+        self.assertEqual(len(create_direct_calls), 1)
         for call in create_direct_calls:
             payload = call.args[2]
             self.assertIsInstance(payload, ast.Dict)
@@ -1245,7 +1245,12 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             self.assertIn('"[data-chat-send]"', lifecycle)
             self.assertIn('"arguments[0].blur()"', lifecycle)
             self.assertIn("select_conversation(", lifecycle)
+        self.assertIn('"group",\n            alternate_group_id', prove_direct)
         self.assertNotIn('"submitTyping"', prove_direct)
+        self.assertLess(
+            source.index('"createGroup"'),
+            source.index("self.prove_direct("),
+        )
         self.assertEqual(
             prove_group.count('"submitTyping"'),
             1,
