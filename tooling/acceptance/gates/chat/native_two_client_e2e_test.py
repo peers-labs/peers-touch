@@ -226,6 +226,16 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             ),
             "accepted",
         )
+        snapshot["commandLedger"][0]["draftState"] = ""
+        self.assertEqual(
+            reconciled_command_snapshot_outcome(
+                snapshot,
+                "command-1",
+                "message-1",
+                "a" * 64,
+            ),
+            "accepted",
+        )
         snapshot["projection"] = None
         snapshot["intent"] = None
         snapshot["outbox"].update(

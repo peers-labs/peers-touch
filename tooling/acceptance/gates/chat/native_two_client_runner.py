@@ -275,7 +275,7 @@ def reconciled_command_snapshot_outcome(
         and original.get("attemptState") == "committed"
         and original.get("localState") == "committed"
         and original.get("outboxState") == "committed"
-        and original.get("draftState") == "accepted"
+        and original.get("draftState") in {"", "accepted"}
     ):
         return "accepted"
     if (
