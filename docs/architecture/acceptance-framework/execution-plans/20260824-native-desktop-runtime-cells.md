@@ -5729,6 +5729,12 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   `cfg(any(test, feature = "acceptance-webdriver"))` boundary. The focused
   assertion and the 97-test Native Chat contract suite pass; this is
   `SOURCE_CHECK`, not runtime proof.
+- The same checkpoint passes the exact Rust submitted-command fixture
+  regression, 24 W8A runner tests, focused W8A/W8B Conversation and Federation
+  Go packages, 29 W8C Desktop projection/group tests, 56 W8C/W9/W10 Native
+  runtime-binding tests, and 16 Local Development profile/deploy-resolution
+  tests. These results establish source readiness only; they do not replace a
+  Native functional journey or formal Acceptance proof.
 - Final exact-source redeployment is currently blocked by the Local Development
   Control Plane: the external `env` repository contains
   `peers-touch/chat-native-four` and `peers-touch/chat-native-five`, but those
