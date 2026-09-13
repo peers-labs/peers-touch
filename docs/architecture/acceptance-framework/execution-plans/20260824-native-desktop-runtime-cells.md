@@ -861,7 +861,7 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | in progress | Current-profile Direct, reply/thread, reaction, edit, recall, fresh Alice-to-Bob Native delivery at authority sequence 34, and historical cross-Station Alice/Bob avatar parity evidence exist while formal remaining Gates are incomplete. NDR-W8A has dedicated retained-command proof wiring in the current worktree; NDR-W8B remains exact-source Native-proof pending; NDR-W8C tracks authoritative remote-profile refresh, one PTID-keyed identity projection, recoverable Group creation, and the real three-client Create Group/MLS UI journey. Multi-device, backup recovery, and full three-client Group/MLS runtime cells remain. |
-| NDR-W8A submitted-command reconciliation | source-complete; Native proof pending | MP-D31 contract, generated bindings, authenticated `/conversation/command/results`, canonical receipt/outbox/exact Device Inbox resolver, transactional hard-cut migration from historical payload-hash result IDs, deterministic endpoint/command result identity, and Device Engine startup reconciliation are implemented. Conversation packages, migration regression, two static contract tests, Desktop bounded/cursor-neutral reconciliation, and rollback-on-integrity-failure tests pass. Exact-source deployment and stale Native command convergence remain `UNPROVEN`. |
+| NDR-W8A submitted-command reconciliation | source-complete; Native proof pending | MP-D31 contract, generated bindings, authenticated `/conversation/command/results`, canonical receipt/outbox/exact Device Inbox resolver, transactional hard-cut migration from historical payload-hash result IDs, deterministic endpoint/command result identity, and Device Engine startup reconciliation are implemented. The dedicated Acceptance-only fixture is actor-bound, authorization-gated, byte-preserving, cursor-neutral, and accepts the retained terminal shape `superseded/stale_delivery_plan` plus a failed logical pending row only when no projection or active replacement exists. Focused Rust, TypeScript, and Python checks pass. Exact-source Native convergence remains `UNPROVEN`; see the 2026-09-13 continuation checkpoint below. |
 | NDR-W8B federated ephemeral typing | source-complete; Native proof pending | MP-D32 signal, receiver-fixed ephemeral QoS, bounded no-row receiver dispatch, Runtime payload-kind-restricted transport, Authority-mediated routing, production identity-directory binding, and local/remote common receiver composition are implemented. Conversation and Federation package tests pass. Exact-source cross-Station Direct/Group typing, TTL/session/disconnect, deny, partial-failure, and durable-row runtime evidence remain `UNPROVEN`. |
 | NDR-W8C federated contact identity and Group genesis reliability | source-complete; Native proof pending | Station remote-cache refresh, relationship identity contract, one PTID-keyed Desktop projection, readable Federation/Home Station rows, recoverable Group creation, accepted-Group convergence, typed errors, prototype parity, and UI-driven Native Gate logic are implemented and statically proven. Exact-source three-client Native Group/MLS proof remains `UNPROVEN`. |
 | NDR-W9 Windows cell | W9-A/B/C done; Product Closure reaches `reaction.ui`; W9-D remains partial | Exact-source Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` at `2ae0254691d97f16c3c08ef3e8639bdd91a91eac` proves Direct open/reopen, canonical Group genesis, Alice sequence 2, Bob sequence 3, Alice thread-reply sequence 4, toolbar geometry, and authority reaction sequence 5. Bob's Device Inbox lane 7 contains a canonical `ActorReadCursor` whose event identity is the payload SHA-256; the client expected a retired `read:` prefix, rejected the cursor as `MessageReceipt`, and blocked the lane-8 reaction. The shared Messaging Core decoder correction and four local Chat Gates pass, but exact-source deployment and Product Closure rerun remain pending. |
@@ -5677,3 +5677,57 @@ checks. Deployment and shared runtime evidence remain serial.
 Carol three-client Group/MLS remains parked because creating another worktree is a
 separate Git topology operation. No reset, commit, push, deployment, branch switch,
 or worktree creation is implied by MP-D31/MP-D32 acceptance.
+
+### 2026-09-13 W8A/W8B continuation checkpoint
+
+- Draft PR `#111` contains the Development Workflow control plane, W8A/W8B
+  Acceptance repairs, the exact submitted-command fixture, and the synchronized
+  Native client history. The latest code checkpoint before this plan update is
+  `2ff2cd9ca3cce83b501f08c16163f4c543ea9de2`.
+- `peers-group-chat` and `peers-chat-high-chat` are clean at the same commit and
+  tree. The synchronization preserved both histories and retained the
+  Conversation Authority integration tree as canonical; no reset, force update,
+  or new worktree was used.
+- `chat-native-four` and `chat-native-five` were non-destructively deployed and
+  attest build commit `1db3461b354a`. They do not yet attest the later
+  `2ff2cd9ca` source checkpoint.
+- The exact retained identity is:
+  - actor: `alice`;
+  - conversation: `direct-060c1c0291de8a853548f6b289895557`;
+  - message: `01M2B43C1WNPRK9JHACMFZ4DA4`;
+  - command: `01M2B43C65M3QRQVK529SZTMSS`;
+  - expected outcome: `terminal_superseded`;
+  - retained command SHA-256:
+    `e73be505f57465f67a6835e0d7768481f713f1f7c796645ff974258f6fda3a75`.
+- Run `20260913T133705385798Z-f3272b11978049b29f232b5c4566fdee`
+  is `FAIL/PARTIAL/UNPROVEN`: an interrupted predecessor left the Native cell
+  occupied. Cleanup subsequently removed the stale processes and released the
+  six declared ports.
+- Run `20260913T134222022937Z-8e861a0e0457040fdd46c394f4125914`
+  is `FAIL/PARTIAL/UNPROVEN`: source/build identity, cross-worktree topology,
+  two Native clients, actor/device isolation, and cleanup passed, but the stale
+  `direct-8933203d465fd79ac34b9b33953757a2` summary identity did not bind the
+  retained command.
+- Run `20260913T134640973568Z-3bb4d59d7b053fe256345c39086ae6a5`
+  is `FAIL/PARTIAL/UNPROVEN`: the corrected conversation bound the exact command,
+  and exposed the retained logical pending row as `failed` after its replacement
+  command also failed. The fixture now accepts that terminal shape only under
+  the existing no-projection/no-active-replacement fences; its focused Rust
+  regression passes.
+- Final exact-source redeployment is currently blocked by the Local Development
+  Control Plane: the external `env` repository contains
+  `peers-touch/chat-native-four` and `peers-touch/chat-native-five`, but those
+  environment definitions are untracked. The new governance rule correctly
+  rejects `make profile` and `make station` until the Environment Owner
+  Git-tracks/reviews those existing profiles. Do not bypass this guard by
+  invoking `deploy.sh` directly or by creating an authorization file.
+- After the Environment Owner resolves that tracked-profile gap, deploy the
+  current MR HEAD to both Stations, verify `/app-meta/version`, and rerun
+  `chat-native-submitted-command-recovery-e2e` with
+  `PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND=1`,
+  `PT_CHAT_NATIVE_RETAINED_ENGINE_STATE_ROLES=alice`, the two existing W8A
+  persistent storage roots, and the exact tuple above.
+- NDR-W8B remains source-complete but runtime-unproven. Direct start/stop,
+  lost-stop TTL, disconnect, and session-switch plus Group cross-Station fan-out,
+  deny, partial failure, overload, and zero durable typing-row evidence remain
+  required after W8A.

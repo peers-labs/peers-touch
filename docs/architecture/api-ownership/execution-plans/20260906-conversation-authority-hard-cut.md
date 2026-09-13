@@ -596,7 +596,7 @@ matrices. Local/static success cannot replace native receiver proof.
 | CA-W4 Shared Federation and Social | done | Shared Federation supplies authenticated frames, durable outbox/inbox leases, retry/dedup/hash-conflict behavior, typed Conversation and Social receivers, and same-Station loopback. Conversation command conflicts return durable authority results bound to the originating command SHA-256; remote Device Inbox lane sequence remains target-owned. Social enforces receiver-local block/existing-relationship policy, atomically persists command/projection/result-outbox state, binds results to exact outgoing command bytes, rejects retryable result frames before durable resolution, and resolves remote actor keys from PTID plus a pinned Home Station profile/locator chain rather than `ActorRef.acct`; cached remote keys are revalidated against the latest signed active-key profile. The exact CA-W4 race command, focused `go vet`, `gofmt`, `git diff --check`, Go style, and `messaging-platform-contract` run `20260906T204614333077Z-6c52a4241e67fb14b3a0663a346aa7a5` pass. Two independent post-fix reviews report zero P0/P1 findings. Live DHT/Relay two-Station convergence remains `UNPROVEN` until CA-W5 production composition and CA-W6 runtime Acceptance. |
 | CA-W5-P0 Donor reconciliation | done | `peers-social` remained a read-only donor. The unique Conversation query/persistence/HTTP behavior was reconciled semantically into `peers-group-chat`; divergent contracts, generated bindings, and overlapping Desktop/Mobile/Messaging Core code were rejected. The retired 105-file `conversation/engine/` tree is deleted, and the final source contains no duplicate engine owner. |
 | CA-W5 Atomic production hard cut | source checkpoint ready / runtime unproven | AO-D07 is implemented proto-first across Station, Desktop, Mobile, and portable Messaging Core. Canonical Conversation production composition now owns creation, commands, event truth, follower recovery, attachment control/data forwarding, and Device Inbox effects; Key Exchange owns local reservation and exact-replay irreversible remote KeyPackage claims; shared Federation owns authenticated route/relay transport. Retired Envelope, flat Conversation, engine, superseded proto, generated bindings, callers, stores, aliases, and fallbacks are deleted. `proto-build` run `20260907T095814186121Z-b39852f3e6f655416a20f3194dc3699d`, `station-api-ownership` run `20260907T095552389681Z-9035a2fbed82ec5a54b98f5b260fe383`, `station-messaging-unit` run `20260907T095534375916Z-3761b27ef989ec4449bf94b82a4a2523`, `messaging-platform-contract` run `20260907T095650555959Z-0f85322adf5c78105d9ca8f15a4a351b`, `desktop-check` run `20260907T095738644264Z-aa04882b997b2eeb5f7e9b2001600a10`, and `chat-native-visible-static` run `20260907T100757881125Z-070fde35dba471e1da0351dc8d030cb0` pass. Focused Station race/vet, Desktop 540 tests and build, Desktop Rust library check, Mobile full check, Messaging Core 104+2 tests, Go style, and diff checks pass. The Gap Detector correctly keeps product proof `UNPROVEN` until the CA-W6 native receiver gates run. Repository-wide Station tests also contain unrelated pre-existing Frame/vendor failures and live `:18080` tests; they do not establish CA-W6 runtime proof. |
-| CA-W6 Runtime Acceptance | in progress / remote authority commit proven; read-cursor queue projection locally corrected | Windows Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` at exact source `2ae0254691d97f16c3c08ef3e8639bdd91a91eac` proves distinct Station binding, Direct create/reopen, canonical Group genesis, Bob's remote authority commit, bidirectional transcript/thread projection, and authority reaction sequence 5. Bob's lane 7 canonical `ActorReadCursor` was rejected because Desktop and portable Messaging Core expected a retired `read:` event prefix instead of the payload SHA-256 identity produced by Conversation. The shared decoder correction and four local Chat Gates pass; cleanup is `DONE/PROVEN`, while complete Product Closure and PostgreSQL contention remain `UNPROVEN` pending checkpoint commit, exact-source deployment, and rerun. |
+| CA-W6 Runtime Acceptance | in progress / W8A fixture source-complete; final runtime proof pending | Windows Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` proves the earlier remote authority path through reaction sequence 5. The later MP-D31/MP-D32 source and dedicated W8A Acceptance fixture are present in Draft PR `#111`; focused checks pass. Both chat-native Stations attest `1db3461b354a`, while the later source checkpoint is `2ff2cd9ca3cce83b501f08c16163f4c543ea9de2`. W8A runs `20260913T133705385798Z-f3272b11978049b29f232b5c4566fdee`, `20260913T134222022937Z-8e861a0e0457040fdd46c394f4125914`, and `20260913T134640973568Z-3bb4d59d7b053fe256345c39086ae6a5` remain `PARTIAL/UNPROVEN`; they respectively exposed stale Native-cell ownership, a stale conversation ID, and the retained failed-pending terminal shape. The first two are corrected and the third has a focused passing regression. Final deployment/rerun is blocked by untracked `chat-native-four/five` definitions in the external `env` repository under the accepted environment-creation guard. |
 | CA-W7 Completion/docs/knowledge audit | pending | — |
 
 ## 14. Risks And Escalation
@@ -1090,3 +1090,30 @@ CA-W6 remains `PARTIAL/UNPROVEN` pending a local checkpoint commit, exact-source
 deployment to station-four, station-five, and sixwin, and a Product
 Closure-only rerun. Dependent Windows Gates and PostgreSQL contention remain
 deferred.
+
+The 2026-09-13 continuation is carried by Draft PR `#111`. The current source
+checkpoint before this plan update is
+`2ff2cd9ca3cce83b501f08c16163f4c543ea9de2`; `peers-group-chat` and
+`peers-chat-high-chat` are clean and synchronized to the same commit/tree.
+Profiles `chat-native-four` and `chat-native-five` are healthy at build
+`1db3461b354a`, but the accepted Local Development Control Plane now rejects
+their next deployment because the corresponding definitions in the external
+`env` repository are not Git-tracked. This is an Environment Owner boundary:
+do not bypass `make profile`/`make station`, invoke `deploy.sh` directly, or
+mint an authorization file.
+
+Once the Environment Owner tracks those existing profiles, deploy the current
+MR HEAD to both Stations and resume W8A with Alice's exact retained tuple:
+
+```text
+conversation: direct-060c1c0291de8a853548f6b289895557
+message:      01M2B43C1WNPRK9JHACMFZ4DA4
+command:      01M2B43C65M3QRQVK529SZTMSS
+outcome:      terminal_superseded
+```
+
+The dedicated Gate must run with its explicit acceptance-only fixture
+authorization and the existing W8A Alice/Bob storage roots. CA-W6 then
+continues through W8B federated typing and the remaining Social-before-Chat /
+Contacts runtime cells. CA-W7 remains pending until those runtime obligations
+are proved or explicitly retained as `UNPROVEN`.
