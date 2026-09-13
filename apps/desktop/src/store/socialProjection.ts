@@ -37,6 +37,11 @@ export interface DesktopUnifiedConversationLike {
   lastActivity: Date;
   unread: number;
   peerPtid?: string;
+  username?: string;
+  federatedHandle?: string;
+  homeStationDomain?: string;
+  homeStationPeerId?: string;
+  federationName?: string;
   memberCount?: number;
   muted?: boolean;
   alertEnabled?: boolean;
@@ -181,6 +186,11 @@ export type DesktopIMConversationProjection = IMConversationProjection & {
   authorityStationId?: string;
   federationId?: string;
   peerPtid?: string;
+  username?: string;
+  federatedHandle?: string;
+  homeStationDomain?: string;
+  homeStationPeerId?: string;
+  federationName?: string;
   memberCount?: number;
 };
 
@@ -302,6 +312,11 @@ export function projectDesktopIMConversation(conversation: DesktopUnifiedConvers
     authorityStationId: conversation.authorityStationId ?? '',
     federationId: conversation.federationId ?? '',
     peerPtid: conversation.peerPtid,
+    username: conversation.username,
+    federatedHandle: conversation.federatedHandle,
+    homeStationDomain: conversation.homeStationDomain,
+    homeStationPeerId: conversation.homeStationPeerId,
+    federationName: conversation.federationName,
     memberCount: conversation.memberCount,
   };
 }

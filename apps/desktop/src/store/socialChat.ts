@@ -1530,6 +1530,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     try {
       await get().loadSessions();
       if (!Object.prototype.hasOwnProperty.call(get().groupMembers, groupUlid)) {
+        if (get().pendingGroupCreations[groupUlid]) {
+          get().setGroupSecurityState(groupUlid, 'establishing');
+          return;
+        }
         throw new Error(`conversation_members_unavailable:${groupUlid}`);
       }
     } catch (error) {

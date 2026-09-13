@@ -45,6 +45,9 @@ from tooling.acceptance.gates.chat.native_support import (
 
 GATE_ID = "chat-native-two-client-e2e"
 CURRENT_PROFILE_GATE_ID = "chat-native-current-profile-two-client-e2e"
+SUBMITTED_COMMAND_RECOVERY_GATE_ID = (
+    "chat-native-submitted-command-recovery-e2e"
+)
 CURRENT_PROFILE_ACTOR_WORKTREES = {
     "alice": "peers-chat-high-chat",
     "bob": "peers-group-chat",
@@ -88,6 +91,16 @@ CURRENT_PROFILE_REQUIRED_ASSERTIONS = {
     "current_profile_cross_worktree",
     "current_profile_group_chat_initiator",
     "current_profile_persistent_device_state",
+}
+SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS = {
+    "source_build_runtime_identity",
+    "current_profile_cross_worktree",
+    "current_profile_group_chat_initiator",
+    "current_profile_persistent_device_state",
+    "native_runtime",
+    "actor_isolation",
+    "submitted_command_converged",
+    "resources_released",
 }
 
 
@@ -1354,16 +1367,18 @@ class NativeTwoClientGate(AcceptanceGate):
                     self.prove_expected_command_reconciliation,
                     self.expected_reconciliation_target()["actor"],
                 )
-            conversation_id = self.step(
-                "conversation.open",
-                self.open_conversation,
-            )
-            self.step(
-                "avatar.bundled",
-                self.prove_demo_avatar_sources,
-            )
-            self.prove_direction(*self.direction_order)
-            self.prove_direction(*reversed(self.direction_order))
+            conversation_id = ""
+            if self.gate_id != SUBMITTED_COMMAND_RECOVERY_GATE_ID:
+                conversation_id = self.step(
+                    "conversation.open",
+                    self.open_conversation,
+                )
+                self.step(
+                    "avatar.bundled",
+                    self.prove_demo_avatar_sources,
+                )
+                self.prove_direction(*self.direction_order)
+                self.prove_direction(*reversed(self.direction_order))
             for actor in ("alice", "bob"):
                 self.collect_client_evidence(actor)
         finally:
@@ -1385,13 +1400,22 @@ class NativeTwoClientGate(AcceptanceGate):
             )
 
         assertion_names = {assertion.name for assertion in self.report.assertions}
-        missing = REQUIRED_ASSERTIONS - assertion_names
+        required_assertions = (
+            SUBMITTED_COMMAND_RECOVERY_REQUIRED_ASSERTIONS
+            if self.gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID
+            else REQUIRED_ASSERTIONS
+        )
+        missing = required_assertions - assertion_names
         if missing:
             raise GateError(f"required assertions are missing: {sorted(missing)}")
         return {
             "runtimeCell": self.runtime_binding.cell_id,
             "runtimeCellRunId": source_identity["runtimeCell"]["runId"],
-            "journey": "direct-delivered-receipt",
+            "journey": (
+                "submitted-command-recovery"
+                if self.gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID
+                else "direct-delivered-receipt"
+            ),
             "conversationId": conversation_id,
             "sourceIdentity": source_identity,
             "launchOrder": order,

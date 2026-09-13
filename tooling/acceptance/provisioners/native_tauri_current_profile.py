@@ -37,6 +37,13 @@ from tooling.acceptance.provisioners.remote_source_identity import (
 
 
 GATE_ID = "chat-native-current-profile-two-client-e2e"
+SUBMITTED_COMMAND_RECOVERY_GATE_ID = (
+    "chat-native-submitted-command-recovery-e2e"
+)
+SUPPORTED_GATE_IDS = {
+    GATE_ID,
+    SUBMITTED_COMMAND_RECOVERY_GATE_ID,
+}
 CLIENT_ROLES = ("alice", "bob")
 CLIENT_WORKTREE_NAMES = {
     "alice": "peers-chat-high-chat",
@@ -789,7 +796,7 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
-            if gate_id != GATE_ID:
+            if gate_id not in SUPPORTED_GATE_IDS:
                 raise BlockedError(
                     reason=f"unsupported current-profile Native Gate: {gate_id}",
                     resource=f"gate-environment:{gate_id}",

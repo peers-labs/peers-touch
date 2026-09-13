@@ -127,10 +127,14 @@ export async function refreshSocialProjection(label: string, includeNotification
     ]);
 
     const refreshed = useSocialChatStore.getState();
+    const relationships = useRelationshipsStore.getState();
     const peerPtids = Array.from(new Set(
-      Object.values(refreshed.conversationMembers)
-        .flat()
-        .map((member) => member.ptid)
+      [
+        ...Object.values(refreshed.conversationMembers)
+          .flat()
+          .map((member) => member.ptid),
+        ...relationships.mutualFriends.map((friend) => friend.actorPtid),
+      ]
         .filter((ptid) => ptid.startsWith('ptid:') && ptid !== refreshed.currentUserPtid),
     ));
     await Promise.allSettled([
@@ -201,9 +205,20 @@ async function bootstrapSocialProjection(actorPtid: string, sequence: number): P
   if (sequence !== bootstrapSequence) return;
 
   const refreshed = useSocialChatStore.getState();
+  const relationships = useRelationshipsStore.getState();
+  const peerPtids = Array.from(new Set(
+    [
+      ...Object.values(refreshed.conversationMembers)
+        .flat()
+        .map((member) => member.ptid),
+      ...relationships.mutualFriends.map((friend) => friend.actorPtid),
+    ]
+      .filter((ptid) => ptid.startsWith('ptid:') && ptid !== refreshed.currentUserPtid),
+  ));
   await Promise.allSettled([
     refreshed.loadGroupUnreadCounts(),
     refreshed.loadConversationPreviews(),
+    ...peerPtids.map((ptid) => refreshed.loadPeerProfile(ptid, true)),
     notifications.loadNotifications(),
   ]);
 

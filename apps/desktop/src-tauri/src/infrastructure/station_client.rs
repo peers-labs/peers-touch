@@ -15,7 +15,14 @@ use std::time::Duration;
 const INTERACTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const TURN_EXECUTION_WALL_TIME: Duration = Duration::from_secs(300);
 const TURN_EXECUTION_RESPONSE_MARGIN: Duration = Duration::from_secs(5);
-const SAFE_ERROR_DETAIL_FIELDS: [&str; 3] = ["resource_id", "expected_revision", "actual_revision"];
+const SAFE_ERROR_DETAIL_FIELDS: [&str; 6] = [
+    "resource_id",
+    "expected_revision",
+    "actual_revision",
+    "operation",
+    "field",
+    "reason",
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum StationTransportPolicy {
@@ -1634,6 +1641,9 @@ mod tests {
                 "resource_id":"agent-1",
                 "expected_revision":"7",
                 "actual_revision":"8",
+                "operation":"application.prepare_group",
+                "field":"home_station",
+                "reason":"is not an active Federation Station",
                 "ignored_string":"not-safe",
                 "ignored_number":9
             }"#,
@@ -1655,6 +1665,9 @@ mod tests {
         assert_eq!(details["resource_id"], "agent-1");
         assert_eq!(details["expected_revision"], "7");
         assert_eq!(details["actual_revision"], "8");
+        assert_eq!(details["operation"], "application.prepare_group");
+        assert_eq!(details["field"], "home_station");
+        assert_eq!(details["reason"], "is not an active Federation Station");
         assert!(details.get("ignored_string").is_none());
         assert!(details.get("ignored_number").is_none());
     }

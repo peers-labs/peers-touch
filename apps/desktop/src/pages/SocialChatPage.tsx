@@ -381,8 +381,13 @@ export function SocialChatPage() {
                 kind: 'friend',
                 peerPtid: directOpenIntent.peerPtid,
                 federationId: directOpenIntent.federationId,
+                federationName: directOpenIntent.federationName,
                 displayName: directOpenIntent.displayName,
                 avatar: directOpenIntent.avatar,
+                username: directOpenIntent.username,
+                federatedHandle: directOpenIntent.federatedHandle,
+                homeStationDomain: directOpenIntent.homeStationDomain,
+                homeStationPeerId: directOpenIntent.homeStationPeerId,
               });
             }}
           />

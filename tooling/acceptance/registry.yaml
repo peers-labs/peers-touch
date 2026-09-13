@@ -83,7 +83,9 @@
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
           "tooling/acceptance/gates/chat/native_two_client_runner.py",
           "tooling/acceptance/gates/chat/native_two_client_e2e.py",
-          "tooling/acceptance/gates/chat/native_current_profile_two_client_e2e.py"
+          "tooling/acceptance/gates/chat/native_current_profile_two_client_e2e.py",
+          "tooling/acceptance/gates/chat/native_submitted_command_recovery_entry.py",
+          "tooling/acceptance/gates/chat/native_submitted_command_recovery_e2e.py"
         ]
       },
       "require": [
@@ -92,6 +94,7 @@
         "desktop-check",
         "chat-native-visible-static",
         "chat-native-current-profile-two-client-e2e",
+        "chat-native-submitted-command-recovery-e2e",
         "chat-native-two-client-e2e"
       ]
     },
@@ -123,25 +126,48 @@
       ],
       "when": {
         "paths": [
+          "model/domain/social/relationship.proto",
+          "apps/station/frame/touch/federation/cache/doc.go",
+          "apps/station/frame/touch/federation/cache/cache.go",
+          "apps/station/frame/touch/federation/cache/cache_test.go",
           "apps/station/app/subserver/social/infrastructure/follow_repo.go",
+          "apps/station/app/subserver/social/application/relationship_service.go",
           "apps/station/app/subserver/social/application/relationship_service_test.go",
           "apps/desktop/src/store/federation.ts",
           "apps/desktop/src/store/relationships.ts",
           "apps/desktop/src/store/friendshipProjection.ts",
           "apps/desktop/src/services/socialRealtime.ts",
+          "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
+          "apps/desktop/src-tauri/src/messaging/group_genesis.rs",
+          "apps/desktop/src-tauri/src/messaging/engine.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
+          "apps/desktop/src/acceptance/chat/harness.ts",
           "apps/desktop/src/components/chat/useActiveSocialChatStore.ts",
           "apps/desktop/src/components/chat/FindPeopleModal.tsx",
           "apps/desktop/src/components/chat/CreateGroupModal.tsx",
+          "apps/desktop/src/components/chat/CreateGroupModal.test.ts",
+          "apps/desktop/src/components/chat/ChatActorIdentityRow.tsx",
           "apps/desktop/src/components/chat/ChatContactsPanel.tsx",
           "apps/desktop/src/components/chat/ChatSessionList.tsx",
+          "apps/desktop/src/components/chat/ChatSearchDropdown.tsx",
           "apps/desktop/src/components/chat/contactSelection.ts",
+          "apps/desktop/src/services/errorMappings/chatErrorMapping.ts",
+          "apps/desktop/src/store/socialChat.ts",
+          "apps/desktop/src/components/profile/PublicProfileCard.tsx",
           "apps/desktop/src/pages/SocialChatPage.tsx",
+          "packages/locales/en/chat.json",
+          "packages/locales/en/errors.json",
+          "packages/locales/zh-CN/chat.json",
+          "packages/locales/zh-CN/errors.json",
+          "packages/prototypes/desktop/features/social-chat/**",
+          "docs/architecture/social/prototype/README.md",
           "tooling/acceptance/gates/chat/native_group_mls_runner.py",
           "tooling/acceptance/gates/chat/native_group_mls_runner_test.py",
           "tooling/acceptance/features/chat-native-friendship-projection.yaml"
         ]
       },
       "require": [
+        "proto-build",
         "desktop-check",
         "chat-native-visible-static",
         "chat-native-group-mls-e2e"

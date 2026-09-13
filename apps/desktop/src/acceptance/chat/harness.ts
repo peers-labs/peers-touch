@@ -370,12 +370,16 @@ export function installAcceptanceHarness(): void {
       );
       const groupUlid = result.conversationId || conversationId;
       const social = useSocialChatStore.getState();
+      social.setGroupSecurityState(groupUlid, 'establishing');
+      social.trackPendingGroupCreation(groupUlid, result.commandId);
       await social.loadGroups();
-      await social.loadGroupMembers(groupUlid).catch(() => {});
+      await social.loadGroupMembers(groupUlid);
       social.selectGroup(groupUlid);
       social.setActiveTab('group');
       return {
         groupUlid,
+        commandId: result.commandId,
+        state: result.state,
         memberCount: useSocialChatStore.getState().groupMembers[groupUlid]?.length ?? 0,
       };
     },
@@ -384,13 +388,23 @@ export function installAcceptanceHarness(): void {
       const social = useSocialChatStore.getState();
       await imServiceV1.conversation.syncFromStation(groupUlid, _limit).catch(() => {});
       await social.loadGroups();
-      await social.loadGroupMembers(groupUlid).catch(() => {});
+      await social.loadGroupMembers(groupUlid);
       await social.loadMessages(groupUlid, 'group');
       social.selectGroup(groupUlid);
       social.setActiveTab('group');
-      const messages = useSocialChatStore.getState().getIMMessages('group', groupUlid);
+      const state = useSocialChatStore.getState();
+      const messages = state.getIMMessages('group', groupUlid);
+      const conversation = state.getIMConversations().find(
+        (item) => item.kind === 'group' && item.id === groupUlid,
+      );
       return {
         groupUlid,
+        groupName: conversation?.title ?? '',
+        memberPtids: (state.groupMembers[groupUlid] ?? [])
+          .map((member) => member.ptid)
+          .filter(Boolean)
+          .sort(),
+        securityState: state.groupSecurityState[groupUlid] ?? 'unknown',
         messageCount: messages.length,
         syncedCount: messages.length,
         pagesFetched: 1,
@@ -782,6 +796,25 @@ export function installAcceptanceHarness(): void {
         actorPtid: String(device?.actor_ptid ?? ''),
         deviceId,
         active,
+      };
+    },
+
+    async mlsReadiness() {
+      const actorPtid = activeActorPtid();
+      const device = await api.messagingAcceptanceCurrentEndpoint(actorPtid);
+      const deviceId = String(device?.device_id ?? '');
+      const devices = await imServiceV1.device.list();
+      const active = devices.some(candidate => (
+        candidate.ref?.actor?.ptid === actorPtid
+        && candidate.ref?.deviceId === deviceId
+        && candidate.status === ActorDeviceStatus.ACTIVE
+      ));
+      return {
+        actorPtid,
+        deviceId,
+        active,
+        availableKeyPackages:
+          await imServiceV1.keyPackage.countAvailable(),
       };
     },
 

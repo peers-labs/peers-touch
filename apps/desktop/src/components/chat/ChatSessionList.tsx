@@ -29,8 +29,17 @@ import {
   projectGroupAvatarSlots,
   resolveActorIdentity,
 } from '../../store/socialProfileProjection';
+import {
+  chatActorIdentityMetadata,
+  projectChatFriendContacts,
+  type ChatActorIdentityProjection,
+} from '../../store/friendshipProjection';
 import type { DesktopIMConversationProjection } from '../../store/socialProjection';
-import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
+import {
+  useActiveChatFederationSlice,
+  useActiveChatRelationshipsSlice,
+  useActiveSocialChatSlice,
+} from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
 import type { FriendContactSelection } from './contactSelection';
 import { CreateGroupModal } from './CreateGroupModal';
@@ -118,6 +127,23 @@ function relativeTime(d: Date, t: (key: string, opts?: Record<string, unknown>) 
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
+function conversationWithActorIdentity(
+  conversation: DesktopIMConversationProjection,
+  identity: ChatActorIdentityProjection,
+): DesktopIMConversationProjection {
+  return {
+    ...conversation,
+    title: identity.displayName,
+    avatar: identity.avatarUrl,
+    username: identity.username,
+    federatedHandle: identity.federatedHandle,
+    homeStationDomain: identity.homeStationDomain,
+    homeStationPeerId: identity.homeStationPeerId,
+    federationId: identity.federationId,
+    federationName: identity.federationName,
+  };
+}
+
 interface ChatSessionListProps {
   onConversationSelected: () => void;
   onOpenDirect: (contact: FriendContactSelection) => void;
@@ -178,6 +204,12 @@ export function ChatSessionList({
     loadSessions: state.loadSessions,
     loadGroups: state.loadGroups,
   }));
+  const mutualFriends = useActiveChatRelationshipsSlice(
+    (state) => state.mutualFriends,
+  );
+  const federations = useActiveChatFederationSlice(
+    (state) => state.federations,
+  );
 
   const [searchText, setSearchText] = useState('');
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -189,8 +221,8 @@ export function ChatSessionList({
   // do NOT re-fire those calls here, otherwise the cold path runs every
   // fetch twice in parallel and the spinner blocks longer than necessary.
 
-  const visibleConversations = useMemo(
-    () => getIMConversations().filter((c) => !c.hidden),
+  const conversationProjection = useMemo(
+    () => getIMConversations(),
     [
       getIMConversations,
       conversations,
@@ -204,6 +236,45 @@ export function ChatSessionList({
       peerProfiles,
       friendRequests,
     ],
+  );
+  const friendIdentities = useMemo(
+    () => projectChatFriendContacts({
+      mutualFriends,
+      conversations: conversationProjection,
+      friendRequests,
+      peerProfiles,
+      currentUserPtid: currentUserPtid || '',
+      federations,
+    }),
+    [
+      conversationProjection,
+      federations,
+      friendRequests,
+      mutualFriends,
+      currentUserPtid,
+      peerProfiles,
+    ],
+  );
+  const friendIdentitiesByPtid = useMemo(
+    () => new Map(friendIdentities.map((identity) => [
+      identity.actorPtid,
+      identity,
+    ])),
+    [friendIdentities],
+  );
+  const visibleConversations = useMemo(
+    () => conversationProjection
+      .filter((conversation) => !conversation.hidden)
+      .map((conversation) => {
+        if (conversation.kind !== 'friend' || !conversation.peerPtid) {
+          return conversation;
+        }
+        const identity = friendIdentitiesByPtid.get(conversation.peerPtid);
+        return identity
+          ? conversationWithActorIdentity(conversation, identity)
+          : conversation;
+      }),
+    [conversationProjection, friendIdentitiesByPtid],
   );
 
   const handleSearchSelect = async (c: DesktopIMConversationProjection) => {
@@ -240,8 +311,13 @@ export function ChatSessionList({
         kind: 'friend',
         peerPtid: c.peerPtid,
         federationId: c.federationId || '',
+        federationName: c.federationName || '',
         displayName: c.title,
         avatar: c.avatar,
+        username: c.username || '',
+        federatedHandle: c.federatedHandle || '',
+        homeStationDomain: c.homeStationDomain || '',
+        homeStationPeerId: c.homeStationPeerId || '',
       });
     }
   };
@@ -250,40 +326,37 @@ export function ChatSessionList({
     if (!searchText.trim()) return [];
     const q = searchText.toLowerCase();
 
-    const fromConversations = getIMConversations().filter((c) => c.title.toLowerCase().includes(q));
+    const fromConversations = visibleConversations.filter((conversation) => (
+      conversation.title.toLowerCase().includes(q)
+      || conversation.federatedHandle?.toLowerCase().includes(q)
+      || conversation.homeStationDomain?.toLowerCase().includes(q)
+      || conversation.federationName?.toLowerCase().includes(q)
+    ));
 
     const existingPeerIds = new Set(fromConversations.map((c) => c.peerPtid).filter(Boolean));
-    const myId = currentUserPtid || '';
-    const fromContacts: DesktopIMConversationProjection[] = friendRequests
-      .filter((r) => r.status === 2)
-      .map((r) => {
-        const isSender = r.senderPtid === myId;
-        const peerId = isSender ? r.receiverPtid : r.senderPtid;
-        const requestPeerName = isSender ? r.receiverDisplayName : r.senderDisplayName;
-        const requestPeerAvatar = isSender ? r.receiverAvatar : r.senderAvatar;
-        const profile = peerProfiles[peerId];
-        const peerName = requestPeerName
-          || profile?.display_name
-          || profile?.username
-          || peerId;
-        const peerAvatar = requestPeerAvatar || profile?.avatar || '';
-        return {
-          peerId,
-          peerName,
-          peerAvatar,
-          federationId: r.federationId,
-        };
-      })
-      .filter(({ peerId, peerName }) =>
-        !existingPeerIds.has(peerId) && peerName.toLowerCase().includes(q),
-      )
-      .map(({ peerId, peerName, peerAvatar, federationId }) => ({
-        id: peerId,
+    const fromContacts: DesktopIMConversationProjection[] = friendIdentities
+      .filter((identity) => (
+        !existingPeerIds.has(identity.actorPtid)
+        && [
+          identity.displayName,
+          identity.username,
+          identity.federatedHandle,
+          identity.homeStationDomain,
+          identity.federationName,
+        ].some((value) => value.toLowerCase().includes(q))
+      ))
+      .map((identity) => ({
+        id: identity.actorPtid,
         kind: 'friend' as const,
-        title: peerName,
-        avatar: peerAvatar || '',
-        peerPtid: peerId,
-        federationId,
+        title: identity.displayName,
+        avatar: identity.avatarUrl,
+        peerPtid: identity.actorPtid,
+        username: identity.username,
+        federatedHandle: identity.federatedHandle,
+        homeStationDomain: identity.homeStationDomain,
+        homeStationPeerId: identity.homeStationPeerId,
+        federationId: identity.federationId,
+        federationName: identity.federationName,
         lastActivityMs: 0,
         unread: 0,
         visibleUnread: 0,
@@ -296,7 +369,7 @@ export function ChatSessionList({
       }));
 
     return [...fromConversations, ...fromContacts];
-  }, [searchText, getIMConversations, conversations, peerProfiles, friendRequests, currentUserPtid]);
+  }, [friendIdentities, searchText, visibleConversations]);
 
   const plusMenuItems = [
     {
@@ -471,6 +544,16 @@ export function ChatSessionList({
               const timeStr = relativeTime(new Date(c.lastActivityMs), t);
               const unread = c.visibleUnread;
               const localState = conversationLocalState[`${c.kind}:${c.id}`];
+              const identityMetadata = c.kind === 'friend' && c.peerPtid
+                ? chatActorIdentityMetadata({
+                    actorPtid: c.peerPtid,
+                    federatedHandle: c.federatedHandle || '',
+                    homeStationDomain: c.homeStationDomain || '',
+                    homeStationPeerId: c.homeStationPeerId || '',
+                    federationId: c.federationId || '',
+                    federationName: c.federationName || '',
+                  })
+                : '';
 
               let subtitle = '';
               if (c.preview) {
@@ -496,6 +579,9 @@ export function ChatSessionList({
                 } else {
                   subtitle = text;
                 }
+              }
+              if (identityMetadata) {
+                subtitle = [identityMetadata, subtitle].filter(Boolean).join(' · ');
               }
 
               const contextMenuTarget = `context-menu:chat:${c.kind}:${c.id}`;
@@ -564,6 +650,10 @@ export function ChatSessionList({
                             <span
                               data-chat-avatar-ptid={c.peerPtid || ''}
                               data-chat-avatar-src={c.avatar || ''}
+                              data-chat-identity-federated-handle={c.federatedHandle || ''}
+                              data-chat-identity-home-station-domain={c.homeStationDomain || ''}
+                              data-chat-identity-home-station-peer-id={c.homeStationPeerId || ''}
+                              data-chat-identity-federation-id={c.federationId || ''}
                               style={{ display: 'inline-flex', flexShrink: 0 }}
                             >
                               <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />

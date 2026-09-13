@@ -50,6 +50,7 @@
     "desktop-check",
     "chat-native-visible-static",
     "chat-native-current-profile-two-client-e2e",
+    "chat-native-submitted-command-recovery-e2e",
     "chat-native-two-client-e2e"
   ],
   "acceptance": {
