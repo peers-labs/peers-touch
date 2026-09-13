@@ -46,29 +46,44 @@ interface DiscoveryState {
   total: number;
   searching: boolean;
   searchError?: string;
+  usersById: Record<string, DiscoveryUser>;
+  profileLoadingById: Record<string, boolean>;
 
   me?: MeProfile;
   meLoading: boolean;
   meError?: string;
 
   searchUsers: (q: string) => Promise<void>;
+  loadUserProfile: (actorPtid: string, force?: boolean) => Promise<DiscoveryUser | undefined>;
   loadMe: (force?: boolean) => Promise<MeProfile | undefined>;
   reset: () => void;
 }
 
 const initialState: Pick<
   DiscoveryState,
-  'query' | 'results' | 'total' | 'searching' | 'searchError' | 'me' | 'meLoading' | 'meError'
+  | 'query'
+  | 'results'
+  | 'total'
+  | 'searching'
+  | 'searchError'
+  | 'usersById'
+  | 'profileLoadingById'
+  | 'me'
+  | 'meLoading'
+  | 'meError'
 > = {
   query: '',
   results: [],
   total: 0,
   searching: false,
+  usersById: {},
+  profileLoadingById: {},
   me: undefined,
   meLoading: false,
 };
 
 let inFlightSearchToken = 0;
+let profileLoadGeneration = 0;
 
 export const useDiscoveryStore = createDesktopStore<DiscoveryState>('discovery', (set, get) => ({
   ...initialState,
@@ -78,11 +93,12 @@ export const useDiscoveryStore = createDesktopStore<DiscoveryState>('discovery',
     if (!trimmed) {
       // Empty query clears the slate but does NOT call the backend —
       // keeps the "no recent search" UI from flickering.
+      inFlightSearchToken += 1;
       set({ query: '', results: [], total: 0, searching: false, searchError: undefined });
       return;
     }
     const token = ++inFlightSearchToken;
-    set({ query: trimmed, searching: true, searchError: undefined });
+    set({ query: trimmed, results: [], total: 0, searching: true, searchError: undefined });
     try {
       const data = await desktopApi.actorSearchActors(trimmed);
       // Drop late results: only honour the *last* search the user issued.
@@ -95,11 +111,55 @@ export const useDiscoveryStore = createDesktopStore<DiscoveryState>('discovery',
         actorPtid: raw.actorPtid ? String(raw.actorPtid) : undefined,
         avatar: raw.avatar ? String(raw.avatar) : undefined,
       }));
-      set({ results: items, total: data.total ?? items.length, searching: false });
+      set((state) => ({
+        results: items,
+        total: data.total ?? items.length,
+        searching: false,
+        usersById: {
+          ...state.usersById,
+          ...Object.fromEntries(items.map((item) => [item.id, item])),
+        },
+      }));
     } catch (err) {
       if (token !== inFlightSearchToken) return;
       log.warn(TAG, 'searchUsers failed', { q: trimmed, err: String(err) });
       set({ searching: false, searchError: String(err) });
+    }
+  },
+
+  loadUserProfile: async (actorPtid, force = false) => {
+    const id = actorPtid.trim();
+    if (!id) return undefined;
+    const generation = profileLoadGeneration;
+    const current = get();
+    if (!force && current.usersById[id]) return current.usersById[id];
+    if (current.profileLoadingById[id]) return current.usersById[id];
+
+    set((state) => ({
+      profileLoadingById: { ...state.profileLoadingById, [id]: true },
+    }));
+    try {
+      const profile = await desktopApi.peerProfileGet(id);
+      if (generation !== profileLoadGeneration) return undefined;
+      const user: DiscoveryUser = {
+        id,
+        actorPtid: id,
+        username: profile.username,
+        displayName: profile.display_name || profile.username,
+        avatar: profile.avatar || undefined,
+      };
+      set((state) => ({
+        usersById: { ...state.usersById, [id]: user },
+        profileLoadingById: { ...state.profileLoadingById, [id]: false },
+      }));
+      return user;
+    } catch (err) {
+      if (generation !== profileLoadGeneration) return undefined;
+      log.warn(TAG, 'loadUserProfile failed', { actorPtid: id, err: String(err) });
+      set((state) => ({
+        profileLoadingById: { ...state.profileLoadingById, [id]: false },
+      }));
+      return get().usersById[id];
     }
   },
 
@@ -130,6 +190,7 @@ export const useDiscoveryStore = createDesktopStore<DiscoveryState>('discovery',
 
   reset: () => {
     inFlightSearchToken += 1;
+    profileLoadGeneration += 1;
     set({ ...initialState });
   },
 }));

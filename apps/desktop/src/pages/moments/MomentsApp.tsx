@@ -11,6 +11,7 @@ import { MomentsUserView } from './MomentsUserPage';
 import { UserSearchView } from './UserSearchPage';
 import { CircleManageView } from './CircleManagePage';
 import {
+  ensureCircleMemberProfiles,
   ensureMomentDetailProjection,
   ensureUserMomentsProjection,
 } from '../../runtimes/momentsRuntime';
@@ -74,6 +75,9 @@ export function MomentsApp() {
 
   const goTab = useCallback((tab: MainTab) => {
     setView({ kind: 'tab', tab });
+    if (tab === 'circles') {
+      void ensureCircleMemberProfiles();
+    }
   }, []);
 
   const goDetail = useCallback(
@@ -164,6 +168,7 @@ export function MomentsApp() {
     if (view.kind === 'detail') {
       return (
         <MomentDetailView
+          key={view.postId}
           postId={view.postId}
           viewerActorPtid={me?.id}
           onBack={goBack}

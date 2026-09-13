@@ -61,6 +61,26 @@ async function preloadCircleMembers(): Promise<void> {
   await Promise.allSettled(tasks);
 }
 
+export async function ensureCircleMemberProfiles(): Promise<void> {
+  await preloadCircleMembers();
+  const discovery = useDiscoveryStore.getState();
+  const memberPtids = [...new Set(
+    Object.values(useMomentsStore.getState().circleMembers)
+      .flat()
+      .map((member) => member.actorPtid.trim())
+      .filter(Boolean),
+  )];
+
+  const batchSize = 6;
+  for (let index = 0; index < memberPtids.length; index += batchSize) {
+    await Promise.allSettled(
+      memberPtids
+        .slice(index, index + batchSize)
+        .map((actorPtid) => discovery.loadUserProfile(actorPtid)),
+    );
+  }
+}
+
 async function refreshMomentsProjection(label: string): Promise<void> {
   if (refreshInFlight) return refreshInFlight;
 
@@ -102,9 +122,11 @@ export async function ensureUserMomentsProjection(actorPtid: string): Promise<vo
   if (!trimmedActorPtid) return;
 
   const moments = useMomentsStore.getState();
+  const discovery = useDiscoveryStore.getState();
   const relationships = useRelationshipsStore.getState();
   log.info('momentsRuntime', 'user moments projection refresh started', { actorPtid: trimmedActorPtid });
   await Promise.allSettled([
+    discovery.loadUserProfile(trimmedActorPtid, true),
     moments.loadUserFeed(trimmedActorPtid, true),
     relationships.loadFollowers(trimmedActorPtid, true),
     relationships.loadFollowing(trimmedActorPtid, true),

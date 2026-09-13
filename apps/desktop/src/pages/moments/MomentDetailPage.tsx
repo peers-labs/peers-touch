@@ -1,3 +1,4 @@
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, message } from 'antd';
 import { ChevronLeft } from 'lucide-react';
@@ -35,6 +36,8 @@ export function MomentDetailView({
   onAuthorClick,
 }: MomentDetailViewProps) {
   const { t } = useTranslation('moments');
+  const commentsRegionId = useId();
+  const [commentsOpen, setCommentsOpen] = useState(true);
   const {
     post,
     reactions,
@@ -102,28 +105,43 @@ export function MomentDetailView({
             onReact={handleReact}
             onUnreact={handleUnreact}
           />
-          <SocialThreadDivider label={t('moments.comment.viewAll')} />
-          <SocialThreadSection>
-            <CommentList
-              postId={postId}
-              comments={comments}
-              loading={commentsLoading}
-              hasMore={commentsHasMore}
-              viewerActorPtid={viewerActorPtid}
-              onLoadMore={() => loadComments(postId).catch(() => {})}
-              onSubmit={async (content, replyToCommentId) => {
-                try {
-                  await createComment(postId, content, replyToCommentId);
-                } catch (err) {
-                  message.error(String(err));
-                  throw err;
-                }
-              }}
-              onDelete={async (cid) => {
-                await deleteComment(postId, cid);
-              }}
-            />
-          </SocialThreadSection>
+          <SocialThreadDivider
+            label={t(
+              commentsOpen
+                ? 'moments.comment.hide'
+                : 'moments.comment.viewAll',
+            )}
+            expanded={commentsOpen}
+            controls={commentsRegionId}
+            onToggle={() => setCommentsOpen((open) => !open)}
+          />
+          <div
+            id={commentsRegionId}
+            data-moments-comments-region
+            hidden={!commentsOpen}
+          >
+            <SocialThreadSection>
+              <CommentList
+                postId={postId}
+                comments={comments}
+                loading={commentsLoading}
+                hasMore={commentsHasMore}
+                viewerActorPtid={viewerActorPtid}
+                onLoadMore={() => loadComments(postId).catch(() => {})}
+                onSubmit={async (content, replyToCommentId) => {
+                  try {
+                    await createComment(postId, content, replyToCommentId);
+                  } catch (err) {
+                    message.error(String(err));
+                    throw err;
+                  }
+                }}
+                onDelete={async (cid) => {
+                  await deleteComment(postId, cid);
+                }}
+              />
+            </SocialThreadSection>
+          </div>
         </SocialThreadSurface>
       )}
     </div>

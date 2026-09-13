@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { theme, Typography } from 'antd';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 // SocialThreadSurface — the detail post + comments + composer.
 //
@@ -130,9 +131,49 @@ export function SocialThreadBody({ children }: SocialThreadBodyProps) {
 }
 
 // SocialThreadDivider — a hairline between post body and comments /
-// between comment groups.
-export function SocialThreadDivider({ label }: { label?: string }) {
+// between comment groups. When onToggle is present, the divider also
+// owns the comment-section disclosure affordance.
+export interface SocialThreadDividerProps {
+  label?: string;
+  expanded?: boolean;
+  controls?: string;
+  onToggle?: () => void;
+}
+
+export function SocialThreadDivider({
+  label,
+  expanded,
+  controls,
+  onToggle,
+}: SocialThreadDividerProps) {
   const { token } = theme.useToken();
+  const labelNode = label && onToggle ? (
+    <button
+      type="button"
+      data-moments-comments-toggle
+      aria-expanded={expanded}
+      aria-controls={controls}
+      onClick={onToggle}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: '4px 6px',
+        border: 'none',
+        background: 'transparent',
+        color: token.colorTextSecondary,
+        font: 'inherit',
+        fontSize: 12,
+        cursor: 'pointer',
+      }}
+    >
+      {label}
+      {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+    </button>
+  ) : (
+    label && <Text style={{ fontSize: 11, color: token.colorTextTertiary }}>{label}</Text>
+  );
+
   return (
     <div
       style={{
@@ -144,7 +185,7 @@ export function SocialThreadDivider({ label }: { label?: string }) {
       }}
     >
       <div style={{ flex: 1, height: 1, background: token.colorBorderSecondary, opacity: 0.6 }} />
-      {label && <Text style={{ fontSize: 11, color: token.colorTextTertiary }}>{label}</Text>}
+      {labelNode}
       <div style={{ flex: 1, height: 1, background: token.colorBorderSecondary, opacity: 0.6 }} />
     </div>
   );

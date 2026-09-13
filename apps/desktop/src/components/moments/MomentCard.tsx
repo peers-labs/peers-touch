@@ -294,12 +294,7 @@ export function MomentCard({
               <Text
                 strong
                 style={{
-                  cursor: author?.id ? 'pointer' : 'default',
                   fontSize: 14.5,
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (author?.id) onAuthorClick?.(author.id);
                 }}
               >
                 {displayName}
@@ -323,16 +318,10 @@ export function MomentCard({
               menu={{
                 items: [
                   { key: 'open', label: t('moments.action.openPost') },
-                  {
-                    key: 'profile',
-                    label: t('moments.action.viewProfile'),
-                    disabled: !author?.id,
-                  },
                 ],
                 onClick: ({ key, domEvent }) => {
                   domEvent.stopPropagation();
                   if (key === 'open') onOpen?.(post.id);
-                  if (key === 'profile' && author?.id) onAuthorClick?.(author.id);
                 },
               }}
             >

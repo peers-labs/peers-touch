@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Input } from '@lobehub/ui';
-import { Empty, List, Spin, Typography } from 'antd';
+import { Empty, List, Spin, Typography, theme } from 'antd';
 import { Search } from 'lucide-react';
 import type { DiscoveryUser } from '../../store/discovery';
 import { UserProfileHeader } from '../../components/moments/UserProfileHeader';
 import { useActiveDiscoverySlice } from '../../components/moments/useActiveMomentsStore';
+import { SocialEmptyState } from '../../components/moments/surfaces';
 import type { PostAuthor } from '../../gen/proto/domain/social/post_pb';
 
 const { Text } = Typography;
@@ -40,13 +41,17 @@ function asPostAuthor(u: DiscoveryUser): PostAuthor {
 
 export function UserSearchView({ viewerActorPtid, onOpenUser }: UserSearchViewProps) {
   const { t } = useTranslation('moments');
+  const { token } = theme.useToken();
   const [text, setText] = useState('');
-  const { query, results, searching, searchUsers } = useActiveDiscoverySlice((s) => ({
+  const { query, results, searching, searchError, searchUsers } = useActiveDiscoverySlice((s) => ({
     query: s.query,
     results: s.results,
     searching: s.searching,
+    searchError: s.searchError,
     searchUsers: s.searchUsers,
   }));
+  const normalizedText = text.trim();
+  const visibleResults = query === normalizedText ? results : [];
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -70,32 +75,61 @@ export function UserSearchView({ viewerActorPtid, onOpenUser }: UserSearchViewPr
       <div style={{ marginTop: 16 }}>
         {searching && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
-            <Spin />
+            <Spin size="small" />
           </div>
         )}
 
-        {!searching && !text.trim() && (
+        {!searching && !normalizedText && (
           <Empty description={<Text>{t('moments.placeholder.searchEmpty')}</Text>} />
         )}
 
-        {!searching && text.trim() && results.length === 0 && query === text.trim() && (
+        {!searching && normalizedText && searchError && query === normalizedText && (
+          <SocialEmptyState
+            compact
+            kind="degraded"
+            primaryAction={{
+              label: t('moments.empty.try-again'),
+              onClick: () => void searchUsers(normalizedText),
+            }}
+          />
+        )}
+
+        {!searching && normalizedText && !searchError && visibleResults.length === 0 && query === normalizedText && (
           <Empty description={<Text>{t('moments.placeholder.noResults')}</Text>} />
         )}
 
-        {!searching && results.length > 0 && (
+        {!searching && !searchError && visibleResults.length > 0 && (
           <List
-            dataSource={results}
+            dataSource={visibleResults}
             renderItem={(u) => (
               <List.Item
                 key={u.id}
-                onClick={() => onOpenUser(u.id)}
-                style={{ cursor: 'pointer' }}
+                data-moments-search-result
+                style={{ cursor: 'default' }}
               >
-                <UserProfileHeader
-                  actor={asPostAuthor(u)}
-                  viewerActorPtid={viewerActorPtid}
-                  inline
-                />
+                <div style={{ width: '100%' }}>
+                  <UserProfileHeader
+                    actor={asPostAuthor(u)}
+                    viewerActorPtid={viewerActorPtid}
+                    inline
+                    onAvatarClick={() => onOpenUser(u.id)}
+                    avatarActionLabel={t('moments.search.openUserPosts', {
+                      name: u.displayName || u.username,
+                    })}
+                  />
+                  <Text
+                    type="secondary"
+                    style={{
+                      display: 'block',
+                      marginTop: 4,
+                      marginLeft: 56,
+                      fontSize: 12,
+                      color: token.colorTextTertiary,
+                    }}
+                  >
+                    {t('moments.search.avatarHint')}
+                  </Text>
+                </div>
               </List.Item>
             )}
           />
