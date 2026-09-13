@@ -2169,6 +2169,13 @@ export interface MessagingAcceptancePreparedCommand {
   snapshot: MessagingAcceptanceInteractionSnapshot;
 }
 
+export interface MessagingAcceptanceRestorableCommand
+  extends MessagingAcceptancePreparedCommand {
+  conversationId: string;
+  messageId: string;
+  commandId: string;
+}
+
 export const DESKTOP_TAURI_CONTRACT_VERSION = '2026-03-24.desktop-tauri-rust.v1';
 
 export interface AuthLoginInput {
@@ -5746,6 +5753,24 @@ export const api = {
       conversation_id: input.conversationId,
       message_id: input.messageId,
       command_id: input.commandId,
+    }),
+
+  messagingAcceptanceCreateRestorableCommand: (input: {
+    actorPtid: string;
+    conversationId: string;
+    plaintext: string;
+  }) =>
+    invokeRustData<
+      {
+        expected_actor_ptid: string;
+        conversation_id: string;
+        plaintext: string;
+      },
+      MessagingAcceptanceRestorableCommand
+    >('messaging_acceptance_create_restorable_command', {
+      expected_actor_ptid: input.actorPtid,
+      conversation_id: input.conversationId,
+      plaintext: input.plaintext,
     }),
 
   messagingAcceptanceResumeLifecycle: (expectedActorPtid: string) =>

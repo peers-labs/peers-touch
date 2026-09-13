@@ -803,6 +803,68 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertLess(fixture, activation)
         self.assertLess(activation, convergence)
 
+    def test_submitted_recovery_can_bind_a_fresh_restorable_command(self) -> None:
+        manifest = self.valid_report()["manifest"]
+        actors = {
+            "initialState": "existing",
+            "actors": [
+                {
+                    "role": actor,
+                    "accountRef": f"station-account:{actor}@p.t",
+                    "ptid": f"ptid:{actor}",
+                }
+                for actor in ("alice", "bob")
+            ],
+            "reset": {"authorized": False, "targetVerified": True},
+        }
+        gate = NativeTwoClientGate(
+            manifest=manifest,
+            actor_manifest=actors,
+            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+            gate_id=SUBMITTED_COMMAND_RECOVERY_GATE_ID,
+            allow_existing_fixture=True,
+        )
+        gate.clients = {"alice": object(), "bob": object()}  # type: ignore[assignment]
+        gate.ptids = {"alice": "ptid:alice", "bob": "ptid:bob"}
+        environment = {
+            "PT_CHAT_NATIVE_CREATE_RESTORABLE_COMMAND": "1",
+            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_ACTOR": "alice",
+            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_CONVERSATION_ID": "conversation-1",
+            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_MESSAGE_ID": "",
+            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_COMMAND_ID": "",
+            "PT_CHAT_NATIVE_EXPECTED_RECONCILIATION_OUTCOME": "accepted",
+            "PT_CHAT_NATIVE_RESTORABLE_COMMAND_PLAINTEXT": "recover me",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=False),
+            patch(
+                "tooling.acceptance.gates.chat.native_two_client_runner.async_harness",
+                return_value={
+                    "messageId": "message-1",
+                    "commandId": "command-1",
+                    "snapshot": {},
+                },
+            ) as harness,
+        ):
+            target = gate.create_restorable_command_target()
+
+        self.assertEqual(
+            target,
+            {
+                "actor": "alice",
+                "conversationId": "conversation-1",
+                "messageId": "message-1",
+                "commandId": "command-1",
+                "outcome": "accepted",
+            },
+        )
+        self.assertEqual(gate.expected_reconciliation_target(), target)
+        self.assertEqual(
+            gate.report.runtime["createdSubmittedCommand"]["plaintextSha256"],
+            "bc54d1d8c0a99336ea2c89cccee81d1545b9e5c10791b3e5a7140803035213fb",
+        )
+        harness.assert_called_once()
+
     def test_current_profile_accepts_cross_worktree_group_initiator(self) -> None:
         report = self.valid_report()
         source_commit = "a" * 40
