@@ -231,3 +231,30 @@ The next exact-source run records sanitized draft/button geometry, connection,
 computed visibility, locale, selector counts, and label equality immediately
 before the production remove click. No behavior, timeout, Gate assertion, or
 cleanup rule changes during this diagnostic iteration.
+
+### Receiver Snapshot Timing
+
+- Exact-source run
+  `20260913T094836502489Z-a682e895d24041cc009f8ac56ce520c5`
+  on `7d72baab4f4e8987a796a73a9805b614733e00fd` again failed only
+  `localizedRemovalVisible`; all eleven AS-F05 assertions and Provisioner
+  cleanup passed.
+- Immediately before the real Remove click, the rejected draft and remove
+  action were unique, connected, visible, and measured `260x60` and `24x24`.
+  The remove label was non-empty and exactly matched the English locale; the
+  selected attachment identity also matched.
+- After the click, both saved draft/button nodes were disconnected, the target
+  attachment was absent, and owner-side deletion readback remained complete.
+- Source inspection identifies the producer mismatch: removal visibility/text
+  are captured before the click, but error visibility/text are read later from
+  a saved DOM node after the removal-driven render. The assertion requires
+  both surfaces at the pre-action receiver boundary.
+
+The correction freezes localized error visibility/text and removal
+visibility/text together before executing Remove, then separately verifies the
+post-action draft/object deletion. It does not change UI behavior, copy,
+selectors, timeout, Gate assertions, or cleanup.
+
+Local verification passes Desktop strict check, Desktop `622/622` with one
+existing environment-only skip, Agent Acceptance `419/419`, Python compilation,
+and diff hygiene. Exact-source C08 proof remains pending.

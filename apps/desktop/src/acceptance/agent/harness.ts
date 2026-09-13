@@ -5438,6 +5438,12 @@ async function runFoundationAttachmentRejectedScenario(input: {
 
     const attachmentVisibleAfterReject =
       rejectedDraft.getClientRects().length > 0;
+    const errorVisible = errorText.getClientRects().length > 0;
+    const errorTextValue = errorText.textContent?.trim() ?? '';
+    const expectedErrorText = i18n.t(
+      'agent.errors.attachmentRejected',
+      { ns: 'agent' },
+    );
     const removalVisible = removeAction.getClientRects().length > 0;
     const removalText =
       removeAction.getAttribute('aria-label')
@@ -5449,6 +5455,8 @@ async function runFoundationAttachmentRejectedScenario(input: {
     const removeActionRect = removeAction.getBoundingClientRect();
     const rejectedDraftStyle = window.getComputedStyle(rejectedDraft);
     const removeActionStyle = window.getComputedStyle(removeAction);
+    const errorTextRect = errorText.getBoundingClientRect();
+    const errorTextStyle = window.getComputedStyle(errorText);
     const expectedRemovalText = i18n.t(
       'chat.input.attachmentRemove',
       { ns: 'chat' },
@@ -5473,6 +5481,14 @@ async function runFoundationAttachmentRejectedScenario(input: {
         rejectedDraftHeight: Math.round(rejectedDraftRect.height),
         rejectedDraftDisplay: rejectedDraftStyle.display,
         rejectedDraftVisibility: rejectedDraftStyle.visibility,
+        errorTextConnected: errorText.isConnected,
+        errorTextRectCount: errorText.getClientRects().length,
+        errorTextWidth: Math.round(errorTextRect.width),
+        errorTextHeight: Math.round(errorTextRect.height),
+        errorTextDisplay: errorTextStyle.display,
+        errorTextVisibility: errorTextStyle.visibility,
+        errorTextPresent: errorTextValue.length > 0,
+        errorTextMatches: errorTextValue === expectedErrorText,
         removeActionConnected: removeAction.isConnected,
         removeActionRectCount: removeAction.getClientRects().length,
         removeActionWidth: Math.round(removeActionRect.width),
@@ -5551,12 +5567,9 @@ async function runFoundationAttachmentRejectedScenario(input: {
         runtimeEvent: rejectionRuntimeEvent,
         outcome: typedOutcome,
         receiver: {
-          errorVisible: errorText.getClientRects().length > 0,
-          errorText: errorText.textContent?.trim() ?? '',
-          expectedErrorText: i18n.t(
-            'agent.errors.attachmentRejected',
-            { ns: 'agent' },
-          ),
+          errorVisible,
+          errorText: errorTextValue,
+          expectedErrorText,
           attachmentVisibleAfterReject,
           attachmentStatusAfterReject:
             rejectedDraft.dataset.ptAgentComposerAttachmentStatus,
@@ -5564,10 +5577,7 @@ async function runFoundationAttachmentRejectedScenario(input: {
           draftTextAfterRejection,
           removalVisible,
           removalText,
-          expectedRemovalText: i18n.t(
-            'chat.input.attachmentRemove',
-            { ns: 'chat' },
-          ),
+          expectedRemovalText,
           removalExecuted: true,
           attachmentPresentAfterRemoval: false,
         },

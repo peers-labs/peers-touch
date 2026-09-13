@@ -2048,6 +2048,13 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
         self.assertIn("removeAction.click()", scenario)
+        self.assertLess(
+            scenario.index("const errorVisible ="),
+            scenario.index("removeAction.click()"),
+        )
+        self.assertIn("errorVisible,", scenario)
+        self.assertIn("errorText: errorTextValue", scenario)
+        self.assertIn("expectedErrorText,", scenario)
         self.assertIn("foundationExecutionSnapshot(", scenario)
         self.assertIn("foundationConversationReadback(", scenario)
         self.assertIn(
