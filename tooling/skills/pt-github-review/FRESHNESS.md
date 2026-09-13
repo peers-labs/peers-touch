@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-13
-covered_docs_hash: b7d36ba0fe25c29d5a626a08b1c67902e33dba7aabfc98e6fd9723da30c638dd
+last_verified_at: 2026-09-14
+covered_docs_hash: 8d47320637bc2f51fea6b966d9c4ae5426905e3d27da936904779bd2afe6d21d
 
 covered_docs:
   - AGENTS.md
@@ -193,3 +193,12 @@ Remote deployment and Foundation restart now resolve only unique,
 Git-tracked-clean env-repository definitions; arbitrary profile-file overrides
 are confined to declared Acceptance runtime roots. Existing repository hygiene
 checks and profile-only startup invariants own the other two rules.
+
+## 2026-09-14 Review
+
+DWF-D13 corrects source-claim isolation: overlapping writes in independent
+worktrees on different branches emit a coordination warning instead of
+blocking development. Same-workspace overlap, same-branch writes, and exclusive
+runtime resources remain fail-closed. This changes development coordination,
+not PR review severity or evidence semantics, so no review fixture or
+`pt-github-review/SKILL.md` behavior change is required.

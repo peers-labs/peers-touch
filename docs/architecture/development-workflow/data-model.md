@@ -125,9 +125,14 @@ before mutation.
 
 Conflict rules:
 
-- overlapping `exclusive-write` claims from different workspaces block;
+- overlapping source claims inside one workspace block when either claim is
+  `exclusive-write`;
 - two worktrees writing the same branch block;
-- generated outputs, lockfiles, plan status and delivery branch are exclusive;
+- overlapping source claims from different workspaces on different branches
+  are allowed and emit `SOURCE_OVERLAP_WARNING`; Git worktree isolation keeps
+  the files independent and later semantic reconciliation owns merge risk;
+- generated outputs, lockfiles and plan status still require one integrator
+  owner per branch, but do not become machine-global source locks;
 - `station.connect` may be shared;
 - slot, client storage, Fixture mutation, deploy and reset are exclusive;
 - a declaration announces intent but never substitutes for a live runtime lease;
