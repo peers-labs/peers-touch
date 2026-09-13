@@ -7170,7 +7170,7 @@ impl MessagingStore {
             && state.5 == "superseded"
             && state.6 == "stale_delivery_plan"
             && state.8 == "superseded"
-            && state.9 == "draft";
+            && matches!(state.9.as_str(), "draft" | "failed");
         if !already_submitted && !restorable_terminal {
             return Err("submitted-command fixture target is not safely restorable".to_string());
         }
@@ -7230,7 +7230,7 @@ impl MessagingStore {
                  SET state = 'submitted', next_attempt_at_unix_ms = 0,
                      last_error_code = ''
                  WHERE conversation_id = ?1 AND message_id = ?2
-                   AND state IN ('submitted', 'draft')",
+                   AND state IN ('submitted', 'draft', 'failed')",
                 params![conversation_id, message_id],
             )
             .map_err(|error| error.to_string())?;
@@ -10799,6 +10799,15 @@ mod tests {
         persist_direct_command(&store, command_id, command_bytes, 10).unwrap();
         store
             .mark_command_superseded(command_id, command_bytes, 0)
+            .unwrap();
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "UPDATE messaging_pending_messages SET state = 'failed'
+                 WHERE conversation_id = ?1 AND message_id = ?2",
+                params!["conversation-1", command_id],
+            )
             .unwrap();
         let before_cursor = store.lane_checkpoint().unwrap();
 
