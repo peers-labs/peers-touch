@@ -1,6 +1,6 @@
 # Debug Session: duplicate-conflict-original-details
 - **Status**: [OPEN]
-- **Issue**: Exact-source Browser `BASE-DUPLICATE_CONFLICT / zh-CN` times out waiting for the original Turn details view after the localized recovery action is clicked.
+- **Issue**: Exact-source Browser `BASE-DUPLICATE_CONFLICT / zh-CN` now times out before the typed receiver surface appears; the earlier original-Turn details timeout did not reproduce.
 - **Debug Server**: `http://127.0.0.1:7793/event`
 - **Log File**: `.dbg/trae-debug-log-duplicate-conflict-original-details.ndjson`
 
@@ -76,6 +76,37 @@ evidence. The session remains `[OPEN]`; instrumentation and the collector are
 retained until the enclosing Foundation proof is complete or the user
 authorizes cleanup.
 
+## Iteration 2: Receiver Projection Boundary
+
+Exact-source C08 run
+`20260913T012013690791Z-a87dd97ff5c3a0acf76621e915eaa84d`
+on `acf98eb3bd0f59a206351488777f89d7a64106e4` completed
+`DONE / PROVEN`. The same-source Foundation run
+`20260913T013756664860Z-5244311931c42973f9cfccf9571b6c72`
+crossed AS-F10 after the prior transient and failed first at Browser
+`BASE-DUPLICATE_CONFLICT / zh-CN / single / sample-001` while waiting for
+`duplicate conflict receiver`. Outer Provisioner cleanup completed
+`DONE / PROVEN / passed`.
+
+This failure occurs after both the typed Station event and the `onRejected`
+callback have been observed, but before the existing click/Portal
+instrumentation begins.
+
+| ID | Hypothesis | Likelihood | Effort | Expected Signal |
+|----|------------|------------|--------|-----------------|
+| F | The typed rejection reaches the Harness, but the production store has not projected it when the receiver wait begins. | High | Low | Event/callback snapshots lack the typed assistant, followed by a later store transition. |
+| G | The current session changes, so the rejection is retained only in the conversation buffer and not the visible message list. | Medium | Low | `currentSessionMatches=false`, buffered typed conflict count is positive, and visible typed conflict count is zero. |
+| H | The store contains the typed assistant, but the rendered DOM omits or normalizes the expected error-type attribute. | Medium | Low | Visible store typed conflict count is positive while the DOM conflict count remains zero. |
+| I | The receiver appears transiently and is replaced by a session or locale rerender before the wait samples it. | Low | Medium | An intermediate observation has a positive DOM conflict count followed by a timeout snapshot with zero. |
+
+The next instrumentation records only locale, booleans, counts, operation
+status, loading state, stable typed-error codes, and presence of the already
+observed event/callback. It records no message content, raw IDs, actor identity,
+credentials, or provider payload.
+
 ## Local Verification
+- Agent Acceptance tests: `418/418` PASS.
+- Desktop Vitest: `622/622` PASS with one existing environment-only skip.
 - Desktop strict check: PASS.
+- Desktop production build: PASS.
 - `git diff --check`: PASS.

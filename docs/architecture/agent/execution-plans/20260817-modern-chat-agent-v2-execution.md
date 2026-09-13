@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260913T003619586251Z-f9d282299dedcaf1e19e40c011255774` on `bf1af73241b76e4e7b3b857aa29091dbf63fcda9` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260913T003753703208Z-727e7fa98b35bbad6ac31bf02f8ed1be` proved all four AS-F06 and both `BASE-CONTEXT_OVERFLOW` locale tuples; V-Z instrumentation proved one interrupted Assistant Message with a valid 276-byte typed outcome and strict projector acceptance; the first failure moved to Browser English `BASE-INTERRUPTED / foundationInterruptedReceiverMissing`; Provisioner cleanup passed; bounded AA-AD DOM/store shape instrumentation is pending exact-source diagnosis; the `chatRuntime` generation fence remains locally verified | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260913T012013690791Z-a87dd97ff5c3a0acf76621e915eaa84d` on `acf98eb3bd0f59a206351488777f89d7a64106e4` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260913T013756664860Z-5244311931c42973f9cfccf9571b6c72` crossed the earlier AS-F10 transient and failed first at Browser Simplified Chinese `BASE-DUPLICATE_CONFLICT / duplicate conflict receiver`; Provisioner cleanup passed; bounded F-I typed-event/store/DOM instrumentation is in progress before returning to the pending AA-AD `BASE-INTERRUPTED` receiver diagnosis; the `chatRuntime` generation fence remains locally verified | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7814,6 +7814,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   post-wait message, recovery, primary-error selector, store projection, and
   current-session presence using only booleans, counts, and typed
   status/attribute values.
+- **BASE-DUPLICATE_CONFLICT receiver diagnostic (2026-09-13)**: diagnostic
+  checkpoint `acf98eb3bd0f59a206351488777f89d7a64106e4` passed exact-source C08
+  run `20260913T012013690791Z-a87dd97ff5c3a0acf76621e915eaa84d`.
+  Fully authorized same-source Foundation run
+  `20260913T013756664860Z-5244311931c42973f9cfccf9571b6c72`
+  crossed the earlier AS-F10 transient and failed first at Browser Simplified
+  Chinese `BASE-DUPLICATE_CONFLICT / duplicate conflict receiver`. This
+  boundary occurs after the typed Station event and `onRejected` callback but
+  before the retained Open-original click/Portal instrumentation. Provisioner
+  cleanup completed `DONE / PROVEN / passed`. The next F-I instrumentation
+  records only locale, session match, current/buffered message counts, stable
+  typed-error codes, operation status, loading state, matching DOM counts, and
+  the peak matching DOM count. It distinguishes delayed store projection,
+  off-session buffering, store/DOM shape mismatch, and a transient receiver
+  replacement without changing product behavior, assertions, matrix tuples,
+  timeout, cleanup, or provider configuration. Agent Acceptance tests pass
+  `418/418`; Desktop tests pass `622/622` with one existing environment-only
+  skip; Desktop strict check, production build, and diff hygiene pass.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

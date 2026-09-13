@@ -6068,6 +6068,60 @@ async function runFoundationDuplicateConflictScenario(input: {
       .map((message) => message.messageId)
       .sort();
 
+    // #region debug-point F-I:duplicate-conflict-receiver
+    const duplicateConflictReceiverSnapshot = (): Record<string, unknown> => {
+      const chatState = useChatStore.getState();
+      const currentMessages = chatState.messages;
+      const bufferedMessages =
+        chatState.sessionBuffers[conversationId] ?? [];
+      const domAssistants = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-pt-agent-message="assistant"]',
+        ),
+      );
+      return {
+        locale: i18n.language,
+        currentSessionMatches:
+          chatState.currentSessionKey === conversationId,
+        currentMessageCount: currentMessages.length,
+        currentAssistantCount: currentMessages.filter(
+          (message) => message.role === 'assistant',
+        ).length,
+        currentAssistantLoadingCount: currentMessages.filter(
+          (message) => (
+            message.role === 'assistant' && message.loading === true
+          ),
+        ).length,
+        currentAssistantTypedErrorTypes: currentMessages
+          .filter((message) => message.role === 'assistant')
+          .map((message) => message.typedError?.error_type ?? '')
+          .filter((errorType) => errorType.length > 0)
+          .sort(),
+        bufferedMessageCount: bufferedMessages.length,
+        bufferedAssistantTypedErrorTypes: bufferedMessages
+          .filter((message) => message.role === 'assistant')
+          .map((message) => message.typedError?.error_type ?? '')
+          .filter((errorType) => errorType.length > 0)
+          .sort(),
+        operationPresent:
+          chatState.operations[conversationId] !== undefined,
+        operationStatus:
+          chatState.operations[conversationId]?.status ?? 'absent',
+        isStreaming: chatState.isStreaming,
+        domAssistantCount: domAssistants.length,
+        domAssistantErrorTypes: domAssistants
+          .map((element) => (
+            element.getAttribute('data-pt-agent-error-type') ?? ''
+          ))
+          .filter((errorType) => errorType.length > 0)
+          .sort(),
+        domConflictCount: document.querySelectorAll(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="ADMISSION_DUPLICATE_CONFLICT"]',
+        ).length,
+      };
+    };
+    // #endregion
     const rejectedOutcomeRef: {
       current: Record<string, unknown> | null;
     } = { current: null };
@@ -6075,6 +6129,33 @@ async function runFoundationDuplicateConflictScenario(input: {
     const errorEventRef: {
       current: FoundationPreAdmissionErrorEvent | null;
     } = { current: null };
+    let receiverDomConflictCount = Number(
+      duplicateConflictReceiverSnapshot().domConflictCount,
+    );
+    let receiverDomConflictPeak = receiverDomConflictCount;
+    const receiverObserver = new MutationObserver(() => {
+      const snapshot = duplicateConflictReceiverSnapshot();
+      const nextCount = Number(snapshot.domConflictCount);
+      if (nextCount === receiverDomConflictCount) return;
+      receiverDomConflictCount = nextCount;
+      receiverDomConflictPeak = Math.max(receiverDomConflictPeak, nextCount);
+      // #region debug-point I:duplicate-conflict-receiver-dom-transition
+      void reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'I',
+        'receiver-dom-transition',
+        {
+          ...snapshot,
+          receiverDomConflictPeak,
+        },
+      );
+      // #endregion
+    });
+    receiverObserver.observe(document.body, {
+      attributes: true,
+      attributeFilter: ['data-pt-agent-error-type'],
+      childList: true,
+      subtree: true,
+    });
     const unsubscribe = eventBus.subscribe(
       EVENT.AGENT_TURN_STREAM_EVENT,
       (payload) => {
@@ -6100,9 +6181,23 @@ async function runFoundationDuplicateConflictScenario(input: {
           timestampMs: payload.timestampMs,
           sourceDelivery,
         };
+        // #region debug-point F-I:duplicate-conflict-event
+        void reportFoundationDuplicateConflictOriginalDetailsDebug(
+          'F-I',
+          'typed-rejection-event-observed',
+          duplicateConflictReceiverSnapshot(),
+        );
+        // #endregion
       },
     );
     try {
+      // #region debug-point F-I:duplicate-conflict-before-send
+      await reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'F-I',
+        'before-conflicting-send',
+        duplicateConflictReceiverSnapshot(),
+      );
+      // #endregion
       const sent = useChatStore.getState().sendMessage(
         conflictingContent,
         [],
@@ -6112,6 +6207,13 @@ async function runFoundationDuplicateConflictScenario(input: {
             if (error) {
               rejectedOutcomeRef.current =
                 evidenceValue(error) as Record<string, unknown>;
+              // #region debug-point F-I:duplicate-conflict-rejection-callback
+              void reportFoundationDuplicateConflictOriginalDetailsDebug(
+                'F-I',
+                'rejection-callback-observed',
+                duplicateConflictReceiverSnapshot(),
+              );
+              // #endregion
             }
           },
         },
@@ -6129,15 +6231,46 @@ async function runFoundationDuplicateConflictScenario(input: {
         'typed duplicate conflict rejection',
         60_000,
       );
-      await waitFor(
-        () => Boolean(document.querySelector(
-          '[data-pt-agent-message="assistant"]'
-          + '[data-pt-agent-error-type="ADMISSION_DUPLICATE_CONFLICT"]',
-        )),
-        'duplicate conflict receiver',
-        10_000,
+      // #region debug-point F-I:duplicate-conflict-typed-ready
+      await reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'F-I',
+        'typed-rejection-ready',
+        duplicateConflictReceiverSnapshot(),
       );
+      // #endregion
+      try {
+        await waitFor(
+          () => Boolean(document.querySelector(
+            '[data-pt-agent-message="assistant"]'
+            + '[data-pt-agent-error-type="ADMISSION_DUPLICATE_CONFLICT"]',
+          )),
+          'duplicate conflict receiver',
+          10_000,
+        );
+      } catch (error) {
+        // #region debug-point F-I:duplicate-conflict-receiver-timeout
+        await reportFoundationDuplicateConflictOriginalDetailsDebug(
+          'F-I',
+          'receiver-timeout',
+          {
+            ...duplicateConflictReceiverSnapshot(),
+            errorEventPresent: errorEventRef.current !== null,
+            rejectedOutcomePresent: rejectedOutcomeRef.current !== null,
+            receiverDomConflictPeak,
+          },
+        );
+        // #endregion
+        throw error;
+      }
+      // #region debug-point F-I:duplicate-conflict-receiver-observed
+      await reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'F-I',
+        'receiver-observed',
+        duplicateConflictReceiverSnapshot(),
+      );
+      // #endregion
     } finally {
+      receiverObserver.disconnect();
       unsubscribe();
     }
 

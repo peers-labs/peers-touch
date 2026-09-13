@@ -22,20 +22,20 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure and exact-source Foundation proof |
-| Current step | Diagnose Browser English `BASE-INTERRUPTED` receiver sampling after typed persisted-outcome readback succeeded |
+| Current step | Diagnose Browser Simplified Chinese `BASE-DUPLICATE_CONFLICT` receiver projection before the existing Open-original recovery instrumentation |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source C08 run `20260913T003619586251Z-f9d282299dedcaf1e19e40c011255774` on `bf1af73241b76e4e7b3b857aa29091dbf63fcda9` completed `DONE / PROVEN`; same-source Foundation run `20260913T003753703208Z-727e7fa98b35bbad6ac31bf02f8ed1be` proved AS-F06, both context-overflow locales, and strict interrupted persisted-outcome readback |
-| Current action | Instrument only the post-wait `BASE-INTERRUPTED` message, recovery, primary-error selector, store projection, and current-session shape |
-| Next action | Create a clean diagnostic checkpoint, rebuild/smoke, deploy exact source, run C08 first, and rerun Foundation through `BASE-INTERRUPTED` |
+| Last completed | Exact-source C08 run `20260913T012013690791Z-a87dd97ff5c3a0acf76621e915eaa84d` on `acf98eb3bd0f59a206351488777f89d7a64106e4` completed `DONE / PROVEN`; same-source Foundation run `20260913T013756664860Z-5244311931c42973f9cfccf9571b6c72` crossed the earlier AS-F10 transient and reached Browser Simplified Chinese `BASE-DUPLICATE_CONFLICT` |
+| Current action | Instrument only the Duplicate Conflict send, typed-event callback, rejection callback, current/buffered store projection, matching DOM count, and receiver timeout boundary |
+| Next action | Run focused local verification, create a clean diagnostic checkpoint, rebuild/smoke, deploy exact source, run C08 first, and rerun Foundation through Duplicate Conflict and `BASE-INTERRUPTED` |
 | Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
 | Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | none；the current context-overflow draft writeback is a recoverable Harness owner-path defect；the `BASE-INTERRUPTED` `chatRuntime` fix remains locally verified and awaits runtime proof after this earlier cell crosses；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
+| Blockers | none；Duplicate Conflict receiver projection is the current recoverable diagnostic boundary；the `BASE-INTERRUPTED` generation fence and receiver-shape diagnostics remain locally verified and await runtime proof after this earlier cell crosses；AS-F04 per-turn sequential-tool control remains a parked design gap because later runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 run `20260913T003619586251Z-f9d282299dedcaf1e19e40c011255774` is `DONE / PROVEN` on `bf1af73241b76e4e7b3b857aa29091dbf63fcda9`；Foundation run `20260913T003753703208Z-727e7fa98b35bbad6ac31bf02f8ed1be` proves AS-F06, both context-overflow locales, and valid interrupted persisted outcome, then fails first at `foundationInterruptedReceiverMissing`；Provisioner cleanup is `DONE / PROVEN / passed` |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 run `20260913T012013690791Z-a87dd97ff5c3a0acf76621e915eaa84d` is `DONE / PROVEN` on `acf98eb3bd0f59a206351488777f89d7a64106e4`；Foundation run `20260913T013756664860Z-5244311931c42973f9cfccf9571b6c72` crosses AS-F10 and fails first at Browser Simplified Chinese `BASE-DUPLICATE_CONFLICT / duplicate conflict receiver`；Provisioner cleanup is `DONE / PROVEN / passed` |
 | Last updated | 2026-09-13 |
 
 ---
