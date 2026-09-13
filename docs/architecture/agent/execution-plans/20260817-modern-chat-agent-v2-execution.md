@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260913T012013690791Z-a87dd97ff5c3a0acf76621e915eaa84d` on `acf98eb3bd0f59a206351488777f89d7a64106e4` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260913T013756664860Z-5244311931c42973f9cfccf9571b6c72` crossed the earlier AS-F10 transient and failed first at Browser Simplified Chinese `BASE-DUPLICATE_CONFLICT / duplicate conflict receiver`; Provisioner cleanup passed; bounded F-I typed-event/store/DOM instrumentation is in progress before returning to the pending AA-AD `BASE-INTERRUPTED` receiver diagnosis; the `chatRuntime` generation fence remains locally verified | W8a |
+| G-F Complete Foundation Gate | partial / unproven; exact-source C08 run `20260913T012013690791Z-a87dd97ff5c3a0acf76621e915eaa84d` on `acf98eb3bd0f59a206351488777f89d7a64106e4` passed with 19/19 assertions and clean cleanup; fully authorized same-source Foundation run `20260913T013756664860Z-5244311931c42973f9cfccf9571b6c72` crossed the earlier AS-F10 transient and failed first at Browser Simplified Chinese `BASE-DUPLICATE_CONFLICT / duplicate conflict receiver`; Provisioner cleanup passed; bounded F-I typed-event/store/DOM instrumentation is committed at `09974e4e77fb1c470c491bc7438ab2798740dcc6` before returning to the pending AA-AD `BASE-INTERRUPTED` receiver diagnosis; the `chatRuntime` generation fence remains locally verified | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -7832,6 +7832,9 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   timeout, cleanup, or provider configuration. Agent Acceptance tests pass
   `418/418`; Desktop tests pass `622/622` with one existing environment-only
   skip; Desktop strict check, production build, and diff hygiene pass.
+  Instrumentation checkpoint
+  `09974e4e77fb1c470c491bc7438ab2798740dcc6` is ready for Native binary
+  rebuild, smoke, exact-source deployment, C08, and Foundation.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

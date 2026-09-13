@@ -104,6 +104,10 @@ status, loading state, stable typed-error codes, and presence of the already
 observed event/callback. It records no message content, raw IDs, actor identity,
 credentials, or provider payload.
 
+Instrumentation checkpoint
+`09974e4e77fb1c470c491bc7438ab2798740dcc6` contains those F-I observations
+and retains the earlier A-E click/Portal observations.
+
 ## Local Verification
 - Agent Acceptance tests: `418/418` PASS.
 - Desktop Vitest: `622/622` PASS with one existing environment-only skip.
