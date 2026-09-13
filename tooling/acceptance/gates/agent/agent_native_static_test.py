@@ -1757,6 +1757,38 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertNotIn("BASE-CONTEXT-OVERFLOW", self.source)
         self.assertNotIn("mock", scenario.lower())
 
+    def test_invalid_reference_uses_reject_remove_and_resend_product_path(
+        self,
+    ) -> None:
+        scenario_start = self.source.index(
+            "async function runFoundationInvalidReferenceScenario"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationDuplicateConflictScenario",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("useChatStore.getState().sendMessage(", self.source)
+        self.assertIn("[data-pt-agent-composer-send]", scenario)
+        self.assertIn("CONTEXT_INVALID_REFERENCE", scenario)
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="remove-reference"]',
+            scenario,
+        )
+        self.assertIn("removalAction.click()", scenario)
+        self.assertIn("textarea.value === correctedDraft", scenario)
+        self.assertIn("composerFocusedAfterRemoval", scenario)
+        self.assertIn("successfulAssistantCount", scenario)
+        self.assertIn("successfulAssistantPeakCount", scenario)
+        self.assertIn("successfulAssistantOptimistic", scenario)
+        self.assertIn("foundationExecutionSnapshot(", scenario)
+        self.assertIn("foundationConversationReadback(", scenario)
+        self.assertIn("successfulProviderExecutionDelta", scenario)
+        self.assertIn("await cleanupFoundationToolConversation(", scenario)
+        self.assertIn("if (cell === 'BASE-INVALID_REFERENCE')", self.source)
+        self.assertNotIn("mock", scenario.lower())
+
     def test_duplicate_conflict_uses_typed_open_original_recovery_path(
         self,
     ) -> None:

@@ -27,6 +27,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_forbidden_actor,
     evaluate_base_incompatible_capability,
     evaluate_base_interrupted,
+    evaluate_base_invalid_reference,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -49,6 +50,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_forbidden_actor_capture,
     valid_incompatible_capability_capture,
     valid_interrupted_capture,
+    valid_invalid_reference_capture,
     valid_as_f04_capture,
     valid_as_f05_capture,
     valid_as_f06_capture,
@@ -168,6 +170,15 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
         result["scenarioFacts"] = facts
         result["assertions"] = evaluate_base_context_overflow(facts)
         result["runtime-events"] = typed_runtime_role(facts)
+        return result
+    if probe.cell == "BASE-INVALID_REFERENCE":
+        facts = valid_invalid_reference_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_invalid_reference(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        result["runtimeAttestation"]["actorIdentityHash"] = (
+            facts["runtimeEvent"]["sourcePtidHash"]
+        )
         return result
     if probe.cell == "BASE-APPROVAL_EXPIRED":
         facts = valid_approval_expired_capture()
@@ -724,6 +735,27 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneProbeError,
             "BASE-CONTEXT_OVERFLOW assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_invalid_reference_routes_to_independent_oracle(self) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-INVALID_REFERENCE",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "exactlyOneAuthoritativeAssistant": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-INVALID_REFERENCE assertions do not match",
         ):
             assert_group_one_capture(probe, capture_value)
 

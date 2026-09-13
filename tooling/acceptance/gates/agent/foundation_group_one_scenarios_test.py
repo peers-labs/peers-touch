@@ -19,6 +19,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_forbidden_actor,
     evaluate_base_incompatible_capability,
     evaluate_base_interrupted,
+    evaluate_base_invalid_reference,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -1439,6 +1440,105 @@ def valid_context_overflow_capture() -> dict[str, object]:
         "replay": {
             "sourceHash": "2" * 64,
             "replayHash": "2" * 64,
+            "equal": True,
+        },
+        "cleanup": {
+            "draftCleared": True,
+            "localProjectionCleared": True,
+            "conversationDeleted": True,
+        },
+    }
+
+
+def valid_invalid_reference_capture() -> dict[str, object]:
+    return {
+        "runtimeEvent": {
+            "eventId": "b" * 64,
+            "sequence": 1,
+            "eventType": "error",
+            "observedAt": "2026-09-14T00:00:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "c" * 64,
+            "conversationIdHash": "d" * 64,
+            "payloadHash": "e" * 64,
+            "errorType": "CONTEXT_INVALID_REFERENCE",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "a" * 64,
+            "sourceConversationId": "conversation-invalid-reference",
+            "sourceTurnId": "",
+            "sourceSequence": 0,
+            "sourceEventType": "error",
+        },
+        "outcome": {
+            "error": "agent.errors.contextInvalidReference",
+            "error_type": "CONTEXT_INVALID_REFERENCE",
+            "locale_key": "agent.errors.contextInvalidReference",
+            "retryable": False,
+            "terminal": True,
+            "details": {
+                "reference_kind": "file",
+                "reference_hash": "f" * 64,
+            },
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "A context reference is invalid or unavailable.",
+            "expectedErrorText": (
+                "A context reference is invalid or unavailable."
+            ),
+            "removalVisible": True,
+            "removalText": "Remove reference",
+            "expectedRemovalText": "Remove reference",
+            "draftLengthBefore": 64,
+            "draftLengthAfterRejection": 64,
+            "draftHashBefore": "1" * 64,
+            "draftHashAfterRejection": "1" * 64,
+            "draftHashAfterRemoval": "2" * 64,
+            "correctedDraftHash": "2" * 64,
+            "referencePresentAfterRemoval": False,
+            "composerFocusedAfterRemoval": True,
+            "removalExecuted": True,
+            "successfulAssistantVisible": True,
+            "successfulAssistantCount": 1,
+            "successfulAssistantPeakCount": 1,
+            "successfulAssistantId": "message-assistant",
+            "successfulAssistantTurnId": "turn-success",
+            "successfulAssistantOptimistic": False,
+        },
+        "station": {
+            "conversationId": "conversation-invalid-reference",
+            "referenceKind": "file",
+            "referenceHash": "f" * 64,
+            "rejectionVersionBefore": 1,
+            "rejectionVersionAfter": 1,
+            "rejectionHashBefore": "3" * 64,
+            "rejectionHashAfter": "3" * 64,
+            "rejectedTurnDelta": 0,
+            "rejectedMessageDelta": 0,
+            "rejectedQueueDelta": 0,
+            "rejectedProviderExecutionDelta": 0,
+            "successfulTurnId": "turn-success",
+            "successfulAssistantMessageId": "message-assistant",
+            "successfulTurnDelta": 1,
+            "successfulMessageDelta": 2,
+            "successfulQueueDelta": 0,
+            "successfulProviderExecutionDelta": 1,
+        },
+        "completion": {
+            "status": "completed",
+            "turnId": "turn-success",
+            "assistantMessageId": "message-assistant",
+            "sourceTransport": "station-sse",
+            "sourceConversationId": "conversation-invalid-reference",
+            "sourceTurnId": "turn-success",
+            "sourceSequence": 2,
+            "sourceEventType": "done",
+            "responseHash": "4" * 64,
+            "expectedResponseHash": "4" * 64,
+        },
+        "replay": {
+            "sourceHash": "5" * 64,
+            "replayHash": "5" * 64,
             "equal": True,
         },
         "cleanup": {
@@ -3457,6 +3557,72 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "cleanupComplete",
         ):
             evaluate_base_context_overflow(capture)
+
+    def test_invalid_reference_accepts_exact_product_journey(self) -> None:
+        assertions = evaluate_base_invalid_reference(
+            valid_invalid_reference_capture()
+        )
+
+        self.assertEqual(len(assertions), 9)
+        self.assertTrue(all(assertions.values()))
+        self.assertTrue(all(type(value) is bool for value in assertions.values()))
+
+    def test_invalid_reference_rejects_typed_contract_drift(self) -> None:
+        capture = valid_invalid_reference_capture()
+        capture["outcome"]["details"]["reference_path"] = "/private/path"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "typedInvalidReferenceRejected",
+        ):
+            evaluate_base_invalid_reference(capture)
+
+    def test_invalid_reference_requires_exact_token_removal(self) -> None:
+        capture = valid_invalid_reference_capture()
+        capture["receiver"]["referencePresentAfterRemoval"] = True
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "onlyRejectedReferenceRemoved",
+        ):
+            evaluate_base_invalid_reference(capture)
+
+    def test_invalid_reference_requires_one_authoritative_assistant(
+        self,
+    ) -> None:
+        for key in (
+            "successfulAssistantCount",
+            "successfulAssistantPeakCount",
+        ):
+            with self.subTest(key=key):
+                capture = valid_invalid_reference_capture()
+                capture["receiver"][key] = 2
+
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "exactlyOneAuthoritativeAssistant",
+                ):
+                    evaluate_base_invalid_reference(capture)
+
+    def test_invalid_reference_rejects_rejected_path_side_effects(self) -> None:
+        capture = valid_invalid_reference_capture()
+        capture["station"]["rejectedProviderExecutionDelta"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroRejectedPathSideEffects",
+        ):
+            evaluate_base_invalid_reference(capture)
+
+    def test_invalid_reference_requires_cleanup(self) -> None:
+        capture = valid_invalid_reference_capture()
+        capture["cleanup"]["conversationDeleted"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_invalid_reference(capture)
 
     def test_duplicate_conflict_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_duplicate_conflict(

@@ -3875,6 +3875,268 @@ def evaluate_base_context_overflow(
     return assertions
 
 
+def evaluate_base_invalid_reference(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-INVALID_REFERENCE"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    completion = _mapping(capture, "completion", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+
+    reference_hash = _sha256_string(
+        station,
+        "referenceHash",
+        scenario=scenario,
+    )
+    successful_turn_id = _nonempty_string(
+        station,
+        "successfulTurnId",
+        scenario=scenario,
+    )
+    successful_assistant_message_id = _nonempty_string(
+        station,
+        "successfulAssistantMessageId",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedInvalidReferenceRejected": (
+            outcome.get("error") == "agent.errors.contextInvalidReference"
+            and outcome.get("error_type") == "CONTEXT_INVALID_REFERENCE"
+            and outcome.get("locale_key")
+            == "agent.errors.contextInvalidReference"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and sorted(details) == ["reference_hash", "reference_kind"]
+            and details.get("reference_kind") == station.get("referenceKind")
+            and details.get("reference_hash") == reference_hash
+            and station.get("referenceKind") == "file"
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType") == "CONTEXT_INVALID_REFERENCE"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            ) > 0
+            and _positive_int(
+                runtime_event,
+                "streamGeneration",
+                scenario=scenario,
+            ) > 0
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and _sha256_string(
+                runtime_event,
+                "sourcePtidHash",
+                scenario=scenario,
+            )
+            and runtime_event.get("sourceConversationId")
+            == station.get("conversationId")
+            and runtime_event.get("sourceTurnId") == ""
+            and runtime_event.get("sourceSequence") == 0
+            and runtime_event.get("sourceEventType") == "error"
+        ),
+        "localizedRemovalVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("removalVisible") is True
+            and _nonempty_string(
+                receiver,
+                "removalText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRemovalText",
+                scenario=scenario,
+            )
+        ),
+        "rejectedDraftPreserved": (
+            _positive_int(
+                receiver,
+                "draftLengthBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                receiver,
+                "draftLengthAfterRejection",
+                scenario=scenario,
+            )
+            and _sha256_string(
+                receiver,
+                "draftHashBefore",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                receiver,
+                "draftHashAfterRejection",
+                scenario=scenario,
+            )
+        ),
+        "onlyRejectedReferenceRemoved": (
+            receiver.get("removalExecuted") is True
+            and receiver.get("referencePresentAfterRemoval") is False
+            and receiver.get("composerFocusedAfterRemoval") is True
+            and _sha256_string(
+                receiver,
+                "draftHashAfterRemoval",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                receiver,
+                "correctedDraftHash",
+                scenario=scenario,
+            )
+        ),
+        "correctedResendCompleted": (
+            completion.get("status") == "completed"
+            and completion.get("turnId") == successful_turn_id
+            and completion.get("assistantMessageId")
+            == successful_assistant_message_id
+            and _sha256_string(
+                completion,
+                "responseHash",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                completion,
+                "expectedResponseHash",
+                scenario=scenario,
+            )
+            and _nonnegative_int(
+                station,
+                "successfulTurnDelta",
+                scenario=scenario,
+            )
+            == 1
+            and _nonnegative_int(
+                station,
+                "successfulMessageDelta",
+                scenario=scenario,
+            )
+            == 2
+            and _nonnegative_int(
+                station,
+                "successfulQueueDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "successfulProviderExecutionDelta",
+                scenario=scenario,
+            )
+            == 1
+            and completion.get("sourceTransport") == "station-sse"
+            and completion.get("sourceConversationId")
+            == station.get("conversationId")
+            and completion.get("sourceTurnId") == successful_turn_id
+            and _positive_int(
+                completion,
+                "sourceSequence",
+                scenario=scenario,
+            )
+            > 0
+            and completion.get("sourceEventType") == "done"
+        ),
+        "exactlyOneAuthoritativeAssistant": (
+            receiver.get("successfulAssistantVisible") is True
+            and _nonnegative_int(
+                receiver,
+                "successfulAssistantCount",
+                scenario=scenario,
+            )
+            == 1
+            and _nonnegative_int(
+                receiver,
+                "successfulAssistantPeakCount",
+                scenario=scenario,
+            )
+            == 1
+            and receiver.get("successfulAssistantId")
+            == successful_assistant_message_id
+            and receiver.get("successfulAssistantTurnId")
+            == successful_turn_id
+            and receiver.get("successfulAssistantOptimistic") is False
+        ),
+        "zeroRejectedPathSideEffects": (
+            station.get("rejectionVersionAfter")
+            == station.get("rejectionVersionBefore")
+            and _sha256_string(
+                station,
+                "rejectionHashAfter",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                station,
+                "rejectionHashBefore",
+                scenario=scenario,
+            )
+            and _nonnegative_int(
+                station,
+                "rejectedTurnDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "rejectedMessageDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "rejectedQueueDelta",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                station,
+                "rejectedProviderExecutionDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _sha256_string(
+                replay,
+                "sourceHash",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                replay,
+                "replayHash",
+                scenario=scenario,
+            )
+        ),
+        "cleanupComplete": (
+            cleanup.get("draftCleared") is True
+            and cleanup.get("localProjectionCleared") is True
+            and cleanup.get("conversationDeleted") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_credential_missing(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:

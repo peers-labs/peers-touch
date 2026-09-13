@@ -271,6 +271,22 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
             },
         )
 
+    def test_invalid_reference_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-INVALID_REFERENCE"],
+            {
+                "typedInvalidReferenceRejected",
+                "localizedRemovalVisible",
+                "rejectedDraftPreserved",
+                "onlyRejectedReferenceRemoved",
+                "correctedResendCompleted",
+                "exactlyOneAuthoritativeAssistant",
+                "zeroRejectedPathSideEffects",
+                "replayEqual",
+                "cleanupComplete",
+            },
+        )
+
     def test_group_one_cells_are_explicitly_supported_on_both_receivers(self) -> None:
         adapter = self.adapter()
         producer = FoundationCandidateProducer(

@@ -1241,7 +1241,8 @@ and zero local-path leakage.
 #### G-FE1 DevelopmentWorkItem: MCA-J06 Invalid Reference Recovery
 
 - **ID**: `G-FE1-J06-INVALID-REFERENCE`.
-- **Status**: `FOCUSED_PASS`; exact-source product Journey pending.
+- **Status**: `FUNCTIONAL_PASS`; Foundation promotion implementation is
+  `FOCUSED_PASS`, while the Foundation runtime cell remains `UNPROVEN`.
 - **Product Journey**: `MCA-J06 Work With Files And Images`.
 - **Accepted behavior**: a user submits a draft containing an invalid or
   unavailable context reference; Station rejects it with
@@ -1298,10 +1299,37 @@ and zero local-path leakage.
     onto the optimistic assistant message, so authoritative reconciliation
     could not identify both records as one response. The focused fix binds
     stream events to that canonical Turn identity before message merge.
+  - Checkpoint `3a7f4ce5cb7fcc7dcf5fd980bdc850f30942552d` also binds the
+    admission-header Turn and conversation identities onto every forwarded
+    native live-stream payload when Station frames omit them.
+  - A committed-only native build from `3a7f4ce5c` completed the full
+    `MCA-J06` flow with `CLEAN_OK`: typed rejection, full draft preservation,
+    localized `Remove reference`, exact token removal, accepted resend, and
+    exactly one canonical assistant response all passed.
+  - Diagnostic evidence from the same source showed the native `done`,
+    optimistic assistant, operation, and authoritative assistant shared one
+    Turn ID before merge; merge output contained one assistant row. The prior
+    duplicate was not reproduced after rebuilding both Web assets and the
+    native bundle from the committed source.
+  - Acceptance mode `COMPLETE` keeps the existing `agent` Domain,
+    `agent-v2-kernel-foundation` Feature/Capability, Registry rule, Gate
+    Catalog entry, and 419-cell matrix unchanged. The missing closure was the
+    business-owned `BASE-INVALID_REFERENCE` Harness scenario and independent
+    direct-runtime oracle for Desktop and Browser in both locales.
+  - The promoted scenario drives the real composer twice, proves the
+    pre-admission error and zero rejected-path side effects, removes only the
+    hash-matched reference, completes the corrected provider turn, observes a
+    maximum of one matching assistant row, verifies authoritative Station
+    readback/replay, and performs local plus Station cleanup.
   - `go test ./app/subserver/agent/service ./app/subserver/agent/handler
     -count=1`: PASS.
   - focused Desktop Vitest after the reconciliation fix: 62/62 PASS.
+  - focused Foundation Python/static suite after Acceptance promotion:
+    262/262 PASS.
   - `pnpm run check`: PASS.
+  - `make acceptance-validate DOMAIN=agent`: expected `UNPROVEN` because the
+    latest Foundation evidence predates this source and the promoted runtime
+    cell has not run.
   - Prototype disposition: no drift; the implementation follows the confirmed
     attachment-failure preservation/removal behavior. No prototype source
     change is required.

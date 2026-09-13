@@ -6101,6 +6101,520 @@ async function runFoundationContextOverflowScenario(input: {
   }
 }
 
+async function runFoundationInvalidReferenceScenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: FoundationRuntimeEventObservation;
+  facts: Record<string, unknown>;
+}> {
+  const agentId = input.agent.id || input.agent.name;
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation invalid reference ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  const conversationId = conversation.conversation_id;
+  const referenceToken = `@file:/missing/${input.sampleId}`;
+  const responseMarker =
+    `INVALID_REFERENCE_RECOVERED_${input.sampleId.replace(/[^a-z0-9]/gi, '_')}`;
+  const correctedDraft = `Reply with exactly ${responseMarker}.`;
+  const rejectedDraft = `${correctedDraft} ${referenceToken}`;
+  let successfulTurnId = '';
+  const startedAt = performance.now();
+
+  try {
+    await useChatStore.getState().selectSession(conversationId);
+    await useChatStore.getState().syncMessages();
+    const [beforeExecution, beforeReadback, beforeQueue] = await Promise.all([
+      foundationExecutionSnapshot(agentId, conversationId),
+      foundationConversationReadback(conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    const rejectionHashBefore = await sha256Hex(stableJson(beforeReadback));
+    const textarea = await setFoundationComposerDraft(
+      rejectedDraft,
+      'invalid reference composer draft',
+    );
+
+    let observationSequence = 0;
+    const rejectedOutcomeRef: {
+      current: Record<string, unknown> | null;
+    } = { current: null };
+    const rejectionEventRef: {
+      current: FoundationPreAdmissionErrorEvent | null;
+    } = { current: null };
+    const unsubscribeRejection = eventBus.subscribe(
+      EVENT.AGENT_TURN_STREAM_EVENT,
+      (payload) => {
+        const sourceDelivery = (
+          payload as typeof payload & {
+            sourceDelivery?: AgentTurnSourceDelivery;
+          }
+        ).sourceDelivery;
+        if (payload.conversationId !== conversationId) return;
+        observationSequence += 1;
+        if (
+          payload.event !== 'error'
+          || payload.data.error_type !== 'CONTEXT_INVALID_REFERENCE'
+        ) return;
+        rejectionEventRef.current = {
+          data: evidenceValue(payload.data) as Record<string, unknown>,
+          eventType: payload.event,
+          observedAt: new Date(payload.timestampMs).toISOString(),
+          streamId: payload.streamId,
+          streamGeneration: payload.streamGeneration,
+          conversationId: payload.conversationId,
+          observationSequence,
+          timestampMs: payload.timestampMs,
+          sourceDelivery,
+        };
+      },
+    );
+    try {
+      const send = document.querySelector<HTMLElement>(
+        '[data-pt-agent-composer-send]',
+      );
+      if (!send) {
+        throw new Error('agent.acceptance.foundationComposerSendMissing');
+      }
+      send.click();
+      await waitFor(
+        () => rejectionEventRef.current !== null,
+        'typed invalid reference rejection',
+        60_000,
+      );
+      await waitFor(
+        () => Boolean(document.querySelector(
+          '[data-pt-agent-message="assistant"]'
+          + '[data-pt-agent-error-type="CONTEXT_INVALID_REFERENCE"]',
+        )),
+        'invalid reference receiver',
+        10_000,
+      );
+      const operation = useChatStore.getState().operations[conversationId];
+      const rejectedMessage = useChatStore.getState().messages.find(
+        (message) => (
+          message.role === 'assistant'
+          && message.typedError?.error_type === 'CONTEXT_INVALID_REFERENCE'
+        ),
+      );
+      rejectedOutcomeRef.current = rejectedMessage?.typedError
+        ? evidenceValue(rejectedMessage.typedError) as Record<string, unknown>
+        : null;
+      if (!operation || !rejectedOutcomeRef.current) {
+        throw new Error(
+          'agent.acceptance.foundationInvalidReferenceProjectionMissing',
+        );
+      }
+    } finally {
+      unsubscribeRejection();
+    }
+
+    const errorSurface = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="CONTEXT_INVALID_REFERENCE"]',
+      ),
+    ).reverse().find((element) => element.getClientRects().length > 0);
+    const errorToggle = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-toggle]',
+    );
+    const errorSelector =
+      '[data-pt-agent-message-error-text="agent.errors.contextInvalidReference"]';
+    if (!errorSurface?.querySelector(errorSelector)) {
+      errorToggle?.click();
+      await waitFor(
+        () => Boolean(errorSurface?.querySelector(errorSelector)),
+        'localized invalid reference text',
+        10_000,
+      );
+    }
+    const errorText = errorSurface?.querySelector<HTMLElement>(errorSelector);
+    const removalAction = errorSurface?.querySelector<HTMLElement>(
+      '[data-pt-agent-message-error-recovery="remove-reference"]',
+    );
+    const rejectionEvent =
+      rejectionEventRef.current as FoundationPreAdmissionErrorEvent | null;
+    if (
+      !errorSurface
+      || !errorText
+      || !removalAction
+      || !rejectionEvent
+      || !rejectedOutcomeRef.current
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceSurfaceMissing',
+      );
+    }
+    const sourceDelivery = rejectionEvent.sourceDelivery;
+    const actorPtid = authenticatedFoundationActorPtid();
+    if (
+      !sourceDelivery
+      || sourceDelivery.transport !== 'station-sse'
+      || sourceDelivery.ptid !== actorPtid
+      || sourceDelivery.conversationId !== conversationId
+      || sourceDelivery.turnId !== ''
+      || sourceDelivery.sequence !== 0
+      || sourceDelivery.rawPayload.eventType !== 'error'
+      || stableJson(
+        normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+      ) !== stableJson(
+        normalizeProjectedStationPayload(rejectionEvent.data),
+      )
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceSourceIdentityMismatch',
+      );
+    }
+
+    const draftAfterRejection = textarea.value;
+    const receiverErrorVisible = errorText.getClientRects().length > 0;
+    const receiverErrorText = errorText.textContent?.trim() ?? '';
+    const receiverRemovalVisible =
+      removalAction.getClientRects().length > 0;
+    const receiverRemovalText = removalAction.textContent?.trim() ?? '';
+    removalAction.click();
+    await waitFor(
+      () => (
+        textarea.value === correctedDraft
+        && document.activeElement === textarea
+      ),
+      'invalid reference removal',
+      10_000,
+    );
+    const draftAfterRemoval = textarea.value;
+
+    const [afterRejectedExecution, afterRejectedReadback, afterRejectedQueue] =
+      await Promise.all([
+        foundationExecutionSnapshot(agentId, conversationId),
+        foundationConversationReadback(conversationId),
+        api.listAgentTurnQueue(conversationId),
+      ]);
+    const rejectionHashAfter = await sha256Hex(
+      stableJson(afterRejectedReadback),
+    );
+
+    let completionObservationSequence = 0;
+    const completionEventRef: {
+      current: FoundationPreAdmissionErrorEvent | null;
+    } = { current: null };
+    const unsubscribeCompletion = eventBus.subscribe(
+      EVENT.AGENT_TURN_STREAM_EVENT,
+      (payload) => {
+        if (payload.conversationId !== conversationId) return;
+        completionObservationSequence += 1;
+        const event = {
+          event: payload.event,
+          data: payload.data,
+        };
+        if (classifyAgentTurnTerminalEvent(event) !== 'completed') return;
+        completionEventRef.current = {
+          data: evidenceValue(payload.data) as Record<string, unknown>,
+          eventType: payload.event,
+          observedAt: new Date(payload.timestampMs).toISOString(),
+          streamId: payload.streamId,
+          streamGeneration: payload.streamGeneration,
+          conversationId: payload.conversationId,
+          observationSequence: completionObservationSequence,
+          timestampMs: payload.timestampMs,
+          sourceDelivery: (
+            payload as typeof payload & {
+              sourceDelivery?: AgentTurnSourceDelivery;
+            }
+          ).sourceDelivery,
+        };
+      },
+    );
+    const countVisibleSuccessfulAssistants = () => Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]',
+      ),
+    ).filter((element) => (
+      element.getClientRects().length > 0
+      && element.textContent?.includes(responseMarker)
+    )).length;
+    let successfulAssistantPeakCount = countVisibleSuccessfulAssistants();
+    const assistantObserver = new MutationObserver(() => {
+      successfulAssistantPeakCount = Math.max(
+        successfulAssistantPeakCount,
+        countVisibleSuccessfulAssistants(),
+      );
+    });
+    assistantObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+    try {
+      await withFoundationCapabilitiesDisabled(
+        input.agent,
+        input.capabilitySessionId,
+        async () => {
+          const send = document.querySelector<HTMLElement>(
+            '[data-pt-agent-composer-send]',
+          );
+          if (!send) {
+            throw new Error('agent.acceptance.foundationComposerSendMissing');
+          }
+          send.click();
+          await waitFor(
+            () => completionEventRef.current !== null,
+            'invalid reference corrected resend',
+            FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
+          );
+        },
+      );
+    } finally {
+      unsubscribeCompletion();
+      assistantObserver.disconnect();
+      successfulAssistantPeakCount = Math.max(
+        successfulAssistantPeakCount,
+        countVisibleSuccessfulAssistants(),
+      );
+    }
+
+    const completionEvent =
+      completionEventRef.current as FoundationPreAdmissionErrorEvent | null;
+    successfulTurnId = String(
+      completionEvent?.data.turnId
+      ?? completionEvent?.data.turn_id
+      ?? '',
+    );
+    if (!completionEvent || !successfulTurnId) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceCompletionMissing',
+      );
+    }
+    const completionSourceDelivery = completionEvent.sourceDelivery;
+    if (
+      !completionSourceDelivery
+      || completionSourceDelivery.transport !== 'station-sse'
+      || completionSourceDelivery.ptid !== actorPtid
+      || completionSourceDelivery.conversationId !== conversationId
+      || completionSourceDelivery.turnId !== successfulTurnId
+      || completionSourceDelivery.sequence <= 0
+      || completionSourceDelivery.rawPayload.eventType !== 'done'
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceCompletionIdentityMismatch',
+      );
+    }
+    await useChatStore.getState().syncMessages();
+    await waitFor(
+      () => {
+        const matching = useChatStore.getState().messages.filter(
+          (message) => (
+            message.role === 'assistant'
+            && message.turnId === successfulTurnId
+            && message.loading !== true
+            && message.content.trim() === responseMarker
+          ),
+        );
+        return matching.length === 1 && !matching[0].id.startsWith('temp-');
+      },
+      'invalid reference canonical assistant response',
+      30_000,
+    );
+
+    const successfulAssistants = useChatStore.getState().messages.filter(
+      (message) => (
+        message.role === 'assistant'
+        && message.turnId === successfulTurnId
+      ),
+    );
+    const successfulAssistant = successfulAssistants[0];
+    const visibleAssistantCount = countVisibleSuccessfulAssistants();
+    const [finalExecution, finalReadback, finalQueue] = await Promise.all([
+      foundationExecutionSnapshot(agentId, conversationId),
+      foundationConversationReadback(conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    const replayReadback = await foundationConversationReadback(conversationId);
+    const finalReadbackHash = await sha256Hex(stableJson(finalReadback));
+    const replayReadbackHash = await sha256Hex(stableJson(replayReadback));
+    const authoritativeAssistant = finalReadback.messages.find(
+      (message) => (
+        message.role === 'assistant'
+        && message.turnId === successfulTurnId
+      ),
+    );
+    if (!successfulAssistant || !authoritativeAssistant) {
+      throw new Error(
+        'agent.acceptance.foundationInvalidReferenceAssistantMissing',
+      );
+    }
+    const typedOutcome = evidenceRecord(
+      rejectedOutcomeRef.current,
+      'foundationInvalidReferenceOutcome',
+    );
+    const runtimeEvent: FoundationRuntimeEventObservation = {
+      eventId: await sha256Hex(stableJson({
+        streamId: rejectionEvent.streamId,
+        streamGeneration: rejectionEvent.streamGeneration,
+        conversationId: rejectionEvent.conversationId,
+        observationSequence: rejectionEvent.observationSequence,
+        eventType: rejectionEvent.eventType,
+        timestampMs: rejectionEvent.timestampMs,
+        data: rejectionEvent.data,
+      })),
+      eventType: rejectionEvent.eventType,
+      sequence: rejectionEvent.observationSequence,
+      observedAt: rejectionEvent.observedAt,
+      streamGeneration: rejectionEvent.streamGeneration,
+      streamIdHash: await sha256Hex(rejectionEvent.streamId),
+      conversationIdHash: await sha256Hex(rejectionEvent.conversationId),
+      payloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+      errorType: String(rejectionEvent.data.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    };
+
+    clearFoundationLocalConversationProjection(conversationId);
+    const cleanupTextarea = await setFoundationComposerDraft(
+      '',
+      'invalid reference composer cleanup',
+    );
+    return {
+      conversationId,
+      turnId: successfulTurnId,
+      durationMs: performance.now() - startedAt,
+      runtimeEvent,
+      facts: {
+        outcome: typedOutcome,
+        runtimeEvent,
+        receiver: {
+          errorVisible: receiverErrorVisible,
+          errorText: receiverErrorText,
+          expectedErrorText: i18n.t(
+            'agent.errors.contextInvalidReference',
+            { ns: 'agent' },
+          ),
+          removalVisible: receiverRemovalVisible,
+          removalText: receiverRemovalText,
+          expectedRemovalText: i18n.t(
+            'agent.recovery.removeReference',
+            { ns: 'agent' },
+          ),
+          draftLengthBefore: rejectedDraft.length,
+          draftLengthAfterRejection: draftAfterRejection.length,
+          draftHashBefore: await sha256Hex(rejectedDraft),
+          draftHashAfterRejection: await sha256Hex(draftAfterRejection),
+          draftHashAfterRemoval: await sha256Hex(draftAfterRemoval),
+          correctedDraftHash: await sha256Hex(correctedDraft),
+          referencePresentAfterRemoval:
+            draftAfterRemoval.includes(referenceToken),
+          composerFocusedAfterRemoval:
+            document.activeElement === textarea,
+          removalExecuted: true,
+          successfulAssistantVisible: visibleAssistantCount === 1,
+          successfulAssistantCount: successfulAssistants.length,
+          successfulAssistantPeakCount,
+          successfulAssistantId: successfulAssistant.id,
+          successfulAssistantTurnId: successfulAssistant.turnId ?? '',
+          successfulAssistantOptimistic:
+            successfulAssistant.id.startsWith('temp-'),
+        },
+        station: {
+          conversationId,
+          referenceKind: 'file',
+          referenceHash: await sha256Hex(referenceToken),
+          rejectionVersionBefore: beforeReadback.conversation.version,
+          rejectionVersionAfter: afterRejectedReadback.conversation.version,
+          rejectionHashBefore,
+          rejectionHashAfter,
+          rejectedTurnDelta:
+            afterRejectedExecution.turnCount - beforeExecution.turnCount,
+          rejectedMessageDelta:
+            afterRejectedReadback.messages.length
+            - beforeReadback.messages.length,
+          rejectedQueueDelta:
+            afterRejectedQueue.entries.length - beforeQueue.entries.length,
+          rejectedProviderExecutionDelta:
+            afterRejectedExecution.providerCallCount
+            - beforeExecution.providerCallCount,
+          successfulTurnId,
+          successfulAssistantMessageId:
+            authoritativeAssistant.messageId,
+          successfulTurnDelta:
+            finalExecution.turnCount - afterRejectedExecution.turnCount,
+          successfulMessageDelta:
+            finalReadback.messages.length
+            - afterRejectedReadback.messages.length,
+          successfulQueueDelta:
+            finalQueue.entries.length - afterRejectedQueue.entries.length,
+          successfulProviderExecutionDelta:
+            finalExecution.providerCallCount
+            - afterRejectedExecution.providerCallCount,
+          successfulConversationVersion:
+            finalReadback.conversation.version,
+          successfulReadbackHash: finalReadbackHash,
+        },
+        completion: {
+          status: 'completed',
+          turnId: successfulTurnId,
+          assistantMessageId: authoritativeAssistant.messageId,
+          sourceTransport: completionSourceDelivery.transport,
+          sourceConversationId: completionSourceDelivery.conversationId,
+          sourceTurnId: completionSourceDelivery.turnId,
+          sourceSequence: completionSourceDelivery.sequence,
+          sourceEventType: completionSourceDelivery.rawPayload.eventType,
+          responseHash: await sha256Hex(
+            authoritativeAssistant.content.trim(),
+          ),
+          expectedResponseHash: await sha256Hex(responseMarker),
+        },
+        replay: {
+          sourceHash: finalReadbackHash,
+          replayHash: replayReadbackHash,
+          equal: finalReadbackHash === replayReadbackHash,
+        },
+        cleanup: {
+          draftCleared: cleanupTextarea.value === '',
+          localProjectionCleared: (
+            useChatStore.getState().sessionBuffers[conversationId] === undefined
+            && useChatStore.getState().operations[conversationId] === undefined
+          ),
+          conversationDeleted: false,
+        },
+      },
+    };
+  } catch (error) {
+    try {
+      clearFoundationLocalConversationProjection(conversationId);
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        '[data-pt-agent-composer-input]',
+      );
+      if (textarea) {
+        await setFoundationComposerDraft(
+          '',
+          'invalid reference failed-scenario composer cleanup',
+        );
+      }
+      await cleanupFoundationToolConversation(
+        conversationId,
+        successfulTurnId,
+      );
+    } catch (cleanupError) {
+      throw Object.assign(
+        new Error(
+          'agent.acceptance.foundationInvalidReferenceCleanupFailed',
+        ),
+        { primaryError: error, cleanupError },
+      );
+    }
+    throw error;
+  }
+}
+
 async function runFoundationDuplicateConflictScenario(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
@@ -15046,6 +15560,8 @@ async function evaluateDirectCellAssertions(
       return evaluateBaseInterrupted(ctx);
     case 'BASE-CONTEXT_OVERFLOW':
       return evaluateBaseContextOverflow(ctx);
+    case 'BASE-INVALID_REFERENCE':
+      return evaluateBaseInvalidReference(ctx);
     case 'BASE-DUPLICATE_CONFLICT':
       return evaluateBaseDuplicateConflict(ctx);
     case 'BASE-CREDENTIAL_MISSING':
@@ -15852,6 +16368,134 @@ function evaluateBaseContextOverflow(
       && Number(station.messageDelta) === 0
       && Number(station.queueDelta) === 0
       && Number(station.providerExecutionDelta) === 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+    ),
+    cleanupComplete: (
+      cleanup.draftCleared === true
+      && cleanup.localProjectionCleared === true
+      && cleanup.conversationDeleted === true
+    ),
+  };
+}
+
+function evaluateBaseInvalidReference(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationInvalidReferenceFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationInvalidReferenceOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationInvalidReferenceDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationInvalidReferenceReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationInvalidReferenceStation',
+  );
+  const completion = evidenceRecord(
+    facts.completion,
+    'foundationInvalidReferenceCompletion',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationInvalidReferenceReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationInvalidReferenceCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationInvalidReferenceRuntimeEvent',
+  );
+  const detailKeys = Object.keys(details).sort();
+  const referenceHash = String(station.referenceHash ?? '');
+
+  return {
+    typedInvalidReferenceRejected: (
+      outcome.error === 'agent.errors.contextInvalidReference'
+      && outcome.error_type === 'CONTEXT_INVALID_REFERENCE'
+      && outcome.locale_key === 'agent.errors.contextInvalidReference'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && detailKeys.length === 2
+      && detailKeys[0] === 'reference_hash'
+      && detailKeys[1] === 'reference_kind'
+      && details.reference_kind === station.referenceKind
+      && details.reference_hash === referenceHash
+      && station.referenceKind === 'file'
+      && /^[0-9a-f]{64}$/.test(referenceHash)
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'CONTEXT_INVALID_REFERENCE'
+      && Number(runtimeEvent.sequence) > 0
+      && Number(runtimeEvent.streamGeneration) > 0
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === ''
+      && Number(runtimeEvent.sourceSequence) === 0
+      && runtimeEvent.sourceEventType === 'error'
+    ),
+    localizedRemovalVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.removalVisible === true
+      && receiver.removalText === receiver.expectedRemovalText
+    ),
+    rejectedDraftPreserved: (
+      receiver.draftHashAfterRejection === receiver.draftHashBefore
+      && Number(receiver.draftLengthAfterRejection)
+        === Number(receiver.draftLengthBefore)
+    ),
+    onlyRejectedReferenceRemoved: (
+      receiver.removalExecuted === true
+      && receiver.referencePresentAfterRemoval === false
+      && receiver.composerFocusedAfterRemoval === true
+      && receiver.draftHashAfterRemoval === receiver.correctedDraftHash
+    ),
+    correctedResendCompleted: (
+      completion.status === 'completed'
+      && completion.turnId === station.successfulTurnId
+      && completion.assistantMessageId === station.successfulAssistantMessageId
+      && completion.responseHash === completion.expectedResponseHash
+      && Number(station.successfulTurnDelta) === 1
+      && Number(station.successfulMessageDelta) === 2
+      && Number(station.successfulQueueDelta) === 0
+      && Number(station.successfulProviderExecutionDelta) === 1
+      && completion.sourceTransport === 'station-sse'
+      && completion.sourceConversationId === station.conversationId
+      && completion.sourceTurnId === station.successfulTurnId
+      && Number(completion.sourceSequence) > 0
+      && completion.sourceEventType === 'done'
+    ),
+    exactlyOneAuthoritativeAssistant: (
+      receiver.successfulAssistantVisible === true
+      && Number(receiver.successfulAssistantCount) === 1
+      && Number(receiver.successfulAssistantPeakCount) === 1
+      && receiver.successfulAssistantId
+        === station.successfulAssistantMessageId
+      && receiver.successfulAssistantTurnId === station.successfulTurnId
+      && receiver.successfulAssistantOptimistic === false
+    ),
+    zeroRejectedPathSideEffects: (
+      station.rejectionVersionAfter === station.rejectionVersionBefore
+      && station.rejectionHashAfter === station.rejectionHashBefore
+      && Number(station.rejectedTurnDelta) === 0
+      && Number(station.rejectedMessageDelta) === 0
+      && Number(station.rejectedQueueDelta) === 0
+      && Number(station.rejectedProviderExecutionDelta) === 0
     ),
     replayEqual: (
       replay.equal === true
@@ -19384,6 +20028,24 @@ export function installAcceptanceHarness(): void {
         // #endregion
       }
 
+      if (cell === 'BASE-INVALID_REFERENCE') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenario = await runFoundationInvalidReferenceScenario({
+          agent,
+          capabilitySessionId,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
+
       if (cell === 'BASE-CREDENTIAL_MISSING') {
         const capabilitySessionId =
           capabilitySessions.selectedStationSession?.session_id;
@@ -20709,6 +21371,7 @@ export function installAcceptanceHarness(): void {
           || cell === 'BASE-ACTIVE_MUTATION_CONFLICT'
           || cell === 'BASE-CANCELLED'
           || cell === 'BASE-CONTEXT_OVERFLOW'
+          || cell === 'BASE-INVALID_REFERENCE'
           || cell === 'BASE-DUPLICATE_CONFLICT'
           || cell === 'BASE-CREDENTIAL_MISSING'
         )
@@ -20742,6 +21405,8 @@ export function installAcceptanceHarness(): void {
                 ? 'foundationCancelledCleanup'
               : cell === 'BASE-CONTEXT_OVERFLOW'
                 ? 'foundationContextOverflowCleanup'
+              : cell === 'BASE-INVALID_REFERENCE'
+                ? 'foundationInvalidReferenceCleanup'
               : cell === 'BASE-DUPLICATE_CONFLICT'
                 ? 'foundationDuplicateConflictCleanup'
               : cell === 'BASE-CREDENTIAL_MISSING'
@@ -20999,6 +21664,33 @@ export function installAcceptanceHarness(): void {
           providerExecution: station.providerExecutionDelta,
         };
       }
+      if (cell === 'BASE-INVALID_REFERENCE' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationInvalidReferenceStation',
+        );
+        stationReadback.entityKind = 'agent-reference-recovery';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.successfulTurnId),
+        );
+        stationReadback.revision = Number(
+          station.successfulConversationVersion,
+        );
+        stationReadback.stateHash = String(station.successfulReadbackHash);
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          rejectedTurn: station.rejectedTurnDelta,
+          rejectedMessage: station.rejectedMessageDelta,
+          rejectedQueue: station.rejectedQueueDelta,
+          rejectedProviderExecution:
+            station.rejectedProviderExecutionDelta,
+          successfulTurn: station.successfulTurnDelta,
+          successfulMessage: station.successfulMessageDelta,
+          successfulQueue: station.successfulQueueDelta,
+          successfulProviderExecution:
+            station.successfulProviderExecutionDelta,
+        };
+      }
       if (cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts) {
         const station = evidenceRecord(
           scenarioFacts.station,
@@ -21177,6 +21869,7 @@ export function installAcceptanceHarness(): void {
             || cell === 'BASE-CANCELLED'
             || cell === 'BASE-INTERRUPTED'
             || cell === 'BASE-CONTEXT_OVERFLOW'
+            || cell === 'BASE-INVALID_REFERENCE'
             || cell === 'BASE-DUPLICATE_CONFLICT'
             || cell === 'BASE-CREDENTIAL_MISSING'
           ) && observedRuntimeEvent
@@ -21197,6 +21890,7 @@ export function installAcceptanceHarness(): void {
                     || cell === 'BASE-FORBIDDEN_ACTOR'
                     || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
                     || cell === 'BASE-CONTEXT_OVERFLOW'
+                    || cell === 'BASE-INVALID_REFERENCE'
                     || cell === 'BASE-DUPLICATE_CONFLICT'
                     || cell === 'BASE-CREDENTIAL_MISSING'
                   )
@@ -21246,6 +21940,7 @@ export function installAcceptanceHarness(): void {
         || cell === 'BASE-APPROVAL_EXPIRED'
           ? 900_000
           : cell === 'AS-F06'
+            || cell === 'BASE-INVALID_REFERENCE'
             ? 300_000
             : 120_000;
       const measurementReport: Record<string, unknown> = {
@@ -21409,6 +22104,34 @@ export function installAcceptanceHarness(): void {
                     queueDelta: station.queueDelta,
                     providerExecutionDelta:
                       station.providerExecutionDelta,
+                  },
+                };
+              })()
+          : cell === 'BASE-INVALID_REFERENCE' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationInvalidReferenceStation',
+                );
+                const count =
+                  Number(station.rejectedTurnDelta)
+                  + Number(station.rejectedMessageDelta)
+                  + Number(station.rejectedQueueDelta)
+                  + Number(station.rejectedProviderExecutionDelta);
+                return {
+                  counterId: String(station.referenceHash),
+                  count,
+                  maximum: 0,
+                  measurements: {
+                    rejectedTurnDelta: station.rejectedTurnDelta,
+                    rejectedMessageDelta: station.rejectedMessageDelta,
+                    rejectedQueueDelta: station.rejectedQueueDelta,
+                    rejectedProviderExecutionDelta:
+                      station.rejectedProviderExecutionDelta,
+                    successfulTurnDelta: station.successfulTurnDelta,
+                    successfulMessageDelta: station.successfulMessageDelta,
+                    successfulProviderExecutionDelta:
+                      station.successfulProviderExecutionDelta,
                   },
                 };
               })()
@@ -21644,6 +22367,13 @@ export function installAcceptanceHarness(): void {
               'foundationContextOverflowCleanup',
             )
           : null;
+      const invalidReferenceCleanup =
+        cell === 'BASE-INVALID_REFERENCE' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationInvalidReferenceCleanup',
+            )
+          : null;
       const duplicateConflictCleanup =
         cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
           ? evidenceRecord(
@@ -21708,6 +22438,12 @@ export function installAcceptanceHarness(): void {
                   contextOverflowCleanup.draftCleared === true
                   && contextOverflowCleanup.localProjectionCleared === true
                   && contextOverflowCleanup.conversationDeleted === true
+                )
+            : invalidReferenceCleanup
+              ? (
+                  invalidReferenceCleanup.draftCleared === true
+                  && invalidReferenceCleanup.localProjectionCleared === true
+                  && invalidReferenceCleanup.conversationDeleted === true
                 )
             : duplicateConflictCleanup
               ? (
@@ -21839,6 +22575,8 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-CONTEXT_OVERFLOW' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-INVALID_REFERENCE' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-CREDENTIAL_MISSING' && scenarioFacts
@@ -21857,6 +22595,7 @@ export function installAcceptanceHarness(): void {
         || cell === 'BASE-APPROVAL_EXPIRED'
         || cell === 'BASE-ATTACHMENT_REJECTED'
         || cell === 'BASE-CONTEXT_OVERFLOW'
+        || cell === 'BASE-INVALID_REFERENCE'
         || cell === 'BASE-DUPLICATE_CONFLICT'
         || cell === 'BASE-CREDENTIAL_MISSING'
       ) && scenarioFacts
@@ -21979,6 +22718,22 @@ export function installAcceptanceHarness(): void {
           receiverText = {
             errorText: receiver.errorText,
             recoveryText: receiver.recoveryText,
+          };
+        } else if (cell === 'BASE-INVALID_REFERENCE') {
+          receiverVisible =
+            receiver.errorVisible === true
+            && receiver.removalVisible === true
+            && receiver.removalExecuted === true
+            && receiver.successfulAssistantVisible === true
+            && Number(receiver.successfulAssistantCount) === 1;
+          receiverSelector =
+            '[data-pt-agent-message-error-text="agent.errors.contextInvalidReference"],'
+            + '[data-pt-agent-message-error-recovery="remove-reference"],'
+            + '[data-pt-agent-message="assistant"]';
+          receiverText = {
+            errorText: receiver.errorText,
+            removalText: receiver.removalText,
+            successfulAssistantId: receiver.successfulAssistantId,
           };
         } else if (cell === 'BASE-DUPLICATE_CONFLICT') {
           receiverVisible =
@@ -22117,6 +22872,19 @@ export function installAcceptanceHarness(): void {
         replayEvidence.sourceHash = replay.sourceHash;
         replayEvidence.replayHash = replay.replayHash;
         replayEvidence.equal = replay.equal;
+      }
+      if (cell === 'BASE-INVALID_REFERENCE' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationInvalidReferenceReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+        replayEvidence.turnId = evidenceRecord(
+          scenarioFacts.station,
+          'foundationInvalidReferenceStation',
+        ).successfulTurnId;
       }
       if (cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts) {
         const replay = evidenceRecord(
@@ -22360,6 +23128,39 @@ export function installAcceptanceHarness(): void {
             throw Object.assign(
               new Error(
                 'agent.acceptance.foundationContextOverflowCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-INVALID_REFERENCE'
+          && preparedConversationId
+        ) {
+          try {
+            clearFoundationLocalConversationProjection(
+              preparedConversationId,
+            );
+            const textarea = document.querySelector<HTMLTextAreaElement>(
+              '[data-pt-agent-composer-input]',
+            );
+            if (textarea) {
+              await setFoundationComposerDraft(
+                '',
+                'invalid reference outer composer cleanup',
+              );
+            }
+            await cleanupFoundationToolConversation(
+              preparedConversationId,
+              preparedTurnId ?? '',
+            );
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationInvalidReferenceCleanupFailed',
               ),
               {
                 primaryError: error,

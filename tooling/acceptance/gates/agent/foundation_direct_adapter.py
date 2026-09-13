@@ -225,6 +225,19 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-INVALID_REFERENCE": frozenset(
+        {
+            "typedInvalidReferenceRejected",
+            "localizedRemovalVisible",
+            "rejectedDraftPreserved",
+            "onlyRejectedReferenceRemoved",
+            "correctedResendCompleted",
+            "exactlyOneAuthoritativeAssistant",
+            "zeroRejectedPathSideEffects",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
     "BASE-DUPLICATE_CONFLICT": frozenset(
         {
             "typedDuplicateConflictProjected",
