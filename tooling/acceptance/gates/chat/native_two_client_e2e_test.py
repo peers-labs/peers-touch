@@ -26,7 +26,7 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
     CURRENT_PROFILE_GATE_ID,
     NativeTwoClientGate,
     avatar_evidence_is_valid,
-    reconciled_command_snapshot_is_final,
+    reconciled_command_snapshot_outcome,
 )
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
@@ -182,7 +182,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             )
         )
 
-    def test_reconciled_command_snapshot_requires_original_committed_identity(
+    def test_reconciled_command_snapshot_distinguishes_architecture_outcomes(
         self,
     ) -> None:
         snapshot = {
@@ -196,7 +196,11 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                 "commandId": "command-1",
                 "state": "committed",
             },
-            "outbox": {"state": "committed"},
+            "outbox": {
+                "state": "committed",
+                "lastErrorCode": "",
+                "commandSha256": "a" * 64,
+            },
             "commandLedger": [
                 {
                     "commandId": "command-1",
@@ -209,19 +213,122 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             ],
         }
 
-        self.assertTrue(
-            reconciled_command_snapshot_is_final(
+        self.assertEqual(
+            reconciled_command_snapshot_outcome(
                 snapshot,
                 "command-1",
                 "message-1",
+                "a" * 64,
+            ),
+            "accepted",
+        )
+        snapshot["projection"] = None
+        snapshot["intent"] = None
+        snapshot["outbox"].update(
+            {
+                "state": "retry_wait",
+                "lastErrorCode": "canonical_not_found",
+            }
+        )
+        snapshot["commandLedger"][0].update(
+            {
+                "attemptState": "retry_wait",
+                "localState": "submitted",
+                "outboxState": "retry_wait",
+                "draftState": "retry_wait",
+            }
+        )
+        self.assertEqual(
+            reconciled_command_snapshot_outcome(
+                snapshot,
+                "command-1",
+                "message-1",
+                "a" * 64,
+            ),
+            "retrying",
+        )
+        snapshot["outbox"].update(
+            {
+                "state": "superseded",
+                "lastErrorCode": "stale_delivery_plan",
+            }
+        )
+        snapshot["commandLedger"][0].update(
+            {
+                "attemptState": "superseded",
+                "localState": "superseded",
+                "outboxState": "superseded",
+                "draftState": "draft",
+            }
+        )
+        self.assertEqual(
+            reconciled_command_snapshot_outcome(
+                snapshot,
+                "command-1",
+                "message-1",
+                "a" * 64,
+            ),
+            "terminal_superseded",
+        )
+        snapshot["commandLedger"].append(
+            {
+                "commandId": "command-2",
+                "messageId": "message-1",
+                "attemptState": "committed",
+                "localState": "committed",
+                "outboxState": "committed",
+                "draftState": "accepted",
+            }
+        )
+        self.assertEqual(
+            reconciled_command_snapshot_outcome(
+                snapshot,
+                "command-1",
+                "message-1",
+                "a" * 64,
+            ),
+            "terminal_superseded",
+        )
+
+    def test_reconciled_command_snapshot_rejects_identity_or_byte_replacement(
+        self,
+    ) -> None:
+        snapshot = {
+            "messageId": "message-1",
+            "projection": None,
+            "intent": None,
+            "outbox": {
+                "state": "retry_wait",
+                "lastErrorCode": "canonical_not_found",
+                "commandSha256": "a" * 64,
+            },
+            "commandLedger": [
+                {
+                    "commandId": "command-1",
+                    "messageId": "message-1",
+                    "attemptState": "retry_wait",
+                    "localState": "submitted",
+                    "outboxState": "retry_wait",
+                    "draftState": "retry_wait",
+                }
+            ],
+        }
+
+        self.assertIsNone(
+            reconciled_command_snapshot_outcome(
+                snapshot,
+                "command-1",
+                "message-1",
+                "b" * 64,
             )
         )
         snapshot["commandLedger"][0]["commandId"] = "replacement-command"
-        self.assertFalse(
-            reconciled_command_snapshot_is_final(
+        self.assertIsNone(
+            reconciled_command_snapshot_outcome(
                 snapshot,
                 "command-1",
                 "message-1",
+                "a" * 64,
             )
         )
 
