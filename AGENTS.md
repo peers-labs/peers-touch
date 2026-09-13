@@ -164,6 +164,17 @@ Example:
 `console.log`, `print`, `println!`, `fmt.Println`, `debugPrint` — **absolutely forbidden**.
 Use domain-specific loggers only (see platform docs for specifics).
 
+### No Repository Debug Artifacts
+
+- Do not create or commit `debug-*`, `.dbg/`, ad-hoc test prompts, runtime
+  logs, DOM dumps, screenshots, traces, or temporary reports at repository
+  root.
+- Worktree-scoped debug sessions live under
+  `~/.peers-touch/dev/workspaces/<workspaceId>/debug/<sessionId>/`.
+- Durable conclusions belong in the governing `docs/` source, `docs/knowledge/`,
+  or the Acceptance Evidence Store. Temporary debug sessions are deleted after
+  closure; they are not retained as repository history.
+
 ### No Secrets in Code
 
 - Never hardcode keys, tokens, passwords.
@@ -389,6 +400,7 @@ Current project skills:
 | `pt-prototype-design` | Create, modify, and review executable UI / UX prototypes under the project prototype system |
 | `pt-prototype-sync-guardian` | Keep product implementation and prototypes aligned when visible behavior changes |
 | `pt-completion-auditor` | Audit Peers-Touch work for completion, architecture, code quality, safety, evidence, and overclaim risk |
+| `pt-defect-closure` | Close the defect loop: debug → fix → acceptance injection; ensures every behavioral bug fix leaves behind a regression Gate |
 | `pt-frontend-component-tree-review` | Review frontend component tree structure, boundaries, and UI implementation quality |
 | `pt-small-fix-discipline` | Govern small fixes so agents locate the governing spec, fix the correct architectural layer, keep changes surgical, and self-grade before claiming done |
 | `pt-skill-author` | Govern creation, naming, cleanup, and verification of Peers-Touch `pt-*` project skills |

@@ -276,8 +276,18 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
             size={42}
             radius={12}
           />
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              padding: '8px 12px',
+              border: `1px solid ${token.colorBorderSecondary}`,
+              borderRadius: token.borderRadiusLG,
+              background: token.colorBgContainer,
+            }}
+          >
             <TextArea
+              data-moments-composer-input
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
@@ -286,7 +296,7 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
               placeholder={t('moments.compose.placeholder')}
               autoSize={{ minRows: 2, maxRows: 10 }}
               maxLength={5000}
-              bordered={false}
+              variant="borderless"
               style={{
                 padding: 0,
                 resize: 'none',
