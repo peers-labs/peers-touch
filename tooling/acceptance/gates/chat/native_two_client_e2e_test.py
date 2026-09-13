@@ -795,6 +795,22 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertTrue(is_current_profile_gate(CURRENT_PROFILE_GATE_ID))
         self.assertTrue(is_current_profile_gate(SUBMITTED_COMMAND_RECOVERY_GATE_ID))
         self.assertFalse(is_current_profile_gate(self.module.GATE_ID))
+        self.assertEqual(
+            self.module.expected_journey_for_gate(
+                SUBMITTED_COMMAND_RECOVERY_GATE_ID
+            ),
+            "submitted-command-recovery",
+        )
+        self.assertFalse(
+            self.module.requires_distinct_client_profiles(
+                SUBMITTED_COMMAND_RECOVERY_GATE_ID
+            )
+        )
+        self.assertTrue(
+            self.module.requires_distinct_client_profiles(
+                self.module.GATE_ID
+            )
+        )
         self.assertEqual(gate.direction_order, ["bob", "alice"])
         self.assertIn(
             "submitted_command_fixture_exact",

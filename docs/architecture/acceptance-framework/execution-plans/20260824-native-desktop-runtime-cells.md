@@ -861,7 +861,7 @@ committed to this plan.
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
 | NDR-W8 macOS regression | in progress / source-complete, runtime-unproven | Current-profile Direct, reply/thread, reaction, edit, recall, fresh Alice-to-Bob Native delivery at authority sequence 34, and historical cross-Station Alice/Bob avatar parity evidence exist while formal remaining Gates are incomplete. W8A/W8B/W8C source checks pass. The Owner selected canonical `four` and `fiveArm`; `four` is exact-source healthy while `fiveArm` fails closed on a retained legacy Conversation schema. W8C also requires separately authorized third-client topology. Multi-device, backup recovery, and full three-client Group/MLS runtime cells remain. |
-| NDR-W8A submitted-command reconciliation | source-complete; Native proof pending | MP-D31 contract, generated bindings, authenticated `/conversation/command/results`, canonical receipt/outbox/exact Device Inbox resolver, transactional hard-cut migration from historical payload-hash result IDs, deterministic endpoint/command result identity, and Device Engine startup reconciliation are implemented. The dedicated Acceptance-only fixture is actor-bound, authorization-gated, byte-preserving, cursor-neutral, and accepts the retained terminal shape `superseded/stale_delivery_plan` plus a failed logical pending row only when no projection or active replacement exists. Focused Rust, TypeScript, and Python checks pass. Exact-source Native convergence remains `UNPROVEN`; see the 2026-09-13 continuation checkpoint below. |
+| NDR-W8A submitted-command reconciliation | functional pass; formal Native proof pending | MP-D31 contract, generated bindings, authenticated `/conversation/command/results`, canonical receipt/outbox/exact Device Inbox resolver, transactional hard-cut migration from historical payload-hash result IDs, deterministic endpoint/command result identity, and Device Engine startup reconciliation are implemented. Exact-source run `20260913T163733726022Z-1a649100132ca245d99b69a50f0f30cc` generated command `01M2DT76RX52W4J6G9T8GS1BN3` / message `01M2DT76MBCG8W64K2TX0A5FJX`, converged it to committed/delivered, rendered it on Bob, and released all resources. The product report is `PASS/DONE/PROVEN`; the catalog result remains `PARTIAL/UNPROVEN` because the shared validator hard-coded the base Direct journey/profile rules. The focused validator correction passes 25 tests and awaits final exact-source deployment/rerun. |
 | NDR-W8B federated ephemeral typing | source-complete; Native proof pending | MP-D32 signal, receiver-fixed ephemeral QoS, bounded no-row receiver dispatch, Runtime payload-kind-restricted transport, Authority-mediated routing, production identity-directory binding, and local/remote common receiver composition are implemented. Conversation and Federation package tests pass. Exact-source cross-Station Direct/Group typing, TTL/session/disconnect, deny, partial-failure, and durable-row runtime evidence remain `UNPROVEN`. |
 | NDR-W8C federated contact identity and Group genesis reliability | source-complete; Native proof pending | Station remote-cache refresh, relationship identity contract, one PTID-keyed Desktop projection, readable Federation/Home Station rows, recoverable Group creation, accepted-Group convergence, typed errors, prototype parity, and UI-driven Native Gate logic are implemented and statically proven. Exact-source three-client Native Group/MLS proof remains `UNPROVEN`. |
 | NDR-W9 Windows cell | W9-A/B/C done; W9-D blocked / partial | Exact-source Product Closure run `20260908T175709393177Z-55f53c9d9f4a50ca95c53e79a3bde0bc` at `2ae0254691d97f16c3c08ef3e8639bdd91a91eac` proves Direct open/reopen, canonical Group genesis, Alice sequence 2, Bob sequence 3, Alice thread-reply sequence 4, toolbar geometry, and authority reaction sequence 5. The shared Messaging Core read-cursor decoder correction and focused source checks pass, but exact-source Station deployment and the Product Closure rerun are blocked by the Environment Owner profile boundary. |
@@ -5809,3 +5809,27 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   development identities. The historical W8A command tuple is retired after
   this reset; the next W8A proof must create and bind a new exact tuple before
   exercising submitted-command recovery.
+
+### 2026-09-13 W8A Functional Pass And Validator Correction
+
+- Canonical `four` and `fiveArm` both report exact build
+  `b5f42f721d0c`; both Native client worktrees are clean at full commit
+  `b5f42f721d0c6635eba74e4d4df55c62429287e2`.
+- The bounded W8A product entrypoint in run
+  `20260913T163733726022Z-1a649100132ca245d99b69a50f0f30cc`
+  reached `FUNCTIONAL_PASS`. It generated and staged command
+  `01M2DT76RX52W4J6G9T8GS1BN3` for message
+  `01M2DT76MBCG8W64K2TX0A5FJX` in
+  `direct-173e0baa1fc7de528ef29e279c86f51a`, restored the exact bytes and
+  identifiers, committed the authority result, produced the delivered sender
+  projection, rendered the plaintext on Bob, and released both clients and all
+  six ports.
+- The formal catalog result is still `PARTIAL/UNPROVEN`: after the product
+  report passed, the shared validator rejected the valid
+  `submitted-command-recovery` journey because it hard-coded
+  `direct-delivered-receipt`; its next profile check also treated only one
+  current-profile Gate ID as sharing a client profile.
+- The Acceptance-only correction derives the journey and profile-topology rule
+  from the Gate variant. Its 25 focused tests and Python compilation pass. The
+  next action is a clean checkpoint, synchronized clients and Stations, then
+  one final W8A catalog rerun before W8B begins.

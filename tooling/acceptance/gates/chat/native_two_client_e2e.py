@@ -16,9 +16,10 @@ from tooling.acceptance.core import (
     current_artifact_ref,
 )
 from tooling.acceptance.gates.chat.native_two_client_runner import (
-    CURRENT_PROFILE_GATE_ID,
     REQUIRED_ASSERTIONS,
+    SUBMITTED_COMMAND_RECOVERY_GATE_ID,
     commits_match,
+    is_current_profile_gate,
 )
 from tooling.acceptance.gates.chat.native_support import runtime_station_service
 
@@ -44,6 +45,16 @@ REQUIRED_STEPS = {
 
 class GateError(RuntimeError):
     pass
+
+
+def expected_journey_for_gate(gate_id: str) -> str:
+    if gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID:
+        return "submitted-command-recovery"
+    return "direct-delivered-receipt"
+
+
+def requires_distinct_client_profiles(gate_id: str) -> bool:
+    return not is_current_profile_gate(gate_id)
 
 
 def require(condition: bool, message: str) -> None:
@@ -98,7 +109,7 @@ def validate_report(
         "runtime cell must match PT_ACCEPTANCE_RUNTIME_CELL",
     )
     require(
-        runtime.get("journey") == "direct-delivered-receipt",
+        runtime.get("journey") == expected_journey_for_gate(gate_id),
         "unexpected native two-client journey",
     )
     source_identity = runtime.get("sourceIdentity")
@@ -229,7 +240,7 @@ def validate_report(
         require("" not in values and len(values) == 2, f"actors require distinct {field}")
     profiles = {str(actor.get("profile") or "") for actor in actors.values()}
     require("" not in profiles, "actors require a non-empty profile")
-    if gate_id != CURRENT_PROFILE_GATE_ID:
+    if requires_distinct_client_profiles(gate_id):
         require(
             len(profiles) == 2,
             "actors require distinct profile",
