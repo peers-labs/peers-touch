@@ -183,6 +183,7 @@ planRef = docs/architecture/secure-content/execution-plans/20260913-secure-conte
 |---|---|---|---|---|---|
 | `secure-content-w0` | documentation | accepted PRODUCT set | all Secure Content docs | none | docs/plan/tracking only; exclude code/runtime |
 | `secure-content-w0r` | infrastructure | none; runtime prerequisite only | `LDCP-D01..D06/D08/D09` | machine registration and lease-control Journey | canonical Local Dev Control Plane only; exclude env creation/product runtime |
+| `secure-content-w14` | infrastructure | none; W1 preparation only | `SC-A01/SC-A03`; `SC-D02` | none | scoped generator and its isolated tests only; exclude proto/generated/runtime changes |
 | `secure-content-w1` | infrastructure | `SOC-SEC-C02/C03/C04/C05/C08`; `SOC-SEC-AS03/04/08/13/14/16` | `SC-A03/A04/A08`; `SC-D02/D05/D07/D09/D12` | `SOC-SEC-J01/J02/J03/J05/J06/J07` | allowlisted proto/generated consumers only; exclude unrelated generated output/runtime |
 | `secure-content-w2` | refactor | `MP-C13`; `MP-G13` | `SC-A01/A03`; `SC-D02/D03/D13`; `MP-D23` | `MP-J11` Desktop and Mobile Native | shared kernels + Chat internal adapters; exclude Chat wire/API/schema/behavior |
 | `secure-content-w3` | infrastructure | `SOC-SEC-C04/C05`; `SOC-SEC-AS08/16` | `SC-A04/A08`; `SC-D05/D09/D12` | `SOC-SEC-J01/J07` | Content PreKeys only; exclude Direct/MLS |
@@ -318,7 +319,8 @@ command uses the ineffective `make station-restart PROFILE=...` form.
 W0 Plan approval and conflict reconciliation
   -> W0R Machine registration and Station lease owner
   -> W4 Optional JWT + Development runner bootstrap
-       -> W1 Contracts/generated substrate
+       -> W14 Scoped generator groundwork
+            -> W1 Contracts/generated substrate
 
 W0R + W1 + W4
   -> W2 Atomic shared-kernel extraction + Desktop/Mobile Chat FUNCTIONAL_PASS
@@ -374,6 +376,9 @@ Mode: `hybrid`.
 
 - W1 allowlisted generated outputs are serial under one integrator; the broad
   `model/build.sh` and `proto-gen-mobile.sh` generators are forbidden in W1.
+- W14 may implement and isolate-test only the scoped generator while W1's
+  Desktop write set remains unavailable. It cannot add or modify proto source,
+  generated output, or Rust consumer declarations.
 - After W0, W0R and W4 are independent when claims permit. W0R owns the
   canonical registration/lease implementation, and W4 owns the dynamically
   discovered Development runner and YAML projector bootstrap. W1 follows W4;
@@ -510,7 +515,7 @@ make env-check \
 
 - **Responsibility**: shared payload/object/envelope types; Social private
   prepare/submit/read/recovery; Key Exchange Content PreKeys.
-- **Dependencies**: W0/W4; generated-path conflicts released.
+- **Dependencies**: W14; generated-path conflicts released.
 - **Deliverables**: deterministic Go/Desktop/Mobile/Rust outputs.
 - **Generator boundary**: add `tooling/scripts/proto-gen-secure-content.sh`.
   It accepts only `domain/common`, `domain/secure_content`, `domain/social` and
@@ -534,6 +539,29 @@ git diff --check
 
 - **Deletion at W11**: `AudienceKeyEnvelope`, inline media keys, legacy visibility,
   and Social generated mirrors. Chat attachment wire types remain.
+
+### SC-W14: Scoped Generator Groundwork
+
+- **Responsibility**: implement the W1 code-generation owner without changing
+  proto contracts or generated consumers.
+- **Dependencies**: W0/W4.
+- **Deliverables**: thin `tooling/scripts/proto-gen-secure-content.sh` entry,
+  `tooling/scripts/proto-gen-secure-content.mjs`, and isolated Node tests for
+  the fixed input allowlist, output manifest, repository-boundary checks,
+  tool/budget validation, and check/apply behavior.
+- **Failure**: reject undeclared input/output paths, applet `go_package`,
+  missing tools, timeout, and writes outside the manifest.
+- **Checks**:
+
+```bash
+node --test tooling/scripts/proto-gen-secure-content.test.mjs
+bash -n tooling/scripts/proto-gen-secure-content.sh
+git diff --check
+```
+
+- **Exit**: generator behavior is checkpointed and independently reviewed.
+  Proto source, generated files, and Rust build/module files remain untouched
+  until W1 acquires its complete serial write set.
 
 ### SC-W2: Atomic Shared-Kernel Extraction And Chat Cutover
 
@@ -1159,6 +1187,7 @@ observations is invalid.
 |---|---|---|---|---|---|---|
 | W0 | governance | complete | plan-review-v14 | N/A | N/A | none |
 | W0R | machine runtime control | complete | `8a7722c93` | PASS | NOT_RUN | none |
+| W14 | scoped generator groundwork | in_progress | none | NOT_RUN | N/A | none |
 | W1 | contracts | parked | none | NOT_RUN | NOT_RUN | focused Desktop generated paths overlap active MCA owner |
 | W2 | atomic kernels/Chat | parked | none | NOT_RUN | NOT_RUN | W0R/W1/W4; active MCA Desktop source and Station deploy/slot owner |
 | W3 | PreKeys | parked | none | NOT_RUN | NOT_RUN | W2 |
@@ -1173,9 +1202,8 @@ observations is invalid.
 | W12 | physical schema/data cut + full functional | parked | none | NOT_RUN | NOT_RUN | W5/W11; exact two-profile reset/deploy authorization |
 | W13 | Acceptance | parked | none | NOT_RUN | NOT_RUN | W12 FUNCTIONAL_PASS; active Acceptance owner |
 
-Overall: `3/15`. W1 is next but remains parked while the active MCA declaration
-owns focused Desktop generated paths. The execution guardian must recompute the
-remaining non-conflicting frontier before waiting.
+Overall: `3/16`. W14 is the dependency-ready execution frontier. W1 remains
+parked while the active MCA declaration owns focused Desktop generated paths.
 
 Current evidence:
 

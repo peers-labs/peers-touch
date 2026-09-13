@@ -58,6 +58,29 @@ items:
       history: { rewrite: denied }
 
   - schemaVersion: 1
+    id: secure-content-w14
+    workClass: infrastructure
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W14
+    productRefs: []
+    architectureRefs: [SC-A01, SC-A03, SC-D02]
+    journeyIds: []
+    scope:
+      include: [tooling/scripts/proto-gen-secure-content.sh, tooling/scripts/proto-gen-secure-content.mjs, tooling/scripts/proto-gen-secure-content.test.mjs]
+      exclude: [model/domain, generated outputs, Rust build inputs, runtime]
+    resources:
+      sourceClaims:
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.sh, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.test.mjs, mode: exclusive-write }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
     id: secure-content-w1
     workClass: infrastructure
     planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
