@@ -1282,7 +1282,7 @@ observations is invalid.
 | W2 | atomic kernels/Chat | in progress | `c69edd606` (W2A) | SOURCE_CHECK/PASS | NOT_RUN | W2D waits for W5/W9; W2B Native proof waits for W2D and runtime leases |
 | W3 | PreKeys | complete | `dbd612b65` | PASS (`sc-dj-content-prekey`) | NOT_RUN | none |
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
-| W5 | recovery | in progress | none | NOT_RUN | NOT_RUN | none |
+| W5 | recovery | complete | `9bf7e3934` | PASS (`sc-dj-recovery-consumer`) | NOT_RUN | none |
 | W6 | Social minimum | complete | `d2731a220` | PASS (`sc-dj-social-uow-atomicity`) | NOT_RUN | none |
 | W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | active MCA Desktop claim and Station runtime owner |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
@@ -1292,7 +1292,7 @@ observations is invalid.
 | W12 | physical schema/data cut + full functional | parked | none | NOT_RUN | NOT_RUN | W5/W11; exact two-profile reset/deploy authorization |
 | W13 | Acceptance | parked | none | NOT_RUN | NOT_RUN | W12 FUNCTIONAL_PASS; active Acceptance owner |
 
-Overall: `7/16`. DWF-D13 removed the cross-worktree source-lock blocker. W1
+Overall: `8/16`. DWF-D13 removed the cross-worktree source-lock blocker. W1
 completed the accepted `SC-D14` wire contracts, scoped generation and all five
 generated consumer closures. W2A completed the atomic source cut; W2D must add
 the real Desktop/Mobile Development drivers before the Desktop/Mobile Native
@@ -1428,8 +1428,10 @@ Current evidence:
   envelope projection, actor-bound nanosecond cursor pagination, restart and
   denial tests. Recovery/Social race suites, Go vet/style, six Rust recovery
   tests, 18 Development runner/work-item tests and independent Rust/Go source
-  reviews pass. W5 remains `in progress` until a clean checkpoint and the
-  exact-source `sc-dj-recovery-consumer` service Journey pass.
+  reviews pass. Checkpoint `9bf7e3934` produced an exact-source
+  `FUNCTIONAL_CHECK/PASS` for `sc-dj-recovery-consumer` at
+  `~/.peers-touch/dev/workspaces/9eb2cb904c9ae460/development/secure-content/W5/SC-AS08/result.json`.
+  W5 is complete; formal Acceptance remains `NOT_RUN`.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level
