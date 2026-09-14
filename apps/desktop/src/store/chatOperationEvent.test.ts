@@ -259,6 +259,49 @@ describe('Agent turn event identity projection', () => {
     expect(result.operations['conversation-1']).toBe(current);
   });
 
+  it('allows an ordered recovery transition to share the acknowledged sequence', () => {
+    const current = {
+      ...operation(),
+      turnId: 'turn-1',
+      lastEventSeq: 31,
+      runState: 'connection_lost' as const,
+    };
+    const result = applyOperationEventIdentity(
+      { 'conversation-1': current },
+      'conversation-1',
+      {
+        event: 'reconnecting',
+        data: { seq: 31, turnId: 'turn-1', streamGeneration: 10 },
+      },
+    );
+
+    expect(result.accepted).toBe(true);
+    expect(result.operations['conversation-1']).toMatchObject({
+      lastEventSeq: 31,
+      runState: 'reconnecting',
+    });
+  });
+
+  it('rejects a stale same-sequence recovery control without regressing the operation', () => {
+    const current = {
+      ...operation(),
+      turnId: 'turn-1',
+      lastEventSeq: 31,
+      runState: 'reconnecting' as const,
+    };
+    const result = applyOperationEventIdentity(
+      { 'conversation-1': current },
+      'conversation-1',
+      {
+        event: 'connection_lost',
+        data: { seq: 31, turnId: 'turn-1', streamGeneration: 10 },
+      },
+    );
+
+    expect(result.accepted).toBe(false);
+    expect(result.operations['conversation-1']).toBe(current);
+  });
+
   it('never lets an older turn generation overwrite the current turn', () => {
     const current = {
       ...operation(),

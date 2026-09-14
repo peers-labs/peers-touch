@@ -23,11 +23,11 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | MCA-J06 is `FUNCTIONAL_PASS`; `BASE-INVALID_REFERENCE` promotion is implemented and focused-pass, with source-bound Foundation execution pending |
+| Current step | MCA-J06 is `FUNCTIONAL_PASS`; the AS-F06 equal-cursor recovery-order fix is `FOCUSED_PASS`, with exact-source Foundation execution pending before `BASE-INVALID_REFERENCE` |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
 | Last completed | Checkpoint `d3e6feaa3051763c79f1252593c7bbcfff06f6b1` preserves retained-Attempt replay; C08 run `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN`; fully authorized Foundation run `20260913T150542388406Z-46ced7c0b785bb9094b7b948a34b86d3` crossed all AS-F06 and both-locale `BASE-INTERRUPTED` cells before exposing unimplemented `BASE-INVALID_REFERENCE` |
-| Current action | Checkpoint the `BASE-INVALID_REFERENCE` Harness/oracle promotion and prepare its exact-source Foundation execution |
-| Next action | Execute the promoted Desktop/Browser locale cells, preserve evidence, then continue from the next real Foundation failure |
+| Current action | Checkpoint and deploy the AS-F06 recovery-order owner fix, then rerun the unchanged Foundation Gate |
+| Next action | Prove AS-F06 idempotence, execute the promoted `BASE-INVALID_REFERENCE` Desktop/Browser locale cells, and continue from the next real Foundation failure |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
@@ -36,7 +36,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | none for MCA-J06 Acceptance promotion；AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN` on `d3e6feaa3`；Foundation `20260913T150542388406Z-46ced7c0b785bb9094b7b948a34b86d3` first fails at Browser English `BASE-INVALID_REFERENCE`；checkpoint `3a7f4ce5c` binds canonical Turn identity across Web and native boundaries；a committed-only native build completed reject→preserve→remove→resend and rendered exactly one `CLEAN_OK`, establishing MCA-J06 `FUNCTIONAL_PASS`；the promoted Harness/oracle/static suite passes 262 tests and Desktop typecheck, while the Foundation runtime cell remains `UNPROVEN` until execution |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN` on `d3e6feaa3`；MCA-J06 completed reject→preserve→remove→resend with exactly one `CLEAN_OK` assistant；Foundation run `20260914T000507932791Z-ee4b4c3cae4a4b8ca27861ac101ef85d` isolated stale same-cursor `connection_lost` regression after `RECONNECTING`；the owner-layer correction passes 57 focused Desktop tests, the 685-test Desktop suite with one existing skip, Desktop typecheck, 86 native static tests, 136 AS-F06 oracle tests, and diff checks；Foundation remains `UNPROVEN` until exact-source execution |
 | Last updated | 2026-09-14 |
 
 ---

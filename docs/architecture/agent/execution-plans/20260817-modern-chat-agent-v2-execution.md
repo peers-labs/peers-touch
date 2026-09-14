@@ -1333,6 +1333,33 @@ and zero local-path leakage.
   - Prototype disposition: no drift; the implementation follows the confirmed
     attachment-failure preservation/removal behavior. No prototype source
     change is required.
+  - Source-bound Foundation continuation on checkpoints `67552f1c6`,
+    `e71e90437`, and `fbdcdf9d9` repaired remote-profile deployment, disproved
+    the earlier AS-F02 queue-projection timeout as a current product defect,
+    and made acknowledged-cursor evidence include recovery-control events
+    without changing any Gate predicate. The latest exact-source Gate run
+    `20260914T000507932791Z-ee4b4c3cae4a4b8ca27861ac101ef85d`
+    completed AS-F06 replay, source/payload equality, stale-generation and
+    stale-terminal rejection, terminal Station equality, and cleanup, then
+    failed only `duplicateAndOutOfOrderIdempotent`.
+  - Runtime evidence identifies the remaining owner-layer defect: after
+    `connection_lost(31) -> reconnecting(31)`, replaying the stale
+    `connection_lost(31)` is accepted by both the recovery record and operation
+    projection because recovery controls are exempt from equal-cursor
+    deduplication. The remediation lane is serial across
+    `agentTurnRecovery.ts`, `chat.ts`, and their focused tests because they
+    implement one recovery-phase ordering contract. The required fix rejects
+    backward or duplicate same-cursor control transitions while preserving
+    legal same-cursor forward transitions; the 419-cell matrix, assertions,
+    and timeout values remain unchanged.
+  - The owner-layer correction now shares one explicit recovery-transition
+    contract between `agentTurnRecovery.ts` and `chat.ts`. Focused recovery and
+    operation-projection tests pass `57/57`, the full Desktop suite passes
+    `685/685` with one existing skip, Desktop typecheck passes, Agent native
+    static tests pass `86/86`, the AS-F06 scenario oracle passes `136/136`, and
+    `git diff --check` passes. This is `FOCUSED_PASS`; AS-F06 and G-F remain
+    `PARTIAL / UNPROVEN` pending an exact-source checkpoint deployment and
+    unchanged Foundation rerun.
 
 #### G-FE1 Concurrency Decision
 

@@ -77,6 +77,30 @@ const PHASE_BY_EVENT: Record<string, AgentTurnRecoveryPhase> = {
   reconciling: 'RECONCILING',
   recovery_failed: 'RECOVERY_FAILED',
 };
+const ALLOWED_RECOVERY_PHASE_TRANSITIONS: Record<
+  AgentTurnRecoveryPhase,
+  ReadonlySet<AgentTurnRecoveryPhase>
+> = {
+  CONNECTED: new Set(['CONNECTION_LOST', 'RECONNECTING']),
+  CONNECTION_LOST: new Set(['RECONNECTING', 'RECOVERY_FAILED']),
+  RECONNECTING: new Set(['REPLAYING', 'RECOVERY_FAILED']),
+  REPLAYING: new Set(['RECONCILING', 'RECOVERY_FAILED']),
+  RECONCILING: new Set(['CONNECTED', 'RECOVERY_FAILED']),
+  RECOVERY_FAILED: new Set(['RECONNECTING', 'RECONCILING']),
+};
+
+export function agentTurnRecoveryPhaseForEvent(
+  event: string,
+): AgentTurnRecoveryPhase | undefined {
+  return PHASE_BY_EVENT[event];
+}
+
+export function isAgentTurnRecoveryPhaseTransitionAllowed(
+  current: AgentTurnRecoveryPhase,
+  next: AgentTurnRecoveryPhase,
+): boolean {
+  return ALLOWED_RECOVERY_PHASE_TRANSITIONS[current].has(next);
+}
 
 // #region debug-point A-D:foundation-recovery-registration
 function reportFoundationRecoveryRegistrationDebug(
@@ -196,6 +220,7 @@ export function reduceAgentTurnRecovery(
     return { accepted: false, terminal: false, record: current };
   }
   const sequence = sequenceField(payload.data);
+  const recoveryPhase = agentTurnRecoveryPhaseForEvent(payload.event);
   if (current && streamGeneration < current.streamGeneration) {
     return { accepted: false, terminal: false, record: current };
   }
@@ -227,6 +252,19 @@ export function reduceAgentTurnRecovery(
   ) {
     return { accepted: false, terminal: false, record: current };
   }
+  if (
+    current
+    && current.turnId === turnId
+    && current.streamGeneration === streamGeneration
+    && sequence === current.cursor
+    && recoveryPhase
+    && !isAgentTurnRecoveryPhaseTransitionAllowed(
+      current.phase,
+      recoveryPhase,
+    )
+  ) {
+    return { accepted: false, terminal: false, record: current };
+  }
   const terminal = terminalEvent && !options.deferTerminalClosure;
   if (terminal) {
     return { accepted: true, terminal: true };
@@ -237,7 +275,7 @@ export function reduceAgentTurnRecovery(
     && current.streamGeneration === streamGeneration
     && sequence > 0
     && sequence <= current.cursor
-    && !PHASE_BY_EVENT[payload.event]
+    && !recoveryPhase
   ) {
     return { accepted: false, terminal: false, record: current };
   }
@@ -251,7 +289,7 @@ export function reduceAgentTurnRecovery(
     streamId: payload.streamId || current?.streamId || '',
     streamGeneration,
     cursor: Math.max(current?.cursor ?? 0, sequence),
-    phase: PHASE_BY_EVENT[payload.event] ?? current?.phase ?? 'CONNECTED',
+    phase: recoveryPhase ?? current?.phase ?? 'CONNECTED',
     startedAt: current?.startedAt ?? now,
     updatedAt: Math.max(current?.updatedAt ?? 0, now),
     recoveryEpoch: current?.recoveryEpoch ?? 0,

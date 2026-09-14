@@ -19,6 +19,11 @@ import { agentService } from '../services/agent-service';
 import { useAgentStore } from './agent';
 import { useAgentCapabilityStore } from './agentCapabilities';
 import { useAgentTopicStore } from './agentTopics';
+import {
+  agentTurnRecoveryPhaseForEvent,
+  isAgentTurnRecoveryPhaseTransitionAllowed,
+  type AgentTurnRecoveryPhase,
+} from './agentTurnRecovery';
 import { currentAuthenticatedActorPtid } from './session';
 import {
   conversationIdFromAgentDraftKey,
@@ -963,6 +968,27 @@ function removeOperation(
   return next;
 }
 
+function operationRecoveryPhase(
+  operation: ChatOperation,
+): AgentTurnRecoveryPhase | undefined {
+  switch (operation.runState) {
+    case 'streaming':
+      return 'CONNECTED';
+    case 'connection_lost':
+      return 'CONNECTION_LOST';
+    case 'reconnecting':
+      return 'RECONNECTING';
+    case 'replaying':
+      return 'REPLAYING';
+    case 'reconciling':
+      return 'RECONCILING';
+    case 'recovery_failed':
+      return 'RECOVERY_FAILED';
+    default:
+      return undefined;
+  }
+}
+
 export function applyOperationEventIdentity(
   operations: Record<string, ChatOperation>,
   sessionKey: string,
@@ -973,14 +999,16 @@ export function applyOperationEventIdentity(
   const seq = Number(event.data?.seq || 0);
   const streamGeneration = Number(event.data?.streamGeneration || 0);
   const currentGeneration = operation.streamGeneration ?? 0;
-  const recoveryControlEvent = [
-    'connection_lost',
-    'reconnecting',
-    'replaying',
-    'reconciling',
-    'connected',
-    'recovery_failed',
-  ].includes(event.event);
+  const recoveryPhase = agentTurnRecoveryPhaseForEvent(event.event);
+  const currentRecoveryPhase = operationRecoveryPhase(operation);
+  const sameSequenceRecoveryAdvance =
+    recoveryPhase !== undefined
+    && currentRecoveryPhase !== undefined
+    && seq === (operation.lastEventSeq || 0)
+    && isAgentTurnRecoveryPhaseTransitionAllowed(
+      currentRecoveryPhase,
+      recoveryPhase,
+    );
   if (
     streamGeneration > 0
     && currentGeneration > 0
@@ -992,7 +1020,7 @@ export function applyOperationEventIdentity(
     seq > 0
     && (operation.lastEventSeq || 0) >= seq
     && streamGeneration === currentGeneration
-    && !recoveryControlEvent
+    && !sameSequenceRecoveryAdvance
     && !(
       event.event === 'snapshot'
       && (operation.lastEventSeq || 0) === seq
