@@ -169,6 +169,9 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
   let transition: Promise<void> = Promise.resolve();
 
   const synchronize = async (session: MobileAuthSession | null) => {
+    // #region debug-point C:social-synchronize-start
+    void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-social-activation', runId: 'post-fix', hypothesisId: 'C', location: 'apps/mobile/src/runtimes/runtimeRegistry.ts:social.synchronize', msg: '[DEBUG] Social synchronization starting', data: { hasSession: session !== null, suspended, hadController: controller !== null }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     const previousController = controller;
     previousController?.teardown();
     await previousController?.drain();
@@ -180,12 +183,20 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
       useSocialStore.getState(),
       useGroupStore.getState(),
     );
+    // #region debug-point C:social-controller-started
+    void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-social-activation', runId: 'post-fix', hypothesisId: 'C', location: 'apps/mobile/src/runtimes/runtimeRegistry.ts:social.synchronize', msg: '[DEBUG] Social controller started', data: { active: controller !== null }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
   };
 
   const enqueueSession = (session: MobileAuthSession | null) => {
     transition = transition
       .then(async () => synchronize(session))
-      .catch((error) => reportRuntimeDescriptorError('social', error));
+      .catch((error) => {
+        // #region debug-point C:social-synchronize-failed
+        void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-social-activation', runId: 'post-fix', hypothesisId: 'C', location: 'apps/mobile/src/runtimes/runtimeRegistry.ts:social.enqueueSession', msg: '[DEBUG] Social synchronization failed', data: { message: error instanceof Error ? error.message : String(error) }, ts: Date.now() }) }).catch(() => {});
+        // #endregion
+        reportRuntimeDescriptorError('social', error);
+      });
   };
 
   return {

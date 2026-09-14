@@ -175,7 +175,15 @@ export function startSocialRuntime(
     onReceipt: wakeMessaging,
     onMutation: wakeMessaging,
     onTyping: (...args) => {
-      if (!cancelled) store.applyTypingState(...args);
+      if (!cancelled) {
+        store.applyTypingState(...args);
+        // #region debug-point L:typing-projection-applied
+        const [conversationId, fromActorPtid, typing] = args;
+        const typingPeers = useSocialStore.getState().typingPeers;
+        const projection = typingPeers[conversationId]?.[fromActorPtid];
+        void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-social-activation', runId: 'typing-pre-fix', hypothesisId: 'L', location: 'apps/mobile/src/features/social/socialRuntime.ts:onTyping', msg: '[DEBUG] Mobile typing projection applied', data: { conversationId, fromActorPtid, typing, storedTyping: projection?.typing ?? null, conversationKeys: Object.keys(typingPeers).sort() }, ts: Date.now() }) }).catch(() => {});
+        // #endregion
+      }
     },
     onPresence: (...args) => {
       if (!cancelled) store.setPeerOnline(...args);
@@ -286,9 +294,12 @@ async function superviseRealtimeStream(
     try {
       await startRealtimeStream(session, signal, handlers);
       reconnectDelay = REALTIME_RECONNECT_BASE_MS;
-	} catch {
-	  if (signal.aborted) return;
-	}
+    } catch (error) {
+      if (signal.aborted) return;
+      // #region debug-point K:realtime-stream-failed
+      void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-social-activation', runId: 'typing-pre-fix', hypothesisId: 'K', location: 'apps/mobile/src/features/social/socialRuntime.ts:superviseRealtimeStream', msg: '[DEBUG] Mobile realtime stream failed', data: { message: readableErrorMessage(error), reconnectDelay }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
+    }
 
     if (signal.aborted) return;
     await reconcileActiveThreads(store, groupStore);

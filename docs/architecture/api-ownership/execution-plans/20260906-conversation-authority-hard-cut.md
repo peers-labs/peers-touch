@@ -1807,3 +1807,27 @@ convergence, and the durable Direct effect. The focused regression, complete
 Social race suite, Actor Identity and Conversation race suites, focused
 `go vet`, Go style, and `git diff --check` pass. Exact-source checkpoint,
 deployment, and the same receiver-perspective Journey remain required.
+
+Checkpoint `b4bad26b49a0972f9f6abb17bc4571b1f97a8896` was deployed
+exactly to `four` and `fiveArm`. Exact-source run
+`20260914T183051787153Z-a191af536e16885a10fcd344c2905f85`
+clears the accepted-relationship and Direct Conversation boundary. The
+self-targeted ACCEPT frame returns a successful local disposition, and
+Conversation frames are emitted to the remote Station. The next first
+actionable product failure is `sim-android typing projection did not converge
+before timeout`.
+
+CA-W6 admits one bounded diagnostic for this later typing boundary. The sender
+typing action returned successfully and shared Federation selected both the
+local authority-admission route and the remote Home fan-out route. The
+remaining hypotheses are receiver Home delivery rejection, publication without
+a live Bob SSE subscriber, Mobile SSE decode/dispatch loss, or projection-key
+drift. Instrumentation is limited to those Station ephemeral-publication and
+Mobile realtime-ingress observation points. Business behavior remains
+unchanged until runtime evidence selects the owner-layer correction.
+
+Concurrency Decision: hybrid. Read-only evidence and source audits may run in
+parallel. Instrumentation, checkpoint integration, deployment to `four` and
+`fiveArm`, and the shared simulator Journey remain serial because they mutate
+or consume the same Station binaries, profiles, databases, and Mobile fixture.
+CA-W6 remains `PARTIAL/UNPROVEN`; CA-W7 remains pending.

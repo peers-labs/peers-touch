@@ -372,7 +372,18 @@ func (t *routedTransport) Deliver(
 		return result, err
 	}
 
-	return t.remote.Deliver(ctx, frame)
+	result, err := t.remote.Deliver(ctx, frame)
+	// #region debug-point I:remote-delivery-result
+	if payload, encodeErr := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "typing-pre-fix", "hypothesisId": "I", "location": "apps/station/frame/core/federation/transport.go:routedTransport.Deliver", "msg": "[DEBUG] Remote Federation delivery completed", "data": map[string]any{"frameId": frame.GetFrameId(), "payloadKind": frame.GetPayloadKind(), "targetStationPeerId": frame.GetTargetStationPeerId(), "disposition": result.Disposition, "errorCode": result.ErrorCode, "error": fmt.Sprint(err)}, "ts": time.Now().UnixMilli()}); encodeErr == nil {
+		go func() {
+			response, _ := http.Post("http://10.4.44.83:7784/event", "application/json", bytes.NewReader(payload))
+			if response != nil {
+				_ = response.Body.Close()
+			}
+		}()
+	}
+	// #endregion
+	return result, err
 }
 
 var (
