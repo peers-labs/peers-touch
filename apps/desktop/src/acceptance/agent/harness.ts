@@ -6604,6 +6604,47 @@ async function runFoundationInvalidReferenceScenario(input: {
       stableJson(afterRejectedReadback),
     );
 
+    // #region debug-point A-E:invalid-reference-resend-snapshot
+    const invalidReferenceResendSnapshot = () => {
+      const state = useChatStore.getState();
+      const operation = state.operations[conversationId];
+      const send = document.querySelector<HTMLElement>(
+        '[data-pt-agent-composer-send]',
+      );
+      const assistantMessages = state.messages.filter(
+        (message) => message.role === 'assistant',
+      );
+      return {
+        assistantCount: assistantMessages.length,
+        assistantLoadingCount: assistantMessages.filter(
+          (message) => message.loading === true,
+        ).length,
+        assistantSuccessfulMarkerCount: assistantMessages.filter(
+          (message) => message.content.includes(responseMarker),
+        ).length,
+        assistantTurnIdentityCount: assistantMessages.filter(
+          (message) => Boolean(message.turnId),
+        ).length,
+        composerLength: textarea.value.length,
+        composerMatchesCorrectedDraft: textarea.value === correctedDraft,
+        currentSessionMatches: state.currentSessionKey === conversationId,
+        isStreaming: state.isStreaming,
+        operationErrorPresent: Boolean(operation?.error),
+        operationLastEventSeq: operation?.lastEventSeq ?? null,
+        operationPresent: Boolean(operation),
+        operationRunState: operation?.runState ?? null,
+        operationStatus: operation?.status ?? null,
+        operationStreamGeneration: operation?.streamGeneration ?? null,
+        operationTurnIdPresent: Boolean(operation?.turnId),
+        sendAriaDisabled: send?.getAttribute('aria-disabled') ?? null,
+        sendDisabled: send instanceof HTMLButtonElement
+          ? send.disabled
+          : null,
+        sendPresent: Boolean(send),
+      };
+    };
+    // #endregion
+
     let completionObservationSequence = 0;
     const completionEventRef: {
       current: FoundationPreAdmissionErrorEvent | null;
@@ -6611,6 +6652,51 @@ async function runFoundationInvalidReferenceScenario(input: {
     const unsubscribeCompletion = eventBus.subscribe(
       EVENT.AGENT_TURN_STREAM_EVENT,
       (payload) => {
+        const payloadTurnId = String(
+          payload.data.turnId
+          ?? payload.data.turn_id
+          ?? '',
+        );
+        const sourceDelivery = (
+          payload as typeof payload & {
+            sourceDelivery?: AgentTurnSourceDelivery;
+          }
+        ).sourceDelivery;
+        // #region debug-point C-E:invalid-reference-resend-event
+        void Promise.all([
+          sha256Hex(payload.conversationId),
+          payloadTurnId ? sha256Hex(payloadTurnId) : Promise.resolve(''),
+        ]).then(([payloadConversationIdHash, payloadTurnIdHash]) =>
+          reportFoundationInvalidReferenceResendDebug(
+            'C-D-E',
+            'stream-event-observed',
+            {
+              ...invalidReferenceResendSnapshot(),
+              conversationMatches:
+                payload.conversationId === conversationId,
+              eventType: payload.event,
+              payloadConversationIdHash,
+              payloadTurnIdHash,
+              sequence: Number(
+                payload.data.seq
+                ?? payload.data.sequence
+                ?? 0,
+              ),
+              sourceConversationMatches:
+                sourceDelivery?.conversationId === conversationId,
+              sourceSequence: sourceDelivery?.sequence ?? null,
+              sourceTransport: sourceDelivery?.transport ?? null,
+              sourceTurnIdMatches:
+                Boolean(payloadTurnId)
+                && sourceDelivery?.turnId === payloadTurnId,
+              streamGeneration: payload.streamGeneration,
+              terminalClass: classifyAgentTurnTerminalEvent({
+                event: payload.event,
+                data: payload.data,
+              }),
+            },
+          ));
+        // #endregion
         if (payload.conversationId !== conversationId) return;
         completionObservationSequence += 1;
         const event = {
@@ -6627,11 +6713,7 @@ async function runFoundationInvalidReferenceScenario(input: {
           conversationId: payload.conversationId,
           observationSequence: completionObservationSequence,
           timestampMs: payload.timestampMs,
-          sourceDelivery: (
-            payload as typeof payload & {
-              sourceDelivery?: AgentTurnSourceDelivery;
-            }
-          ).sourceDelivery,
+          sourceDelivery,
         };
       },
     );
@@ -6665,12 +6747,94 @@ async function runFoundationInvalidReferenceScenario(input: {
           if (!send) {
             throw new Error('agent.acceptance.foundationComposerSendMissing');
           }
-          send.click();
-          await waitFor(
-            () => completionEventRef.current !== null,
-            'invalid reference corrected resend',
-            FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
+          // #region debug-point A-B:invalid-reference-resend-before-click
+          await reportFoundationInvalidReferenceResendDebug(
+            'A-B',
+            'before-corrected-send-click',
+            invalidReferenceResendSnapshot(),
           );
+          // #endregion
+          send.click();
+          // #region debug-point A-B:invalid-reference-resend-after-click
+          await reportFoundationInvalidReferenceResendDebug(
+            'A-B',
+            'after-corrected-send-click',
+            invalidReferenceResendSnapshot(),
+          );
+          // #endregion
+          try {
+            await waitFor(
+              () => completionEventRef.current !== null,
+              'invalid reference corrected resend',
+              FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
+            );
+            // #region debug-point C-E:invalid-reference-resend-completed
+            await reportFoundationInvalidReferenceResendDebug(
+              'C-D-E',
+              'corrected-resend-completed',
+              invalidReferenceResendSnapshot(),
+            );
+            // #endregion
+          } catch (error) {
+            const [readbackResult, queueResult, executionResult] =
+              await Promise.allSettled([
+                foundationConversationReadback(conversationId),
+                api.listAgentTurnQueue(conversationId),
+                foundationExecutionSnapshot(agentId, conversationId),
+              ]);
+            // #region debug-point A-E:invalid-reference-resend-timeout
+            await reportFoundationInvalidReferenceResendDebug(
+              'A-B-C-D-E',
+              'corrected-resend-timeout',
+              {
+                ...invalidReferenceResendSnapshot(),
+                error:
+                  error instanceof Error ? error.message : String(error),
+                execution: executionResult.status === 'fulfilled'
+                  ? executionResult.value
+                  : {
+                      error: foundationF12MessageListErrorDebug(
+                        executionResult.reason,
+                      ),
+                    },
+                queue: queueResult.status === 'fulfilled'
+                  ? {
+                      entryCount: queueResult.value.entries.length,
+                      entryStatuses: queueResult.value.entries.map(
+                        (entry) => String(entry.status ?? ''),
+                      ),
+                    }
+                  : {
+                      error: foundationF12MessageListErrorDebug(
+                        queueResult.reason,
+                      ),
+                    },
+                readback: readbackResult.status === 'fulfilled'
+                  ? {
+                      conversationStatus:
+                        readbackResult.value.conversation.status,
+                      conversationVersion:
+                        readbackResult.value.conversation.version,
+                      messageCount: readbackResult.value.messages.length,
+                      messages: readbackResult.value.messages.map(
+                        (message) => ({
+                          role: message.role,
+                          status: message.status,
+                          turnIdPresent: Boolean(message.turnId),
+                          typedErrorPresent: Boolean(message.errorJson),
+                        }),
+                      ),
+                    }
+                  : {
+                      error: foundationF12MessageListErrorDebug(
+                        readbackResult.reason,
+                      ),
+                    },
+              },
+            );
+            // #endregion
+            throw error;
+          }
         },
       );
     } finally {
@@ -11510,6 +11674,27 @@ function reportFoundationApprovalExpiryCleanupDebug(
       location: 'harness.ts:runFoundationApprovalExpiredScenario',
       msg: `[DEBUG] ${stage}`,
       data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:foundation-invalid-reference-resend
+function reportFoundationInvalidReferenceResendDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7812/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-invalid-reference-resend',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationInvalidReferenceScenario',
+      msg: `[DEBUG] ${stage}`,
+      data: evidenceValue(data),
       ts: Date.now(),
     }),
   }).then(() => undefined).catch(() => undefined);

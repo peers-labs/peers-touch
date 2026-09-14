@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; MCA-J06 is `FUNCTIONAL_PASS`; checkpoint `b0be51e808b9d442ab7551ec16b2536861e8f41f` fixes the AS-F06 equal-cursor recovery regression; run `20260914T034858052731Z-56fdebfb8bc40b4540d647b5abd705f0` crossed Browser AS-F12 in both locales and first exposed Browser English `BASE-APPROVAL-EXPIRED` cleanup; diagnostic checkpoint `805bb2791513c13c61a859d6e74a51d4fad40cf7` then reproduced `AS_F06_DURABLE_RELOAD_TARGET_MISSING` after same-process runtime teardown dropped the failed-record preservation marker; the owner fix is `FOCUSED_PASS` and exact-source proof remains pending | W8a |
+| G-F Complete Foundation Gate | partial / unproven; MCA-J06 is `FUNCTIONAL_PASS`; checkpoint `1c238413df7a68b86ba081c30be518463f0c0a97` fixes same-process failed-recovery retention, while diagnostic checkpoint `da6f4bec4b1e76e7f25c2d7814e76e5476b80ba8` makes approval-expiry cleanup probes BigInt-safe; exact-source run `20260914T051145190380Z-d38aa72f1a763c293a9170f83bcf53ad` crossed AS-F06 and both `BASE-APPROVAL-EXPIRED` locale cells, then failed first at Browser zh-CN `BASE-INVALID_REFERENCE` while waiting for corrected resend completion; debug session `foundation-invalid-reference-resend` is tracing click dispatch, stale operation fencing, Turn admission/settlement, identity matching, and Station readback without changing Gate predicates or timeouts | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1424,6 +1424,33 @@ and zero local-path leakage.
     Foundation/native static tests pass `137/137`, and `git diff --check`
     passes. AS-F06 and G-F remain `PARTIAL / UNPROVEN` pending exact-source
     runtime reproof.
+  - Checkpoint `1c238413df7a68b86ba081c30be518463f0c0a97`
+    packages that same-process recovery owner fix. Diagnostic checkpoint
+    `da6f4bec4b1e76e7f25c2d7814e76e5476b80ba8` also makes the retained
+    approval-expiry cleanup probe serialize binding revisions safely.
+    Exact-source Foundation run
+    `20260914T051145190380Z-d38aa72f1a763c293a9170f83bcf53ad`
+    (outer Provisioner
+    `20260914T051126886609Z-83083f8ee61105eaec3fb97639fe6760`)
+    crossed the corrected AS-F06 path and both
+    `BASE-APPROVAL-EXPIRED` locale cells. Approval-expiry binding restoration
+    completed for both executions without a primary or cleanup error.
+  - The same run first failed at
+    `foundation-browser-direct / browser / direct_model /
+    BASE-INVALID_REFERENCE / zh-CN / single / sample-001` after typed
+    rejection, localized removal, and corrected draft restoration. The
+    Harness clicked the corrected send control but timed out waiting for
+    `invalid reference corrected resend`; inner and outer cleanup released
+    both clients, all ports, storage, actor identity, source lease, and profile
+    lease.
+  - Debug session `foundation-invalid-reference-resend` is `OPEN`.
+    Instrumentation records the corrected composer/send state, operation
+    projection, all nearby stream events with hashed identities, and bounded
+    failure-time Station readback. No product behavior, timeout, matrix tuple,
+    or Gate assertion has changed. Desktop typecheck passes, the focused
+    Foundation/static suite passes `126/126`, and `git diff --check` passes.
+    The next action is one exact-source `pre-fix` reproduction; only its
+    runtime evidence may select the owner-layer correction.
 
 #### G-FE1 Concurrency Decision
 

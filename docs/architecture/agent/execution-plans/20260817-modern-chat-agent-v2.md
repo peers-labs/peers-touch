@@ -23,20 +23,20 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | MCA-J06 is `FUNCTIONAL_PASS`; Browser AS-F12 is runtime-confirmed in both locales; the AS-F06 same-process teardown/bootstrap recovery-preservation fix is `FOCUSED_PASS`, while approval-expiry cleanup instrumentation remains ready behind it |
+| Current step | MCA-J06 is `FUNCTIONAL_PASS`; exact-source AS-F06 and both `BASE-APPROVAL-EXPIRED` locale cells crossed; Browser zh-CN `BASE-INVALID_REFERENCE` corrected resend is the current diagnostic frontier |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source run `20260914T042330737498Z-8fbe37528875f10dff6343794c737e23` reproduced `AS_F06_DURABLE_RELOAD_TARGET_MISSING`: same-process runtime teardown cleared the failed record, then bootstrap auto-reconciliation consumed its persisted terminal snapshot before explicit durable reload; the owner fix and regression now pass all focused/full checks |
-| Current action | Checkpoint and deploy the AS-F06 teardown/bootstrap owner fix while retaining approval-expiry cleanup probes |
-| Next action | Reprove AS-F06 and continue to the instrumented Browser English `BASE-APPROVAL-EXPIRED` cleanup boundary |
+| Last completed | Exact-source run `20260914T051145190380Z-d38aa72f1a763c293a9170f83bcf53ad` crossed AS-F06 and both approval-expiry locale cells, then first failed at Browser zh-CN `BASE-INVALID_REFERENCE` while waiting for corrected resend completion; cleanup passed |
+| Current action | Instrument the corrected resend boundary without changing behavior, Gate predicates, or timeout values |
+| Next action | Checkpoint the diagnostic source, rebuild/smoke, deploy exact source, and collect one `pre-fix` Foundation reproduction |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `WORKTREE_IDENTITY_MISMATCH`、undefined PRODUCT/DESIGN semantics、unauthorized destructive reset、secret leak、or exhausted external runtime resources park the affected action；focused implementation failures return to the owner layer |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, new PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | no Goal-level blocker; Foundation execution first requires exact-source AS-F06 reproof, after which Browser English `BASE-APPROVAL-EXPIRED` cleanup remains the next diagnostic frontier；AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
+| Blockers | no Goal-level blocker; the first actionable failure is Browser zh-CN `BASE-INVALID_REFERENCE` corrected resend; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN` on `d3e6feaa3`；MCA-J06 completed reject→preserve→remove→resend with exactly one `CLEAN_OK` assistant；Foundation run `20260914T020855882888Z-37de0f8f4117aa4f2a9227759dd9401f` crossed AS-F06 and `BASE-INVALID_REFERENCE`；run `20260914T034858052731Z-56fdebfb8bc40b4540d647b5abd705f0` crossed Browser AS-F12 in both locales and exposed approval-expiry cleanup；run `20260914T042330737498Z-8fbe37528875f10dff6343794c737e23` exposed the AS-F06 same-process teardown/bootstrap race；the owner fix passes 76 focused tests, 686 full Desktop tests with one existing skip, Desktop typecheck, 137 Foundation/static tests, and diff checks；Foundation remains `PARTIAL / UNPROVEN` |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN` on `d3e6feaa3`；MCA-J06 completed reject→preserve→remove→resend with exactly one `CLEAN_OK` assistant；Foundation run `20260914T051145190380Z-d38aa72f1a763c293a9170f83bcf53ad` on `da6f4bec4` crossed AS-F06 and both approval-expiry locale cells before the Browser zh-CN corrected-resend timeout；diagnostic instrumentation passes Desktop typecheck, 126 focused Foundation/static tests, and diff checks；Foundation remains `PARTIAL / UNPROVEN` |
 | Last updated | 2026-09-14 |
 
 ---
