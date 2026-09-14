@@ -1263,7 +1263,7 @@ observations is invalid.
 | W3 | PreKeys | complete | `dbd612b65` | PASS (`sc-dj-content-prekey`) | NOT_RUN | none |
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
 | W5 | recovery | ready | none | NOT_RUN | NOT_RUN | none |
-| W6 | Social minimum | ready | none | NOT_RUN | NOT_RUN | none |
+| W6 | Social minimum | parked | none | NOT_RUN | NOT_RUN | DESIGN_AMENDMENT_REQUIRED: durable prepare-plan/command-receipt schema and existing `POST /moments` private-submit dispatch |
 | W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | W6; active MCA Desktop claim and Station runtime owner |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
 | W9 | Mobile | parked | none | NOT_RUN | NOT_RUN | W5/W7/W8; Mobile claim |
@@ -1335,6 +1335,12 @@ Current evidence:
   The isolated PostgreSQL lock-order tests compile but remain locally skipped
   because `MESSAGING_TEST_POSTGRES_DSN` is not configured; this does not replace
   or weaken the required W3 Development journey.
+- W6 pre-execution inventory found two unresolved architecture contracts:
+  the required durable prepare-plan and exact command-receipt state have no
+  declared Social tables/keys, and the private `SubmitPrivateMomentRequest`
+  shares `POST /api/v1/social/moments` with the existing public
+  `CreatePostRequest` without a dispatch contract. W6 is parked at
+  `DESIGN_AMENDMENT_REQUIRED`; W5 remains dependency-ready.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level
