@@ -7993,23 +7993,44 @@ async function prepareFoundationF06Conversation(
             );
           }
           const acknowledgedCursor = activeAtCut.cursor;
-          const durableEvents = events
+          const sequencedEvents = events
             .filter((candidate) =>
               Number(candidate.data.seq ?? 0) > 0
-              && !FOUNDATION_F06_PHASE_BY_EVENT[candidate.event]
               && candidate.event !== 'catchup_done'
               && candidate.event !== 'snapshot')
             .sort((left, right) =>
               Number(left.data.seq ?? 0) - Number(right.data.seq ?? 0));
-          const duplicateSource = [...durableEvents]
+          const durableEvents = sequencedEvents.filter(
+            (candidate) => !FOUNDATION_F06_PHASE_BY_EVENT[candidate.event],
+          );
+          const duplicateSource = [...sequencedEvents]
             .reverse()
             .find((candidate) =>
               Number(candidate.data.seq ?? 0) === acknowledgedCursor);
-          const outOfOrderSource = [...durableEvents]
+          const outOfOrderSource = [...sequencedEvents]
             .reverse()
             .find((candidate) =>
               Number(candidate.data.seq ?? 0) < acknowledgedCursor);
           if (!duplicateSource || !outOfOrderSource) {
+            void reportFoundationF06TerminalRaceDebug(
+              'E',
+              'fault-boundary-events-missing',
+              {
+                platform: input.platform,
+                locale: input.locale,
+                scenarioKey: input.scenarioKey,
+                requestedCursor,
+                acknowledgedCursor,
+                sequencedEvents: sequencedEvents.map((candidate) => ({
+                  event: candidate.event,
+                  sequence: Number(candidate.data.seq ?? 0),
+                })),
+                durableEvents: durableEvents.map((candidate) => ({
+                  event: candidate.event,
+                  sequence: Number(candidate.data.seq ?? 0),
+                })),
+              },
+            );
             throw new Error(
               'agent.acceptance.foundationRecoveryFaultBoundaryEventsMissing',
             );

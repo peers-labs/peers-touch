@@ -442,9 +442,21 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "const acknowledgedCursor = activeAtCut.cursor",
             fault_observation,
         )
+        sequenced_events = self.source.index(
+            "const sequencedEvents = events",
+            cursor_capture,
+        )
+        durable_events = self.source.index(
+            "const durableEvents = sequencedEvents.filter",
+            sequenced_events,
+        )
+        duplicate_source = self.source.index(
+            "const duplicateSource = [...sequencedEvents]",
+            durable_events,
+        )
         mutation_probe = self.source.index(
             "publishFault(duplicateSource, activeAtCut.streamGeneration)",
-            cursor_capture,
+            duplicate_source,
         )
         boundary_publish = self.source.index(
             "resolveBoundary(boundary)",
@@ -464,7 +476,19 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertLess(fault_request, transport_disconnect)
         self.assertLess(transport_disconnect, fault_observation)
         self.assertLess(fault_observation, cursor_capture)
-        self.assertLess(cursor_capture, mutation_probe)
+        self.assertLess(cursor_capture, sequenced_events)
+        self.assertLess(sequenced_events, durable_events)
+        self.assertLess(durable_events, duplicate_source)
+        self.assertLess(duplicate_source, mutation_probe)
+        self.assertIn(
+            "!FOUNDATION_F06_PHASE_BY_EVENT[candidate.event]",
+            self.source[durable_events:duplicate_source],
+        )
+        self.assertIn(
+            ".find((candidate) =>\n"
+            "              Number(candidate.data.seq ?? 0) === acknowledgedCursor)",
+            self.source[duplicate_source:mutation_probe],
+        )
         self.assertLess(mutation_probe, boundary_publish)
         self.assertNotIn("await ", self.source[cursor_capture:mutation_probe])
         self.assertNotIn(
