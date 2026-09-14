@@ -21,12 +21,14 @@ import (
 )
 
 const (
-	authorityCommandFrameDomain = "conversation-authority-command"
-	authorityResultFrameDomain  = "conversation-authority-result"
-	deviceDeliveryFrameDomain   = "conversation-device-delivery"
-	deliveryReceiptFrameDomain  = "conversation-delivery-receipt"
-	typingFrameDomain           = "conversation-typing"
-	conversationTypingVersion   = uint32(1)
+	authorityCommandFrameDomain   = "conversation-authority-command"
+	authorityResultFrameDomain    = "conversation-authority-result"
+	deviceDeliveryFrameDomain     = "conversation-device-delivery"
+	deliveryReceiptFrameDomain    = "conversation-delivery-receipt"
+	readCursorFrameDomain         = "conversation-read-cursor"
+	typingFrameDomain             = "conversation-typing"
+	conversationTypingVersion     = uint32(1)
+	conversationReadCursorVersion = uint32(1)
 )
 
 // Sender converts canonical Conversation protobufs into immutable, signed
@@ -356,6 +358,68 @@ func (s *Sender) EnqueueDeliveryReceipt(
 	return outbox.Enqueue(ctx, frame, s.clock.Now().UTC())
 }
 
+// EnqueueReadCursor durably forwards one actor-scoped cursor from its Home
+// Station to the Conversation authority.
+func (s *Sender) EnqueueReadCursor(
+	ctx context.Context,
+	outbox federationdelivery.OutboxWriter,
+	authorityStationPeerID string,
+	cursor *chatmodel.FederatedConversationReadCursor,
+) (federationdelivery.EnqueueResult, error) {
+	if outbox == nil ||
+		cursor == nil ||
+		cursor.GetFormatVersion() != conversationReadCursorVersion ||
+		cursor.GetReader() == nil ||
+		cursor.GetFederationId() == "" ||
+		cursor.GetConversationId() == "" ||
+		cursor.GetAuthorityStationPeerId() != authorityStationPeerID ||
+		cursor.GetAuthorityEpoch() == 0 ||
+		cursor.GetReader().GetPtid() == "" ||
+		cursor.GetReader().GetDeviceId() == "" ||
+		cursor.GetReaderHomeStationPeerId() != s.localStationPeerID ||
+		cursor.GetLastReadSequence() <= 0 {
+		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
+			federationdelivery.FailureInvalidArgument,
+			"enqueue Conversation read cursor",
+			fmt.Errorf("outbox and complete read cursor are required"),
+		)
+	}
+	if strings.TrimSpace(authorityStationPeerID) == "" ||
+		authorityStationPeerID == s.localStationPeerID {
+		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
+			federationdelivery.FailureInvalidFrame,
+			"enqueue Conversation read cursor",
+			fmt.Errorf("remote authority Station is required"),
+		)
+	}
+	payload, err := canonicalPayloadBytes(cursor)
+	if err != nil {
+		return federationdelivery.EnqueueResult{}, err
+	}
+	payloadID, err := ReadCursorPayloadID(cursor)
+	if err != nil {
+		return federationdelivery.EnqueueResult{}, err
+	}
+	issuedAt := s.clock.Now().UTC()
+	frame, err := s.signedFrame(
+		ctx,
+		federationdelivery.PayloadKindConversationReadCursor,
+		authorityStationPeerID,
+		payloadID,
+		readCursorFrameDomain+":"+payloadID,
+		readCursorOrderingKey(cursor),
+		cursor.GetLastReadSequence(),
+		payload,
+		issuedAt,
+		issuedAt.Add(s.frameLifetime),
+	)
+	if err != nil {
+		return federationdelivery.EnqueueResult{}, err
+	}
+
+	return outbox.Enqueue(ctx, frame, s.clock.Now().UTC())
+}
+
 // EnqueueDeviceDelivery forwards a target-local Device Inbox intent. The
 // target Home Station owns lane allocation and all queue lifecycle state.
 func (s *Sender) EnqueueDeviceDelivery(
@@ -635,6 +699,40 @@ func stableIdentifier(parts ...string) string {
 
 func conversationOrderingKey(domain string, conversationID string) string {
 	return domain + ":" + conversationID
+}
+
+// ReadCursorPayloadID returns the deterministic identity shared by the sender,
+// durable outbox replay check, and receiver validation.
+func ReadCursorPayloadID(
+	cursor *chatmodel.FederatedConversationReadCursor,
+) (string, error) {
+	if cursor == nil || cursor.GetReader() == nil {
+		return "", federationdelivery.NewError(
+			federationdelivery.FailureInvalidFrame,
+			"identify Conversation read cursor",
+			fmt.Errorf("cursor and reader are required"),
+		)
+	}
+	return stableIdentifier(
+		cursor.GetFederationId(),
+		cursor.GetConversationId(),
+		cursor.GetAuthorityStationPeerId(),
+		strconv.FormatUint(cursor.GetAuthorityEpoch(), 10),
+		cursor.GetReader().GetPtid(),
+		cursor.GetReader().GetDeviceId(),
+		cursor.GetReaderHomeStationPeerId(),
+		strconv.FormatInt(cursor.GetLastReadSequence(), 10),
+	), nil
+}
+
+func readCursorOrderingKey(cursor *chatmodel.FederatedConversationReadCursor) string {
+	return readCursorFrameDomain + ":" + stableIdentifier(
+		cursor.GetConversationId(),
+		cursor.GetAuthorityStationPeerId(),
+		strconv.FormatUint(cursor.GetAuthorityEpoch(), 10),
+		cursor.GetReader().GetPtid(),
+		cursor.GetReader().GetDeviceId(),
+	)
 }
 
 func authorityResultPayloadID(

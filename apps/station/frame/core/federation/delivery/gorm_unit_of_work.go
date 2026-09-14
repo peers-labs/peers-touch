@@ -29,6 +29,7 @@ func (r *GORMRepository) Receive(
 	}
 	receivedAt = receivedAt.UTC()
 	var outcome Result
+	var deliveryTransaction *gormTransaction
 	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		receipt := &InboxRecord{
 			SourceStationPeerID: identity.sourceStationPeerID,
@@ -56,7 +57,8 @@ func (r *GORMRepository) Receive(
 			return nil
 		}
 
-		outcome, err = dispatch(ctx, &gormTransaction{db: tx}, frame)
+		deliveryTransaction = &gormTransaction{db: tx}
+		outcome, err = dispatch(ctx, deliveryTransaction, frame)
 		if err != nil {
 			return err
 		}
@@ -85,11 +87,28 @@ func (r *GORMRepository) Receive(
 		}
 		return nil
 	})
+	var afterCommit []AfterCommitFunc
+	if deliveryTransaction != nil {
+		afterCommit = deliveryTransaction.close()
+	}
 	if errors.Is(err, rollbackRetryable) {
 		return outcome, nil
 	}
 	if err != nil {
 		return Result{}, err
+	}
+	var afterCommitErrors []error
+	for _, callback := range afterCommit {
+		if callbackErr := callback(ctx); callbackErr != nil {
+			afterCommitErrors = append(afterCommitErrors, callbackErr)
+		}
+	}
+	if afterCommitErr := errors.Join(afterCommitErrors...); afterCommitErr != nil {
+		return outcome, NewError(
+			FailureDomainDispatch,
+			"run post-commit callback",
+			afterCommitErr,
+		)
 	}
 	return outcome, nil
 }
@@ -148,7 +167,9 @@ func inboxIdentityMatches(record InboxRecord, identity frameIdentity) bool {
 }
 
 type gormTransaction struct {
-	db *gorm.DB
+	db          *gorm.DB
+	afterCommit []AfterCommitFunc
+	closed      bool
 }
 
 func (t *gormTransaction) DB() *gorm.DB {
@@ -157,6 +178,37 @@ func (t *gormTransaction) DB() *gorm.DB {
 
 func (t *gormTransaction) Outbox() OutboxWriter {
 	return &gormOutboxWriter{db: t.db}
+}
+
+func (t *gormTransaction) AfterCommit(callback AfterCommitFunc) error {
+	if t == nil || callback == nil {
+		return NewError(
+			FailureInvalidArgument,
+			"register post-commit callback",
+			errorsText("transaction and callback are required"),
+		)
+	}
+	if t.closed {
+		return NewError(
+			FailureInvalidArgument,
+			"register post-commit callback",
+			errorsText("transaction is already closed"),
+		)
+	}
+	t.afterCommit = append(t.afterCommit, callback)
+
+	return nil
+}
+
+func (t *gormTransaction) close() []AfterCommitFunc {
+	if t == nil || t.closed {
+		return nil
+	}
+	t.closed = true
+	callbacks := append([]AfterCommitFunc(nil), t.afterCommit...)
+	t.afterCommit = nil
+
+	return callbacks
 }
 
 type gormOutboxWriter struct {

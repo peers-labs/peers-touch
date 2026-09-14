@@ -99,6 +99,26 @@ func (s *Service) BindUnitOfWork(unitOfWork ports.UnitOfWork) (*Service, error) 
 	return &bound, nil
 }
 
+// BindPostCommitPublisher replaces the publisher used after the bound unit of
+// work completes. Federation receivers use this to defer wake hints until the
+// shared inbox transaction commits.
+func (s *Service) BindPostCommitPublisher(
+	postCommit ports.PostCommitPublisher,
+) (*Service, error) {
+	if s == nil || postCommit == nil {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"application.bind_post_commit_publisher",
+			"post_commit",
+			"is required",
+		)
+	}
+	bound := *s
+	bound.postCommit = postCommit
+
+	return &bound, nil
+}
+
 type CreateDirectRequest struct {
 	Creator           valueobject.Endpoint
 	Peer              valueobject.PTID

@@ -27,6 +27,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	attachmentinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/attachment"
 	deliveryinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/delivery"
+	conversationfederation "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/federation"
 	conversationhttp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/interface/http"
 	federationdomain "github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	federationinfra "github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
@@ -124,6 +125,32 @@ type productionAdapterFixture struct {
 	bob         valueobject.Endpoint
 	bobPrivate  ed25519.PrivateKey
 	objectID    valueobject.ObjectID
+}
+
+type productionPostCommitTestRegistrar struct {
+	callbacks []federationdelivery.AfterCommitFunc
+}
+
+func (r *productionPostCommitTestRegistrar) AfterCommit(
+	callback federationdelivery.AfterCommitFunc,
+) error {
+	r.callbacks = append(r.callbacks, callback)
+
+	return nil
+}
+
+type productionPostCommitTestPublisher struct {
+	deliveries []ports.CommittedDelivery
+	err        error
+}
+
+func (p *productionPostCommitTestPublisher) NotifyCommitted(
+	_ context.Context,
+	deliveries []ports.CommittedDelivery,
+) error {
+	p.deliveries = append(p.deliveries, deliveries...)
+
+	return p.err
 }
 
 func TestProductionIdentityAndFederationAdaptersUseOwnerTruth(t *testing.T) {
@@ -856,6 +883,228 @@ func TestProductionDeliveryReceiptForwarderUsesSharedDurableFederation(
 	}
 	if created != 1 {
 		t.Fatalf("concurrent receipt creators = %d, want 1", created)
+	}
+}
+
+func TestProductionReadCursorForwarderUsesSharedDurableFederation(
+	t *testing.T,
+) {
+	fixture := newProductionAdapterFixture(t)
+	forwarder := &productionReadCursorForwarder{
+		database:     fixture.db,
+		sender:       fixture.factory.federationSender,
+		clock:        productionAdapterTestClock{now: productionAdapterTestTime},
+		localStation: "station-a",
+	}
+	request := interactionapp.ReadCursorRequest{
+		ConversationID: "conversation-1",
+		Reader:         fixture.alice,
+		Sequence:       7,
+	}
+	replay, err := forwarder.ForwardReadCursor(
+		context.Background(),
+		"station-b",
+		"federation-1",
+		3,
+		request,
+	)
+	if err != nil || replay {
+		t.Fatalf("forward read cursor: replay=%v error=%v", replay, err)
+	}
+	replay, err = forwarder.ForwardReadCursor(
+		context.Background(),
+		"station-b",
+		"federation-1",
+		3,
+		request,
+	)
+	if err != nil || !replay {
+		t.Fatalf("replay read cursor: replay=%v error=%v", replay, err)
+	}
+	sameSequenceVariants := []struct {
+		name      string
+		request   interactionapp.ReadCursorRequest
+		authority valueobject.AuthorityEpoch
+	}{
+		{
+			name: "second device",
+			request: interactionapp.ReadCursorRequest{
+				ConversationID: request.ConversationID,
+				Reader: valueobject.Endpoint{
+					Actor:  request.Reader.Actor,
+					Device: "alice-device-2",
+				},
+				Sequence: request.Sequence,
+			},
+			authority: 3,
+		},
+		{
+			name:      "new authority epoch",
+			request:   request,
+			authority: 4,
+		},
+	}
+	for _, variant := range sameSequenceVariants {
+		t.Run(variant.name, func(t *testing.T) {
+			replay, err := forwarder.ForwardReadCursor(
+				context.Background(),
+				"station-b",
+				"federation-1",
+				variant.authority,
+				variant.request,
+			)
+			if err != nil || replay {
+				t.Fatalf(
+					"same-sequence variant: replay=%v error=%v",
+					replay,
+					err,
+				)
+			}
+		})
+	}
+	var sameSequenceRows []federationdelivery.OutboxRecord
+	if err := fixture.db.Where(
+		"payload_kind = ? AND ordering_sequence = ?",
+		int32(federationdelivery.PayloadKindConversationReadCursor),
+		int64(request.Sequence),
+	).Find(&sameSequenceRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	orderingKeys := make(map[string]struct{}, len(sameSequenceRows))
+	for _, row := range sameSequenceRows {
+		orderingKeys[row.OrderingKey] = struct{}{}
+	}
+	if len(sameSequenceRows) != 3 || len(orderingKeys) != 3 {
+		t.Fatalf(
+			"same-sequence rows=%d orderingKeys=%d, want 3 distinct lanes",
+			len(sameSequenceRows),
+			len(orderingKeys),
+		)
+	}
+
+	var record federationdelivery.OutboxRecord
+	originalWire, err := productionReadCursorToWire(
+		request,
+		"federation-1",
+		"station-b",
+		3,
+		"station-a",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalPayloadID, err := conversationfederation.ReadCursorPayloadID(originalWire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.Where(
+		"payload_kind = ? AND payload_id = ?",
+		int32(federationdelivery.PayloadKindConversationReadCursor),
+		originalPayloadID,
+	).First(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	var frame federationdelivery.Frame
+	if err := proto.Unmarshal(record.FrameBytes, &frame); err != nil {
+		t.Fatal(err)
+	}
+	var encoded chatmodel.FederatedConversationReadCursor
+	if err := proto.Unmarshal(frame.GetOpaquePayload(), &encoded); err != nil {
+		t.Fatal(err)
+	}
+	if frame.GetSourceStationPeerId() != "station-a" ||
+		frame.GetTargetStationPeerId() != "station-b" ||
+		frame.GetOrderingSequence() != int64(request.Sequence) ||
+		encoded.GetFederationId() != "federation-1" ||
+		encoded.GetConversationId() != string(request.ConversationID) ||
+		encoded.GetAuthorityStationPeerId() != "station-b" ||
+		encoded.GetAuthorityEpoch() != 3 ||
+		encoded.GetReader().GetPtid() != string(request.Reader.Actor) ||
+		encoded.GetReader().GetDeviceId() != string(request.Reader.Device) ||
+		encoded.GetReaderHomeStationPeerId() != "station-a" ||
+		encoded.GetLastReadSequence() != int64(request.Sequence) {
+		t.Fatalf("read cursor frame=%+v payload=%+v", &frame, &encoded)
+	}
+
+	concurrent := request
+	concurrent.Sequence++
+	const workers = 8
+	var wait sync.WaitGroup
+	results := make(chan bool, workers)
+	errs := make(chan error, workers)
+	for range workers {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			replay, err := forwarder.ForwardReadCursor(
+				context.Background(),
+				"station-b",
+				"federation-1",
+				3,
+				concurrent,
+			)
+			results <- replay
+			errs <- err
+		}()
+	}
+	wait.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent read cursor replay: %v", err)
+		}
+	}
+	var created int
+	for replay := range results {
+		if !replay {
+			created++
+		}
+	}
+	if created != 1 {
+		t.Fatalf("concurrent read cursor creators = %d, want 1", created)
+	}
+}
+
+func TestProductionFederationPostCommitPublisherDefersWakeAndSurfacesFailure(
+	t *testing.T,
+) {
+	registrar := &productionPostCommitTestRegistrar{}
+	publishFailure := errors.New("injected realtime failure")
+	delegate := &productionPostCommitTestPublisher{err: publishFailure}
+	publisher := &productionFederationPostCommitPublisher{
+		registrar: registrar,
+		delegate:  delegate,
+	}
+	deliveries := []ports.CommittedDelivery{{
+		Recipient: valueobject.Endpoint{
+			Actor:  "ptid:reader",
+			Device: "reader-device",
+		},
+		EventID: "read-cursor-event",
+	}}
+
+	if err := publisher.NotifyCommitted(
+		context.Background(),
+		deliveries,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(delegate.deliveries) != 0 || len(registrar.callbacks) != 1 {
+		t.Fatalf(
+			"before commit deliveries=%+v callbacks=%d",
+			delegate.deliveries,
+			len(registrar.callbacks),
+		)
+	}
+	deliveries[0].EventID = "mutated-after-registration"
+	err := registrar.callbacks[0](context.Background())
+	if !errors.Is(err, publishFailure) {
+		t.Fatalf("post-commit publish error = %v", err)
+	}
+	if len(delegate.deliveries) != 1 ||
+		delegate.deliveries[0].EventID != "read-cursor-event" {
+		t.Fatalf("post-commit deliveries = %+v", delegate.deliveries)
 	}
 }
 

@@ -212,8 +212,42 @@ func (r *testReceiptRecorder) CommitDeliveryReceipt(
 }
 
 type testDeliveryReceiptForwarder struct {
-	authority valueobject.StationID
-	receipt   *interaction.DeliveryReceipt
+	authority        valueobject.StationID
+	receipt          *interaction.DeliveryReceipt
+	cursor           *interaction.ReadCursorRequest
+	cursorFederation valueobject.FederationID
+	cursorEpoch      valueobject.AuthorityEpoch
+}
+
+func (f *testDeliveryReceiptForwarder) ForwardReadCursor(
+	_ context.Context,
+	authority valueobject.StationID,
+	federationID valueobject.FederationID,
+	authorityEpoch valueobject.AuthorityEpoch,
+	request interaction.ReadCursorRequest,
+) (bool, error) {
+	if f.cursor != nil {
+		if f.authority != authority ||
+			f.cursorFederation != federationID ||
+			f.cursorEpoch != authorityEpoch ||
+			*f.cursor != request {
+			return false, interaction.NewError(
+				interaction.ErrorCodeIdempotencyConflict,
+				"test.read_cursor_forwarder",
+				"cursor",
+				"already identifies different cursor bytes",
+			)
+		}
+
+		return true, nil
+	}
+	cloned := request
+	f.authority = authority
+	f.cursorFederation = federationID
+	f.cursorEpoch = authorityEpoch
+	f.cursor = &cloned
+
+	return false, nil
 }
 
 func (f *testDeliveryReceiptForwarder) ForwardDeliveryReceipt(
@@ -431,6 +465,62 @@ func TestServiceDelegatesReadCursorToCAW2Port(t *testing.T) {
 	}
 }
 
+func TestServiceForwardsFollowerReadCursorWithoutLocalAuthorityMutation(t *testing.T) {
+	alice := valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-1"}
+	bob := valueobject.Endpoint{Actor: "ptid:bob", Device: "bob-1"}
+	snapshot := directInteractionConversationSnapshot(t, alice, bob)
+	snapshot.AuthorityStation = "station:authority"
+	snapshot.Members[0].HomeStation = "station:authority"
+	snapshot.Members[1].HomeStation = "station:local"
+	snapshot.Devices[0].HomeStation = "station:authority"
+	snapshot.Devices[1].HomeStation = "station:local"
+	service, _, _, _, readCursors, forwarder := newInteractionFixture(
+		t,
+		testConversationReader{
+			snapshot:       snapshot,
+			source:         query.SourceFollower,
+			followerStatus: repository.FollowerStatusActive,
+		},
+	)
+	request := interaction.ReadCursorRequest{
+		ConversationID: snapshot.ID,
+		Reader:         bob,
+		Sequence:       snapshot.Head.Sequence,
+	}
+	for expectedReplay := false; ; expectedReplay = true {
+		result, err := service.SubmitReadCursor(context.Background(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !result.Forwarded ||
+			result.Replay != expectedReplay ||
+			result.Result.Cursor.ConversationID != request.ConversationID ||
+			result.Result.Cursor.Actor != request.Reader.Actor ||
+			result.Result.Cursor.Sequence != request.Sequence {
+			t.Fatalf("forwarded read cursor result = %+v", result)
+		}
+		if expectedReplay {
+			break
+		}
+	}
+	if len(readCursors.requests) != 0 {
+		t.Fatalf("follower mutated authority cursor: %+v", readCursors.requests)
+	}
+	if forwarder.authority != snapshot.AuthorityStation ||
+		forwarder.cursorFederation != snapshot.FederationID ||
+		forwarder.cursorEpoch != snapshot.AuthorityEpoch ||
+		forwarder.cursor == nil ||
+		*forwarder.cursor != request {
+		t.Fatalf(
+			"forwarder authority=%s federation=%s epoch=%d cursor=%+v",
+			forwarder.authority,
+			forwarder.cursorFederation,
+			forwarder.cursorEpoch,
+			forwarder.cursor,
+		)
+	}
+}
+
 func TestServiceDeliveryReceiptValidatesAndCommitsIdempotently(t *testing.T) {
 	service, _, _, _, _, _ := newInteractionFixture(t)
 	receipt := interaction.DeliveryReceipt{
@@ -574,6 +664,7 @@ func newInteractionFixture(
 		reader,
 		devices,
 		readCursors,
+		forwarder,
 		receipts,
 		forwarder,
 		typing,

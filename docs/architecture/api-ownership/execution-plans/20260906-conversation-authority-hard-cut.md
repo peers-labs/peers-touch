@@ -1851,3 +1851,57 @@ Federation routing, or production HTTPS policy. Focused Hertz/EventBus/
 Federation race tests, focused `go vet`, Mobile TypeScript, and
 `git diff --check` pass. Checkpoint deployment and the same product Journey
 remain required.
+
+Checkpoint `cdc4475df9cfbdf18357db8131667f47c74bf860` was deployed
+exactly to `four` and `fiveArm`; live preflight on both Stations permits
+`X-Device-ID` and `Last-Event-ID`. Exact-source run
+`20260914T190022110735Z-4d6915e6c865080b561b84f8e531bdf6`
+then proves end-to-end typing: both WebViews establish HTTP 200 streams,
+`fiveArm` publishes the pulse to two live Bob subscribers, and Android decodes
+and stores `typing=true` under the exact Direct conversation and Alice PTID.
+
+The first remaining product failure advances to Bob's read acknowledgement.
+After Bob durably consumes and acknowledges the message and submits its
+delivery receipt successfully, `fiveArm` returns HTTP 404 for
+`POST /conversation/read-cursor`. The Home Station holds a valid follower
+projection, but the current read-cursor application path delegates directly to
+the authority-only repository. CA-W6 admits the missing cross-Station
+Conversation read-cursor transport only if it preserves the accepted
+actor-scoped monotonic cursor, Home-Station client boundary, Conversation
+authority ownership, typed shared-Federation delivery, and idempotent durable
+retry semantics. The exact protocol and implementation shape must be derived
+from the existing authority-command, delivery-receipt, and follower-projection
+contracts before mutation.
+
+The derived correction adds one durable typed
+`CONVERSATION_READ_CURSOR` Federation payload. A client continues to submit
+only to its Home Station. An active follower Home validates the local reader
+endpoint and follower authority projection, then atomically enqueues the signed
+cursor frame without writing a second cursor. The Conversation Authority
+validates the authenticated source Home Station, Federation and authority
+scope, reader endpoint, monotonic sequence bound, canonical payload identity,
+and ordering tuple before advancing the existing authority-owned actor cursor
+inside the shared Federation inbox transaction. Existing Device Inbox cursor
+projection remains the only fan-out path. Exact replay is duplicate-safe and a
+lower cursor is a monotonic no-op; no direct client-to-authority call, route
+alias, remote Actor shadow row, or second truth store is permitted.
+
+Independent read-only review initially held the correction on two P1 defects:
+an actor-only ordered lane collided when distinct devices or authority epochs
+submitted the same sequence, and the authority wake could publish before the
+outer Federation inbox transaction committed. The corrected transport scopes
+each ordered lane by Conversation, authority Station and epoch, reader PTID,
+and reader device while preserving one actor-scoped monotonic authority cursor.
+Shared Federation transactions now expose a generic post-commit registrar;
+Conversation authority commands and read cursors register wake-only callbacks
+through that boundary, discard them on rollback, and surface callback failure
+only after durable inbox and domain state commit. Regression coverage proves
+same-sequence multi-device and cross-epoch enqueue, stale-epoch rejection
+followed by current-epoch acceptance, post-commit visibility, rollback
+discard, exact replay, and notification-failure propagation. Follow-up review
+reports no P0/P1 findings. Full Conversation and shared Federation race suites,
+focused `go vet`, Go style, deterministic Go/Desktop/Mobile proto generation,
+Desktop TypeScript, Mobile web/build/Rust/iOS-project checks, and
+`git diff --check` pass. This remains `SOURCE_CHECK`; exact-source checkpoint,
+deployment to `four` and `fiveArm`, and the same Social product Journey are
+still required before `FUNCTIONAL_PASS`.
