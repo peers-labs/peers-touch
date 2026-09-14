@@ -1217,8 +1217,8 @@ observations is invalid.
 | W0 | governance | complete | plan-review-v14 | N/A | N/A | none |
 | W0R | machine runtime control | complete | `8a7722c93` | PASS | NOT_RUN | none |
 | W14 | scoped generator groundwork | complete | `69fe979b3` | SOURCE_CHECK/PASS | N/A | none |
-| W1 | contracts | in progress | none | NOT_RUN | NOT_RUN | none; `SC-D14` accepted by Owner |
-| W2 | atomic kernels/Chat | parked | none | NOT_RUN | NOT_RUN | W0R/W1/W4; active MCA Desktop source and Station deploy/slot owner |
+| W1 | contracts | complete | `e9be68c8a` | SOURCE_CHECK/PASS | NOT_RUN | none |
+| W2 | atomic kernels/Chat | ready | none | NOT_RUN | NOT_RUN | source implementation ready; Native proof waits for required runtime leases |
 | W3 | PreKeys | parked | none | NOT_RUN | NOT_RUN | W2 |
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
 | W5 | recovery | parked | none | NOT_RUN | NOT_RUN | W1/W2/W3 |
@@ -1231,13 +1231,11 @@ observations is invalid.
 | W12 | physical schema/data cut + full functional | parked | none | NOT_RUN | NOT_RUN | W5/W11; exact two-profile reset/deploy authorization |
 | W13 | Acceptance | parked | none | NOT_RUN | NOT_RUN | W12 FUNCTIONAL_PASS; active Acceptance owner |
 
-Overall: `4/16`. DWF-D13 removed the cross-worktree source-lock blocker and a
-real W1 declaration reached `ACTIVE`. The missing wire contracts are now defined
-by accepted `SC-D14`, including bounded subtype payloads, canonical replay,
-viewer commit proof, PUBLIC/private repost proof, source-owned media, mention
-commitments, and recovery locators. Independent review v11 passes all six
-invariants with no findings. The Owner accepted `SC-D14` on 2026-09-14, so W1
-returns to the dependency-ready execution frontier.
+Overall: `5/16`. DWF-D13 removed the cross-worktree source-lock blocker. W1
+completed the accepted `SC-D14` wire contracts, scoped generation and all five
+generated consumer closures. W2 source implementation is dependency-ready;
+its Desktop/Mobile Native `MP-J11` proof still requires the declared runtime
+leases.
 
 Current evidence:
 
@@ -1263,6 +1261,13 @@ Current evidence:
   `PASS`, with metadata minimization, bounded decoding, exact replay,
   viewer-scoped projection, cross-language proto-first generation, and
   ownership/transaction boundary all `PASS`.
+- W1: checkpoint `e9be68c8a` defines the payload, neutral Content PreKey,
+  object and Social private-content contracts. The scoped generator reports 36
+  outputs with zero drift; its focused suite passes 15 tests. Station Go,
+  Desktop/Mobile Rust and Desktop/Mobile TypeScript all decode and semantically
+  round-trip the shared payload, viewer-envelope and object-descriptor vectors.
+  `GOWORK=off` frame tests prove no `frame -> app` dependency, both client type
+  checks pass, and final independent review returns `PASS`.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level
