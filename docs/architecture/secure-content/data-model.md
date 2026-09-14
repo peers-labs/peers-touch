@@ -1,7 +1,7 @@
 # Secure Content - Data Model
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.2
 > **Created**: 2026-09-13 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `model/domain/social/`, `model/domain/key_exchange/`
@@ -163,6 +163,87 @@ message ClaimContentPreKeysResponse {
 
 Claims are exact-once and irreversible when public material is disclosed. Chat
 Direct prekeys and Content PreKeys use separate types, stores, quotas, and APIs.
+
+### Proposed Content PreKey Signature Canonicalization
+
+Pending Owner acceptance of `SC-D15`, `prekey.proto` adds:
+
+```protobuf
+message ContentPreKeySigningInput {
+  uint32 format_version = 1;
+  ContentPreKeyKind kind = 2;
+  string key_id = 3;
+  bytes x25519_public_key = 4;
+  oneof principal {
+    peers_touch.model.actor.v1.ActorDeviceRef endpoint = 5;
+    peers_touch.model.actor.v1.ActorRef recovery_actor = 6;
+  }
+  uint64 pool_epoch = 7;
+  uint64 expected_pool_epoch = 8;
+  peers_touch.model.actor.v1.ActorDeviceRef publisher = 9;
+  string publisher_signing_key_id = 10;
+  uint64 publisher_profile_version = 11;
+}
+
+message PublishContentPreKeysRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef publisher = 1;
+  string publisher_signing_key_id = 2;
+  uint64 publisher_profile_version = 3;
+  uint64 expected_pool_epoch = 4;
+  repeated ContentOneTimePreKey prekeys = 5;
+}
+
+message ContentPreKeyInventory {
+  ContentPreKeyClaimTarget target = 1;
+  uint64 current_epoch = 2;
+  uint32 available = 3;
+  uint32 capacity = 4;
+  uint32 replenish_at_or_below = 5;
+  bool needs_replenishment = 6;
+}
+
+message PublishContentPreKeysResponse {
+  ContentPreKeyInventory inventory = 1;
+}
+
+message GetContentPreKeyInventoryRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef publisher = 1;
+  ContentPreKeyClaimTarget target = 2;
+}
+
+message GetContentPreKeyInventoryResponse {
+  ContentPreKeyInventory inventory = 1;
+}
+```
+
+The publisher signs:
+
+```text
+content_prekey_signing_bytes =
+  "peers-touch:secure-content:prekey:v1\0"
+  || canonical(ContentPreKeySigningInput)
+```
+
+Publication carries publisher and compare-and-swap fields once per batch plus one
+`ContentOneTimePreKey` per key. Key Exchange reconstructs a fresh signing input
+for each key and requires exact equality with the request-level publisher,
+signing-key, profile-version and compare-and-swap epoch fields. The canonical
+encoder follows the project rules used by the other Secure Content
+hash/signature inputs.
+
+The authenticated publisher's verified Actor Identity device signing key
+verifies each signature before mutation and again before an unclaimed key is
+exposed. Endpoint pool epochs equal the current device profile version.
+Recovery-pool epochs use compare-and-swap: `0 -> 1` creates the pool, `N -> N`
+replenishes it, and `N -> N+1` rotates it. Stale expected epochs and jumps fail.
+Completed claim receipts remain replayable after issuer revocation because the
+public material was already irreversibly exposed.
+
+Unknown fields at every nested message level fail before semantic
+normalization. A future raw-wire publication endpoint additionally requires
+decode/re-encode equality to reject duplicate singular fields, non-minimal
+varints, and non-canonical field order. The signature authenticates publication;
+it does not attest recovery-secret derivation.
 
 ## 5. Encryption Plan And Envelope Binding
 

@@ -1,8 +1,8 @@
 # Secure Content - Security Contract
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Version**: v1.1
+> **Created**: 2026-09-13 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 
 ---
@@ -74,6 +74,15 @@ Key Exchange owns two non-interchangeable pools:
 Properties:
 
 - every public PreKey is 32-byte X25519 material with a unique typed key ID;
+- pending `SC-D15`, every published PreKey is signed by the authenticated active
+  device over a dedicated domain-separated canonical signing input that binds
+  the publisher, signing-key ID, publisher profile version, and expected/new
+  pool epochs;
+- Key Exchange resolves the verified signing key through Actor Identity and
+  revalidates signature and publisher eligibility before publication and before
+  a new claim exposes stored material; an Actor Identity-owned row fence holds
+  the exact device key/profile/revocation state through the Key Exchange
+  transaction commit;
 - endpoint and recovery key IDs occupy separate namespaces;
 - plan claim is exact-once and irreversible when public material is disclosed;
 - retries with the same plan ID return the same claimed key;
@@ -83,6 +92,14 @@ Properties:
 - recipient slots expose only one-time public material, preventing cross-plan
   endpoint fingerprinting;
 - sender-visible recipient count remains an explicit metadata leakage.
+
+The issuer signature authenticates the device that published the public key and
+prevents database substitution from becoming claimable material. It does not
+prove that an actor-recovery private key was derived from the recovery phrase.
+A compromised currently authorized device may rotate or replenish that actor's
+recovery pool while authorized, but revocation makes its unclaimed keys
+ineligible for future content. Completed claims remain replayable because their
+public material was already exposed.
 
 Recovery PreKeys derive from a domain-separated recovery master:
 
@@ -209,7 +226,8 @@ Station must not retain:
 
 - fixed known-answer vectors across every Rust consumer and Go descriptor validator;
 - envelope substitution matrix over every binding field;
-- one-time PreKey exact-claim, replay, conflict, expiry, and replenishment proof;
+- one-time PreKey signature, publisher-key/profile binding, exact-claim, replay,
+  conflict, revocation race, persisted-tamper, epoch CAS, and replenishment proof;
 - anonymous/invalid-token/wrong-actor/wrong-device/wrong-object negative corpus;
 - Station DB/log/trace/evidence recursive secret scan;
 - never-opened-content trusted recovery and revoked-resource denial;

@@ -1,7 +1,7 @@
 # Secure Content - Architecture Design
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.2
 > **Created**: 2026-09-13 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `packages/secure-content-core/`, `apps/station/app/internal/securecontent/`
@@ -94,6 +94,14 @@ each other.
 | Private plaintext and root keys | Native client | encrypted per-account store |
 | Physical opaque bytes | domain adapter | generic `storage.Backend` |
 | Recovery identity/material | Recovery | opaque actor recovery revision |
+
+Pending `SC-D15`, Actor Identity remains the sole source of verified device
+signing keys and profile versions used to authenticate Content PreKey
+publication. Key Exchange owns only the separate prekey pools, their monotonic
+recovery-pool epoch, immutable tombstones, and exact claim receipts. It resolves
+publisher keys through the Actor Identity capability and rechecks current
+eligibility through an Actor Identity-owned row fence held by the Key Exchange
+transaction before publication or a new claim exposes stored material.
 
 ## 6. Shared Components
 

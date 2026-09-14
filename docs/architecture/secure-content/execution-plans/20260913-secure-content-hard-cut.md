@@ -189,7 +189,7 @@ planRef = docs/architecture/secure-content/execution-plans/20260913-secure-conte
 | `secure-content-w2d` | infrastructure | `MP-C13`; `MP-G13` | `SC-A01/A03`; `SC-D02/D03/D13`; `MP-D23` | none | real Desktop/Mobile Development drivers for the complete MP-G13 corpus; exclude runtime execution and formal Acceptance |
 | `secure-content-w2b-desktop` | refactor | `MP-C13`; `MP-G13` | `SC-A01/A03`; `SC-D02/D03/D13`; `MP-D23` | `MP-J11` Desktop Native | read-only exact W2A checkpoint plus Desktop runtime proof |
 | `secure-content-w2b-mobile` | refactor | `MP-C13`; `MP-G13` | `SC-A01/A03`; `SC-D02/D03/D13`; `MP-D23` | `MP-J11` Mobile Native | read-only exact W2A checkpoint plus iOS/Android runtime proof |
-| `secure-content-w3` | infrastructure | `SOC-SEC-C04/C05`; `SOC-SEC-AS08/16` | `SC-A04/A08`; `SC-D05/D09/D12` | `SOC-SEC-J01/J07` | Content PreKeys only; exclude Direct/MLS |
+| `secure-content-w3` | infrastructure | `SOC-SEC-C04/C05`; `SOC-SEC-AS08/16` | `SC-A04/A08`; `SC-D05/D09/D12`; proposed `SC-D15` | `SOC-SEC-J01/J07` | Content PreKeys only; exclude Direct/MLS |
 | `secure-content-w4` | infrastructure | `SOC-SEC-C03`; `SOC-SEC-AS04` | `SC-A05`; `SC-D08` | `SOC-SEC-J03` | Optional JWT plus generic Development runner bootstrap; exclude domain policy and later scenario logic |
 | `secure-content-w5` | infrastructure | `SOC-SEC-C04/C06/C08`; `SOC-SEC-AS08` | `SC-A02/A08`; `SC-D05/D09` | `SOC-SEC-J07` | recovery derivation/query; exclude Messaging history redesign |
 | `secure-content-w6` | product-behavior | `SOC-SEC-C01/C02/C03/C05/C07`; `SOC-SEC-AS01/03/04/05/06/07/10/12/13/15/16` | `SC-A01..A08`; `SC-D01..D08/D11..D13` | `SOC-SEC-J01/J02/J03/J04/J06/J09` | FRIENDS text+image Social minimum and outer-UOW atomicity; exclude remaining subtypes/Mobile |
@@ -676,7 +676,10 @@ python3 -m tooling.development.secure_content.run \
 - **Responsibility**: endpoint/recovery pools, publish, inventory, exact claim,
   irreversible consumption and replenishment.
 - **Dependencies**: W2A source closure; Key Exchange source claim released.
-- **Deliverables**: separate Direct/MLS/Content stores and quotas.
+- **Deliverables**: separate Direct/MLS/Content stores and quotas; proposed
+  `SC-D15` canonical signing input, Actor Identity publisher verification,
+  recovery-epoch compare-and-swap, and claim-time persisted-material
+  revalidation.
 - **Failure**: depleted pool blocks prepare; same plan/hash replays; conflicting
   hash fails; exposed key is never reused.
 - **Functional boundary**: a self-hosting Key Exchange operational driver claims
@@ -691,6 +694,13 @@ cargo test --manifest-path packages/secure-content-core/Cargo.toml prekey
 python3 -m tooling.development.secure_content.run \
   --runtime service --scenario content-prekey --budget-seconds 600
 ```
+
+The W3 source and Development result must cover valid Ed25519 publication,
+wrong signer/key ID/profile version, recursive unknown fields, recovery-epoch
+CAS and jump rejection, failed-batch atomicity, claim-versus-revocation and
+rotation races, persisted key/signature tampering, depleted pools, bounded
+replenishment, no consumed-key revival, and exact completed-receipt replay after
+issuer revocation.
 
 ### SC-W4: Strict Optional Authentication And Development Runner Bootstrap
 
@@ -1250,7 +1260,7 @@ observations is invalid.
 | W14 | scoped generator groundwork | complete | `69fe979b3` | SOURCE_CHECK/PASS | N/A | none |
 | W1 | contracts | complete | `e9be68c8a` | SOURCE_CHECK/PASS | NOT_RUN | none |
 | W2 | atomic kernels/Chat | in progress | `c69edd606` (W2A) | SOURCE_CHECK/PASS | NOT_RUN | W2D waits for W5/W9; W2B Native proof waits for W2D and runtime leases |
-| W3 | PreKeys | ready | none | NOT_RUN | NOT_RUN | none |
+| W3 | PreKeys | design review | none | SOURCE_CHECK/HOLD (draft) | NOT_RUN | Owner acceptance of proposed `SC-D15` issuer-authenticity contract |
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
 | W5 | recovery | parked | none | NOT_RUN | NOT_RUN | W3 |
 | W6 | Social minimum | parked | none | NOT_RUN | NOT_RUN | W3 |
@@ -1312,6 +1322,13 @@ Current evidence:
   W2A unlock W3/W6, keeps W2 incomplete, and schedules W2D/W2B after W5/W9
   without weakening the final Desktop, iOS Simulator or Android Emulator
   functional boundary.
+- W3 draft: separate endpoint/recovery pools, bounded inventory, atomic
+  multi-target claims, exact replay/conflict, irreversible consumption,
+  revocation checks and the `content-prekey` Development scenario pass focused
+  race/unit checks. Independent review found that the accepted wire carries
+  `issuer_signature` without defining canonical signing bytes or verification
+  authority. Proposed `SC-D15` closes that security contract; W3 is not
+  checkpointed or complete before Owner acceptance and implementation.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level

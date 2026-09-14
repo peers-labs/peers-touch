@@ -1,7 +1,7 @@
 # Secure Content - Architecture Decisions
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.2
 > **Created**: 2026-09-13 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 
@@ -25,6 +25,7 @@
 | `SC-D12` | Plans expose opaque slots backed only by one-time public keys | accepted |
 | `SC-D13` | The business domain owns the outer object/grant transaction | accepted |
 | `SC-D14` | Private subtype and routing wires are bounded and canonical | accepted |
+| `SC-D15` | Content PreKey publication is device-authenticated and epoch-fenced | proposed |
 
 ---
 
@@ -611,3 +612,106 @@ source-owned and source-authorized; it is not copied into the repost object
 plane, so source deletion or revocation cannot be bypassed by the snapshot.
 Accepting this decision unblocks W1; rejecting it requires another complete
 typed wire design before implementation can resume.
+
+---
+
+## SC-D15: Content PreKey Publication Is Device-Authenticated And Epoch-Fenced
+
+**Status**: proposed
+**Date**: 2026-09-14
+
+### Context
+
+`ContentOneTimePreKey` carries `issuer_signature`, but the accepted contract does
+not define the signed bytes, verification key, or authority for advancing an
+actor-recovery epoch. Checking only signature length would allow arbitrary
+public material to enter a recovery pool and would make the field decorative.
+
+### Decision
+
+Add a dedicated proto-first `ContentPreKeySigningInput`. The publisher signs a
+domain-separated canonical projection:
+
+```text
+"peers-touch:secure-content:prekey:v1\0"
+|| canonical(ContentPreKeySigningInput)
+```
+
+The signing input binds format version, kind, key ID, X25519 public key, exact
+endpoint or recovery principal, new pool epoch, expected prior pool epoch,
+publisher `ActorDeviceRef`, publisher signing-key ID, and publisher profile
+version. It is built fresh from validated semantic fields and encoded by the
+Secure Content project canonical encoder. The transport encoding is not itself
+the signature surface.
+
+Key Exchange resolves the exact verified signing key through the Actor Identity
+capability. Before creating a pool, advancing an epoch, retiring old keys, or
+inserting key material, it requires the authenticated publisher, signing-key
+ID, publisher profile version, active status, and Ed25519 signature to match.
+The Key Exchange transaction then invokes an Actor Identity-owned persistence
+fence that locks the exact `actor_devices` row and compares active status,
+signing-key ID, public key, and profile version against the resolved snapshot.
+The lock remains held through the Key Exchange commit. Key Exchange neither
+defines the Actor Identity query nor becomes a second owner of device-key truth.
+
+- Endpoint keys must name the authenticated `ActorDeviceRef`, and their epoch
+  must equal that endpoint's current Actor Identity profile version.
+- Recovery keys must name the authenticated actor. Key Exchange owns a
+  compare-and-swap recovery-pool epoch: initial publication is `0 -> 1`, equal
+  epoch replenishes the current pool, and rotation is exactly `N -> N+1`.
+  Stale expected epochs and jumps fail before mutation.
+- Exact publication replay requires the same key ID, principal, epoch, public
+  key, signature, expected prior epoch, publisher, signing-key ID, and publisher
+  profile version. Consumed or retired keys never become available again.
+- Signature verification failure is typed invalid material and occurs before
+  any pool or key mutation.
+- Before a new claim exposes public material, Key Exchange resolves the
+  publisher again through Actor Identity, revalidates the stored signed fields,
+  and holds the same Actor Identity-owned row fence through claim commit.
+  Unclaimed keys from a revoked, rotated, stale, or invalid publisher are not
+  claimable. A completed exact claim receipt remains replayable because its
+  material was already irreversibly exposed.
+- Unknown fields are rejected recursively before semantic normalization.
+  Duplicate singular fields, field order, and non-minimal varints are handled
+  at any future raw-wire publish boundary by canonical decode/re-encode
+  equality; the in-process W3 capability accepts only reconstructed typed
+  signing inputs.
+
+The signature proves which active actor device published the public material.
+It does not prove that a recovery key was derived from the recovery phrase;
+that derivation remains a Native responsibility and an explicit security
+non-claim. A compromised active device can deny or retain only access already
+available to that actor while it remains authorized; revocation prevents its
+unclaimed recovery keys from protecting future content.
+
+### Rationale
+
+This gives `issuer_signature` one portable meaning, keeps Actor Identity as
+device-key truth, detects database substitution before exposure, and lets Key
+Exchange protect irreversible claim inventory without learning recovery
+secrets.
+
+### Alternatives Considered
+
+- Accept any non-zero 64-byte signature: rejected because forged recovery
+  material could advance the pool epoch and retire valid keys.
+- Verify endpoint keys but not recovery keys: rejected because recovery is the
+  higher-impact long-lived path.
+- Canonicalize `ContentOneTimePreKey` after clearing its signature: rejected
+  because the signed publisher and compare-and-swap epoch are not fields of
+  that message.
+- Let Recovery own the pool epoch: rejected because it creates a circular
+  Key Exchange/Recovery mutation dependency; Recovery consumes the accepted
+  epoch but does not own Key Exchange inventory.
+- Read Actor Identity tables as Key Exchange truth: rejected because verified
+  device keys and lifecycle are Actor Identity-owned capabilities.
+
+### Consequences
+
+W3 must extend the proto contract and regenerate all declared consumers, add one
+cross-language canonical signing vector, resolve verified publisher keys through
+Actor Identity, add its transaction-local row-fence helper, and replace synthetic
+signatures with valid Ed25519 vectors. Claim tests must cover
+revocation and key rotation before exposure, persisted tampering, epoch CAS and
+completed-receipt replay after revocation. W3 remains blocked until the Owner
+accepts this decision.
