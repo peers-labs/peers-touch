@@ -759,6 +759,69 @@ func TestConversationDDDPersistsCanonicalTimestampPrecision(t *testing.T) {
 	}
 }
 
+func TestConversationDDDReadCursorUsesVerifiedRemoteRoutes(t *testing.T) {
+	fixture := newDDDComposition(t)
+	alice := dddEndpoint("ptid:read-alice", "alice-1")
+	bob := dddEndpoint("ptid:read-bob", "bob-1")
+	seedDDDDevices(t, fixture.db, dddDevice(alice, "station-a"))
+	routes := dddDirectRoutes(alice, "station-a", bob, "station-b")
+
+	created, err := fixture.commands.CreateDirect(
+		context.Background(),
+		command.CreateDirectRequest{
+			Creator:           alice,
+			Peer:              bob.Actor,
+			FederationID:      dddFederationID,
+			AuthorityEpoch:    dddAuthorityEpoch,
+			CommandID:         "read-cursor-create",
+			VerifiedRoutes:    routes,
+			ExactCommandBytes: []byte("read-cursor-create"),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.commands.AdvanceReadCursorFromVerifiedHome(
+		context.Background(),
+		created.Conversation.ID,
+		bob,
+		"station-c",
+		created.Event.Sequence,
+		routes,
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeUnauthorized) {
+		t.Fatalf("wrong reader Home Station error = %v", err)
+	}
+
+	notificationsBefore := fixture.notifier.count()
+	result, err := fixture.commands.AdvanceReadCursorFromVerifiedHome(
+		context.Background(),
+		created.Conversation.ID,
+		bob,
+		"station-b",
+		created.Event.Sequence,
+		routes,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Cursor.Actor != bob.Actor ||
+		result.Cursor.Sequence != created.Event.Sequence {
+		t.Fatalf("federated read cursor = %+v", result.Cursor)
+	}
+	if fixture.notifier.count() != notificationsBefore+1 {
+		t.Fatal("federated read cursor did not notify the local participant")
+	}
+	var bobIdentityRows int64
+	if err := fixture.db.Model(&dddActorDeviceModel{}).
+		Where("ptid = ?", string(bob.Actor)).
+		Count(&bobIdentityRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if bobIdentityRows != 0 {
+		t.Fatalf("federated read cursor created %d remote Actor rows", bobIdentityRows)
+	}
+}
+
 func TestConversationDDDTestCompositionDirectReplayRollbackAndQueries(t *testing.T) {
 	fixture := newDDDComposition(t)
 	alice := dddEndpoint("ptid:alice", "alice-1")

@@ -1905,3 +1905,33 @@ Desktop TypeScript, Mobile web/build/Rust/iOS-project checks, and
 `git diff --check` pass. This remains `SOURCE_CHECK`; exact-source checkpoint,
 deployment to `four` and `fiveArm`, and the same Social product Journey are
 still required before `FUNCTIONAL_PASS`.
+
+Checkpoint `e1530af125c2df42d8f396ff5dd4840deb3877bd` was deployed
+exactly to `four` and `fiveArm`. After correcting local SDK/NDK and reset
+authorization inputs, run
+`20260914T195858428454Z-69210f6dfb2bf214f20a50dde988ca99`
+reaches the read-cursor path and no longer returns the follower-side 404.
+The typed payload reaches the Conversation Authority, but the sender observes
+HTTP 500 and the iOS read projection times out.
+
+Instrumented checkpoint `46a34a9dd1410793386a3ae3ea555632312866f8`
+in run
+`20260914T203821867939Z-09d584b5d43a6ba831c0f62458223623`
+proves the authority projection, Federation ID, Station/epoch binding, and
+source Home membership all validate. Cursor application then fails before
+mutation because the generic local route lookup requires remote Bob to exist
+as an authority-local Actor Device row. That requirement contradicts the
+accepted signed endpoint-manifest route boundary and the no-shadow-Actor rule.
+
+The owner-layer correction keeps local read-cursor submission unchanged and
+adds an explicit authority application path for an authenticated remote Home.
+Production resolves the current signed endpoint manifests through the existing
+Conversation route owner, then the command service revalidates the complete
+route snapshot against the locked Conversation actor/Home set and verifies the
+reader endpoint belongs to the frame-authenticated Home Station. Cursor truth
+and Device Inbox fan-out remain in the existing authority transaction; no
+remote Actor shadow row, client-supplied route, or second cursor store is
+introduced. Focused and complete Conversation/Federation race suites, focused
+`go vet`, Go style, and `git diff --check` pass. A focused independent review
+reports no P0/P1 findings. Exact-source checkpoint, deployment, and the same
+Social Journey rerun remain required.

@@ -634,6 +634,12 @@ type productionFederationPostCommitPublisher struct {
 	delegate  ports.PostCommitPublisher
 }
 
+type productionFederatedReadCursorAdvancer struct {
+	service    *command.Service
+	readerHome valueobject.StationID
+	routes     []ports.EndpointRoute
+}
+
 type productionDeliveryReceiptCommitter struct {
 	database     *gorm.DB
 	adapters     *ProductionTransactionalAdapterFactory
@@ -1137,6 +1143,28 @@ func (c *ProductionComposition) bindFederationCommandService(
 	)
 }
 
+func (a *productionFederatedReadCursorAdvancer) AdvanceReadCursor(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	reader valueobject.Endpoint,
+	sequence valueobject.Sequence,
+) (command.ReadCursorResult, error) {
+	if a == nil || a.service == nil || a.readerHome == "" {
+		return command.ReadCursorResult{}, fmt.Errorf(
+			"advance federated Conversation read cursor: dependencies are incomplete",
+		)
+	}
+
+	return a.service.AdvanceReadCursorFromVerifiedHome(
+		ctx,
+		conversationID,
+		reader,
+		a.readerHome,
+		sequence,
+		a.routes,
+	)
+}
+
 type productionDeliveryReceiptPort struct {
 	composition *ProductionComposition
 }
@@ -1326,12 +1354,25 @@ func (p *productionReadCursorPort) ApplyReadCursor(
 	if err != nil {
 		return err
 	}
+	verifiedRoutes, err := p.composition.productionCommandRoutes(
+		ctx,
+		boundCommand,
+		request.ConversationID,
+		request.Reader.Actor,
+	)
+	if err != nil {
+		return err
+	}
 	boundService, err := p.composition.InteractionService.BindReadCursorAuthorityPorts(
 		boundQuery,
 		productionInteractionDeviceDirectory{
 			identity: &productionIdentityDirectory{db: transaction.DB()},
 		},
-		boundCommand,
+		&productionFederatedReadCursorAdvancer{
+			service:    boundCommand,
+			readerHome: request.SourceStation,
+			routes:     verifiedRoutes,
+		},
 	)
 	if err != nil {
 		return err

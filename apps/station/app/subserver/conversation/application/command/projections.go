@@ -101,6 +101,50 @@ func (s *Service) AdvanceReadCursor(
 	reader valueobject.Endpoint,
 	sequence valueobject.Sequence,
 ) (ReadCursorResult, error) {
+	return s.advanceReadCursor(ctx, conversationID, reader, sequence, nil)
+}
+
+// AdvanceReadCursorFromVerifiedHome applies an authenticated remote reader
+// using the current signed endpoint-manifest route snapshot.
+func (s *Service) AdvanceReadCursorFromVerifiedHome(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	reader valueobject.Endpoint,
+	readerHome valueobject.StationID,
+	sequence valueobject.Sequence,
+	verifiedRoutes []ports.EndpointRoute,
+) (ReadCursorResult, error) {
+	if readerHome == "" {
+		return ReadCursorResult{}, invalid(
+			"application.advance_read_cursor_from_verified_home",
+			"reader_home",
+			"is required",
+		)
+	}
+	return s.advanceReadCursor(
+		ctx,
+		conversationID,
+		reader,
+		sequence,
+		&readCursorRouteAuthorization{
+			readerHome:     readerHome,
+			verifiedRoutes: append([]ports.EndpointRoute(nil), verifiedRoutes...),
+		},
+	)
+}
+
+type readCursorRouteAuthorization struct {
+	readerHome     valueobject.StationID
+	verifiedRoutes []ports.EndpointRoute
+}
+
+func (s *Service) advanceReadCursor(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+	reader valueobject.Endpoint,
+	sequence valueobject.Sequence,
+	routeAuthorization *readCursorRouteAuthorization,
+) (ReadCursorResult, error) {
 	if sequence == 0 {
 		return ReadCursorResult{}, invalid(
 			"application.advance_read_cursor",
@@ -119,21 +163,51 @@ func (s *Service) AdvanceReadCursor(
 		if err != nil {
 			return err
 		}
-		active, err := transaction.Identity.IsActive(ctx, reader)
-		if err != nil {
-			return err
-		}
-		routes, err := resolveActorRoutes(
-			ctx,
-			transaction.Identity,
-			conversation.ActiveMemberActors(),
-		)
-		if err != nil {
-			return err
+		var routes []ports.EndpointRoute
+		if routeAuthorization == nil {
+			active, err := transaction.Identity.IsActive(ctx, reader)
+			if err != nil {
+				return err
+			}
+			routes, err = resolveActorRoutes(
+				ctx,
+				transaction.Identity,
+				conversation.ActiveMemberActors(),
+			)
+			if err != nil {
+				return err
+			}
+			if !active {
+				return unauthorized(
+					"application.advance_read_cursor",
+					"reader is not an active member device",
+				)
+			}
+		} else {
+			routes, err = commandRouteSnapshot(
+				conversation,
+				routeAuthorization.verifiedRoutes,
+			)
+			if err != nil {
+				return err
+			}
+			if !routeSetContainsAtStation(
+				routes,
+				reader,
+				routeAuthorization.readerHome,
+			) {
+				return unauthorized(
+					"application.advance_read_cursor",
+					"reader endpoint does not belong to the authenticated Home Station",
+				)
+			}
 		}
 		routes = eligibleConversationRoutes(conversation, routes)
-		if !active || !routeSetContains(routes, reader) {
-			return unauthorized("application.advance_read_cursor", "reader is not an active member device")
+		if !routeSetContains(routes, reader) {
+			return unauthorized(
+				"application.advance_read_cursor",
+				"reader is not an active member device",
+			)
 		}
 		if sequence > conversation.AuthorityHead().Sequence {
 			return conversationdomain.NewError(
