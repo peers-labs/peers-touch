@@ -1700,3 +1700,23 @@ two pre-existing attachment descriptor fixture failures and is not used as
 evidence for this correction. CA-W6 remains `PARTIAL/UNPROVEN` pending a clean
 checkpoint, exact-source deployment to `four` and `fiveArm`, and the same
 receiver-perspective Social Journey.
+
+Checkpoint `6a6ea5eb6dcf4b9edc6b07e40f3359269f6cf8d1` was deployed
+exactly to `four` and `fiveArm`. The first bounded rerun was blocked before
+Fixture mutation because the operator command omitted the already authorized
+`CHAT_ACCEPTANCE_RESET_ENVIRONMENTS=station-four,station-five-arm`; the
+corrected invocation reached `FIXTURE_READY`. Run
+`20260914T162805862103Z-64658655ad958949eeb2c0af33a96a90` then failed
+before authentication readback when the iOS refresh path selected the previous
+WebView document during navigation: its pre-refresh Harness inventory was
+visible, but the subsequent `social.projection.read` observed
+`acceptance.mobile.actionUnavailable`.
+
+This is a generic simulator-driver lifecycle defect, not missing Social
+injection. The mechanical Acceptance Infra correction records the current
+WebView document time origin before refresh and accepts the post-refresh
+WebView only after that identity changes and the Harness inventory is present.
+It does not add a delay, weaken required-action checks, retry a business
+action, or alter Mobile product lifecycle semantics. Focused simulator driver
+tests must prove that a stale pre-refresh document is rejected before the
+Social Journey reruns.
