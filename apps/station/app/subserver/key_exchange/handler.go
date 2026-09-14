@@ -628,10 +628,17 @@ func mapCanonicalError(
 		)
 	case domain.ErrorCodeConflict,
 		domain.ErrorCodeStaleMaterial,
-		domain.ErrorCodePlanExpired:
+		domain.ErrorCodePlanExpired,
+		domain.ErrorCodePoolDepleted:
 		return server.NewHandlerErrorWithCause(
 			nethttp.StatusConflict,
 			"Key Exchange material conflicts with current state",
+			err,
+		)
+	case domain.ErrorCodeQuotaExceeded:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusTooManyRequests,
+			"Key Exchange quota was exceeded",
 			err,
 		)
 	case domain.ErrorCodePayloadTooLarge:

@@ -1,7 +1,9 @@
 package securecontent_test
 
 import (
+	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -149,6 +151,84 @@ func TestCanonicalEnvelopeBindingUsesAscendingFieldOrder(t *testing.T) {
 	}
 	if len(fields) != 14 {
 		t.Fatalf("field count = %d, want 14", len(fields))
+	}
+}
+
+func TestContentPreKeySigningBytesCanonicalVector(t *testing.T) {
+	input := validContentPreKeySigningInput()
+	signingBytes, err := kernel.ContentPreKeySigningBytes(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const expectedHex = "70656572732d746f7563683a7365637572652d636f6e74656e743a7072656b65793a763100080110011a17636f6e74656e742d7072656b65792d766563746f722d3122200102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202a1c0a0c120a707469643a616c696365120c616c6963652d646576696365380740064a1c0a0c120a707469643a616c696365120c616c6963652d6465766963655211616c6963652d7369676e696e672d6b65795807"
+	if actual := hex.EncodeToString(signingBytes); actual != expectedHex {
+		t.Fatalf("signing vector = %s, want %s", actual, expectedHex)
+	}
+}
+
+func TestContentPreKeySigningInputRejectsSemanticMismatch(t *testing.T) {
+	tests := map[string]func(*securecontentpb.ContentPreKeySigningInput){
+		"endpoint publisher": func(input *securecontentpb.ContentPreKeySigningInput) {
+			input.GetEndpoint().DeviceId = "other-device"
+		},
+		"endpoint epoch": func(input *securecontentpb.ContentPreKeySigningInput) {
+			input.PoolEpoch++
+		},
+		"recovery publisher": func(input *securecontentpb.ContentPreKeySigningInput) {
+			input.Kind = securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ACTOR_RECOVERY
+			input.Principal = &securecontentpb.ContentPreKeySigningInput_RecoveryActor{
+				RecoveryActor: &actormodel.ActorRef{Ptid: "ptid:bob"},
+			}
+		},
+		"oversized key id": func(input *securecontentpb.ContentPreKeySigningInput) {
+			input.KeyId = string(make([]byte, 129))
+		},
+		"nul key id": func(input *securecontentpb.ContentPreKeySigningInput) {
+			input.KeyId = "content\x00prekey"
+		},
+		"oversized actor ptid": func(input *securecontentpb.ContentPreKeySigningInput) {
+			ptid := strings.Repeat("a", 256)
+			input.GetEndpoint().Actor.Ptid = ptid
+			input.GetPublisher().Actor.Ptid = ptid
+		},
+		"persistence epoch": func(input *securecontentpb.ContentPreKeySigningInput) {
+			input.PoolEpoch = uint64(1 << 63)
+			input.PublisherProfileVersion = uint64(1 << 63)
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			input := validContentPreKeySigningInput()
+			mutate(input)
+			if _, err := kernel.ContentPreKeySigningBytes(input); err == nil {
+				t.Fatal("invalid signing input was accepted")
+			}
+		})
+	}
+}
+
+func validContentPreKeySigningInput() *securecontentpb.ContentPreKeySigningInput {
+	publicKey := make([]byte, 32)
+	for index := range publicKey {
+		publicKey[index] = byte(index + 1)
+	}
+	endpoint := &actormodel.ActorDeviceRef{
+		Actor:    &actormodel.ActorRef{Ptid: "ptid:alice"},
+		DeviceId: "alice-device",
+	}
+	return &securecontentpb.ContentPreKeySigningInput{
+		FormatVersion:   1,
+		Kind:            securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ENDPOINT,
+		KeyId:           "content-prekey-vector-1",
+		X25519PublicKey: publicKey,
+		Principal: &securecontentpb.ContentPreKeySigningInput_Endpoint{
+			Endpoint: proto.Clone(endpoint).(*actormodel.ActorDeviceRef),
+		},
+		PoolEpoch:               7,
+		ExpectedPoolEpoch:       6,
+		Publisher:               endpoint,
+		PublisherSigningKeyId:   "alice-signing-key",
+		PublisherProfileVersion: 7,
 	}
 }
 

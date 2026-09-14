@@ -19,12 +19,58 @@ message ContentOneTimePreKey {
   bytes issuer_signature = 7;
 }
 
+message ContentPreKeySigningInput {
+  uint32 format_version = 1;
+  ContentPreKeyKind kind = 2;
+  string key_id = 3;
+  bytes x25519_public_key = 4;
+  oneof principal {
+    peers_touch.model.actor.v1.ActorDeviceRef endpoint = 5;
+    peers_touch.model.actor.v1.ActorRef recovery_actor = 6;
+  }
+  uint64 pool_epoch = 7;
+  uint64 expected_pool_epoch = 8;
+  peers_touch.model.actor.v1.ActorDeviceRef publisher = 9;
+  string publisher_signing_key_id = 10;
+  uint64 publisher_profile_version = 11;
+}
+
+message PublishContentPreKeysRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef publisher = 1;
+  string publisher_signing_key_id = 2;
+  uint64 publisher_profile_version = 3;
+  uint64 expected_pool_epoch = 4;
+  repeated ContentOneTimePreKey prekeys = 5;
+}
+
 message ContentPreKeyClaimTarget {
   ContentPreKeyKind kind = 1;
   oneof principal {
     peers_touch.model.actor.v1.ActorDeviceRef endpoint = 2;
     peers_touch.model.actor.v1.ActorRef recovery_actor = 3;
   }
+}
+
+message ContentPreKeyInventory {
+  ContentPreKeyClaimTarget target = 1;
+  uint64 current_epoch = 2;
+  uint32 available = 3;
+  uint32 capacity = 4;
+  uint32 replenish_at_or_below = 5;
+  bool needs_replenishment = 6;
+}
+
+message PublishContentPreKeysResponse {
+  ContentPreKeyInventory inventory = 1;
+}
+
+message GetContentPreKeyInventoryRequest {
+  peers_touch.model.actor.v1.ActorDeviceRef publisher = 1;
+  ContentPreKeyClaimTarget target = 2;
+}
+
+message GetContentPreKeyInventoryResponse {
+  ContentPreKeyInventory inventory = 1;
 }
 
 message ClaimedContentPreKey {

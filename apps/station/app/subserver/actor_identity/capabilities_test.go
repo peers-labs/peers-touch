@@ -472,6 +472,49 @@ func TestActorCapabilitiesReturnRevokedLocalKeyForHistoricalVerification(t *test
 	}
 }
 
+func TestActorCapabilitiesReturnRetainedRemoteKeyWithoutHydration(t *testing.T) {
+	database := openCapabilityTestDatabase(t)
+	revokedAt := capabilityTestTime.Add(-time.Minute)
+	devicePublicKey := deterministicPublicKey(0x62)
+	if err := database.Create(&persistence.ActorDeviceModel{
+		PTID:               capabilityTestRemoteActor,
+		ActorAccount:       "remote@example.test",
+		ActorKind:          int32(actormodel.ActorKind_ACTOR_KIND_PERSON),
+		DeviceID:           testDeviceID,
+		Label:              "Remote Desktop",
+		HomeStationPeerID:  capabilityTestRemoteStation,
+		SigningKeyID:       signingKeyID(devicePublicKey),
+		PublicKey:          append([]byte(nil), devicePublicKey...),
+		ProfileVersion:     2,
+		VerificationSource: int32(actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE),
+		Revoked:            true,
+		CreatedAt:          capabilityTestTime.Add(-time.Hour),
+		RevokedAt:          &revokedAt,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	provider := newKeyOnlyCapabilityProvider(t, capabilityTestLocalStation, nil)
+	subserver := &subServer{capabilities: provider}
+	key, err := subserver.ResolveRetainedActorDeviceSigningKey(
+		context.Background(),
+		capabilityTestTransaction{db: database},
+		capabilityTestRemoteActor,
+		testDeviceID,
+		signingKeyID(devicePublicKey),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key == nil ||
+		key.GetVerificationSource() !=
+			actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE ||
+		key.GetRevokedAtUnixMs() != revokedAt.UnixMilli() ||
+		!bytes.Equal(key.GetEd25519PublicKey(), devicePublicKey) {
+		t.Fatalf("unexpected retained remote key projection: %+v", key)
+	}
+}
+
 func TestActorCapabilitiesHydrateRemoteKeyInsideCallerTransaction(t *testing.T) {
 	database := openCapabilityTestDatabase(t)
 	if err := database.Exec(`

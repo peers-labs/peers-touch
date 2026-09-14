@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/secure_content/prekey.proto.
  */
 export const file_domain_secure_content_prekey: GenFile = /*@__PURE__*/
-  fileDesc("CiJkb21haW4vc2VjdXJlX2NvbnRlbnQvcHJla2V5LnByb3RvEiNwZWVyc190b3VjaC5tb2RlbC5zZWN1cmVfY29udGVudC52MSLRAgoUQ29udGVudE9uZVRpbWVQcmVLZXkSRAoEa2luZBgBIAEoDjI2LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLkNvbnRlbnRQcmVLZXlLaW5kEg4KBmtleV9pZBgCIAEoCRIZChF4MjU1MTlfcHVibGljX2tleRgDIAEoDBI+CghlbmRwb2ludBgEIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yRGV2aWNlUmVmSAASPgoOcmVjb3ZlcnlfYWN0b3IYBSABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZkgAEiEKGXByb2ZpbGVfb3JfcmVjb3ZlcnlfZXBvY2gYBiABKAQSGAoQaXNzdWVyX3NpZ25hdHVyZRgHIAEoDEILCglwcmluY2lwYWwi7QEKGENvbnRlbnRQcmVLZXlDbGFpbVRhcmdldBJECgRraW5kGAEgASgOMjYucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuQ29udGVudFByZUtleUtpbmQSPgoIZW5kcG9pbnQYAiABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvckRldmljZVJlZkgAEj4KDnJlY292ZXJ5X2FjdG9yGAMgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWZIAEILCglwcmluY2lwYWwi4QEKFENsYWltZWRDb250ZW50UHJlS2V5EhAKCGNsYWltX2lkGAEgASgJEk0KBnRhcmdldBgCIAEoCzI9LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLkNvbnRlbnRQcmVLZXlDbGFpbVRhcmdldBJJCgZwcmVrZXkYAyABKAsyOS5wZWVyc190b3VjaC5tb2RlbC5zZWN1cmVfY29udGVudC52MS5Db250ZW50T25lVGltZVByZUtleRIdChVpcnJldmVyc2libHlfY29uc3VtZWQYBCABKAgimgEKGkNsYWltQ29udGVudFByZUtleXNSZXF1ZXN0Eg8KB3BsYW5faWQYASABKAkSGwoTcGxhbl9yZXF1ZXN0X3NoYTI1NhgCIAEoDBJOCgd0YXJnZXRzGAMgAygLMj0ucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuQ29udGVudFByZUtleUNsYWltVGFyZ2V0In4KG0NsYWltQ29udGVudFByZUtleXNSZXNwb25zZRJJCgZjbGFpbXMYASADKAsyOS5wZWVyc190b3VjaC5tb2RlbC5zZWN1cmVfY29udGVudC52MS5DbGFpbWVkQ29udGVudFByZUtleRIUCgxleGFjdF9yZXBsYXkYAiABKAhCWFpWZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvY29yZS90eXBlcy9zZWN1cmVjb250ZW50O3NlY3VyZWNvbnRlbnRiBnByb3RvMw", [file_domain_actor_actor, file_domain_secure_content_content]);
+  fileDesc("CiJkb21haW4vc2VjdXJlX2NvbnRlbnQvcHJla2V5LnByb3RvEiNwZWVyc190b3VjaC5tb2RlbC5zZWN1cmVfY29udGVudC52MSLRAgoUQ29udGVudE9uZVRpbWVQcmVLZXkSRAoEa2luZBgBIAEoDjI2LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLkNvbnRlbnRQcmVLZXlLaW5kEg4KBmtleV9pZBgCIAEoCRIZChF4MjU1MTlfcHVibGljX2tleRgDIAEoDBI+CghlbmRwb2ludBgEIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yRGV2aWNlUmVmSAASPgoOcmVjb3ZlcnlfYWN0b3IYBSABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZkgAEiEKGXByb2ZpbGVfb3JfcmVjb3ZlcnlfZXBvY2gYBiABKAQSGAoQaXNzdWVyX3NpZ25hdHVyZRgHIAEoDEILCglwcmluY2lwYWwi5gMKGUNvbnRlbnRQcmVLZXlTaWduaW5nSW5wdXQSFgoOZm9ybWF0X3ZlcnNpb24YASABKA0SRAoEa2luZBgCIAEoDjI2LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLkNvbnRlbnRQcmVLZXlLaW5kEg4KBmtleV9pZBgDIAEoCRIZChF4MjU1MTlfcHVibGljX2tleRgEIAEoDBI+CghlbmRwb2ludBgFIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yRGV2aWNlUmVmSAASPgoOcmVjb3ZlcnlfYWN0b3IYBiABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZkgAEhIKCnBvb2xfZXBvY2gYByABKAQSGwoTZXhwZWN0ZWRfcG9vbF9lcG9jaBgIIAEoBBI9CglwdWJsaXNoZXIYCSABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvckRldmljZVJlZhIgChhwdWJsaXNoZXJfc2lnbmluZ19rZXlfaWQYCiABKAkSIQoZcHVibGlzaGVyX3Byb2ZpbGVfdmVyc2lvbhgLIAEoBEILCglwcmluY2lwYWwiiwIKHFB1Ymxpc2hDb250ZW50UHJlS2V5c1JlcXVlc3QSPQoJcHVibGlzaGVyGAEgASgLMioucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JEZXZpY2VSZWYSIAoYcHVibGlzaGVyX3NpZ25pbmdfa2V5X2lkGAIgASgJEiEKGXB1Ymxpc2hlcl9wcm9maWxlX3ZlcnNpb24YAyABKAQSGwoTZXhwZWN0ZWRfcG9vbF9lcG9jaBgEIAEoBBJKCgdwcmVrZXlzGAUgAygLMjkucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuQ29udGVudE9uZVRpbWVQcmVLZXki7QEKGENvbnRlbnRQcmVLZXlDbGFpbVRhcmdldBJECgRraW5kGAEgASgOMjYucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuQ29udGVudFByZUtleUtpbmQSPgoIZW5kcG9pbnQYAiABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvckRldmljZVJlZkgAEj4KDnJlY292ZXJ5X2FjdG9yGAMgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWZIAEILCglwcmluY2lwYWwi3wEKFkNvbnRlbnRQcmVLZXlJbnZlbnRvcnkSTQoGdGFyZ2V0GAEgASgLMj0ucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuQ29udGVudFByZUtleUNsYWltVGFyZ2V0EhUKDWN1cnJlbnRfZXBvY2gYAiABKAQSEQoJYXZhaWxhYmxlGAMgASgNEhAKCGNhcGFjaXR5GAQgASgNEh0KFXJlcGxlbmlzaF9hdF9vcl9iZWxvdxgFIAEoDRIbChNuZWVkc19yZXBsZW5pc2htZW50GAYgASgIIm8KHVB1Ymxpc2hDb250ZW50UHJlS2V5c1Jlc3BvbnNlEk4KCWludmVudG9yeRgBIAEoCzI7LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLkNvbnRlbnRQcmVLZXlJbnZlbnRvcnkisAEKIEdldENvbnRlbnRQcmVLZXlJbnZlbnRvcnlSZXF1ZXN0Ej0KCXB1Ymxpc2hlchgBIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yRGV2aWNlUmVmEk0KBnRhcmdldBgCIAEoCzI9LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLkNvbnRlbnRQcmVLZXlDbGFpbVRhcmdldCJzCiFHZXRDb250ZW50UHJlS2V5SW52ZW50b3J5UmVzcG9uc2USTgoJaW52ZW50b3J5GAEgASgLMjsucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuQ29udGVudFByZUtleUludmVudG9yeSLhAQoUQ2xhaW1lZENvbnRlbnRQcmVLZXkSEAoIY2xhaW1faWQYASABKAkSTQoGdGFyZ2V0GAIgASgLMj0ucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuQ29udGVudFByZUtleUNsYWltVGFyZ2V0EkkKBnByZWtleRgDIAEoCzI5LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLkNvbnRlbnRPbmVUaW1lUHJlS2V5Eh0KFWlycmV2ZXJzaWJseV9jb25zdW1lZBgEIAEoCCKaAQoaQ2xhaW1Db250ZW50UHJlS2V5c1JlcXVlc3QSDwoHcGxhbl9pZBgBIAEoCRIbChNwbGFuX3JlcXVlc3Rfc2hhMjU2GAIgASgMEk4KB3RhcmdldHMYAyADKAsyPS5wZWVyc190b3VjaC5tb2RlbC5zZWN1cmVfY29udGVudC52MS5Db250ZW50UHJlS2V5Q2xhaW1UYXJnZXQifgobQ2xhaW1Db250ZW50UHJlS2V5c1Jlc3BvbnNlEkkKBmNsYWltcxgBIAMoCzI5LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLkNsYWltZWRDb250ZW50UHJlS2V5EhQKDGV4YWN0X3JlcGxheRgCIAEoCEJYWlZnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS9jb3JlL3R5cGVzL3NlY3VyZWNvbnRlbnQ7c2VjdXJlY29udGVudGIGcHJvdG8z", [file_domain_actor_actor, file_domain_secure_content_content]);
 
 /**
  * @generated from message peers_touch.model.secure_content.v1.ContentOneTimePreKey
@@ -71,6 +71,117 @@ export const ContentOneTimePreKeySchema: GenMessage<ContentOneTimePreKey> = /*@_
   messageDesc(file_domain_secure_content_prekey, 0);
 
 /**
+ * @generated from message peers_touch.model.secure_content.v1.ContentPreKeySigningInput
+ */
+export type ContentPreKeySigningInput = Message<"peers_touch.model.secure_content.v1.ContentPreKeySigningInput"> & {
+  /**
+   * @generated from field: uint32 format_version = 1;
+   */
+  formatVersion: number;
+
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.ContentPreKeyKind kind = 2;
+   */
+  kind: ContentPreKeyKind;
+
+  /**
+   * @generated from field: string key_id = 3;
+   */
+  keyId: string;
+
+  /**
+   * @generated from field: bytes x25519_public_key = 4;
+   */
+  x25519PublicKey: Uint8Array;
+
+  /**
+   * @generated from oneof peers_touch.model.secure_content.v1.ContentPreKeySigningInput.principal
+   */
+  principal: {
+    /**
+     * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef endpoint = 5;
+     */
+    value: ActorDeviceRef;
+    case: "endpoint";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.actor.v1.ActorRef recovery_actor = 6;
+     */
+    value: ActorRef;
+    case: "recoveryActor";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * @generated from field: uint64 pool_epoch = 7;
+   */
+  poolEpoch: bigint;
+
+  /**
+   * @generated from field: uint64 expected_pool_epoch = 8;
+   */
+  expectedPoolEpoch: bigint;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef publisher = 9;
+   */
+  publisher?: ActorDeviceRef | undefined;
+
+  /**
+   * @generated from field: string publisher_signing_key_id = 10;
+   */
+  publisherSigningKeyId: string;
+
+  /**
+   * @generated from field: uint64 publisher_profile_version = 11;
+   */
+  publisherProfileVersion: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.ContentPreKeySigningInput.
+ * Use `create(ContentPreKeySigningInputSchema)` to create a new message.
+ */
+export const ContentPreKeySigningInputSchema: GenMessage<ContentPreKeySigningInput> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_prekey, 1);
+
+/**
+ * @generated from message peers_touch.model.secure_content.v1.PublishContentPreKeysRequest
+ */
+export type PublishContentPreKeysRequest = Message<"peers_touch.model.secure_content.v1.PublishContentPreKeysRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef publisher = 1;
+   */
+  publisher?: ActorDeviceRef | undefined;
+
+  /**
+   * @generated from field: string publisher_signing_key_id = 2;
+   */
+  publisherSigningKeyId: string;
+
+  /**
+   * @generated from field: uint64 publisher_profile_version = 3;
+   */
+  publisherProfileVersion: bigint;
+
+  /**
+   * @generated from field: uint64 expected_pool_epoch = 4;
+   */
+  expectedPoolEpoch: bigint;
+
+  /**
+   * @generated from field: repeated peers_touch.model.secure_content.v1.ContentOneTimePreKey prekeys = 5;
+   */
+  prekeys: ContentOneTimePreKey[];
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.PublishContentPreKeysRequest.
+ * Use `create(PublishContentPreKeysRequestSchema)` to create a new message.
+ */
+export const PublishContentPreKeysRequestSchema: GenMessage<PublishContentPreKeysRequest> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_prekey, 2);
+
+/**
  * @generated from message peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget
  */
 export type ContentPreKeyClaimTarget = Message<"peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget"> & {
@@ -102,7 +213,105 @@ export type ContentPreKeyClaimTarget = Message<"peers_touch.model.secure_content
  * Use `create(ContentPreKeyClaimTargetSchema)` to create a new message.
  */
 export const ContentPreKeyClaimTargetSchema: GenMessage<ContentPreKeyClaimTarget> = /*@__PURE__*/
-  messageDesc(file_domain_secure_content_prekey, 1);
+  messageDesc(file_domain_secure_content_prekey, 3);
+
+/**
+ * @generated from message peers_touch.model.secure_content.v1.ContentPreKeyInventory
+ */
+export type ContentPreKeyInventory = Message<"peers_touch.model.secure_content.v1.ContentPreKeyInventory"> & {
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget target = 1;
+   */
+  target?: ContentPreKeyClaimTarget | undefined;
+
+  /**
+   * @generated from field: uint64 current_epoch = 2;
+   */
+  currentEpoch: bigint;
+
+  /**
+   * @generated from field: uint32 available = 3;
+   */
+  available: number;
+
+  /**
+   * @generated from field: uint32 capacity = 4;
+   */
+  capacity: number;
+
+  /**
+   * @generated from field: uint32 replenish_at_or_below = 5;
+   */
+  replenishAtOrBelow: number;
+
+  /**
+   * @generated from field: bool needs_replenishment = 6;
+   */
+  needsReplenishment: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.ContentPreKeyInventory.
+ * Use `create(ContentPreKeyInventorySchema)` to create a new message.
+ */
+export const ContentPreKeyInventorySchema: GenMessage<ContentPreKeyInventory> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_prekey, 4);
+
+/**
+ * @generated from message peers_touch.model.secure_content.v1.PublishContentPreKeysResponse
+ */
+export type PublishContentPreKeysResponse = Message<"peers_touch.model.secure_content.v1.PublishContentPreKeysResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.ContentPreKeyInventory inventory = 1;
+   */
+  inventory?: ContentPreKeyInventory | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.PublishContentPreKeysResponse.
+ * Use `create(PublishContentPreKeysResponseSchema)` to create a new message.
+ */
+export const PublishContentPreKeysResponseSchema: GenMessage<PublishContentPreKeysResponse> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_prekey, 5);
+
+/**
+ * @generated from message peers_touch.model.secure_content.v1.GetContentPreKeyInventoryRequest
+ */
+export type GetContentPreKeyInventoryRequest = Message<"peers_touch.model.secure_content.v1.GetContentPreKeyInventoryRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef publisher = 1;
+   */
+  publisher?: ActorDeviceRef | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget target = 2;
+   */
+  target?: ContentPreKeyClaimTarget | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.GetContentPreKeyInventoryRequest.
+ * Use `create(GetContentPreKeyInventoryRequestSchema)` to create a new message.
+ */
+export const GetContentPreKeyInventoryRequestSchema: GenMessage<GetContentPreKeyInventoryRequest> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_prekey, 6);
+
+/**
+ * @generated from message peers_touch.model.secure_content.v1.GetContentPreKeyInventoryResponse
+ */
+export type GetContentPreKeyInventoryResponse = Message<"peers_touch.model.secure_content.v1.GetContentPreKeyInventoryResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.ContentPreKeyInventory inventory = 1;
+   */
+  inventory?: ContentPreKeyInventory | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.GetContentPreKeyInventoryResponse.
+ * Use `create(GetContentPreKeyInventoryResponseSchema)` to create a new message.
+ */
+export const GetContentPreKeyInventoryResponseSchema: GenMessage<GetContentPreKeyInventoryResponse> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_prekey, 7);
 
 /**
  * @generated from message peers_touch.model.secure_content.v1.ClaimedContentPreKey
@@ -134,7 +343,7 @@ export type ClaimedContentPreKey = Message<"peers_touch.model.secure_content.v1.
  * Use `create(ClaimedContentPreKeySchema)` to create a new message.
  */
 export const ClaimedContentPreKeySchema: GenMessage<ClaimedContentPreKey> = /*@__PURE__*/
-  messageDesc(file_domain_secure_content_prekey, 2);
+  messageDesc(file_domain_secure_content_prekey, 8);
 
 /**
  * @generated from message peers_touch.model.secure_content.v1.ClaimContentPreKeysRequest
@@ -161,7 +370,7 @@ export type ClaimContentPreKeysRequest = Message<"peers_touch.model.secure_conte
  * Use `create(ClaimContentPreKeysRequestSchema)` to create a new message.
  */
 export const ClaimContentPreKeysRequestSchema: GenMessage<ClaimContentPreKeysRequest> = /*@__PURE__*/
-  messageDesc(file_domain_secure_content_prekey, 3);
+  messageDesc(file_domain_secure_content_prekey, 9);
 
 /**
  * @generated from message peers_touch.model.secure_content.v1.ClaimContentPreKeysResponse
@@ -183,4 +392,4 @@ export type ClaimContentPreKeysResponse = Message<"peers_touch.model.secure_cont
  * Use `create(ClaimContentPreKeysResponseSchema)` to create a new message.
  */
 export const ClaimContentPreKeysResponseSchema: GenMessage<ClaimContentPreKeysResponse> = /*@__PURE__*/
-  messageDesc(file_domain_secure_content_prekey, 4);
+  messageDesc(file_domain_secure_content_prekey, 10);

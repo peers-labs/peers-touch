@@ -446,6 +446,8 @@ func TestMapCanonicalErrorPreservesFailureClass(t *testing.T) {
 		{domain.ErrorCodeConflict, http.StatusConflict},
 		{domain.ErrorCodeStaleMaterial, http.StatusConflict},
 		{domain.ErrorCodePlanExpired, http.StatusConflict},
+		{domain.ErrorCodePoolDepleted, http.StatusConflict},
+		{domain.ErrorCodeQuotaExceeded, http.StatusTooManyRequests},
 		{domain.ErrorCodePayloadTooLarge, http.StatusRequestEntityTooLarge},
 		{domain.ErrorCodeDependency, http.StatusServiceUnavailable},
 		{domain.ErrorCodeInternal, http.StatusInternalServerError},

@@ -278,14 +278,14 @@ items:
     architectureRefs: [SC-A04, SC-A08, SC-D05, SC-D09, SC-D12, SC-D15]
     journeyIds: [sc-dj-content-prekey]
     scope:
-      include: [model/domain/secure_content/prekey.proto, apps/station/frame/core/types/securecontent, apps/station/app/internal/securecontent, apps/station/app/subserver/actor_identity/infrastructure/persistence, apps/station/app/subserver/key_exchange, packages/secure-content-core, apps/desktop/src/gen/proto/domain/secure_content, apps/mobile/src/gen/proto/domain/secure_content, tooling/scripts/proto-gen-secure-content.mjs, tooling/scripts/proto-gen-secure-content.sh, tooling/development/secure_content/scenarios/content_prekey.py]
+      include: [model/domain/secure_content/prekey.proto, apps/station/frame/core/types/securecontent, apps/station/app/internal/securecontent, apps/station/app/subserver/actor_identity, apps/station/app/subserver/key_exchange, packages/secure-content-core, apps/desktop/src/gen/proto/domain/secure_content, apps/mobile/src/gen/proto/domain/secure_content, tooling/scripts/proto-gen-secure-content.mjs, tooling/scripts/proto-gen-secure-content.sh, tooling/development/secure_content/scenarios/content_prekey.py]
       exclude: [Direct, MLS, Social policy]
     resources:
       sourceClaims:
         - { pathPrefix: model/domain/secure_content/prekey.proto, mode: exclusive-write }
         - { pathPrefix: apps/station/frame/core/types/securecontent, mode: exclusive-write }
         - { pathPrefix: apps/station/app/internal/securecontent, mode: exclusive-write }
-        - { pathPrefix: apps/station/app/subserver/actor_identity/infrastructure/persistence, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/actor_identity, mode: exclusive-write }
         - { pathPrefix: apps/station/app/subserver/key_exchange, mode: exclusive-write }
         - { pathPrefix: packages/secure-content-core, mode: exclusive-write }
         - { pathPrefix: apps/desktop/src/gen/proto/domain/secure_content, mode: exclusive-write }
