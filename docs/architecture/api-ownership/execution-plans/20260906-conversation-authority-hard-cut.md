@@ -1935,3 +1935,33 @@ introduced. Focused and complete Conversation/Federation race suites, focused
 `go vet`, Go style, and `git diff --check` pass. A focused independent review
 reports no P0/P1 findings. Exact-source checkpoint, deployment, and the same
 Social Journey rerun remain required.
+
+Checkpoint `a6ae2f48a84cc109368a210d99d3f8e49dc4d006` was deployed
+exactly to `four` and `fiveArm`. Social simulator run
+`20260914T205140644944Z-9efff5c20f71cf145d35527bed7d9923`
+then reached receiver-perspective `FUNCTIONAL_PASS`: typing converged in 18 ms,
+message delivery in 1915 ms, read receipt in 723 ms, and cleanup passed. This
+closes the ordered Social functional prerequisite but does not prove the
+physical-device cells.
+
+The following exact-source Chat/Contacts run
+`20260914T205436809375Z-2dc0d3f505a364e40d2943b01ef80fe7`
+advanced to its first remaining product failure: receiver attachment delivery
+did not converge. Instrumented checkpoint
+`09f4cd10f6c81de87bca2abe550c828076e5192f` proves attachment staging
+completes, durable send returns `state=draft` with no command ID, the worker
+wake succeeds, message-draft preparation and command dispatch remain idle, and
+the receiver Device Inbox remains at cursor/lane head `1/1`. The attachment
+upload worker reports intermittent progress without surfacing its typed result;
+the cadence matches retry backoff. CA-W6 therefore admits one instrumentation-
+only diagnostic at the Mobile attachment transfer owner to capture the exact
+transfer progress, persisted state, attempt count, retry deadline, and typed
+error code before any behavioral correction.
+
+Concurrency Decision: serial for this remediation. The Mobile attachment
+store, worker lifecycle, simulator fixture, `four`/`fiveArm` deployments, and
+the bounded Chat/Contacts Journey are shared mutable resources. Read-only
+source and evidence inspection may run in parallel, but instrumentation,
+owner-layer correction, focused regression, checkpoint, deployment, and the
+functional rerun must remain ordered. CA-W6 is `PARTIAL/UNPROVEN`; CA-W7 stays
+pending until the Chat/Contacts Journey reaches `FUNCTIONAL_PASS`.

@@ -1488,8 +1488,47 @@ impl MobileMessagingEngine {
         let Some(attachment_id) = self.store.next_due_attachment_upload(now_unix_ms)? else {
             return Ok(false);
         };
-        self.attachment_transfer_worker()?
-            .run_upload_once(&attachment_id, now_unix_ms)?;
+        let transfer_before = self.store.attachment_transfer(&attachment_id)?;
+        let progress = self
+            .attachment_transfer_worker()?
+            .run_upload_once(&attachment_id, now_unix_ms);
+        let transfer_after = self.store.attachment_transfer(&attachment_id);
+        // #region debug-point F:attachment-upload-result
+        {
+            let debug_data = serde_json::json!({
+                "attachmentId": attachment_id,
+                "progress": progress.as_ref().map(|value| format!("{value:?}")).ok(),
+                "error": progress.as_ref().err(),
+                "before": transfer_before.as_ref().map(|transfer| serde_json::json!({
+                    "state": transfer.state,
+                    "attemptCount": transfer.attempt_count,
+                    "nextAttemptAtUnixMs": transfer.next_attempt_at_unix_ms,
+                    "lastErrorCode": transfer.last_error_code,
+                    "hasUploadId": !transfer.upload_id.is_empty(),
+                    "generation": transfer.generation,
+                    "descriptorCommitted": transfer.descriptor_sha256 != vec![0; 32],
+                    "completedChunkBitmap": transfer.completed_chunk_bitmap,
+                })),
+                "after": transfer_after.as_ref().ok().and_then(|transfer| {
+                    transfer.as_ref().map(|transfer| serde_json::json!({
+                        "state": transfer.state,
+                        "attemptCount": transfer.attempt_count,
+                        "nextAttemptAtUnixMs": transfer.next_attempt_at_unix_ms,
+                        "lastErrorCode": transfer.last_error_code,
+                        "hasUploadId": !transfer.upload_id.is_empty(),
+                        "generation": transfer.generation,
+                        "descriptorCommitted": transfer.descriptor_sha256 != vec![0; 32],
+                        "completedChunkBitmap": transfer.completed_chunk_bitmap,
+                    }))
+                }),
+                "snapshotError": transfer_after.as_ref().err(),
+            });
+            std::thread::spawn(move || {
+                let _ = reqwest::blocking::Client::new().post("http://10.4.44.83:7784/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"pre-fix","hypothesisId":"F","location":"apps/mobile/src-tauri/src/messaging/engine.rs:resume_attachment_upload_once","msg":"[DEBUG] Mobile attachment upload result persisted","data":debug_data}).to_string()).send();
+            });
+        }
+        // #endregion
+        progress?;
         Ok(true)
     }
 
