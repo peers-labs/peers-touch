@@ -322,7 +322,7 @@ test('rejects live declaration takeover by another session or owner', () => {
   }
 });
 
-test('update preserves claims when omitted and check rejects unavailable identity', () => {
+test('update preserves claims and requires activation before identity checks', () => {
   const scope = fixture();
   try {
     const created = startOrUpdateDeclaration(options(scope));
@@ -336,7 +336,7 @@ test('update preserves claims when omitted and check rejects unavailable identit
     );
     assert.deepEqual(updated.sourceClaims, created.sourceClaims);
     assert.deepEqual(updated.runtimeClaims, created.runtimeClaims);
-    expectCode('WORKTREE_IDENTITY_UNAVAILABLE', () =>
+    expectCode('WORK_DECLARATION_NOT_ACTIVE', () =>
       checkDeclaration({
         home: scope.home,
         workspaceRoot: scope.workspaceA,
