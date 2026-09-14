@@ -4618,8 +4618,8 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             )
             actor = resolve_actor_identity(
                 station_url,
+                deployment_environment,
                 "alice",
-                ACTOR_PASSWORD,
             )
             stations[service_id] = {
                 "targetVerified": True,
@@ -5517,8 +5517,8 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
             actors = [
                 resolve_actor_identity(
                     station_url,
+                    deployment_environment,
                     role,
-                    ACTOR_PASSWORD,
                 )
                 for role in ("alice", "bob")
             ]

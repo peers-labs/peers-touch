@@ -834,6 +834,72 @@ class MobileSimulatorContractTests(unittest.TestCase):
             set(payload["harness"]["required_actions"]),
         )
 
+    def test_social_fixture_resolves_actor_with_deployment_before_role(
+        self,
+    ) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        provisioner = MobileSocialSimulatorProvisioner(contract)
+        evidence = FakeEvidenceRun()
+        provisioner.bind_evidence_run(evidence)  # type: ignore[arg-type]
+        profile = {
+            "PT_MOBILE_STATION_PRIMARY_URL": "https://primary.example",
+            "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "deploy-primary",
+            "PT_MOBILE_STATION_SECONDARY_URL": "https://secondary.example",
+            "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "deploy-secondary",
+        }
+        calls: list[tuple[str, str, str]] = []
+
+        def resolve(
+            station_url: str,
+            deployment_environment: str,
+            role: str,
+        ) -> SimpleNamespace:
+            calls.append((station_url, deployment_environment, role))
+            return SimpleNamespace(
+                role=role,
+                account_ref=f"station-account:{role}@p.t",
+                ptid=f"ptid:{role}",
+                device_policy="single-active-session",
+            )
+
+        with (
+            patch.dict(
+                "os.environ",
+                {"MOBILE_ACCEPTANCE_RESET": "1"},
+                clear=False,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "verify_reset_target",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "reset_fixture",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "resolve_actor_identity",
+                side_effect=resolve,
+            ),
+        ):
+            provisioner._prepare_actor_fixture(
+                "mobile-simulator-social-convergence-e2e",
+                profile,
+                provisioner._load_overlay(),
+            )
+            provisioner.cleanup()
+
+        self.assertEqual(
+            calls,
+            [
+                ("https://primary.example", "deploy-primary", "alice"),
+                ("https://primary.example", "deploy-primary", "bob"),
+                ("https://secondary.example", "deploy-secondary", "alice"),
+                ("https://secondary.example", "deploy-secondary", "bob"),
+            ],
+        )
+
     def test_station_lifecycle_overlay_has_exact_topology_and_bindings(
         self,
     ) -> None:

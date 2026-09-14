@@ -1617,3 +1617,14 @@ full Mobile Rust suite reaches 85/87; two unrelated attachment descriptor
 fixtures remain red and are not changed by this remediation. Exact-source
 checkpoint, Station attestation, iOS/Android builds, and the ordered simulator
 Gates remain required.
+
+Exact-source Social simulator attempt
+`20260914T132626608953Z-df4ca6adc31d9a1e391423c36cc43ca8`
+at `da962507a310fc4d97c650d8c48c9e3f6b75f3fc` passes the complete
+service, reset, SDK/NDK, simulator, Chromedriver, web, iOS, and Android build
+frontier, then blocks before product actions because both Mobile simulator
+Provisioners call the Actor Fixture owner with `(station_url, role, password)`
+instead of `(station_url, deployment_environment, role)`. Cleanup succeeds,
+including both devices and generated iOS assets. The owner-adapter correction
+now passes 37 focused simulator tests and Mobile Rust compilation; checkpoint
+and rerun remain required.
