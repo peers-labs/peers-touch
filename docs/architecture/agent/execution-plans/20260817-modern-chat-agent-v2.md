@@ -25,8 +25,8 @@
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
 | Current step | `BASE-INVALID_RESOURCE_REF` Station persistence remediation is `FOCUSED_PASS`; exact-source checkpoint, deployment, and the native product Journey remain |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Checkpoint `60588d847` deployed; PostgreSQL accepted full PREPARED/FAILED receipt statuses and Station persisted the exact nested invalid-resource error; Desktop Rust nested typed-error preservation now passes focused tests |
-| Current action | Checkpoint the Desktop Rust live-stream normalization fix, rebuild the native binary, and rerun the real invalid-resource failure Journey |
+| Last completed | The native diagnostic proved the raw nested typed event reaches Desktop, then reconciliation erased it because the canonical assistant was already `completed`; Station now persists terminal typed errors onto both active assistant states and the focused regression passes |
+| Current action | Checkpoint and deploy the canonical assistant persistence fix, then rerun the real invalid-resource failure Journey |
 | Next action | Verify PREPARED and terminal invalid-reference receipts persist, then prove localized recovery, zero side effects, replay equality, and explicit resend behavior |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
@@ -36,7 +36,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | no Goal-level blocker; `BASE-INVALID_RESOURCE_REF` remains below `FUNCTIONAL_PASS` until exact-source deployment and native receiver verification; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN` on `d3e6feaa3`；MCA-J06 completed reject→preserve→remove→resend with exactly one `CLEAN_OK` assistant；Foundation inner run `20260914T061925912621Z-87241fd9e161029c1c784e0dd86109a7` on `f876ad54f` crossed both `BASE-INVALID_REFERENCE` locales；checkpoint `60588d847` fixed the PostgreSQL status width and the deployed Station accepted both invalid-resource receipts；the next runtime failure exposed Desktop Rust reclassification of nested `outcome_error`, now covered by a focused regression；Foundation remains `PARTIAL / UNPROVEN` |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN` on `d3e6feaa3`；MCA-J06 completed reject→preserve→remove→resend with exactly one `CLEAN_OK` assistant；Foundation inner run `20260914T061925912621Z-87241fd9e161029c1c784e0dd86109a7` on `f876ad54f` crossed both `BASE-INVALID_REFERENCE` locales；checkpoint `60588d847` fixed PostgreSQL receipt status；checkpoint `7438f60ce` preserves nested typed live-stream errors；the latest diagnostic proved the remaining reconciliation overwrite and its Station persistence regression now passes；Foundation remains `PARTIAL / UNPROVEN` |
 | Last updated | 2026-09-14 |
 
 ---

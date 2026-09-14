@@ -4177,7 +4177,12 @@ func (s *TurnService) interruptTurnWithOutcomeError(
 				return err
 			}
 			if err := tx.Model(&persistence.AgentMessage{}).
-				Where("turn_id = ? AND role = ? AND status = ?", turnID, string(domain.MessageRoleAssistant), "pending").
+				Where(
+					"turn_id = ? AND role = ? AND status IN ?",
+					turnID,
+					string(domain.MessageRoleAssistant),
+					[]string{"pending", "completed"},
+				).
 				Updates(map[string]interface{}{
 					"status":     string(domain.TurnStatusInterrupted),
 					"error_json": outcomeErrorJSON,

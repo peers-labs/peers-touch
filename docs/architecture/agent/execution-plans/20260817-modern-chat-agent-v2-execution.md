@@ -1544,6 +1544,15 @@ and zero local-path leakage.
     Desktop Rust transport now preserves either canonical shape; both focused
     Rust regression cases pass. Exact-source rebuild and Journey reproof remain
     pending.
+  - The next source-bound diagnostic captured the repaired raw Tauri error
+    event and a failed operation projection, but reconciliation replaced it
+    with a canonical assistant row whose `error_json` was empty. The real
+    tool-call path had already marked that assistant `completed`, while
+    `interruptTurnWithOutcomeError` updated only `pending` assistants. Station
+    now persists the terminal typed error onto either active assistant state,
+    and the existing invalid-resource settlement regression uses the real
+    `completed` state. Focused Station test, vet, style, and diff checks pass;
+    exact-source deployment and Journey reproof remain pending.
 
 #### G-FE1 Concurrency Decision
 

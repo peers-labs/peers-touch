@@ -3079,7 +3079,7 @@ func TestTurnServicePreservesInvalidResourceFailureFromBlockedToolBatch(t *testi
 		ConversationID: conversation.ID,
 		TurnID:         &turn.ID,
 		Role:           string(domain.MessageRoleAssistant),
-		Status:         "pending",
+		Status:         "completed",
 		Content:        &assistantContent,
 		Seq:            1,
 		CreatedAt:      now,
