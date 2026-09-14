@@ -809,18 +809,26 @@ def _friend_request_event_text(
     return "\n".join(fields) + "\n"
 
 
-def fixture_federation_id(actors: Iterable[FixtureActorRecord]) -> str:
+def fixture_federation_id_from_station_ids(
+    home_station_peer_ids: Iterable[str],
+) -> str:
     station_ids = sorted(
         {
-            actor.home_station_peer_id
-            for actor in actors
-            if actor.home_station_peer_id
+            station_id.strip()
+            for station_id in home_station_peer_ids
+            if station_id.strip()
         }
     )
     if not station_ids:
         raise RuntimeError("Chat fixture Federation requires a Home Station")
     identity = hashlib.sha256("\x00".join(station_ids).encode("utf-8")).hexdigest()
     return f"fed_chat_{identity[:20]}"
+
+
+def fixture_federation_id(actors: Iterable[FixtureActorRecord]) -> str:
+    return fixture_federation_id_from_station_ids(
+        actor.home_station_peer_id for actor in actors
+    )
 
 
 def _accepted_friendship(

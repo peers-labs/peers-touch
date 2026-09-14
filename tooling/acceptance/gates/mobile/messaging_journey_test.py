@@ -18,6 +18,7 @@ class FakeMessagingNetwork:
         self.messages: dict[str, list[dict[str, Any]]] = {}
         self.typing: dict[str, dict[str, dict[str, Any]]] = {}
         self.friend_requests: list[dict[str, Any]] = []
+        self.actors: dict[str, MessagingActor] = {}
         self.sequence = 0
 
     def add_conversation(
@@ -57,6 +58,7 @@ class FakeMessagingSession:
         self.login_emails: list[str] = []
         self.lifecycle_restart_count = 0
         self.social_runtime_active = False
+        self.network.actors[actor.ptid] = actor
 
     def call_action(
         self,
@@ -105,15 +107,39 @@ class FakeMessagingSession:
                 "conversationId": conversation_id,
                 "state": "projected",
             }
+        if action == "social.people.search":
+            query = str(body["query"])
+            federation_id = str(body["federationId"])
+            if federation_id != "federation-1":
+                raise AssertionError("unexpected explicit Federation identity")
+            return [
+                {
+                    "ptid": actor.ptid,
+                    "federationId": federation_id,
+                    "homeStationPeerId": actor.station_peer_id,
+                }
+                for actor in self.network.actors.values()
+                if actor.federated_handle == query
+            ]
         if action == "social.request.send":
             if not self.social_runtime_active:
                 raise GateError("mobile.social.runtimeUnavailable")
+            receiver = self.network.actors[str(body["receiverPtid"])]
+            if body["receiverHomeStationPeerId"] != receiver.station_peer_id:
+                raise AssertionError("receiver Home Station identity mismatch")
+            if body["federationId"] != "federation-1":
+                raise AssertionError("receiver Federation identity mismatch")
             self.network.sequence += 1
             self.network.friend_requests.append(
                 {
                     "requestId": f"request-{self.network.sequence}",
+                    "federationId": body["federationId"],
                     "senderPtid": self.actor.ptid,
                     "receiverPtid": body["receiverPtid"],
+                    "senderHomeStationPeerId": self.actor.station_peer_id,
+                    "receiverHomeStationPeerId": body[
+                        "receiverHomeStationPeerId"
+                    ],
                     "status": 1,
                 }
             )
@@ -350,6 +376,8 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             station_peer_id="station-primary",
             ptid="ptid:alice",
             account_ref="station-account:alice@p.t",
+            federated_handle="@alice@station-primary.example",
+            federation_id="federation-1",
         )
         self.receiver = MessagingActor(
             client_id="sim-android",
@@ -358,6 +386,8 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             station_peer_id="station-secondary",
             ptid="ptid:bob",
             account_ref="station-account:bob@p.t",
+            federated_handle="@bob@station-secondary.example",
+            federation_id="federation-1",
         )
         self.sender_session = FakeMessagingSession(self.network, self.sender)
         self.receiver_session = FakeMessagingSession(
@@ -417,6 +447,8 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             station_peer_id=self.sender.station_peer_id,
             ptid=self.sender.ptid,
             account_ref="fixture:alice",
+            federated_handle=self.sender.federated_handle,
+            federation_id=self.sender.federation_id,
         )
 
         with self.assertRaisesRegex(GateError, "must be Station-owned"):
@@ -463,6 +495,8 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             station_peer_id=self.sender.station_peer_id,
             ptid="ptid:other",
             account_ref=self.sender.account_ref,
+            federated_handle=self.sender.federated_handle,
+            federation_id=self.sender.federation_id,
         )
 
         with self.assertRaisesRegex(GateError, "does not match"):

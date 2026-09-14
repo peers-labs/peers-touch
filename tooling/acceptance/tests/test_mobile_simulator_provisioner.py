@@ -861,6 +861,8 @@ class MobileSimulatorContractTests(unittest.TestCase):
                 account_ref=f"station-account:{role}@p.t",
                 ptid=f"ptid:{role}",
                 device_policy="single-active-session",
+                federated_handle=f"@{role}@station.example",
+                home_station_peer_id=f"station-{role}",
             )
 
         with (
@@ -1655,6 +1657,8 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                     account_ref="station-account:alice@p.t",
                     ptid="ptid:alice",
                     device_policy="single-active-session",
+                    federated_handle="@alice@station.example",
+                    home_station_peer_id="station-alice",
                 ),
             ),
         ):

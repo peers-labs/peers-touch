@@ -1087,8 +1087,8 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 			t.Fatal(err)
 		}
 		hydrationCalls := 0
-		fixture.b.service.WithActorKeyHydrator(
-			friendRequestActorKeyHydratorFunc(func(
+		fixture.b.service.WithActorDeviceKeyResolver(
+			friendRequestActorKeyResolverFunc(func(
 				_ context.Context,
 				actorPTID string,
 				homeStationPeerID string,
@@ -1142,6 +1142,19 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 		if hydrationCalls != 1 {
 			t.Fatalf("cold-cache hydration calls = %d, want 1", hydrationCalls)
 		}
+		var persistedBySocial int64
+		if err := fixture.b.db.
+			Model(&touchactor.DeviceRecord{}).
+			Where("ptid = ? AND device_id = ?", alicePTID, alicePTID+":device").
+			Count(&persistedBySocial).Error; err != nil {
+			t.Fatal(err)
+		}
+		if persistedBySocial != 0 {
+			t.Fatalf(
+				"Social persisted %d remote Actor Identity rows, want 0",
+				persistedBySocial,
+			)
+		}
 		assertProjectionState(
 			t,
 			fixture.b,
@@ -1155,8 +1168,8 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 	t.Run("latest verified profile omission rejects cached remote key", func(t *testing.T) {
 		fixture := newFederatedFriendRequestFixture(t)
 		hydrationCalls := 0
-		fixture.b.service.WithActorKeyHydrator(
-			friendRequestActorKeyHydratorFunc(func(
+		fixture.b.service.WithActorDeviceKeyResolver(
+			friendRequestActorKeyResolverFunc(func(
 				_ context.Context,
 				actorPTID string,
 				homeStationPeerID string,
@@ -1198,8 +1211,8 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 	t.Run("latest verified profile rejects revoked cached remote key", func(t *testing.T) {
 		fixture := newFederatedFriendRequestFixture(t)
 		hydrationCalls := 0
-		fixture.b.service.WithActorKeyHydrator(
-			friendRequestActorKeyHydratorFunc(func(
+		fixture.b.service.WithActorDeviceKeyResolver(
+			friendRequestActorKeyResolverFunc(func(
 				_ context.Context,
 				actorPTID string,
 				homeStationPeerID string,
@@ -1269,8 +1282,8 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 			"missing-identity-idempotency",
 		)
 		hydrationCalls := 0
-		fixture.b.service.WithActorKeyHydrator(
-			friendRequestActorKeyHydratorFunc(func(
+		fixture.b.service.WithActorDeviceKeyResolver(
+			friendRequestActorKeyResolverFunc(func(
 				_ context.Context,
 				actorPTID string,
 				homeStationPeerID string,
@@ -1314,8 +1327,8 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 	t.Run("revoked remote key", func(t *testing.T) {
 		fixture := newFederatedFriendRequestFixture(t)
 		hydrationCalls := 0
-		fixture.b.service.WithActorKeyHydrator(
-			friendRequestActorKeyHydratorFunc(func(
+		fixture.b.service.WithActorDeviceKeyResolver(
+			friendRequestActorKeyResolverFunc(func(
 				context.Context,
 				string,
 				string,
@@ -1360,8 +1373,8 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 	t.Run("unverified remote key", func(t *testing.T) {
 		fixture := newFederatedFriendRequestFixture(t)
 		hydrationCalls := 0
-		fixture.b.service.WithActorKeyHydrator(
-			friendRequestActorKeyHydratorFunc(func(
+		fixture.b.service.WithActorDeviceKeyResolver(
+			friendRequestActorKeyResolverFunc(func(
 				context.Context,
 				string,
 				string,
@@ -1407,8 +1420,8 @@ func TestReceiverUsesVerifiedRemoteActorDeviceProjectionAndRejectsInvalidAuthori
 	t.Run("unproven rotated remote key", func(t *testing.T) {
 		fixture := newFederatedFriendRequestFixture(t)
 		hydrationCalls := 0
-		fixture.b.service.WithActorKeyHydrator(
-			friendRequestActorKeyHydratorFunc(func(
+		fixture.b.service.WithActorDeviceKeyResolver(
+			friendRequestActorKeyResolverFunc(func(
 				context.Context,
 				string,
 				string,
@@ -1633,18 +1646,38 @@ func TestReceiverPolicyRejectionRollsBackCommandWhenResultOutboxConflicts(
 	}
 }
 
-type friendRequestActorKeyHydratorFunc func(
+type friendRequestActorKeyResolverFunc func(
 	context.Context,
 	string,
 	string,
 ) ([]*model.VerifiedActorDeviceSigningKey, error)
 
-func (f friendRequestActorKeyHydratorFunc) Hydrate(
+func (f friendRequestActorKeyResolverFunc) ResolveVerifiedActorDeviceSigningKey(
 	ctx context.Context,
+	transaction delivery.Transaction,
 	actorPTID string,
-	homeStationPeerID string,
-) ([]*model.VerifiedActorDeviceSigningKey, error) {
-	return f(ctx, actorPTID, homeStationPeerID)
+	deviceID string,
+	signingKeyID string,
+) (*model.VerifiedActorDeviceSigningKey, error) {
+	if transaction == nil || transaction.DB() == nil {
+		return nil, errors.New("missing bound Social transaction")
+	}
+	homeStationPeerID := stationA
+	if actorPTID == bobPTID {
+		homeStationPeerID = stationB
+	}
+	keys, err := f(ctx, actorPTID, homeStationPeerID)
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range keys {
+		if key != nil &&
+			key.GetActorDeviceId() == deviceID &&
+			key.GetSigningKeyId() == signingKeyID {
+			return key, nil
+		}
+	}
+	return nil, nil
 }
 
 type federatedFriendRequestFixture struct {
@@ -1908,7 +1941,7 @@ func newFriendRequestStation(
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.WithActorKeyHydrator(friendRequestActorKeyHydratorFunc(func(
+	service.WithActorDeviceKeyResolver(friendRequestActorKeyResolverFunc(func(
 		_ context.Context,
 		actorPTID string,
 		homeStationPeerID string,

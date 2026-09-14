@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::station_origin::{normalize_station_origin, StationOriginPolicy};
 use messaging_core::attachment::{
     AttachmentCryptoMaterial, AttachmentRetryPolicy, AttachmentTransferControl,
     AttachmentTransferRecord, AttachmentTransferWorker, ATTACHMENT_MAX_PLAINTEXT_SIZE,
@@ -183,24 +184,8 @@ pub(crate) fn validate_account_scope(
     {
         return Err("mobile messaging account scope is incomplete".to_string());
     }
-    let origin = reqwest::Url::parse(station_origin)
-        .map_err(|_| "mobile messaging Station origin is invalid".to_string())?;
-    let host = origin
-        .host_str()
-        .ok_or_else(|| "mobile messaging Station origin has no host".to_string())?;
-    let loopback = host.eq_ignore_ascii_case("localhost")
-        || host
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|address| address.is_loopback());
-    if (origin.scheme() != "https" && !(cfg!(debug_assertions) && loopback))
-        || !origin.username().is_empty()
-        || origin.password().is_some()
-        || origin.query().is_some()
-        || origin.fragment().is_some()
-        || origin.path() != "/"
-    {
-        return Err("mobile messaging Station origin is not canonical".to_string());
-    }
+    normalize_station_origin(station_origin, StationOriginPolicy::current_build())
+        .map_err(|_| "mobile messaging Station origin is not canonical".to_string())?;
     Ok(())
 }
 

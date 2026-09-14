@@ -24,7 +24,7 @@ type FederatedFriendRequestTransaction interface {
 		device *model.ActorDeviceRef,
 		claimedHomeStationPeerID string,
 		localStationPeerID string,
-		hydrator FriendRequestActorKeyHydrator,
+		actorKeys FriendRequestActorKeyResolver,
 		signingKeyID string,
 		canonicalSigningBytes []byte,
 		signature []byte,
@@ -531,18 +531,18 @@ func (t *federatedFriendRequestTransaction) VerifyFriendRequestCommandSignature(
 	device *model.ActorDeviceRef,
 	claimedHomeStationPeerID string,
 	localStationPeerID string,
-	hydrator FriendRequestActorKeyHydrator,
+	actorKeys FriendRequestActorKeyResolver,
 	signingKeyID string,
 	canonicalSigningBytes []byte,
 	signature []byte,
 ) error {
 	return verifyFriendRequestCommandSignature(
 		ctx,
-		t.db,
+		t,
 		device,
 		claimedHomeStationPeerID,
 		localStationPeerID,
-		hydrator,
+		actorKeys,
 		signingKeyID,
 		canonicalSigningBytes,
 		signature,
@@ -939,6 +939,10 @@ func (t *federatedFriendRequestTransaction) PutDirectConversationEffect(
 
 func (t *federatedFriendRequestTransaction) Outbox() delivery.OutboxWriter {
 	return t.outbox
+}
+
+func (t *federatedFriendRequestTransaction) DB() *gorm.DB {
+	return t.db
 }
 
 func friendRequestTransactionFromDelivery(

@@ -12,7 +12,10 @@ import {
 import type { SocialState } from './socialStore';
 import { useSocialStore } from './socialStore';
 import { startRealtimeStream } from './socialRealtime';
-import { readableErrorMessage } from './socialTypes';
+import {
+  readableErrorMessage,
+  type ActorSearchResult,
+} from './socialTypes';
 import type { GroupMembershipKind } from './socialWire';
 
 const RECONCILE_INTERVAL_MS = 30000;
@@ -123,6 +126,14 @@ export async function reconcileSocialRuntime(): Promise<SocialRuntimePublicProje
   requireActiveSocialRuntime();
   await useSocialStore.getState().reconcile();
   return readSocialRuntimeProjection();
+}
+
+export async function searchSocialPeople(query: string): Promise<ActorSearchResult[]> {
+  requireActiveSocialRuntime();
+  await useSocialStore.getState().searchPeople(query);
+  const state = useSocialStore.getState();
+  if (state.peopleSearchError) throw state.peopleSearchError;
+  return [...state.peopleSearchResults];
 }
 
 function requireActiveSocialRuntime(): void {

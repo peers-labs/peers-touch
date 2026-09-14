@@ -62,6 +62,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('messaging.send');
     expect(actionNames).toContain('messaging.interact');
     expect(actionNames).toContain('messaging.projection.read');
+    expect(actionNames).toContain('social.people.search');
     expect(actionNames).toContain('social.request.send');
     expect(actionNames).toContain('social.request.accept');
     expect(actionNames).toContain('social.reconcile');

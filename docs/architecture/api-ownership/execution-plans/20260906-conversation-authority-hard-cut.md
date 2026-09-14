@@ -1628,3 +1628,75 @@ instead of `(station_url, deployment_environment, role)`. Cleanup succeeds,
 including both devices and generated iOS assets. The owner-adapter correction
 now passes 37 focused simulator tests and Mobile Rust compilation; checkpoint
 and rerun remain required.
+
+Instrumented Social simulator run
+`20260914T135235549631Z-33933357851deea5b7e8beaac91a1209`
+reaches authenticated product execution and proves the next CA-W6 defect is
+owned by Mobile native Station-origin policy. The authenticated session enters
+both Messaging and Social, and the Social controller starts, but Messaging
+rejects the canonical non-loopback `http` development Station as
+`mobile messaging Station origin is not canonical`. The post-login webview
+restart then waits behind the failed Messaging dependency, so the Harness
+correctly observes no stable Social runtime. OAuth cleanup independently
+rejects the same origin.
+
+This is a mechanical remediation under accepted MS-D10/MS-D11 and the Mobile
+acceptance-environment contract: debug/acceptance builds may use canonical HTTP
+development Stations, while release builds remain HTTPS-only. CA-W6 admits one
+shared native Station-origin value policy consumed by Station identity,
+Messaging, and OAuth, replacing their divergent validators. Focused Rust tests
+must prove canonicalization, debug HTTP admission, release-policy HTTP
+rejection, and credential/path/query/fragment rejection before the product
+Journey is rerun. This does not introduce an HTTP fallback, alter Station
+identity pinning, or weaken release transport policy.
+
+After the origin correction, run
+`20260914T141131185081Z-a75b10422e5a2b8e805495776e4c4bcd`
+proves both Mobile clients activate Messaging and Social and that every
+post-login runtime teardown succeeds. The Journey then reaches
+`social.request.send` and exposes an incomplete adapter payload: it supplies
+only `receiverPtid`, while the production Contacts flow obtains and requires
+`receiverHomeStationPeerId` plus `federationId` from the canonical federated
+actor search result. CA-W6 mechanically admits a production-backed
+`social.people.search` Harness action and requires the Journey to resolve the
+fixture actor by canonical federated handle, validate the returned PTID and
+Home Station identity, and pass the returned Federation ID to the unchanged
+Social command. Fixture-synthesized Federation IDs and direct Station data
+injection are forbidden.
+
+The production-backed Social search correction reaches signed cross-Station
+Friend Request delivery in run
+`20260914T155708096534Z-0fefcce11b5b7d8cf327d47fecdeca22`.
+The sender durably accepts the command and retries its shared-Federation frame,
+but the receiver returns retryable `OVERLOADED` before Social authority
+persistence. Receiver `fiveArm` logs prove every attempt resolves the sender's
+signed Home Station profile with HTTP 200 and then fails on
+`actor_devices.actor_acct` `NOT NULL` while persisting the verified remote
+device key. Direct two-way locator and resolver probes pass, so neither DHT
+absence nor profile wire negotiation owns this failure.
+
+This is an Actor Identity ownership violation in the Social adapter. Social
+calls the legacy `touch/actor.DeviceStore.UpsertVerifiedRemote` directly,
+bypassing the canonical Actor Identity capability and its current persistence
+model. CA-W6 mechanically admits the owner-layer correction required by AO-D02
+and the Actor Identity boundary: Social delegates exact remote device-key
+resolution to the Actor Identity capability inside the existing Federation
+transaction, Actor Identity alone hydrates and persists the verified profile,
+and Social only validates the returned key against the command. Filling legacy
+columns in Social, relaxing `NOT NULL`, or adding a fallback store is
+forbidden. Focused Actor Identity/Social race and vet checks, checkpoint
+deployment, and the same receiver-perspective Journey rerun are required.
+
+The owner-layer correction is implemented: the Social transaction now exposes
+the shared Federation transaction contract and delegates remote device-key
+resolution to the canonical Actor Identity subserver capability. Actor Identity
+performs profile revalidation and persistence in that transaction; Social
+retains only signature validation and no longer calls
+`DeviceStore.UpsertVerifiedRemote`. The Social/Actor Identity race suites,
+focused `go vet`, Go style, Mobile Rust Station-origin/OAuth/Messaging checks,
+Mobile web typecheck, 20 focused Mobile tests, and 49 focused Journey/
+Provisioner tests pass. A broader filtered Mobile Rust run still exposes the
+two pre-existing attachment descriptor fixture failures and is not used as
+evidence for this correction. CA-W6 remains `PARTIAL/UNPROVEN` pending a clean
+checkpoint, exact-source deployment to `four` and `fiveArm`, and the same
+receiver-perspective Social Journey.

@@ -40,6 +40,8 @@ class MessagingActor:
     station_peer_id: str
     ptid: str
     account_ref: str
+    federated_handle: str
+    federation_id: str
 
 
 class MobileMessagingJourney:
@@ -257,10 +259,57 @@ class MobileMessagingJourney:
         sender: MessagingActor,
         receiver: MessagingActor,
     ) -> str:
+        if sender.federation_id != receiver.federation_id:
+            raise GateError("Mobile actors do not share one explicit Federation")
+        results = sender_session.call_action(
+            "social.people.search",
+            {
+                "query": receiver.federated_handle,
+                "federationId": sender.federation_id,
+            },
+        )
+        if not isinstance(results, list):
+            raise GateError("Federated actor search must return a list")
+        result = next(
+            (
+                dict(value)
+                for value in results
+                if isinstance(value, Mapping)
+                and value.get("ptid") == receiver.ptid
+            ),
+            None,
+        )
+        if result is None:
+            populated_ptids = sum(
+                1
+                for value in results
+                if isinstance(value, Mapping)
+                and isinstance(value.get("ptid"), str)
+                and bool(value["ptid"].strip())
+            )
+            raise GateError(
+                f"{sender.client_id} did not resolve the receiver identity "
+                f"(results={len(results)}, populatedPtids={populated_ptids})"
+            )
+        receiver_home_station_peer_id = self._text(
+            result.get("homeStationPeerId"),
+            "Receiver Home Station peer ID",
+        )
+        if receiver_home_station_peer_id != receiver.station_peer_id:
+            raise GateError(
+                f"{sender.client_id} resolved the receiver to the wrong Home Station"
+            )
+        federation_id = self._text(result.get("federationId"), "Federation ID")
+        if federation_id != sender.federation_id:
+            raise GateError(
+                f"{sender.client_id} resolved the receiver in the wrong Federation"
+            )
         sender_session.call_action(
             "social.request.send",
             {
                 "receiverPtid": receiver.ptid,
+                "receiverHomeStationPeerId": receiver_home_station_peer_id,
+                "federationId": federation_id,
                 "message": "mobile acceptance",
             },
         )

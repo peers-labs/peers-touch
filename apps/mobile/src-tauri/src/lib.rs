@@ -4,6 +4,7 @@ pub mod error;
 pub mod messaging;
 mod platform;
 pub mod runtime;
+mod station_origin;
 
 use messaging::lifecycle::MobileMessagingRuntime;
 #[cfg(not(target_os = "android"))]

@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -41,6 +42,12 @@ ACTOR_PASSWORD = "1"
 RESET_TIMEOUT_SECONDS = 120.0
 RESET_TERMINATION_RESERVE_SECONDS = 1.0
 RESET_POLL_INTERVAL_SECONDS = 0.05
+
+
+@dataclass(frozen=True)
+class ResolvedActorIdentity(ActorIdentity):
+    federated_handle: str = ""
+    home_station_peer_id: str = ""
 
 
 def fixture_password(path: Path = ACTOR_FIXTURE) -> str:
@@ -281,7 +288,7 @@ def resolve_actor_identity(
     station_url: str,
     deployment_environment: str,
     role: str,
-) -> ActorIdentity:
+) -> ResolvedActorIdentity:
     account = ACTOR_ACCOUNTS.get(role)
     if not account:
         raise BlockedError(
@@ -299,10 +306,12 @@ def resolve_actor_identity(
             reason=f"Cannot resolve canonical PTID for fixture role {role}: {error}",
             resource=f"fixture-actor:{role}",
         ) from error
-    return ActorIdentity(
+    return ResolvedActorIdentity(
         role=role,
         account_ref=f"station-account:{account}",
         ptid=record.ptid,
+        federated_handle=record.federated_handle,
+        home_station_peer_id=record.home_station_peer_id,
     )
 
 

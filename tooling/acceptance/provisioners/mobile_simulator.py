@@ -59,6 +59,9 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     resolve_actor_identity,
     verify_reset_target,
 )
+from tooling.acceptance.fixtures.chat_native_reset import (
+    fixture_federation_id_from_station_ids,
+)
 
 from .remote_source_identity import resolve_remote_source_identity
 
@@ -5530,10 +5533,30 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
                         "accountRef": actor.account_ref,
                         "ptid": actor.ptid,
                         "devicePolicy": actor.device_policy,
+                        "federatedHandle": actor.federated_handle,
+                        "homeStationPeerId": actor.home_station_peer_id,
                     }
                     for actor in actors
                 ],
             }
+        selected_actor_routes = (
+            next(
+                actor
+                for actor in stations["station-primary"]["actors"]
+                if actor["role"] == "alice"
+            ),
+            next(
+                actor
+                for actor in stations["station-secondary"]["actors"]
+                if actor["role"] == "bob"
+            ),
+        )
+        federation_id = fixture_federation_id_from_station_ids(
+            actor["homeStationPeerId"] for actor in selected_actor_routes
+        )
+        for station in stations.values():
+            for actor in station["actors"]:
+                actor["federationId"] = federation_id
         payload = {
             "artifactKind": "mobile-social-simulator-actor-manifest",
             "environmentId": self.environment_id,

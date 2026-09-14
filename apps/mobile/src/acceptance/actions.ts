@@ -42,6 +42,7 @@ import {
   acceptSocialFriendRequest,
   readSocialRuntimeProjection,
   reconcileSocialRuntime,
+  searchSocialPeople,
   sendSocialFriendRequest,
 } from '../features/social/socialRuntime';
 import {
@@ -561,6 +562,21 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       }),
     ] as const)));
     return sanitizeMessagingProjection({ runtime, conversations, messages });
+  },
+
+  'social.people.search': async (input) => {
+    const federationId = requireString(
+      input?.federationId,
+      'social.people.search.federationId',
+    );
+    const results = await searchSocialPeople(
+      requireString(input?.query, 'social.people.search.query'),
+    );
+    return results.map((result) => ({
+      ptid: result.ptid,
+      federationId,
+      homeStationPeerId: result.homeStationPeerId,
+    }));
   },
 
   'social.request.send': async (input) => sendSocialFriendRequest(

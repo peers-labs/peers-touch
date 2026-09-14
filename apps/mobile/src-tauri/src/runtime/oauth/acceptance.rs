@@ -264,7 +264,6 @@ impl OAuthCoordinator {
                     .transport
                     .post(
                         &alternate_scope.station_origin,
-                        alternate_scope.allow_insecure_loopback,
                         STATUS_PATH,
                         &attempt.status_request()?,
                     )

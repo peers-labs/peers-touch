@@ -6,123 +6,39 @@ import (
 	"errors"
 
 	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
-	actoridentityinfra "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure"
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
+	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"gorm.io/gorm"
 )
 
-// FriendRequestActorKeyHydrator delegates remote identity recovery to the
-// Actor Identity owner using only PTID and the authenticated Home Station.
-type FriendRequestActorKeyHydrator interface {
-	Hydrate(
+// FriendRequestActorKeyResolver delegates verified device-key reads and remote
+// profile hydration to the Actor Identity owner inside the Social transaction.
+type FriendRequestActorKeyResolver interface {
+	ResolveVerifiedActorDeviceSigningKey(
 		ctx context.Context,
+		transaction delivery.Transaction,
 		actorPTID string,
-		claimedHomeStationPeerID string,
-	) ([]*model.VerifiedActorDeviceSigningKey, error)
-}
-
-// NewVerifiedFriendRequestActorKeyHydrator creates the Actor Identity-owned hydrator.
-func NewVerifiedFriendRequestActorKeyHydrator(
-	db *gorm.DB,
-) (FriendRequestActorKeyHydrator, error) {
-	if db == nil {
-		return nil, domain.NewFederationError(
-			domain.FederationErrorInvalidArgument,
-			"social.new_friend_request_actor_key_hydrator",
-			"db",
-			"is required",
-		)
-	}
-
-	hydrator, err := actoridentityinfra.NewVerifiedProfileDeviceKeyHydrator(db)
-	if err != nil {
-		return nil, classifyFriendRequestHydratorError(
-			"social.new_friend_request_actor_key_hydrator",
-			err,
-		)
-	}
-
-	return hydrator, nil
-}
-
-// GORMFriendRequestIdentityVerifier reads the Actor Identity-owned actor_devices
-// projection. A cold remote miss delegates only to Actor Identity hydration.
-type GORMFriendRequestIdentityVerifier struct {
-	db       *gorm.DB
-	hydrator FriendRequestActorKeyHydrator
-}
-
-// NewGORMFriendRequestIdentityVerifier constructs the Social identity read adapter.
-func NewGORMFriendRequestIdentityVerifier(
-	db *gorm.DB,
-) (*GORMFriendRequestIdentityVerifier, error) {
-	if db == nil {
-		return nil, domain.NewFederationError(
-			domain.FederationErrorInvalidArgument,
-			"social.new_friend_request_identity_verifier",
-			"db",
-			"is required",
-		)
-	}
-	hydrator, err := actoridentityinfra.NewVerifiedProfileDeviceKeyHydrator(db)
-	if err != nil {
-		return nil, classifyFriendRequestHydratorError(
-			"social.new_friend_request_identity_verifier",
-			err,
-		)
-	}
-	return &GORMFriendRequestIdentityVerifier{
-		db:       db,
-		hydrator: hydrator,
-	}, nil
-}
-
-// WithActorKeyHydrator overrides profile hydration for composition or tests.
-func (v *GORMFriendRequestIdentityVerifier) WithActorKeyHydrator(
-	hydrator FriendRequestActorKeyHydrator,
-) *GORMFriendRequestIdentityVerifier {
-	v.hydrator = hydrator
-	return v
-}
-
-// VerifyFriendRequestCommandSignature binds a command to one active verified device.
-func (v *GORMFriendRequestIdentityVerifier) VerifyFriendRequestCommandSignature(
-	ctx context.Context,
-	device *model.ActorDeviceRef,
-	claimedHomeStationPeerID string,
-	localStationPeerID string,
-	signingKeyID string,
-	canonicalSigningBytes []byte,
-	signature []byte,
-) error {
-	return verifyFriendRequestCommandSignature(
-		ctx,
-		v.db,
-		device,
-		claimedHomeStationPeerID,
-		localStationPeerID,
-		v.hydrator,
-		signingKeyID,
-		canonicalSigningBytes,
-		signature,
-	)
+		deviceID string,
+		signingKeyID string,
+	) (*model.VerifiedActorDeviceSigningKey, error)
 }
 
 func verifyFriendRequestCommandSignature(
 	ctx context.Context,
-	db *gorm.DB,
+	transaction delivery.Transaction,
 	device *model.ActorDeviceRef,
 	claimedHomeStationPeerID string,
 	localStationPeerID string,
-	hydrator FriendRequestActorKeyHydrator,
+	actorKeys FriendRequestActorKeyResolver,
 	signingKeyID string,
 	canonicalSigningBytes []byte,
 	signature []byte,
 ) error {
 	const operation = "social.verify_friend_request_command_signature"
-	if db == nil ||
+	if transaction == nil ||
+		transaction.DB() == nil ||
 		device == nil ||
 		device.GetActor() == nil ||
 		device.GetActor().GetPtid() == "" ||
@@ -140,6 +56,7 @@ func verifyFriendRequestCommandSignature(
 		)
 	}
 
+	db := transaction.DB()
 	deviceStore := touchactor.NewDeviceStore(db)
 	key, err := deviceStore.ResolveSigningKey(
 		ctx,
@@ -168,58 +85,37 @@ func verifyFriendRequestCommandSignature(
 		)
 	}
 	if claimedHomeStationPeerID != localStationPeerID {
-		key = nil
-		if hydrator == nil {
-			var hydrateErr error
-			hydrator, hydrateErr =
-				actoridentityinfra.NewVerifiedProfileDeviceKeyHydrator(db)
-			if hydrateErr != nil {
-				return classifyFriendRequestHydratorError(operation, hydrateErr)
-			}
+		if actorKeys == nil {
+			return domain.NewFederationError(
+				domain.FederationErrorIdentityUnavailable,
+				operation,
+				"actor_identity",
+				"capability provider is unavailable",
+			)
 		}
-		hydratedKeys, hydrateErr := hydrator.Hydrate(
+		key, err = actorKeys.ResolveVerifiedActorDeviceSigningKey(
 			ctx,
+			transaction,
 			device.GetActor().GetPtid(),
-			claimedHomeStationPeerID,
+			device.GetDeviceId(),
+			signingKeyID,
 		)
-		if hydrateErr != nil {
-			return classifyFriendRequestHydratorError(operation, hydrateErr)
-		}
-		for _, hydratedKey := range hydratedKeys {
-			if hydratedKey == nil ||
-				hydratedKey.GetActorPtid() != device.GetActor().GetPtid() ||
-				hydratedKey.GetActorDeviceId() == "" ||
-				hydratedKey.GetHomeStationPeerId() != claimedHomeStationPeerID ||
-				hydratedKey.GetSigningKeyId() == "" ||
-				(hydratedKey.GetVerificationSource() !=
-					model.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE &&
-					hydratedKey.GetVerificationSource() !=
-						model.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_LOCATOR) ||
-				len(hydratedKey.GetEd25519PublicKey()) != ed25519.PublicKeySize ||
-				hydratedKey.GetProfileVersion() <= 0 ||
-				hydratedKey.GetValidFromUnixMs() <= 0 ||
-				hydratedKey.GetRevokedAtUnixMs() != 0 {
-				return domain.NewFederationError(
-					domain.FederationErrorInvalidSignature,
-					operation,
-					"hydrated_identity",
-					"does not match the verified actor and Home Station",
-				)
-			}
-			if upsertErr := deviceStore.UpsertVerifiedRemote(
-				ctx,
-				hydratedKey,
-			); upsertErr != nil {
-				return classifyFriendRequestHydratorError(operation, upsertErr)
-			}
-			if hydratedKey.GetActorDeviceId() == device.GetDeviceId() &&
-				hydratedKey.GetSigningKeyId() == signingKeyID {
-				key = hydratedKey
-			}
+		if err != nil {
+			return classifyFriendRequestActorKeyError(operation, err)
 		}
 		if key == nil ||
+			key.GetActorPtid() != device.GetActor().GetPtid() ||
 			key.GetActorDeviceId() != device.GetDeviceId() ||
-			key.GetSigningKeyId() != signingKeyID {
+			key.GetHomeStationPeerId() != claimedHomeStationPeerID ||
+			key.GetSigningKeyId() != signingKeyID ||
+			(key.GetVerificationSource() !=
+				model.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE &&
+				key.GetVerificationSource() !=
+					model.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_LOCATOR) ||
+			len(key.GetEd25519PublicKey()) != ed25519.PublicKeySize ||
+			key.GetProfileVersion() <= 0 ||
+			key.GetValidFromUnixMs() <= 0 ||
+			key.GetRevokedAtUnixMs() != 0 {
 			return domain.NewFederationError(
 				domain.FederationErrorUnauthorized,
 				operation,
@@ -257,7 +153,7 @@ func verifyFriendRequestCommandSignature(
 	return nil
 }
 
-func classifyFriendRequestHydratorError(
+func classifyFriendRequestActorKeyError(
 	operation string,
 	err error,
 ) error {
