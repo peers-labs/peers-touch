@@ -2721,8 +2721,14 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
       throw new Error('agent.acceptance.foundationToolApprovalInvalid');
     }
 
+    const toolCallSelector = `[data-pt-agent-tool-call="${toolCallId}"]`;
+    await waitFor(
+      () => Boolean(document.querySelector(toolCallSelector)),
+      'invalid-resource ToolCall receiver',
+      30_000,
+    );
     const toolCallElement = document.querySelector<HTMLElement>(
-      `[data-pt-agent-tool-call="${toolCallId}"]`,
+      toolCallSelector,
     );
     if (!toolCallElement) {
       throw new Error('agent.acceptance.foundationToolCallSurfaceMissing');

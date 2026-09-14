@@ -1832,6 +1832,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             '[data-pt-agent-tool-decision="approve"]',
             scenario,
         )
+        self.assertIn("'invalid-resource ToolCall receiver'", scenario)
         self.assertIn("approve.click()", scenario)
         self.assertIn("CLIENT_INVALID_RESOURCE_REFERENCE", scenario)
         self.assertIn("agent.errors.invalidResourceReference", scenario)
