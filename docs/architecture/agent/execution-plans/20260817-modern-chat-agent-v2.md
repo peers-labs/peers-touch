@@ -26,7 +26,7 @@
 | Current step | `BASE-INVALID_RESOURCE_REF` is `FUNCTIONAL_PASS`; Foundation promotion implementation is `FOCUSED_PASS`, runtime proof remains `UNPROVEN` |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
 | Last completed | The shared invalid-resource Journey is wired into the existing Foundation Harness and independent Python oracle for Desktop/Browser × English/Simplified-Chinese without changing the 419-cell matrix |
-| Current action | Create the clean Acceptance-promotion checkpoint and deploy that exact source |
+| Current action | Checkpoint the stream-identity blast-radius correction, rebuild, and reprove C08 |
 | Next action | Run the four invalid-resource cells through the unchanged Foundation execution, then continue the remaining 419-cell Gate |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
@@ -36,7 +36,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | no Goal-level blocker; `BASE-INVALID_RESOURCE_REF` formal Foundation proof remains `UNPROVEN`; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN` on `d3e6feaa3`；MCA-J06 completed reject→preserve→remove→resend with exactly one `CLEAN_OK` assistant；Foundation inner run `20260914T061925912621Z-87241fd9e161029c1c784e0dd86109a7` on `f876ad54f` crossed both `BASE-INVALID_REFERENCE` locales；checkpoint `148707e48` persists the typed invalid-resource failure on settled assistants；the exact-source Development Journey passed；Desktop typecheck, `701/701` Desktop unit tests, `362/362` focused Agent/Foundation tests, matrix integrity, and diff checks pass；Foundation remains `PARTIAL / UNPROVEN` |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN` on `d3e6feaa3`；MCA-J06 completed reject→preserve→remove→resend with exactly one `CLEAN_OK` assistant；Foundation inner run `20260914T061925912621Z-87241fd9e161029c1c784e0dd86109a7` on `f876ad54f` crossed both `BASE-INVALID_REFERENCE` locales；checkpoint `148707e48` persists the typed invalid-resource failure on settled assistants；the exact-source Development Journey passed；the promotion checkpoint passed Desktop and focused tests but C08 exposed global stream-ID blast radius, now narrowed with `701/701` Desktop and `340/340` focused tests passing；Foundation remains `PARTIAL / UNPROVEN` |
 | Last updated | 2026-09-14 |
 
 ---

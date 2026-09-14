@@ -2615,6 +2615,7 @@ async function startFoundationToolTurn(input: {
   label: string;
   repeatUntilStopped?: boolean;
   requestedBudget?: AgentRuntimeBudgetInput;
+  streamId?: string;
   onConversationCreated?: (
     conversationId: string,
     streamId: string,
@@ -2631,8 +2632,10 @@ async function startFoundationToolTurn(input: {
   const content = input.repeatUntilStopped
     ? `Call ${input.fixture.toolName} with ${argumentsJSON}. After every tool result, call the same tool again with the same arguments. Do not stop voluntarily; let the runtime tool-loop budget stop the turn.`
     : `Call ${input.fixture.toolName} exactly once with ${argumentsJSON}. After the tool result, answer with one short sentence and do not call another tool.`;
-  const streamId = crypto.randomUUID();
-  input.onConversationCreated?.(conversation.conversation_id, streamId);
+  const streamId = input.streamId;
+  if (streamId) {
+    input.onConversationCreated?.(conversation.conversation_id, streamId);
+  }
   const observed = startObservedFoundationTurn({
     conversationId: conversation.conversation_id,
     agentId,
@@ -2642,7 +2645,7 @@ async function startFoundationToolTurn(input: {
     model: input.agent.model || undefined,
     clientCapabilitySessionId: input.capabilitySessionId,
     requestedBudget: input.requestedBudget,
-    streamId,
+    streamId: input.streamId,
     timeoutMs: input.repeatUntilStopped
       ? 300_000
       : FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
@@ -2732,6 +2735,7 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
   const startedAt = performance.now();
 
   try {
+    const invalidResourceStreamId = crypto.randomUUID();
     currentBinding = await updateFoundationToolPolicy(
       agent,
       fixture,
@@ -2744,6 +2748,7 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
       fixture,
       sampleId: input.sampleId,
       label: 'invalid-resource-reference',
+      streamId: invalidResourceStreamId,
       onConversationCreated: input.scenarioKey
         ? (conversationId) => {
             foundationInvalidResourceReferenceScenarios.set(

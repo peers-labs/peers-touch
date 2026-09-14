@@ -1583,6 +1583,14 @@ and zero local-path leakage.
     existing skip; focused Agent/Foundation tests pass `362/362`;
     Acceptance planning still selects the unchanged 419-cell Foundation Gate,
     and `git diff --check` passes. Formal runtime proof remains `UNPROVEN`.
+  - Exact-source C08 reproof on `5feef72f7` twice exceeded the Native Harness
+    script budget, while the last proven C08 runs completed in 63–116 seconds.
+    The promotion had unnecessarily assigned an explicit stream ID to every
+    governed-tool Journey. The root correction scopes that identity only to
+    the invalid-resource Journey, preserving every existing ToolCall stream
+    contract. Post-fix Desktop typecheck, `701/701` Desktop unit tests, and
+    `340/340` focused Agent/Foundation tests pass; C08 and Foundation require
+    exact-source runtime reproof on the corrected checkpoint.
 
 #### G-FE1 Concurrency Decision
 
