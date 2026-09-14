@@ -4636,9 +4636,11 @@ async function runFoundationApprovalExpiredScenario(input: {
         'binding-restore-start',
         {
           currentBindingPresent: Boolean(currentBinding),
-          currentBindingRevision: currentBinding?.revision ?? null,
+          currentBindingRevision:
+            currentBinding?.revision?.toString() ?? null,
           originalBindingPresent: Boolean(originalBinding),
-          originalBindingRevision: originalBinding?.revision ?? null,
+          originalBindingRevision:
+            originalBinding?.revision?.toString() ?? null,
         },
       );
       // #endregion
