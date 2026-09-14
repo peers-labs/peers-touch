@@ -1616,6 +1616,37 @@ and zero local-path leakage.
     event idempotency and exact five-minute percentile semantics while
     recomputing only windows touched by newly admitted event IDs. No C08 or
     Foundation timeout, tuple, assertion, provider, or cleanup rule changes.
+  - Checkpoint `910cf3497fc372d6dd57432733bdd5a0bb0c3d8f` bounds telemetry
+    rollup recomputation to windows touched by newly admitted event IDs.
+    Exact-source C08 run
+    `20260914T144924811654Z-3e6b375e8f6bf4b646788bacac5f57ff`
+    completed `DONE / PROVEN` in 64.04 seconds with all `19/19` assertions,
+    matching clean Station source, a passing secret scan, and complete
+    process, port, storage, session, and Fixture cleanup. Post-fix telemetry
+    recorded 0.148 seconds for Station health, 9.587 seconds for login, and
+    3.203 seconds for navigation/configuration, versus the low-load pre-fix
+    0.568, 30.8, and about 23 seconds respectively.
+  - The first same-source Foundation run
+    `20260914T145445577586Z-b8ffb647c9caa5cd99d6ee130234b684`
+    exposed one transient Browser AS-F05 upload failure; an instrumented
+    unchanged-source rerun
+    `20260914T151213561983Z-57306baff0e2d528ecd7321dc0f6182a`
+    completed AS-F05 and stopped only because the invocation omitted the
+    documented `PT_AGENT_V2_ALLOW_STATION_RESTART=1`. Fully authorized run
+    `20260914T152422560360Z-6b640c89e4e1afdc1d2644d666dbc12a`
+    crossed both AS-F05 locales and AS-F06, then exposed a transient Browser
+    English `BASE-INVALID_REFERENCE` resend timeout. A clean instrumented
+    rerun crossed that promoted vertical and advanced to Browser AS-F10.
+    Every run retained matching clean source and complete Provisioner cleanup.
+  - The AS-F10 failure is fixture-owned: after AS-F06 restart, Station retains
+    multiple sessions for one device. The Harness selected any session ID
+    different from the active session, so it could choose an older session
+    from the same device; Station correctly accepted that pull and returned
+    the unspecified command code. The local correction requires both a
+    different session ID and a different device ID for the cross-device
+    negative control. Focused Agent/Foundation regressions pass `231/231`,
+    Desktop strict TypeScript checks pass, and diff hygiene passes. No product
+    contract, Gate tuple, timeout, assertion, provider, or cleanup rule changes.
 
 #### G-FE1 Concurrency Decision
 

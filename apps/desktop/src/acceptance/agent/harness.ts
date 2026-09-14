@@ -13236,7 +13236,9 @@ async function runFoundationF10Scenario(input: {
     throw new Error('agent.acceptance.capabilitySessionUnavailable');
   }
   const crossDeviceSession = input.capabilitySessions.station.sessions.find(
-    (session) => session.session_id !== stationSession.session_id,
+    (session) =>
+      session.session_id !== stationSession.session_id
+      && session.device_id !== stationSession.device_id,
   );
   if (!crossDeviceSession) {
     throw new Error('agent.acceptance.crossDeviceSessionUnavailable');

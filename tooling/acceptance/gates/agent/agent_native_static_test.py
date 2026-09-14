@@ -863,6 +863,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertIn("toolIsolation", scenario)
         self.assertIn("runAgentCapabilityNegativeControl(", scenario)
+        self.assertIn(
+            "session.device_id !== stationSession.device_id",
+            scenario,
+        )
         for control in (
             "'unsupported'",
             "'unauthorized'",

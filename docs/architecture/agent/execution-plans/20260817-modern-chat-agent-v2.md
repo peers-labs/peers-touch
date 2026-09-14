@@ -23,11 +23,11 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | `BASE-INVALID_RESOURCE_REF` is `FUNCTIONAL_PASS`; Foundation promotion implementation is `FOCUSED_PASS`, runtime proof remains `UNPROVEN` |
+| Current step | Exact-source C08 is `DONE / PROVEN`; Foundation crossed the promoted invalid-reference vertical and the local AS-F10 cross-device Fixture correction is `FOCUSED_PASS`; full runtime proof remains `UNPROVEN` |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | The shared invalid-resource Journey is wired into the existing Foundation Harness and independent Python oracle for Desktop/Browser × English/Simplified-Chinese without changing the 419-cell matrix |
-| Current action | Checkpoint bounded telemetry rollups, deploy exact source, and run post-fix C08 |
-| Next action | Run the four invalid-resource cells through the unchanged Foundation execution, then continue the remaining 419-cell Gate |
+| Last completed | Browser AS-F10 now selects a genuinely different device rather than an older same-device capability session after AS-F06 restart; `231/231` focused regressions and Desktop strict checks pass |
+| Current action | Checkpoint the AS-F10 Fixture correction, deploy exact source, rebuild the Acceptance binary, and rerun C08 then the unchanged Foundation Gate |
+| Next action | Resolve only the first source-defined Foundation failure, or close G-F when the same-source Gate reaches `DONE / PROVEN` |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
@@ -36,7 +36,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | no Goal-level blocker; `BASE-INVALID_RESOURCE_REF` formal Foundation proof remains `UNPROVEN`; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN` on `d3e6feaa3`；MCA-J06 completed reject→preserve→remove→resend with exactly one `CLEAN_OK` assistant；Foundation inner run `20260914T061925912621Z-87241fd9e161029c1c784e0dd86109a7` on `f876ad54f` crossed both `BASE-INVALID_REFERENCE` locales；checkpoint `148707e48` persists the typed invalid-resource failure on settled assistants；the exact-source Development Journey passed；instrumented direct-transport C08 runs proved the timeout comes from Station telemetry recomputing 1.27M actor events and 75k rollups on every background upload；the bounded-window remediation passes frontend telemetry Go tests, vet, style, `88/88` native static tests, Python compilation, and diff hygiene；Foundation remains `PARTIAL / UNPROVEN` |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；checkpoint `910cf3497` bounds telemetry recomputation to touched windows, and C08 `20260914T144924811654Z-3e6b375e8f6bf4b646788bacac5f57ff` passed `DONE / PROVEN` in 64.04 seconds with `19/19`, clean source, passing secret scan, and complete cleanup；the authorized Foundation run crossed AS-F05, AS-F06, and the promoted invalid-reference vertical before Browser AS-F10 reported `crossDeviceRejected=false`；runtime evidence showed zero execution but an unspecified code because the Fixture selected a same-device historical session after restart；the local selector now requires a distinct device ID and passes `231/231` focused tests, Desktop strict checks, and diff hygiene；Foundation remains `PARTIAL / UNPROVEN` |
 | Last updated | 2026-09-14 |
 
 ---
