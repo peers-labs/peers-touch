@@ -322,6 +322,13 @@ const foundationF06PendingHandoffs = new Map<string, FoundationF06Handoff>();
 const foundationF06FaultBoundaries =
   new Map<string, FoundationF06FaultBoundary>();
 const foundationF06ReplayingScenarios = new Set<string>();
+let foundationF12MessageListDebugScope: {
+  locale: string;
+  platform: string;
+  readbackSequence: number;
+  sampleId: string;
+  scenarioKey: string;
+} | null = null;
 
 function observedFoundationF06Handoffs(): FoundationF06Handoff[] {
   const byScenario = new Map(
@@ -1513,13 +1520,91 @@ function foundationDomSnapshot() {
 }
 
 async function foundationConversationReadback(conversationId: string) {
+  // #region debug-point A-E:f12-message-list-boundary
+  const debugScope = foundationF12MessageListDebugScope;
+  const readbackSequence = debugScope
+    ? ++debugScope.readbackSequence
+    : 0;
+  const conversationIdHash = debugScope
+    ? sha256Hex(conversationId)
+    : Promise.resolve('');
+  if (debugScope) {
+    const sessionState = useSessionStore.getState();
+    const actorPtid = sessionState.currentUser?.actorPtid.trim() || '';
+    void Promise.all([
+      conversationIdHash,
+      actorPtid ? sha256Hex(actorPtid) : Promise.resolve(''),
+    ]).then(([resolvedConversationIdHash, actorPtidHash]) =>
+      reportFoundationF12MessageListDebug('A-B-E', 'readback-start', {
+        actorPtidHash,
+        authenticated: sessionState.authenticated,
+        conversationIdHash: resolvedConversationIdHash,
+        currentSessionMatches:
+          useChatStore.getState().currentSessionKey === conversationId,
+        locale: debugScope.locale,
+        platform: debugScope.platform,
+        readbackSequence,
+        sampleId: debugScope.sampleId,
+      }));
+  }
+  const conversationRequest = api.getAgentConversation(conversationId);
+  const messagesRequest = api.listAgentConversationMessages({
+    conversation_id: conversationId,
+    limit: 200,
+  });
+  const observedConversationRequest = debugScope
+    ? conversationRequest.then(
+        (conversation) => {
+          void conversationIdHash.then((resolvedConversationIdHash) =>
+            reportFoundationF12MessageListDebug('B-E', 'conversation-ok', {
+              conversationIdHash: resolvedConversationIdHash,
+              conversationStatus: conversation.status,
+              conversationVersion: conversation.version,
+              readbackSequence,
+            }));
+          return conversation;
+        },
+        (error: unknown) => {
+          void conversationIdHash.then((resolvedConversationIdHash) =>
+            reportFoundationF12MessageListDebug('A-B-C-D-E', 'conversation-error', {
+              conversationIdHash: resolvedConversationIdHash,
+              error: foundationF12MessageListErrorDebug(error),
+              readbackSequence,
+            }));
+          throw error;
+        },
+      )
+    : conversationRequest;
+  const observedMessagesRequest = debugScope
+    ? messagesRequest.then(
+        (result) => {
+          void conversationIdHash.then((resolvedConversationIdHash) =>
+            reportFoundationF12MessageListDebug('B-C-D-E', 'messages-ok', {
+              conversationIdHash: resolvedConversationIdHash,
+              firstSequence: result.messages[0]?.seq ?? null,
+              hasMore: result.has_more,
+              lastSequence: result.messages[result.messages.length - 1]?.seq ?? null,
+              messageCount: result.messages.length,
+              readbackSequence,
+            }));
+          return result;
+        },
+        (error: unknown) => {
+          void conversationIdHash.then((resolvedConversationIdHash) =>
+            reportFoundationF12MessageListDebug('A-B-C-D-E', 'messages-error', {
+              conversationIdHash: resolvedConversationIdHash,
+              error: foundationF12MessageListErrorDebug(error),
+              readbackSequence,
+            }));
+          throw error;
+        },
+      )
+    : messagesRequest;
   const [conversation, result] = await Promise.all([
-    api.getAgentConversation(conversationId),
-    api.listAgentConversationMessages({
-      conversation_id: conversationId,
-      limit: 200,
-    }),
+    observedConversationRequest,
+    observedMessagesRequest,
   ]);
+  // #endregion
   return {
     conversation,
     messages: result.messages.map((message) => ({
@@ -9845,6 +9930,29 @@ async function runFoundationF12Prepare(input: {
   locale: string;
   sampleId: string;
 }): Promise<FoundationF12Handoff> {
+  // #region debug-point A-B-E:f12-prepare-entry
+  foundationF12MessageListDebugScope = {
+    locale: input.locale,
+    platform: input.platform,
+    readbackSequence: 0,
+    sampleId: input.sampleId,
+    scenarioKey: input.scenarioKey,
+  };
+  const sessionState = useSessionStore.getState();
+  const actorPtid = sessionState.currentUser?.actorPtid.trim() || '';
+  void Promise.all([
+    sha256Hex(input.agent.id || input.agent.name),
+    actorPtid ? sha256Hex(actorPtid) : Promise.resolve(''),
+  ]).then(([agentIdHash, actorPtidHash]) =>
+    reportFoundationF12MessageListDebug('A-B-E', 'prepare-entry', {
+      actorPtidHash,
+      agentIdHash,
+      authenticated: sessionState.authenticated,
+      locale: input.locale,
+      platform: input.platform,
+      sampleId: input.sampleId,
+    }));
+  // #endregion
   const existing = readFoundationF12Handoff(input.scenarioKey);
   if (existing) {
     await cleanupFoundationF12Scenario({
@@ -9878,6 +9986,17 @@ async function runFoundationF12Prepare(input: {
           model_name: input.agent.model,
         });
         createdConversationIds.push(beta.conversation_id);
+        // #region debug-point B-E:f12-conversations-created
+        void Promise.all([
+          sha256Hex(alpha.conversation_id),
+          sha256Hex(beta.conversation_id),
+        ]).then(([alphaConversationIdHash, betaConversationIdHash]) =>
+          reportFoundationF12MessageListDebug('B-E', 'conversations-created', {
+            alphaConversationIdHash,
+            betaConversationIdHash,
+            createdConversationCount: createdConversationIds.length,
+          }));
+        // #endregion
 
         const runtimeEvents: FoundationF12RuntimeEvent[] = [];
         const alphaFirst = await runFoundationF12Turn({
@@ -10159,6 +10278,17 @@ async function runFoundationF12Prepare(input: {
     writeFoundationF12Handoff(handoff);
     return handoff;
   } catch (error) {
+    // #region debug-point A-E:f12-prepare-failure
+    void Promise.all(createdConversationIds.map((conversationId) =>
+      sha256Hex(conversationId))).then((createdConversationIdHashes) =>
+      reportFoundationF12MessageListDebug('A-B-C-D-E', 'prepare-error', {
+        createdConversationCount: createdConversationIds.length,
+        createdConversationIdHashes,
+        error: foundationF12MessageListErrorDebug(error),
+        readbackSequence:
+          foundationF12MessageListDebugScope?.readbackSequence ?? 0,
+      }));
+    // #endregion
     try {
       await cleanupFoundationF12Scenario({
         scenarioKey: input.scenarioKey,
@@ -10172,6 +10302,8 @@ async function runFoundationF12Prepare(input: {
       throw new Error(`CLEANUP_FAILED:${primary}; cleanup=${cleanup}`);
     }
     throw error;
+  } finally {
+    foundationF12MessageListDebugScope = null;
   }
 }
 
@@ -11045,6 +11177,69 @@ function reportFoundationF12ProjectionDebug(
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:foundationF12ReceiverSnapshot',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:foundation-f12-message-list
+function foundationF12MessageListErrorDebug(
+  error: unknown,
+): Record<string, unknown> {
+  const candidate = error && typeof error === 'object'
+    ? error as {
+        code?: unknown;
+        details?: Record<string, unknown>;
+        name?: unknown;
+      }
+    : null;
+  const details = candidate?.details;
+  const rawBody = details?.body;
+  let bodyCode: string | number | null = null;
+  if (typeof rawBody === 'string') {
+    try {
+      const parsed = JSON.parse(rawBody) as Record<string, unknown>;
+      const candidateCode = parsed.error_code ?? parsed.code;
+      if (typeof candidateCode === 'string' || typeof candidateCode === 'number') {
+        bodyCode = candidateCode;
+      }
+    } catch {
+      bodyCode = null;
+    }
+  } else if (rawBody && typeof rawBody === 'object') {
+    const body = rawBody as Record<string, unknown>;
+    const candidateCode = body.error_code ?? body.code;
+    if (typeof candidateCode === 'string' || typeof candidateCode === 'number') {
+      bodyCode = candidateCode;
+    }
+  }
+  return {
+    bodyCode,
+    code: typeof candidate?.code === 'string' ? candidate.code : null,
+    detailCode:
+      typeof details?.error_code === 'string' ? details.error_code : null,
+    name: typeof candidate?.name === 'string' ? candidate.name : typeof error,
+    observedCode: observedErrorCode(error),
+    stationStatus:
+      typeof details?.status === 'number' ? details.status : null,
+  };
+}
+
+function reportFoundationF12MessageListDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7810/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-f12-message-list',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:foundationConversationReadback',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),

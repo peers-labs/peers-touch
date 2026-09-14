@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; checkpoint `d3e6feaa3051763c79f1252593c7bbcfff06f6b1` preserves retained-Attempt replay; C08 run `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN`; fully authorized Foundation run `20260913T150542388406Z-46ced7c0b785bb9094b7b948a34b86d3` crossed all AS-F06 and both-locale `BASE-INTERRUPTED` cells, then first failed at Browser English `BASE-INVALID_REFERENCE` because the real product vertical is absent; G-FE1 now executes that accepted MCA-J06 behavior as a product-first DevelopmentWorkItem before Acceptance promotion | W8a |
+| G-F Complete Foundation Gate | partial / unproven; MCA-J06 is `FUNCTIONAL_PASS`; checkpoint `b0be51e808b9d442ab7551ec16b2536861e8f41f` fixes the AS-F06 equal-cursor recovery regression; exact-source Foundation run `20260914T020855882888Z-37de0f8f4117aa4f2a9227759dd9401f` crossed all AS-F06 and `BASE-INVALID_REFERENCE` before a later approval receiver timeout; the next run isolated a native Harness restart incident; run `20260914T025423025083Z-91dc85e1941d30698292e5582c61e851` first failed at Browser zh-CN AS-F12 preparation while listing conversation messages and completed clean inner cleanup; outer run `20260914T025357736208Z-01d084eb87694198d7d64517e9413264` released client storage, source lease, and profile lease with `DONE / PROVEN` cleanup | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1357,9 +1357,35 @@ and zero local-path leakage.
     operation-projection tests pass `57/57`, the full Desktop suite passes
     `685/685` with one existing skip, Desktop typecheck passes, Agent native
     static tests pass `86/86`, the AS-F06 scenario oracle passes `136/136`, and
-    `git diff --check` passes. This is `FOCUSED_PASS`; AS-F06 and G-F remain
-    `PARTIAL / UNPROVEN` pending an exact-source checkpoint deployment and
-    unchanged Foundation rerun.
+    `git diff --check` passes.
+  - Local checkpoint `b0be51e808b9d442ab7551ec16b2536861e8f41f`
+    packages that owner fix. Exact-source Foundation run
+    `20260914T020855882888Z-37de0f8f4117aa4f2a9227759dd9401f`
+    crossed all four AS-F06 tuples and the promoted
+    `BASE-INVALID_REFERENCE` cells before failing later at Browser
+    `BASE-APPROVAL-DENIED / zh-CN` on a receiver timeout. This runtime evidence
+    confirms the same-cursor correction and the MCA-J06 Acceptance promotion;
+    it does not prove the complete Gate.
+  - Unchanged-source run
+    `20260914T023534878291Z-e2a6ee68000aacac0f3b2bb42b7dd080`
+    stopped at Desktop English AS-F06 because the restarted Native runtime did
+    not expose the Agent Acceptance Harness. The outer Provisioner cleanup
+    passed, so this is an environment/runtime restart incident rather than a
+    product assertion.
+  - Unchanged-source run
+    `20260914T025423025083Z-91dc85e1941d30698292e5582c61e851`
+    reached Browser zh-CN AS-F12 and first failed in
+    `foundationF12Prepare` with `Failed to list agent conversation messages`.
+    Its inner cleanup released both clients, every allocated port, storage,
+    and actor identity. Outer Provisioner run
+    `20260914T025357736208Z-01d084eb87694198d7d64517e9413264`
+    released client storage, the exact Station source lease, and profile lease
+    with `DONE / PROVEN` cleanup.
+  - AS-F12 preparation diagnosis is now the first Ready action. The diagnostic
+    must distinguish authentication/session loss, stale conversation identity,
+    Station HTTP failure, Desktop decode failure, and premature cleanup before
+    any business fix. The full 419-cell Foundation Gate remains
+    `PARTIAL / UNPROVEN`.
 
 #### G-FE1 Concurrency Decision
 
