@@ -30,16 +30,19 @@ import (
 )
 
 const (
-	alicePTID = "ptid:p:alice"
-	bobPTID   = "ptid:p:bob"
-	stationA  = "station-a"
-	stationB  = "station-b"
+	alicePTID                = "ptid:p:alice"
+	bobPTID                  = "ptid:p:bob"
+	stationA                 = "station-a"
+	stationB                 = "station-b"
+	acceptedFriendshipStatus = int32(2)
 )
 
-func TestFederatedFriendRequestCrossStationAcceptConvergesAndCreatesDirectEffect(
+func TestFederatedFriendRequestCrossStationAcceptConvergesWithoutRemoteActorRows(
 	t *testing.T,
 ) {
 	fixture := newFederatedFriendRequestFixture(t)
+	deleteRemoteActorProjection(t, fixture.a.db, bobPTID)
+	deleteRemoteActorProjection(t, fixture.b.db, alicePTID)
 	command := fixture.command(
 		t,
 		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
@@ -152,7 +155,7 @@ func TestFederatedFriendRequestCrossStationAcceptConvergesAndCreatesDirectEffect
 	); err != nil || relationship == nil {
 		t.Fatalf("receiver relationship = %+v, %v", relationship, err)
 	}
-	assertFollowProjection(t, fixture.b.db, bobPTID, alicePTID)
+	assertFriendshipProjection(t, fixture.b.db, bobPTID, alicePTID)
 
 	fixture.dispatchOnce(t, fixture.b)
 	assertProjectionState(
@@ -170,7 +173,7 @@ func TestFederatedFriendRequestCrossStationAcceptConvergesAndCreatesDirectEffect
 	); err != nil || relationship == nil {
 		t.Fatalf("sender relationship = %+v, %v", relationship, err)
 	}
-	assertFollowProjection(t, fixture.a.db, alicePTID, bobPTID)
+	assertFriendshipProjection(t, fixture.a.db, alicePTID, bobPTID)
 
 	effectID := domain.DirectConversationEffectID("request-accept")
 	effect, conversationID, err := fixture.a.store.DirectConversationEffect(
@@ -990,7 +993,7 @@ func TestSameStationFriendRequestUsesSharedDeliveryReceiver(t *testing.T) {
 		if err != nil || relationship == nil {
 			t.Fatalf("local relationship %s -> %s = %+v, %v", owner, peer, relationship, err)
 		}
-		assertFollowProjection(t, local.db, owner, peer)
+		assertFriendshipProjection(t, local.db, owner, peer)
 	}
 	effect, _, err := local.store.DirectConversationEffect(
 		context.Background(),
@@ -1999,30 +2002,52 @@ func newFriendRequestStation(
 	}
 }
 
-func assertFollowProjection(
+func deleteRemoteActorProjection(
 	t *testing.T,
 	db *gorm.DB,
-	followerPTID string,
-	followingPTID string,
+	actorPTID string,
+) {
+	t.Helper()
+	if err := db.Exec(
+		"DELETE FROM touch_actor WHERE ptid = ?",
+		actorPTID,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := db.Table("touch_actor").
+		Where("ptid = ?", actorPTID).
+		Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("remote Actor projection %s count = %d, want 0", actorPTID, count)
+	}
+}
+
+func assertFriendshipProjection(
+	t *testing.T,
+	db *gorm.DB,
+	ownerPTID string,
+	peerPTID string,
 ) {
 	t.Helper()
 	var count int64
-	if err := db.Table("follows AS follow").
-		Joins("JOIN touch_actor AS follower ON follower.id = follow.follower_id").
-		Joins("JOIN touch_actor AS following ON following.id = follow.following_id").
+	if err := db.Table("friend_chat_friendships").
 		Where(
-			"follower.ptid = ? AND following.ptid = ?",
-			followerPTID,
-			followingPTID,
+			"actor_ptid = ? AND peer_ptid = ? AND status = ?",
+			ownerPTID,
+			peerPTID,
+			acceptedFriendshipStatus,
 		).
 		Count(&count).Error; err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
 		t.Fatalf(
-			"follow projection %s -> %s count = %d, want 1",
-			followerPTID,
-			followingPTID,
+			"friendship projection %s -> %s count = %d, want 1",
+			ownerPTID,
+			peerPTID,
 			count,
 		)
 	}

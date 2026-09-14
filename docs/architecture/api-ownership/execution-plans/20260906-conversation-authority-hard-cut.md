@@ -1773,3 +1773,37 @@ did not reach Social commands because the existing intermittent
 `mobile.lifecycle.teardownIncomplete` race recurred. That independent
 recoverable defect remains in the CA-W6 queue, but it does not replace the
 earlier post-accept convergence evidence.
+
+Shared-Federation instrumentation at checkpoint
+`8fe015f275e8feea134f0b3920cc0730e529dc85` in run
+`20260914T181714592514Z-b3d56f896eb2b2d0220be28d15ee18f8`
+resolves the ACCEPT ambiguity.
+The frame source, target, and runtime local Station ID all equal the attested
+`fiveArm` identity and the router reports `isLocal=true`; stale self-route
+classification is rejected. The same-Station receiver instead returns
+`social.resolve_relationship_projection_actors: actor PTID ... is not
+registered locally`.
+
+The failure is owned by Social relationship persistence.
+`federatedFriendRequestTransaction.PutRelationship` first writes the
+hash-bound PTID relationship projection, then requires both PTIDs to resolve
+through local `touch_actor` rows so it can mirror the accepted edge into the
+numeric `follows` table. On a cold receiver the sender is intentionally remote,
+so this forbidden shadow-Actor dependency rolls back the complete ACCEPT
+transaction. CA-W6 mechanically admits the owner-layer correction: persist the
+accepted edge in Social's PTID-native `friend_chat_friendships` truth store
+alongside `social_relationship_projections`, without synthesizing a remote
+Actor row or weakening policy. Focused regression must remove the remote Actor
+row and prove ACCEPT, both actor-local relationship projections, and the Direct
+effect.
+
+The Social persistence correction now replaces the numeric `follows` mirror
+with an idempotent PTID-native `friend_chat_friendships` write in the same
+transaction as the accepted-event projection. An existing accepted edge
+replays safely; any conflicting block or relationship status fails closed.
+The cross-Station regression deletes each remote `touch_actor` row before SEND,
+then proves ACCEPT, both actor-local friendship projections, accepted-event
+convergence, and the durable Direct effect. The focused regression, complete
+Social race suite, Actor Identity and Conversation race suites, focused
+`go vet`, Go style, and `git diff --check` pass. Exact-source checkpoint,
+deployment, and the same receiver-perspective Journey remain required.
