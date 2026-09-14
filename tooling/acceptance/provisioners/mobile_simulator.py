@@ -1840,6 +1840,8 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                         timeout=1800,
                         resource=f"mobile-simulator:build:{name}",
                     )
+                    if name == "web":
+                        self._stage_ios_static_assets()
                 finally:
                     if name == "android":
                         android_manifest_guard.restore()
@@ -2687,6 +2689,39 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             "id": spec.application_ids[platform],
             "callbackScheme": spec.callback_schemes[platform],
         }
+
+    def _stage_ios_static_assets(self) -> None:
+        source = (self.repo_root / "apps" / "mobile" / "dist").resolve()
+        target = (
+            self.repo_root
+            / "apps"
+            / "mobile"
+            / "src-tauri"
+            / "gen"
+            / "apple"
+            / "assets"
+        ).resolve()
+        if not source.is_dir() or not (source / "index.html").is_file():
+            raise BlockedError(
+                reason="Mobile web build did not produce a complete static bundle",
+                resource="mobile-simulator:ios-static-assets",
+            )
+        repository_root = self.repo_root.resolve()
+        if repository_root not in target.parents:
+            raise BlockedError(
+                reason="Mobile iOS static asset target escaped the source tree",
+                resource="mobile-simulator:ios-static-assets",
+            )
+
+        def cleanup() -> None:
+            if target.is_symlink() or target.is_file():
+                target.unlink()
+            elif target.is_dir():
+                shutil.rmtree(target)
+
+        self.register_cleanup("build-artifact:ios-static-assets", cleanup)
+        cleanup()
+        shutil.copytree(source, target)
 
     def _artifact_matches(
         self,

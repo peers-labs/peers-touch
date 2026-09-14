@@ -4774,6 +4774,16 @@ impl MlsInboundRepository for MobileMessagingStore {
         {
             return Err("mobile messaging MLS transition is incomplete".to_string());
         }
+        let projection = commit.authority_projection;
+        if !projection.active {
+            return Err("mobile messaging MLS authority projection must be active".to_string());
+        }
+        validate_mls_projection(
+            projection,
+            commit.conversation_id,
+            commit.to_membership_epoch,
+            commit.to_mls_epoch,
+        )?;
         self.with_transaction(|transaction| {
             let result = MobileMessagingStore::commit_claimed_item(
                 transaction,
@@ -4794,7 +4804,7 @@ impl MlsInboundRepository for MobileMessagingStore {
                 commit.event_sequence,
                 commit.event_hash,
                 commit.previous_event_hash,
-                commit.join_projection.is_some(),
+                commit.allow_join_checkpoint,
             )?;
             persist_mls_session(
                 transaction,
@@ -4807,17 +4817,8 @@ impl MlsInboundRepository for MobileMessagingStore {
             if let Some(provider_pool) = commit.provider_pool_state {
                 persist_mls_provider_pool(transaction, provider_pool, commit.consumed_at_unix_ms)?;
             }
-            if let Some(projection) = commit.join_projection {
-                if !projection.active {
-                    return Err("mobile messaging MLS join projection must be active".to_string());
-                }
-                validate_mls_projection(
-                    projection,
-                    commit.conversation_id,
-                    commit.to_membership_epoch,
-                    commit.to_mls_epoch,
-                )?;
-                persist_mls_conversation(transaction, projection, commit.consumed_at_unix_ms)?;
+            persist_mls_conversation(transaction, projection, commit.consumed_at_unix_ms)?;
+            if commit.allow_join_checkpoint {
                 transaction
                     .execute(
                         "DELETE FROM messaging_mls_retired_checkpoints
@@ -4825,25 +4826,6 @@ impl MlsInboundRepository for MobileMessagingStore {
                         params![commit.conversation_id],
                     )
                     .map_err(|error| error.to_string())?;
-            } else {
-                let changed = transaction
-                    .execute(
-                        "UPDATE messaging_conversations
-                         SET membership_epoch = ?2, mls_epoch = ?3, updated_at_unix_ms = ?4
-                         WHERE conversation_id = ?1",
-                        params![
-                            commit.conversation_id,
-                            commit.to_membership_epoch,
-                            commit.to_mls_epoch,
-                            commit.consumed_at_unix_ms
-                        ],
-                    )
-                    .map_err(|error| error.to_string())?;
-                if changed != 1 {
-                    return Err(
-                        "mobile messaging MLS conversation projection is unavailable".to_string(),
-                    );
-                }
             }
             transaction
                 .execute(
@@ -4892,19 +4874,18 @@ impl MlsInboundRepository for MobileMessagingStore {
         {
             return Err("mobile messaging MLS sender transition is incomplete".to_string());
         }
-        if let Some(projection) = commit.genesis_projection {
-            if !projection.active {
-                return Err(
-                    "mobile messaging MLS sender genesis projection must be active".to_string(),
-                );
-            }
-            validate_mls_projection(
-                projection,
-                commit.conversation_id,
-                commit.membership_epoch,
-                commit.mls_epoch,
-            )?;
+        let projection = commit.authority_projection;
+        if !projection.active {
+            return Err(
+                "mobile messaging MLS sender authority projection must be active".to_string(),
+            );
         }
+        validate_mls_projection(
+            projection,
+            commit.conversation_id,
+            commit.membership_epoch,
+            commit.mls_epoch,
+        )?;
         self.with_transaction(|transaction| {
             let result = MobileMessagingStore::commit_claimed_item(
                 transaction,
@@ -4925,7 +4906,7 @@ impl MlsInboundRepository for MobileMessagingStore {
                 commit.event_sequence,
                 commit.event_hash,
                 commit.previous_event_hash,
-                commit.genesis_projection.is_some(),
+                false,
             )?;
             let pending = transaction
                 .query_row(
@@ -4956,28 +4937,7 @@ impl MlsInboundRepository for MobileMessagingStore {
                 commit.mls_epoch,
                 commit.consumed_at_unix_ms,
             )?;
-            if let Some(projection) = commit.genesis_projection {
-                persist_mls_conversation(transaction, projection, commit.consumed_at_unix_ms)?;
-            } else {
-                let conversation_changed = transaction
-                    .execute(
-                        "UPDATE messaging_conversations
-                         SET membership_epoch = ?2, mls_epoch = ?3, updated_at_unix_ms = ?4
-                         WHERE conversation_id = ?1",
-                        params![
-                            commit.conversation_id,
-                            commit.membership_epoch,
-                            commit.mls_epoch,
-                            commit.consumed_at_unix_ms
-                        ],
-                    )
-                    .map_err(|error| error.to_string())?;
-                if conversation_changed != 1 {
-                    return Err(
-                        "mobile messaging MLS conversation projection is unavailable".to_string(),
-                    );
-                }
-            }
+            persist_mls_conversation(transaction, projection, commit.consumed_at_unix_ms)?;
             for table in [
                 "messaging_local_commands",
                 "messaging_command_outbox",
@@ -7684,7 +7644,8 @@ mod tests {
                     to_membership_epoch: 3,
                     from_mls_epoch: 2,
                     to_mls_epoch: 3,
-                    join_projection: Some(&joined),
+                    authority_projection: &joined,
+                    allow_join_checkpoint: true,
                     receipt_id: "receipt-join",
                     receipt_bytes: b"receipt",
                     consumed_at_unix_ms: 41,
@@ -7830,7 +7791,11 @@ mod tests {
             kind: 2,
             name: "Group".into(),
             owner_ptid: "ptid:alice".into(),
-            member_ptids: vec!["ptid:alice".into(), "ptid:bob".into()],
+            member_ptids: vec![
+                "ptid:alice".into(),
+                "ptid:bob".into(),
+                "ptid:charlie".into(),
+            ],
             membership_epoch: 1,
             mls_epoch: 1,
             active: true,
@@ -7882,6 +7847,28 @@ mod tests {
             52,
         )
         .unwrap();
+        let authority_projection = MlsConversationProjection {
+            conversation_id: "group-1".into(),
+            authority_station_id: "station-1".into(),
+            federation_id: "federation-1".into(),
+            kind: ConversationKind::Group as i32,
+            name: "Group".into(),
+            owner_ptid: "ptid:alice".into(),
+            members: vec![
+                MlsConversationMemberProjection {
+                    ptid: "ptid:alice".into(),
+                    role: MemberRole::Owner as i32,
+                },
+                MlsConversationMemberProjection {
+                    ptid: "ptid:bob".into(),
+                    role: MemberRole::Member as i32,
+                },
+            ],
+            membership_epoch: 2,
+            mls_epoch: 2,
+            active: true,
+            updated_at_unix_ms: 52,
+        };
         assert_eq!(
             MlsInboundRepository::commit_mls_sender_transition(
                 &store,
@@ -7900,7 +7887,7 @@ mod tests {
                     session_state: b"committed-session",
                     membership_epoch: 2,
                     mls_epoch: 2,
-                    genesis_projection: None,
+                    authority_projection: &authority_projection,
                     receipt_id: "receipt-transition",
                     receipt_bytes: b"receipt",
                     consumed_at_unix_ms: 52,
@@ -7917,6 +7904,23 @@ mod tests {
         assert_eq!(
             MlsInboundRepository::load_mls_session_state(&store, "group-1").unwrap(),
             Some(b"committed-session".to_vec())
+        );
+        let members = store
+            .connection
+            .lock()
+            .unwrap()
+            .prepare(
+                "SELECT ptid FROM messaging_conversation_members
+                 WHERE conversation_id = ?1 ORDER BY ptid",
+            )
+            .unwrap()
+            .query_map(params!["group-1"], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            members,
+            vec!["ptid:alice".to_string(), "ptid:bob".to_string()]
         );
     }
 
@@ -7986,7 +7990,7 @@ mod tests {
             session_state: b"committed-genesis-state",
             membership_epoch: 1,
             mls_epoch: 1,
-            genesis_projection: Some(&projection),
+            authority_projection: &projection,
             receipt_id: "genesis-receipt",
             receipt_bytes: b"genesis-receipt-bytes",
             consumed_at_unix_ms: 101,

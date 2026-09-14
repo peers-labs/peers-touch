@@ -1596,3 +1596,24 @@ Station. The approved tuple is `station-primary=four`,
 the Relay binding and no third Station is in scope.
 Focused Provisioner/runner tests, an exact-source checkpoint, Station
 attestation, and the two ordered CA-W6 simulator Gates remain required.
+
+The first source-bound Social simulator attempt with the complete runtime tuple
+passed Station/Relay binding, reset authorization, service attestation, SDK,
+NDK, AVD, simulator, and Chromedriver preflight, then exposed two source
+closure gaps before product actions. Mobile still referenced the retired
+optional `join_projection` / `genesis_projection` fields after Messaging Core
+made `authority_projection` mandatory, and static-bundle mode skipped Tauri's
+normal `gen/apple/assets` staging before `xcodebuild`.
+
+The mechanical remediation aligns Mobile with the proven Desktop transaction:
+recipient and sender MLS commits require the complete authority projection,
+atomically replace Conversation metadata and members, and retain the existing
+join-checkpoint retirement behavior. The Mobile simulator Provisioner now
+copies the verified web output into the Xcode-owned generated assets directory
+and registers deterministic reverse cleanup. Mobile MLS tests pass 4/4, Mobile
+Rust compilation passes, Provisioner tests pass 12/12, combined Mobile
+Provisioner/runtime tests pass 68/68, and acceptance-run tests pass 73/73. The
+full Mobile Rust suite reaches 85/87; two unrelated attachment descriptor
+fixtures remain red and are not changed by this remediation. Exact-source
+checkpoint, Station attestation, iOS/Android builds, and the ordered simulator
+Gates remain required.

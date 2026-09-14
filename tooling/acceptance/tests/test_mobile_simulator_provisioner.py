@@ -239,6 +239,15 @@ class FakeCommandExecutor:
                 0,
                 f"ChromeDriver {self.driver_version}\n",
             )
+        if command == ("pnpm", "--dir", "apps/mobile", "run", "build"):
+            dist = self.repo_root / "apps" / "mobile" / "dist"
+            (dist / "assets").mkdir(parents=True, exist_ok=True)
+            (dist / "index.html").write_text("mobile\n", encoding="utf-8")
+            (dist / "assets" / "main.js").write_text(
+                "mobile\n",
+                encoding="utf-8",
+            )
+            return CommandResult(0)
         if command and command[0] == "xcodebuild":
             derived_data = Path(command[command.index("-derivedDataPath") + 1])
             app = (
@@ -2079,6 +2088,20 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
             self.android_manifest.read_text(encoding="utf-8"),
             self.android_manifest_baseline,
         )
+        ios_assets = (
+            self.repo_root
+            / "apps"
+            / "mobile"
+            / "src-tauri"
+            / "gen"
+            / "apple"
+            / "assets"
+        )
+        self.assertEqual(
+            (ios_assets / "index.html").read_text(encoding="utf-8"),
+            "mobile\n",
+        )
+        self.assertTrue((ios_assets / "assets" / "main.js").is_file())
         self.assertEqual(self.fetches, [])
 
         for platform in ("ios", "android"):
@@ -2132,10 +2155,20 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
                 "storageRoot"
             ]
         ).parents[1]
+        ios_assets = (
+            self.repo_root
+            / "apps"
+            / "mobile"
+            / "src-tauri"
+            / "gen"
+            / "apple"
+            / "assets"
+        )
 
         completed = self.provisioner.cleanup()
 
         self.assertFalse(runtime_root.exists())
+        self.assertFalse(ios_assets.exists())
         self.assertLess(
             completed.index("appium-process"),
             completed.index(
