@@ -1,7 +1,7 @@
 # Secure Content - Integration And Migration
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.2
 > **Created**: 2026-09-13 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 
@@ -96,11 +96,11 @@ Social owns:
 
 ```text
 POST /api/v1/social/moments:prepare-private
-POST /api/v1/social/moments
+POST /api/v1/social/moments:submit-private
 GET  /api/v1/social/moments/{post_id}
 GET  /api/v1/social/moments/{post_id}/comments
 POST /api/v1/social/moments/{post_id}/comments:prepare-private
-POST /api/v1/social/moments/{post_id}/comments
+POST /api/v1/social/moments/{post_id}/comments:submit-private
 GET  /api/v1/social/moments/{post_id}/audience
 
 POST /api/v1/social/moments/objects/uploads:begin
@@ -115,6 +115,13 @@ GET  /api/v1/social/moments/recoverable
 
 The API Ownership and `MP-D23` contracts remain valid. Social adds only Social
 capabilities; Conversation keeps Chat attachment authority.
+
+The two `:submit-private` paths above are proposed by `SC-D17`. They keep the
+generated private request types distinct from the existing public
+`CreatePostRequest` and `CreateCommentRequest` handlers. Content negotiation
+does not select public versus private business semantics. Once W6 lands, the
+legacy create routes reject non-PUBLIC payloads instead of storing plaintext or
+dispatching to the private flow.
 
 ## 4. Audience Ports
 
@@ -179,6 +186,17 @@ Browser supports PUBLIC only and rejects private operations before network send.
 
 Social's UOW commits Post/Comment fact, snapshot, slot mappings, envelopes,
 delivery intents, object attachments, grants, and command receipt in one transaction.
+
+Under proposed `SC-D17`, prepare state is durable before Key Exchange claim in
+`social_private_content_plans`, including the exact canonical claim request;
+the exact claim response and claimed slots are finalized in
+`social_private_content_plan_slots`; exact submit replay is owned by
+`social_private_command_receipts`. W6 owns this substrate. Before commit,
+Social uses an internal Key Exchange claim-validation capability to compare
+recovery-slot epochs and uses Actor Identity for endpoint activity/profile
+checks. Neither dependency gains Social mutation authority. W5 reads only
+committed resource, grant, and recovery-envelope rows after W6 and introduces
+no parallel recovery authority.
 
 Conversation keeps its existing event/object/grant transaction.
 

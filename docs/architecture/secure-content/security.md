@@ -1,7 +1,7 @@
 # Secure Content - Security Contract
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.2
 > **Created**: 2026-09-13 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 
@@ -101,13 +101,38 @@ recovery pool while authorized, but revocation makes its unclaimed keys
 ineligible for future content. Completed claims remain replayable because their
 public material was already exposed.
 
-Recovery PreKeys derive from a domain-separated recovery master:
+Proposed `SC-D16` replaces the previous underspecified recovery formula with one
+byte-exact transcript. The accepted 24-word BIP39 phrase must first pass the
+maintained BIP39 library's wordlist, NFKD, and checksum validation and decode to
+exactly 32 bytes of entropy. The KDF itself receives only those entropy bytes,
+not the phrase text:
 
 ```text
+master_context =
+  u32be(len(actor_ptid)) || actor_ptid || u64be(recovery_epoch)
+
 K_sc_recovery = HKDF-SHA256(
-  BIP39_mnemonic_entropy,
-  sha256(actor_ptid || recovery_epoch),
-  "peers-touch:secure-content:recovery:v1"
+  ikm  = BIP39_mnemonic_entropy,
+  salt = SHA-256(
+    "peers-touch:secure-content:recovery-master-salt:v1\0"
+    || master_context
+  ),
+  info = "peers-touch:secure-content:recovery:v1\0",
+  L    = 32
+)
+
+prekey_context =
+  master_context || u32be(len(key_id)) || key_id
+
+K_recovery_prekey = HKDF-SHA256(
+  ikm  = K_sc_recovery,
+  salt = SHA-256(
+    "peers-touch:secure-content:recovery-prekey-salt:v1\0"
+    || prekey_context
+  ),
+  info = "peers-touch:secure-content:recovery-prekey:v1\0"
+         || prekey_context,
+  L    = 32
 )
 ```
 
@@ -120,6 +145,15 @@ A recovered device derives the same master after explicit phrase entry. The
 recovery phrase, recovery master, and derived private keys are never uploaded.
 Private publish fails before encryption when any required recipient lacks a
 claimable recovery PreKey.
+
+`actor_ptid` and `key_id` are UTF-8 encoded exactly as their canonical protocol
+identifiers; this KDF performs no Unicode normalization. Inputs must already be
+non-empty, unchanged by trimming, NUL-free, and within their protocol byte
+limits. Lengths are unsigned 32-bit big-endian and the epoch is unsigned 64-bit
+big-endian. Each domain above includes the shown terminal NUL. The per-key
+32-byte output is passed to the maintained X25519 implementation, which owns
+RFC 7748 scalar clamping; there is no retry branch. Native rejects a derived
+public key that differs from the claimed recovery PreKey before HPKE open.
 
 ## 5. Exact Envelope Binding
 

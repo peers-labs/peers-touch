@@ -1,7 +1,7 @@
 # Secure Content - Data Model
 
 > **Status**: active
-> **Version**: v1.2
+> **Version**: v1.3
 > **Created**: 2026-09-13 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `model/domain/social/`, `model/domain/key_exchange/`
@@ -244,6 +244,51 @@ normalization. A future raw-wire publication endpoint additionally requires
 decode/re-encode equality to reject duplicate singular fields, non-minimal
 varints, and non-canonical field order. The signature authenticates publication;
 it does not attest recovery-secret derivation.
+
+### Proposed Recovery PreKey Derivation
+
+Under proposed `SC-D16`, the maintained BIP39 parser applies NFKD, validates
+the English word list and checksum, and emits exactly 32 bytes of entropy for
+the accepted 24-word recovery phrase. The KDF receives only those bytes.
+`actor_ptid` and `key_id` are encoded as exact canonical UTF-8 bytes with no
+normalization performed by the KDF: both are non-empty, unchanged by trimming,
+NUL-free, and bounded to 255 and 128 bytes respectively. `recovery_epoch` is in
+`1..2^63-1`. Integers are unsigned big-endian.
+
+```text
+master_salt_input =
+  u32be(len(actor_ptid)) || actor_ptid || u64be(recovery_epoch)
+
+K_sc_recovery = HKDF-SHA256(
+  ikm  = BIP39_mnemonic_entropy,
+  salt = SHA-256(
+    "peers-touch:secure-content:recovery-master-salt:v1\0"
+    || master_salt_input
+  ),
+  info = "peers-touch:secure-content:recovery:v1\0",
+  L    = 32
+)
+
+prekey_context =
+  u32be(len(actor_ptid)) || actor_ptid
+  || u64be(recovery_epoch)
+  || u32be(len(key_id)) || key_id
+
+K_recovery_prekey = HKDF-SHA256(
+  ikm  = K_sc_recovery,
+  salt = SHA-256(
+    "peers-touch:secure-content:recovery-prekey-salt:v1\0"
+    || prekey_context
+  ),
+  info = "peers-touch:secure-content:recovery-prekey:v1\0"
+         || prekey_context,
+  L    = 32
+)
+```
+
+The 32-byte output is the input to the maintained X25519 static-secret type,
+which owns RFC 7748 clamping. There is no retry counter. Native must compare the
+derived public key with the claimed recovery PreKey before HPKE open.
 
 ## 5. Encryption Plan And Envelope Binding
 
@@ -1010,7 +1055,10 @@ social_private_posts
 social_private_comments
 social_private_audience_snapshots
 social_private_recipient_grants
+social_private_content_plans
+social_private_content_plan_slots
 social_private_content_envelopes
+social_private_command_receipts
 social_private_object_uploads
 social_private_object_parts
 social_private_objects
@@ -1024,7 +1072,10 @@ social_private_object_audit
 | `social_private_comments` | `comment_id`, unique `content_id` | post, parent comment, author, interaction snapshot, canonical encrypted payload bytes/hash |
 | `social_private_audience_snapshots` | `snapshot_id`, unique `post_id` | audience kind/target, source revision, canonical snapshot hash |
 | `social_private_recipient_grants` | `(snapshot_id, recipient_ptid)` | grant time, revoke time/reason |
+| `social_private_content_plans` | `plan_id`; unique `(author_ptid, prepare_command_id)`; unique `(content_id, generation)` | canonical prepare bytes/hash, exact Key Exchange claim-request bytes/hash and ordered targets, exact claim-response bytes/hash, resource kind, author endpoint, snapshot ID, exact signed plan bytes/hash, state, expiry, optional domain commit |
+| `social_private_content_plan_slots` | `(plan_id, recipient_slot_id)`; globally unique `claim_id`; unique `(plan_id, one_time_key_id)` | key kind, recipient actor/device, principal epoch, exact claimed PreKey bytes/hash including issuer signature, principal-binding hash |
 | `social_private_content_envelopes` | `(content_id, key_kind, recipient principal, one_time_key_id)` | exact plan/binding/envelope/signature hashes |
+| `social_private_command_receipts` | `(author_ptid, command_id)` | canonical submit hash, resource kind/content/generation, domain commit ID, exact response bytes/hash, completion time |
 | `social_private_object_uploads` | `(upload_id, generation)` | content ID, uploader endpoint, descriptor commitment, bitmap, state, expiry |
 | `social_private_object_parts` | `(upload_id, generation, chunk_index)` | offset, size, ciphertext hash, storage key |
 | `social_private_objects` | `object_id` | content ID, uploader, canonical descriptor, state, domain commit ID |
@@ -1034,6 +1085,9 @@ social_private_object_audit
 All resource, slot, key, and command uniqueness constraints are database-backed.
 Private payload bytes are stored once as canonical `EncryptedPayload`; indexed
 hash columns are generated/validated mirrors and cannot be independently updated.
+Command receipts store canonical business-result bytes with
+`exact_replay=false`; exact replay validates those bytes and sets
+`exact_replay=true` only on the returned clone.
 
 Conversation keeps its accepted `conversation_attachment_*` table family.
 There is no shared `secure_content_*` authority table.
@@ -1076,14 +1130,22 @@ Conversation retains its current event/object/grant atomic UOW.
 Plan:
 
 ```text
-PREPARING
-  -> PREKEYS_CLAIMED
-  -> PREPARED
-  -> CONSUMED(domain_commit_id)
-
-PREPARING/PREKEYS_CLAIMED -> RETRY_WAIT
-PREPARED -> EXPIRED | REJECTED_STALE
+PREPARING -> PREKEYS_CLAIMED -> PREPARED -> CONSUMED(domain_commit_id)
+PREPARING -> RETRY_WAIT | CANCELLED | EXPIRED
+PREKEYS_CLAIMED -> PREPARED | RETRY_WAIT | CANCELLED | EXPIRED
+RETRY_WAIT -> PREPARING | CANCELLED | EXPIRED
+PREPARED -> CONSUMED | REJECTED_STALE | CANCELLED | EXPIRED
 ```
+
+`PREPARING` is persisted before the external Key Exchange claim. If the process
+stops after irreversible claim but before `PREPARED`, exact prepare replay
+reuses the persisted canonical claim request with the same `plan_id`, validates
+the exact Key Exchange response, then persists the same slots and signed plan.
+Cancellation or expiry never releases a claimed PreKey, and terminal states
+never return to `PREPARING`. Submit locks the plan and
+`(author_ptid, command_id)` receipt before any domain write. It revalidates
+current endpoint activity/profile, the recovery-pool epoch, and the FRIENDS
+snapshot; drift transitions the plan to `REJECTED_STALE`.
 
 Object:
 

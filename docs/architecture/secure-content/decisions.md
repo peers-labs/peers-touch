@@ -1,7 +1,7 @@
 # Secure Content - Architecture Decisions
 
 > **Status**: active
-> **Version**: v1.2
+> **Version**: v1.3
 > **Created**: 2026-09-13 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 
@@ -26,6 +26,8 @@
 | `SC-D13` | The business domain owns the outer object/grant transaction | accepted |
 | `SC-D14` | Private subtype and routing wires are bounded and canonical | accepted |
 | `SC-D15` | Content PreKey publication is device-authenticated and epoch-fenced | accepted |
+| `SC-D16` | Recovery PreKey derivation uses one canonical HKDF transcript | proposed |
+| `SC-D17` | Social private prepare and submit use durable records and distinct routes | proposed |
 
 ---
 
@@ -715,3 +717,241 @@ signatures with valid Ed25519 vectors. Claim tests must cover
 revocation and key rotation before exposure, persisted tampering, epoch CAS and
 completed-receipt replay after revocation. The Owner accepted this decision on
 2026-09-14.
+
+---
+
+## SC-D16: Recovery PreKey Derivation Uses One Canonical HKDF Transcript
+
+**Status**: proposed
+**Date**: 2026-09-14
+
+### Context
+
+The accepted recovery design defines `K_sc_recovery` but only states that each
+typed recovery PreKey ID deterministically derives an X25519 private key. Without
+an exact transcript, Desktop and Mobile can derive different keys for the same
+actor, epoch, and key ID, making never-opened recovery non-interoperable.
+
+### Decision
+
+The maintained BIP39 implementation first applies the BIP39-required NFKD
+normalization, validates the English word list and checksum, and returns
+exactly 32 entropy bytes for the accepted 24-word phrase. The KDF receives only
+those bytes, never mnemonic text.
+
+`actor_ptid` and `key_id` are encoded as their exact canonical UTF-8 bytes. The
+KDF performs no Unicode normalization: the caller must supply identifiers that
+are non-empty, unchanged by trimming, NUL-free, and bounded to 255 and 128
+bytes respectively. `recovery_epoch` is in `1..2^63-1`. Lengths are unsigned
+32-bit big-endian and the epoch is unsigned 64-bit big-endian.
+
+The existing recovery master transcript is made explicit:
+
+```text
+master_salt_input =
+  u32be(len(actor_ptid)) || actor_ptid || u64be(recovery_epoch)
+
+K_sc_recovery = HKDF-SHA256(
+  ikm  = BIP39_mnemonic_entropy,
+  salt = SHA-256(
+    "peers-touch:secure-content:recovery-master-salt:v1\0"
+    || master_salt_input
+  ),
+  info = "peers-touch:secure-content:recovery:v1\0",
+  L    = 32
+)
+```
+
+Each recovery PreKey seed is:
+
+```text
+prekey_context =
+  u32be(len(actor_ptid)) || actor_ptid
+  || u64be(recovery_epoch)
+  || u32be(len(key_id)) || key_id
+
+K_recovery_prekey = HKDF-SHA256(
+  ikm  = K_sc_recovery,
+  salt = SHA-256(
+    "peers-touch:secure-content:recovery-prekey-salt:v1\0"
+    || prekey_context
+  ),
+  info = "peers-touch:secure-content:recovery-prekey:v1\0"
+         || prekey_context,
+  L    = 32
+)
+```
+
+`K_recovery_prekey` is passed to the maintained X25519 library as the 32-byte
+static-secret input; the library owns RFC 7748 scalar clamping. There is no
+retry/counter branch. The derived public key must equal the claimed
+`ContentOneTimePreKey.x25519_public_key` before an envelope is opened.
+
+The portable Rust core owns this implementation and zeroizes the master,
+per-key seed, and private key. Go and Station never derive or receive the
+private material. Fixed master, private-seed, public-key, and envelope-open
+vectors are required.
+
+The normative derivation vector is:
+
+```text
+BIP39 entropy = 0b repeated 32 times
+actor_ptid = "ptid:v1:actor:peers:p:alice:key"
+recovery_epoch = 7
+key_id = "recovery-prekey-0001"
+
+master_context =
+0000001f707469643a76313a6163746f723a70656572733a703a616c6963653a6b65790000000000000007
+master_salt =
+0d42446c4a58ccdc74013ffd21ab0023c9c18813cd06f24a8395d3ffa25d4023
+K_sc_recovery =
+57064757d05c45ddfe290541243c801fa07a8e90b7248b3a5989fae496e155aa
+prekey_context =
+0000001f707469643a76313a6163746f723a70656572733a703a616c6963653a6b65790000000000000007000000147265636f766572792d7072656b65792d30303031
+prekey_salt =
+a204ff97065160b31b68d86f3dd6ac9d2071e6c5bec45cfca9593368ec8e09f7
+K_recovery_prekey =
+07fd2947dd56b405f1139f053cbbc13fa9b29c8ef323731b9f3a73a9b28022ac
+X25519 public key =
+7de402b631f5f1a0f4f0b2b0d1b063a8a4e3fe7212f28b3bc6202197274bb43a
+```
+
+The envelope-open vector uses this key pair, the existing
+`ContentKeyEnvelopeBinding` canonical bytes as both HPKE `info` and AEAD AAD,
+and a fixed 32-byte content key. W5 records the resulting encapsulated key and
+ciphertext beside the derivation vector before implementation can complete.
+
+### Rationale
+
+Length-prefixing removes concatenation ambiguity, explicit domains prevent
+cross-protocol reuse, and binding actor, epoch, and key ID makes the mapping
+portable and deterministic without adding a server-side recovery-key catalog.
+
+### Alternatives Considered
+
+- Use the key ID directly as HKDF info without actor or epoch: rejected because
+  it permits accidental cross-actor or cross-epoch reuse if a master is
+  mishandled.
+- Derive from the mnemonic string: rejected because BIP39 normalization and
+  locale representation would become part of this protocol.
+- Retry until a library reports a valid scalar: rejected because X25519 clamps
+  the 32-byte input and a counter would create another cross-client branch.
+
+### Consequences
+
+W5 must update the existing master vector, add per-key private/public vectors,
+prove wrong actor/epoch/key ID divergence, and open a real HPKE envelope with a
+derived recovery key. Any future transcript change requires a new version and
+cannot silently reinterpret existing recovery PreKey IDs.
+
+---
+
+## SC-D17: Social Private Prepare And Submit Use Durable Records And Distinct Routes
+
+**Status**: proposed
+**Date**: 2026-09-14
+
+### Context
+
+The accepted Social transaction requires durable prepare replay, plan
+consumption, slot mapping, and exact submit receipts, but the persistence
+inventory names no plan, plan-slot, or command-receipt tables. The accepted
+private submit request also shares the existing `POST /api/v1/social/moments`
+route with `CreatePostRequest`, leaving request decoding ambiguous.
+
+### Decision
+
+Social adds three authority tables:
+
+| Table | Primary/unique identity | Required bindings |
+|---|---|---|
+| `social_private_content_plans` | `plan_id`; unique `(author_ptid, prepare_command_id)`; unique `(content_id, generation)` | canonical prepare bytes/hash, exact Key Exchange claim-request bytes/hash and ordered targets, exact claim-response bytes/hash, resource kind, author endpoint, audience snapshot, exact signed plan bytes/hash, state, expiry, optional domain commit |
+| `social_private_content_plan_slots` | `(plan_id, recipient_slot_id)`; globally unique `claim_id`; unique `(plan_id, one_time_key_id)` | key kind, recipient actor/device, principal epoch, exact claimed PreKey bytes/hash including issuer signature, principal-binding hash |
+| `social_private_command_receipts` | `(author_ptid, command_id)` | canonical submit hash, resource kind/content/generation, domain commit ID, exact response bytes/hash, completion time |
+
+Prepare first inserts or locks the plan identity in `PREPARING`, calls Key
+Exchange with the exact claim request already persisted on that row, and then
+atomically stores the exact claim response, all slot mappings, and the
+Station-signed plan as `PREPARED`. A crash after irreversible PreKey claim is
+recovered by replaying the persisted claim bytes with the same `plan_id`; another
+prepare hash for the same author/command is a terminal conflict.
+
+Submit locks the plan and command-receipt identities, revalidates current
+audience policy and exact plan/payload/envelope/object commitments, then commits
+the Post or Comment fact, audience snapshot, recipient grants, envelopes,
+delivery intents, object attachments/grants, Station-signed commit proof, plan
+consumption, and exact response receipt in one Social transaction. The receipt
+stores canonical business-result bytes with `exact_replay=false`; an exact retry
+validates those bytes and returns a clone with `exact_replay=true`. The same
+author/command/hash therefore returns the same business result while replay
+metadata remains truthful; another hash conflicts.
+
+Before submit, Social revalidates every endpoint slot against current Actor
+Identity activity/profile and every recovery slot against the current Key
+Exchange recovery-pool epoch. Any revoked endpoint, advanced recovery epoch, or
+changed FRIENDS snapshot moves the plan to `REJECTED_STALE` and commits no
+resource rows. Key Exchange exposes this as an internal, read-only
+claim-validation capability; it does not create a public route or transfer
+Social policy ownership.
+
+The plan lifecycle is:
+
+```text
+PREPARING -> PREKEYS_CLAIMED -> PREPARED -> CONSUMED(domain_commit_id)
+PREPARING -> RETRY_WAIT | CANCELLED | EXPIRED
+PREKEYS_CLAIMED -> PREPARED | RETRY_WAIT | CANCELLED | EXPIRED
+RETRY_WAIT -> PREPARING | CANCELLED | EXPIRED
+PREPARED -> CONSUMED | REJECTED_STALE | CANCELLED | EXPIRED
+```
+
+Retry uses the same author, prepare command, canonical prepare hash, `plan_id`,
+claim-request bytes, and target order. Cancellation or expiry never releases or
+reuses an already claimed PreKey. Terminal states do not transition back to
+`PREPARING`.
+
+The private wire uses explicit routes:
+
+```text
+POST /api/v1/social/moments:prepare-private
+POST /api/v1/social/moments:submit-private
+POST /api/v1/social/moments/{post_id}/comments:prepare-private
+POST /api/v1/social/moments/{post_id}/comments:submit-private
+```
+
+Existing `POST /api/v1/social/moments` and
+`POST /api/v1/social/moments/{post_id}/comments` retain their existing public
+request types and reject non-PUBLIC writes once W6 lands. Content negotiation
+does not select business semantics, and no handler attempts to decode one body
+as two unrelated protobuf request messages.
+
+The W6 persistence substrate lands before W5. W5 then adds the paginated
+recovery query over committed private resources, current grants, and actor
+recovery envelopes; it does not create a synthetic recovery-only table.
+
+### Rationale
+
+Explicit durable identities make crash recovery and exact replay enforceable.
+Separate routes preserve typed decoding and keep the existing public API stable.
+Putting the shared Social persistence substrate in W6 preserves one domain
+authority and removes the W5/W6 dependency inversion.
+
+### Alternatives Considered
+
+- Infer private submit from `Content-Type`: rejected because existing public
+  requests already support JSON and protobuf, so media type is not a business
+  discriminator.
+- Trial-decode both request messages on one route: rejected because protobuf
+  field overlap can produce ambiguous or silently defaulted interpretations.
+- Store prepare state only in Key Exchange: rejected because Social owns
+  resource, audience, slot, expiry, and command semantics.
+- Add W5-only recovery tables: rejected because that would create a second
+  Social private-content authority.
+
+### Consequences
+
+W6 owns the three additional tables and the explicit private routes before W5.
+W5 depends on W6 and reads only committed resource/grant/envelope rows. W11
+removes the legacy private write/read path after all callers migrate; W12 alone
+owns physical deletion/reset. The new tables carry only ciphertext,
+commitments, identifiers, grants, and signed evidence, never private plaintext
+or key material.

@@ -331,11 +331,9 @@ W0R + W1 + W4
 W2A
   -> W3 Content PreKeys
 
-W2A + W3
-  -> W5 Recovery
-
 W2A + W3 + W4
   -> W6 Minimal Social FRIENDS text+image closure
+       -> W5 Recovery
        -> W7 Desktop pilot FUNCTIONAL_PASS
 
 W7 FUNCTIONAL_PASS
@@ -396,7 +394,8 @@ Mode: `hybrid`.
   the complete MP-G13 driver must exercise fresh recovery and the real Mobile
   runtime; requiring that driver before those owners exist creates a dependency
   cycle.
-- W5 follows W2A/W3.
+- W5 follows W6 because its real recovery query consumes the Social-owned
+  private resource, grant and recovery-envelope substrate.
 - W6 is serial because one Social UOW/schema owner integrates the minimal slice.
 - W7 checkpoint, deploy, runtime and Journey are serial.
 - After W7 `FUNCTIONAL_PASS`, W8 runs its subtype Journeys; W9 consumes the
@@ -728,7 +727,7 @@ python3 -m tooling.development.secure_content.run \
 
 - **Responsibility**: BIP39-derived recovery master and Social paginated
   recovery-envelope query/core consumer; Native UI adapters remain W7/W9.
-- **Dependencies**: W1/W2A/W3.
+- **Dependencies**: W1/W2A/W3/W6.
 - **Deliverables**: recovery of content never opened by the prior device without
   whole-archive root-key growth.
 - **Failure**: wrong phrase/key/epoch, deleted/block-revoked resource and tampered
@@ -1262,8 +1261,8 @@ observations is invalid.
 | W2 | atomic kernels/Chat | in progress | `c69edd606` (W2A) | SOURCE_CHECK/PASS | NOT_RUN | W2D waits for W5/W9; W2B Native proof waits for W2D and runtime leases |
 | W3 | PreKeys | complete | `dbd612b65` | PASS (`sc-dj-content-prekey`) | NOT_RUN | none |
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
-| W5 | recovery | parked | none | NOT_RUN | NOT_RUN | DESIGN_AMENDMENT_REQUIRED: per-key recovery KDF transcript; W6 private-resource/grant/envelope substrate |
-| W6 | Social minimum | parked | none | NOT_RUN | NOT_RUN | DESIGN_AMENDMENT_REQUIRED: durable prepare-plan/command-receipt schema and existing `POST /moments` private-submit dispatch |
+| W5 | recovery | parked | none | NOT_RUN | NOT_RUN | Owner acceptance of proposed `SC-D16`; W6 |
+| W6 | Social minimum | parked | none | NOT_RUN | NOT_RUN | Owner acceptance of proposed `SC-D17` |
 | W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | W6; active MCA Desktop claim and Station runtime owner |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
 | W9 | Mobile | parked | none | NOT_RUN | NOT_RUN | W5/W7/W8; Mobile claim |
@@ -1347,6 +1346,11 @@ Current evidence:
   query also depends on W6's private resource, grant and envelope substrate.
   W5 is parked with W6 behind one bounded architecture amendment; no synthetic
   W5-only persistence path is permitted.
+- Proposed `SC-D16` defines the byte-exact recovery master and per-key X25519
+  derivation. Proposed `SC-D17` defines the missing Social plan/slot/receipt
+  tables, explicit private submit routes, prepare crash recovery and the
+  corrected W6-before-W5 dependency. Both remain unaccepted; execution stops at
+  their Owner gate.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level

@@ -1,7 +1,7 @@
 # Secure Content - Architecture Design
 
 > **Status**: active
-> **Version**: v1.2
+> **Version**: v1.3
 > **Created**: 2026-09-13 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `packages/secure-content-core/`, `apps/station/app/internal/securecontent/`
@@ -171,8 +171,9 @@ Native -> Social prepare(content_id, typed audience, command_id)
 Social:
   resolve recipient actors and current deny rules
   query Conversation only for GROUP snapshot
+  persist PREPARING identity plus exact Key Exchange claim request
   claim one-time endpoint and recovery Content PreKeys from Key Exchange
-  persist an expiring signed plan with opaque recipient slots
+  persist exact claim response, claimed slots and an expiring signed PREPARED plan
 Native:
   generate one resource root key
   encrypt typed payload and objects through Secure Content Core
@@ -188,6 +189,21 @@ Social UOW:
 PreKey claims are irreversible when exposed. Replaying the same prepare command
 returns the same claim; abandoned plans consume capacity and are replenished through
 Key Exchange policy. No partial recipient publish is allowed.
+
+Proposed `SC-D17` makes the prepare crash boundary explicit:
+`social_private_content_plans` persists `plan_id` and the canonical prepare hash
+plus the exact canonical claim request before Key Exchange is called. It then
+persists the exact claim response, while `social_private_content_plan_slots`
+finalizes the exact claimed PreKey and principal epoch for each slot. Submit owns
+`social_private_command_receipts` in the same Social UOW as the resource and
+all dependent writes. W6 owns this shared substrate before W5 adds recovery
+queries.
+
+Submit revalidates current FRIENDS authority, every endpoint slot's Actor
+Identity profile/activity, and every recovery slot's current Key Exchange pool
+epoch. Drift rejects the complete plan without partial resource writes. Exact
+submit replay returns the persisted business result and derives the
+`exact_replay` response flag at read time rather than storing two result forms.
 
 ## 9. Private Read And Recovery
 
