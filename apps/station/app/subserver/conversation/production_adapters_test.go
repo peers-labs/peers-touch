@@ -242,6 +242,10 @@ func TestProductionMembershipEventWireRoundTripPreservesCanonicalHash(t *testing
 		Actor:  "ptid:wire-owner",
 		Device: "owner-device",
 	}
+	member := valueobject.Endpoint{
+		Actor:  "ptid:wire-member",
+		Device: "member-device",
+	}
 	mlsCommitHash := valueobject.HashBytes([]byte("wire-mls-commit"))
 	commandBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
 		&chatmodel.ChatCommand{
@@ -285,7 +289,7 @@ func TestProductionMembershipEventWireRoundTripPreservesCanonicalHash(t *testing
 				Payload: commandBytes,
 				MembershipChanges: []entity.MembershipChange{{
 					Action: entity.MembershipActionRemoveActor,
-					Actor:  "ptid:wire-member",
+					Actor:  member.Actor,
 				}},
 				PostState: &domainevent.ConversationState{
 					Kind:           valueobject.ConversationKindGroup,
@@ -331,6 +335,208 @@ func TestProductionMembershipEventWireRoundTripPreservesCanonicalHash(t *testing
 		conversationhttp.ProtobufEventSealer{},
 	); err != nil {
 		t.Fatalf("verify federated membership event round-trip: %v", err)
+	}
+	current := aggregate.Snapshot{
+		ID:               event.ConversationID,
+		Kind:             valueobject.ConversationKindGroup,
+		Status:           valueobject.ConversationStatusActive,
+		FederationID:     "wire-federation",
+		AuthorityStation: event.AuthorityStation,
+		AuthorityEpoch:   1,
+		Owner:            owner.Actor,
+		Head: valueobject.AuthorityHead{
+			Sequence:        1,
+			EventHash:       event.PreviousHash,
+			MembershipEpoch: 1,
+			MLSEpoch:        1,
+		},
+		Settings: valueobject.ConversationSettings{Name: "Wire group"},
+		Members: []entity.Member{
+			{
+				Actor:       owner.Actor,
+				Role:        valueobject.MemberRoleOwner,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station-authority",
+				JoinedAt:    1,
+			},
+			{
+				Actor:       member.Actor,
+				Role:        valueobject.MemberRoleMember,
+				Status:      valueobject.MemberStatusActive,
+				HomeStation: "station-remote",
+				JoinedAt:    1,
+			},
+		},
+		Devices: []entity.MemberDevice{
+			{
+				Endpoint:    owner,
+				HomeStation: "station-authority",
+				Active:      true,
+				JoinedAt:    1,
+			},
+			{
+				Endpoint:    member,
+				HomeStation: "station-remote",
+				Active:      true,
+				JoinedAt:    1,
+			},
+		},
+		CreatedAt: productionAdapterTestTime.Add(-time.Minute),
+		UpdatedAt: productionAdapterTestTime.Add(-time.Minute),
+	}
+	decodedState := decoded.Fact.PostState
+	post := aggregate.Snapshot{
+		ID:               event.ConversationID,
+		Kind:             decodedState.Kind,
+		Status:           current.Status,
+		FederationID:     decodedState.FederationID,
+		AuthorityStation: event.AuthorityStation,
+		AuthorityEpoch:   decodedState.AuthorityEpoch,
+		Owner:            decodedState.Owner,
+		Head: valueobject.AuthorityHead{
+			Sequence:        event.Sequence,
+			EventHash:       event.Hash,
+			MembershipEpoch: event.MembershipEpoch,
+			MLSEpoch:        event.MLSEpoch,
+		},
+		Settings:  decodedState.Settings,
+		Members:   decodedState.ActiveMembers,
+		Devices:   decodedState.ActiveDevices,
+		CreatedAt: current.CreatedAt,
+		UpdatedAt: event.CommittedAt,
+	}
+	reconciled, err := aggregate.ReconcileCommittedMembershipProjection(
+		current,
+		decoded.Fact.MembershipChanges,
+		post,
+	)
+	if err != nil {
+		t.Fatalf("reconcile federated membership projection: %v", err)
+	}
+	if len(reconciled.Members) != 1 ||
+		reconciled.Members[0].Actor != owner.Actor ||
+		reconciled.Members[0].JoinedAt != 1 ||
+		len(reconciled.Devices) != 1 ||
+		reconciled.Devices[0].Endpoint != owner ||
+		reconciled.Devices[0].JoinedAt != 1 {
+		t.Fatalf("reconciled membership lifecycle = %+v", reconciled)
+	}
+}
+
+// TestReconcileCommittedMembershipProjectionRestoresAddedLifecycle verifies
+// that active-state wire snapshots cannot rewrite retained join history.
+func TestReconcileCommittedMembershipProjectionRestoresAddedLifecycle(t *testing.T) {
+	owner := valueobject.Endpoint{
+		Actor:  "ptid:wire-add-owner",
+		Device: "owner-device",
+	}
+	member := valueobject.Endpoint{
+		Actor:  "ptid:wire-add-member",
+		Device: "member-device",
+	}
+	current := aggregate.Snapshot{
+		ID:               "wire-add-group",
+		Kind:             valueobject.ConversationKindGroup,
+		Status:           valueobject.ConversationStatusActive,
+		FederationID:     "wire-federation",
+		AuthorityStation: "station-authority",
+		AuthorityEpoch:   1,
+		Owner:            owner.Actor,
+		Head: valueobject.AuthorityHead{
+			Sequence:        1,
+			EventHash:       valueobject.HashBytes([]byte("wire-add-previous")),
+			MembershipEpoch: 1,
+			MLSEpoch:        1,
+		},
+		Settings: valueobject.ConversationSettings{Name: "Wire add group"},
+		Members: []entity.Member{{
+			Actor:       owner.Actor,
+			Role:        valueobject.MemberRoleOwner,
+			Status:      valueobject.MemberStatusActive,
+			HomeStation: "station-authority",
+			JoinedAt:    1,
+		}},
+		Devices: []entity.MemberDevice{{
+			Endpoint:    owner,
+			HomeStation: "station-authority",
+			Active:      true,
+			JoinedAt:    1,
+		}},
+		CreatedAt: productionAdapterTestTime.Add(-time.Minute),
+		UpdatedAt: productionAdapterTestTime.Add(-time.Minute),
+	}
+	post := current
+	post.Head = valueobject.AuthorityHead{
+		Sequence:        2,
+		EventHash:       valueobject.HashBytes([]byte("wire-add-event")),
+		MembershipEpoch: 2,
+		MLSEpoch:        2,
+	}
+	post.Members = []entity.Member{
+		{
+			Actor:       member.Actor,
+			Role:        valueobject.MemberRoleMember,
+			Status:      valueobject.MemberStatusActive,
+			HomeStation: "station-remote",
+			JoinedAt:    1,
+		},
+		current.Members[0],
+	}
+	post.Devices = []entity.MemberDevice{
+		{
+			Endpoint:    member,
+			HomeStation: "station-remote",
+			Active:      true,
+			JoinedAt:    2,
+		},
+		{
+			Endpoint:    owner,
+			HomeStation: "station-authority",
+			Active:      true,
+			JoinedAt:    2,
+		},
+	}
+	post.UpdatedAt = productionAdapterTestTime
+	change := entity.MembershipChange{
+		Action:      entity.MembershipActionAddActor,
+		Actor:       member.Actor,
+		Device:      member.Device,
+		HomeStation: "station-remote",
+		Role:        valueobject.MemberRoleMember,
+	}
+
+	reconciled, err := aggregate.ReconcileCommittedMembershipProjection(
+		current,
+		[]entity.MembershipChange{change},
+		post,
+	)
+	if err != nil {
+		t.Fatalf("reconcile added membership projection: %v", err)
+	}
+	memberJoinedAt := make(map[valueobject.PTID]valueobject.Sequence)
+	for _, projected := range reconciled.Members {
+		memberJoinedAt[projected.Actor] = projected.JoinedAt
+	}
+	deviceJoinedAt := make(map[string]valueobject.Sequence)
+	for _, projected := range reconciled.Devices {
+		deviceJoinedAt[projected.Endpoint.Key()] = projected.JoinedAt
+	}
+	if memberJoinedAt[owner.Actor] != 1 ||
+		memberJoinedAt[member.Actor] != 2 ||
+		deviceJoinedAt[owner.Key()] != 1 ||
+		deviceJoinedAt[member.Key()] != 2 {
+		t.Fatalf("reconciled added lifecycle = %+v", reconciled)
+	}
+
+	tampered := post
+	tampered.Members = append([]entity.Member(nil), post.Members...)
+	tampered.Members[1].HomeStation = "station-forged"
+	if _, err := aggregate.ReconcileCommittedMembershipProjection(
+		current,
+		[]entity.MembershipChange{change},
+		tampered,
+	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeHashChainInvalid) {
+		t.Fatalf("tampered authority-visible state error = %v", err)
 	}
 }
 

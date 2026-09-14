@@ -825,11 +825,12 @@ func deriveFollowerProjection(
 			return repository.FollowerProjection{}, err
 		}
 		if event.Fact.Kind == domainevent.KindMembershipCommitted {
-			if err := aggregate.ValidateCommittedMembershipProjection(
+			snapshot, err = aggregate.ReconcileCommittedMembershipProjection(
 				current.Conversation,
 				event.Fact.MembershipChanges,
 				snapshot,
-			); err != nil {
+			)
+			if err != nil {
 				return repository.FollowerProjection{}, err
 			}
 		}

@@ -954,10 +954,10 @@ committed to this plan.
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Product and receiver runners consume `NativeDesktopRuntimeBinding`; all required Native runners use `NativeClientLifecycleLedger`; PR #103 exact-source 22-Gate evidence validates the integrated migration. |
 | NDR-W7 Linux MP-W13 proof | done — Linux only | Aggregate `20260901T095008761974Z-3b99fa79d3d1d9d637010b6253d070e0` passed 22/22 `DONE/PROVEN` at `ef89b11`; W11 `20260901T110101534000Z-2095f54d374d51f23bcfd6feeb343aeb`, 9/9 Chat required-proven validation, Gap Detector zero gaps, and runtime-cell cleanup `CLEANED` passed. PR #103 retains this evidence. |
-| NDR-W8 macOS regression | in progress / W8A-W8B proven; W8C partial | The Owner selected canonical `four` and `fiveArm`. W8A and W8B are proven. W8C reached MLS readiness; its Desktop KeyPackage endpoint-identity correction is integrated after PR #111 and awaits its exact-source bounded rerun. |
+| NDR-W8 macOS regression | in progress / W8A-W8B proven; W8C partial | The Owner selected canonical `four` and `fiveArm`. W8A and W8B are proven. W8C passes identity, Group creation, encrypted delivery, restart recovery, and sender-side removal at exact checkpoint `23002bf18d6d316901b9ede4f19bb3bd21124890`; retained-recipient removal remains `UNPROVEN` pending deployment of the follower lifecycle reconciliation. |
 | NDR-W8A submitted-command reconciliation | done | MP-D31 contract, generated bindings, authenticated `/conversation/command/results`, canonical receipt/outbox/exact Device Inbox resolver, transactional hard-cut migration from historical payload-hash result IDs, deterministic endpoint/command result identity, and Device Engine startup reconciliation are implemented. Exact-source macOS Native Gate `20260913T164933497898Z-87194509f71e18677704f12aea7e5805` is `PASS/DONE/PROVEN` at `638679c0e54a2c657fa208cff390210d6fa47322`: generated command `01M2DTWRTS6JBMBSN4WTKSHX5Q` / message `01M2DTWRQ7FVRJ24EZRQB3V7X9` retained exact identity and bytes, converged to committed/delivered authority truth, rendered on Bob, and released both clients and all six ports. |
 | NDR-W8B federated ephemeral typing | done | Exact-source run `20260914T000309707403Z-c776902fe848cc9d8c9236b9ec1f437a` at `08e13a19e4c2e91e5c97411a3c866a8e25d98af4` is `PASS/DONE/PROVEN` across Direct/Group typing lifecycle, removed-member and revoked-device rejection, zero durable typing writes, three Native clients, two Stations, and cleanup. |
-| NDR-W8C federated contact identity and Group genesis reliability | partial; MLS continuation pending rerun | Run `20260913T222630465438Z-dafc69d1f5d7c5fae174abfa28bab614` proves three-client identity/avatar/contact parity. Checkpoint `579ca4924c3cfeb74d553ff0c652989a4682ba18` moves MLS KeyPackage upload/fetch/count to the Key Exchange adapter and binds canonical protobuf endpoint identity plus `X-Device-ID`; exact-source Group/MLS proof remains `UNPROVEN`. |
+| NDR-W8C federated contact identity and Group genesis reliability | partial; retained-recipient removal fix pending deployment | Run `20260914T114014299344Z-aa87d8f750cbbe4100c3ebff501b0889` at `23002bf18d6d316901b9ede4f19bb3bd21124890` proves identity/avatar/contact parity, Group creation, encrypted delivery, Bob restart recovery, and Alice sender-side removal. Bob remains stale because `fiveArm` rejects both sequence-three device frames with HTTP `500`; durable readback proves its follower head remains at sequence two. The owner-layer lifecycle reconciliation now passes focused add/remove regressions and the complete Conversation race suite; exact-source deployment and rerun remain required. |
 | NDR-W9 Windows cell | done for Windows sixwin scope | Product Closure run `20260911T171023157955Z-dec53283a4ae9dbb4124c94a00ba6a24` is `PASS/DONE/PROVEN` at clean source `283832a7`; runtime identity, 1920x1080 Win32 evidence, Station binding, and cleanup are proven. |
 | NDR-W10 D-18 binding infrastructure | done for current Windows single-Station scope | Eight-Gate Native aggregate `20260911T171022643174Z-8601dca380d9a904041d72fa46bafad6`, PostgreSQL run `20260911T1915491502940Z-f3a7eb606a6e401980e62336ea6d6524`, two zero-gap reports, and audit `20260911T193908424196Z-daccebe8f7c6c434bcc1e07c767562b9` close the Owner-approved sixwin scope. Historical distinct-Station claims remain outside this closure. |
 
@@ -6499,3 +6499,32 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   the required comment. This is `SOURCE_CHECK` only. Exact-source deployment to
   `four` and `fiveArm` and the bounded W8C Native rerun remain required for
   `FUNCTIONAL_PASS`.
+- Checkpoint `23002bf18d6d316901b9ede4f19bb3bd21124890` was deployed to
+  `four` and `fiveArm`. Stable exact-source run
+  `20260914T114014299344Z-aa87d8f750cbbe4100c3ebff501b0889`
+  passes identity/avatar/contact parity, visible three-member Group creation,
+  encrypted delivery, Bob restart recovery, and Alice's sender-side Charlie
+  removal. It times out only while waiting for Bob's retained-recipient
+  projection. Cleanup is complete.
+- Durable readback proves authority sequence three and Alice's queue item are
+  committed and acknowledged, while `fiveArm` remains at follower sequence two
+  with no sequence-three event or queue item. Both sequence-three remote frames
+  remain in the `four` Federation outbox as `retry_wait /
+  transport_unavailable`. Target logs show every corresponding
+  `/federation/delivery` request reaches `fiveArm` and returns HTTP `500`.
+- The remaining owner-layer defect is lifecycle reconstruction in the
+  Conversation follower projection. `ConversationAuthoritySnapshot`
+  intentionally carries the complete active public state but no historical
+  join sequence. The production decoder therefore used the transition
+  sequence for every active endpoint, while the follower validator compared
+  those synthesized values with retained sequence-one endpoint history and
+  rejected the valid removal. The correction validates actor, role, endpoint,
+  Home Station, active-state, scope, epoch, and hash-chain truth as
+  duplicate-safe sets, then preserves retained lifecycle metadata and derives
+  added lifecycle metadata from the committed transition.
+- Focused remove/add lifecycle regressions, including rejection of forged Home
+  Station state, pass. The complete Conversation race suite, focused `go vet`,
+  Go formatting, and `git diff --check` pass. The repository-wide Go style
+  script remains red only on the recorded missing-doc-comment backlog. This is
+  `SOURCE_CHECK`; checkpoint, exact-source deployment, and the bounded W8C
+  Native rerun remain required.
