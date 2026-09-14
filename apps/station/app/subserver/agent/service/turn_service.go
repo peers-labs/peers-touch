@@ -3928,6 +3928,7 @@ func (s *TurnService) settleBlockedToolBatches(ctx context.Context) error {
 		return err
 	}
 	var rows []struct {
+		BatchID        string
 		TurnID         string
 		AgentID        string
 		ConversationID string
@@ -3936,7 +3937,7 @@ func (s *TurnService) settleBlockedToolBatches(ctx context.Context) error {
 	}
 	if err := db.WithContext(ctx).
 		Table("agent_tool_batches AS batch").
-		Select("batch.turn_id, batch.agent_id, batch.conversation_id, batch.task_id, batch.step_id").
+		Select("batch.id AS batch_id, batch.turn_id, batch.agent_id, batch.conversation_id, batch.task_id, batch.step_id").
 		Joins("JOIN agent_turns AS turn_record ON turn_record.id = batch.turn_id").
 		Joins("JOIN agent_turn_attempts AS attempt ON attempt.id = batch.attempt_id AND attempt.turn_id = batch.turn_id").
 		Where(
@@ -3949,19 +3950,81 @@ func (s *TurnService) settleBlockedToolBatches(ctx context.Context) error {
 		return fmt.Errorf("load blocked tool batches: %w", err)
 	}
 	for _, row := range rows {
-		if err := s.interruptTurn(
+		reasonCode := "tool_batch_blocked"
+		outcomeError, err := blockedToolBatchOutcomeError(
+			db.WithContext(ctx),
+			row.BatchID,
+		)
+		if err != nil {
+			return err
+		}
+		if outcomeError != nil {
+			reasonCode = outcomeError.GetErrorType()
+		}
+		if _, err := s.interruptTurnWithOutcomeError(
 			ctx,
 			row.AgentID,
 			row.TurnID,
 			row.ConversationID,
 			row.TaskID,
 			row.StepID,
-			"tool_batch_blocked",
+			reasonCode,
+			outcomeError,
 		); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func blockedToolBatchOutcomeError(
+	db *gorm.DB,
+	batchID string,
+) (*model.ErrorPayload, error) {
+	var result persistence.ToolResult
+	if err := db.
+		Where(
+			"tool_batch_id = ? AND status = ? AND error_code = ?",
+			batchID,
+			persistence.ToolReceiptStatusFailed,
+			string(errcode.AgentClientInvalidResourceReference),
+		).
+		Order("created_at ASC").
+		First(&result).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("load blocked ToolBatch outcome: %w", err)
+	}
+
+	var details map[string]string
+	if err := json.Unmarshal(result.BoundedResult, &details); err != nil ||
+		len(details) != 2 {
+		return nil, nil
+	}
+	resourceKind := strings.TrimSpace(details["resource_kind"])
+	resourceRefHash := details["resource_ref_hash"]
+	decodedHash, err := hex.DecodeString(resourceRefHash)
+	if !validClientResourceKind(resourceKind) ||
+		len(resourceRefHash) != sha256.Size*2 ||
+		resourceRefHash != strings.ToLower(resourceRefHash) ||
+		err != nil ||
+		len(decodedHash) != sha256.Size {
+		return nil, nil
+	}
+	return errcode.NewClientInvalidResourceReferencePayload(
+		resourceKind,
+		resourceRefHash,
+	), nil
+}
+
+func validClientResourceKind(resourceKind string) bool {
+	switch resourceKind {
+	case "file", "folder", "image", "workspace":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *TurnService) settleReconciliationRequiredTurns(ctx context.Context) error {
@@ -4029,6 +4092,31 @@ func (s *TurnService) interruptTurnWithEvent(
 	stepID string,
 	reasonCode string,
 ) (TurnEvent, error) {
+	return s.interruptTurnWithOutcomeError(
+		ctx,
+		agentID,
+		turnID,
+		conversationID,
+		taskID,
+		stepID,
+		reasonCode,
+		errcode.NewLifecycleInterruptedPayload(turnID, reasonCode),
+	)
+}
+
+func (s *TurnService) interruptTurnWithOutcomeError(
+	ctx context.Context,
+	agentID string,
+	turnID string,
+	conversationID string,
+	taskID string,
+	stepID string,
+	reasonCode string,
+	outcomeError *model.ErrorPayload,
+) (TurnEvent, error) {
+	if outcomeError == nil {
+		outcomeError = errcode.NewLifecycleInterruptedPayload(turnID, reasonCode)
+	}
 	ownershipCtx := ctx
 	ctx = context.WithoutCancel(ctx)
 	db, err := s.getDB(ctx)
@@ -4065,7 +4153,7 @@ func (s *TurnService) interruptTurnWithEvent(
 			outcomeErrorJSON, err := (protojson.MarshalOptions{
 				UseProtoNames:   true,
 				EmitUnpopulated: true,
-			}).Marshal(errcode.NewLifecycleInterruptedPayload(turnID, reasonCode))
+			}).Marshal(outcomeError)
 			if err != nil {
 				return err
 			}

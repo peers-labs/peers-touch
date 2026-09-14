@@ -23,20 +23,20 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | MCA-J06 is `FUNCTIONAL_PASS`; exact-source AS-F06 and both `BASE-APPROVAL-EXPIRED` locale cells crossed; Browser zh-CN `BASE-INVALID_REFERENCE` corrected resend is the current diagnostic frontier |
+| Current step | MCA-J06 and `BASE-INVALID_REFERENCE` crossed both locale cells; `BASE-INVALID_RESOURCE_REF` is the current product-first DevelopmentWorkItem |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source run `20260914T051145190380Z-d38aa72f1a763c293a9170f83bcf53ad` crossed AS-F06 and both approval-expiry locale cells, then first failed at Browser zh-CN `BASE-INVALID_REFERENCE` while waiting for corrected resend completion; cleanup passed |
-| Current action | Instrument the corrected resend boundary without changing behavior, Gate predicates, or timeout values |
-| Next action | Checkpoint the diagnostic source, rebuild/smoke, deploy exact source, and collect one `pre-fix` Foundation reproduction |
+| Last completed | Exact-source inner run `20260914T061925912621Z-87241fd9e161029c1c784e0dd86109a7` on `f876ad54ff7543b1ed6e3ab928110e1db126b546` crossed AS-F06, AS-F12, approval denial/expiry, and both `BASE-INVALID_REFERENCE` locale cells; cleanup passed |
+| Current action | Implement the accepted `CLIENT_INVALID_RESOURCE_REFERENCE` failure at Desktop Rust, Station, and Desktop Web owner boundaries before Acceptance promotion |
+| Next action | Run focused Rust, Station, and Web checks, checkpoint, deploy exact source, and execute the real invalid-resource failure Journey |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `WORKTREE_IDENTITY_MISMATCH`、undefined PRODUCT/DESIGN semantics、unauthorized destructive reset、secret leak、or exhausted external runtime resources park the affected action；focused implementation failures return to the owner layer |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, new PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | no Goal-level blocker; the first actionable failure is Browser zh-CN `BASE-INVALID_REFERENCE` corrected resend; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
+| Blockers | no Goal-level blocker; Browser English `BASE-INVALID_RESOURCE_REF` is a recoverable implementation and mechanical plan gap; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN` on `d3e6feaa3`；MCA-J06 completed reject→preserve→remove→resend with exactly one `CLEAN_OK` assistant；Foundation run `20260914T051145190380Z-d38aa72f1a763c293a9170f83bcf53ad` on `da6f4bec4` crossed AS-F06 and both approval-expiry locale cells before the Browser zh-CN corrected-resend timeout；diagnostic instrumentation passes Desktop typecheck, 126 focused Foundation/static tests, and diff checks；Foundation remains `PARTIAL / UNPROVEN` |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN` on `d3e6feaa3`；MCA-J06 completed reject→preserve→remove→resend with exactly one `CLEAN_OK` assistant；Foundation inner run `20260914T061925912621Z-87241fd9e161029c1c784e0dd86109a7` on `f876ad54f` crossed AS-F06, AS-F12, approval denial/expiry, and both `BASE-INVALID_REFERENCE` locale cells before failing closed at unimplemented Browser English `BASE-INVALID_RESOURCE_REF`；cleanup passed；Foundation remains `PARTIAL / UNPROVEN` |
 | Last updated | 2026-09-14 |
 
 ---

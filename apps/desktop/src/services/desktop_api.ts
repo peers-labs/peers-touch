@@ -2506,12 +2506,14 @@ export interface AgentErrorResolutionAction {
     | 'openOriginal'
     | 'switchAccount'
     | 'chooseCompatibleModel'
+    | 'chooseResourceAgain'
     | 'removeReference'
     | 'recover';
   cliId?: string;
   providerId?: string;
   existingCommandId?: string;
   resourceKind?: string;
+  resourceRefHash?: string;
   resourceId?: string;
   referenceKind?: string;
   referenceHash?: string;
@@ -2527,6 +2529,10 @@ export const AGENT_CONTEXT_LIMIT_ERROR_TYPE = 'CONTEXT_OVERFLOW';
 export const AGENT_INVALID_REFERENCE_ERROR_TYPE = 'CONTEXT_INVALID_REFERENCE';
 export const AGENT_INVALID_REFERENCE_LOCALE_KEY =
   'agent.errors.contextInvalidReference';
+export const AGENT_INVALID_RESOURCE_REFERENCE_ERROR_TYPE =
+  'CLIENT_INVALID_RESOURCE_REFERENCE';
+export const AGENT_INVALID_RESOURCE_REFERENCE_LOCALE_KEY =
+  'agent.errors.invalidResourceReference';
 export const AGENT_FORBIDDEN_ACTOR_ERROR_TYPE = 'OWNERSHIP_FORBIDDEN_ACTOR';
 export const AGENT_FORBIDDEN_ACTOR_LOCALE_KEY = 'agent.errors.forbiddenActor';
 export const AGENT_INCOMPATIBLE_CAPABILITY_ERROR_TYPE =
@@ -2565,8 +2571,16 @@ export type AgentInvalidReferenceError = AgentTypedErrorPayload & {
   };
 };
 
+export type AgentInvalidResourceReferenceError = AgentTypedErrorPayload & {
+  details: {
+    resource_kind: string;
+    resource_ref_hash: string;
+  };
+};
+
 const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'resource_kind',
+  'resource_ref_hash',
   'resource_id',
   'expected_revision',
   'actual_revision',
@@ -2584,6 +2598,12 @@ const AGENT_INVALID_REFERENCE_KINDS = new Set([
   'diff',
   'staged',
   'git',
+]);
+const AGENT_CLIENT_RESOURCE_KINDS = new Set([
+  'file',
+  'folder',
+  'image',
+  'workspace',
 ]);
 const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/u;
 
@@ -2744,6 +2764,27 @@ export function isAgentInvalidReferenceError(
   );
 }
 
+export function isAgentInvalidResourceReferenceError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentInvalidResourceReferenceError {
+  if (
+    error?.error_type !== AGENT_INVALID_RESOURCE_REFERENCE_ERROR_TYPE
+    || error.locale_key !== AGENT_INVALID_RESOURCE_REFERENCE_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'resource_kind'
+    && detailKeys[1] === 'resource_ref_hash'
+    && AGENT_CLIENT_RESOURCE_KINDS.has(error.details.resource_kind)
+    && SHA256_HEX_PATTERN.test(error.details.resource_ref_hash)
+  );
+}
+
 export function resolveAgentTypedErrorAction(
   error: AgentTypedErrorPayload | null | undefined,
 ): AgentErrorResolutionAction | undefined {
@@ -2769,6 +2810,14 @@ export function resolveAgentTypedErrorAction(
       turnId: error.details.turn_id,
       reasonCode: error.details.reason_code,
       label: 'agent.recovery.recover',
+    };
+  }
+  if (isAgentInvalidResourceReferenceError(error)) {
+    return {
+      type: 'chooseResourceAgain',
+      resourceKind: error.details.resource_kind,
+      resourceRefHash: error.details.resource_ref_hash,
+      label: 'agent.recovery.chooseResourceAgain',
     };
   }
   if (isAgentInvalidReferenceError(error)) {
@@ -6923,6 +6972,7 @@ export function agentTurnStreamErrorFromData(
     const suppliedResolution = data.resolution as AgentErrorResolutionAction;
     if (
       suppliedResolution.type !== 'recover'
+      && suppliedResolution.type !== 'chooseResourceAgain'
       && suppliedResolution.type !== 'removeReference'
     ) {
       error.resolution = suppliedResolution;

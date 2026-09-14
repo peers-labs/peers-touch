@@ -96,6 +96,9 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const consumeComposerReferenceRemoval = useChatStore(
     s => s.consumeComposerReferenceRemoval,
   );
+  const consumeComposerResourceSelection = useChatStore(
+    s => s.consumeComposerResourceSelection,
+  );
   const consumeComposerFocus = useChatStore(s => s.consumeComposerFocus);
   const selectedModel = useAgentStore(s => s.selectedModel);
   const selectedProviderId = useAgentStore(s => s.selectedProviderId);
@@ -239,10 +242,26 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   ]);
 
   useEffect(() => {
-    if (composerFocusNonce === 0) return;
-    consumeComposerFocus();
-    requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [composerFocusNonce, consumeComposerFocus]);
+    // Keep the native picker composer-owned. The direct store subscription
+    // opens it in the originating user-action stack, then restores the draft
+    // focus without retrying or resending the failed Turn.
+    const unsubscribeResourceSelection = useChatStore.subscribe((state) => {
+      const request = state.composerResourceSelection;
+      if (!request || request.sessionKey !== state.currentSessionKey) return;
+      consumeComposerResourceSelection(request.nonce);
+      fileInputRef.current?.click();
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    });
+    if (composerFocusNonce !== 0) {
+      consumeComposerFocus();
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+    return unsubscribeResourceSelection;
+  }, [
+    composerFocusNonce,
+    consumeComposerFocus,
+    consumeComposerResourceSelection,
+  ]);
 
   const resizeTextarea = useCallback(() => {
     const el = textareaRef.current;
@@ -342,6 +361,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     const files = Array.from(event.target.files || []);
     if (files.length > 0) addFiles(files);
     event.target.value = '';
+    requestAnimationFrame(() => textareaRef.current?.focus());
   }, [addFiles]);
 
   const currentModelKey = modelInfo ? modelMenuKey(modelInfo) : currentModelId;
@@ -642,6 +662,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
       <input
         data-pt-agent-attachment-input
+        data-pt-agent-resource-picker
         ref={fileInputRef}
         type="file"
         accept={AGENT_ATTACHMENT_ACCEPT}

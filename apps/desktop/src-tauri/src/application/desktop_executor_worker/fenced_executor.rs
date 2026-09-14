@@ -3,10 +3,12 @@ use super::recovery_signer::sign_terminal_recovery;
 use super::resource_registry::{LocalResource, ResourceRegistry};
 use crate::model::agent::{
     ClientCapabilityReceipt, ClientCapabilityReceiptStatus, ClientCapabilityRequest,
-    ClientExecutionReplayPolicy, ReceiptRecoveryScopePayload,
+    ClientExecutionReplayPolicy, ClientResourceRef, ReceiptRecoveryScopePayload,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
+
+const INVALID_RESOURCE_REFERENCE_ERROR: &str = "CLIENT_INVALID_RESOURCE_REFERENCE";
 
 #[derive(Debug, Clone)]
 pub struct ExecutionLease {
@@ -50,6 +52,17 @@ pub struct ConsumeOutcome {
     pub receipt: ClientCapabilityReceipt,
     pub duplicate: bool,
     pub side_effect_executed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InvalidResourceReference {
+    resource_kind: String,
+    resource_ref_hash: String,
+}
+
+enum ResourceResolutionError {
+    Invalid(InvalidResourceReference),
+    Internal(String),
 }
 
 pub struct FencedExecutor<'a> {
@@ -112,7 +125,6 @@ impl<'a> FencedExecutor<'a> {
         {
             return Err("CLIENT_CAPABILITY_EXECUTION_DEADLINE_EXPIRED".to_string());
         }
-        let resolved_resources = self.resolve_resources(&envelope, now_ms)?;
 
         let prepared = prepared_receipt(&envelope, now_ms);
         self.ledger
@@ -120,6 +132,28 @@ impl<'a> FencedExecutor<'a> {
         self.reporter.submit(&prepared).map_err(|error| {
             format!("submit PREPARED receipt before local side effect: {error}")
         })?;
+
+        let resolved_resources = match self.resolve_resources(&envelope, now_ms) {
+            Ok(resources) => resources,
+            Err(ResourceResolutionError::Invalid(invalid)) => {
+                let bounded_result = invalid.bounded_result()?;
+                return self.commit_and_submit_terminal(
+                    &envelope,
+                    terminal_receipt(
+                        &envelope,
+                        prepared.side_effect_receipt_id,
+                        ClientCapabilityReceiptStatus::Failed,
+                        bounded_result,
+                        INVALID_RESOURCE_REFERENCE_ERROR,
+                        now_ms,
+                    ),
+                    false,
+                    false,
+                    now_ms,
+                );
+            }
+            Err(ResourceResolutionError::Internal(error)) => return Err(error),
+        };
 
         self.execute_after_prepared(&envelope, &resolved_resources, &contract, false, now_ms)
     }
@@ -133,7 +167,9 @@ impl<'a> FencedExecutor<'a> {
         if existing.receipt.status != ClientCapabilityReceiptStatus::Prepared as i32 {
             let outbound = self.receipt_for_submission(envelope, existing.receipt, now_ms)?;
             self.reporter.submit(&outbound)?;
-            self.cleanup_resources(envelope)?;
+            if outbound.error_code != INVALID_RESOURCE_REFERENCE_ERROR {
+                self.cleanup_resources(envelope)?;
+            }
             return Ok(ConsumeOutcome {
                 receipt: outbound,
                 duplicate: true,
@@ -262,7 +298,9 @@ impl<'a> FencedExecutor<'a> {
         let stored = self.ledger.commit_terminal(envelope, &receipt)?.receipt;
         let outbound = self.receipt_for_submission(envelope, stored, now_ms)?;
         self.reporter.submit(&outbound)?;
-        self.cleanup_resources(envelope)?;
+        if outbound.error_code != INVALID_RESOURCE_REFERENCE_ERROR {
+            self.cleanup_resources(envelope)?;
+        }
         Ok(ConsumeOutcome {
             receipt: outbound,
             duplicate,
@@ -375,19 +413,33 @@ impl<'a> FencedExecutor<'a> {
         &self,
         envelope: &ClientCapabilityRequest,
         now_ms: i64,
-    ) -> Result<Vec<LocalResource>, String> {
-        envelope
-            .resource_refs
-            .iter()
-            .map(|reference| {
-                self.resources.resolve(
-                    reference,
-                    &envelope.capability_session_id,
-                    &envelope.capability_id,
-                    now_ms,
-                )
-            })
-            .collect()
+    ) -> Result<Vec<LocalResource>, ResourceResolutionError> {
+        if envelope.resource_refs.is_empty()
+            && required_resource_kind(&envelope.capability_id).is_some()
+        {
+            return Err(ResourceResolutionError::Invalid(
+                invalid_resource_reference(envelope, None),
+            ));
+        }
+
+        let mut resolved = Vec::with_capacity(envelope.resource_refs.len());
+        for reference in &envelope.resource_refs {
+            match self.resources.resolve(
+                reference,
+                &envelope.capability_session_id,
+                &envelope.capability_id,
+                now_ms,
+            ) {
+                Ok(resource) => resolved.push(resource),
+                Err(error) if is_invalid_resource_resolution(&error) => {
+                    return Err(ResourceResolutionError::Invalid(
+                        invalid_resource_reference(envelope, Some(reference)),
+                    ));
+                }
+                Err(error) => return Err(ResourceResolutionError::Internal(error)),
+            }
+        }
+        Ok(resolved)
     }
 
     fn cleanup_resources(&self, envelope: &ClientCapabilityRequest) -> Result<(), String> {
@@ -398,6 +450,62 @@ impl<'a> FencedExecutor<'a> {
             .collect::<Vec<_>>();
         self.resources.delete(&opaque_refs)
     }
+}
+
+impl InvalidResourceReference {
+    fn bounded_result(&self) -> Result<Vec<u8>, String> {
+        serde_json::to_vec(&serde_json::json!({
+            "resource_kind": self.resource_kind,
+            "resource_ref_hash": self.resource_ref_hash,
+        }))
+        .map_err(|error| format!("encode invalid resource reference details: {error}"))
+    }
+}
+
+fn required_resource_kind(capability_id: &str) -> Option<&'static str> {
+    match capability_id {
+        "filesystem.read" => Some("file"),
+        "filesystem.list" => Some("folder"),
+        "shell.execute" | "mcp.invoke" => Some("workspace"),
+        _ => None,
+    }
+}
+
+fn invalid_resource_reference(
+    envelope: &ClientCapabilityRequest,
+    reference: Option<&ClientResourceRef>,
+) -> InvalidResourceReference {
+    let opaque_ref = reference
+        .map(|reference| reference.resource_ref.as_str())
+        .filter(|resource_ref| !resource_ref.is_empty())
+        .map(str::to_owned)
+        .or_else(|| resource_ref_from_arguments(&envelope.bounded_arguments))
+        .unwrap_or_default();
+    InvalidResourceReference {
+        resource_kind: required_resource_kind(&envelope.capability_id)
+            .unwrap_or("resource")
+            .to_string(),
+        resource_ref_hash: hex::encode(Sha256::digest(opaque_ref.as_bytes())),
+    }
+}
+
+fn resource_ref_from_arguments(arguments: &[u8]) -> Option<String> {
+    serde_json::from_slice::<serde_json::Value>(arguments)
+        .ok()?
+        .as_object()?
+        .get("resource_ref")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+fn is_invalid_resource_resolution(error: &str) -> bool {
+    matches!(
+        error,
+        "CLIENT_RESOURCE_REF_NOT_FOUND"
+            | "CLIENT_RESOURCE_REF_EXPIRY_REQUIRED"
+            | "CLIENT_RESOURCE_REF_SCOPE_MISMATCH"
+            | "CLIENT_RESOURCE_REF_TIMESTAMP_INVALID"
+    )
 }
 
 fn validate_replay_policy(
@@ -589,4 +697,396 @@ fn now_unix_ms() -> i64 {
         .unwrap_or_default()
         .as_millis()
         .min(i64::MAX as u128) as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::resource_registry::RegisterResource;
+    use super::*;
+    use crate::model::agent::ReceiptRecoveryCredential;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    const TEST_NOW_MS: i64 = 1_900_000_000_000;
+    const ACTOR_PTID: &str = "ptid:test-actor";
+    const DEVICE_ID: &str = "device-1";
+    const SESSION_ID: &str = "session-1";
+    const CAPABILITY_ID: &str = "filesystem.read";
+
+    #[derive(Default)]
+    struct RecordingExecutor {
+        execution_count: AtomicUsize,
+    }
+
+    impl CapabilityExecutor for RecordingExecutor {
+        fn contract(&self, capability_id: &str) -> Option<CapabilityContract> {
+            (capability_id == CAPABILITY_ID).then(|| CapabilityContract {
+                capability_id: CAPABILITY_ID.to_string(),
+                schema_version: "1".to_string(),
+                max_argument_bytes: 1024,
+                max_result_bytes: 1024,
+                supports_external_idempotency: false,
+            })
+        }
+
+        fn execute(
+            &self,
+            _request: &ClientCapabilityRequest,
+            _resources: &[LocalResource],
+            _external_idempotency_key: Option<&str>,
+            _record_side_effect_start: &mut dyn FnMut() -> Result<(), String>,
+        ) -> Result<Vec<u8>, String> {
+            self.execution_count.fetch_add(1, Ordering::SeqCst);
+            Ok(Vec::new())
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingReporter {
+        receipts: Mutex<Vec<ClientCapabilityReceipt>>,
+    }
+
+    impl RecordingReporter {
+        fn receipts(&self) -> Vec<ClientCapabilityReceipt> {
+            self.receipts.lock().unwrap().clone()
+        }
+    }
+
+    impl ReceiptReporter for RecordingReporter {
+        fn submit(&self, receipt: &ClientCapabilityReceipt) -> Result<(), String> {
+            self.receipts.lock().unwrap().push(receipt.clone());
+            Ok(())
+        }
+    }
+
+    struct TestStorage {
+        root: PathBuf,
+    }
+
+    impl TestStorage {
+        fn new() -> Self {
+            Self {
+                root: std::env::temp_dir()
+                    .join(format!("peers-fenced-executor-{}", ulid::Ulid::new())),
+            }
+        }
+
+        fn path(&self, name: &str) -> PathBuf {
+            self.root.join(name)
+        }
+    }
+
+    impl Drop for TestStorage {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn lease() -> ExecutionLease {
+        ExecutionLease {
+            station_url: "https://station.test".to_string(),
+            actor_ptid: ACTOR_PTID.to_string(),
+            device_id: DEVICE_ID.to_string(),
+            capability_session_id: SESSION_ID.to_string(),
+            executor_lease_id: "lease-1".to_string(),
+            lease_revision: 1,
+            expires_at_ms: TEST_NOW_MS + 60_000,
+            revoked: false,
+        }
+    }
+
+    fn resource_reference(resource_ref: &str) -> ClientResourceRef {
+        ClientResourceRef {
+            resource_ref: resource_ref.to_string(),
+            ptid: ACTOR_PTID.to_string(),
+            device_id: DEVICE_ID.to_string(),
+            capability_session_id: SESSION_ID.to_string(),
+            capability_id: CAPABILITY_ID.to_string(),
+            expires_at: Some(timestamp_from_ms(TEST_NOW_MS + 30_000)),
+            permission_grant_id: "grant-1".to_string(),
+            integrity_hash: "sha256:content".to_string(),
+        }
+    }
+
+    fn envelope(
+        tool_call_id: &str,
+        resource_refs: Vec<ClientResourceRef>,
+        bounded_arguments: &[u8],
+    ) -> ClientCapabilityRequest {
+        let execution_deadline = timestamp_from_ms(TEST_NOW_MS + 10_000);
+        let reconciliation_deadline = timestamp_from_ms(TEST_NOW_MS + 20_000);
+        let mut envelope = ClientCapabilityRequest {
+            request_id: format!("request-{tool_call_id}"),
+            turn_id: "turn-1".to_string(),
+            tool_call_id: tool_call_id.to_string(),
+            capability_session_id: SESSION_ID.to_string(),
+            capability_id: CAPABILITY_ID.to_string(),
+            schema_version: "1".to_string(),
+            resource_refs,
+            bounded_arguments: bounded_arguments.to_vec(),
+            approval_id: "approval-1".to_string(),
+            sequence: 1,
+            attempt_id: "attempt-1".to_string(),
+            target_device_id: DEVICE_ID.to_string(),
+            decision_id: "decision-1".to_string(),
+            decision_revision: 1,
+            execution_claim_id: "claim-1".to_string(),
+            executor_lease_id: "lease-1".to_string(),
+            fencing_token: 1,
+            dispatch_sequence: 1,
+            payload_hash: String::new(),
+            execution_deadline: Some(execution_deadline.clone()),
+            tool_batch_id: "batch-1".to_string(),
+            replay_policy: ClientExecutionReplayPolicy::NoReplayAfterPrepared as i32,
+            external_idempotency_key: String::new(),
+            recovery_credential: None,
+            reconciliation_deadline: Some(reconciliation_deadline.clone()),
+            capability_lease_revision: 1,
+        };
+        envelope.payload_hash = hex::encode(Sha256::digest(envelope.encode_to_vec()));
+
+        let mut credential = ReceiptRecoveryCredential {
+            credential_id: "credential-1".to_string(),
+            device_signing_key_id: "signing-key-1".to_string(),
+            nonce: vec![7; 32],
+            scope_hash: String::new(),
+            expires_at: Some(reconciliation_deadline.clone()),
+        };
+        let scope = ReceiptRecoveryScopePayload {
+            actor_ptid: ACTOR_PTID.to_string(),
+            device_id: DEVICE_ID.to_string(),
+            request_id: envelope.request_id.clone(),
+            tool_call_id: envelope.tool_call_id.clone(),
+            execution_claim_id: envelope.execution_claim_id.clone(),
+            capability_lease_revision: envelope.capability_lease_revision,
+            fencing_token: envelope.fencing_token,
+            payload_hash: envelope.payload_hash.clone(),
+            replay_policy: envelope.replay_policy,
+            execution_deadline: Some(execution_deadline),
+            reconciliation_deadline: Some(reconciliation_deadline),
+            credential_id: credential.credential_id.clone(),
+            device_signing_key_id: credential.device_signing_key_id.clone(),
+            nonce: credential.nonce.clone(),
+        };
+        credential.scope_hash = hex::encode(Sha256::digest(scope.encode_to_vec()));
+        envelope.recovery_credential = Some(credential);
+        envelope
+    }
+
+    fn open_stores(storage: &TestStorage) -> (ReceiptLedger, ResourceRegistry) {
+        (
+            ReceiptLedger::open_test(&storage.path("receipts.sqlite")).unwrap(),
+            ResourceRegistry::open_test(&storage.path("resources.sqlite"), ACTOR_PTID, DEVICE_ID)
+                .unwrap(),
+        )
+    }
+
+    fn executor<'a>(
+        lease: &'a ExecutionLease,
+        ledger: &'a ReceiptLedger,
+        resources: &'a ResourceRegistry,
+        signing_key: &'a ed25519_dalek::SigningKey,
+        capability_executor: &'a RecordingExecutor,
+        reporter: &'a RecordingReporter,
+    ) -> FencedExecutor<'a> {
+        FencedExecutor::new(
+            lease,
+            ledger,
+            resources,
+            "signing-key-1",
+            signing_key,
+            capability_executor,
+            reporter,
+        )
+    }
+
+    fn assert_invalid_details(
+        receipt: &ClientCapabilityReceipt,
+        expected_ref: &str,
+    ) -> serde_json::Value {
+        assert_eq!(receipt.status, ClientCapabilityReceiptStatus::Failed as i32);
+        assert_eq!(receipt.error_code, INVALID_RESOURCE_REFERENCE_ERROR);
+        let details: serde_json::Value = serde_json::from_slice(&receipt.bounded_result).unwrap();
+        let object = details.as_object().unwrap();
+        assert_eq!(object.len(), 2);
+        assert_eq!(object["resource_kind"], "file");
+        assert_eq!(
+            object["resource_ref_hash"],
+            hex::encode(Sha256::digest(expected_ref.as_bytes()))
+        );
+        details
+    }
+
+    #[test]
+    fn invalid_resource_is_prepared_then_failed_without_executor_call() {
+        let storage = TestStorage::new();
+        let (ledger, resources) = open_stores(&storage);
+        let lease = lease();
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[3; 32]);
+        let capability_executor = RecordingExecutor::default();
+        let reporter = RecordingReporter::default();
+        let fenced = executor(
+            &lease,
+            &ledger,
+            &resources,
+            &signing_key,
+            &capability_executor,
+            &reporter,
+        );
+        let request = envelope(
+            "missing-resource",
+            vec![resource_reference("opaque-missing")],
+            br#"{"path":"safe.txt"}"#,
+        );
+
+        let outcome = fenced.consume_at(request.clone(), TEST_NOW_MS).unwrap();
+
+        assert!(!outcome.duplicate);
+        assert!(!outcome.side_effect_executed);
+        assert_eq!(
+            capability_executor.execution_count.load(Ordering::SeqCst),
+            0
+        );
+        let details = assert_invalid_details(&outcome.receipt, "opaque-missing");
+        assert!(!details.to_string().contains("opaque-missing"));
+        let submitted = reporter.receipts();
+        assert_eq!(submitted.len(), 2);
+        assert_eq!(
+            submitted[0].status,
+            ClientCapabilityReceiptStatus::Prepared as i32
+        );
+        assert_eq!(submitted[1], outcome.receipt);
+        let persisted = ledger
+            .load(&request.tool_call_id, request.fencing_token)
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.receipt, outcome.receipt);
+    }
+
+    #[test]
+    fn argument_only_resource_ref_fails_safely_without_raw_path_output() {
+        let storage = TestStorage::new();
+        let (ledger, resources) = open_stores(&storage);
+        let lease = lease();
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[4; 32]);
+        let capability_executor = RecordingExecutor::default();
+        let reporter = RecordingReporter::default();
+        let fenced = executor(
+            &lease,
+            &ledger,
+            &resources,
+            &signing_key,
+            &capability_executor,
+            &reporter,
+        );
+        let request = envelope(
+            "argument-resource",
+            Vec::new(),
+            br#"{"resource_ref":"argument-only-ref","path":"/private/alice/secret.txt"}"#,
+        );
+
+        let outcome = fenced.consume_at(request, TEST_NOW_MS).unwrap();
+
+        assert!(!outcome.side_effect_executed);
+        assert_eq!(
+            capability_executor.execution_count.load(Ordering::SeqCst),
+            0
+        );
+        assert_invalid_details(&outcome.receipt, "argument-only-ref");
+        let encoded = String::from_utf8(outcome.receipt.bounded_result).unwrap();
+        assert!(!encoded.contains("argument-only-ref"));
+        assert!(!encoded.contains("/private/alice"));
+    }
+
+    #[test]
+    fn expired_resource_ref_produces_the_same_typed_terminal_failure() {
+        let storage = TestStorage::new();
+        let (ledger, resources) = open_stores(&storage);
+        let lease = lease();
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[5; 32]);
+        let capability_executor = RecordingExecutor::default();
+        let reporter = RecordingReporter::default();
+        let fenced = executor(
+            &lease,
+            &ledger,
+            &resources,
+            &signing_key,
+            &capability_executor,
+            &reporter,
+        );
+        let mut expired = resource_reference("expired-ref");
+        expired.expires_at = Some(timestamp_from_ms(TEST_NOW_MS - 1));
+        let request = envelope("expired-resource", vec![expired], br#"{}"#);
+
+        let outcome = fenced.consume_at(request, TEST_NOW_MS).unwrap();
+
+        assert!(!outcome.side_effect_executed);
+        assert_eq!(
+            capability_executor.execution_count.load(Ordering::SeqCst),
+            0
+        );
+        assert_invalid_details(&outcome.receipt, "expired-ref");
+    }
+
+    #[test]
+    fn scope_mismatch_replays_terminal_receipt_without_deleting_valid_entry() {
+        let storage = TestStorage::new();
+        let (ledger, resources) = open_stores(&storage);
+        let valid_reference = resource_reference("scope-bound-ref");
+        resources
+            .register(RegisterResource {
+                opaque_ref: &valid_reference.resource_ref,
+                capability_session_id: &valid_reference.capability_session_id,
+                capability_id: &valid_reference.capability_id,
+                permission_grant_id: &valid_reference.permission_grant_id,
+                integrity_hash: &valid_reference.integrity_hash,
+                locator: "/private/alice/workspace",
+                expires_at_ms: TEST_NOW_MS + 30_000,
+            })
+            .unwrap();
+        let mut mismatched_reference = valid_reference.clone();
+        mismatched_reference.permission_grant_id = "different-grant".to_string();
+        let request = envelope(
+            "scope-mismatch",
+            vec![mismatched_reference],
+            br#"{"path":"secret.txt"}"#,
+        );
+        let lease = lease();
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[6; 32]);
+        let capability_executor = RecordingExecutor::default();
+        let reporter = RecordingReporter::default();
+        let fenced = executor(
+            &lease,
+            &ledger,
+            &resources,
+            &signing_key,
+            &capability_executor,
+            &reporter,
+        );
+
+        let first = fenced.consume_at(request.clone(), TEST_NOW_MS).unwrap();
+        let replay = fenced.consume_at(request, TEST_NOW_MS + 1).unwrap();
+
+        assert!(!first.duplicate);
+        assert!(replay.duplicate);
+        assert!(!first.side_effect_executed);
+        assert!(!replay.side_effect_executed);
+        assert_eq!(first.receipt, replay.receipt);
+        assert_eq!(ledger.list().unwrap().len(), 1);
+        assert_eq!(
+            capability_executor.execution_count.load(Ordering::SeqCst),
+            0
+        );
+        let submitted = reporter.receipts();
+        assert_eq!(submitted.len(), 3);
+        assert_eq!(submitted[1], submitted[2]);
+        assert_eq!(
+            resources
+                .resolve(&valid_reference, SESSION_ID, CAPABILITY_ID, TEST_NOW_MS + 1,)
+                .unwrap()
+                .locator,
+            "/private/alice/workspace"
+        );
+    }
 }

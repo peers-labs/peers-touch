@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; MCA-J06 is `FUNCTIONAL_PASS`; checkpoint `1c238413df7a68b86ba081c30be518463f0c0a97` fixes same-process failed-recovery retention, while diagnostic checkpoint `da6f4bec4b1e76e7f25c2d7814e76e5476b80ba8` makes approval-expiry cleanup probes BigInt-safe; exact-source run `20260914T051145190380Z-d38aa72f1a763c293a9170f83bcf53ad` crossed AS-F06 and both `BASE-APPROVAL-EXPIRED` locale cells, then failed first at Browser zh-CN `BASE-INVALID_REFERENCE` while waiting for corrected resend completion; debug session `foundation-invalid-reference-resend` is tracing click dispatch, stale operation fencing, Turn admission/settlement, identity matching, and Station readback without changing Gate predicates or timeouts | W8a |
+| G-F Complete Foundation Gate | partial / unproven; MCA-J06 and `BASE-INVALID_REFERENCE` are source-matched through both locales; diagnostic checkpoint `f876ad54ff7543b1ed6e3ab928110e1db126b546` preserved the resend instrumentation and exact-source run `20260914T061925912621Z-87241fd9e161029c1c784e0dd86109a7` crossed AS-F06, AS-F12, approval denial/expiry, and `BASE-INVALID_REFERENCE` before failing closed at Browser English `BASE-INVALID_RESOURCE_REF` because its direct-runtime group is not implemented; debug session `foundation-invalid-reference-resend` remains open pending explicit cleanup confirmation | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1451,6 +1451,73 @@ and zero local-path leakage.
     Foundation/static suite passes `126/126`, and `git diff --check` passes.
     The next action is one exact-source `pre-fix` reproduction; only its
     runtime evidence may select the owner-layer correction.
+  - Diagnostic checkpoint
+    `f876ad54ff7543b1ed6e3ab928110e1db126b546` and exact-source inner run
+    `20260914T061925912621Z-87241fd9e161029c1c784e0dd86109a7`
+    (outer Provisioner
+    `20260914T061908499064Z-765662cec1d16b3e600a5b08befb3463`)
+    crossed AS-F06, AS-F12, approval denial, both approval-expiry locales, and
+    both `BASE-INVALID_REFERENCE` locales without reproducing the corrected
+    resend timeout. The first failure is now Browser English
+    `BASE-INVALID_RESOURCE_REF`, which fails closed because its direct-runtime
+    group is not implemented. Inner and outer cleanup completed cleanly.
+    Foundation remains `PARTIAL / UNPROVEN`.
+
+#### G-FE1 DevelopmentWorkItem: Invalid Client Resource Reference
+
+- **ID**: `G-FE1-INVALID-RESOURCE-REF`.
+- **Status**: `IMPLEMENTING`; product failure path, focused checks, exact-source
+  functional evidence, and Foundation promotion are pending.
+- **Product Journeys**: `MCA-J05 Use A Governed Tool` and `MCA-J06 Work With
+  Files And Images`; this work implements only the accepted invalid-resource
+  failure and explicit recovery trigger.
+- **Accepted behavior**: an approved client-owned ToolCall whose opaque local
+  resource reference is missing, expired, malformed, or outside the committed
+  actor/device/session/capability/grant/integrity scope settles as
+  `CLIENT_INVALID_RESOURCE_REFERENCE /
+  agent.errors.invalidResourceReference`, `retryable=false`, `terminal=true`,
+  with only `resource_kind,resource_ref_hash`.
+- **Authority and ordering**: Station remains the decision, dispatch, result,
+  Turn, and continuation authority. Desktop Rust validates the complete
+  envelope, durably records and reports `PREPARED`, resolves only opaque
+  registry metadata, and on resolution failure durably records and reports one
+  `FAILED` receipt before any resource-content read or local side effect.
+  Station persists that exact typed failure, blocks automatic continuation,
+  and projects it through the ordinary Turn event stream. Desktop Web renders
+  the projection and exposes localized `Choose resource again`; it never
+  fabricates or reclassifies the failure.
+- **Recovery boundary**: invoking `Choose resource again` opens the existing
+  user-owned resource selection surface and requires an explicit resend. It
+  does not silently retry, restore raw-path authority, or claim that positive
+  `ClientResourceRef` registration/rebind is complete. Positive local-resource
+  execution remains owned by `AS-F4-07`.
+- **Platform boundary**: Desktop is the selected local executor. Browser
+  advertises no local capability and never resolves the opaque reference; its
+  required cell proves the same Station-authored typed outcome and localized
+  recovery projection from the Browser receiver.
+- **Negative guarantees**: zero resource-content read, zero provider
+  continuation, zero local side effect, no second terminal result, replay
+  equality, and complete cleanup.
+- **Focused checks**: Rust PREPARED-before-resolution and terminal replay tests;
+  Station receipt-to-Turn typed-error persistence and no-continuation tests;
+  Desktop typed payload/action and composer selection tests. Broad Foundation
+  execution remains forbidden until the exact-source product failure Journey
+  reaches `FUNCTIONAL_PASS`.
+- **Acceptance promotion**: after `FUNCTIONAL_PASS`, add the existing
+  `BASE-INVALID_RESOURCE_REF` assertion/evaluator/Harness coverage for Desktop
+  and Browser in both locales without changing the 419-cell matrix, timeout,
+  evidence roles, or Gate strength.
+- **Scope boundary**: no positive cross-session resource rebind, Home, MCP,
+  Connector, Evaluation, W8b, version, provider, matrix, timeout, or
+  destructive Fixture change.
+- **Concurrency decision**: `hybrid`. The contract above is frozen first.
+  Rust owns `desktop_executor_worker` receipt/resource behavior; Station owns
+  typed terminal projection; Desktop Web owns typed payload and explicit
+  recovery interaction. The integrator owns this plan, shared/generated
+  contracts, Acceptance promotion, checkpoints, deployment, runtime Journey,
+  and final Gates. Because the current wire contract already carries a string
+  receipt error code and bounded result bytes, no Proto/generated change is
+  required.
 
 #### G-FE1 Concurrency Decision
 

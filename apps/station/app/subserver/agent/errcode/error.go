@@ -61,6 +61,10 @@ const (
 	AgentProviderCredentialMissingLocaleKey     = "agent.errors.providerCredentialMissing"
 )
 
+const AgentClientInvalidResourceReference Code = "CLIENT_INVALID_RESOURCE_REFERENCE"
+
+const AgentClientInvalidResourceReferenceLocaleKey = "agent.errors.invalidResourceReference"
+
 const AgentActiveMutationConflict Code = "ADMISSION_ACTIVE_MUTATION_CONFLICT"
 
 const AgentActiveMutationConflictLocaleKey = "agent.errors.activeMutationConflict"
@@ -200,6 +204,20 @@ func NewClientExecutorUnavailablePayload(targetDeviceID, capabilityID string) *m
 		Details: map[string]string{
 			"target_device_id": targetDeviceID,
 			"capability_id":    capabilityID,
+		},
+	}
+}
+
+func NewClientInvalidResourceReferencePayload(resourceKind, resourceRefHash string) *model.ErrorPayload {
+	return &model.ErrorPayload{
+		Error:     AgentClientInvalidResourceReferenceLocaleKey,
+		ErrorType: string(AgentClientInvalidResourceReference),
+		LocaleKey: AgentClientInvalidResourceReferenceLocaleKey,
+		Retryable: false,
+		Terminal:  true,
+		Details: map[string]string{
+			"resource_kind":     resourceKind,
+			"resource_ref_hash": resourceRefHash,
 		},
 	}
 }

@@ -3031,6 +3031,167 @@ func TestTurnServiceSettlesBlockedToolBatchForCurrentAttempt(t *testing.T) {
 	}
 }
 
+func TestTurnServicePreservesInvalidResourceFailureFromBlockedToolBatch(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	now := fixture.now
+	resourceRefHash := strings.Repeat("a", sha256.Size*2)
+	conversation := &persistence.Conversation{
+		ID:        "conversation-invalid-resource",
+		AgentID:   "agent-1",
+		ActorPTID: fixture.actorID,
+		Title:     "Invalid resource",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	turn := &persistence.AgentTurn{
+		ID:             "turn-invalid-resource",
+		ConversationID: conversation.ID,
+		AgentID:        "agent-1",
+		Status:         string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:      now,
+	}
+	attempt := &persistence.TurnAttempt{
+		ID:           "attempt-invalid-resource",
+		TurnID:       turn.ID,
+		AttemptIndex: 1,
+		Status:       string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:    now,
+	}
+	batch := &persistence.ToolBatch{
+		ID:             "batch-invalid-resource",
+		ActorID:        fixture.actorID,
+		TurnID:         turn.ID,
+		AttemptID:      attempt.ID,
+		ConversationID: conversation.ID,
+		AgentID:        "agent-1",
+		Provider:       "provider-1",
+		Model:          "model-1",
+		SystemPrompt:   "system",
+		Iteration:      1,
+		Status:         persistence.ToolBatchStatusBlocked,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	assistantContent := ""
+	assistant := &persistence.AgentMessage{
+		ID:             "message-invalid-resource",
+		ConversationID: conversation.ID,
+		TurnID:         &turn.ID,
+		Role:           string(domain.MessageRoleAssistant),
+		Status:         "pending",
+		Content:        &assistantContent,
+		Seq:            1,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	result := &persistence.ToolResult{
+		ID:          "result-invalid-resource",
+		ToolCallID:  "tool-call-invalid-resource",
+		MessageID:   "tool-message-invalid-resource",
+		ToolBatchID: batch.ID,
+		TurnID:      turn.ID,
+		AttemptID:   attempt.ID,
+		Status:      persistence.ToolReceiptStatusFailed,
+		PayloadHash: strings.Repeat("b", sha256.Size*2),
+		BoundedResult: []byte(fmt.Sprintf(
+			`{"resource_kind":"file","resource_ref_hash":"%s"}`,
+			resourceRefHash,
+		)),
+		ErrorCode: string(errcode.AgentClientInvalidResourceReference),
+		CreatedAt: now,
+	}
+	for label, value := range map[string]interface{}{
+		"conversation": conversation,
+		"turn":         turn,
+		"attempt":      attempt,
+		"batch":        batch,
+		"assistant":    assistant,
+		"tool result":  result,
+	} {
+		if err := fixture.db.Create(value).Error; err != nil {
+			t.Fatalf("seed %s: %v", label, err)
+		}
+	}
+
+	service := &TurnService{}
+	if err := service.settleBlockedToolBatches(context.Background()); err != nil {
+		t.Fatalf("settle invalid-resource ToolBatch: %v", err)
+	}
+
+	var reloadedAttempt persistence.TurnAttempt
+	if err := fixture.db.First(&reloadedAttempt, "id = ?", attempt.ID).Error; err != nil {
+		t.Fatalf("reload invalid-resource attempt: %v", err)
+	}
+	if reloadedAttempt.Status != string(domain.TurnStatusInterrupted) ||
+		reloadedAttempt.ErrorCode != string(errcode.AgentClientInvalidResourceReference) ||
+		reloadedAttempt.EndedAt == nil {
+		t.Fatalf("invalid-resource attempt terminal state = %+v", reloadedAttempt)
+	}
+
+	var reloadedMessage persistence.AgentMessage
+	if err := fixture.db.First(&reloadedMessage, "id = ?", assistant.ID).Error; err != nil {
+		t.Fatalf("reload invalid-resource assistant message: %v", err)
+	}
+	var messageError model.ErrorPayload
+	if err := json.Unmarshal(reloadedMessage.ErrorJSON, &messageError); err != nil {
+		t.Fatalf("decode invalid-resource assistant error: %v", err)
+	}
+	if messageError.GetErrorType() != string(errcode.AgentClientInvalidResourceReference) ||
+		messageError.GetLocaleKey() != errcode.AgentClientInvalidResourceReferenceLocaleKey ||
+		messageError.GetRetryable() ||
+		!messageError.GetTerminal() ||
+		len(messageError.GetDetails()) != 2 ||
+		messageError.GetDetails()["resource_kind"] != "file" ||
+		messageError.GetDetails()["resource_ref_hash"] != resourceRefHash {
+		t.Fatalf("invalid-resource assistant error = %+v", &messageError)
+	}
+
+	var event persistence.TurnEvent
+	if err := fixture.db.First(
+		&event,
+		"turn_id = ? AND attempt_id = ? AND event_type = ?",
+		turn.ID,
+		attempt.ID,
+		"error",
+	).Error; err != nil {
+		t.Fatalf("load invalid-resource terminal event: %v", err)
+	}
+	var eventPayload TurnEvent
+	if err := json.Unmarshal([]byte(event.Payload), &eventPayload); err != nil {
+		t.Fatalf("decode invalid-resource terminal event: %v", err)
+	}
+	var eventError model.ErrorPayload
+	if err := json.Unmarshal(eventPayload.OutcomeError, &eventError); err != nil {
+		t.Fatalf("decode invalid-resource event outcome: %v", err)
+	}
+	if !proto.Equal(&messageError, &eventError) {
+		t.Fatalf("event outcome differs from assistant error: message=%+v event=%+v", &messageError, &eventError)
+	}
+
+	var continuationCount int64
+	if err := fixture.db.Model(&persistence.ToolContinuation{}).
+		Where("tool_batch_id = ?", batch.ID).
+		Count(&continuationCount).Error; err != nil {
+		t.Fatalf("count invalid-resource continuations: %v", err)
+	}
+	if continuationCount != 0 {
+		t.Fatalf("invalid-resource failure created %d continuations", continuationCount)
+	}
+	if err := service.settleBlockedToolBatches(context.Background()); err != nil {
+		t.Fatalf("replay invalid-resource ToolBatch settlement: %v", err)
+	}
+	var eventCount int64
+	if err := fixture.db.Model(&persistence.TurnEvent{}).
+		Where("turn_id = ? AND event_type = ?", turn.ID, "error").
+		Count(&eventCount).Error; err != nil {
+		t.Fatalf("count invalid-resource terminal events: %v", err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("invalid-resource settlement emitted %d terminal events", eventCount)
+	}
+}
+
 func TestTurnServiceIgnoresBlockedToolBatchFromPreviousAttempt(t *testing.T) {
 	fixture := newToolDispatchFixture(t)
 	now := fixture.now

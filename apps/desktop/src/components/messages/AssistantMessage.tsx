@@ -362,6 +362,9 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const requestComposerReferenceRemoval = useChatStore(
     s => s.requestComposerReferenceRemoval,
   );
+  const requestComposerResourceSelection = useChatStore(
+    s => s.requestComposerResourceSelection,
+  );
   const sendMessage = useChatStore(s => s.sendMessage);
   const translateMessage = useChatStore(s => s.translateMessage);
   const openThread = usePortalStore(s => s.openThread);
@@ -400,6 +403,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           ? 'choose-compatible-model'
           : message.resolution?.type === 'recover'
             ? 'recover'
+            : message.resolution?.type === 'chooseResourceAgain'
+              ? 'choose-resource-again'
             : message.resolution?.type === 'removeReference'
               ? 'remove-reference'
             : 'true';
@@ -498,6 +503,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-terminal-status={message.terminalStatus}
       data-pt-agent-error-type={message.typedError?.error_type}
       data-pt-agent-error-resource-kind={message.typedError?.details.resource_kind}
+      data-pt-agent-error-resource-ref-hash={message.typedError?.details.resource_ref_hash}
       data-pt-agent-error-resource-id={message.typedError?.details.resource_id}
       data-pt-agent-error-capability-id={message.typedError?.details.capability_id}
       data-pt-agent-error-turn-id={message.typedError?.details.turn_id}
@@ -755,6 +761,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                       message.resolution.type !== 'openOriginal'
                       && message.resolution.type !== 'switchAccount'
                       && message.resolution.type !== 'chooseCompatibleModel'
+                      && message.resolution.type !== 'chooseResourceAgain'
                       && message.resolution.type !== 'recover'
                     }
                     icon={
@@ -767,6 +774,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                             ? <LogOut size={14} />
                             : message.resolution.type === 'recover'
                               ? <RotateCcw size={14} />
+                              : message.resolution.type === 'chooseResourceAgain'
+                                ? <FileText size={14} />
                               : message.resolution.type === 'removeReference'
                                 ? <X size={14} />
                                 : undefined
@@ -798,6 +807,13 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         }
                         if (message.resolution!.type === 'recover') {
                           await handleRetry();
+                          return;
+                        }
+                        if (message.resolution!.type === 'chooseResourceAgain') {
+                          requestComposerResourceSelection(
+                            message.resolution!.resourceKind ?? '',
+                            message.resolution!.resourceRefHash ?? '',
+                          );
                           return;
                         }
                         if (message.resolution!.type === 'removeReference') {
