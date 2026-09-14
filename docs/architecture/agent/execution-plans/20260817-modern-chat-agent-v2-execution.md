@@ -1466,8 +1466,8 @@ and zero local-path leakage.
 #### G-FE1 DevelopmentWorkItem: Invalid Client Resource Reference
 
 - **ID**: `G-FE1-INVALID-RESOURCE-REF`.
-- **Status**: `FOCUSED_PASS`; exact-source functional evidence and Foundation
-  promotion are pending.
+- **Status**: `FUNCTIONAL_PASS`; Foundation promotion implementation is
+  `FOCUSED_PASS`, while its runtime proof remains `UNPROVEN`.
 - **Product Journeys**: `MCA-J05 Use A Governed Tool` and `MCA-J06 Work With
   Files And Images`; this work implements only the accepted invalid-resource
   failure and explicit recovery trigger.
@@ -1500,9 +1500,7 @@ and zero local-path leakage.
   equality, and complete cleanup.
 - **Focused checks**: Rust PREPARED-before-resolution and terminal replay tests;
   Station receipt-to-Turn typed-error persistence and no-continuation tests;
-  Desktop typed payload/action and composer selection tests. Broad Foundation
-  execution remains forbidden until the exact-source product failure Journey
-  reaches `FUNCTIONAL_PASS`.
+  Desktop typed payload/action and composer selection tests.
 - **Acceptance promotion**: after `FUNCTIONAL_PASS`, add the existing
   `BASE-INVALID_RESOURCE_REF` assertion/evaluator/Harness coverage for Desktop
   and Browser in both locales without changing the 419-cell matrix, timeout,
@@ -1552,7 +1550,39 @@ and zero local-path leakage.
     now persists the terminal typed error onto either active assistant state,
     and the existing invalid-resource settlement regression uses the real
     `completed` state. Focused Station test, vet, style, and diff checks pass;
-    exact-source deployment and Journey reproof remain pending.
+    exact-source deployment and Journey reproof remained pending at that
+    checkpoint.
+  - Exact-source native Development execution on
+    `148707e4868073303a68d4e80d9f3cc0e696ffd9` completed the real
+    `local_file_read` approval and invalid-resource failure Journey in
+    71.903 seconds. It proved the exact typed payload and bounded details,
+    localized `Choose resource again`, one picker activation, zero resource
+    read, zero local side effect, zero provider continuation, one terminal
+    result, replay equality, no automatic resend, binding restoration,
+    conversation deletion, and complete process/port/storage cleanup.
+    `G-FE1-INVALID-RESOURCE-REF` is therefore `FUNCTIONAL_PASS`; the four
+    Desktop/Browser by English/Simplified-Chinese Foundation cells remain
+    `UNPROVEN` until the same Journey is promoted and executed formally.
+  - Acceptance `COMPLETE` inventory retains the existing `agent` Domain,
+    `agent-v2-kernel-foundation` Feature/Capability, Registry rule,
+    `agent-v2-kernel-foundation-e2e` Gate, 3600-second timeout, and exact
+    419-tuple matrix digest. The four target cells are Desktop/Browser by
+    English/Simplified-Chinese; all remain `UNPROVEN`.
+  - Foundation promotion reuses
+    `runDevelopmentInvalidResourceReferenceScenario`; Browser selects the
+    opaque Desktop capability-session identity from Station and never gains
+    local execution authority. The Native client validates that supplied
+    identity and contributes only hash-bound execution/side-effect counters.
+    Keyed cleanup covers successful, failed, and lost-response paths.
+  - The independent Python oracle recomputes the typed payload, bounded
+    details, event/payload/stream/conversation hashes, Native executor
+    provenance, localized recovery, picker activation, zero resource read,
+    zero local side effect, zero provider continuation, one terminal result,
+    replay equality, no automatic resend, and cleanup.
+  - Desktop typecheck passes; Desktop unit tests pass `701/701` with one
+    existing skip; focused Agent/Foundation tests pass `362/362`;
+    Acceptance planning still selects the unchanged 419-cell Foundation Gate,
+    and `git diff --check` passes. Formal runtime proof remains `UNPROVEN`.
 
 #### G-FE1 Concurrency Decision
 

@@ -486,6 +486,234 @@ class FoundationExecutorUnavailableCoordinator:
                 )
 
 
+class FoundationInvalidResourceReferenceCoordinator:
+    def __init__(self, runtime_pair: "FoundationRuntimePair") -> None:
+        self._runtime_pair = runtime_pair
+
+    @staticmethod
+    def _receiver(
+        runtime_pair: "FoundationRuntimePair",
+        platform: str,
+    ) -> Any:
+        if platform == "desktop_app":
+            return runtime_pair.native
+        if platform == "browser":
+            return runtime_pair.browser
+        raise ScenarioRunnerError(
+            f"BASE-INVALID_RESOURCE_REF has no receiver for {platform}"
+        )
+
+    @staticmethod
+    def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
+        return "|".join(
+            (
+                probe_input.platform,
+                probe_input.locale,
+                probe_input.cell,
+                probe_input.sample_id,
+            )
+        )
+
+    @staticmethod
+    def _counter(value: Mapping[str, Any], key: str) -> int:
+        candidate = value.get(key)
+        if isinstance(candidate, bool) or not isinstance(candidate, int):
+            raise ScenarioRunnerError(
+                f"BASE-INVALID_RESOURCE_REF {key} is invalid"
+            )
+        if candidate < 0:
+            raise ScenarioRunnerError(
+                f"BASE-INVALID_RESOURCE_REF {key} is negative"
+            )
+        return candidate
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        receiver = self._receiver(self._runtime_pair, probe_input.platform)
+        executor = self._runtime_pair.native
+        scenario_key = self._scenario_key(probe_input)
+        scenario: Mapping[str, Any] | None = None
+        result: Mapping[str, Any] | None = None
+        primary_error: BaseException | None = None
+        try:
+            locale = receiver.harness(
+                "setFoundationLocale",
+                {"locale": probe_input.locale},
+                timeout=30,
+            )
+            if (
+                not isinstance(locale, Mapping)
+                or locale.get("locale") != probe_input.locale
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF locale did not converge"
+                )
+            target = receiver.harness(
+                "resolveFoundationInvalidResourceExecutorTarget",
+                timeout=60,
+            )
+            if not isinstance(target, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF executor target is invalid"
+                )
+            target_input = {
+                "targetCapabilitySessionId": target.get(
+                    "capabilitySessionId"
+                ),
+                "targetDeviceId": target.get("targetDeviceId"),
+                "targetCapabilityId": target.get("targetCapabilityId"),
+            }
+            before = executor.harness(
+                "getFoundationClientExecutorCounters",
+                target_input,
+                timeout=60,
+            )
+            if not isinstance(before, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF executor counters are invalid"
+                )
+            candidate = receiver.harness(
+                "runDevelopmentInvalidResourceReference",
+                {
+                    "sampleId": probe_input.sample_id,
+                    "capabilitySessionId": target.get("capabilitySessionId"),
+                    "deferConversationCleanup": True,
+                    "externalExecutorEvidence": True,
+                    "scenarioKey": scenario_key,
+                },
+                timeout=300,
+            )
+            if not isinstance(candidate, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF shared Journey result is invalid"
+                )
+            scenario = dict(candidate)
+            after = executor.harness(
+                "getFoundationClientExecutorCounters",
+                target_input,
+                timeout=60,
+            )
+            if not isinstance(after, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF executor readback is invalid"
+                )
+            for hash_key in (
+                "capabilitySessionIdHash",
+                "targetDeviceIdHash",
+            ):
+                if (
+                    not isinstance(target.get(hash_key), str)
+                    or len(str(target.get(hash_key))) != 64
+                    or before.get(hash_key) != target.get(hash_key)
+                    or after.get(hash_key) != target.get(hash_key)
+                ):
+                    raise ScenarioRunnerError(
+                        "BASE-INVALID_RESOURCE_REF executor identity changed"
+                    )
+            if (
+                target.get("targetCapabilityId") != "filesystem.read"
+                or target.get("targetPlatform") != "desktop"
+                or before.get("targetCapabilityId")
+                != target.get("targetCapabilityId")
+                or after.get("targetCapabilityId")
+                != target.get("targetCapabilityId")
+                or before.get("targetPlatform") != target.get("targetPlatform")
+                or after.get("targetPlatform") != target.get("targetPlatform")
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF executor capability changed"
+                )
+            facts = scenario.get("facts")
+            if not isinstance(facts, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF Journey facts are missing"
+                )
+            scenario["facts"] = {
+                **dict(facts),
+                "executor": {
+                    "evidenceSource": "native-executor-coordinator",
+                    "capabilitySessionIdHash": target.get(
+                        "capabilitySessionIdHash"
+                    ),
+                    "targetDeviceIdHash": target.get("targetDeviceIdHash"),
+                    "targetCapabilityId": target.get("targetCapabilityId"),
+                    "targetPlatform": target.get("targetPlatform"),
+                    "executionAttemptCountBefore": self._counter(
+                        before,
+                        "executionAttemptCount",
+                    ),
+                    "executionAttemptCountAfter": self._counter(
+                        after,
+                        "executionAttemptCount",
+                    ),
+                    "sideEffectCountBefore": self._counter(
+                        before,
+                        "sideEffectCount",
+                    ),
+                    "sideEffectCountAfter": self._counter(
+                        after,
+                        "sideEffectCount",
+                    ),
+                },
+            }
+            captured = receiver.harness(
+                "foundationDirectProbe",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "cell": probe_input.cell,
+                    "sampleId": probe_input.sample_id,
+                    "scenarioKey": scenario_key,
+                    "preparedScenario": scenario,
+                },
+                timeout=300,
+            )
+            if not isinstance(captured, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF direct capture is invalid"
+                )
+            result = dict(captured)
+            assert_group_one_capture(probe_input, result)
+            return result
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            cleanup = result.get("cleanup") if result is not None else None
+            cleanup_is_clean = (
+                isinstance(cleanup, Mapping)
+                and cleanup.get("status") == "clean"
+            )
+            if not cleanup_is_clean:
+                try:
+                    cleanup_request: dict[str, Any] = {
+                        "scenarioKey": scenario_key,
+                    }
+                    if scenario is not None:
+                        conversation_id = str(
+                            scenario.get("conversationId") or ""
+                        )
+                        turn_id = str(scenario.get("turnId") or "")
+                        if conversation_id:
+                            cleanup_request["conversationId"] = conversation_id
+                        if turn_id:
+                            cleanup_request["turnId"] = turn_id
+                    receiver.harness(
+                        "abortFoundationInvalidResourceReference",
+                        cleanup_request,
+                        timeout=120,
+                    )
+                except BaseException as cleanup_error:
+                    if primary_error is not None:
+                        raise ScenarioRunnerError(
+                            f"{primary_error}; "
+                            f"CLEANUP_FAILED: {cleanup_error}"
+                        ) from primary_error
+                    raise
+
+
 class FoundationForbiddenActorCoordinator:
     def __init__(
         self,
@@ -726,6 +954,8 @@ def _make_direct_probe(
         "FoundationInterruptedCoordinator | None" = None,
     executor_unavailable_coordinator:
         "FoundationExecutorUnavailableCoordinator | None" = None,
+    invalid_resource_reference_coordinator:
+        "FoundationInvalidResourceReferenceCoordinator | None" = None,
     forbidden_actor_coordinator:
         "FoundationForbiddenActorCoordinator | None" = None,
 ) -> "Callable[[DirectRuntimeProbeInput], Mapping[str, Any]]":
@@ -748,6 +978,12 @@ def _make_direct_probe(
                     "BASE-EXECUTOR_UNAVAILABLE requires executor orchestration"
                 )
             return executor_unavailable_coordinator.capture(probe_input)
+        if probe_input.cell == "BASE-INVALID_RESOURCE_REF":
+            if invalid_resource_reference_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-INVALID_RESOURCE_REF requires executor orchestration"
+                )
+            return invalid_resource_reference_coordinator.capture(probe_input)
         if probe_input.cell == "BASE-INTERRUPTED":
             if interrupted_coordinator is None:
                 raise ScenarioRunnerError(
@@ -2411,6 +2647,9 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         executor_unavailable_coordinator = (
             FoundationExecutorUnavailableCoordinator(runtime_pair)
         )
+        invalid_resource_reference_coordinator = (
+            FoundationInvalidResourceReferenceCoordinator(runtime_pair)
+        )
         interrupted_coordinator = FoundationInterruptedCoordinator(
             runtime_pair,
             runtime_manifest,
@@ -2431,6 +2670,9 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 executor_unavailable_coordinator=(
                     executor_unavailable_coordinator
                 ),
+                invalid_resource_reference_coordinator=(
+                    invalid_resource_reference_coordinator
+                ),
                 forbidden_actor_coordinator=forbidden_actor_coordinator,
             )
         )
@@ -2444,6 +2686,9 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 interrupted_coordinator=interrupted_coordinator,
                 executor_unavailable_coordinator=(
                     executor_unavailable_coordinator
+                ),
+                invalid_resource_reference_coordinator=(
+                    invalid_resource_reference_coordinator
                 ),
                 forbidden_actor_coordinator=forbidden_actor_coordinator,
             )

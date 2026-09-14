@@ -1914,6 +1914,7 @@ interface FoundationToolFixtureOptions {
 interface FoundationToolTurn {
   conversationId: string;
   turnId: string;
+  streamId?: string;
   observed: ObservedFoundationTurn;
 }
 
@@ -1938,6 +1939,8 @@ interface FoundationExecutorUnavailableScenario {
 
 const foundationExecutorUnavailableScenarios =
   new Map<string, FoundationExecutorUnavailableScenario>();
+const foundationInvalidResourceReferenceScenarios =
+  new Map<string, { conversationId: string; turnId: string }>();
 
 interface FoundationForbiddenActorOwnerScenario {
   scenarioKey: string;
@@ -2612,6 +2615,10 @@ async function startFoundationToolTurn(input: {
   label: string;
   repeatUntilStopped?: boolean;
   requestedBudget?: AgentRuntimeBudgetInput;
+  onConversationCreated?: (
+    conversationId: string,
+    streamId: string,
+  ) => void;
 }): Promise<FoundationToolTurn> {
   const agentId = input.agent.id || input.agent.name;
   const conversation = await api.createAgentConversation({
@@ -2624,6 +2631,8 @@ async function startFoundationToolTurn(input: {
   const content = input.repeatUntilStopped
     ? `Call ${input.fixture.toolName} with ${argumentsJSON}. After every tool result, call the same tool again with the same arguments. Do not stop voluntarily; let the runtime tool-loop budget stop the turn.`
     : `Call ${input.fixture.toolName} exactly once with ${argumentsJSON}. After the tool result, answer with one short sentence and do not call another tool.`;
+  const streamId = crypto.randomUUID();
+  input.onConversationCreated?.(conversation.conversation_id, streamId);
   const observed = startObservedFoundationTurn({
     conversationId: conversation.conversation_id,
     agentId,
@@ -2633,6 +2642,7 @@ async function startFoundationToolTurn(input: {
     model: input.agent.model || undefined,
     clientCapabilitySessionId: input.capabilitySessionId,
     requestedBudget: input.requestedBudget,
+    streamId,
     timeoutMs: input.repeatUntilStopped
       ? 300_000
       : FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
@@ -2652,15 +2662,33 @@ async function startFoundationToolTurn(input: {
   return {
     conversationId: conversation.conversation_id,
     turnId,
+    streamId,
     observed,
   };
 }
 
 async function runDevelopmentInvalidResourceReferenceScenario(input: {
   sampleId: string;
+  capabilitySessionId?: string;
+  deferConversationCleanup?: boolean;
+  externalExecutorEvidence?: boolean;
+  scenarioKey?: string;
 }): Promise<Record<string, unknown>> {
   const agent = selectedAgent();
   if (!agent) throw new Error('agent.acceptance.agentMissing');
+  if (
+    input.deferConversationCleanup
+    && (!input.scenarioKey || !input.externalExecutorEvidence)
+  ) {
+    throw new Error(
+      'agent.acceptance.invalidResourceDeferredCleanupContractMissing',
+    );
+  }
+  if (input.externalExecutorEvidence && !input.capabilitySessionId) {
+    throw new Error(
+      'agent.acceptance.invalidResourceExecutorTargetMissing',
+    );
+  }
   const agentId = agent.id || agent.name;
   const fixture = await foundationToolFixture(agentId, 'desktop_app', {
     toolName: 'local_file_read',
@@ -2675,7 +2703,12 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
     throw new Error('agent.acceptance.invalidResourceManifestMismatch');
   }
 
-  const capabilitySession = await resolveFoundationToolTurnSession();
+  const capabilitySession = input.capabilitySessionId
+    ? {
+        capabilitySessionId: input.capabilitySessionId,
+        facts: {},
+      }
+    : await resolveFoundationToolTurnSession();
   const selectedTarget = (
     await api.listAgentCapabilitySessions()
   ).sessions.find((session) =>
@@ -2711,7 +2744,24 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
       fixture,
       sampleId: input.sampleId,
       label: 'invalid-resource-reference',
+      onConversationCreated: input.scenarioKey
+        ? (conversationId) => {
+            foundationInvalidResourceReferenceScenarios.set(
+              input.scenarioKey!,
+              { conversationId, turnId: '' },
+            );
+          }
+        : undefined,
     });
+    if (input.scenarioKey) {
+      foundationInvalidResourceReferenceScenarios.set(
+        input.scenarioKey,
+        {
+          conversationId: turn.conversationId,
+          turnId: turn.turnId,
+        },
+      );
+    }
     await useChatStore.getState().selectSession(turn.conversationId);
     const approval = await waitForToolApprovalEvent(turn);
     const toolCallId = String(
@@ -2756,12 +2806,21 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
     }
 
     const beforeCapability = await capabilitySessionEvidence();
-    const beforeLocal = beforeCapability.selectedLocalSession;
-    if (!beforeLocal) {
+    const targetSessionHash = await sha256Hex(
+      capabilitySession.capabilitySessionId,
+    );
+    const beforeLocal =
+      beforeCapability.selectedLocalSession?.capability_session_id_hash
+        === targetSessionHash
+        ? beforeCapability.selectedLocalSession
+        : null;
+    if (!beforeLocal && !input.externalExecutorEvidence) {
       throw new Error('agent.acceptance.invalidResourceLocalSessionMissing');
     }
-    const beforeExecutionCount = beforeLocal.local_execution_attempt_count;
-    const beforeSideEffectCount = beforeLocal.local_side_effect_count;
+    const beforeExecutionCount =
+      beforeLocal?.local_execution_attempt_count ?? null;
+    const beforeSideEffectCount =
+      beforeLocal?.local_side_effect_count ?? null;
 
     approve.click();
     const errorSurfaceSelector =
@@ -2843,8 +2902,12 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
     }
 
     const afterCapability = await capabilitySessionEvidence();
-    const afterLocal = afterCapability.selectedLocalSession;
-    if (!afterLocal) {
+    const afterLocal =
+      afterCapability.selectedLocalSession?.capability_session_id_hash
+        === targetSessionHash
+        ? afterCapability.selectedLocalSession
+        : null;
+    if (!afterLocal && !input.externalExecutorEvidence) {
       throw new Error('agent.acceptance.invalidResourceLocalSessionMissing');
     }
     const sourceReplayHash = await sha256Hex(stableJson(
@@ -2854,6 +2917,75 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
       withoutDiagnosticGenerationTime(replayed.replay),
     ));
     const sourceFact = source.facts[0];
+    const terminalEvent = [...turn.observed.events].reverse().find((event) => {
+      const nested = event.data.outcome_error;
+      const outcome = (
+        nested && typeof nested === 'object' && !Array.isArray(nested)
+          ? nested
+          : event.data
+      ) as Record<string, unknown>;
+      return (
+        event.event === 'error'
+        && outcome.error_type === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+      );
+    });
+    const sourceDelivery = terminalEvent?.sourceDelivery;
+    const streamId = turn.streamId;
+    const terminalOutcome = terminalEvent
+      ? evidenceRecord(
+          terminalEvent.data.outcome_error ?? terminalEvent.data,
+          'invalidResourceRuntimeOutcome',
+        )
+      : null;
+    if (
+      !terminalEvent
+      || !sourceDelivery
+      || !streamId
+      || !terminalOutcome
+      || stableJson(terminalOutcome) !== stableJson(persistedOutcome)
+      || stableJson(
+        normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+      ) !== stableJson(
+        normalizeProjectedStationPayload(terminalEvent.data),
+      )
+      || sourceDelivery.transport !== 'station-sse'
+      || sourceDelivery.ptid !== authenticatedFoundationActorPtid()
+      || sourceDelivery.conversationId !== turn.conversationId
+      || sourceDelivery.turnId !== turn.turnId
+      || sourceDelivery.sequence <= 0
+      || sourceDelivery.rawPayload.eventType !== 'error'
+    ) {
+      throw new Error(
+        'agent.acceptance.invalidResourceRuntimeIdentityMismatch',
+      );
+    }
+    const payloadHash = await sha256Hex(
+      stableJson(sourceDelivery.rawPayload),
+    );
+    const runtimeEvent: FoundationRuntimeEventObservation = {
+      eventId: await sha256Hex(stableJson({
+        streamId,
+        streamGeneration: turn.observed.controller.streamGeneration,
+        conversationId: turn.conversationId,
+        turnId: turn.turnId,
+        sequence: sourceDelivery.sequence,
+        payloadHash,
+      })),
+      eventType: terminalEvent.event,
+      sequence: sourceDelivery.sequence,
+      observedAt: terminalEvent.observedAt,
+      streamGeneration: turn.observed.controller.streamGeneration,
+      streamIdHash: await sha256Hex(streamId),
+      conversationIdHash: await sha256Hex(turn.conversationId),
+      payloadHash,
+      errorType: String(persistedOutcome.error_type ?? ''),
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    };
     const resourceRefHash = String(
       persistedDetails.resource_ref_hash ?? '',
     );
@@ -2892,11 +3024,15 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
       agentId,
       turn.conversationId,
     );
+    const afterRecoveryReadback = await foundationConversationReadback(
+      turn.conversationId,
+    );
 
     const assertions = {
       approvedThroughReceiver: approve.disabled,
       typedInvalidResourceReference:
-        persistedOutcome.error_type === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+        persistedOutcome.error === 'agent.errors.invalidResourceReference'
+        && persistedOutcome.error_type === 'CLIENT_INVALID_RESOURCE_REFERENCE'
         && persistedOutcome.locale_key
           === 'agent.errors.invalidResourceReference'
         && persistedOutcome.retryable === false
@@ -2918,10 +3054,12 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
           { ns: 'agent' },
         ),
       pickerActivated: pickerActivationCount === 1,
-      zeroResourceRead:
-        afterLocal.local_execution_attempt_count === beforeExecutionCount,
-      zeroLocalSideEffect:
-        afterLocal.local_side_effect_count === beforeSideEffectCount,
+      zeroResourceRead: beforeLocal && afterLocal
+        ? afterLocal.local_execution_attempt_count === beforeExecutionCount
+        : null,
+      zeroLocalSideEffect: beforeLocal && afterLocal
+        ? afterLocal.local_side_effect_count === beforeSideEffectCount
+        : null,
       zeroProviderContinuation:
         !String(
           evidenceField(sourceFact, 'continuationId', 'continuation_id') ?? '',
@@ -2935,12 +3073,10 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
       replayEqual: sourceReplayHash === diagnosticReplayHash,
       noAutomaticResend:
         afterRecovery.turnCount === beforeRecovery.turnCount
-        && (
-          await foundationConversationReadback(turn.conversationId)
-        ).messages.length === beforeRecoveryMessageCount,
+        && afterRecoveryReadback.messages.length === beforeRecoveryMessageCount,
     };
     const failedAssertions = Object.entries(assertions)
-      .filter(([, passed]) => !passed)
+      .filter(([, passed]) => passed === false)
       .map(([name]) => name);
     if (failedAssertions.length > 0) {
       throw new Error(
@@ -2952,6 +3088,7 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
       conversationId: turn.conversationId,
       turnId: turn.turnId,
       durationMs: performance.now() - startedAt,
+      runtimeEvent,
       assertions,
       receiver: {
         errorText: errorText.textContent?.trim() ?? '',
@@ -2966,14 +3103,101 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
         replayEqual: sourceReplayHash === diagnosticReplayHash,
       },
       local: {
-        executionAttemptDelta:
-          afterLocal.local_execution_attempt_count - beforeExecutionCount,
-        sideEffectDelta:
-          afterLocal.local_side_effect_count - beforeSideEffectCount,
+        executionAttemptCountBefore: beforeExecutionCount,
+        executionAttemptCountAfter:
+          afterLocal?.local_execution_attempt_count ?? null,
+        sideEffectCountBefore: beforeSideEffectCount,
+        sideEffectCountAfter: afterLocal?.local_side_effect_count ?? null,
       },
       recovery: {
         pickerActivationCount,
         explicitResendRequired: true,
+        turnCountBefore: beforeRecovery.turnCount,
+        turnCountAfter: afterRecovery.turnCount,
+        messageCountBefore: beforeRecoveryMessageCount,
+        messageCountAfter: afterRecoveryReadback.messages.length,
+        providerCallCountBefore: beforeRecovery.providerCallCount,
+        providerCallCountAfter: afterRecovery.providerCallCount,
+      },
+      facts: {
+        outcome: persistedOutcome,
+        runtimeEvent,
+        receiver: {
+          approvedThroughReceiver: approve.disabled,
+          errorVisible: errorText.getClientRects().length > 0,
+          errorText: errorText.textContent?.trim() ?? '',
+          expectedErrorText: i18n.t(
+            'agent.errors.invalidResourceReference',
+            { ns: 'agent' },
+          ),
+          recoveryVisible: recoveryAction.getClientRects().length > 0,
+          recoveryText: recoveryAction.textContent?.trim() ?? '',
+          expectedRecoveryText: i18n.t(
+            'agent.recovery.chooseResourceAgain',
+            { ns: 'agent' },
+          ),
+          resourceKind: errorSurface.dataset.ptAgentErrorResourceKind ?? '',
+          resourceRefHash:
+            errorSurface.dataset.ptAgentErrorResourceRefHash ?? '',
+          pickerActivationCount,
+        },
+        station: {
+          conversationId: turn.conversationId,
+          turnId: turn.turnId,
+          toolCallId,
+          factCount: source.facts.length,
+          status: toolStatusName(sourceFact.status),
+          errorCode: String(
+            evidenceField(sourceFact, 'errorCode', 'error_code') ?? '',
+          ),
+          resultId: String(
+            evidenceField(sourceFact, 'resultId', 'result_id') ?? '',
+          ),
+          continuationId: String(
+            evidenceField(
+              sourceFact,
+              'continuationId',
+              'continuation_id',
+            ) ?? '',
+          ),
+          resourceKind: String(persistedDetails.resource_kind ?? ''),
+          resourceRefHash,
+          streamId,
+          streamGeneration: turn.observed.controller.streamGeneration,
+          payloadHash,
+          sourceSequence: sourceDelivery.sequence,
+          runtimePayload: evidenceValue(sourceDelivery.rawPayload),
+        },
+        executor: {
+          evidenceSource: beforeLocal && afterLocal
+            ? 'receiver-local-session'
+            : 'external-coordinator',
+          executionAttemptCountBefore: beforeExecutionCount,
+          executionAttemptCountAfter:
+            afterLocal?.local_execution_attempt_count ?? null,
+          sideEffectCountBefore: beforeSideEffectCount,
+          sideEffectCountAfter: afterLocal?.local_side_effect_count ?? null,
+        },
+        recovery: {
+          pickerActivationCount,
+          explicitResendRequired: true,
+          turnCountBefore: beforeRecovery.turnCount,
+          turnCountAfter: afterRecovery.turnCount,
+          messageCountBefore: beforeRecoveryMessageCount,
+          messageCountAfter: afterRecoveryReadback.messages.length,
+          providerCallCountBefore: beforeRecovery.providerCallCount,
+          providerCallCountAfter: afterRecovery.providerCallCount,
+        },
+        replay: {
+          sourceHash: sourceReplayHash,
+          replayHash: diagnosticReplayHash,
+          equal: sourceReplayHash === diagnosticReplayHash,
+        },
+        cleanup: {
+          bindingRestored: false,
+          localProjectionCleared: false,
+          conversationDeleted: false,
+        },
       },
     };
   } catch (error) {
@@ -3001,7 +3225,7 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
         cleanupFailures.push(error);
       }
     }
-    if (turn) {
+    if (turn && (!input.deferConversationCleanup || primaryError)) {
       try {
         await cleanupFoundationToolConversation(
           turn.conversationId,
@@ -3009,6 +3233,9 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
         );
       } catch (error) {
         cleanupFailures.push(error);
+      }
+      if (input.scenarioKey) {
+        foundationInvalidResourceReferenceScenarios.delete(input.scenarioKey);
       }
     }
   }
@@ -3027,7 +3254,16 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
     ...result,
     cleanup: {
       bindingRestored: true,
-      conversationDeleted: true,
+      localProjectionCleared: !input.deferConversationCleanup,
+      conversationDeleted: !input.deferConversationCleanup,
+    },
+    facts: {
+      ...evidenceRecord(result.facts, 'invalidResourceFacts'),
+      cleanup: {
+        bindingRestored: true,
+        localProjectionCleared: !input.deferConversationCleanup,
+        conversationDeleted: !input.deferConversationCleanup,
+      },
     },
   };
 }
@@ -16632,6 +16868,8 @@ async function evaluateDirectCellAssertions(
       return evaluateBaseContextOverflow(ctx);
     case 'BASE-INVALID_REFERENCE':
       return evaluateBaseInvalidReference(ctx);
+    case 'BASE-INVALID_RESOURCE_REF':
+      return evaluateBaseInvalidResourceReference(ctx);
     case 'BASE-DUPLICATE_CONFLICT':
       return evaluateBaseDuplicateConflict(ctx);
     case 'BASE-CREDENTIAL_MISSING':
@@ -17573,6 +17811,141 @@ function evaluateBaseInvalidReference(
     ),
     cleanupComplete: (
       cleanup.draftCleared === true
+      && cleanup.localProjectionCleared === true
+      && cleanup.conversationDeleted === true
+    ),
+  };
+}
+
+function evaluateBaseInvalidResourceReference(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationInvalidResourceReferenceFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationInvalidResourceReferenceOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationInvalidResourceReferenceDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationInvalidResourceReferenceReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationInvalidResourceReferenceStation',
+  );
+  const executor = evidenceRecord(
+    facts.executor,
+    'foundationInvalidResourceReferenceExecutor',
+  );
+  const recovery = evidenceRecord(
+    facts.recovery,
+    'foundationInvalidResourceReferenceRecovery',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationInvalidResourceReferenceReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationInvalidResourceReferenceCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationInvalidResourceReferenceRuntimeEvent',
+  );
+  const resourceRefHash = String(station.resourceRefHash ?? '');
+
+  return {
+    approvedThroughReceiver: receiver.approvedThroughReceiver === true,
+    typedInvalidResourceReference: (
+      outcome.error === 'agent.errors.invalidResourceReference'
+      && outcome.error_type === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+      && outcome.locale_key === 'agent.errors.invalidResourceReference'
+      && outcome.retryable === false
+      && outcome.terminal === true
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+      && Number(runtimeEvent.sequence) > 0
+      && Number(runtimeEvent.sequence) === Number(station.sourceSequence)
+      && Number(runtimeEvent.streamGeneration)
+        === Number(station.streamGeneration)
+      && /^[0-9a-f]{64}$/.test(String(runtimeEvent.eventId))
+      && /^[0-9a-f]{64}$/.test(String(runtimeEvent.streamIdHash))
+      && /^[0-9a-f]{64}$/.test(String(runtimeEvent.conversationIdHash))
+      && runtimeEvent.payloadHash === station.payloadHash
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === station.turnId
+      && Number(runtimeEvent.sourceSequence) > 0
+      && runtimeEvent.sourceEventType === 'error'
+    ),
+    boundedDetails: (
+      Object.keys(details).sort().join(',')
+        === 'resource_kind,resource_ref_hash'
+      && details.resource_kind === 'file'
+      && details.resource_kind === station.resourceKind
+      && details.resource_ref_hash === resourceRefHash
+      && /^[0-9a-f]{64}$/.test(resourceRefHash)
+      && receiver.resourceKind === station.resourceKind
+      && receiver.resourceRefHash === resourceRefHash
+    ),
+    localizedRecoveryVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    pickerActivated: Number(receiver.pickerActivationCount) === 1,
+    zeroResourceRead: (
+      executor.evidenceSource === 'native-executor-coordinator'
+      && executor.targetPlatform === 'desktop'
+      && executor.targetCapabilityId === 'filesystem.read'
+      && /^[0-9a-f]{64}$/.test(
+        String(executor.capabilitySessionIdHash),
+      )
+      && /^[0-9a-f]{64}$/.test(String(executor.targetDeviceIdHash))
+      && Number(executor.executionAttemptCountAfter)
+        === Number(executor.executionAttemptCountBefore)
+    ),
+    zeroLocalSideEffect: (
+      Number(executor.sideEffectCountAfter)
+        === Number(executor.sideEffectCountBefore)
+    ),
+    zeroProviderContinuation: (
+      station.continuationId === ''
+      && Number(recovery.providerCallCountAfter)
+        === Number(recovery.providerCallCountBefore)
+    ),
+    oneTerminalResult: (
+      Number(station.factCount) === 1
+      && station.status === 'failed'
+      && station.errorCode === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+      && typeof station.resultId === 'string'
+      && station.resultId.length > 0
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+      && typeof replay.sourceHash === 'string'
+      && replay.sourceHash.length === 64
+    ),
+    noAutomaticResend: (
+      recovery.explicitResendRequired === true
+      && Number(recovery.turnCountAfter)
+        === Number(recovery.turnCountBefore)
+      && Number(recovery.messageCountAfter)
+        === Number(recovery.messageCountBefore)
+    ),
+    cleanupComplete: (
+      cleanup.bindingRestored === true
       && cleanup.localProjectionCleared === true
       && cleanup.conversationDeleted === true
     ),
@@ -19878,12 +20251,93 @@ export function installAcceptanceHarness(): void {
 
     async runDevelopmentInvalidResourceReference({
       sampleId,
+      capabilitySessionId,
+      deferConversationCleanup,
+      externalExecutorEvidence,
+      scenarioKey,
     }: {
       sampleId: string;
+      capabilitySessionId?: string;
+      deferConversationCleanup?: boolean;
+      externalExecutorEvidence?: boolean;
+      scenarioKey?: string;
     }) {
       return evidenceValue(
-        await runDevelopmentInvalidResourceReferenceScenario({ sampleId }),
+        await runDevelopmentInvalidResourceReferenceScenario({
+          sampleId,
+          capabilitySessionId,
+          deferConversationCleanup,
+          externalExecutorEvidence,
+          scenarioKey,
+        }),
       );
+    },
+
+    async resolveFoundationInvalidResourceExecutorTarget() {
+      const agent = selectedAgent();
+      if (!agent) throw new Error('agent.acceptance.agentMissing');
+      const fixture = await foundationToolFixture(
+        agent.id || agent.name,
+        'desktop_app',
+      );
+      const actorPtid = authenticatedFoundationActorPtid();
+      const stationSessions = await api.listAgentCapabilitySessions();
+      const targets = stationSessions.sessions.filter((candidate) => (
+        candidate.ptid === actorPtid
+        && clientPlatformName(candidate.platform) === 'desktop'
+        && candidate.typed_capabilities.some(
+          (capability) =>
+            capability.capability_id === fixture.manifest.capabilityId,
+        )
+      ));
+      if (targets.length !== 1) {
+        throw new Error(
+          'agent.acceptance.foundationInvalidResourceExecutorAmbiguous',
+        );
+      }
+      const target = targets[0];
+      return {
+        capabilitySessionId: target.session_id,
+        capabilitySessionIdHash: await sha256Hex(target.session_id),
+        targetDeviceId: target.device_id,
+        targetDeviceIdHash: await sha256Hex(target.device_id),
+        targetCapabilityId: fixture.manifest.capabilityId,
+        targetPlatform: clientPlatformName(target.platform),
+      };
+    },
+
+    async getFoundationClientExecutorCounters({
+      targetCapabilitySessionId,
+      targetDeviceId,
+      targetCapabilityId,
+    }: {
+      targetCapabilitySessionId: string;
+      targetDeviceId: string;
+      targetCapabilityId: string;
+    }) {
+      const [sessionIdHash, deviceIdHash, snapshot] = await Promise.all([
+        sha256Hex(targetCapabilitySessionId),
+        sha256Hex(targetDeviceId),
+        api.getAgentCapabilitySessionSnapshot(),
+      ]);
+      const target = snapshot.sessions.find((candidate) => (
+        candidate.capability_session_id_hash === sessionIdHash
+        && candidate.device_id_hash === deviceIdHash
+        && candidate.capability_ids.includes(targetCapabilityId)
+      ));
+      if (!target) {
+        throw new Error(
+          'agent.acceptance.foundationExecutorCounterTargetMismatch',
+        );
+      }
+      return {
+        capabilitySessionIdHash: sessionIdHash,
+        targetDeviceIdHash: deviceIdHash,
+        targetCapabilityId,
+        targetPlatform: clientPlatformName(target.platform),
+        executionAttemptCount: target.local_execution_attempt_count,
+        sideEffectCount: target.local_side_effect_count,
+      };
     },
 
     async getFoundationClientExecutorTarget() {
@@ -19893,21 +20347,80 @@ export function installAcceptanceHarness(): void {
         agent.id || agent.name,
         'desktop_app',
       );
-      const session = await resolveFoundationToolTurnSession();
-      const stationSessions = await api.listAgentCapabilitySessions();
-      const target = stationSessions.sessions.find((candidate) =>
-        candidate.session_id === session.capabilitySessionId
-        && candidate.typed_capabilities.some(
+      const evidence = await capabilitySessionEvidence();
+      const target = evidence.selectedStationSession;
+      const localTarget = evidence.selectedLocalSession;
+      if (
+        !target
+        || !localTarget
+        || !target.typed_capabilities.some(
           (capability) =>
             capability.capability_id === fixture.manifest.capabilityId,
-        ));
-      if (!target) {
+        )
+      ) {
+        throw new Error('agent.acceptance.foundationExecutorTargetUnavailable');
+      }
+      const targetCapability = target.typed_capabilities.find(
+        (capability) =>
+          capability.capability_id === fixture.manifest.capabilityId,
+      );
+      if (
+        !targetCapability
+        || !localTarget.capability_ids.includes(
+          fixture.manifest.capabilityId,
+        )
+      ) {
         throw new Error('agent.acceptance.foundationExecutorTargetUnavailable');
       }
       return {
         capabilitySessionId: target.session_id,
         targetDeviceId: target.device_id,
-        targetCapabilityId: fixture.manifest.capabilityId,
+        targetCapabilityId: targetCapability.capability_id,
+      };
+    },
+
+    async abortFoundationInvalidResourceReference({
+      scenarioKey,
+      conversationId,
+      turnId,
+    }: {
+      scenarioKey: string;
+      conversationId?: string;
+      turnId?: string;
+    }) {
+      const locator = foundationInvalidResourceReferenceScenarios.get(
+        scenarioKey,
+      );
+      const targetConversationId =
+        String(conversationId || locator?.conversationId || '');
+      const targetTurnId = String(turnId || locator?.turnId || '');
+      if (!targetConversationId) {
+        return {
+          conversationDeleted: true,
+          localProjectionCleared: true,
+        };
+      }
+      clearFoundationLocalConversationProjection(targetConversationId);
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        '[data-pt-agent-composer-input]',
+      );
+      if (textarea) {
+        await setFoundationComposerDraft(
+          '',
+          'invalid resource outer composer cleanup',
+        );
+      }
+      try {
+        await cleanupFoundationToolConversation(
+          targetConversationId,
+          targetTurnId,
+        );
+      } finally {
+        foundationInvalidResourceReferenceScenarios.delete(scenarioKey);
+      }
+      return {
+        conversationDeleted: true,
+        localProjectionCleared: true,
       };
     },
 
@@ -21124,6 +21637,57 @@ export function installAcceptanceHarness(): void {
         preparedRuntimeEvent.current = scenario.runtimeEvent;
         turnDurationMs = scenario.durationMs;
         scenarioFacts = scenario.facts;
+      }
+
+      if (cell === 'BASE-INVALID_RESOURCE_REF') {
+        const scenario = evidenceRecord(
+          preparedScenario,
+          'foundationInvalidResourceReferencePreparedScenario',
+        );
+        preparedConversationId = String(scenario.conversationId ?? '');
+        preparedTurnId = String(scenario.turnId ?? '');
+        turnDurationMs = Number(scenario.durationMs ?? 0);
+        scenarioFacts = evidenceRecord(
+          scenario.facts,
+          'foundationInvalidResourceReferenceFacts',
+        );
+        const runtimeEvent = evidenceRecord(
+          scenario.runtimeEvent,
+          'foundationInvalidResourceReferenceRuntimeEvent',
+        );
+        preparedRuntimeEvent.current = {
+          eventId: String(runtimeEvent.eventId ?? ''),
+          eventType: String(runtimeEvent.eventType ?? ''),
+          sequence: Number(runtimeEvent.sequence ?? 0),
+          observedAt: String(runtimeEvent.observedAt ?? ''),
+          streamGeneration: Number(runtimeEvent.streamGeneration ?? 0),
+          streamIdHash: String(runtimeEvent.streamIdHash ?? ''),
+          conversationIdHash: String(
+            runtimeEvent.conversationIdHash ?? '',
+          ),
+          payloadHash: String(runtimeEvent.payloadHash ?? ''),
+          errorType: String(runtimeEvent.errorType ?? ''),
+          sourceTransport: String(runtimeEvent.sourceTransport ?? ''),
+          sourcePtidHash: String(runtimeEvent.sourcePtidHash ?? ''),
+          sourceConversationId: String(
+            runtimeEvent.sourceConversationId ?? '',
+          ),
+          sourceTurnId: String(runtimeEvent.sourceTurnId ?? ''),
+          sourceSequence: Number(runtimeEvent.sourceSequence ?? 0),
+          sourceEventType: String(runtimeEvent.sourceEventType ?? ''),
+        };
+        if (
+          !preparedConversationId
+          || !preparedTurnId
+          || !scenarioKey
+          || !turnDurationMs
+          || !preparedRuntimeEvent.current.eventId
+          || preparedRuntimeEvent.current.sequence <= 0
+        ) {
+          throw new Error(
+            'agent.acceptance.foundationInvalidResourcePreparedScenarioInvalid',
+          );
+        }
       }
 
       if (cell === 'BASE-CREDENTIAL_MISSING') {
@@ -22511,6 +23075,7 @@ export function installAcceptanceHarness(): void {
           || cell === 'BASE-CANCELLED'
           || cell === 'BASE-CONTEXT_OVERFLOW'
           || cell === 'BASE-INVALID_REFERENCE'
+          || cell === 'BASE-INVALID_RESOURCE_REF'
           || cell === 'BASE-DUPLICATE_CONFLICT'
           || cell === 'BASE-CREDENTIAL_MISSING'
         )
@@ -22518,6 +23083,9 @@ export function installAcceptanceHarness(): void {
         && currentConversationId
       ) {
         preservedReplayReadback = conversationReadback;
+        if (cell === 'BASE-INVALID_RESOURCE_REF') {
+          clearFoundationLocalConversationProjection(currentConversationId);
+        }
         const deletionErrorCode = await deleteFoundationConversation(
           currentConversationId,
         );
@@ -22546,6 +23114,8 @@ export function installAcceptanceHarness(): void {
                 ? 'foundationContextOverflowCleanup'
               : cell === 'BASE-INVALID_REFERENCE'
                 ? 'foundationInvalidReferenceCleanup'
+              : cell === 'BASE-INVALID_RESOURCE_REF'
+                ? 'foundationInvalidResourceReferenceCleanup'
               : cell === 'BASE-DUPLICATE_CONFLICT'
                 ? 'foundationDuplicateConflictCleanup'
               : cell === 'BASE-CREDENTIAL_MISSING'
@@ -22558,9 +23128,32 @@ export function installAcceptanceHarness(): void {
                   ? 'foundationApprovalExpiredCleanup'
                   : 'foundationAttachmentRejectedCleanup',
           ),
+          ...(cell === 'BASE-INVALID_RESOURCE_REF'
+            ? {
+                localProjectionCleared: (
+                  !useChatStore.getState().sessions.some(
+                    (session) => session.id === currentConversationId,
+                  )
+                  && !useChatStore.getState().messages.some(
+                    (message) => message.turnId === preparedTurnId,
+                  )
+                ),
+              }
+            : {}),
           conversationDeleted,
           deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
         };
+        if (
+          cell === 'BASE-INVALID_RESOURCE_REF'
+          && scenarioKey
+          && conversationDeleted
+          && evidenceRecord(
+            scenarioFacts.cleanup,
+            'foundationInvalidResourceReferenceCleanup',
+          ).localProjectionCleared === true
+        ) {
+          foundationInvalidResourceReferenceScenarios.delete(scenarioKey);
+        }
         if (cell === 'BASE-CONTEXT_OVERFLOW') {
           const contextOverflowCleanup = evidenceRecord(
             scenarioFacts.cleanup,
@@ -22830,6 +23423,41 @@ export function installAcceptanceHarness(): void {
             station.successfulProviderExecutionDelta,
         };
       }
+      if (cell === 'BASE-INVALID_RESOURCE_REF' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationInvalidResourceReferenceStation',
+        );
+        stationReadback.entityKind = 'agent-client-resource-reference';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.toolCallId),
+        );
+        stationReadback.revision = Number(station.factCount);
+        stationReadback.stateHash = await sha256Hex(stableJson(station));
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          executionAttempt:
+            Number(evidenceRecord(
+              scenarioFacts.executor,
+              'foundationInvalidResourceReferenceExecutor',
+            ).executionAttemptCountAfter)
+            - Number(evidenceRecord(
+              scenarioFacts.executor,
+              'foundationInvalidResourceReferenceExecutor',
+            ).executionAttemptCountBefore),
+          localSideEffect:
+            Number(evidenceRecord(
+              scenarioFacts.executor,
+              'foundationInvalidResourceReferenceExecutor',
+            ).sideEffectCountAfter)
+            - Number(evidenceRecord(
+              scenarioFacts.executor,
+              'foundationInvalidResourceReferenceExecutor',
+            ).sideEffectCountBefore),
+          providerContinuation:
+            station.continuationId === '' ? 0 : 1,
+        };
+      }
       if (cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts) {
         const station = evidenceRecord(
           scenarioFacts.station,
@@ -23009,6 +23637,7 @@ export function installAcceptanceHarness(): void {
             || cell === 'BASE-INTERRUPTED'
             || cell === 'BASE-CONTEXT_OVERFLOW'
             || cell === 'BASE-INVALID_REFERENCE'
+            || cell === 'BASE-INVALID_RESOURCE_REF'
             || cell === 'BASE-DUPLICATE_CONFLICT'
             || cell === 'BASE-CREDENTIAL_MISSING'
           ) && observedRuntimeEvent
@@ -23030,6 +23659,7 @@ export function installAcceptanceHarness(): void {
                     || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
                     || cell === 'BASE-CONTEXT_OVERFLOW'
                     || cell === 'BASE-INVALID_REFERENCE'
+                    || cell === 'BASE-INVALID_RESOURCE_REF'
                     || cell === 'BASE-DUPLICATE_CONFLICT'
                     || cell === 'BASE-CREDENTIAL_MISSING'
                   )
@@ -23080,6 +23710,7 @@ export function installAcceptanceHarness(): void {
           ? 900_000
           : cell === 'AS-F06'
             || cell === 'BASE-INVALID_REFERENCE'
+            || cell === 'BASE-INVALID_RESOURCE_REF'
             ? 300_000
             : 120_000;
       const measurementReport: Record<string, unknown> = {
@@ -23271,6 +23902,38 @@ export function installAcceptanceHarness(): void {
                     successfulMessageDelta: station.successfulMessageDelta,
                     successfulProviderExecutionDelta:
                       station.successfulProviderExecutionDelta,
+                  },
+                };
+              })()
+          : cell === 'BASE-INVALID_RESOURCE_REF' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationInvalidResourceReferenceStation',
+                );
+                const executor = evidenceRecord(
+                  scenarioFacts.executor,
+                  'foundationInvalidResourceReferenceExecutor',
+                );
+                const executionAttemptDelta =
+                  Number(executor.executionAttemptCountAfter)
+                  - Number(executor.executionAttemptCountBefore);
+                const sideEffectDelta =
+                  Number(executor.sideEffectCountAfter)
+                  - Number(executor.sideEffectCountBefore);
+                const providerContinuationDelta =
+                  station.continuationId === '' ? 0 : 1;
+                return {
+                  counterId: String(station.resourceRefHash),
+                  count:
+                    executionAttemptDelta
+                    + sideEffectDelta
+                    + providerContinuationDelta,
+                  maximum: 0,
+                  measurements: {
+                    executionAttemptDelta,
+                    sideEffectDelta,
+                    providerContinuationDelta,
                   },
                 };
               })()
@@ -23513,6 +24176,13 @@ export function installAcceptanceHarness(): void {
               'foundationInvalidReferenceCleanup',
             )
           : null;
+      const invalidResourceReferenceCleanup =
+        cell === 'BASE-INVALID_RESOURCE_REF' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationInvalidResourceReferenceCleanup',
+            )
+          : null;
       const duplicateConflictCleanup =
         cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
           ? evidenceRecord(
@@ -23538,6 +24208,14 @@ export function installAcceptanceHarness(): void {
                 && forbiddenActorCleanup.receiverRestored === true
                 && forbiddenActorCleanup.conversationDeleted === true
               )
+            : invalidResourceReferenceCleanup
+              ? (
+                  invalidResourceReferenceCleanup.bindingRestored === true
+                  && invalidResourceReferenceCleanup.localProjectionCleared
+                    === true
+                  && invalidResourceReferenceCleanup.conversationDeleted
+                    === true
+                )
             : incompatibleCapabilityCleanup
               ? (
                   incompatibleCapabilityCleanup.localProjectionCleared === true
@@ -23716,6 +24394,8 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-INVALID_REFERENCE' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-INVALID_RESOURCE_REF' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-CREDENTIAL_MISSING' && scenarioFacts
@@ -23735,6 +24415,7 @@ export function installAcceptanceHarness(): void {
         || cell === 'BASE-ATTACHMENT_REJECTED'
         || cell === 'BASE-CONTEXT_OVERFLOW'
         || cell === 'BASE-INVALID_REFERENCE'
+        || cell === 'BASE-INVALID_RESOURCE_REF'
         || cell === 'BASE-DUPLICATE_CONFLICT'
         || cell === 'BASE-CREDENTIAL_MISSING'
       ) && scenarioFacts
@@ -23873,6 +24554,21 @@ export function installAcceptanceHarness(): void {
             errorText: receiver.errorText,
             removalText: receiver.removalText,
             successfulAssistantId: receiver.successfulAssistantId,
+          };
+        } else if (cell === 'BASE-INVALID_RESOURCE_REF') {
+          receiverVisible =
+            receiver.errorVisible === true
+            && receiver.recoveryVisible === true
+            && Number(receiver.pickerActivationCount) === 1;
+          receiverSelector =
+            '[data-pt-agent-message-error-text='
+            + '"agent.errors.invalidResourceReference"],'
+            + '[data-pt-agent-message-error-recovery='
+            + '"choose-resource-again"],'
+            + '[data-pt-agent-resource-picker]';
+          receiverText = {
+            errorText: receiver.errorText,
+            recoveryText: receiver.recoveryText,
           };
         } else if (cell === 'BASE-DUPLICATE_CONFLICT') {
           receiverVisible =
@@ -24024,6 +24720,19 @@ export function installAcceptanceHarness(): void {
           scenarioFacts.station,
           'foundationInvalidReferenceStation',
         ).successfulTurnId;
+      }
+      if (cell === 'BASE-INVALID_RESOURCE_REF' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationInvalidResourceReferenceReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+        replayEvidence.turnId = evidenceRecord(
+          scenarioFacts.station,
+          'foundationInvalidResourceReferenceStation',
+        ).turnId;
       }
       if (cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts) {
         const replay = evidenceRecord(
@@ -24300,6 +25009,38 @@ export function installAcceptanceHarness(): void {
             throw Object.assign(
               new Error(
                 'agent.acceptance.foundationInvalidReferenceCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-INVALID_RESOURCE_REF'
+          && preparedConversationId
+        ) {
+          try {
+            clearFoundationLocalConversationProjection(
+              preparedConversationId,
+            );
+            try {
+              await cleanupFoundationToolConversation(
+                preparedConversationId,
+                preparedTurnId ?? '',
+              );
+            } finally {
+              if (scenarioKey) {
+                foundationInvalidResourceReferenceScenarios.delete(
+                  scenarioKey,
+                );
+              }
+            }
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationInvalidResourceCleanupFailed',
               ),
               {
                 primaryError: error,

@@ -238,6 +238,22 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-INVALID_RESOURCE_REF": frozenset(
+        {
+            "approvedThroughReceiver",
+            "typedInvalidResourceReference",
+            "boundedDetails",
+            "localizedRecoveryVisible",
+            "pickerActivated",
+            "zeroResourceRead",
+            "zeroLocalSideEffect",
+            "zeroProviderContinuation",
+            "oneTerminalResult",
+            "replayEqual",
+            "noAutomaticResend",
+            "cleanupComplete",
+        }
+    ),
     "BASE-DUPLICATE_CONFLICT": frozenset(
         {
             "typedDuplicateConflictProjected",

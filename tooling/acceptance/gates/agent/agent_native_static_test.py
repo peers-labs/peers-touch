@@ -1852,6 +1852,25 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "async runDevelopmentInvalidResourceReference",
             self.source,
         )
+        self.assertIn(
+            "if (cell === 'BASE-INVALID_RESOURCE_REF')",
+            self.source,
+        )
+        scenario_runner = FOUNDATION_SCENARIO_RUNNER.read_text(
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "class FoundationInvalidResourceReferenceCoordinator",
+            scenario_runner,
+        )
+        self.assertIn(
+            '"runDevelopmentInvalidResourceReference"',
+            scenario_runner,
+        )
+        self.assertIn(
+            '"deferConversationCleanup": True',
+            scenario_runner,
+        )
         self.assertNotIn("foundationDirectProbe", scenario)
         self.assertNotIn("mock", scenario.lower())
 

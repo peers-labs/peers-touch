@@ -4137,6 +4137,308 @@ def evaluate_base_invalid_reference(
     return assertions
 
 
+def evaluate_base_invalid_resource_reference(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-INVALID_RESOURCE_REF"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    executor = _mapping(capture, "executor", scenario=scenario)
+    recovery = _mapping(capture, "recovery", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+
+    resource_ref_hash = _sha256_string(
+        station,
+        "resourceRefHash",
+        scenario=scenario,
+    )
+    conversation_id = _nonempty_string(
+        station,
+        "conversationId",
+        scenario=scenario,
+    )
+    turn_id = _nonempty_string(station, "turnId", scenario=scenario)
+    stream_id = _nonempty_string(station, "streamId", scenario=scenario)
+    stream_generation = _positive_int(
+        station,
+        "streamGeneration",
+        scenario=scenario,
+    )
+    source_sequence = _positive_int(
+        station,
+        "sourceSequence",
+        scenario=scenario,
+    )
+    payload_hash = _sha256_string(
+        station,
+        "payloadHash",
+        scenario=scenario,
+    )
+    runtime_payload = _mapping(
+        station,
+        "runtimePayload",
+        scenario=scenario,
+    )
+    runtime_payload_data = _mapping(
+        runtime_payload,
+        "data",
+        scenario=scenario,
+    )
+    nested_outcome = runtime_payload_data.get("outcome_error")
+    source_outcome = (
+        dict(nested_outcome)
+        if isinstance(nested_outcome, Mapping)
+        else runtime_payload_data
+    )
+    expected_payload_hash = _canonical_payload_hash(runtime_payload)
+    expected_event_id = _canonical_payload_hash(
+        {
+            "streamId": stream_id,
+            "streamGeneration": stream_generation,
+            "conversationId": conversation_id,
+            "turnId": turn_id,
+            "sequence": source_sequence,
+            "payloadHash": payload_hash,
+        }
+    )
+    execution_before = _nonnegative_int(
+        executor,
+        "executionAttemptCountBefore",
+        scenario=scenario,
+    )
+    execution_after = _nonnegative_int(
+        executor,
+        "executionAttemptCountAfter",
+        scenario=scenario,
+    )
+    side_effect_before = _nonnegative_int(
+        executor,
+        "sideEffectCountBefore",
+        scenario=scenario,
+    )
+    side_effect_after = _nonnegative_int(
+        executor,
+        "sideEffectCountAfter",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "approvedThroughReceiver": (
+            receiver.get("approvedThroughReceiver") is True
+        ),
+        "typedInvalidResourceReference": (
+            outcome.get("error") == "agent.errors.invalidResourceReference"
+            and outcome.get("error_type")
+            == "CLIENT_INVALID_RESOURCE_REFERENCE"
+            and outcome.get("locale_key")
+            == "agent.errors.invalidResourceReference"
+            and outcome.get("retryable") is False
+            and outcome.get("terminal") is True
+            and runtime_payload.get("eventType") == "error"
+            and source_outcome == outcome
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType")
+            == "CLIENT_INVALID_RESOURCE_REFERENCE"
+            and _sha256_string(
+                runtime_event,
+                "eventId",
+                scenario=scenario,
+            )
+            == expected_event_id
+            and _nonempty_string(
+                runtime_event,
+                "observedAt",
+                scenario=scenario,
+            )
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            ) == source_sequence
+            and _positive_int(
+                runtime_event,
+                "streamGeneration",
+                scenario=scenario,
+            ) == stream_generation
+            and _sha256_string(
+                runtime_event,
+                "streamIdHash",
+                scenario=scenario,
+            )
+            == hashlib.sha256(stream_id.encode("utf-8")).hexdigest()
+            and _sha256_string(
+                runtime_event,
+                "conversationIdHash",
+                scenario=scenario,
+            )
+            == hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()
+            and _sha256_string(
+                runtime_event,
+                "payloadHash",
+                scenario=scenario,
+            )
+            == payload_hash
+            == expected_payload_hash
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and _sha256_string(
+                runtime_event,
+                "sourcePtidHash",
+                scenario=scenario,
+            )
+            and runtime_event.get("sourceConversationId")
+            == conversation_id
+            and runtime_event.get("sourceTurnId") == turn_id
+            and _positive_int(
+                runtime_event,
+                "sourceSequence",
+                scenario=scenario,
+            ) == source_sequence
+            and runtime_event.get("sourceEventType") == "error"
+        ),
+        "boundedDetails": (
+            sorted(details) == ["resource_kind", "resource_ref_hash"]
+            and details.get("resource_kind") == "file"
+            and details.get("resource_kind") == station.get("resourceKind")
+            and details.get("resource_ref_hash") == resource_ref_hash
+            and receiver.get("resourceKind") == station.get("resourceKind")
+            and receiver.get("resourceRefHash") == resource_ref_hash
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+        ),
+        "pickerActivated": (
+            _positive_int(
+                receiver,
+                "pickerActivationCount",
+                scenario=scenario,
+            )
+            == 1
+        ),
+        "zeroResourceRead": execution_after == execution_before,
+        "zeroLocalSideEffect": (
+            executor.get("evidenceSource")
+            == "native-executor-coordinator"
+            and executor.get("targetPlatform") == "desktop"
+            and executor.get("targetCapabilityId") == "filesystem.read"
+            and len(
+                _sha256_string(
+                    executor,
+                    "capabilitySessionIdHash",
+                    scenario=scenario,
+                )
+            )
+            == 64
+            and len(
+                _sha256_string(
+                    executor,
+                    "targetDeviceIdHash",
+                    scenario=scenario,
+                )
+            )
+            == 64
+            and side_effect_after == side_effect_before
+        ),
+        "zeroProviderContinuation": (
+            station.get("continuationId") == ""
+            and _nonnegative_int(
+                recovery,
+                "providerCallCountAfter",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                recovery,
+                "providerCallCountBefore",
+                scenario=scenario,
+            )
+        ),
+        "oneTerminalResult": (
+            _positive_int(station, "factCount", scenario=scenario) == 1
+            and station.get("status") == "failed"
+            and station.get("errorCode")
+            == "CLIENT_INVALID_RESOURCE_REFERENCE"
+            and bool(
+                _nonempty_string(
+                    station,
+                    "resultId",
+                    scenario=scenario,
+                )
+            )
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and _sha256_string(
+                replay,
+                "sourceHash",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                replay,
+                "replayHash",
+                scenario=scenario,
+            )
+        ),
+        "noAutomaticResend": (
+            recovery.get("explicitResendRequired") is True
+            and _nonnegative_int(
+                recovery,
+                "turnCountAfter",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                recovery,
+                "turnCountBefore",
+                scenario=scenario,
+            )
+            and _nonnegative_int(
+                recovery,
+                "messageCountAfter",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                recovery,
+                "messageCountBefore",
+                scenario=scenario,
+            )
+        ),
+        "cleanupComplete": (
+            cleanup.get("bindingRestored") is True
+            and cleanup.get("localProjectionCleared") is True
+            and cleanup.get("conversationDeleted") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_credential_missing(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:

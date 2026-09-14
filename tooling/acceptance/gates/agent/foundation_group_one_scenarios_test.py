@@ -20,6 +20,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_incompatible_capability,
     evaluate_base_interrupted,
     evaluate_base_invalid_reference,
+    evaluate_base_invalid_resource_reference,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -1543,6 +1544,128 @@ def valid_invalid_reference_capture() -> dict[str, object]:
         },
         "cleanup": {
             "draftCleared": True,
+            "localProjectionCleared": True,
+            "conversationDeleted": True,
+        },
+    }
+
+
+def valid_invalid_resource_reference_capture() -> dict[str, object]:
+    conversation_id = "conversation-invalid-resource"
+    turn_id = "turn-invalid-resource"
+    stream_id = "stream-invalid-resource"
+    stream_generation = 1
+    source_sequence = 7
+    outcome = {
+        "error": "agent.errors.invalidResourceReference",
+        "error_type": "CLIENT_INVALID_RESOURCE_REFERENCE",
+        "locale_key": "agent.errors.invalidResourceReference",
+        "retryable": False,
+        "terminal": True,
+        "details": {
+            "resource_kind": "file",
+            "resource_ref_hash": "f" * 64,
+        },
+    }
+    runtime_payload = {
+        "eventType": "error",
+        "data": {
+            "error": "CLIENT_INVALID_RESOURCE_REFERENCE",
+            "outcome_error": outcome,
+        },
+    }
+    payload_hash = canonical_payload_hash(runtime_payload)
+    return {
+        "runtimeEvent": {
+            "eventId": canonical_payload_hash(
+                {
+                    "streamId": stream_id,
+                    "streamGeneration": stream_generation,
+                    "conversationId": conversation_id,
+                    "turnId": turn_id,
+                    "sequence": source_sequence,
+                    "payloadHash": payload_hash,
+                }
+            ),
+            "sequence": source_sequence,
+            "eventType": "error",
+            "observedAt": "2026-09-14T10:00:00Z",
+            "streamGeneration": stream_generation,
+            "streamIdHash": hashlib.sha256(
+                stream_id.encode("utf-8")
+            ).hexdigest(),
+            "conversationIdHash": hashlib.sha256(
+                conversation_id.encode("utf-8")
+            ).hexdigest(),
+            "payloadHash": payload_hash,
+            "errorType": "CLIENT_INVALID_RESOURCE_REFERENCE",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "a" * 64,
+            "sourceConversationId": conversation_id,
+            "sourceTurnId": turn_id,
+            "sourceSequence": source_sequence,
+            "sourceEventType": "error",
+        },
+        "outcome": outcome,
+        "receiver": {
+            "approvedThroughReceiver": True,
+            "errorVisible": True,
+            "errorText": "A selected resource reference is no longer valid.",
+            "expectedErrorText": (
+                "A selected resource reference is no longer valid."
+            ),
+            "recoveryVisible": True,
+            "recoveryText": "Choose resource again",
+            "expectedRecoveryText": "Choose resource again",
+            "resourceKind": "file",
+            "resourceRefHash": "f" * 64,
+            "pickerActivationCount": 1,
+        },
+        "station": {
+            "conversationId": conversation_id,
+            "turnId": turn_id,
+            "toolCallId": "tool-call-invalid-resource",
+            "factCount": 1,
+            "status": "failed",
+            "errorCode": "CLIENT_INVALID_RESOURCE_REFERENCE",
+            "resultId": "result-invalid-resource",
+            "continuationId": "",
+            "resourceKind": "file",
+            "resourceRefHash": "f" * 64,
+            "streamId": stream_id,
+            "streamGeneration": stream_generation,
+            "payloadHash": payload_hash,
+            "sourceSequence": source_sequence,
+            "runtimePayload": runtime_payload,
+        },
+        "executor": {
+            "evidenceSource": "native-executor-coordinator",
+            "capabilitySessionIdHash": "c" * 64,
+            "targetDeviceIdHash": "d" * 64,
+            "targetCapabilityId": "filesystem.read",
+            "targetPlatform": "desktop",
+            "executionAttemptCountBefore": 3,
+            "executionAttemptCountAfter": 3,
+            "sideEffectCountBefore": 2,
+            "sideEffectCountAfter": 2,
+        },
+        "recovery": {
+            "pickerActivationCount": 1,
+            "explicitResendRequired": True,
+            "providerCallCountBefore": 4,
+            "providerCallCountAfter": 4,
+            "turnCountBefore": 8,
+            "turnCountAfter": 8,
+            "messageCountBefore": 12,
+            "messageCountAfter": 12,
+        },
+        "replay": {
+            "sourceHash": "1" * 64,
+            "replayHash": "1" * 64,
+            "equal": True,
+        },
+        "cleanup": {
+            "bindingRestored": True,
             "localProjectionCleared": True,
             "conversationDeleted": True,
         },
@@ -3623,6 +3746,89 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "cleanupComplete",
         ):
             evaluate_base_invalid_reference(capture)
+
+    def test_invalid_resource_reference_accepts_exact_product_journey(
+        self,
+    ) -> None:
+        assertions = evaluate_base_invalid_resource_reference(
+            valid_invalid_resource_reference_capture()
+        )
+
+        self.assertEqual(len(assertions), 12)
+        self.assertTrue(all(assertions.values()))
+        self.assertTrue(all(type(value) is bool for value in assertions.values()))
+
+    def test_invalid_resource_reference_rejects_typed_contract_drift(
+        self,
+    ) -> None:
+        capture = valid_invalid_resource_reference_capture()
+        capture["outcome"]["details"]["resource_path"] = "/private/path"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "boundedDetails",
+        ):
+            evaluate_base_invalid_resource_reference(capture)
+
+    def test_invalid_resource_reference_rejects_executor_activity(self) -> None:
+        capture = valid_invalid_resource_reference_capture()
+        capture["executor"]["executionAttemptCountAfter"] = 4
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroResourceRead",
+        ):
+            evaluate_base_invalid_resource_reference(capture)
+
+    def test_invalid_resource_reference_requires_native_executor_provenance(
+        self,
+    ) -> None:
+        capture = valid_invalid_resource_reference_capture()
+        capture["executor"]["evidenceSource"] = "browser"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroLocalSideEffect",
+        ):
+            evaluate_base_invalid_resource_reference(capture)
+
+    def test_invalid_resource_reference_rejects_runtime_identity_drift(
+        self,
+    ) -> None:
+        for key, value in (
+            ("eventId", "0" * 64),
+            ("streamIdHash", "0" * 64),
+            ("conversationIdHash", "0" * 64),
+            ("payloadHash", "0" * 64),
+        ):
+            with self.subTest(key=key):
+                capture = valid_invalid_resource_reference_capture()
+                capture["runtimeEvent"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "typedInvalidResourceReference",
+                ):
+                    evaluate_base_invalid_resource_reference(capture)
+
+    def test_invalid_resource_reference_requires_explicit_resend(self) -> None:
+        capture = valid_invalid_resource_reference_capture()
+        capture["recovery"]["turnCountAfter"] = 9
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "noAutomaticResend",
+        ):
+            evaluate_base_invalid_resource_reference(capture)
+
+    def test_invalid_resource_reference_requires_cleanup(self) -> None:
+        capture = valid_invalid_resource_reference_capture()
+        capture["cleanup"]["bindingRestored"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_invalid_resource_reference(capture)
 
     def test_duplicate_conflict_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_duplicate_conflict(

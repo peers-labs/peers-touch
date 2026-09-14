@@ -28,6 +28,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_interrupted,
     evaluate_base_executor_unavailable,
     evaluate_base_forbidden_actor,
+    evaluate_base_invalid_resource_reference,
     evaluate_as_f04,
     evaluate_as_f06,
     evaluate_as_f12,
@@ -36,6 +37,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_interrupted_capture,
     valid_executor_unavailable_capture,
     valid_forbidden_actor_capture,
+    valid_invalid_resource_reference_capture,
     valid_as_f04_capture,
     valid_as_f06_capture,
     valid_as_f12_capture,
@@ -137,6 +139,139 @@ class ExecutorUnavailableHarnessClient:
             return result
         if method == "abortFoundationExecutorUnavailable":
             return {"scenarioKey": request["scenarioKey"], "cleaned": True}
+        raise AssertionError(f"unexpected method: {method}")
+
+
+class InvalidResourceHarnessClient:
+    def __init__(
+        self,
+        platform: str,
+        *,
+        call_log: list[str],
+        fail_direct: bool = False,
+        fail_journey_response: bool = False,
+        fail_abort: bool = False,
+    ) -> None:
+        self.platform = platform
+        self.call_log = call_log
+        self.fail_direct = fail_direct
+        self.fail_journey_response = fail_journey_response
+        self.fail_abort = fail_abort
+        self.pending_scenario_key = ""
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        del timeout
+        request = payload or {}
+        self.call_log.append(f"{self.platform}:{method}")
+        if method == "setFoundationLocale":
+            return {"locale": request["locale"]}
+        if method == "resolveFoundationInvalidResourceExecutorTarget":
+            return {
+                "capabilitySessionId": "session-native",
+                "capabilitySessionIdHash": "a" * 64,
+                "targetDeviceId": "device-native",
+                "targetDeviceIdHash": "b" * 64,
+                "targetCapabilityId": "filesystem.read",
+                "targetPlatform": "desktop",
+            }
+        if method == "getFoundationClientExecutorCounters":
+            return {
+                "capabilitySessionIdHash": "a" * 64,
+                "targetDeviceIdHash": "b" * 64,
+                "targetCapabilityId": "filesystem.read",
+                "targetPlatform": "desktop",
+                "executionAttemptCount": 4,
+                "sideEffectCount": 2,
+            }
+        if method == "runDevelopmentInvalidResourceReference":
+            if (
+                request.get("sampleId") != "sample-001"
+                or request.get("capabilitySessionId") != "session-native"
+                or request.get("deferConversationCleanup") is not True
+                or request.get("externalExecutorEvidence") is not True
+                or not str(request.get("scenarioKey") or "").startswith(
+                    f"{self.platform}|"
+                )
+                or not str(request.get("scenarioKey") or "").endswith(
+                    "|BASE-INVALID_RESOURCE_REF|sample-001"
+                )
+            ):
+                raise AssertionError(
+                    f"unexpected invalid-resource request: {request!r}"
+                )
+            self.pending_scenario_key = str(request["scenarioKey"])
+            if self.fail_journey_response:
+                raise RuntimeError("journey response lost")
+            facts = valid_invalid_resource_reference_capture()
+            facts["cleanup"]["conversationDeleted"] = False
+            facts["cleanup"]["localProjectionCleared"] = False
+            facts["executor"] = {
+                "evidenceSource": "external-coordinator",
+                "executionAttemptCountBefore": None,
+                "executionAttemptCountAfter": None,
+                "sideEffectCountBefore": None,
+                "sideEffectCountAfter": None,
+            }
+            return {
+                "conversationId": "conversation-invalid-resource",
+                "turnId": "turn-invalid-resource",
+                "durationMs": 10,
+                "runtimeEvent": facts["runtimeEvent"],
+                "facts": facts,
+                "cleanup": facts["cleanup"],
+            }
+        if method == "foundationDirectProbe":
+            if self.fail_direct:
+                raise RuntimeError("direct capture failed")
+            prepared = request["preparedScenario"]
+            if not isinstance(prepared, dict):
+                raise AssertionError("prepared scenario is invalid")
+            facts = prepared["facts"]
+            if not isinstance(facts, dict):
+                raise AssertionError("prepared facts are invalid")
+            facts["cleanup"] = {
+                "bindingRestored": True,
+                "localProjectionCleared": True,
+                "conversationDeleted": True,
+            }
+            probe = DirectRuntimeProbeInput(
+                platform=str(request["platform"]),
+                locale=str(request["locale"]),
+                cell=str(request["cell"]),
+                sample_id=str(request["sampleId"]),
+            )
+            result = capture(probe)
+            result["scenarioFacts"] = facts
+            result["assertions"] = (
+                evaluate_base_invalid_resource_reference(facts)
+            )
+            result["runtime-events"] = typed_runtime_role(facts)
+            result["runtimeAttestation"]["actorIdentityHash"] = (
+                facts["runtimeEvent"]["sourcePtidHash"]
+            )
+            self.pending_scenario_key = ""
+            return result
+        if method == "abortFoundationInvalidResourceReference":
+            if request.get("scenarioKey") != self.pending_scenario_key:
+                raise AssertionError("keyed cleanup did not use the locator")
+            if self.fail_journey_response and (
+                "conversationId" in request or "turnId" in request
+            ):
+                raise AssertionError(
+                    "lost-response cleanup must not override the locator"
+                )
+            if self.fail_abort:
+                raise RuntimeError("abort failed")
+            self.pending_scenario_key = ""
+            return {
+                "conversationDeleted": True,
+                "localProjectionCleared": True,
+            }
         raise AssertionError(f"unexpected method: {method}")
 
 
@@ -2411,6 +2546,194 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                 "browser:abortFoundationExecutorUnavailable",
             ],
         )
+
+    def test_invalid_resource_reuses_development_journey_for_browser(
+        self,
+    ) -> None:
+        call_log: list[str] = []
+        native = InvalidResourceHarnessClient(
+            "desktop_app",
+            call_log=call_log,
+        )
+        browser = InvalidResourceHarnessClient(
+            "browser",
+            call_log=call_log,
+        )
+        coordinator = (
+            foundation_scenario_runner
+            .FoundationInvalidResourceReferenceCoordinator(
+                SimpleNamespace(native=native, browser=browser)
+            )
+        )
+        probe = foundation_scenario_runner._make_direct_probe(
+            browser,
+            invalid_resource_reference_coordinator=coordinator,
+        )
+
+        result = probe(
+            DirectRuntimeProbeInput(
+                platform="browser",
+                locale="zh-CN",
+                cell="BASE-INVALID_RESOURCE_REF",
+                sample_id="sample-001",
+            )
+        )
+
+        self.assertTrue(
+            result["assertions"]["typedInvalidResourceReference"]
+        )
+        self.assertTrue(result["assertions"]["zeroResourceRead"])
+        self.assertEqual(
+            call_log,
+            [
+                "browser:setFoundationLocale",
+                "browser:resolveFoundationInvalidResourceExecutorTarget",
+                "desktop_app:getFoundationClientExecutorCounters",
+                "browser:runDevelopmentInvalidResourceReference",
+                "desktop_app:getFoundationClientExecutorCounters",
+                "browser:foundationDirectProbe",
+            ],
+        )
+
+    def test_invalid_resource_reuses_development_journey_for_native(
+        self,
+    ) -> None:
+        call_log: list[str] = []
+        native = InvalidResourceHarnessClient(
+            "desktop_app",
+            call_log=call_log,
+        )
+        coordinator = (
+            foundation_scenario_runner
+            .FoundationInvalidResourceReferenceCoordinator(
+                SimpleNamespace(native=native, browser=Mock())
+            )
+        )
+
+        result = coordinator.capture(
+            DirectRuntimeProbeInput(
+                platform="desktop_app",
+                locale="zh-CN",
+                cell="BASE-INVALID_RESOURCE_REF",
+                sample_id="sample-001",
+            )
+        )
+
+        self.assertTrue(result["assertions"]["zeroLocalSideEffect"])
+        self.assertEqual(
+            call_log,
+            [
+                "desktop_app:setFoundationLocale",
+                "desktop_app:resolveFoundationInvalidResourceExecutorTarget",
+                "desktop_app:getFoundationClientExecutorCounters",
+                "desktop_app:runDevelopmentInvalidResourceReference",
+                "desktop_app:getFoundationClientExecutorCounters",
+                "desktop_app:foundationDirectProbe",
+            ],
+        )
+
+    def test_invalid_resource_failure_cleans_deferred_journey(self) -> None:
+        call_log: list[str] = []
+        native = InvalidResourceHarnessClient(
+            "desktop_app",
+            call_log=call_log,
+        )
+        browser = InvalidResourceHarnessClient(
+            "browser",
+            call_log=call_log,
+            fail_direct=True,
+        )
+        coordinator = (
+            foundation_scenario_runner
+            .FoundationInvalidResourceReferenceCoordinator(
+                SimpleNamespace(native=native, browser=browser)
+            )
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "direct capture failed"):
+            coordinator.capture(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="en",
+                    cell="BASE-INVALID_RESOURCE_REF",
+                    sample_id="sample-001",
+                )
+            )
+
+        self.assertEqual(
+            call_log[-2:],
+            [
+                "browser:foundationDirectProbe",
+                "browser:abortFoundationInvalidResourceReference",
+            ],
+        )
+
+    def test_invalid_resource_lost_response_uses_keyed_cleanup(self) -> None:
+        call_log: list[str] = []
+        native = InvalidResourceHarnessClient(
+            "desktop_app",
+            call_log=call_log,
+        )
+        browser = InvalidResourceHarnessClient(
+            "browser",
+            call_log=call_log,
+            fail_journey_response=True,
+        )
+        coordinator = (
+            foundation_scenario_runner
+            .FoundationInvalidResourceReferenceCoordinator(
+                SimpleNamespace(native=native, browser=browser)
+            )
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "journey response lost"):
+            coordinator.capture(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="en",
+                    cell="BASE-INVALID_RESOURCE_REF",
+                    sample_id="sample-001",
+                )
+            )
+
+        self.assertEqual(
+            call_log[-2:],
+            [
+                "browser:runDevelopmentInvalidResourceReference",
+                "browser:abortFoundationInvalidResourceReference",
+            ],
+        )
+
+    def test_invalid_resource_preserves_primary_and_cleanup_failure(self) -> None:
+        native = InvalidResourceHarnessClient(
+            "desktop_app",
+            call_log=[],
+        )
+        browser = InvalidResourceHarnessClient(
+            "browser",
+            call_log=[],
+            fail_journey_response=True,
+            fail_abort=True,
+        )
+        coordinator = (
+            foundation_scenario_runner
+            .FoundationInvalidResourceReferenceCoordinator(
+                SimpleNamespace(native=native, browser=browser)
+            )
+        )
+
+        with self.assertRaisesRegex(
+            foundation_scenario_runner.ScenarioRunnerError,
+            "journey response lost; CLEANUP_FAILED: abort failed",
+        ):
+            coordinator.capture(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="en",
+                    cell="BASE-INVALID_RESOURCE_REF",
+                    sample_id="sample-001",
+                )
+            )
 
     def test_forbidden_actor_coordinates_bob_owner_and_browser_receiver(
         self,
