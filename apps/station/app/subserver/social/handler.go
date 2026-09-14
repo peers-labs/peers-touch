@@ -1,21 +1,33 @@
 package social
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	nethttp "net/http"
+	"net/url"
+	"strconv"
 	"strings"
 
+	securecontentkernel "github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -36,9 +48,19 @@ const (
 	routeSocialUserPosts    = "/api/v1/social/users/:userId/posts"
 
 	// Moments (preferred)
-	routeSocialMoments       = "/api/v1/social/moments"
-	routeSocialMoment        = "/api/v1/social/moments/:id"
-	routeSocialMomentComment = "/api/v1/social/moments/:id/comments"
+	routeSocialMoments               = "/api/v1/social/moments"
+	routeSocialMoment                = "/api/v1/social/moments/:id"
+	routeSocialMomentComment         = "/api/v1/social/moments/:id/comments"
+	routeSocialPreparePrivateMoment  = "/api/v1/social/moments/prepare-private"
+	routeSocialSubmitPrivateMoment   = "/api/v1/social/moments/submit-private"
+	routeSocialPreparePrivateComment = "/api/v1/social/moments/:id/comments/prepare-private"
+	routeSocialSubmitPrivateComment  = "/api/v1/social/moments/:id/comments/submit-private"
+	routeSocialObjectUploadBegin     = "/api/v1/social/moments/objects/uploads/begin"
+	routeSocialObjectUploadStatus    = "/api/v1/social/moments/objects/uploads/:upload_id"
+	routeSocialObjectUploadChunk     = "/api/v1/social/moments/objects/uploads/:upload_id/chunks/:chunk_index"
+	routeSocialObjectUploadComplete  = "/api/v1/social/moments/objects/uploads/:upload_id/complete"
+	routeSocialObjectUploadCancel    = "/api/v1/social/moments/objects/uploads/:upload_id/cancel"
+	routeSocialObjectDownload        = "/api/v1/social/moments/objects/:object_id"
 
 	// Reactions
 	routeSocialPostReact   = "/api/v1/social/posts/:id/react"
@@ -90,6 +112,14 @@ func (s *subServer) Handlers() []server.Handler {
 		// Moments / Posts (write)
 		server.NewTypedHandler("social-create-post", routeSocialPosts, server.POST, s.handleCreatePost, cw, jw),
 		server.NewTypedHandler("social-create-moment", routeSocialMoments, server.POST, s.handleCreatePost, cw, jw),
+		server.NewStrictTypedHandler("social-prepare-private-moment", routeSocialPreparePrivateMoment, server.POST, s.handlePreparePrivateMoment, cw, deviceIDWrapper, jw),
+		server.NewStrictTypedHandler("social-submit-private-moment", routeSocialSubmitPrivateMoment, server.POST, s.handleSubmitPrivateMoment, cw, deviceIDWrapper, jw),
+		server.NewStrictTypedHandler("social-private-object-upload-begin", routeSocialObjectUploadBegin, server.POST, s.handleBeginPrivateObjectUpload, cw, deviceIDWrapper, jw),
+		server.NewHTTPHandler("social-private-object-upload-status", routeSocialObjectUploadStatus, server.GET, socialObjectRawHandler(s.handlePrivateObjectUploadStatus), cw, deviceIDWrapper, jw),
+		server.NewHTTPHandler("social-private-object-upload-chunk", routeSocialObjectUploadChunk, server.PUT, socialObjectRawHandler(s.handlePrivateObjectChunk), cw, deviceIDWrapper, jw),
+		server.NewStrictTypedHandler("social-private-object-upload-complete", routeSocialObjectUploadComplete, server.POST, s.handleCompletePrivateObjectUpload, socialObjectPathWrapper("/api/v1/social/moments/objects/uploads/", "/complete"), cw, deviceIDWrapper, jw),
+		server.NewStrictTypedHandler("social-private-object-upload-cancel", routeSocialObjectUploadCancel, server.POST, s.handleCancelPrivateObjectUpload, socialObjectPathWrapper("/api/v1/social/moments/objects/uploads/", "/cancel"), cw, deviceIDWrapper, jw),
+		server.NewHTTPHandler("social-private-object-download", routeSocialObjectDownload, server.GET, socialObjectRawHandler(s.handlePrivateObjectDownload), cw, deviceIDWrapper, jw),
 		server.NewTypedHandler("social-update-post", routeSocialPost, server.PUT, s.handleUpdatePost, cw, jw),
 		server.NewTypedHandler("social-delete-post", routeSocialPost, server.DELETE, s.handleDeletePost, cw, jw),
 		server.NewTypedHandler("social-delete-moment", routeSocialMoment, server.DELETE, s.handleDeletePost, cw, jw),
@@ -97,7 +127,7 @@ func (s *subServer) Handlers() []server.Handler {
 
 		// Moments / Posts (read)
 		server.NewTypedHandler("social-get-post", routeSocialPost, server.GET, s.handleGetPost, cw, ojw),
-		server.NewTypedHandler("social-get-moment", routeSocialMoment, server.GET, s.handleGetPost, cw, ojw),
+		server.NewTypedHandler("social-get-moment", routeSocialMoment, server.GET, s.handleGetMomentResource, socialMomentPathWrapper, cw, deviceIDWrapper, ojw),
 		server.NewTypedHandler("social-get-timeline", routeSocialTimeline, server.GET, s.handleGetTimeline, cw, ojw),
 		server.NewTypedHandler("social-sync-moments-projection", routeSocialMomentsSync, server.POST, s.handleSyncMomentsProjection, cw, jw),
 		server.NewTypedHandler("social-get-user-posts", routeSocialUserPosts, server.GET, s.handleGetUserPosts, cw, ojw),
@@ -111,6 +141,8 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-get-moment-comments", routeSocialMomentComment, server.GET, s.handleGetPostComments, cw, ojw),
 		server.NewTypedHandler("social-create-comment", routeSocialPostComments, server.POST, s.handleCreateComment, cw, jw),
 		server.NewTypedHandler("social-create-moment-comment", routeSocialMomentComment, server.POST, s.handleCreateComment, cw, jw),
+		server.NewStrictTypedHandler("social-prepare-private-comment", routeSocialPreparePrivateComment, server.POST, s.handlePreparePrivateComment, cw, deviceIDWrapper, jw),
+		server.NewStrictTypedHandler("social-submit-private-comment", routeSocialSubmitPrivateComment, server.POST, s.handleSubmitPrivateComment, cw, deviceIDWrapper, jw),
 		server.NewTypedHandler("social-delete-comment", routeSocialComment, server.DELETE, s.handleDeleteComment, cw, jw),
 
 		// Relationships
@@ -145,6 +177,820 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-accept-friend-request", routeSocialFriendRequestAccept, server.POST, s.handleAcceptFriendRequest, cw, deviceIDWrapper, jw),
 		server.NewTypedHandler("social-reject-friend-request", routeSocialFriendRequestReject, server.POST, s.handleRejectFriendRequest, cw, deviceIDWrapper, jw),
 		server.NewTypedHandler("social-list-friend-requests", routeSocialFriendRequests, server.GET, s.handleListFriendRequests, cw, jw),
+	}
+}
+
+func (s *subServer) handlePreparePrivateMoment(
+	ctx context.Context,
+	req *privatecontentpb.PreparePrivateMomentRequest,
+) (*privatecontentpb.PreparePrivateMomentResponse, error) {
+	author, err := s.privateContentAuthor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.privateContentSvc.PreparePrivateMoment(ctx, author, req)
+	if err != nil {
+		return nil, privateContentHandlerError(err)
+	}
+	return response, nil
+}
+
+func (s *subServer) handleSubmitPrivateMoment(
+	ctx context.Context,
+	req *privatecontentpb.SubmitPrivateMomentRequest,
+) (*privatecontentpb.SubmitPrivateMomentResponse, error) {
+	author, err := s.privateContentAuthor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.privateContentSvc.SubmitPrivateMoment(
+		ctx,
+		author.Endpoint,
+		req,
+	)
+	if err != nil {
+		return nil, privateContentHandlerError(err)
+	}
+	return response, nil
+}
+
+func (s *subServer) handlePreparePrivateComment(
+	ctx context.Context,
+	req *privatecontentpb.PreparePrivateCommentRequest,
+) (*privatecontentpb.PreparePrivateCommentResponse, error) {
+	author, err := s.privateContentAuthor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.privateContentSvc.PreparePrivateComment(ctx, author, req)
+	if err != nil {
+		return nil, privateContentHandlerError(err)
+	}
+	return response, nil
+}
+
+func (s *subServer) handleSubmitPrivateComment(
+	ctx context.Context,
+	req *privatecontentpb.SubmitPrivateCommentRequest,
+) (*privatecontentpb.SubmitPrivateCommentResponse, error) {
+	author, err := s.privateContentAuthor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.privateContentSvc.SubmitPrivateComment(
+		ctx,
+		author.Endpoint,
+		req,
+	)
+	if err != nil {
+		return nil, privateContentHandlerError(err)
+	}
+	return response, nil
+}
+
+func (s *subServer) handleBeginPrivateObjectUpload(
+	ctx context.Context,
+	req *securecontentpb.BeginEncryptedObjectUploadRequest,
+) (*securecontentpb.BeginEncryptedObjectUploadResponse, error) {
+	endpoint, err := s.privateObjectEndpoint(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.privateObjectSvc.Begin(ctx, endpoint, req)
+	if err != nil {
+		return nil, privateContentHandlerError(err)
+	}
+	return response, nil
+}
+
+func (s *subServer) handlePrivateObjectUploadStatus(
+	ctx context.Context,
+	req server.Request,
+	resp server.Response,
+) error {
+	endpoint, err := s.privateObjectEndpoint(ctx)
+	if err != nil {
+		return err
+	}
+	if err := rejectSocialRequestBody(
+		req,
+		"private object status body is forbidden",
+	); err != nil {
+		return err
+	}
+	uploadID, generation, err := canonicalSocialObjectStatusRequest(req.Path())
+	if err != nil {
+		return err
+	}
+	response, err := s.privateObjectSvc.Status(
+		ctx,
+		endpoint,
+		&securecontentpb.GetEncryptedObjectUploadRequest{
+			UploadId:   uploadID,
+			Generation: generation,
+		},
+	)
+	if err != nil {
+		return privateContentHandlerError(err)
+	}
+	return writeSocialObjectProto(resp, response)
+}
+
+func (s *subServer) handleCompletePrivateObjectUpload(
+	ctx context.Context,
+	req *securecontentpb.CompleteEncryptedObjectUploadRequest,
+) (*securecontentpb.CompleteEncryptedObjectUploadResponse, error) {
+	endpoint, err := s.privateObjectEndpoint(ctx)
+	if err != nil {
+		return nil, err
+	}
+	uploadID, ok := ctx.Value(socialObjectPathContextKey{}).(string)
+	if !ok || uploadID == "" ||
+		(req.GetUploadId() != "" && req.GetUploadId() != uploadID) {
+		return nil, server.BadRequest(
+			"private object completion path does not match request",
+		)
+	}
+	req.UploadId = uploadID
+	response, err := s.privateObjectSvc.Complete(ctx, endpoint, req)
+	if err != nil {
+		return nil, privateContentHandlerError(err)
+	}
+	return response, nil
+}
+
+func (s *subServer) handleCancelPrivateObjectUpload(
+	ctx context.Context,
+	req *securecontentpb.CancelEncryptedObjectUploadRequest,
+) (*securecontentpb.CancelEncryptedObjectUploadResponse, error) {
+	endpoint, err := s.privateObjectEndpoint(ctx)
+	if err != nil {
+		return nil, err
+	}
+	uploadID, ok := ctx.Value(socialObjectPathContextKey{}).(string)
+	if !ok || uploadID == "" ||
+		(req.GetUploadId() != "" && req.GetUploadId() != uploadID) {
+		return nil, server.BadRequest(
+			"private object cancellation path does not match request",
+		)
+	}
+	req.UploadId = uploadID
+	response, err := s.privateObjectSvc.Cancel(ctx, endpoint, req)
+	if err != nil {
+		return nil, privateContentHandlerError(err)
+	}
+	return response, nil
+}
+
+func (s *subServer) handlePrivateObjectChunk(
+	ctx context.Context,
+	req server.Request,
+	resp server.Response,
+) error {
+	endpoint, err := s.privateObjectEndpoint(ctx)
+	if err != nil {
+		return err
+	}
+	uploadID, chunkIndex, err := socialObjectChunkPath(req.Path())
+	if err != nil {
+		return err
+	}
+	if mediaType := strings.TrimSpace(
+		socialObjectHeader(req, "Content-Type"),
+	); mediaType != "application/octet-stream" {
+		return server.BadRequest(
+			"private object chunks require application/octet-stream",
+		)
+	}
+	generation, err := canonicalUnsignedHeader(
+		req,
+		"X-Upload-Generation",
+		64,
+	)
+	if err != nil {
+		return err
+	}
+	offset, err := canonicalUnsignedHeader(req, "X-Chunk-Offset", 64)
+	if err != nil {
+		return err
+	}
+	size, err := canonicalUnsignedHeader(req, "X-Ciphertext-Size", 64)
+	if err != nil {
+		return err
+	}
+	contentLength, err := canonicalUnsignedHeader(req, "Content-Length", 64)
+	if err != nil {
+		return err
+	}
+	if size == 0 ||
+		size > uint64(
+			securecontentkernel.ObjectChunkSize+
+				securecontentkernel.AES256GCMTagSize,
+		) ||
+		contentLength != size {
+		return server.BadRequest(
+			"private object chunk length is invalid",
+		)
+	}
+	body, err := readBoundedSocialObjectBody(req, size)
+	if err != nil {
+		return server.BadRequest(
+			"private object chunk body is invalid",
+		)
+	}
+	ciphertextHash, err := canonicalSHA256Header(
+		req,
+		"X-Ciphertext-SHA256",
+	)
+	if err != nil {
+		return err
+	}
+	idempotencyKey := strings.TrimSpace(
+		socialObjectHeader(req, "Idempotency-Key"),
+	)
+	if idempotencyKey == "" ||
+		len(idempotencyKey) > 128 ||
+		idempotencyKey != socialObjectHeader(req, "Idempotency-Key") {
+		return server.BadRequest(
+			"private object chunk idempotency key is invalid",
+		)
+	}
+	response, err := s.privateObjectSvc.PutChunk(
+		ctx,
+		endpoint,
+		application.PrivateObjectChunk{
+			UploadID:         uploadID,
+			Generation:       generation,
+			ChunkIndex:       chunkIndex,
+			Offset:           offset,
+			Size:             size,
+			CiphertextSHA256: ciphertextHash,
+			IdempotencyKey:   idempotencyKey,
+			Body:             body,
+		},
+	)
+	if err != nil {
+		return privateContentHandlerError(err)
+	}
+	return writeSocialObjectProto(resp, response)
+}
+
+func readBoundedSocialObjectBody(
+	request server.Request,
+	size uint64,
+) ([]byte, error) {
+	var reader io.Reader
+	if streaming, ok := request.(server.StreamingRequest); ok {
+		reader = streaming.BodyStream()
+	} else {
+		reader = bytes.NewReader(request.Body())
+	}
+	body, err := io.ReadAll(io.LimitReader(reader, int64(size)+1))
+	if err != nil || uint64(len(body)) != size {
+		return nil, errors.New("private object body length differs")
+	}
+	return body, nil
+}
+
+func (s *subServer) handlePrivateObjectDownload(
+	ctx context.Context,
+	req server.Request,
+	resp server.Response,
+) error {
+	endpoint, err := s.privateObjectEndpoint(ctx)
+	if err != nil {
+		return err
+	}
+	objectID, err := socialObjectPathValue(
+		req.Path(),
+		"/api/v1/social/moments/objects/",
+		"",
+	)
+	if err != nil {
+		return err
+	}
+	query, err := socialObjectQuery(req.Path())
+	if err != nil {
+		return server.NotFound("private object not found")
+	}
+	expectedValues, ok := query["expected_descriptor_sha256"]
+	if !ok || len(expectedValues) != 1 || len(query) != 1 {
+		return server.NotFound("private object not found")
+	}
+	expectedDescriptor, err := decodeCanonicalSHA256(expectedValues[0])
+	if err != nil {
+		return server.NotFound("private object not found")
+	}
+	start, end, partial, err := socialObjectRange(
+		socialObjectHeader(req, "Range"),
+	)
+	if err != nil {
+		return err
+	}
+	download, err := s.privateObjectSvc.Download(
+		ctx,
+		endpoint,
+		objectID,
+		expectedDescriptor,
+		start,
+		end,
+	)
+	if err != nil {
+		if domain.PrivateContentCodeOf(err) ==
+			domain.PrivateContentNotFound {
+			return server.NotFound("private object not found")
+		}
+		if partial &&
+			domain.PrivateContentCodeOf(err) ==
+				domain.PrivateContentInvalidArgument {
+			return server.NewHandlerError(
+				nethttp.StatusRequestedRangeNotSatisfiable,
+				"private object range is not satisfiable",
+			)
+		}
+		return privateContentHandlerError(err)
+	}
+	descriptorHex := hex.EncodeToString(download.DescriptorSHA256)
+	resp.SetHeader("Accept-Ranges", "bytes")
+	resp.SetHeader("Content-Type", "application/octet-stream")
+	resp.SetHeader("ETag", `"sha256:`+descriptorHex+`"`)
+	resp.SetHeader("X-Descriptor-SHA256", descriptorHex)
+	resp.SetHeader(
+		"X-Total-Ciphertext-Size",
+		strconv.FormatUint(download.TotalSize, 10),
+	)
+	responseLength := download.TotalSize
+	if partial {
+		responseLength = uint64(download.End - download.Start + 1)
+	}
+	resp.SetHeader(
+		"Content-Length",
+		strconv.FormatUint(responseLength, 10),
+	)
+	if partial {
+		resp.SetHeader(
+			"Content-Range",
+			fmt.Sprintf(
+				"bytes %d-%d/%d",
+				download.Start,
+				download.End,
+				download.TotalSize,
+			),
+		)
+		resp.WriteHeader(nethttp.StatusPartialContent)
+	} else {
+		resp.WriteHeader(nethttp.StatusOK)
+	}
+	if streaming, ok := resp.(server.StreamingResponse); ok {
+		return streaming.SetBodyStream(
+			download.Body,
+			int64(responseLength),
+		)
+	}
+	defer download.Body.Close()
+	_, err = io.Copy(resp, download.Body)
+	return err
+}
+
+func (s *subServer) privateObjectEndpoint(
+	ctx context.Context,
+) (*model.ActorDeviceRef, error) {
+	actorPTID, ok := getActorPTID(ctx)
+	if !ok {
+		return nil, server.Unauthorized(
+			"authenticated private-content actor required",
+		)
+	}
+	deviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
+	if deviceID == "" {
+		return nil, server.Unauthorized(
+			"authenticated private-content device required",
+		)
+	}
+	if s.privateObjectSvc == nil {
+		return nil, server.InternalError(
+			"Social private-object service is unavailable",
+		)
+	}
+	return &model.ActorDeviceRef{
+		Actor: &model.ActorRef{
+			Ptid: actorPTID,
+			Kind: model.ActorKind_ACTOR_KIND_PERSON,
+		},
+		DeviceId: deviceID,
+	}, nil
+}
+
+type socialObjectPathContextKey struct{}
+
+type socialMomentPathContextKey struct{}
+
+func socialMomentPathWrapper(next server.EndpointHandler) server.EndpointHandler {
+	return func(
+		ctx context.Context,
+		request server.Request,
+		response server.Response,
+	) error {
+		if strings.Contains(request.Path(), "?") {
+			return server.BadRequest("moment point-read query is forbidden")
+		}
+		if err := rejectSocialRequestBody(
+			request,
+			"moment point-read body is forbidden",
+		); err != nil {
+			return err
+		}
+		postID, err := socialObjectPathValue(
+			request.Path(),
+			"/api/v1/social/moments/",
+			"",
+		)
+		if err != nil {
+			return err
+		}
+		return next(
+			context.WithValue(ctx, socialMomentPathContextKey{}, postID),
+			request,
+			response,
+		)
+	}
+}
+
+func socialObjectPathWrapper(prefix string, suffix string) server.Wrapper {
+	return func(next server.EndpointHandler) server.EndpointHandler {
+		return func(
+			ctx context.Context,
+			req server.Request,
+			resp server.Response,
+		) error {
+			value, err := socialObjectPathValue(req.Path(), prefix, suffix)
+			if err != nil {
+				return err
+			}
+			return next(
+				context.WithValue(
+					ctx,
+					socialObjectPathContextKey{},
+					value,
+				),
+				req,
+				resp,
+			)
+		}
+	}
+}
+
+func socialObjectPathValue(
+	path string,
+	prefix string,
+	suffix string,
+) (string, error) {
+	clean := path
+	if index := strings.IndexByte(clean, '?'); index >= 0 {
+		clean = clean[:index]
+	}
+	if !strings.HasPrefix(clean, prefix) ||
+		(suffix != "" && !strings.HasSuffix(clean, suffix)) {
+		return "", server.BadRequest("private object route is invalid")
+	}
+	value := strings.TrimSuffix(strings.TrimPrefix(clean, prefix), suffix)
+	if value == "" || strings.Contains(value, "/") {
+		return "", server.BadRequest(
+			"private object resource ID is invalid",
+		)
+	}
+	return value, nil
+}
+
+func socialObjectChunkPath(path string) (string, uint32, error) {
+	const prefix = "/api/v1/social/moments/objects/uploads/"
+	const separator = "/chunks/"
+	if strings.Contains(path, "?") {
+		return "", 0, server.BadRequest(
+			"private object chunk query is forbidden",
+		)
+	}
+	clean := path
+	if !strings.HasPrefix(clean, prefix) {
+		return "", 0, server.BadRequest(
+			"private object chunk route is invalid",
+		)
+	}
+	uploadID, rawIndex, found := strings.Cut(
+		strings.TrimPrefix(clean, prefix),
+		separator,
+	)
+	if !found ||
+		uploadID == "" ||
+		rawIndex == "" ||
+		strings.Contains(uploadID, "/") ||
+		strings.Contains(rawIndex, "/") {
+		return "", 0, server.BadRequest(
+			"private object chunk route is invalid",
+		)
+	}
+	index, err := strconv.ParseUint(rawIndex, 10, 32)
+	if err != nil ||
+		(rawIndex != "0" && strings.HasPrefix(rawIndex, "0")) {
+		return "", 0, server.BadRequest(
+			"private object chunk index is invalid",
+		)
+	}
+	return uploadID, uint32(index), nil
+}
+
+func canonicalSocialObjectStatusRequest(
+	path string,
+) (string, uint64, error) {
+	const prefix = "/api/v1/social/moments/objects/uploads/"
+	index := strings.IndexByte(path, '?')
+	if index < 0 {
+		return "", 0, server.BadRequest(
+			"private object status generation query is required",
+		)
+	}
+	rawQuery := path[index+1:]
+	const generationPrefix = "generation="
+	if !strings.HasPrefix(rawQuery, generationPrefix) ||
+		strings.Contains(rawQuery, "&") ||
+		strings.Contains(rawQuery, ";") {
+		return "", 0, server.BadRequest(
+			"private object status query is invalid",
+		)
+	}
+	rawGeneration := strings.TrimPrefix(rawQuery, generationPrefix)
+	if rawGeneration == "" ||
+		(rawGeneration != "0" && strings.HasPrefix(rawGeneration, "0")) ||
+		strings.HasPrefix(rawGeneration, "+") ||
+		strings.HasPrefix(rawGeneration, "-") {
+		return "", 0, server.BadRequest(
+			"private object status generation is not canonical",
+		)
+	}
+	generation, err := strconv.ParseUint(rawGeneration, 10, 64)
+	if err != nil || generation == 0 {
+		return "", 0, server.BadRequest(
+			"private object status generation is invalid",
+		)
+	}
+	uploadID, err := socialObjectPathValue(path[:index], prefix, "")
+	if err != nil {
+		return "", 0, err
+	}
+	return uploadID, generation, nil
+}
+
+func rejectSocialRequestBody(
+	request server.Request,
+	message string,
+) error {
+	var reader io.Reader
+	if streaming, ok := request.(server.StreamingRequest); ok {
+		reader = streaming.BodyStream()
+	} else {
+		reader = bytes.NewReader(request.Body())
+	}
+	var probe [1]byte
+	read, err := reader.Read(probe[:])
+	if read != 0 || (err != nil && !errors.Is(err, io.EOF)) {
+		return server.BadRequest(message)
+	}
+	return nil
+}
+
+func socialObjectHeader(req server.Request, name string) string {
+	for key, value := range req.Header() {
+		if strings.EqualFold(key, name) {
+			return value
+		}
+	}
+	return ""
+}
+
+func canonicalUnsignedHeader(
+	req server.Request,
+	name string,
+	bitSize int,
+) (uint64, error) {
+	raw := socialObjectHeader(req, name)
+	if raw == "" ||
+		(raw != "0" && strings.HasPrefix(raw, "0")) ||
+		strings.HasPrefix(raw, "+") ||
+		strings.HasPrefix(raw, "-") {
+		return 0, server.BadRequest(name + " is not canonical")
+	}
+	value, err := strconv.ParseUint(raw, 10, bitSize)
+	if err != nil {
+		return 0, server.BadRequest(name + " is invalid")
+	}
+	return value, nil
+}
+
+func canonicalSHA256Header(
+	req server.Request,
+	name string,
+) ([]byte, error) {
+	value, err := decodeCanonicalSHA256(socialObjectHeader(req, name))
+	if err != nil {
+		return nil, server.BadRequest(name + " is invalid")
+	}
+	return value, nil
+}
+
+func decodeCanonicalSHA256(value string) ([]byte, error) {
+	if len(value) != sha256.Size*2 || strings.ToLower(value) != value {
+		return nil, errors.New("SHA-256 is not lowercase hexadecimal")
+	}
+	decoded, err := hex.DecodeString(value)
+	if err != nil || len(decoded) != sha256.Size {
+		return nil, errors.New("SHA-256 is invalid")
+	}
+	return decoded, nil
+}
+
+func socialObjectQuery(path string) (url.Values, error) {
+	index := strings.IndexByte(path, '?')
+	if index < 0 {
+		return nil, errors.New("query is required")
+	}
+	return url.ParseQuery(path[index+1:])
+}
+
+func socialObjectRange(
+	value string,
+) (int64, int64, bool, error) {
+	if strings.TrimSpace(value) == "" {
+		return -1, -1, false, nil
+	}
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "bytes=") ||
+		strings.Contains(value, ",") {
+		return 0, 0, false, server.NewHandlerError(
+			nethttp.StatusRequestedRangeNotSatisfiable,
+			"private object range is invalid",
+		)
+	}
+	startRaw, endRaw, found := strings.Cut(
+		strings.TrimPrefix(value, "bytes="),
+		"-",
+	)
+	if !found || startRaw == "" {
+		return 0, 0, false, server.NewHandlerError(
+			nethttp.StatusRequestedRangeNotSatisfiable,
+			"private object range is invalid",
+		)
+	}
+	start, err := strconv.ParseInt(startRaw, 10, 64)
+	if err != nil ||
+		start < 0 ||
+		(startRaw != "0" && strings.HasPrefix(startRaw, "0")) {
+		return 0, 0, false, server.NewHandlerError(
+			nethttp.StatusRequestedRangeNotSatisfiable,
+			"private object range is invalid",
+		)
+	}
+	end := int64(-1)
+	if endRaw != "" {
+		end, err = strconv.ParseInt(endRaw, 10, 64)
+		if err != nil ||
+			end < start ||
+			(endRaw != "0" && strings.HasPrefix(endRaw, "0")) {
+			return 0, 0, false, server.NewHandlerError(
+				nethttp.StatusRequestedRangeNotSatisfiable,
+				"private object range is invalid",
+			)
+		}
+	}
+	return start, end, true, nil
+}
+
+func writeSocialObjectProto(
+	response server.Response,
+	message proto.Message,
+) error {
+	body, err := proto.MarshalOptions{Deterministic: true}.Marshal(message)
+	if err != nil {
+		return err
+	}
+	response.SetHeader("Content-Type", "application/protobuf")
+	response.WriteHeader(nethttp.StatusOK)
+	_, err = response.Write(body)
+	return err
+}
+
+func socialObjectRawHandler(
+	next server.EndpointHandler,
+) server.EndpointHandler {
+	return func(
+		ctx context.Context,
+		request server.Request,
+		response server.Response,
+	) error {
+		err := next(ctx, request, response)
+		if err == nil {
+			return nil
+		}
+		status := nethttp.StatusInternalServerError
+		message := "private object request failed"
+		if handlerError, ok := err.(*server.HandlerError); ok {
+			status = handlerError.Code
+			message = handlerError.Message
+			for name, value := range handlerError.Headers {
+				response.SetHeader(name, value)
+			}
+			if len(handlerError.Body) != 0 {
+				if handlerError.ContentType != "" {
+					response.SetHeader(
+						"Content-Type",
+						handlerError.ContentType,
+					)
+				}
+				response.WriteHeader(status)
+				_, writeErr := response.Write(handlerError.Body)
+				return writeErr
+			}
+		}
+		body, marshalErr := json.Marshal(map[string]any{
+			"error": message,
+			"code":  status,
+		})
+		if marshalErr != nil {
+			return marshalErr
+		}
+		response.SetHeader("Content-Type", "application/json")
+		response.WriteHeader(status)
+		_, writeErr := response.Write(body)
+		return writeErr
+	}
+}
+
+func (s *subServer) privateContentAuthor(
+	ctx context.Context,
+) (domain.PrivateContentAuthor, error) {
+	actorPTID, ok := getActorPTID(ctx)
+	if !ok {
+		return domain.PrivateContentAuthor{},
+			server.Unauthorized("authenticated private-content actor required")
+	}
+	deviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
+	if deviceID == "" {
+		return domain.PrivateContentAuthor{},
+			server.Unauthorized("authenticated private-content device required")
+	}
+	if s.privateContentSvc == nil {
+		return domain.PrivateContentAuthor{},
+			server.InternalError("Social private-content service is unavailable")
+	}
+	actors, err := resolvePrivateContentActorCapabilities()
+	if err != nil {
+		return domain.PrivateContentAuthor{},
+			server.InternalErrorWithCause(
+				"Actor Identity capability is unavailable",
+				err,
+			)
+	}
+	homeStation, err := actors.ResolveActorHomeStationPeerID(ctx, actorPTID)
+	if err != nil {
+		return domain.PrivateContentAuthor{},
+			server.InternalErrorWithCause(
+				"resolve private-content actor Home Station",
+				err,
+			)
+	}
+	return domain.PrivateContentAuthor{
+		Endpoint: &model.ActorDeviceRef{
+			Actor: &model.ActorRef{
+				Ptid: actorPTID,
+				Kind: model.ActorKind_ACTOR_KIND_PERSON,
+			},
+			DeviceId: deviceID,
+		},
+		HomeStationPeerID: homeStation,
+	}, nil
+}
+
+func privateContentHandlerError(err error) error {
+	switch domain.PrivateContentCodeOf(err) {
+	case domain.PrivateContentInvalidArgument,
+		domain.PrivateContentUnsupported:
+		return server.BadRequestWithCause("invalid private-content command", err)
+	case domain.PrivateContentUnauthorized:
+		return server.Forbidden("private-content command is unauthorized")
+	case domain.PrivateContentNotFound:
+		return server.NotFound("private content not found")
+	case domain.PrivateContentConflict,
+		domain.PrivateContentStalePlan,
+		domain.PrivateContentExpiredPlan:
+		return server.NewHandlerErrorWithCause(
+			nethttp.StatusConflict,
+			"private-content command conflicts with current authority",
+			err,
+		)
+	default:
+		return server.InternalErrorWithCause(
+			"private-content command failed",
+			err,
+		)
 	}
 }
 
@@ -183,6 +1029,11 @@ func (s *subServer) handleCreatePost(ctx context.Context, req *model.CreatePostR
 		// Backward-compat: synthesize an Audience from the legacy
 		// `visibility` field for clients that haven't migrated yet.
 		req.Audience = audienceFromLegacyVisibility(req.Visibility)
+	}
+	if !domain.IsPublic(req.Audience) {
+		return nil, server.BadRequest(
+			"private moments require the prepare-private and submit-private routes",
+		)
 	}
 	post, err := s.momentSvc.CreateMoment(ctx, req, actorPTID)
 	if err != nil {
@@ -268,6 +1119,107 @@ func (s *subServer) handleGetPost(ctx context.Context, req *model.GetPostRequest
 		Post:        post,
 		Explanation: application.BuildFeedObjectExplanation(post, model.RelationshipReason_RELATIONSHIP_REASON_PROFILE_VIEW),
 	}, nil
+}
+
+func (s *subServer) handleGetMomentResource(
+	ctx context.Context,
+	req *privatecontentpb.GetMomentResourceRequest,
+) (*privatecontentpb.GetMomentResourceResponse, error) {
+	postID, ok := ctx.Value(socialMomentPathContextKey{}).(string)
+	if !ok || postID == "" {
+		return nil, server.BadRequest("moment path is invalid")
+	}
+	if req == nil {
+		return nil, server.BadRequest("post_id is required")
+	}
+	if req.GetPostId() != "" && req.GetPostId() != postID {
+		return nil, server.BadRequest("moment path does not match request")
+	}
+	req.PostId = postID
+	var viewerPTID string
+	if ptid, ok := getActorPTID(ctx); ok {
+		viewerPTID = ptid
+	}
+	if legacyID, parseErr := strconv.ParseUint(
+		req.GetPostId(),
+		10,
+		64,
+	); parseErr == nil &&
+		strconv.FormatUint(legacyID, 10) == req.GetPostId() {
+		if publicPost, err := s.momentSvc.GetMoment(
+			ctx,
+			req.GetPostId(),
+			viewerPTID,
+		); err != nil {
+			return nil, server.InternalErrorWithCause(
+				"failed to resolve public moment",
+				err,
+			)
+		} else if publicPost != nil &&
+			domain.IsPublic(publicPost.GetAudience()) {
+			return &privatecontentpb.GetMomentResourceResponse{
+				Post: publicPost,
+				Explanation: application.BuildFeedObjectExplanation(
+					publicPost,
+					model.RelationshipReason_RELATIONSHIP_REASON_PROFILE_VIEW,
+				),
+				Resource: &privatecontentpb.PostResource{
+					Metadata: &privatecontentpb.PostMetadata{
+						PostId:       publicPost.GetId(),
+						ContentId:    publicPost.GetId(),
+						Author:       &model.ActorRef{Ptid: publicPost.GetAuthorPtid()},
+						Type:         publicPost.GetType(),
+						AudienceKind: model.Audience_PUBLIC,
+						CreatedAt:    publicPost.GetCreatedAt(),
+						UpdatedAt:    publicPost.GetUpdatedAt(),
+						IsDeleted:    publicPost.GetIsDeleted(),
+						Stats:        publicPost.GetStats(),
+					},
+					Body: &privatecontentpb.PostResource_PublicContent{
+						PublicContent: &privatecontentpb.PublicPostContent{
+							Post: publicPost,
+						},
+					},
+				},
+			}, nil
+		}
+	}
+	if err := domain.ValidatePrivateContentID(
+		req.GetPostId(),
+		"post_id",
+		"social.get_moment_resource",
+	); err != nil {
+		return nil, server.NotFound("moment not found")
+	}
+	actorPTID, ok := getActorPTID(ctx)
+	deviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
+	if !ok || deviceID == "" {
+		return nil, server.NotFound("moment not found")
+	}
+	if s.privateContentSvc == nil {
+		return nil, server.InternalError(
+			"Social private-content service is unavailable",
+		)
+	}
+	response, err := s.privateContentSvc.GetPrivateMoment(
+		ctx,
+		&model.ActorDeviceRef{
+			Actor: &model.ActorRef{
+				Ptid: actorPTID,
+				Kind: model.ActorKind_ACTOR_KIND_PERSON,
+			},
+			DeviceId: deviceID,
+		},
+		req.GetPostId(),
+	)
+	if err != nil {
+		if domain.PrivateContentCodeOf(err) ==
+			domain.PrivateContentNotFound {
+			return nil, server.NotFound("moment not found")
+		}
+		return nil, privateContentHandlerError(err)
+	}
+	return response, nil
 }
 
 func (s *subServer) handleGetUserPosts(ctx context.Context, req *model.ListPostsRequest) (*model.ListPostsResponse, error) {
@@ -414,6 +1366,21 @@ func (s *subServer) handleCreateComment(ctx context.Context, req *model.CreateCo
 	postID := domain.ParseID(req.PostId)
 	if postID == 0 {
 		return nil, server.BadRequest("invalid post_id")
+	}
+	parent, err := s.momentSvc.GetMoment(ctx, req.PostId, actorPTID)
+	if err != nil {
+		return nil, server.InternalErrorWithCause(
+			"failed to resolve comment parent",
+			err,
+		)
+	}
+	if parent == nil {
+		return nil, server.NotFound("post not found")
+	}
+	if !domain.IsPublic(parent.GetAudience()) {
+		return nil, server.BadRequest(
+			"private comments require the prepare-private and submit-private routes",
+		)
 	}
 	comment, err := s.commentSvc.CreateComment(ctx, req, postID, actorPTID)
 	if err != nil {

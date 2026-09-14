@@ -77,6 +77,7 @@ wire, storage, and recovery behavior.
 | [execution-plans/20260913-secure-content-hard-cut.md](./execution-plans/20260913-secure-content-hard-cut.md) | Dependency-backed hard-cut plan, workstream status, acceptance scenarios, and conflict controls |
 | [execution-plans/20260913-secure-content-hard-cut-review-prompt.md](./execution-plans/20260913-secure-content-hard-cut-review-prompt.md) | Independent PLAN review contract |
 | [execution-plans/20260914-recovery-social-durability-amendment-review-prompt.md](./execution-plans/20260914-recovery-social-durability-amendment-review-prompt.md) | Completed independent review contract for accepted `SC-D16` and `SC-D17` |
+| [execution-plans/20260914-social-object-transfer-amendment-review-prompt.md](./execution-plans/20260914-social-object-transfer-amendment-review-prompt.md) | Completed independent review contract for accepted `SC-D18` and `SC-D19` |
 | [execution-plans/20260913-secure-content-work-items.yaml](./execution-plans/20260913-secure-content-work-items.yaml) | Machine-shaped DevelopmentWorkItem contracts |
 | [execution-plans/20260913-secure-content-journeys.yaml](./execution-plans/20260913-secure-content-journeys.yaml) | Machine-shaped DevelopmentJourney contracts and budgets |
 

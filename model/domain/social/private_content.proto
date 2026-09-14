@@ -334,6 +334,7 @@ message PrivateContentVerification {
     PrivatePollAuthority poll_authority = 3;
     PrivateRepostAuthority repost_authority = 4;
   }
+  .peers_touch.model.secure_content.v1.StationContentSigningKeyAttestation station_signing_key_attestation = 5;
 }
 
 message PrivateContentAccess {
@@ -429,7 +430,11 @@ message GetMomentResourceRequest {
 }
 
 message GetMomentResourceResponse {
-  PostResource post = 1;
+  // Fields 1 and 2 intentionally preserve GetPostResponse wire semantics so
+  // existing Moment clients can keep decoding public reads during W6/W7.
+  .peers_touch.model.social.v1.Post post = 1;
+  .peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;
+  PostResource resource = 3;
 }
 
 message GetMomentCommentResourceRequest {

@@ -748,15 +748,32 @@ python3 -m tooling.development.secure_content.run \
 
 - **Responsibility**: FRIENDS truth, Social prepare/submit UOW, encrypted private
   Post/Comment foundations, Social object plane, viewer-scoped read, text+image.
+- **Read boundary**: W6 proves private Post point-read. Private Comment
+  point-read/list projection remains in W8 with the broader Comment lifecycle.
+- **Mechanical contract repair**: add the already accepted `Audience.FRIENDS`
+  wire value without renumbering existing values, then regenerate only the
+  scoped Go/Desktop/Mobile Social outputs. W1's generated substrate omitted this
+  product-required enum even though the accepted product and architecture
+  sources already define it.
 - **Dependencies**: W2A/W3/W4.
 - **Deliverables**: one transaction commits snapshot, ciphertext, slot mapping,
   envelopes, delivery, objects, grants and receipt; one Social UOW scenario
   module consumed by the W4-owned Development runner with no Evidence Store
-  dependency.
+  dependency. Accepted `SC-D18` makes W6 own all six
+  Social object routes for the minimal IMAGE path: begin, chunk, status,
+  complete-to-unattached, submit attach/grant, authenticated full/range read,
+  exact replay, failpoint rollback and unattached cleanup.
 - **Interim behavior**: every not-yet-implemented private subtype/audience fails
   explicitly; no request falls back to legacy plaintext.
-- **Failure**: stale relation/device plan, missing slot, object mismatch,
-  over-limit audience, block/delete race and duplicate conflict reject atomically.
+- **Design gate**: source execution proved that the declared Social object
+  routes had no generated begin/status/chunk/complete/cancel/get messages.
+  `SC-D18` and `SC-D19` passed independent review and were accepted by the Owner
+  on 2026-09-14. W6 implementation therefore resumes with typed object control,
+  bounded raw-byte transfer, Federation-owned historical public-key attestation,
+  and no handler-local JSON or Conversation/public OSS authority reuse.
+- **Failure**: stale FRIENDS projection/device plan, missing slot, object
+  mismatch, over-limit audience and duplicate conflict reject atomically.
+  Delete/block mutation races remain in W8, which owns those lifecycle writes.
 - **UOW failpoint matrix**: Post and Comment variants inject one failure after
   each plan-consumption, fact, audience snapshot, slot mapping, endpoint-envelope,
   recovery-envelope, delivery-intent, object-attachment, object-grant and
@@ -809,7 +826,8 @@ python3 -m tooling.development.secure_content.run \
 
 ### SC-W8: Remaining Social Semantics
 
-- **Responsibility**: FOLLOWERS/CIRCLE/GROUP/SELF/CUSTOM, private Comment,
+- **Responsibility**: FOLLOWERS/CIRCLE/GROUP/SELF/CUSTOM, private Comment
+  point-read/list and visibility,
   Poll/Repost/Mention/Reaction/Link/Location, delete/block and bounded abuse.
 - **Dependencies**: W7 `FUNCTIONAL_PASS`.
 - **Deliverables**: revision-bound GROUP port, accepted FRIENDS projection only,
@@ -823,6 +841,9 @@ python3 -m tooling.development.secure_content.run \
 pnpm --dir apps/desktop exec vitest run src/test/moments-store.test.ts
 ```
 
+- **Object-plane expansion**: W8 retains VIDEO variants and the exhaustive
+  cancel/expire/corrupt/range/abuse/storage-full/GC matrices. It does not defer
+  W6's minimal IMAGE object routes or attach/read happy path.
 - **Development loop**: execute one subtype/relationship slice at a time in this
   order: audience matrix; Comment; IMAGE/VIDEO object states; Poll; Repost;
   Mention/Reaction; Link/Location; object attach/replay; GC cleanup/retry;
@@ -1262,7 +1283,7 @@ observations is invalid.
 | W3 | PreKeys | complete | `dbd612b65` | PASS (`sc-dj-content-prekey`) | NOT_RUN | none |
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
 | W5 | recovery | parked | none | NOT_RUN | NOT_RUN | W6 |
-| W6 | Social minimum | ready | none | NOT_RUN | NOT_RUN | none |
+| W6 | Social minimum | in progress | none | NOT_RUN | NOT_RUN | none |
 | W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | W6; active MCA Desktop claim and Station runtime owner |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
 | W9 | Mobile | parked | none | NOT_RUN | NOT_RUN | W5/W7/W8; Mobile claim |
@@ -1351,6 +1372,51 @@ Current evidence:
   X25519 derivation, Social plan/slot/receipt tables, explicit private submit
   routes, prepare crash recovery and the corrected W6-before-W5 dependency.
   W6 is dependency-ready; W5 remains parked on W6.
+- W6 resume inventory found that `Audience.FRIENDS` was defined by the accepted
+  Social product and Secure Content architecture sources but omitted from W1's
+  proto/generated output. This is a mechanical plan gap, not a new product or
+  architecture decision; W6 now owns the additive enum and scoped regeneration
+  before implementing FRIENDS-only private prepare/submit.
+- W6 source implementation now has the additive `FRIENDS=8` generated contract,
+  durable prepare/slot/receipt persistence, transaction-bound Key Exchange
+  revalidation, FRIENDS text and Comment prepare/submit/replay, stale-plan
+  rejection, viewer-scoped endpoint projection, explicit private routes and
+  public-route private-write rejection. Social and Key Exchange race suites,
+  Go vet, Go style, runner tests and scoped generation pass on the dirty source.
+  The Development runner correctly remains `BLOCKED` until a checkpoint exists.
+  IMAGE closure is not claimed: implementation found that the six accepted
+  Social object routes lack any generated control-message and raw-byte contract.
+  Source review also found that the current/previous Federation key window
+  cannot verify historical commit proofs for later recovery. Accepted `SC-D18`
+  and `SC-D19` are now the bounded implementation contracts; no handler-local
+  wire or Social-owned verification-key authority is permitted.
+- Independent review of corrected `SC-D18` and `SC-D19` returned `PASS` for
+  typed control, raw-byte transfer, Social outer-UOW ownership, authorization/
+  storage boundaries and durable Station proof verification. The Owner accepted
+  both decisions on 2026-09-14 and W6 source implementation resumed.
+- W6 source review initially returned `HOLD`. The implementation was corrected
+  with a populated-legacy staged migration and partial ciphertext indexes,
+  ordered FRIENDS/parent-row fences, canonical ULID dispatch, stable
+  prepare/crash replay, persisted `EXPIRED`/`REJECTED_STALE` outcomes,
+  current/previous Station plan-signature verification and current
+  actor/device/grant checks on private reads. The complete Social and Key
+  Exchange race suites, Go vet, Go style, Development runner tests,
+  `git diff --check` and scoped generator zero-drift check now pass. Final
+  source re-review returned `PASS`, safe for a partial checkpoint. W6 remains
+  incomplete and has no `FUNCTIONAL_PASS` until the accepted SC-D18/SC-D19
+  implementation has a clean checkpoint and the service Journey passes.
+- W6 SC-D18/SC-D19 source implementation now includes the typed object control
+  plane, bounded raw-byte transfer, durable write/verify/cleanup leases and
+  tombstones, exact success/corrupt/GC replay, uploader-scoped admission,
+  path-only wire-compatible Moment reads, strict JSON/query/protobuf request
+  shapes, stream-preserving Hertz/native adapters, Federation-owned retained
+  proof-key history, transaction-safe signing, and current-key attestations.
+  Complete Social/Key Exchange/Federation/server race suites, OSS/Dashboard
+  tests, Go vet/style, Desktop/Mobile type checks, cross-language contract
+  tests, 18 Development runner/work-item tests, scoped generator zero drift and
+  final independent source review all pass. The local checkpoint and
+  exact-source `sc-dj-social-uow-atomicity` run remain pending, so Functional is
+  still `NOT_RUN` and formal Acceptance is `NOT_RUN`.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level

@@ -3,6 +3,7 @@ syntax = "proto3";
 package peers_touch.model.secure_content.v1;
 
 import "domain/secure_content/content.proto";
+import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent;securecontent";
 
@@ -34,4 +35,96 @@ message EncryptedObjectDescriptor {
   string object_id = 2;
   string storage_ref = 3;
   EncryptedObjectUploadSpec commitment = 4;
+}
+
+enum EncryptedObjectTransferState {
+  ENCRYPTED_OBJECT_TRANSFER_STATE_UNSPECIFIED = 0;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_CREATED = 1;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_RECEIVING_PARTS = 2;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_VERIFYING = 3;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_COMPLETE_UNATTACHED = 4;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_ATTACHED = 5;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_CANCELLED = 6;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_EXPIRED = 7;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_TERMINAL_CORRUPT = 8;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_GC_CLAIMED = 9;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_GARBAGE_COLLECTED = 10;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_RETRY_WAIT = 11;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_CLEANUP_FAILED = 12;
+}
+
+message EncryptedObjectDescriptorCommitmentInput {
+  uint32 format_version = 1;
+  .peers_touch.model.secure_content.v1.SecureResourceRef resource = 2;
+  string object_id = 3;
+  EncryptedObjectUploadSpec upload_spec = 4;
+}
+
+message BeginEncryptedObjectUploadRequest {
+  uint32 format_version = 1;
+  string plan_id = 2;
+  .peers_touch.model.secure_content.v1.SecureResourceRef resource = 3;
+  string object_id = 4;
+  EncryptedObjectUploadSpec upload_spec = 5;
+  bytes descriptor_commitment_sha256 = 6;
+  string command_id = 7;
+}
+
+message BeginEncryptedObjectUploadResponse {
+  string upload_id = 1;
+  uint64 generation = 2;
+  EncryptedObjectTransferState state = 3;
+  bytes received_chunk_bitmap = 4;
+  .google.protobuf.Timestamp expires_at = 5;
+  bool exact_replay = 6;
+}
+
+message GetEncryptedObjectUploadRequest {
+  string upload_id = 1;
+  uint64 generation = 2;
+}
+
+message GetEncryptedObjectUploadResponse {
+  string upload_id = 1;
+  uint64 generation = 2;
+  string object_id = 3;
+  EncryptedObjectTransferState state = 4;
+  bytes received_chunk_bitmap = 5;
+  .google.protobuf.Timestamp expires_at = 6;
+  EncryptedObjectDescriptor descriptor = 7;
+}
+
+message PutEncryptedObjectChunkResponse {
+  string upload_id = 1;
+  uint64 generation = 2;
+  uint32 chunk_index = 3;
+  EncryptedObjectTransferState state = 4;
+  bytes received_chunk_bitmap = 5;
+  bool exact_replay = 6;
+}
+
+message CompleteEncryptedObjectUploadRequest {
+  string upload_id = 1;
+  uint64 generation = 2;
+  bytes descriptor_commitment_sha256 = 3;
+  string command_id = 4;
+}
+
+message CompleteEncryptedObjectUploadResponse {
+  EncryptedObjectDescriptor descriptor = 1;
+  EncryptedObjectTransferState state = 2;
+  bool exact_replay = 3;
+}
+
+message CancelEncryptedObjectUploadRequest {
+  string upload_id = 1;
+  uint64 generation = 2;
+  string command_id = 3;
+}
+
+message CancelEncryptedObjectUploadResponse {
+  string upload_id = 1;
+  uint64 generation = 2;
+  EncryptedObjectTransferState state = 3;
+  bool exact_replay = 4;
 }

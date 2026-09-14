@@ -625,6 +625,93 @@ func (s *ContentPreKeyStore) ClaimContentPreKeys(
 	return response, nil
 }
 
+// ValidateContentPreKeyClaims revalidates a completed claim inside the
+// caller-owned transaction so its current principal fences remain held through
+// the caller's commit.
+func (s *ContentPreKeyStore) ValidateContentPreKeyClaims(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+	response *securecontentpb.ClaimContentPreKeysResponse,
+	principals []domain.ContentPreKeyPrincipal,
+) error {
+	const operation = contentPreKeyStoreOperation + ".validate"
+
+	if transaction == nil || transaction.DB() == nil {
+		return domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"transaction",
+			"is required",
+		)
+	}
+
+	tx := transaction.DB().WithContext(ctx)
+	var receipt ContentPreKeyClaimReceiptModel
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("plan_id = ?", request.GetPlanId()).
+		First(&receipt).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.NewError(
+			domain.ErrorCodeNotFound,
+			operation,
+			"plan_id",
+			"has no completed Content PreKey claim receipt",
+		)
+	}
+	if err != nil {
+		return contentPreKeyStoreFailure(
+			"load Content PreKey claim receipt for validation",
+			err,
+		)
+	}
+
+	persistedResponse, err := decodeCanonicalContentPreKeyClaimReceipt(
+		receipt,
+		request,
+		operation,
+	)
+	if err != nil {
+		return err
+	}
+	providedResponse := proto.Clone(
+		response,
+	).(*securecontentpb.ClaimContentPreKeysResponse)
+	providedResponse.ExactReplay = false
+	if !proto.Equal(providedResponse, persistedResponse) {
+		return domain.NewError(
+			domain.ErrorCodeInvalidMaterial,
+			operation,
+			"response",
+			"does not match the completed Content PreKey claim receipt",
+		)
+	}
+
+	currentEpochs, err := lockCurrentContentPreKeyClaimEpochs(
+		tx,
+		principals,
+		operation,
+	)
+	if err != nil {
+		return err
+	}
+	if err := s.verifyCompletedContentPreKeyClaimReceipt(
+		ctx,
+		tx,
+		request,
+		persistedResponse,
+		operation,
+	); err != nil {
+		return err
+	}
+
+	return validateCurrentContentPreKeyClaimEpochs(
+		persistedResponse,
+		currentEpochs,
+		operation,
+	)
+}
+
 func ensureAndLockContentPreKeyPool(
 	tx *gorm.DB,
 	principal domain.ContentPreKeyPrincipal,
@@ -1359,6 +1446,31 @@ func (s *ContentPreKeyStore) decodeContentPreKeyClaimReceipt(
 ) (*securecontentpb.ClaimContentPreKeysResponse, error) {
 	const operation = contentPreKeyStoreOperation + ".replay"
 
+	response, err := decodeCanonicalContentPreKeyClaimReceipt(
+		receipt,
+		request,
+		operation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.verifyCompletedContentPreKeyClaimReceipt(
+		ctx,
+		tx,
+		request,
+		response,
+		operation,
+	); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
+func decodeCanonicalContentPreKeyClaimReceipt(
+	receipt ContentPreKeyClaimReceiptModel,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+	operation string,
+) (*securecontentpb.ClaimContentPreKeysResponse, error) {
 	canonicalRequestSHA256, err := canonicalContentPreKeyClaimRequestSHA256(
 		request,
 	)
@@ -1415,14 +1527,6 @@ func (s *ContentPreKeyStore) decodeContentPreKeyClaimReceipt(
 	if err != nil || !bytes.Equal(canonicalResponseBytes, receipt.ResponseBytes) {
 		return nil, persistedContentPreKeyInvalid("receipt.response_bytes")
 	}
-	if err := s.verifyCompletedContentPreKeyClaimReceipt(
-		ctx,
-		tx,
-		request,
-		&response,
-	); err != nil {
-		return nil, err
-	}
 	return &response, nil
 }
 
@@ -1431,9 +1535,8 @@ func (s *ContentPreKeyStore) verifyCompletedContentPreKeyClaimReceipt(
 	tx *gorm.DB,
 	request *securecontentpb.ClaimContentPreKeysRequest,
 	response *securecontentpb.ClaimContentPreKeysResponse,
+	operation string,
 ) error {
-	const operation = contentPreKeyStoreOperation + ".replay"
-
 	if response == nil ||
 		len(response.GetClaims()) != len(request.GetTargets()) {
 		return persistedContentPreKeyInvalid("receipt.claims")
@@ -1534,6 +1637,87 @@ func (s *ContentPreKeyStore) verifyCompletedContentPreKeyClaimReceipt(
 			return persistedContentPreKeyInvalid("receipt.claims.prekey")
 		}
 	}
+	return nil
+}
+
+func lockCurrentContentPreKeyClaimEpochs(
+	tx *gorm.DB,
+	principals []domain.ContentPreKeyPrincipal,
+	operation string,
+) (map[string]uint64, error) {
+	currentEpochs := make(map[string]uint64, len(principals))
+
+	for _, principal := range principals {
+		pool, found, err := findAndLockContentPreKeyPool(tx, principal)
+		if err != nil {
+			return nil, err
+		}
+		if !found || pool.CurrentEpoch <= 0 {
+			return nil, persistedContentPreKeyInvalid(
+				"receipt.claims.pool",
+			)
+		}
+		if principal.Kind ==
+			securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ACTOR_RECOVERY {
+			currentEpochs[principal.Key()] = uint64(pool.CurrentEpoch)
+		}
+	}
+
+	for _, principal := range principals {
+		endpoint, isEndpoint := principal.Endpoint()
+		if !isEndpoint {
+			continue
+		}
+		profileVersion, err :=
+			actoridentitypersistence.LockActiveDeviceProfileVersionForMutation(
+				tx,
+				actoridentitypersistence.DeviceLocator{
+					PTID:     endpoint.ActorPTID,
+					DeviceID: endpoint.DeviceID,
+				},
+			)
+		if err != nil {
+			return nil, mapContentPreKeyActorIdentityError(operation, err)
+		}
+		currentEpochs[principal.Key()] = profileVersion
+	}
+
+	return currentEpochs, nil
+}
+
+func validateCurrentContentPreKeyClaimEpochs(
+	response *securecontentpb.ClaimContentPreKeysResponse,
+	currentEpochs map[string]uint64,
+	operation string,
+) error {
+	for _, claim := range response.GetClaims() {
+		principal, err := domain.ContentPreKeyPrincipalFromTarget(
+			operation,
+			claim.GetTarget(),
+		)
+		if err != nil {
+			return domain.WrapError(
+				domain.ErrorCodeInvalidMaterial,
+				operation,
+				err,
+			)
+		}
+		currentEpoch, found := currentEpochs[principal.Key()]
+		if !found || currentEpoch == 0 {
+			return persistedContentPreKeyInvalid(
+				"receipt.claims.current_epoch",
+			)
+		}
+		if claim.GetPrekey().GetProfileOrRecoveryEpoch() != currentEpoch {
+			return domain.NewError(
+				domain.ErrorCodeStaleMaterial,
+				operation,
+				"claims.prekey.profile_or_recovery_epoch",
+				"does not match the current principal epoch",
+			)
+		}
+	}
+
 	return nil
 }
 

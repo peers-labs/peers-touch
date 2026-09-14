@@ -103,10 +103,116 @@ message EncryptedObjectDescriptor {
   string storage_ref = 3;
   EncryptedObjectUploadSpec commitment = 4;
 }
+
+message EncryptedObjectDescriptorCommitmentInput {
+  uint32 format_version = 1;
+  SecureResourceRef resource = 2;
+  string object_id = 3;
+  EncryptedObjectUploadSpec upload_spec = 4;
+}
+
+enum EncryptedObjectTransferState {
+  ENCRYPTED_OBJECT_TRANSFER_STATE_UNSPECIFIED = 0;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_CREATED = 1;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_RECEIVING_PARTS = 2;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_VERIFYING = 3;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_COMPLETE_UNATTACHED = 4;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_ATTACHED = 5;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_CANCELLED = 6;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_EXPIRED = 7;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_TERMINAL_CORRUPT = 8;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_GC_CLAIMED = 9;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_GARBAGE_COLLECTED = 10;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_RETRY_WAIT = 11;
+  ENCRYPTED_OBJECT_TRANSFER_STATE_CLEANUP_FAILED = 12;
+}
+
+message BeginEncryptedObjectUploadRequest {
+  uint32 format_version = 1;
+  string plan_id = 2;
+  SecureResourceRef resource = 3;
+  string object_id = 4;
+  EncryptedObjectUploadSpec upload_spec = 5;
+  bytes descriptor_commitment_sha256 = 6;
+  string command_id = 7;
+}
+
+message BeginEncryptedObjectUploadResponse {
+  string upload_id = 1;
+  uint64 generation = 2;
+  EncryptedObjectTransferState state = 3;
+  bytes received_chunk_bitmap = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  bool exact_replay = 6;
+}
+
+message GetEncryptedObjectUploadRequest {
+  string upload_id = 1;
+  uint64 generation = 2;
+}
+
+message GetEncryptedObjectUploadResponse {
+  string upload_id = 1;
+  uint64 generation = 2;
+  string object_id = 3;
+  EncryptedObjectTransferState state = 4;
+  bytes received_chunk_bitmap = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  EncryptedObjectDescriptor descriptor = 7;
+}
+
+message PutEncryptedObjectChunkResponse {
+  string upload_id = 1;
+  uint64 generation = 2;
+  uint32 chunk_index = 3;
+  EncryptedObjectTransferState state = 4;
+  bytes received_chunk_bitmap = 5;
+  bool exact_replay = 6;
+}
+
+message CompleteEncryptedObjectUploadRequest {
+  string upload_id = 1;
+  uint64 generation = 2;
+  bytes descriptor_commitment_sha256 = 3;
+  string command_id = 4;
+}
+
+message CompleteEncryptedObjectUploadResponse {
+  EncryptedObjectDescriptor descriptor = 1;
+  EncryptedObjectTransferState state = 2;
+  bool exact_replay = 3;
+}
+
+message CancelEncryptedObjectUploadRequest {
+  string upload_id = 1;
+  uint64 generation = 2;
+  string command_id = 3;
+}
+
+message CancelEncryptedObjectUploadResponse {
+  string upload_id = 1;
+  uint64 generation = 2;
+  EncryptedObjectTransferState state = 3;
+  bool exact_replay = 4;
+}
 ```
 
 Filename, real MIME type, dimensions, plaintext size/hash, object key, base nonce,
 and alt text stay inside the encrypted domain payload.
+
+`SC-D18` keeps large ciphertext out of these control messages. Chunk PUT and
+object GET bodies are raw `application/octet-stream`; path parameters and
+bounded headers carry generation, offset, size, hash, idempotency and range
+metadata. Begin/complete/cancel canonical hashes bind every typed field above.
+`descriptor_commitment_sha256` hashes the canonical
+`EncryptedObjectDescriptorCommitmentInput`; Station-owned `storage_ref` is not
+part of that client commitment.
+
+Status maps `generation` to `?generation=<canonical-u64>`. A received bitmap
+has exactly `ceil(chunk_count / 8)` bytes; bit `i` represents chunk `i`,
+least-significant bit first within byte `i / 8`, and unused high bits are zero.
+Object GET is a bounded raw-byte route rather than a typed body: the descriptor
+already arrives through the authorized Post/Comment projection.
 
 ## 4. One-Time Key Contracts
 
@@ -405,6 +511,17 @@ message ViewerContentCommitProof {
   string station_signing_key_id = 13;
   bytes station_signature = 14;
 }
+
+message StationContentSigningKeyAttestation {
+  uint32 format_version = 1;
+  string station_peer_id = 2;
+  string proof_signing_key_id = 3;
+  bytes proof_ed25519_public_key = 4;
+  string attesting_signing_key_id = 5;
+  google.protobuf.Timestamp issued_at = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  bytes station_signature = 8;
+}
 ```
 
 Plan canonicalization requires:
@@ -431,6 +548,12 @@ slot, key claim, or unrelated envelope.
 The deterministic binding bytes are simultaneously HPKE `info`, HPKE AEAD AAD,
 and the Ed25519 signature input. Submit requires exactly one envelope per required
 slot and rejects extra, missing, expired, remapped, or non-canonical envelopes.
+
+`StationContentSigningKeyAttestation` is not part of the immutable command
+receipt or commit-proof signature. Federation generates it on point read for
+the proof's retained public key and signs fields `1..7` with the currently
+trusted Station key. Its expiry can change across reads without changing the
+business result or proof bytes.
 
 Station maps slots to principals only inside the domain UOW. Ordinary reads emit
 one `ViewerContentKeyEnvelope` with the authenticated caller principal instead of
@@ -801,6 +924,7 @@ message PrivateContentVerification {
     PrivatePollAuthority poll_authority = 3;
     PrivateRepostAuthority repost_authority = 4;
   }
+  StationContentSigningKeyAttestation station_signing_key_attestation = 5;
 }
 
 message PrivateContentAccess {
@@ -921,7 +1045,10 @@ message GetMomentResourceRequest {
 }
 
 message GetMomentResourceResponse {
-  PostResource post = 1;
+  // Wire-compatible with GetPostResponse for existing public Moment clients.
+  .peers_touch.model.social.v1.Post post = 1;
+  .peers_touch.model.social.v1.FeedObjectExplanation explanation = 2;
+  PostResource resource = 3;
 }
 
 message GetMomentCommentResourceRequest {
@@ -1063,7 +1190,6 @@ social_private_object_uploads
 social_private_object_parts
 social_private_objects
 social_private_object_grants
-social_private_object_audit
 ```
 
 | Table | Primary identity | Required bindings |
@@ -1076,11 +1202,10 @@ social_private_object_audit
 | `social_private_content_plan_slots` | `(plan_id, recipient_slot_id)`; globally unique `claim_id`; unique `(plan_id, one_time_key_id)` | key kind, recipient actor/device, principal epoch, exact claimed PreKey bytes/hash including issuer signature, principal-binding hash |
 | `social_private_content_envelopes` | `(content_id, key_kind, recipient principal, one_time_key_id)` | exact plan/binding/envelope/signature hashes |
 | `social_private_command_receipts` | `(author_ptid, command_id)` | canonical submit hash, resource kind/content/generation, domain commit ID, exact response bytes/hash, completion time |
-| `social_private_object_uploads` | `(upload_id, generation)` | content ID, uploader endpoint, descriptor commitment, bitmap, state, expiry |
-| `social_private_object_parts` | `(upload_id, generation, chunk_index)` | offset, size, ciphertext hash, storage key |
-| `social_private_objects` | `object_id` | content ID, uploader, canonical descriptor, state, domain commit ID |
+| `social_private_object_uploads` | `(upload_id, generation)`; unique `(uploader_ptid, begin_command_id)` | content ID, uploader endpoint, upload spec, descriptor commitment, bitmap, state, expiry, canonical begin/complete/cancel command bytes and hashes, verify/GC lease owner/generation/expiry, attempts, next retry and terminal outcome hash |
+| `social_private_object_parts` | `(upload_id, generation, chunk_index)`; unique `(upload_id, generation, idempotency_key)` | offset, size, ciphertext hash, canonical idempotency key, immutable storage key, WRITING/STORED state, lease owner/generation/expiry, attempts and next retry |
+| `social_private_objects` | `object_id` | content ID, uploader, canonical descriptor, state, domain commit ID, GC lease owner/generation/expiry and immutable tombstone/result hash |
 | `social_private_object_grants` | `(object_id, principal kind, principal)` | domain commit ID, grant/revoke facts |
-| `social_private_object_audit` | `audit_id` | redacted operation/outcome, byte/count buckets, timestamp |
 
 All resource, slot, key, and command uniqueness constraints are database-backed.
 Private payload bytes are stored once as canonical `EncryptedPayload`; indexed
@@ -1095,6 +1220,14 @@ There is no shared `secure_content_*` authority table.
 Private Social Post/Comment rows contain canonical encrypted payload bytes and
 indexed commitments, not duplicated plaintext or independently mutable nonce/body
 representations.
+
+Federation authentication separately owns
+`auth_station_content_signing_key_history`, keyed by
+`(station_peer_id, signing_key_id)`, with the retained Ed25519 public key,
+`first_active_at`, `last_active_at`, `retired_at`, and immutable
+`retirement_reason`. It stores no content row, proof, audience fact or old
+private key. Social accesses it only through the `SC-D19` read/attestation
+capability.
 
 ## 10. Transaction Contract
 
@@ -1153,12 +1286,23 @@ Object:
 CREATED -> RECEIVING_PARTS -> VERIFYING -> COMPLETE_UNATTACHED
 COMPLETE_UNATTACHED -> ATTACHED(domain_commit_id)
 CREATED/RECEIVING_PARTS -> CANCELLED | EXPIRED
-VERIFYING -> RECEIVING_PARTS | TERMINAL_CORRUPT
-COMPLETE_UNATTACHED -> GC_CLAIMED -> GARBAGE_COLLECTED
+VERIFYING -> RECEIVING_PARTS  # retriable storage interruption before verdict
+VERIFYING -> TERMINAL_CORRUPT # decided hash/size/bitmap mismatch
+CREATED/RECEIVING_PARTS/VERIFYING/COMPLETE_UNATTACHED/
+  CANCELLED/EXPIRED/TERMINAL_CORRUPT
+  -> GC_CLAIMED -> GARBAGE_COLLECTED
 ```
 
 Exact identity/hash replay returns the original result. Same identity with another
-hash is terminal conflict.
+hash is terminal conflict. An `ATTACHED` object cannot use the pre-attachment
+GC transition; later domain deletion must revoke every grant before scheduling
+its separate cleanup.
+
+Under accepted `SC-D18`, begin persists the canonical request before any chunk
+write. Chunk identity is `(upload_id, generation, chunk_index)` and exact replay
+also binds offset, size, hash and idempotency key. Complete and cancel store
+their canonical command hashes on the upload row, so a restart returns the same
+descriptor/state while a conflicting command cannot reinterpret existing bytes.
 
 ## 12. Recovery Query
 

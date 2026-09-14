@@ -190,7 +190,51 @@ and ciphertext checks before releasing plaintext.
 
 No free-form `binding_sha256` without canonical source fields is accepted.
 
-## 6. Recovery Flow
+## 6. Station Proof-Key Retention
+
+Under accepted `SC-D19`, Federation authentication archives only public
+verification keys before key rotation retires private material. Social resolves
+historical proof keys through that owner and cannot add trusted keys itself.
+Point reads carry a five-minute attestation over the retained public key,
+Station peer ID and proof key ID, signed by the currently trusted Station key.
+
+Native verifies the current Station profile/pin, then the attestation, then the
+immutable content proof. Substituting the proof, archived key or attestation in
+the content database therefore fails unless the current Station signing key is
+also compromised. Missing key history fails closed before payload, envelope or
+object bytes are returned.
+
+## 7. Social Object Transfer
+
+Under accepted `SC-D18`:
+
+- begin requires a prepared Social plan, deterministic object ID, authenticated
+  uploader endpoint and exact upload commitment;
+- raw chunk bodies are bounded before allocation, hashed while streaming and
+  written only under Social-owned opaque storage keys;
+- each non-transactional storage write is preceded by a durable SQL
+  `WRITING`/lease row, uses an immutable generation-fenced storage key, and
+  finalizes through compare-and-swap;
+- exact chunk replay requires identical generation, index, offset, size, hash,
+  idempotency key and bytes;
+- complete rechecks every chunk and the whole ciphertext commitment before
+  `COMPLETE_UNATTACHED`;
+- only the Social Post/Comment outer UOW may attach the object and grant access;
+- download requires a current active endpoint, current Social resource
+  authorization, and either its exact endpoint grant or the same actor's
+  recovery grant, not possession of an object ID or `storage_ref`;
+- missing and unauthorized upload/object identities have the same not-found
+  response;
+- partial, corrupt, cancelled and expired uploads never become readable and are
+  eligible for bounded lease-fenced cleanup;
+- attach and GC lock/CAS the same object row, and post-GC tombstones retain
+  command/result hashes and storage identities so exact replay cannot recreate
+  deleted bytes.
+
+The generic storage backend receives opaque keys and bytes. It receives no
+actor, audience, plan, envelope, key or grant authority.
+
+## 8. Recovery Flow
 
 For each recipient actor, prepare claims:
 
@@ -217,7 +261,7 @@ otherwise revoked resources are not returned by the recovery query. Recovery
 pagination is cursor-bound and does not embed one key per resource in the
 whole-archive revision.
 
-## 7. Metadata Boundary
+## 9. Metadata Boundary
 
 Station may retain:
 
@@ -235,7 +279,7 @@ Station must not retain:
 - author-visible stable recipient wrapping public keys;
 - full recipient/envelope lists in ordinary read responses.
 
-## 8. Authentication And Authorization
+## 10. Authentication And Authorization
 
 - Missing credential on public-capable GET means anonymous public lookup only.
 - Any supplied invalid, expired, malformed, or revoked credential returns `401`.
@@ -246,7 +290,7 @@ Station must not retain:
 - Object IDs and ciphertext possession never imply access.
 - Unauthorized private resources use a uniform not-found response.
 
-## 9. Secret Handling
+## 11. Secret Handling
 
 - Root keys, object keys, nonces, recovery secrets, prekey private material, and
   plaintext never enter URL, logs, metrics, traces, Acceptance evidence, or Web
@@ -256,7 +300,7 @@ Station must not retain:
   atomically removed on revoke, logout, account switch, or integrity failure.
 - Crash recovery may retain ciphertext/checkpoints, never partial plaintext.
 
-## 10. Required Security Evidence
+## 12. Required Security Evidence
 
 - fixed known-answer vectors across every Rust consumer and Go descriptor validator;
 - envelope substitution matrix over every binding field;

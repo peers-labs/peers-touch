@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"google.golang.org/protobuf/proto"
 )
+
+const maxTypedRequestBodyBytes int64 = 64 << 20
 
 // TypedHandler is a handler function that takes a typed request and returns a typed response
 type TypedHandler[Req, Resp any] func(context.Context, *Req) (*Resp, error)
@@ -21,6 +25,28 @@ func NewTypedHandler[Req, Resp any](
 	name, path string,
 	method Method,
 	handler TypedHandler[Req, Resp],
+	wrappers ...Wrapper,
+) Handler {
+	return newTypedHandler(name, path, method, handler, false, wrappers...)
+}
+
+// NewStrictTypedHandler is the canonical typed surface for security-sensitive
+// control messages. It rejects unknown JSON, query, and protobuf fields instead
+// of silently normalizing distinct requests to the same command.
+func NewStrictTypedHandler[Req, Resp any](
+	name, path string,
+	method Method,
+	handler TypedHandler[Req, Resp],
+	wrappers ...Wrapper,
+) Handler {
+	return newTypedHandler(name, path, method, handler, true, wrappers...)
+}
+
+func newTypedHandler[Req, Resp any](
+	name, path string,
+	method Method,
+	handler TypedHandler[Req, Resp],
+	strict bool,
 	wrappers ...Wrapper,
 ) Handler {
 	negotiator := NewContentNegotiator()
@@ -39,6 +65,16 @@ func NewTypedHandler[Req, Resp any](
 
 		// 1. Get request serializer based on Content-Type
 		requestSerializer := negotiator.GetRequestSerializer(contentType)
+		if strict {
+			switch requestSerializer.(type) {
+			case *ProtoJSONSerializer:
+				requestSerializer = &ProtoJSONSerializer{RejectUnknown: true}
+			case *ProtoSerializer:
+				requestSerializer = &ProtoSerializer{
+					RejectDuplicateSingular: true,
+				}
+			}
+		}
 
 		// 2. Deserialize request
 		var request Req
@@ -48,22 +84,92 @@ func NewTypedHandler[Req, Resp any](
 			reqValue.Elem().Set(reflect.New(reqValue.Elem().Type().Elem()))
 		}
 
-		body := req.Body()
+		body, readErr := readBoundedTypedRequestBody(req)
+		if readErr != nil {
+			if strict {
+				writeTypedRequestError(
+					resp,
+					http.StatusRequestEntityTooLarge,
+					"Request body is too large",
+				)
+				return nil
+			}
+			return &HandlerError{
+				Code:    http.StatusRequestEntityTooLarge,
+				Message: "Request body is too large",
+				Err:     readErr,
+			}
+		}
+		queryJSON, hasQuery := queryParamsToJSON(req.Path())
+		rawQuery := ""
+		if index := strings.Index(req.Path(), "?"); index >= 0 {
+			rawQuery = req.Path()[index+1:]
+		}
+		if strict && method != GET && rawQuery != "" {
+			writeTypedRequestError(
+				resp,
+				http.StatusBadRequest,
+				"Invalid request format",
+			)
+			return nil
+		}
+		if strict && len(body) > 0 && rawQuery != "" {
+			writeTypedRequestError(
+				resp,
+				http.StatusBadRequest,
+				"Invalid request format",
+			)
+			return nil
+		}
 		if len(body) > 0 {
 			if err := requestSerializer.Unmarshal(body, &request); err != nil {
 				logger.Error(ctx, "Failed to deserialize request", "error", err, "contentType", contentType)
+				if strict {
+					writeTypedRequestError(
+						resp,
+						http.StatusBadRequest,
+						"Invalid request format",
+					)
+					return nil
+				}
 				return &HandlerError{
 					Code:    http.StatusBadRequest,
 					Message: "Invalid request format",
 					Err:     err,
 				}
 			}
-		} else if queryJSON, ok := queryParamsToJSON(req.Path()); ok {
+		} else if hasQuery {
 			// For requests with no body (typically GET), populate the typed request
 			// from URL query params via ProtoJSONSerializer (accepts snake_case field names).
-			querySerializer := &ProtoJSONSerializer{}
+			querySerializer := &ProtoJSONSerializer{RejectUnknown: strict}
 			if err := querySerializer.Unmarshal(queryJSON, &request); err != nil {
+				if strict {
+					writeTypedRequestError(
+						resp,
+						http.StatusBadRequest,
+						"Invalid request format",
+					)
+					return nil
+				}
 				logger.Warn(ctx, "Failed to deserialize query params into request", "error", err, "path", req.Path())
+			}
+		} else if strict && rawQuery != "" {
+			writeTypedRequestError(
+				resp,
+				http.StatusBadRequest,
+				"Invalid request format",
+			)
+			return nil
+		}
+		if strict {
+			if message, ok := any(&request).(proto.Message); ok &&
+				len(message.ProtoReflect().GetUnknown()) != 0 {
+				writeTypedRequestError(
+					resp,
+					http.StatusBadRequest,
+					"Invalid request format",
+				)
+				return nil
 			}
 		}
 
@@ -124,6 +230,49 @@ func NewTypedHandler[Req, Resp any](
 	}
 
 	return NewHTTPHandler(name, path, method, endpointHandler, wrappers...)
+}
+
+func writeTypedRequestError(
+	response Response,
+	status int,
+	message string,
+) {
+	body, _ := json.Marshal(map[string]any{
+		"error": message,
+		"code":  status,
+	})
+	response.SetHeader("Content-Type", "application/json")
+	response.WriteHeader(status)
+	_, _ = response.Write(body)
+}
+
+func readBoundedTypedRequestBody(request Request) ([]byte, error) {
+	var reader io.Reader
+	if streaming, ok := request.(StreamingRequest); ok {
+		reader = streaming.BodyStream()
+	} else {
+		body := request.Body()
+		if int64(len(body)) > maxTypedRequestBodyBytes {
+			return nil, fmt.Errorf(
+				"typed request body exceeds %d bytes",
+				maxTypedRequestBodyBytes,
+			)
+		}
+		return body, nil
+	}
+	body, err := io.ReadAll(
+		io.LimitReader(reader, maxTypedRequestBodyBytes+1),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > maxTypedRequestBodyBytes {
+		return nil, fmt.Errorf(
+			"typed request body exceeds %d bytes",
+			maxTypedRequestBodyBytes,
+		)
+	}
+	return body, nil
 }
 
 // queryParamsToJSON extracts URL query parameters and encodes them as a JSON object.

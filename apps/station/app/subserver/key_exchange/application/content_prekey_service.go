@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
+	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
 	"google.golang.org/protobuf/proto"
 )
@@ -13,6 +14,7 @@ const (
 	publishContentPreKeysOperation   = "key_exchange.publish_content_prekeys"
 	inventoryContentPreKeysOperation = "key_exchange.inventory_content_prekeys"
 	claimContentPreKeysOperation     = "key_exchange.claim_content_prekeys"
+	validateContentPreKeysOperation  = "key_exchange.validate_content_prekey_claims"
 )
 
 // ContentPreKeyStore owns the durable Content-only pool and exact claim
@@ -35,6 +37,13 @@ type ContentPreKeyStore interface {
 		principals []domain.ContentPreKeyPrincipal,
 		claimedAt time.Time,
 	) (*securecontentpb.ClaimContentPreKeysResponse, error)
+	ValidateContentPreKeyClaims(
+		ctx context.Context,
+		transaction federationdelivery.Transaction,
+		request *securecontentpb.ClaimContentPreKeysRequest,
+		response *securecontentpb.ClaimContentPreKeysResponse,
+		principals []domain.ContentPreKeyPrincipal,
+	) error
 }
 
 // ContentPreKeyService is the Key Exchange application boundary consumed by
@@ -170,6 +179,62 @@ func (s *ContentPreKeyService) ClaimContentPreKeys(
 		return nil, err
 	}
 	return proto.Clone(response).(*securecontentpb.ClaimContentPreKeysResponse), nil
+}
+
+// ValidateContentPreKeyClaims verifies an exact completed claim and its current
+// principal epochs without changing claim or pool state.
+func (s *ContentPreKeyService) ValidateContentPreKeyClaims(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+	response *securecontentpb.ClaimContentPreKeysResponse,
+) error {
+	normalized, principals, err := domain.NormalizeContentPreKeyClaimRequest(
+		validateContentPreKeysOperation,
+		request,
+	)
+	if err != nil {
+		return err
+	}
+	if !proto.Equal(normalized, request) {
+		return domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			validateContentPreKeysOperation,
+			"request",
+			"must match the canonical persisted claim request",
+		)
+	}
+	if response == nil || len(response.ProtoReflect().GetUnknown()) != 0 {
+		return domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			validateContentPreKeysOperation,
+			"response",
+			"must be present and contain no unknown protobuf fields",
+		)
+	}
+	if err := validateContentPreKeyClaims(
+		validateContentPreKeysOperation,
+		response,
+		principals,
+	); err != nil {
+		return domain.WrapError(
+			domain.ErrorCodeInvalidArgument,
+			validateContentPreKeysOperation,
+			err,
+		)
+	}
+
+	if err := s.store.ValidateContentPreKeyClaims(
+		ctx,
+		transaction,
+		normalized,
+		proto.Clone(response).(*securecontentpb.ClaimContentPreKeysResponse),
+		principals,
+	); err != nil {
+		return wrapStoreError(validateContentPreKeysOperation, err)
+	}
+
+	return nil
 }
 
 func (s *ContentPreKeyService) now() time.Time {

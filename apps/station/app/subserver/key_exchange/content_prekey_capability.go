@@ -5,6 +5,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
+	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
@@ -26,6 +27,12 @@ type ContentPreKeyCapabilities interface {
 		context.Context,
 		*securecontentpb.ClaimContentPreKeysRequest,
 	) (*securecontentpb.ClaimContentPreKeysResponse, error)
+	ValidateContentPreKeyClaims(
+		context.Context,
+		federationdelivery.Transaction,
+		*securecontentpb.ClaimContentPreKeysRequest,
+		*securecontentpb.ClaimContentPreKeysResponse,
+	) error
 }
 
 func (s *subServer) PublishContentPreKeys(
@@ -116,6 +123,27 @@ func (s *subServer) ClaimContentPreKeys(
 		return nil, err
 	}
 	return service.ClaimContentPreKeys(ctx, request)
+}
+
+// ValidateContentPreKeyClaims revalidates a completed exact claim inside the
+// caller's transaction. It registers no route and performs no mutation.
+func (s *subServer) ValidateContentPreKeyClaims(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+	response *securecontentpb.ClaimContentPreKeysResponse,
+) error {
+	service, err := s.requireContentPreKeyService()
+	if err != nil {
+		return err
+	}
+
+	return service.ValidateContentPreKeyClaims(
+		ctx,
+		transaction,
+		request,
+		response,
+	)
 }
 
 func (s *subServer) requireContentPreKeyService() (

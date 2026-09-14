@@ -63,7 +63,8 @@ CREATED
 
 CREATED/RECEIVING_PARTS -> CANCELLED | EXPIRED
 VERIFYING -> RECEIVING_PARTS | TERMINAL_CORRUPT
-COMPLETE_UNATTACHED -> GC_CLAIMED -> GARBAGE_COLLECTED
+CREATED/RECEIVING_PARTS/VERIFYING/COMPLETE_UNATTACHED/
+  CANCELLED/EXPIRED/TERMINAL_CORRUPT -> GC_CLAIMED -> GARBAGE_COLLECTED
 GC_CLAIMED -> RETRY_WAIT | CLEANUP_FAILED
 ```
 
@@ -72,10 +73,15 @@ Rules:
 - part identity is `(upload_id, generation, chunk_index)`;
 - identical bytes/hash replay succeeds; different bytes/hash conflict;
 - complete requires every chunk and exact whole commitment;
+- verification retries start after the observed storage failure, honor the
+  persisted next-attempt time, and stop at the shared bounded attempt count;
+- background expiry commits `EXPIRED` before a later cleanup lease claims GC;
+- corrupt complete stores a deterministic terminal response/hash for exact
+  replay before and after GC;
 - attach requires the same resource, uploader, descriptor set, and domain UOW;
 - download requires the domain's persisted grant, not current object possession;
-- immutable ETag is the whole ciphertext hash;
-- range reads require `If-Match`;
+- immutable ETag is the descriptor SHA-256;
+- every full/range read requires exact `expected_descriptor_sha256`;
 - no plaintext temporary file is created by Station.
 
 ## 4. Domain-Owned Routes
@@ -89,11 +95,11 @@ Conversation retains:
 Social owns:
 
 ```text
-/api/v1/social/moments/objects/uploads:begin
+/api/v1/social/moments/objects/uploads/begin
 /api/v1/social/moments/objects/uploads/{upload_id}
 /api/v1/social/moments/objects/uploads/{upload_id}/chunks/{chunk_index}
-/api/v1/social/moments/objects/uploads/{upload_id}:complete
-/api/v1/social/moments/objects/uploads/{upload_id}:cancel
+/api/v1/social/moments/objects/uploads/{upload_id}/complete
+/api/v1/social/moments/objects/uploads/{upload_id}/cancel
 /api/v1/social/moments/objects/{object_id}
 ```
 
@@ -196,7 +202,8 @@ Forbidden:
 - private text, URL, filename, location, poll label, or mention;
 - raw SQL, authorization token, recovery phrase, or plaintext path.
 
-Audit rows use opaque correlation IDs and bounded retention.
+Structured operational events use opaque correlation IDs and the existing
+Station log retention policy. W6 does not add a second object-audit authority.
 
 ## 10. Hard-Cut Inventory
 

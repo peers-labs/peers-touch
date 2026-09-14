@@ -117,3 +117,14 @@ message ViewerContentCommitProof {
   string station_signing_key_id = 13;
   bytes station_signature = 14;
 }
+
+message StationContentSigningKeyAttestation {
+  uint32 format_version = 1;
+  string station_peer_id = 2;
+  string proof_signing_key_id = 3;
+  bytes proof_ed25519_public_key = 4;
+  string attesting_signing_key_id = 5;
+  .google.protobuf.Timestamp issued_at = 6;
+  .google.protobuf.Timestamp expires_at = 7;
+  bytes station_signature = 8;
+}

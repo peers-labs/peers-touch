@@ -28,6 +28,8 @@
 | `SC-D15` | Content PreKey publication is device-authenticated and epoch-fenced | accepted |
 | `SC-D16` | Recovery PreKey derivation uses one canonical HKDF transcript | accepted |
 | `SC-D17` | Social private prepare and submit use durable records and distinct routes | accepted |
+| `SC-D18` | Social encrypted objects use typed control messages and bounded raw-byte routes | accepted |
+| `SC-D19` | Durable content proofs use current-key attestations for retained Station public keys | accepted |
 
 ---
 
@@ -913,10 +915,10 @@ reuses an already claimed PreKey. Terminal states do not transition back to
 The private wire uses explicit routes:
 
 ```text
-POST /api/v1/social/moments:prepare-private
-POST /api/v1/social/moments:submit-private
-POST /api/v1/social/moments/{post_id}/comments:prepare-private
-POST /api/v1/social/moments/{post_id}/comments:submit-private
+POST /api/v1/social/moments/prepare-private
+POST /api/v1/social/moments/submit-private
+POST /api/v1/social/moments/{post_id}/comments/prepare-private
+POST /api/v1/social/moments/{post_id}/comments/submit-private
 ```
 
 Existing `POST /api/v1/social/moments` and
@@ -956,4 +958,332 @@ removes the legacy private write/read path after all callers migrate; W12 alone
 owns physical deletion/reset. The new tables carry only ciphertext,
 commitments, identifiers, grants, and signed evidence, never private plaintext
 or key material.
+The Owner accepted this decision on 2026-09-14.
+
+---
+
+## SC-D18: Social Encrypted Objects Use Typed Control Messages And Bounded Raw-Byte Routes
+
+**Status**: accepted
+**Date**: 2026-09-14
+
+### Context
+
+The accepted architecture assigns a Social-owned object plane, lists six
+Social object routes and defines the object state machine and persistence
+tables. `model/domain/secure_content/object.proto` currently contains only
+`EncryptedObjectUploadSpec` and `EncryptedObjectDescriptor`; it has no
+begin/status/chunk/complete/cancel/get operation contract. W6 therefore cannot
+implement IMAGE publish or authenticated object read without inventing
+unversioned handler-local wire shapes.
+
+### Decision
+
+`model/domain/secure_content/object.proto` adds domain-neutral, versioned
+control messages:
+
+```text
+BeginEncryptedObjectUploadRequest/Response
+GetEncryptedObjectUploadRequest/Response
+PutEncryptedObjectChunkResponse
+CompleteEncryptedObjectUploadRequest/Response
+CancelEncryptedObjectUploadRequest/Response
+EncryptedObjectTransferState
+```
+
+Begin binds the prepared Social resource, deterministic object ID,
+authenticated uploader endpoint, complete upload spec, descriptor-commitment
+hash and command ID. First admission requires the object ID to appear in the
+caller's current, unexpired durable `PREPARED` plan. The handler first looks up
+an existing upload by `(uploader actor, command_id)` and returns an exact
+same-hash replay before applying the current-plan check, so a committed begin
+remains replayable after plan consumption or expiry. A changed canonical
+request conflicts.
+
+Chunk upload remains a bounded raw-byte data plane:
+
+```text
+PUT /api/v1/social/moments/objects/uploads/{upload_id}/chunks/{chunk_index}
+Content-Type: application/octet-stream
+X-Upload-Generation: <u64>
+X-Chunk-Offset: <u64>
+X-Ciphertext-Size: <u64>
+X-Ciphertext-SHA256: <lowercase hex SHA-256>
+Idempotency-Key: <canonical identifier>
+```
+
+Unsigned decimal headers use no sign and no leading zero except the value zero.
+`Content-Length` is mandatory and must equal `X-Ciphertext-Size`, which in turn
+must equal the expected size for that chunk. The request body stays within the
+shared Secure Content policy. `(upload_id, generation, chunk_index)` is
+exact-once: identical offset/size/hash/body replay returns duplicate success;
+the part row persists the canonical idempotency key, and reusing that key for
+another index or hash is terminal conflict. Bytes are written only through the
+generic `storage.Backend` under a Social-owned opaque key. They never enter a
+public OSS row or a protobuf/JSON control message.
+
+`descriptor_commitment_sha256` is SHA-256 over the canonical
+`EncryptedObjectDescriptorCommitmentInput`, which contains format version,
+resource, object ID and complete `EncryptedObjectUploadSpec`, and deliberately
+excludes the Station-owned `storage_ref`.
+
+The bitmap has exactly `ceil(chunk_count / 8)` bytes. Bit `i` is chunk `i`,
+least-significant bit first within byte `i / 8`; unused high bits in the final
+byte are zero. Status requires an empty body and exactly one
+`?generation=<canonical-u64>` query value. Chunk PUT forbids query data; neither
+route normalizes alternate wire shapes into the same command.
+
+Complete verifies the full bitmap, every chunk hash, total ciphertext size and
+whole-object SHA-256, then atomically moves
+`VERIFYING -> COMPLETE_UNATTACHED` and returns one canonical
+`EncryptedObjectDescriptor`. Exact complete replay returns that descriptor.
+Mismatch atomically stores and returns a deterministic `TERMINAL_CORRUPT`
+complete response; the same command replays that terminal response before and
+after GC. Cancellation and expiry never make object bytes attachable.
+
+Private submit may only attach a `COMPLETE_UNATTACHED` object whose canonical
+descriptor equals the submitted descriptor. The existing Social outer UOW
+atomically commits `ATTACHED(domain_commit_id)` and endpoint/recovery object
+grants with the Post or Comment and command receipt.
+
+Object download uses:
+
+```text
+GET /api/v1/social/moments/objects/{object_id}
+```
+
+`GET /api/v1/social/moments/{post_id}` returns
+`GetMomentResourceResponse` with fields 1 and 2 wire-compatible with the
+existing `GetPostResponse` public projection. Field 3 carries the typed
+`PostResource`; private reads leave the legacy public fields empty rather than
+reinterpreting field 1 as another message type. The point read accepts its
+identifier from the path only and rejects body or query alternatives.
+
+It returns raw `application/octet-stream` bytes and descriptor/ETag/range
+metadata through the following exact HTTP contract:
+
+```text
+request query:
+  expected_descriptor_sha256=<lowercase hex SHA-256>
+
+request header:
+  Range: bytes=<start>-<end> | bytes=<start>-
+
+response:
+  200 for a full body; 206 for one satisfiable range; 416 otherwise
+  Accept-Ranges: bytes
+  Content-Length: <returned bytes>
+  Content-Range: bytes <start>-<end>/<total>   # 206 only
+  ETag: "sha256:<lowercase hex descriptor SHA-256>"
+  X-Descriptor-SHA256: <lowercase hex descriptor SHA-256>
+  X-Total-Ciphertext-Size: <canonical u64>
+```
+
+Multiple or suffix ranges are rejected with `416`. Social resolves the
+authenticated actor and `X-Device-ID`, requires that endpoint to remain active,
+and accepts either its exact unrevoked endpoint grant or the same actor's
+unrevoked recovery grant, plus current Post/Comment authorization. This permits
+a newly recovered active endpoint to fetch ciphertext without inventing a
+server-side root-key transfer. Missing and unauthorized objects use the same
+not-found shape. `storage_ref` is never accepted from the caller and is never an
+authorization token.
+
+The complete descriptor is already carried by the authorized Post/Comment
+resource projection; raw object GET does not repeat it in an unbounded header.
+The total response-header budget is 8 KiB and all object metadata headers are
+fixed-size or bounded identifiers.
+
+Begin, complete and cancel store their canonical command bytes/hashes on the
+upload row. Status reads are uploader-endpoint scoped. All control messages
+reject unknown fields, duplicate protobuf singular/oneof fields and
+non-canonical identities; POST controls require their typed body and reject
+query data rather than silently treating it as a body alternative. Every
+server transport applies a bounded full-request read timeout, and every route
+enforces size/chunk-count limits and zero partial authority writes.
+
+Every non-transactional storage action is fenced by durable SQL state:
+
+- before writing a chunk, Social inserts or locks its part row in `WRITING`
+  with expected metadata, immutable storage key, lease owner/generation/expiry,
+  attempts and next-attempt time;
+- a same-hash retry of an expired `WRITING` lease may verify or rewrite only the
+  same immutable key, then CAS the same lease generation to `STORED`;
+- complete CAS-leases the upload row in `VERIFYING`; a transient backend
+  interruption records retry/backoff from the failure time and returns to
+  `RECEIVING_PARTS`, while a decided integrity mismatch stores an immutable
+  `TERMINAL_CORRUPT` response and result hash;
+- submit attach and GC both lock the same object row. Attach CASes only
+  `COMPLETE_UNATTACHED -> ATTACHED`; GC CASes only an eligible non-attached
+  state to `GC_CLAIMED`, so neither can pass the other;
+- deletion completion retains upload/object tombstones, canonical command
+  hashes, terminal result hashes, generations and storage identities in
+  `GARBAGE_COLLECTED`. Exact replay returns the terminal outcome and no command
+  may recreate the same upload, object or storage key.
+- active-upload admission counts only `CREATED`, `RECEIVING_PARTS` and
+  `VERIFYING`; `COMPLETE_UNATTACHED` is no longer transferring and therefore
+  does not prevent the remaining objects in one valid ten-object plan from
+  uploading;
+- background expiry commits `CREATED/RECEIVING_PARTS -> EXPIRED` before a later
+  cleanup lease may claim the row for GC. Verification retries honor their
+  persisted next-attempt time and the shared bounded attempt limit.
+
+Persisting `WRITING` before `storage.Backend.Save` makes every crash-visible
+byte write discoverable from its deterministic row; cleanup never depends on a
+backend list API.
+
+The object cleanup transitions are:
+
+```text
+CREATED -> RECEIVING_PARTS -> VERIFYING -> COMPLETE_UNATTACHED
+VERIFYING -> RECEIVING_PARTS        # retriable storage interruption only
+VERIFYING -> TERMINAL_CORRUPT       # any decided integrity mismatch
+CREATED/RECEIVING_PARTS -> CANCELLED | EXPIRED
+CREATED/RECEIVING_PARTS/VERIFYING/COMPLETE_UNATTACHED/
+  CANCELLED/EXPIRED/TERMINAL_CORRUPT
+  -> GC_CLAIMED -> GARBAGE_COLLECTED
+```
+
+A failed blob write may leave only unreferenced Social-owned bytes eligible for
+bounded cleanup; it cannot create an attachment or grant. `ATTACHED` is outside
+this pre-attachment GC path and may enter later domain deletion cleanup only
+after all grants are revoked.
+
+### Rationale
+
+Typed control messages preserve proto-first client parity, while raw chunk and
+object bodies keep large ciphertext out of JSON/protobuf buffering. Social
+retains authorization and lifecycle ownership, the shared kernel retains pure
+validation/FSM ownership, and `storage.Backend` remains an opaque byte store.
+
+### Alternatives Considered
+
+- Handler-local JSON structs: rejected because Desktop and Mobile would have
+  no generated canonical contract.
+- Put ciphertext bytes inside protobuf: rejected because it collapses the
+  control and large-payload data planes.
+- Reuse `/conversation/attachments/*`: rejected because Conversation does not
+  own Social resources or grants.
+- Reuse public OSS rows or presigned public URLs: rejected because possession
+  of a key or URL would bypass Social authorization.
+- Attach an object during complete: rejected because only the Social
+  Post/Comment outer UOW may commit object authority.
+
+### Consequences
+
+W6 must extend the scoped generator inputs/outputs, persist upload/part command
+hashes and exact completion state, add a Social `storage.Backend` adapter, and
+implement all six routes for the minimal IMAGE path. Its Gate covers begin,
+chunk, complete, attach, authorized read, exact replay, failpoint rollback and
+unattached cleanup. W8 retains VIDEO variants plus exhaustive cancellation,
+expiry, corrupt-upload, range, abuse, storage-full and GC lifecycle matrices.
+The decision does not change Conversation routes, tables, attachment behavior
+or the shared stateless kernel.
+The Owner accepted this decision on 2026-09-14.
+
+---
+
+## SC-D19: Durable Content Proofs Use Current-Key Attestations For Retained Station Public Keys
+
+**Status**: accepted
+**Date**: 2026-09-14
+
+### Context
+
+`ContentEncryptionPlan` expires after minutes, but
+`ViewerContentCommitProof` must remain verifiable for never-opened recovery.
+The Federation key store retains the previous private key only for its bounded
+token grace window. Keeping only `station_signing_key_id` on a content proof
+does not let a newly recovered device verify an older proof after later Station
+key rotations. Social cannot solve this by storing its own trusted public-key
+copy: a compromised content database could substitute the proof, key and
+signature together.
+
+### Decision
+
+The Federation authentication owner adds an append-only public verification-key
+history keyed by `(station_peer_id, signing_key_id)`. Rotation atomically
+archives the outgoing public key before its private key may leave the existing
+`prev` grace slot. Public history remains while any durable content proof may
+reference the key; old private keys retain their existing short grace and are
+not archived.
+
+The current Station signing key issues a bounded, short-lived
+`StationContentSigningKeyAttestation`:
+
+```protobuf
+message StationContentSigningKeyAttestation {
+  uint32 format_version = 1;
+  string station_peer_id = 2;
+  string proof_signing_key_id = 3;
+  bytes proof_ed25519_public_key = 4;
+  string attesting_signing_key_id = 5;
+  google.protobuf.Timestamp issued_at = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  bytes station_signature = 8;
+}
+```
+
+The current key signs the domain-separated canonical fields `1..7`. A client
+trusts the current Station key through the existing Federation profile/pin,
+verifies the attestation, then verifies the historical content proof with
+`proof_ed25519_public_key`. A current proof key is self-attested through the
+same message. Attestations expire after five minutes and are regenerated on
+read; their expiry does not expire the content proof or the retained public key.
+
+Federation exposes a read-only internal capability:
+
+```go
+ResolveContentProofVerificationKey(
+    ctx context.Context,
+    stationPeerID string,
+    signingKeyID string,
+) (ed25519.PublicKey, error)
+
+AttestContentProofVerificationKey(
+    ctx context.Context,
+    signingKeyID string,
+    now time.Time,
+) (*StationContentSigningKeyAttestation, error)
+```
+
+Social uses the resolver to verify every signed plan before submit and every
+commit proof before projection. Point reads add a freshly generated
+attestation to `PrivateContentVerification`; it is transport verification
+metadata, not part of the immutable command receipt or commit-proof signature.
+Exact submit replay therefore retains the original business/proof bytes while
+point reads may carry a newer valid attestation after rotation.
+
+The history record and attestation contain only public keys. Mutation remains
+Federation-owned; Social and Secure Content cannot insert, rotate, delete or
+trust keys independently. A missing history key fails closed with typed
+`STATION_PROOF_KEY_UNAVAILABLE` and returns no private payload or envelope.
+
+### Rationale
+
+Re-attesting one retained public key with the currently trusted Station key
+gives new devices a fixed-size verification path without retaining old private
+keys, embedding an unbounded rotation chain in every response, or trusting the
+content database as key authority.
+
+### Alternatives Considered
+
+- Current/previous key lookup only: rejected because recovery may occur after
+  the previous-key grace window.
+- Store the old public key beside each Social proof: rejected because the same
+  compromised database could substitute both.
+- Retain every old private key: rejected because it expands signing compromise.
+- Embed the complete rotation chain in each Post: rejected as unbounded
+  response metadata.
+- Use Actor device keys for Station commit proofs: rejected because a device
+  does not own Station commit truth.
+
+### Consequences
+
+W6 must add the Federation-owned public-key history and internal resolver,
+verify plans before submit, verify proofs before point-read projection, and add
+the attestation to the generated private verification response. Federation key
+rotation tests must prove atomic archive-before-retire and re-attestation after
+rotation. W5 must prove that a newly recovered device can validate a proof
+signed before rotation. Existing JWT/Federation token grace behavior and
+Conversation wire remain unchanged.
 The Owner accepted this decision on 2026-09-14.

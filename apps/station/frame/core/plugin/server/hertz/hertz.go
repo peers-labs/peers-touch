@@ -1,9 +1,11 @@
 package hertz
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -65,8 +67,19 @@ func (s *Server) Init(opts ...option.Option) error {
 	// Note: We don't call hlog.SetLevel here because it would re-initialize
 	// our DefaultLogger and override the log level from config
 
-	s.hertz = hz.New(hz.WithHostPorts(s.Options().Address))
+	s.hertz = newHertzEngine(
+		s.Options().Address,
+		server.RequestReadTimeout(s.Options().Timeout),
+	)
 	return nil
+}
+
+func newHertzEngine(address string, readTimeout time.Duration) *hz.Hertz {
+	return hz.New(
+		hz.WithHostPorts(address),
+		hz.WithStreamBody(true),
+		hz.WithReadTimeout(readTimeout),
+	)
 }
 
 // Handle registers a handler on the Hertz engine.
@@ -347,6 +360,13 @@ func (r *hertzRequest) Body() []byte {
 	return r.ctx.Request.Body()
 }
 
+func (r *hertzRequest) BodyStream() io.Reader {
+	if r.ctx.Request.IsBodyStream() {
+		return r.ctx.Request.BodyStream()
+	}
+	return bytes.NewReader(r.ctx.Request.Body())
+}
+
 // hertzRequestWithContext adapts Hertz RequestContext to server.Request
 // and implements hertzContextGetter to provide access to the underlying Hertz context
 type hertzRequestWithContext struct {
@@ -382,6 +402,13 @@ func (r *hertzRequestWithContext) Body() []byte {
 	return r.ctx.Request.Body()
 }
 
+func (r *hertzRequestWithContext) BodyStream() io.Reader {
+	if r.ctx.Request.IsBodyStream() {
+		return r.ctx.Request.BodyStream()
+	}
+	return bytes.NewReader(r.ctx.Request.Body())
+}
+
 // GetHertzContext returns the underlying Hertz RequestContext
 // This implements the hertzContextGetter interface used by HertzHandlerFunc
 func (r *hertzRequestWithContext) GetHertzContext() interface{} {
@@ -409,6 +436,18 @@ func (r *hertzResponse) SetHeader(key, value string) {
 func (r *hertzResponse) Write(b []byte) (int, error) {
 	r.prepareStreaming()
 	return r.ctx.Write(b)
+}
+
+func (r *hertzResponse) SetBodyStream(
+	reader io.ReadCloser,
+	size int64,
+) error {
+	if size < 0 || int64(int(size)) != size {
+		return fmt.Errorf("hertz response stream size %d is invalid", size)
+	}
+	r.ctx.SetBodyStream(reader, int(size))
+	r.streaming = true
+	return nil
 }
 
 func (r *hertzResponse) prepareStreaming() {

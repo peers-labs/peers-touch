@@ -6,13 +6,15 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { SecureResourceRef } from "./content_pb";
 import { file_domain_secure_content_content } from "./content_pb";
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file domain/secure_content/object.proto.
  */
 export const file_domain_secure_content_object: GenFile = /*@__PURE__*/
-  fileDesc("CiJkb21haW4vc2VjdXJlX2NvbnRlbnQvb2JqZWN0LnByb3RvEiNwZWVyc190b3VjaC5tb2RlbC5zZWN1cmVfY29udGVudC52MSKwAwoZRW5jcnlwdGVkT2JqZWN0VXBsb2FkU3BlYxJICghyZXNvdXJjZRgBIAEoCzI2LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLlNlY3VyZVJlc291cmNlUmVmEhEKCW9iamVjdF9pZBgCIAEoCRIXCg9jaXBoZXJ0ZXh0X3NpemUYAyABKAQSGQoRY2lwaGVydGV4dF9zaGEyNTYYBCABKAwSEgoKY2h1bmtfc2l6ZRgFIAEoDRITCgtjaHVua19jb3VudBgGIAEoDRJUChBlbmNyeXB0aW9uX3N1aXRlGAcgASgOMjoucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuT2JqZWN0RW5jcnlwdGlvblN1aXRlEhAKCHRhZ19zaXplGAggASgNElAKDm5vbmNlX3N0cmF0ZWd5GAkgASgOMjgucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuT2JqZWN0Tm9uY2VTdHJhdGVneRIfChdjaHVua19jaXBoZXJ0ZXh0X3NoYTI1NhgKIAMoDCLhAQoZRW5jcnlwdGVkT2JqZWN0RGVzY3JpcHRvchJICghyZXNvdXJjZRgBIAEoCzI2LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLlNlY3VyZVJlc291cmNlUmVmEhEKCW9iamVjdF9pZBgCIAEoCRITCgtzdG9yYWdlX3JlZhgDIAEoCRJSCgpjb21taXRtZW50GAQgASgLMj4ucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuRW5jcnlwdGVkT2JqZWN0VXBsb2FkU3BlYypxChVPYmplY3RFbmNyeXB0aW9uU3VpdGUSJwojT0JKRUNUX0VOQ1JZUFRJT05fU1VJVEVfVU5TUEVDSUZJRUQQABIvCitPQkpFQ1RfRU5DUllQVElPTl9TVUlURV9BRVNfMjU2X0dDTV9DSFVOS0VEEAEqZAoTT2JqZWN0Tm9uY2VTdHJhdGVneRIlCiFPQkpFQ1RfTk9OQ0VfU1RSQVRFR1lfVU5TUEVDSUZJRUQQABImCiJPQkpFQ1RfTk9OQ0VfU1RSQVRFR1lfQ09VTlRFUjMyX0JFEAFCWFpWZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvY29yZS90eXBlcy9zZWN1cmVjb250ZW50O3NlY3VyZWNvbnRlbnRiBnByb3RvMw", [file_domain_secure_content_content]);
+  fileDesc("CiJkb21haW4vc2VjdXJlX2NvbnRlbnQvb2JqZWN0LnByb3RvEiNwZWVyc190b3VjaC5tb2RlbC5zZWN1cmVfY29udGVudC52MSKwAwoZRW5jcnlwdGVkT2JqZWN0VXBsb2FkU3BlYxJICghyZXNvdXJjZRgBIAEoCzI2LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLlNlY3VyZVJlc291cmNlUmVmEhEKCW9iamVjdF9pZBgCIAEoCRIXCg9jaXBoZXJ0ZXh0X3NpemUYAyABKAQSGQoRY2lwaGVydGV4dF9zaGEyNTYYBCABKAwSEgoKY2h1bmtfc2l6ZRgFIAEoDRITCgtjaHVua19jb3VudBgGIAEoDRJUChBlbmNyeXB0aW9uX3N1aXRlGAcgASgOMjoucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuT2JqZWN0RW5jcnlwdGlvblN1aXRlEhAKCHRhZ19zaXplGAggASgNElAKDm5vbmNlX3N0cmF0ZWd5GAkgASgOMjgucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuT2JqZWN0Tm9uY2VTdHJhdGVneRIfChdjaHVua19jaXBoZXJ0ZXh0X3NoYTI1NhgKIAMoDCLhAQoZRW5jcnlwdGVkT2JqZWN0RGVzY3JpcHRvchJICghyZXNvdXJjZRgBIAEoCzI2LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLlNlY3VyZVJlc291cmNlUmVmEhEKCW9iamVjdF9pZBgCIAEoCRITCgtzdG9yYWdlX3JlZhgDIAEoCRJSCgpjb21taXRtZW50GAQgASgLMj4ucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuRW5jcnlwdGVkT2JqZWN0VXBsb2FkU3BlYyL0AQooRW5jcnlwdGVkT2JqZWN0RGVzY3JpcHRvckNvbW1pdG1lbnRJbnB1dBIWCg5mb3JtYXRfdmVyc2lvbhgBIAEoDRJICghyZXNvdXJjZRgCIAEoCzI2LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLlNlY3VyZVJlc291cmNlUmVmEhEKCW9iamVjdF9pZBgDIAEoCRJTCgt1cGxvYWRfc3BlYxgEIAEoCzI+LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLkVuY3J5cHRlZE9iamVjdFVwbG9hZFNwZWMiuAIKIUJlZ2luRW5jcnlwdGVkT2JqZWN0VXBsb2FkUmVxdWVzdBIWCg5mb3JtYXRfdmVyc2lvbhgBIAEoDRIPCgdwbGFuX2lkGAIgASgJEkgKCHJlc291cmNlGAMgASgLMjYucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuU2VjdXJlUmVzb3VyY2VSZWYSEQoJb2JqZWN0X2lkGAQgASgJElMKC3VwbG9hZF9zcGVjGAUgASgLMj4ucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuRW5jcnlwdGVkT2JqZWN0VXBsb2FkU3BlYxIkChxkZXNjcmlwdG9yX2NvbW1pdG1lbnRfc2hhMjU2GAYgASgMEhIKCmNvbW1hbmRfaWQYByABKAkiggIKIkJlZ2luRW5jcnlwdGVkT2JqZWN0VXBsb2FkUmVzcG9uc2USEQoJdXBsb2FkX2lkGAEgASgJEhIKCmdlbmVyYXRpb24YAiABKAQSUAoFc3RhdGUYAyABKA4yQS5wZWVyc190b3VjaC5tb2RlbC5zZWN1cmVfY29udGVudC52MS5FbmNyeXB0ZWRPYmplY3RUcmFuc2ZlclN0YXRlEh0KFXJlY2VpdmVkX2NodW5rX2JpdG1hcBgEIAEoDBIuCgpleHBpcmVzX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxleGFjdF9yZXBsYXkYBiABKAgiSAofR2V0RW5jcnlwdGVkT2JqZWN0VXBsb2FkUmVxdWVzdBIRCgl1cGxvYWRfaWQYASABKAkSEgoKZ2VuZXJhdGlvbhgCIAEoBCLRAgogR2V0RW5jcnlwdGVkT2JqZWN0VXBsb2FkUmVzcG9uc2USEQoJdXBsb2FkX2lkGAEgASgJEhIKCmdlbmVyYXRpb24YAiABKAQSEQoJb2JqZWN0X2lkGAMgASgJElAKBXN0YXRlGAQgASgOMkEucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuRW5jcnlwdGVkT2JqZWN0VHJhbnNmZXJTdGF0ZRIdChVyZWNlaXZlZF9jaHVua19iaXRtYXAYBSABKAwSLgoKZXhwaXJlc19hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASUgoKZGVzY3JpcHRvchgHIAEoCzI+LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLkVuY3J5cHRlZE9iamVjdERlc2NyaXB0b3Ii5AEKH1B1dEVuY3J5cHRlZE9iamVjdENodW5rUmVzcG9uc2USEQoJdXBsb2FkX2lkGAEgASgJEhIKCmdlbmVyYXRpb24YAiABKAQSEwoLY2h1bmtfaW5kZXgYAyABKA0SUAoFc3RhdGUYBCABKA4yQS5wZWVyc190b3VjaC5tb2RlbC5zZWN1cmVfY29udGVudC52MS5FbmNyeXB0ZWRPYmplY3RUcmFuc2ZlclN0YXRlEh0KFXJlY2VpdmVkX2NodW5rX2JpdG1hcBgFIAEoDBIUCgxleGFjdF9yZXBsYXkYBiABKAgihwEKJENvbXBsZXRlRW5jcnlwdGVkT2JqZWN0VXBsb2FkUmVxdWVzdBIRCgl1cGxvYWRfaWQYASABKAkSEgoKZ2VuZXJhdGlvbhgCIAEoBBIkChxkZXNjcmlwdG9yX2NvbW1pdG1lbnRfc2hhMjU2GAMgASgMEhIKCmNvbW1hbmRfaWQYBCABKAki4wEKJUNvbXBsZXRlRW5jcnlwdGVkT2JqZWN0VXBsb2FkUmVzcG9uc2USUgoKZGVzY3JpcHRvchgBIAEoCzI+LnBlZXJzX3RvdWNoLm1vZGVsLnNlY3VyZV9jb250ZW50LnYxLkVuY3J5cHRlZE9iamVjdERlc2NyaXB0b3ISUAoFc3RhdGUYAiABKA4yQS5wZWVyc190b3VjaC5tb2RlbC5zZWN1cmVfY29udGVudC52MS5FbmNyeXB0ZWRPYmplY3RUcmFuc2ZlclN0YXRlEhQKDGV4YWN0X3JlcGxheRgDIAEoCCJfCiJDYW5jZWxFbmNyeXB0ZWRPYmplY3RVcGxvYWRSZXF1ZXN0EhEKCXVwbG9hZF9pZBgBIAEoCRISCgpnZW5lcmF0aW9uGAIgASgEEhIKCmNvbW1hbmRfaWQYAyABKAkitAEKI0NhbmNlbEVuY3J5cHRlZE9iamVjdFVwbG9hZFJlc3BvbnNlEhEKCXVwbG9hZF9pZBgBIAEoCRISCgpnZW5lcmF0aW9uGAIgASgEElAKBXN0YXRlGAMgASgOMkEucGVlcnNfdG91Y2gubW9kZWwuc2VjdXJlX2NvbnRlbnQudjEuRW5jcnlwdGVkT2JqZWN0VHJhbnNmZXJTdGF0ZRIUCgxleGFjdF9yZXBsYXkYBCABKAgqcQoVT2JqZWN0RW5jcnlwdGlvblN1aXRlEicKI09CSkVDVF9FTkNSWVBUSU9OX1NVSVRFX1VOU1BFQ0lGSUVEEAASLworT0JKRUNUX0VOQ1JZUFRJT05fU1VJVEVfQUVTXzI1Nl9HQ01fQ0hVTktFRBABKmQKE09iamVjdE5vbmNlU3RyYXRlZ3kSJQohT0JKRUNUX05PTkNFX1NUUkFURUdZX1VOU1BFQ0lGSUVEEAASJgoiT0JKRUNUX05PTkNFX1NUUkFURUdZX0NPVU5URVIzMl9CRRABKqQFChxFbmNyeXB0ZWRPYmplY3RUcmFuc2ZlclN0YXRlEi8KK0VOQ1JZUFRFRF9PQkpFQ1RfVFJBTlNGRVJfU1RBVEVfVU5TUEVDSUZJRUQQABIrCidFTkNSWVBURURfT0JKRUNUX1RSQU5TRkVSX1NUQVRFX0NSRUFURUQQARIzCi9FTkNSWVBURURfT0JKRUNUX1RSQU5TRkVSX1NUQVRFX1JFQ0VJVklOR19QQVJUUxACEi0KKUVOQ1JZUFRFRF9PQkpFQ1RfVFJBTlNGRVJfU1RBVEVfVkVSSUZZSU5HEAMSNwozRU5DUllQVEVEX09CSkVDVF9UUkFOU0ZFUl9TVEFURV9DT01QTEVURV9VTkFUVEFDSEVEEAQSLAooRU5DUllQVEVEX09CSkVDVF9UUkFOU0ZFUl9TVEFURV9BVFRBQ0hFRBAFEi0KKUVOQ1JZUFRFRF9PQkpFQ1RfVFJBTlNGRVJfU1RBVEVfQ0FOQ0VMTEVEEAYSKwonRU5DUllQVEVEX09CSkVDVF9UUkFOU0ZFUl9TVEFURV9FWFBJUkVEEAcSNAowRU5DUllQVEVEX09CSkVDVF9UUkFOU0ZFUl9TVEFURV9URVJNSU5BTF9DT1JSVVBUEAgSLgoqRU5DUllQVEVEX09CSkVDVF9UUkFOU0ZFUl9TVEFURV9HQ19DTEFJTUVEEAkSNQoxRU5DUllQVEVEX09CSkVDVF9UUkFOU0ZFUl9TVEFURV9HQVJCQUdFX0NPTExFQ1RFRBAKEi4KKkVOQ1JZUFRFRF9PQkpFQ1RfVFJBTlNGRVJfU1RBVEVfUkVUUllfV0FJVBALEjIKLkVOQ1JZUFRFRF9PQkpFQ1RfVFJBTlNGRVJfU1RBVEVfQ0xFQU5VUF9GQUlMRUQQDEJYWlZnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS9jb3JlL3R5cGVzL3NlY3VyZWNvbnRlbnQ7c2VjdXJlY29udGVudGIGcHJvdG8z", [file_domain_secure_content_content, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec
@@ -109,6 +111,356 @@ export const EncryptedObjectDescriptorSchema: GenMessage<EncryptedObjectDescript
   messageDesc(file_domain_secure_content_object, 1);
 
 /**
+ * @generated from message peers_touch.model.secure_content.v1.EncryptedObjectDescriptorCommitmentInput
+ */
+export type EncryptedObjectDescriptorCommitmentInput = Message<"peers_touch.model.secure_content.v1.EncryptedObjectDescriptorCommitmentInput"> & {
+  /**
+   * @generated from field: uint32 format_version = 1;
+   */
+  formatVersion: number;
+
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.SecureResourceRef resource = 2;
+   */
+  resource?: SecureResourceRef | undefined;
+
+  /**
+   * @generated from field: string object_id = 3;
+   */
+  objectId: string;
+
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec upload_spec = 4;
+   */
+  uploadSpec?: EncryptedObjectUploadSpec | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.EncryptedObjectDescriptorCommitmentInput.
+ * Use `create(EncryptedObjectDescriptorCommitmentInputSchema)` to create a new message.
+ */
+export const EncryptedObjectDescriptorCommitmentInputSchema: GenMessage<EncryptedObjectDescriptorCommitmentInput> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_object, 2);
+
+/**
+ * @generated from message peers_touch.model.secure_content.v1.BeginEncryptedObjectUploadRequest
+ */
+export type BeginEncryptedObjectUploadRequest = Message<"peers_touch.model.secure_content.v1.BeginEncryptedObjectUploadRequest"> & {
+  /**
+   * @generated from field: uint32 format_version = 1;
+   */
+  formatVersion: number;
+
+  /**
+   * @generated from field: string plan_id = 2;
+   */
+  planId: string;
+
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.SecureResourceRef resource = 3;
+   */
+  resource?: SecureResourceRef | undefined;
+
+  /**
+   * @generated from field: string object_id = 4;
+   */
+  objectId: string;
+
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec upload_spec = 5;
+   */
+  uploadSpec?: EncryptedObjectUploadSpec | undefined;
+
+  /**
+   * @generated from field: bytes descriptor_commitment_sha256 = 6;
+   */
+  descriptorCommitmentSha256: Uint8Array;
+
+  /**
+   * @generated from field: string command_id = 7;
+   */
+  commandId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.BeginEncryptedObjectUploadRequest.
+ * Use `create(BeginEncryptedObjectUploadRequestSchema)` to create a new message.
+ */
+export const BeginEncryptedObjectUploadRequestSchema: GenMessage<BeginEncryptedObjectUploadRequest> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_object, 3);
+
+/**
+ * @generated from message peers_touch.model.secure_content.v1.BeginEncryptedObjectUploadResponse
+ */
+export type BeginEncryptedObjectUploadResponse = Message<"peers_touch.model.secure_content.v1.BeginEncryptedObjectUploadResponse"> & {
+  /**
+   * @generated from field: string upload_id = 1;
+   */
+  uploadId: string;
+
+  /**
+   * @generated from field: uint64 generation = 2;
+   */
+  generation: bigint;
+
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.EncryptedObjectTransferState state = 3;
+   */
+  state: EncryptedObjectTransferState;
+
+  /**
+   * @generated from field: bytes received_chunk_bitmap = 4;
+   */
+  receivedChunkBitmap: Uint8Array;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 5;
+   */
+  expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: bool exact_replay = 6;
+   */
+  exactReplay: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.BeginEncryptedObjectUploadResponse.
+ * Use `create(BeginEncryptedObjectUploadResponseSchema)` to create a new message.
+ */
+export const BeginEncryptedObjectUploadResponseSchema: GenMessage<BeginEncryptedObjectUploadResponse> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_object, 4);
+
+/**
+ * @generated from message peers_touch.model.secure_content.v1.GetEncryptedObjectUploadRequest
+ */
+export type GetEncryptedObjectUploadRequest = Message<"peers_touch.model.secure_content.v1.GetEncryptedObjectUploadRequest"> & {
+  /**
+   * @generated from field: string upload_id = 1;
+   */
+  uploadId: string;
+
+  /**
+   * @generated from field: uint64 generation = 2;
+   */
+  generation: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.GetEncryptedObjectUploadRequest.
+ * Use `create(GetEncryptedObjectUploadRequestSchema)` to create a new message.
+ */
+export const GetEncryptedObjectUploadRequestSchema: GenMessage<GetEncryptedObjectUploadRequest> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_object, 5);
+
+/**
+ * @generated from message peers_touch.model.secure_content.v1.GetEncryptedObjectUploadResponse
+ */
+export type GetEncryptedObjectUploadResponse = Message<"peers_touch.model.secure_content.v1.GetEncryptedObjectUploadResponse"> & {
+  /**
+   * @generated from field: string upload_id = 1;
+   */
+  uploadId: string;
+
+  /**
+   * @generated from field: uint64 generation = 2;
+   */
+  generation: bigint;
+
+  /**
+   * @generated from field: string object_id = 3;
+   */
+  objectId: string;
+
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.EncryptedObjectTransferState state = 4;
+   */
+  state: EncryptedObjectTransferState;
+
+  /**
+   * @generated from field: bytes received_chunk_bitmap = 5;
+   */
+  receivedChunkBitmap: Uint8Array;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 6;
+   */
+  expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.EncryptedObjectDescriptor descriptor = 7;
+   */
+  descriptor?: EncryptedObjectDescriptor | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.GetEncryptedObjectUploadResponse.
+ * Use `create(GetEncryptedObjectUploadResponseSchema)` to create a new message.
+ */
+export const GetEncryptedObjectUploadResponseSchema: GenMessage<GetEncryptedObjectUploadResponse> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_object, 6);
+
+/**
+ * @generated from message peers_touch.model.secure_content.v1.PutEncryptedObjectChunkResponse
+ */
+export type PutEncryptedObjectChunkResponse = Message<"peers_touch.model.secure_content.v1.PutEncryptedObjectChunkResponse"> & {
+  /**
+   * @generated from field: string upload_id = 1;
+   */
+  uploadId: string;
+
+  /**
+   * @generated from field: uint64 generation = 2;
+   */
+  generation: bigint;
+
+  /**
+   * @generated from field: uint32 chunk_index = 3;
+   */
+  chunkIndex: number;
+
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.EncryptedObjectTransferState state = 4;
+   */
+  state: EncryptedObjectTransferState;
+
+  /**
+   * @generated from field: bytes received_chunk_bitmap = 5;
+   */
+  receivedChunkBitmap: Uint8Array;
+
+  /**
+   * @generated from field: bool exact_replay = 6;
+   */
+  exactReplay: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.PutEncryptedObjectChunkResponse.
+ * Use `create(PutEncryptedObjectChunkResponseSchema)` to create a new message.
+ */
+export const PutEncryptedObjectChunkResponseSchema: GenMessage<PutEncryptedObjectChunkResponse> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_object, 7);
+
+/**
+ * @generated from message peers_touch.model.secure_content.v1.CompleteEncryptedObjectUploadRequest
+ */
+export type CompleteEncryptedObjectUploadRequest = Message<"peers_touch.model.secure_content.v1.CompleteEncryptedObjectUploadRequest"> & {
+  /**
+   * @generated from field: string upload_id = 1;
+   */
+  uploadId: string;
+
+  /**
+   * @generated from field: uint64 generation = 2;
+   */
+  generation: bigint;
+
+  /**
+   * @generated from field: bytes descriptor_commitment_sha256 = 3;
+   */
+  descriptorCommitmentSha256: Uint8Array;
+
+  /**
+   * @generated from field: string command_id = 4;
+   */
+  commandId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.CompleteEncryptedObjectUploadRequest.
+ * Use `create(CompleteEncryptedObjectUploadRequestSchema)` to create a new message.
+ */
+export const CompleteEncryptedObjectUploadRequestSchema: GenMessage<CompleteEncryptedObjectUploadRequest> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_object, 8);
+
+/**
+ * @generated from message peers_touch.model.secure_content.v1.CompleteEncryptedObjectUploadResponse
+ */
+export type CompleteEncryptedObjectUploadResponse = Message<"peers_touch.model.secure_content.v1.CompleteEncryptedObjectUploadResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.EncryptedObjectDescriptor descriptor = 1;
+   */
+  descriptor?: EncryptedObjectDescriptor | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.EncryptedObjectTransferState state = 2;
+   */
+  state: EncryptedObjectTransferState;
+
+  /**
+   * @generated from field: bool exact_replay = 3;
+   */
+  exactReplay: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.CompleteEncryptedObjectUploadResponse.
+ * Use `create(CompleteEncryptedObjectUploadResponseSchema)` to create a new message.
+ */
+export const CompleteEncryptedObjectUploadResponseSchema: GenMessage<CompleteEncryptedObjectUploadResponse> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_object, 9);
+
+/**
+ * @generated from message peers_touch.model.secure_content.v1.CancelEncryptedObjectUploadRequest
+ */
+export type CancelEncryptedObjectUploadRequest = Message<"peers_touch.model.secure_content.v1.CancelEncryptedObjectUploadRequest"> & {
+  /**
+   * @generated from field: string upload_id = 1;
+   */
+  uploadId: string;
+
+  /**
+   * @generated from field: uint64 generation = 2;
+   */
+  generation: bigint;
+
+  /**
+   * @generated from field: string command_id = 3;
+   */
+  commandId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.CancelEncryptedObjectUploadRequest.
+ * Use `create(CancelEncryptedObjectUploadRequestSchema)` to create a new message.
+ */
+export const CancelEncryptedObjectUploadRequestSchema: GenMessage<CancelEncryptedObjectUploadRequest> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_object, 10);
+
+/**
+ * @generated from message peers_touch.model.secure_content.v1.CancelEncryptedObjectUploadResponse
+ */
+export type CancelEncryptedObjectUploadResponse = Message<"peers_touch.model.secure_content.v1.CancelEncryptedObjectUploadResponse"> & {
+  /**
+   * @generated from field: string upload_id = 1;
+   */
+  uploadId: string;
+
+  /**
+   * @generated from field: uint64 generation = 2;
+   */
+  generation: bigint;
+
+  /**
+   * @generated from field: peers_touch.model.secure_content.v1.EncryptedObjectTransferState state = 3;
+   */
+  state: EncryptedObjectTransferState;
+
+  /**
+   * @generated from field: bool exact_replay = 4;
+   */
+  exactReplay: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.secure_content.v1.CancelEncryptedObjectUploadResponse.
+ * Use `create(CancelEncryptedObjectUploadResponseSchema)` to create a new message.
+ */
+export const CancelEncryptedObjectUploadResponseSchema: GenMessage<CancelEncryptedObjectUploadResponse> = /*@__PURE__*/
+  messageDesc(file_domain_secure_content_object, 11);
+
+/**
  * @generated from enum peers_touch.model.secure_content.v1.ObjectEncryptionSuite
  */
 export enum ObjectEncryptionSuite {
@@ -149,3 +501,79 @@ export enum ObjectNonceStrategy {
  */
 export const ObjectNonceStrategySchema: GenEnum<ObjectNonceStrategy> = /*@__PURE__*/
   enumDesc(file_domain_secure_content_object, 1);
+
+/**
+ * @generated from enum peers_touch.model.secure_content.v1.EncryptedObjectTransferState
+ */
+export enum EncryptedObjectTransferState {
+  /**
+   * @generated from enum value: ENCRYPTED_OBJECT_TRANSFER_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ENCRYPTED_OBJECT_TRANSFER_STATE_CREATED = 1;
+   */
+  CREATED = 1,
+
+  /**
+   * @generated from enum value: ENCRYPTED_OBJECT_TRANSFER_STATE_RECEIVING_PARTS = 2;
+   */
+  RECEIVING_PARTS = 2,
+
+  /**
+   * @generated from enum value: ENCRYPTED_OBJECT_TRANSFER_STATE_VERIFYING = 3;
+   */
+  VERIFYING = 3,
+
+  /**
+   * @generated from enum value: ENCRYPTED_OBJECT_TRANSFER_STATE_COMPLETE_UNATTACHED = 4;
+   */
+  COMPLETE_UNATTACHED = 4,
+
+  /**
+   * @generated from enum value: ENCRYPTED_OBJECT_TRANSFER_STATE_ATTACHED = 5;
+   */
+  ATTACHED = 5,
+
+  /**
+   * @generated from enum value: ENCRYPTED_OBJECT_TRANSFER_STATE_CANCELLED = 6;
+   */
+  CANCELLED = 6,
+
+  /**
+   * @generated from enum value: ENCRYPTED_OBJECT_TRANSFER_STATE_EXPIRED = 7;
+   */
+  EXPIRED = 7,
+
+  /**
+   * @generated from enum value: ENCRYPTED_OBJECT_TRANSFER_STATE_TERMINAL_CORRUPT = 8;
+   */
+  TERMINAL_CORRUPT = 8,
+
+  /**
+   * @generated from enum value: ENCRYPTED_OBJECT_TRANSFER_STATE_GC_CLAIMED = 9;
+   */
+  GC_CLAIMED = 9,
+
+  /**
+   * @generated from enum value: ENCRYPTED_OBJECT_TRANSFER_STATE_GARBAGE_COLLECTED = 10;
+   */
+  GARBAGE_COLLECTED = 10,
+
+  /**
+   * @generated from enum value: ENCRYPTED_OBJECT_TRANSFER_STATE_RETRY_WAIT = 11;
+   */
+  RETRY_WAIT = 11,
+
+  /**
+   * @generated from enum value: ENCRYPTED_OBJECT_TRANSFER_STATE_CLEANUP_FAILED = 12;
+   */
+  CLEANUP_FAILED = 12,
+}
+
+/**
+ * Describes the enum peers_touch.model.secure_content.v1.EncryptedObjectTransferState.
+ */
+export const EncryptedObjectTransferStateSchema: GenEnum<EncryptedObjectTransferState> = /*@__PURE__*/
+  enumDesc(file_domain_secure_content_object, 2);

@@ -1,9 +1,13 @@
 package server
 
 import (
+	"time"
+
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
+
+const DefaultRequestReadTimeout = 3 * time.Minute
 
 // region server options
 // serverOptionsKey is the context key for server options.
@@ -66,6 +70,15 @@ func WithTimeout(timeout int) option.Option {
 	return wrapper.Wrap(func(opts *Options) {
 		opts.Timeout = timeout
 	})
+}
+
+// RequestReadTimeout returns the configured full-request read deadline, using
+// a bounded default when no explicit server timeout is configured.
+func RequestReadTimeout(timeoutSeconds int) time.Duration {
+	if timeoutSeconds > 0 {
+		return time.Duration(timeoutSeconds) * time.Second
+	}
+	return DefaultRequestReadTimeout
 }
 
 // WithMetadata associates metadata with the server.

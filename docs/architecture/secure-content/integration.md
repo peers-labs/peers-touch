@@ -95,19 +95,19 @@ Conversation retains:
 Social owns:
 
 ```text
-POST /api/v1/social/moments:prepare-private
-POST /api/v1/social/moments:submit-private
+POST /api/v1/social/moments/prepare-private
+POST /api/v1/social/moments/submit-private
 GET  /api/v1/social/moments/{post_id}
 GET  /api/v1/social/moments/{post_id}/comments
-POST /api/v1/social/moments/{post_id}/comments:prepare-private
-POST /api/v1/social/moments/{post_id}/comments:submit-private
+POST /api/v1/social/moments/{post_id}/comments/prepare-private
+POST /api/v1/social/moments/{post_id}/comments/submit-private
 GET  /api/v1/social/moments/{post_id}/audience
 
-POST /api/v1/social/moments/objects/uploads:begin
+POST /api/v1/social/moments/objects/uploads/begin
 GET  /api/v1/social/moments/objects/uploads/{upload_id}
 PUT  /api/v1/social/moments/objects/uploads/{upload_id}/chunks/{chunk_index}
-POST /api/v1/social/moments/objects/uploads/{upload_id}:complete
-POST /api/v1/social/moments/objects/uploads/{upload_id}:cancel
+POST /api/v1/social/moments/objects/uploads/{upload_id}/complete
+POST /api/v1/social/moments/objects/uploads/{upload_id}/cancel
 GET  /api/v1/social/moments/objects/{object_id}
 
 GET  /api/v1/social/moments/recoverable
@@ -116,12 +116,35 @@ GET  /api/v1/social/moments/recoverable
 The API Ownership and `MP-D23` contracts remain valid. Social adds only Social
 capabilities; Conversation keeps Chat attachment authority.
 
-The two `:submit-private` paths above are defined by `SC-D17`. They keep the
+Under accepted `SC-D18`, begin/status/complete/cancel use generated
+`secure_content` control messages. Chunk PUT uses a raw
+`application/octet-stream` body plus `X-Upload-Generation`,
+`X-Chunk-Offset`, `X-Ciphertext-Size`, `X-Ciphertext-SHA256`,
+`Content-Length` and `Idempotency-Key`. Object GET maps
+`expected_descriptor_sha256` to a lowercase-hex query value and returns
+`Accept-Ranges`, `Content-Length`, optional `Content-Range`,
+`ETag: "sha256:<hex>"`, `X-Descriptor-SHA256`, and
+`X-Total-Ciphertext-Size`. The complete descriptor is already delivered in the
+authorized Post/Comment response and is not duplicated into an HTTP header.
+Only one explicit or open-ended byte range is accepted; full, partial and
+unsatisfiable responses are `200`, `206` and `416`. The Social handler enforces
+JWT, `X-Device-ID`, plan ownership and current grants before delegating bytes to
+`storage.Backend`. Public OSS routes and rows are never involved.
+
+The two private-submit paths above are defined by `SC-D17`. They keep the
 generated private request types distinct from the existing public
 `CreatePostRequest` and `CreateCommentRequest` handlers. Content negotiation
 does not select public versus private business semantics. Once W6 lands, the
 legacy create routes reject non-PUBLIC payloads instead of storing plaintext or
 dispatching to the private flow.
+
+Proposed `SC-D19` adds no Social key table or public Secure Content service.
+Federation authentication archives public verification keys during its
+existing atomic rotation and exposes internal resolve/attest capabilities.
+Social verifies plans/proofs through that port and adds a fresh bounded
+attestation to private point-read verification metadata. Native anchors the
+attestation to the current Station profile key before accepting an historical
+proof.
 
 ## 4. Audience Ports
 

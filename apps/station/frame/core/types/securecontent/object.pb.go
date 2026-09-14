@@ -9,6 +9,7 @@ package securecontent
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -111,6 +112,85 @@ func (x ObjectNonceStrategy) Number() protoreflect.EnumNumber {
 // Deprecated: Use ObjectNonceStrategy.Descriptor instead.
 func (ObjectNonceStrategy) EnumDescriptor() ([]byte, []int) {
 	return file_domain_secure_content_object_proto_rawDescGZIP(), []int{1}
+}
+
+type EncryptedObjectTransferState int32
+
+const (
+	EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_UNSPECIFIED         EncryptedObjectTransferState = 0
+	EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_CREATED             EncryptedObjectTransferState = 1
+	EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_RECEIVING_PARTS     EncryptedObjectTransferState = 2
+	EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_VERIFYING           EncryptedObjectTransferState = 3
+	EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_COMPLETE_UNATTACHED EncryptedObjectTransferState = 4
+	EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_ATTACHED            EncryptedObjectTransferState = 5
+	EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_CANCELLED           EncryptedObjectTransferState = 6
+	EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_EXPIRED             EncryptedObjectTransferState = 7
+	EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_TERMINAL_CORRUPT    EncryptedObjectTransferState = 8
+	EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_GC_CLAIMED          EncryptedObjectTransferState = 9
+	EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_GARBAGE_COLLECTED   EncryptedObjectTransferState = 10
+	EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_RETRY_WAIT          EncryptedObjectTransferState = 11
+	EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_CLEANUP_FAILED      EncryptedObjectTransferState = 12
+)
+
+// Enum value maps for EncryptedObjectTransferState.
+var (
+	EncryptedObjectTransferState_name = map[int32]string{
+		0:  "ENCRYPTED_OBJECT_TRANSFER_STATE_UNSPECIFIED",
+		1:  "ENCRYPTED_OBJECT_TRANSFER_STATE_CREATED",
+		2:  "ENCRYPTED_OBJECT_TRANSFER_STATE_RECEIVING_PARTS",
+		3:  "ENCRYPTED_OBJECT_TRANSFER_STATE_VERIFYING",
+		4:  "ENCRYPTED_OBJECT_TRANSFER_STATE_COMPLETE_UNATTACHED",
+		5:  "ENCRYPTED_OBJECT_TRANSFER_STATE_ATTACHED",
+		6:  "ENCRYPTED_OBJECT_TRANSFER_STATE_CANCELLED",
+		7:  "ENCRYPTED_OBJECT_TRANSFER_STATE_EXPIRED",
+		8:  "ENCRYPTED_OBJECT_TRANSFER_STATE_TERMINAL_CORRUPT",
+		9:  "ENCRYPTED_OBJECT_TRANSFER_STATE_GC_CLAIMED",
+		10: "ENCRYPTED_OBJECT_TRANSFER_STATE_GARBAGE_COLLECTED",
+		11: "ENCRYPTED_OBJECT_TRANSFER_STATE_RETRY_WAIT",
+		12: "ENCRYPTED_OBJECT_TRANSFER_STATE_CLEANUP_FAILED",
+	}
+	EncryptedObjectTransferState_value = map[string]int32{
+		"ENCRYPTED_OBJECT_TRANSFER_STATE_UNSPECIFIED":         0,
+		"ENCRYPTED_OBJECT_TRANSFER_STATE_CREATED":             1,
+		"ENCRYPTED_OBJECT_TRANSFER_STATE_RECEIVING_PARTS":     2,
+		"ENCRYPTED_OBJECT_TRANSFER_STATE_VERIFYING":           3,
+		"ENCRYPTED_OBJECT_TRANSFER_STATE_COMPLETE_UNATTACHED": 4,
+		"ENCRYPTED_OBJECT_TRANSFER_STATE_ATTACHED":            5,
+		"ENCRYPTED_OBJECT_TRANSFER_STATE_CANCELLED":           6,
+		"ENCRYPTED_OBJECT_TRANSFER_STATE_EXPIRED":             7,
+		"ENCRYPTED_OBJECT_TRANSFER_STATE_TERMINAL_CORRUPT":    8,
+		"ENCRYPTED_OBJECT_TRANSFER_STATE_GC_CLAIMED":          9,
+		"ENCRYPTED_OBJECT_TRANSFER_STATE_GARBAGE_COLLECTED":   10,
+		"ENCRYPTED_OBJECT_TRANSFER_STATE_RETRY_WAIT":          11,
+		"ENCRYPTED_OBJECT_TRANSFER_STATE_CLEANUP_FAILED":      12,
+	}
+)
+
+func (x EncryptedObjectTransferState) Enum() *EncryptedObjectTransferState {
+	p := new(EncryptedObjectTransferState)
+	*p = x
+	return p
+}
+
+func (x EncryptedObjectTransferState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (EncryptedObjectTransferState) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_secure_content_object_proto_enumTypes[2].Descriptor()
+}
+
+func (EncryptedObjectTransferState) Type() protoreflect.EnumType {
+	return &file_domain_secure_content_object_proto_enumTypes[2]
+}
+
+func (x EncryptedObjectTransferState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use EncryptedObjectTransferState.Descriptor instead.
+func (EncryptedObjectTransferState) EnumDescriptor() ([]byte, []int) {
+	return file_domain_secure_content_object_proto_rawDescGZIP(), []int{2}
 }
 
 type EncryptedObjectUploadSpec struct {
@@ -297,11 +377,739 @@ func (x *EncryptedObjectDescriptor) GetCommitment() *EncryptedObjectUploadSpec {
 	return nil
 }
 
+type EncryptedObjectDescriptorCommitmentInput struct {
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	FormatVersion uint32                     `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	Resource      *SecureResourceRef         `protobuf:"bytes,2,opt,name=resource,proto3" json:"resource,omitempty"`
+	ObjectId      string                     `protobuf:"bytes,3,opt,name=object_id,json=objectId,proto3" json:"object_id,omitempty"`
+	UploadSpec    *EncryptedObjectUploadSpec `protobuf:"bytes,4,opt,name=upload_spec,json=uploadSpec,proto3" json:"upload_spec,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EncryptedObjectDescriptorCommitmentInput) Reset() {
+	*x = EncryptedObjectDescriptorCommitmentInput{}
+	mi := &file_domain_secure_content_object_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EncryptedObjectDescriptorCommitmentInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EncryptedObjectDescriptorCommitmentInput) ProtoMessage() {}
+
+func (x *EncryptedObjectDescriptorCommitmentInput) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_secure_content_object_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EncryptedObjectDescriptorCommitmentInput.ProtoReflect.Descriptor instead.
+func (*EncryptedObjectDescriptorCommitmentInput) Descriptor() ([]byte, []int) {
+	return file_domain_secure_content_object_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *EncryptedObjectDescriptorCommitmentInput) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *EncryptedObjectDescriptorCommitmentInput) GetResource() *SecureResourceRef {
+	if x != nil {
+		return x.Resource
+	}
+	return nil
+}
+
+func (x *EncryptedObjectDescriptorCommitmentInput) GetObjectId() string {
+	if x != nil {
+		return x.ObjectId
+	}
+	return ""
+}
+
+func (x *EncryptedObjectDescriptorCommitmentInput) GetUploadSpec() *EncryptedObjectUploadSpec {
+	if x != nil {
+		return x.UploadSpec
+	}
+	return nil
+}
+
+type BeginEncryptedObjectUploadRequest struct {
+	state                      protoimpl.MessageState     `protogen:"open.v1"`
+	FormatVersion              uint32                     `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	PlanId                     string                     `protobuf:"bytes,2,opt,name=plan_id,json=planId,proto3" json:"plan_id,omitempty"`
+	Resource                   *SecureResourceRef         `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"`
+	ObjectId                   string                     `protobuf:"bytes,4,opt,name=object_id,json=objectId,proto3" json:"object_id,omitempty"`
+	UploadSpec                 *EncryptedObjectUploadSpec `protobuf:"bytes,5,opt,name=upload_spec,json=uploadSpec,proto3" json:"upload_spec,omitempty"`
+	DescriptorCommitmentSha256 []byte                     `protobuf:"bytes,6,opt,name=descriptor_commitment_sha256,json=descriptorCommitmentSha256,proto3" json:"descriptor_commitment_sha256,omitempty"`
+	CommandId                  string                     `protobuf:"bytes,7,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
+}
+
+func (x *BeginEncryptedObjectUploadRequest) Reset() {
+	*x = BeginEncryptedObjectUploadRequest{}
+	mi := &file_domain_secure_content_object_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginEncryptedObjectUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginEncryptedObjectUploadRequest) ProtoMessage() {}
+
+func (x *BeginEncryptedObjectUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_secure_content_object_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginEncryptedObjectUploadRequest.ProtoReflect.Descriptor instead.
+func (*BeginEncryptedObjectUploadRequest) Descriptor() ([]byte, []int) {
+	return file_domain_secure_content_object_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *BeginEncryptedObjectUploadRequest) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *BeginEncryptedObjectUploadRequest) GetPlanId() string {
+	if x != nil {
+		return x.PlanId
+	}
+	return ""
+}
+
+func (x *BeginEncryptedObjectUploadRequest) GetResource() *SecureResourceRef {
+	if x != nil {
+		return x.Resource
+	}
+	return nil
+}
+
+func (x *BeginEncryptedObjectUploadRequest) GetObjectId() string {
+	if x != nil {
+		return x.ObjectId
+	}
+	return ""
+}
+
+func (x *BeginEncryptedObjectUploadRequest) GetUploadSpec() *EncryptedObjectUploadSpec {
+	if x != nil {
+		return x.UploadSpec
+	}
+	return nil
+}
+
+func (x *BeginEncryptedObjectUploadRequest) GetDescriptorCommitmentSha256() []byte {
+	if x != nil {
+		return x.DescriptorCommitmentSha256
+	}
+	return nil
+}
+
+func (x *BeginEncryptedObjectUploadRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+type BeginEncryptedObjectUploadResponse struct {
+	state               protoimpl.MessageState       `protogen:"open.v1"`
+	UploadId            string                       `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	Generation          uint64                       `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	State               EncryptedObjectTransferState `protobuf:"varint,3,opt,name=state,proto3,enum=peers_touch.model.secure_content.v1.EncryptedObjectTransferState" json:"state,omitempty"`
+	ReceivedChunkBitmap []byte                       `protobuf:"bytes,4,opt,name=received_chunk_bitmap,json=receivedChunkBitmap,proto3" json:"received_chunk_bitmap,omitempty"`
+	ExpiresAt           *timestamppb.Timestamp       `protobuf:"bytes,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	ExactReplay         bool                         `protobuf:"varint,6,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *BeginEncryptedObjectUploadResponse) Reset() {
+	*x = BeginEncryptedObjectUploadResponse{}
+	mi := &file_domain_secure_content_object_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BeginEncryptedObjectUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BeginEncryptedObjectUploadResponse) ProtoMessage() {}
+
+func (x *BeginEncryptedObjectUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_secure_content_object_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BeginEncryptedObjectUploadResponse.ProtoReflect.Descriptor instead.
+func (*BeginEncryptedObjectUploadResponse) Descriptor() ([]byte, []int) {
+	return file_domain_secure_content_object_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *BeginEncryptedObjectUploadResponse) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+func (x *BeginEncryptedObjectUploadResponse) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *BeginEncryptedObjectUploadResponse) GetState() EncryptedObjectTransferState {
+	if x != nil {
+		return x.State
+	}
+	return EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_UNSPECIFIED
+}
+
+func (x *BeginEncryptedObjectUploadResponse) GetReceivedChunkBitmap() []byte {
+	if x != nil {
+		return x.ReceivedChunkBitmap
+	}
+	return nil
+}
+
+func (x *BeginEncryptedObjectUploadResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *BeginEncryptedObjectUploadResponse) GetExactReplay() bool {
+	if x != nil {
+		return x.ExactReplay
+	}
+	return false
+}
+
+type GetEncryptedObjectUploadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UploadId      string                 `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	Generation    uint64                 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetEncryptedObjectUploadRequest) Reset() {
+	*x = GetEncryptedObjectUploadRequest{}
+	mi := &file_domain_secure_content_object_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetEncryptedObjectUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetEncryptedObjectUploadRequest) ProtoMessage() {}
+
+func (x *GetEncryptedObjectUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_secure_content_object_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetEncryptedObjectUploadRequest.ProtoReflect.Descriptor instead.
+func (*GetEncryptedObjectUploadRequest) Descriptor() ([]byte, []int) {
+	return file_domain_secure_content_object_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetEncryptedObjectUploadRequest) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+func (x *GetEncryptedObjectUploadRequest) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+type GetEncryptedObjectUploadResponse struct {
+	state               protoimpl.MessageState       `protogen:"open.v1"`
+	UploadId            string                       `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	Generation          uint64                       `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	ObjectId            string                       `protobuf:"bytes,3,opt,name=object_id,json=objectId,proto3" json:"object_id,omitempty"`
+	State               EncryptedObjectTransferState `protobuf:"varint,4,opt,name=state,proto3,enum=peers_touch.model.secure_content.v1.EncryptedObjectTransferState" json:"state,omitempty"`
+	ReceivedChunkBitmap []byte                       `protobuf:"bytes,5,opt,name=received_chunk_bitmap,json=receivedChunkBitmap,proto3" json:"received_chunk_bitmap,omitempty"`
+	ExpiresAt           *timestamppb.Timestamp       `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	Descriptor_         *EncryptedObjectDescriptor   `protobuf:"bytes,7,opt,name=descriptor,proto3" json:"descriptor,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *GetEncryptedObjectUploadResponse) Reset() {
+	*x = GetEncryptedObjectUploadResponse{}
+	mi := &file_domain_secure_content_object_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetEncryptedObjectUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetEncryptedObjectUploadResponse) ProtoMessage() {}
+
+func (x *GetEncryptedObjectUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_secure_content_object_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetEncryptedObjectUploadResponse.ProtoReflect.Descriptor instead.
+func (*GetEncryptedObjectUploadResponse) Descriptor() ([]byte, []int) {
+	return file_domain_secure_content_object_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GetEncryptedObjectUploadResponse) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+func (x *GetEncryptedObjectUploadResponse) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *GetEncryptedObjectUploadResponse) GetObjectId() string {
+	if x != nil {
+		return x.ObjectId
+	}
+	return ""
+}
+
+func (x *GetEncryptedObjectUploadResponse) GetState() EncryptedObjectTransferState {
+	if x != nil {
+		return x.State
+	}
+	return EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_UNSPECIFIED
+}
+
+func (x *GetEncryptedObjectUploadResponse) GetReceivedChunkBitmap() []byte {
+	if x != nil {
+		return x.ReceivedChunkBitmap
+	}
+	return nil
+}
+
+func (x *GetEncryptedObjectUploadResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *GetEncryptedObjectUploadResponse) GetDescriptor_() *EncryptedObjectDescriptor {
+	if x != nil {
+		return x.Descriptor_
+	}
+	return nil
+}
+
+type PutEncryptedObjectChunkResponse struct {
+	state               protoimpl.MessageState       `protogen:"open.v1"`
+	UploadId            string                       `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	Generation          uint64                       `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	ChunkIndex          uint32                       `protobuf:"varint,3,opt,name=chunk_index,json=chunkIndex,proto3" json:"chunk_index,omitempty"`
+	State               EncryptedObjectTransferState `protobuf:"varint,4,opt,name=state,proto3,enum=peers_touch.model.secure_content.v1.EncryptedObjectTransferState" json:"state,omitempty"`
+	ReceivedChunkBitmap []byte                       `protobuf:"bytes,5,opt,name=received_chunk_bitmap,json=receivedChunkBitmap,proto3" json:"received_chunk_bitmap,omitempty"`
+	ExactReplay         bool                         `protobuf:"varint,6,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *PutEncryptedObjectChunkResponse) Reset() {
+	*x = PutEncryptedObjectChunkResponse{}
+	mi := &file_domain_secure_content_object_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutEncryptedObjectChunkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutEncryptedObjectChunkResponse) ProtoMessage() {}
+
+func (x *PutEncryptedObjectChunkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_secure_content_object_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutEncryptedObjectChunkResponse.ProtoReflect.Descriptor instead.
+func (*PutEncryptedObjectChunkResponse) Descriptor() ([]byte, []int) {
+	return file_domain_secure_content_object_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *PutEncryptedObjectChunkResponse) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+func (x *PutEncryptedObjectChunkResponse) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *PutEncryptedObjectChunkResponse) GetChunkIndex() uint32 {
+	if x != nil {
+		return x.ChunkIndex
+	}
+	return 0
+}
+
+func (x *PutEncryptedObjectChunkResponse) GetState() EncryptedObjectTransferState {
+	if x != nil {
+		return x.State
+	}
+	return EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_UNSPECIFIED
+}
+
+func (x *PutEncryptedObjectChunkResponse) GetReceivedChunkBitmap() []byte {
+	if x != nil {
+		return x.ReceivedChunkBitmap
+	}
+	return nil
+}
+
+func (x *PutEncryptedObjectChunkResponse) GetExactReplay() bool {
+	if x != nil {
+		return x.ExactReplay
+	}
+	return false
+}
+
+type CompleteEncryptedObjectUploadRequest struct {
+	state                      protoimpl.MessageState `protogen:"open.v1"`
+	UploadId                   string                 `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	Generation                 uint64                 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	DescriptorCommitmentSha256 []byte                 `protobuf:"bytes,3,opt,name=descriptor_commitment_sha256,json=descriptorCommitmentSha256,proto3" json:"descriptor_commitment_sha256,omitempty"`
+	CommandId                  string                 `protobuf:"bytes,4,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
+}
+
+func (x *CompleteEncryptedObjectUploadRequest) Reset() {
+	*x = CompleteEncryptedObjectUploadRequest{}
+	mi := &file_domain_secure_content_object_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteEncryptedObjectUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteEncryptedObjectUploadRequest) ProtoMessage() {}
+
+func (x *CompleteEncryptedObjectUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_secure_content_object_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteEncryptedObjectUploadRequest.ProtoReflect.Descriptor instead.
+func (*CompleteEncryptedObjectUploadRequest) Descriptor() ([]byte, []int) {
+	return file_domain_secure_content_object_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *CompleteEncryptedObjectUploadRequest) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+func (x *CompleteEncryptedObjectUploadRequest) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *CompleteEncryptedObjectUploadRequest) GetDescriptorCommitmentSha256() []byte {
+	if x != nil {
+		return x.DescriptorCommitmentSha256
+	}
+	return nil
+}
+
+func (x *CompleteEncryptedObjectUploadRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+type CompleteEncryptedObjectUploadResponse struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	Descriptor_   *EncryptedObjectDescriptor   `protobuf:"bytes,1,opt,name=descriptor,proto3" json:"descriptor,omitempty"`
+	State         EncryptedObjectTransferState `protobuf:"varint,2,opt,name=state,proto3,enum=peers_touch.model.secure_content.v1.EncryptedObjectTransferState" json:"state,omitempty"`
+	ExactReplay   bool                         `protobuf:"varint,3,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompleteEncryptedObjectUploadResponse) Reset() {
+	*x = CompleteEncryptedObjectUploadResponse{}
+	mi := &file_domain_secure_content_object_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteEncryptedObjectUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteEncryptedObjectUploadResponse) ProtoMessage() {}
+
+func (x *CompleteEncryptedObjectUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_secure_content_object_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteEncryptedObjectUploadResponse.ProtoReflect.Descriptor instead.
+func (*CompleteEncryptedObjectUploadResponse) Descriptor() ([]byte, []int) {
+	return file_domain_secure_content_object_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *CompleteEncryptedObjectUploadResponse) GetDescriptor_() *EncryptedObjectDescriptor {
+	if x != nil {
+		return x.Descriptor_
+	}
+	return nil
+}
+
+func (x *CompleteEncryptedObjectUploadResponse) GetState() EncryptedObjectTransferState {
+	if x != nil {
+		return x.State
+	}
+	return EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_UNSPECIFIED
+}
+
+func (x *CompleteEncryptedObjectUploadResponse) GetExactReplay() bool {
+	if x != nil {
+		return x.ExactReplay
+	}
+	return false
+}
+
+type CancelEncryptedObjectUploadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UploadId      string                 `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	Generation    uint64                 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	CommandId     string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelEncryptedObjectUploadRequest) Reset() {
+	*x = CancelEncryptedObjectUploadRequest{}
+	mi := &file_domain_secure_content_object_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelEncryptedObjectUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelEncryptedObjectUploadRequest) ProtoMessage() {}
+
+func (x *CancelEncryptedObjectUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_secure_content_object_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelEncryptedObjectUploadRequest.ProtoReflect.Descriptor instead.
+func (*CancelEncryptedObjectUploadRequest) Descriptor() ([]byte, []int) {
+	return file_domain_secure_content_object_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CancelEncryptedObjectUploadRequest) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+func (x *CancelEncryptedObjectUploadRequest) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *CancelEncryptedObjectUploadRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+type CancelEncryptedObjectUploadResponse struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	UploadId      string                       `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	Generation    uint64                       `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	State         EncryptedObjectTransferState `protobuf:"varint,3,opt,name=state,proto3,enum=peers_touch.model.secure_content.v1.EncryptedObjectTransferState" json:"state,omitempty"`
+	ExactReplay   bool                         `protobuf:"varint,4,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelEncryptedObjectUploadResponse) Reset() {
+	*x = CancelEncryptedObjectUploadResponse{}
+	mi := &file_domain_secure_content_object_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelEncryptedObjectUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelEncryptedObjectUploadResponse) ProtoMessage() {}
+
+func (x *CancelEncryptedObjectUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_secure_content_object_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelEncryptedObjectUploadResponse.ProtoReflect.Descriptor instead.
+func (*CancelEncryptedObjectUploadResponse) Descriptor() ([]byte, []int) {
+	return file_domain_secure_content_object_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *CancelEncryptedObjectUploadResponse) GetUploadId() string {
+	if x != nil {
+		return x.UploadId
+	}
+	return ""
+}
+
+func (x *CancelEncryptedObjectUploadResponse) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *CancelEncryptedObjectUploadResponse) GetState() EncryptedObjectTransferState {
+	if x != nil {
+		return x.State
+	}
+	return EncryptedObjectTransferState_ENCRYPTED_OBJECT_TRANSFER_STATE_UNSPECIFIED
+}
+
+func (x *CancelEncryptedObjectUploadResponse) GetExactReplay() bool {
+	if x != nil {
+		return x.ExactReplay
+	}
+	return false
+}
+
 var File_domain_secure_content_object_proto protoreflect.FileDescriptor
 
 const file_domain_secure_content_object_proto_rawDesc = "" +
 	"\n" +
-	"\"domain/secure_content/object.proto\x12#peers_touch.model.secure_content.v1\x1a#domain/secure_content/content.proto\"\xbd\x04\n" +
+	"\"domain/secure_content/object.proto\x12#peers_touch.model.secure_content.v1\x1a#domain/secure_content/content.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbd\x04\n" +
 	"\x19EncryptedObjectUploadSpec\x12R\n" +
 	"\bresource\x18\x01 \x01(\v26.peers_touch.model.secure_content.v1.SecureResourceRefR\bresource\x12\x1b\n" +
 	"\tobject_id\x18\x02 \x01(\tR\bobjectId\x12'\n" +
@@ -323,13 +1131,110 @@ const file_domain_secure_content_object_proto_rawDesc = "" +
 	"storageRef\x12^\n" +
 	"\n" +
 	"commitment\x18\x04 \x01(\v2>.peers_touch.model.secure_content.v1.EncryptedObjectUploadSpecR\n" +
-	"commitment*q\n" +
+	"commitment\"\xa3\x02\n" +
+	"(EncryptedObjectDescriptorCommitmentInput\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12R\n" +
+	"\bresource\x18\x02 \x01(\v26.peers_touch.model.secure_content.v1.SecureResourceRefR\bresource\x12\x1b\n" +
+	"\tobject_id\x18\x03 \x01(\tR\bobjectId\x12_\n" +
+	"\vupload_spec\x18\x04 \x01(\v2>.peers_touch.model.secure_content.v1.EncryptedObjectUploadSpecR\n" +
+	"uploadSpec\"\x96\x03\n" +
+	"!BeginEncryptedObjectUploadRequest\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12\x17\n" +
+	"\aplan_id\x18\x02 \x01(\tR\x06planId\x12R\n" +
+	"\bresource\x18\x03 \x01(\v26.peers_touch.model.secure_content.v1.SecureResourceRefR\bresource\x12\x1b\n" +
+	"\tobject_id\x18\x04 \x01(\tR\bobjectId\x12_\n" +
+	"\vupload_spec\x18\x05 \x01(\v2>.peers_touch.model.secure_content.v1.EncryptedObjectUploadSpecR\n" +
+	"uploadSpec\x12@\n" +
+	"\x1cdescriptor_commitment_sha256\x18\x06 \x01(\fR\x1adescriptorCommitmentSha256\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\a \x01(\tR\tcommandId\"\xcc\x02\n" +
+	"\"BeginEncryptedObjectUploadResponse\x12\x1b\n" +
+	"\tupload_id\x18\x01 \x01(\tR\buploadId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\x04R\n" +
+	"generation\x12W\n" +
+	"\x05state\x18\x03 \x01(\x0e2A.peers_touch.model.secure_content.v1.EncryptedObjectTransferStateR\x05state\x122\n" +
+	"\x15received_chunk_bitmap\x18\x04 \x01(\fR\x13receivedChunkBitmap\x129\n" +
+	"\n" +
+	"expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12!\n" +
+	"\fexact_replay\x18\x06 \x01(\bR\vexactReplay\"^\n" +
+	"\x1fGetEncryptedObjectUploadRequest\x12\x1b\n" +
+	"\tupload_id\x18\x01 \x01(\tR\buploadId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\x04R\n" +
+	"generation\"\xa4\x03\n" +
+	" GetEncryptedObjectUploadResponse\x12\x1b\n" +
+	"\tupload_id\x18\x01 \x01(\tR\buploadId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\x04R\n" +
+	"generation\x12\x1b\n" +
+	"\tobject_id\x18\x03 \x01(\tR\bobjectId\x12W\n" +
+	"\x05state\x18\x04 \x01(\x0e2A.peers_touch.model.secure_content.v1.EncryptedObjectTransferStateR\x05state\x122\n" +
+	"\x15received_chunk_bitmap\x18\x05 \x01(\fR\x13receivedChunkBitmap\x129\n" +
+	"\n" +
+	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12^\n" +
+	"\n" +
+	"descriptor\x18\a \x01(\v2>.peers_touch.model.secure_content.v1.EncryptedObjectDescriptorR\n" +
+	"descriptor\"\xaf\x02\n" +
+	"\x1fPutEncryptedObjectChunkResponse\x12\x1b\n" +
+	"\tupload_id\x18\x01 \x01(\tR\buploadId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\x04R\n" +
+	"generation\x12\x1f\n" +
+	"\vchunk_index\x18\x03 \x01(\rR\n" +
+	"chunkIndex\x12W\n" +
+	"\x05state\x18\x04 \x01(\x0e2A.peers_touch.model.secure_content.v1.EncryptedObjectTransferStateR\x05state\x122\n" +
+	"\x15received_chunk_bitmap\x18\x05 \x01(\fR\x13receivedChunkBitmap\x12!\n" +
+	"\fexact_replay\x18\x06 \x01(\bR\vexactReplay\"\xc4\x01\n" +
+	"$CompleteEncryptedObjectUploadRequest\x12\x1b\n" +
+	"\tupload_id\x18\x01 \x01(\tR\buploadId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\x04R\n" +
+	"generation\x12@\n" +
+	"\x1cdescriptor_commitment_sha256\x18\x03 \x01(\fR\x1adescriptorCommitmentSha256\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x04 \x01(\tR\tcommandId\"\x83\x02\n" +
+	"%CompleteEncryptedObjectUploadResponse\x12^\n" +
+	"\n" +
+	"descriptor\x18\x01 \x01(\v2>.peers_touch.model.secure_content.v1.EncryptedObjectDescriptorR\n" +
+	"descriptor\x12W\n" +
+	"\x05state\x18\x02 \x01(\x0e2A.peers_touch.model.secure_content.v1.EncryptedObjectTransferStateR\x05state\x12!\n" +
+	"\fexact_replay\x18\x03 \x01(\bR\vexactReplay\"\x80\x01\n" +
+	"\"CancelEncryptedObjectUploadRequest\x12\x1b\n" +
+	"\tupload_id\x18\x01 \x01(\tR\buploadId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\x04R\n" +
+	"generation\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x03 \x01(\tR\tcommandId\"\xde\x01\n" +
+	"#CancelEncryptedObjectUploadResponse\x12\x1b\n" +
+	"\tupload_id\x18\x01 \x01(\tR\buploadId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\x04R\n" +
+	"generation\x12W\n" +
+	"\x05state\x18\x03 \x01(\x0e2A.peers_touch.model.secure_content.v1.EncryptedObjectTransferStateR\x05state\x12!\n" +
+	"\fexact_replay\x18\x04 \x01(\bR\vexactReplay*q\n" +
 	"\x15ObjectEncryptionSuite\x12'\n" +
 	"#OBJECT_ENCRYPTION_SUITE_UNSPECIFIED\x10\x00\x12/\n" +
 	"+OBJECT_ENCRYPTION_SUITE_AES_256_GCM_CHUNKED\x10\x01*d\n" +
 	"\x13ObjectNonceStrategy\x12%\n" +
 	"!OBJECT_NONCE_STRATEGY_UNSPECIFIED\x10\x00\x12&\n" +
-	"\"OBJECT_NONCE_STRATEGY_COUNTER32_BE\x10\x01BXZVgithub.com/peers-labs/peers-touch/station/frame/core/types/securecontent;securecontentb\x06proto3"
+	"\"OBJECT_NONCE_STRATEGY_COUNTER32_BE\x10\x01*\xa4\x05\n" +
+	"\x1cEncryptedObjectTransferState\x12/\n" +
+	"+ENCRYPTED_OBJECT_TRANSFER_STATE_UNSPECIFIED\x10\x00\x12+\n" +
+	"'ENCRYPTED_OBJECT_TRANSFER_STATE_CREATED\x10\x01\x123\n" +
+	"/ENCRYPTED_OBJECT_TRANSFER_STATE_RECEIVING_PARTS\x10\x02\x12-\n" +
+	")ENCRYPTED_OBJECT_TRANSFER_STATE_VERIFYING\x10\x03\x127\n" +
+	"3ENCRYPTED_OBJECT_TRANSFER_STATE_COMPLETE_UNATTACHED\x10\x04\x12,\n" +
+	"(ENCRYPTED_OBJECT_TRANSFER_STATE_ATTACHED\x10\x05\x12-\n" +
+	")ENCRYPTED_OBJECT_TRANSFER_STATE_CANCELLED\x10\x06\x12+\n" +
+	"'ENCRYPTED_OBJECT_TRANSFER_STATE_EXPIRED\x10\a\x124\n" +
+	"0ENCRYPTED_OBJECT_TRANSFER_STATE_TERMINAL_CORRUPT\x10\b\x12.\n" +
+	"*ENCRYPTED_OBJECT_TRANSFER_STATE_GC_CLAIMED\x10\t\x125\n" +
+	"1ENCRYPTED_OBJECT_TRANSFER_STATE_GARBAGE_COLLECTED\x10\n" +
+	"\x12.\n" +
+	"*ENCRYPTED_OBJECT_TRANSFER_STATE_RETRY_WAIT\x10\v\x122\n" +
+	".ENCRYPTED_OBJECT_TRANSFER_STATE_CLEANUP_FAILED\x10\fBXZVgithub.com/peers-labs/peers-touch/station/frame/core/types/securecontent;securecontentb\x06proto3"
 
 var (
 	file_domain_secure_content_object_proto_rawDescOnce sync.Once
@@ -343,26 +1248,51 @@ func file_domain_secure_content_object_proto_rawDescGZIP() []byte {
 	return file_domain_secure_content_object_proto_rawDescData
 }
 
-var file_domain_secure_content_object_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_domain_secure_content_object_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_domain_secure_content_object_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_domain_secure_content_object_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_domain_secure_content_object_proto_goTypes = []any{
-	(ObjectEncryptionSuite)(0),        // 0: peers_touch.model.secure_content.v1.ObjectEncryptionSuite
-	(ObjectNonceStrategy)(0),          // 1: peers_touch.model.secure_content.v1.ObjectNonceStrategy
-	(*EncryptedObjectUploadSpec)(nil), // 2: peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec
-	(*EncryptedObjectDescriptor)(nil), // 3: peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
-	(*SecureResourceRef)(nil),         // 4: peers_touch.model.secure_content.v1.SecureResourceRef
+	(ObjectEncryptionSuite)(0),                       // 0: peers_touch.model.secure_content.v1.ObjectEncryptionSuite
+	(ObjectNonceStrategy)(0),                         // 1: peers_touch.model.secure_content.v1.ObjectNonceStrategy
+	(EncryptedObjectTransferState)(0),                // 2: peers_touch.model.secure_content.v1.EncryptedObjectTransferState
+	(*EncryptedObjectUploadSpec)(nil),                // 3: peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec
+	(*EncryptedObjectDescriptor)(nil),                // 4: peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+	(*EncryptedObjectDescriptorCommitmentInput)(nil), // 5: peers_touch.model.secure_content.v1.EncryptedObjectDescriptorCommitmentInput
+	(*BeginEncryptedObjectUploadRequest)(nil),        // 6: peers_touch.model.secure_content.v1.BeginEncryptedObjectUploadRequest
+	(*BeginEncryptedObjectUploadResponse)(nil),       // 7: peers_touch.model.secure_content.v1.BeginEncryptedObjectUploadResponse
+	(*GetEncryptedObjectUploadRequest)(nil),          // 8: peers_touch.model.secure_content.v1.GetEncryptedObjectUploadRequest
+	(*GetEncryptedObjectUploadResponse)(nil),         // 9: peers_touch.model.secure_content.v1.GetEncryptedObjectUploadResponse
+	(*PutEncryptedObjectChunkResponse)(nil),          // 10: peers_touch.model.secure_content.v1.PutEncryptedObjectChunkResponse
+	(*CompleteEncryptedObjectUploadRequest)(nil),     // 11: peers_touch.model.secure_content.v1.CompleteEncryptedObjectUploadRequest
+	(*CompleteEncryptedObjectUploadResponse)(nil),    // 12: peers_touch.model.secure_content.v1.CompleteEncryptedObjectUploadResponse
+	(*CancelEncryptedObjectUploadRequest)(nil),       // 13: peers_touch.model.secure_content.v1.CancelEncryptedObjectUploadRequest
+	(*CancelEncryptedObjectUploadResponse)(nil),      // 14: peers_touch.model.secure_content.v1.CancelEncryptedObjectUploadResponse
+	(*SecureResourceRef)(nil),                        // 15: peers_touch.model.secure_content.v1.SecureResourceRef
+	(*timestamppb.Timestamp)(nil),                    // 16: google.protobuf.Timestamp
 }
 var file_domain_secure_content_object_proto_depIdxs = []int32{
-	4, // 0: peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	0, // 1: peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec.encryption_suite:type_name -> peers_touch.model.secure_content.v1.ObjectEncryptionSuite
-	1, // 2: peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec.nonce_strategy:type_name -> peers_touch.model.secure_content.v1.ObjectNonceStrategy
-	4, // 3: peers_touch.model.secure_content.v1.EncryptedObjectDescriptor.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	2, // 4: peers_touch.model.secure_content.v1.EncryptedObjectDescriptor.commitment:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	15, // 0: peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	0,  // 1: peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec.encryption_suite:type_name -> peers_touch.model.secure_content.v1.ObjectEncryptionSuite
+	1,  // 2: peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec.nonce_strategy:type_name -> peers_touch.model.secure_content.v1.ObjectNonceStrategy
+	15, // 3: peers_touch.model.secure_content.v1.EncryptedObjectDescriptor.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	3,  // 4: peers_touch.model.secure_content.v1.EncryptedObjectDescriptor.commitment:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec
+	15, // 5: peers_touch.model.secure_content.v1.EncryptedObjectDescriptorCommitmentInput.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	3,  // 6: peers_touch.model.secure_content.v1.EncryptedObjectDescriptorCommitmentInput.upload_spec:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec
+	15, // 7: peers_touch.model.secure_content.v1.BeginEncryptedObjectUploadRequest.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	3,  // 8: peers_touch.model.secure_content.v1.BeginEncryptedObjectUploadRequest.upload_spec:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectUploadSpec
+	2,  // 9: peers_touch.model.secure_content.v1.BeginEncryptedObjectUploadResponse.state:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectTransferState
+	16, // 10: peers_touch.model.secure_content.v1.BeginEncryptedObjectUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
+	2,  // 11: peers_touch.model.secure_content.v1.GetEncryptedObjectUploadResponse.state:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectTransferState
+	16, // 12: peers_touch.model.secure_content.v1.GetEncryptedObjectUploadResponse.expires_at:type_name -> google.protobuf.Timestamp
+	4,  // 13: peers_touch.model.secure_content.v1.GetEncryptedObjectUploadResponse.descriptor:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+	2,  // 14: peers_touch.model.secure_content.v1.PutEncryptedObjectChunkResponse.state:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectTransferState
+	4,  // 15: peers_touch.model.secure_content.v1.CompleteEncryptedObjectUploadResponse.descriptor:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+	2,  // 16: peers_touch.model.secure_content.v1.CompleteEncryptedObjectUploadResponse.state:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectTransferState
+	2,  // 17: peers_touch.model.secure_content.v1.CancelEncryptedObjectUploadResponse.state:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectTransferState
+	18, // [18:18] is the sub-list for method output_type
+	18, // [18:18] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_domain_secure_content_object_proto_init() }
@@ -376,8 +1306,8 @@ func file_domain_secure_content_object_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_secure_content_object_proto_rawDesc), len(file_domain_secure_content_object_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   2,
+			NumEnums:      3,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

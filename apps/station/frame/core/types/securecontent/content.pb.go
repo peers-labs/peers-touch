@@ -1029,6 +1029,106 @@ func (x *ViewerContentCommitProof) GetStationSignature() []byte {
 	return nil
 }
 
+type StationContentSigningKeyAttestation struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	FormatVersion         uint32                 `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	StationPeerId         string                 `protobuf:"bytes,2,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
+	ProofSigningKeyId     string                 `protobuf:"bytes,3,opt,name=proof_signing_key_id,json=proofSigningKeyId,proto3" json:"proof_signing_key_id,omitempty"`
+	ProofEd25519PublicKey []byte                 `protobuf:"bytes,4,opt,name=proof_ed25519_public_key,json=proofEd25519PublicKey,proto3" json:"proof_ed25519_public_key,omitempty"`
+	AttestingSigningKeyId string                 `protobuf:"bytes,5,opt,name=attesting_signing_key_id,json=attestingSigningKeyId,proto3" json:"attesting_signing_key_id,omitempty"`
+	IssuedAt              *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
+	ExpiresAt             *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	StationSignature      []byte                 `protobuf:"bytes,8,opt,name=station_signature,json=stationSignature,proto3" json:"station_signature,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *StationContentSigningKeyAttestation) Reset() {
+	*x = StationContentSigningKeyAttestation{}
+	mi := &file_domain_secure_content_content_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StationContentSigningKeyAttestation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StationContentSigningKeyAttestation) ProtoMessage() {}
+
+func (x *StationContentSigningKeyAttestation) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_secure_content_content_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StationContentSigningKeyAttestation.ProtoReflect.Descriptor instead.
+func (*StationContentSigningKeyAttestation) Descriptor() ([]byte, []int) {
+	return file_domain_secure_content_content_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *StationContentSigningKeyAttestation) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *StationContentSigningKeyAttestation) GetStationPeerId() string {
+	if x != nil {
+		return x.StationPeerId
+	}
+	return ""
+}
+
+func (x *StationContentSigningKeyAttestation) GetProofSigningKeyId() string {
+	if x != nil {
+		return x.ProofSigningKeyId
+	}
+	return ""
+}
+
+func (x *StationContentSigningKeyAttestation) GetProofEd25519PublicKey() []byte {
+	if x != nil {
+		return x.ProofEd25519PublicKey
+	}
+	return nil
+}
+
+func (x *StationContentSigningKeyAttestation) GetAttestingSigningKeyId() string {
+	if x != nil {
+		return x.AttestingSigningKeyId
+	}
+	return ""
+}
+
+func (x *StationContentSigningKeyAttestation) GetIssuedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.IssuedAt
+	}
+	return nil
+}
+
+func (x *StationContentSigningKeyAttestation) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *StationContentSigningKeyAttestation) GetStationSignature() []byte {
+	if x != nil {
+		return x.StationSignature
+	}
+	return nil
+}
+
 var File_domain_secure_content_content_proto protoreflect.FileDescriptor
 
 const file_domain_secure_content_content_proto_rawDesc = "" +
@@ -1121,7 +1221,17 @@ const file_domain_secure_content_content_proto_rawDesc = "" +
 	"\x18subtype_authority_sha256\x18\v \x01(\fR\x16subtypeAuthoritySha256\x12=\n" +
 	"\fcommitted_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\vcommittedAt\x123\n" +
 	"\x16station_signing_key_id\x18\r \x01(\tR\x13stationSigningKeyId\x12+\n" +
-	"\x11station_signature\x18\x0e \x01(\fR\x10stationSignature*\x9d\x01\n" +
+	"\x11station_signature\x18\x0e \x01(\fR\x10stationSignature\"\xb8\x03\n" +
+	"#StationContentSigningKeyAttestation\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12&\n" +
+	"\x0fstation_peer_id\x18\x02 \x01(\tR\rstationPeerId\x12/\n" +
+	"\x14proof_signing_key_id\x18\x03 \x01(\tR\x11proofSigningKeyId\x127\n" +
+	"\x18proof_ed25519_public_key\x18\x04 \x01(\fR\x15proofEd25519PublicKey\x127\n" +
+	"\x18attesting_signing_key_id\x18\x05 \x01(\tR\x15attestingSigningKeyId\x127\n" +
+	"\tissued_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\x129\n" +
+	"\n" +
+	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12+\n" +
+	"\x11station_signature\x18\b \x01(\fR\x10stationSignature*\x9d\x01\n" +
 	"\x18SecureContentOwnerDomain\x12+\n" +
 	"'SECURE_CONTENT_OWNER_DOMAIN_UNSPECIFIED\x10\x00\x12,\n" +
 	"(SECURE_CONTENT_OWNER_DOMAIN_CONVERSATION\x10\x01\x12&\n" +
@@ -1147,22 +1257,23 @@ func file_domain_secure_content_content_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_secure_content_content_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_domain_secure_content_content_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_domain_secure_content_content_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_domain_secure_content_content_proto_goTypes = []any{
-	(SecureContentOwnerDomain)(0),        // 0: peers_touch.model.secure_content.v1.SecureContentOwnerDomain
-	(PayloadEncryptionSuite)(0),          // 1: peers_touch.model.secure_content.v1.PayloadEncryptionSuite
-	(ContentPreKeyKind)(0),               // 2: peers_touch.model.secure_content.v1.ContentPreKeyKind
-	(*SecureResourceRef)(nil),            // 3: peers_touch.model.secure_content.v1.SecureResourceRef
-	(*EncryptedPayload)(nil),             // 4: peers_touch.model.secure_content.v1.EncryptedPayload
-	(*RequiredContentRecipientSlot)(nil), // 5: peers_touch.model.secure_content.v1.RequiredContentRecipientSlot
-	(*ContentEncryptionPlan)(nil),        // 6: peers_touch.model.secure_content.v1.ContentEncryptionPlan
-	(*ContentKeyEnvelopeBinding)(nil),    // 7: peers_touch.model.secure_content.v1.ContentKeyEnvelopeBinding
-	(*PreparedContentKeyEnvelope)(nil),   // 8: peers_touch.model.secure_content.v1.PreparedContentKeyEnvelope
-	(*ViewerContentKeyEnvelope)(nil),     // 9: peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
-	(*ViewerContentCommitProof)(nil),     // 10: peers_touch.model.secure_content.v1.ViewerContentCommitProof
-	(*model.ActorDeviceRef)(nil),         // 11: peers_touch.model.actor.v1.ActorDeviceRef
-	(*timestamppb.Timestamp)(nil),        // 12: google.protobuf.Timestamp
-	(*model.ActorRef)(nil),               // 13: peers_touch.model.actor.v1.ActorRef
+	(SecureContentOwnerDomain)(0),               // 0: peers_touch.model.secure_content.v1.SecureContentOwnerDomain
+	(PayloadEncryptionSuite)(0),                 // 1: peers_touch.model.secure_content.v1.PayloadEncryptionSuite
+	(ContentPreKeyKind)(0),                      // 2: peers_touch.model.secure_content.v1.ContentPreKeyKind
+	(*SecureResourceRef)(nil),                   // 3: peers_touch.model.secure_content.v1.SecureResourceRef
+	(*EncryptedPayload)(nil),                    // 4: peers_touch.model.secure_content.v1.EncryptedPayload
+	(*RequiredContentRecipientSlot)(nil),        // 5: peers_touch.model.secure_content.v1.RequiredContentRecipientSlot
+	(*ContentEncryptionPlan)(nil),               // 6: peers_touch.model.secure_content.v1.ContentEncryptionPlan
+	(*ContentKeyEnvelopeBinding)(nil),           // 7: peers_touch.model.secure_content.v1.ContentKeyEnvelopeBinding
+	(*PreparedContentKeyEnvelope)(nil),          // 8: peers_touch.model.secure_content.v1.PreparedContentKeyEnvelope
+	(*ViewerContentKeyEnvelope)(nil),            // 9: peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
+	(*ViewerContentCommitProof)(nil),            // 10: peers_touch.model.secure_content.v1.ViewerContentCommitProof
+	(*StationContentSigningKeyAttestation)(nil), // 11: peers_touch.model.secure_content.v1.StationContentSigningKeyAttestation
+	(*model.ActorDeviceRef)(nil),                // 12: peers_touch.model.actor.v1.ActorDeviceRef
+	(*timestamppb.Timestamp)(nil),               // 13: google.protobuf.Timestamp
+	(*model.ActorRef)(nil),                      // 14: peers_touch.model.actor.v1.ActorRef
 }
 var file_domain_secure_content_content_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.secure_content.v1.SecureResourceRef.owner_domain:type_name -> peers_touch.model.secure_content.v1.SecureContentOwnerDomain
@@ -1170,25 +1281,27 @@ var file_domain_secure_content_content_proto_depIdxs = []int32{
 	1,  // 2: peers_touch.model.secure_content.v1.EncryptedPayload.suite:type_name -> peers_touch.model.secure_content.v1.PayloadEncryptionSuite
 	2,  // 3: peers_touch.model.secure_content.v1.RequiredContentRecipientSlot.key_kind:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyKind
 	3,  // 4: peers_touch.model.secure_content.v1.ContentEncryptionPlan.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	11, // 5: peers_touch.model.secure_content.v1.ContentEncryptionPlan.author:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	12, // 5: peers_touch.model.secure_content.v1.ContentEncryptionPlan.author:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
 	5,  // 6: peers_touch.model.secure_content.v1.ContentEncryptionPlan.required_slots:type_name -> peers_touch.model.secure_content.v1.RequiredContentRecipientSlot
-	12, // 7: peers_touch.model.secure_content.v1.ContentEncryptionPlan.expires_at:type_name -> google.protobuf.Timestamp
+	13, // 7: peers_touch.model.secure_content.v1.ContentEncryptionPlan.expires_at:type_name -> google.protobuf.Timestamp
 	3,  // 8: peers_touch.model.secure_content.v1.ContentKeyEnvelopeBinding.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
 	2,  // 9: peers_touch.model.secure_content.v1.ContentKeyEnvelopeBinding.recipient_key_kind:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyKind
-	12, // 10: peers_touch.model.secure_content.v1.ContentKeyEnvelopeBinding.plan_expires_at:type_name -> google.protobuf.Timestamp
-	11, // 11: peers_touch.model.secure_content.v1.ContentKeyEnvelopeBinding.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	13, // 10: peers_touch.model.secure_content.v1.ContentKeyEnvelopeBinding.plan_expires_at:type_name -> google.protobuf.Timestamp
+	12, // 11: peers_touch.model.secure_content.v1.ContentKeyEnvelopeBinding.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
 	7,  // 12: peers_touch.model.secure_content.v1.PreparedContentKeyEnvelope.binding:type_name -> peers_touch.model.secure_content.v1.ContentKeyEnvelopeBinding
 	7,  // 13: peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope.binding:type_name -> peers_touch.model.secure_content.v1.ContentKeyEnvelopeBinding
-	11, // 14: peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope.endpoint:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	13, // 15: peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope.recovery_actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	12, // 14: peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope.endpoint:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	14, // 15: peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope.recovery_actor:type_name -> peers_touch.model.actor.v1.ActorRef
 	3,  // 16: peers_touch.model.secure_content.v1.ViewerContentCommitProof.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	11, // 17: peers_touch.model.secure_content.v1.ViewerContentCommitProof.author:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	12, // 18: peers_touch.model.secure_content.v1.ViewerContentCommitProof.committed_at:type_name -> google.protobuf.Timestamp
-	19, // [19:19] is the sub-list for method output_type
-	19, // [19:19] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	12, // 17: peers_touch.model.secure_content.v1.ViewerContentCommitProof.author:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	13, // 18: peers_touch.model.secure_content.v1.ViewerContentCommitProof.committed_at:type_name -> google.protobuf.Timestamp
+	13, // 19: peers_touch.model.secure_content.v1.StationContentSigningKeyAttestation.issued_at:type_name -> google.protobuf.Timestamp
+	13, // 20: peers_touch.model.secure_content.v1.StationContentSigningKeyAttestation.expires_at:type_name -> google.protobuf.Timestamp
+	21, // [21:21] is the sub-list for method output_type
+	21, // [21:21] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_domain_secure_content_content_proto_init() }
@@ -1206,7 +1319,7 @@ func file_domain_secure_content_content_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_secure_content_content_proto_rawDesc), len(file_domain_secure_content_content_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -89,6 +89,7 @@ each other.
 | Actor/device lifecycle | Actor Identity | `ActorDeviceRef`, endpoint manifest |
 | Endpoint/recovery Content PreKeys | Key Exchange | exact-once prekey claims |
 | Crypto format and vectors | Model + Secure Content Core | `model/domain/secure_content/`, Rust crate |
+| Historical Station proof verification keys | Federation authentication | append-only public-key history and current-key attestations |
 | Social opaque-object lifecycle | Social | Social object repository/UOW |
 | Conversation opaque-object lifecycle | Conversation | existing attachment repository/UOW |
 | Private plaintext and root keys | Native client | encrypted per-account store |
@@ -205,6 +206,35 @@ epoch. Drift rejects the complete plan without partial resource writes. Exact
 submit replay returns the persisted business result and derives the
 `exact_replay` response flag at read time rather than storing two result forms.
 
+### 8.1 Social Object Transfer
+
+`SC-D18` separates typed control from bounded ciphertext bytes:
+
+```text
+Native -- typed begin/status/complete/cancel --> Social object application
+Native -- raw bounded chunk PUT -------------> Social storage adapter
+Social object application -------------------> stateless Secure Content kernel
+Social storage adapter ----------------------> generic storage.Backend
+Social submit UOW ----------------------------> attach object + grants
+authorized Native -- raw range GET ----------> Social grant check + storage
+```
+
+Begin requires a deterministic object ID from a durable private-content plan and
+the authenticated author endpoint. Chunk replay is exact by upload generation,
+index, offset, size, body hash and idempotency key. Complete verifies every
+chunk and whole-object commitment before producing one canonical
+`COMPLETE_UNATTACHED` descriptor. It cannot attach or grant the object.
+
+Only the Post/Comment submit UOW may transition the descriptor to
+`ATTACHED(domain_commit_id)` and persist endpoint/recovery grants. Object GET
+rechecks current resource authorization and requires an active Actor Identity
+endpoint plus either that endpoint's exact grant or the same actor's recovery
+grant before opening the opaque storage key. The recovery grant lets a newly
+recovered active endpoint fetch ciphertext without creating a server-side key
+transfer; the recovery secret is still required to decrypt. Missing and
+unauthorized IDs share one not-found response. Generic storage has no actor,
+audience, resource or grant authority.
+
 ## 9. Private Read And Recovery
 
 ```text
@@ -218,6 +248,12 @@ GET Moment/Comment
 
 Every private Post and Comment has an independent root key and envelope plan.
 Attachment object keys exist only inside that resource's encrypted payload.
+
+Under accepted `SC-D19`, Social verifies the stored commit proof through the
+Federation-owned retained public-key resolver before projection. The response
+adds a fresh fixed-size attestation signed by the currently trusted Station
+key, allowing a newly recovered Native client to verify an older proof without
+retaining old private keys or trusting the Social database as key authority.
 
 Normal delivery uses one-time endpoint Content PreKeys. Recovery uses one-time
 actor Content Recovery PreKeys deterministically recoverable from the existing
@@ -345,7 +381,9 @@ that cannot be represented by the hash input is terminal rejection.
 - ordinary response includes at most the caller's endpoint envelope;
 - recovery response includes only the caller actor's claimed recovery envelope;
 - author audience administration is a separate metadata-only route.
-- `GET /api/v1/social/moments/:id` returns `GetMomentResourceResponse`;
+- `GET /api/v1/social/moments/:id` accepts the path ID only and returns
+  `GetMomentResourceResponse`; its public fields remain wire-compatible with
+  `GetPostResponse`, while field 3 carries the typed public/private resource;
 - `GET /api/v1/social/moments/:id/comments/:comment_id` returns
   `GetMomentCommentResourceResponse`; recovery locators use these same bounded
   domain-owned point-read routes and never require comment-list traversal.

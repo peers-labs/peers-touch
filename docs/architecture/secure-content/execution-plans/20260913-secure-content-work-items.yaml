@@ -357,15 +357,37 @@ items:
     planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
     workstreamId: W6
     productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C05, SOC-SEC-C07, SOC-SEC-AS01, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS06, SOC-SEC-AS07, SOC-SEC-AS10, SOC-SEC-AS12, SOC-SEC-AS13, SOC-SEC-AS15, SOC-SEC-AS16]
-    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D11, SC-D12, SC-D13, SC-D15, SC-D17]
+    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D11, SC-D12, SC-D13, SC-D15, SC-D17, SC-D18, SC-D19]
     journeyIds: [sc-dj-social-uow-atomicity]
     scope:
-      include: [apps/station/app/subserver/social, apps/station/app/subserver/key_exchange, apps/station/frame/touch/model/db, tooling/development/secure_content/scenarios/social_uow_atomicity.py]
+      include: [model/domain/social/post.proto, model/domain/social/private_content.proto, model/domain/secure_content/content.proto, model/domain/secure_content/object.proto, apps/station/frame/core/auth/federation, apps/station/frame/core/server, apps/station/frame/core/plugin/server/hertz, apps/station/frame/core/plugin/native/server, apps/station/frame/core/types/securecontent, apps/station/frame/touch/model/post.pb.go, apps/station/frame/touch/model/privatecontent/private_content.pb.go, apps/desktop/src/gen/proto/domain/social, apps/mobile/src/gen/proto/domain/social, apps/desktop/src/gen/proto/domain/secure_content, apps/mobile/src/gen/proto/domain/secure_content, apps/station/app/subserver/social, apps/station/app/subserver/key_exchange, apps/station/app/subserver/oss, apps/station/app/subserver/dashboard, apps/station/frame/touch/model/db, tooling/development/secure_content/scenarios/social_uow_atomicity.py]
       exclude: [remaining private subtypes, Mobile, Chat behavior]
     resources:
       sourceClaims:
+        - { pathPrefix: model/domain/social/post.proto, mode: exclusive-write }
+        - { pathPrefix: model/domain/social/private_content.proto, mode: exclusive-write }
+        - { pathPrefix: model/domain/secure_content/content.proto, mode: exclusive-write }
+        - { pathPrefix: model/domain/secure_content/object.proto, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/auth/federation, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/server, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/plugin/server/hertz, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/plugin/native/server, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/types/securecontent/content.pb.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/types/securecontent/object.pb.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/touch/model/post.pb.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/touch/model/privatecontent/private_content.pb.go, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/social/post_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/social/private_content_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/social/post_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/social/private_content_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/secure_content/content_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/secure_content/object_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/secure_content/content_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/secure_content/object_pb.ts, mode: exclusive-write }
         - { pathPrefix: apps/station/app/subserver/social, mode: exclusive-write }
         - { pathPrefix: apps/station/app/subserver/key_exchange, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/oss, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/dashboard, mode: exclusive-write }
         - { pathPrefix: apps/station/frame/touch/model/db, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/scenarios/social_uow_atomicity.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/run.py, mode: shared-read }

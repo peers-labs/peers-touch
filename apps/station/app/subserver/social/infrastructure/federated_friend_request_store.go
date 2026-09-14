@@ -822,6 +822,12 @@ func (t *federatedFriendRequestTransaction) PutRelationship(
 	ctx context.Context,
 	projection domain.FriendRequestRelationshipProjection,
 ) error {
+	if err := lockSocialRelationshipAuthority(
+		t.db.WithContext(ctx),
+		projection.OwnerPTID,
+	); err != nil {
+		return err
+	}
 	persisted := relationshipProjectionModelFromDomain(projection)
 	create := t.db.WithContext(ctx).
 		Clauses(clause.OnConflict{DoNothing: true}).

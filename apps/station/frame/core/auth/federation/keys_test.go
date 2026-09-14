@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const testLocalStationPeerID = "station-test"
+
 func TestMintLocalKey_RoundTrip(t *testing.T) {
 	now := time.Now()
 	k, err := MintLocalKey(now)
@@ -80,6 +82,24 @@ func TestInMemoryStore_PutAndLoad(t *testing.T) {
 	}
 }
 
+func TestInMemoryStore_PutCurrentRejectsReplacement(t *testing.T) {
+	s := NewInMemoryKeyStore()
+	first, _ := MintLocalKey(time.Now())
+	second, _ := MintLocalKey(time.Now())
+	if err := s.PutCurrent(context.Background(), first); err != nil {
+		t.Fatalf("put first: %v", err)
+	}
+	if err := s.PutCurrent(context.Background(), first); err != nil {
+		t.Fatalf("idempotent put: %v", err)
+	}
+	if err := s.PutCurrent(context.Background(), second); !errors.Is(
+		err,
+		ErrLocalKeyReplacementRequiresRotation,
+	) {
+		t.Fatalf("replacement error = %v, want rotation-required", err)
+	}
+}
+
 func TestInMemoryStore_LoadCurrentKid_EmptyReturnsBlank(t *testing.T) {
 	s := NewInMemoryKeyStore()
 	kid, err := s.LoadCurrentKid(context.Background())
@@ -98,7 +118,7 @@ func TestInMemoryStore_RotateDemotesCurrent(t *testing.T) {
 		t.Fatalf("put first: %v", err)
 	}
 	second, _ := MintLocalKey(time.Now())
-	res, err := s.Rotate(context.Background(), second)
+	res, err := s.Rotate(context.Background(), testLocalStationPeerID, second)
 	if err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
@@ -120,7 +140,7 @@ func TestInMemoryStore_RotateDemotesCurrent(t *testing.T) {
 func TestInMemoryStore_RotateOnEmptyTreatedAsPut(t *testing.T) {
 	s := NewInMemoryKeyStore()
 	k, _ := MintLocalKey(time.Now())
-	res, err := s.Rotate(context.Background(), k)
+	res, err := s.Rotate(context.Background(), testLocalStationPeerID, k)
 	if err != nil {
 		t.Fatalf("rotate empty: %v", err)
 	}
@@ -139,22 +159,36 @@ func TestInMemoryStore_RotateRefusesIdenticalKid(t *testing.T) {
 	if err := s.PutCurrent(context.Background(), k); err != nil {
 		t.Fatalf("put: %v", err)
 	}
-	if _, err := s.Rotate(context.Background(), k); err == nil {
+	if _, err := s.Rotate(context.Background(), testLocalStationPeerID, k); err == nil {
 		t.Fatalf("expected error on identical-kid rotate")
 	}
 }
 
 func TestInMemoryStore_ClearPrevIsIdempotent(t *testing.T) {
 	s := NewInMemoryKeyStore()
-	if err := s.ClearPrev(context.Background()); err != nil {
-		t.Fatalf("clear empty: %v", err)
+	cleared, err := s.ClearPrev(
+		context.Background(),
+		"missing-key",
+		time.Now(),
+	)
+	if err != nil || cleared {
+		t.Fatalf("clear empty = %v, %v", cleared, err)
 	}
 	first, _ := MintLocalKey(time.Now())
 	_ = s.PutCurrent(context.Background(), first)
 	second, _ := MintLocalKey(time.Now())
-	_, _ = s.Rotate(context.Background(), second)
-	if err := s.ClearPrev(context.Background()); err != nil {
-		t.Fatalf("clear after rotate: %v", err)
+	_, _ = s.Rotate(context.Background(), testLocalStationPeerID, second)
+	prev, err := s.Load(context.Background(), SlotPrev)
+	if err != nil {
+		t.Fatalf("load previous after rotate: %v", err)
+	}
+	cleared, err = s.ClearPrev(
+		context.Background(),
+		prev.Kid,
+		prev.UpdatedAt,
+	)
+	if err != nil || !cleared {
+		t.Fatalf("clear after rotate = %v, %v", cleared, err)
 	}
 	if _, err := s.Load(context.Background(), SlotPrev); !errors.Is(err, ErrNoLocalKey) {
 		t.Errorf("prev should be empty after clear, got %v", err)
@@ -216,7 +250,7 @@ func TestKeyCache_DetectsRotationAfterRecheck(t *testing.T) {
 
 	// Out-of-band rotation (simulates dashboard).
 	second, _ := MintLocalKey(clock())
-	if _, err := store.Rotate(context.Background(), second); err != nil {
+	if _, err := store.Rotate(context.Background(), testLocalStationPeerID, second); err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
 
@@ -267,7 +301,17 @@ func (s *errorKeyStore) Load(ctx context.Context, slot string) (*LocalKey, error
 }
 func (s *errorKeyStore) LoadCurrentKid(ctx context.Context) (string, error) { return "", nil }
 func (s *errorKeyStore) PutCurrent(ctx context.Context, k *LocalKey) error  { return nil }
-func (s *errorKeyStore) Rotate(ctx context.Context, k *LocalKey) (*RotateResult, error) {
+func (s *errorKeyStore) Rotate(
+	ctx context.Context,
+	stationPeerID string,
+	k *LocalKey,
+) (*RotateResult, error) {
 	return nil, nil
 }
-func (s *errorKeyStore) ClearPrev(ctx context.Context) error { return nil }
+func (s *errorKeyStore) ClearPrev(
+	ctx context.Context,
+	expectedKeyID string,
+	expectedUpdatedAt time.Time,
+) (bool, error) {
+	return false, nil
+}

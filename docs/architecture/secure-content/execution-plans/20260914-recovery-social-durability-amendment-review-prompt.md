@@ -39,7 +39,7 @@ contracts:
 4. Does the submit transaction have enough durable state to prove exact replay
    and all-or-none Post/Comment, snapshot, envelope, delivery, object, grant,
    proof and receipt writes?
-5. Are the proposed `:submit-private` routes unambiguous while preserving the
+5. Are the proposed private-submit routes unambiguous while preserving the
    existing public request contracts?
 6. Does moving W5 after W6 remove the persistence dependency cycle without
    weakening the W5 recovery Journey?

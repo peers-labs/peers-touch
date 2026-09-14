@@ -20,6 +20,8 @@ type Viewer struct {
 	ActorPTID string
 	// Set of actor PTIDs the viewer follows.
 	Following map[string]struct{}
+	// Set of actor PTIDs with an accepted Social relationship to the viewer.
+	Friends map[string]struct{}
 	// Set of actor PTIDs that are blocked in either direction with this viewer.
 	// Block is a cross-social privacy boundary: it suppresses follow-derived
 	// visibility and prevents audience selectors from becoming a bypass.
@@ -78,6 +80,15 @@ func canReadKind(viewer Viewer, authorPTID string, audience *model.Audience, kin
 			return true, "follower of author"
 		}
 		return false, "not a follower"
+
+	case model.Audience_FRIENDS:
+		if viewer.ActorPTID == "" {
+			return false, "anonymous viewer cannot read FRIENDS audience"
+		}
+		if _, ok := viewer.Friends[authorPTID]; ok {
+			return true, "accepted friend of author"
+		}
+		return false, "not an accepted friend"
 
 	case model.Audience_CIRCLE:
 		if audience.TargetId == 0 {
@@ -160,7 +171,7 @@ func ValidateAudience(a *model.Audience) error {
 	case model.Audience_KIND_UNSPECIFIED:
 		return fmt.Errorf("audience kind unspecified")
 
-	case model.Audience_PUBLIC, model.Audience_FOLLOWERS, model.Audience_SELF:
+	case model.Audience_PUBLIC, model.Audience_FOLLOWERS, model.Audience_FRIENDS, model.Audience_SELF:
 		if a.TargetId != 0 {
 			return fmt.Errorf("%s audience must not set target_id", a.Kind)
 		}
