@@ -1906,6 +1906,11 @@ interface FoundationToolFixture {
   arguments: Record<string, unknown>;
 }
 
+interface FoundationToolFixtureOptions {
+  toolName?: string;
+  arguments?: Record<string, unknown>;
+}
+
 interface FoundationToolTurn {
   conversationId: string;
   turnId: string;
@@ -2066,13 +2071,14 @@ async function waitForFoundationToolFacts(
 async function foundationToolFixture(
   agentId: string,
   platform: string,
+  options: FoundationToolFixtureOptions = {},
 ): Promise<FoundationToolFixture> {
   const sourceKind = platform === 'browser'
     ? CapabilitySourceKind.BUILTIN_TOOL
     : CapabilitySourceKind.CLIENT_NATIVE;
-  const toolName = platform === 'browser'
+  const toolName = options.toolName ?? (platform === 'browser'
     ? 'skills_list'
-    : 'local_clipboard_read';
+    : 'local_clipboard_read');
   const [manifests, bindings] = await Promise.all([
     api.listCapabilityManifests([sourceKind]),
     api.listAgentCapabilityBindings(agentId),
@@ -2095,9 +2101,7 @@ async function foundationToolFixture(
     manifest,
     binding,
     toolName,
-    arguments: platform === 'browser'
-      ? {}
-      : {},
+    arguments: options.arguments ?? {},
   };
 }
 
@@ -2649,6 +2653,376 @@ async function startFoundationToolTurn(input: {
     conversationId: conversation.conversation_id,
     turnId,
     observed,
+  };
+}
+
+async function runDevelopmentInvalidResourceReferenceScenario(input: {
+  sampleId: string;
+}): Promise<Record<string, unknown>> {
+  const agent = selectedAgent();
+  if (!agent) throw new Error('agent.acceptance.agentMissing');
+  const agentId = agent.id || agent.name;
+  const fixture = await foundationToolFixture(agentId, 'desktop_app', {
+    toolName: 'local_file_read',
+    arguments: {
+      path: `missing-${input.sampleId.replace(/[^a-z0-9]/gi, '-')}.txt`,
+    },
+  });
+  if (
+    fixture.manifest.capabilityId !== 'filesystem.read'
+    || fixture.manifest.version !== '1'
+  ) {
+    throw new Error('agent.acceptance.invalidResourceManifestMismatch');
+  }
+
+  const capabilitySession = await resolveFoundationToolTurnSession();
+  const selectedTarget = (
+    await api.listAgentCapabilitySessions()
+  ).sessions.find((session) =>
+    session.session_id === capabilitySession.capabilitySessionId
+    && session.typed_capabilities.some(
+      (capability) =>
+        capability.capability_id === fixture.manifest.capabilityId,
+    ));
+  if (
+    !selectedTarget
+  ) {
+    throw new Error('agent.acceptance.invalidResourceExecutorUnavailable');
+  }
+
+  const originalBinding = fixture.binding;
+  let currentBinding = fixture.binding;
+  let turn: FoundationToolTurn | null = null;
+  let result: Record<string, unknown> | null = null;
+  let primaryError: unknown = null;
+  const cleanupFailures: unknown[] = [];
+  const startedAt = performance.now();
+
+  try {
+    currentBinding = await updateFoundationToolPolicy(
+      agent,
+      fixture,
+      currentBinding,
+      CapabilityApprovalPolicy.MANUAL,
+    );
+    turn = await startFoundationToolTurn({
+      agent,
+      capabilitySessionId: capabilitySession.capabilitySessionId,
+      fixture,
+      sampleId: input.sampleId,
+      label: 'invalid-resource-reference',
+    });
+    await useChatStore.getState().selectSession(turn.conversationId);
+    const approval = await waitForToolApprovalEvent(turn);
+    const toolCallId = String(
+      evidenceField(approval, 'toolCallId', 'tool_call_id') ?? '',
+    );
+    if (!toolCallId) {
+      throw new Error('agent.acceptance.foundationToolApprovalInvalid');
+    }
+
+    const toolCallElement = document.querySelector<HTMLElement>(
+      `[data-pt-agent-tool-call="${toolCallId}"]`,
+    );
+    if (!toolCallElement) {
+      throw new Error('agent.acceptance.foundationToolCallSurfaceMissing');
+    }
+    let approve = toolCallElement.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-tool-decision="approve"]',
+    );
+    if (!approve) {
+      toolCallElement.querySelector<HTMLElement>(
+        '[data-pt-agent-tool-call-toggle]',
+      )?.click();
+      await waitFor(
+        () => Boolean(toolCallElement.querySelector(
+          '[data-pt-agent-tool-decision="approve"]',
+        )),
+        'invalid-resource approve action',
+        10_000,
+      );
+      approve = toolCallElement.querySelector<HTMLButtonElement>(
+        '[data-pt-agent-tool-decision="approve"]',
+      );
+    }
+    if (!approve) {
+      throw new Error('agent.acceptance.foundationToolApproveMissing');
+    }
+
+    const beforeCapability = await capabilitySessionEvidence();
+    const beforeLocal = beforeCapability.selectedLocalSession;
+    if (!beforeLocal) {
+      throw new Error('agent.acceptance.invalidResourceLocalSessionMissing');
+    }
+    const beforeExecutionCount = beforeLocal.local_execution_attempt_count;
+    const beforeSideEffectCount = beforeLocal.local_side_effect_count;
+
+    approve.click();
+    const errorSurfaceSelector =
+      '[data-pt-agent-message="assistant"]'
+      + '[data-pt-agent-error-type="CLIENT_INVALID_RESOURCE_REFERENCE"]';
+    await waitFor(
+      () => Boolean(document.querySelector(errorSurfaceSelector)),
+      'invalid-resource typed receiver outcome',
+      FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
+    );
+    const source = await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts) => (
+        facts.length === 1
+        && Number(facts[0].status) === ToolCallStatus.FAILED
+        && String(
+          evidenceField(facts[0], 'errorCode', 'error_code') ?? '',
+        ) === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+      ),
+      'invalid-resource Station source readback',
+    );
+    const replayed = await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts) => (
+        facts.length === 1
+        && Number(facts[0].status) === ToolCallStatus.FAILED
+        && String(
+          evidenceField(facts[0], 'errorCode', 'error_code') ?? '',
+        ) === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+      ),
+      'invalid-resource Station replay readback',
+    );
+    const readback = await foundationConversationReadback(turn.conversationId);
+    const assistant = [...readback.messages].reverse().find(
+      (message) => (
+        message.role === 'assistant'
+        && message.turnId === turn?.turnId
+        && Boolean(message.errorJson)
+      ),
+    );
+    if (!assistant) {
+      throw new Error('agent.acceptance.invalidResourceMessageMissing');
+    }
+    const persistedOutcome = evidenceRecord(
+      JSON.parse(String(assistant.errorJson || '{}')),
+      'invalidResourcePersistedOutcome',
+    );
+    const persistedDetails = evidenceRecord(
+      persistedOutcome.details,
+      'invalidResourcePersistedDetails',
+    );
+    const errorSurface = Array.from(
+      document.querySelectorAll<HTMLElement>(errorSurfaceSelector),
+    ).reverse().find((element) => element.getClientRects().length > 0);
+    const errorTextSelector =
+      '[data-pt-agent-message-error-text='
+      + '"agent.errors.invalidResourceReference"]';
+    if (!errorSurface?.querySelector(errorTextSelector)) {
+      errorSurface?.querySelector<HTMLElement>(
+        '[data-pt-agent-message-error-toggle]',
+      )?.click();
+      await waitFor(
+        () => Boolean(errorSurface?.querySelector(errorTextSelector)),
+        'localized invalid-resource text',
+        10_000,
+      );
+    }
+    const errorText = errorSurface?.querySelector<HTMLElement>(
+      errorTextSelector,
+    );
+    const recoveryAction = errorSurface?.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-message-error-recovery="choose-resource-again"]',
+    );
+    const resourcePicker = document.querySelector<HTMLInputElement>(
+      '[data-pt-agent-resource-picker]',
+    );
+    if (!errorSurface || !errorText || !recoveryAction || !resourcePicker) {
+      throw new Error('agent.acceptance.invalidResourceRecoverySurfaceMissing');
+    }
+
+    const afterCapability = await capabilitySessionEvidence();
+    const afterLocal = afterCapability.selectedLocalSession;
+    if (!afterLocal) {
+      throw new Error('agent.acceptance.invalidResourceLocalSessionMissing');
+    }
+    const sourceReplayHash = await sha256Hex(stableJson(
+      withoutDiagnosticGenerationTime(source.replay),
+    ));
+    const diagnosticReplayHash = await sha256Hex(stableJson(
+      withoutDiagnosticGenerationTime(replayed.replay),
+    ));
+    const sourceFact = source.facts[0];
+    const resourceRefHash = String(
+      persistedDetails.resource_ref_hash ?? '',
+    );
+    const beforeRecovery = await foundationExecutionSnapshot(
+      agentId,
+      turn.conversationId,
+    );
+    const beforeRecoveryMessageCount = readback.messages.length;
+    let pickerActivationCount = 0;
+    const observePickerActivation = (event: Event) => {
+      pickerActivationCount += 1;
+      event.preventDefault();
+    };
+    resourcePicker.addEventListener(
+      'click',
+      observePickerActivation,
+      { once: true },
+    );
+    try {
+      recoveryAction.click();
+      await waitFor(
+        () => (
+          pickerActivationCount === 1
+          && useChatStore.getState().composerResourceSelection === null
+        ),
+        'invalid-resource composer picker activation',
+        10_000,
+      );
+    } finally {
+      resourcePicker.removeEventListener('click', observePickerActivation);
+    }
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+    const afterRecovery = await foundationExecutionSnapshot(
+      agentId,
+      turn.conversationId,
+    );
+
+    const assertions = {
+      approvedThroughReceiver: approve.disabled,
+      typedInvalidResourceReference:
+        persistedOutcome.error_type === 'CLIENT_INVALID_RESOURCE_REFERENCE'
+        && persistedOutcome.locale_key
+          === 'agent.errors.invalidResourceReference'
+        && persistedOutcome.retryable === false
+        && persistedOutcome.terminal === true,
+      boundedDetails:
+        Object.keys(persistedDetails).sort().join(',')
+          === 'resource_kind,resource_ref_hash'
+        && persistedDetails.resource_kind === 'file'
+        && /^[0-9a-f]{64}$/.test(resourceRefHash),
+      localizedRecoveryVisible:
+        errorText.getClientRects().length > 0
+        && errorText.textContent?.trim() === i18n.t(
+          'agent.errors.invalidResourceReference',
+          { ns: 'agent' },
+        )
+        && recoveryAction.getClientRects().length > 0
+        && recoveryAction.textContent?.trim() === i18n.t(
+          'agent.recovery.chooseResourceAgain',
+          { ns: 'agent' },
+        ),
+      pickerActivated: pickerActivationCount === 1,
+      zeroResourceRead:
+        afterLocal.local_execution_attempt_count === beforeExecutionCount,
+      zeroLocalSideEffect:
+        afterLocal.local_side_effect_count === beforeSideEffectCount,
+      zeroProviderContinuation:
+        !String(
+          evidenceField(sourceFact, 'continuationId', 'continuation_id') ?? '',
+        )
+        && afterRecovery.providerCallCount === beforeRecovery.providerCallCount,
+      oneTerminalResult:
+        source.facts.length === 1
+        && Boolean(
+          evidenceField(sourceFact, 'resultId', 'result_id'),
+        ),
+      replayEqual: sourceReplayHash === diagnosticReplayHash,
+      noAutomaticResend:
+        afterRecovery.turnCount === beforeRecovery.turnCount
+        && (
+          await foundationConversationReadback(turn.conversationId)
+        ).messages.length === beforeRecoveryMessageCount,
+    };
+    const failedAssertions = Object.entries(assertions)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
+    if (failedAssertions.length > 0) {
+      throw new Error(
+        'agent.acceptance.invalidResourceAssertionsFailed: '
+        + failedAssertions.join(','),
+      );
+    }
+    result = {
+      conversationId: turn.conversationId,
+      turnId: turn.turnId,
+      durationMs: performance.now() - startedAt,
+      assertions,
+      receiver: {
+        errorText: errorText.textContent?.trim() ?? '',
+        recoveryText: recoveryAction.textContent?.trim() ?? '',
+        resourceKind: errorSurface.dataset.ptAgentErrorResourceKind ?? '',
+        resourceRefHash:
+          errorSurface.dataset.ptAgentErrorResourceRefHash ?? '',
+      },
+      station: {
+        persistedOutcome,
+        sourceFact,
+        replayEqual: sourceReplayHash === diagnosticReplayHash,
+      },
+      local: {
+        executionAttemptDelta:
+          afterLocal.local_execution_attempt_count - beforeExecutionCount,
+        sideEffectDelta:
+          afterLocal.local_side_effect_count - beforeSideEffectCount,
+      },
+      recovery: {
+        pickerActivationCount,
+        explicitResendRequired: true,
+      },
+    };
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    if (currentBinding) {
+      try {
+        if (originalBinding) {
+          await updateFoundationToolPolicy(
+            agent,
+            fixture,
+            currentBinding,
+            originalBinding.approvalPolicy,
+            originalBinding.enabled,
+          );
+        } else {
+          await api.deleteAgentCapabilityBinding(
+            currentBinding.bindingId,
+            currentBinding.revision,
+            crypto.randomUUID(),
+            'acceptance_fixture_cleanup',
+          );
+        }
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
+    }
+    if (turn) {
+      try {
+        await cleanupFoundationToolConversation(
+          turn.conversationId,
+          turn.turnId,
+        );
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
+    }
+  }
+
+  if (cleanupFailures.length > 0) {
+    throw Object.assign(
+      new Error('agent.acceptance.invalidResourceCleanupFailed'),
+      { primaryError, cleanupFailures },
+    );
+  }
+  if (primaryError) throw primaryError;
+  if (!result) {
+    throw new Error('agent.acceptance.invalidResourceResultMissing');
+  }
+  return {
+    ...result,
+    cleanup: {
+      bindingRestored: true,
+      conversationDeleted: true,
+    },
   };
 }
 
@@ -19494,6 +19868,16 @@ export function installAcceptanceHarness(): void {
     async openBrowserCapabilitySession() {
       await api.openBrowserCapabilitySession();
       return { opened: true };
+    },
+
+    async runDevelopmentInvalidResourceReference({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      return evidenceValue(
+        await runDevelopmentInvalidResourceReferenceScenario({ sampleId }),
+      );
     },
 
     async getFoundationClientExecutorTarget() {

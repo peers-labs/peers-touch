@@ -1813,6 +1813,47 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("if (cell === 'BASE-INVALID_REFERENCE')", self.source)
         self.assertNotIn("mock", scenario.lower())
 
+    def test_development_invalid_resource_reference_uses_real_file_tool_path(
+        self,
+    ) -> None:
+        scenario_start = self.source.index(
+            "async function runDevelopmentInvalidResourceReferenceScenario"
+        )
+        scenario_end = self.source.index(
+            "function firstToolApprovalOutcome",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("toolName: 'local_file_read'", scenario)
+        self.assertIn("fixture.manifest.capabilityId !== 'filesystem.read'", scenario)
+        self.assertIn("path: `missing-${input.sampleId", scenario)
+        self.assertIn(
+            '[data-pt-agent-tool-decision="approve"]',
+            scenario,
+        )
+        self.assertIn("approve.click()", scenario)
+        self.assertIn("CLIENT_INVALID_RESOURCE_REFERENCE", scenario)
+        self.assertIn("agent.errors.invalidResourceReference", scenario)
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="choose-resource-again"]',
+            scenario,
+        )
+        self.assertIn("[data-pt-agent-resource-picker]", scenario)
+        self.assertIn("pickerActivationCount === 1", scenario)
+        self.assertIn("zeroResourceRead", scenario)
+        self.assertIn("zeroLocalSideEffect", scenario)
+        self.assertIn("zeroProviderContinuation", scenario)
+        self.assertIn("replayEqual", scenario)
+        self.assertIn("noAutomaticResend", scenario)
+        self.assertIn("await cleanupFoundationToolConversation(", scenario)
+        self.assertIn(
+            "async runDevelopmentInvalidResourceReference",
+            self.source,
+        )
+        self.assertNotIn("foundationDirectProbe", scenario)
+        self.assertNotIn("mock", scenario.lower())
+
     def test_duplicate_conflict_uses_typed_open_original_recovery_path(
         self,
     ) -> None:
