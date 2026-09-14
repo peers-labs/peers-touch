@@ -1603,6 +1603,19 @@ and zero local-path leakage.
     `stream-resilience`, while attachment and plain-turn journeys use the
     canonical Station endpoint directly. Agent native static tests pass
     `88/88`; exact-source C08 reproof remains pending the new checkpoint.
+  - Direct-transport C08 runs on `9daf7c689` and instrumentation checkpoint
+    `b1975e1b4` disproved the fault proxy as the primary timeout source. The
+    low-load `b1975e1b4` run still spent about 31 seconds in login and then
+    exhausted attachment admission. Station inspection found
+    `1,270,464` raw frontend telemetry events (`1,268,590` for one actor) and
+    `75,317` rollups. Every telemetry upload currently locks the actor, reloads
+    all actor history, deletes all actor rollups, and rebuilds exact
+    percentiles; each background upload therefore consumes the 15-second
+    interactive deadline and delays unrelated Desktop bootstrap commands.
+    This is an admitted implementation remediation inside G-FE1: preserve
+    event idempotency and exact five-minute percentile semantics while
+    recomputing only windows touched by newly admitted event IDs. No C08 or
+    Foundation timeout, tuple, assertion, provider, or cleanup rule changes.
 
 #### G-FE1 Concurrency Decision
 

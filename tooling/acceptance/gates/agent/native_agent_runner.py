@@ -78,7 +78,10 @@ def report_c08_latency_debug(
             data=json.dumps(
                 {
                     "sessionId": session_id,
-                    "runId": "pre-fix",
+                    "runId": os.environ.get(
+                        "PT_C08_DEBUG_RUN_ID",
+                        "pre-fix",
+                    ),
                     "hypothesisId": hypothesis_id,
                     "location": "native_agent_runner.py",
                     "msg": f"[DEBUG] {message}",
