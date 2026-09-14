@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package peers_touch.model.secure_content.v1;
+
+import "domain/actor/actor.proto";
+import "domain/secure_content/content.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent;securecontent";
+
+message ContentOneTimePreKey {
+  ContentPreKeyKind kind = 1;
+  string key_id = 2;
+  bytes x25519_public_key = 3;
+  oneof principal {
+    peers_touch.model.actor.v1.ActorDeviceRef endpoint = 4;
+    peers_touch.model.actor.v1.ActorRef recovery_actor = 5;
+  }
+  uint64 profile_or_recovery_epoch = 6;
+  bytes issuer_signature = 7;
+}
+
+message ContentPreKeyClaimTarget {
+  ContentPreKeyKind kind = 1;
+  oneof principal {
+    peers_touch.model.actor.v1.ActorDeviceRef endpoint = 2;
+    peers_touch.model.actor.v1.ActorRef recovery_actor = 3;
+  }
+}
+
+message ClaimedContentPreKey {
+  string claim_id = 1;
+  ContentPreKeyClaimTarget target = 2;
+  ContentOneTimePreKey prekey = 3;
+  bool irreversibly_consumed = 4;
+}
+
+message ClaimContentPreKeysRequest {
+  string plan_id = 1;
+  bytes plan_request_sha256 = 2;
+  repeated ContentPreKeyClaimTarget targets = 3;
+}
+
+message ClaimContentPreKeysResponse {
+  repeated ClaimedContentPreKey claims = 1;
+  bool exact_replay = 2;
+}

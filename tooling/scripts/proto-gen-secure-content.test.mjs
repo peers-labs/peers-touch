@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -102,8 +103,29 @@ function fakeRunner({
   failureStatus = null,
   goPath = null,
   goEnvWritePath = null,
+  goEnvStatus = 0,
+  expectedGoEnvCwd = null,
+  expectedGoEnvHome = null,
+  expectedGoPlugin = null,
+  forbiddenToolHome = null,
 } = {}) {
   return (command, options) => {
+    if (path.basename(command[0]) === 'go' && command[1] === 'env') {
+      if (expectedGoEnvCwd !== null) {
+        assert.equal(realpathSync(options.cwd), realpathSync(expectedGoEnvCwd));
+      }
+      if (expectedGoEnvHome !== null) {
+        assert.equal(options.environment.HOME, expectedGoEnvHome);
+      }
+      if (goEnvWritePath !== null) {
+        writeFileSync(goEnvWritePath, 'go env wrote into repository\n');
+      }
+      return {
+        status: goEnvStatus,
+        stdout: goEnvStatus === 0 ? `${goPath}\n` : '',
+        stderr: goEnvStatus === 0 ? '' : 'injected go env failure',
+      };
+    }
     if (projectRoot !== null) {
       const relativeCwd = path.relative(projectRoot, options.cwd);
       assert.ok(
@@ -111,14 +133,11 @@ function fakeRunner({
         `generator command cwd escaped staging: ${options.cwd}`,
       );
     }
-    if (path.basename(command[0]) === 'go' && command[1] === 'env') {
-      if (goEnvWritePath !== null) {
-        writeFileSync(goEnvWritePath, 'go env wrote into repository\n');
-      }
-      return { status: 0, stdout: `${goPath}\n`, stderr: '' };
-    }
     if (repositoryWritePath !== null) {
       writeFileSync(repositoryWritePath, 'tool wrote into repository\n');
+    }
+    if (forbiddenToolHome !== null) {
+      assert.notEqual(options.environment.HOME, forbiddenToolHome);
     }
     if (timeout) {
       return { status: null, stdout: '', stderr: '', error: { code: 'ETIMEDOUT' } };
@@ -129,6 +148,12 @@ function fakeRunner({
     const goOutput = command.find((argument) => argument.startsWith('--go_out='));
     const esOutput = command.find((argument) => argument.startsWith('--es_out='));
     assert.notEqual(Boolean(goOutput), Boolean(esOutput));
+    if (goOutput && expectedGoPlugin !== null) {
+      assert.equal(
+        optionValue(command, '--plugin=protoc-gen-go='),
+        expectedGoPlugin,
+      );
+    }
     const outputRoot = goOutput
       ? optionValue(command, '--go_out=')
       : optionValue(command, '--es_out=');
@@ -195,6 +220,13 @@ test('builds one fixed three-channel output manifest', () => {
         (output) =>
           output.destination ===
           'apps/station/frame/core/types/securecontent/content.pb.go',
+      ),
+    );
+    assert.ok(
+      manifest.outputs.some(
+        (output) =>
+          output.destination ===
+          'apps/station/frame/core/types/securecontent/prekey.pb.go',
       ),
     );
     assert.ok(
@@ -359,6 +391,61 @@ test('apply writes only manifest outputs and check detects no drift', () => {
     assert.equal(checked.status, 'PASS');
     assert.deepEqual(checked.changed, []);
     assert.equal(readFileSync(sentinel, 'utf8'), 'sentinel\n');
+  } finally {
+    scope.close();
+  }
+});
+
+test('resolves the physical Go plugin before staged HOME isolation', () => {
+  const scope = fixture();
+  try {
+    const originalHome = path.join(scope.root, 'original-home');
+    const pathPlugin = path.join(scope.root, 'tools', 'protoc-gen-go');
+    mkdirSync(originalHome, { recursive: true });
+    writeFileSync(pathPlugin, '#!/bin/sh\nexit 1\n');
+    chmodSync(pathPlugin, 0o755);
+
+    const options = generationOptions(scope, 'apply');
+    delete options.goPlugin;
+    options.environment = {
+      HOME: originalHome,
+      PATH: path.dirname(scope.tools.protoc),
+    };
+    options.runCommand = fakeRunner({
+      projectRoot: scope.root,
+      goPath: scope.goPath,
+      expectedGoEnvCwd: scope.root,
+      expectedGoEnvHome: originalHome,
+      expectedGoPlugin: scope.tools['protoc-gen-go'],
+      forbiddenToolHome: originalHome,
+    });
+
+    const result = executeGeneration(options);
+    assert.equal(result.status, 'PASS');
+    assert.equal(result.changed.length, PROTO_INPUTS.length * 3);
+  } finally {
+    scope.close();
+  }
+});
+
+test('falls back to a genuine PATH Go plugin when go env fails', () => {
+  const scope = fixture();
+  try {
+    const pathPlugin = path.join(scope.root, 'tools', 'protoc-gen-go');
+    writeFileSync(pathPlugin, '#!/bin/sh\nexit 0\n');
+    chmodSync(pathPlugin, 0o755);
+
+    const options = generationOptions(scope, 'apply');
+    delete options.goPlugin;
+    options.runCommand = fakeRunner({
+      projectRoot: scope.root,
+      goEnvStatus: 1,
+      expectedGoPlugin: pathPlugin,
+    });
+
+    const result = executeGeneration(options);
+    assert.equal(result.status, 'PASS');
+    assert.equal(result.changed.length, PROTO_INPUTS.length * 3);
   } finally {
     scope.close();
   }

@@ -110,7 +110,10 @@ and alt text stay inside the encrypted domain payload.
 
 ## 4. One-Time Key Contracts
 
-Key Exchange owns separate pools:
+Key Exchange owns separate pools and their claim/replay lifecycle. The neutral
+wire types below live in `model/domain/secure_content/prekey.proto`, so the
+Station `frame` contract layer never imports the app-owned Key Exchange
+subserver package:
 
 ```protobuf
 enum ContentPreKeyKind {
@@ -611,6 +614,17 @@ and `option_set_sha256`. Social validates parent access, expiry, choice cardinal
 option membership, and exact vote replay before mutating vote facts.
 
 Hash inputs use deterministic protobuf encoding after canonicalization:
+
+- "deterministic protobuf encoding" means the Secure Content project canonical
+  encoder, not a language runtime's `deterministic` option. The encoder emits
+  known fields in ascending field-number order, emits the selected `oneof` at
+  its field-number position, uses minimal scalar and length encodings, preserves
+  each explicitly canonicalized repeated-field order, omits protobuf defaults,
+  and rejects unknown or duplicate singular fields before hashing or signing;
+- W2 implements this encoder once in `packages/secure-content-core` and the
+  stateless Station Go kernel, with cross-language vectors. W1 generated
+  consumers only prove that every runtime can decode and semantically
+  round-trip the same legal wire values;
 
 - `audience_sha256` hashes `kind`, `target_id`, `base_kind`, and ascending
   `actor_ptids`; legacy `key_envelopes` are forbidden;

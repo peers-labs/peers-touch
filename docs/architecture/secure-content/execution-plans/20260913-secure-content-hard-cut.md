@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Created**: 2026-09-13 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 > **Entry Stage**: PLAN
 
@@ -33,7 +33,7 @@ Architecture:
 - `docs/architecture/secure-content/{README,design,security,operations,data-model,integration,module-layout}.md`
 - `docs/architecture/secure-content/decisions.md`
 - `SC-A01..SC-A08`
-- `SC-D01..SC-D13`
+- `SC-D01..SC-D14`
 
 Retained authorities:
 
@@ -55,7 +55,7 @@ Retained authorities:
 | Branch | `feat/federation` |
 | Workspace ID | `9eb2cb904c9ae460` |
 | Initial HEAD | `2d54851f95994d717928105aca6470c30adf3657` |
-| Expected HEAD | `2d54851f95994d717928105aca6470c30adf3657` |
+| Expected HEAD | `active_work.expected_head` (authoritative advancing value) |
 | Worktree-set digest | `4b41b36f2a0a6704e9779efc97495b76bbe1cd0b1427a1d564baf306025281c4` |
 
 Initial HEAD is immutable. Expected HEAD advances only through authorized local
@@ -517,6 +517,13 @@ make env-check \
   prepare/submit/read/recovery; Key Exchange Content PreKeys.
 - **Dependencies**: W14; generated-path conflicts released.
 - **Deliverables**: deterministic Go/Desktop/Mobile/Rust outputs.
+- **Canonical vectors**: one tracked fixture set under
+  `model/domain/secure_content/testdata` is decoded and semantically
+  round-tripped by Station Go, Desktop Rust, Mobile Rust, Desktop TypeScript and
+  Mobile TypeScript for payload, viewer-envelope and object-descriptor
+  contracts. Per-consumer handwritten vector copies are forbidden. W1 proves
+  wire compatibility; W2 owns the runtime-independent canonical encoder used
+  for every signature and hash input.
 - **Generator boundary**: use `tooling/scripts/proto-gen-secure-content.sh`
   with its `.mjs` implementation and focused tests.
   It accepts only `domain/common`, `domain/secure_content`, `domain/social` and
@@ -531,7 +538,10 @@ make env-check \
   Social-owned child package `frame/touch/model/privatecontent`. Existing
   Social and Actor bindings remain in `frame/touch/model`; this one-way child
   dependency avoids `securecontent -> model -> securecontent` without changing
-  proto package names, business ownership, or public wire semantics.
+  proto package names, business ownership, or public wire semantics. Content
+  PreKey value contracts live in `secure_content/prekey.proto` and the neutral
+  `frame/core/types/securecontent` package; the Key Exchange app subserver owns
+  their pool and claim behavior through the allowed `app -> frame` direction.
 - **Failure**: unknown suite/version/kind, malformed binding, or generation drift
   fails before consumer migration.
 - **Functional boundary**: generated Go/Rust/Desktop/Mobile consumers decode the
@@ -541,6 +551,17 @@ make env-check \
 ```bash
 ./tooling/scripts/proto-gen-secure-content.sh \
   --check --budget-seconds 600
+(cd apps/station && go test -count=1 ./frame/core/types/securecontent)
+(cd apps/station/frame && GOWORK=off go test \
+  ./core/types/securecontent ./touch/model/privatecontent)
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml \
+  --offline --bin peers-touch-desktop secure_content_contract_tests
+cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml \
+  --offline secure_content
+pnpm --dir apps/desktop exec vitest run \
+  src/contracts/secureContentContract.test.ts
+pnpm --dir apps/mobile exec vitest run \
+  src/contracts/secureContentContract.test.ts
 git diff --check
 ```
 
@@ -578,9 +599,10 @@ git diff --check
 - **Dependencies**: W1 and W4; Conversation/Messaging/Desktop source claims
   released; exact Desktop and Mobile Chat runtime resources available.
 - **Deliverables**: AEAD, HPKE, object crypto, transfer FSM, recovery derivation,
-  Go validation/transitions and shared vectors; thin Chat wire/domain adapters;
-  unchanged Chat proto, routes, tables, UOW and grants; Desktop/Mobile Chat
-  scenario modules consumed by the W4-owned dynamically discovered runner.
+  runtime-independent canonical protobuf encoding, Go validation/transitions
+  and shared vectors; thin Chat wire/domain adapters; unchanged Chat proto,
+  routes, tables, UOW and grants; Desktop/Mobile Chat scenario modules consumed
+  by the W4-owned dynamically discovered runner.
 - **Failure**: tamper, binding mismatch, invalid range, duplicate conflict,
   unsupported version, and over-limit input fail closed.
 - **Checks**:

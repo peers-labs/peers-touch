@@ -31,6 +31,7 @@ const MAX_BUDGET_SECONDS = 1_200;
 export const PROTO_INPUTS = Object.freeze([
   'domain/common/common.proto',
   'domain/secure_content/content.proto',
+  'domain/secure_content/prekey.proto',
   'domain/secure_content/object.proto',
   'domain/social/post.proto',
   'domain/social/comment.proto',
@@ -52,6 +53,7 @@ const ALLOWED_PROTO_ROOTS = Object.freeze([
 const GO_OUTPUT_DIRECTORIES = Object.freeze({
   'domain/common/common.proto': 'frame/core/types',
   'domain/secure_content/content.proto': 'frame/core/types/securecontent',
+  'domain/secure_content/prekey.proto': 'frame/core/types/securecontent',
   'domain/secure_content/object.proto': 'frame/core/types/securecontent',
   'domain/social/post.proto': 'frame/touch/model',
   'domain/social/comment.proto': 'frame/touch/model',
@@ -66,6 +68,7 @@ const GO_OUTPUT_DIRECTORIES = Object.freeze({
 const GO_PACKAGE_NAMES = Object.freeze({
   'domain/common/common.proto': 'types',
   'domain/secure_content/content.proto': 'securecontent',
+  'domain/secure_content/prekey.proto': 'securecontent',
   'domain/secure_content/object.proto': 'securecontent',
   'domain/social/post.proto': 'model',
   'domain/social/comment.proto': 'model',
@@ -406,17 +409,22 @@ function requireExecutable(value, field, environment) {
 
 function defaultGoPlugin(environment, runCommand, deadline, cwd) {
   if (environment.PROTOC_GEN_GO) return environment.PROTOC_GEN_GO;
-  const fromPath = executablePath('protoc-gen-go', environment);
-  if (fromPath) return fromPath;
   const go = executablePath('go', environment);
-  if (!go) return 'protoc-gen-go';
-  const result = runCommand([go, 'env', 'GOPATH'], {
-    cwd,
-    timeout: remainingMilliseconds(deadline),
-    environment,
-  });
-  if (result.status !== 0) return 'protoc-gen-go';
-  return path.join(String(result.stdout).trim(), 'bin', 'protoc-gen-go');
+  if (go) {
+    const result = runCommand([go, 'env', 'GOPATH'], {
+      cwd,
+      timeout: remainingMilliseconds(deadline),
+      environment,
+    });
+    if (result.status === 0) {
+      for (const goPath of String(result.stdout).trim().split(path.delimiter)) {
+        if (!goPath) continue;
+        const candidate = path.join(goPath, 'bin', 'protoc-gen-go');
+        if (executablePath(candidate, environment)) return candidate;
+      }
+    }
+  }
+  return executablePath('protoc-gen-go', environment) ?? 'protoc-gen-go';
 }
 
 function remainingMilliseconds(deadline) {
@@ -742,10 +750,10 @@ export function executeGeneration(options) {
       const goPlugin = requireExecutable(
         options.goPlugin ??
           defaultGoPlugin(
-            toolEnvironment,
+            environment,
             auditedRunCommand,
             deadline,
-            stageRoot,
+            projectRoot,
           ),
         'protoc-gen-go',
         toolEnvironment,

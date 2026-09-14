@@ -15,7 +15,8 @@ model/domain/
 ├── key_exchange/key_exchange.proto
 ├── secure_content/
 │   ├── content.proto
-│   └── object.proto
+│   ├── object.proto
+│   └── prekey.proto
 ├── social/
 │   ├── post.proto
 │   ├── comment.proto
@@ -55,6 +56,11 @@ apps/station/app/internal/securecontent/
 ├── policy.go
 ├── errors.go
 └── conformance.go
+
+apps/station/frame/core/types/securecontent/
+├── content.pb.go
+├── object.pb.go
+└── prekey.pb.go
 
 apps/station/frame/touch/model/privatecontent/
 └── private_content.pb.go      # Social-owned generated child package
@@ -114,6 +120,7 @@ direction may not change.
 | Path | Owns | Must not own |
 |---|---|---|
 | `model/domain/secure_content/` | generic payload/object/envelope contracts | Social audience or Conversation membership |
+| `apps/station/frame/core/types/securecontent/` | generated neutral Secure Content and Content PreKey wire values | Key Exchange pool/service behavior |
 | `apps/station/frame/touch/model/privatecontent/` | generated Social private-content wire projection | shared crypto semantics or independent business authority |
 | `packages/secure-content-core/` | portable crypto, codec, object and transfer FSM | platform or business policy |
 | `apps/station/app/internal/securecontent/` | pure validation/transitions/policy/conformance | route, DB, transaction, worker, ACL |
@@ -156,6 +163,13 @@ the existing parent Social/Actor model package and the shared Secure Content
 package. The parent model package must not import that child package, preventing
 the generated `securecontent -> model -> securecontent` cycle without creating
 another domain owner.
+
+Content PreKey wire values are declared in
+`model/domain/secure_content/prekey.proto` and generated into the neutral
+`frame/core/types/securecontent` package. Key Exchange retains service, pool,
+quota, claim and replay authority and imports those frame-owned values through
+the normal `app -> frame` dependency direction. Frame packages must never
+import `app/subserver/key_exchange/model`.
 
 ## 4. Extraction Boundary
 

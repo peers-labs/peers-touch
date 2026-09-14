@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package peers_touch.model.secure_content.v1;
+
+import "domain/secure_content/content.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent;securecontent";
+
+enum ObjectEncryptionSuite {
+  OBJECT_ENCRYPTION_SUITE_UNSPECIFIED = 0;
+  OBJECT_ENCRYPTION_SUITE_AES_256_GCM_CHUNKED = 1;
+}
+
+enum ObjectNonceStrategy {
+  OBJECT_NONCE_STRATEGY_UNSPECIFIED = 0;
+  OBJECT_NONCE_STRATEGY_COUNTER32_BE = 1;
+}
+
+message EncryptedObjectUploadSpec {
+  .peers_touch.model.secure_content.v1.SecureResourceRef resource = 1;
+  string object_id = 2;
+  uint64 ciphertext_size = 3;
+  bytes ciphertext_sha256 = 4;
+  uint32 chunk_size = 5;
+  uint32 chunk_count = 6;
+  ObjectEncryptionSuite encryption_suite = 7;
+  uint32 tag_size = 8;
+  ObjectNonceStrategy nonce_strategy = 9;
+  repeated bytes chunk_ciphertext_sha256 = 10;
+}
+
+message EncryptedObjectDescriptor {
+  .peers_touch.model.secure_content.v1.SecureResourceRef resource = 1;
+  string object_id = 2;
+  string storage_ref = 3;
+  EncryptedObjectUploadSpec commitment = 4;
+}

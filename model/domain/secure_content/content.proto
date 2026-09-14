@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package peers_touch.model.secure_content.v1;
+
+import "domain/actor/actor.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent;securecontent";
+
+enum SecureContentOwnerDomain {
+  SECURE_CONTENT_OWNER_DOMAIN_UNSPECIFIED = 0;
+  SECURE_CONTENT_OWNER_DOMAIN_CONVERSATION = 1;
+  SECURE_CONTENT_OWNER_DOMAIN_SOCIAL = 2;
+}
+
+message SecureResourceRef {
+  SecureContentOwnerDomain owner_domain = 1;
+  string content_id = 2;
+  uint64 generation = 3;
+}
+
+enum PayloadEncryptionSuite {
+  PAYLOAD_ENCRYPTION_SUITE_UNSPECIFIED = 0;
+  PAYLOAD_ENCRYPTION_SUITE_AES_256_GCM = 1;
+}
+
+enum ContentPreKeyKind {
+  CONTENT_PREKEY_KIND_UNSPECIFIED = 0;
+  CONTENT_PREKEY_KIND_ENDPOINT = 1;
+  CONTENT_PREKEY_KIND_ACTOR_RECOVERY = 2;
+}
+
+message EncryptedPayload {
+  uint32 format_version = 1;
+  SecureResourceRef resource = 2;
+  PayloadEncryptionSuite suite = 3;
+  bytes nonce = 4;
+  bytes ciphertext = 5;
+  bytes ciphertext_sha256 = 6;
+  bytes aad_sha256 = 7;
+}
+
+message RequiredContentRecipientSlot {
+  string recipient_slot_id = 1;
+  ContentPreKeyKind key_kind = 2;
+  string one_time_key_id = 3;
+  bytes one_time_public_key = 4;
+  bytes principal_binding_sha256 = 5;
+}
+
+message ContentEncryptionPlan {
+  uint32 format_version = 1;
+  string plan_id = 2;
+  SecureResourceRef resource = 3;
+  .peers_touch.model.actor.v1.ActorDeviceRef author = 4;
+  bytes authorization_snapshot_sha256 = 5;
+  repeated RequiredContentRecipientSlot required_slots = 6;
+  repeated string object_ids = 7;
+  .google.protobuf.Timestamp expires_at = 8;
+  bytes canonical_plan_sha256 = 9;
+  string station_signing_key_id = 10;
+  bytes station_signature = 11;
+  bytes domain_binding_sha256 = 12;
+}
+
+message ContentKeyEnvelopeBinding {
+  uint32 format_version = 1;
+  string plan_id = 2;
+  bytes canonical_plan_sha256 = 3;
+  SecureResourceRef resource = 4;
+  string recipient_slot_id = 5;
+  ContentPreKeyKind recipient_key_kind = 6;
+  string recipient_key_id = 7;
+  bytes principal_binding_sha256 = 8;
+  bytes authorization_snapshot_sha256 = 9;
+  bytes payload_ciphertext_sha256 = 10;
+  bytes object_descriptor_set_sha256 = 11;
+  .google.protobuf.Timestamp plan_expires_at = 12;
+  .peers_touch.model.actor.v1.ActorDeviceRef sender = 13;
+  string sender_signing_key_id = 14;
+}
+
+message PreparedContentKeyEnvelope {
+  ContentKeyEnvelopeBinding binding = 1;
+  bytes binding_sha256 = 2;
+  bytes hpke_encapsulated_key = 3;
+  bytes hpke_ciphertext = 4;
+  bytes sender_signature = 5;
+}
+
+message ViewerContentKeyEnvelope {
+  ContentKeyEnvelopeBinding binding = 1;
+  oneof recipient {
+    .peers_touch.model.actor.v1.ActorDeviceRef endpoint = 2;
+    .peers_touch.model.actor.v1.ActorRef recovery_actor = 3;
+  }
+  bytes binding_sha256 = 4;
+  bytes hpke_encapsulated_key = 5;
+  bytes hpke_ciphertext = 6;
+  bytes sender_signature = 7;
+  uint64 principal_epoch = 8;
+}
+
+message ViewerContentCommitProof {
+  uint32 format_version = 1;
+  string domain_commit_id = 2;
+  bytes canonical_plan_sha256 = 3;
+  SecureResourceRef resource = 4;
+  .peers_touch.model.actor.v1.ActorDeviceRef author = 5;
+  bytes authorization_snapshot_sha256 = 6;
+  bytes domain_binding_sha256 = 7;
+  bytes encrypted_payload_sha256 = 8;
+  bytes object_descriptor_set_sha256 = 9;
+  bytes mention_routing_sha256 = 10;
+  bytes subtype_authority_sha256 = 11;
+  .google.protobuf.Timestamp committed_at = 12;
+  string station_signing_key_id = 13;
+  bytes station_signature = 14;
+}
