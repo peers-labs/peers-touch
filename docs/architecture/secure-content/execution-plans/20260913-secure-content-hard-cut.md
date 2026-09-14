@@ -1260,10 +1260,10 @@ observations is invalid.
 | W14 | scoped generator groundwork | complete | `69fe979b3` | SOURCE_CHECK/PASS | N/A | none |
 | W1 | contracts | complete | `e9be68c8a` | SOURCE_CHECK/PASS | NOT_RUN | none |
 | W2 | atomic kernels/Chat | in progress | `c69edd606` (W2A) | SOURCE_CHECK/PASS | NOT_RUN | W2D waits for W5/W9; W2B Native proof waits for W2D and runtime leases |
-| W3 | PreKeys | in progress | none | SOURCE_CHECK/HOLD (draft) | NOT_RUN | implement accepted `SC-D15` issuer-authenticity contract |
+| W3 | PreKeys | complete | `dbd612b65` | PASS (`sc-dj-content-prekey`) | NOT_RUN | none |
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
-| W5 | recovery | parked | none | NOT_RUN | NOT_RUN | W3 |
-| W6 | Social minimum | parked | none | NOT_RUN | NOT_RUN | W3 |
+| W5 | recovery | ready | none | NOT_RUN | NOT_RUN | none |
+| W6 | Social minimum | ready | none | NOT_RUN | NOT_RUN | none |
 | W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | W6; active MCA Desktop claim and Station runtime owner |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
 | W9 | Mobile | parked | none | NOT_RUN | NOT_RUN | W5/W7/W8; Mobile claim |
@@ -1272,7 +1272,7 @@ observations is invalid.
 | W12 | physical schema/data cut + full functional | parked | none | NOT_RUN | NOT_RUN | W5/W11; exact two-profile reset/deploy authorization |
 | W13 | Acceptance | parked | none | NOT_RUN | NOT_RUN | W12 FUNCTIONAL_PASS; active Acceptance owner |
 
-Overall: `5/16`. DWF-D13 removed the cross-worktree source-lock blocker. W1
+Overall: `6/16`. DWF-D13 removed the cross-worktree source-lock blocker. W1
 completed the accepted `SC-D14` wire contracts, scoped generation and all five
 generated consumer closures. W2A completed the atomic source cut; W2D must add
 the real Desktop/Mobile Development drivers before the Desktop/Mobile Native
@@ -1322,14 +1322,19 @@ Current evidence:
   W2A unlock W3/W6, keeps W2 incomplete, and schedules W2D/W2B after W5/W9
   without weakening the final Desktop, iOS Simulator or Android Emulator
   functional boundary.
-- W3 draft: separate endpoint/recovery pools, bounded inventory, atomic
-  multi-target claims, exact replay/conflict, irreversible consumption,
-  revocation checks and the `content-prekey` Development scenario pass focused
-  race/unit checks. Independent review found that the accepted wire carries
-  `issuer_signature` without defining canonical signing bytes or verification
-  authority. The Owner accepted `SC-D15` on 2026-09-14; W3 is not checkpointed
-  or complete before its signing, fencing, and claim-time revalidation are
-  implemented.
+- W3: checkpoint `dbd612b65` implements accepted `SC-D15` with matching Go/Rust
+  canonical Ed25519 signing bytes, Actor Identity-owned active and retained-key
+  capabilities, pool-before-Actor transaction ordering, recovery epoch CAS,
+  bounded inventory, immutable claim tombstones, atomic multi-target claims,
+  exact replay/conflict, and stale-publisher retirement. Focused Go race suites,
+  20x claim-contention stress, Go vet, generated Go checks, Desktop/Mobile
+  TypeScript checks, Rust 7/7 prekey and 37/37 full-core tests, 18/18 runner
+  tests, zero-drift generation and final independent review pass. Exact source
+  `dbd612b65` produced `FUNCTIONAL_CHECK/PASS` for `sc-dj-content-prekey` at
+  `~/.peers-touch/dev/workspaces/9eb2cb904c9ae460/development/secure-content/W3/SC-AS08/result.json`.
+  The isolated PostgreSQL lock-order tests compile but remain locally skipped
+  because `MESSAGING_TEST_POSTGRES_DSN` is not configured; this does not replace
+  or weaken the required W3 Development journey.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level
