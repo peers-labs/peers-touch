@@ -6,8 +6,10 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -1092,7 +1094,18 @@ func (p *productionFederationPostCommitPublisher) NotifyCommitted(
 	pending := append([]ports.CommittedDelivery(nil), deliveries...)
 
 	return p.registrar.AfterCommit(func(callbackContext context.Context) error {
-		return p.delegate.NotifyCommitted(callbackContext, pending)
+		callbackErr := p.delegate.NotifyCommitted(callbackContext, pending)
+		// #region debug-point O-P:read-cursor-post-commit-wake
+		if payload, encodeErr := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "read-cursor-authority-pre-fix", "hypothesisId": "O-P", "location": "apps/station/app/subserver/conversation/production_federation.go:productionFederationPostCommitPublisher.NotifyCommitted", "msg": "[DEBUG] Conversation Federation post-commit wake completed", "data": map[string]any{"deliveryCount": len(pending), "contextError": fmt.Sprint(callbackContext.Err()), "error": fmt.Sprint(callbackErr)}, "ts": time.Now().UnixMilli()}); encodeErr == nil {
+			go func() {
+				response, _ := http.Post("http://10.4.44.83:7784/event", "application/json", bytes.NewReader(payload))
+				if response != nil {
+					_ = response.Body.Close()
+				}
+			}()
+		}
+		// #endregion
+		return callbackErr
 	})
 }
 
@@ -1260,6 +1273,16 @@ func (p *productionReadCursorPort) ApplyReadCursor(
 		return err
 	}
 	view, err := boundQuery.Get(ctx, request.ConversationID, request.Reader.Actor)
+	// #region debug-point N:read-cursor-authority-view
+	if payload, encodeErr := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "read-cursor-authority-pre-fix", "hypothesisId": "N", "location": "apps/station/app/subserver/conversation/production_federation.go:productionReadCursorPort.ApplyReadCursor.view", "msg": "[DEBUG] Conversation read cursor authority view resolved", "data": map[string]any{"conversationId": request.ConversationID, "sourceHomeStationPeerId": sourceHomeStationPeerID, "viewError": fmt.Sprint(err), "viewSource": fmt.Sprint(view.Source), "viewFederationId": view.Conversation.FederationID, "expectedFederationId": federationID, "viewAuthority": view.Conversation.AuthorityStation, "expectedAuthority": authority, "viewAuthorityEpoch": view.Conversation.AuthorityEpoch, "expectedAuthorityEpoch": authorityEpoch}, "ts": time.Now().UnixMilli()}); encodeErr == nil {
+		go func() {
+			response, _ := http.Post("http://10.4.44.83:7784/event", "application/json", bytes.NewReader(payload))
+			if response != nil {
+				_ = response.Body.Close()
+			}
+		}()
+	}
+	// #endregion
 	if err != nil ||
 		view.Source != query.SourceAuthority ||
 		view.Conversation.FederationID != federationID ||
@@ -1277,6 +1300,16 @@ func (p *productionReadCursorPort) ApplyReadCursor(
 		string(federationID),
 		sourceHomeStationPeerID,
 	)
+	// #region debug-point N:read-cursor-federation-membership
+	if payload, encodeErr := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "read-cursor-authority-pre-fix", "hypothesisId": "N", "location": "apps/station/app/subserver/conversation/production_federation.go:productionReadCursorPort.ApplyReadCursor.membership", "msg": "[DEBUG] Conversation read cursor Federation membership resolved", "data": map[string]any{"conversationId": request.ConversationID, "sourceHomeStationPeerId": sourceHomeStationPeerID, "active": active, "error": fmt.Sprint(err)}, "ts": time.Now().UnixMilli()}); encodeErr == nil {
+		go func() {
+			response, _ := http.Post("http://10.4.44.83:7784/event", "application/json", bytes.NewReader(payload))
+			if response != nil {
+				_ = response.Body.Close()
+			}
+		}()
+	}
+	// #endregion
 	if err != nil {
 		return err
 	}
@@ -1304,6 +1337,16 @@ func (p *productionReadCursorPort) ApplyReadCursor(
 		return err
 	}
 	result, err := boundService.SubmitReadCursor(ctx, request)
+	// #region debug-point N-Q:read-cursor-authority-apply
+	if payload, encodeErr := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "read-cursor-authority-pre-fix", "hypothesisId": "N-Q", "location": "apps/station/app/subserver/conversation/production_federation.go:productionReadCursorPort.ApplyReadCursor.submit", "msg": "[DEBUG] Conversation authority read cursor application completed", "data": map[string]any{"conversationId": request.ConversationID, "readerPtid": request.Reader.Actor, "readerDeviceId": request.Reader.Device, "sequence": request.Sequence, "error": fmt.Sprint(err), "postCommitError": fmt.Sprint(result.Result.PostCommitError), "resultSequence": result.Result.Cursor.Sequence}, "ts": time.Now().UnixMilli()}); encodeErr == nil {
+		go func() {
+			response, _ := http.Post("http://10.4.44.83:7784/event", "application/json", bytes.NewReader(payload))
+			if response != nil {
+				_ = response.Body.Close()
+			}
+		}()
+	}
+	// #endregion
 	if err == nil && result.Result.PostCommitError != nil {
 		return result.Result.PostCommitError
 	}
