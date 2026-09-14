@@ -326,15 +326,15 @@ W0 Plan approval and conflict reconciliation
             -> W1 Contracts/generated substrate
 
 W0R + W1 + W4
-  -> W2 Atomic shared-kernel extraction + Desktop/Mobile Chat FUNCTIONAL_PASS
+  -> W2A Atomic shared-kernel extraction
 
-W2
+W2A
   -> W3 Content PreKeys
 
-W2 + W3
+W2A + W3
   -> W5 Recovery
 
-W2 + W3 + W4
+W2A + W3 + W4
   -> W6 Minimal Social FRIENDS text+image closure
        -> W7 Desktop pilot FUNCTIONAL_PASS
 
@@ -344,7 +344,12 @@ W7 FUNCTIONAL_PASS
 W5 + W7 + W8
   -> W9 Mobile parity
 
-W9 FUNCTIONAL_PASS
+W5 + W9 FUNCTIONAL_PASS
+  -> W2D Desktop/Mobile MP-G13 Development drivers
+       -> W2B Desktop/Mobile exact-source FUNCTIONAL_PASS
+            -> W2 complete
+
+W2 + W9 FUNCTIONAL_PASS
   -> W10 Chat exact-source regression revalidation
 
 W5 + W8 + W9 + W10
@@ -385,9 +390,13 @@ Mode: `hybrid`.
 - After W0, W0R and W4 are independent when claims permit. W0R owns the
   canonical registration/lease implementation, and W4 owns the dynamically
   discovered Development runner and YAML projector bootstrap. W1 follows W4;
-  W2 follows W0R/W1/W4 and atomically moves Chat to the shared kernels before W3
-  or Social consumers begin.
-- W5 follows W2/W3.
+  W2A follows W0R/W1/W4 and atomically moves Chat to the shared kernels before
+  W3 or Social consumers begin.
+- W2A is the source-dependency fence for W3 and W6. W2D follows W5/W9 because
+  the complete MP-G13 driver must exercise fresh recovery and the real Mobile
+  runtime; requiring that driver before those owners exist creates a dependency
+  cycle.
+- W5 follows W2A/W3.
 - W6 is serial because one Social UOW/schema owner integrates the minimal slice.
 - W7 checkpoint, deploy, runtime and Journey are serial.
 - After W7 `FUNCTIONAL_PASS`, W8 runs its subtype Journeys; W9 consumes the
@@ -403,13 +412,14 @@ Mode: `hybrid`.
 Current machine snapshot at the latest review:
 
 - `MCA-001` owns `apps/desktop/src`, `apps/desktop/src-tauri/src` and Agent
-  sources, so W1/W2/W7/W8/W10/W11 remain parked on its Desktop overlap.
+  sources. DWF-D13 reports cross-worktree overlap as advisory, so source-only
+  work may continue with explicit reconciliation before merge.
 - `native-desktop-runtime-cells` owns `station-four`/`station-five-arm` deploy
   and reset resources plus slots 3/4 and Acceptance paths, so all overlapping
   Native/runtime work remains parked.
-- `peers-touch-federation` is not yet an authoritative machine registration.
-  W0R owns that migration and binds only the verified workspace to tracked
-  profile `four` and free workspace slot 5; it creates no profile or environment.
+- `peers-touch-federation` is registered authoritatively to tracked profile
+  `four` and workspace slot 5 with `station.connect`/`station.deploy`; W0R
+  created no profile or environment.
 - Every `work_item start` re-reads the live ledger and registry rather than
   relying on this snapshot or on `active_work`.
 
@@ -599,8 +609,9 @@ git diff --check
 - **Responsibility**: create `packages/secure-content-core` and stateless
   `apps/station/app/internal/securecontent`; migrate Chat's generic
   crypto/validation/FSM internals and delete the old implementations atomically.
-- **Dependencies**: W1 and W4; Conversation/Messaging/Desktop source claims
-  released; exact Desktop and Mobile Chat runtime resources available.
+- **Dependencies**: W2A depends on W1/W4 and released source claims. W2D depends
+  on W5/W9 so the complete recovery and Mobile surfaces exist. W2B additionally
+  requires exact Desktop and Mobile Chat runtime resources.
 - **Deliverables**: AEAD, HPKE, object crypto, transfer FSM, recovery derivation,
   runtime-independent canonical protobuf encoding, Go validation/transitions
   and shared vectors; thin Chat wire/domain adapters; unchanged Chat proto,
@@ -611,9 +622,12 @@ git diff --check
     migrates every Chat caller, deletes the old generic implementations, adds
     the Desktop blob adapter and multi-profile runner binding to the declared
     scope, and checkpoints clean source.
-  - `W2D`: add the real non-Acceptance Desktop and Mobile Native drivers for the
-    complete MP-G13 corpus. A unit/static command or formal Gate wrapper is not
-    a valid substitute.
+  - `W2D`: after W5 and W9, add the real non-Acceptance Desktop and Mobile
+    Native drivers for the complete MP-G13 corpus. A unit/static command or
+    formal Gate wrapper is not a valid substitute. Driver-only, feature-gated
+    diagnostics may expose redacted transfer state or deterministic fault
+    controls, but must not add a public route, product authority,
+    key/nonce/plaintext-hash projection or production fallback.
   - `W2B Desktop`: read-only source proof for
     `sc-dj-chat-attachment-atomic` using the W2D checkpoint.
   - `W2B Mobile`: read-only source proof for
@@ -653,15 +667,15 @@ python3 -m tooling.development.secure_content.run \
   `sc-dj-chat-attachment-mobile` execute the complete `MP-J11`/`MP-G13`
   Direct/Group, chunk-resume, conflict/range/hash, fresh-recovery, removed-actor
   and secrecy corpus through unchanged Conversation routes, tables and grants.
-- **Exit**: Desktop plus iOS Simulator and Android Emulator Chat refactor cells
-  reach `FUNCTIONAL_PASS`; no old generic crypto/FSM implementation remains
-  before Social imports the shared core.
+- **Exit**: W2A source closure is the only prerequisite for Social to import the
+  shared core. W2 completes only after Desktop plus iOS Simulator and Android
+  Emulator Chat refactor cells reach `FUNCTIONAL_PASS`.
 
 ### SC-W3: Content PreKey Lifecycle
 
 - **Responsibility**: endpoint/recovery pools, publish, inventory, exact claim,
   irreversible consumption and replenishment.
-- **Dependencies**: W2 `FUNCTIONAL_PASS`; Key Exchange source claim released.
+- **Dependencies**: W2A source closure; Key Exchange source claim released.
 - **Deliverables**: separate Direct/MLS/Content stores and quotas.
 - **Failure**: depleted pool blocks prepare; same plan/hash replays; conflicting
   hash fails; exposed key is never reused.
@@ -704,7 +718,7 @@ python3 -m tooling.development.secure_content.run \
 
 - **Responsibility**: BIP39-derived recovery master and Social paginated
   recovery-envelope query/core consumer; Native UI adapters remain W7/W9.
-- **Dependencies**: W1/W2/W3.
+- **Dependencies**: W1/W2A/W3.
 - **Deliverables**: recovery of content never opened by the prior device without
   whole-archive root-key growth.
 - **Failure**: wrong phrase/key/epoch, deleted/block-revoked resource and tampered
@@ -725,7 +739,7 @@ python3 -m tooling.development.secure_content.run \
 
 - **Responsibility**: FRIENDS truth, Social prepare/submit UOW, encrypted private
   Post/Comment foundations, Social object plane, viewer-scoped read, text+image.
-- **Dependencies**: W2/W3/W4.
+- **Dependencies**: W2A/W3/W4.
 - **Deliverables**: one transaction commits snapshot, ciphertext, slot mapping,
   envelopes, delivery, objects, grants and receipt; one Social UOW scenario
   module consumed by the W4-owned Development runner with no Evidence Store
@@ -1235,11 +1249,11 @@ observations is invalid.
 | W0R | machine runtime control | complete | `8a7722c93` | PASS | NOT_RUN | none |
 | W14 | scoped generator groundwork | complete | `69fe979b3` | SOURCE_CHECK/PASS | N/A | none |
 | W1 | contracts | complete | `e9be68c8a` | SOURCE_CHECK/PASS | NOT_RUN | none |
-| W2 | atomic kernels/Chat | in progress | `c69edd606` (W2A) | SOURCE_CHECK/PASS | NOT_RUN | W2D drivers pending; W2B Native proof waits for required runtime leases |
-| W3 | PreKeys | parked | none | NOT_RUN | NOT_RUN | W2 |
+| W2 | atomic kernels/Chat | in progress | `c69edd606` (W2A) | SOURCE_CHECK/PASS | NOT_RUN | W2D waits for W5/W9; W2B Native proof waits for W2D and runtime leases |
+| W3 | PreKeys | ready | none | NOT_RUN | NOT_RUN | none |
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
-| W5 | recovery | parked | none | NOT_RUN | NOT_RUN | W1/W2/W3 |
-| W6 | Social minimum | parked | none | NOT_RUN | NOT_RUN | W2/W3/W4 |
+| W5 | recovery | parked | none | NOT_RUN | NOT_RUN | W3 |
+| W6 | Social minimum | parked | none | NOT_RUN | NOT_RUN | W3 |
 | W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | W6; active MCA Desktop claim and Station runtime owner |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
 | W9 | Mobile | parked | none | NOT_RUN | NOT_RUN | W5/W7/W8; Mobile claim |
@@ -1293,6 +1307,11 @@ Current evidence:
   Desktop and Mobile malformed-checkpoint persistence tests, 10 runner tests,
   hard rules and diff checks pass. Final independent review returns `PASS`.
   Native `MP-J11` behavior remains `NOT_RUN` and `UNPROVEN`.
+- W2D dependency audit found that the complete MP-G13 driver requires the W5
+  fresh-recovery consumer and W9 Mobile runtime. The dependency graph now lets
+  W2A unlock W3/W6, keeps W2 incomplete, and schedules W2D/W2B after W5/W9
+  without weakening the final Desktop, iOS Simulator or Android Emulator
+  functional boundary.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level
