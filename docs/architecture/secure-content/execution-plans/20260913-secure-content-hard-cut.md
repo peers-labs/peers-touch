@@ -1235,7 +1235,7 @@ observations is invalid.
 | W0R | machine runtime control | complete | `8a7722c93` | PASS | NOT_RUN | none |
 | W14 | scoped generator groundwork | complete | `69fe979b3` | SOURCE_CHECK/PASS | N/A | none |
 | W1 | contracts | complete | `e9be68c8a` | SOURCE_CHECK/PASS | NOT_RUN | none |
-| W2 | atomic kernels/Chat | in progress | none | NOT_RUN | NOT_RUN | W2A source ready; W2B Native proof waits for required runtime leases |
+| W2 | atomic kernels/Chat | in progress | `c69edd606` (W2A) | SOURCE_CHECK/PASS | NOT_RUN | W2D drivers pending; W2B Native proof waits for required runtime leases |
 | W3 | PreKeys | parked | none | NOT_RUN | NOT_RUN | W2 |
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
 | W5 | recovery | parked | none | NOT_RUN | NOT_RUN | W1/W2/W3 |
@@ -1250,9 +1250,9 @@ observations is invalid.
 
 Overall: `5/16`. DWF-D13 removed the cross-worktree source-lock blocker. W1
 completed the accepted `SC-D14` wire contracts, scoped generation and all five
-generated consumer closures. W2 source implementation is dependency-ready;
-its Desktop/Mobile Native `MP-J11` proof still requires the declared runtime
-leases.
+generated consumer closures. W2A completed the atomic source cut; W2D must add
+the real Desktop/Mobile Development drivers before the Desktop/Mobile Native
+`MP-J11` proof can acquire the declared runtime leases.
 
 Current evidence:
 
@@ -1285,6 +1285,14 @@ Current evidence:
   round-trip the shared payload, viewer-envelope and object-descriptor vectors.
   `GOWORK=off` frame tests prove no `frame -> app` dependency, both client type
   checks pass, and final independent review returns `PASS`.
+- W2A: checkpoint `c69edd606` extracts the neutral Rust crypto/object/transfer
+  kernel and stateless Station Go validation/transition kernel, migrates Chat
+  through thin adapters, preserves persisted numeric states and public error
+  semantics, and deletes the superseded generic implementations. The shared
+  transfer suite passes 103 unit tests plus both integration tests; focused
+  Desktop and Mobile malformed-checkpoint persistence tests, 10 runner tests,
+  hard rules and diff checks pass. Final independent review returns `PASS`.
+  Native `MP-J11` behavior remains `NOT_RUN` and `UNPROVEN`.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level
