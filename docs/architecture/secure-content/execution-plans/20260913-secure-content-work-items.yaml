@@ -86,10 +86,10 @@ items:
     planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
     workstreamId: W1
     productRefs: [SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C08, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS08, SOC-SEC-AS13, SOC-SEC-AS14, SOC-SEC-AS16]
-    architectureRefs: [SC-A03, SC-A04, SC-A08, SC-D02, SC-D05, SC-D07, SC-D09, SC-D12]
+    architectureRefs: [SC-A03, SC-A04, SC-A08, SC-D02, SC-D05, SC-D07, SC-D09, SC-D12, SC-D14]
     journeyIds: [sc-dj-contract-consumers]
     scope:
-      include: [model/domain/common, model/domain/secure_content, model/domain/social, model/domain/key_exchange, tooling/scripts/proto-gen-secure-content.sh, apps/station/frame/core/types, apps/station/frame/touch/model, apps/station/app/subserver/key_exchange/model, apps/desktop/src/gen/proto/domain/common, apps/desktop/src/gen/proto/domain/secure_content, apps/desktop/src/gen/proto/domain/social, apps/desktop/src/gen/proto/domain/key_exchange, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/src/model/mod.rs, apps/mobile/src/gen/proto/domain/common, apps/mobile/src/gen/proto/domain/secure_content, apps/mobile/src/gen/proto/domain/social, apps/mobile/src/gen/proto/domain/key_exchange, apps/mobile/src-tauri/build.rs, apps/mobile/src-tauri/src/lib.rs, apps/mobile/src-tauri/src/secure_content/mod.rs, apps/mobile/src-tauri/src/secure_content/proto.rs]
+      include: [model/domain/common, model/domain/secure_content, model/domain/social, model/domain/key_exchange, tooling/scripts/proto-gen-secure-content.sh, tooling/scripts/proto-gen-secure-content.mjs, tooling/scripts/proto-gen-secure-content.test.mjs, apps/station/frame/core/types, apps/station/frame/touch/model, apps/station/app/subserver/key_exchange/model, apps/desktop/src/gen/proto/domain/common, apps/desktop/src/gen/proto/domain/secure_content, apps/desktop/src/gen/proto/domain/social, apps/desktop/src/gen/proto/domain/key_exchange, apps/desktop/src-tauri/build.rs, apps/desktop/src-tauri/src/model/mod.rs, apps/mobile/src/gen/proto/domain/common, apps/mobile/src/gen/proto/domain/secure_content, apps/mobile/src/gen/proto/domain/social, apps/mobile/src/gen/proto/domain/key_exchange, apps/mobile/src-tauri/build.rs, apps/mobile/src-tauri/src/lib.rs, apps/mobile/src-tauri/src/secure_content/mod.rs, apps/mobile/src-tauri/src/secure_content/proto.rs]
       exclude: [unrelated proto inputs and generated outputs, apps/applets, packages/messaging-core, apps/station/app/subserver/conversation, runtime]
     resources:
       sourceClaims:
@@ -98,6 +98,8 @@ items:
         - { pathPrefix: model/domain/social, mode: exclusive-write }
         - { pathPrefix: model/domain/key_exchange, mode: exclusive-write }
         - { pathPrefix: tooling/scripts/proto-gen-secure-content.sh, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.test.mjs, mode: exclusive-write }
         - { pathPrefix: apps/station/frame/core/types, mode: exclusive-write }
         - { pathPrefix: apps/station/frame/touch/model, mode: exclusive-write }
         - { pathPrefix: apps/station/app/subserver/key_exchange/model, mode: exclusive-write }

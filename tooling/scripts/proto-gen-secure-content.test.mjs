@@ -31,6 +31,9 @@ function goPackageFor(input) {
   if (input.startsWith('domain/secure_content/')) {
     return `${STATION_PREFIX}frame/core/types/securecontent;securecontent`;
   }
+  if (input === 'domain/social/private_content.proto') {
+    return `${STATION_PREFIX}frame/touch/model/privatecontent;privatecontent`;
+  }
   if (input.startsWith('domain/social/')) {
     return `${STATION_PREFIX}frame/touch/model;model`;
   }
@@ -192,6 +195,13 @@ test('builds one fixed three-channel output manifest', () => {
         (output) =>
           output.destination ===
           'apps/station/frame/core/types/securecontent/content.pb.go',
+      ),
+    );
+    assert.ok(
+      manifest.outputs.some(
+        (output) =>
+          output.destination ===
+          'apps/station/frame/touch/model/privatecontent/private_content.pb.go',
       ),
     );
   } finally {

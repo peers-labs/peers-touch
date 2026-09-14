@@ -517,14 +517,21 @@ make env-check \
   prepare/submit/read/recovery; Key Exchange Content PreKeys.
 - **Dependencies**: W14; generated-path conflicts released.
 - **Deliverables**: deterministic Go/Desktop/Mobile/Rust outputs.
-- **Generator boundary**: add `tooling/scripts/proto-gen-secure-content.sh`.
+- **Generator boundary**: use `tooling/scripts/proto-gen-secure-content.sh`
+  with its `.mjs` implementation and focused tests.
   It accepts only `domain/common`, `domain/secure_content`, `domain/social` and
   `domain/key_exchange`, writes only the W1-declared Station Go, Desktop
-  TypeScript and Mobile TypeScript roots, updates only the declared
-  Desktop/Mobile Rust build-input files, rejects an applet `go_package`, and
-  fails when any repository write escapes the declared output manifest. Rust
-  protobuf output remains untracked under Cargo `OUT_DIR`; absent legacy
-  `apps/mobile/android` and `apps/mobile/ios` trees are not consumers or claims.
+  TypeScript and Mobile TypeScript roots, rejects an applet `go_package`, and
+  fails when any repository write escapes the declared output manifest.
+  Desktop/Mobile Rust build-input and module files are manually reviewed W1
+  inputs; Rust protobuf output remains untracked under Cargo `OUT_DIR`. Absent
+  legacy `apps/mobile/android` and `apps/mobile/ios` trees are not consumers or
+  claims.
+- **Go package closure**: generate `social/private_content.proto` into the
+  Social-owned child package `frame/touch/model/privatecontent`. Existing
+  Social and Actor bindings remain in `frame/touch/model`; this one-way child
+  dependency avoids `securecontent -> model -> securecontent` without changing
+  proto package names, business ownership, or public wire semantics.
 - **Failure**: unknown suite/version/kind, malformed binding, or generation drift
   fails before consumer migration.
 - **Functional boundary**: generated Go/Rust/Desktop/Mobile consumers decode the

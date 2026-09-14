@@ -1,8 +1,8 @@
 # Secure Content - Module Layout
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Version**: v1.1
+> **Created**: 2026-09-13 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 
 ---
@@ -55,6 +55,9 @@ apps/station/app/internal/securecontent/
 ├── policy.go
 ├── errors.go
 └── conformance.go
+
+apps/station/frame/touch/model/privatecontent/
+└── private_content.pb.go      # Social-owned generated child package
 
 apps/station/app/subserver/conversation/
 ├── application/attachment/     # Conversation route/UOW/grant adapter
@@ -111,6 +114,7 @@ direction may not change.
 | Path | Owns | Must not own |
 |---|---|---|
 | `model/domain/secure_content/` | generic payload/object/envelope contracts | Social audience or Conversation membership |
+| `apps/station/frame/touch/model/privatecontent/` | generated Social private-content wire projection | shared crypto semantics or independent business authority |
 | `packages/secure-content-core/` | portable crypto, codec, object and transfer FSM | platform or business policy |
 | `apps/station/app/internal/securecontent/` | pure validation/transitions/policy/conformance | route, DB, transaction, worker, ACL |
 | `conversation/application/attachment/` | Chat route, UOW and grant adapter | copied crypto/transition algorithms |
@@ -145,6 +149,13 @@ Conversation -> Social implementation
 Social TypeScript/Lynx -> crypto libraries
 OSS -> Social or Conversation policy
 ```
+
+The Go binding for `social/private_content.proto` is generated into the
+Social-owned `frame/touch/model/privatecontent` child package. It may import
+the existing parent Social/Actor model package and the shared Secure Content
+package. The parent model package must not import that child package, preventing
+the generated `securecontent -> model -> securecontent` cycle without creating
+another domain owner.
 
 ## 4. Extraction Boundary
 

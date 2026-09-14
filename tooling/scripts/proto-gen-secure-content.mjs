@@ -59,7 +59,7 @@ const GO_OUTPUT_DIRECTORIES = Object.freeze({
   'domain/social/poll.proto': 'frame/touch/model',
   'domain/social/circle.proto': 'frame/touch/model',
   'domain/social/relationship.proto': 'frame/touch/model',
-  'domain/social/private_content.proto': 'frame/touch/model',
+  'domain/social/private_content.proto': 'frame/touch/model/privatecontent',
   'domain/key_exchange/key_exchange.proto': 'app/subserver/key_exchange/model',
 });
 
@@ -73,7 +73,7 @@ const GO_PACKAGE_NAMES = Object.freeze({
   'domain/social/poll.proto': 'model',
   'domain/social/circle.proto': 'model',
   'domain/social/relationship.proto': 'model',
-  'domain/social/private_content.proto': 'model',
+  'domain/social/private_content.proto': 'privatecontent',
   'domain/key_exchange/key_exchange.proto': 'model',
 });
 
