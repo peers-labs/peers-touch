@@ -219,7 +219,14 @@ class AgentNativeJourney:
         self.run_root = self.storage_root.parent
         self.runtime_profile = self.run_root / f"{APPROVED_PROFILE}.env"
         self.desktop_log = self.run_root / "desktop.log"
-        self.proxy = TcpFaultProxy.from_url(self.station_url)
+        self.proxy = (
+            TcpFaultProxy.from_url(self.station_url)
+            if journey == "stream-resilience"
+            else None
+        )
+        self.station_transport_url = (
+            self.proxy.url if self.proxy is not None else self.station_url
+        )
         self.tauri_driver: TauriSession | None = None
         self.desktop_log_bytes = b""
         self.driver: Any = None
@@ -275,8 +282,10 @@ class AgentNativeJourney:
         values = {
             **self.profile_env,
             "PT_DEV_PROFILE": APPROVED_PROFILE,
-            "PT_STATION_URL": self.proxy.url,
-            "PT_STATION_HEALTH_URL": f"{self.proxy.url}/app-meta/version",
+            "PT_STATION_URL": self.station_transport_url,
+            "PT_STATION_HEALTH_URL": (
+                f"{self.station_transport_url}/app-meta/version"
+            ),
             "PT_DESKTOP_APP_GATEWAY_PORT": str(self.gateway_port),
             "PT_DESKTOP_APP_WEB_PORT": str(self.renderer_port),
         }
@@ -288,7 +297,8 @@ class AgentNativeJourney:
         self.runtime_profile.chmod(0o600)
 
     def start(self) -> None:
-        self.proxy.start()
+        if self.proxy is not None:
+            self.proxy.start()
         self._write_runtime_profile()
         environment = {
             **self.profile_env,
@@ -299,9 +309,11 @@ class AgentNativeJourney:
             "PT_DESKTOP_APP_GATEWAY_PORT": str(self.gateway_port),
             "PT_DESKTOP_APP_WEB_PORT": str(self.renderer_port),
             "PT_STATION_MODE": "remote",
-            "PT_STATION_URL": self.proxy.url,
-            "PEERS_STATION_URL": self.proxy.url,
-            "PT_STATION_HEALTH_URL": f"{self.proxy.url}/app-meta/version",
+            "PT_STATION_URL": self.station_transport_url,
+            "PEERS_STATION_URL": self.station_transport_url,
+            "PT_STATION_HEALTH_URL": (
+                f"{self.station_transport_url}/app-meta/version"
+            ),
             "PT_DESKTOP_E2E": "true",
         }
         self.tauri_driver = TauriSession(
@@ -343,10 +355,14 @@ class AgentNativeJourney:
         )
         return result
 
-    def verify_proxy_health(self) -> dict[str, Any]:
-        require(self.proxy.is_alive, "Station fault proxy thread is not alive")
+    def verify_station_transport_health(self) -> dict[str, Any]:
+        if self.proxy is not None:
+            require(
+                self.proxy.is_alive,
+                "Station fault proxy thread is not alive",
+            )
         with urllib.request.urlopen(
-            f"{self.proxy.url}/app-meta/version",
+            f"{self.station_transport_url}/app-meta/version",
             timeout=10,
         ) as response:
             payload = json.loads(response.read().decode("utf-8"))
@@ -354,21 +370,26 @@ class AgentNativeJourney:
             isinstance(payload, dict)
             and str(payload.get("build_commit") or "").lower()
             not in {"", "unknown"},
-            "Station fault proxy does not preserve runtime identity",
+            "Station transport does not preserve runtime identity",
         )
-        return {
-            "proxyPort": self.proxy.port,
+        result = {
+            "transportKind": (
+                "fault-proxy" if self.proxy is not None else "direct"
+            ),
             "status": response.status,
             "buildCommit": payload.get("build_commit"),
         }
+        if self.proxy is not None:
+            result["proxyPort"] = self.proxy.port
+        return result
 
     def configure_station(self) -> dict[str, Any]:
         result = self.harness(
             "configureStation",
-            {"stationUrl": self.proxy.url},
+            {"stationUrl": self.station_transport_url},
             timeout=60,
         )
-        expected_url = self.proxy.url.rstrip("/")
+        expected_url = self.station_transport_url.rstrip("/")
         require(
             isinstance(result, Mapping)
             and result.get("configured") is True
@@ -529,6 +550,8 @@ class AgentNativeJourney:
         )
 
     def run_stream_resilience(self) -> None:
+        proxy = self.proxy
+        require(proxy is not None, "stream resilience requires a fault proxy")
         self.step("login", self.login)
         self.step("navigate_and_configure", self.navigate_and_configure)
         self.step("send_replay_turn", lambda: self.send_long_turn("R6 replay"))
@@ -578,7 +601,7 @@ class AgentNativeJourney:
             ),
         )
 
-        self.step("cut_station_transport", self.proxy.cut)
+        self.step("cut_station_transport", proxy.cut)
         reconciling = self.step(
             "reconciling_visible",
             lambda: wait_until(
@@ -599,7 +622,7 @@ class AgentNativeJourney:
                 30,
             ),
         )
-        self.step("restore_station_transport", self.proxy.restore)
+        self.step("restore_station_transport", proxy.restore)
         completed = self.step(
             "cursor_replay_completed",
             lambda: wait_until(
@@ -889,7 +912,8 @@ class AgentNativeJourney:
                 failures.append(f"tauri-driver: {error}")
             self.tauri_driver = None
         self.driver = None
-        self.proxy.close()
+        if self.proxy is not None:
+            self.proxy.close()
         if self.desktop_log.is_file():
             try:
                 self.desktop_log_bytes = self.desktop_log.read_bytes()
@@ -900,7 +924,9 @@ class AgentNativeJourney:
             "gateway": not port_open(self.gateway_port),
             "renderer": not port_open(self.renderer_port),
             "webdriver": not port_open(self.webdriver_port),
-            "faultProxy": not port_open(self.proxy.port),
+            "faultProxy": (
+                self.proxy is None or not port_open(self.proxy.port)
+            ),
         }
         if not all(ports.values()):
             failures.append(f"ports still listening: {ports}")
@@ -935,7 +961,10 @@ def run_journey(journey_name: str) -> int:
         try:
             runner = AgentNativeJourney(journey_name)
             runner.step("start_native_runtime", runner.start)
-            runner.step("fault_proxy_health", runner.verify_proxy_health)
+            runner.step(
+                "station_transport_health",
+                runner.verify_station_transport_health,
+            )
             runner.step("configure_active_station", runner.configure_station)
             if journey_name == "stream-resilience":
                 runner.run_stream_resilience()

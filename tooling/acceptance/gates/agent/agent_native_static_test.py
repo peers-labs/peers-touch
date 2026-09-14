@@ -258,8 +258,9 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
             'result.get("peerIdAvailable") is True',
             online_assertion,
         )
-        proxy_health_step = self.source.index(
-            'runner.step("fault_proxy_health", runner.verify_proxy_health)'
+        transport_health_step = self.source.index(
+            '"station_transport_health",\n'
+            "                runner.verify_station_transport_health,"
         )
         configure_step = self.source.index(
             'runner.step("configure_active_station", runner.configure_station)'
@@ -272,12 +273,27 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self.assertLess(configure_call, active_url_assertion)
         self.assertLess(active_url_assertion, online_assertion)
         self.assertLess(online_assertion, peer_id_assertion)
-        self.assertLess(proxy_health_step, configure_step)
+        self.assertLess(transport_health_step, configure_step)
         self.assertLess(configure_step, journey_dispatch)
-        self.assertIn('{"stationUrl": self.proxy.url}', self.source)
+        self.assertIn(
+            '{"stationUrl": self.station_transport_url}',
+            self.source,
+        )
         self.assertNotIn("stations.json", self.source)
         self.assertNotIn("stationSetActive", self.source)
         self.assertNotIn("stationAdd(", self.source)
+
+    def test_only_stream_resilience_uses_the_fault_proxy(self) -> None:
+        self.assertIn('if journey == "stream-resilience"', self.source)
+        self.assertIn(
+            "self.proxy.url if self.proxy is not None else self.station_url",
+            self.source,
+        )
+        self.assertNotIn('"PT_STATION_URL": self.proxy.url', self.source)
+        self.assertIn(
+            'require(proxy is not None, "stream resilience requires a fault proxy")',
+            self.source,
+        )
 
     def test_home_station_provisions_supported_agent_journeys(self) -> None:
         source = HOME_STATION_PROVISIONER.read_text(encoding="utf-8")

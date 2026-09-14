@@ -1591,6 +1591,18 @@ and zero local-path leakage.
     contract. Post-fix Desktop typecheck, `701/701` Desktop unit tests, and
     `340/340` focused Agent/Foundation tests pass; C08 and Foundation require
     exact-source runtime reproof on the corrected checkpoint.
+  - Exact-source C08 runs
+    `20260914T125928048995Z-758e4afba58d7e044335e6c3128317c5` and
+    `20260914T130919389736Z-0d0ea84c399abcf1f6a2f99291364a6f` on
+    `57b4cc60a` both reached `FIXTURE_READY` with a clean matching Station
+    attestation, then exhausted the unchanged 300-second Gate budget while
+    ordinary Station requests through the run-local TCP fault proxy degraded
+    into repeated 15-second network failures. C08 never requests a transport
+    fault; only R6 stream resilience owns that injection. The local
+    owner-layer correction now constructs and binds `TcpFaultProxy` only for
+    `stream-resilience`, while attachment and plain-turn journeys use the
+    canonical Station endpoint directly. Agent native static tests pass
+    `88/88`; exact-source C08 reproof remains pending the new checkpoint.
 
 #### G-FE1 Concurrency Decision
 
