@@ -69,6 +69,11 @@ def get_provisioner(
             contract,
             station_profiles=station_profiles,
         )
+    if provisioner_class is MobileSocialSimulatorProvisioner:
+        return provisioner_class(
+            contract,
+            station_profiles=station_profiles,
+        )
     if station_profiles:
         raise ProvisioningError(
             f"environment {contract.id!r} does not accept Station profile bindings"

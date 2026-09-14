@@ -654,6 +654,109 @@ class MobileSimulatorContractTests(unittest.TestCase):
             "__PEERS_MOBILE_ACCEPTANCE__",
         )
 
+    def test_social_simulator_accepts_explicit_station_profiles(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        bindings = {
+            "station-primary": "four",
+            "station-secondary": "fiveArm",
+        }
+        provisioner = get_provisioner(
+            contract,
+            station_profiles=bindings,
+        )
+
+        self.assertIsInstance(
+            provisioner,
+            MobileSocialSimulatorProvisioner,
+        )
+        self.assertEqual(
+            provisioner._required_station_profiles(),
+            bindings,
+        )
+
+    def test_social_simulator_rejects_invalid_station_profile_sets(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+
+        for bindings in (
+            {"station-primary": "four"},
+            {
+                "station-primary": "four",
+                "station-secondary": "fiveArm",
+                "station-extra": "six",
+            },
+            {
+                "station-primary": "four",
+                "station-secondary": "four",
+            },
+            {
+                "station-primary": "../four",
+                "station-secondary": "fiveArm",
+            },
+        ):
+            with self.subTest(bindings=bindings):
+                provisioner = get_provisioner(
+                    contract,
+                    station_profiles=bindings,
+                )
+                with self.assertRaises(BlockedError):
+                    provisioner._required_station_profiles()
+
+    def test_social_simulator_injects_station_profiles_in_memory(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        provisioner = MobileSocialSimulatorProvisioner(
+            contract,
+            station_profiles={
+                "station-primary": "four",
+                "station-secondary": "fiveArm",
+            },
+        )
+        active = {
+            "PT_DEV_PROFILE": "four",
+            "PT_RELAY_URL": "https://relay.example",
+            "PT_RELAY_DEPLOY_ENV": "relay",
+        }
+        station_profiles = {
+            "four.env": {
+                "PT_DEV_PROFILE": "four",
+                "PT_STATION_MODE": "remote",
+                "PT_STATION_URL": "https://four.example",
+                "PT_STATION_DEPLOY_ENV": "station-four",
+            },
+            "fiveArm.env": {
+                "PT_DEV_PROFILE": "fiveArm",
+                "PT_STATION_MODE": "remote",
+                "PT_STATION_URL": "https://five.example",
+                "PT_STATION_DEPLOY_ENV": "station-five-arm",
+            },
+        }
+
+        with (
+            patch.object(Path, "is_file", return_value=True),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "load_env_file",
+                side_effect=lambda profile_path: station_profiles[
+                    profile_path.name
+                ],
+            ),
+        ):
+            merged = provisioner._inject_station_profile_bindings(active)
+
+        self.assertEqual(
+            merged,
+            {
+                **active,
+                "PT_MOBILE_STATION_PRIMARY_URL": "https://four.example",
+                "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "station-four",
+                "PT_MOBILE_STATION_SECONDARY_URL": "https://five.example",
+                "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "station-five-arm",
+            },
+        )
+        self.assertNotIn("PT_MOBILE_STATION_PRIMARY_URL", active)
+
     def test_social_simulator_preserves_base_harness_actions(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
         payload = json.loads(path.read_text(encoding="utf-8"))
