@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	actoridentityapp "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/application"
 	actoridentitypersistence "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure/persistence"
 	attachmentapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
@@ -976,7 +977,7 @@ func TestProductionAdaptersRollbackWithConversationTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	if object.EventID != "" ||
-		object.State != string(attachmentapp.ObjectStateCompleteUnattached) {
+		object.State != string(securecontent.ObjectStateCompleteUnattached) {
 		t.Fatalf("rolled-back object = %+v", object)
 	}
 
@@ -1339,7 +1340,7 @@ func seedProductionAdapterGrantObject(
 		storageRef,
 		verificationToken,
 	)
-	ciphertextSize := uint64(attachmentapp.TagSize + 1)
+	ciphertextSize := uint64(securecontent.AES256GCMTagSize + 1)
 	if err := database.Create(&attachmentinfra.UploadModel{
 		UploadID:                   "upload-1",
 		Generation:                 1,
@@ -1351,15 +1352,15 @@ func seedProductionAdapterGrantObject(
 		CiphertextSize:             ciphertextSize,
 		CiphertextSHA256:           ciphertextHash.Bytes(),
 		MediaType:                  "application/octet-stream",
-		ChunkSize:                  attachmentapp.ChunkSize,
+		ChunkSize:                  securecontent.ObjectChunkSize,
 		ChunkCount:                 1,
-		EncryptionSuite:            int32(attachmentapp.EncryptionSuiteAES256GCMChunked),
-		TagSize:                    attachmentapp.TagSize,
-		NonceStrategy:              int32(attachmentapp.NonceStrategyCounter32BE),
+		EncryptionSuite:            int32(securecontent.EncryptionSuiteAES256GCMChunked),
+		TagSize:                    securecontent.AES256GCMTagSize,
+		NonceStrategy:              int32(securecontent.NonceStrategyCounter32BE),
 		ChunkCiphertextSHA256:      ciphertextHash.Bytes(),
 		DescriptorCommitmentSHA256: commitment.Bytes(),
 		IdempotencyKey:             "attachment-idempotency",
-		State:                      int32(attachmentapp.TransferStateComplete),
+		State:                      int32(securecontent.TransferStateComplete),
 		ReceivedChunkBitmap:        []byte{1},
 		ObjectID:                   string(objectID),
 		StorageRef:                 storageRef,
@@ -1386,14 +1387,14 @@ func seedProductionAdapterGrantObject(
 		CiphertextSize:             ciphertextSize,
 		CiphertextSHA256:           ciphertextHash.Bytes(),
 		MediaType:                  "application/octet-stream",
-		ChunkSize:                  attachmentapp.ChunkSize,
+		ChunkSize:                  securecontent.ObjectChunkSize,
 		ChunkCount:                 1,
-		EncryptionSuite:            int32(attachmentapp.EncryptionSuiteAES256GCMChunked),
-		TagSize:                    attachmentapp.TagSize,
-		NonceStrategy:              int32(attachmentapp.NonceStrategyCounter32BE),
+		EncryptionSuite:            int32(securecontent.EncryptionSuiteAES256GCMChunked),
+		TagSize:                    securecontent.AES256GCMTagSize,
+		NonceStrategy:              int32(securecontent.NonceStrategyCounter32BE),
 		ChunkCiphertextSHA256:      ciphertextHash.Bytes(),
 		DescriptorCommitmentSHA256: commitment.Bytes(),
-		State:                      string(attachmentapp.ObjectStateCompleteUnattached),
+		State:                      string(securecontent.ObjectStateCompleteUnattached),
 		ExpiresAt:                  expiresAt,
 		CleanupNextAttemptAt:       expiresAt,
 		CreatedAt:                  createdAt,

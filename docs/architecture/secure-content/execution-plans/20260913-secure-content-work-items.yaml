@@ -135,8 +135,8 @@ items:
     architectureRefs: [SC-A01, SC-A03, SC-D02, SC-D03, SC-D13, MP-D23]
     journeyIds: []
     scope:
-      include: [packages/secure-content-core, apps/station/app/internal/securecontent, packages/messaging-core, apps/station/app/subserver/conversation, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/infrastructure/attachment_blob.rs, apps/desktop/src-tauri/src/messaging, apps/mobile/src-tauri/Cargo.toml, apps/mobile/src-tauri/Cargo.lock, apps/mobile/src-tauri/src/messaging, tooling/development/secure_content/work_item.py, tooling/development/secure_content/test_work_item.py, tooling/development/secure_content/run.py, tooling/development/secure_content/test_run.py, tooling/development/secure_content/scenarios/chat_attachment.py, tooling/development/secure_content/scenarios/chat_attachment_mobile.py, tooling/development/secure_content/scenarios/test_chat_attachment.py]
-      exclude: [runtime, model/domain/chat, conversation routes, conversation tables, Direct, MLS, recovery derivation]
+      include: [packages/secure-content-core, apps/station/app/internal/securecontent, packages/messaging-core, apps/station/app/subserver/conversation, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/infrastructure/attachment_blob.rs, apps/desktop/src-tauri/src/messaging, apps/mobile/src-tauri/Cargo.toml, apps/mobile/src-tauri/Cargo.lock, apps/mobile/src-tauri/src/messaging, tooling/development/secure_content/work_item.py, tooling/development/secure_content/test_work_item.py, tooling/development/secure_content/run.py, tooling/development/secure_content/test_run.py]
+      exclude: [runtime, model/domain/chat, conversation routes, conversation tables, Direct, MLS, recovery query and consumer]
     resources:
       sourceClaims:
         - { pathPrefix: packages/secure-content-core, mode: exclusive-write }
@@ -154,10 +154,35 @@ items:
         - { pathPrefix: tooling/development/secure_content/test_work_item.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/run.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/test_run.py, mode: exclusive-write }
+        - { pathPrefix: model/domain/chat, mode: shared-read }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w2d
+    workClass: infrastructure
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W2D
+    productRefs: [MP-C13, MP-G13]
+    architectureRefs: [SC-A01, SC-A03, SC-D02, SC-D03, SC-D13, MP-D23]
+    journeyIds: []
+    scope:
+      include: [tooling/development/secure_content/drivers, tooling/development/secure_content/scenarios/chat_attachment.py, tooling/development/secure_content/scenarios/chat_attachment_mobile.py, tooling/development/secure_content/scenarios/test_chat_attachment.py]
+      exclude: [runtime execution, formal Acceptance evidence, product or architecture changes]
+    resources:
+      sourceClaims:
+        - { pathPrefix: tooling/development/secure_content/drivers, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/scenarios/chat_attachment.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/scenarios/chat_attachment_mobile.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/scenarios/test_chat_attachment.py, mode: exclusive-write }
-        - { pathPrefix: model/domain/chat, mode: shared-read }
+        - { pathPrefix: tooling/acceptance/drivers/native, mode: shared-read }
+        - { pathPrefix: tooling/acceptance/drivers/tauri, mode: shared-read }
+        - { pathPrefix: tooling/acceptance/gates/chat, mode: shared-read }
+        - { pathPrefix: tooling/acceptance/gates/mobile, mode: shared-read }
       runtimeClaims: []
     authorization:
       checkpoint: { localCommit: allowed, amend: denied }

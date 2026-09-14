@@ -49,6 +49,7 @@ futures-lite = "2"
 ulid = "1.1"
 bip39 = { version = "2", features = ["rand"] }
 messaging-core = { path = "../../../packages/messaging-core" }
+secure-content-core = { path = "../../../packages/secure-content-core" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 dispatch2 = "0.3.1"

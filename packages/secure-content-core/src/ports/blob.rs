@@ -1,4 +1,4 @@
-pub trait AttachmentBlob: Send + Sync {
+pub trait ObjectBlob: Send + Sync {
     fn exists(&self, blob_ref: &str) -> Result<bool, String>;
     fn len(&self, blob_ref: &str) -> Result<u64, String>;
     fn read_chunk(&self, blob_ref: &str, offset: u64, length: usize) -> Result<Vec<u8>, String>;

@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use messaging_core::attachment::{
-    AttachmentCryptoMaterial, AttachmentRetryPolicy, AttachmentTransferControl,
-    AttachmentTransferRecord, AttachmentTransferWorker, ATTACHMENT_MAX_PLAINTEXT_SIZE,
+    AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferRecord,
+    AttachmentTransferWorker,
 };
 use messaging_core::contracts::{
     CommandStatusProjection, ConversationMessageProjection, ConversationProjection,
@@ -40,7 +40,6 @@ use messaging_core::outbox::{
     DirectOutboundPreparer, DirectSendIntent, DirectSessionBootstrapper, MetadataInteraction,
     MetadataInteractionPreparer,
 };
-use messaging_core::ports::AttachmentBlob;
 use messaging_core::proto::actor::{ActorDevice, ActorKind, ActorRef};
 use messaging_core::proto::chat::{
     chat_command, ActorReadCursor, AttachmentTransferState, ChatCommand, Conversation,
@@ -59,6 +58,11 @@ use messaging_core::store::MessagingRepository;
 use prost::Message;
 use rand::rngs::OsRng;
 use rand::RngCore;
+use secure_content_core::object::{
+    ObjectCryptoMaterial as AttachmentCryptoMaterial,
+    OBJECT_MAX_PLAINTEXT_SIZE as ATTACHMENT_MAX_PLAINTEXT_SIZE,
+};
+use secure_content_core::ports::ObjectBlob as AttachmentBlob;
 use sha2::{Digest, Sha256};
 use ulid::Ulid;
 use zeroize::Zeroizing;

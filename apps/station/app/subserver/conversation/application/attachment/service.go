@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
@@ -55,19 +56,19 @@ func NewService(
 		)
 	}
 	if policy.UploadTTL <= 0 ||
-		policy.UploadTTL > MaximumUploadTTL ||
+		policy.UploadTTL > securecontent.MaximumUploadTTL ||
 		policy.UnattachedObjectTTL <= 0 ||
-		policy.UnattachedObjectTTL > MaximumUnattachedObjectTTL ||
+		policy.UnattachedObjectTTL > securecontent.MaximumUnattachedObjectTTL ||
 		policy.VerificationLeaseTTL <= 0 ||
-		policy.VerificationLeaseTTL > MaximumVerificationLeaseTTL ||
+		policy.VerificationLeaseTTL > securecontent.MaximumVerificationLeaseTTL ||
 		policy.CleanupLeaseTTL <= 0 ||
-		policy.CleanupLeaseTTL > MaximumCleanupLeaseTTL ||
+		policy.CleanupLeaseTTL > securecontent.MaximumCleanupLeaseTTL ||
 		policy.MaximumActiveUploads <= 0 ||
-		policy.MaximumActiveUploads > MaximumActiveUploadCount ||
+		policy.MaximumActiveUploads > securecontent.MaximumActiveUploadCount ||
 		policy.MaximumConcurrentParts <= 0 ||
-		policy.MaximumConcurrentParts > MaximumConcurrentPartCount ||
+		policy.MaximumConcurrentParts > securecontent.MaximumConcurrentPartCount ||
 		policy.MaximumCleanupBatchSize <= 0 ||
-		policy.MaximumCleanupBatchSize > MaximumCleanupBatchSize {
+		policy.MaximumCleanupBatchSize > securecontent.MaximumCleanupBatchSize {
 		return nil, NewError(
 			ErrorCodeInvalidArgument,
 			"attachment.new_service",
@@ -115,7 +116,7 @@ func (s *Service) Begin(
 			"must bind a complete upload identity to the authenticated endpoint",
 		)
 	}
-	if err := ValidateUploadSpec(request.Spec); err != nil {
+	if err := ValidateChatUploadSpec(request.Spec); err != nil {
 		return BeginResult{}, err
 	}
 	expectedCommitment := UploadCommitment(
@@ -148,7 +149,7 @@ func (s *Service) Begin(
 		Spec:                 CloneUploadSpec(request.Spec),
 		DescriptorCommitment: request.DescriptorCommitment,
 		IdempotencyKey:       request.IdempotencyKey,
-		State:                TransferStateQueued,
+		State:                securecontent.TransferStateQueued,
 		ReceivedChunkBitmap:  make([]byte, (request.Spec.ChunkCount+7)/8),
 		ExpiresAt:            now.Add(s.policy.UploadTTL),
 		CleanupNextAttemptAt: now.Add(s.policy.UploadTTL),
@@ -179,7 +180,7 @@ func (s *Service) Begin(
 				ctx,
 				upload,
 				s.policy.MaximumActiveUploads,
-				MaximumMessageObjects,
+				securecontent.MaximumObjectsPerResource,
 				audit,
 			)
 
@@ -433,7 +434,7 @@ func (s *Service) Cancel(
 	ctx context.Context,
 	authenticated valueobject.Endpoint,
 	request CancelRequest,
-) (TransferState, error) {
+) (securecontent.TransferState, error) {
 	if err := s.validateUploadReference(
 		"attachment.cancel",
 		request.UploadID,
@@ -496,7 +497,7 @@ func (s *Service) Cancel(
 	}
 	for _, part := range parts {
 		if err := s.blobs.Delete(ctx, part.StorageKey); err != nil {
-			return TransferStateCancelled, WrapError(
+			return securecontent.TransferStateCancelled, WrapError(
 				ErrorCodePersistence,
 				"attachment.cancel.delete_part",
 				err,
@@ -504,7 +505,7 @@ func (s *Service) Cancel(
 		}
 	}
 
-	return TransferStateCancelled, nil
+	return securecontent.TransferStateCancelled, nil
 }
 
 // SweepExpired runs the bounded, lease-fenced attachment reclamation lifecycle.
@@ -743,47 +744,6 @@ func (s *Service) Download(
 	}, nil
 }
 
-func ValidateUploadSpec(spec UploadSpec) error {
-	if strings.TrimSpace(spec.MediaType) != spec.MediaType ||
-		spec.MediaType != "application/octet-stream" ||
-		spec.ChunkSize != ChunkSize ||
-		spec.ChunkCount == 0 ||
-		spec.ChunkCount > MaximumChunkCount ||
-		spec.TagSize != TagSize ||
-		spec.Encryption != EncryptionSuiteAES256GCMChunked ||
-		spec.NonceStrategy != NonceStrategyCounter32BE ||
-		uint32(len(spec.ChunkHashes)) != spec.ChunkCount {
-		return NewError(
-			ErrorCodeInvalidArgument,
-			"attachment.validate_upload_spec",
-			"object",
-			"does not satisfy the canonical encrypted-object profile",
-		)
-	}
-	minimumSize := uint64(spec.ChunkCount-1)*uint64(spec.ChunkSize+spec.TagSize) +
-		uint64(spec.TagSize) + 1
-	maximumSize := uint64(spec.ChunkCount) * uint64(spec.ChunkSize+spec.TagSize)
-	if spec.CiphertextSize < minimumSize || spec.CiphertextSize > maximumSize {
-		return NewError(
-			ErrorCodeInvalidArgument,
-			"attachment.validate_upload_spec",
-			"ciphertext_size",
-			"does not match the fixed chunk geometry",
-		)
-	}
-	plaintextSize := spec.CiphertextSize - uint64(spec.ChunkCount)*uint64(spec.TagSize)
-	if plaintextSize > MaximumPlaintextSize {
-		return NewError(
-			ErrorCodeQuotaExceeded,
-			"attachment.validate_upload_spec",
-			"ciphertext_size",
-			"exceeds the attachment size policy",
-		)
-	}
-
-	return nil
-}
-
 func UploadCommitment(
 	conversationID valueobject.ConversationID,
 	messageID valueobject.MessageID,
@@ -972,13 +932,13 @@ func (s *Service) stageVerification(
 			}
 
 			switch upload.State {
-			case TransferStateComplete:
+			case securecontent.TransferStateComplete:
 				object, objectErr := transaction.GetObject(ctx, upload.ObjectID)
 				if objectErr != nil {
 					return objectErr
 				}
-				if object.State != ObjectStateCompleteUnattached &&
-					object.State != ObjectStateAttached {
+				if object.State != securecontent.ObjectStateCompleteUnattached &&
+					object.State != securecontent.ObjectStateAttached {
 					return NewError(
 						ErrorCodeInvalidState,
 						"attachment.complete",
@@ -1009,7 +969,7 @@ func (s *Service) stageVerification(
 				completed = true
 
 				return nil
-			case TransferStateTransferring:
+			case securecontent.TransferStateTransferring:
 				if !upload.ExpiresAt.After(now) {
 					return NewError(
 						ErrorCodeUploadExpired,
@@ -1018,13 +978,13 @@ func (s *Service) stageVerification(
 						"has elapsed",
 					)
 				}
-				if validationErr := validateCompleteParts(upload, parts); validationErr != nil {
+				if validationErr := validatePartConformance(upload, parts); validationErr != nil {
 					return validationErr
 				}
 
 				return stage(1)
-			case TransferStateVerifying:
-				if validationErr := validateCompleteParts(upload, parts); validationErr != nil {
+			case securecontent.TransferStateVerifying:
+				if validationErr := validatePartConformance(upload, parts); validationErr != nil {
 					return validationErr
 				}
 				lease, leaseErr := verificationLeaseFromUpload(upload)
@@ -1038,7 +998,7 @@ func (s *Service) stageVerification(
 						"another verifier owns the active upload lease",
 					)
 				}
-				if lease.Attempt >= MaximumVerificationAttemptCount {
+				if lease.Attempt >= securecontent.MaximumVerificationAttemptCount {
 					return NewError(
 						ErrorCodeInvalidState,
 						"attachment.complete",
@@ -1139,9 +1099,9 @@ func verificationLeaseFromUpload(upload Upload) (VerificationLease, error) {
 		upload.VerificationLeaseExpiresAt.IsZero() ||
 		!upload.VerificationLeaseExpiresAt.After(upload.VerificationStartedAt) ||
 		upload.VerificationLeaseExpiresAt.Sub(upload.VerificationStartedAt) >
-			MaximumVerificationLeaseTTL ||
+			securecontent.MaximumVerificationLeaseTTL ||
 		upload.VerificationAttempt == 0 ||
-		upload.VerificationAttempt > MaximumVerificationAttemptCount ||
+		upload.VerificationAttempt > securecontent.MaximumVerificationAttemptCount ||
 		upload.VerificationToken != expectedToken {
 		return VerificationLease{}, NewError(
 			ErrorCodeIntegrityFailed,
@@ -1298,9 +1258,9 @@ func cleanupRetryDelay(objectID valueobject.ObjectID, attempt uint32) time.Durat
 	if exponent > 8 {
 		exponent = 8
 	}
-	delay := MinimumCleanupRetryDelay << exponent
-	if delay >= MaximumCleanupRetryDelay {
-		return MaximumCleanupRetryDelay
+	delay := securecontent.MinimumCleanupRetryDelay << exponent
+	if delay >= securecontent.MaximumCleanupRetryDelay {
+		return securecontent.MaximumCleanupRetryDelay
 	}
 	jitterRange := delay / 2
 	if jitterRange <= 0 {
@@ -1312,8 +1272,8 @@ func cleanupRetryDelay(objectID valueobject.ObjectID, attempt uint32) time.Durat
 		[]byte(fmt.Sprintf("%d", attempt)),
 	))
 	jitter := time.Duration(binary.BigEndian.Uint64(hash[:8]) % uint64(jitterRange))
-	if delay+jitter > MaximumCleanupRetryDelay {
-		return MaximumCleanupRetryDelay
+	if delay+jitter > securecontent.MaximumCleanupRetryDelay {
+		return securecontent.MaximumCleanupRetryDelay
 	}
 
 	return delay + jitter
@@ -1390,13 +1350,11 @@ func validateChunk(
 			"is not owned by the authenticated conversation endpoint",
 		)
 	}
-	if upload.State != TransferStateQueued && upload.State != TransferStateTransferring {
-		return NewError(
-			ErrorCodeInvalidState,
-			"attachment.put_chunk",
-			"state",
-			"is not receiving chunks",
-		)
+	if err := securecontent.ValidateTransferTransition(
+		upload.State,
+		securecontent.TransferStateTransferring,
+	); err != nil {
+		return mapKernelError(err, "attachment.put_chunk")
 	}
 	if !upload.ExpiresAt.After(now) {
 		return NewError(
@@ -1406,25 +1364,16 @@ func validateChunk(
 			"has elapsed",
 		)
 	}
-	if request.ChunkIndex >= upload.Spec.ChunkCount ||
-		request.CiphertextSize != uint64(len(body)) ||
-		request.ByteOffset != uint64(request.ChunkIndex)*uint64(upload.Spec.ChunkSize+upload.Spec.TagSize) {
+	if request.CiphertextSize != uint64(len(body)) {
 		return NewError(
 			ErrorCodeInvalidArgument,
 			"attachment.put_chunk",
 			"chunk",
-			"index, offset, or size does not match the immutable upload",
+			"body size does not match the declared ciphertext size",
 		)
 	}
-	expectedSize := uint64(upload.Spec.ChunkSize + upload.Spec.TagSize)
-	if request.ChunkIndex == upload.Spec.ChunkCount-1 {
-		expectedSize = upload.Spec.CiphertextSize -
-			uint64(upload.Spec.ChunkCount-1)*uint64(upload.Spec.ChunkSize+upload.Spec.TagSize)
-	}
 	actualHash := valueobject.HashBytes(body)
-	if request.CiphertextSize != expectedSize ||
-		request.CiphertextHash != actualHash ||
-		request.CiphertextHash != upload.Spec.ChunkHashes[request.ChunkIndex] {
+	if request.CiphertextHash != actualHash {
 		return NewError(
 			ErrorCodePartConflict,
 			"attachment.put_chunk",
@@ -1433,54 +1382,12 @@ func validateChunk(
 		)
 	}
 
-	return nil
-}
-
-func validateCompleteParts(upload Upload, parts []Part) error {
-	if len(parts) != int(upload.Spec.ChunkCount) {
-		return NewError(
-			ErrorCodeInvalidState,
-			"attachment.complete",
-			"parts",
-			"are incomplete",
-		)
-	}
-	sort.Slice(parts, func(left int, right int) bool {
-		return parts[left].ChunkIndex < parts[right].ChunkIndex
+	return validateChunkCommitment(upload.Spec, securecontent.Part{
+		ChunkIndex:     request.ChunkIndex,
+		ByteOffset:     request.ByteOffset,
+		CiphertextSize: request.CiphertextSize,
+		CiphertextHash: request.CiphertextHash.Bytes(),
 	})
-	var totalSize uint64
-	for index, part := range parts {
-		expectedSize := uint64(upload.Spec.ChunkSize + upload.Spec.TagSize)
-		if index == len(parts)-1 {
-			expectedSize = upload.Spec.CiphertextSize -
-				uint64(upload.Spec.ChunkCount-1)*uint64(upload.Spec.ChunkSize+upload.Spec.TagSize)
-		}
-		if part.UploadID != upload.UploadID ||
-			part.Generation != upload.Generation ||
-			part.ChunkIndex != uint32(index) ||
-			part.ByteOffset != uint64(index)*uint64(upload.Spec.ChunkSize+upload.Spec.TagSize) ||
-			part.CiphertextSize != expectedSize ||
-			part.CiphertextHash != upload.Spec.ChunkHashes[index] ||
-			!validAttachmentStorageKey(part.StorageKey) {
-			return NewError(
-				ErrorCodePartConflict,
-				"attachment.complete",
-				"parts",
-				"do not match the immutable chunk commitments",
-			)
-		}
-		totalSize += part.CiphertextSize
-	}
-	if totalSize != upload.Spec.CiphertextSize {
-		return NewError(
-			ErrorCodePartConflict,
-			"attachment.complete",
-			"ciphertext_size",
-			"does not match the immutable upload",
-		)
-	}
-
-	return nil
 }
 
 func objectFromUpload(
@@ -1504,7 +1411,7 @@ func objectFromUpload(
 		Uploader:             upload.Uploader.Actor,
 		Spec:                 CloneUploadSpec(upload.Spec),
 		DescriptorCommitment: upload.DescriptorCommitment,
-		State:                ObjectStateCompleteUnattached,
+		State:                securecontent.ObjectStateCompleteUnattached,
 		ExpiresAt:            expiresAt,
 		CleanupNextAttemptAt: expiresAt,
 		CreatedAt:            createdAt,

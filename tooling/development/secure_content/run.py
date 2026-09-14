@@ -46,6 +46,7 @@ RESULT_RESERVED_FIELDS = frozenset(
         "declarationDigest",
         "runtimeBindingDigest",
         "profile",
+        "profiles",
         "clients",
         "startedAt",
         "durationMs",
@@ -86,6 +87,7 @@ class ScenarioContext:
     repo_root: Path
     runtime: str
     profile: Optional[str]
+    profiles: tuple[str, ...]
     clients: tuple[str, ...]
     budget_seconds: int
     started_monotonic: float
@@ -444,6 +446,7 @@ def _command_digest(
     scenario_id: str,
     runtime: str,
     profile: Optional[str],
+    profiles: Sequence[str],
     clients: Sequence[str],
     budget_seconds: int,
 ) -> str:
@@ -452,6 +455,7 @@ def _command_digest(
             "budgetSeconds": budget_seconds,
             "clients": list(clients),
             "profile": profile,
+            "profiles": list(profiles),
             "runtime": runtime,
             "scenarioId": scenario_id,
         },
@@ -467,6 +471,7 @@ def _runtime_binding_digest(
     source_commit: str,
     runtime: str,
     profile: Optional[str],
+    profiles: Sequence[str],
     clients: Sequence[str],
     checks: Sequence[Mapping[str, Any]],
 ) -> str:
@@ -487,6 +492,7 @@ def _runtime_binding_digest(
             "clients": list(clients),
             "declarationDigest": declaration_digest,
             "profile": profile,
+            "profiles": list(profiles),
             "runtime": runtime,
             "sourceCommit": source_commit,
             "checks": check_commands,
@@ -581,6 +587,7 @@ def execute_scenario(
     budget_seconds: int,
     repo_root: Path,
     profile: Optional[str] = None,
+    profiles: Sequence[str] = (),
     clients: Sequence[str] = (),
     result_root: Optional[Path] = None,
     registry: Optional[Mapping[str, ScenarioDefinition]] = None,
@@ -592,6 +599,13 @@ def execute_scenario(
         raise RunnerError(f"unsupported runtime: {runtime}")
     if budget_seconds <= 0:
         raise RunnerError("budget-seconds must be positive")
+    if profile is not None and profiles:
+        raise RunnerError("choose exactly one of profile or profiles")
+    bound_profiles = tuple(profiles) if profiles else ((profile,) if profile else ())
+    for value in bound_profiles:
+        _require_identifier(value, "profile")
+    if len(set(bound_profiles)) != len(bound_profiles):
+        raise RunnerError("profiles must not contain duplicates")
     if registry is None:
         registry = discover_scenarios()
     scenario = registry.get(normalized_scenario)
@@ -626,6 +640,7 @@ def execute_scenario(
         repo_root=repo_root,
         runtime=runtime,
         profile=profile,
+        profiles=bound_profiles,
         clients=tuple(clients),
         budget_seconds=budget_seconds,
         started_monotonic=started_monotonic,
@@ -647,6 +662,7 @@ def execute_scenario(
         scenario_id=scenario.scenario_id,
         runtime=runtime,
         profile=profile,
+        profiles=bound_profiles,
         clients=clients,
         budget_seconds=budget_seconds,
     )
@@ -670,10 +686,12 @@ def execute_scenario(
             source_commit=identity["head"],
             runtime=runtime,
             profile=profile,
+            profiles=bound_profiles,
             clients=clients,
             checks=context.checks,
         ),
         "profile": profile,
+        "profiles": list(bound_profiles),
         "clients": list(clients),
         "startedAt": started_at,
         "durationMs": int((time.monotonic() - started_monotonic) * 1000),
@@ -700,7 +718,9 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a Secure Content Development Journey")
     parser.add_argument("--runtime", required=True, choices=sorted(RUNTIMES))
     parser.add_argument("--scenario", required=True)
-    parser.add_argument("--profile")
+    profile_group = parser.add_mutually_exclusive_group()
+    profile_group.add_argument("--profile")
+    profile_group.add_argument("--profiles", default="")
     parser.add_argument("--clients", default="")
     parser.add_argument("--budget-seconds", required=True, type=int)
     parser.add_argument("--result-root", type=Path)
@@ -710,6 +730,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parse_args(argv)
     clients = tuple(value.strip() for value in args.clients.split(",") if value.strip())
+    profiles = tuple(value.strip() for value in args.profiles.split(",") if value.strip())
     try:
         result = execute_scenario(
             runtime=args.runtime,
@@ -717,6 +738,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             budget_seconds=args.budget_seconds,
             repo_root=_repo_root(),
             profile=args.profile,
+            profiles=profiles,
             clients=clients,
             result_root=args.result_root,
         )

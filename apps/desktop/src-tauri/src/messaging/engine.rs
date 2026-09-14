@@ -1,17 +1,17 @@
 use super::recovery::{restore_profile_database_atomically, MessagingRecoveryArchive};
 use super::store::{CompletedSenderAttachmentSource, DirectAuthorityCheckpoint};
 use super::{
-    verify_device_event_delivery, AttachmentCryptoMaterial, AttachmentDownloadProjection,
-    AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferProgress,
-    AttachmentTransferRecord, AttachmentTransferWorker, CommandDispatchProgress,
-    CommandOutboxWorker, CommandReconciliationProgress, CommandReconciliationWorker,
-    CommandRetryPolicy, ConversationMemberProjection, ConversationMessageProjection,
-    ConversationProjection, DirectSessionBootstrapper, DrainProgress, EditTextIntent,
-    MessagingItemConsumer, MessagingLifecycleWorker, MessagingStore, PendingAttachmentUpload,
-    PendingMembershipIntent, PendingMessageDraft, PreKeyPublisher, QueueDrain, SendPreparer,
-    SendTextIntent, StationAttachmentTransferTransport, StationCommandTransport,
-    StationDeliveryReceiptTransport, StationDeviceTransport, StationGroupGenesisTransport,
-    StationKeyBundleTransport, StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
+    verify_device_event_delivery, AttachmentDownloadProjection, AttachmentRetryPolicy,
+    AttachmentTransferControl, AttachmentTransferProgress, AttachmentTransferRecord,
+    AttachmentTransferWorker, CommandDispatchProgress, CommandOutboxWorker,
+    CommandReconciliationProgress, CommandReconciliationWorker, CommandRetryPolicy,
+    ConversationMemberProjection, ConversationMessageProjection, ConversationProjection,
+    DirectSessionBootstrapper, DrainProgress, EditTextIntent, MessagingItemConsumer,
+    MessagingLifecycleWorker, MessagingStore, PendingAttachmentUpload, PendingMembershipIntent,
+    PendingMessageDraft, PreKeyPublisher, QueueDrain, SendPreparer, SendTextIntent,
+    StationAttachmentTransferTransport, StationCommandTransport, StationDeliveryReceiptTransport,
+    StationDeviceTransport, StationGroupGenesisTransport, StationKeyBundleTransport,
+    StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
     StationMlsLeaveIntentTransport, StationPreKeyTransport, StationQueueTransport,
     ThreadCountProjection,
 };
@@ -51,6 +51,10 @@ use messaging_core::proto::actor::ActorDevice;
 use messaging_core::proto::actor_device_ref;
 use prost::Message;
 use reqwest::Method;
+use secure_content_core::object::{
+    ObjectCryptoMaterial as AttachmentCryptoMaterial, OBJECT_CHUNK_SIZE as ATTACHMENT_CHUNK_SIZE,
+    OBJECT_MAX_PLAINTEXT_SIZE as ATTACHMENT_MAX_PLAINTEXT_SIZE,
+};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
@@ -595,7 +599,7 @@ impl MessagingEngine {
         if filename.trim().is_empty()
             || filename.len() > 1024
             || plaintext_size == 0
-            || plaintext_size > super::attachment::ATTACHMENT_MAX_PLAINTEXT_SIZE
+            || plaintext_size > ATTACHMENT_MAX_PLAINTEXT_SIZE
         {
             return Err("messaging attachment source is invalid".to_string());
         }
@@ -1146,7 +1150,7 @@ impl MessagingEngine {
                 .checked_add(upload.transfer.plaintext_size)
                 .ok_or_else(|| "messaging attachment aggregate size exceeds policy".to_string())
         })?;
-        if aggregate_plaintext_size > super::attachment::ATTACHMENT_MAX_PLAINTEXT_SIZE {
+        if aggregate_plaintext_size > ATTACHMENT_MAX_PLAINTEXT_SIZE {
             return Err("messaging attachment aggregate size exceeds policy".to_string());
         }
         uploads.sort_by(|left, right| {
@@ -2451,7 +2455,7 @@ fn prepare_local_attachment_upload(
     let mut plaintext = File::open(&source)
         .map_err(|error| format!("open messaging attachment source: {error}"))?;
     let mut hasher = Sha256::new();
-    let mut buffer = vec![0_u8; super::attachment::ATTACHMENT_CHUNK_SIZE as usize];
+    let mut buffer = vec![0_u8; ATTACHMENT_CHUNK_SIZE as usize];
     loop {
         let read = plaintext
             .read(&mut buffer)
@@ -2613,7 +2617,7 @@ fn sha256_path(path: &Path) -> Result<[u8; 32], String> {
     let mut file =
         File::open(path).map_err(|error| format!("open messaging attachment cache: {error}"))?;
     let mut hasher = Sha256::new();
-    let mut buffer = vec![0_u8; super::attachment::ATTACHMENT_CHUNK_SIZE as usize];
+    let mut buffer = vec![0_u8; ATTACHMENT_CHUNK_SIZE as usize];
     loop {
         let read = file
             .read(&mut buffer)

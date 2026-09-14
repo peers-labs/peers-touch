@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	conversationhttp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/interface/http"
@@ -34,7 +35,7 @@ func (s *attachmentApplicationStub) Begin(
 		Uploader:             request.Uploader,
 		Spec:                 request.Spec,
 		DescriptorCommitment: request.DescriptorCommitment,
-		State:                attachment.TransferStateQueued,
+		State:                securecontent.TransferStateQueued,
 		ReceivedChunkBitmap:  []byte{0},
 		ExpiresAt:            time.Date(2026, time.September, 6, 18, 0, 0, 0, time.UTC),
 	}}, nil
@@ -69,8 +70,8 @@ func (s *attachmentApplicationStub) Cancel(
 	context.Context,
 	valueobject.Endpoint,
 	attachment.CancelRequest,
-) (attachment.TransferState, error) {
-	return attachment.TransferStateCancelled, nil
+) (securecontent.TransferState, error) {
+	return securecontent.TransferStateCancelled, nil
 }
 
 func (s *attachmentApplicationStub) Download(
@@ -86,11 +87,11 @@ func (s *attachmentApplicationStub) Download(
 				CiphertextSize: 4,
 				CiphertextHash: valueobject.HashBytes([]byte("body")),
 				MediaType:      "application/octet-stream",
-				ChunkSize:      attachment.ChunkSize,
+				ChunkSize:      securecontent.ObjectChunkSize,
 				ChunkCount:     1,
-				Encryption:     attachment.EncryptionSuiteAES256GCMChunked,
-				TagSize:        attachment.TagSize,
-				NonceStrategy:  attachment.NonceStrategyCounter32BE,
+				Encryption:     securecontent.EncryptionSuiteAES256GCMChunked,
+				TagSize:        securecontent.AES256GCMTagSize,
+				NonceStrategy:  securecontent.NonceStrategyCounter32BE,
 				ChunkHashes:    []valueobject.Hash{valueobject.HashBytes([]byte("body"))},
 			},
 		},
@@ -109,13 +110,13 @@ func TestAttachmentHandlerMapsCanonicalBeginContract(t *testing.T) {
 	}
 	ciphertextHash := valueobject.HashBytes([]byte("ciphertext"))
 	wireSpec := &chat.EncryptedObjectUploadSpec{
-		CiphertextSize:   uint64(attachment.TagSize + 1),
+		CiphertextSize:   uint64(securecontent.AES256GCMTagSize + 1),
 		CiphertextSha256: ciphertextHash.Bytes(),
 		MediaType:        "application/octet-stream",
-		ChunkSize:        attachment.ChunkSize,
+		ChunkSize:        securecontent.ObjectChunkSize,
 		ChunkCount:       1,
 		EncryptionSuite:  chat.AttachmentEncryptionSuite_ATTACHMENT_ENCRYPTION_SUITE_AES_256_GCM_CHUNKED,
-		TagSize:          attachment.TagSize,
+		TagSize:          securecontent.AES256GCMTagSize,
 		NonceStrategy:    chat.AttachmentNonceStrategy_ATTACHMENT_NONCE_STRATEGY_COUNTER32_BE,
 		ChunkCiphertextSha256: [][]byte{
 			ciphertextHash.Bytes(),

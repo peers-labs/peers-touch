@@ -185,7 +185,8 @@ planRef = docs/architecture/secure-content/execution-plans/20260913-secure-conte
 | `secure-content-w0r` | infrastructure | none; runtime prerequisite only | `LDCP-D01..D06/D08/D09` | machine registration and lease-control Journey | canonical Local Dev Control Plane only; exclude env creation/product runtime |
 | `secure-content-w14` | infrastructure | none; W1 preparation only | `SC-A01/SC-A03`; `SC-D02` | none | scoped generator and its isolated tests only; exclude proto/generated/runtime changes |
 | `secure-content-w1` | infrastructure | `SOC-SEC-C02/C03/C04/C05/C08`; `SOC-SEC-AS03/04/08/13/14/16` | `SC-A03/A04/A08`; `SC-D02/D05/D07/D09/D12` | `SOC-SEC-J01/J02/J03/J05/J06/J07` | allowlisted proto/generated consumers only; exclude unrelated generated output/runtime |
-| `secure-content-w2a` | refactor | `MP-C13`; `MP-G13` | `SC-A01/A03`; `SC-D02/D03/D13`; `MP-D23` | none | atomic shared kernels + Chat internal adapters and Journey modules; exclude runtime and Chat wire/API/schema/behavior |
+| `secure-content-w2a` | refactor | `MP-C13`; `MP-G13` | `SC-A01/A03`; `SC-D02/D03/D13`; `MP-D23` | none | atomic shared kernels + Chat internal adapters and runner multi-profile binding; exclude runtime and Chat wire/API/schema/behavior |
+| `secure-content-w2d` | infrastructure | `MP-C13`; `MP-G13` | `SC-A01/A03`; `SC-D02/D03/D13`; `MP-D23` | none | real Desktop/Mobile Development drivers for the complete MP-G13 corpus; exclude runtime execution and formal Acceptance |
 | `secure-content-w2b-desktop` | refactor | `MP-C13`; `MP-G13` | `SC-A01/A03`; `SC-D02/D03/D13`; `MP-D23` | `MP-J11` Desktop Native | read-only exact W2A checkpoint plus Desktop runtime proof |
 | `secure-content-w2b-mobile` | refactor | `MP-C13`; `MP-G13` | `SC-A01/A03`; `SC-D02/D03/D13`; `MP-D23` | `MP-J11` Mobile Native | read-only exact W2A checkpoint plus iOS/Android runtime proof |
 | `secure-content-w3` | infrastructure | `SOC-SEC-C04/C05`; `SOC-SEC-AS08/16` | `SC-A04/A08`; `SC-D05/D09/D12` | `SOC-SEC-J01/J07` | Content PreKeys only; exclude Direct/MLS |
@@ -608,11 +609,15 @@ git diff --check
 - **Subphases**:
   - `W2A`: one atomic source cut with no runtime claims. It adds both kernels,
     migrates every Chat caller, deletes the old generic implementations, adds
-    the Desktop blob adapter to the declared scope, and checkpoints clean source.
+    the Desktop blob adapter and multi-profile runner binding to the declared
+    scope, and checkpoints clean source.
+  - `W2D`: add the real non-Acceptance Desktop and Mobile Native drivers for the
+    complete MP-G13 corpus. A unit/static command or formal Gate wrapper is not
+    a valid substitute.
   - `W2B Desktop`: read-only source proof for
-    `sc-dj-chat-attachment-atomic` using the W2A checkpoint.
+    `sc-dj-chat-attachment-atomic` using the W2D checkpoint.
   - `W2B Mobile`: read-only source proof for
-    `sc-dj-chat-attachment-mobile` using the same W2A checkpoint.
+    `sc-dj-chat-attachment-mobile` using the same W2D checkpoint.
   W2 remains `in progress` until both W2B results are current
   `FUNCTIONAL_PASS`.
 - **Failure**: tamper, binding mismatch, invalid range, duplicate conflict,

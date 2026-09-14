@@ -2,7 +2,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use messaging_core::attachment::{
-    upload_commitment_fields, validate_attachment_transfer_record, AttachmentTransferRecord,
+    upload_commitment_fields, validate_chat_attachment_transfer_record,
+    validate_chat_encrypted_object_descriptor, AttachmentTransferRecord,
     AttachmentTransferRepository,
 };
 use messaging_core::contracts::CryptoEndpoint;
@@ -309,7 +310,7 @@ impl MobileMessagingStore {
         }
         let mut previous_attachment_id: Option<&str> = None;
         for upload in uploads {
-            validate_attachment_transfer_record(&upload.transfer)?;
+            validate_chat_attachment_transfer_record(&upload.transfer)?;
             if upload.transfer.conversation_id != draft.conversation_id
                 || upload.transfer.message_id != draft.message_id
                 || upload.transfer.direction != 1
@@ -486,7 +487,7 @@ impl MobileMessagingStore {
         &self,
         transfer: &AttachmentTransferRecord,
     ) -> Result<bool, String> {
-        validate_attachment_transfer_record(transfer)?;
+        validate_chat_attachment_transfer_record(transfer)?;
         let generation = i64::try_from(transfer.generation)
             .map_err(|_| "mobile messaging attachment generation overflow")?;
         let plaintext_size = i64::try_from(transfer.plaintext_size)
@@ -549,7 +550,7 @@ impl MobileMessagingStore {
         &self,
         download: &AttachmentTransferRecord,
     ) -> Result<(), String> {
-        validate_attachment_transfer_record(download)?;
+        validate_chat_attachment_transfer_record(download)?;
         if download.direction != 2
             || download.state != AttachmentTransferState::Queued as i32
             || download.generation != 0
@@ -1092,8 +1093,8 @@ impl MobileMessagingStore {
         descriptor: &EncryptedObjectDescriptor,
         updated_at_unix_ms: i64,
     ) -> Result<(), String> {
-        messaging_core::attachment::validate_encrypted_object_descriptor(descriptor)?;
-        validate_attachment_transfer_record(transfer)?;
+        validate_chat_encrypted_object_descriptor(descriptor)?;
+        validate_chat_attachment_transfer_record(transfer)?;
         if updated_at_unix_ms <= 0 {
             return Err("mobile messaging attachment completion time is invalid".to_string());
         }
@@ -1200,8 +1201,8 @@ impl MobileMessagingStore {
         cache_path: &str,
         updated_at_unix_ms: i64,
     ) -> Result<(), String> {
-        messaging_core::attachment::validate_encrypted_object_descriptor(descriptor)?;
-        validate_attachment_transfer_record(transfer)?;
+        validate_chat_encrypted_object_descriptor(descriptor)?;
+        validate_chat_attachment_transfer_record(transfer)?;
         if transfer.direction != 2
             || cache_path.trim().is_empty()
             || updated_at_unix_ms <= 0
@@ -1338,6 +1339,47 @@ impl MobileMessagingStore {
                     completed_chunk_bitmap,
                     attempt_count,
                     next_attempt_at_unix_ms,
+                    last_error_code,
+                    updated_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("mobile messaging attachment progress target is unavailable".to_string());
+        }
+        Ok(())
+    }
+
+    pub(crate) fn terminalize_attachment_transfer(
+        &self,
+        attachment_id: &str,
+        attempt_count: u32,
+        last_error_code: i32,
+        updated_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        if attachment_id.trim().is_empty()
+            || attempt_count == 0
+            || last_error_code <= 0
+            || updated_at_unix_ms <= 0
+        {
+            return Err("mobile messaging attachment terminal state is incomplete".to_string());
+        }
+        let changed = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?
+            .execute(
+                "UPDATE messaging_attachment_transfers
+                 SET state = ?2,
+                     attempt_count = ?3,
+                     next_attempt_at_unix_ms = 0,
+                     last_error_code = ?4,
+                     updated_at_unix_ms = ?5
+                 WHERE attachment_id = ?1",
+                params![
+                    attachment_id,
+                    AttachmentTransferState::Terminal as i32,
+                    attempt_count,
                     last_error_code,
                     updated_at_unix_ms,
                 ],
@@ -3998,6 +4040,22 @@ impl AttachmentTransferRepository for MobileMessagingStore {
         )
     }
 
+    fn terminalize_attachment_transfer(
+        &self,
+        attachment_id: &str,
+        attempt_count: u32,
+        last_error_code: i32,
+        updated_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        MobileMessagingStore::terminalize_attachment_transfer(
+            self,
+            attachment_id,
+            attempt_count,
+            last_error_code,
+            updated_at_unix_ms,
+        )
+    }
+
     fn complete_attachment_upload(
         &self,
         transfer: &AttachmentTransferRecord,
@@ -6521,10 +6579,10 @@ mod tests {
             ciphertext_size: 33,
             ciphertext_sha256: vec![5; 32],
             media_type: "text/plain".to_string(),
-            chunk_size: messaging_core::attachment::ATTACHMENT_CHUNK_SIZE,
+            chunk_size: secure_content_core::object::OBJECT_CHUNK_SIZE,
             chunk_count: 1,
             encryption_suite: AttachmentEncryptionSuite::Aes256GcmChunked as i32,
-            tag_size: messaging_core::attachment::ATTACHMENT_TAG_SIZE,
+            tag_size: secure_content_core::object::OBJECT_TAG_SIZE,
             nonce_strategy: AttachmentNonceStrategy::Counter32Be as i32,
             chunk_ciphertext_sha256: vec![vec![6; 32]],
         }
@@ -6560,7 +6618,7 @@ mod tests {
             object_key: vec![8; 32],
             base_nonce: vec![0; 12],
             plaintext_size: 17,
-            chunk_size: messaging_core::attachment::ATTACHMENT_CHUNK_SIZE,
+            chunk_size: secure_content_core::object::OBJECT_CHUNK_SIZE,
             attempt_count: 0,
             next_attempt_at_unix_ms: 10,
             last_error_code: 0,
@@ -8438,6 +8496,43 @@ mod tests {
             Some(download)
         );
         assert_eq!(store.next_attachment_retry_at().unwrap(), Some(20));
+    }
+
+    #[test]
+    fn malformed_attachment_checkpoint_can_be_terminalized() {
+        let store = store();
+        let transfer = attachment_upload_transfer();
+        assert!(store.create_attachment_transfer(&transfer).unwrap());
+        store
+            .connection
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE messaging_attachment_transfers
+                 SET completed_chunk_bitmap = X''
+                 WHERE attachment_id = ?1",
+                params![transfer.attachment_id],
+            )
+            .unwrap();
+
+        store
+            .terminalize_attachment_transfer(
+                &transfer.attachment_id,
+                1,
+                messaging_core::proto::chat::AttachmentTransferErrorCode::IntegrityFailed as i32,
+                12,
+            )
+            .unwrap();
+        let persisted = store
+            .attachment_transfer(&transfer.attachment_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.state, AttachmentTransferState::Terminal as i32);
+        assert!(persisted.completed_chunk_bitmap.is_empty());
+        assert_eq!(
+            persisted.last_error_code,
+            messaging_core::proto::chat::AttachmentTransferErrorCode::IntegrityFailed as i32
+        );
     }
 
     #[test]

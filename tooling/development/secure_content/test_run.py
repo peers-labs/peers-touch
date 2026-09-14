@@ -171,6 +171,73 @@ class SecureContentRunnerTest(unittest.TestCase):
             )
             self.assertEqual(result, persisted)
 
+    def test_preserves_ordered_multi_profile_binding(self) -> None:
+        def execute(context: run.ScenarioContext) -> dict[str, object]:
+            self.assertIsNone(context.profile)
+            self.assertEqual(("four", "fiveArm"), context.profiles)
+            return {"observations": ["multi-profile binding preserved"]}
+
+        scenario = run.ScenarioDefinition(
+            scenario_id="multi-profile",
+            journey_id="journey-1",
+            work_item_id="work-1",
+            runtimes=frozenset({"desktop"}),
+            evidence_path=Path("W2/SC-AS12/result.json"),
+            execute=execute,
+        )
+
+        with tempfile.TemporaryDirectory() as temp:
+            result = run.execute_scenario(
+                runtime="desktop",
+                scenario_id=scenario.scenario_id,
+                budget_seconds=10,
+                repo_root=REPO_ROOT,
+                profiles=("four", "fiveArm"),
+                result_root=Path(temp),
+                registry={scenario.scenario_id: scenario},
+                workspace_identity=IDENTITY,
+                command_runner=control_plane_runner(scenario),
+            )
+
+        self.assertIsNone(result["profile"])
+        self.assertEqual(["four", "fiveArm"], result["profiles"])
+
+    def test_rejects_ambiguous_or_duplicate_profile_binding(self) -> None:
+        scenario = run.ScenarioDefinition(
+            scenario_id="profile-binding",
+            journey_id="journey-1",
+            work_item_id="work-1",
+            runtimes=frozenset({"desktop"}),
+            evidence_path=Path("W2/SC-AS12/result.json"),
+            execute=lambda _: {},
+        )
+
+        with tempfile.TemporaryDirectory() as temp:
+            common = {
+                "runtime": "desktop",
+                "scenario_id": scenario.scenario_id,
+                "budget_seconds": 10,
+                "repo_root": REPO_ROOT,
+                "result_root": Path(temp),
+                "registry": {scenario.scenario_id: scenario},
+                "workspace_identity": IDENTITY,
+                "command_runner": control_plane_runner(scenario),
+            }
+            with self.assertRaisesRegex(
+                run.RunnerError,
+                "choose exactly one",
+            ):
+                run.execute_scenario(
+                    **common,
+                    profile="four",
+                    profiles=("four", "fiveArm"),
+                )
+            with self.assertRaisesRegex(run.RunnerError, "duplicates"):
+                run.execute_scenario(
+                    **common,
+                    profiles=("four", "four"),
+                )
+
     def test_rejects_result_root_inside_repository(self) -> None:
         scenario = run.ScenarioDefinition(
             scenario_id="test-service",

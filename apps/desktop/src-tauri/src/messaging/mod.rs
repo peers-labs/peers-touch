@@ -1,4 +1,3 @@
-mod attachment;
 mod attachment_transfer;
 mod command_outbox;
 mod command_reconciliation;
@@ -71,11 +70,6 @@ pub(crate) fn crypto_endpoints_from_actor_device_refs(
         .collect()
 }
 
-pub use attachment::{
-    attachment_chunk_aad, attachment_chunk_nonce, decrypt_attachment_chunk,
-    encrypt_attachment_chunk, validate_encrypted_object_descriptor,
-    validate_encrypted_object_upload_spec, AttachmentCryptoMaterial, EncryptedAttachmentChunk,
-};
 pub use attachment_transfer::{
     AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferFailure,
     AttachmentTransferProgress, AttachmentTransferRecord, AttachmentTransferTransport,

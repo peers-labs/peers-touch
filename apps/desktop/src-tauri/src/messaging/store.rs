@@ -12,7 +12,10 @@ use crate::model::chat::{
     ConversationKind, EncryptedObjectDescriptor, EncryptedObjectUploadSpec, MemberRole,
 };
 pub use messaging_core::attachment::AttachmentTransferRecord;
-use messaging_core::attachment::AttachmentTransferRepository;
+use messaging_core::attachment::{
+    validate_chat_attachment_transfer_record, validate_chat_encrypted_object_descriptor,
+    AttachmentTransferRepository,
+};
 pub use messaging_core::contracts::{CommandStatusProjection, ConversationMessageProjection};
 use messaging_core::contracts::{
     CryptoEndpoint as CoreCryptoEndpoint, InteractionMutation as CoreInteractionMutation,
@@ -4061,7 +4064,7 @@ impl MessagingStore {
         descriptor: &EncryptedObjectDescriptor,
         updated_at_unix_ms: i64,
     ) -> Result<(), String> {
-        super::attachment::validate_encrypted_object_descriptor(descriptor)?;
+        validate_chat_encrypted_object_descriptor(descriptor)?;
         validate_attachment_transfer(transfer)?;
         if updated_at_unix_ms <= 0 {
             return Err("messaging attachment completion time is invalid".to_string());
@@ -4169,7 +4172,7 @@ impl MessagingStore {
         cache_path: &str,
         updated_at_unix_ms: i64,
     ) -> Result<(), String> {
-        super::attachment::validate_encrypted_object_descriptor(descriptor)?;
+        validate_chat_encrypted_object_descriptor(descriptor)?;
         validate_attachment_transfer(transfer)?;
         if transfer.direction != 2
             || cache_path.trim().is_empty()
@@ -4300,6 +4303,45 @@ impl MessagingStore {
                     completed_chunk_bitmap,
                     attempt_count,
                     next_attempt_at_unix_ms,
+                    last_error_code,
+                    updated_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging attachment progress target is unavailable".to_string());
+        }
+        Ok(())
+    }
+
+    pub fn terminalize_attachment_transfer(
+        &self,
+        attachment_id: &str,
+        attempt_count: u32,
+        last_error_code: i32,
+        updated_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        if attachment_id.trim().is_empty()
+            || attempt_count == 0
+            || last_error_code <= 0
+            || updated_at_unix_ms <= 0
+        {
+            return Err("messaging attachment terminal state is incomplete".to_string());
+        }
+        let changed = self
+            .connection()?
+            .execute(
+                "UPDATE messaging_attachment_transfers
+                 SET state = ?2,
+                     attempt_count = ?3,
+                     next_attempt_at_unix_ms = 0,
+                     last_error_code = ?4,
+                     updated_at_unix_ms = ?5
+                 WHERE attachment_id = ?1",
+                params![
+                    attachment_id,
+                    AttachmentTransferState::Terminal as i32,
+                    attempt_count,
                     last_error_code,
                     updated_at_unix_ms,
                 ],
@@ -9933,6 +9975,22 @@ impl AttachmentTransferRepository for MessagingStore {
         )
     }
 
+    fn terminalize_attachment_transfer(
+        &self,
+        attachment_id: &str,
+        attempt_count: u32,
+        last_error_code: i32,
+        updated_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        MessagingStore::terminalize_attachment_transfer(
+            self,
+            attachment_id,
+            attempt_count,
+            last_error_code,
+            updated_at_unix_ms,
+        )
+    }
+
     fn complete_attachment_upload(
         &self,
         transfer: &AttachmentTransferRecord,
@@ -9968,7 +10026,7 @@ fn fts_phrase_query(query: &str) -> Result<String, String> {
 }
 
 fn validate_attachment_transfer(transfer: &AttachmentTransferRecord) -> Result<(), String> {
-    messaging_core::attachment::validate_attachment_transfer_record(transfer)
+    validate_chat_attachment_transfer_record(transfer)
 }
 
 fn attachment_transfer_from_row(
@@ -11348,6 +11406,42 @@ mod tests {
         assert_eq!(persisted.attempt_count, 1);
         assert_eq!(persisted.next_attempt_at_unix_ms, 20);
         assert_eq!(persisted.last_error_code, 8);
+    }
+
+    #[test]
+    fn malformed_attachment_checkpoint_can_be_terminalized() {
+        let store = MessagingStore::in_memory().unwrap();
+        let transfer = attachment_transfer();
+        assert!(store.create_attachment_transfer(&transfer).unwrap());
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "UPDATE messaging_attachment_transfers
+                 SET completed_chunk_bitmap = X''
+                 WHERE attachment_id = ?1",
+                params![transfer.attachment_id],
+            )
+            .unwrap();
+
+        store
+            .terminalize_attachment_transfer(
+                &transfer.attachment_id,
+                1,
+                AttachmentTransferErrorCode::IntegrityFailed as i32,
+                12,
+            )
+            .unwrap();
+        let persisted = store
+            .attachment_transfer(&transfer.attachment_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.state, AttachmentTransferState::Terminal as i32);
+        assert!(persisted.completed_chunk_bitmap.is_empty());
+        assert_eq!(
+            persisted.last_error_code,
+            AttachmentTransferErrorCode::IntegrityFailed as i32
+        );
     }
 
     #[test]

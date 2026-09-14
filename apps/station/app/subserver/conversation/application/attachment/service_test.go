@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	actoridentitypersistence "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
@@ -213,11 +214,11 @@ func TestServiceUploadGrantAndRangeDownload(t *testing.T) {
 		CiphertextSize: uint64(len(ciphertext)),
 		CiphertextHash: ciphertextHash,
 		MediaType:      "application/octet-stream",
-		ChunkSize:      attachment.ChunkSize,
+		ChunkSize:      securecontent.ObjectChunkSize,
 		ChunkCount:     1,
-		Encryption:     attachment.EncryptionSuiteAES256GCMChunked,
-		TagSize:        attachment.TagSize,
-		NonceStrategy:  attachment.NonceStrategyCounter32BE,
+		Encryption:     securecontent.EncryptionSuiteAES256GCMChunked,
+		TagSize:        securecontent.AES256GCMTagSize,
+		NonceStrategy:  securecontent.NonceStrategyCounter32BE,
 		ChunkHashes:    []valueobject.Hash{ciphertextHash},
 	}
 	canonicalSpec := []byte("canonical-encrypted-object-spec")
@@ -397,11 +398,11 @@ func TestServiceRejectsNonMemberAndCancelsIdempotently(t *testing.T) {
 		CiphertextSize: uint64(len(ciphertext)),
 		CiphertextHash: hash,
 		MediaType:      "application/octet-stream",
-		ChunkSize:      attachment.ChunkSize,
+		ChunkSize:      securecontent.ObjectChunkSize,
 		ChunkCount:     1,
-		Encryption:     attachment.EncryptionSuiteAES256GCMChunked,
-		TagSize:        attachment.TagSize,
-		NonceStrategy:  attachment.NonceStrategyCounter32BE,
+		Encryption:     securecontent.EncryptionSuiteAES256GCMChunked,
+		TagSize:        securecontent.AES256GCMTagSize,
+		NonceStrategy:  securecontent.NonceStrategyCounter32BE,
 		ChunkHashes:    []valueobject.Hash{hash},
 	}
 	canonicalSpec := []byte("cancel-spec")
@@ -437,7 +438,7 @@ func TestServiceRejectsNonMemberAndCancelsIdempotently(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if state != attachment.TransferStateCancelled {
+		if state != securecontent.TransferStateCancelled {
 			t.Fatalf("cancel state = %v", state)
 		}
 	}
@@ -464,14 +465,14 @@ func TestServiceEnforcesPerActorActiveUploadQuota(t *testing.T) {
 		CiphertextSize: uint64(len(ciphertext)),
 		CiphertextHash: hash,
 		MediaType:      "application/octet-stream",
-		ChunkSize:      attachment.ChunkSize,
+		ChunkSize:      securecontent.ObjectChunkSize,
 		ChunkCount:     1,
-		Encryption:     attachment.EncryptionSuiteAES256GCMChunked,
-		TagSize:        attachment.TagSize,
-		NonceStrategy:  attachment.NonceStrategyCounter32BE,
+		Encryption:     securecontent.EncryptionSuiteAES256GCMChunked,
+		TagSize:        securecontent.AES256GCMTagSize,
+		NonceStrategy:  securecontent.NonceStrategyCounter32BE,
 		ChunkHashes:    []valueobject.Hash{hash},
 	}
-	for index := 0; index < attachment.MaximumActiveUploadCount+1; index++ {
+	for index := 0; index < securecontent.MaximumActiveUploadCount+1; index++ {
 		messageID := valueobject.MessageID(fmt.Sprintf("message-%d", index))
 		attachmentID := fmt.Sprintf("attachment-%d", index)
 		specBytes := []byte(fmt.Sprintf("quota-spec-%d", index))
@@ -492,13 +493,73 @@ func TestServiceEnforcesPerActorActiveUploadQuota(t *testing.T) {
 			IdempotencyKey:   fmt.Sprintf("quota-upload-%d", index),
 			AuthorityStation: "station:local",
 		})
-		if index < attachment.MaximumActiveUploadCount && err != nil {
+		if index < securecontent.MaximumActiveUploadCount && err != nil {
 			t.Fatalf("upload %d failed before quota: %v", index, err)
 		}
-		if index == attachment.MaximumActiveUploadCount &&
+		if index == securecontent.MaximumActiveUploadCount &&
 			!attachment.IsCode(err, attachment.ErrorCodeQuotaExceeded) {
 			t.Fatalf("quota error = %v", err)
 		}
+	}
+}
+
+func TestPutChunkPreservesConversationErrorCodes(t *testing.T) {
+	service, _, _ := newAttachmentFixture(t)
+	alice := valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-1"}
+	scenario := newUploadScenario(alice, "error-codes", "message-error-codes")
+	begun, err := service.Begin(context.Background(), alice, scenario.begin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenario.bindUpload(begun.Upload)
+
+	cases := []struct {
+		name string
+		edit func(*attachment.PutChunkRequest)
+		code attachment.ErrorCode
+	}{
+		{
+			name: "chunk index",
+			edit: func(request *attachment.PutChunkRequest) {
+				request.ChunkIndex = 1
+			},
+			code: attachment.ErrorCodeInvalidArgument,
+		},
+		{
+			name: "byte offset",
+			edit: func(request *attachment.PutChunkRequest) {
+				request.ByteOffset = 1
+			},
+			code: attachment.ErrorCodeInvalidArgument,
+		},
+		{
+			name: "body size",
+			edit: func(request *attachment.PutChunkRequest) {
+				request.CiphertextSize++
+			},
+			code: attachment.ErrorCodeInvalidArgument,
+		},
+		{
+			name: "commitment hash",
+			edit: func(request *attachment.PutChunkRequest) {
+				request.CiphertextHash = valueobject.HashBytes([]byte("different"))
+			},
+			code: attachment.ErrorCodePartConflict,
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			request := scenario.chunk
+			testCase.edit(&request)
+			if _, err := service.PutChunk(
+				context.Background(),
+				alice,
+				request,
+				scenario.body,
+			); !attachment.IsCode(err, testCase.code) {
+				t.Fatalf("error = %v, want code %s", err, testCase.code)
+			}
+		})
 	}
 }
 
@@ -685,7 +746,7 @@ func TestServiceRevalidatesCanonicalAuthorizationInsideMutationTransaction(t *te
 		if err != nil {
 			t.Fatal(err)
 		}
-		if persisted.State != attachment.TransferStateQueued {
+		if persisted.State != securecontent.TransferStateQueued {
 			t.Fatalf("unauthorized cancel changed upload state to %v", persisted.State)
 		}
 	})
@@ -697,7 +758,7 @@ func TestServiceEnforcesMaximumMessageObjectsUnderConcurrentAdmission(t *testing
 		alice,
 		valueobject.Endpoint{Actor: "ptid:bob", Device: "bob-1"},
 	))
-	for index := 0; index < attachment.MaximumMessageObjects-1; index++ {
+	for index := 0; index < securecontent.MaximumObjectsPerResource-1; index++ {
 		scenario := newUploadScenario(
 			alice,
 			fmt.Sprintf("message-existing-%02d", index),
@@ -761,7 +822,7 @@ func TestServiceEnforcesMaximumMessageObjectsUnderConcurrentAdmission(t *testing
 		Count(&persisted).Error; err != nil {
 		t.Fatal(err)
 	}
-	if persisted != int64(attachment.MaximumMessageObjects) {
+	if persisted != int64(securecontent.MaximumObjectsPerResource) {
 		t.Fatalf("persisted message objects = %d", persisted)
 	}
 	replayed, err := runtime.service.Begin(
@@ -819,8 +880,8 @@ func TestServiceSerializesActorUploadQuotaAcrossConcurrentBegins(t *testing.T) {
 			t.Fatalf("unexpected actor-quota admission error = %v", err)
 		}
 	}
-	if admitted != attachment.MaximumActiveUploadCount ||
-		rejected != contenders-attachment.MaximumActiveUploadCount {
+	if admitted != securecontent.MaximumActiveUploadCount ||
+		rejected != contenders-securecontent.MaximumActiveUploadCount {
 		t.Fatalf("actor quota admitted=%d rejected=%d", admitted, rejected)
 	}
 }
@@ -862,7 +923,7 @@ func TestServiceRecoversDurableVerifyingAfterFinalizeFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if verifying.State != attachment.TransferStateVerifying ||
+	if verifying.State != securecontent.TransferStateVerifying ||
 		verifying.VerificationToken == "" ||
 		verifying.VerificationStorageKey == "" ||
 		verifying.VerificationStartedAt.IsZero() {
@@ -951,7 +1012,7 @@ func TestServiceVerificationLeaseProtectsAssemblyPastUploadExpiry(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if verifying.State != attachment.TransferStateVerifying ||
+	if verifying.State != securecontent.TransferStateVerifying ||
 		verifying.VerificationAttempt != 1 ||
 		!verifying.VerificationLeaseExpiresAt.After(begun.Upload.ExpiresAt) {
 		t.Fatalf("verification lease does not protect assembly: %+v", verifying)
@@ -988,7 +1049,7 @@ func TestServiceVerificationLeaseProtectsAssemblyPastUploadExpiry(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if completed.State != attachment.TransferStateComplete {
+	if completed.State != securecontent.TransferStateComplete {
 		t.Fatalf("verification did not finalize: %+v", completed)
 	}
 }
@@ -1082,7 +1143,7 @@ func TestServiceExpiredVerificationCleanupFencesLateFinalization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cleaned.State != attachment.TransferStateTerminal ||
+	if cleaned.State != securecontent.TransferStateTerminal ||
 		cleaned.CleanupCompletedAt.IsZero() {
 		t.Fatalf("cleanup did not retain final ownership: %+v", cleaned)
 	}
@@ -1114,7 +1175,7 @@ func TestServiceBoundsVerificationLeaseAttempts(t *testing.T) {
 	}
 
 	var previousToken string
-	for attempt := uint32(1); attempt <= attachment.MaximumVerificationAttemptCount; attempt++ {
+	for attempt := uint32(1); attempt <= securecontent.MaximumVerificationAttemptCount; attempt++ {
 		failNextObjectCreate(t, runtime.database)
 		if _, err := runtime.service.Complete(
 			context.Background(),
@@ -1241,7 +1302,7 @@ func TestServiceReclaimsTrackedVerificationBlobAfterFinalizeFailure(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cleaned.State != attachment.TransferStateTerminal ||
+	if cleaned.State != securecontent.TransferStateTerminal ||
 		cleaned.VerificationStorageKey != "" ||
 		cleaned.CleanupCompletedAt.IsZero() {
 		t.Fatalf("reclaimed VERIFYING upload = %+v", cleaned)
@@ -1293,7 +1354,7 @@ func TestServiceReclaimsExpiredIncompleteUploadAndPartBlobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cleaned.State != attachment.TransferStateTerminal ||
+	if cleaned.State != securecontent.TransferStateTerminal ||
 		cleaned.CleanupCompletedAt.IsZero() {
 		t.Fatalf("cleaned upload state = %+v", cleaned)
 	}
@@ -1338,11 +1399,11 @@ func TestServiceRetriesAndFinalizesExpiredUnattachedObjectCleanup(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if retryObject.State != attachment.ObjectStateCompleteUnattached ||
+	if retryObject.State != securecontent.ObjectStateCompleteUnattached ||
 		retryObject.CleanupAttempt != 1 ||
 		!retryObject.CleanupNextAttemptAt.After(runtime.clock.Now()) ||
 		retryObject.CleanupNextAttemptAt.Sub(runtime.clock.Now()) >
-			attachment.MaximumCleanupRetryDelay {
+			securecontent.MaximumCleanupRetryDelay {
 		t.Fatalf("retry lifecycle = %+v", retryObject)
 	}
 
@@ -1372,7 +1433,7 @@ func TestServiceRetriesAndFinalizesExpiredUnattachedObjectCleanup(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if finalized.State != attachment.ObjectStateGarbageCollected ||
+	if finalized.State != securecontent.ObjectStateGarbageCollected ||
 		finalized.StorageKey != "" ||
 		finalized.CleanupCompletedAt.IsZero() {
 		t.Fatalf("finalized cleanup object = %+v", finalized)
@@ -1462,11 +1523,11 @@ func TestServiceDirectAllowsCurrentDeviceOutsideGenesisProjection(t *testing.T) 
 				CiphertextSize: uint64(len(ciphertext)),
 				CiphertextHash: ciphertextHash,
 				MediaType:      "application/octet-stream",
-				ChunkSize:      attachment.ChunkSize,
+				ChunkSize:      securecontent.ObjectChunkSize,
 				ChunkCount:     1,
-				Encryption:     attachment.EncryptionSuiteAES256GCMChunked,
-				TagSize:        attachment.TagSize,
-				NonceStrategy:  attachment.NonceStrategyCounter32BE,
+				Encryption:     securecontent.EncryptionSuiteAES256GCMChunked,
+				TagSize:        securecontent.AES256GCMTagSize,
+				NonceStrategy:  securecontent.NonceStrategyCounter32BE,
 				ChunkHashes:    []valueobject.Hash{ciphertextHash},
 			},
 			CanonicalSpecBytes: canonicalSpec,
@@ -1706,11 +1767,11 @@ func newUploadScenario(
 				CiphertextSize: uint64(len(body)),
 				CiphertextHash: hash,
 				MediaType:      "application/octet-stream",
-				ChunkSize:      attachment.ChunkSize,
+				ChunkSize:      securecontent.ObjectChunkSize,
 				ChunkCount:     1,
-				Encryption:     attachment.EncryptionSuiteAES256GCMChunked,
-				TagSize:        attachment.TagSize,
-				NonceStrategy:  attachment.NonceStrategyCounter32BE,
+				Encryption:     securecontent.EncryptionSuiteAES256GCMChunked,
+				TagSize:        securecontent.AES256GCMTagSize,
+				NonceStrategy:  securecontent.NonceStrategyCounter32BE,
 				ChunkHashes:    []valueobject.Hash{hash},
 			},
 			CanonicalSpecBytes:   specBytes,
@@ -1883,30 +1944,43 @@ func conversationSnapshotForEndpoints(
 }
 
 func TestValidateUploadSpecRejectsPlaintextMetadataAndBounds(t *testing.T) {
-	hash := valueobject.HashBytes([]byte("ciphertext"))
-	valid := attachment.UploadSpec{
-		CiphertextSize: uint64(attachment.TagSize + 1),
-		CiphertextHash: hash,
-		MediaType:      "application/octet-stream",
-		ChunkSize:      attachment.ChunkSize,
-		ChunkCount:     1,
-		Encryption:     attachment.EncryptionSuiteAES256GCMChunked,
-		TagSize:        attachment.TagSize,
-		NonceStrategy:  attachment.NonceStrategyCounter32BE,
-		ChunkHashes:    []valueobject.Hash{hash},
-	}
-	if err := attachment.ValidateUploadSpec(valid); err != nil {
+	service, _, _ := newAttachmentFixture(t)
+	uploader := valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-1"}
+
+	valid := newUploadScenario(uploader, "validation-valid", "message-validation-valid")
+	if _, err := service.Begin(context.Background(), uploader, valid.begin); err != nil {
 		t.Fatal(err)
 	}
-	plaintextMedia := valid
-	plaintextMedia.MediaType = "image/png"
-	if err := attachment.ValidateUploadSpec(plaintextMedia); err == nil {
+
+	plaintextMedia := newUploadScenario(
+		uploader,
+		"validation-media",
+		"message-validation-media",
+	)
+	plaintextMedia.begin.Spec.MediaType = "image/png"
+	if _, err := service.Begin(
+		context.Background(),
+		uploader,
+		plaintextMedia.begin,
+	); err == nil {
 		t.Fatal("plaintext media metadata reached the Station attachment descriptor")
 	}
-	tooManyParts := valid
-	tooManyParts.ChunkCount = attachment.MaximumChunkCount + 1
-	tooManyParts.ChunkHashes = make([]valueobject.Hash, tooManyParts.ChunkCount)
-	if err := attachment.ValidateUploadSpec(tooManyParts); !attachment.IsCode(
+
+	tooManyParts := newUploadScenario(
+		uploader,
+		"validation-parts",
+		"message-validation-parts",
+	)
+	tooManyParts.begin.Spec.ChunkCount = securecontent.MaximumObjectChunkCount + 1
+	tooManyParts.begin.Spec.ChunkHashes = make(
+		[]valueobject.Hash,
+		tooManyParts.begin.Spec.ChunkCount,
+	)
+	if _, err := service.Begin(
+		context.Background(),
+		uploader,
+		tooManyParts.begin,
+	); !attachment.IsCode(
 		err,
 		attachment.ErrorCodeInvalidArgument,
 	) {

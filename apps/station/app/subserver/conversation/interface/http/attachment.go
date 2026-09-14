@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
@@ -39,7 +40,7 @@ type AttachmentApplication interface {
 		ctx context.Context,
 		authenticated valueobject.Endpoint,
 		request attachment.CancelRequest,
-	) (attachment.TransferState, error)
+	) (securecontent.TransferState, error)
 	Download(
 		ctx context.Context,
 		authenticated valueobject.Endpoint,
@@ -179,7 +180,7 @@ func (h *AttachmentHandler) Status(
 		ReceivedChunkBitmap: append([]byte(nil), upload.ReceivedChunkBitmap...),
 		ExpiresAt:           timestamppb.New(upload.ExpiresAt.UTC()),
 	}
-	if upload.State == attachment.TransferStateComplete {
+	if upload.State == securecontent.TransferStateComplete {
 		response.Object = descriptorToProto(attachment.Object{
 			ObjectID:       upload.ObjectID,
 			StorageRef:     upload.StorageRef,
@@ -444,9 +445,9 @@ func uploadSpecFromProto(
 		MediaType:      wire.GetMediaType(),
 		ChunkSize:      wire.GetChunkSize(),
 		ChunkCount:     wire.GetChunkCount(),
-		Encryption:     attachment.EncryptionSuite(wire.GetEncryptionSuite()),
+		Encryption:     securecontent.EncryptionSuite(wire.GetEncryptionSuite()),
 		TagSize:        wire.GetTagSize(),
-		NonceStrategy:  attachment.NonceStrategy(wire.GetNonceStrategy()),
+		NonceStrategy:  securecontent.NonceStrategy(wire.GetNonceStrategy()),
 		ChunkHashes:    chunkHashes,
 	}, nil
 }
@@ -473,7 +474,7 @@ func descriptorToProto(object attachment.Object) *chat.EncryptedObjectDescriptor
 }
 
 func transferStateToProto(
-	state attachment.TransferState,
+	state securecontent.TransferState,
 ) chat.AttachmentTransferState {
 	return chat.AttachmentTransferState(state)
 }

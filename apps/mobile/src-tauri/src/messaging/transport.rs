@@ -4,7 +4,7 @@ use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use messaging_core::attachment::{
     AttachmentTransferFailure, AttachmentTransferRecord, AttachmentTransferTransport,
-    EncryptedAttachmentChunk, PreparedAttachmentUpload, ATTACHMENT_TAG_SIZE,
+    PreparedAttachmentUpload,
 };
 use messaging_core::crypto::prekeys::PreKeyTransport;
 use messaging_core::identity::DeviceEnrollmentTransport;
@@ -45,6 +45,9 @@ use messaging_core::proto::{actor_device_ptid, actor_device_ref};
 use prost::Message;
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, IF_MATCH, RANGE, RETRY_AFTER};
+use secure_content_core::object::{
+    EncryptedObjectChunk as EncryptedAttachmentChunk, OBJECT_TAG_SIZE as ATTACHMENT_TAG_SIZE,
+};
 use zeroize::Zeroizing;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);

@@ -8,9 +8,11 @@ pub use messaging_core::codec::private_content::{
 pub(super) fn test_attachment_metadata(
     attachment_id: &str,
 ) -> crate::model::chat::AttachmentPlaintextMetadata {
-    use super::attachment::{ATTACHMENT_CHUNK_SIZE, ATTACHMENT_TAG_SIZE};
     use crate::model::chat::{
         AttachmentEncryptionSuite, AttachmentNonceStrategy, EncryptedObjectDescriptor,
+    };
+    use secure_content_core::object::{
+        OBJECT_CHUNK_SIZE as ATTACHMENT_CHUNK_SIZE, OBJECT_TAG_SIZE as ATTACHMENT_TAG_SIZE,
     };
     use sha2::{Digest, Sha256};
 

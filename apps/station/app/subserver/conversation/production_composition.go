@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	attachmentapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/attachment"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/command"
 	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
@@ -42,13 +43,6 @@ const (
 	defaultProductionQueueAttempts           = 8
 	defaultProductionQueueRetryInitial       = time.Second
 	defaultProductionQueueRetryMaximum       = time.Minute
-	defaultProductionAttachmentUploadTTL     = 24 * time.Hour
-	defaultProductionAttachmentObjectTTL     = 24 * time.Hour
-	defaultProductionAttachmentVerifyLease   = time.Hour
-	defaultProductionAttachmentCleanupLease  = 5 * time.Minute
-	defaultProductionAttachmentActive        = 4
-	defaultProductionAttachmentParts         = 4
-	defaultProductionAttachmentCleanupBatch  = 100
 	defaultProductionTypingPulseInterval     = 3 * time.Second
 	defaultProductionTypingTTL               = 10 * time.Second
 	defaultProductionTypingClockSkew         = time.Minute
@@ -235,13 +229,13 @@ func DefaultProductionCompositionConfig(
 			MaxRetryDelay:  defaultProductionQueueRetryMaximum,
 		},
 		AttachmentPolicy: attachmentapp.Policy{
-			UploadTTL:               defaultProductionAttachmentUploadTTL,
-			UnattachedObjectTTL:     defaultProductionAttachmentObjectTTL,
-			VerificationLeaseTTL:    defaultProductionAttachmentVerifyLease,
-			CleanupLeaseTTL:         defaultProductionAttachmentCleanupLease,
-			MaximumActiveUploads:    defaultProductionAttachmentActive,
-			MaximumConcurrentParts:  defaultProductionAttachmentParts,
-			MaximumCleanupBatchSize: defaultProductionAttachmentCleanupBatch,
+			UploadTTL:               securecontent.MaximumUploadTTL,
+			UnattachedObjectTTL:     securecontent.MaximumUnattachedObjectTTL,
+			VerificationLeaseTTL:    securecontent.MaximumVerificationLeaseTTL,
+			CleanupLeaseTTL:         securecontent.MaximumCleanupLeaseTTL,
+			MaximumActiveUploads:    securecontent.MaximumActiveUploadCount,
+			MaximumConcurrentParts:  securecontent.MaximumConcurrentPartCount,
+			MaximumCleanupBatchSize: securecontent.MaximumCleanupBatchSize,
 		},
 		InteractionPolicy: interactionapp.Policy{
 			MinimumPulseInterval:   defaultProductionTypingPulseInterval,
