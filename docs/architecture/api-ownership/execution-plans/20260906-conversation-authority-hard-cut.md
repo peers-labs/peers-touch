@@ -1497,3 +1497,39 @@ switch/disconnect clearing, removed-member rejection, revoked-device
 rejection, and zero durable typing writes all pass. Runtime and Provisioner
 cleanup are complete. CA-W6 now advances serially to the exact-source W8C
 Group/MLS journey before the Social-before-Chat/Contacts cells.
+
+Exact-source W8C run
+`20260914T001708329983Z-f3bc5aff5c7a5eef6ec66deedfad4aea`
+at `3ec14ada443728f440ea88b565df44c787c41144` proves identity/avatar
+parity, MLS readiness, visible three-member Group creation, encrypted delivery
+to both remote members, and restart recovery. Conversation Authority then
+commits Charlie's removal at sequence three, but Alice and Bob retain the stale
+three-member projection until the Gate times out. Cleanup is `DONE/PROVEN`;
+CA-W6 remains `PARTIAL/UNPROVEN`.
+
+Runtime readback identifies two contract-preservation defects. The Station
+federation decoder reconstructs the committed membership event without
+`mls_commit_sha256`, so canonical re-sealing rejects the event and remote
+delivery retries after target HTTP `500`. Independently, portable MLS inbound
+processing supplies no authority snapshot projection for an ordinary
+sender/recipient membership commit, so Desktop commits epochs without replacing
+`messaging_conversation_members`.
+
+CA-W6 mechanically admits the owner-layer remediation already defined by the
+canonical post-state contract: Station preserves every membership-event hash
+field across federation wire round-trip; portable Messaging Core derives the
+complete authoritative member projection for retained endpoints and the
+sender; Desktop atomically replaces conversation metadata and members with the
+MLS transition commit. The removed endpoint retains the existing retirement
+path. Focused Station, Messaging Core, and Desktop regressions, checkpoint
+deployment, and the bounded W8C rerun remain required.
+
+The remediation passes source verification: the complete Conversation package
+race suite, all 119 portable Messaging Core tests, the two Desktop
+sender/recipient atomic-member-replacement regressions, Desktop binary
+compilation, both Rust formatting checks, Go formatting, `go vet`, and
+`git diff --check` pass. The repository-wide Go style script remains red on its
+existing missing-doc-comment backlog; the new exported regression has the
+required comment. This is `SOURCE_CHECK` only. CA-W6 remains
+`PARTIAL/UNPROVEN` pending exact-source deployment to `four` and `fiveArm` and
+the bounded W8C Native rerun.

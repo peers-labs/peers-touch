@@ -6467,3 +6467,35 @@ or worktree creation is implied by MP-D31/MP-D32 acceptance.
   denial, and zero durable typing writes pass; runtime and Provisioner cleanup
   are complete. NDR-W8B is done. The serial runtime frontier advances to
   NDR-W8C.
+- Exact-source W8C run
+  `20260914T001708329983Z-f3bc5aff5c7a5eef6ec66deedfad4aea`
+  at `3ec14ada443728f440ea88b565df44c787c41144` proves identity/avatar
+  parity, MLS readiness, visible three-member Group creation, encrypted
+  delivery to both remote members, and restart recovery. The authority then
+  commits Charlie's removal at sequence three, but Alice and Bob retain the
+  stale three-member projection until the Gate times out. Cleanup is
+  `DONE/PROVEN`; W8C remains `PARTIAL/UNPROVEN`.
+- Runtime readback identifies two owner-layer defects behind that stale
+  projection. The Station federation decoder reconstructs a committed
+  membership event without its `mls_commit_sha256`, so canonical re-sealing
+  rejects the event and remote delivery retries after target HTTP `500`.
+  Independently, portable MLS inbound processing returns no authority snapshot
+  projection for an ordinary sender/recipient membership commit, so Desktop
+  updates epochs but not `messaging_conversation_members`.
+- Mechanical W8C remediation is admitted under the existing authority
+  post-state contract: Station must preserve every event-hash field during
+  membership wire round-trip, portable Messaging Core must derive the complete
+  authoritative member projection for retained endpoints and the sender, and
+  Desktop must replace conversation metadata/members atomically with the MLS
+  transition commit. The removed endpoint keeps the existing retirement path.
+  Focused Station, Messaging Core, and Desktop regressions, checkpoint
+  deployment, and the bounded W8C rerun are required.
+- The owner-layer remediation passes source verification: the complete
+  Conversation package race suite, all 119 portable Messaging Core tests, the
+  two Desktop sender/recipient atomic-member-replacement regressions, Desktop
+  binary compilation, both Rust formatting checks, Go formatting, `go vet`,
+  and `git diff --check` pass. The repository-wide Go style script remains red
+  on its existing missing-doc-comment backlog; the new exported regression has
+  the required comment. This is `SOURCE_CHECK` only. Exact-source deployment to
+  `four` and `fiveArm` and the bounded W8C Native rerun remain required for
+  `FUNCTIONAL_PASS`.

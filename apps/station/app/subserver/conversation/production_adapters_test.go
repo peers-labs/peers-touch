@@ -20,6 +20,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/entity"
 	domainevent "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
 	domainservice "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/service"
@@ -231,6 +232,105 @@ func TestProductionIdentityAndFederationAdaptersUseOwnerTruth(t *testing.T) {
 	)
 	if !conversationdomain.IsCode(err, conversationdomain.ErrorCodeProposalSignature) {
 		t.Fatalf("invalid signature error = %v", err)
+	}
+}
+
+// TestProductionMembershipEventWireRoundTripPreservesCanonicalHash verifies that
+// federation decoding retains every field covered by the authority event hash.
+func TestProductionMembershipEventWireRoundTripPreservesCanonicalHash(t *testing.T) {
+	owner := valueobject.Endpoint{
+		Actor:  "ptid:wire-owner",
+		Device: "owner-device",
+	}
+	mlsCommitHash := valueobject.HashBytes([]byte("wire-mls-commit"))
+	commandBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		&chatmodel.ChatCommand{
+			CommandId:      "wire-membership-remove",
+			ConversationId: "wire-membership-group",
+			Sender: &chatmodel.CryptoEndpoint{
+				Ptid:     string(owner.Actor),
+				DeviceId: string(owner.Device),
+			},
+			Payload: &chatmodel.ChatCommand_MembershipTransition{
+				MembershipTransition: &chatmodel.MembershipTransitionIntent{
+					TransitionId:        "wire-membership-transition",
+					FromMembershipEpoch: 1,
+					FromMlsEpoch:        1,
+					ToMlsEpoch:          2,
+					MlsCommitSha256:     mlsCommitHash.Bytes(),
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := (conversationhttp.ProtobufEventSealer{}).Seal(
+		domainevent.RecordInput{
+			ID:               "wire-membership-event",
+			ConversationID:   "wire-membership-group",
+			Sequence:         2,
+			CommandID:        "wire-membership-remove",
+			Actor:            owner,
+			PreviousHash:     valueobject.HashBytes([]byte("wire-previous-event")),
+			CommittedAt:      productionAdapterTestTime,
+			MembershipEpoch:  2,
+			MLSEpoch:         2,
+			AuthorityStation: "station-authority",
+			DeliveryCommitments: []valueobject.Hash{
+				valueobject.HashBytes([]byte("wire-delivery")),
+			},
+			Fact: domainevent.Fact{
+				Kind:    domainevent.KindMembershipCommitted,
+				Payload: commandBytes,
+				MembershipChanges: []entity.MembershipChange{{
+					Action: entity.MembershipActionRemoveActor,
+					Actor:  "ptid:wire-member",
+				}},
+				PostState: &domainevent.ConversationState{
+					Kind:           valueobject.ConversationKindGroup,
+					FederationID:   "wire-federation",
+					AuthorityEpoch: 1,
+					Owner:          owner.Actor,
+					Settings: valueobject.ConversationSettings{
+						Name: "Wire group",
+					},
+					ActiveMembers: []entity.Member{{
+						Actor:       owner.Actor,
+						Role:        valueobject.MemberRoleOwner,
+						Status:      valueobject.MemberStatusActive,
+						HomeStation: "station-authority",
+						JoinedAt:    1,
+					}},
+					ActiveEndpoints: []valueobject.Endpoint{owner},
+					ActiveDevices: []entity.MemberDevice{{
+						Endpoint:    owner,
+						HomeStation: "station-authority",
+						Active:      true,
+						JoinedAt:    1,
+					}},
+					MembershipEpoch: 2,
+					MLSEpoch:        2,
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := conversationhttp.MapEvent(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := productionRecordFromWire(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := domainevent.Verify(
+		decoded,
+		conversationhttp.ProtobufEventSealer{},
+	); err != nil {
+		t.Fatalf("verify federated membership event round-trip: %v", err)
 	}
 }
 

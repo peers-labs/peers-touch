@@ -1711,6 +1711,7 @@ func productionFactFromWire(
 				FromMembershipEpoch: transition.GetFromMembershipEpoch(),
 				FromMlsEpoch:        transition.GetFromMlsEpoch(),
 				ToMlsEpoch:          transition.GetToMlsEpoch(),
+				MlsCommitSha256:     append([]byte(nil), transition.GetMlsCommitSha256()...),
 				LeaveIntentId:       transition.GetLeaveIntentId(),
 			},
 		}
