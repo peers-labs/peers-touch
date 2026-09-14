@@ -56,6 +56,46 @@ WAIT_TICK = threading.Event()
 DEFAULT_TIMEOUT = float(os.environ.get("PT_AGENT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 
 
+# #region debug-point A-D:c08-station-latency
+def report_c08_latency_debug(
+    hypothesis_id: str,
+    message: str,
+    data: Mapping[str, object],
+) -> None:
+    try:
+        debug_env = load_env_file(
+            REPO_ROOT / ".dbg" / "c08-station-latency.env"
+        )
+        endpoint = debug_env.get("DEBUG_SERVER_URL", "")
+        session_id = debug_env.get(
+            "DEBUG_SESSION_ID",
+            "c08-station-latency",
+        )
+        if not endpoint:
+            return
+        request = urllib.request.Request(
+            endpoint,
+            data=json.dumps(
+                {
+                    "sessionId": session_id,
+                    "runId": "pre-fix",
+                    "hypothesisId": hypothesis_id,
+                    "location": "native_agent_runner.py",
+                    "msg": f"[DEBUG] {message}",
+                    "data": dict(data),
+                    "ts": time.time_ns() // 1_000_000,
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=0.25):
+            pass
+    except Exception:
+        pass
+# #endregion
+
+
 class JourneyError(RuntimeError):
     """Fail-closed product journey error."""
 
@@ -227,6 +267,20 @@ class AgentNativeJourney:
         self.station_transport_url = (
             self.proxy.url if self.proxy is not None else self.station_url
         )
+        report_c08_latency_debug(
+            "A-B",
+            "transport-selected",
+            {
+                "journey": journey,
+                "transportKind": (
+                    "fault-proxy" if self.proxy is not None else "direct"
+                ),
+                "sourceCommit": self.runtime_manifest.get("source", {}).get(
+                    "commit",
+                    "",
+                ),
+            },
+        )
         self.tauri_driver: TauriSession | None = None
         self.desktop_log_bytes = b""
         self.driver: Any = None
@@ -239,6 +293,11 @@ class AgentNativeJourney:
 
     def step(self, name: str, operation: Callable[[], Any]) -> Any:
         started = time.monotonic()
+        report_c08_latency_debug(
+            "B-C-D",
+            "step-started",
+            {"journey": self.journey, "step": name},
+        )
         entry: dict[str, Any] = {
             "step": name,
             "status": "running",
@@ -252,6 +311,15 @@ class AgentNativeJourney:
                 completedAt=now_iso(),
                 durationMs=int((time.monotonic() - started) * 1000),
             )
+            report_c08_latency_debug(
+                "B-C-D",
+                "step-passed",
+                {
+                    "journey": self.journey,
+                    "step": name,
+                    "durationMs": entry["durationMs"],
+                },
+            )
             return result
         except Exception as error:
             entry.update(
@@ -259,6 +327,16 @@ class AgentNativeJourney:
                 completedAt=now_iso(),
                 durationMs=int((time.monotonic() - started) * 1000),
                 error=str(error),
+            )
+            report_c08_latency_debug(
+                "B-C-D",
+                "step-failed",
+                {
+                    "journey": self.journey,
+                    "step": name,
+                    "durationMs": entry["durationMs"],
+                    "errorType": type(error).__name__,
+                },
             )
             raise
 
@@ -356,6 +434,7 @@ class AgentNativeJourney:
         return result
 
     def verify_station_transport_health(self) -> dict[str, Any]:
+        started = time.monotonic()
         if self.proxy is not None:
             require(
                 self.proxy.is_alive,
@@ -371,6 +450,18 @@ class AgentNativeJourney:
             and str(payload.get("build_commit") or "").lower()
             not in {"", "unknown"},
             "Station transport does not preserve runtime identity",
+        )
+        report_c08_latency_debug(
+            "B",
+            "station-health-passed",
+            {
+                "journey": self.journey,
+                "transportKind": (
+                    "fault-proxy" if self.proxy is not None else "direct"
+                ),
+                "durationMs": int((time.monotonic() - started) * 1000),
+                "buildCommitPresent": bool(payload.get("build_commit")),
+            },
         )
         result = {
             "transportKind": (
