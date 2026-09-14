@@ -209,7 +209,10 @@ func CORSMiddleware() app.HandlerFunc {
 			ctx.Header("Access-Control-Allow-Origin", origin)
 			ctx.Header("Access-Control-Allow-Credentials", "true")
 			ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			ctx.Header("Access-Control-Allow-Headers", "Accept, Content-Type, Authorization")
+			ctx.Header(
+				"Access-Control-Allow-Headers",
+				"Accept, Content-Type, Authorization, X-Device-ID, Last-Event-ID",
+			)
 			ctx.Header("Access-Control-Max-Age", "600")
 		}
 

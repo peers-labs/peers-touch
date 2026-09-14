@@ -1831,3 +1831,23 @@ parallel. Instrumentation, checkpoint integration, deployment to `four` and
 `fiveArm`, and the shared simulator Journey remain serial because they mutate
 or consume the same Station binaries, profiles, databases, and Mobile fixture.
 CA-W6 remains `PARTIAL/UNPROVEN`; CA-W7 remains pending.
+
+Instrumented run
+`20260914T184820972545Z-1059580805530d7bafc1f022035b73e2`
+rejects a Conversation or Federation delivery defect. The remote typing frame
+returns `disposition=1`, `errorCode=0`, and `error=<nil>`. The receiver Home
+Station then publishes Bob's typing event with `subscriberCount=0` and
+`deliveredCount=0`. Both Mobile WebViews repeatedly fail their realtime fetch
+before receiving an HTTP response.
+
+The shared Station CORS preflight allowed `Authorization` but omitted the
+canonical `/events/stream` request header `X-Device-ID`; the architecture also
+reserves `Last-Event-ID` for device-scoped resume. Browser enforcement
+therefore rejected the stream before the GET reached Station. CA-W6
+mechanically admits the shared HTTP-boundary correction: include both canonical
+realtime headers in `Access-Control-Allow-Headers`, with a focused middleware
+regression. This does not change Conversation authority, event persistence,
+Federation routing, or production HTTPS policy. Focused Hertz/EventBus/
+Federation race tests, focused `go vet`, Mobile TypeScript, and
+`git diff --check` pass. Checkpoint deployment and the same product Journey
+remain required.
