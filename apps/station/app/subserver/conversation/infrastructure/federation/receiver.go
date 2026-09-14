@@ -221,6 +221,7 @@ func (r *Receiver) receiveAuthorityCommand(
 		ctx,
 		transaction,
 		proposal.GetActorPtid(),
+		frame.GetSourceStationPeerId(),
 		proposal.GetActorDeviceId(),
 		proposal.GetActorSigningKeyId(),
 	)

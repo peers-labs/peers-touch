@@ -1720,3 +1720,29 @@ It does not add a delay, weaken required-action checks, retry a business
 action, or alter Mobile product lifecycle semantics. Focused simulator driver
 tests must prove that a stale pre-refresh document is rejected before the
 Social Journey reruns.
+
+WebView-rebinding checkpoint
+`d99dea349fcc46b69b0c7d66cec25f6be1423dd4` was deployed to both
+Stations. Run
+`20260914T163611195734Z-37c751b57c3e2c460af8b02b0f7a0744`
+passed the refreshed-document boundary and again reached receiver delivery. The
+previous `actor_acct` persistence failure is absent, proving that Social no
+longer writes the legacy Actor Device projection, but the receiver still
+returns retryable `OVERLOADED`.
+
+Live readback during the next bounded reproduction showed one local device on
+each Station, a sender outbox retrying the Social frame, and no remote Actor
+cache or receiver command/inbox row. The Actor Identity capability therefore
+fails before hydration because its old method first inferred the remote Home
+Station from a pre-existing local projection. That is incompatible with the
+accepted cold-receiver path, where the authenticated Federation frame is the
+Home Station claim and no remote shadow Actor is required.
+
+CA-W6 mechanically extends the internal Actor Identity key-resolution
+capability with an explicit expected Home Station peer ID. Social passes the
+command's frame-authenticated source Station; Conversation passes its
+frame-authenticated source Station. Actor Identity validates that value,
+rejects conflicts with any established device route, and can hydrate a cold
+receiver directly from the signed locator/profile chain. Focused coverage must
+prove cold hydration without a `touch_actor` remote row and fail closed when a
+persisted key conflicts with the expected Home Station.

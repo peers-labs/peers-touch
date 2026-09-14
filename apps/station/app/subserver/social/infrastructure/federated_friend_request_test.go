@@ -1656,15 +1656,12 @@ func (f friendRequestActorKeyResolverFunc) ResolveVerifiedActorDeviceSigningKey(
 	ctx context.Context,
 	transaction delivery.Transaction,
 	actorPTID string,
+	homeStationPeerID string,
 	deviceID string,
 	signingKeyID string,
 ) (*model.VerifiedActorDeviceSigningKey, error) {
 	if transaction == nil || transaction.DB() == nil {
 		return nil, errors.New("missing bound Social transaction")
-	}
-	homeStationPeerID := stationA
-	if actorPTID == bobPTID {
-		homeStationPeerID = stationB
 	}
 	keys, err := f(ctx, actorPTID, homeStationPeerID)
 	if err != nil {

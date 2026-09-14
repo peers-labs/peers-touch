@@ -740,6 +740,7 @@ func (p productionLazyActorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
 	actorPTID string,
+	expectedHomeStationPeerID string,
 	deviceID string,
 	signingKeyID string,
 ) (*actormodel.VerifiedActorDeviceSigningKey, error) {
@@ -752,6 +753,7 @@ func (p productionLazyActorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 		ctx,
 		transaction,
 		actorPTID,
+		expectedHomeStationPeerID,
 		deviceID,
 		signingKeyID,
 	)

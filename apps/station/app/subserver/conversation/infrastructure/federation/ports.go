@@ -35,6 +35,7 @@ type VerifiedActorDeviceKeyResolver interface {
 		ctx context.Context,
 		transaction federationdelivery.Transaction,
 		actorPTID string,
+		expectedHomeStationPeerID string,
 		deviceID string,
 		signingKeyID string,
 	) (*actormodel.VerifiedActorDeviceSigningKey, error)

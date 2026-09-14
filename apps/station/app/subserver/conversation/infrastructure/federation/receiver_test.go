@@ -1319,6 +1319,7 @@ func (p *recordingActorKeyProjection) ResolveVerifiedActorDeviceSigningKey(
 	_ context.Context,
 	transaction federationdelivery.Transaction,
 	actorPTID string,
+	expectedHomeStationPeerID string,
 	deviceID string,
 	signingKeyID string,
 ) (*actormodel.VerifiedActorDeviceSigningKey, error) {
@@ -1329,6 +1330,7 @@ func (p *recordingActorKeyProjection) ResolveVerifiedActorDeviceSigningKey(
 	defer p.mu.Unlock()
 	p.calls++
 	if p.key.GetActorPtid() != actorPTID ||
+		p.key.GetHomeStationPeerId() != expectedHomeStationPeerID ||
 		p.key.GetActorDeviceId() != deviceID ||
 		p.key.GetSigningKeyId() != signingKeyID {
 		return nil, nil

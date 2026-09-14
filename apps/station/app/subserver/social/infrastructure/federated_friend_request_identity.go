@@ -20,6 +20,7 @@ type FriendRequestActorKeyResolver interface {
 		ctx context.Context,
 		transaction delivery.Transaction,
 		actorPTID string,
+		expectedHomeStationPeerID string,
 		deviceID string,
 		signingKeyID string,
 	) (*model.VerifiedActorDeviceSigningKey, error)
@@ -97,6 +98,7 @@ func verifyFriendRequestCommandSignature(
 			ctx,
 			transaction,
 			device.GetActor().GetPtid(),
+			claimedHomeStationPeerID,
 			device.GetDeviceId(),
 			signingKeyID,
 		)

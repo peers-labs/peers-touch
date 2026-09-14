@@ -51,6 +51,7 @@ func (actorDeviceKeyPort) ResolveVerifiedActorDeviceSigningKey(
 	ctx context.Context,
 	transaction delivery.Transaction,
 	actorPTID string,
+	expectedHomeStationPeerID string,
 	deviceID string,
 	signingKeyID string,
 ) (*model.VerifiedActorDeviceSigningKey, error) {
@@ -66,6 +67,7 @@ func (actorDeviceKeyPort) ResolveVerifiedActorDeviceSigningKey(
 		ctx,
 		transaction,
 		actorPTID,
+		expectedHomeStationPeerID,
 		deviceID,
 		signingKeyID,
 	)

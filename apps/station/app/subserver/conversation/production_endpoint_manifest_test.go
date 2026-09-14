@@ -249,6 +249,7 @@ func (productionManifestTestActorCapabilities) ResolveVerifiedActorDeviceSigning
 	string,
 	string,
 	string,
+	string,
 ) (*actormodel.VerifiedActorDeviceSigningKey, error) {
 	return nil, errors.New("device signing key resolution is outside this test")
 }
