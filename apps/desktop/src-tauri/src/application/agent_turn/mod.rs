@@ -1707,10 +1707,13 @@ fn emit_resolved_error_to(
 }
 
 fn station_stream_error_payload(provider_id: &str, data: Value) -> Value {
-    let typed = data
-        .get("error_type")
-        .and_then(Value::as_str)
-        .is_some_and(|value| !value.trim().is_empty());
+    let has_error_type = |payload: &Value| {
+        payload
+            .get("error_type")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+    };
+    let typed = has_error_type(&data) || data.get("outcome_error").is_some_and(has_error_type);
     if typed {
         return data;
     }
@@ -2666,6 +2669,30 @@ mod tests {
             "details": {
                 "attachment_id": "attachment-1",
                 "reason_code": "attachment_content_does_not_match_mime",
+            },
+        });
+
+        assert_eq!(
+            station_stream_error_payload("bytedance-ark", payload.clone()),
+            payload,
+        );
+    }
+
+    #[test]
+    fn station_stream_error_preserves_nested_typed_outcome_contract() {
+        let payload = json!({
+            "type": "error",
+            "error": "CLIENT_INVALID_RESOURCE_REFERENCE",
+            "outcome_error": {
+                "error": "agent.errors.invalidResourceReference",
+                "error_type": "CLIENT_INVALID_RESOURCE_REFERENCE",
+                "locale_key": "agent.errors.invalidResourceReference",
+                "retryable": false,
+                "terminal": true,
+                "details": {
+                    "resource_kind": "file",
+                    "resource_ref_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                },
             },
         });
 

@@ -1533,6 +1533,17 @@ and zero local-path leakage.
     Go style, and `git diff --check` pass. This is source evidence only; the
     product Journey remains below `FUNCTIONAL_PASS` until exact-source
     deployment and native receiver verification complete.
+  - Checkpoint `60588d8475b9340743cbf744bc48068e989dbd13` deployed
+    successfully. Live PostgreSQL reports `status character varying(64)`, and
+    the real PREPARED and FAILED receipt rows were both accepted with their
+    full generated enum strings. Station persisted the exact nested
+    `CLIENT_INVALID_RESOURCE_REFERENCE` Turn event.
+  - The same native run first failed at the Desktop receiver because
+    `station_stream_error_payload` preserved only top-level typed errors and
+    reclassified a valid nested `outcome_error` as a provider failure. The
+    Desktop Rust transport now preserves either canonical shape; both focused
+    Rust regression cases pass. Exact-source rebuild and Journey reproof remain
+    pending.
 
 #### G-FE1 Concurrency Decision
 
