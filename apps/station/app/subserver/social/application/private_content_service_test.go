@@ -940,8 +940,12 @@ func (k *privateContentTestKeyExchange) ClaimContentPreKeys(
 	response := &securecontentpb.ClaimContentPreKeysResponse{}
 	for index, target := range request.GetTargets() {
 		prekey := &securecontentpb.ContentOneTimePreKey{
-			Kind:                   target.GetKind(),
-			KeyId:                  fmt.Sprintf("prekey-%02d", index),
+			Kind: target.GetKind(),
+			KeyId: fmt.Sprintf(
+				"prekey-%02d-%02d",
+				k.claimCalls,
+				index,
+			),
 			X25519PublicKey:        bytes.Repeat([]byte{byte(index + 1)}, 32),
 			ProfileOrRecoveryEpoch: uint64(index + 1),
 			IssuerSignature:        bytes.Repeat([]byte{byte(index + 11)}, 64),
@@ -961,7 +965,11 @@ func (k *privateContentTestKeyExchange) ClaimContentPreKeys(
 			}
 		}
 		response.Claims = append(response.Claims, &securecontentpb.ClaimedContentPreKey{
-			ClaimId: fmt.Sprintf("claim-%02d", index),
+			ClaimId: fmt.Sprintf(
+				"claim-%02d-%02d",
+				k.claimCalls,
+				index,
+			),
 			Target: proto.Clone(
 				target,
 			).(*securecontentpb.ContentPreKeyClaimTarget),

@@ -186,6 +186,10 @@ type PrivateContentUnitOfWork interface {
 type PrivateContentStore interface {
 	PrivateContentUnitOfWork
 	Migrate(context.Context) error
+	ListRecoverablePrivateContent(
+		context.Context,
+		RecoverablePrivateContentQuery,
+	) ([]RecoverablePrivateContentRecord, error)
 	FindPrepare(
 		context.Context,
 		string,

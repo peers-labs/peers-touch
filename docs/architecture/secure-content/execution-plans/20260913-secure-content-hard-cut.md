@@ -1418,6 +1418,18 @@ Current evidence:
   exact-source `FUNCTIONAL_CHECK/PASS` for `sc-dj-social-uow-atomicity` at
   `~/.peers-touch/dev/workspaces/9eb2cb904c9ae460/development/secure-content/W6/SC-AS16/result.json`.
   W6 is complete; formal Acceptance remains `NOT_RUN`.
+- W5 source implementation now matches accepted `SC-D16`: the portable Rust
+  core derives the canonical recovery master and one-time recovery PreKey,
+  verifies the claimed X25519 public key before HPKE open, zeroizes secret
+  material, and passes the fixed master/private/public/envelope vectors plus
+  wrong phrase/actor/epoch/key cases. Social adds the authenticated
+  `/api/v1/social/moments/recoverable` query with current grant/FRIENDS/block/
+  delete and parent authorization, author self-recovery, exact actor-recovery
+  envelope projection, actor-bound nanosecond cursor pagination, restart and
+  denial tests. Recovery/Social race suites, Go vet/style, six Rust recovery
+  tests, 18 Development runner/work-item tests and independent Rust/Go source
+  reviews pass. W5 remains `in progress` until a clean checkpoint and the
+  exact-source `sc-dj-recovery-consumer` service Journey pass.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level
