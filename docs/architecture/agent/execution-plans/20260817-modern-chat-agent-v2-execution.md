@@ -1466,8 +1466,8 @@ and zero local-path leakage.
 #### G-FE1 DevelopmentWorkItem: Invalid Client Resource Reference
 
 - **ID**: `G-FE1-INVALID-RESOURCE-REF`.
-- **Status**: `IMPLEMENTING`; product failure path, focused checks, exact-source
-  functional evidence, and Foundation promotion are pending.
+- **Status**: `FOCUSED_PASS`; exact-source functional evidence and Foundation
+  promotion are pending.
 - **Product Journeys**: `MCA-J05 Use A Governed Tool` and `MCA-J06 Work With
   Files And Images`; this work implements only the accepted invalid-resource
   failure and explicit recovery trigger.
@@ -1518,6 +1518,21 @@ and zero local-path leakage.
   and final Gates. Because the current wire contract already carries a string
   receipt error code and bounded result bytes, no Proto/generated change is
   required.
+- **Focused evidence (2026-09-14)**:
+  - Exact-source Development execution reached a real `local_file_read`
+    ToolCall, user approval, and Desktop PREPARED receipt submission, then
+    failed because production PostgreSQL rejected
+    `CLIENT_CAPABILITY_RECEIPT_STATUS_PREPARED` from the historical
+    `agent_tool_receipt_attempts.status varchar(32)` column.
+  - Station persistence now owns `varchar(64)` for receipt-attempt status and
+    runs an idempotent pre-`AutoMigrate` expansion that preserves historical
+    rows. The regression starts from `varchar(32)`, executes the migration
+    twice, verifies the retained row and new width, and stores the full
+    generated PREPARED status.
+  - Station persistence tests and Agent service tests pass; focused `go vet`,
+    Go style, and `git diff --check` pass. This is source evidence only; the
+    product Journey remains below `FUNCTIONAL_PASS` until exact-source
+    deployment and native receiver verification complete.
 
 #### G-FE1 Concurrency Decision
 
