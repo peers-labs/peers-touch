@@ -1746,3 +1746,30 @@ rejects conflicts with any established device route, and can hydrate a cold
 receiver directly from the signed locator/profile chain. Focused coverage must
 prove cold hydration without a `touch_actor` remote row and fail closed when a
 persisted key conflicts with the expected Home Station.
+
+Checkpoint `ed97ded5a9de41219fba75f83ce1b87d2b323a35` implements that
+cold-receiver capability and is deployed exactly to `four` and `fiveArm`.
+Exact-source run
+`20260914T172112484885Z-4b9b6bfdf6b1244eb8f221962cd711a5`
+clears the prior `actor_acct`, `OVERLOADED`, and stale-WebView boundaries:
+SEND reaches `fiveArm`, Bob's ACCEPT endpoint returns HTTP 200, and the
+accepted result returns to `four` through `/federation/delivery` with HTTP 200.
+The first remaining product failure is Alice's missing Direct Conversation.
+
+Live change-only database capture during run
+`20260914T180646012493Z-3c40e3f379af7f4497aa55a737b466de`
+proves the ACCEPT frame is not misaddressed. Its source and target are the
+attested `fiveArm` Station, its ordering sequence is 2, and its outbox attempt
+count advances while the row remains `retry_wait / transport_unavailable`.
+The SEND result frame from `fiveArm` to `four` is already delivered. CA-W6
+therefore admits a bounded shared-Federation diagnostic to distinguish a
+same-Station receiver failure from stale local-route classification; Mobile
+and Social target selection remain unchanged. This diagnostic is serial with
+the same Social Journey because both use the shared Station databases and
+simulator fixture.
+
+Run `20260914T180123805553Z-48c6437cc7e742b1197d57abc272bd7d`
+did not reach Social commands because the existing intermittent
+`mobile.lifecycle.teardownIncomplete` race recurred. That independent
+recoverable defect remains in the CA-W6 queue, but it does not replace the
+earlier post-accept convergence evidence.
