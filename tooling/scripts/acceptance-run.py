@@ -220,6 +220,7 @@ def environment_provisioner(
     environment_id: str,
     *,
     station_profiles: Mapping[str, str] | None = None,
+    service_profiles: Mapping[str, str] | None = None,
 ) -> Any | None:
     from tooling.acceptance.core import ENVIRONMENTS_DIR, EnvironmentContract
     from tooling.acceptance.provisioners import get_provisioner
@@ -230,6 +231,7 @@ def environment_provisioner(
     return get_provisioner(
         EnvironmentContract.from_yaml(contract_path),
         station_profiles=station_profiles,
+        service_profiles=service_profiles,
     )
 
 
@@ -246,6 +248,24 @@ def parse_station_profile_bindings(values: list[str]) -> dict[str, str]:
         if service_id in bindings:
             raise SystemExit(
                 f"--station-profile repeats service {service_id!r}"
+            )
+        bindings[service_id] = profile_name
+    return bindings
+
+
+def parse_service_profile_bindings(values: list[str]) -> dict[str, str]:
+    bindings: dict[str, str] = {}
+    for value in values:
+        service_id, separator, profile_name = value.partition("=")
+        service_id = service_id.strip()
+        profile_name = profile_name.strip()
+        if not separator or not service_id or not profile_name:
+            raise SystemExit(
+                "--service-profile must use SERVICE_ID=PROFILE"
+            )
+        if service_id in bindings:
+            raise SystemExit(
+                f"--service-profile repeats service {service_id!r}"
             )
         bindings[service_id] = profile_name
     return bindings
@@ -1669,11 +1689,18 @@ def main() -> int:
         default=[],
         metavar="SERVICE_ID=PROFILE",
     )
+    parser.add_argument(
+        "--service-profile",
+        action="append",
+        default=[],
+        metavar="SERVICE_ID=PROFILE",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--candidate-ref-out")
     parser.add_argument("--candidate-manifest-sha-out")
     args = parser.parse_args()
     station_profiles = parse_station_profile_bindings(args.station_profile)
+    service_profiles = parse_service_profile_bindings(args.service_profile)
     candidate_mode = bool(
         args.candidate_ref_out or args.candidate_manifest_sha_out
     )
@@ -1830,6 +1857,7 @@ def main() -> int:
                             provisioner = environment_provisioner(
                                 provisioner_id,
                                 station_profiles=station_profiles,
+                                service_profiles=service_profiles,
                             )
                             provisioner.bind_evidence_run(gate_run)
                             try:

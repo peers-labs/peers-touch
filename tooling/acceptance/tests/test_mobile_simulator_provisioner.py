@@ -664,6 +664,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
         provisioner = get_provisioner(
             contract,
             station_profiles=bindings,
+            service_profiles={"relay": "one"},
         )
 
         self.assertIsInstance(
@@ -673,6 +674,10 @@ class MobileSimulatorContractTests(unittest.TestCase):
         self.assertEqual(
             provisioner._required_station_profiles(),
             bindings,
+        )
+        self.assertEqual(
+            provisioner._required_service_profiles(),
+            {"relay": "one"},
         )
 
     def test_social_simulator_rejects_invalid_station_profile_sets(self) -> None:
@@ -702,6 +707,22 @@ class MobileSimulatorContractTests(unittest.TestCase):
                 )
                 with self.assertRaises(BlockedError):
                     provisioner._required_station_profiles()
+
+    def test_social_simulator_rejects_invalid_service_profile_sets(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+
+        for bindings in (
+            {"station-primary": "four"},
+            {"relay": "../one"},
+        ):
+            with self.subTest(bindings=bindings):
+                provisioner = get_provisioner(
+                    contract,
+                    service_profiles=bindings,
+                )
+                with self.assertRaises(BlockedError):
+                    provisioner._required_service_profiles()
 
     def test_social_simulator_injects_station_profiles_in_memory(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
@@ -756,6 +777,44 @@ class MobileSimulatorContractTests(unittest.TestCase):
             },
         )
         self.assertNotIn("PT_MOBILE_STATION_PRIMARY_URL", active)
+
+    def test_social_simulator_injects_relay_profile_in_memory(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        provisioner = MobileSocialSimulatorProvisioner(
+            contract,
+            service_profiles={"relay": "one"},
+        )
+        active = {
+            "PT_DEV_PROFILE": "four",
+            "PT_RELAY_URL": "https://stale-relay.example",
+            "PT_RELAY_DEPLOY_ENV": "relay",
+        }
+        with (
+            patch.object(Path, "is_file", return_value=True),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "load_env_file",
+                return_value={
+                    "PT_DEV_PROFILE": "one",
+                    "PT_RELAY_MODE": "remote",
+                    "PT_RELAY_URL": "https://relay.example",
+                    "PT_RELAY_HEALTH_URL": (
+                        "https://relay.example/healthz"
+                    ),
+                    "PT_RELAY_DEPLOY_ENV": "relay-1",
+                },
+            ),
+        ):
+            merged = provisioner._inject_service_profile_bindings(active)
+
+        self.assertEqual(merged["PT_RELAY_URL"], "https://relay.example")
+        self.assertEqual(merged["PT_RELAY_DEPLOY_ENV"], "relay-1")
+        self.assertEqual(
+            merged["PT_RELAY_HEALTH_URL"],
+            "https://relay.example/healthz",
+        )
+        self.assertEqual(active["PT_RELAY_DEPLOY_ENV"], "relay")
 
     def test_social_simulator_preserves_base_harness_actions(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"

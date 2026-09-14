@@ -86,6 +86,12 @@ MOBILE_SOCIAL_STATION_PROFILE_KEYS = {
         "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV",
     ),
 }
+MOBILE_SOCIAL_SERVICE_PROFILE_KEYS = {
+    "relay": (
+        "PT_RELAY_URL",
+        "PT_RELAY_DEPLOY_ENV",
+    ),
+}
 PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 IOS_LAYOUT_CLIENTS = {
     "sim-ios-compact": (
@@ -4925,6 +4931,7 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
         base_factory: Any = MobileSimulatorProvisioner,
         overlay_path: Path | None = None,
         station_profiles: Mapping[str, str] | None = None,
+        service_profiles: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(contract)
         self.base_factory = base_factory
@@ -4932,6 +4939,7 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
             ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
         )
         self._station_profiles = dict(station_profiles or {})
+        self._service_profiles = dict(service_profiles or {})
 
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
@@ -4957,6 +4965,7 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
                     resource="profile:station-mode",
                 )
             profile_env = self._inject_station_profile_bindings(profile_env)
+            profile_env = self._inject_service_profile_bindings(profile_env)
             service_specs = self._service_specs(profile_env)
             for service_id in ("station-primary", "station-secondary"):
                 _, station_url, deployment_environment, _ = service_specs[
@@ -4964,11 +4973,9 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
                 ]
                 verify_reset_target(station_url, deployment_environment)
             owner = f"acceptance:{gate_id}:{self._manifest.run_id}"
-            profile_leases = (
-                set(self._required_station_profiles().values())
-                if self._station_profiles
-                else {profile_name}
-            )
+            profile_leases = {profile_name}
+            profile_leases.update(self._required_station_profiles().values())
+            profile_leases.update(self._required_service_profiles().values())
             for leased_profile in sorted(profile_leases):
                 self.acquire_profile_lease(leased_profile, owner)
             for deployment_environment in {
@@ -5174,6 +5181,35 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
             )
         return dict(self._station_profiles)
 
+    def _required_service_profiles(self) -> dict[str, str]:
+        if not self._service_profiles:
+            return {}
+        expected = set(MOBILE_SOCIAL_SERVICE_PROFILE_KEYS)
+        provided = set(self._service_profiles)
+        missing = sorted(expected - provided)
+        unexpected = sorted(provided - expected)
+        if missing or unexpected:
+            detail = []
+            if missing:
+                detail.append(f"missing={','.join(missing)}")
+            if unexpected:
+                detail.append(f"unexpected={','.join(unexpected)}")
+            raise BlockedError(
+                reason=(
+                    "Mobile social service profiles must be specified at run "
+                    "time with --service-profile SERVICE_ID=PROFILE "
+                    f"({'; '.join(detail)})"
+                ),
+                resource="service-profile-bindings",
+            )
+        profile_name = self._service_profiles["relay"]
+        if not PROFILE_NAME_PATTERN.fullmatch(profile_name):
+            raise BlockedError(
+                reason=f"Invalid service profile name: {profile_name!r}",
+                resource="service-profile-bindings",
+            )
+        return dict(self._service_profiles)
+
     def _inject_station_profile_bindings(
         self,
         profile_env: Mapping[str, str],
@@ -5231,6 +5267,68 @@ class MobileSocialSimulatorProvisioner(EnvironmentProvisioner):
             ]
             merged[url_key] = station_url
             merged[deployment_key] = deployment_environment
+        return merged
+
+    def _inject_service_profile_bindings(
+        self,
+        profile_env: Mapping[str, str],
+    ) -> dict[str, str]:
+        merged = dict(profile_env)
+        for service_id, profile_name in self._required_service_profiles().items():
+            profile_path = (
+                REPO_ROOT
+                / ".local"
+                / "dev"
+                / "profiles"
+                / f"{profile_name}.env"
+            )
+            if not profile_path.is_file():
+                raise BlockedError(
+                    reason=(
+                        f"Mobile social service {service_id!r} requires runtime "
+                        f"profile {profile_name!r}"
+                    ),
+                    resource=f"service-profile:{service_id}",
+                )
+            service_env = load_env_file(profile_path)
+            declared_profile = service_env.get("PT_DEV_PROFILE", "").strip()
+            if declared_profile != profile_name:
+                raise BlockedError(
+                    reason=(
+                        f"Service profile {profile_name!r} declares "
+                        f"PT_DEV_PROFILE={declared_profile!r}"
+                    ),
+                    resource=f"service-profile:{service_id}",
+                )
+            if service_env.get("PT_RELAY_MODE", "").strip() != "remote":
+                raise BlockedError(
+                    reason=(
+                        f"Mobile social service {service_id!r} requires a "
+                        "remote Relay profile"
+                    ),
+                    resource=f"service-profile:{service_id}",
+                )
+            service_url = service_env.get("PT_RELAY_URL", "").rstrip("/")
+            deployment_environment = service_env.get(
+                "PT_RELAY_DEPLOY_ENV",
+                "",
+            ).strip()
+            if not service_url or not deployment_environment:
+                raise BlockedError(
+                    reason=(
+                        f"Service profile {profile_name!r} has no complete "
+                        "Relay endpoint/deployment binding"
+                    ),
+                    resource=f"service-profile:{service_id}",
+                )
+            url_key, deployment_key = MOBILE_SOCIAL_SERVICE_PROFILE_KEYS[
+                service_id
+            ]
+            merged[url_key] = service_url
+            merged[deployment_key] = deployment_environment
+            health_url = service_env.get("PT_RELAY_HEALTH_URL", "").strip()
+            if health_url:
+                merged["PT_RELAY_HEALTH_URL"] = health_url
         return merged
 
     def _service_specs(

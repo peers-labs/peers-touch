@@ -81,6 +81,22 @@ class AcceptanceRunTest(unittest.TestCase):
             with self.subTest(values=values), self.assertRaises(SystemExit):
                 module.parse_station_profile_bindings(values)
 
+    def test_service_profiles_are_explicit_runtime_bindings(self) -> None:
+        module = load_module()
+
+        self.assertEqual(
+            module.parse_service_profile_bindings(["relay=one"]),
+            {"relay": "one"},
+        )
+        for values in (
+            ["relay"],
+            ["relay="],
+            ["=one"],
+            ["relay=one", "relay=two"],
+        ):
+            with self.subTest(values=values), self.assertRaises(SystemExit):
+                module.parse_service_profile_bindings(values)
+
     def test_load_plan_uses_the_current_python_interpreter(self) -> None:
         module = load_module()
         store = mock.Mock()

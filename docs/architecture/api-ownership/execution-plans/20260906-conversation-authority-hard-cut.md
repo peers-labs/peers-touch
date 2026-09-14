@@ -1584,7 +1584,15 @@ Persisting a synthetic aggregate profile would violate the Development
 environment boundary. The mechanical remediation is therefore to admit the
 existing run-scoped `--station-profile` contract for
 `mobile-social-simulator`, resolve `station-primary=four` and
-`station-secondary=fiveArm` in memory, retain Relay from the active profile,
-and reject missing, unexpected, duplicate, non-remote, or identity-mismatched
-bindings. Focused Provisioner/runner tests, an exact-source checkpoint, Station
+`station-secondary=fiveArm` in memory, and reject missing, unexpected,
+duplicate, non-remote, or identity-mismatched bindings. The first bounded
+attempt reached reset target verification and then exposed a stale
+`PT_RELAY_DEPLOY_ENV=relay` value in both Station profiles; no such deployment
+source exists and the configured Relay endpoint is unavailable. The same
+run-scoped contract must therefore accept one explicit Relay profile, read only
+its Relay endpoint/deployment fields, and must not activate that profile's
+Station. The approved tuple is `station-primary=four`,
+`station-secondary=fiveArm`, and `relay=two`; profile `two` contributes only
+the Relay binding and no third Station is in scope.
+Focused Provisioner/runner tests, an exact-source checkpoint, Station
 attestation, and the two ordered CA-W6 simulator Gates remain required.
