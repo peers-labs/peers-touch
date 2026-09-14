@@ -185,7 +185,9 @@ planRef = docs/architecture/secure-content/execution-plans/20260913-secure-conte
 | `secure-content-w0r` | infrastructure | none; runtime prerequisite only | `LDCP-D01..D06/D08/D09` | machine registration and lease-control Journey | canonical Local Dev Control Plane only; exclude env creation/product runtime |
 | `secure-content-w14` | infrastructure | none; W1 preparation only | `SC-A01/SC-A03`; `SC-D02` | none | scoped generator and its isolated tests only; exclude proto/generated/runtime changes |
 | `secure-content-w1` | infrastructure | `SOC-SEC-C02/C03/C04/C05/C08`; `SOC-SEC-AS03/04/08/13/14/16` | `SC-A03/A04/A08`; `SC-D02/D05/D07/D09/D12` | `SOC-SEC-J01/J02/J03/J05/J06/J07` | allowlisted proto/generated consumers only; exclude unrelated generated output/runtime |
-| `secure-content-w2` | refactor | `MP-C13`; `MP-G13` | `SC-A01/A03`; `SC-D02/D03/D13`; `MP-D23` | `MP-J11` Desktop and Mobile Native | shared kernels + Chat internal adapters; exclude Chat wire/API/schema/behavior |
+| `secure-content-w2a` | refactor | `MP-C13`; `MP-G13` | `SC-A01/A03`; `SC-D02/D03/D13`; `MP-D23` | none | atomic shared kernels + Chat internal adapters and Journey modules; exclude runtime and Chat wire/API/schema/behavior |
+| `secure-content-w2b-desktop` | refactor | `MP-C13`; `MP-G13` | `SC-A01/A03`; `SC-D02/D03/D13`; `MP-D23` | `MP-J11` Desktop Native | read-only exact W2A checkpoint plus Desktop runtime proof |
+| `secure-content-w2b-mobile` | refactor | `MP-C13`; `MP-G13` | `SC-A01/A03`; `SC-D02/D03/D13`; `MP-D23` | `MP-J11` Mobile Native | read-only exact W2A checkpoint plus iOS/Android runtime proof |
 | `secure-content-w3` | infrastructure | `SOC-SEC-C04/C05`; `SOC-SEC-AS08/16` | `SC-A04/A08`; `SC-D05/D09/D12` | `SOC-SEC-J01/J07` | Content PreKeys only; exclude Direct/MLS |
 | `secure-content-w4` | infrastructure | `SOC-SEC-C03`; `SOC-SEC-AS04` | `SC-A05`; `SC-D08` | `SOC-SEC-J03` | Optional JWT plus generic Development runner bootstrap; exclude domain policy and later scenario logic |
 | `secure-content-w5` | infrastructure | `SOC-SEC-C04/C06/C08`; `SOC-SEC-AS08` | `SC-A02/A08`; `SC-D05/D09` | `SOC-SEC-J07` | recovery derivation/query; exclude Messaging history redesign |
@@ -603,6 +605,16 @@ git diff --check
   and shared vectors; thin Chat wire/domain adapters; unchanged Chat proto,
   routes, tables, UOW and grants; Desktop/Mobile Chat scenario modules consumed
   by the W4-owned dynamically discovered runner.
+- **Subphases**:
+  - `W2A`: one atomic source cut with no runtime claims. It adds both kernels,
+    migrates every Chat caller, deletes the old generic implementations, adds
+    the Desktop blob adapter to the declared scope, and checkpoints clean source.
+  - `W2B Desktop`: read-only source proof for
+    `sc-dj-chat-attachment-atomic` using the W2A checkpoint.
+  - `W2B Mobile`: read-only source proof for
+    `sc-dj-chat-attachment-mobile` using the same W2A checkpoint.
+  W2 remains `in progress` until both W2B results are current
+  `FUNCTIONAL_PASS`.
 - **Failure**: tamper, binding mismatch, invalid range, duplicate conflict,
   unsupported version, and over-limit input fail closed.
 - **Checks**:
@@ -621,12 +633,12 @@ make profile PROFILE=fiveArm
 make config
 make station
 python3 -m tooling.development.secure_content.run \
-  --runtime desktop --scenario chat-attachment-regression \
+  --runtime desktop --scenario chat-attachment \
   --profiles four,fiveArm \
   --clients four-alice,four-bob,fiveArm-alice,fiveArm-bob \
   --budget-seconds 1800
 python3 -m tooling.development.secure_content.run \
-  --runtime mobile --scenario chat-attachment-regression \
+  --runtime mobile --scenario chat-attachment-mobile \
   --profiles four,fiveArm \
   --clients secure-content-chat-ios-alice,secure-content-chat-ios-bob,secure-content-chat-android-alice,secure-content-chat-android-bob \
   --budget-seconds 3600
@@ -856,12 +868,12 @@ make profile PROFILE=fiveArm
 make config
 make station
 python3 -m tooling.development.secure_content.run \
-  --runtime desktop --scenario chat-attachment-regression \
+  --runtime desktop --scenario chat-attachment \
   --profiles four,fiveArm \
   --clients four-alice,four-bob,fiveArm-alice,fiveArm-bob \
   --budget-seconds 1800
 python3 -m tooling.development.secure_content.run \
-  --runtime mobile --scenario chat-attachment-regression \
+  --runtime mobile --scenario chat-attachment-mobile \
   --profiles four,fiveArm \
   --clients secure-content-chat-ios-alice,secure-content-chat-ios-bob,secure-content-chat-android-alice,secure-content-chat-android-bob \
   --budget-seconds 3600
@@ -910,7 +922,7 @@ python3 -m tooling.development.secure_content.run \
   --clients secure-content-hardcut-four-alice,secure-content-hardcut-four-bob,secure-content-hardcut-four-eve \
   --budget-seconds 7200
 python3 -m tooling.development.secure_content.run \
-  --runtime desktop --scenario chat-attachment-regression \
+  --runtime desktop --scenario chat-attachment \
   --profiles four,fiveArm \
   --clients four-alice,four-bob,fiveArm-alice,fiveArm-bob \
   --budget-seconds 1800
@@ -919,7 +931,7 @@ python3 -m tooling.development.secure_content.run \
   --clients secure-content-hardcut-ios-alice,secure-content-hardcut-ios-bob,secure-content-hardcut-ios-eve,secure-content-hardcut-android-alice,secure-content-hardcut-android-bob,secure-content-hardcut-android-eve \
   --budget-seconds 7200
 python3 -m tooling.development.secure_content.run \
-  --runtime mobile --scenario chat-attachment-regression \
+  --runtime mobile --scenario chat-attachment-mobile \
   --profiles four,fiveArm \
   --clients secure-content-hardcut-ios-alice,secure-content-hardcut-ios-bob,secure-content-hardcut-android-alice,secure-content-hardcut-android-bob \
   --budget-seconds 3600
@@ -1031,12 +1043,12 @@ python3 -m tooling.development.secure_content.run \
   --clients secure-content-browser-authenticated,secure-content-browser-anonymous \
   --budget-seconds 1200
 python3 -m tooling.development.secure_content.run \
-  --runtime desktop --scenario chat-attachment-regression \
+  --runtime desktop --scenario chat-attachment \
   --profiles four,fiveArm \
   --clients four-alice,four-bob,fiveArm-alice,fiveArm-bob \
   --budget-seconds 1800
 python3 -m tooling.development.secure_content.run \
-  --runtime mobile --scenario chat-attachment-regression \
+  --runtime mobile --scenario chat-attachment-mobile \
   --profiles four,fiveArm \
   --clients secure-content-ios-alice,secure-content-ios-bob,secure-content-android-alice,secure-content-android-bob \
   --budget-seconds 3600
@@ -1218,7 +1230,7 @@ observations is invalid.
 | W0R | machine runtime control | complete | `8a7722c93` | PASS | NOT_RUN | none |
 | W14 | scoped generator groundwork | complete | `69fe979b3` | SOURCE_CHECK/PASS | N/A | none |
 | W1 | contracts | complete | `e9be68c8a` | SOURCE_CHECK/PASS | NOT_RUN | none |
-| W2 | atomic kernels/Chat | ready | none | NOT_RUN | NOT_RUN | source implementation ready; Native proof waits for required runtime leases |
+| W2 | atomic kernels/Chat | in progress | none | NOT_RUN | NOT_RUN | W2A source ready; W2B Native proof waits for required runtime leases |
 | W3 | PreKeys | parked | none | NOT_RUN | NOT_RUN | W2 |
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
 | W5 | recovery | parked | none | NOT_RUN | NOT_RUN | W1/W2/W3 |

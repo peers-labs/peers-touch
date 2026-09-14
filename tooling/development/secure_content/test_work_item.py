@@ -41,6 +41,43 @@ class WorkItemProjectionTest(unittest.TestCase):
         )
         self.assertEqual((), projection.runtime_claim_arguments)
 
+    def test_loads_w2_source_and_runtime_subphases(self) -> None:
+        source = work_item.load_projection(
+            MANIFEST,
+            workstream="W2A",
+            journey=None,
+            repo_root=REPO_ROOT,
+        )
+        desktop = work_item.load_projection(
+            MANIFEST,
+            workstream="W2B-DESKTOP",
+            journey="sc-dj-chat-attachment-atomic",
+            repo_root=REPO_ROOT,
+        )
+        mobile = work_item.load_projection(
+            MANIFEST,
+            workstream="W2B-MOBILE",
+            journey="sc-dj-chat-attachment-mobile",
+            repo_root=REPO_ROOT,
+        )
+
+        self.assertEqual("secure-content-w2a", source.work_item_id)
+        self.assertEqual((), source.runtime_claim_arguments)
+        self.assertIn(
+            "exclusive-write:packages/secure-content-core",
+            source.source_claim_arguments,
+        )
+        self.assertEqual("secure-content-w2b-desktop", desktop.work_item_id)
+        self.assertIn(
+            "exclusive:fixture:secure-content-chat-desktop",
+            desktop.runtime_claim_arguments,
+        )
+        self.assertEqual("secure-content-w2b-mobile", mobile.work_item_id)
+        self.assertIn(
+            "exclusive:fixture:mobile-ios-simulator-native",
+            mobile.runtime_claim_arguments,
+        )
+
     def test_rejects_unknown_fields_path_escape_and_runtime_kind(self) -> None:
         base = yaml.safe_load(MANIFEST.read_text(encoding="utf-8"))
         cases = (

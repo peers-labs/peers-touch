@@ -127,16 +127,16 @@ items:
       history: { rewrite: denied }
 
   - schemaVersion: 1
-    id: secure-content-w2
+    id: secure-content-w2a
     workClass: refactor
     planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
-    workstreamId: W2
+    workstreamId: W2A
     productRefs: [MP-C13, MP-G13]
     architectureRefs: [SC-A01, SC-A03, SC-D02, SC-D03, SC-D13, MP-D23]
-    journeyIds: [sc-dj-chat-attachment-atomic, sc-dj-chat-attachment-mobile]
+    journeyIds: []
     scope:
-      include: [packages/secure-content-core, apps/station/app/internal/securecontent, packages/messaging-core, apps/station/app/subserver/conversation, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/messaging, apps/mobile/src-tauri/Cargo.toml, apps/mobile/src-tauri/Cargo.lock, apps/mobile/src-tauri/src/messaging, tooling/development/secure_content/scenarios/chat_attachment.py, tooling/development/secure_content/scenarios/chat_attachment_mobile.py]
-      exclude: [model/domain/chat, conversation routes, conversation tables, Direct, MLS]
+      include: [packages/secure-content-core, apps/station/app/internal/securecontent, packages/messaging-core, apps/station/app/subserver/conversation, apps/desktop/src-tauri/Cargo.toml, apps/desktop/src-tauri/Cargo.lock, apps/desktop/src-tauri/src/infrastructure/attachment_blob.rs, apps/desktop/src-tauri/src/messaging, apps/mobile/src-tauri/Cargo.toml, apps/mobile/src-tauri/Cargo.lock, apps/mobile/src-tauri/src/messaging, tooling/development/secure_content/work_item.py, tooling/development/secure_content/test_work_item.py, tooling/development/secure_content/run.py, tooling/development/secure_content/test_run.py, tooling/development/secure_content/scenarios/chat_attachment.py, tooling/development/secure_content/scenarios/chat_attachment_mobile.py, tooling/development/secure_content/scenarios/test_chat_attachment.py]
+      exclude: [runtime, model/domain/chat, conversation routes, conversation tables, Direct, MLS, recovery derivation]
     resources:
       sourceClaims:
         - { pathPrefix: packages/secure-content-core, mode: exclusive-write }
@@ -145,14 +145,45 @@ items:
         - { pathPrefix: apps/station/app/subserver/conversation, mode: exclusive-write }
         - { pathPrefix: apps/desktop/src-tauri/Cargo.toml, mode: exclusive-write }
         - { pathPrefix: apps/desktop/src-tauri/Cargo.lock, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src-tauri/src/infrastructure/attachment_blob.rs, mode: exclusive-write }
         - { pathPrefix: apps/desktop/src-tauri/src/messaging, mode: exclusive-write }
         - { pathPrefix: apps/mobile/src-tauri/Cargo.toml, mode: exclusive-write }
         - { pathPrefix: apps/mobile/src-tauri/Cargo.lock, mode: exclusive-write }
         - { pathPrefix: apps/mobile/src-tauri/src/messaging, mode: exclusive-write }
-        - { pathPrefix: tooling/development/secure_content/run.py, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content/work_item.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/test_work_item.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/run.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/test_run.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/scenarios/chat_attachment.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/scenarios/chat_attachment_mobile.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/scenarios/test_chat_attachment.py, mode: exclusive-write }
         - { pathPrefix: model/domain/chat, mode: shared-read }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w2b-desktop
+    workClass: refactor
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W2B-DESKTOP
+    productRefs: [MP-C13, MP-G13]
+    architectureRefs: [SC-A01, SC-A03, SC-D02, SC-D03, SC-D13, MP-D23]
+    journeyIds: [sc-dj-chat-attachment-atomic]
+    scope:
+      include: [packages/secure-content-core, packages/messaging-core, apps/station/app/internal/securecontent, apps/station/app/subserver/conversation, apps/desktop/src-tauri, tooling/development/secure_content]
+      exclude: [source mutation, Mobile proof, model/domain/chat, Conversation route/table/grant changes]
+    resources:
+      sourceClaims:
+        - { pathPrefix: packages/secure-content-core, mode: shared-read }
+        - { pathPrefix: packages/messaging-core, mode: shared-read }
+        - { pathPrefix: apps/station/app/internal/securecontent, mode: shared-read }
+        - { pathPrefix: apps/station/app/subserver/conversation, mode: shared-read }
+        - { pathPrefix: apps/desktop/src-tauri, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content, mode: shared-read }
       runtimeClaims:
         - { kind: profile, resourceId: four, mode: shared }
         - { kind: profile, resourceId: fiveArm, mode: shared }
@@ -164,18 +195,51 @@ items:
         - { kind: client.storage, resourceId: four-bob, mode: exclusive }
         - { kind: client.storage, resourceId: fiveArm-alice, mode: exclusive }
         - { kind: client.storage, resourceId: fiveArm-bob, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-chat-desktop, mode: exclusive }
+        - { kind: local.slot, resourceId: "5", mode: exclusive }
+    authorization:
+      checkpoint: { localCommit: denied, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w2b-mobile
+    workClass: refactor
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W2B-MOBILE
+    productRefs: [MP-C13, MP-G13]
+    architectureRefs: [SC-A01, SC-A03, SC-D02, SC-D03, SC-D13, MP-D23]
+    journeyIds: [sc-dj-chat-attachment-mobile]
+    scope:
+      include: [packages/secure-content-core, packages/messaging-core, apps/station/app/internal/securecontent, apps/station/app/subserver/conversation, apps/mobile/src-tauri, tooling/development/secure_content]
+      exclude: [source mutation, Desktop proof, model/domain/chat, Conversation route/table/grant changes]
+    resources:
+      sourceClaims:
+        - { pathPrefix: packages/secure-content-core, mode: shared-read }
+        - { pathPrefix: packages/messaging-core, mode: shared-read }
+        - { pathPrefix: apps/station/app/internal/securecontent, mode: shared-read }
+        - { pathPrefix: apps/station/app/subserver/conversation, mode: shared-read }
+        - { pathPrefix: apps/mobile/src-tauri, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content, mode: shared-read }
+      runtimeClaims:
+        - { kind: profile, resourceId: four, mode: shared }
+        - { kind: profile, resourceId: fiveArm, mode: shared }
+        - { kind: station.connect, resourceId: four, mode: shared }
+        - { kind: station.connect, resourceId: fiveArm, mode: shared }
+        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
+        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-chat-ios-alice, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-chat-ios-bob, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-chat-android-alice, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-chat-android-bob, mode: exclusive }
         - { kind: fixture, resourceId: mobile-ios-simulator-native, mode: exclusive }
         - { kind: fixture, resourceId: mobile-android-emulator-native, mode: exclusive }
-        - { kind: fixture, resourceId: secure-content-chat-desktop, mode: exclusive }
         - { kind: fixture, resourceId: secure-content-chat-mobile-ios, mode: exclusive }
         - { kind: fixture, resourceId: secure-content-chat-mobile-android, mode: exclusive }
         - { kind: local.slot, resourceId: "5", mode: exclusive }
     authorization:
-      checkpoint: { localCommit: allowed, amend: denied }
+      checkpoint: { localCommit: denied, amend: denied }
       delivery: { push: denied, pullRequest: denied }
       runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
       history: { rewrite: denied }

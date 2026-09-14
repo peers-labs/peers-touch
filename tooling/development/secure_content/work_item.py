@@ -15,7 +15,7 @@ import yaml
 
 SCHEMA_VERSION = 1
 IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$", re.IGNORECASE)
-WORKSTREAM_ID = re.compile(r"^W(?:0R|0|[1-9][0-9]*)$")
+WORKSTREAM_ID = re.compile(r"^W(?:0R|0|[1-9][0-9]*)(?:[A-Z](?:-[A-Z]+)?)?$")
 WORK_CLASSES = {"product-behavior", "infrastructure", "refactor", "documentation"}
 SOURCE_MODES = {"shared-read", "exclusive-write"}
 RUNTIME_MODES = {"shared", "exclusive"}
