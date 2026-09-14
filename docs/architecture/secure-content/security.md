@@ -101,7 +101,7 @@ recovery pool while authorized, but revocation makes its unclaimed keys
 ineligible for future content. Completed claims remain replayable because their
 public material was already exposed.
 
-Proposed `SC-D16` replaces the previous underspecified recovery formula with one
+`SC-D16` replaces the previous underspecified recovery formula with one
 byte-exact transcript. The accepted 24-word BIP39 phrase must first pass the
 maintained BIP39 library's wordlist, NFKD, and checksum validation and decode to
 exactly 32 bytes of entropy. The KDF itself receives only those entropy bytes,

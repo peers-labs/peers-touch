@@ -26,8 +26,8 @@
 | `SC-D13` | The business domain owns the outer object/grant transaction | accepted |
 | `SC-D14` | Private subtype and routing wires are bounded and canonical | accepted |
 | `SC-D15` | Content PreKey publication is device-authenticated and epoch-fenced | accepted |
-| `SC-D16` | Recovery PreKey derivation uses one canonical HKDF transcript | proposed |
-| `SC-D17` | Social private prepare and submit use durable records and distinct routes | proposed |
+| `SC-D16` | Recovery PreKey derivation uses one canonical HKDF transcript | accepted |
+| `SC-D17` | Social private prepare and submit use durable records and distinct routes | accepted |
 
 ---
 
@@ -722,7 +722,7 @@ completed-receipt replay after revocation. The Owner accepted this decision on
 
 ## SC-D16: Recovery PreKey Derivation Uses One Canonical HKDF Transcript
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-09-14
 
 ### Context
@@ -843,12 +843,13 @@ W5 must update the existing master vector, add per-key private/public vectors,
 prove wrong actor/epoch/key ID divergence, and open a real HPKE envelope with a
 derived recovery key. Any future transcript change requires a new version and
 cannot silently reinterpret existing recovery PreKey IDs.
+The Owner accepted this decision on 2026-09-14.
 
 ---
 
 ## SC-D17: Social Private Prepare And Submit Use Durable Records And Distinct Routes
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-09-14
 
 ### Context
@@ -955,3 +956,4 @@ removes the legacy private write/read path after all callers migrate; W12 alone
 owns physical deletion/reset. The new tables carry only ciphertext,
 commitments, identifiers, grants, and signed evidence, never private plaintext
 or key material.
+The Owner accepted this decision on 2026-09-14.

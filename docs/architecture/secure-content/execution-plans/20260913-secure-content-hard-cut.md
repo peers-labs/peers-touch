@@ -1261,8 +1261,8 @@ observations is invalid.
 | W2 | atomic kernels/Chat | in progress | `c69edd606` (W2A) | SOURCE_CHECK/PASS | NOT_RUN | W2D waits for W5/W9; W2B Native proof waits for W2D and runtime leases |
 | W3 | PreKeys | complete | `dbd612b65` | PASS (`sc-dj-content-prekey`) | NOT_RUN | none |
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
-| W5 | recovery | parked | none | NOT_RUN | NOT_RUN | Owner acceptance of proposed `SC-D16`; W6 |
-| W6 | Social minimum | parked | none | NOT_RUN | NOT_RUN | Owner acceptance of proposed `SC-D17` |
+| W5 | recovery | parked | none | NOT_RUN | NOT_RUN | W6 |
+| W6 | Social minimum | ready | none | NOT_RUN | NOT_RUN | none |
 | W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | W6; active MCA Desktop claim and Station runtime owner |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
 | W9 | Mobile | parked | none | NOT_RUN | NOT_RUN | W5/W7/W8; Mobile claim |
@@ -1346,11 +1346,11 @@ Current evidence:
   query also depends on W6's private resource, grant and envelope substrate.
   W5 is parked with W6 behind one bounded architecture amendment; no synthetic
   W5-only persistence path is permitted.
-- Proposed `SC-D16` defines the byte-exact recovery master and per-key X25519
-  derivation. Proposed `SC-D17` defines the missing Social plan/slot/receipt
-  tables, explicit private submit routes, prepare crash recovery and the
-  corrected W6-before-W5 dependency. Both remain unaccepted; execution stops at
-  their Owner gate.
+- `SC-D16` and `SC-D17` were independently reviewed `PASS` and accepted by the
+  Owner on 2026-09-14. They define the byte-exact recovery master/per-key
+  X25519 derivation, Social plan/slot/receipt tables, explicit private submit
+  routes, prepare crash recovery and the corrected W6-before-W5 dependency.
+  W6 is dependency-ready; W5 remains parked on W6.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level

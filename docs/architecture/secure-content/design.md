@@ -190,7 +190,7 @@ PreKey claims are irreversible when exposed. Replaying the same prepare command
 returns the same claim; abandoned plans consume capacity and are replenished through
 Key Exchange policy. No partial recipient publish is allowed.
 
-Proposed `SC-D17` makes the prepare crash boundary explicit:
+`SC-D17` makes the prepare crash boundary explicit:
 `social_private_content_plans` persists `plan_id` and the canonical prepare hash
 plus the exact canonical claim request before Key Exchange is called. It then
 persists the exact claim response, while `social_private_content_plan_slots`

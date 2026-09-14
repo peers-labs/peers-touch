@@ -247,7 +247,7 @@ it does not attest recovery-secret derivation.
 
 ### Proposed Recovery PreKey Derivation
 
-Under proposed `SC-D16`, the maintained BIP39 parser applies NFKD, validates
+Under `SC-D16`, the maintained BIP39 parser applies NFKD, validates
 the English word list and checksum, and emits exactly 32 bytes of entropy for
 the accepted 24-word recovery phrase. The KDF receives only those bytes.
 `actor_ptid` and `key_id` are encoded as exact canonical UTF-8 bytes with no

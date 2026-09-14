@@ -116,7 +116,7 @@ GET  /api/v1/social/moments/recoverable
 The API Ownership and `MP-D23` contracts remain valid. Social adds only Social
 capabilities; Conversation keeps Chat attachment authority.
 
-The two `:submit-private` paths above are proposed by `SC-D17`. They keep the
+The two `:submit-private` paths above are defined by `SC-D17`. They keep the
 generated private request types distinct from the existing public
 `CreatePostRequest` and `CreateCommentRequest` handlers. Content negotiation
 does not select public versus private business semantics. Once W6 lands, the
@@ -187,7 +187,7 @@ Browser supports PUBLIC only and rejects private operations before network send.
 Social's UOW commits Post/Comment fact, snapshot, slot mappings, envelopes,
 delivery intents, object attachments, grants, and command receipt in one transaction.
 
-Under proposed `SC-D17`, prepare state is durable before Key Exchange claim in
+Under `SC-D17`, prepare state is durable before Key Exchange claim in
 `social_private_content_plans`, including the exact canonical claim request;
 the exact claim response and claimed slots are finalized in
 `social_private_content_plan_slots`; exact submit replay is owned by

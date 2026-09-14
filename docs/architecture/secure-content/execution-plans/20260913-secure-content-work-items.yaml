@@ -332,7 +332,7 @@ items:
     planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
     workstreamId: W5
     productRefs: [SOC-SEC-C04, SOC-SEC-C06, SOC-SEC-C08, SOC-SEC-AS08]
-    architectureRefs: [SC-A02, SC-A08, SC-D05, SC-D09]
+    architectureRefs: [SC-A02, SC-A08, SC-D05, SC-D09, SC-D16, SC-D17]
     journeyIds: [sc-dj-recovery-consumer]
     scope:
       include: [packages/secure-content-core/src/recovery.rs, apps/station/app/subserver/recovery, apps/station/app/subserver/social, tooling/development/secure_content/scenarios/recovery_consumer.py]
@@ -357,14 +357,15 @@ items:
     planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
     workstreamId: W6
     productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C05, SOC-SEC-C07, SOC-SEC-AS01, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS06, SOC-SEC-AS07, SOC-SEC-AS10, SOC-SEC-AS12, SOC-SEC-AS13, SOC-SEC-AS15, SOC-SEC-AS16]
-    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D11, SC-D12, SC-D13]
+    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D11, SC-D12, SC-D13, SC-D15, SC-D17]
     journeyIds: [sc-dj-social-uow-atomicity]
     scope:
-      include: [apps/station/app/subserver/social, apps/station/frame/touch/model/db, tooling/development/secure_content/scenarios/social_uow_atomicity.py]
+      include: [apps/station/app/subserver/social, apps/station/app/subserver/key_exchange, apps/station/frame/touch/model/db, tooling/development/secure_content/scenarios/social_uow_atomicity.py]
       exclude: [remaining private subtypes, Mobile, Chat behavior]
     resources:
       sourceClaims:
         - { pathPrefix: apps/station/app/subserver/social, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/key_exchange, mode: exclusive-write }
         - { pathPrefix: apps/station/frame/touch/model/db, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/scenarios/social_uow_atomicity.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/run.py, mode: shared-read }
