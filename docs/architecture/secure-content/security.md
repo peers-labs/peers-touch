@@ -74,7 +74,7 @@ Key Exchange owns two non-interchangeable pools:
 Properties:
 
 - every public PreKey is 32-byte X25519 material with a unique typed key ID;
-- pending `SC-D15`, every published PreKey is signed by the authenticated active
+- under accepted `SC-D15`, every published PreKey is signed by the authenticated active
   device over a dedicated domain-separated canonical signing input that binds
   the publisher, signing-key ID, publisher profile version, and expected/new
   pool epochs;

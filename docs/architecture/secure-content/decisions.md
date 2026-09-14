@@ -25,7 +25,7 @@
 | `SC-D12` | Plans expose opaque slots backed only by one-time public keys | accepted |
 | `SC-D13` | The business domain owns the outer object/grant transaction | accepted |
 | `SC-D14` | Private subtype and routing wires are bounded and canonical | accepted |
-| `SC-D15` | Content PreKey publication is device-authenticated and epoch-fenced | proposed |
+| `SC-D15` | Content PreKey publication is device-authenticated and epoch-fenced | accepted |
 
 ---
 
@@ -617,7 +617,7 @@ typed wire design before implementation can resume.
 
 ## SC-D15: Content PreKey Publication Is Device-Authenticated And Epoch-Fenced
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-09-14
 
 ### Context
@@ -713,5 +713,5 @@ cross-language canonical signing vector, resolve verified publisher keys through
 Actor Identity, add its transaction-local row-fence helper, and replace synthetic
 signatures with valid Ed25519 vectors. Claim tests must cover
 revocation and key rotation before exposure, persisted tampering, epoch CAS and
-completed-receipt replay after revocation. W3 remains blocked until the Owner
-accepts this decision.
+completed-receipt replay after revocation. The Owner accepted this decision on
+2026-09-14.

@@ -1,13 +1,14 @@
 # Secure Content PreKey Authenticity Amendment - Review Prompt
 
-> **Status**: draft
+> **Status**: accepted
 > **Version**: v1.0
 > **Created**: 2026-09-14 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 
 ---
 
-Review proposed decision `SC-D15` before W3 implementation resumes.
+`SC-D15` passed independent review and was accepted by the Owner on
+2026-09-14. This prompt remains the review record for W3 implementation.
 
 ## Upstream Sources
 

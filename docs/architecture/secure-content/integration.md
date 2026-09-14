@@ -62,7 +62,7 @@ Neither kernel owns routes, persistence, transactions, recipient policy, or work
 
 Actor Identity continues to own active/revoked endpoints. Key Exchange adds
 separate exact-once endpoint and actor-recovery Content PreKey pools with independent
-inventory and replenishment from Direct/MLS material. Pending `SC-D15`, Key
+inventory and replenishment from Direct/MLS material. Under accepted `SC-D15`, Key
 Exchange resolves publisher signing material through the Actor Identity
 capability, then uses an Actor Identity-owned transaction fence to keep the
 verified key/profile/revocation snapshot stable through publication and

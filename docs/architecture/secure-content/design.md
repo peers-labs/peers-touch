@@ -95,7 +95,7 @@ each other.
 | Physical opaque bytes | domain adapter | generic `storage.Backend` |
 | Recovery identity/material | Recovery | opaque actor recovery revision |
 
-Pending `SC-D15`, Actor Identity remains the sole source of verified device
+Under accepted `SC-D15`, Actor Identity remains the sole source of verified device
 signing keys and profile versions used to authenticate Content PreKey
 publication. Key Exchange owns only the separate prekey pools, their monotonic
 recovery-pool epoch, immutable tombstones, and exact claim receipts. It resolves

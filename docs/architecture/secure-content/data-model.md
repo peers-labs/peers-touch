@@ -166,7 +166,7 @@ Direct prekeys and Content PreKeys use separate types, stores, quotas, and APIs.
 
 ### Proposed Content PreKey Signature Canonicalization
 
-Pending Owner acceptance of `SC-D15`, `prekey.proto` adds:
+Under accepted `SC-D15`, `prekey.proto` adds:
 
 ```protobuf
 message ContentPreKeySigningInput {
