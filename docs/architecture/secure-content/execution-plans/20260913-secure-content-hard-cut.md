@@ -1262,7 +1262,7 @@ observations is invalid.
 | W2 | atomic kernels/Chat | in progress | `c69edd606` (W2A) | SOURCE_CHECK/PASS | NOT_RUN | W2D waits for W5/W9; W2B Native proof waits for W2D and runtime leases |
 | W3 | PreKeys | complete | `dbd612b65` | PASS (`sc-dj-content-prekey`) | NOT_RUN | none |
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
-| W5 | recovery | ready | none | NOT_RUN | NOT_RUN | none |
+| W5 | recovery | parked | none | NOT_RUN | NOT_RUN | DESIGN_AMENDMENT_REQUIRED: per-key recovery KDF transcript; W6 private-resource/grant/envelope substrate |
 | W6 | Social minimum | parked | none | NOT_RUN | NOT_RUN | DESIGN_AMENDMENT_REQUIRED: durable prepare-plan/command-receipt schema and existing `POST /moments` private-submit dispatch |
 | W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | W6; active MCA Desktop claim and Station runtime owner |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
@@ -1340,7 +1340,13 @@ Current evidence:
   declared Social tables/keys, and the private `SubmitPrivateMomentRequest`
   shares `POST /api/v1/social/moments` with the existing public
   `CreatePostRequest` without a dispatch contract. W6 is parked at
-  `DESIGN_AMENDMENT_REQUIRED`; W5 remains dependency-ready.
+  `DESIGN_AMENDMENT_REQUIRED`.
+- W5 pre-execution inventory found that the actor-level recovery master is
+  defined but the per-key recovery PreKey KDF transcript is not, so independent
+  clients cannot derive the same X25519 key safely. Its real Social recovery
+  query also depends on W6's private resource, grant and envelope substrate.
+  W5 is parked with W6 behind one bounded architecture amendment; no synthetic
+  W5-only persistence path is permitted.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level
