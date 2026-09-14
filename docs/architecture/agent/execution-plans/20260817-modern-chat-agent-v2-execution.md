@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; MCA-J06 is `FUNCTIONAL_PASS`; checkpoint `b0be51e808b9d442ab7551ec16b2536861e8f41f` fixes the AS-F06 equal-cursor recovery regression; exact-source Foundation run `20260914T020855882888Z-37de0f8f4117aa4f2a9227759dd9401f` crossed all AS-F06 and `BASE-INVALID_REFERENCE`; diagnostic checkpoint `9c3e7f9b5ae1b99e9eaaea0c7e3fc2eef4f453ca` then crossed Browser AS-F12 in both locales with every instrumented conversation/message readback successful before run `20260914T034858052731Z-56fdebfb8bc40b4540d647b5abd705f0` first failed at Browser English `BASE-APPROVAL-EXPIRED` cleanup; inner and outer cleanup passed | W8a |
+| G-F Complete Foundation Gate | partial / unproven; MCA-J06 is `FUNCTIONAL_PASS`; checkpoint `b0be51e808b9d442ab7551ec16b2536861e8f41f` fixes the AS-F06 equal-cursor recovery regression; run `20260914T034858052731Z-56fdebfb8bc40b4540d647b5abd705f0` crossed Browser AS-F12 in both locales and first exposed Browser English `BASE-APPROVAL-EXPIRED` cleanup; diagnostic checkpoint `805bb2791513c13c61a859d6e74a51d4fad40cf7` then reproduced `AS_F06_DURABLE_RELOAD_TARGET_MISSING` after same-process runtime teardown dropped the failed-record preservation marker; the owner fix is `FOCUSED_PASS` and exact-source proof remains pending | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1404,6 +1404,26 @@ and zero local-path leakage.
     primary error, capability-binding restoration, Turn cancellation, and
     conversation deletion before changing behavior. The full 419-cell
     Foundation Gate remains `PARTIAL / UNPROVEN`.
+  - Diagnostic checkpoint `805bb2791513c13c61a859d6e74a51d4fad40cf7`
+    added cleanup-boundary probes, but exact-source run
+    `20260914T042330737498Z-8fbe37528875f10dff6343794c737e23`
+    stopped earlier at native zh-CN AS-F06 with
+    `AS_F06_DURABLE_RELOAD_TARGET_MISSING`; the approval-expiry probes were not
+    exercised. The persisted handoff survived both restart boundaries and the
+    explicit retry returned to `RECOVERY_FAILED`, but session-runtime teardown
+    reset the in-memory recovery store. Bootstrap then treated the persisted
+    failed record as a fresh-process record, automatically reconciled its
+    terminal snapshot, and removed it before the explicit durable reload.
+    Cleanup remained complete.
+  - The owner-layer correction carries the exact failed recovery record across
+    one same-process runtime teardown/bootstrap cycle, keyed by actor and the
+    full Turn/stream/cursor/epoch/timestamp identity. A true process start has
+    no in-memory carry and retains automatic bootstrap reconciliation. The
+    focused recovery/operation suite passes `76/76`, the full Desktop suite
+    passes `686/686` with one existing skip, Desktop typecheck passes,
+    Foundation/native static tests pass `137/137`, and `git diff --check`
+    passes. AS-F06 and G-F remain `PARTIAL / UNPROVEN` pending exact-source
+    runtime reproof.
 
 #### G-FE1 Concurrency Decision
 
