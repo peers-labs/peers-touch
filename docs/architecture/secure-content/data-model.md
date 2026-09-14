@@ -1,8 +1,8 @@
 # Secure Content - Data Model
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Version**: v1.1
+> **Created**: 2026-09-13 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `model/domain/social/`, `model/domain/key_exchange/`
 
@@ -166,11 +166,25 @@ Direct prekeys and Content PreKeys use separate types, stores, quotas, and APIs.
 Social owns typed prepare requests:
 
 ```protobuf
+enum PrivateMomentKind {
+  PRIVATE_MOMENT_KIND_UNSPECIFIED = 0;
+  PRIVATE_MOMENT_KIND_TEXT = 1;
+  PRIVATE_MOMENT_KIND_IMAGE = 2;
+  PRIVATE_MOMENT_KIND_VIDEO = 3;
+  PRIVATE_MOMENT_KIND_LINK = 4;
+  PRIVATE_MOMENT_KIND_POLL = 5;
+  PRIVATE_MOMENT_KIND_REPOST = 6;
+  PRIVATE_MOMENT_KIND_LOCATION = 7;
+}
+
 message PreparePrivateMomentRequest {
   string content_id = 1;
   Audience audience = 2;
   uint32 object_count = 3;
   string command_id = 4;
+  PrivateMomentKind kind = 5;
+  PrivateRepostAuthority repost_authority = 6;
+  PrivatePollAuthority poll_authority = 7;
 }
 
 message PreparePrivateCommentRequest {
@@ -205,6 +219,7 @@ message ContentEncryptionPlan {
   bytes canonical_plan_sha256 = 9;
   string station_signing_key_id = 10;
   bytes station_signature = 11;
+  bytes domain_binding_sha256 = 12;
 }
 
 message ContentKeyEnvelopeBinding {
@@ -244,11 +259,29 @@ message ViewerContentKeyEnvelope {
   bytes sender_signature = 7;
   uint64 principal_epoch = 8; // recipient profile or recovery epoch
 }
+
+message ViewerContentCommitProof {
+  uint32 format_version = 1;
+  string domain_commit_id = 2;
+  bytes canonical_plan_sha256 = 3;
+  SecureResourceRef resource = 4;
+  peers_touch.model.actor.v1.ActorDeviceRef author = 5;
+  bytes authorization_snapshot_sha256 = 6;
+  bytes domain_binding_sha256 = 7;
+  bytes encrypted_payload_sha256 = 8;
+  bytes object_descriptor_set_sha256 = 9;
+  bytes mention_routing_sha256 = 10;
+  bytes subtype_authority_sha256 = 11;
+  google.protobuf.Timestamp committed_at = 12;
+  string station_signing_key_id = 13;
+  bytes station_signature = 14;
+}
 ```
 
 Plan canonicalization requires:
 
 - `recipient_slot_id` ascending order and no duplicate slot/key claim;
+- `domain_binding_sha256` coverage by the plan signature and payload AAD;
 - one random slot per exact claimed endpoint or recovery principal;
 - `principal_binding_sha256 = SHA-256(plan_id || slot_id || canonical principal
   || claim_id || one_time_key_id || one_time_public_key)`;
@@ -256,6 +289,15 @@ Plan canonicalization requires:
 - exact required-slot envelope coverage with no additional envelope;
 - plan hash coverage of resource, author, authorization snapshot, object IDs,
   all slots, expiry, and claimed-key receipts.
+
+`ViewerContentCommitProof` is a separate Station signature over exactly fields
+`1..13` in deterministic protobuf order. Social selects `domain_commit_id`,
+`committed_at`, and a retained Station signing-key ID, computes the signature,
+and persists the exact proof bytes and command receipt inside the same UOW as
+the Post/Comment, envelopes, deliveries, objects, and grants. Signing failure
+rolls back the UOW. Exact replay returns the stored proof bytes, so a crash or
+later key rotation cannot change the result. The proof exposes no recipient
+slot, key claim, or unrelated envelope.
 
 The deterministic binding bytes are simultaneously HPKE `info`, HPKE AEAD AAD,
 and the Ed25519 signature input. Submit requires exactly one envelope per required
@@ -279,6 +321,131 @@ message PrivateMomentContent {
     PrivateRepostContent repost = 7;
     PrivateLocationContent location = 8;
   }
+  bytes mention_commitment_salt = 9;
+}
+
+message PrivateTextContent {
+  string text = 1;
+  repeated string hashtags = 2;
+  repeated Mention mentions = 3;
+}
+
+message PrivateImageContent {
+  string text = 1;
+  repeated PrivateAttachmentMetadata images = 2;
+  repeated string hashtags = 3;
+  repeated Mention mentions = 4;
+}
+
+message PrivateVideoVariant {
+  string variant_id = 1;
+  uint32 bitrate = 2;
+  string codec = 3;
+  uint32 width = 4;
+  uint32 height = 5;
+  PrivateAttachmentMetadata media = 6;
+}
+
+message PrivateVideoContent {
+  string text = 1;
+  PrivateAttachmentMetadata source = 2;
+  PrivateAttachmentMetadata poster = 3;
+  repeated PrivateVideoVariant variants = 4;
+  repeated string hashtags = 5;
+  repeated Mention mentions = 6;
+}
+
+message PrivateLinkContent {
+  string text = 1;
+  LinkPreview link = 2;
+  repeated string hashtags = 3;
+  repeated Mention mentions = 4;
+}
+
+message PrivatePollOption {
+  bytes opaque_option_id = 1;
+  string label = 2;
+}
+
+message PrivatePollContent {
+  string text = 1;
+  string question = 2;
+  repeated PrivatePollOption options = 3;
+  bytes option_set_sha256 = 4;
+  uint32 min_choices = 5;
+  uint32 max_choices = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  repeated Mention mentions = 8;
+}
+
+enum PrivateRenderedSourceKind {
+  PRIVATE_RENDERED_SOURCE_KIND_UNSPECIFIED = 0;
+  PRIVATE_RENDERED_SOURCE_KIND_TEXT = 1;
+  PRIVATE_RENDERED_SOURCE_KIND_IMAGE = 2;
+  PRIVATE_RENDERED_SOURCE_KIND_VIDEO = 3;
+  PRIVATE_RENDERED_SOURCE_KIND_LINK = 4;
+  PRIVATE_RENDERED_SOURCE_KIND_POLL = 5;
+  PRIVATE_RENDERED_SOURCE_KIND_LOCATION = 6;
+}
+
+message SocialPostSourceRef {
+  string post_id = 1;
+  string private_content_id = 2;
+  uint64 private_generation = 3;
+}
+
+message PublicRenderedSourceSnapshot {
+  SocialPostSourceRef source = 1;
+  peers_touch.model.actor.v1.ActorRef author = 2;
+  google.protobuf.Timestamp created_at = 3;
+  PrivateRenderedSourceKind kind = 4;
+  repeated Mention typed_mentions = 5;
+  oneof body {
+    TextPost text = 10;
+    ImagePost image = 11;
+    VideoPost video = 12;
+    LinkPost link = 13;
+    PollPost poll = 14;
+    LocationPost location = 15;
+  }
+}
+
+message PrivateRenderedSourceSnapshot {
+  SocialPostSourceRef source = 1;
+  peers_touch.model.actor.v1.ActorRef author = 2;
+  google.protobuf.Timestamp created_at = 3;
+  PrivateRenderedSourceKind kind = 4;
+  oneof body {
+    PrivateTextContent text = 10;
+    PrivateImageContent image = 11;
+    PrivateVideoContent video = 12;
+    PrivateLinkContent link = 13;
+    PrivatePollContent poll = 14;
+    PrivateLocationContent location = 15;
+  }
+}
+
+message RenderedSourceSnapshot {
+  oneof source_class {
+    PublicRenderedSourceSnapshot public_source = 1;
+    PrivateRenderedSourceSnapshot private_source = 2;
+  }
+}
+
+message PrivateRepostContent {
+  string comment = 1;
+  SocialPostSourceRef original_source = 2;
+  RenderedSourceSnapshot rendered_source = 3;
+  repeated Mention mentions = 4;
+  bytes rendered_source_commitment_salt = 5;
+}
+
+message PrivateLocationContent {
+  string text = 1;
+  Location location = 2;
+  repeated PrivateAttachmentMetadata images = 3;
+  repeated string hashtags = 4;
+  repeated Mention mentions = 5;
 }
 
 message PrivateCommentContent {
@@ -287,6 +454,7 @@ message PrivateCommentContent {
   string parent_content_id = 3;
   string text = 4;
   repeated Mention mentions = 5;
+  bytes mention_commitment_salt = 6;
 }
 
 message PrivateAttachmentMetadata {
@@ -303,7 +471,49 @@ message PrivateAttachmentMetadata {
   uint32 duration_ms = 11;
   string alt_text = 12;
 }
+
+message MentionRoutingFact {
+  peers_touch.model.actor.v1.ActorRef mentioned_actor = 1;
+  bytes mention_commitment = 2;
+}
+
+message SignedMentionRouting {
+  uint32 format_version = 1;
+  SecureResourceRef resource = 2;
+  bytes authorization_snapshot_sha256 = 3;
+  bytes encrypted_payload_sha256 = 4;
+  repeated MentionRoutingFact facts = 5;
+  peers_touch.model.actor.v1.ActorDeviceRef sender = 6;
+  string sender_signing_key_id = 7;
+  bytes canonical_facts_sha256 = 8;
+  bytes sender_signature = 9;
+}
 ```
+
+Both rendered-source body unions intentionally exclude REPOST. A canonical
+PUBLIC snapshot maps only source ID, canonical actor, creation time, non-zero
+kind, and the selected immutable body. It excludes `PostStats`,
+`PostInteraction`, reactions, viewer state, audience envelopes, feed
+explanations, and nested `original_post`. Public image/video/location media use
+their source-owned URL attachment messages; `media_encryption` must be absent.
+Legacy username-only `mentions` arrays inside the selected public body must be
+empty; `typed_mentions` copies canonical `Post.typed_mentions` with UTF-16
+offset/length and preserves authoritative order. Other lists preserve
+authoritative stored order. Private video variants are ordered by `variant_id`,
+unique, and bounded to eight. Attachment and object references in the outer
+private body must match its plan's exact object set; references nested in a
+private rendered repost snapshot remain bound to the authenticated source
+descriptor set defined in section 7.
+
+`mention_commitment_salt` is a random 32-byte per-resource secret stored only
+inside the encrypted payload. `mention_commitment` is
+HMAC-SHA256(`mention_commitment_salt`,
+`"peers-touch:secure-content:mention:v1" || deterministic Mention bytes`).
+Facts sort by canonical actor bytes and then commitment bytes.
+`canonical_facts_sha256` hashes the canonical routing bytes defined in
+`design.md`, including `encrypted_payload_sha256`; the author-device signature
+covers that digest. Station cannot enumerate mention offsets or display text;
+Native verifies exact commitments after decryption.
 
 Subtype Station-visible facts:
 
@@ -321,7 +531,7 @@ committed option set without reading labels.
 
 ```protobuf
 message PrivatePollAuthority {
-  string post_id = 1;
+  SecureResourceRef resource = 1;
   repeated bytes opaque_option_ids = 2;
   bytes option_set_sha256 = 3;
   uint32 min_choices = 4;
@@ -334,11 +544,99 @@ message VotePrivatePollRequest {
   repeated bytes opaque_option_ids = 2;
   string command_id = 3;
 }
+
+message PrivateMomentDomainBinding {
+  uint32 format_version = 1;
+  PrivateMomentKind kind = 2;
+  bytes subtype_prepare_authority_sha256 = 3;
+}
+
+message PrivateCommentDomainBinding {
+  uint32 format_version = 1;
+  string post_id = 2;
+  string reply_to_comment_id = 3;
+}
+
+message PreparePrivateMomentHashInput {
+  uint32 format_version = 1;
+  string command_id = 2;
+  string content_id = 3;
+  PrivateMomentKind kind = 4;
+  bytes audience_sha256 = 5;
+  uint32 object_count = 6;
+  bytes subtype_prepare_authority_sha256 = 7;
+}
+
+message PreparePrivateCommentHashInput {
+  uint32 format_version = 1;
+  string command_id = 2;
+  string post_id = 3;
+  string comment_content_id = 4;
+  string reply_to_comment_id = 5;
+  uint32 object_count = 6;
+}
+
+message EnvelopeSubmitCommitment {
+  string recipient_slot_id = 1;
+  bytes binding_sha256 = 2;
+  bytes envelope_sha256 = 3;
+}
+
+message ObjectSubmitCommitment {
+  string object_id = 1;
+  bytes descriptor_sha256 = 2;
+}
+
+message SubmitPrivateContentHashInput {
+  uint32 format_version = 1;
+  string command_id = 2;
+  bytes canonical_plan_sha256 = 3;
+  bytes encrypted_payload_sha256 = 4;
+  repeated EnvelopeSubmitCommitment envelopes = 5;
+  repeated ObjectSubmitCommitment objects = 6;
+  bytes mention_routing_sha256 = 7;
+  bytes subtype_authority_sha256 = 8;
+}
+
+message VotePrivatePollHashInput {
+  uint32 format_version = 1;
+  string command_id = 2;
+  string post_id = 3;
+  repeated bytes opaque_option_ids = 4;
+}
 ```
 
 The encrypted payload binds readable option labels to the same opaque option IDs
 and `option_set_sha256`. Social validates parent access, expiry, choice cardinality,
 option membership, and exact vote replay before mutating vote facts.
+
+Hash inputs use deterministic protobuf encoding after canonicalization:
+
+- `audience_sha256` hashes `kind`, `target_id`, `base_kind`, and ascending
+  `actor_ptids`; legacy `key_envelopes` are forbidden;
+- the non-zero `PrivateMomentKind` and its canonical Social
+  `domain_binding_sha256` are covered by prepare replay, the signed plan, and
+  payload AAD;
+- `subtype_prepare_authority_sha256` is required for POLL or REPOST and hashes
+  exactly one complete deterministic `PrivatePollAuthority` or
+  `PrivateRepostAuthority`; Social validates poll bounds or source grant and
+  target-audience subset before claiming any Content PreKey;
+- envelope commitments sort by `recipient_slot_id` and hash the complete
+  deterministic `PreparedContentKeyEnvelope`;
+- object commitments sort by `object_id` and hash the complete deterministic
+  `EncryptedObjectDescriptor`;
+- `encrypted_payload_sha256` hashes the complete deterministic
+  `EncryptedPayload`, including format, resource, suite, nonce, ciphertext,
+  ciphertext commitment, and AAD commitment;
+- `mention_routing_sha256` hashes the complete deterministic
+  `SignedMentionRouting`, including its signature;
+- `subtype_authority_sha256` hashes exactly one deterministic poll or repost
+  authority, or is empty when the payload subtype requires neither;
+- poll option IDs sort by unsigned byte order.
+
+The canonical request hash is SHA-256 over the deterministic hash-input message.
+Duplicate stable identities, unknown fields, non-canonical ordering, or omitted
+transport fields are rejected before lookup or mutation.
 
 ## 7. Resource Projection
 
@@ -351,12 +649,232 @@ message PostResource {
   }
 }
 
+message PrivatePollProjection {
+  repeated PrivatePollOptionResult options = 1;
+  uint64 voter_count = 2;
+}
+
+message PrivateContentVerification {
+  ViewerContentCommitProof commit_proof = 1;
+  SignedMentionRouting mention_routing = 2;
+  oneof subtype_authority {
+    PrivatePollAuthority poll_authority = 3;
+    PrivateRepostAuthority repost_authority = 4;
+  }
+}
+
 message PrivateContentAccess {
   EncryptedPayload payload = 1;
   ViewerContentKeyEnvelope viewer_envelope = 2;
   repeated EncryptedObjectDescriptor objects = 3;
+  PrivatePollProjection poll = 4;
+  PrivateContentVerification verification = 5;
 }
 ```
+
+Proposed `SC-D14` completes the W1 Social wire:
+
+```protobuf
+message PreparePrivateMomentResponse {
+  ContentEncryptionPlan plan = 1;
+}
+
+message PreparePrivateCommentResponse {
+  ContentEncryptionPlan plan = 1;
+}
+
+message PublicRepostSourceProof {
+  bytes canonical_public_post_sha256 = 1;
+}
+
+message PrivateRepostSourceProof {
+  SecureResourceRef source_resource = 1;
+  bytes source_authorization_snapshot_sha256 = 2;
+  bytes source_encrypted_payload_sha256 = 3;
+  bytes source_commit_proof_sha256 = 4;
+}
+
+message PrivateRepostAuthority {
+  SocialPostSourceRef source = 1;
+  peers_touch.model.actor.v1.ActorRef source_author = 2;
+  bytes rendered_source_commitment = 3;
+  oneof source_proof {
+    PublicRepostSourceProof public_source = 4;
+    PrivateRepostSourceProof private_source = 5;
+  }
+}
+
+message SubmitPrivateMomentRequest {
+  ContentEncryptionPlan plan = 1;
+  EncryptedPayload payload = 2;
+  repeated PreparedContentKeyEnvelope envelopes = 3;
+  repeated EncryptedObjectDescriptor objects = 4;
+  SignedMentionRouting mention_routing = 5;
+  PrivatePollAuthority poll_authority = 6;
+  PrivateRepostAuthority repost_authority = 7;
+  string command_id = 8;
+}
+
+message SubmitPrivateMomentResponse {
+  PostResource post = 1;
+  bool exact_replay = 2;
+}
+
+message SubmitPrivateCommentRequest {
+  ContentEncryptionPlan plan = 1;
+  EncryptedPayload payload = 2;
+  repeated PreparedContentKeyEnvelope envelopes = 3;
+  repeated EncryptedObjectDescriptor objects = 4;
+  SignedMentionRouting mention_routing = 5;
+  string command_id = 6;
+}
+
+message SubmitPrivateCommentResponse {
+  CommentResource comment = 1;
+  bool exact_replay = 2;
+}
+
+message PostMetadata {
+  string post_id = 1;
+  string content_id = 2;
+  peers_touch.model.actor.v1.ActorRef author = 3;
+  PostType type = 4;
+  Audience.Kind audience_kind = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  bool is_deleted = 8;
+  PostStats stats = 9;
+}
+
+message CommentMetadata {
+  string comment_id = 1;
+  string content_id = 2;
+  string post_id = 3;
+  string reply_to_comment_id = 4;
+  peers_touch.model.actor.v1.ActorRef author = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  bool is_deleted = 8;
+  int64 reactions_count = 9;
+  int64 replies_count = 10;
+}
+
+message PublicPostContent {
+  Post post = 1;
+}
+
+message PublicCommentContent {
+  string text = 1;
+  repeated Mention mentions = 2;
+}
+
+message CommentResource {
+  CommentMetadata metadata = 1;
+  oneof body {
+    PublicCommentContent public_content = 2;
+    PrivateContentAccess private_content = 3;
+  }
+}
+
+message GetMomentResourceRequest {
+  string post_id = 1;
+}
+
+message GetMomentResourceResponse {
+  PostResource post = 1;
+}
+
+message GetMomentCommentResourceRequest {
+  string post_id = 1;
+  string comment_id = 2;
+}
+
+message GetMomentCommentResourceResponse {
+  CommentResource comment = 1;
+}
+
+message ListMomentCommentsRequest {
+  string post_id = 1;
+  string cursor = 2;
+  uint32 limit = 3;
+}
+
+message ListMomentCommentsResponse {
+  repeated CommentResource comments = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
+}
+
+message PrivatePollOptionResult {
+  bytes opaque_option_id = 1;
+  uint64 vote_count = 2;
+  bool selected_by_viewer = 3;
+}
+
+message VotePrivatePollResponse {
+  repeated PrivatePollOptionResult options = 1;
+  uint64 voter_count = 2;
+  bool exact_replay = 3;
+}
+```
+
+The signed plan's visible `PrivateMomentKind` determines whether poll or repost
+authority is required. Station validates authority presence, its prepare/submit
+hash equality, poll bounds or source-grant subset, exact envelope/object
+coverage, canonical mention routing, plan expiry/revision, and command replay
+inside the Social UOW. It never inspects encrypted subtype fields. Sender Native
+validates plaintext subtype-to-authority equality before encryption; recipient
+Native repeats that validation after authenticated decryption. Point and list
+reads project at most the authenticated endpoint's
+`ViewerContentKeyEnvelope`; unauthorized private resources use the uniform
+not-found shape.
+
+`PrivateContentAccess.verification` carries only the Station-signed viewer
+commit proof, signed routing bundle, and applicable visible subtype authority.
+It never carries another recipient, slot mapping, private text, or object key.
+Recipient Native verifies the Station signature and every commit-proof binding,
+then verifies the endpoint envelope, encrypted payload, decrypted subtype, and
+decrypted mention commitments before publishing the local plaintext projection.
+
+`PrivateContentAccess.poll` is present only for private POLL resources. Its
+opaque option IDs must exactly match the committed `PrivatePollAuthority`;
+counts and `selected_by_viewer` are viewer-scoped Social facts, while option
+labels remain exclusively inside `EncryptedPayload`.
+
+For reposts, Native requires `PrivateRepostContent.original_source`,
+the selected rendered snapshot's `source`, and
+`PrivateRepostAuthority.source` to be byte-identical. The selected snapshot
+class must match the authority's source-proof class.
+`PrivateRepostAuthority.source_author` must match authenticated Social metadata,
+and `rendered_source_commitment` is HMAC-SHA256 over the domain
+`"peers-touch:secure-content:repost-snapshot:v1"` and the complete deterministic
+`RenderedSourceSnapshot`, keyed by the random 32-byte
+`rendered_source_commitment_salt` stored only inside `PrivateRepostContent`.
+PUBLIC sources require
+`PublicRepostSourceProof.canonical_public_post_sha256` to equal SHA-256 over the
+selected deterministic `PublicRenderedSourceSnapshot`; private sources require
+the exact private `SecureResourceRef`, authorization snapshot, encrypted-payload
+hash, and viewer commit-proof hash. Recipient Native fetches the source through
+`source.post_id`, verifies the applicable public or private proof, derives the
+same rendered snapshot, and rejects any attribution or content mismatch. The
+selected snapshot kind must be non-zero and select exactly the corresponding
+body field; unspecified, mismatched, missing, or multiple body representations
+are rejected.
+
+Attachments nested in `PrivateRenderedSourceSnapshot` retain their original
+source-bound `EncryptedObjectDescriptor`. They are excluded from the repost
+plan's object set, are never copied or reattached by the repost UOW, and are
+fetched through `source.post_id` under current source authorization. Attachments
+in `PublicRenderedSourceSnapshot` retain source-owned public media IDs/URLs and
+are revalidated through the public source route. Attachments owned by the outer
+repost body, if any, remain repost-bound and must match the repost plan's exact
+object set. If the source Post or object is deleted, blocked, or otherwise
+unavailable, Native does not render the stored source snapshot as a substitute.
+
+`ListMomentCommentsRequest.limit` and
+`ListRecoverablePrivateContentRequest.limit` accept `1..100`; zero, overflow,
+or malformed cursors fail closed. A private poll accepts `2..20` unique opaque
+option IDs, with `1 <= min_choices <= max_choices <= option_count`.
 
 Private resources never carry legacy plaintext `Post.content`,
 `Audience.actor_ptids`, or unrelated envelopes.
@@ -453,6 +971,7 @@ Social submit atomically writes:
 - slot-to-principal mappings and envelopes;
 - delivery intents;
 - object attachment and grants;
+- exact Station-signed `ViewerContentCommitProof` bytes;
 - exact command receipt.
 
 Conversation retains its current event/object/grant atomic UOW.
@@ -492,16 +1011,39 @@ message ListRecoverablePrivateContentRequest {
   uint32 limit = 2;
 }
 
+message PrivateCommentLocator {
+  string post_id = 1;
+  string comment_id = 2;
+}
+
+message SocialPrivateContentLocator {
+  oneof resource {
+    string post_id = 1;
+    PrivateCommentLocator comment = 2;
+  }
+}
+
 message RecoverablePrivateContent {
   SecureResourceRef resource = 1;
-  ViewerContentKeyEnvelope recovery_envelope = 2;
-  bytes payload_ciphertext_sha256 = 3;
+  SocialPrivateContentLocator locator = 2;
+  ViewerContentKeyEnvelope recovery_envelope = 3;
+  bytes payload_ciphertext_sha256 = 4;
+}
+
+message ListRecoverablePrivateContentResponse {
+  repeated RecoverablePrivateContent resources = 1;
+  string next_cursor = 2;
+  bool has_more = 3;
 }
 ```
 
-Social lists only currently authorized resources and maps actor recovery slots to
-the caller. The recovered device derives the claimed recovery private key from
-the recovery secret, recovery epoch, and one-time key ID. Results are cursor
+Social lists only currently authorized resources, includes the exact domain
+locator required by the existing point-read route, and maps actor recovery slots
+to the caller. Locator kind must match the `SecureResourceRef` owner/domain fact
+and resolve to the same content ID and generation; mismatches are rejected. The
+recovered device derives the claimed recovery private key from the recovery
+secret, recovery epoch, and one-time key ID, then fetches the viewer-scoped
+payload and object descriptors through that locator. Results are cursor
 paginated and restartable; no root-key list is embedded in the whole Recovery
 archive.
 
@@ -513,6 +1055,11 @@ archive.
 | objects per resource | 10 |
 | object plaintext | 2 GiB |
 | object chunks | 2048 at fixed 1 MiB plaintext |
+| encrypted video variants | 8 |
+| rendered repost depth | 1 non-recursive snapshot |
+| mention routing facts | 256 |
+| private poll options | 20 |
+| comment page | 100 resources |
 | recipient actors per plan | 256 |
 | endpoint plus recovery slots per plan | 1000 |
 | active plans per actor | 4 |

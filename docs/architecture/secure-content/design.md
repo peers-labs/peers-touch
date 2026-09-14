@@ -1,8 +1,8 @@
 # Secure Content - Architecture Design
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Version**: v1.1
+> **Created**: 2026-09-13 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `packages/secure-content-core/`, `apps/station/app/internal/securecontent/`
 
@@ -218,6 +218,99 @@ Mention notifications carry signed recipient routing facts that are a subset of
 the frozen audience and never contain private text. Reactions remain Social
 business facts but are returned only after parent authorization.
 
+### 10.1 Proposed W1 Wire Closure
+
+> **Status**: proposed; not executable until Owner acceptance of `SC-D14`.
+
+The W1 generated-contract cutover requires four additional protocol rules:
+
+1. A private video owns one encrypted source object, an optional encrypted
+   poster, and at most eight encrypted variants. Every variant has an opaque
+   variant ID, codec, bitrate, dimensions, and its own
+   `PrivateAttachmentMetadata`; Station sees only the referenced object
+   descriptors.
+2. A private repost contains a non-recursive immutable rendered-source
+   snapshot. The snapshot may contain TEXT, IMAGE, VIDEO, LINK, POLL, or
+   LOCATION, but never another rendered repost. This prevents attacker-chosen
+   recursive payload depth while preserving the exact source presentation
+   available at publish time.
+3. Mention delivery uses one signed routing bundle per resource. Each fact
+   contains only the mentioned actor and a salted, domain-separated HMAC
+   commitment to the canonical encrypted-payload `Mention`. Station verifies
+   the author-device signature and that every routed actor belongs to the frozen
+   grant; Native verifies exact fact-to-payload coverage after decryption.
+4. Prepare, submit, point-read, comment-list, poll-vote, and recovery-list
+   responses are typed, idempotent, and viewer-scoped. Submit accepts the
+   prepared plan, encrypted payload, exact slot envelopes, object descriptors,
+   optional subtype authority, and the signed mention bundle in one command.
+   Prepare commits a non-zero Social subtype and the complete poll or repost
+   authority through the plan's domain-binding hash before PreKey claims.
+   Recovery entries carry a typed Post or Comment locator for the existing
+   domain point-read route. Private reads carry a viewer-safe verification
+   projection containing a Station-signed commit proof, the signed mention
+   bundle, and only the applicable poll or repost authority.
+
+Station validates only visible authority, signatures, hashes, frozen grants, and
+the signed subtype/domain binding. Sender Native validates plaintext subtype
+content against that authority before encryption, and recipient Native repeats
+the equality checks after authenticated decryption. Station never infers
+encrypted fields from visible metadata.
+
+Repost authority uses a discriminated source proof. PUBLIC sources bind the
+dedicated immutable, non-recursive public snapshot hash; that snapshot excludes
+stats, viewer interaction, audience envelopes, and nested repost state while
+retaining source-owned public media references. Private sources bind the private
+resource, authorization snapshot, encrypted-payload hash, and source viewer
+commit proof. Both bind the source Post locator, source author, and deterministic
+rendered-snapshot commitment. The commitment is a domain-separated HMAC keyed
+by a random salt inside the encrypted repost payload, preventing Station from
+enumerating low-entropy quoted text or locations. PUBLIC normalization carries
+canonical typed mention offsets and forbids legacy username-only mention arrays.
+Because private repost recipients are a subset of source recipients, recipient
+Native can validate the authenticated source and reject fabricated quoted
+content or author attribution without exposing snapshot plaintext to Station.
+Rendered-source media remains source-owned and is fetched under current source
+authorization; the repost UOW neither copies nor grants those objects. Source
+deletion or revocation therefore suppresses the rendered snapshot instead of
+preserving a bypass copy.
+
+The Station-signed viewer commit proof is finalized and persisted inside the
+same Social UOW and exact command receipt as the resource. Signing failure rolls
+back the UOW; replay returns the stored proof bytes across crash or signing-key
+rotation.
+
+Canonical mention-routing bytes contain, in field order:
+
+```text
+format_version
+resource(owner_domain, content_id, generation)
+authorization_snapshot_sha256
+encrypted_payload_sha256
+sorted facts(mentioned actor canonical bytes, mention_commitment)
+sender ActorDeviceRef
+sender_signing_key_id
+```
+
+Facts sort by canonical actor bytes and then commitment bytes. Duplicate
+`(actor, commitment)` pairs or duplicate commitments, an actor outside the
+frozen grant, extra/missing payload mentions, a resource/snapshot mismatch, or
+an invalid signature is terminal rejection. Multiple distinct commitments for
+the same actor are valid and represent separate mention occurrences. Exact
+command replay returns the original result; the same command ID with another
+canonical request hash is conflict.
+
+The mention commitment is a domain-separated HMAC over deterministic `Mention`
+bytes using a random 32-byte per-resource salt stored only inside the encrypted
+payload. The routing signature therefore binds the complete encrypted payload
+without exposing a low-entropy offset/display hash that Station can enumerate.
+
+Prepare, submit, and poll-vote request hashes use the dedicated canonical hash
+input messages in `data-model.md`, not the transport request bytes. Repeated
+envelope, object, mention, audience-actor, and poll-option commitments are sorted
+by their specified stable identity before deterministic protobuf encoding.
+Unknown fields, duplicate identities, non-canonical order, or a transport field
+that cannot be represented by the hash input is terminal rejection.
+
 ## 11. Authentication And Response Projection
 
 - no Bearer header: anonymous public lookup only;
@@ -228,6 +321,10 @@ business facts but are returned only after parent authorization.
 - ordinary response includes at most the caller's endpoint envelope;
 - recovery response includes only the caller actor's claimed recovery envelope;
 - author audience administration is a separate metadata-only route.
+- `GET /api/v1/social/moments/:id` returns `GetMomentResourceResponse`;
+- `GET /api/v1/social/moments/:id/comments/:comment_id` returns
+  `GetMomentCommentResourceResponse`; recovery locators use these same bounded
+  domain-owned point-read routes and never require comment-list traversal.
 
 ## 12. Allowed And Forbidden Relationships
 

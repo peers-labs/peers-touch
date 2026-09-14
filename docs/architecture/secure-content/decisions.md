@@ -1,8 +1,8 @@
 # Secure Content - Architecture Decisions
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Version**: v1.1
+> **Created**: 2026-09-13 | **Updated**: 2026-09-14
 > **Owner**: Architecture Team
 
 ---
@@ -24,6 +24,7 @@
 | `SC-D11` | Public and private content retain separate physical persistence | accepted |
 | `SC-D12` | Plans expose opaque slots backed only by one-time public keys | accepted |
 | `SC-D13` | The business domain owns the outer object/grant transaction | accepted |
+| `SC-D14` | Private subtype and routing wires are bounded and canonical | proposed |
 
 ---
 
@@ -524,3 +525,89 @@ together without introducing a cross-domain transaction coordinator.
 Each domain keeps its own object persistence adapter and must pass the shared
 kernel conformance suite. Abandoned PreKey claims consume inventory and require
 bounded replenishment.
+
+---
+
+## SC-D14: Bounded Private Subtype And Routing Wires
+
+**Status**: proposed
+**Date**: 2026-09-14
+
+### Context
+
+W1 cannot generate one cross-language contract substrate while encrypted video
+variants, rendered repost snapshots, signed mention-routing facts, and the
+prepare/submit/read response shapes remain undefined. Inferring those fields in
+code would turn generated output into the architecture source and make later
+wire correction a breaking migration.
+
+### Decision
+
+The Social private-content proto defines:
+
+- bounded encrypted video variants, each referencing its own opaque object
+  descriptor through encrypted attachment metadata;
+- one non-recursive rendered-source snapshot for a private repost;
+- one canonical signed mention-routing bundle per private resource;
+- complete typed prepare, submit, point-read, comment-list, vote, and
+  recovery-list request/response messages.
+
+The prepare plan commits a non-zero Social subtype through a generic domain
+binding hash, and recovery entries carry a typed Post or Comment locator. The
+rendered snapshot excludes REPOST from its body union. Mention facts expose only
+actor identity and a commitment to the canonical encrypted-payload mention.
+The commitment is a domain-separated HMAC keyed by a random per-resource salt
+that remains inside the encrypted payload. The signature binds the resource,
+authorization snapshot, complete encrypted-payload hash, sorted facts, sender
+device, and signing-key ID. Prepare, submit, and vote commands hash dedicated
+canonical input messages that represent every transport field with
+deterministic repeated-field ordering. The same command and request hash returns
+the original result; the same command with another hash is terminal conflict.
+Private reads return a viewer-safe verification projection with the signed
+routing bundle, Station-signed commit proof, and applicable visible subtype
+authority. The commit proof is finalized and persisted in the same Social UOW
+and exact receipt. Repost authority discriminates PUBLIC canonical-Post proof
+from private source-resource/commit proof. PUBLIC proof uses a dedicated
+immutable, non-recursive snapshot that excludes mutable/viewer fields and keeps
+public media source-owned while retaining canonical typed mention offsets. Both
+proof classes bind source author, locator, and a salted, domain-separated
+rendered-snapshot HMAC so recipients can detect fabricated quoted content
+without exposing an enumerable plaintext-derived hash.
+
+### Rationale
+
+The bounded non-recursive model is portable across prost, Go protobuf, and
+protobuf-es, prevents attacker-controlled recursive decode depth, and retains
+the complete encrypted presentation needed by Desktop and Mobile. A signed
+commitment lets Station route mention notifications without receiving private
+text or mention offsets.
+
+### Alternatives Considered
+
+- Free-form rendered-source bytes: rejected because type/version validation
+  would diverge across clients.
+- Recursive `PrivateMomentContent`: rejected because malicious nesting creates
+  unbounded decode and validation depth.
+- Station-visible mention offsets or text: rejected by metadata minimization.
+- Unsigned actor-only mention routing: rejected because routing facts could be
+  detached from the author command or substituted across resources.
+- Separate subtype endpoints: rejected because they split the atomic prepared
+  command and duplicate replay semantics.
+
+### Consequences
+
+Video variants are limited to eight, private polls to twenty options, comment
+and recovery pages to one hundred resources, and rendered reposts flatten one
+source snapshot. Distinct occurrences may mention the same actor. Native
+validates plaintext and decrypted subtype/authority equality, subtype limits,
+exact mention commitments, and repost source/snapshot equality. Station
+validates signatures, frozen-grant
+membership, pre-claim poll/repost authority, repost audience subsets,
+subtype/domain binding, request bounds, replay identity, recovery locator
+identity, and object descriptor coverage without reading private payload fields.
+Private poll reads expose only opaque option results, and recovery reuses
+bounded Post/Comment point-read routes. Rendered repost media remains
+source-owned and source-authorized; it is not copied into the repost object
+plane, so source deletion or revocation cannot be bypassed by the snapshot.
+Accepting this decision unblocks W1; rejecting it requires another complete
+typed wire design before implementation can resume.
