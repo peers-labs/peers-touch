@@ -218,9 +218,9 @@ Mention notifications carry signed recipient routing facts that are a subset of
 the frozen audience and never contain private text. Reactions remain Social
 business facts but are returned only after parent authorization.
 
-### 10.1 Proposed W1 Wire Closure
+### 10.1 Accepted W1 Wire Closure
 
-> **Status**: proposed; not executable until Owner acceptance of `SC-D14`.
+> **Status**: accepted by Owner on 2026-09-14.
 
 The W1 generated-contract cutover requires four additional protocol rules:
 

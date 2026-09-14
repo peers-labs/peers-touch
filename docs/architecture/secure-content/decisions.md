@@ -24,7 +24,7 @@
 | `SC-D11` | Public and private content retain separate physical persistence | accepted |
 | `SC-D12` | Plans expose opaque slots backed only by one-time public keys | accepted |
 | `SC-D13` | The business domain owns the outer object/grant transaction | accepted |
-| `SC-D14` | Private subtype and routing wires are bounded and canonical | proposed |
+| `SC-D14` | Private subtype and routing wires are bounded and canonical | accepted |
 
 ---
 
@@ -530,7 +530,7 @@ bounded replenishment.
 
 ## SC-D14: Bounded Private Subtype And Routing Wires
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-09-14
 
 ### Context

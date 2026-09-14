@@ -1188,7 +1188,7 @@ observations is invalid.
 | W0 | governance | complete | plan-review-v14 | N/A | N/A | none |
 | W0R | machine runtime control | complete | `8a7722c93` | PASS | NOT_RUN | none |
 | W14 | scoped generator groundwork | complete | `69fe979b3` | SOURCE_CHECK/PASS | N/A | none |
-| W1 | contracts | parked | none | NOT_RUN | NOT_RUN | proposed `SC-D14` passed independent review; Owner acceptance required |
+| W1 | contracts | in progress | none | NOT_RUN | NOT_RUN | none; `SC-D14` accepted by Owner |
 | W2 | atomic kernels/Chat | parked | none | NOT_RUN | NOT_RUN | W0R/W1/W4; active MCA Desktop source and Station deploy/slot owner |
 | W3 | PreKeys | parked | none | NOT_RUN | NOT_RUN | W2 |
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
@@ -1204,11 +1204,11 @@ observations is invalid.
 
 Overall: `4/16`. DWF-D13 removed the cross-worktree source-lock blocker and a
 real W1 declaration reached `ACTIVE`. The missing wire contracts are now defined
-by proposed `SC-D14`, including bounded subtype payloads, canonical replay,
+by accepted `SC-D14`, including bounded subtype payloads, canonical replay,
 viewer commit proof, PUBLIC/private repost proof, source-owned media, mention
 commitments, and recovery locators. Independent review v11 passes all six
-invariants with no findings. W1 remains parked at the mandatory Owner acceptance
-gate; a reviewed proposal is not an accepted architecture decision.
+invariants with no findings. The Owner accepted `SC-D14` on 2026-09-14, so W1
+returns to the dependency-ready execution frontier.
 
 Current evidence:
 
@@ -1228,7 +1228,8 @@ Current evidence:
   pass. A W1 declaration then reached `ACTIVE` despite the independent
   MCA/NDR source overlap and was released cleanly after the design gap was
   confirmed.
-- Proposed `SC-D14` is checkpointed at `1ecc92ad2`; eleven defect-driven
+- `SC-D14` was proposed at `1ecc92ad2` and accepted by the Owner on 2026-09-14;
+  eleven defect-driven
   independent review rounds resolved all findings. Final review result:
   `PASS`, with metadata minimization, bounded decoding, exact replay,
   viewer-scoped projection, cross-language proto-first generation, and

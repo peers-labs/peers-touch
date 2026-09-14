@@ -672,7 +672,7 @@ message PrivateContentAccess {
 }
 ```
 
-Proposed `SC-D14` completes the W1 Social wire:
+Accepted `SC-D14` completes the W1 Social wire:
 
 ```protobuf
 message PreparePrivateMomentResponse {
