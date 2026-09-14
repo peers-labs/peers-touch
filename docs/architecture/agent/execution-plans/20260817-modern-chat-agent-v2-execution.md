@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | partial / unproven; MCA-J06 is `FUNCTIONAL_PASS`; checkpoint `b0be51e808b9d442ab7551ec16b2536861e8f41f` fixes the AS-F06 equal-cursor recovery regression; exact-source Foundation run `20260914T020855882888Z-37de0f8f4117aa4f2a9227759dd9401f` crossed all AS-F06 and `BASE-INVALID_REFERENCE` before a later approval receiver timeout; the next run isolated a native Harness restart incident; run `20260914T025423025083Z-91dc85e1941d30698292e5582c61e851` first failed at Browser zh-CN AS-F12 preparation while listing conversation messages and completed clean inner cleanup; outer run `20260914T025357736208Z-01d084eb87694198d7d64517e9413264` released client storage, source lease, and profile lease with `DONE / PROVEN` cleanup | W8a |
+| G-F Complete Foundation Gate | partial / unproven; MCA-J06 is `FUNCTIONAL_PASS`; checkpoint `b0be51e808b9d442ab7551ec16b2536861e8f41f` fixes the AS-F06 equal-cursor recovery regression; exact-source Foundation run `20260914T020855882888Z-37de0f8f4117aa4f2a9227759dd9401f` crossed all AS-F06 and `BASE-INVALID_REFERENCE`; diagnostic checkpoint `9c3e7f9b5ae1b99e9eaaea0c7e3fc2eef4f453ca` then crossed Browser AS-F12 in both locales with every instrumented conversation/message readback successful before run `20260914T034858052731Z-56fdebfb8bc40b4540d647b5abd705f0` first failed at Browser English `BASE-APPROVAL-EXPIRED` cleanup; inner and outer cleanup passed | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1386,6 +1386,24 @@ and zero local-path leakage.
     Station HTTP failure, Desktop decode failure, and premature cleanup before
     any business fix. The full 419-cell Foundation Gate remains
     `PARTIAL / UNPROVEN`.
+  - Diagnostic checkpoint `9c3e7f9b5ae1b99e9eaaea0c7e3fc2eef4f453ca`
+    rebuilt and smoked the Native Acceptance binary, then executed fully
+    authorized Foundation inner run
+    `20260914T034858052731Z-56fdebfb8bc40b4540d647b5abd705f0`.
+    Browser AS-F12 English and zh-CN each completed six paired readbacks:
+    one authenticated actor remained stable, both new conversations stayed
+    active, and every message list returned four decoded messages. The prior
+    zh-CN message-list failure did not reproduce, so no AS-F12 product change
+    is justified.
+  - The same run advanced to Browser English `BASE-APPROVAL-EXPIRED` and
+    first failed with `agent.acceptance.foundationToolExpiryCleanupFailed`.
+    Inner cleanup released both clients, ports, storage, and actor identity;
+    outer run `20260914T034841244388Z-7a876a00e77cfc2addd239e50f395b75`
+    released client storage, source lease, and profile lease with
+    `DONE / PROVEN` cleanup. The Ready action is now to distinguish the masked
+    primary error, capability-binding restoration, Turn cancellation, and
+    conversation deletion before changing behavior. The full 419-cell
+    Foundation Gate remains `PARTIAL / UNPROVEN`.
 
 #### G-FE1 Concurrency Decision
 

@@ -329,6 +329,10 @@ let foundationF12MessageListDebugScope: {
   sampleId: string;
   scenarioKey: string;
 } | null = null;
+let foundationApprovalExpiryCleanupDebugScope: {
+  platform: string;
+  sampleId: string;
+} | null = null;
 
 function observedFoundationF06Handoffs(): FoundationF06Handoff[] {
   const byScenario = new Map(
@@ -1111,9 +1115,30 @@ async function observeFoundationActiveDependency(
 async function deleteFoundationConversation(
   conversationId: string,
 ): Promise<string> {
+  // #region debug-point B-D:approval-expiry-delete
+  const debugScope = foundationApprovalExpiryCleanupDebugScope;
+  const conversationIdHash = debugScope
+    ? sha256Hex(conversationId)
+    : Promise.resolve('');
+  // #endregion
   for (let attempt = 0; attempt < 12; attempt += 1) {
     try {
       const conversation = await api.getAgentConversation(conversationId);
+      // #region debug-point B-C:approval-expiry-delete-read
+      if (debugScope) {
+        void conversationIdHash.then((resolvedConversationIdHash) =>
+          reportFoundationApprovalExpiryCleanupDebug(
+            'B-C',
+            'delete-read',
+            {
+              attempt,
+              conversationIdHash: resolvedConversationIdHash,
+              conversationStatus: conversation.status,
+              conversationVersion: conversation.version,
+            },
+          ));
+      }
+      // #endregion
       if (conversation.status === 'deleted') {
         return 'CONVERSATION_DELETED';
       }
@@ -1122,9 +1147,36 @@ async function deleteFoundationConversation(
         conversation.version,
         true,
       );
+      // #region debug-point B-C:approval-expiry-delete-complete
+      if (debugScope) {
+        void conversationIdHash.then((resolvedConversationIdHash) =>
+          reportFoundationApprovalExpiryCleanupDebug(
+            'B-C',
+            'delete-complete',
+            {
+              attempt,
+              conversationIdHash: resolvedConversationIdHash,
+            },
+          ));
+      }
+      // #endregion
       return '';
     } catch (error) {
       const code = observedErrorCode(error);
+      // #region debug-point B-C-D:approval-expiry-delete-error
+      if (debugScope) {
+        void conversationIdHash.then((resolvedConversationIdHash) =>
+          reportFoundationApprovalExpiryCleanupDebug(
+            'B-C-D',
+            'delete-attempt-error',
+            {
+              attempt,
+              conversationIdHash: resolvedConversationIdHash,
+              error: foundationApprovalExpiryCleanupErrorDebug(error),
+            },
+          ));
+      }
+      // #endregion
       if (isFoundationResourceNotFound(error)) return 'AGENT_4004';
       if (code !== 'VERSION_CONFLICT' && code !== 'ACTIVE_DEPENDENCY') {
         try {
@@ -1136,6 +1188,14 @@ async function deleteFoundationConversation(
       await new Promise((resolve) => window.setTimeout(resolve, 250));
     }
   }
+  // #region debug-point C:approval-expiry-delete-exhausted
+  if (debugScope) {
+    void conversationIdHash.then((resolvedConversationIdHash) =>
+      reportFoundationApprovalExpiryCleanupDebug('C', 'delete-exhausted', {
+        conversationIdHash: resolvedConversationIdHash,
+      }));
+  }
+  // #endregion
   throw new Error('agent.acceptance.foundationConversationDeleteBlocked');
 }
 
@@ -1143,12 +1203,58 @@ async function cleanupFoundationToolConversation(
   conversationId: string,
   turnId: string,
 ): Promise<void> {
+  // #region debug-point B-D:approval-expiry-cleanup-start
+  const debugScope = foundationApprovalExpiryCleanupDebugScope;
+  const identityHashes = debugScope
+    ? Promise.all([
+        sha256Hex(conversationId),
+        turnId ? sha256Hex(turnId) : Promise.resolve(''),
+      ])
+    : Promise.resolve(['', '']);
+  if (debugScope) {
+    void identityHashes.then(([conversationIdHash, turnIdHash]) =>
+      reportFoundationApprovalExpiryCleanupDebug('B-D', 'cleanup-start', {
+        conversationIdHash,
+        platform: debugScope.platform,
+        sampleId: debugScope.sampleId,
+        turnIdHash,
+      }));
+  }
+  // #endregion
   let cancellationError: unknown = null;
   if (turnId) {
     try {
-      await api.cancelAgentTurn(turnId);
+      const cancellation = await api.cancelAgentTurn(turnId);
+      // #region debug-point B:approval-expiry-cancel-complete
+      if (debugScope) {
+        void identityHashes.then(([conversationIdHash, turnIdHash]) =>
+          reportFoundationApprovalExpiryCleanupDebug(
+            'B',
+            'cancel-complete',
+            {
+              cancellationStatus: String(cancellation.status ?? ''),
+              conversationIdHash,
+              turnIdHash,
+            },
+          ));
+      }
+      // #endregion
     } catch (error) {
       cancellationError = error;
+      // #region debug-point B-D:approval-expiry-cancel-error
+      if (debugScope) {
+        void identityHashes.then(([conversationIdHash, turnIdHash]) =>
+          reportFoundationApprovalExpiryCleanupDebug(
+            'B-D',
+            'cancel-error',
+            {
+              conversationIdHash,
+              error: foundationApprovalExpiryCleanupErrorDebug(error),
+              turnIdHash,
+            },
+          ));
+      }
+      // #endregion
     }
   }
 
@@ -1169,7 +1275,40 @@ async function cleanupFoundationToolConversation(
         'agent.acceptance.foundationCleanupConversationNotDeleted',
       );
     }
+    // #region debug-point B-C:approval-expiry-cleanup-complete
+    if (debugScope) {
+      void identityHashes.then(([conversationIdHash, turnIdHash]) =>
+        reportFoundationApprovalExpiryCleanupDebug(
+          'B-C',
+          'cleanup-complete',
+          {
+            cancellationError:
+              foundationApprovalExpiryCleanupErrorDebug(cancellationError),
+            conversationIdHash,
+            deletionErrorCode,
+            turnIdHash,
+          },
+        ));
+    }
+    // #endregion
   } catch (cleanupError) {
+    // #region debug-point B-C-D:approval-expiry-cleanup-error
+    if (debugScope) {
+      void identityHashes.then(([conversationIdHash, turnIdHash]) =>
+        reportFoundationApprovalExpiryCleanupDebug(
+          'B-C-D',
+          'cleanup-error',
+          {
+            cancellationError:
+              foundationApprovalExpiryCleanupErrorDebug(cancellationError),
+            cleanupError:
+              foundationApprovalExpiryCleanupErrorDebug(cleanupError),
+            conversationIdHash,
+            turnIdHash,
+          },
+        ));
+    }
+    // #endregion
     throw Object.assign(
       new Error('agent.acceptance.foundationToolConversationCleanupFailed'),
       {
@@ -4065,6 +4204,25 @@ async function runFoundationApprovalExpiredScenario(input: {
   };
   facts: Record<string, unknown>;
 }> {
+  // #region debug-point A-E:approval-expiry-scenario-entry
+  foundationApprovalExpiryCleanupDebugScope = {
+    platform: input.platform,
+    sampleId: input.sampleId,
+  };
+  const sessionState = useSessionStore.getState();
+  const actorPtid = sessionState.currentUser?.actorPtid.trim() || '';
+  void Promise.all([
+    sha256Hex(input.agent.id || input.agent.name),
+    actorPtid ? sha256Hex(actorPtid) : Promise.resolve(''),
+  ]).then(([agentIdHash, actorPtidHash]) =>
+    reportFoundationApprovalExpiryCleanupDebug('A-E', 'scenario-entry', {
+      actorPtidHash,
+      agentIdHash,
+      authenticated: sessionState.authenticated,
+      platform: input.platform,
+      sampleId: input.sampleId,
+    }));
+  // #endregion
   const fixture = await foundationToolFixture(
     input.agent.id || input.agent.name,
     input.platform,
@@ -4460,9 +4618,30 @@ async function runFoundationApprovalExpiredScenario(input: {
     };
   } catch (error) {
     operationError = error;
+    // #region debug-point E:approval-expiry-primary-error
+    void reportFoundationApprovalExpiryCleanupDebug(
+      'E',
+      'operation-error',
+      {
+        error: foundationApprovalExpiryCleanupErrorDebug(error),
+      },
+    );
+    // #endregion
   } finally {
     const cleanupErrors: unknown[] = [];
     try {
+      // #region debug-point A:approval-expiry-binding-restore
+      void reportFoundationApprovalExpiryCleanupDebug(
+        'A',
+        'binding-restore-start',
+        {
+          currentBindingPresent: Boolean(currentBinding),
+          currentBindingRevision: currentBinding?.revision ?? null,
+          originalBindingPresent: Boolean(originalBinding),
+          originalBindingRevision: originalBinding?.revision ?? null,
+        },
+      );
+      // #endregion
       if (originalBinding) {
         await updateFoundationToolPolicy(
           input.agent,
@@ -4479,8 +4658,23 @@ async function runFoundationApprovalExpiredScenario(input: {
           'acceptance_fixture_cleanup',
         );
       }
+      // #region debug-point A:approval-expiry-binding-restored
+      void reportFoundationApprovalExpiryCleanupDebug(
+        'A',
+        'binding-restore-complete',
+      );
+      // #endregion
     } catch (error) {
       cleanupErrors.push(error);
+      // #region debug-point A-D:approval-expiry-binding-error
+      void reportFoundationApprovalExpiryCleanupDebug(
+        'A-D',
+        'binding-restore-error',
+        {
+          error: foundationApprovalExpiryCleanupErrorDebug(error),
+        },
+      );
+      // #endregion
     }
     if ((operationError || cleanupErrors.length > 0) && conversationId) {
       try {
@@ -4490,9 +4684,31 @@ async function runFoundationApprovalExpiredScenario(input: {
         );
       } catch (error) {
         cleanupErrors.push(error);
+        // #region debug-point B-D:approval-expiry-conversation-cleanup-error
+        void reportFoundationApprovalExpiryCleanupDebug(
+          'B-D',
+          'conversation-cleanup-error',
+          {
+            error: foundationApprovalExpiryCleanupErrorDebug(error),
+          },
+        );
+        // #endregion
       }
     }
     if (cleanupErrors.length > 0) {
+      // #region debug-point A-E:approval-expiry-cleanup-failed
+      void reportFoundationApprovalExpiryCleanupDebug(
+        'A-E',
+        'scenario-cleanup-failed',
+        {
+          cleanupErrors: cleanupErrors.map(
+            foundationApprovalExpiryCleanupErrorDebug,
+          ),
+          primaryError:
+            foundationApprovalExpiryCleanupErrorDebug(operationError),
+        },
+      );
+      // #endregion
       throw Object.assign(
         new Error('agent.acceptance.foundationToolExpiryCleanupFailed'),
         {
@@ -4522,6 +4738,7 @@ async function runFoundationApprovalExpiredScenario(input: {
       : restoredBinding === null,
     conversationDeleted: false,
   };
+  foundationApprovalExpiryCleanupDebugScope = null;
   return result;
 }
 
@@ -11240,6 +11457,55 @@ function reportFoundationF12MessageListDebug(
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:foundationConversationReadback',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
+// #region debug-point A-E:foundation-approval-expiry-cleanup
+function foundationApprovalExpiryCleanupErrorDebug(
+  error: unknown,
+): Record<string, unknown> | null {
+  if (error === null || error === undefined) return null;
+  const candidate = error && typeof error === 'object'
+    ? error as {
+        code?: unknown;
+        details?: Record<string, unknown>;
+        message?: unknown;
+        name?: unknown;
+      }
+    : null;
+  const details = candidate?.details;
+  return {
+    code: typeof candidate?.code === 'string' ? candidate.code : null,
+    detailCode:
+      typeof details?.error_code === 'string' ? details.error_code : null,
+    message:
+      typeof candidate?.message === 'string'
+        ? candidate.message
+        : String(error),
+    name: typeof candidate?.name === 'string' ? candidate.name : typeof error,
+    observedCode: observedErrorCode(error),
+    stationStatus:
+      typeof details?.status === 'number' ? details.status : null,
+  };
+}
+
+function reportFoundationApprovalExpiryCleanupDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7811/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-approval-expiry-cleanup',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationApprovalExpiredScenario',
       msg: `[DEBUG] ${stage}`,
       data,
       ts: Date.now(),
