@@ -2015,3 +2015,19 @@ The existing serial Concurrency Decision remains valid because the Station
 object stream, `four`/`fiveArm` deployments, simulator fixture, and rerun are
 shared mutable resources. CA-W6 remains `PARTIAL/UNPROVEN`; CA-W7 remains
 pending until the receiver-open Journey reaches `FUNCTIONAL_PASS`.
+
+Instrumented checkpoint `ac9e00fec82690bbd1cdbd576b221ef77dfec5ad`
+was deployed exactly to `four` and `fiveArm`. Run
+`20260915T015724802744Z-f66857957b3229dee6fb5d969f69a5f4`
+reproduces the same receiver-open timeout after `FIXTURE_READY`; attachment
+delivery still converges and cleanup passes. Mobile records five bounded
+download attempts entering `RetryWait` with `RETRY_LATER`. Authority `four`
+returns HTTP 400 in 2-3 ms for each federated object GET, while receiver Home
+`fiveArm` logs only `peer returned HTTP 400`. The authority cannot reach the
+local Debug Server, so the entry probes do not distinguish metadata decode
+from path binding. Source inspection exposes the next diagnostic boundary:
+shared Federation `peerClient.Open` drains and discards the existing non-2xx
+response body before wrapping the status. CA-W6 therefore admits one
+diagnostic-only change to preserve that bounded error body in the returned
+error chain. This changes no status, retry classification, route, claim,
+storage, or success-path behavior.
