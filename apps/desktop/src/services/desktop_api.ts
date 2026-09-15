@@ -2532,6 +2532,7 @@ export interface AgentErrorResolutionAction {
     | 'switchAccount'
     | 'chooseCompatibleModel'
     | 'chooseTool'
+    | 'inspectBudget'
     | 'chooseResourceAgain'
     | 'removeReference'
     | 'reconcile'
@@ -2553,6 +2554,8 @@ export interface AgentErrorResolutionAction {
   capabilityId?: string;
   toolId?: string;
   toolVersion?: string;
+  budgetKind?: AgentRuntimeBudgetKind;
+  limit?: string;
   sessionId?: string;
   leaseId?: string;
   expiredAt?: string;
@@ -2580,6 +2583,10 @@ export const AGENT_PROVIDER_TIMEOUT_LOCALE_KEY =
   'agent.errors.providerTimeout';
 export const AGENT_TOOL_UNKNOWN_ERROR_TYPE = 'TOOL_UNKNOWN';
 export const AGENT_TOOL_UNKNOWN_LOCALE_KEY = 'agent.errors.toolUnknown';
+export const AGENT_TOOL_LOOP_BUDGET_EXHAUSTED_ERROR_TYPE =
+  'TOOL_LOOP_BUDGET_EXHAUSTED';
+export const AGENT_TOOL_LOOP_BUDGET_EXHAUSTED_LOCALE_KEY =
+  'agent.errors.toolLoopBudgetExhausted';
 export const AGENT_CONTEXT_LIMIT_ERROR_TYPE = 'CONTEXT_OVERFLOW';
 export const AGENT_INVALID_REFERENCE_ERROR_TYPE = 'CONTEXT_INVALID_REFERENCE';
 export const AGENT_INVALID_REFERENCE_LOCALE_KEY =
@@ -2652,6 +2659,26 @@ export type AgentToolUnknownError = AgentTypedErrorPayload & {
   };
 };
 
+export type AgentRuntimeBudgetKind =
+  | 'tool_calls'
+  | 'identical_tool_calls'
+  | 'wall_time'
+  | 'attempts'
+  | 'agent_steps'
+  | 'delegation_depth'
+  | 'input_tokens'
+  | 'output_tokens'
+  | 'attachments'
+  | 'cost';
+
+export type AgentToolLoopBudgetExhaustedError = AgentTypedErrorPayload & {
+  details: {
+    turn_id: string;
+    budget_kind: AgentRuntimeBudgetKind;
+    limit: string;
+  };
+};
+
 export type AgentIncompatibleCapabilityError = AgentTypedErrorPayload & {
   details: {
     capability_id: string;
@@ -2705,6 +2732,8 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'actual_revision',
   'capability_id',
   'turn_id',
+  'budget_kind',
+  'limit',
   'reason_code',
   'reference_kind',
   'reference_hash',
@@ -2726,6 +2755,18 @@ const AGENT_CLIENT_RESOURCE_KINDS = new Set([
   'folder',
   'image',
   'workspace',
+]);
+const AGENT_RUNTIME_BUDGET_KINDS = new Set<AgentRuntimeBudgetKind>([
+  'tool_calls',
+  'identical_tool_calls',
+  'wall_time',
+  'attempts',
+  'agent_steps',
+  'delegation_depth',
+  'input_tokens',
+  'output_tokens',
+  'attachments',
+  'cost',
 ]);
 const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/u;
 const RFC3339_UTC_PATTERN =
@@ -2983,6 +3024,33 @@ export function isAgentToolUnknownError(
   );
 }
 
+export function isAgentToolLoopBudgetExhaustedError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentToolLoopBudgetExhaustedError {
+  if (
+    error?.error_type !== AGENT_TOOL_LOOP_BUDGET_EXHAUSTED_ERROR_TYPE
+    || error.locale_key !== AGENT_TOOL_LOOP_BUDGET_EXHAUSTED_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  const limit = Number(error.details.limit);
+  return (
+    detailKeys.length === 3
+    && detailKeys[0] === 'budget_kind'
+    && detailKeys[1] === 'limit'
+    && detailKeys[2] === 'turn_id'
+    && error.details.turn_id.trim().length > 0
+    && AGENT_RUNTIME_BUDGET_KINDS.has(
+      error.details.budget_kind as AgentRuntimeBudgetKind,
+    )
+    && Number.isFinite(limit)
+    && limit > 0
+  );
+}
+
 export function isAgentIncompatibleCapabilityError(
   error: AgentTypedErrorPayload | null | undefined,
 ): error is AgentIncompatibleCapabilityError {
@@ -3124,6 +3192,15 @@ export function resolveAgentTypedErrorAction(
       toolId: error.details.tool_id,
       toolVersion: error.details.tool_version,
       label: 'agent.recovery.chooseTool',
+    };
+  }
+  if (isAgentToolLoopBudgetExhaustedError(error)) {
+    return {
+      type: 'inspectBudget',
+      turnId: error.details.turn_id,
+      budgetKind: error.details.budget_kind,
+      limit: error.details.limit,
+      label: 'agent.recovery.inspectBudget',
     };
   }
   if (isAgentRuntimeUnavailableError(error)) {

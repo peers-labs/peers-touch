@@ -1911,6 +1911,7 @@ func TestAuthorizedToolsRequireNativeToolCapabilityBeforeExecution(t *testing.T)
 func TestRuntimeBudgetDeadlineRejectsBeforeProviderExecution(t *testing.T) {
 	ctx, cancel := withRuntimeBudgetDeadline(
 		context.Background(),
+		"turn-expired-runtime-budget",
 		&model.RuntimeBudget{WallTimeMs: 1},
 		time.Now().Add(-time.Second),
 	)

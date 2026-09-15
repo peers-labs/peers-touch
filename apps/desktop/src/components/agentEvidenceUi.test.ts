@@ -77,20 +77,48 @@ describe('Agent evidence UI projections', () => {
       error: 'agent.errors.toolLoopBudgetExhausted',
       error_type: BUDGET_ERROR_TYPE,
       locale_key: 'agent.errors.toolLoopBudgetExhausted',
+      retryable: false,
+      terminal: true,
+      details: {
+        turn_id: 'turn-1',
+        budget_kind: 'tool_calls',
+        limit: '4',
+      },
+    };
+
+    expect(projectBudgetNotice(data)).toEqual({
+      kind: 'tool_calls',
+      turnId: 'turn-1',
+      limit: '4',
+      localeKey: 'agent.errors.toolLoopBudgetExhausted',
+    });
+    expect(reduceStreamEvent(assistantMessage, { event: 'error', data }))
+      .toMatchObject({
+        budgetNotice: {
+          kind: 'tool_calls',
+          turnId: 'turn-1',
+          limit: '4',
+        },
+        resolution: {
+          type: 'inspectBudget',
+          turnId: 'turn-1',
+        },
+      });
+  });
+
+  it('does not infer budget recovery from a legacy terminal reason', () => {
+    expect(projectBudgetNotice({
+      error: 'agent.errors.toolLoopBudgetExhausted',
+      error_type: BUDGET_ERROR_TYPE,
+      locale_key: 'agent.errors.toolLoopBudgetExhausted',
+      retryable: false,
+      terminal: true,
       details: {
         reason: 'max_tool_calls_exhausted',
         limit: '4',
         consumed: '4',
       },
-    };
-
-    expect(projectBudgetNotice(data)).toMatchObject({
-      kind: 'tool_calls',
-      limit: '4',
-      consumed: '4',
-    });
-    expect(reduceStreamEvent(assistantMessage, { event: 'error', data }).budgetNotice)
-      .toMatchObject({ kind: 'tool_calls' });
+    })).toBeUndefined();
   });
 
   it('preserves typed attachment rejection details on the receiver message', () => {

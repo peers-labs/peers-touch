@@ -334,6 +334,7 @@ func assertNoProviderToolPersistence(t *testing.T, db *gorm.DB) {
 
 func TestStationDelegationBudgetRejectsBeforeChildExecution(t *testing.T) {
 	config := &TurnConfig{
+		TurnID:        "turn-delegation-budget",
 		RuntimeBudget: &model.RuntimeBudget{MaxDelegationDepth: 1},
 		Depth:         1,
 	}
@@ -344,7 +345,12 @@ func TestStationDelegationBudgetRejectsBeforeChildExecution(t *testing.T) {
 	var budgetErr *errcode.BizError
 	if !errors.As(err, &budgetErr) ||
 		budgetErr.Code != errcode.AgentToolBudgetExhausted ||
-		budgetErr.Message != maxDelegationDepthExhaustedReason {
+		budgetErr.Message != maxDelegationDepthExhaustedReason ||
+		budgetErr.Payload == nil ||
+		len(budgetErr.Payload.GetDetails()) != 3 ||
+		budgetErr.Payload.GetDetails()["turn_id"] != config.TurnID ||
+		budgetErr.Payload.GetDetails()["budget_kind"] != "delegation_depth" ||
+		budgetErr.Payload.GetDetails()["limit"] != "1" {
 		t.Fatalf("unexpected delegation budget rejection: %#v", err)
 	}
 }
@@ -352,6 +358,7 @@ func TestStationDelegationBudgetRejectsBeforeChildExecution(t *testing.T) {
 func TestWallTimeDeadlineRetainsTypedBudgetExhaustion(t *testing.T) {
 	ctx, cancel := withRuntimeBudgetDeadline(
 		context.Background(),
+		"turn-wall-time-budget",
 		&model.RuntimeBudget{WallTimeMs: 25},
 		time.Now().Add(-time.Second),
 	)
@@ -363,7 +370,11 @@ func TestWallTimeDeadlineRetainsTypedBudgetExhaustion(t *testing.T) {
 	if !errors.As(err, &budgetErr) ||
 		budgetErr.Code != errcode.AgentToolBudgetExhausted ||
 		budgetErr.Message != wallTimeExhaustedReason ||
-		!budgetErr.Payload.GetTerminal() {
+		!budgetErr.Payload.GetTerminal() ||
+		len(budgetErr.Payload.GetDetails()) != 3 ||
+		budgetErr.Payload.GetDetails()["turn_id"] != "turn-wall-time-budget" ||
+		budgetErr.Payload.GetDetails()["budget_kind"] != "wall_time" ||
+		budgetErr.Payload.GetDetails()["limit"] != "25" {
 		t.Fatalf("wall-time deadline lost typed budget exhaustion: %#v", err)
 	}
 }
@@ -402,7 +413,11 @@ func TestResumeReadyToolContinuationDoesNotResetMaxAttempts(t *testing.T) {
 	var budgetErr *errcode.BizError
 	if !errors.As(err, &budgetErr) ||
 		budgetErr.Code != errcode.AgentToolBudgetExhausted ||
-		budgetErr.Message != maxAttemptsExhaustedReason {
+		budgetErr.Message != maxAttemptsExhaustedReason ||
+		len(budgetErr.Payload.GetDetails()) != 3 ||
+		budgetErr.Payload.GetDetails()["turn_id"] != config.TurnID ||
+		budgetErr.Payload.GetDetails()["budget_kind"] != "attempts" ||
+		budgetErr.Payload.GetDetails()["limit"] != "1" {
 		t.Fatalf("continuation reset provider-attempt budget: %T %v", err, err)
 	}
 	var turn persistence.AgentTurn
@@ -525,7 +540,7 @@ func TestToolLoopBudgetStopsProviderContinuationAtBound(t *testing.T) {
 	}
 	providerCalls := 0
 
-	if err := state.exhaustionBeforeContinuation(budget); err == nil {
+	if err := state.exhaustionBeforeContinuation("turn-total-budget", budget); err == nil {
 		providerCalls++
 	}
 
@@ -547,7 +562,7 @@ func TestToolLoopBudgetStopsProviderContinuationAtIdenticalBound(t *testing.T) {
 	}
 	providerCalls := 0
 
-	if err := state.exhaustionBeforeContinuation(budget); err == nil {
+	if err := state.exhaustionBeforeContinuation("turn-identical-budget", budget); err == nil {
 		providerCalls++
 	}
 
@@ -638,6 +653,7 @@ func TestInputBudgetPreflightReturnsContextOverflow(t *testing.T) {
 func TestAdmittedInputBudgetRetainsToolBudgetSemantics(t *testing.T) {
 	err := validateAdmittedInputBudget(
 		NewCompressionService(),
+		"turn-input-budget",
 		&model.RuntimeBudget{MaxInputTokens: 1},
 		"oversized",
 	)
@@ -651,10 +667,46 @@ func TestAdmittedInputBudgetRetainsToolBudgetSemantics(t *testing.T) {
 		bizErr.Payload.GetRetryable() ||
 		!bizErr.Payload.GetTerminal() ||
 		len(bizErr.Payload.GetDetails()) != 3 ||
-		bizErr.Payload.GetDetails()["reason"] != maxInputTokensExhaustedReason ||
-		bizErr.Payload.GetDetails()["limit"] != "1" ||
-		bizErr.Payload.GetDetails()["consumed"] != "12" {
+		bizErr.Payload.GetDetails()["turn_id"] != "turn-input-budget" ||
+		bizErr.Payload.GetDetails()["budget_kind"] != "input_tokens" ||
+		bizErr.Payload.GetDetails()["limit"] != "1" {
 		t.Fatalf("admitted input budget error = %T %+v", err, bizErr)
+	}
+}
+
+func TestTurnRuntimeBudgetExhaustionUsesCanonicalDetails(t *testing.T) {
+	tests := []struct {
+		reason string
+		kind   string
+	}{
+		{maxAttemptsExhaustedReason, "attempts"},
+		{maxToolCallsExhaustedReason, "tool_calls"},
+		{maxIdenticalToolCallsExhaustedReason, "identical_tool_calls"},
+		{maxAgentStepsExhaustedReason, "agent_steps"},
+		{maxDelegationDepthExhaustedReason, "delegation_depth"},
+		{maxInputTokensExhaustedReason, "input_tokens"},
+		{maxOutputTokensExhaustedReason, "output_tokens"},
+		{wallTimeExhaustedReason, "wall_time"},
+	}
+	for _, test := range tests {
+		t.Run(test.kind, func(t *testing.T) {
+			err := turnRuntimeBudgetExhausted("turn-budget", test.reason, 7)
+			var budgetErr *errcode.BizError
+			if !errors.As(err, &budgetErr) ||
+				budgetErr.Code != errcode.AgentToolBudgetExhausted ||
+				budgetErr.Message != test.reason ||
+				budgetErr.Payload == nil ||
+				budgetErr.Payload.GetErrorType() != string(errcode.AgentToolBudgetExhausted) ||
+				budgetErr.Payload.GetLocaleKey() != errcode.AgentToolBudgetExhaustedLocaleKey ||
+				budgetErr.Payload.GetRetryable() ||
+				!budgetErr.Payload.GetTerminal() ||
+				len(budgetErr.Payload.GetDetails()) != 3 ||
+				budgetErr.Payload.GetDetails()["turn_id"] != "turn-budget" ||
+				budgetErr.Payload.GetDetails()["budget_kind"] != test.kind ||
+				budgetErr.Payload.GetDetails()["limit"] != "7" {
+				t.Fatalf("canonical budget error = %T %+v", err, budgetErr)
+			}
+		})
 	}
 }
 
@@ -826,7 +878,11 @@ func assertToolBatchRejectedBeforeDispatchAtIteration(
 	if !errors.As(err, &budgetErr) ||
 		budgetErr.Code != errcode.AgentToolBudgetExhausted ||
 		budgetErr.Message != wantReason ||
-		!budgetErr.Payload.GetTerminal() {
+		!budgetErr.Payload.GetTerminal() ||
+		len(budgetErr.Payload.GetDetails()) != 3 ||
+		budgetErr.Payload.GetDetails()["turn_id"] != config.TurnID ||
+		budgetErr.Payload.GetDetails()["budget_kind"] != runtimeBudgetKind(wantReason) ||
+		budgetErr.Payload.GetDetails()["limit"] != "1" {
 		t.Fatalf("unexpected budget exhaustion: %#v", err)
 	}
 	if iterations != startingIterations || paused {

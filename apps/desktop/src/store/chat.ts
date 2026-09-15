@@ -8,6 +8,7 @@ import {
   type StreamEvent,
   type AgentAttachmentRefInput,
   type AgentErrorResolutionAction,
+  type AgentRuntimeBudgetKind,
   type AgentTypedErrorPayload,
   type AgentTurnStreamError,
   type AgentTurnQueueListOutput,
@@ -142,22 +143,12 @@ export interface ComposerResourceSelectionIntent {
   nonce: number;
 }
 
-export type BudgetExhaustionKind =
-  | 'tool_calls'
-  | 'wall_time'
-  | 'attempts'
-  | 'agent_steps'
-  | 'input_tokens'
-  | 'output_tokens'
-  | 'attachments'
-  | 'cost'
-  | 'unknown';
+export type BudgetExhaustionKind = AgentRuntimeBudgetKind;
 
 export interface BudgetNotice {
   kind: BudgetExhaustionKind;
-  reason: string;
+  turnId: string;
   limit?: string;
-  consumed?: string;
   localeKey: string;
 }
 

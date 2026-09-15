@@ -1007,7 +1007,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
     def test_provider_timeout_development_journey_uses_real_provider(self) -> None:
         start = self.source.index("async runDevelopmentProviderTimeout")
-        end = self.source.index("async runDevelopmentUnknownTool", start)
+        end = self.source.index("async runDevelopmentLoopBudget", start)
         scenario = self.source[start:end]
 
         self.assertIn("useChatStore.getState().sendMessage(", scenario)
@@ -1044,6 +1044,29 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
         self.assertNotIn("recovery.click()", scenario)
+
+    def test_loop_budget_development_journey_reuses_f04_tool_loop(self) -> None:
+        start = self.source.index("async runDevelopmentLoopBudget")
+        end = self.source.index("async runDevelopmentUnknownTool", start)
+        scenario = self.source[start:end]
+
+        self.assertIn("runFoundationToolLoopBudget({", scenario)
+        self.assertIn("selectConversation: true", scenario)
+        self.assertIn("=== 'TOOL_LOOP_BUDGET_EXHAUSTED'", scenario)
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="inspect-budget"]',
+            scenario,
+        )
+        self.assertIn("view?.type === 'turnDetails'", scenario)
+        self.assertIn("executionAfterLimit === 0", scenario)
+        self.assertIn(
+            "providerCallsAfterAction === providerCallsBeforeAction",
+            scenario,
+        )
+        self.assertIn(
+            "await cleanupFoundationToolConversation(conversationId, turnId)",
+            scenario,
+        )
 
     def test_unknown_tool_development_journey_uses_real_provider(self) -> None:
         start = self.source.index("async runDevelopmentUnknownTool")
@@ -2687,10 +2710,16 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         )
         scenario = source[start:end]
         run_case_start = scenario.index("const runCase")
-        loop_start = scenario.index(
-            "const loopCapabilitySession = await resolveFoundationToolTurnSession()"
-        )
+        loop_start = scenario.index("const loop = await runFoundationToolLoopBudget")
         run_case = scenario[run_case_start:loop_start]
+        helper_start = source.index(
+            "async function runFoundationToolLoopBudget"
+        )
+        helper_end = source.index(
+            "async function runFoundationF04Scenario",
+            helper_start,
+        )
+        loop_helper = source[helper_start:helper_end]
 
         self.assertLess(
             run_case.index(
@@ -2713,23 +2742,26 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("toolStatuses: facts.map", run_case)
         self.assertIn("replayTerminal: diagnosticReplayTerminal(replay)", run_case)
         self.assertLess(
-            loop_start,
-            scenario.index("const loopTurn = await startFoundationToolTurn"),
+            loop_helper.index(
+                "const capabilitySession = await resolveFoundationToolTurnSession()"
+            ),
+            loop_helper.index("const turn = await startFoundationToolTurn"),
         )
         self.assertIn(
-            "capabilitySessionId: loopCapabilitySession.capabilitySessionId",
-            scenario,
+            "capabilitySessionId: capabilitySession.capabilitySessionId",
+            loop_helper,
         )
         self.assertEqual(
             scenario.count("await resolveFoundationToolTurnSession()"),
-            2,
+            1,
         )
         self.assertNotIn("input.capabilitySessionId", scenario)
+        self.assertNotIn("input.capabilitySessionId", loop_helper)
         self.assertIn("caseFact.capabilitySession = {", scenario)
         self.assertIn("...capabilitySession.facts", scenario)
-        self.assertIn("...loopCapabilitySession.facts", scenario)
+        self.assertIn("...capabilitySession.facts", loop_helper)
         self.assertIn("turnId: turn.turnId", scenario)
-        self.assertIn("turnId: loopTurn.turnId", scenario)
+        self.assertIn("turnId: turn.turnId", loop_helper)
 
         resolver_start = source.index(
             "async function resolveFoundationToolTurnSession"

@@ -1227,6 +1227,13 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 			maxDepth,
 			uint32(config.Depth),
 		)
+		if admittedTurnID != "" {
+			budgetErr = turnRuntimeBudgetExhausted(
+				admittedTurnID,
+				maxDelegationDepthExhaustedReason,
+				maxDepth,
+			)
+		}
 		return nil, settleAdmissionFailure(maxDelegationDepthExhaustedReason, budgetErr)
 	}
 	if admittedTurnID == "" {
@@ -1239,6 +1246,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		}
 	} else if err := validateAdmittedInputBudget(
 		s.compression,
+		admittedTurnID,
 		config.RuntimeBudget,
 		userInput,
 	); err != nil {
@@ -1282,6 +1290,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 	ctx, cancelRuntimeBudget := withRuntimeBudgetDeadline(
 		ctx,
+		turnID,
 		config.RuntimeBudget,
 		turnRecord.StartedAt,
 	)
@@ -1533,10 +1542,10 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		int(toolDefinitionTokens)
 	if maxInputTokens := config.RuntimeBudget.GetMaxInputTokens(); maxInputTokens > 0 &&
 		uint64(estimatedTokens) > maxInputTokens {
-		budgetErr := runtimeBudgetExhaustedWithDetails(
+		budgetErr := turnRuntimeBudgetExhaustedWithLimit(
+			turnID,
 			maxInputTokensExhaustedReason,
 			fmt.Sprintf("%d", maxInputTokens),
-			fmt.Sprintf("%d", estimatedTokens),
 		)
 		return nil, settleRunningFailure(maxInputTokensExhaustedReason, budgetErr)
 	}
@@ -2405,6 +2414,7 @@ func (s *TurnService) callProviderWithRuntimeAuthority(
 	}
 	if err := validateProviderRequestInputBudget(
 		s.compression,
+		config.TurnID,
 		config.RuntimeBudget,
 		request,
 	); err != nil {
@@ -2450,10 +2460,10 @@ func (s *TurnService) callProviderWithRuntimeAuthority(
 	}
 	if response != nil &&
 		response.OutputTokens > int(config.RuntimeBudget.GetMaxOutputTokens()) {
-		return response, runtimeBudgetExhaustedWithDetails(
+		return response, turnRuntimeBudgetExhaustedWithLimit(
+			config.TurnID,
 			maxOutputTokensExhaustedReason,
 			fmt.Sprintf("%d", config.RuntimeBudget.GetMaxOutputTokens()),
-			fmt.Sprintf("%d", response.OutputTokens),
 		)
 	}
 	return response, nil
@@ -2519,10 +2529,10 @@ func (s *TurnService) reserveProviderAttempt(
 			err,
 		)
 	}
-	return runtimeBudgetExhausted(
+	return turnRuntimeBudgetExhausted(
+		config.TurnID,
 		maxAttemptsExhaustedReason,
 		maxAttempts,
-		turn.ProviderAttemptCount,
 	)
 }
 
@@ -2984,6 +2994,7 @@ func validateInputBudgetBeforePersistence(
 
 func validateAdmittedInputBudget(
 	compression *CompressionService,
+	turnID string,
 	budget *model.RuntimeBudget,
 	userInput string,
 ) error {
@@ -2998,10 +3009,10 @@ func validateAdmittedInputBudget(
 	if actualTokens <= limitTokens {
 		return nil
 	}
-	return runtimeBudgetExhaustedWithDetails(
+	return turnRuntimeBudgetExhaustedWithLimit(
+		turnID,
 		maxInputTokensExhaustedReason,
 		fmt.Sprintf("%d", limitTokens),
-		fmt.Sprintf("%d", actualTokens),
 	)
 }
 
@@ -3031,6 +3042,7 @@ func inputBudgetUsage(
 
 func validateProviderRequestInputBudget(
 	compression *CompressionService,
+	turnID string,
 	budget *model.RuntimeBudget,
 	request *ProviderCallRequest,
 ) error {
@@ -3070,10 +3082,10 @@ func validateProviderRequestInputBudget(
 	if uint64(actualTokens) <= budget.GetMaxInputTokens() {
 		return nil
 	}
-	return runtimeBudgetExhaustedWithDetails(
+	return turnRuntimeBudgetExhaustedWithLimit(
+		turnID,
 		maxInputTokensExhaustedReason,
 		fmt.Sprintf("%d", budget.GetMaxInputTokens()),
-		fmt.Sprintf("%d", actualTokens),
 	)
 }
 
@@ -3253,13 +3265,13 @@ func (s *TurnService) processToolCalls(
 		}
 		if maxSteps := budget.GetMaxAgentSteps(); maxSteps > 0 &&
 			uint32(iterations) >= maxSteps {
-			return iterations, false, runtimeBudgetExhausted(
+			return iterations, false, turnRuntimeBudgetExhausted(
+				turnID,
 				maxAgentStepsExhaustedReason,
 				maxSteps,
-				uint32(iterations),
 			)
 		}
-		if exhaustion := budgetState.admit(budget, toolCalls); exhaustion != nil {
+		if exhaustion := budgetState.admit(turnID, budget, toolCalls); exhaustion != nil {
 			return iterations, false, exhaustion
 		}
 		if err := s.validateProviderToolCallsBeforePersistence(config, toolCalls); err != nil {
@@ -3448,6 +3460,7 @@ func (s *TurnService) loadToolLoopBudgetState(
 }
 
 func (s *toolLoopBudgetState) admit(
+	turnID string,
 	budget *model.RuntimeBudget,
 	calls []toolCallEntry,
 ) error {
@@ -3456,10 +3469,10 @@ func (s *toolLoopBudgetState) admit(
 	}
 	callCount := uint32(len(calls))
 	if limit := budget.GetMaxToolCalls(); limit > 0 && s.total+callCount > limit {
-		return runtimeBudgetExhausted(
+		return turnRuntimeBudgetExhausted(
+			turnID,
 			maxToolCallsExhaustedReason,
 			limit,
-			s.total,
 		)
 	}
 	nextIdentical := make(map[string]uint32, len(s.identical)+len(calls))
@@ -3470,10 +3483,10 @@ func (s *toolLoopBudgetState) admit(
 		key := toolCallBudgetKey(calls[i].ToolName, hashBytes([]byte(calls[i].Arguments)))
 		nextIdentical[key]++
 		if limit := budget.GetMaxIdenticalToolCalls(); limit > 0 && nextIdentical[key] > limit {
-			return runtimeBudgetExhausted(
+			return turnRuntimeBudgetExhausted(
+				turnID,
 				maxIdenticalToolCallsExhaustedReason,
 				limit,
-				nextIdentical[key]-1,
 			)
 		}
 	}
@@ -3483,21 +3496,26 @@ func (s *toolLoopBudgetState) admit(
 }
 
 func (s *toolLoopBudgetState) exhaustionBeforeContinuation(
+	turnID string,
 	budget *model.RuntimeBudget,
 ) error {
 	if s == nil || budget == nil {
 		return nil
 	}
 	if limit := budget.GetMaxToolCalls(); limit > 0 && s.total >= limit {
-		return runtimeBudgetExhausted(maxToolCallsExhaustedReason, limit, s.total)
+		return turnRuntimeBudgetExhausted(
+			turnID,
+			maxToolCallsExhaustedReason,
+			limit,
+		)
 	}
 	if limit := budget.GetMaxIdenticalToolCalls(); limit > 0 {
 		for _, count := range s.identical {
 			if count >= limit {
-				return runtimeBudgetExhausted(
+				return turnRuntimeBudgetExhausted(
+					turnID,
 					maxIdenticalToolCallsExhaustedReason,
 					limit,
-					count,
 				)
 			}
 		}
@@ -3537,10 +3555,69 @@ func runtimeBudgetExhaustedWithDetails(reason string, limit string, consumed str
 	}
 }
 
-func wallTimeBudgetExhausted(limitMillis uint64) error {
-	return runtimeBudgetExhaustedWithDetails(
+func turnRuntimeBudgetExhausted(
+	turnID string,
+	reason string,
+	limit uint32,
+) error {
+	return turnRuntimeBudgetExhaustedWithLimit(
+		turnID,
+		reason,
+		fmt.Sprintf("%d", limit),
+	)
+}
+
+func turnRuntimeBudgetExhaustedWithLimit(
+	turnID string,
+	reason string,
+	limit string,
+) error {
+	return &errcode.BizError{
+		Code:       errcode.AgentToolBudgetExhausted,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    reason,
+		Payload: &model.ErrorPayload{
+			Error:     errcode.AgentToolBudgetExhaustedLocaleKey,
+			ErrorType: string(errcode.AgentToolBudgetExhausted),
+			LocaleKey: errcode.AgentToolBudgetExhaustedLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"turn_id":     strings.TrimSpace(turnID),
+				"budget_kind": runtimeBudgetKind(reason),
+				"limit":       limit,
+			},
+		},
+	}
+}
+
+func runtimeBudgetKind(reason string) string {
+	switch reason {
+	case maxAttemptsExhaustedReason:
+		return "attempts"
+	case maxToolCallsExhaustedReason:
+		return "tool_calls"
+	case maxIdenticalToolCallsExhaustedReason:
+		return "identical_tool_calls"
+	case maxAgentStepsExhaustedReason:
+		return "agent_steps"
+	case maxDelegationDepthExhaustedReason:
+		return "delegation_depth"
+	case maxInputTokensExhaustedReason:
+		return "input_tokens"
+	case maxOutputTokensExhaustedReason:
+		return "output_tokens"
+	case wallTimeExhaustedReason:
+		return "wall_time"
+	default:
+		return "unknown"
+	}
+}
+
+func wallTimeBudgetExhausted(turnID string, limitMillis uint64) error {
+	return turnRuntimeBudgetExhaustedWithLimit(
+		turnID,
 		wallTimeExhaustedReason,
-		fmt.Sprintf("%d", limitMillis),
 		fmt.Sprintf("%d", limitMillis),
 	)
 }
@@ -3690,6 +3767,7 @@ func lowerPositiveLimit64(policy uint64, requested uint64) uint64 {
 
 func withRuntimeBudgetDeadline(
 	ctx context.Context,
+	turnID string,
 	budget *model.RuntimeBudget,
 	startedAt time.Time,
 ) (context.Context, context.CancelFunc) {
@@ -3707,7 +3785,7 @@ func withRuntimeBudgetDeadline(
 	return context.WithDeadlineCause(
 		ctx,
 		startedAt.Add(time.Duration(wallTime)*time.Millisecond),
-		wallTimeBudgetExhausted(wallTime),
+		wallTimeBudgetExhausted(turnID, wallTime),
 	)
 }
 
@@ -3867,6 +3945,7 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 		}
 		toolCtx, cancelRuntimeBudget := withRuntimeBudgetDeadline(
 			ctx,
+			config.TurnID,
 			config.RuntimeBudget,
 			attemptStartedAt,
 		)
@@ -4077,10 +4156,10 @@ func validateStationToolBudgetBeforeExecution(
 	nextDepth := uint32(config.Depth + 1)
 	maxDepth := config.RuntimeBudget.GetMaxDelegationDepth()
 	if maxDepth > 0 && nextDepth > maxDepth {
-		return runtimeBudgetExhausted(
+		return turnRuntimeBudgetExhausted(
+			config.TurnID,
 			maxDelegationDepthExhaustedReason,
 			maxDepth,
-			nextDepth,
 		)
 	}
 	return nil
@@ -4482,6 +4561,7 @@ func (s *TurnService) ResumeReadyToolContinuation(
 	}
 	ctx, cancelRuntimeBudget := withRuntimeBudgetDeadline(
 		ctx,
+		config.TurnID,
 		config.RuntimeBudget,
 		attemptStartedAt,
 	)
@@ -4507,13 +4587,14 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		); completeErr != nil {
 			settlementErrors = append(settlementErrors, completeErr)
 		}
-		if settleErr := s.failTurn(
+		if _, settleErr := s.failTurnWithEvent(
 			settlementCtx,
 			batch.AgentID,
 			batch.TurnID,
 			batch.TaskID,
 			batch.StepID,
 			reason,
+			deadlineErr,
 		); settleErr != nil {
 			settlementErrors = append(settlementErrors, settleErr)
 		}
@@ -4561,7 +4642,10 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		}
 		return true, err
 	}
-	if exhaustion := budgetState.exhaustionBeforeContinuation(config.RuntimeBudget); exhaustion != nil {
+	if exhaustion := budgetState.exhaustionBeforeContinuation(
+		config.TurnID,
+		config.RuntimeBudget,
+	); exhaustion != nil {
 		reason, _ := runtimeBudgetExhaustionReason(exhaustion)
 		_ = s.saveTurnTrace(ctx, trace)
 		_ = s.toolDispatch.CompleteContinuation(
@@ -4571,7 +4655,15 @@ func (s *TurnService) ResumeReadyToolContinuation(
 			continuation.FencingToken,
 			nil,
 		)
-		if settleErr := s.failTurn(ctx, batch.AgentID, batch.TurnID, batch.TaskID, batch.StepID, reason); settleErr != nil {
+		if _, settleErr := s.failTurnWithEvent(
+			ctx,
+			batch.AgentID,
+			batch.TurnID,
+			batch.TaskID,
+			batch.StepID,
+			reason,
+			exhaustion,
+		); settleErr != nil {
 			return true, errors.Join(exhaustion, settleErr)
 		}
 		return true, exhaustion

@@ -2690,6 +2690,7 @@ async function startFoundationToolTurn(input: {
   label: string;
   repeatUntilStopped?: boolean;
   requestedBudget?: AgentRuntimeBudgetInput;
+  selectConversation?: boolean;
   streamId?: string;
   onConversationCreated?: (
     conversationId: string,
@@ -2703,6 +2704,9 @@ async function startFoundationToolTurn(input: {
     provider_id: input.agent.provider,
     model_name: input.agent.model,
   });
+  if (input.selectConversation) {
+    await useChatStore.getState().selectSession(conversation.conversation_id);
+  }
   const argumentsJSON = JSON.stringify(input.fixture.arguments);
   const content = input.repeatUntilStopped
     ? `Call ${input.fixture.toolName} with ${argumentsJSON}. After every tool result, call the same tool again with the same arguments. Do not stop voluntarily; let the runtime tool-loop budget stop the turn.`
@@ -3542,6 +3546,135 @@ function diagnosticReplayTerminal(replay: Record<string, unknown>): boolean {
   ].includes(Number(replay.status) as AgentTurnStatus);
 }
 
+async function runFoundationToolLoopBudget(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  fixture: FoundationToolFixture;
+  sampleId: string;
+  selectConversation?: boolean;
+}): Promise<{
+  turn: FoundationToolTurn;
+  sourceReplay: Record<string, unknown>;
+  replay: Record<string, unknown>;
+  facts: Record<string, unknown>;
+}> {
+  const capabilitySession = await resolveFoundationToolTurnSession();
+  const turn = await startFoundationToolTurn({
+    agent: input.agent,
+    capabilitySessionId: capabilitySession.capabilitySessionId,
+    fixture: input.fixture,
+    sampleId: input.sampleId,
+    label: 'loop-budget',
+    repeatUntilStopped: true,
+    selectConversation: input.selectConversation,
+    requestedBudget: {
+      max_tool_calls: FOUNDATION_LOOP_MAX_TOOL_CALLS,
+    },
+  });
+  const source = await waitForFoundationToolFacts(
+    turn.turnId,
+    (facts, replay) =>
+      facts.length > 0
+      && facts.every((fact) => Number(fact.status) === ToolCallStatus.SUCCEEDED)
+      && Number(replay.status) === AgentTurnStatus.FAILED
+      && String(
+        evidenceField(replay, 'terminalReason', 'terminal_reason') ?? '',
+      ) === 'max_tool_calls_exhausted',
+    'Foundation ToolCall loop budget',
+    600_000,
+  );
+  const observedIterations = Number(
+    evidenceField(source.replay, 'toolIterations', 'tool_iterations') ?? 0,
+  );
+  const maximumIterations = Number(
+    evidenceField(
+      source.replay,
+      'toolIterationLimit',
+      'tool_iteration_limit',
+    ) ?? 0,
+  );
+  const attempts = evidenceArray(
+    evidenceField(source.replay, 'attempts', 'attempts'),
+    'foundationF04LoopAttempts',
+  );
+  const latestAttempt = evidenceRecord(
+    attempts[attempts.length - 1],
+    'foundationF04LoopAttempt',
+  );
+  const runtimeSnapshot = evidenceRecord(
+    evidenceField(latestAttempt, 'runtimeSnapshot', 'runtime_snapshot'),
+    'foundationF04LoopRuntimeSnapshot',
+  );
+  const effectiveBudget = evidenceRecord(
+    evidenceField(runtimeSnapshot, 'budget', 'budget'),
+    'foundationF04LoopEffectiveBudget',
+  );
+  const effectiveLimit = Number(
+    evidenceField(effectiveBudget, 'maxToolCalls', 'max_tool_calls') ?? 0,
+  );
+  const terminalReason = String(
+    evidenceField(source.replay, 'terminalReason', 'terminal_reason') ?? '',
+  );
+  if (
+    observedIterations !== FOUNDATION_LOOP_MAX_TOOL_CALLS
+    || effectiveLimit !== FOUNDATION_LOOP_MAX_TOOL_CALLS
+    || maximumIterations !== FOUNDATION_LOOP_MAX_TOOL_CALLS
+    || terminalReason !== 'max_tool_calls_exhausted'
+    || source.facts.length !== observedIterations
+  ) {
+    throw new Error('agent.acceptance.foundationToolLoopBudgetNotObserved');
+  }
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  const replay = await foundationDiagnosticReplay(turn.turnId);
+  const executionAfterLimit =
+    foundationDiagnosticToolFacts(replay)
+      .reduce(
+        (total, fact) =>
+          total
+          + Number(
+            evidenceField(
+              fact,
+              'executionAttemptCount',
+              'execution_attempt_count',
+            ) ?? 0,
+          ),
+        0,
+      )
+    - source.facts.reduce(
+      (total, fact) =>
+        total
+        + Number(
+          evidenceField(
+            fact,
+            'executionAttemptCount',
+            'execution_attempt_count',
+          ) ?? 0,
+        ),
+      0,
+    );
+  return {
+    turn,
+    sourceReplay: source.replay,
+    replay,
+    facts: {
+      stopped:
+        terminalReason === 'max_tool_calls_exhausted'
+        && observedIterations === FOUNDATION_LOOP_MAX_TOOL_CALLS
+        && effectiveLimit === FOUNDATION_LOOP_MAX_TOOL_CALLS
+        && maximumIterations === FOUNDATION_LOOP_MAX_TOOL_CALLS,
+      terminalReason,
+      requestedLimit: FOUNDATION_LOOP_MAX_TOOL_CALLS,
+      effectiveLimit,
+      observedIterations,
+      maximumIterations,
+      capabilitySession: {
+        ...capabilitySession.facts,
+        turnId: turn.turnId,
+      },
+      executionAfterLimit,
+    },
+  };
+}
+
 async function runFoundationF04Scenario(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   platform: string;
@@ -3787,74 +3920,15 @@ async function runFoundationF04Scenario(input: {
     );
 
     await applyPolicy(CapabilityApprovalPolicy.AUTO);
-    const loopCapabilitySession = await resolveFoundationToolTurnSession();
-    const loopTurn = await startFoundationToolTurn({
+    const loop = await runFoundationToolLoopBudget({
       agent: input.agent,
-      capabilitySessionId: loopCapabilitySession.capabilitySessionId,
       fixture,
       sampleId: input.sampleId,
-      label: 'loop-budget',
-      repeatUntilStopped: true,
-      requestedBudget: {
-        max_tool_calls: FOUNDATION_LOOP_MAX_TOOL_CALLS,
-      },
     });
-    const loop = await waitForFoundationToolFacts(
-      loopTurn.turnId,
-      (facts, replay) =>
-        facts.length > 0
-        && facts.every((fact) => Number(fact.status) === ToolCallStatus.SUCCEEDED)
-        && Number(replay.status) === AgentTurnStatus.FAILED
-        && String(
-          evidenceField(replay, 'terminalReason', 'terminal_reason') ?? '',
-        ) === 'max_tool_calls_exhausted',
-      'Foundation ToolCall loop budget',
-      600_000,
-    );
-    const observedIterations = Number(
-      evidenceField(loop.replay, 'toolIterations', 'tool_iterations') ?? 0,
-    );
-    const maximumIterations = Number(
-      evidenceField(
-        loop.replay,
-        'toolIterationLimit',
-        'tool_iteration_limit',
-      ) ?? 0,
-    );
-    const attempts = evidenceArray(
-      evidenceField(loop.replay, 'attempts', 'attempts'),
-      'foundationF04LoopAttempts',
-    );
-    const latestAttempt = evidenceRecord(
-      attempts[attempts.length - 1],
-      'foundationF04LoopAttempt',
-    );
-    const runtimeSnapshot = evidenceRecord(
-      evidenceField(latestAttempt, 'runtimeSnapshot', 'runtime_snapshot'),
-      'foundationF04LoopRuntimeSnapshot',
-    );
-    const effectiveBudget = evidenceRecord(
-      evidenceField(runtimeSnapshot, 'budget', 'budget'),
-      'foundationF04LoopEffectiveBudget',
-    );
-    const effectiveLimit = Number(
-      evidenceField(effectiveBudget, 'maxToolCalls', 'max_tool_calls') ?? 0,
-    );
-    const terminalReason = String(
-      evidenceField(loop.replay, 'terminalReason', 'terminal_reason') ?? '',
-    );
-    if (
-      observedIterations !== FOUNDATION_LOOP_MAX_TOOL_CALLS
-      || effectiveLimit !== FOUNDATION_LOOP_MAX_TOOL_CALLS
-      || maximumIterations !== FOUNDATION_LOOP_MAX_TOOL_CALLS
-      || terminalReason !== 'max_tool_calls_exhausted'
-      || loop.facts.length !== observedIterations
-    ) {
-      throw new Error('agent.acceptance.foundationToolLoopBudgetNotObserved');
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const loopReplay = await foundationDiagnosticReplay(loopTurn.turnId);
-    diagnosticPairs.push({ source: loop.replay, replay: loopReplay });
+    diagnosticPairs.push({
+      source: loop.sourceReplay,
+      replay: loop.replay,
+    });
 
     primaryConversationId = manual.turn.conversationId;
     primaryTurnId = manual.turn.turnId;
@@ -3918,48 +3992,7 @@ async function runFoundationF04Scenario(input: {
           originalContinuationId,
           replayedContinuationId,
         },
-        loopBudget: {
-          stopped:
-            terminalReason === 'max_tool_calls_exhausted'
-            && observedIterations === FOUNDATION_LOOP_MAX_TOOL_CALLS
-            && effectiveLimit === FOUNDATION_LOOP_MAX_TOOL_CALLS
-            && maximumIterations === FOUNDATION_LOOP_MAX_TOOL_CALLS,
-          terminalReason,
-          requestedLimit: FOUNDATION_LOOP_MAX_TOOL_CALLS,
-          effectiveLimit,
-          observedIterations,
-          maximumIterations,
-          capabilitySession: {
-            ...loopCapabilitySession.facts,
-            turnId: loopTurn.turnId,
-          },
-          executionAfterLimit:
-            foundationDiagnosticToolFacts(loopReplay)
-              .reduce(
-                (total, fact) =>
-                  total
-                  + Number(
-                    evidenceField(
-                      fact,
-                      'executionAttemptCount',
-                      'execution_attempt_count',
-                    ) ?? 0,
-                  ),
-                0,
-              )
-            - loop.facts.reduce(
-              (total, fact) =>
-                total
-                + Number(
-                  evidenceField(
-                    fact,
-                    'executionAttemptCount',
-                    'execution_attempt_count',
-                  ) ?? 0,
-                ),
-              0,
-            ),
-        },
+        loopBudget: loop.facts,
         replay: {
           sourceHash,
           replayHash,
@@ -21845,6 +21878,271 @@ export function installAcceptanceHarness(): void {
           localProjectionCleared,
           status:
             conversationDeleted && localProjectionCleared
+              ? 'clean'
+              : 'failed',
+        },
+      });
+    },
+
+    async runDevelopmentLoopBudget({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent?.provider || !agent.model) {
+        throw new Error('agent.acceptance.loopBudget');
+      }
+      const agentId = agent.id || agent.name;
+      const fixture = await foundationToolFixture(agentId, 'browser');
+      const originalBinding = fixture.binding;
+      let currentBinding = originalBinding;
+      let conversationId = '';
+      let turnId = '';
+      let conversationDeleted = false;
+      let localProjectionCleared = false;
+      let bindingRestored = false;
+      let capture: Record<string, unknown> | null = null;
+      let primaryError: unknown = null;
+      const cleanupErrors: unknown[] = [];
+
+      try {
+        currentBinding = await updateFoundationToolPolicy(
+          agent,
+          fixture,
+          currentBinding,
+          CapabilityApprovalPolicy.AUTO,
+        );
+        const loop = await runFoundationToolLoopBudget({
+          agent,
+          fixture,
+          sampleId,
+          selectConversation: true,
+        });
+        conversationId = loop.turn.conversationId;
+        turnId = loop.turn.turnId;
+
+        let errorMessage = useChatStore.getState().messages.find(
+          (message) => (
+            message.turnId === turnId
+            && message.typedError?.error_type
+              === 'TOOL_LOOP_BUDGET_EXHAUSTED'
+            && message.resolution?.type === 'inspectBudget'
+          ),
+        );
+        await waitFor(
+          () => {
+            errorMessage = useChatStore.getState().messages.find(
+              (message) => (
+                message.turnId === turnId
+                && message.typedError?.error_type
+                  === 'TOOL_LOOP_BUDGET_EXHAUSTED'
+                && message.resolution?.type === 'inspectBudget'
+              ),
+            );
+            const recovery = document.querySelector<HTMLButtonElement>(
+              '[data-pt-agent-message-error-recovery="inspect-budget"]',
+            );
+            return Boolean(
+              errorMessage
+              && recovery
+              && recovery.getClientRects().length > 0,
+            );
+          },
+          'loop-budget Inspect budget recovery',
+          60_000,
+        );
+        const recovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="inspect-budget"]',
+        );
+        const errorSurface = document.querySelector<HTMLElement>(
+          '[data-pt-agent-error-type="TOOL_LOOP_BUDGET_EXHAUSTED"]',
+        );
+        if (!errorMessage || !recovery || !errorSurface) {
+          throw new Error('agent.acceptance.loopBudgetRecoveryMissing');
+        }
+        const typedError = errorMessage.typedError;
+        const resolution = errorMessage.resolution;
+        const recoveryLabel = recovery.textContent?.trim() ?? '';
+        const countProviderCalls = (replay: Record<string, unknown>): number =>
+          evidenceArray(
+            evidenceField(replay, 'attempts', 'attempts'),
+            'loopBudgetAttempts',
+          ).reduce<number>((total, value) => {
+            const attempt = evidenceRecord(value, 'loopBudgetAttempt');
+            return total + optionalEvidenceArray(
+              evidenceField(attempt, 'providerCalls', 'provider_calls'),
+              'loopBudgetProviderCalls',
+            ).length;
+          }, 0);
+        const providerCallsBeforeAction = countProviderCalls(loop.replay);
+        const toolCallsBeforeAction =
+          foundationDiagnosticToolFacts(loop.replay).length;
+
+        recovery.click();
+        await waitFor(
+          () => {
+            const view = usePortalStore.getState().activeView;
+            return view?.type === 'turnDetails' && view.turnId === turnId;
+          },
+          'loop-budget Turn details',
+          30_000,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const replayAfterAction = await foundationDiagnosticReplay(turnId);
+        const providerCallsAfterAction =
+          countProviderCalls(replayAfterAction);
+        const toolCallsAfterAction =
+          foundationDiagnosticToolFacts(replayAfterAction).length;
+        const terminalEvents = loop.turn.observed.events.filter(
+          (event) => ['error', 'cancelled', 'done'].includes(event.event),
+        );
+        const stationError = terminalEvents[0]?.data ?? {};
+        const stationDetails = evidenceRecord(
+          stationError.details,
+          'loopBudgetStationDetails',
+        );
+        const activeView = usePortalStore.getState().activeView;
+
+        capture = {
+          assertions: {
+            stationTypedPayload:
+              stationError.error_type === 'TOOL_LOOP_BUDGET_EXHAUSTED'
+              && stationError.locale_key
+                === 'agent.errors.toolLoopBudgetExhausted'
+              && stationError.retryable === false
+              && stationError.terminal === true
+              && stableJson(Object.keys(stationDetails).sort())
+                === stableJson(['budget_kind', 'limit', 'turn_id'])
+              && stationDetails.turn_id === turnId
+              && stationDetails.budget_kind === 'tool_calls'
+              && stationDetails.limit
+                === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
+            typedLoopBudget:
+              typedError?.error_type === 'TOOL_LOOP_BUDGET_EXHAUSTED'
+              && typedError.locale_key
+                === 'agent.errors.toolLoopBudgetExhausted'
+              && typedError.retryable === false
+              && typedError.terminal === true
+              && stableJson(Object.keys(typedError.details).sort())
+                === stableJson(['budget_kind', 'limit', 'turn_id'])
+              && typedError.details.turn_id === turnId
+              && typedError.details.budget_kind === 'tool_calls'
+              && typedError.details.limit
+                === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
+            localizedInspectBudgetVisible:
+              recovery.getClientRects().length > 0
+              && recoveryLabel === i18n.t(
+                'agent.recovery.inspectBudget',
+                { ns: 'agent' },
+              )
+              && resolution?.type === 'inspectBudget'
+              && resolution.turnId === turnId
+              && resolution.budgetKind === 'tool_calls'
+              && resolution.limit === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
+            budgetIdentityProjected:
+              errorSurface.dataset.ptAgentErrorTurnId === turnId
+              && errorSurface.dataset.ptAgentErrorBudgetKind === 'tool_calls'
+              && errorSurface.dataset.ptAgentErrorBudgetLimit
+                === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
+            inspectBudgetOpenedTurnDetails:
+              activeView?.type === 'turnDetails'
+              && activeView.turnId === turnId,
+            terminalAtExactLimit:
+              loop.facts.stopped === true
+              && loop.facts.executionAfterLimit === 0
+              && terminalEvents.length === 1
+              && terminalEvents[0]?.event === 'error',
+            inspectBudgetHasNoAutomaticRetry:
+              providerCallsAfterAction === providerCallsBeforeAction
+              && toolCallsAfterAction === toolCallsBeforeAction,
+          },
+          facts: {
+            conversationId,
+            turnId,
+            typedError,
+            stationError,
+            resolution,
+            recoveryLabel,
+            recoveryVisible: recovery.getClientRects().length > 0,
+            projectedTurnId:
+              errorSurface.dataset.ptAgentErrorTurnId ?? '',
+            projectedBudgetKind:
+              errorSurface.dataset.ptAgentErrorBudgetKind ?? '',
+            projectedLimit:
+              errorSurface.dataset.ptAgentErrorBudgetLimit ?? '',
+            loopBudget: loop.facts,
+            providerCallsBeforeAction,
+            providerCallsAfterAction,
+            toolCallsBeforeAction,
+            toolCallsAfterAction,
+            terminalEventCount: terminalEvents.length,
+            terminalEventType: terminalEvents[0]?.event ?? '',
+            turnDetailsOpened:
+              activeView?.type === 'turnDetails'
+              && activeView.turnId === turnId,
+          },
+        };
+      } catch (error) {
+        primaryError = error;
+      } finally {
+        usePortalStore.getState().close();
+        if (conversationId) {
+          try {
+            clearFoundationLocalConversationProjection(conversationId);
+            localProjectionCleared = true;
+            await cleanupFoundationToolConversation(conversationId, turnId);
+            conversationDeleted = true;
+          } catch (error) {
+            cleanupErrors.push(error);
+          }
+        }
+        try {
+          if (
+            originalBinding
+            && currentBinding
+            && currentBinding !== originalBinding
+          ) {
+            await updateFoundationToolPolicy(
+              agent,
+              fixture,
+              currentBinding,
+              originalBinding.approvalPolicy,
+              originalBinding.enabled,
+            );
+          } else if (!originalBinding && currentBinding) {
+            await api.deleteAgentCapabilityBinding(
+              currentBinding.bindingId,
+              currentBinding.revision,
+              crypto.randomUUID(),
+              'acceptance_fixture_cleanup',
+            );
+          }
+          bindingRestored = true;
+        } catch (error) {
+          cleanupErrors.push(error);
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw Object.assign(
+          new Error('agent.acceptance.loopBudgetCleanupFailed'),
+          { primaryError, cleanupErrors },
+        );
+      }
+      if (primaryError) throw primaryError;
+      if (!capture) {
+        throw new Error('agent.acceptance.loopBudgetCaptureMissing');
+      }
+      return evidenceValue({
+        ...capture,
+        cleanup: {
+          bindingRestored,
+          conversationDeleted,
+          localProjectionCleared,
+          status:
+            bindingRestored
+              && conversationDeleted
+              && localProjectionCleared
               ? 'clean'
               : 'failed',
         },

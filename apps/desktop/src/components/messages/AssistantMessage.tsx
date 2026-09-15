@@ -408,6 +408,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           ? 'retry-later'
         : message.resolution?.type === 'retry'
           ? 'retry'
+        : message.resolution?.type === 'inspectBudget'
+          ? 'inspect-budget'
         : message.resolution?.type === 'switchAccount'
           ? 'switch-account'
         : message.resolution?.type === 'chooseCompatibleModel'
@@ -506,6 +508,19 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const handleOpenTurnDetails = useCallback(() => {
     if (message.turnId) openTurnDetails(message.id, message.turnId);
   }, [message.id, message.turnId, openTurnDetails]);
+
+  const handleInspectBudget = useCallback(() => {
+    const resolution = message.resolution;
+    if (
+      resolution?.type !== 'inspectBudget'
+      || !resolution.turnId
+      || resolution.turnId !== message.turnId
+    ) {
+      toast.error(t('chat.message.turnDetails.loadFailed'));
+      return;
+    }
+    openTurnDetails(message.id, resolution.turnId);
+  }, [message.id, message.resolution, message.turnId, openTurnDetails, t]);
 
   const handleOpenOriginal = useCallback((turnId: string) => {
     const originalMessage = useChatStore.getState().messages.find(
@@ -620,6 +635,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-error-retry-after-ms={message.typedError?.details.retry_after_ms}
       data-pt-agent-error-tool-id={message.typedError?.details.tool_id}
       data-pt-agent-error-tool-version={message.typedError?.details.tool_version}
+      data-pt-agent-error-budget-kind={message.typedError?.details.budget_kind}
+      data-pt-agent-error-budget-limit={message.typedError?.details.limit}
       data-pt-agent-error-reference-kind={message.typedError?.details.reference_kind}
       data-pt-agent-error-reference-hash={message.typedError?.details.reference_hash}
       data-pt-agent-error-session-id={message.typedError?.details.session_id}
@@ -716,19 +733,19 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
               <span style={{ fontSize: 12 }}>
                 {t(`chat.message.budget.kind.${message.budgetNotice.kind}`, {
                   limit: message.budgetNotice.limit,
-                  consumed: message.budgetNotice.consumed,
                 })}
               </span>
-              <Flexbox horizontal gap={8}>
-                <Button size="small" onClick={handleRetry}>
-                  {t('chat.message.budget.retry')}
+              {message.resolution?.type === 'inspectBudget' && (
+                <Button
+                  data-pt-agent-message-error-recovery="inspect-budget"
+                  icon={<Activity size={14} />}
+                  size="small"
+                  type="primary"
+                  onClick={handleInspectBudget}
+                >
+                  {resolutionLabel}
                 </Button>
-                {message.turnId && (
-                  <Button size="small" type="text" onClick={handleOpenTurnDetails}>
-                    {t('chat.message.action.turnDetails')}
-                  </Button>
-                )}
-              </Flexbox>
+              )}
             </Flexbox>
           )}
 
@@ -888,6 +905,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                       && message.resolution.type !== 'selectRuntime'
                       && message.resolution.type !== 'retryLater'
                       && message.resolution.type !== 'retry'
+                      && message.resolution.type !== 'inspectBudget'
                       && message.resolution.type !== 'switchAccount'
                       && message.resolution.type !== 'chooseCompatibleModel'
                       && message.resolution.type !== 'chooseTool'
@@ -911,6 +929,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                               ? <RotateCcw size={14} />
                             : message.resolution.type === 'retry'
                               ? <RotateCcw size={14} />
+                            : message.resolution.type === 'inspectBudget'
+                              ? <Activity size={14} />
                             : message.resolution.type === 'recover'
                               ? <RotateCcw size={14} />
                               : message.resolution.type === 'reconcile'
@@ -952,6 +972,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         }
                         if (message.resolution!.type === 'retry') {
                           await handleRetry();
+                          return;
+                        }
+                        if (message.resolution!.type === 'inspectBudget') {
+                          handleInspectBudget();
                           return;
                         }
                         if (message.resolution!.type === 'switchAccount') {

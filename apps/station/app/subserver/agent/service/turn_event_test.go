@@ -995,7 +995,7 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 				ctx, cancel := context.WithDeadlineCause(
 					context.Background(),
 					time.Now().Add(-time.Second),
-					wallTimeBudgetExhausted(25),
+					wallTimeBudgetExhausted("turn_runtime_budget_wins", 25),
 				)
 				t.Cleanup(cancel)
 				return ctx
@@ -1143,6 +1143,24 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 				test.wantEventType,
 			).Error; err != nil {
 				t.Fatalf("load terminal TurnEvent: %v", err)
+			}
+			if test.name == "runtime_budget_wins" {
+				var payload TurnEvent
+				if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+					t.Fatalf("decode runtime-budget TurnEvent: %v", err)
+				}
+				if payload.ErrorType != string(errcode.AgentToolBudgetExhausted) ||
+					payload.LocaleKey != errcode.AgentToolBudgetExhaustedLocaleKey ||
+					payload.Retryable == nil ||
+					*payload.Retryable ||
+					payload.Terminal == nil ||
+					!*payload.Terminal ||
+					len(payload.Details) != 3 ||
+					payload.Details["turn_id"] != turnID ||
+					payload.Details["budget_kind"] != "wall_time" ||
+					payload.Details["limit"] != "25" {
+					t.Fatalf("runtime-budget TurnEvent lost canonical payload: %+v", payload)
+				}
 			}
 		})
 	}

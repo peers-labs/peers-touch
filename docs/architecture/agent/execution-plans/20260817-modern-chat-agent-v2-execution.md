@@ -2143,6 +2143,14 @@ and zero local-path leakage.
 #### G-FE1 Concurrency Decision
 
 - **Mode**: hybrid.
+- **Active loop-budget slice**: serial. The Station turn-scoped budget
+  terminal payload, Desktop typed-error projection and `Inspect budget`
+  action, shared AS-F04 loop driver, checkpoint/deploy, and Native receiver
+  Journey form one causally ordered path. The integrator owns
+  `apps/station/app/subserver/agent`, `apps/desktop/src`,
+  `packages/locales/{en,zh-CN}/`, `tooling/acceptance/gates/agent`, plan
+  tracking, commit, deployment, runtime resources, and final reconciliation.
+  No parallel writer is admitted for this slice.
 - **Completed provider-timeout slice**: serial. Provider deadline ownership and
   upstream cancellation, typed Station terminalization, Desktop recovery
   projection, the shared disposable Fixture, checkpoint/deploy, and the Native
