@@ -399,6 +399,31 @@ items:
       history: { rewrite: denied }
 
   - schemaVersion: 1
+    id: secure-content-w7s
+    workClass: product-behavior
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W7S
+    productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C07, SOC-SEC-AS01, SOC-SEC-AS02, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS07, SOC-SEC-AS10, SOC-SEC-AS11, SOC-SEC-AS13, SOC-SEC-AS15]
+    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D09, SC-D11, SC-D12, SC-D13, SC-D16, SC-D20]
+    journeyIds: []
+    scope:
+      include: [apps/desktop, tooling/development/secure_content/scenarios/desktop_pilot.py, tooling/development/secure_content/scenarios/browser_private_boundary.py]
+      exclude: [remaining private subtypes, Mobile, formal Acceptance, runtime acquisition]
+    resources:
+      sourceClaims:
+        - { pathPrefix: apps/desktop, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/scenarios/desktop_pilot.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/scenarios/browser_private_boundary.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/run.py, mode: shared-read }
+        - { pathPrefix: apps/station/app/subserver/social, mode: shared-read }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
     id: secure-content-w7
     workClass: product-behavior
     planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
@@ -411,9 +436,9 @@ items:
       exclude: [remaining private subtypes, Mobile, formal Acceptance]
     resources:
       sourceClaims:
-        - { pathPrefix: apps/desktop, mode: exclusive-write }
-        - { pathPrefix: tooling/development/secure_content/scenarios/desktop_pilot.py, mode: exclusive-write }
-        - { pathPrefix: tooling/development/secure_content/scenarios/browser_private_boundary.py, mode: exclusive-write }
+        - { pathPrefix: apps/desktop, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content/scenarios/desktop_pilot.py, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content/scenarios/browser_private_boundary.py, mode: shared-read }
         - { pathPrefix: tooling/development/secure_content/run.py, mode: shared-read }
         - { pathPrefix: apps/station/app/subserver/social, mode: shared-read }
       runtimeClaims:

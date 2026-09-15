@@ -194,6 +194,7 @@ planRef = docs/architecture/secure-content/execution-plans/20260913-secure-conte
 | `secure-content-w5` | infrastructure | `SOC-SEC-C04/C06/C08`; `SOC-SEC-AS08` | `SC-A02/A08`; `SC-D05/D09` | `SOC-SEC-J07` | recovery derivation/query; exclude Messaging history redesign |
 | `secure-content-w6` | product-behavior | `SOC-SEC-C01/C02/C03/C05/C07`; `SOC-SEC-AS01/03/04/05/06/07/10/12/13/15/16` | `SC-A01..A08`; `SC-D01..D08/D11..D13` | `SOC-SEC-J01/J02/J03/J04/J06/J09` | FRIENDS text+image Social minimum and outer-UOW atomicity; exclude remaining subtypes/Mobile |
 | `secure-content-w7a` | infrastructure | `SOC-SEC-C04/C05/C08`; supporting evidence only | `SC-A03/A04/A08`; `SC-D05/D09/D15/D16/D20` | `sc-dj-content-prekey-client-boundary` | canonical client-facing Content PreKey route and receipt; exclude Desktop UI/runtime and internal claim exposure |
+| `secure-content-w7s` | product-behavior | W7 product refs; source evidence only | W7 architecture refs | none | Desktop Native/store/UI and Development scenario source closure; exclude runtime acquisition and functional claims |
 | `secure-content-w7` | product-behavior | `SOC-SEC-C01/C02/C03/C04/C05/C07`; `SOC-SEC-AS01/02/03/04/05/07/10/11/13/15` | `SC-A01..A08`; `SC-D01..D09/D11..D13/D16/D20` | `SOC-SEC-J01/J02/J03/J06/J09` | Desktop pilot plus authenticated Browser boundary Journeys; exclude Acceptance |
 | `secure-content-w8` | product-behavior | `SOC-SEC-C01..C07/C09`; `SOC-SEC-AS05/06/07/09/10/11/12/15/16` | `SC-A01..A08`; `SC-D01..D13` | `SOC-SEC-J04/J05/J08/J09` | remaining Social behavior; exclude Mobile/Chat |
 | `secure-content-w9` | product-behavior | `SOC-SEC-C01..C08`; `SOC-SEC-AS01..AS16` | `SC-A01..A08`; `SC-D01..D13` | `SOC-SEC-J01..J09` | Mobile parity; exclude Chat authority change |
@@ -340,7 +341,8 @@ W2A + W3 + W4
        -> W7A Content PreKey client boundary
 
 W5 + W7A
-  -> W7 Desktop pilot FUNCTIONAL_PASS
+  -> W7S Desktop source closure
+       -> W7 Desktop pilot FUNCTIONAL_PASS
 
 W7 FUNCTIONAL_PASS
   -> W8 Remaining Social subtypes/relationships
@@ -408,7 +410,11 @@ Mode: `hybrid`.
   Exchange receipt transaction and exact-source service Journey form one
   interface/verification chain. Independent read-only review may run in
   parallel after the combined source is stable.
-- W7 checkpoint, deploy, runtime and Journey are serial.
+- W7S uses a hybrid source-only split after W7A: Desktop Native/store,
+  Desktop Web/store and Development scenario lanes have disjoint write sets;
+  the integrator owns shared registration, reconciliation, generation,
+  checkpoint and final focused checks.
+- W7 deploy, runtime and Journey remain serial behind the W7S checkpoint.
 - After W7 `FUNCTIONAL_PASS`, W8 runs its subtype Journeys; W9 consumes the
   resulting complete Social contract and remains serial behind W8.
 - W10 is parked until `native-desktop-runtime-cells` releases Conversation,
@@ -852,11 +858,37 @@ python3 -m tooling.development.secure_content.run \
   receipt-contention, pool/Actor lock-order, profile-rotation or revocation race
   test skips.
 
+### SC-W7S: Desktop Pilot Source Closure
+
+- **Responsibility**: implement and focused-test the Desktop Native
+  adapter/store/supervisor, Moments integration and the Desktop/Browser
+  Development scenario adapters without acquiring product runtime resources.
+- **Dependencies**: W5/W6/W7A.
+- **Deliverables**: encrypted persist-before-publish state,
+  `UNKNOWN_COMMIT` reconciliation, per-key root-commit deletion, epoch-keyed
+  recovery, account/device/session-generation fencing, teardown zeroization,
+  FRIENDS text+image integration, Browser private unsupported states and both
+  W7 Development scenario implementations.
+- **Source boundary**: `apps/desktop` and the exact W7 Development scenarios.
+  Station deployment, Profile, client storage, Fixture and slot acquisition
+  remain W7-owned.
+- **Checks**:
+
+```bash
+pnpm --dir apps/desktop run check
+pnpm --dir apps/desktop exec vitest run src/test/moments-store.test.ts
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml secure_content
+python3 -m unittest tooling.development.secure_content.test_run
+```
+
+- **Exit**: one clean source checkpoint records `SOURCE_CHECK/PASS`; it makes
+  no Desktop, Browser or Acceptance functional claim.
+
 ### SC-W7: Desktop Pilot Functional Pass
 
-- **Responsibility**: Desktop Native adapter/store/worker, FRIENDS text+image,
-  strict read/deny, public continuity, draft retention and cleanup.
-- **Dependencies**: W5/W6/W7A; Desktop claim released; checkpoint/deploy/profile
+- **Responsibility**: deploy the W7S checkpoint and execute FRIENDS
+  text+image, strict read/deny, public continuity, draft retention and cleanup.
+- **Dependencies**: W7S; Desktop claim released; checkpoint/deploy/profile
   authorization and leases available.
 - **Design gate**: `SC-D20` must define and receive Owner acceptance for the
   client-facing Content PreKey publication/inventory boundary before W7 source
@@ -865,8 +897,9 @@ python3 -m tooling.development.secure_content.run \
 - **Execution decomposition**: source-only `W7A` owns the canonical
   protobuf handler mode, Content PreKey publish/inventory routes and receipts,
   scoped proto/generated outputs, API-ownership registry/Gate and an
-  exact-source service Journey. W7 depends on W7A and owns the
-  Desktop Native/store/UI plus serial Desktop and Browser runtime Journeys.
+  exact-source service Journey. W7S depends on W7A and owns the Desktop
+  Native/store/UI source closure; W7 owns the serial Desktop and Browser
+  runtime Journeys.
   W7A uses only the worktree-isolated `secure-content-w7a-postgres` test
   fixture; it has no Station profile, deploy, client-storage or slot claim.
   The 2026-09-15 Owner acceptance of `SC-D20` released it to execution.
@@ -1377,7 +1410,8 @@ observations is invalid.
 | W5 | recovery | complete | `9bf7e3934` | PASS (`sc-dj-recovery-consumer`) | NOT_RUN | none |
 | W6 | Social minimum | complete | `d2731a220` | PASS (`sc-dj-social-uow-atomicity`) | NOT_RUN | none |
 | W7A | Content PreKey client boundary | complete | `14b0cdf81` | PASS (`sc-dj-content-prekey-client-boundary`) | NOT_RUN | none |
-| W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | active MCA Desktop and NDR Station owners |
+| W7S | Desktop pilot source closure | in progress | none | NOT_RUN | N/A | none |
+| W7 | Desktop pilot runtime | parked | none | NOT_RUN | NOT_RUN | W7S; active MCA Desktop and NDR Station owners |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
 | W9 | Mobile | parked | none | NOT_RUN | NOT_RUN | W5/W7/W8; Mobile claim |
 | W10 | Chat regression | parked | none | NOT_RUN | NOT_RUN | W2/W9 FUNCTIONAL_PASS; active Desktop/Station runtime owners |
@@ -1385,7 +1419,7 @@ observations is invalid.
 | W12 | physical schema/data cut + full functional | parked | none | NOT_RUN | NOT_RUN | W11; exact runtime leases |
 | W13 | Acceptance | parked | none | NOT_RUN | NOT_RUN | W12 FUNCTIONAL_PASS; active Acceptance owner |
 
-Overall: `9/17`. DWF-D13 removed the cross-worktree source-lock blocker. W1
+Overall: `9/18`. DWF-D13 removed the cross-worktree source-lock blocker. W1
 completed the accepted `SC-D14` wire contracts, scoped generation and all five
 generated consumer closures. W2A completed the atomic source cut; W2D must add
 the real Desktop/Mobile Development drivers before the Desktop/Mobile Native
