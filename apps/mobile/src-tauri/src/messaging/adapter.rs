@@ -1092,105 +1092,124 @@ impl MobileMessagingStore {
         descriptor: &EncryptedObjectDescriptor,
         updated_at_unix_ms: i64,
     ) -> Result<(), String> {
-        messaging_core::attachment::validate_encrypted_object_descriptor(descriptor)?;
-        validate_attachment_transfer_record(transfer)?;
-        if updated_at_unix_ms <= 0 {
-            return Err("mobile messaging attachment completion time is invalid".to_string());
-        }
-        let upload_spec = EncryptedObjectUploadSpec {
-            ciphertext_size: descriptor.ciphertext_size,
-            ciphertext_sha256: descriptor.ciphertext_sha256.clone(),
-            media_type: descriptor.media_type.clone(),
-            chunk_size: descriptor.chunk_size,
-            chunk_count: descriptor.chunk_count,
-            encryption_suite: descriptor.encryption_suite,
-            tag_size: descriptor.tag_size,
-            nonce_strategy: descriptor.nonce_strategy,
-            chunk_ciphertext_sha256: descriptor.chunk_ciphertext_sha256.clone(),
-        };
-        let expected_commitment = upload_commitment_fields(
-            &transfer.conversation_id,
-            &transfer.message_id,
-            &transfer.attachment_id,
-            &transfer.authority_station_id,
-            &upload_spec,
-        );
-        if transfer.descriptor_sha256 != expected_commitment {
-            return Err("mobile messaging attachment completion descriptor mismatch".to_string());
-        }
-        let generation = i64::try_from(transfer.generation)
-            .map_err(|_| "mobile messaging attachment generation overflow")?;
-        self.with_transaction(|transaction| {
-            let draft_media_type = transaction
-                .query_row(
-                    "SELECT mime_type FROM messaging_attachment_drafts
-                     WHERE attachment_id = ?1
-                       AND conversation_id = ?2
-                       AND message_id = ?3",
-                    params![
-                        transfer.attachment_id,
-                        transfer.conversation_id,
-                        transfer.message_id
-                    ],
-                    |row| row.get::<_, String>(0),
-                )
-                .optional()
-                .map_err(|error| error.to_string())?;
-            let mime_type = draft_media_type
-                .as_deref()
-                .unwrap_or(descriptor.media_type.as_str());
-            if mime_type != descriptor.media_type {
+        let result = (|| {
+            messaging_core::attachment::validate_encrypted_object_descriptor(descriptor)?;
+            validate_attachment_transfer_record(transfer)?;
+            if updated_at_unix_ms <= 0 {
+                return Err("mobile messaging attachment completion time is invalid".to_string());
+            }
+            let upload_spec = EncryptedObjectUploadSpec {
+                ciphertext_size: descriptor.ciphertext_size,
+                ciphertext_sha256: descriptor.ciphertext_sha256.clone(),
+                media_type: descriptor.media_type.clone(),
+                chunk_size: descriptor.chunk_size,
+                chunk_count: descriptor.chunk_count,
+                encryption_suite: descriptor.encryption_suite,
+                tag_size: descriptor.tag_size,
+                nonce_strategy: descriptor.nonce_strategy,
+                chunk_ciphertext_sha256: descriptor.chunk_ciphertext_sha256.clone(),
+            };
+            let expected_commitment = upload_commitment_fields(
+                &transfer.conversation_id,
+                &transfer.message_id,
+                &transfer.attachment_id,
+                &transfer.authority_station_id,
+                &upload_spec,
+            );
+            if transfer.descriptor_sha256 != expected_commitment {
                 return Err(
-                    "mobile messaging attachment completion media type mismatch".to_string()
+                    "mobile messaging attachment completion descriptor mismatch".to_string()
                 );
             }
-            let transfer_changed = transaction
-                .execute(
-                    "UPDATE messaging_attachment_transfers
-                     SET state = ?2,
-                         upload_id = ?3,
-                         generation = ?4,
-                         completed_chunk_bitmap = ?5,
-                         attempt_count = ?6,
-                         next_attempt_at_unix_ms = 0,
-                         last_error_code = 0,
-                         updated_at_unix_ms = ?7
-                     WHERE attachment_id = ?1
-                       AND descriptor_sha256 = ?8
-                       AND state IN (?9, ?10)",
-                    params![
-                        transfer.attachment_id,
-                        AttachmentTransferState::Complete as i32,
-                        transfer.upload_id,
-                        generation,
-                        transfer.completed_chunk_bitmap,
-                        transfer.attempt_count,
-                        updated_at_unix_ms,
-                        expected_commitment.as_slice(),
-                        AttachmentTransferState::Transferring as i32,
-                        AttachmentTransferState::Verifying as i32,
-                    ],
-                )
-                .map_err(|error| error.to_string())?;
-            let descriptor_bytes = descriptor.encode_to_vec();
-            let draft_changed = transaction
-                .execute(
-                    "UPDATE messaging_attachment_drafts
-                     SET descriptor_bytes = ?2
-                     WHERE attachment_id = ?1
-                       AND (descriptor_bytes IS NULL OR descriptor_bytes = ?2)",
-                    params![transfer.attachment_id, descriptor_bytes],
-                )
-                .map_err(|error| error.to_string())?;
-            let draft_fenced = match draft_media_type {
-                Some(_) => draft_changed == 1,
-                None => draft_changed == 0,
-            };
-            if transfer_changed != 1 || !draft_fenced {
-                return Err("mobile messaging attachment completion was not fenced".to_string());
-            }
-            Ok(())
-        })
+            let generation = i64::try_from(transfer.generation)
+                .map_err(|_| "mobile messaging attachment generation overflow")?;
+            self.with_transaction(|transaction| {
+                let draft_media_type = transaction
+                    .query_row(
+                        "SELECT mime_type FROM messaging_attachment_drafts
+                         WHERE attachment_id = ?1
+                           AND conversation_id = ?2
+                           AND message_id = ?3",
+                        params![
+                            transfer.attachment_id,
+                            transfer.conversation_id,
+                            transfer.message_id
+                        ],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()
+                    .map_err(|error| error.to_string())?;
+                let mime_type = draft_media_type
+                    .as_deref()
+                    .unwrap_or(descriptor.media_type.as_str());
+                if mime_type != descriptor.media_type {
+                    return Err(
+                        "mobile messaging attachment completion media type mismatch".to_string()
+                    );
+                }
+                let transfer_changed = transaction
+                    .execute(
+                        "UPDATE messaging_attachment_transfers
+                         SET state = ?2,
+                             upload_id = ?3,
+                             generation = ?4,
+                             completed_chunk_bitmap = ?5,
+                             attempt_count = ?6,
+                             next_attempt_at_unix_ms = 0,
+                             last_error_code = 0,
+                             updated_at_unix_ms = ?7
+                         WHERE attachment_id = ?1
+                           AND descriptor_sha256 = ?8
+                           AND state IN (?9, ?10)",
+                        params![
+                            transfer.attachment_id,
+                            AttachmentTransferState::Complete as i32,
+                            transfer.upload_id,
+                            generation,
+                            transfer.completed_chunk_bitmap,
+                            transfer.attempt_count,
+                            updated_at_unix_ms,
+                            expected_commitment.as_slice(),
+                            AttachmentTransferState::Transferring as i32,
+                            AttachmentTransferState::Verifying as i32,
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+                let descriptor_bytes = descriptor.encode_to_vec();
+                let draft_changed = transaction
+                    .execute(
+                        "UPDATE messaging_attachment_drafts
+                         SET descriptor_bytes = ?2
+                         WHERE attachment_id = ?1
+                           AND (descriptor_bytes IS NULL OR descriptor_bytes = ?2)",
+                        params![transfer.attachment_id, descriptor_bytes],
+                    )
+                    .map_err(|error| error.to_string())?;
+                let draft_fenced = match draft_media_type {
+                    Some(_) => draft_changed == 1,
+                    None => draft_changed == 0,
+                };
+                if transfer_changed != 1 || !draft_fenced {
+                    return Err("mobile messaging attachment completion was not fenced".to_string());
+                }
+                Ok(())
+            })
+        })();
+        // #region debug-point G:attachment-local-completion
+        {
+            let debug_data = serde_json::json!({
+                "attachmentId": transfer.attachment_id,
+                "transferState": transfer.state,
+                "attemptCount": transfer.attempt_count,
+                "descriptorMediaType": descriptor.media_type,
+                "error": result.as_ref().err(),
+            });
+            std::thread::spawn(move || {
+                let _ = reqwest::blocking::Client::new().post("http://10.4.44.83:7784/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"pre-fix","hypothesisId":"G","location":"apps/mobile/src-tauri/src/messaging/adapter.rs:complete_attachment_upload","msg":"[DEBUG] Mobile attachment local completion finished","data":debug_data}).to_string()).send();
+            });
+        }
+        // #endregion
+        result
     }
 
     pub(crate) fn complete_attachment_download(

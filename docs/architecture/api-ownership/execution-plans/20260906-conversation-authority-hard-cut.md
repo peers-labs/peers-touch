@@ -1965,3 +1965,16 @@ source and evidence inspection may run in parallel, but instrumentation,
 owner-layer correction, focused regression, checkpoint, deployment, and the
 functional rerun must remain ordered. CA-W6 is `PARTIAL/UNPROVEN`; CA-W7 stays
 pending until the Chat/Contacts Journey reaches `FUNCTIONAL_PASS`.
+
+Diagnostic run
+`20260914T212556991446Z-5696bdfc2ef8f3047e81d55ab8899a12`
+at source `809be1328d99e1a900363aeaa836c1d66cf0d7f3` confirms the
+attachment upload begins and uploads its only chunk. The persisted Mobile
+transfer then enters `RetryWait` with a complete chunk bitmap, generation one,
+a descriptor commitment, and `RETRY_LATER`; six attempts follow the bounded
+backoff policy. Authority Station access logs show every matching completion
+request returns HTTP 200, including exact replays. The remaining failure is
+therefore inside the Mobile local completion transaction, after successful
+authority completion and before the descriptor makes the draft eligible. The
+next diagnostic records that transaction's exact error without changing
+transfer behavior.
