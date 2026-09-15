@@ -32,9 +32,15 @@ describe('queue-full component recovery wiring', () => {
     expect(assistantMessageSource).toContain("'edit-queue'");
     expect(assistantMessageSource).toContain('syncTurnQueue(resolution.conversationId)');
     expect(assistantMessageSource).toContain(
-      "document.querySelector<HTMLElement>(\n        '[data-pt-agent-turn-queue]'",
+      "document.querySelectorAll<HTMLElement>('[data-pt-agent-turn-queue]')",
     );
-    expect(queueTraySource).toContain('data-pt-agent-turn-queue');
+    expect(assistantMessageSource).toContain(
+      'candidate.dataset.ptAgentTurnQueue === resolution.conversationId',
+    );
+    expect(assistantMessageSource).not.toContain('requestAnimationFrame');
+    expect(queueTraySource).toContain(
+      'data-pt-agent-turn-queue={currentSessionKey}',
+    );
     expect(queueTraySource).toContain('tabIndex={-1}');
   });
 });

@@ -17,7 +17,7 @@ export function TurnQueueTray() {
 
   return (
     <Flexbox
-      data-pt-agent-turn-queue
+      data-pt-agent-turn-queue={currentSessionKey}
       aria-label={t('chat.queue.title', { count: entries.length })}
       gap={6}
       tabIndex={-1}

@@ -23463,9 +23463,11 @@ export function installAcceptanceHarness(): void {
         }
         queueFullRecovery.click();
         await waitFor(
-          () => document.activeElement?.matches(
-            '[data-pt-agent-turn-queue]',
-          ) === true,
+          () => (
+            document.activeElement instanceof HTMLElement
+            && document.activeElement.dataset.ptAgentTurnQueue
+              === conversation.conversation_id
+          ),
           'Foundation queue editor focus',
           10_000,
         );
@@ -23780,9 +23782,10 @@ export function installAcceptanceHarness(): void {
               },
               recovery: {
                 visible: queueFullRecovery.getClientRects().length > 0,
-                queueFocused: document.activeElement?.matches(
-                  '[data-pt-agent-turn-queue]',
-                ) === true,
+                queueFocused:
+                  document.activeElement instanceof HTMLElement
+                  && document.activeElement.dataset.ptAgentTurnQueue
+                    === conversation.conversation_id,
               },
               queueSizeAfterAction: queueAfterEditAction.entries.length,
               conversationVersionBeforeAction:

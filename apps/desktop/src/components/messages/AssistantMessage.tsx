@@ -482,13 +482,17 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       throw new Error('agent.errors.queueFull');
     }
     await syncTurnQueue(resolution.conversationId);
-    requestAnimationFrame(() => {
-      const tray = document.querySelector<HTMLElement>(
-        '[data-pt-agent-turn-queue]',
-      );
-      tray?.scrollIntoView({ block: 'nearest' });
-      tray?.focus({ preventScroll: true });
-    });
+    const tray = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-pt-agent-turn-queue]'),
+    ).find((candidate) => (
+      candidate.dataset.ptAgentTurnQueue === resolution.conversationId
+      && candidate.getClientRects().length > 0
+    ));
+    if (!tray) {
+      throw new Error('agent.errors.queueFull');
+    }
+    tray.scrollIntoView({ block: 'nearest' });
+    tray.focus({ preventScroll: true });
   }, [currentSessionKey, message.resolution, syncTurnQueue]);
 
   const handleOpenTurnDetails = useCallback(() => {

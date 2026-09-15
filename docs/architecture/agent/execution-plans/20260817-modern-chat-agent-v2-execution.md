@@ -2012,6 +2012,11 @@ and zero local-path leakage.
   - `BASE-QUEUE_FULL` is implementation-ready. `Edit queue` reuses the
     existing `TurnQueueTray`: refresh Station queue truth, scroll the tray into
     view, and restore keyboard focus without submitting or retrying a Turn.
+  - Exact-source Development run `20260915T151252523130Z` on `ca8df3ba7`
+    reached the visible typed `ADMISSION_QUEUE_FULL` recovery surface, then
+    failed while waiting for queue-tray focus. Cleanup was clean. The focused
+    correction removes background-WebView-sensitive `requestAnimationFrame`
+    scheduling and targets the visible tray for the same Conversation.
   - `BASE-UNAUTHORIZED_RESOURCE` is parked at the DESIGN boundary because the
     accepted error contract does not identify whether the removable resource
     is a knowledge descriptor, attachment, Conversation context reference, or
