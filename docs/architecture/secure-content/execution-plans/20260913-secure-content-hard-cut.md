@@ -869,9 +869,9 @@ python3 -m tooling.development.secure_content.run \
   recovery, account/device/session-generation fencing, teardown zeroization,
   FRIENDS text+image integration, Browser private unsupported states and both
   W7 Development scenario implementations.
-- **Source boundary**: `apps/desktop` and the exact W7 Development scenarios.
-  Station deployment, Profile, client storage, Fixture and slot acquisition
-  remain W7-owned.
+- **Source boundary**: `apps/desktop`, exact Moments locale files and the exact
+  W7 Development scenarios. Station deployment, Profile, client storage,
+  Fixture and slot acquisition remain W7-owned.
 - **Checks**:
 
 ```bash
