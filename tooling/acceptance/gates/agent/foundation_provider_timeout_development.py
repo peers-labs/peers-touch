@@ -16,6 +16,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+ROOT = Path(__file__).resolve().parents[4]
+PROFILE = "chat-native-disposable"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+os.environ.setdefault("PT_ACCEPTANCE_APPROVED_PROFILE", PROFILE)
+
 from tooling.acceptance.core import ENVIRONMENTS_DIR, EnvironmentContract
 from tooling.acceptance.core.evidence_store import (
     EvidenceStore,
@@ -38,11 +44,9 @@ from tooling.acceptance.provisioners.home_station import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[4]
 WORKSPACE_ID = workspace_id(ROOT)
 WORK_ITEM_ID = "MCA-001"
 JOURNEY_ID = "G-FE1-SC4-PROVIDER-TIMEOUT"
-PROFILE = "chat-native-disposable"
 DEPLOYMENT_ENVIRONMENT = "chat-native-disposable-station"
 PROVIDER_DEADLINE_MS = 120_000
 
@@ -268,6 +272,11 @@ def main() -> int:
 
     try:
         manifest = provisioner.provision(AGENT_V2_FOUNDATION_GATE)
+        require(
+            manifest.blocked_reason is None,
+            "runtime provisioning blocked: "
+            f"{manifest.blocked_reason} ({manifest.blocked_resource})",
+        )
         runtime_pair = FoundationRuntimePair.from_manifest(
             _build_client_manifest(manifest.to_dict()),
             profile_env=profile_env,
