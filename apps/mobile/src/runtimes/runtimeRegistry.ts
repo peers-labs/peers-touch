@@ -37,6 +37,7 @@ import {
 import { useSocialStore } from '../features/social/socialStore';
 import {
   fenceAuthRuntimeProjection,
+  readAccessRuntimeProjection,
   restoreAndRevalidateAuthRuntime,
 } from './authRuntime';
 import { installMobileNativeEventBridge } from './mobileNativeEventBridge';
@@ -57,7 +58,11 @@ function createAuthRuntimeDescriptor(): MobileRuntimeDescriptor {
     dependsOn: ['secure-storage'],
 
     async bootstrap(): Promise<void> {
-      await restoreAndRevalidateAuthRuntime();
+      // #region debug-point A-C:auth-bootstrap
+      void fetch('http://100.86.255.160:7789/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-restart-session-recovery', runId: 'pre-fix', hypothesisId: 'A-C', location: 'apps/mobile/src/runtimes/runtimeRegistry.ts:auth.bootstrap.before', msg: '[DEBUG] Mobile auth runtime bootstrap started', data: { access: readAccessRuntimeProjection() }, ts: Date.now() }) }).catch(() => {});
+      const restored = await restoreAndRevalidateAuthRuntime();
+      void fetch('http://100.86.255.160:7789/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-restart-session-recovery', runId: 'pre-fix', hypothesisId: 'A-C', location: 'apps/mobile/src/runtimes/runtimeRegistry.ts:auth.bootstrap.after', msg: '[DEBUG] Mobile auth runtime bootstrap completed', data: { restoredSession: restored !== null, access: readAccessRuntimeProjection() }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
     },
 
     async suspend(): Promise<void> {

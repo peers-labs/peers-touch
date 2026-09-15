@@ -270,7 +270,21 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   }),
 
   'lifecycle.restart': async () => {
-    await getMobileLifecycleKernel().restartRuntimeGraph('acceptance-restart');
+    // #region debug-point A-B:restart-action
+    const before = {
+      lifecycle: getMobileLifecycleKernel().getSnapshot(),
+      access: readAccessRuntimeProjection(),
+      station: activeStationEntry(await loadStationRegistry())?.stationPeerId ?? null,
+    };
+    void fetch('http://100.86.255.160:7789/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-restart-session-recovery', runId: 'pre-fix', hypothesisId: 'A-B', location: 'apps/mobile/src/acceptance/actions.ts:lifecycle.restart.before', msg: '[DEBUG] Mobile lifecycle restart requested', data: before, ts: Date.now() }) }).catch(() => {});
+    const lifecycle = await getMobileLifecycleKernel().restartRuntimeGraph('acceptance-restart');
+    const after = {
+      lifecycle,
+      access: readAccessRuntimeProjection(),
+      station: activeStationEntry(await loadStationRegistry())?.stationPeerId ?? null,
+    };
+    void fetch('http://100.86.255.160:7789/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-restart-session-recovery', runId: 'pre-fix', hypothesisId: 'A-B', location: 'apps/mobile/src/acceptance/actions.ts:lifecycle.restart.after', msg: '[DEBUG] Mobile lifecycle restart completed', data: after, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     return {
       requested: true,
       scope: 'webview',
@@ -753,6 +767,9 @@ async function sha256Hex(value: Uint8Array<ArrayBuffer>): Promise<string> {
 function requireMessagingAccount(): MessagingAccountInput {
   const session = readActiveAuthSession();
   if (!session?.stationPeerId || !session.actorRef.ptid) {
+    // #region debug-point B-D:missing-active-session
+    void fetch('http://100.86.255.160:7789/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-restart-session-recovery', runId: 'pre-fix', hypothesisId: 'B-D', location: 'apps/mobile/src/acceptance/actions.ts:requireMessagingAccount', msg: '[DEBUG] Mobile acceptance action has no active Messaging session', data: { lifecycle: getMobileLifecycleKernel().getSnapshot(), access: readAccessRuntimeProjection() }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     throw new Error('acceptance.mobile.activeMessagingSessionRequired');
   }
   return {
