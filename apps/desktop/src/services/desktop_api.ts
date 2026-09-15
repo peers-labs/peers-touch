@@ -2515,6 +2515,7 @@ export interface AgentErrorResolutionAction {
     | 'recover';
   cliId?: string;
   providerId?: string;
+  modelId?: string;
   existingCommandId?: string;
   conversationId?: string;
   capacity?: number;
@@ -2544,6 +2545,10 @@ export const AGENT_RUNTIME_UNAVAILABLE_LOCALE_KEY =
 export const AGENT_PROVIDER_RATE_LIMIT_ERROR_TYPE = 'PROVIDER_RATE_LIMIT';
 export const AGENT_PROVIDER_RATE_LIMIT_LOCALE_KEY =
   'agent.errors.providerRateLimit';
+export const AGENT_PROVIDER_MODEL_UNAVAILABLE_ERROR_TYPE =
+  'PROVIDER_MODEL_UNAVAILABLE';
+export const AGENT_PROVIDER_MODEL_UNAVAILABLE_LOCALE_KEY =
+  'agent.errors.providerModelUnavailable';
 export const AGENT_CONTEXT_LIMIT_ERROR_TYPE = 'CONTEXT_OVERFLOW';
 export const AGENT_INVALID_REFERENCE_ERROR_TYPE = 'CONTEXT_INVALID_REFERENCE';
 export const AGENT_INVALID_REFERENCE_LOCALE_KEY =
@@ -2594,6 +2599,13 @@ export type AgentProviderRateLimitError = AgentTypedErrorPayload & {
   };
 };
 
+export type AgentProviderModelUnavailableError = AgentTypedErrorPayload & {
+  details: {
+    provider_id: string;
+    model_id: string;
+  };
+};
+
 export type AgentIncompatibleCapabilityError = AgentTypedErrorPayload & {
   details: {
     capability_id: string;
@@ -2638,6 +2650,7 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'capacity',
   'runtime_kind',
   'provider_id',
+  'model_id',
   'retry_after_ms',
   'expected_revision',
   'actual_revision',
@@ -2828,6 +2841,27 @@ export function isAgentProviderRateLimitError(
   );
 }
 
+export function isAgentProviderModelUnavailableError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentProviderModelUnavailableError {
+  if (
+    error?.error_type !== AGENT_PROVIDER_MODEL_UNAVAILABLE_ERROR_TYPE
+    || error.locale_key !== AGENT_PROVIDER_MODEL_UNAVAILABLE_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'model_id'
+    && detailKeys[1] === 'provider_id'
+    && error.details.provider_id.trim().length > 0
+    && error.details.model_id.trim().length > 0
+  );
+}
+
 export function isAgentIncompatibleCapabilityError(
   error: AgentTypedErrorPayload | null | undefined,
 ): error is AgentIncompatibleCapabilityError {
@@ -2944,6 +2978,14 @@ export function resolveAgentTypedErrorAction(
       providerId: error.details.provider_id,
       retryAfterMs: Number(error.details.retry_after_ms),
       label: 'agent.recovery.retryLater',
+    };
+  }
+  if (isAgentProviderModelUnavailableError(error)) {
+    return {
+      type: 'chooseCompatibleModel',
+      providerId: error.details.provider_id,
+      modelId: error.details.model_id,
+      label: 'agent.recovery.chooseCompatibleModel',
     };
   }
   if (isAgentRuntimeUnavailableError(error)) {

@@ -611,6 +611,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
       data-pt-agent-error-runtime-kind={message.typedError?.details.runtime_kind}
       data-pt-agent-error-provider-id={message.typedError?.details.provider_id}
+      data-pt-agent-error-model-id={message.typedError?.details.model_id}
       data-pt-agent-error-retry-after-ms={message.typedError?.details.retry_after_ms}
       data-pt-agent-error-reference-kind={message.typedError?.details.reference_kind}
       data-pt-agent-error-reference-hash={message.typedError?.details.reference_hash}

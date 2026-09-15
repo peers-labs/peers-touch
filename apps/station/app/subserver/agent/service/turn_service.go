@@ -2685,10 +2685,16 @@ func (s *TurnService) providerCallWithRetry(
 		logger.Warnf(ctx, "provider call failed: turn_id=%s attempt=%d reason=%s retryable=%v",
 			turnID, attempt, classified.Reason.String(), classified.Retryable)
 
-		if classified.Reason == domain.FailoverReasonRateLimit {
+		switch classified.Reason {
+		case domain.FailoverReasonRateLimit:
 			return "", nil, providerCalls, false, errcode.NewProviderRateLimit(
 				config.Provider,
 				providerRetryAfterMilliseconds(callErr, time.Now().UTC()),
+			)
+		case domain.FailoverReasonModelNotFound:
+			return "", nil, providerCalls, false, errcode.NewProviderModelUnavailable(
+				config.Provider,
+				config.Model,
 			)
 		}
 

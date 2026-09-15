@@ -497,6 +497,78 @@ func TestProviderRateLimitTerminatesWithoutHiddenRetry(t *testing.T) {
 	}
 }
 
+func TestProviderModelUnavailableTerminatesWithoutHiddenFallback(t *testing.T) {
+	service, config, db := setupPinnedProviderExecution(
+		t,
+		"runtime_authority_provider_model_unavailable",
+	)
+	if err := db.AutoMigrate(&persistence.Credential{}); err != nil {
+		t.Fatalf("migrate credential: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.Credential{
+		ID:        "credential-model-unavailable",
+		ActorPTID: config.ActorID,
+		Provider:  config.Provider,
+		AuthType:  "api_key",
+		Source:    "test",
+		Status:    string(domain.CredentialStatusActive),
+		Version:   1,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed credential pool: %v", err)
+	}
+	service.credentialPool = NewCredentialPoolService()
+	service.errorClassifier = NewErrorClassifierService()
+	service.compression = NewCompressionService()
+	config.MaxRetries = 3
+	config.FallbackModel = "fallback-model"
+	providerCalls := 0
+	service.providerCall = func(
+		ctx context.Context,
+		request *ProviderCallRequest,
+	) (*ProviderCallResponse, error) {
+		if err := request.BeforeDispatch(ctx); err != nil {
+			return nil, err
+		}
+		providerCalls++
+		return nil, &ProviderHTTPError{
+			StatusCode: http.StatusNotFound,
+			Body:       "model_not_found",
+			Provider:   config.Provider,
+		}
+	}
+
+	trace := &domain.TurnTrace{}
+	_, _, recordedCalls, _, err := service.providerCallWithRetry(
+		context.Background(),
+		config,
+		config.TurnID,
+		trace,
+		"",
+		nil,
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentProviderModelUnavailable ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentProviderModelUnavailable) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentProviderModelUnavailableLocaleKey ||
+		!bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		bizErr.Payload.GetDetails()["provider_id"] != config.Provider ||
+		bizErr.Payload.GetDetails()["model_id"] != config.Model {
+		t.Fatalf("unexpected model-unavailable payload: %T %+v", err, bizErr)
+	}
+	if providerCalls != 1 || len(recordedCalls) != 1 {
+		t.Fatalf(
+			"model unavailable retried or fell back: calls=%d records=%d",
+			providerCalls,
+			len(recordedCalls),
+		)
+	}
+}
+
 func TestProviderContextOverflowUsesGovernedCompressionAndReplacesLedger(t *testing.T) {
 	service, config, db := setupPinnedProviderExecution(
 		t,

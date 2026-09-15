@@ -36,6 +36,7 @@ const (
 	AgentLifecycleInterrupted          Code = "LIFECYCLE_INTERRUPTED"
 	AgentProviderCredentialMissing     Code = "PROVIDER_CREDENTIAL_MISSING"
 	AgentProviderRateLimit             Code = "PROVIDER_RATE_LIMIT"
+	AgentProviderModelUnavailable      Code = "PROVIDER_MODEL_UNAVAILABLE"
 	AgentProviderFailed                Code = "AGENT_5001"
 	AgentCompressionFailed             Code = "AGENT_5002"
 	AgentDelegationFailed              Code = "AGENT_5003"
@@ -66,6 +67,7 @@ const (
 	AgentLifecycleInterruptedLocaleKey          = "agent.errors.lifecycleInterrupted"
 	AgentProviderCredentialMissingLocaleKey     = "agent.errors.providerCredentialMissing"
 	AgentProviderRateLimitLocaleKey             = "agent.errors.providerRateLimit"
+	AgentProviderModelUnavailableLocaleKey      = "agent.errors.providerModelUnavailable"
 )
 
 const AgentClientInvalidResourceReference Code = "CLIENT_INVALID_RESOURCE_REFERENCE"
@@ -209,6 +211,25 @@ func NewProviderRateLimit(providerID string, retryAfterMS int64) *BizError {
 			Details: map[string]string{
 				"provider_id":    providerID,
 				"retry_after_ms": strconv.FormatInt(retryAfterMS, 10),
+			},
+		},
+	}
+}
+
+func NewProviderModelUnavailable(providerID, modelID string) *BizError {
+	return &BizError{
+		Code:       AgentProviderModelUnavailable,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    AgentProviderModelUnavailableLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentProviderModelUnavailableLocaleKey,
+			ErrorType: string(AgentProviderModelUnavailable),
+			LocaleKey: AgentProviderModelUnavailableLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"provider_id": providerID,
+				"model_id":    modelID,
 			},
 		},
 	}

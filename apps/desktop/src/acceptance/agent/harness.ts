@@ -21301,6 +21301,206 @@ export function installAcceptanceHarness(): void {
       });
     },
 
+    async runDevelopmentProviderModelUnavailable({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent?.provider || !agent.model) {
+        throw new Error('agent.acceptance.providerModelUnavailable');
+      }
+      const agentId = agent.id || agent.name;
+      const originalModel = agent.model;
+      const missingModel = `pt-missing-model-${sampleId}`;
+      let agentRestored = false;
+      let conversationDeleted = false;
+      let localProjectionCleared = false;
+      let conversationId = '';
+      let capture: Record<string, unknown> | null = null;
+      try {
+        await useAgentStore.getState().updateAgentProfile(agentId, {
+          provider: agent.provider,
+          model: missingModel,
+        });
+        await useAgentStore.getState().loadAgents();
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Model unavailable ${sampleId}`,
+          provider_id: agent.provider,
+          model_name: missingModel,
+        });
+        conversationId = conversation.conversation_id;
+        await useChatStore.getState().selectSession(conversationId);
+        const [readbackBefore, tracesBefore, queueBefore] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+
+        const messageCountBefore = useChatStore.getState().messages.length;
+        useChatStore.getState().sendMessage(
+          `Model unavailable ${sampleId}`,
+        );
+        let errorMessage = useChatStore.getState().messages
+          .slice(messageCountBefore)
+          .find((message) => (
+            message.role === 'assistant'
+            && message.typedError?.error_type
+              === 'PROVIDER_MODEL_UNAVAILABLE'
+          ));
+        await waitFor(
+          () => {
+            errorMessage = useChatStore.getState().messages
+              .slice(messageCountBefore)
+              .find((message) => (
+                message.role === 'assistant'
+                && message.typedError?.error_type
+                  === 'PROVIDER_MODEL_UNAVAILABLE'
+                && message.resolution?.type === 'chooseCompatibleModel'
+              ));
+            const recovery = document.querySelector<HTMLButtonElement>(
+              '[data-pt-agent-message-error-recovery="choose-compatible-model"]',
+            );
+            return Boolean(
+              errorMessage
+              && recovery
+              && recovery.getClientRects().length > 0,
+            );
+          },
+          'provider-model-unavailable recovery surface',
+          120_000,
+        );
+        const recovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="choose-compatible-model"]',
+        );
+        if (!errorMessage || !recovery) {
+          throw new Error(
+            'agent.acceptance.providerModelUnavailableRecoveryMissing',
+          );
+        }
+        const recoveryVisibleBeforeAction =
+          recovery.getClientRects().length > 0;
+        const recoveryLabelBeforeAction = recovery.textContent?.trim() ?? '';
+        recovery.click();
+        await waitFor(
+          () => (
+            useAgentStore.getState().getAgentSurface(agent.name) === 'profile'
+            && Boolean(
+              document.querySelector<HTMLElement>(
+                `[data-pt-agent-profile="${agent.id}"]`,
+              )?.getClientRects().length,
+            )
+          ),
+          'compatible model profile surface',
+          30_000,
+        );
+
+        const [readbackAfter, tracesAfter, queueAfter] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+        const typedError = errorMessage.typedError;
+        const resolution = errorMessage.resolution;
+        const latestTrace =
+          tracesAfter.entries[tracesAfter.entries.length - 1];
+        const completedAssistantMessages = readbackAfter.messages.filter(
+          (message) => (
+            String(message.role).toLowerCase() === 'assistant'
+            && String(message.status).toLowerCase() === 'completed'
+          ),
+        );
+        capture = {
+          assertions: {
+            typedModelUnavailable:
+              typedError?.error_type === 'PROVIDER_MODEL_UNAVAILABLE'
+              && typedError.locale_key
+                === 'agent.errors.providerModelUnavailable'
+              && typedError.retryable === true
+              && typedError.terminal === true
+              && stableJson(Object.keys(typedError.details).sort())
+                === stableJson(['model_id', 'provider_id'])
+              && typedError.details.provider_id === agent.provider
+              && typedError.details.model_id === missingModel,
+            localizedRecoveryVisible:
+              recoveryVisibleBeforeAction
+              && recoveryLabelBeforeAction.length > 0,
+            chooseModelOpened:
+              resolution?.type === 'chooseCompatibleModel'
+              && resolution.providerId === agent.provider
+              && resolution.modelId === missingModel
+              && useAgentStore.getState().getAgentSurface(agent.name)
+                === 'profile',
+            oneTerminalProviderAttempt:
+              tracesAfter.entries.length === tracesBefore.entries.length + 1
+              && (latestTrace?.trace?.providerCalls.length ?? 0) === 1,
+            zeroSuccessfulCompletion: completedAssistantMessages.length === 0,
+            queueUnchanged:
+              queueAfter.entries.length === queueBefore.entries.length,
+          },
+          facts: {
+            conversationId,
+            providerId: typedError?.details.provider_id ?? '',
+            modelId: typedError?.details.model_id ?? '',
+            resolution,
+            recoveryLabel: recoveryLabelBeforeAction,
+            messageDelta:
+              readbackAfter.messages.length - readbackBefore.messages.length,
+            traceDelta:
+              tracesAfter.entries.length - tracesBefore.entries.length,
+            queueDelta:
+              queueAfter.entries.length - queueBefore.entries.length,
+          },
+        };
+      } finally {
+        try {
+          await useAgentStore.getState().updateAgentProfile(agentId, {
+            provider: agent.provider,
+            model: originalModel,
+          });
+          await useAgentStore.getState().loadAgents();
+          agentRestored = true;
+          useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+        } finally {
+          if (conversationId) {
+            clearFoundationLocalConversationProjection(conversationId);
+            localProjectionCleared = true;
+            const deletionErrorCode = await deleteFoundationConversation(
+              conversationId,
+            );
+            conversationDeleted = deletionErrorCode === ''
+              || deletionErrorCode.includes('AGENT_4004');
+          }
+        }
+      }
+      if (!capture) {
+        throw new Error(
+          'agent.acceptance.providerModelUnavailableCaptureMissing',
+        );
+      }
+      return evidenceValue({
+        ...capture,
+        cleanup: {
+          agentRestored,
+          conversationDeleted,
+          localProjectionCleared,
+          status:
+            agentRestored && conversationDeleted && localProjectionCleared
+              ? 'clean'
+              : 'failed',
+        },
+      });
+    },
+
     async sendMessage({ content }: SendMessageInput) {
       const chatStore = useChatStore.getState();
       const beforeCount = chatStore.messages.length;

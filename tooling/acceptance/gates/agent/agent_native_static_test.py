@@ -973,6 +973,28 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("readbackAfter.messages.length === readbackBefore.messages.length", scenario)
         self.assertIn("await deleteFoundationConversation(conversationId)", scenario)
 
+    def test_model_unavailable_development_journey_uses_real_provider(self) -> None:
+        start = self.source.index("async runDevelopmentProviderModelUnavailable")
+        end = self.source.index("async sendMessage", start)
+        scenario = self.source[start:end]
+
+        self.assertIn("updateAgentProfile(agentId", scenario)
+        self.assertIn("useChatStore.getState().sendMessage(", scenario)
+        self.assertIn("=== 'PROVIDER_MODEL_UNAVAILABLE'", scenario)
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="choose-compatible-model"]',
+            scenario,
+        )
+        self.assertIn(
+            "(latestTrace?.trace?.providerCalls.length ?? 0) === 1",
+            scenario,
+        )
+        self.assertIn("zeroSuccessfulCompletion:", scenario)
+        self.assertIn(
+            "const deletionErrorCode = await deleteFoundationConversation(",
+            scenario,
+        )
+
     def test_two_topic_restart_scenario_uses_production_authorities(self) -> None:
         snapshot_start = self.source.index(
             "async function foundationF12TopicSnapshot",
