@@ -2696,6 +2696,21 @@ func (s *TurnService) providerCallWithRetry(
 				config.Provider,
 				config.Model,
 			)
+		case domain.FailoverReasonTimeout:
+			deadline, ok := providerTimeoutDeadline(callErr)
+			if !ok {
+				return "", nil, providerCalls, false, errcode.New(
+					errcode.AgentProviderFailed,
+					http.StatusGatewayTimeout,
+					"provider timeout is missing its canonical deadline",
+					callErr,
+				)
+			}
+			return "", nil, providerCalls, false, errcode.NewProviderTimeout(
+				config.Provider,
+				config.Model,
+				deadline,
+			)
 		}
 
 		if attempt > 0 && s.growthMetrics != nil {

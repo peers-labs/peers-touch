@@ -37,6 +37,7 @@ const (
 	AgentProviderCredentialMissing     Code = "PROVIDER_CREDENTIAL_MISSING"
 	AgentProviderRateLimit             Code = "PROVIDER_RATE_LIMIT"
 	AgentProviderModelUnavailable      Code = "PROVIDER_MODEL_UNAVAILABLE"
+	AgentProviderTimeout               Code = "PROVIDER_TIMEOUT"
 	AgentProviderFailed                Code = "AGENT_5001"
 	AgentCompressionFailed             Code = "AGENT_5002"
 	AgentDelegationFailed              Code = "AGENT_5003"
@@ -68,6 +69,7 @@ const (
 	AgentProviderCredentialMissingLocaleKey     = "agent.errors.providerCredentialMissing"
 	AgentProviderRateLimitLocaleKey             = "agent.errors.providerRateLimit"
 	AgentProviderModelUnavailableLocaleKey      = "agent.errors.providerModelUnavailable"
+	AgentProviderTimeoutLocaleKey               = "agent.errors.providerTimeout"
 )
 
 const AgentClientInvalidResourceReference Code = "CLIENT_INVALID_RESOURCE_REFERENCE"
@@ -230,6 +232,26 @@ func NewProviderModelUnavailable(providerID, modelID string) *BizError {
 			Details: map[string]string{
 				"provider_id": providerID,
 				"model_id":    modelID,
+			},
+		},
+	}
+}
+
+func NewProviderTimeout(providerID, modelID string, deadline time.Time) *BizError {
+	return &BizError{
+		Code:       AgentProviderTimeout,
+		HTTPStatus: http.StatusGatewayTimeout,
+		Message:    AgentProviderTimeoutLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentProviderTimeoutLocaleKey,
+			ErrorType: string(AgentProviderTimeout),
+			LocaleKey: AgentProviderTimeoutLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"provider_id": providerID,
+				"model_id":    modelID,
+				"deadline":    deadline.UTC().Format(time.RFC3339Nano),
 			},
 		},
 	}

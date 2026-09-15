@@ -32,6 +32,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -62,7 +63,7 @@ const (
 	defaultMaxTokens    = 4096
 	maxResponseBytes    = 2 * 1024 * 1024 // 2 MiB safety limit on response body
 
-	// HTTP client timeout for all provider calls.
+	// Provider-attempt deadline for all provider calls.
 	providerHTTPTimeout = 120 * time.Second
 )
 
@@ -279,17 +280,17 @@ func (s *ProviderService) loadProvider(ctx context.Context, providerID string) (
 // detects the provider type, applies prompt caching for Anthropic, and dispatches
 // the request to the appropriate API endpoint.
 type ProviderService struct {
-	cachingService *PromptCachingService
-	httpClient     *http.Client
+	cachingService  *PromptCachingService
+	httpClient      *http.Client
+	providerTimeout time.Duration
 }
 
 // NewProviderService creates a ProviderService with the given caching dependency.
 func NewProviderService(cachingService *PromptCachingService) *ProviderService {
 	return &ProviderService{
-		cachingService: cachingService,
-		httpClient: &http.Client{
-			Timeout: providerHTTPTimeout,
-		},
+		cachingService:  cachingService,
+		httpClient:      &http.Client{},
+		providerTimeout: providerHTTPTimeout,
 	}
 }
 
@@ -418,53 +419,88 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	logger.Infof(ctx, "provider call: provider_id=%s type=%s model=%s messages=%d",
 		req.ProviderID, providerType, model, len(req.Messages))
 
-	// Step 5 — Dispatch to the appropriate endpoint.
-	var resp *ProviderCallResponse
+	// Step 5 — Dispatch under the provider-attempt deadline. The request
+	// context is the cancellation authority for the upstream HTTP operation.
+	resp, err := s.callWithProviderDeadline(
+		ctx,
+		func(providerCtx context.Context) (*ProviderCallResponse, error) {
+			switch providerType {
+			case providerTypeOllama:
+				if baseURL == "" {
+					baseURL = "http://127.0.0.1:11434"
+				}
+				return s.callOllama(
+					providerCtx,
+					baseURL,
+					model,
+					req.SystemPrompt,
+					req.Messages,
+					maxOutputTokens,
+					req.DeltaSink,
+				)
 
-	switch providerType {
-	case providerTypeOllama:
-		if baseURL == "" {
-			baseURL = "http://127.0.0.1:11434"
-		}
-		resp, err = s.callOllama(ctx, baseURL, model, req.SystemPrompt, req.Messages, maxOutputTokens, req.DeltaSink)
+			case providerTypeAnthropic:
+				if baseURL == "" {
+					baseURL = "https://api.anthropic.com"
+				}
 
-	case providerTypeAnthropic:
-		if baseURL == "" {
-			baseURL = "https://api.anthropic.com"
-		}
+				// Apply prompt caching for Anthropic providers.
+				var cachingResult *PromptCachingResult
+				if s.cachingService != nil {
+					cachingResult = s.cachingService.Apply(
+						providerCtx,
+						req.SystemPrompt,
+						req.Messages,
+						providerType,
+					)
+				}
 
-		// Apply prompt caching for Anthropic providers.
-		var cachingResult *PromptCachingResult
-		if s.cachingService != nil {
-			cachingResult = s.cachingService.Apply(ctx, req.SystemPrompt, req.Messages, providerType)
-		}
+				return s.callAnthropic(
+					providerCtx,
+					baseURL,
+					apiKey,
+					model,
+					req.SystemPrompt,
+					req.Messages,
+					cachingResult,
+					maxOutputTokens,
+					req.DeltaSink,
+				)
 
-		resp, err = s.callAnthropic(ctx, baseURL, apiKey, model, req.SystemPrompt, req.Messages, cachingResult, maxOutputTokens, req.DeltaSink)
-
-	default:
-		// OpenAI-compatible is the default fallback.
-		if baseURL == "" {
-			return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
-				"provider base_url is empty for openai-compatible provider", nil)
-		}
-		resp, err = s.callOpenAI(
-			ctx,
-			baseURL,
-			apiKey,
-			model,
-			req.SystemPrompt,
-			req.Messages,
-			req.Effort,
-			thinkingMode,
-			maxOutputTokens,
-			req.Tools,
-			req.DeltaSink,
-		)
-	}
+			default:
+				// OpenAI-compatible is the default fallback.
+				if baseURL == "" {
+					return nil, errcode.New(
+						errcode.AgentProviderFailed,
+						http.StatusBadGateway,
+						"provider base_url is empty for openai-compatible provider",
+						nil,
+					)
+				}
+				return s.callOpenAI(
+					providerCtx,
+					baseURL,
+					apiKey,
+					model,
+					req.SystemPrompt,
+					req.Messages,
+					req.Effort,
+					thinkingMode,
+					maxOutputTokens,
+					req.Tools,
+					req.DeltaSink,
+				)
+			}
+		},
+	)
 
 	if err != nil {
 		logger.Errorf(ctx, "provider call failed: provider_id=%s type=%s model=%s err=%v",
 			req.ProviderID, providerType, model, err)
+		var timeoutErr *providerTimeoutError
+		if errors.As(err, &timeoutErr) {
+			return nil, timeoutErr
+		}
 		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
 			"provider call failed", err)
 	}

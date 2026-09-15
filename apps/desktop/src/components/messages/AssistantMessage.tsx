@@ -406,6 +406,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           ? 'select-runtime'
         : message.resolution?.type === 'retryLater'
           ? 'retry-later'
+        : message.resolution?.type === 'retry'
+          ? 'retry'
         : message.resolution?.type === 'switchAccount'
           ? 'switch-account'
         : message.resolution?.type === 'chooseCompatibleModel'
@@ -612,6 +614,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-error-runtime-kind={message.typedError?.details.runtime_kind}
       data-pt-agent-error-provider-id={message.typedError?.details.provider_id}
       data-pt-agent-error-model-id={message.typedError?.details.model_id}
+      data-pt-agent-error-deadline={message.typedError?.details.deadline}
       data-pt-agent-error-retry-after-ms={message.typedError?.details.retry_after_ms}
       data-pt-agent-error-reference-kind={message.typedError?.details.reference_kind}
       data-pt-agent-error-reference-hash={message.typedError?.details.reference_hash}
@@ -880,6 +883,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                       && message.resolution.type !== 'editQueue'
                       && message.resolution.type !== 'selectRuntime'
                       && message.resolution.type !== 'retryLater'
+                      && message.resolution.type !== 'retry'
                       && message.resolution.type !== 'switchAccount'
                       && message.resolution.type !== 'chooseCompatibleModel'
                       && message.resolution.type !== 'chooseResourceAgain'
@@ -898,6 +902,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                             : message.resolution.type === 'switchAccount'
                               ? <LogOut size={14} />
                             : message.resolution.type === 'retryLater'
+                              ? <RotateCcw size={14} />
+                            : message.resolution.type === 'retry'
                               ? <RotateCcw size={14} />
                             : message.resolution.type === 'recover'
                               ? <RotateCcw size={14} />
@@ -935,6 +941,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                           return;
                         }
                         if (message.resolution!.type === 'retryLater') {
+                          await handleRetry();
+                          return;
+                        }
+                        if (message.resolution!.type === 'retry') {
                           await handleRetry();
                           return;
                         }

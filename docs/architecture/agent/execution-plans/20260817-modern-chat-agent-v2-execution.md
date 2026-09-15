@@ -2099,48 +2099,49 @@ and zero local-path leakage.
 #### G-FE1 Concurrency Decision
 
 - **Mode**: hybrid.
-- **Current lease-expiry slice**: serial. Store projection, MessageList render,
-  AssistantMessage recovery UI, the shared disposable Fixture, and the two
-  Desktop clients form one causally ordered evidence path. The integrator owns
-  the Store fix, regression, diagnostic instrumentation, checkpoint, deploy,
-  and exact-source rerun.
+- **Current provider-timeout slice**: serial. Provider deadline ownership and
+  upstream cancellation, typed Station terminalization, Desktop recovery
+  projection, the shared disposable Fixture, checkpoint/deploy, and the Native
+  receiver Journey form one causally ordered evidence path. The integrator owns
+  every write and the final reconciliation.
 - **Shared contract freeze — integrator, serial first**:
-  `model/domain/agent/agent_config.proto` and the accepted
-  `CLIENT_EXECUTOR_UNAVAILABLE` payload shape. Generated artifacts remain
-  integrator-owned.
+  the accepted `PROVIDER_TIMEOUT` payload is
+  `provider_id,model_id,deadline`, retryable and terminal, with explicit
+  `Retry`; `ErrorPayload.details` already carries the bounded fields, so this
+  slice must not add a parallel Proto contract or regenerate shared bindings.
 - **Station lane**:
-  `apps/station/app/subserver/agent/{errcode,service}/**`; reject an unavailable
-  client executor before decision mutation, execution claim, or dispatch, and
-  prove acknowledgement replay plus zero downstream rows.
+  `apps/station/app/subserver/agent/{errcode,service}/**`; make the provider
+  attempt deadline cancel the real upstream request, map the classified timeout
+  to one typed terminal, and prove no hidden retry or successful completion.
 - **Desktop Web lane**:
-  `apps/desktop/src/{runtimes,components/messages,services}/**`; retain the
-  Station-owned waiting-approval projection, disable repeated approval while
-  unavailable, and expose the localized `Reconnect executor` action.
-- **Desktop Rust lane**:
-  `apps/desktop/src-tauri/src/{application,interface}/**`; provide
-  Acceptance-gated stop/start control over the real production capability
-  supervisor without synthesizing executor state.
-- **Acceptance lane**:
+  `apps/desktop/src/{components/messages,services}/**`; preserve the exact
+  Station payload, validate its deadline, and expose the existing localized
+  retry command without timers or client-side retry policy.
+- **Development Journey lane**:
   `apps/desktop/src/acceptance/agent/**` and
-  `tooling/acceptance/gates/agent/foundation_*`; coordinate real executor
-  withdrawal/restoration, produce receiver/Station/replay/zero-side-effect
-  facts, and recompute them in the independent Python oracle.
-- **Integrator-only reconcile**: generated Proto output, combined tests,
-  plan/status updates, commit, `make station`, Fixture mutation, and the final
-  exact-source G-F run.
-- **Conflict controls**: reserve the four lane write sets before dispatch;
-  subagents must not edit the shared Proto, generated output, plan/status
-  sources, or Git index; each lane re-reads owned files before patching, stops
-  on unexpected writes, and returns its exact changed-file list; the integrator
-  reviews the combined diff and interface compatibility before verification.
-- **Source checkpoint**: `ff7bfa9f8342a154c2b637e1f0170b2c61c8a31c`
+  `tooling/acceptance/gates/agent/foundation_*`; drive one real provider attempt
+  beyond its canonical deadline, then prove the Native receiver, Station trace,
+  upstream cancellation, retry action, zero successful completion, and cleanup.
+- **Desktop Rust/generated lanes**: read-only for this slice; the existing
+  transport and generic `ErrorPayload` contract are sufficient.
+- **Integrator-only reconcile**: focused checks, plan/status updates, commit,
+  `make station`, Fixture mutation, Native binary rebuild, and the one bounded
+  exact-source Development Journey.
+- **Conflict controls**: no subagent writer is admitted because Station timeout
+  ownership, shared Desktop mapping, the single Harness registry, Fixture,
+  deployment, and runtime evidence are inseparable. The integrator re-reads
+  every target before patching and verifies the combined diff before
+  checkpointing.
+- **Prior executor source checkpoint**:
+  `ff7bfa9f8342a154c2b637e1f0170b2c61c8a31c`
   preserves the Station rejection-before-mutation contract, adds the
   Acceptance-gated production supervisor withdrawal/restoration control,
   keeps `toolRuntime` as the sole Web projection owner, renders localized
   `Reconnect executor`, and adds the complete Harness plus independent Python
   oracle. Browser recovery waits for the exact target device/capability to
   re-advertise and never starts or fabricates a Browser executor.
-- **Local checkpoint evidence**: Station executor-unavailable regression,
+- **Prior executor local checkpoint evidence**:
+  Station executor-unavailable regression,
   Desktop typecheck, `590` Vitest tests with one environment-only skip,
   Desktop production build, Rust format and `cargo check --locked --features
   e2e-testing`, `280` Foundation/static tests, Agent Domain structural

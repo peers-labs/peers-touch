@@ -1005,6 +1005,38 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("modelAdded,", scenario)
         self.assertIn("modelRemoved,", scenario)
 
+    def test_provider_timeout_development_journey_uses_real_provider(self) -> None:
+        start = self.source.index("async runDevelopmentProviderTimeout")
+        end = self.source.index("async sendMessage", start)
+        scenario = self.source[start:end]
+
+        self.assertIn("useChatStore.getState().sendMessage(", scenario)
+        self.assertIn("max_output_tokens: 8192", scenario)
+        self.assertIn("wall_time_ms: requestedWallTimeMs", scenario)
+        self.assertIn("requestedWallTimeMs = 180_000", scenario)
+        self.assertIn("=== 'PROVIDER_TIMEOUT'", scenario)
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="retry"]',
+            scenario,
+        )
+        self.assertIn(
+            "evidenceField(\n            latestTraceRecord,\n"
+            "            'providerCalls',\n            'provider_calls',",
+            scenario,
+        )
+        self.assertIn("latestProviderCalls.length === 1", scenario)
+        self.assertIn("classifiedErrors.length === 1", scenario)
+        self.assertIn("zeroSuccessfulCompletion:", scenario)
+        self.assertIn(
+            "clearFoundationLocalConversationProjection(conversationId)",
+            scenario,
+        )
+        self.assertIn(
+            "await deleteFoundationConversation(",
+            scenario,
+        )
+        self.assertNotIn("recovery.click()", scenario)
+
     def test_two_topic_restart_scenario_uses_production_authorities(self) -> None:
         snapshot_start = self.source.index(
             "async function foundationF12TopicSnapshot",

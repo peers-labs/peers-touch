@@ -2528,6 +2528,7 @@ export interface AgentErrorResolutionAction {
     | 'editQueue'
     | 'selectRuntime'
     | 'retryLater'
+    | 'retry'
     | 'switchAccount'
     | 'chooseCompatibleModel'
     | 'chooseResourceAgain'
@@ -2542,6 +2543,7 @@ export interface AgentErrorResolutionAction {
   capacity?: number;
   runtimeKind?: string;
   retryAfterMs?: number;
+  deadline?: string;
   resourceKind?: string;
   resourceRefHash?: string;
   resourceId?: string;
@@ -2570,6 +2572,9 @@ export const AGENT_PROVIDER_MODEL_UNAVAILABLE_ERROR_TYPE =
   'PROVIDER_MODEL_UNAVAILABLE';
 export const AGENT_PROVIDER_MODEL_UNAVAILABLE_LOCALE_KEY =
   'agent.errors.providerModelUnavailable';
+export const AGENT_PROVIDER_TIMEOUT_ERROR_TYPE = 'PROVIDER_TIMEOUT';
+export const AGENT_PROVIDER_TIMEOUT_LOCALE_KEY =
+  'agent.errors.providerTimeout';
 export const AGENT_CONTEXT_LIMIT_ERROR_TYPE = 'CONTEXT_OVERFLOW';
 export const AGENT_INVALID_REFERENCE_ERROR_TYPE = 'CONTEXT_INVALID_REFERENCE';
 export const AGENT_INVALID_REFERENCE_LOCALE_KEY =
@@ -2627,6 +2632,14 @@ export type AgentProviderModelUnavailableError = AgentTypedErrorPayload & {
   };
 };
 
+export type AgentProviderTimeoutError = AgentTypedErrorPayload & {
+  details: {
+    provider_id: string;
+    model_id: string;
+    deadline: string;
+  };
+};
+
 export type AgentIncompatibleCapabilityError = AgentTypedErrorPayload & {
   details: {
     capability_id: string;
@@ -2672,6 +2685,7 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'runtime_kind',
   'provider_id',
   'model_id',
+  'deadline',
   'retry_after_ms',
   'expected_revision',
   'actual_revision',
@@ -2700,6 +2714,34 @@ const AGENT_CLIENT_RESOURCE_KINDS = new Set([
   'workspace',
 ]);
 const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/u;
+const RFC3339_UTC_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/u;
+
+function isFiniteRFC3339UTC(value: string): boolean {
+  const match = RFC3339_UTC_PATTERN.exec(value);
+  if (!match) return false;
+  const [, year, month, day, hour, minute, second, fraction = ''] = match;
+  const components = [year, month, day, hour, minute, second].map(Number);
+  const [yearValue, monthValue, dayValue, hourValue, minuteValue, secondValue] =
+    components;
+  const date = new Date(0);
+  date.setUTCFullYear(yearValue, monthValue - 1, dayValue);
+  date.setUTCHours(
+    hourValue,
+    minuteValue,
+    secondValue,
+    Number(fraction.padEnd(3, '0').slice(0, 3)),
+  );
+  return (
+    Number.isFinite(date.getTime())
+    && date.getUTCFullYear() === yearValue
+    && date.getUTCMonth() === monthValue - 1
+    && date.getUTCDate() === dayValue
+    && date.getUTCHours() === hourValue
+    && date.getUTCMinutes() === minuteValue
+    && date.getUTCSeconds() === secondValue
+  );
+}
 
 function agentTypedErrorBoolean(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
@@ -2883,6 +2925,29 @@ export function isAgentProviderModelUnavailableError(
   );
 }
 
+export function isAgentProviderTimeoutError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentProviderTimeoutError {
+  if (
+    error?.error_type !== AGENT_PROVIDER_TIMEOUT_ERROR_TYPE
+    || error.locale_key !== AGENT_PROVIDER_TIMEOUT_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 3
+    && detailKeys[0] === 'deadline'
+    && detailKeys[1] === 'model_id'
+    && detailKeys[2] === 'provider_id'
+    && error.details.provider_id.trim().length > 0
+    && error.details.model_id.trim().length > 0
+    && isFiniteRFC3339UTC(error.details.deadline)
+  );
+}
+
 export function isAgentIncompatibleCapabilityError(
   error: AgentTypedErrorPayload | null | undefined,
 ): error is AgentIncompatibleCapabilityError {
@@ -2993,6 +3058,15 @@ export function isAgentClientLeaseExpiredError(
 export function resolveAgentTypedErrorAction(
   error: AgentTypedErrorPayload | null | undefined,
 ): AgentErrorResolutionAction | undefined {
+  if (isAgentProviderTimeoutError(error)) {
+    return {
+      type: 'retry',
+      providerId: error.details.provider_id,
+      modelId: error.details.model_id,
+      deadline: error.details.deadline,
+      label: 'agent.recovery.retry',
+    };
+  }
   if (isAgentProviderRateLimitError(error)) {
     return {
       type: 'retryLater',
@@ -7314,6 +7388,7 @@ export function agentTurnStreamErrorFromData(
       suppliedResolution.type !== 'recover'
       && suppliedResolution.type !== 'chooseResourceAgain'
       && suppliedResolution.type !== 'removeReference'
+      && suppliedResolution.type !== 'retry'
     ) {
       error.resolution = suppliedResolution;
     }

@@ -569,6 +569,83 @@ func TestProviderModelUnavailableTerminatesWithoutHiddenFallback(t *testing.T) {
 	}
 }
 
+func TestProviderTimeoutTerminatesWithoutHiddenRetry(t *testing.T) {
+	service, config, db := setupPinnedProviderExecution(
+		t,
+		"runtime_authority_provider_timeout",
+	)
+	if err := db.AutoMigrate(&persistence.Credential{}); err != nil {
+		t.Fatalf("migrate credential: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.Credential{
+		ID:        "credential-provider-timeout",
+		ActorPTID: config.ActorID,
+		Provider:  config.Provider,
+		AuthType:  "api_key",
+		Source:    "test",
+		Status:    string(domain.CredentialStatusActive),
+		Version:   1,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed credential pool: %v", err)
+	}
+	service.credentialPool = NewCredentialPoolService()
+	service.errorClassifier = NewErrorClassifierService()
+	service.compression = NewCompressionService()
+	config.MaxRetries = 3
+	config.FallbackModel = "fallback-model"
+	deadline := time.Date(2026, 9, 16, 1, 2, 3, 456000000, time.UTC)
+	providerCalls := 0
+	service.providerCall = func(
+		ctx context.Context,
+		request *ProviderCallRequest,
+	) (*ProviderCallResponse, error) {
+		if err := request.BeforeDispatch(ctx); err != nil {
+			return nil, err
+		}
+		providerCalls++
+		return nil, &providerTimeoutError{
+			Deadline: deadline,
+			Cause:    context.DeadlineExceeded,
+		}
+	}
+
+	trace := &domain.TurnTrace{}
+	_, _, recordedCalls, _, err := service.providerCallWithRetry(
+		context.Background(),
+		config,
+		config.TurnID,
+		trace,
+		"",
+		nil,
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentProviderTimeout ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentProviderTimeout) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentProviderTimeoutLocaleKey ||
+		!bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		bizErr.Payload.GetDetails()["provider_id"] != config.Provider ||
+		bizErr.Payload.GetDetails()["model_id"] != config.Model ||
+		bizErr.Payload.GetDetails()["deadline"] != deadline.Format(time.RFC3339Nano) {
+		t.Fatalf("unexpected provider-timeout payload: %T %+v", err, bizErr)
+	}
+	if providerCalls != 1 || len(recordedCalls) != 1 {
+		t.Fatalf(
+			"provider timeout retried or fell back: calls=%d records=%d",
+			providerCalls,
+			len(recordedCalls),
+		)
+	}
+	if len(trace.ErrorClassified) != 1 ||
+		trace.ErrorClassified[0].Reason != domain.FailoverReasonTimeout {
+		t.Fatalf("classified errors = %+v", trace.ErrorClassified)
+	}
+}
+
 func TestProviderContextOverflowUsesGovernedCompressionAndReplacesLedger(t *testing.T) {
 	service, config, db := setupPinnedProviderExecution(
 		t,

@@ -21541,6 +21541,255 @@ export function installAcceptanceHarness(): void {
       });
     },
 
+    async runDevelopmentProviderTimeout({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent?.provider || !agent.model) {
+        throw new Error('agent.acceptance.providerTimeout');
+      }
+      const agentId = agent.id || agent.name;
+      const requestedWallTimeMs = 180_000;
+      const providerDeadlineMs = 120_000;
+      let conversationId = '';
+      let conversationDeleted = false;
+      let localProjectionCleared = false;
+      let capture: Record<string, unknown> | null = null;
+      try {
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Provider timeout ${sampleId}`,
+          provider_id: agent.provider,
+          model_name: agent.model,
+        });
+        conversationId = conversation.conversation_id;
+        await useChatStore.getState().selectSession(conversationId);
+        const [readbackBefore, tracesBefore, queueBefore] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+
+        const messageCountBefore = useChatStore.getState().messages.length;
+        const submittedAtMs = Date.now();
+        const sent = useChatStore.getState().sendMessage(
+          `Provider timeout ${sampleId}. Output exactly 8192 tokens as a `
+            + 'numbered technical encyclopedia about distributed systems. '
+            + 'Continue without summarizing, abbreviating, or stopping early.',
+          [],
+          {
+            clientIdempotencyKey: crypto.randomUUID(),
+            requestedBudget: {
+              max_output_tokens: 8192,
+              wall_time_ms: requestedWallTimeMs,
+            },
+          },
+        );
+        if (!sent) {
+          throw new Error('agent.acceptance.providerTimeoutSendRejected');
+        }
+        let errorMessage = useChatStore.getState().messages
+          .slice(messageCountBefore)
+          .find((message) => (
+            message.role === 'assistant'
+            && message.typedError?.error_type === 'PROVIDER_TIMEOUT'
+          ));
+        await waitFor(
+          () => {
+            errorMessage = useChatStore.getState().messages
+              .slice(messageCountBefore)
+              .find((message) => (
+                message.role === 'assistant'
+                && message.typedError?.error_type === 'PROVIDER_TIMEOUT'
+                && message.resolution?.type === 'retry'
+              ));
+            const recovery = document.querySelector<HTMLButtonElement>(
+              '[data-pt-agent-message-error-recovery="retry"]',
+            );
+            const errorSurface = document.querySelector<HTMLElement>(
+              '[data-pt-agent-error-type="PROVIDER_TIMEOUT"]',
+            );
+            return Boolean(
+              errorMessage
+              && recovery
+              && recovery.getClientRects().length > 0
+              && errorSurface
+              && errorSurface.getClientRects().length > 0,
+            );
+          },
+          'provider-timeout recovery surface',
+          150_000,
+        );
+        const terminalObservedAtMs = Date.now();
+        const recovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="retry"]',
+        );
+        const errorSurface = document.querySelector<HTMLElement>(
+          '[data-pt-agent-error-type="PROVIDER_TIMEOUT"]',
+        );
+        if (!errorMessage || !recovery || !errorSurface) {
+          throw new Error('agent.acceptance.providerTimeoutRecoveryMissing');
+        }
+        const recoveryVisible = recovery.getClientRects().length > 0;
+        const recoveryLabel = recovery.textContent?.trim() ?? '';
+        const projectedDeadline =
+          errorSurface.dataset.ptAgentErrorDeadline ?? '';
+
+        const [readbackAfter, tracesAfter, queueAfter] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+        const typedError = errorMessage.typedError;
+        const resolution = errorMessage.resolution;
+        const deadline = typedError?.details.deadline ?? '';
+        const deadlineMs = Date.parse(deadline);
+        const latestTrace =
+          tracesAfter.entries[tracesAfter.entries.length - 1];
+        const latestTraceRecord = latestTrace?.trace
+          ? evidenceRecord(
+              evidenceValue(latestTrace.trace),
+              'providerTimeoutTrace',
+            )
+          : {};
+        const latestProviderCalls = optionalEvidenceArray(
+          evidenceField(
+            latestTraceRecord,
+            'providerCalls',
+            'provider_calls',
+          ),
+          'providerTimeoutProviderCalls',
+        ).map((value) => evidenceRecord(value, 'providerTimeoutProviderCall'));
+        const classifiedErrors = optionalEvidenceArray(
+          evidenceField(
+            latestTraceRecord,
+            'errorsClassified',
+            'errors_classified',
+          ),
+          'providerTimeoutClassifiedErrors',
+        ).map((value) => evidenceRecord(value, 'providerTimeoutClassifiedError'));
+        const providerCall = latestProviderCalls[0] ?? {};
+        const classifiedError = classifiedErrors[0] ?? {};
+        const completedAssistantMessages = readbackAfter.messages.filter(
+          (message) => (
+            String(message.role).toLowerCase() === 'assistant'
+            && String(message.status).toLowerCase() === 'completed'
+          ),
+        );
+        capture = {
+          assertions: {
+            typedProviderTimeout:
+              typedError?.error_type === 'PROVIDER_TIMEOUT'
+              && typedError.locale_key === 'agent.errors.providerTimeout'
+              && typedError.retryable === true
+              && typedError.terminal === true
+              && stableJson(Object.keys(typedError.details).sort())
+                === stableJson(['deadline', 'model_id', 'provider_id'])
+              && typedError.details.provider_id === agent.provider
+              && typedError.details.model_id === agent.model
+              && Number.isFinite(deadlineMs),
+            localizedRetryVisible:
+              recoveryVisible
+              && recoveryLabel.length > 0
+              && resolution?.type === 'retry'
+              && resolution.providerId === agent.provider
+              && resolution.modelId === agent.model
+              && resolution.deadline === deadline,
+            deadlineProjected: projectedDeadline === deadline,
+            oneTerminalProviderAttempt:
+              tracesAfter.entries.length === tracesBefore.entries.length + 1
+              && latestProviderCalls.length === 1
+              && String(
+                evidenceField(providerCall, 'provider', 'provider') ?? '',
+              ) === agent.provider
+              && String(
+                evidenceField(providerCall, 'model', 'model') ?? '',
+              ) === agent.model,
+            upstreamTimeoutCancelled:
+              classifiedErrors.length === 1
+              && Number(
+                evidenceField(classifiedError, 'reason', 'reason') ?? -1,
+              ) === 7
+              && Number(
+                evidenceField(providerCall, 'latencyMs', 'latency_ms') ?? 0,
+              ) >= providerDeadlineMs - 5_000,
+            providerDeadlinePrecedesTurnBudget:
+              requestedWallTimeMs > providerDeadlineMs
+              && deadlineMs >= submittedAtMs + providerDeadlineMs - 5_000
+              && deadlineMs <= terminalObservedAtMs + 5_000,
+            zeroSuccessfulCompletion: completedAssistantMessages.length === 0,
+            queueUnchanged:
+              queueAfter.entries.length === queueBefore.entries.length,
+          },
+          facts: {
+            conversationId,
+            typedError,
+            providerId: typedError?.details.provider_id ?? '',
+            modelId: typedError?.details.model_id ?? '',
+            deadline,
+            projectedDeadline,
+            submittedAt: new Date(submittedAtMs).toISOString(),
+            terminalObservedAt: new Date(terminalObservedAtMs).toISOString(),
+            requestedBudget: {
+              maxOutputTokens: 8192,
+              wallTimeMs: requestedWallTimeMs,
+            },
+            resolution,
+            recoveryLabel,
+            recoveryVisible,
+            providerCalls: latestProviderCalls,
+            classifiedErrors,
+            completedAssistantMessageCount:
+              completedAssistantMessages.length,
+            traceCountBefore: tracesBefore.entries.length,
+            traceCountAfter: tracesAfter.entries.length,
+            queueCountBefore: queueBefore.entries.length,
+            queueCountAfter: queueAfter.entries.length,
+            messageDelta:
+              readbackAfter.messages.length - readbackBefore.messages.length,
+            traceDelta:
+              tracesAfter.entries.length - tracesBefore.entries.length,
+            queueDelta:
+              queueAfter.entries.length - queueBefore.entries.length,
+          },
+        };
+      } finally {
+        if (conversationId) {
+          clearFoundationLocalConversationProjection(conversationId);
+          localProjectionCleared = true;
+          const deletionErrorCode = await deleteFoundationConversation(
+            conversationId,
+          );
+          conversationDeleted = deletionErrorCode === ''
+            || deletionErrorCode.includes('AGENT_4004');
+        }
+      }
+      if (!capture) {
+        throw new Error('agent.acceptance.providerTimeoutCaptureMissing');
+      }
+      return evidenceValue({
+        ...capture,
+        cleanup: {
+          conversationDeleted,
+          localProjectionCleared,
+          status:
+            conversationDeleted && localProjectionCleared
+              ? 'clean'
+              : 'failed',
+        },
+      });
+    },
+
     async sendMessage({ content }: SendMessageInput) {
       const chatStore = useChatStore.getState();
       const beforeCount = chatStore.messages.length;
