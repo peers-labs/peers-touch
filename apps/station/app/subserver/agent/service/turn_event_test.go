@@ -149,6 +149,69 @@ func TestTurnServiceSaveTurnTraceUpsertsByTurn(t *testing.T) {
 	}
 }
 
+func TestToolProcessingFailurePersistsProviderTraceAndTypedError(t *testing.T) {
+	db := openConversationAuthorityDB(t, "tool_processing_failure_trace")
+	if err := db.AutoMigrate(&persistence.TurnTrace{}); err != nil {
+		t.Fatalf("migrate turn trace: %v", err)
+	}
+	now := time.Now()
+	if err := db.Create(&persistence.Conversation{
+		ID:        "conv_unknown_tool",
+		AgentID:   "agent_1",
+		ActorPTID: "actor_1",
+		Title:     "Unknown Tool",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	if err := db.Create(&persistence.AgentTurn{
+		ID:             "turn_unknown_tool",
+		ConversationID: "conv_unknown_tool",
+		AgentID:        "agent_1",
+		Status:         string(domain.TurnStatusRunning),
+		StartedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed turn: %v", err)
+	}
+	service := TurnService{}
+	trace := &domain.TurnTrace{
+		TraceID: "trace_unknown_tool",
+		TurnID:  "turn_unknown_tool",
+		ProviderCalls: []domain.ProviderCallRecord{{
+			Provider: "provider_1",
+			Model:    "model_1",
+		}},
+	}
+	processingErr := errcode.NewToolUnknown(
+		"foundation_unknown_tool",
+		unregisteredProviderToolVersion,
+	)
+
+	err := service.persistToolProcessingFailureTrace(
+		context.Background(),
+		trace,
+		processingErr,
+	)
+	var typedErr *errcode.BizError
+	if !errors.As(err, &typedErr) || typedErr.Code != errcode.AgentToolUnknown {
+		t.Fatalf("typed Tool error was not preserved: %T %v", err, err)
+	}
+	loaded, err := service.loadTurnTraceForResume(
+		context.Background(),
+		trace.TurnID,
+	)
+	if err != nil {
+		t.Fatalf("load failed Tool trace: %v", err)
+	}
+	if len(loaded.ProviderCalls) != 1 ||
+		loaded.ProviderCalls[0].Provider != "provider_1" ||
+		loaded.ProviderCalls[0].Model != "model_1" {
+		t.Fatalf("failed Tool trace lost Provider attempt: %+v", loaded.ProviderCalls)
+	}
+}
+
 func TestToolDecisionTurnEventCarriesManualApprovalProjection(t *testing.T) {
 	expiresAt := time.Date(2026, 8, 29, 12, 30, 0, 123456789, time.UTC)
 	event := toolDecisionTurnEvent(ProposalDecision{

@@ -1672,6 +1672,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		return nil, settleRunningFailure("failed to persist turn usage", usageErr)
 	}
 	if err != nil {
+		err = s.persistToolProcessingFailureTrace(ctx, trace, err)
 		terminalReason := fmt.Sprintf("tool call processing failed: %v", err)
 		if reason, exhausted := runtimeBudgetExhaustionReason(err); exhausted {
 			terminalReason = reason
@@ -3131,6 +3132,20 @@ func (s *TurnService) validateProviderToolCallsBeforePersistence(
 		}
 	}
 	return nil
+}
+
+func (s *TurnService) persistToolProcessingFailureTrace(
+	ctx context.Context,
+	trace *domain.TurnTrace,
+	processingErr error,
+) error {
+	if traceErr := s.saveTurnTrace(context.WithoutCancel(ctx), trace); traceErr != nil {
+		return errors.Join(
+			processingErr,
+			fmt.Errorf("persist failed tool-processing trace: %w", traceErr),
+		)
+	}
+	return processingErr
 }
 
 // processToolCalls parses tool_calls from the assistant response, executes

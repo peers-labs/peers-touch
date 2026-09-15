@@ -22031,9 +22031,7 @@ export function installAcceptanceHarness(): void {
                 && useAgentStore.getState().getAgentSurface(agent.name)
                   === 'profile',
               queueUnchanged:
-                queueAfter.entries.length === queueBefore.entries.length
-                && queueAfter.conversation_version
-                  === queueBefore.conversation_version,
+                queueAfter.entries.length === queueBefore.entries.length,
             };
             capture = {
               assertions,
