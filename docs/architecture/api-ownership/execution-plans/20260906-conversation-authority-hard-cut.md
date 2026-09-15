@@ -2288,3 +2288,40 @@ message restart readback. The focused Messaging Journey, Social wrapper, and
 Station lifecycle cohort passes 13/13, Python compilation passes, and
 `git diff --check` passes. This is `FOCUSED_PASS`; the ordered exact-source
 Social and Chat/Contacts Gates must be rerun before CA-W6 closure.
+
+Checkpoint `7906691afdcd788d5a9ee9cca24fb679f2559f41` was deployed
+exactly to both Stations. Final aggregate run
+`20260915T060704455259Z-978853563a2e8d1891f97fb5aa9745fa`
+passes all five executed Gates: Acceptance plan self-check, Acceptance Infra
+validation, runtime-provisioning self-check, ordered Social convergence, and
+Chat/Contacts. Social run
+`20260915T060726558597Z-a705288aad979787d7092cd5b8264696`
+proves typing, message delivery, read receipt, and cleanup; Chat/Contacts run
+`20260915T061015388672Z-587953e6525171492cf434c752f5a1a0`
+proves complete Direct and Group attachment, interaction, receipt, search, and
+restart readback with cleanup. Mobile Rust passes 100/100 and
+`pnpm mobile:check` passes. Both simulator reports remain intentionally
+`PARTIAL/UNPROVEN` outside their observed scope, and the Gap Detector keeps
+`mobile-native-social-convergence-e2e` plus
+`mobile-native-chat-contacts-e2e` `UNPROVEN`; no physical-device claim is made.
+
+CA-W7 source audit begins at the same checkpoint. `station-api-ownership` run
+`20260915T061431374292Z-3e771d7483fc33111747d8ba25f3e2e4`
+and `station-messaging-unit` run
+`20260915T061443576272Z-2630828747c78fe01a2da7922b678796`
+pass. `messaging-platform-contract` exposes two stale Gate assumptions: it
+still opens deleted Desktop `messaging/command_result.rs` after portable Core
+became the sole processor, and still requires MLS Key Exchange route literals
+inside HTTP Gateway after the Key Exchange Tauri owner absorbed them. CA-W7
+admits a Gate-only reconciliation to assert the portable owner, deleted
+duplicate, current Desktop composition, Key Exchange owner routes, and
+wrapper delegation without reintroducing either retired implementation.
+
+The Gate reconciliation now reads portable Core
+`inbox/command_result.rs`, asserts Desktop composition through
+`CommandResultProcessor`, and fails if the deleted Desktop duplicate returns.
+It verifies MLS Key Exchange route literals at the Tauri Key Exchange owner,
+HTTP Gateway delegation to those owner functions, and the retained DKX owner
+without requiring duplicated route strings in the wrapper. The complete
+Messaging Platform contract passes 22/22, Desktop TypeScript checks pass,
+Python compilation passes, and `git diff --check` passes.
