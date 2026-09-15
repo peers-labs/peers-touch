@@ -1376,8 +1376,8 @@ observations is invalid.
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
 | W5 | recovery | complete | `9bf7e3934` | PASS (`sc-dj-recovery-consumer`) | NOT_RUN | none |
 | W6 | Social minimum | complete | `d2731a220` | PASS (`sc-dj-social-uow-atomicity`) | NOT_RUN | none |
-| W7A | Content PreKey client boundary | in progress | `7dc5f53ce` | SOURCE_CHECK/PASS; EC5A BLOCKED/UNPROVEN | NOT_RUN | `MESSAGING_TEST_POSTGRES_DSN` unavailable |
-| W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | W7A; active MCA Desktop and NDR Station owners |
+| W7A | Content PreKey client boundary | complete | `14b0cdf81` | PASS (`sc-dj-content-prekey-client-boundary`) | NOT_RUN | none |
+| W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | active MCA Desktop and NDR Station owners |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
 | W9 | Mobile | parked | none | NOT_RUN | NOT_RUN | W5/W7/W8; Mobile claim |
 | W10 | Chat regression | parked | none | NOT_RUN | NOT_RUN | W2/W9 FUNCTIONAL_PASS; active Desktop/Station runtime owners |
@@ -1385,7 +1385,7 @@ observations is invalid.
 | W12 | physical schema/data cut + full functional | parked | none | NOT_RUN | NOT_RUN | W11; exact runtime leases |
 | W13 | Acceptance | parked | none | NOT_RUN | NOT_RUN | W12 FUNCTIONAL_PASS; active Acceptance owner |
 
-Overall: `8/17`. DWF-D13 removed the cross-worktree source-lock blocker. W1
+Overall: `9/17`. DWF-D13 removed the cross-worktree source-lock blocker. W1
 completed the accepted `SC-D14` wire contracts, scoped generation and all five
 generated consumer closures. W2A completed the atomic source cut; W2D must add
 the real Desktop/Mobile Development drivers before the Desktop/Mobile Native
@@ -1540,12 +1540,14 @@ Current evidence:
   generation, API ownership and fail-closed Development blocker reporting.
   Scoped generation/check, Station Go race tests, Desktop/Mobile Rust checks,
   Desktop/Mobile TypeScript checks, Secure Content Core tests, error parity,
-  API ownership and 19 Development runner/work-item tests pass. Exact-source
-  EC5A at `7dc5f53ce` records `BLOCKED/UNPROVEN` at
-  `~/.peers-touch/dev/workspaces/9eb2cb904c9ae460/development/secure-content/W7A/EC5A/result.json`:
-  the mandatory fail-closed PostgreSQL corpus cannot run because
-  `MESSAGING_TEST_POSTGRES_DSN` is unavailable, and no substitute evidence is
-  accepted.
+  API ownership and 19 Development runner/work-item tests pass. The
+  worktree-isolated PostgreSQL fixture then passed all 12 mandatory contention,
+  rollback, lock-order, profile-rotation and revocation tests. Exact source
+  `14b0cdf81` produced `FUNCTIONAL_CHECK/PASS` for
+  `sc-dj-content-prekey-client-boundary` at
+  `~/.peers-touch/dev/workspaces/9eb2cb904c9ae460/development/secure-content/W7A/EC5A/result.json`.
+  W7A is complete; Desktop/Browser product behavior and formal Acceptance
+  remain `NOT_RUN`.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level
