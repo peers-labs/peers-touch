@@ -46,6 +46,7 @@ WORK_ITEM_ID = "MCA-001"
 JOURNEY_ID = "G-FE1-NORMAL-SEND"
 PROFILE = "chat-native-disposable"
 DEPLOYMENT_ENVIRONMENT = "chat-native-disposable-station"
+ASSISTANT_MESSAGE_ROLE = 3
 COMPLETED_MESSAGE_STATUS = 3
 
 
@@ -136,8 +137,8 @@ def evaluate_normal_send(
         message
         for message in station_messages
         if message.get("turnId") == turn_id
-        and message.get("role") == "assistant"
-        and message.get("status") == COMPLETED_MESSAGE_STATUS
+        and int(message.get("role") or 0) == ASSISTANT_MESSAGE_ROLE
+        and int(message.get("status") or 0) == COMPLETED_MESSAGE_STATUS
     ]
     message_ids = [
         str(message.get("messageId") or "")

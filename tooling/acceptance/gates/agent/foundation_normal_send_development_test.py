@@ -53,14 +53,14 @@ def valid_capture() -> dict[str, object]:
                 {
                     "messageId": "message-user",
                     "turnId": "turn-1",
-                    "role": "user",
+                    "role": 2,
                     "status": 3,
                     "content": "prompt",
                 },
                 {
                     "messageId": "message-assistant",
                     "turnId": "turn-1",
-                    "role": "assistant",
+                    "role": 3,
                     "status": 3,
                     "content": "1\n2\n3",
                 },
@@ -101,6 +101,16 @@ class NormalSendDevelopmentTest(unittest.TestCase):
         duplicate = copy.deepcopy(capture["station"]["messages"][1])
         duplicate["messageId"] = "message-assistant-duplicate"
         capture["station"]["messages"].append(duplicate)
+
+        with self.assertRaisesRegex(
+            NormalSendError,
+            "singleAuthoritativeTerminal",
+        ):
+            evaluate_normal_send(capture)
+
+    def test_rejects_completed_user_message_as_terminal(self) -> None:
+        capture = valid_capture()
+        capture["station"]["messages"][1]["role"] = 2
 
         with self.assertRaisesRegex(
             NormalSendError,
