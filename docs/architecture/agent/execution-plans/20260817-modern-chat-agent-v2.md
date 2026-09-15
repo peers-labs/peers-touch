@@ -26,8 +26,8 @@
 | Current step | `BASE-RUNTIME_UNAVAILABLE` is `FUNCTIONAL_PASS` on exact source `3a5e63ed0`; the 28-family BASE inventory is 17 closed and 11 source-incomplete |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
 | Last completed | Exact-source run `20260915T143820839970Z` passed Desktop Native send → non-empty stream → one Station terminal → page reload → client restart/replay with no duplicate messages or ToolCalls and complete cleanup |
-| Current action | Advance `G-FE1-SC3` client execution: `BASE-PERMISSION_DENIED` and `BASE-TARGET_DISCONNECTED`; keep `BASE-UNAUTHORIZED_RESOURCE` and `BASE-RESUME_UNAVAILABLE` parked at their design/product boundaries |
-| Next action | Inventory the SC3 command and executor owner paths, then implement the first dependency-ready vertical; do not run C08 or Foundation while any source-incomplete family remains |
+| Current action | Advance `G-FE1-SC4` provider terminalization: `BASE-RATE_LIMIT`, `BASE-MODEL_UNAVAILABLE`, and `BASE-PROVIDER_TIMEOUT`; keep SC1-SC3 amendment-bound cells parked |
+| Next action | Map existing provider classifier outcomes to exact typed terminal payloads and focused Journeys; do not run C08 or Foundation while any source-incomplete family remains |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |

@@ -2053,6 +2053,16 @@ and zero local-path leakage.
     implementing or advertising P12 `EXTERNAL_AGENT` in this V2 scope, while
     the error cell requires that stateful runtime's destructive reset
     lifecycle. The cell cannot be made executable by a direct-model shim.
+- **SC3 split**:
+  - `BASE-PERMISSION_DENIED` is parked at `DESIGN_AMENDMENT_REQUIRED`.
+    Client capability leases expose only a permission state; no authoritative
+    `permission_kind` exists for the accepted error detail, so Web/Station
+    cannot invent one from a capability ID.
+  - `BASE-TARGET_DISCONNECTED` is parked at
+    `PRODUCT_AMENDMENT_REQUIRED`. `DISCONNECTED`/`RECONNECTING` currently belong
+    to generic `CapabilityOperation`; the accepted cell requires a Turn-bound
+    client request to remain pending and expose `Reconnect`. No production
+    projection bridges those ownership models.
 - **Gate boundary**: do not run C08 or the 419-cell Foundation Gate while any
   source-incomplete family remains.
 - **C08 diagnostic after the boundary changed (2026-09-15)**: run
