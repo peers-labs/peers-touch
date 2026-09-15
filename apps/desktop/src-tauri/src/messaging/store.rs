@@ -13,7 +13,10 @@ use crate::model::chat::{
 };
 pub use messaging_core::attachment::AttachmentTransferRecord;
 use messaging_core::attachment::AttachmentTransferRepository;
-pub use messaging_core::contracts::{CommandStatusProjection, ConversationMessageProjection};
+pub use messaging_core::contracts::{
+    CommandResultDisposition, CommandResultReceiveCommit, CommandStatusProjection,
+    ConversationMessageProjection,
+};
 use messaging_core::contracts::{
     CryptoEndpoint as CoreCryptoEndpoint, InteractionMutation as CoreInteractionMutation,
     InteractionReceiveCommit as CoreInteractionReceiveCommit, MlsApplicationReceiveCommit,
@@ -31,6 +34,7 @@ use messaging_core::identity::{
     DeviceEnrollmentRepository, FreshDeviceEnrollment, FreshDeviceIdentityState,
     MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
 };
+use messaging_core::inbox::CommandResultRepository;
 use messaging_core::outbox::{MetadataInteractionCommit, MetadataInteractionRepository};
 use messaging_core::proto::{actor_device_ptid, actor_device_ref};
 use messaging_core::store::{migrate_messaging_schema, MessagingSchemaBackend};
@@ -383,25 +387,6 @@ pub struct DeliveryReceiptReceiveCommit<'a> {
     pub consumer_epoch: u64,
     pub payload_sha256: &'a [u8],
     pub delivery_state: &'a str,
-    pub consumed_at_unix_ms: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CommandResultDisposition {
-    Accepted,
-    Failed(String),
-    Superseded(String),
-}
-
-pub struct CommandResultReceiveCommit<'a> {
-    pub item_id: &'a str,
-    pub event_id: &'a str,
-    pub conversation_id: &'a str,
-    pub command_id: &'a str,
-    pub lane_sequence: i64,
-    pub consumer_epoch: u64,
-    pub payload_sha256: &'a [u8],
-    pub disposition: CommandResultDisposition,
     pub consumed_at_unix_ms: i64,
 }
 
@@ -7640,6 +7625,54 @@ impl MessagingStore {
     #[cfg(test)]
     pub(super) fn in_memory() -> Result<Self, String> {
         Self::from_connection(Connection::open_in_memory().map_err(|error| error.to_string())?)
+    }
+}
+
+impl CommandResultRepository for MessagingStore {
+    fn persist_claimed_item(
+        &self,
+        item_id: &str,
+        event_id: &str,
+        conversation_id: &str,
+        lane_sequence: i64,
+        consumer_epoch: u64,
+        payload_sha256: &[u8],
+        opaque_payload: &[u8],
+        now_unix_ms: i64,
+    ) -> Result<(), String> {
+        MessagingStore::persist_claimed_item(
+            self,
+            item_id,
+            event_id,
+            conversation_id,
+            lane_sequence,
+            consumer_epoch,
+            payload_sha256,
+            opaque_payload,
+            now_unix_ms,
+        )
+    }
+
+    fn consumption_marker_matches(
+        &self,
+        item_id: &str,
+        payload_sha256: &[u8],
+    ) -> Result<bool, String> {
+        MessagingStore::consumption_marker_matches(self, item_id, payload_sha256)
+    }
+
+    fn command_bytes(&self, conversation_id: &str, command_id: &str) -> Result<Vec<u8>, String> {
+        MessagingStore::command_bytes(self, conversation_id, command_id)
+    }
+
+    fn commit_command_result(
+        &self,
+        commit: &CommandResultReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        MessagingStore::commit_command_result(self, commit).map(|result| match result {
+            ReceiveCommitResult::Committed => CoreReceiveCommitResult::Committed,
+            ReceiveCommitResult::AlreadyCommitted => CoreReceiveCommitResult::AlreadyCommitted,
+        })
     }
 }
 

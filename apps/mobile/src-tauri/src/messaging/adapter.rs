@@ -7,9 +7,10 @@ use messaging_core::attachment::{
 };
 use messaging_core::contracts::CryptoEndpoint;
 use messaging_core::contracts::{
-    ActorReadReceiveCommit, CommandStatusProjection, ConversationMessageProjection,
-    ConversationProjection, ConversationStateReceiveCommit, DeliveryReceiptReceiveCommit,
-    DirectEditCommit, DirectReceiveCommit, InteractionMutation, InteractionReceiveCommit,
+    ActorReadReceiveCommit, CommandResultDisposition, CommandResultReceiveCommit,
+    CommandStatusProjection, ConversationMessageProjection, ConversationProjection,
+    ConversationStateReceiveCommit, DeliveryReceiptReceiveCommit, DirectEditCommit,
+    DirectReceiveCommit, InteractionMutation, InteractionReceiveCommit,
     MlsApplicationReceiveCommit, MlsConversationProjection, MlsRetirementReceiveCommit,
     MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, PendingMlsKeyPackage,
     PendingMlsTransitionState, PublicEventReceiveCommit, ReceiveCommitResult,
@@ -21,6 +22,7 @@ use messaging_core::identity::{
     DeviceEnrollmentRepository, DeviceSigningKey, FreshDeviceEnrollment, FreshDeviceIdentityState,
     MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
 };
+use messaging_core::inbox::CommandResultRepository;
 use messaging_core::outbox::{
     CommandOutboxEntry, MetadataInteractionCommit, MetadataInteractionRepository, OutboxStore,
 };
@@ -2539,7 +2541,19 @@ impl MessagingRepository for MobileMessagingStore {
                     item_id, event_id, conversation_id, lane_sequence, consumer_epoch,
                     payload_sha256, payload, state, claimed_at_unix_ms
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'claimed', ?8)
-                 ON CONFLICT(item_id) DO NOTHING",
+                 ON CONFLICT(item_id) DO UPDATE SET
+                    consumer_epoch=excluded.consumer_epoch,
+                    state=CASE
+                        WHEN messaging_inbox_items.state = 'consumed' THEN 'consumed'
+                        ELSE 'claimed'
+                    END,
+                    claimed_at_unix_ms=excluded.claimed_at_unix_ms
+                 WHERE messaging_inbox_items.event_id = excluded.event_id
+                   AND messaging_inbox_items.conversation_id = excluded.conversation_id
+                   AND messaging_inbox_items.lane_sequence = excluded.lane_sequence
+                   AND messaging_inbox_items.payload_sha256 = excluded.payload_sha256
+                   AND messaging_inbox_items.payload = excluded.payload
+                   AND excluded.consumer_epoch >= messaging_inbox_items.consumer_epoch",
                 params![
                     item_id,
                     event_id,
@@ -2552,37 +2566,8 @@ impl MessagingRepository for MobileMessagingStore {
                 ],
             )
             .map_err(|error| error.to_string())?;
-        if changed == 0 {
-            let existing = connection
-                .query_row(
-                    "SELECT event_id, conversation_id, lane_sequence, consumer_epoch,
-                            payload_sha256, payload
-                     FROM messaging_inbox_items WHERE item_id = ?1",
-                    params![item_id],
-                    |row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, String>(1)?,
-                            row.get::<_, i64>(2)?,
-                            row.get::<_, i64>(3)?,
-                            row.get::<_, Vec<u8>>(4)?,
-                            row.get::<_, Vec<u8>>(5)?,
-                        ))
-                    },
-                )
-                .map_err(|error| error.to_string())?;
-            if existing
-                != (
-                    event_id.to_string(),
-                    conversation_id.to_string(),
-                    lane_sequence,
-                    epoch,
-                    payload_sha256.to_vec(),
-                    opaque_payload.to_vec(),
-                )
-            {
-                return Err("mobile messaging claimed item replay conflict".to_string());
-            }
+        if changed != 1 {
+            return Err("mobile messaging claimed item replay conflict".to_string());
         }
         Ok(())
     }
@@ -3950,6 +3935,132 @@ impl MessagingRepository for MobileMessagingStore {
             .map_err(|_| "mobile messaging store lock poisoned".to_string())?
             .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
             .map_err(|error| error.to_string())
+    }
+}
+
+impl CommandResultRepository for MobileMessagingStore {
+    fn persist_claimed_item(
+        &self,
+        item_id: &str,
+        event_id: &str,
+        conversation_id: &str,
+        lane_sequence: i64,
+        consumer_epoch: u64,
+        payload_sha256: &[u8],
+        opaque_payload: &[u8],
+        now_unix_ms: i64,
+    ) -> Result<(), String> {
+        MessagingRepository::persist_claimed_item(
+            self,
+            item_id,
+            event_id,
+            conversation_id,
+            lane_sequence,
+            consumer_epoch,
+            payload_sha256,
+            opaque_payload,
+            now_unix_ms,
+        )
+    }
+
+    fn consumption_marker_matches(
+        &self,
+        item_id: &str,
+        payload_sha256: &[u8],
+    ) -> Result<bool, String> {
+        MessagingRepository::consumption_marker_matches(self, item_id, payload_sha256)
+    }
+
+    fn command_bytes(&self, conversation_id: &str, command_id: &str) -> Result<Vec<u8>, String> {
+        if conversation_id.trim().is_empty() || command_id.trim().is_empty() {
+            return Err("mobile messaging command lookup identity is incomplete".to_string());
+        }
+        self.connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?
+            .query_row(
+                "SELECT command_bytes
+                 FROM messaging_local_commands
+                 WHERE conversation_id = ?1 AND command_id = ?2",
+                params![conversation_id, command_id],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "mobile messaging command result has no local command".to_string())
+    }
+
+    fn commit_command_result(
+        &self,
+        commit: &CommandResultReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        if commit.item_id.trim().is_empty()
+            || commit.event_id.trim().is_empty()
+            || commit.conversation_id.trim().is_empty()
+            || commit.command_id.trim().is_empty()
+            || commit.lane_sequence <= 0
+            || commit.consumer_epoch == 0
+            || commit.payload_sha256.len() != 32
+            || commit.consumed_at_unix_ms <= 0
+            || match &commit.disposition {
+                CommandResultDisposition::Accepted => false,
+                CommandResultDisposition::Failed(error_code)
+                | CommandResultDisposition::Superseded(error_code) => error_code.trim().is_empty(),
+            }
+        {
+            return Err("mobile messaging command result commit is incomplete".to_string());
+        }
+        self.with_transaction(|transaction| {
+            let result = Self::commit_claimed_item(
+                transaction,
+                commit.item_id,
+                commit.event_id,
+                commit.conversation_id,
+                commit.lane_sequence,
+                commit.consumer_epoch,
+                commit.payload_sha256,
+                commit.consumed_at_unix_ms,
+            )?;
+            if result == ReceiveCommitResult::AlreadyCommitted {
+                return Ok(result);
+            }
+            let command_state = transaction
+                .query_row(
+                    "SELECT state FROM messaging_local_commands
+                     WHERE command_id = ?1 AND conversation_id = ?2",
+                    params![commit.command_id, commit.conversation_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| {
+                    "mobile messaging command result has no local command".to_string()
+                })?;
+            match &commit.disposition {
+                CommandResultDisposition::Accepted => {
+                    apply_accepted_command_result(transaction, commit.command_id)?;
+                }
+                CommandResultDisposition::Failed(error_code) => {
+                    apply_terminal_command_result(
+                        transaction,
+                        commit.command_id,
+                        error_code,
+                        false,
+                        command_state == "failed",
+                    )?;
+                }
+                CommandResultDisposition::Superseded(error_code) => {
+                    apply_terminal_command_result(
+                        transaction,
+                        commit.command_id,
+                        error_code,
+                        true,
+                        command_state == "superseded",
+                    )?;
+                }
+            }
+            Ok(result)
+        })
     }
 }
 
@@ -5681,6 +5792,171 @@ fn pending_owner_transition_is_valid(
     ))
 }
 
+fn apply_accepted_command_result(
+    transaction: &Transaction<'_>,
+    command_id: &str,
+) -> Result<(), String> {
+    let local_changed = transaction
+        .execute(
+            "UPDATE messaging_local_commands
+             SET state = 'committed'
+             WHERE command_id = ?1
+               AND state IN ('prepared', 'submitted', 'failed', 'superseded', 'committed')",
+            params![command_id],
+        )
+        .map_err(|error| error.to_string())?;
+    let outbox_changed = transaction
+        .execute(
+            "UPDATE messaging_command_outbox
+             SET state = 'committed', last_error_code = ''
+             WHERE command_id = ?1
+               AND state IN (
+                   'pending', 'retry_wait', 'submitted',
+                   'failed', 'superseded', 'committed'
+               )",
+            params![command_id],
+        )
+        .map_err(|error| error.to_string())?;
+    let attempt_changed = transaction
+        .execute(
+            "UPDATE messaging_command_attempts
+             SET state = 'committed'
+             WHERE command_id = ?1
+               AND state IN (
+                   'prepared', 'retry_wait', 'submitted',
+                   'failed', 'superseded', 'committed'
+               )",
+            params![command_id],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "UPDATE messaging_pending_messages AS pending
+             SET state = 'accepted', last_error_code = ''
+             WHERE EXISTS (
+                 SELECT 1 FROM messaging_command_attempts attempt
+                 WHERE attempt.command_id = ?1
+                   AND attempt.conversation_id = pending.conversation_id
+                   AND attempt.message_id = pending.message_id
+             )",
+            params![command_id],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "UPDATE messaging_interaction_intents
+             SET state = 'committed'
+             WHERE command_id = ?1",
+            params![command_id],
+        )
+        .map_err(|error| error.to_string())?;
+    if local_changed != 1 || outbox_changed != 1 || attempt_changed != 1 {
+        return Err("mobile messaging accepted command result was not fenced".to_string());
+    }
+    Ok(())
+}
+
+fn apply_terminal_command_result(
+    transaction: &Transaction<'_>,
+    command_id: &str,
+    error_code: &str,
+    superseded: bool,
+    already_terminal: bool,
+) -> Result<(), String> {
+    if command_id.trim().is_empty() || error_code.trim().is_empty() {
+        return Err("mobile messaging terminal command result is incomplete".to_string());
+    }
+    let terminal_state = if superseded { "superseded" } else { "failed" };
+    let local_changed = transaction
+        .execute(
+            "UPDATE messaging_local_commands
+             SET state = ?2
+             WHERE command_id = ?1
+               AND state IN ('prepared', 'submitted', ?2)",
+            params![command_id, terminal_state],
+        )
+        .map_err(|error| error.to_string())?;
+    let outbox_changed = transaction
+        .execute(
+            "UPDATE messaging_command_outbox
+             SET state = ?2, last_error_code = ?3
+             WHERE command_id = ?1
+               AND state IN ('pending', 'retry_wait', 'submitted', ?2)",
+            params![command_id, terminal_state, error_code],
+        )
+        .map_err(|error| error.to_string())?;
+    let attempt_changed = transaction
+        .execute(
+            "UPDATE messaging_command_attempts
+             SET state = ?2
+             WHERE command_id = ?1
+               AND state IN ('prepared', 'retry_wait', 'submitted', ?2)",
+            params![command_id, terminal_state],
+        )
+        .map_err(|error| error.to_string())?;
+    let pending_message_state = if superseded { "draft" } else { "failed" };
+    let pending_changed = transaction
+        .execute(
+            "UPDATE messaging_pending_messages AS pending
+             SET state = ?2, last_error_code = ?3
+             WHERE state IN ('pending', 'retry_wait', 'submitted')
+               AND EXISTS (
+                   SELECT 1 FROM messaging_command_attempts attempt
+                   WHERE attempt.command_id = ?1
+                     AND attempt.conversation_id = pending.conversation_id
+                     AND attempt.message_id = pending.message_id
+               )",
+            params![command_id, pending_message_state, error_code],
+        )
+        .map_err(|error| error.to_string())?;
+    let interaction_changed = transaction
+        .execute(
+            "UPDATE messaging_interaction_intents
+             SET state = ?2
+             WHERE command_id = ?1
+               AND state IN ('prepared', 'retry_wait', 'submitted')",
+            params![command_id, terminal_state],
+        )
+        .map_err(|error| error.to_string())?;
+    let membership_changed = if superseded {
+        transaction.execute(
+            "UPDATE messaging_membership_intents
+             SET state = 'superseded', command_id = ''
+             WHERE command_id = ?1 AND state = 'prepared'",
+            params![command_id],
+        )
+    } else {
+        transaction.execute(
+            "UPDATE messaging_membership_intents
+             SET state = 'failed'
+             WHERE command_id = ?1 AND state = 'prepared'",
+            params![command_id],
+        )
+    }
+    .map_err(|error| error.to_string())?;
+    let pending_transition_deleted = transaction
+        .execute(
+            "DELETE FROM messaging_mls_pending_transitions
+             WHERE command_id = ?1",
+            params![command_id],
+        )
+        .map_err(|error| error.to_string())?;
+    if local_changed != 1
+        || outbox_changed != 1
+        || attempt_changed != 1
+        || (!already_terminal
+            && !(pending_owner_transition_is_valid(
+                transaction,
+                command_id,
+                pending_changed,
+                interaction_changed,
+            )? || (pending_transition_deleted == 1 && membership_changed <= 1)))
+    {
+        return Err("mobile messaging terminal command result was not fenced".to_string());
+    }
+    Ok(())
+}
+
 fn persist_direct_session_advances(
     transaction: &Transaction<'_>,
     advances: &[DirectSessionAdvance],
@@ -6634,6 +6910,87 @@ mod tests {
     }
 
     #[test]
+    fn accepted_command_result_commits_command_and_lane_atomically() {
+        let store = store();
+        seed_pending_public_message(&store);
+        let payload_hash = [29u8; 32];
+        CommandResultRepository::persist_claimed_item(
+            &store,
+            "item-command-result",
+            "event-command-result",
+            "conversation-1",
+            1,
+            2,
+            &payload_hash,
+            b"command-result",
+            20,
+        )
+        .unwrap();
+        let commit = CommandResultReceiveCommit {
+            item_id: "item-command-result",
+            event_id: "event-command-result",
+            conversation_id: "conversation-1",
+            command_id: "command-public",
+            lane_sequence: 1,
+            consumer_epoch: 2,
+            payload_sha256: &payload_hash,
+            disposition: CommandResultDisposition::Accepted,
+            consumed_at_unix_ms: 21,
+        };
+
+        assert_eq!(
+            CommandResultRepository::commit_command_result(&store, &commit).unwrap(),
+            ReceiveCommitResult::Committed
+        );
+        assert_eq!(
+            CommandResultRepository::commit_command_result(&store, &commit).unwrap(),
+            ReceiveCommitResult::AlreadyCommitted
+        );
+        let connection = store.connection.lock().unwrap();
+        let states = connection
+            .query_row(
+                "SELECT local.state, outbox.state, attempt.state, pending.state
+                 FROM messaging_local_commands local
+                 JOIN messaging_command_outbox outbox USING(command_id)
+                 JOIN messaging_command_attempts attempt USING(command_id)
+                 JOIN messaging_pending_messages pending
+                   ON pending.conversation_id = attempt.conversation_id
+                  AND pending.message_id = attempt.message_id
+                 WHERE local.command_id = 'command-public'",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            states,
+            (
+                "committed".to_string(),
+                "committed".to_string(),
+                "committed".to_string(),
+                "accepted".to_string(),
+            )
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT lane_sequence, consumer_epoch
+                     FROM messaging_lane_cursor WHERE id = 1",
+                    [],
+                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+                )
+                .unwrap(),
+            (1, 2)
+        );
+    }
+
+    #[test]
     fn conversation_commit_is_atomic_and_replay_safe() {
         let store = store();
         let hash = [7u8; 32];
@@ -7054,6 +7411,61 @@ mod tests {
                 )
                 .unwrap(),
             0
+        );
+    }
+
+    #[test]
+    fn claimed_item_replay_refreshes_only_to_a_newer_consumer_epoch() {
+        let store = store();
+        MessagingRepository::persist_claimed_item(
+            &store,
+            "item-reclaimed",
+            "event-1",
+            "conversation-1",
+            1,
+            2,
+            &[1; 32],
+            b"payload",
+            10,
+        )
+        .unwrap();
+        MessagingRepository::persist_claimed_item(
+            &store,
+            "item-reclaimed",
+            "event-1",
+            "conversation-1",
+            1,
+            3,
+            &[1; 32],
+            b"payload",
+            20,
+        )
+        .unwrap();
+        assert!(MessagingRepository::persist_claimed_item(
+            &store,
+            "item-reclaimed",
+            "event-1",
+            "conversation-1",
+            1,
+            2,
+            &[1; 32],
+            b"payload",
+            30,
+        )
+        .is_err());
+        assert_eq!(
+            store
+                .connection
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT consumer_epoch, claimed_at_unix_ms
+                     FROM messaging_inbox_items WHERE item_id = 'item-reclaimed'",
+                    [],
+                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+                )
+                .unwrap(),
+            (3, 20)
         );
     }
 

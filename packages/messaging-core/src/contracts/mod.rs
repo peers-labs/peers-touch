@@ -127,6 +127,25 @@ pub struct DeliveryReceiptReceiveCommit<'a> {
     pub consumed_at_unix_ms: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandResultDisposition {
+    Accepted,
+    Failed(String),
+    Superseded(String),
+}
+
+pub struct CommandResultReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub command_id: &'a str,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub disposition: CommandResultDisposition,
+    pub consumed_at_unix_ms: i64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ActorReadReceiveCommit<'a> {
     pub item_id: &'a str,

@@ -2131,3 +2131,40 @@ lifetime. The focused Mobile transport cohort passes 9/9, Mobile Rust
 compilation passes, formatting is clean, and `git diff --check` passes. The
 instrumentation remains active with `runId=post-fix`; checkpoint, exact-source
 deployment, and the same receiver-perspective Journey remain required.
+
+The D-17 checkpoint moves the Journey to canonical command-result consumption.
+Run `20260915T040712892524Z-f11746bb7b061223aadf8898cc07bd3e`
+at `f08c6bb408ae4bce925d00ea91ce60f19579b906` shows the accepted
+authority event on the preceding Device Inbox lane item, then a valid
+`COMMAND_RESULT` item at lane sequence 4. Instrumentation decodes payload type
+4, submission state `ACCEPTED`, the matching command identity, and a present
+authority event before the portable consumer rejects the otherwise valid item
+as unsupported.
+
+CA-W6 therefore mechanically admits the missing client consumer cut already
+required by AO-D07 and MP-D03/MP-D04: portable Messaging Core must validate and
+dispatch `COMMAND_RESULT`, while the Mobile SQLCipher adapter atomically
+settles command/outbox/attempt and logical-intent state together with the
+consumption marker and fenced lane cursor. Accepted results must not replace
+the separately ordered authority-event projection; terminal membership
+results must also discard durable and in-memory pending MLS transitions. The
+portable processor, Mobile repository implementation, and runtime composition
+are implemented. Focused Core command-result tests pass 2/2, the Mobile atomic
+accepted-result test passes, Mobile Rust compilation passes, and
+`git diff --check` passes. Exact-source checkpoint, deployment, and the same
+Journey remain required.
+
+Two independent read-only reviews then found four pre-checkpoint issues, all
+closed in the same hard cut. Mobile claim replay now refreshes only identical
+unconsumed items to an equal or newer consumer epoch and rejects stale epoch
+downgrades. The portable processor validates the canonical Station
+`CommandResultItemID` tuple before local mutation. Delayed terminal membership
+results carry the exact transition ID into lifecycle cleanup, so an older
+result cannot discard a newer pending transition. Finally, Desktop's duplicate
+command-result processor and contract types are deleted; Desktop and Mobile
+both consume the shared Core implementation through platform persistence
+ports. Desktop and Mobile Rust compilation pass, the complete Messaging Core
+suite passes 121/121, the complete Mobile library suite passes 97/97, Core
+command-result tests pass 4/4, the MLS matching-cleanup regression passes, and
+Mobile accepted-result plus claim-replay tests pass. A final read-only
+rereview reports no remaining P0/P1 finding.

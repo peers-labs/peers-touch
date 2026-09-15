@@ -20,9 +20,9 @@ use messaging_core::identity::{
     DeviceSigningKey, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
 };
 use messaging_core::inbox::{
-    AcknowledgedItemObserver, ClaimedItemConsumer, ConversationStateProcessor,
-    DeliveryReceiptProcessor, DirectMessageProcessor, DrainProgress, MessagingItemConsumer,
-    MlsItemConsumer, PublicEventProcessor, QueueDrain,
+    AcknowledgedItemObserver, ClaimedItemConsumer, CommandResultLifecycle, CommandResultProcessor,
+    ConversationStateProcessor, DeliveryReceiptProcessor, DirectMessageProcessor, DrainProgress,
+    MessagingItemConsumer, MlsItemConsumer, PublicEventProcessor, QueueDrain,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -191,6 +191,7 @@ pub(crate) fn validate_account_scope(
 }
 
 struct MobileMlsItemConsumer {
+    manager: Arc<MlsGroupManager>,
     application: MlsApplicationProcessor<MobileMessagingStore>,
     transition: MlsTransitionProcessor<MobileMessagingStore>,
     retirement: MlsRetirementProcessor<MobileMessagingStore>,
@@ -231,6 +232,13 @@ impl MlsItemConsumer for MobileMlsItemConsumer {
     }
 }
 
+impl CommandResultLifecycle for MobileMlsItemConsumer {
+    fn discard_pending_transition(&self, conversation_id: &str, transition_id: &str) {
+        self.manager
+            .discard_pending_transition_if_matches(conversation_id, transition_id);
+    }
+}
+
 type CoreItemConsumer = MessagingItemConsumer<MobileMessagingStore, MobileMlsItemConsumer>;
 
 #[derive(Clone)]
@@ -251,7 +259,7 @@ impl ClaimedItemConsumer for InstrumentedMobileItemConsumer {
                 "payloadType": item.payload_type,
                 "payloadSize": item.opaque_payload.len(),
             });
-            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"V-X","location":"apps/mobile/src-tauri/src/messaging/engine.rs:InstrumentedMobileItemConsumer.consume.entry","msg":"[DEBUG] Mobile inbox consumer received item","data":debug_data}).to_string()).send();
+            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"post-fix","hypothesisId":"V-X","location":"apps/mobile/src-tauri/src/messaging/engine.rs:InstrumentedMobileItemConsumer.consume.entry","msg":"[DEBUG] Mobile inbox consumer received item","data":debug_data}).to_string()).send();
         }
         // #endregion
         // #region debug-point X-Y:command-result-shape
@@ -273,7 +281,7 @@ impl ClaimedItemConsumer for InstrumentedMobileItemConsumer {
                     "error": error.to_string(),
                 }),
             };
-            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"X-Y","location":"apps/mobile/src-tauri/src/messaging/engine.rs:InstrumentedMobileItemConsumer.consume.command_result","msg":"[DEBUG] Mobile decoded command-result queue item","data":debug_data}).to_string()).send();
+            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"post-fix","hypothesisId":"X-Y","location":"apps/mobile/src-tauri/src/messaging/engine.rs:InstrumentedMobileItemConsumer.consume.command_result","msg":"[DEBUG] Mobile decoded command-result queue item","data":debug_data}).to_string()).send();
         }
         // #endregion
         let result = self.inner.consume(item, consumer_epoch);
@@ -284,7 +292,7 @@ impl ClaimedItemConsumer for InstrumentedMobileItemConsumer {
                 "payloadType": item.payload_type,
                 "result": result.as_ref().err(),
             });
-            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"V-W","location":"apps/mobile/src-tauri/src/messaging/engine.rs:InstrumentedMobileItemConsumer.consume.exit","msg":"[DEBUG] Mobile inbox consumer completed item","data":debug_data}).to_string()).send();
+            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"post-fix","hypothesisId":"V-W","location":"apps/mobile/src-tauri/src/messaging/engine.rs:InstrumentedMobileItemConsumer.consume.exit","msg":"[DEBUG] Mobile inbox consumer completed item","data":debug_data}).to_string()).send();
         }
         // #endregion
         result
@@ -385,6 +393,7 @@ impl MobileMessagingEngine {
             now_unix_ms,
         )?;
         let mls = Arc::new(MobileMlsItemConsumer {
+            manager: mls_manager.clone(),
             application: MlsApplicationProcessor::new(
                 mls_manager.clone(),
                 store.clone(),
@@ -410,11 +419,14 @@ impl MobileMessagingEngine {
                 now_unix_ms,
             )?,
         });
+        let command_result =
+            CommandResultProcessor::new(store.clone(), mls.clone(), endpoint.clone(), now_unix_ms)?;
         let consumer = Arc::new(MessagingItemConsumer::new(
             direct,
             mls,
             PublicEventProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
             ConversationStateProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
+            command_result,
             DeliveryReceiptProcessor::new(store.clone(), endpoint, now_unix_ms)?,
         ));
         let consumer_id = random_consumer_id();
