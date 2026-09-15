@@ -368,12 +368,27 @@ func TestTurnAdmissionIdempotencyAndCapacity(t *testing.T) {
 		"queued-0",
 		firstQueued.GetQueueEntry().GetQueueEntryId(),
 	)
-	if _, err := svc.Admit(
+	_, err = svc.Admit(
 		context.Background(),
 		"ptid:actor-1",
 		admissionRequest("overflow", "overflow"),
-	); !hasAdmissionCode(err, errcode.AgentQueueFull) {
+	)
+	if !hasAdmissionCode(err, errcode.AgentQueueFull) {
 		t.Fatalf("queue overflow did not fail with queue-full: %v", err)
+	}
+	var queueFull *errcode.BizError
+	if !errors.As(err, &queueFull) || queueFull.Payload == nil {
+		t.Fatalf("queue overflow did not preserve typed payload: %v", err)
+	}
+	if queueFull.Payload.GetError() != errcode.AgentQueueFullLocaleKey ||
+		queueFull.Payload.GetErrorType() != string(errcode.AgentQueueFull) ||
+		queueFull.Payload.GetLocaleKey() != errcode.AgentQueueFullLocaleKey ||
+		!queueFull.Payload.GetRetryable() ||
+		!queueFull.Payload.GetTerminal() ||
+		len(queueFull.Payload.GetDetails()) != 2 ||
+		queueFull.Payload.GetDetails()["conversation_id"] != "conversation-1" ||
+		queueFull.Payload.GetDetails()["capacity"] != fmt.Sprint(turnQueueCapacity) {
+		t.Fatalf("queue overflow typed payload = %+v", queueFull.Payload)
 	}
 }
 

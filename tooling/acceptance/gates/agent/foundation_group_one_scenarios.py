@@ -104,6 +104,10 @@ def evaluate_as_f02(capture: Mapping[str, Any]) -> dict[str, bool]:
         )
 
     overflow = _mapping(queue, "overflow")
+    typed_overflow = _mapping(overflow, "typedError")
+    overflow_details = _mapping(typed_overflow, "details")
+    overflow_resolution = _mapping(overflow, "resolution")
+    overflow_recovery = _mapping(overflow, "recovery")
     cancellation = _mapping(queue, "cancellation")
     receiver = _mapping(queue, "receiverDom")
     visible_positions = _positive_int(receiver, "visibleQueuePositions")
@@ -128,6 +132,35 @@ def evaluate_as_f02(capture: Mapping[str, Any]) -> dict[str, bool]:
         "overflowVisible": (
             overflow.get("errorCode") == "ADMISSION_QUEUE_FULL"
             and overflow.get("queueSize") == queue_capacity
+            and typed_overflow.get("errorType") == "ADMISSION_QUEUE_FULL"
+            and typed_overflow.get("localeKey") == "agent.errors.queueFull"
+            and typed_overflow.get("retryable") is True
+            and typed_overflow.get("terminal") is True
+            and set(overflow_details) == {"conversation_id", "capacity"}
+            and _nonempty_string(
+                overflow_details,
+                "conversation_id",
+            ) == _nonempty_string(
+                overflow_resolution,
+                "conversationId",
+            )
+            and int(_nonempty_string(overflow_details, "capacity"))
+            == queue_capacity
+            and overflow_resolution.get("type") == "editQueue"
+            and _positive_int(overflow_resolution, "capacity")
+            == queue_capacity
+            and overflow_recovery.get("visible") is True
+            and overflow_recovery.get("queueFocused") is True
+            and _positive_int(overflow, "queueSizeAfterAction")
+            == queue_capacity
+            and _positive_int(
+                overflow,
+                "conversationVersionBeforeAction",
+            ) == _positive_int(
+                overflow,
+                "conversationVersionAfterAction",
+            )
+            and overflow.get("stationMessageDelta") == 0
         ),
         "rejectedDraftRestored": (
             _nonempty_string(draft, "beforeHash")

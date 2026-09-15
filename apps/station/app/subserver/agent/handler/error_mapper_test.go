@@ -180,6 +180,40 @@ func TestForbiddenActorPreservesTypedPayloadDetails(t *testing.T) {
 	}
 }
 
+func TestQueueFullPreservesTypedPayloadDetails(t *testing.T) {
+	mapped := toHandlerError(errcode.NewQueueFull("conversation-1", 8))
+	var handlerErr *server.HandlerError
+	if !errors.As(mapped, &handlerErr) {
+		t.Fatalf("expected HandlerError, got %T: %v", mapped, mapped)
+	}
+	if handlerErr.Code != http.StatusTooManyRequests {
+		t.Fatalf("status=%d, want %d", handlerErr.Code, http.StatusTooManyRequests)
+	}
+	expectedHeaders := map[string]string{
+		"X-Peers-Error-Code":       string(errcode.AgentQueueFull),
+		"X-Peers-Error-Locale-Key": errcode.AgentQueueFullLocaleKey,
+		"X-Peers-Error-Retryable":  "true",
+		"X-Peers-Error-Terminal":   "true",
+	}
+	for key, value := range expectedHeaders {
+		if handlerErr.Headers[key] != value {
+			t.Fatalf("%s=%q, want %q", key, handlerErr.Headers[key], value)
+		}
+	}
+
+	var details map[string]string
+	if err := json.Unmarshal([]byte(handlerErr.Headers[errorDetailsHeader]), &details); err != nil {
+		t.Fatalf("decode %s: %v", errorDetailsHeader, err)
+	}
+	expectedDetails := map[string]string{
+		"conversation_id": "conversation-1",
+		"capacity":        "8",
+	}
+	if !reflect.DeepEqual(details, expectedDetails) {
+		t.Fatalf("details = %+v, want %+v", details, expectedDetails)
+	}
+}
+
 func TestRuntimeIncompatibleCapabilityPreservesTypedPayloadDetails(t *testing.T) {
 	mapped := toHandlerError(
 		errcode.NewRuntimeIncompatibleCapability(

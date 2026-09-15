@@ -48,6 +48,7 @@ const (
 	AgentAdmissionDuplicateConflictLocaleKey    = "agent.errors.duplicateConflict"
 	AgentCanvasSingleAgentNotReadyLocaleKey     = "agent.errors.canvasSingleAgentNotReady"
 	AgentCanvasSingleAgentNotReadyRequiredGate  = "agent-v2-kernel-foundation-e2e"
+	AgentQueueFullLocaleKey                     = "agent.errors.queueFull"
 	AgentOwnershipForbiddenActorLocaleKey       = "agent.errors.forbiddenActor"
 	AgentAttachmentRejectedLocaleKey            = "agent.errors.attachmentRejected"
 	AgentRuntimeIncompatibleCapabilityLocaleKey = "agent.errors.incompatibleCapability"
@@ -125,6 +126,25 @@ func NewOwnershipForbiddenActor(resourceKind, resourceID string) *BizError {
 			Details: map[string]string{
 				"resource_kind": resourceKind,
 				"resource_id":   resourceID,
+			},
+		},
+	}
+}
+
+func NewQueueFull(conversationID string, capacity uint32) *BizError {
+	return &BizError{
+		Code:       AgentQueueFull,
+		HTTPStatus: http.StatusTooManyRequests,
+		Message:    AgentQueueFullLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentQueueFullLocaleKey,
+			ErrorType: string(AgentQueueFull),
+			LocaleKey: AgentQueueFullLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"conversation_id": conversationID,
+				"capacity":        strconv.FormatUint(uint64(capacity), 10),
 			},
 		},
 	}

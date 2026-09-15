@@ -19,6 +19,7 @@ import {
   Braces,
   Workflow,
   ExternalLink,
+  ListOrdered,
   LogOut,
   Minimize2,
   RotateCcw,
@@ -360,6 +361,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const reloadTurnSnapshot = useChatStore(s => s.reloadTurnSnapshot);
   const reconcileClientLease = useChatStore(s => s.reconcileClientLease);
   const requestComposerFocus = useChatStore(s => s.requestComposerFocus);
+  const syncTurnQueue = useChatStore(s => s.syncTurnQueue);
   const requestComposerReferenceRemoval = useChatStore(
     s => s.requestComposerReferenceRemoval,
   );
@@ -398,8 +400,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     ? 'configure-credential'
     : message.resolution?.type === 'openOriginal'
       ? 'open-original'
-      : message.resolution?.type === 'switchAccount'
-        ? 'switch-account'
+      : message.resolution?.type === 'editQueue'
+        ? 'edit-queue'
+        : message.resolution?.type === 'switchAccount'
+          ? 'switch-account'
         : message.resolution?.type === 'chooseCompatibleModel'
           ? 'choose-compatible-model'
           : message.resolution?.type === 'recover'
@@ -467,6 +471,25 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     message.turnId,
     reconcileClientLease,
   ]);
+
+  const handleEditQueue = useCallback(async () => {
+    const resolution = message.resolution;
+    if (
+      resolution?.type !== 'editQueue'
+      || !resolution.conversationId
+      || resolution.conversationId !== currentSessionKey
+    ) {
+      throw new Error('agent.errors.queueFull');
+    }
+    await syncTurnQueue(resolution.conversationId);
+    requestAnimationFrame(() => {
+      const tray = document.querySelector<HTMLElement>(
+        '[data-pt-agent-turn-queue]',
+      );
+      tray?.scrollIntoView({ block: 'nearest' });
+      tray?.focus({ preventScroll: true });
+    });
+  }, [currentSessionKey, message.resolution, syncTurnQueue]);
 
   const handleOpenTurnDetails = useCallback(() => {
     if (message.turnId) openTurnDetails(message.id, message.turnId);
@@ -796,6 +819,16 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           {message.error && !message.budgetNotice && (
             <div
               className="selectable"
+              data-pt-agent-error-conversation-id={
+                message.resolution?.type === 'editQueue'
+                  ? message.resolution.conversationId
+                  : undefined
+              }
+              data-pt-agent-error-queue-capacity={
+                message.resolution?.type === 'editQueue'
+                  ? message.resolution.capacity
+                  : undefined
+              }
               style={{
                 display: 'flex',
                 alignItems: 'flex-start',
@@ -832,6 +865,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                     size="small"
                     danger={
                       message.resolution.type !== 'openOriginal'
+                      && message.resolution.type !== 'editQueue'
                       && message.resolution.type !== 'switchAccount'
                       && message.resolution.type !== 'chooseCompatibleModel'
                       && message.resolution.type !== 'chooseResourceAgain'
@@ -844,8 +878,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         ? <Settings size={14} />
                         : message.resolution.type === 'openOriginal'
                           ? <ExternalLink size={14} />
-                          : message.resolution.type === 'switchAccount'
-                            ? <LogOut size={14} />
+                          : message.resolution.type === 'editQueue'
+                            ? <ListOrdered size={14} />
+                            : message.resolution.type === 'switchAccount'
+                              ? <LogOut size={14} />
                             : message.resolution.type === 'recover'
                               ? <RotateCcw size={14} />
                               : message.resolution.type === 'reconcile'
@@ -871,6 +907,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                           handleOpenOriginal(
                             message.resolution!.existingCommandId ?? '',
                           );
+                          return;
+                        }
+                        if (message.resolution!.type === 'editQueue') {
+                          await handleEditQueue();
                           return;
                         }
                         if (message.resolution!.type === 'switchAccount') {

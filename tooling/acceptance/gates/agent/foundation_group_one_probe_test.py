@@ -368,6 +368,29 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
             "overflow": {
                 "errorCode": "ADMISSION_QUEUE_FULL",
                 "queueSize": 8,
+                "typedError": {
+                    "errorType": "ADMISSION_QUEUE_FULL",
+                    "localeKey": "agent.errors.queueFull",
+                    "retryable": True,
+                    "terminal": True,
+                    "details": {
+                        "conversation_id": "conversation-1",
+                        "capacity": "8",
+                    },
+                },
+                "resolution": {
+                    "type": "editQueue",
+                    "conversationId": "conversation-1",
+                    "capacity": 8,
+                },
+                "recovery": {
+                    "visible": True,
+                    "queueFocused": True,
+                },
+                "queueSizeAfterAction": 8,
+                "conversationVersionBeforeAction": 10,
+                "conversationVersionAfterAction": 10,
+                "stationMessageDelta": 0,
             },
             "cancellation": {
                 "queueEntryId": "queue-1",

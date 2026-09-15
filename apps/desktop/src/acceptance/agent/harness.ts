@@ -20170,6 +20170,22 @@ function evaluateF02(ctx: DirectCellAssertionContext): Record<string, boolean | 
   const deletion = evidenceRecord(facts.deletion, 'foundationF02Deletion');
   const entries = evidenceArray(queue.entries, 'foundationF02QueueEntries');
   const overflow = evidenceRecord(queue.overflow, 'foundationF02Overflow');
+  const typedOverflow = evidenceRecord(
+    overflow.typedError,
+    'foundationF02OverflowTypedError',
+  );
+  const overflowDetails = evidenceRecord(
+    typedOverflow.details,
+    'foundationF02OverflowDetails',
+  );
+  const overflowResolution = evidenceRecord(
+    overflow.resolution,
+    'foundationF02OverflowResolution',
+  );
+  const overflowRecovery = evidenceRecord(
+    overflow.recovery,
+    'foundationF02OverflowRecovery',
+  );
   const cancellation = evidenceRecord(queue.cancellation, 'foundationF02Cancellation');
   const receiver = evidenceRecord(queue.receiverDom, 'foundationF02QueueReceiver');
 
@@ -20190,7 +20206,24 @@ function evaluateF02(ctx: DirectCellAssertionContext): Record<string, boolean | 
       && cancellation.status === 'cancelled',
     overflowVisible:
       overflow.errorCode === 'ADMISSION_QUEUE_FULL'
-      && Number(overflow.queueSize) === Number(queue.queueCapacity),
+      && Number(overflow.queueSize) === Number(queue.queueCapacity)
+      && typedOverflow.errorType === 'ADMISSION_QUEUE_FULL'
+      && typedOverflow.localeKey === 'agent.errors.queueFull'
+      && typedOverflow.retryable === true
+      && typedOverflow.terminal === true
+      && stableJson(Object.keys(overflowDetails).sort())
+        === stableJson(['capacity', 'conversation_id'])
+      && overflowDetails.conversation_id
+        === overflowResolution.conversationId
+      && Number(overflowDetails.capacity) === Number(queue.queueCapacity)
+      && overflowResolution.type === 'editQueue'
+      && Number(overflowResolution.capacity) === Number(queue.queueCapacity)
+      && overflowRecovery.visible === true
+      && overflowRecovery.queueFocused === true
+      && Number(overflow.queueSizeAfterAction) === Number(queue.queueCapacity)
+      && Number(overflow.conversationVersionBeforeAction)
+        === Number(overflow.conversationVersionAfterAction)
+      && Number(overflow.stationMessageDelta) === 0,
     rejectedDraftRestored:
       draft.beforeHash === draft.afterHash
       && draft.editable === true,
@@ -23386,6 +23419,64 @@ export function installAcceptanceHarness(): void {
           activeDependencyPromise,
           queueReceiverPromise,
         ]);
+        const queueBeforeEditAction = await api.listAgentTurnQueue(
+          conversation.conversation_id,
+        );
+        const readbackBeforeEditAction = await foundationConversationReadback(
+          conversation.conversation_id,
+        );
+        const messageCountBeforeEditAction =
+          useChatStore.getState().messages.length;
+        useChatStore.getState().sendMessage(draftText);
+        let queueFullMessage = useChatStore.getState().messages
+          .slice(messageCountBeforeEditAction)
+          .find((message) => (
+            message.role === 'assistant'
+            && message.typedError?.error_type === 'ADMISSION_QUEUE_FULL'
+          ));
+        await waitFor(
+          () => {
+            queueFullMessage = useChatStore.getState().messages
+              .slice(messageCountBeforeEditAction)
+              .find((message) => (
+                message.role === 'assistant'
+                && message.typedError?.error_type === 'ADMISSION_QUEUE_FULL'
+                && message.resolution?.type === 'editQueue'
+              ));
+            const recovery = document.querySelector<HTMLButtonElement>(
+              '[data-pt-agent-message-error-recovery="edit-queue"]',
+            );
+            return Boolean(
+              queueFullMessage
+              && recovery
+              && recovery.getClientRects().length > 0,
+            );
+          },
+          'Foundation queue-full recovery surface',
+          30_000,
+        );
+        const queueFullRecovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="edit-queue"]',
+        );
+        if (!queueFullMessage || !queueFullRecovery) {
+          throw new Error('agent.acceptance.foundationQueueFullRecoveryMissing');
+        }
+        queueFullRecovery.click();
+        await waitFor(
+          () => document.activeElement?.matches(
+            '[data-pt-agent-turn-queue]',
+          ) === true,
+          'Foundation queue editor focus',
+          10_000,
+        );
+        const queueAfterEditAction = await api.listAgentTurnQueue(
+          conversation.conversation_id,
+        );
+        const readbackAfterEditAction = await foundationConversationReadback(
+          conversation.conversation_id,
+        );
+        const queueFullTypedError = queueFullMessage.typedError;
+        const queueFullResolution = queueFullMessage.resolution;
         void reportFoundationQueueCapacityDebug(
           'A,H',
           'capacity-observations-completed',
@@ -23675,6 +23766,32 @@ export function installAcceptanceHarness(): void {
             overflow: {
               errorCode: observedErrorCode(overflowResult.error),
               queueSize: queueAtCapacity.entries.length,
+              typedError: {
+                errorType: queueFullTypedError?.error_type ?? '',
+                localeKey: queueFullTypedError?.locale_key ?? '',
+                retryable: queueFullTypedError?.retryable ?? false,
+                terminal: queueFullTypedError?.terminal ?? false,
+                details: queueFullTypedError?.details ?? {},
+              },
+              resolution: {
+                type: queueFullResolution?.type ?? '',
+                conversationId: queueFullResolution?.conversationId ?? '',
+                capacity: queueFullResolution?.capacity ?? 0,
+              },
+              recovery: {
+                visible: queueFullRecovery.getClientRects().length > 0,
+                queueFocused: document.activeElement?.matches(
+                  '[data-pt-agent-turn-queue]',
+                ) === true,
+              },
+              queueSizeAfterAction: queueAfterEditAction.entries.length,
+              conversationVersionBeforeAction:
+                queueBeforeEditAction.conversation_version,
+              conversationVersionAfterAction:
+                queueAfterEditAction.conversation_version,
+              stationMessageDelta:
+                readbackAfterEditAction.messages.length
+                - readbackBeforeEditAction.messages.length,
             },
             cancellation: {
               queueEntryId: cancellation?.entry.queue_entry_id ?? '',

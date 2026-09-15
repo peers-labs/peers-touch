@@ -2008,6 +2008,15 @@ and zero local-path leakage.
   Shared error contracts, Desktop error projection, Harness dispatch, oracle
   registration, generated artifacts, checkpoint/deploy, and final integration
   remain serial.
+- **SC1 split**:
+  - `BASE-QUEUE_FULL` is implementation-ready. `Edit queue` reuses the
+    existing `TurnQueueTray`: refresh Station queue truth, scroll the tray into
+    view, and restore keyboard focus without submitting or retrying a Turn.
+  - `BASE-UNAUTHORIZED_RESOURCE` is parked at the DESIGN boundary because the
+    accepted error contract does not identify whether the removable resource
+    is a knowledge descriptor, attachment, Conversation context reference, or
+    client capability resource. No owner path may be invented while the other
+    source-closure clusters remain ready.
 - **Gate boundary**: do not run C08 or the 419-cell Foundation Gate while any
   source-incomplete family remains.
 - **C08 diagnostic after the boundary changed (2026-09-15)**: run

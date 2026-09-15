@@ -18,7 +18,9 @@ export function TurnQueueTray() {
   return (
     <Flexbox
       data-pt-agent-turn-queue
+      aria-label={t('chat.queue.title', { count: entries.length })}
       gap={6}
+      tabIndex={-1}
       style={{
         width: '100%',
         maxHeight: 132,

@@ -2504,6 +2504,7 @@ export interface AgentErrorResolutionAction {
     | 'openProviderSettings'
     | 'checkConnection'
     | 'openOriginal'
+    | 'editQueue'
     | 'switchAccount'
     | 'chooseCompatibleModel'
     | 'chooseResourceAgain'
@@ -2513,6 +2514,8 @@ export interface AgentErrorResolutionAction {
   cliId?: string;
   providerId?: string;
   existingCommandId?: string;
+  conversationId?: string;
+  capacity?: number;
   resourceKind?: string;
   resourceRefHash?: string;
   resourceId?: string;
@@ -2529,6 +2532,8 @@ export interface AgentErrorResolutionAction {
 
 export const AGENT_ATTACHMENT_REJECTED_ERROR_TYPE =
   'CONTEXT_ATTACHMENT_REJECTED';
+export const AGENT_QUEUE_FULL_ERROR_TYPE = 'ADMISSION_QUEUE_FULL';
+export const AGENT_QUEUE_FULL_LOCALE_KEY = 'agent.errors.queueFull';
 export const AGENT_CONTEXT_LIMIT_ERROR_TYPE = 'CONTEXT_OVERFLOW';
 export const AGENT_INVALID_REFERENCE_ERROR_TYPE = 'CONTEXT_INVALID_REFERENCE';
 export const AGENT_INVALID_REFERENCE_LOCALE_KEY =
@@ -2555,6 +2560,13 @@ export type AgentForbiddenActorError = AgentTypedErrorPayload & {
   details: {
     resource_kind: string;
     resource_id: string;
+  };
+};
+
+export type AgentQueueFullError = AgentTypedErrorPayload & {
+  details: {
+    conversation_id: string;
+    capacity: string;
   };
 };
 
@@ -2598,6 +2610,8 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'resource_kind',
   'resource_ref_hash',
   'resource_id',
+  'conversation_id',
+  'capacity',
   'expected_revision',
   'actual_revision',
   'capability_id',
@@ -2720,6 +2734,29 @@ export function isAgentForbiddenActorError(
   );
 }
 
+export function isAgentQueueFullError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentQueueFullError {
+  if (
+    error?.error_type !== AGENT_QUEUE_FULL_ERROR_TYPE
+    || error.locale_key !== AGENT_QUEUE_FULL_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  const capacity = Number(error.details.capacity);
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'capacity'
+    && detailKeys[1] === 'conversation_id'
+    && error.details.conversation_id.trim().length > 0
+    && Number.isInteger(capacity)
+    && capacity > 0
+  );
+}
+
 export function isAgentIncompatibleCapabilityError(
   error: AgentTypedErrorPayload | null | undefined,
 ): error is AgentIncompatibleCapabilityError {
@@ -2830,6 +2867,14 @@ export function isAgentClientLeaseExpiredError(
 export function resolveAgentTypedErrorAction(
   error: AgentTypedErrorPayload | null | undefined,
 ): AgentErrorResolutionAction | undefined {
+  if (isAgentQueueFullError(error)) {
+    return {
+      type: 'editQueue',
+      conversationId: error.details.conversation_id,
+      capacity: Number(error.details.capacity),
+      label: 'agent.recovery.editQueue',
+    };
+  }
   if (isAgentForbiddenActorError(error)) {
     return {
       type: 'switchAccount',

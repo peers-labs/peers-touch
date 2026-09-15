@@ -68,6 +68,29 @@ def valid_capture() -> dict[str, object]:
             "overflow": {
                 "errorCode": "ADMISSION_QUEUE_FULL",
                 "queueSize": 8,
+                "typedError": {
+                    "errorType": "ADMISSION_QUEUE_FULL",
+                    "localeKey": "agent.errors.queueFull",
+                    "retryable": True,
+                    "terminal": True,
+                    "details": {
+                        "conversation_id": "conversation-1",
+                        "capacity": "8",
+                    },
+                },
+                "resolution": {
+                    "type": "editQueue",
+                    "conversationId": "conversation-1",
+                    "capacity": 8,
+                },
+                "recovery": {
+                    "visible": True,
+                    "queueFocused": True,
+                },
+                "queueSizeAfterAction": 8,
+                "conversationVersionBeforeAction": 10,
+                "conversationVersionAfterAction": 10,
+                "stationMessageDelta": 0,
             },
             "cancellation": {
                 "queueEntryId": "queue-1",
@@ -2813,6 +2836,16 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneScenarioError,
             "queue positions are not FIFO",
+        ):
+            evaluate_as_f02(capture)
+
+    def test_as_f02_rejects_queue_edit_mutation(self) -> None:
+        capture = copy.deepcopy(valid_capture())
+        capture["queueSubmission"]["overflow"]["queueSizeAfterAction"] = 7
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "overflowVisible",
         ):
             evaluate_as_f02(capture)
 
