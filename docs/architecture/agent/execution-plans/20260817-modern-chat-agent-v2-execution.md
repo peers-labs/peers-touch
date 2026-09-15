@@ -1984,8 +1984,9 @@ and zero local-path leakage.
 
 - **Inventory source**: the reviewed 28-family `foundation_errors` matrix,
   production Station/Desktop paths, and direct Harness/oracle registration.
-- **Closed on source and prior focused runtime evidence (16)**:
+- **Closed on source and prior focused runtime evidence (17)**:
   `BASE-QUEUE_FULL`,
+  `BASE-RUNTIME_UNAVAILABLE`,
   `BASE-DUPLICATE_CONFLICT`, `BASE-ACTIVE_MUTATION_CONFLICT`,
   `BASE-FORBIDDEN_ACTOR`, `BASE-INCOMPATIBLE_CAPABILITY`,
   `BASE-EXECUTOR_UNAVAILABLE`, `BASE-LEASE_EXPIRED`,
@@ -1993,12 +1994,12 @@ and zero local-path leakage.
   `BASE-CONTEXT_OVERFLOW`, `BASE-INVALID_REFERENCE`,
   `BASE-ATTACHMENT_REJECTED`, `BASE-APPROVAL_DENIED`,
   `BASE-APPROVAL_EXPIRED`, `BASE-CANCELLED`, and `BASE-INTERRUPTED`.
-- **Source-incomplete (12)**:
+- **Source-incomplete (11)**:
 
 | Cluster | Families | Missing closure |
 |---|---|---|
 | `G-FE1-SC1` Admission/ownership | `BASE-UNAUTHORIZED_RESOURCE` | resource-family and removal-owner design decision |
-| `G-FE1-SC2` Runtime selection | `BASE-RUNTIME_UNAVAILABLE`, `BASE-RESUME_UNAVAILABLE` | canonical Station outcome, recovery action, direct Journey |
+| `G-FE1-SC2` Runtime selection | `BASE-RESUME_UNAVAILABLE` | external-session reset command, typed outcome, confirmation action, and direct Journey |
 | `G-FE1-SC3` Client execution | `BASE-PERMISSION_DENIED`, `BASE-TARGET_DISCONNECTED` | Desktop/Station implementation beyond Mobile contract-only coverage |
 | `G-FE1-SC4` Provider terminalization | `BASE-RATE_LIMIT`, `BASE-MODEL_UNAVAILABLE`, `BASE-PROVIDER_TIMEOUT` | accepted typed terminal outcome instead of failover-only classification |
 | `G-FE1-SC5` Tool control | `BASE-UNKNOWN_TOOL`, `BASE-LOOP_BUDGET_EXHAUSTED` | unknown-tool owner path and accepted budget details/action |
@@ -2032,6 +2033,21 @@ and zero local-path leakage.
     is a knowledge descriptor, attachment, Conversation context reference, or
     client capability resource. No owner path may be invented while the other
     source-closure clusters remain ready.
+- **SC2 split**:
+  - `BASE-RUNTIME_UNAVAILABLE` is `FUNCTIONAL_PASS`. Exact-source native
+    Development run `20260915T160019318486Z` on `3a5e63ed0` disabled the
+    selected provider through the production API, submitted from the real
+    composer, received the exact retryable terminal payload, rendered
+    `Select runtime`, opened the existing Agent Profile, and proved zero
+    Station message, queue, Conversation-version, Turn-trace, or provider-call
+    delta. Provider, Conversation, Fixture, processes, ports, storage, and
+    provisioner resources were restored cleanly.
+  - `BASE-RESUME_UNAVAILABLE` remains source-incomplete. The accepted product
+    semantics require explicit `Confirm reset` followed by
+    `ResetConversationRuntime`; the current frozen profile intentionally does
+    not advertise external Agent runtimes and the production reset command is
+    not implemented. Do not map direct-model retry failures to this cell or
+    mutate an external-session epoch before confirmation.
 - **Gate boundary**: do not run C08 or the 419-cell Foundation Gate while any
   source-incomplete family remains.
 - **C08 diagnostic after the boundary changed (2026-09-15)**: run

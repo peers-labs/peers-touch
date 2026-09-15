@@ -23,11 +23,11 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | `BASE-QUEUE_FULL` is `FUNCTIONAL_PASS` on exact source `08da1ba7d`; the 28-family BASE inventory is 16 closed and 12 source-incomplete |
+| Current step | `BASE-RUNTIME_UNAVAILABLE` is `FUNCTIONAL_PASS` on exact source `3a5e63ed0`; the 28-family BASE inventory is 17 closed and 11 source-incomplete |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
 | Last completed | Exact-source run `20260915T143820839970Z` passed Desktop Native send → non-empty stream → one Station terminal → page reload → client restart/replay with no duplicate messages or ToolCalls and complete cleanup |
-| Current action | Advance `G-FE1-SC2` runtime selection: `BASE-RUNTIME_UNAVAILABLE` and `BASE-RESUME_UNAVAILABLE`; keep `BASE-UNAUTHORIZED_RESOURCE` parked at its DESIGN boundary |
-| Next action | Inventory the SC2 owner paths and implement the first dependency-ready vertical; do not run C08 or Foundation while any source-incomplete family remains |
+| Current action | Define and implement the accepted `BASE-RESUME_UNAVAILABLE` external-session reset command; keep `BASE-UNAUTHORIZED_RESOURCE` parked at its DESIGN boundary |
+| Next action | Add the production `ResetConversationRuntime` command and confirmation path, or park it behind an explicit implementation dependency and advance the next independent G-F cluster; do not run C08 or Foundation while any source-incomplete family remains |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
@@ -36,7 +36,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | no Goal-level blocker; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Exact-source Development run `20260915T134604170541Z` proves `BASE-LEASE_EXPIRED`; run `20260915T143820839970Z` proves normal Native send/stream/terminal/reload/restart/replay on `fe254ca7d`; run `20260915T153420786845Z` proves native `BASE-QUEUE_FULL` recovery on `08da1ba7d`; source inventory classifies 16/28 BASE families closed and 12/28 source-incomplete；C08 and the full Foundation Gate remain `UNPROVEN` |
+| Evidence | Exact-source Development run `20260915T134604170541Z` proves `BASE-LEASE_EXPIRED`; run `20260915T143820839970Z` proves normal Native send/stream/terminal/reload/restart/replay on `fe254ca7d`; run `20260915T153420786845Z` proves native `BASE-QUEUE_FULL` recovery on `08da1ba7d`; run `20260915T160019318486Z` proves native `BASE-RUNTIME_UNAVAILABLE` recovery on `3a5e63ed0`; source inventory classifies 17/28 BASE families closed and 11/28 source-incomplete；C08 and the full Foundation Gate remain `UNPROVEN` |
 | Last updated | 2026-09-15 |
 
 ---
