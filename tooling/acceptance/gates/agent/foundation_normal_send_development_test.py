@@ -118,6 +118,16 @@ class NormalSendDevelopmentTest(unittest.TestCase):
         ):
             evaluate_normal_send(capture)
 
+    def test_rejects_stream_prefix_drift(self) -> None:
+        capture = valid_capture()
+        capture["active"]["assistant"]["content"] = "different"
+
+        with self.assertRaisesRegex(
+            NormalSendError,
+            "streamPrefixPreserved",
+        ):
+            evaluate_normal_send(capture)
+
     def test_rejects_restart_projection_drift(self) -> None:
         capture = valid_capture()
         capture["restarted"]["assistant"]["content"] = "different"

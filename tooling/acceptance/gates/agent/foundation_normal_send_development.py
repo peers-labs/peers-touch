@@ -160,6 +160,9 @@ def evaluate_normal_send(
             if len(terminal_messages) == 1
             else False
         ),
+        "streamPrefixPreserved": content.startswith(
+            str(active["assistant"]["content"])
+        ),
         "durableReloadMatches": (
             reloaded["assistant"]["content"] == content
             and reloaded["assistant"]["turnId"] == turn_id
@@ -344,6 +347,7 @@ def main() -> int:
     )
     runtime_pair: FoundationRuntimePair | None = None
     manifest = None
+    conversation_id = ""
     capture: dict[str, Any] = {}
     primary_error: BaseException | None = None
     cleanup: dict[str, Any] = {
@@ -365,6 +369,30 @@ def main() -> int:
         client = runtime_pair.native
         client.start()
         _authenticate_clients(runtime_pair, profile_env, clients=(client,))
+        conversation = client.harness(
+            "createFoundationConversation",
+            {
+                "title": f"Normal send {artifact_run_id}",
+                "description": "G-FE1 normal send Development Journey",
+            },
+            timeout=60,
+        )
+        require(
+            isinstance(conversation, Mapping)
+            and bool(conversation.get("conversation_id")),
+            "normal-send conversation creation failed",
+        )
+        conversation_id = str(conversation["conversation_id"])
+        selected = client.harness(
+            "selectFoundationConversation",
+            {"conversationId": conversation_id},
+            timeout=60,
+        )
+        require(
+            isinstance(selected, Mapping)
+            and selected.get("conversationId") == conversation_id,
+            "normal-send conversation selection failed",
+        )
 
         sent = client.harness(
             "sendMessage",
@@ -385,7 +413,10 @@ def main() -> int:
             "non-empty sequenced stream",
         )
         operation = active["operation"]
-        conversation_id = str(operation["conversationId"])
+        require(
+            operation.get("conversationId") == conversation_id,
+            "normal-send Turn used a different Conversation",
+        )
         turn_id = str(operation["turnId"])
         completed = wait_until(
             lambda: wait_for_completed_turn(client, conversation_id),
@@ -456,26 +487,44 @@ def main() -> int:
         }
         capture["assertions"] = evaluate_normal_send(capture)
 
-        conversation = final_station.get("conversation")
-        require(
-            isinstance(conversation, Mapping)
-            and isinstance(conversation.get("version"), int),
-            "conversation cleanup version is unavailable",
-        )
-        client.harness(
-            "archiveFoundationConversation",
-            {
-                "conversationId": conversation_id,
-                "expectedVersion": conversation["version"],
-                "permanent": True,
-            },
-            timeout=60,
-        )
-        cleanup["conversationDeleted"] = True
     except BaseException as error:
         primary_error = error
     finally:
         if runtime_pair is not None:
+            if conversation_id:
+                try:
+                    client = runtime_pair.native
+                    readback = client.harness(
+                        "getConversationReadback",
+                        {"conversationId": conversation_id},
+                        timeout=60,
+                    )
+                    conversation = (
+                        readback.get("conversation")
+                        if isinstance(readback, Mapping)
+                        else None
+                    )
+                    require(
+                        isinstance(conversation, Mapping)
+                        and isinstance(conversation.get("version"), int),
+                        "conversation cleanup version is unavailable",
+                    )
+                    client.harness(
+                        "archiveFoundationConversation",
+                        {
+                            "conversationId": conversation_id,
+                            "expectedVersion": conversation["version"],
+                            "permanent": True,
+                        },
+                        timeout=60,
+                    )
+                    cleanup["conversationDeleted"] = True
+                except BaseException as error:
+                    cleanup["status"] = "failed"
+                    cleanup["failures"].append(
+                        "conversation cleanup: "
+                        f"{type(error).__name__}: {error}"
+                    )
             try:
                 cleanup["clients"] = cleanup_clients(runtime_pair)
                 if cleanup["clients"].get("status") != "clean":
@@ -495,6 +544,18 @@ def main() -> int:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(client.log_path, target)
         try:
+            activated = subprocess.run(
+                ["make", "profile", f"PROFILE={PROFILE}"],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            require(
+                activated.returncode == 0,
+                "failed to restore the authorized cleanup profile",
+            )
             reset_fixture(
                 DEPLOYMENT_ENVIRONMENT,
                 ("alice", "bob"),
