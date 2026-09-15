@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-14
-covered_docs_hash: 8d47320637bc2f51fea6b966d9c4ae5426905e3d27da936904779bd2afe6d21d
+last_verified_at: 2026-09-15
+covered_docs_hash: 376ac67f939b1fcbdb611909c08e36407bd7d208d578b4c48a122821597f9767
 
 covered_docs:
   - AGENTS.md
@@ -202,3 +202,13 @@ blocking development. Same-workspace overlap, same-branch writes, and exclusive
 runtime resources remain fail-closed. This changes development coordination,
 not PR review severity or evidence semantics, so no review fixture or
 `pt-github-review/SKILL.md` behavior change is required.
+
+## 2026-09-15 Review
+
+The covered-document drift records source-bound Native Desktop Runtime evidence,
+scope boundaries, and navigation to the already-reviewed cross-platform
+`devctl` architecture. It does not change PR review severity, ownership, or
+evidence semantics. Existing Acceptance review rules and the
+`station-profile-bypass` and `unauthorized-environment-creation` hard rules
+already cover these changes, so no `pt-github-review/SKILL.md` update or new
+review fixture is required.
