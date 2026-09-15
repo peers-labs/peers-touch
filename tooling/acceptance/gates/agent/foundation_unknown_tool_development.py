@@ -179,7 +179,7 @@ def main() -> int:
         source=source_identity(ROOT),
     )
     os.environ["PT_ACCEPTANCE_WORKSPACE_ID"] = store.workspace_id
-    os.environ["PT_ACCEPTANCE_GATE_ID"] = AGENT_V2_FOUNDATION_GATE
+    os.environ["PT_ACCEPTANCE_GATE_ID"] = GATE_ID
     os.environ["PT_ACCEPTANCE_RUN_ID"] = attestation_run.run_id
     os.environ["PT_ACCEPTANCE_APPROVED_PROFILE"] = PROFILE
     os.environ["CHAT_ACCEPTANCE_RESET"] = "1"

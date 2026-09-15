@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import unittest
+from pathlib import Path
 
 from tooling.acceptance.gates.agent.foundation_unknown_tool_development import (
     UnknownToolError,
@@ -60,6 +61,15 @@ def valid_capture() -> dict[str, object]:
 
 
 class UnknownToolDevelopmentTest(unittest.TestCase):
+    def test_runner_uses_its_local_gate_identity(self) -> None:
+        source = Path(
+            "tooling/acceptance/gates/agent/"
+            "foundation_unknown_tool_development.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('GATE_ID = "agent-v2-kernel-foundation-e2e"', source)
+        self.assertNotIn("AGENT_V2_FOUNDATION_GATE", source)
+
     def test_accepts_unknown_tool_facts(self) -> None:
         assertions = evaluate_unknown_tool(valid_capture())
 
