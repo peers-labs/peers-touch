@@ -2216,3 +2216,18 @@ Messaging Journey plus Social wrapper tests pass 10/10, the adjacent Station
 lifecycle cohort passes 3/3, Python compilation passes, and
 `git diff --check` passes. This is `FOCUSED_PASS`; checkpoint, exact-source
 deployment, and the same Chat/Contacts Journey remain required.
+
+Checkpoint `f82dcc867f8e7725528f63124b7433d24b3577fd` was deployed
+exactly to `four` and `fiveArm`; run
+`20260915T051116696601Z-66b0059055be45a90d6513fd4a59455f`
+then passes the Direct restart readback that previously failed, proving the
+new readiness barrier in the receiver runtime. The first remaining product
+failure advances to Group creation:
+`acceptance.mobile.invalidInput:messaging.createGroup.federationId`.
+The canonical Mobile action already requires an explicit Federation ID, and
+the Journey owns the exact actor Federation identity but omits it from the
+Group request. CA-W6 mechanically admits the Journey-only correction to pass
+`sender.federation_id` and to make the fake production-action boundary reject
+a missing or mismatched Federation. No product contract, authority path, or
+runtime behavior changes. The focused Journey and Social wrapper cohort passes
+10/10, Python compilation passes, and `git diff --check` passes.

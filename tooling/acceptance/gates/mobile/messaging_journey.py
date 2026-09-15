@@ -228,6 +228,7 @@ class MobileMessagingJourney:
                     "conversationId": group_id,
                     "name": f"Acceptance {journey_id}",
                     "memberPtids": [sender.ptid, receiver.ptid],
+                    "federationId": sender.federation_id,
                 },
             ),
             "Group creation",

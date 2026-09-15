@@ -173,6 +173,8 @@ class FakeMessagingSession:
             return self._social_projection()
         if action == "messaging.createGroup":
             conversation_id = str(body["conversationId"])
+            if body.get("federationId") != self.actor.federation_id:
+                raise AssertionError("Group Federation identity mismatch")
             self.network.add_conversation(
                 conversation_id,
                 kind=2,
