@@ -978,6 +978,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         end = self.source.index("async sendMessage", start)
         scenario = self.source[start:end]
 
+        self.assertIn("await api.addModel(agent.provider", scenario)
         self.assertIn("updateAgentProfile(agentId", scenario)
         self.assertIn("useChatStore.getState().sendMessage(", scenario)
         self.assertIn("=== 'PROVIDER_MODEL_UNAVAILABLE'", scenario)
@@ -994,6 +995,12 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "const deletionErrorCode = await deleteFoundationConversation(",
             scenario,
         )
+        self.assertIn(
+            "await api.deleteModel(agent.provider, missingModel)",
+            scenario,
+        )
+        self.assertIn("modelAdded,", scenario)
+        self.assertIn("modelRemoved,", scenario)
 
     def test_two_topic_restart_scenario_uses_production_authorities(self) -> None:
         snapshot_start = self.source.index(

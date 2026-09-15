@@ -21313,12 +21313,23 @@ export function installAcceptanceHarness(): void {
       const agentId = agent.id || agent.name;
       const originalModel = agent.model;
       const missingModel = `pt-missing-model-${sampleId}`;
+      let modelAdded = false;
+      let modelRemoved = false;
       let agentRestored = false;
       let conversationDeleted = false;
       let localProjectionCleared = false;
       let conversationId = '';
       let capture: Record<string, unknown> | null = null;
       try {
+        await api.addModel(agent.provider, {
+          id: missingModel,
+          display_name: missingModel,
+          type: 'chat',
+          context_window: 128_000,
+          enabled: true,
+        });
+        modelAdded = true;
+        await useAgentStore.getState().loadModels();
         await useAgentStore.getState().updateAgentProfile(agentId, {
           provider: agent.provider,
           model: missingModel,
@@ -21471,14 +21482,22 @@ export function installAcceptanceHarness(): void {
           agentRestored = true;
           useAgentStore.getState().setAgentSurface(agent.name, 'chat');
         } finally {
-          if (conversationId) {
-            clearFoundationLocalConversationProjection(conversationId);
-            localProjectionCleared = true;
-            const deletionErrorCode = await deleteFoundationConversation(
-              conversationId,
-            );
-            conversationDeleted = deletionErrorCode === ''
-              || deletionErrorCode.includes('AGENT_4004');
+          try {
+            if (modelAdded) {
+              await api.deleteModel(agent.provider, missingModel);
+              await useAgentStore.getState().loadModels();
+              modelRemoved = true;
+            }
+          } finally {
+            if (conversationId) {
+              clearFoundationLocalConversationProjection(conversationId);
+              localProjectionCleared = true;
+              const deletionErrorCode = await deleteFoundationConversation(
+                conversationId,
+              );
+              conversationDeleted = deletionErrorCode === ''
+                || deletionErrorCode.includes('AGENT_4004');
+            }
           }
         }
       }
@@ -21490,11 +21509,17 @@ export function installAcceptanceHarness(): void {
       return evidenceValue({
         ...capture,
         cleanup: {
+          modelAdded,
+          modelRemoved,
           agentRestored,
           conversationDeleted,
           localProjectionCleared,
           status:
-            agentRestored && conversationDeleted && localProjectionCleared
+            modelAdded
+              && modelRemoved
+              && agentRestored
+              && conversationDeleted
+              && localProjectionCleared
               ? 'clean'
               : 'failed',
         },
