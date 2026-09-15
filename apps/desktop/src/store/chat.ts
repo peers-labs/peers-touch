@@ -1463,7 +1463,13 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
       const applyTo = (messages: ChatMessage[]): ChatMessage[] => {
         const existingIndex = messages.findIndex(
-          (message) => message.id === assistantMessageId || message.turnId === turnId,
+          (message) => (
+            message.role === 'assistant'
+            && (
+              message.id === assistantMessageId
+              || message.turnId === turnId
+            )
+          ),
         );
         const existing: ChatMessage = existingIndex >= 0
           ? messages[existingIndex]

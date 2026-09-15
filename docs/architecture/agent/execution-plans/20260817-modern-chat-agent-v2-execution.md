@@ -1796,10 +1796,35 @@ and zero local-path leakage.
     product component and assertion contract are unchanged; focused Desktop
     tests pass `68/68`, Native static tests pass `89/89`, and strict TypeScript
     plus diff hygiene pass.
+  - Checkpoint `a00fab8275f2a4d2f00eddfe7b15c0b0a329bb20` disproved a
+    bounded React-commit delay as the complete explanation. Exact-source run
+    `20260915T070309149665Z` received the real sequence-28
+    `CLIENT_LEASE_EXPIRED` event and passed the Store predicate, but the
+    existing error/reconcile DOM remained absent for the full 10-second wait.
+    Reverse-order cleanup was clean. Instrumentation now distinguishes a
+    transient Store overwrite from a missing MessageList commit, stale
+    AssistantMessage props, and virtualized or duplicate DOM ownership before
+    any further behavior change.
+  - Dirty-source diagnostic `20260915T072128647381Z` confirmed the Store
+    projection and MessageList commit while the DOM continued rendering the
+    separate completed assistant row. The updated `msg_044...` row at index 0
+    was the user prompt: `applyRecoveredTurnEvent` matched the first message
+    with the shared Turn ID without restricting the role. The owner-layer fix
+    now matches only assistant messages before projecting recovered events,
+    while the non-terminal reducer clears stale `completed` or `cancelled`
+    markers inherited from an earlier snapshot. Store regressions cover both
+    the shared-Turn identity collision and stale terminal state; focused
+    lease/recovery tests pass `65/65`, strict Desktop TypeScript passes, and
+    the exact-source Development Journey remains pending a new checkpoint.
 
 #### G-FE1 Concurrency Decision
 
 - **Mode**: hybrid.
+- **Current lease-expiry slice**: serial. Store projection, MessageList render,
+  AssistantMessage recovery UI, the shared disposable Fixture, and the two
+  Desktop clients form one causally ordered evidence path. The integrator owns
+  the Store fix, regression, diagnostic instrumentation, checkpoint, deploy,
+  and exact-source rerun.
 - **Shared contract freeze — integrator, serial first**:
   `model/domain/agent/agent_config.proto` and the accepted
   `CLIENT_EXECUTOR_UNAVAILABLE` payload shape. Generated artifacts remain

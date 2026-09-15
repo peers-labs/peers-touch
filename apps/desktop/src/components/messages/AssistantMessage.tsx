@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon, Tag, toast } from '@lobehub/ui';
@@ -519,6 +519,52 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       language: language || t('chat.message.code.plainText'),
     }));
   }, [sendMessage, t]);
+
+  // #region debug-point R-T:lease-expired-message-render
+  useEffect(() => {
+    if (
+      import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1'
+      || (
+        message.typedError?.error_type !== 'CLIENT_LEASE_EXPIRED'
+        && !message.toolCalls?.some(
+          (toolCall) => toolCall.name === 'local_clipboard_read',
+        )
+      )
+    ) {
+      return;
+    }
+    void fetch('http://127.0.0.1:7777/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'lease-approval-stall',
+        runId: 'post-ui-projection-fix',
+        hypothesisId: 'R-T',
+        location: 'components/messages/AssistantMessage.tsx:render-projection',
+        msg: '[DEBUG] Assistant message render projection observed',
+        data: {
+          messageId: message.id,
+          role: message.role,
+          turnId: message.turnId ?? null,
+          error: message.error ?? null,
+          errorType: message.typedError?.error_type ?? null,
+          resolution: message.resolution?.type ?? null,
+          loading: message.loading === true,
+          terminalStatus: message.terminalStatus ?? null,
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+  }, [
+    message.error,
+    message.id,
+    message.loading,
+    message.resolution,
+    message.terminalStatus,
+    message.toolCalls,
+    message.turnId,
+    message.typedError,
+  ]);
+  // #endregion
 
   return (
     <Flexbox

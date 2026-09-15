@@ -23,10 +23,10 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | `G-FE1-LEASE-EXPIRED` is `FOCUSED_PASS` on the dirty tree above `b3a01a4d7`; exact-source replay and typed-error delivery pass, while the receiver DOM synchronization correction still needs a fresh checkpoint and full Journey |
+| Current step | `G-FE1-LEASE-EXPIRED` is `FOCUSED_PASS`; dirty-source diagnostic `20260915T072128647381Z` confirmed recovered events were projected onto the user row when user and assistant shared a Turn ID, and the Store owner fix is ready for checkpoint |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source run `20260915T063417388805Z` reached the real lease-expired event; diagnostic `20260915T064157523276Z` proved the Store projection precedes the matching React error/recovery DOM commit, and the Harness now waits for that existing surface |
-| Current action | Create the authorized clean checkpoint, deploy that exact source, and run the real five-minute `BASE-LEASE_EXPIRED` Development Journey |
+| Last completed | Store owner fix restricts recovered events to assistant messages and clears stale terminal markers for non-terminal incidents; focused lease/recovery tests pass `65/65`, strict Desktop TypeScript and diff hygiene pass |
+| Current action | Create an authorized clean checkpoint, deploy that exact source, and rerun the real five-minute `BASE-LEASE_EXPIRED` Development Journey |
 | Next action | After `FUNCTIONAL_PASS`, rerun C08 and resume the unchanged 419-cell Foundation Gate |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
@@ -36,7 +36,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | no Goal-level blocker; `BASE-LEASE_EXPIRED` is the next source-defined implementation gap; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | C08 `20260915T023010098430Z-1649875e241d509b825fe65d86142fa4` passed on `6ec143379`；Foundation `20260915T023112205523Z-aacb361dcca1036b0958d29da9fbef4a` first exposed the missing lease vertical；checkpoint `b3a01a4d7` exact-source run `20260915T063417388805Z` proved replay and lease event delivery, then failed only because Harness queried DOM in the same tick as Store convergence；diagnostic `20260915T064157523276Z` confirmed message root present but stale error/recovery subtree；focused Desktop tests `68/68`, Native static `89/89`, strict TypeScript, and diff hygiene pass；full Journey and Foundation remain `UNPROVEN` |
+| Evidence | C08 `20260915T023010098430Z-1649875e241d509b825fe65d86142fa4` passed on `6ec143379`；Foundation `20260915T023112205523Z-aacb361dcca1036b0958d29da9fbef4a` first exposed the missing lease vertical；checkpoint `a00fab827` exact-source run `20260915T070309149665Z` disproved a bounded render delay；dirty diagnostic `20260915T072128647381Z` proved Store/List held the lease error on the user row while AssistantMessage retained the completed assistant row；assistant-only projection and non-terminal-state regressions pass focused tests `65/65` and strict TypeScript；full Journey and Foundation remain `UNPROVEN` |
 | Last updated | 2026-09-15 |
 
 ---

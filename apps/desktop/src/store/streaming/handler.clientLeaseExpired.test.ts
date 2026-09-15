@@ -62,4 +62,18 @@ describe('client lease-expired stream projection', () => {
       event: 'error',
     })).toBe(false);
   });
+
+  it('clears a stale terminal marker for the non-terminal lease incident', () => {
+    const result = reduceStreamEvent({
+      ...pendingMessage(),
+      loading: false,
+      terminalStatus: 'completed',
+    }, event);
+
+    expect(result.loading).toBe(true);
+    expect(result.terminalStatus).toBeUndefined();
+    expect(result.error).toBe('agent.errors.clientLeaseExpired');
+    expect(result.typedError?.terminal).toBe(false);
+    expect(result.resolution?.type).toBe('reconcile');
+  });
 });

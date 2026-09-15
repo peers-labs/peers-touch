@@ -137,6 +137,8 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
           typedError,
           resolution: resolveAgentTypedErrorAction(typedError) ?? null,
           loading: true,
+          cancelled: false,
+          terminalStatus: undefined,
           lastEventAt: Date.now(),
         };
       }

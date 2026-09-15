@@ -4806,18 +4806,75 @@ async function completeFoundationLeaseExpiredScenario(input: {
     ).length,
   });
   // #endregion
-  await waitFor(
-    () => {
-      surface = readRecoverySurface();
-      return Boolean(
-        surface.messageElement
-        && surface.errorElement
-        && surface.recovery,
-      );
-    },
-    'lease-expired recovery surface',
-    10_000,
-  );
+  try {
+    await waitFor(
+      () => {
+        surface = readRecoverySurface();
+        return Boolean(
+          surface.messageElement
+          && surface.errorElement
+          && surface.recovery,
+        );
+      },
+      'lease-expired recovery surface',
+      10_000,
+    );
+  } catch (error) {
+    const currentState = useChatStore.getState();
+    const currentMessage = currentState.messages.find(
+      (message) => message.id === receiverMessage.id,
+    );
+    const bufferedMessage = (
+      currentState.sessionBuffers[scenario.turn.conversationId] ?? []
+    ).find((message) => message.id === receiverMessage.id);
+    const rendered = Array.from(
+      document.querySelectorAll<HTMLElement>(messageSelector),
+    );
+    // #region debug-point R-U:lease-expired-recovery-surface-timeout
+    await reportFoundationLeaseApprovalStallDebug(
+      'R-S-T-U',
+      'surface-timeout',
+      {
+        error: error instanceof Error ? error.message : String(error),
+        currentSessionMatches:
+          currentState.currentSessionKey === scenario.turn.conversationId,
+        currentMessage: currentMessage
+          ? {
+              id: currentMessage.id,
+              role: currentMessage.role,
+              turnId: currentMessage.turnId ?? null,
+              error: currentMessage.error ?? null,
+              errorType: currentMessage.typedError?.error_type ?? null,
+              resolution: currentMessage.resolution?.type ?? null,
+              loading: currentMessage.loading === true,
+              terminalStatus: currentMessage.terminalStatus ?? null,
+            }
+          : null,
+        bufferedMessage: bufferedMessage
+          ? {
+              id: bufferedMessage.id,
+              role: bufferedMessage.role,
+              turnId: bufferedMessage.turnId ?? null,
+              error: bufferedMessage.error ?? null,
+              errorType: bufferedMessage.typedError?.error_type ?? null,
+              resolution: bufferedMessage.resolution?.type ?? null,
+              loading: bufferedMessage.loading === true,
+              terminalStatus: bufferedMessage.terminalStatus ?? null,
+            }
+          : null,
+        renderedCount: rendered.length,
+        rendered: rendered.map((element) => ({
+          role: element.getAttribute('data-pt-agent-message'),
+          errorType: element.getAttribute('data-pt-agent-error-type'),
+          terminalStatus: element.getAttribute('data-pt-agent-terminal-status'),
+          text: element.textContent?.trim() ?? '',
+          visible: element.getClientRects().length > 0,
+        })),
+      },
+    );
+    // #endregion
+    throw error;
+  }
   const { messageElement, errorElement, recovery } = surface;
   if (!messageElement || !errorElement || !recovery) {
     throw new Error('agent.acceptance.foundationLeaseRecoverySurfaceMissing');

@@ -697,6 +697,84 @@ describe('Agent turn event identity projection', () => {
     }
   });
 
+  it('projects recovered events onto the assistant when a turn is shared with the user message', () => {
+    const messages: ChatMessage[] = [
+      {
+        id: 'user-message-1',
+        role: 'user',
+        content: 'Use the local tool',
+        timestamp: 1,
+        turnId: 'turn-1',
+      },
+      {
+        id: 'assistant-message-1',
+        role: 'assistant',
+        content: '',
+        loading: true,
+        timestamp: 2,
+        turnId: 'turn-1',
+      },
+    ];
+    useChatStore.getState().reset();
+    useChatStore.setState({
+      currentSessionKey: 'conversation-1',
+      messages,
+      sessionBuffers: {
+        'conversation-1': messages,
+      },
+    });
+
+    try {
+      useChatStore.getState().applyRecoveredTurnEvent(
+        'conversation-1',
+        'agent-1',
+        'turn-1',
+        {
+          event: 'progress',
+          data: {
+            stage: 'client_lease_expired',
+            outcome_error: {
+              error: 'agent.errors.clientLeaseExpired',
+              error_type: 'CLIENT_LEASE_EXPIRED',
+              locale_key: 'agent.errors.clientLeaseExpired',
+              retryable: true,
+              terminal: false,
+              details: {
+                session_id: 'session-1',
+                lease_id: 'lease-1',
+                expired_at: '2026-09-15T00:00:00Z',
+              },
+            },
+          },
+        },
+      );
+
+      const state = useChatStore.getState();
+      expect(state.messages[0]).toEqual(messages[0]);
+      expect(state.messages[1]).toMatchObject({
+        id: 'assistant-message-1',
+        role: 'assistant',
+        error: 'agent.errors.clientLeaseExpired',
+        typedError: {
+          error_type: 'CLIENT_LEASE_EXPIRED',
+        },
+        resolution: {
+          type: 'reconcile',
+        },
+      });
+      expect(state.sessionBuffers['conversation-1'][0]).toEqual(messages[0]);
+      expect(state.sessionBuffers['conversation-1'][1]).toMatchObject({
+        id: 'assistant-message-1',
+        role: 'assistant',
+        typedError: {
+          error_type: 'CLIENT_LEASE_EXPIRED',
+        },
+      });
+    } finally {
+      useChatStore.getState().reset();
+    }
+  });
+
   it('projects incompatible-capability recovery from a live error event', () => {
     const projected = reduceStreamEvent({
       id: 'message-1',
