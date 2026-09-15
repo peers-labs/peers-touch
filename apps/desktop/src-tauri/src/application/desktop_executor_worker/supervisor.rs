@@ -170,6 +170,8 @@ pub struct CapabilityNegativeControlFacts {
     pub capability_session_id_hash: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worker_paused: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_expires_at_ms: Option<i64>,
     pub before: CapabilityExecutionCounters,
     pub station: Option<CapabilityNegativeControlStationFact>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -527,6 +529,7 @@ fn emit_negative_control_from_worker(
         .ok_or_else(|| "AS_F10_CAPABILITY_SESSION_NOT_FOUND".to_string())?;
     if request.control == RequestedCapabilityNegativeControl::LeasePause {
         let before = execution_counters(worker)?;
+        let source_expires_at_ms = lease_expiry_ms(&worker.lease)?;
         worker.paused = true;
         return Ok(CapabilityNegativeControlFacts {
             control: request.control.as_str(),
@@ -534,6 +537,7 @@ fn emit_negative_control_from_worker(
             unavailable_reason: None,
             capability_session_id_hash: request.capability_session_id_hash.clone(),
             worker_paused: Some(true),
+            source_expires_at_ms: Some(source_expires_at_ms),
             before: before.clone(),
             station: None,
             source_station: None,
@@ -554,6 +558,7 @@ fn emit_negative_control_from_worker(
             unavailable_reason: Some("NO_PRODUCTION_CAPABILITY_ENDPOINT"),
             capability_session_id_hash: request.capability_session_id_hash.clone(),
             worker_paused: None,
+            source_expires_at_ms: None,
             before: before.clone(),
             station: None,
             source_station: None,
@@ -573,6 +578,7 @@ fn emit_negative_control_from_worker(
         unavailable_reason: None,
         capability_session_id_hash: request.capability_session_id_hash.clone(),
         worker_paused: None,
+        source_expires_at_ms: None,
         before,
         station: Some(station),
         source_station: None,
@@ -667,6 +673,7 @@ fn emit_lease_expired_control_from_worker(
             unavailable_reason: None,
             capability_session_id_hash: request.capability_session_id_hash.clone(),
             worker_paused: Some(false),
+            source_expires_at_ms: Some(source_expires_at_ms),
             before: before.clone(),
             station: Some(source_station.clone()),
             source_station: Some(source_station),

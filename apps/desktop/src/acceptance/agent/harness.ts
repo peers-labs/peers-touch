@@ -1997,6 +1997,23 @@ function toolStatusName(value: unknown): string {
   }
 }
 
+function diagnosticToolPersistenceStatus(
+  fact: Record<string, unknown>,
+): string {
+  const status = toolStatusName(evidenceField(fact, 'status', 'status'));
+  if (
+    status === 'claimed'
+    && evidenceField(
+      fact,
+      'dispatchCommittedAt',
+      'dispatch_committed_at',
+    )
+  ) {
+    return 'dispatch_committed';
+  }
+  return status;
+}
+
 function toolExecutionOwnerName(value: unknown): string {
   switch (value) {
     case ToolExecutionOwner.STATION:
@@ -4447,6 +4464,27 @@ async function prepareFoundationLeaseExpiredScenario(input: {
   return prepared;
 }
 
+// #region debug-point A-E:lease-approval-stall
+function reportFoundationLeaseApprovalStallDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'lease-approval-stall',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:dispatchFoundationLeaseExpiredScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 async function dispatchFoundationLeaseExpiredScenario(
   scenarioKey: string,
 ): Promise<Record<string, unknown>> {
@@ -4481,24 +4519,122 @@ async function dispatchFoundationLeaseExpiredScenario(
   if (!approve || approve.disabled) {
     throw new Error('agent.acceptance.foundationToolApproveMissing');
   }
-  approve.click();
-  const dispatched = await waitForFoundationToolFacts(
-    scenario.turn.turnId,
-    (facts) => (
-      facts.length === 1
-      && toolStatusName(
-        evidenceField(facts[0], 'status', 'status'),
-      ) === 'dispatch_committed'
-    ),
-    'lease-expired Station dispatch',
-  );
-  return {
+  // #region debug-point A-C-E:lease-approval-before-click
+  await reportFoundationLeaseApprovalStallDebug('A-C-E', 'before-click', {
     scenarioKey,
-    conversationId: scenario.turn.conversationId,
     turnId: scenario.turn.turnId,
     toolCallId: scenario.toolCallId,
-    source: dispatched,
-  };
+    approvalId: scenario.approvalId,
+    expectedRevision: scenario.expectedRevision,
+    targetCapabilitySessionId: scenario.targetCapabilitySessionId,
+    buttonDisabled: approve.disabled,
+    projection: toolRuntime.getProjection(scenario.toolCallId) ?? null,
+  });
+  // #endregion
+  approve.click();
+  // #region debug-point A-B:lease-approval-after-click
+  void reportFoundationLeaseApprovalStallDebug('A-B', 'after-click', {
+    buttonDisabled: approve.disabled,
+    projection: toolRuntime.getProjection(scenario.toolCallId) ?? null,
+  });
+  // #endregion
+  let previousFactSnapshot = '';
+  try {
+    const dispatched = await waitForFoundationToolFacts(
+      scenario.turn.turnId,
+      (facts) => {
+        const fact = facts[0];
+        const snapshot = {
+          factCount: facts.length,
+          status: fact
+            ? Number(evidenceField(fact, 'status', 'status'))
+            : null,
+          statusName: fact
+            ? toolStatusName(evidenceField(fact, 'status', 'status'))
+            : null,
+          dispatchCommittedAt: fact
+            ? evidenceField(
+              fact,
+              'dispatchCommittedAt',
+              'dispatch_committed_at',
+            ) ?? null
+            : null,
+          approvalId: fact
+            ? evidenceField(fact, 'approvalId', 'approval_id') ?? null
+            : null,
+          decisionId: fact
+            ? evidenceField(fact, 'decisionId', 'decision_id') ?? null
+            : null,
+          decisionRevision: fact
+            ? evidenceField(
+              fact,
+              'decisionRevision',
+              'decision_revision',
+            ) ?? null
+            : null,
+          capabilitySessionId: fact
+            ? evidenceField(
+              fact,
+              'capabilitySessionId',
+              'capability_session_id',
+            ) ?? null
+            : null,
+        };
+        const serialized = stableJson(snapshot);
+        if (serialized !== previousFactSnapshot) {
+          previousFactSnapshot = serialized;
+          // #region debug-point B-D-E:lease-approval-fact-change
+          void reportFoundationLeaseApprovalStallDebug(
+            'B-D-E',
+            'fact-change',
+            snapshot,
+          );
+          // #endregion
+        }
+        return (
+          facts.length === 1
+          && diagnosticToolPersistenceStatus(facts[0])
+          === 'dispatch_committed'
+        );
+      },
+      'lease-expired Station dispatch',
+    );
+    // #region debug-point D:lease-approval-dispatch-observed
+    await reportFoundationLeaseApprovalStallDebug(
+      'D',
+      'dispatch-observed',
+      { facts: dispatched.facts },
+    );
+    // #endregion
+    return {
+      scenarioKey,
+      conversationId: scenario.turn.conversationId,
+      turnId: scenario.turn.turnId,
+      toolCallId: scenario.toolCallId,
+      source: dispatched,
+    };
+  } catch (error) {
+    const projection = toolRuntime.getProjection(scenario.toolCallId);
+    const attempt = toolRuntime.getDecisionAttempt(scenario.toolCallId);
+    let replay: Record<string, unknown> | null = null;
+    let facts: Record<string, unknown>[] = [];
+    try {
+      replay = await foundationDiagnosticReplay(scenario.turn.turnId);
+      facts = foundationDiagnosticToolFacts(replay);
+    } catch {
+      // Preserve the primary timeout; the missing final readback is diagnostic.
+    }
+    // #region debug-point A-E:lease-approval-timeout
+    await reportFoundationLeaseApprovalStallDebug('A-B-C-D-E', 'timeout', {
+      error: error instanceof Error ? error.message : String(error),
+      projection: projection ?? null,
+      decisionAttempt: attempt ?? null,
+      replay,
+      facts,
+    });
+    // #endregion
+    throw error;
+  }
 }
 
 async function foundationSessionByHash(
@@ -4561,17 +4697,66 @@ async function completeFoundationLeaseExpiredScenario(input: {
     throw new Error('agent.acceptance.foundationLeaseOutcomeMissing');
   }
 
-  await waitFor(
-    () => useChatStore.getState().messages.some((message) => (
-      message.turnId === scenario.turn.turnId
-      && message.typedError?.error_type === 'CLIENT_LEASE_EXPIRED'
-      && message.resolution?.type === 'reconcile'
-      && message.loading === true
-      && message.terminalStatus === undefined
-    )),
-    'lease-expired non-terminal receiver projection',
-    30_000,
-  );
+  // #region debug-point F-I:lease-expired-complete-entry
+  await reportFoundationLeaseApprovalStallDebug('F-G-H-I', 'complete-entry', {
+    leaseControl: evidenceValue(input.leaseControl),
+    observedEvents: scenario.turn.observed.events.map((event) => ({
+      event: event.event,
+      data: event.data,
+      hasSourceDelivery: Boolean(event.sourceDelivery),
+    })),
+  });
+  // #endregion
+  try {
+    await waitFor(
+      () => useChatStore.getState().messages.some((message) => (
+        message.turnId === scenario.turn.turnId
+        && message.typedError?.error_type === 'CLIENT_LEASE_EXPIRED'
+        && message.resolution?.type === 'reconcile'
+        && message.loading === true
+        && message.terminalStatus === undefined
+      )),
+      'lease-expired non-terminal receiver projection',
+      30_000,
+    );
+  } catch (error) {
+    let replay: Record<string, unknown> | null = null;
+    let facts: Record<string, unknown>[] = [];
+    try {
+      replay = await foundationDiagnosticReplay(scenario.turn.turnId);
+      facts = foundationDiagnosticToolFacts(replay);
+    } catch {
+      // Preserve the projection timeout as the primary failure.
+    }
+    // #region debug-point F-I:lease-expired-receiver-timeout
+    await reportFoundationLeaseApprovalStallDebug(
+      'F-G-H-I',
+      'receiver-timeout',
+      {
+        error: error instanceof Error ? error.message : String(error),
+        observedEvents: scenario.turn.observed.events.map((event) => ({
+          event: event.event,
+          data: event.data,
+          sourceDelivery: event.sourceDelivery ?? null,
+        })),
+        messages: useChatStore.getState().messages
+          .filter((message) => message.turnId === scenario.turn.turnId)
+          .map((message) => ({
+            id: message.id,
+            loading: message.loading,
+            terminalStatus: message.terminalStatus ?? null,
+            error: message.error ?? null,
+            typedError: message.typedError ?? null,
+            resolution: message.resolution ?? null,
+            toolCalls: message.toolCalls ?? [],
+          })),
+        replay,
+        facts,
+      },
+    );
+    // #endregion
+    throw error;
+  }
   const receiverMessage = useChatStore.getState().messages.find(
     (message) => (
       message.turnId === scenario.turn.turnId
@@ -4640,9 +4825,8 @@ async function completeFoundationLeaseExpiredScenario(input: {
     scenario.turn.turnId,
     (facts) => (
       facts.length === 1
-      && toolStatusName(
-        evidenceField(facts[0], 'status', 'status'),
-      ) === 'dispatch_committed'
+      && diagnosticToolPersistenceStatus(facts[0])
+      === 'dispatch_committed'
     ),
     'lease-expired Station source readback',
   );
@@ -4650,9 +4834,8 @@ async function completeFoundationLeaseExpiredScenario(input: {
     scenario.turn.turnId,
     (facts) => (
       facts.length === 1
-      && toolStatusName(
-        evidenceField(facts[0], 'status', 'status'),
-      ) === 'dispatch_committed'
+      && diagnosticToolPersistenceStatus(facts[0])
+      === 'dispatch_committed'
     ),
     'lease-expired Station replay readback',
   );
@@ -4771,9 +4954,7 @@ async function completeFoundationLeaseExpiredScenario(input: {
         toolCallId: String(
           evidenceField(sourceFact, 'toolCallId', 'tool_call_id') ?? '',
         ),
-        status: toolStatusName(
-          evidenceField(sourceFact, 'status', 'status'),
-        ),
+        status: diagnosticToolPersistenceStatus(sourceFact),
         resultId: String(
           evidenceField(sourceFact, 'resultId', 'result_id') ?? '',
         ),

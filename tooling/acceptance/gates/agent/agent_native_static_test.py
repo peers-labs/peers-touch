@@ -2139,6 +2139,23 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
         self.assertIn("prepareFoundationExecutorUnavailableScenario", scenario)
         self.assertIn("waitForFoundationToolFacts(", scenario)
+        self.assertEqual(
+            scenario.count("diagnosticToolPersistenceStatus("),
+            4,
+        )
+        persistence_status_start = self.source.index(
+            "function diagnosticToolPersistenceStatus"
+        )
+        persistence_status_end = self.source.index(
+            "function toolExecutionOwnerName",
+            persistence_status_start,
+        )
+        persistence_status = self.source[
+            persistence_status_start:persistence_status_end
+        ]
+        self.assertIn("status === 'claimed'", persistence_status)
+        self.assertIn("'dispatchCommittedAt'", persistence_status)
+        self.assertIn("return 'dispatch_committed'", persistence_status)
         self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
         self.assertIn("foundationLeaseRuntimeIdentityMismatch", scenario)
         self.assertIn(
@@ -2172,6 +2189,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("Self::LeasePause", supervisor)
         self.assertIn("Self::LeaseExpired", supervisor)
         self.assertIn("Duration::from_secs(6 * 60)", supervisor)
+        self.assertIn(
+            "source_expires_at_ms: Some(source_expires_at_ms)",
+            supervisor,
+        )
         self.assertIn('"leasePause" => Some(', runtime_evidence)
         self.assertIn('"leaseExpired" => Some(', runtime_evidence)
         self.assertIn("AGENT_CLIENT_LEASE_EXPIRED_ERROR_TYPE", desktop_api)

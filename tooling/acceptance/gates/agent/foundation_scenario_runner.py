@@ -158,6 +158,8 @@ DIRECT_PROBE_TIMEOUT_SECONDS = {
     "AS-F07": 900,
     "BASE-APPROVAL_EXPIRED": 1200,
 }
+LEASE_EXPIRED_DISPATCH_WINDOW_MS = 90_000
+LEASE_EXPIRED_MINIMUM_DISPATCH_LEAD_MS = 15_000
 
 RESTORE_IDENTITY_STATES = frozenset(
     {
@@ -487,6 +489,22 @@ class FoundationExecutorUnavailableCoordinator:
                 )
 
 
+def _wait_for_lease_dispatch_window(source_expires_at_ms: int) -> None:
+    now_ms = time.time_ns() // 1_000_000
+    dispatch_delay_ms = (
+        source_expires_at_ms
+        - now_ms
+        - LEASE_EXPIRED_DISPATCH_WINDOW_MS
+    )
+    if dispatch_delay_ms > 0:
+        time.sleep(dispatch_delay_ms / 1000)
+    dispatch_lead_ms = source_expires_at_ms - time.time_ns() // 1_000_000
+    if dispatch_lead_ms < LEASE_EXPIRED_MINIMUM_DISPATCH_LEAD_MS:
+        raise ScenarioRunnerError(
+            "BASE-LEASE_EXPIRED dispatch window was missed"
+        )
+
+
 class FoundationLeaseExpiredCoordinator:
     def __init__(self, runtime_pair: "FoundationRuntimePair") -> None:
         self._runtime_pair = runtime_pair
@@ -581,10 +599,13 @@ class FoundationLeaseExpiredCoordinator:
                 or pause.get("capabilitySessionIdHash")
                 != capability_session_id_hash
                 or pause.get("workerPaused") is not True
+                or type(pause.get("sourceExpiresAtMs")) is not int
             ):
                 raise ScenarioRunnerError(
                     "BASE-LEASE_EXPIRED lease pause is invalid"
                 )
+            source_expires_at_ms = int(pause["sourceExpiresAtMs"])
+            _wait_for_lease_dispatch_window(source_expires_at_ms)
             prepared = receiver.harness(
                 "prepareFoundationLeaseExpired",
                 {

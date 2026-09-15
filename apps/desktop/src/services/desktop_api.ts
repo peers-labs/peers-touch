@@ -6834,6 +6834,27 @@ function isHttpGatewayMode() {
 export const AGENT_REPLAY_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000] as const;
 const AGENT_REPLAY_CATCHUP_TIMEOUT_MS = 30_000;
 export const AGENT_SSE_IDLE_TIMEOUT_MS = 30_000;
+// #region debug-point J-M:lease-replay-fetch
+function reportLeaseReplayFetchDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'lease-approval-stall',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'desktop_api.ts:streamAgentTurnReplay',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
 const FOUNDATION_F06_STREAM_PROBE_INPUT =
   'Write a detailed 2000-word numbered guide to durable event stream recovery.';
 const AGENT_REPLAY_CONTROL_EVENTS = new Set([
@@ -6974,11 +6995,20 @@ async function consumeAgentSSE(
       const frame = buffer.slice(0, boundary);
       buffer = buffer.slice(boundary + 2);
       const lines = frame.split('\n');
-      const event = lines.find((line) => line.startsWith('event:'))?.slice(6).trim() || 'message';
+      const eventLine = lines.find((line) => line.startsWith('event:'));
       const dataText = lines
         .filter((line) => line.startsWith('data:'))
         .map((line) => line.slice(5).trimStart())
         .join('\n');
+      if (
+        !eventLine
+        && !dataText
+        && lines.every((line) => !line.trim() || line.startsWith(':'))
+      ) {
+        boundary = buffer.indexOf('\n\n');
+        continue;
+      }
+      const event = eventLine?.slice(6).trim() || 'message';
       let data: Record<string, unknown> = {};
       if (dataText) {
         const parsed = JSON.parse(dataText);
@@ -7675,6 +7705,12 @@ export function streamAgentTurnReplay(
       ...event,
       data: { ...event.data, streamGeneration },
     };
+    // #region debug-point J-M:lease-replay-event
+    reportLeaseReplayFetchDebug('J-M', 'replay-event', {
+      eventType: projectedEvent.event,
+      sequence: event.data.seq ?? event.data.sequence ?? null,
+    });
+    // #endregion
     const terminalStatus = classifyAgentTurnTerminalEvent(projectedEvent);
     if (
       projectedEvent.event === 'catchup_done'
@@ -7693,6 +7729,13 @@ export function streamAgentTurnReplay(
   };
   const catchupDeadline = globalThis.setTimeout(() => {
     if (catchupEstablished || controller.signal.aborted) return;
+    // #region debug-point J-M:lease-replay-catchup-timeout
+    reportLeaseReplayFetchDebug('J-M', 'catchup-timeout', {
+      conversationId: input.conversation_id,
+      turnId: input.turn_id,
+      afterSequence: input.after_seq,
+    });
+    // #endregion
     reportReplayError(new Error('agent.error.replayCatchupTimeout'));
     controller.abort();
   }, AGENT_REPLAY_CATCHUP_TIMEOUT_MS);
@@ -7721,12 +7764,28 @@ export function streamAgentTurnReplay(
               attempt: attempt + 1,
             },
           });
+          // #region debug-point J-L:lease-replay-fetch-start
+          reportLeaseReplayFetchDebug('J-L', 'fetch-start', {
+            gatewayBase,
+            attempt: attempt + 1,
+            conversationId: input.conversation_id,
+            turnId: input.turn_id,
+            afterSequence: input.after_seq,
+          });
+          // #endregion
           const response = await fetch(`${gatewayBase}/agent/turn/events`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
             body: JSON.stringify(toAgentTurnReplayWireInput(input)),
             signal: controller.signal,
           });
+          // #region debug-point J-L:lease-replay-fetch-response
+          reportLeaseReplayFetchDebug('J-L', 'fetch-response', {
+            attempt: attempt + 1,
+            status: response.status,
+            ok: response.ok,
+          });
+          // #endregion
           deliverReplayEvent({
             event: 'replaying',
             ptid: sourcePtid,
@@ -7810,6 +7869,14 @@ export function streamAgentTurnReplay(
         } catch (error) {
           if (controller.signal.aborted) return;
           replayError = error instanceof Error ? error : new Error(String(error));
+          // #region debug-point J-M:lease-replay-fetch-error
+          reportLeaseReplayFetchDebug('J-M', 'fetch-error', {
+            attempt: attempt + 1,
+            errorName: replayError.name,
+            errorMessage: replayError.message,
+            liveTailEstablished,
+          });
+          // #endregion
         }
         if (liveTailEstablished && replayError) {
           reportReplayError(replayError);

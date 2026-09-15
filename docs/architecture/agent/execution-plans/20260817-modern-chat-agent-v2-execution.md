@@ -1762,6 +1762,27 @@ and zero local-path leakage.
     locale validation, hard rules, Rust/Go formatting, and diff hygiene pass.
     Formal Acceptance validation remains source-stale until the required
     checkpoint and exact-source runtime proof are produced.
+  - Dirty-source Development runs above checkpoint `584d28718` exposed and
+    corrected three owner-layer defects without changing the typed-error
+    contract, production lease duration, ToolCall deadline, Gate timeout, or
+    matrix: diagnostic Proto `CLAIMED + dispatch_committed_at` now maps back to
+    persistence `dispatch_committed`; the coordinator waits until the frozen
+    lease has at most 90 seconds remaining before creating the real ToolCall;
+    and the synchronous Browser gateway now flushes every downstream SSE chunk
+    instead of allowing `tiny_http` to buffer a live response until EOF.
+  - Pre-fix replay diagnostic
+    `20260915T062048218581Z` observed Station HTTP 200 admission in 127 ms but no
+    Browser `fetch-response` before cleanup. Post-fix diagnostic
+    `20260915T062647802445Z` observed Station admission in 117 ms, Browser
+    `fetch-response` 9 ms later, and
+    `replaying -> snapshot -> reconciling -> catchup_done -> connected` before
+    approval and cleanup. Reverse-order cleanup was clean in both runs.
+  - Current focused checks pass: eight Rust lease tests, two Rust gateway
+    stream tests, Rust e2e-feature check, Desktop API tests `61/61`, Desktop
+    strict TypeScript check, Python runner tests `60/60`, direct/oracle tests
+    `45/45`, Native static tests `89/89`, Python compilation, Rust formatting,
+    and diff hygiene. The full five-minute exact-source Development Journey
+    remains `UNPROVEN` until the next checkpoint is created and executed.
 
 #### G-FE1 Concurrency Decision
 

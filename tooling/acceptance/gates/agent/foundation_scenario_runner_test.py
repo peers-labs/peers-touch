@@ -188,6 +188,11 @@ class LeaseExpiredHarnessClient:
                     "availability": "available",
                     "capabilitySessionIdHash": session_hash,
                     "workerPaused": True,
+                    "sourceExpiresAtMs": (
+                        time.time_ns() // 1_000_000
+                        + foundation_scenario_runner
+                        .LEASE_EXPIRED_DISPATCH_WINDOW_MS
+                    ),
                     "before": {
                         "localExecutionAttemptCount": 2,
                         "localSideEffectCount": 1,
@@ -2726,6 +2731,50 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                 "browser:abortFoundationLeaseExpired",
             ],
         )
+
+    def test_lease_expired_waits_for_the_bounded_dispatch_window(self) -> None:
+        now_ms = 100_000
+        source_expires_at_ms = (
+            now_ms
+            + foundation_scenario_runner.LEASE_EXPIRED_DISPATCH_WINDOW_MS
+            + 60_000
+        )
+        with (
+            patch.object(
+                foundation_scenario_runner.time,
+                "time_ns",
+                return_value=now_ms * 1_000_000,
+            ),
+            patch.object(
+                foundation_scenario_runner.time,
+                "sleep",
+            ) as wait,
+        ):
+            foundation_scenario_runner._wait_for_lease_dispatch_window(
+                source_expires_at_ms
+            )
+
+        wait.assert_called_once_with(60)
+
+    def test_lease_expired_rejects_a_missed_dispatch_window(self) -> None:
+        now_ms = 100_000
+        with (
+            patch.object(
+                foundation_scenario_runner.time,
+                "time_ns",
+                return_value=now_ms * 1_000_000,
+            ),
+            self.assertRaisesRegex(
+                foundation_scenario_runner.ScenarioRunnerError,
+                "dispatch window was missed",
+            ),
+        ):
+            foundation_scenario_runner._wait_for_lease_dispatch_window(
+                now_ms
+                + foundation_scenario_runner
+                .LEASE_EXPIRED_MINIMUM_DISPATCH_LEAD_MS
+                - 1
+            )
 
     def test_lease_expired_restores_executor_when_expiry_control_fails(
         self,

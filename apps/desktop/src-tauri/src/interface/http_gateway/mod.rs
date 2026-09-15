@@ -8,7 +8,7 @@
 //
 // 2026-04-09: Initial creation. Full 1:1 mapping of all 237 tauri commands.
 
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -112,10 +112,13 @@ struct GatewayRequestDiagnostics {
     queued_at_enqueue: usize,
 }
 
+const AGENT_STREAM_PREAMBLE: &[u8] = b": gateway-connected\n\n";
+
 struct AgentStreamBody<R> {
     inner: R,
     station_path: &'static str,
     closed: bool,
+    preamble_offset: usize,
 }
 
 impl<R> AgentStreamBody<R> {
@@ -124,12 +127,20 @@ impl<R> AgentStreamBody<R> {
             inner,
             station_path,
             closed: false,
+            preamble_offset: 0,
         }
     }
 }
 
 impl<R: Read> Read for AgentStreamBody<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if self.preamble_offset < AGENT_STREAM_PREAMBLE.len() {
+            let remaining = &AGENT_STREAM_PREAMBLE[self.preamble_offset..];
+            let read = remaining.len().min(buffer.len());
+            buffer[..read].copy_from_slice(&remaining[..read]);
+            self.preamble_offset += read;
+            return Ok(read);
+        }
         if self.closed {
             return Ok(0);
         }
@@ -153,6 +164,64 @@ impl<R: Read> Read for AgentStreamBody<R> {
             }
         }
     }
+}
+
+fn copy_agent_stream_body<R: Read, W: Write>(
+    body: &mut R,
+    writer: &mut W,
+    chunked: bool,
+) -> io::Result<()> {
+    let mut buffer = [0_u8; 8 * 1024];
+    loop {
+        let read = body.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        if chunked {
+            write!(writer, "{read:x}\r\n")?;
+        }
+        writer.write_all(&buffer[..read])?;
+        if chunked {
+            writer.write_all(b"\r\n")?;
+        }
+        writer.flush()?;
+    }
+    if chunked {
+        writer.write_all(b"0\r\n\r\n")?;
+    }
+    writer.flush()
+}
+
+fn respond_agent_stream<R: Read>(
+    request: tiny_http::Request,
+    status: u16,
+    turn_id: Option<&str>,
+    mut body: R,
+) -> io::Result<()> {
+    let version = request.http_version().clone();
+    let chunked = version > tiny_http::HTTPVersion(1, 0);
+    let status_code = tiny_http::StatusCode(status);
+    let mut writer = request.into_writer();
+    write!(
+        writer,
+        "HTTP/{version} {status} {}\r\n",
+        status_code.default_reason_phrase()
+    )?;
+    writer.write_all(b"Content-Type: text/event-stream; charset=utf-8\r\n")?;
+    writer.write_all(b"Cache-Control: no-cache\r\n")?;
+    writer.write_all(b"Access-Control-Allow-Origin: *\r\n")?;
+    writer.write_all(b"Access-Control-Expose-Headers: X-Agent-Turn-ID\r\n")?;
+    if let Some(turn_id) = turn_id {
+        write!(writer, "X-Agent-Turn-ID: {turn_id}\r\n")?;
+    }
+    if chunked {
+        writer.write_all(b"Transfer-Encoding: chunked\r\n")?;
+    } else {
+        writer.write_all(b"Connection: close\r\n")?;
+    }
+    writer.write_all(b"\r\n")?;
+    writer.flush()?;
+    copy_agent_stream_body(&mut body, &mut writer, chunked)
 }
 
 // #region debug-point D-E:foundation-gateway-dispatch
@@ -278,6 +347,37 @@ fn report_foundation_fault_stream_debug(stage: &str, data: Value) {
         .and_then(|client| {
             client
                 .post("http://127.0.0.1:7783/event")
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(payload.to_string())
+                .send()
+        });
+}
+// #endregion
+
+// #region debug-point J-M:lease-replay-gateway
+fn report_lease_replay_gateway_debug(stage: &str, data: Value) {
+    if std::env::var("PT_DESKTOP_E2E").as_deref() != Ok("true") {
+        return;
+    }
+    let payload = json!({
+        "sessionId": "lease-approval-stall",
+        "runId": "post-fix",
+        "hypothesisId": "J-M",
+        "location": "http_gateway/mod.rs:handle_agent_stream_proxy",
+        "msg": format!("[DEBUG] {stage}"),
+        "data": data,
+        "ts": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0),
+    });
+    let _ = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_millis(100))
+        .timeout(std::time::Duration::from_millis(250))
+        .build()
+        .and_then(|client| {
+            client
+                .post("http://127.0.0.1:7777/event")
                 .header(reqwest::header::CONTENT_TYPE, "application/json")
                 .body(payload.to_string())
                 .send()
@@ -566,7 +666,18 @@ fn handle_agent_stream_proxy(
         .flatten();
     let fault_request = std::env::var("PT_DESKTOP_E2E").as_deref() == Ok("true")
         && foundation_fault_stream_request(&body);
+    let lease_replay_request = station_path == "/sub-agent/agent/conversation/events";
     let stream_started_at = std::time::Instant::now();
+    if lease_replay_request {
+        report_lease_replay_gateway_debug(
+            "request-received",
+            json!({
+                "activeWorkersAtEnqueue": diagnostics.active_workers_at_enqueue,
+                "queuedAtEnqueue": diagnostics.queued_at_enqueue,
+                "queueWaitMs": diagnostics.queue_wait_ms,
+            }),
+        );
+    }
     if let Some((request_kind, queue_index)) = queue_request {
         report_foundation_queue_stream_debug(
             "stream-proxy-started",
@@ -620,6 +731,16 @@ fn handle_agent_stream_proxy(
     let upstream = match upstream {
         Ok(response) => response,
         Err(error) => {
+            if lease_replay_request {
+                report_lease_replay_gateway_debug(
+                    "upstream-error",
+                    json!({
+                        "elapsedMs": stream_started_at.elapsed().as_millis(),
+                        "isConnect": error.is_connect(),
+                        "isTimeout": error.is_timeout(),
+                    }),
+                );
+            }
             if fault_request {
                 report_foundation_fault_stream_debug(
                     "gateway-upstream-error",
@@ -638,20 +759,29 @@ fn handle_agent_stream_proxy(
         }
     };
     let status = upstream.status().as_u16();
-    let turn_id_header = upstream
+    if lease_replay_request {
+        report_lease_replay_gateway_debug(
+            "upstream-admitted",
+            json!({
+                "elapsedMs": stream_started_at.elapsed().as_millis(),
+                "status": status,
+            }),
+        );
+    }
+    let turn_id = upstream
         .headers()
         .get("x-agent-turn-id")
         .and_then(|value| value.to_str().ok())
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .and_then(|value| format!("X-Agent-Turn-ID: {value}").parse().ok());
+        .map(str::to_owned);
     if fault_request {
         report_foundation_fault_stream_debug(
             "gateway-upstream-admitted",
             json!({
                 "elapsedMs": stream_started_at.elapsed().as_millis(),
                 "status": status,
-                "turnIdPresent": turn_id_header.is_some(),
+                "turnIdPresent": turn_id.is_some(),
             }),
         );
     }
@@ -663,31 +793,25 @@ fn handle_agent_stream_proxy(
             json!({
                 "elapsedMs": stream_started_at.elapsed().as_millis(),
                 "status": status,
-                "turnIdPresent": turn_id_header.is_some(),
+                "turnIdPresent": turn_id.is_some(),
             }),
         );
     }
-    let mut response_headers = vec![
-        "Content-Type: text/event-stream; charset=utf-8"
-            .parse()
-            .unwrap(),
-        "Cache-Control: no-cache".parse().unwrap(),
-        "Access-Control-Expose-Headers: X-Agent-Turn-ID"
-            .parse()
-            .unwrap(),
-        cors_origin(),
-    ];
-    if let Some(header) = turn_id_header {
-        response_headers.push(header);
-    }
-    let response = tiny_http::Response::new(
-        tiny_http::StatusCode(status),
-        response_headers,
+    let response_result = respond_agent_stream(
+        request,
+        status,
+        turn_id.as_deref(),
         AgentStreamBody::new(upstream, station_path),
-        None,
-        None,
     );
-    let response_result = request.respond(response);
+    if lease_replay_request {
+        report_lease_replay_gateway_debug(
+            "stream-completed",
+            json!({
+                "elapsedMs": stream_started_at.elapsed().as_millis(),
+                "responseOk": response_result.is_ok(),
+            }),
+        );
+    }
     if fault_request {
         report_foundation_fault_stream_debug(
             "gateway-stream-completed",
@@ -7867,12 +7991,49 @@ mod tests {
         body.read_to_end(&mut received)
             .expect("upstream failure should terminate the downstream body");
 
-        assert_eq!(received, b"data: partial\n\n");
+        assert_eq!(received, b": gateway-connected\n\ndata: partial\n\n");
         assert_eq!(
             body.read(&mut [0_u8; 1])
                 .expect("terminated body should stay at EOF"),
             0
         );
+    }
+
+    #[derive(Default)]
+    struct FlushRecordingWriter {
+        bytes: Vec<u8>,
+        flush_count: usize,
+    }
+
+    impl Write for FlushRecordingWriter {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.bytes.extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flush_count += 1;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn agent_stream_body_flushes_every_http_chunk() {
+        let upstream = ErrorAfterBody {
+            body: Cursor::new(b"data: partial\n\n".to_vec()),
+            failed: false,
+        };
+        let mut body = AgentStreamBody::new(upstream, "/sub-agent/agent/turn/stream");
+        let mut writer = FlushRecordingWriter::default();
+
+        copy_agent_stream_body(&mut body, &mut writer, true)
+            .expect("chunked stream forwarding should complete");
+
+        assert_eq!(
+            writer.bytes,
+            b"15\r\n: gateway-connected\n\n\r\nf\r\ndata: partial\n\n\r\n0\r\n\r\n"
+        );
+        assert_eq!(writer.flush_count, 3);
     }
 
     fn temp_layout(name: &str) -> StorageLayout {

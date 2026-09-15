@@ -23,9 +23,9 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | `G-FE1-LEASE-EXPIRED` is `FOCUSED_PASS` on the dirty tree above `6ec143379`; exact-source Development Journey and full runtime proof remain `UNPROVEN` |
+| Current step | `G-FE1-LEASE-EXPIRED` is `FOCUSED_PASS` on the dirty tree above `584d28718`; the Browser replay transport diagnostic passes, while the full exact-source Development Journey and formal runtime proof remain `UNPROVEN` |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Checkpoint `6ec143379` passed C08 and both Browser `BASE-INVALID_RESOURCE_REF` cells through the shared Development Journey and independent oracle; the full Gate cleaned up successfully |
+| Last completed | Dirty-source diagnostic `20260915T062647802445Z` proved Browser replay now receives the gateway response 9 ms after Station admission and completes `replaying -> snapshot -> reconciling -> catchup_done -> connected`; reverse-order cleanup passed |
 | Current action | Create the authorized clean checkpoint, deploy that exact source, and run the real five-minute `BASE-LEASE_EXPIRED` Development Journey |
 | Next action | After `FUNCTIONAL_PASS`, rerun C08 and resume the unchanged 419-cell Foundation Gate |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
@@ -36,7 +36,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | no Goal-level blocker; `BASE-LEASE_EXPIRED` is the next source-defined implementation gap; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | C08 `20260915T023010098430Z-1649875e241d509b825fe65d86142fa4` passed on `6ec143379` in 36.76 seconds；Foundation `20260915T023112205523Z-aacb361dcca1036b0958d29da9fbef4a` crossed both Browser `BASE-INVALID_RESOURCE_REF` locales, `BASE-EXECUTOR_UNAVAILABLE`, cancellation, invalid-reference, and earlier foundation cells, then failed at Browser English `BASE-LEASE_EXPIRED / direct-runtime group is not implemented`；Provisioner cleanup passed and source identity remained exact；Foundation remains `PARTIAL / UNPROVEN` |
+| Evidence | C08 `20260915T023010098430Z-1649875e241d509b825fe65d86142fa4` passed on `6ec143379`；Foundation `20260915T023112205523Z-aacb361dcca1036b0958d29da9fbef4a` first exposed the missing lease vertical；the implementation now passes eight Rust lease tests, two Rust gateway tests, Rust e2e-feature check, Desktop API `61/61`, Desktop strict check, Python runner `60/60`, direct/oracle `45/45`, Native static `89/89`, Python compilation, Rust formatting, and diff hygiene；diagnostic `20260915T062647802445Z` proves the flushed Browser replay path, but the full Journey and Foundation remain `UNPROVEN` |
 | Last updated | 2026-09-15 |
 
 ---

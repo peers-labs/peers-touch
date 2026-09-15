@@ -1535,6 +1535,7 @@ describe('api.startAgentTurnReplayStream', () => {
     }
     mockFetch.mockResolvedValue(new Response(
       [
+        ': gateway-connected\n\n',
         `event: error\ndata: ${JSON.stringify(terminalData)}\n\n`,
         `event: snapshot\ndata: ${JSON.stringify({
           ...terminalData,
