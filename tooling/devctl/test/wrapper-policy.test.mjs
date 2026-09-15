@@ -11,16 +11,15 @@ const root = path.resolve(
   '..',
 );
 
+const normalizeNewlines = (content) => content.replace(/\r\n?/gu, '\n');
+
+const readSource = (...segments) =>
+  normalizeNewlines(fs.readFileSync(path.join(root, ...segments), 'utf8'));
+
 test('migrated development wrappers delegate lifecycle to devctl', () => {
-  const makefile = fs.readFileSync(path.join(root, 'Makefile'), 'utf8');
-  const localDev = fs.readFileSync(
-    path.join(root, 'tooling', 'make', 'local-dev.mk'),
-    'utf8',
-  );
-  const powershell = fs.readFileSync(
-    path.join(root, 'tooling', 'dev.ps1'),
-    'utf8',
-  );
+  const makefile = readSource('Makefile');
+  const localDev = readSource('tooling', 'make', 'local-dev.mk');
+  const powershell = readSource('tooling', 'dev.ps1');
 
   for (const [name, content] of [
     ['Makefile', makefile],
@@ -36,15 +35,22 @@ test('migrated development wrappers delegate lifecycle to devctl', () => {
   assert.match(powershell, /devctl\\index\.mjs/u);
 });
 
+test('wrapper policy normalizes host line endings', () => {
+  assert.equal(
+    normalizeNewlines('station:\r\n\t@$(DEVCTL) station start\r\n'),
+    'station:\n\t@$(DEVCTL) station start\n',
+  );
+});
+
 test('cross-platform package gates do not invoke shell scripts', () => {
   const rootPackage = JSON.parse(
-    fs.readFileSync(path.join(root, 'package.json'), 'utf8'),
+    readSource('package.json'),
   );
   const desktopPackage = JSON.parse(
-    fs.readFileSync(path.join(root, 'apps', 'desktop', 'package.json'), 'utf8'),
+    readSource('apps', 'desktop', 'package.json'),
   );
   const mobilePackage = JSON.parse(
-    fs.readFileSync(path.join(root, 'apps', 'mobile', 'package.json'), 'utf8'),
+    readSource('apps', 'mobile', 'package.json'),
   );
   const scripts = [
     rootPackage.scripts['frontend-runtime:registry-gate'],
@@ -61,10 +67,7 @@ test('cross-platform package gates do not invoke shell scripts', () => {
 });
 
 test('remote Station mode delegates to the reviewed compatibility adapter', () => {
-  const station = fs.readFileSync(
-    path.join(root, 'tooling', 'devctl', 'station.mjs'),
-    'utf8',
-  );
+  const station = readSource('tooling', 'devctl', 'station.mjs');
   const bridge = station.slice(
     station.indexOf('function runRemoteStationBridge('),
     station.indexOf('export async function stationStatus('),

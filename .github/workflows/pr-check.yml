@@ -73,7 +73,21 @@ jobs:
         with:
           node-version: 20
       - run: npm install --save-dev @commitlint/cli @commitlint/config-conventional
-      - run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+      - name: Validate pull request commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          range_base="$BASE_SHA"
+          if ! git merge-base --is-ancestor "$range_base" "$HEAD_SHA"; then
+            range_base="$(git merge-base "$range_base" "$HEAD_SHA")"
+          fi
+
+          while read -r commit_sha; do
+            git show -s --format=%B "$commit_sha" | npx commitlint --verbose
+          done < <(
+            git rev-list --reverse --ancestry-path "$range_base..$HEAD_SHA"
+          )
 
   # Check PR description is not empty
   pr-description:
