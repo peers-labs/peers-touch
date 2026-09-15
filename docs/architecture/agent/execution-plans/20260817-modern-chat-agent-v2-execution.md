@@ -1984,7 +1984,8 @@ and zero local-path leakage.
 
 - **Inventory source**: the reviewed 28-family `foundation_errors` matrix,
   production Station/Desktop paths, and direct Harness/oracle registration.
-- **Closed on source and prior focused runtime evidence (15)**:
+- **Closed on source and prior focused runtime evidence (16)**:
+  `BASE-QUEUE_FULL`,
   `BASE-DUPLICATE_CONFLICT`, `BASE-ACTIVE_MUTATION_CONFLICT`,
   `BASE-FORBIDDEN_ACTOR`, `BASE-INCOMPATIBLE_CAPABILITY`,
   `BASE-EXECUTOR_UNAVAILABLE`, `BASE-LEASE_EXPIRED`,
@@ -1992,11 +1993,11 @@ and zero local-path leakage.
   `BASE-CONTEXT_OVERFLOW`, `BASE-INVALID_REFERENCE`,
   `BASE-ATTACHMENT_REJECTED`, `BASE-APPROVAL_DENIED`,
   `BASE-APPROVAL_EXPIRED`, `BASE-CANCELLED`, and `BASE-INTERRUPTED`.
-- **Source-incomplete (13)**:
+- **Source-incomplete (12)**:
 
 | Cluster | Families | Missing closure |
 |---|---|---|
-| `G-FE1-SC1` Admission/ownership | `BASE-QUEUE_FULL`, `BASE-UNAUTHORIZED_RESOURCE` | exact typed payload/action and direct Journey |
+| `G-FE1-SC1` Admission/ownership | `BASE-UNAUTHORIZED_RESOURCE` | resource-family and removal-owner design decision |
 | `G-FE1-SC2` Runtime selection | `BASE-RUNTIME_UNAVAILABLE`, `BASE-RESUME_UNAVAILABLE` | canonical Station outcome, recovery action, direct Journey |
 | `G-FE1-SC3` Client execution | `BASE-PERMISSION_DENIED`, `BASE-TARGET_DISCONNECTED` | Desktop/Station implementation beyond Mobile contract-only coverage |
 | `G-FE1-SC4` Provider terminalization | `BASE-RATE_LIMIT`, `BASE-MODEL_UNAVAILABLE`, `BASE-PROVIDER_TIMEOUT` | accepted typed terminal outcome instead of failover-only classification |
@@ -2017,6 +2018,15 @@ and zero local-path leakage.
     failed while waiting for queue-tray focus. Cleanup was clean. The focused
     correction removes background-WebView-sensitive `requestAnimationFrame`
     scheduling and targets the visible tray for the same Conversation.
+  - Exact-source native Development run `20260915T153420786845Z` on
+    `08da1ba7d` is `FUNCTIONAL_PASS` for `BASE-QUEUE_FULL`: Station returned the
+    exact retryable terminal payload, Desktop rendered the localized
+    `Edit queue` action, the action focused the current Conversation's existing
+    queue tray, queue size and Conversation version stayed unchanged, no
+    Station message was added, and Harness/Fixture/process/port cleanup was
+    clean. The wrapper's duplicate post-cleanup Git lookup failed, so
+    `result.json` was recovered from the already-written `capture.json` plus
+    reverified clean source and runtime cleanup; no product action was rerun.
   - `BASE-UNAUTHORIZED_RESOURCE` is parked at the DESIGN boundary because the
     accepted error contract does not identify whether the removable resource
     is a knowledge descriptor, attachment, Conversation context reference, or
