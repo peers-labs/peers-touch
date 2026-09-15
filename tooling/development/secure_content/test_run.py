@@ -348,8 +348,8 @@ class SecureContentRunnerTest(unittest.TestCase):
             self.assertIn("scenario execution failed", persisted)
 
     def test_environment_blocker_writes_blocked_result(self) -> None:
-        def execute(_: run.ScenarioContext) -> dict[str, object]:
-            raise run.ScenarioBlocked(
+        def execute(context: run.ScenarioContext) -> dict[str, object]:
+            context.block(
                 "required PostgreSQL DSN is unavailable",
                 kind="DRIVER_FAILED",
                 owner="local-dev-control-plane",

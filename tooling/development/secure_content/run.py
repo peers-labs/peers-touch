@@ -117,6 +117,21 @@ class ScenarioContext:
             raise ScenarioBudgetExceeded("scenario budget exhausted")
         return remaining
 
+    def block(
+        self,
+        message: str,
+        *,
+        kind: str,
+        owner: str,
+        retryable: bool,
+    ) -> None:
+        raise ScenarioBlocked(
+            message,
+            kind=kind,
+            owner=owner,
+            retryable=retryable,
+        )
+
     def run_check(
         self,
         check_id: str,
