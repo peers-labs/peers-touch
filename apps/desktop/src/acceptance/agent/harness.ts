@@ -21195,6 +21195,9 @@ export function installAcceptanceHarness(): void {
             'agent.acceptance.runtimeUnavailableRecoveryMissing',
           );
         }
+        const recoveryVisibleBeforeAction =
+          recovery.getClientRects().length > 0;
+        const recoveryLabelBeforeAction = recovery.textContent?.trim() ?? '';
         recovery.click();
         await waitFor(
           () => (
@@ -21231,8 +21234,8 @@ export function installAcceptanceHarness(): void {
             && typedError.details.runtime_kind === 'direct_model'
             && typedError.details.reason_code === 'provider_disabled',
           localizedRecoveryVisible:
-            recovery.getClientRects().length > 0
-            && Boolean(recovery.textContent?.trim()),
+            recoveryVisibleBeforeAction
+            && recoveryLabelBeforeAction.length > 0,
           selectRuntimeOpened:
             resolution?.type === 'selectRuntime'
             && resolution.runtimeKind === 'direct_model'
@@ -21255,6 +21258,7 @@ export function installAcceptanceHarness(): void {
             runtimeKind: typedError?.details.runtime_kind ?? '',
             reasonCode: typedError?.details.reason_code ?? '',
             resolution,
+            recoveryLabel: recoveryLabelBeforeAction,
             messageDelta:
               readbackAfter.messages.length - readbackBefore.messages.length,
             traceDelta:
