@@ -1112,6 +1112,20 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 			if message.Status != string(test.wantStatus) {
 				t.Fatalf("assistant message remained nonterminal: %+v", message)
 			}
+			if test.name == "runtime_budget_wins" {
+				var messageError model.ErrorPayload
+				if err := json.Unmarshal(message.ErrorJSON, &messageError); err != nil {
+					t.Fatalf("decode runtime-budget assistant error: %v", err)
+				}
+				if messageError.GetErrorType() != string(errcode.AgentToolBudgetExhausted) ||
+					messageError.GetLocaleKey() != errcode.AgentToolBudgetExhaustedLocaleKey ||
+					len(messageError.GetDetails()) != 3 ||
+					messageError.GetDetails()["turn_id"] != turnID ||
+					messageError.GetDetails()["budget_kind"] != "wall_time" ||
+					messageError.GetDetails()["limit"] != "25" {
+					t.Fatalf("assistant message lost canonical budget error: %+v", messageError)
+				}
+			}
 			var terminalSteps int64
 			if err := db.Model(&persistence.ExecutionStep{}).
 				Where(

@@ -6546,6 +6546,17 @@ func applyTypedTurnError(event *TurnEvent, cause error) {
 	event.Details = details
 }
 
+func typedTurnErrorJSON(cause error) (json.RawMessage, error) {
+	var biz *errcode.BizError
+	if !errors.As(cause, &biz) || biz.Payload == nil {
+		return nil, nil
+	}
+	return protojson.MarshalOptions{
+		UseProtoNames:   true,
+		EmitUnpopulated: true,
+	}.Marshal(biz.Payload)
+}
+
 func (s *TurnService) failTurnWithEvent(
 	ctx context.Context,
 	agentID string,
@@ -6564,6 +6575,13 @@ func (s *TurnService) failTurnWithEvent(
 
 	now := time.Now()
 	boundedReason := truncateRunes(reason, 100)
+	errorJSON, err := typedTurnErrorJSON(cause)
+	if err != nil {
+		return TurnEvent{}, turnTerminalPersistenceError(
+			"marshal typed turn failure",
+			err,
+		)
+	}
 	conversationID := ""
 	var committedEvent TurnEvent
 	transactionErr := func() error {
@@ -6610,12 +6628,16 @@ func (s *TurnService) failTurnWithEvent(
 				}).Error; err != nil {
 				return err
 			}
+			messageUpdates := map[string]interface{}{
+				"status":     string(domain.TurnStatusFailed),
+				"updated_at": now,
+			}
+			if len(errorJSON) > 0 {
+				messageUpdates["error_json"] = errorJSON
+			}
 			if err := tx.Model(&persistence.AgentMessage{}).
 				Where("turn_id = ? AND role = ? AND status = ?", turnID, string(domain.MessageRoleAssistant), "pending").
-				Updates(map[string]interface{}{
-					"status":     string(domain.TurnStatusFailed),
-					"updated_at": now,
-				}).Error; err != nil {
+				Updates(messageUpdates).Error; err != nil {
 				return err
 			}
 			var boundStep persistence.ExecutionStep
