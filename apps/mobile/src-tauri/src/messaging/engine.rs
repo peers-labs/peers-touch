@@ -233,6 +233,64 @@ impl MlsItemConsumer for MobileMlsItemConsumer {
 
 type CoreItemConsumer = MessagingItemConsumer<MobileMessagingStore, MobileMlsItemConsumer>;
 
+#[derive(Clone)]
+struct InstrumentedMobileItemConsumer {
+    inner: Arc<CoreItemConsumer>,
+}
+
+impl ClaimedItemConsumer for InstrumentedMobileItemConsumer {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+        // #region debug-point V-X:command-result-item
+        {
+            let debug_data = serde_json::json!({
+                "itemId": item.item_id,
+                "conversationId": item.conversation_id,
+                "eventId": item.event_id,
+                "laneSequence": item.lane_sequence,
+                "consumerEpoch": consumer_epoch,
+                "payloadType": item.payload_type,
+                "payloadSize": item.opaque_payload.len(),
+            });
+            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"V-X","location":"apps/mobile/src-tauri/src/messaging/engine.rs:InstrumentedMobileItemConsumer.consume.entry","msg":"[DEBUG] Mobile inbox consumer received item","data":debug_data}).to_string()).send();
+        }
+        // #endregion
+        // #region debug-point X-Y:command-result-shape
+        if DeviceInboxPayloadType::try_from(item.payload_type).ok()
+            == Some(DeviceInboxPayloadType::CommandResult)
+        {
+            let decoded = ConversationCommandResultDelivery::decode(item.opaque_payload.as_slice());
+            let debug_data = match decoded {
+                Ok(delivery) => serde_json::json!({
+                    "decoded": true,
+                    "conversationId": delivery.conversation_id,
+                    "commandId": delivery.command_id,
+                    "state": delivery.state,
+                    "resultAccepted": delivery.result.as_ref().map(|result| result.accepted),
+                    "resultEventPresent": delivery.result.as_ref().and_then(|result| result.event.as_ref()).is_some(),
+                }),
+                Err(error) => serde_json::json!({
+                    "decoded": false,
+                    "error": error.to_string(),
+                }),
+            };
+            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"X-Y","location":"apps/mobile/src-tauri/src/messaging/engine.rs:InstrumentedMobileItemConsumer.consume.command_result","msg":"[DEBUG] Mobile decoded command-result queue item","data":debug_data}).to_string()).send();
+        }
+        // #endregion
+        let result = self.inner.consume(item, consumer_epoch);
+        // #region debug-point V-W:command-result-dispatch
+        {
+            let debug_data = serde_json::json!({
+                "itemId": item.item_id,
+                "payloadType": item.payload_type,
+                "result": result.as_ref().err(),
+            });
+            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"V-W","location":"apps/mobile/src-tauri/src/messaging/engine.rs:InstrumentedMobileItemConsumer.consume.exit","msg":"[DEBUG] Mobile inbox consumer completed item","data":debug_data}).to_string()).send();
+        }
+        // #endregion
+        result
+    }
+}
+
 pub struct MobileMessagingEngine {
     profile_id: String,
     scope: MessagingAccountScope,
@@ -1390,54 +1448,10 @@ impl MobileMessagingEngine {
         item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String> {
-        // #region debug-point V-X:command-result-item
-        {
-            let debug_data = serde_json::json!({
-                "itemId": item.item_id,
-                "conversationId": item.conversation_id,
-                "eventId": item.event_id,
-                "laneSequence": item.lane_sequence,
-                "consumerEpoch": consumer_epoch,
-                "payloadType": item.payload_type,
-                "payloadSize": item.opaque_payload.len(),
-            });
-            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"V-X","location":"apps/mobile/src-tauri/src/messaging/engine.rs:consume.entry","msg":"[DEBUG] Mobile inbox consumer received item","data":debug_data}).to_string()).send();
+        InstrumentedMobileItemConsumer {
+            inner: self.consumer.clone(),
         }
-        // #endregion
-        // #region debug-point X-Y:command-result-shape
-        if DeviceInboxPayloadType::try_from(item.payload_type).ok()
-            == Some(DeviceInboxPayloadType::CommandResult)
-        {
-            let decoded = ConversationCommandResultDelivery::decode(item.opaque_payload.as_slice());
-            let debug_data = match decoded {
-                Ok(delivery) => serde_json::json!({
-                    "decoded": true,
-                    "conversationId": delivery.conversation_id,
-                    "commandId": delivery.command_id,
-                    "state": delivery.state,
-                    "resultAccepted": delivery.result.as_ref().map(|result| result.accepted),
-                    "resultEventPresent": delivery.result.as_ref().and_then(|result| result.event.as_ref()).is_some(),
-                }),
-                Err(error) => serde_json::json!({
-                    "decoded": false,
-                    "error": error.to_string(),
-                }),
-            };
-            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"X-Y","location":"apps/mobile/src-tauri/src/messaging/engine.rs:consume.command_result","msg":"[DEBUG] Mobile decoded command-result queue item","data":debug_data}).to_string()).send();
-        }
-        // #endregion
-        let result = self.consumer.consume(item, consumer_epoch);
-        // #region debug-point V-W:command-result-dispatch
-        {
-            let debug_data = serde_json::json!({
-                "itemId": item.item_id,
-                "payloadType": item.payload_type,
-                "result": result.as_ref().err(),
-            });
-            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"V-W","location":"apps/mobile/src-tauri/src/messaging/engine.rs:consume.exit","msg":"[DEBUG] Mobile inbox consumer completed item","data":debug_data}).to_string()).send();
-        }
-        // #endregion
-        result
+        .consume(item, consumer_epoch)
     }
 
     pub fn drain_once(&self) -> Result<DrainProgress, String> {
@@ -1461,7 +1475,9 @@ impl MobileMessagingEngine {
                 token,
                 self.scope.device_id.clone(),
             )?,
-            self.consumer.clone(),
+            InstrumentedMobileItemConsumer {
+                inner: self.consumer.clone(),
+            },
             actor_device_ref(self.scope.actor_ptid.clone(), self.scope.device_id.clone()),
             self.consumer_id.clone(),
             DRAIN_BATCH_LIMIT,
