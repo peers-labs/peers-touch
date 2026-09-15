@@ -2048,6 +2048,11 @@ and zero local-path leakage.
     not advertise external Agent runtimes and the production reset command is
     not implemented. Do not map direct-model retry failures to this cell or
     mutate an external-session epoch before confirmation.
+  - `BASE-RESUME_UNAVAILABLE` is parked at
+    `PRODUCT_AMENDMENT_REQUIRED`: sections 2 and F2 explicitly forbid
+    implementing or advertising P12 `EXTERNAL_AGENT` in this V2 scope, while
+    the error cell requires that stateful runtime's destructive reset
+    lifecycle. The cell cannot be made executable by a direct-model shim.
 - **Gate boundary**: do not run C08 or the 419-cell Foundation Gate while any
   source-incomplete family remains.
 - **C08 diagnostic after the boundary changed (2026-09-15)**: run
