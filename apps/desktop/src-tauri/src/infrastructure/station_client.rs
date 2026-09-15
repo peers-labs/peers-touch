@@ -966,7 +966,27 @@ pub(crate) fn request_json_with_policy(
     body: Option<Value>,
     policy: StationTransportPolicy,
 ) -> Result<Value, StationClientError> {
-    let url = format!("{}{}", station_base_url(), path);
+    request_json_with_policy_base_url(
+        &station_base_url(),
+        method,
+        path,
+        token,
+        query,
+        body,
+        policy,
+    )
+}
+
+fn request_json_with_policy_base_url(
+    base_url: &str,
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<Value>,
+    policy: StationTransportPolicy,
+) -> Result<Value, StationClientError> {
+    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
     tracing::debug!(method = %method, path = %path, policy = ?policy, "→ station (json)");
 
     let start = std::time::Instant::now();
@@ -1005,12 +1025,18 @@ pub(crate) fn request_json_with_policy(
 
     let status = resp.status();
     let elapsed = start.elapsed().as_millis();
+    let headers = headers_to_json(resp.headers());
 
     if !status.is_success() {
         let code = status.as_u16();
         let text = resp.text().unwrap_or_default();
         tracing::warn!(path = %path, status = code, elapsed_ms = elapsed, body = %text, "← station FAIL");
-        return Err(build_error_for_status(code, path, &text));
+        return Err(build_error_for_status_with_headers(
+            code,
+            path,
+            &text,
+            Some(&headers),
+        ));
     }
 
     let result: Value = resp.json().map_err(|e| {
@@ -1566,9 +1592,16 @@ pub(crate) fn probe_station(url: &str) -> (bool, Option<String>, Option<String>,
 
 #[cfg(test)]
 mod tests {
-    use super::{build_error_for_status_with_headers, StationTransportPolicy};
+    use super::{
+        build_error_for_status_with_headers, request_json_with_policy_base_url,
+        StationTransportPolicy,
+    };
     use crate::error::ErrorCode;
+    use reqwest::Method;
     use serde_json::json;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
     use std::time::Duration;
 
     #[test]
@@ -1676,6 +1709,62 @@ mod tests {
         assert_eq!(details["reason"], "is not an active Federation Station");
         assert!(details.get("ignored_string").is_none());
         assert!(details.get("ignored_number").is_none());
+    }
+
+    #[test]
+    fn json_request_path_preserves_lifecycle_stale_version_headers() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind JSON error fixture");
+        let address = listener
+            .local_addr()
+            .expect("read JSON error fixture address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept JSON error request");
+            let mut request = [0_u8; 4096];
+            stream.read(&mut request).expect("read JSON error request");
+            let body = r#"{"code":409,"error":"[LIFECYCLE_STALE_VERSION] agent.errors.lifecycleStaleVersion"}"#;
+            let response = format!(
+                "HTTP/1.1 409 Conflict\r\n\
+                 Content-Type: application/json\r\n\
+                 Content-Length: {}\r\n\
+                 X-Peers-Error-Code: LIFECYCLE_STALE_VERSION\r\n\
+                 X-Peers-Error-Locale-Key: agent.errors.lifecycleStaleVersion\r\n\
+                 X-Peers-Error-Retryable: true\r\n\
+                 X-Peers-Error-Terminal: true\r\n\
+                 X-Peers-Error-Details: {{\"resource_id\":\"conversation-1\",\"expected_revision\":\"7\",\"actual_revision\":\"8\",\"private\":\"must-not-cross\"}}\r\n\
+                 Connection: close\r\n\
+                 \r\n\
+                 {body}",
+                body.len(),
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write JSON error response");
+        });
+
+        let error = request_json_with_policy_base_url(
+            &format!("http://{address}"),
+            Method::POST,
+            "/sub-agent/agent/message/edit-resend",
+            "fixture-token",
+            None,
+            Some(json!({"conversation_id": "conversation-1"})),
+            StationTransportPolicy::TurnExecution,
+        )
+        .expect_err("stale revision must remain an error");
+        server.join().expect("join JSON error fixture");
+
+        let result = error.into_app_result::<serde_json::Value>("agent_edit_and_resend failed");
+        let app_error = result.error.expect("AppResult error");
+        assert_eq!(app_error.code, ErrorCode::Conflict);
+        let details = app_error.details.expect("typed error details");
+        assert_eq!(details["error_code"], "LIFECYCLE_STALE_VERSION");
+        assert_eq!(details["locale_key"], "agent.errors.lifecycleStaleVersion");
+        assert_eq!(details["retryable"], "true");
+        assert_eq!(details["terminal"], "true");
+        assert_eq!(details["resource_id"], "conversation-1");
+        assert_eq!(details["expected_revision"], "7");
+        assert_eq!(details["actual_revision"], "8");
+        assert!(details.get("private").is_none());
     }
 
     #[test]
