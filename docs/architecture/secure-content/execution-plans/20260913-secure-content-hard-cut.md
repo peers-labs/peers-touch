@@ -414,6 +414,18 @@ Mode: `hybrid`.
   Desktop Web/store and Development scenario lanes have disjoint write sets;
   the integrator owns shared registration, reconciliation, generation,
   checkpoint and final focused checks.
+- The current W7S closure keeps three disjoint implementation lanes:
+  Social handler typed-error projection and focused tests; Desktop Native
+  transfer/error-consumption lifecycle and focused Rust tests; and Development
+  runtime provenance/capture plus harness tests. The existing shared
+  `ErrorResponse` codes are frozen for this slice, generated contracts remain
+  untouched, and the integrator alone owns this plan, work-item declarations,
+  cross-lane reconciliation, final checks and checkpoint.
+- W7S serializes the remaining Development runner interface chain: the shared
+  runner first gains an explicit external runtime-manifest binding, then the
+  Desktop Moments harness and both scenario adapters consume that frozen
+  contract. The runner only attaches to caller-provisioned clients and never
+  allocates, launches, deploys, resets or releases runtime resources.
 - W7 deploy, runtime and Journey remain serial behind the W7S checkpoint.
 - After W7 `FUNCTIONAL_PASS`, W8 runs its subtype Journeys; W9 consumes the
   resulting complete Social contract and remains serial behind W8.
@@ -868,19 +880,60 @@ python3 -m tooling.development.secure_content.run \
   `UNKNOWN_COMMIT` reconciliation, per-key root-commit deletion, epoch-keyed
   recovery, account/device/session-generation fencing, teardown zeroization,
   FRIENDS text+image integration, Browser private unsupported states and both
-  W7 Development scenario implementations.
-- **Source boundary**: `apps/desktop`, exact Moments locale files and the exact
-  W7 Development scenarios. Station deployment, Profile, client storage,
-  Fixture and slot acquisition remain W7-owned.
+  W7 Development scenario implementations. The portable core also gains the
+  already-specified `K_content -> K_payload` derivation and safe recovery-master
+  restoration APIs required by Native; Desktop must not duplicate them. The
+  Development runner accepts one immutable external runtime manifest, validates
+  workspace/source/profile/client identity before scenario execution, binds the
+  manifest digest into `runtimeBindingDigest`, and exposes attach-only client
+  sessions to the two W7 scenarios. The acceptance-build-only Moments harness
+  delegates to production stores/services and returns bounded digests/states;
+  it must not duplicate publish/read authorization or crypto logic. Recipient
+  verification also corrects the existing Social producer to use the
+  architecture-defined Post/Comment ID as `domain_commit_id`; a separate
+  `commit-*` identity is forbidden because it cannot bind a requested resource
+  to its Station-signed commit proof. The Social point-read repository must
+  return an authorized private resource even when the current device has no
+  endpoint envelope, with `viewer_envelope` absent; Native then reports
+  `RECOVERY_REQUIRED` or injects the separately authorized recovery-list
+  envelope and verifies the complete response before releasing plaintext.
+- **Source boundary**: `packages/secure-content-core`, `apps/desktop`, exact
+  Moments locale files, the shared Development runner/tests and the exact W7
+  Development scenarios, plus the exact Social private-content service and
+  focused service tests needed for the `domain_commit_id` correction, and the
+  exact Social private-content Store/test needed for endpoint-optional
+  point-read projection, plus the Social handler/test needed to return typed
+  protobuf authorization/not-found failures so Native never purges on an
+  untrusted proxy status alone. All other Station source is read-only. Station
+  deployment, Profile, client storage, Fixture, browser/native process launch
+  and slot acquisition remain W7-owned.
 - **Checks**:
 
 ```bash
+(cd apps/station && go test -race -count=1 \
+  ./app/subserver/social \
+  ./app/subserver/social/application/... \
+  ./app/subserver/social/infrastructure/...)
 pnpm --dir apps/desktop run check
 pnpm --dir apps/desktop exec vitest run src/test/moments-store.test.ts
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml secure_content
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --features acceptance-webdriver
+pnpm --dir apps/desktop exec vitest run src/acceptance/moments/harness.test.ts
 python3 -m unittest tooling.development.secure_content.test_run
 ```
 
+- **Execution discovery (2026-09-16)**: the implemented Native/store/UI,
+  Social point-read and Development runner source passes the focused W7S
+  checks. Independent review found that the `desktop-pilot` scenario cannot
+  yet execute the complete lifecycle contract without inventing Acceptance
+  semantics. `DESIGN_AMENDMENT_REQUIRED`: define production-delegating,
+  acceptance-only barriers for persisted-before-send, sent-before-response
+  and response-before-local-commit; define the runtime-owner acknowledgement
+  and fresh-manifest continuation protocol for each forced process restart;
+  and define the account/Station switch, publisher-device revocation and
+  historical-recovery-epoch fixture inputs. Timing-based harness assertions
+  are forbidden. W7S remains in progress and W7 remains parked until the
+  amendment is accepted and implemented.
 - **Exit**: one clean source checkpoint records `SOURCE_CHECK/PASS`; it makes
   no Desktop, Browser or Acceptance functional claim.
 
@@ -922,10 +975,12 @@ make station
 python3 -m tooling.development.secure_content.run \
   --runtime desktop --scenario desktop-pilot --profile four \
   --clients secure-content-desktop-alice,secure-content-desktop-bob,secure-content-desktop-eve \
+  --runtime-manifest "$PT_DEVELOPMENT_RUNTIME_MANIFEST" \
   --budget-seconds 1200
 python3 -m tooling.development.secure_content.run \
   --runtime browser --scenario browser-private-boundary --profile four \
   --clients secure-content-browser-authenticated,secure-content-browser-anonymous \
+  --runtime-manifest "$PT_DEVELOPMENT_RUNTIME_MANIFEST" \
   --budget-seconds 1200
 ```
 
@@ -935,6 +990,13 @@ python3 -m tooling.development.secure_content.run \
   Browser Journey, anonymous PUBLIC read remains available while an authenticated
   actor's private publish/read fails with the explicit unsupported states before
   plaintext or key material leaves the Browser.
+- **Attach-only restart protocol**: the first Desktop invocation writes a
+  source-bound external resume artifact and returns retryable `BLOCKED` after
+  the pre-restart assertions. The W7 runtime owner restarts Bob with retained
+  storage and publishes a fresh immutable runtime manifest. The one permitted
+  observation retry attaches to that runtime, requires a different Native boot
+  identity and completes the durable receiver read. Neither scenario launches,
+  deploys, resets or releases product runtimes itself.
 - **Exit**: exact deployed checkpoint reaches `FUNCTIONAL_PASS`. No Acceptance
   injection or broad platform expansion before this result.
 
@@ -1410,7 +1472,7 @@ observations is invalid.
 | W5 | recovery | complete | `9bf7e3934` | PASS (`sc-dj-recovery-consumer`) | NOT_RUN | none |
 | W6 | Social minimum | complete | `d2731a220` | PASS (`sc-dj-social-uow-atomicity`) | NOT_RUN | none |
 | W7A | Content PreKey client boundary | complete | `14b0cdf81` | PASS (`sc-dj-content-prekey-client-boundary`) | NOT_RUN | none |
-| W7S | Desktop pilot source closure | in progress | none | NOT_RUN | N/A | none |
+| W7S | Desktop pilot source closure | in progress / focused checks pass | none | NOT_RUN | N/A | `DESIGN_AMENDMENT_REQUIRED`: deterministic lifecycle barriers and cross-process continuation inputs |
 | W7 | Desktop pilot runtime | parked | none | NOT_RUN | NOT_RUN | W7S; active MCA Desktop and NDR Station owners |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
 | W9 | Mobile | parked | none | NOT_RUN | NOT_RUN | W5/W7/W8; Mobile claim |

@@ -1,0 +1,527 @@
+mod private_moment;
+mod projection;
+
+use std::path::Path;
+use std::sync::Arc;
+#[cfg(feature = "acceptance-webdriver")]
+use std::sync::OnceLock;
+
+use serde::Deserialize;
+use serde_json::{json, Value};
+#[cfg(feature = "acceptance-webdriver")]
+use sha2::{Digest, Sha256};
+use tauri::{State, Window};
+
+use crate::error::{AppResult, ErrorCode};
+use crate::infrastructure::station_client;
+use crate::model::federation::FederationSelfView;
+use crate::secure_content::adapter::jwt_session_id;
+use crate::secure_content::station_trust::resolve_station_signing_key;
+use crate::secure_content::worker::maintain_content_prekeys;
+use crate::secure_content::{SecureContentLease, SecureContentSession, SecureContentSessionKey};
+use crate::state::AppState;
+
+use self::private_moment::{
+    PrivateMomentOrchestrator, PrivateMomentPublishIntent, PrivateRecoveryFailureKind,
+};
+
+#[cfg(feature = "acceptance-webdriver")]
+static ACCEPTANCE_RUNTIME_BOOT_ID: OnceLock<String> = OnceLock::new();
+#[cfg(feature = "acceptance-webdriver")]
+static ACCEPTANCE_EXECUTABLE_SHA256: OnceLock<Result<String, String>> = OnceLock::new();
+
+#[derive(Debug, Deserialize)]
+pub struct PrivateMomentsBootstrapInput {
+    pub actor_ptid: String,
+    pub renderer_generation: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PrivateMomentsReconcileInput {
+    pub actor_ptid: String,
+    pub renderer_generation: u64,
+    #[serde(default)]
+    pub post_ids: Vec<String>,
+    #[serde(default)]
+    pub reason: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PrivateMomentReadInput {
+    pub actor_ptid: String,
+    pub renderer_generation: u64,
+    pub post_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PrivateMomentMediaOpenInput {
+    pub actor_ptid: String,
+    pub renderer_generation: u64,
+    pub post_id: String,
+    pub object_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PrivateMomentsTeardownInput {
+    pub actor_ptid: String,
+    pub renderer_generation: u64,
+}
+
+#[tauri::command]
+pub fn social_private_moments_bootstrap(
+    input: PrivateMomentsBootstrapInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match activate(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "INTEGRITY_FAILURE"),
+    };
+    if let Err(error) = maintain_content_prekeys(&state.secure_content, &lease) {
+        tracing::warn!(error = %error, "secure content PreKey maintenance is pending");
+    }
+    let authority_key = lease.session.key.clone();
+    let revoke_media = |path: &Path| {
+        state
+            .secure_content
+            .revoke_private_media_path(&authority_key, path)
+    };
+    match PrivateMomentOrchestrator::new(&state.secure_content, lease)
+        .and_then(|service| service.reconcile(&[], &revoke_media))
+    {
+        Ok(snapshot) => AppResult::success(json!(snapshot)),
+        Err(error) => native_failure(error, "INTEGRITY_FAILURE"),
+    }
+}
+
+#[tauri::command]
+pub fn social_private_moments_reconcile(
+    input: PrivateMomentsReconcileInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let _reason = input.reason;
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "INTEGRITY_FAILURE"),
+    };
+    let authority_key = lease.session.key.clone();
+    let revoke_media = |path: &Path| {
+        state
+            .secure_content
+            .revoke_private_media_path(&authority_key, path)
+    };
+    match PrivateMomentOrchestrator::new(&state.secure_content, lease)
+        .and_then(|service| service.reconcile(&input.post_ids, &revoke_media))
+    {
+        Ok(snapshot) => AppResult::success(json!(snapshot)),
+        Err(error) => native_failure(error, "INTEGRITY_FAILURE"),
+    }
+}
+
+#[tauri::command]
+pub fn social_private_moment_publish(
+    input: PrivateMomentPublishIntent,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "PUBLISH_FAILED"),
+    };
+    if let Err(error) = maintain_content_prekeys(&state.secure_content, &lease) {
+        return native_failure(error, "RECIPIENT_KEY_UNAVAILABLE");
+    }
+    match PrivateMomentOrchestrator::new(&state.secure_content, lease)
+        .and_then(|service| service.publish(&input))
+    {
+        Ok(result) => AppResult::success(json!(result)),
+        Err(error) => native_failure(error, "PUBLISH_FAILED"),
+    }
+}
+
+#[tauri::command]
+pub fn social_private_moment_read(
+    input: PrivateMomentReadInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "AUTHENTICATION_REQUIRED"),
+    };
+    let authority_key = lease.session.key.clone();
+    let revoke_media = |path: &Path| {
+        state
+            .secure_content
+            .revoke_private_media_path(&authority_key, path)
+    };
+    match PrivateMomentOrchestrator::new(&state.secure_content, lease)
+        .and_then(|service| service.read(&input.post_id, &revoke_media))
+    {
+        Ok(projection) => AppResult::success(json!(projection)),
+        Err(error) => native_failure(error, "NOT_FOUND_OR_NOT_AUTHORIZED"),
+    }
+}
+
+#[tauri::command]
+pub fn social_private_moment_media_open(
+    input: PrivateMomentMediaOpenInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "AUTHENTICATION_REQUIRED"),
+    };
+    let authority_key = lease.session.key.clone();
+    let revoke_media = |path: &Path| {
+        state
+            .secure_content
+            .revoke_private_media_path(&authority_key, path)
+    };
+    match PrivateMomentOrchestrator::new(&state.secure_content, lease)
+        .and_then(|service| service.open_media(&input.post_id, &input.object_id, &revoke_media))
+    {
+        Ok(mut projection) => {
+            if let Err(error) = grant_private_media_preview(
+                &state.secure_content,
+                &authority_key,
+                &mut projection,
+                &input.object_id,
+            ) {
+                return native_failure(error, "MEDIA_INTEGRITY_FAILURE");
+            }
+            AppResult::success(json!(projection))
+        }
+        Err(error) => native_failure(error, "MEDIA_OFFLINE_RETRYABLE"),
+    }
+}
+
+fn grant_private_media_preview(
+    supervisor: &crate::secure_content::SecureContentSupervisor,
+    authority_key: &crate::secure_content::SecureContentSessionKey,
+    projection: &mut self::projection::PrivateMomentProjection,
+    object_id: &str,
+) -> Result<(), String> {
+    let media = match projection.content.as_mut() {
+        Some(self::projection::PrivateMomentContentProjection::Image { media, .. }) => {
+            media.iter_mut().find(|item| item.object_id == object_id)
+        }
+        _ => None,
+    }
+    .ok_or_else(|| "private Moment media projection is unavailable".to_string())?;
+    if media.state != self::projection::PrivateMediaState::MediaReady {
+        return Ok(());
+    }
+    let local_path = media
+        .local_path
+        .as_deref()
+        .ok_or_else(|| "private Moment media cache path is unavailable".to_string())?;
+    let media_type = media
+        .mime_type
+        .as_deref()
+        .ok_or_else(|| "private Moment media type is unavailable".to_string())?;
+    media.render_url =
+        Some(supervisor.grant_private_media(authority_key, Path::new(local_path), media_type)?);
+    media.local_path = None;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn social_private_moment_recover(
+    input: PrivateMomentReadInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "AUTHENTICATION_REQUIRED"),
+    };
+    let authority_key = lease.session.key.clone();
+    let revoke_media = |path: &Path| {
+        state
+            .secure_content
+            .revoke_private_media_path(&authority_key, path)
+    };
+    match PrivateMomentOrchestrator::new(&state.secure_content, lease) {
+        Ok(service) => match service.recover(&input.post_id, &revoke_media) {
+            Ok(projection) => AppResult::success(json!(projection)),
+            Err(error) => match error.kind {
+                PrivateRecoveryFailureKind::KeyUnavailable => {
+                    native_failure(error.message, "RECOVERY_KEY_UNAVAILABLE")
+                }
+                PrivateRecoveryFailureKind::NotAuthorized => {
+                    native_failure(error.message, "NOT_FOUND_OR_NOT_AUTHORIZED")
+                }
+                PrivateRecoveryFailureKind::AuthenticationRequired => {
+                    native_failure(error.message, "AUTHENTICATION_REQUIRED")
+                }
+                PrivateRecoveryFailureKind::Retryable => {
+                    native_failure(error.message, "RECOVERY_KEY_UNAVAILABLE")
+                }
+                PrivateRecoveryFailureKind::IntegrityFailure => {
+                    native_failure(error.message, "INTEGRITY_FAILURE")
+                }
+            },
+        },
+        Err(error) => native_failure(error, "INTEGRITY_FAILURE"),
+    }
+}
+
+#[tauri::command]
+pub fn social_private_moment_purge(
+    input: PrivateMomentReadInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "AUTHENTICATION_REQUIRED"),
+    };
+    let authority_key = lease.session.key.clone();
+    let revoke_media = |path: &Path| {
+        state
+            .secure_content
+            .revoke_private_media_path(&authority_key, path)
+    };
+    match PrivateMomentOrchestrator::new(&state.secure_content, lease)
+        .and_then(|service| service.purge(&input.post_id, &revoke_media))
+    {
+        Ok(()) => AppResult::success(json!({ "ok": true })),
+        Err(error) => native_failure(error, "INTEGRITY_FAILURE"),
+    }
+}
+
+#[tauri::command]
+pub fn social_private_moments_teardown(
+    input: PrivateMomentsTeardownInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    if let Err(error) = lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        return native_failure(error, "AUTHENTICATION_REQUIRED");
+    }
+    if let Err(error) = state.secure_content.teardown_actor(&input.actor_ptid) {
+        return native_failure(error, "PRIVATE_UNSUPPORTED_ON_DEVICE");
+    }
+    AppResult::success(json!({ "ok": true }))
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn social_private_moments_acceptance_runtime_identity() -> AppResult<Value> {
+    let boot_id = ACCEPTANCE_RUNTIME_BOOT_ID.get_or_init(|| ulid::Ulid::new().to_string());
+    let executable_sha256 = match ACCEPTANCE_EXECUTABLE_SHA256.get_or_init(|| {
+        let executable = std::env::current_exe()
+            .map_err(|error| format!("resolve Desktop executable: {error}"))?;
+        let bytes = std::fs::read(executable)
+            .map_err(|error| format!("read Desktop executable: {error}"))?;
+        Ok::<_, String>(hex::encode(Sha256::digest(bytes)))
+    }) {
+        Ok(digest) => digest,
+        Err(error) => return native_failure(error.clone(), "INTEGRITY_FAILURE"),
+    };
+    AppResult::success(json!({
+        "processId": std::process::id(),
+        "bootId": boot_id,
+        "sourceCommit": env!("PT_BUILD_SOURCE_COMMIT"),
+        "executableSha256": executable_sha256,
+    }))
+}
+
+fn activate(
+    state: &AppState,
+    window: &Window,
+    actor_ptid: &str,
+    renderer_generation: u64,
+) -> Result<SecureContentLease, String> {
+    let lifecycle_epoch = state.secure_content.lifecycle_epoch();
+    let active = state
+        .sessions
+        .get(window.label())
+        .ok_or_else(|| "secure content requires an authenticated window".to_string())?;
+    if active.actor.ptid != actor_ptid || active.jwt.trim().is_empty() {
+        return Err("secure content actor does not match the authenticated window".to_string());
+    }
+    let engine = state
+        .messaging_engines
+        .get(&active.account_id)?
+        .ok_or_else(|| "secure content requires an active device identity".to_string())?;
+    if engine.endpoint().ptid != actor_ptid {
+        return Err("secure content device identity does not match the actor".to_string());
+    }
+    let enrollment = engine
+        .store()
+        .device_enrollment()?
+        .ok_or_else(|| "secure content device enrollment is unavailable".to_string())?;
+    let profile_version = enrollment.certificate.observed_profile_version;
+    let (signing_key_id, signing_key) = engine
+        .device_signing_identity()?
+        .ok_or_else(|| "secure content device signing key is unavailable".to_string())?;
+    let station_peer_id = station_client::active_station_peer_id()
+        .ok_or_else(|| "secure content active Station peer ID is unavailable".to_string())?;
+    let station_url = station_client::station_base_url();
+    let federation_self =
+        station_client::request_peers_proto_no_body_for_device_at::<FederationSelfView>(
+            &station_url,
+            reqwest::Method::GET,
+            "/actor/federation/me",
+            &active.jwt,
+            None,
+            &engine.endpoint().device_id,
+        )
+        .map_err(|error| format!("load Secure Content Station identity: {error}"))?;
+    if federation_self.home_station_peer_id != station_peer_id
+        || federation_self
+            .actor_ref
+            .as_ref()
+            .map(|actor| actor.ptid.as_str())
+            != Some(actor_ptid)
+        || federation_self.federated_handle.trim().is_empty()
+    {
+        return Err("secure content Federation self identity is inconsistent".to_string());
+    }
+    let trusted_station_signing_key = resolve_station_signing_key(
+        station_client::station_registry(),
+        &station_url,
+        &station_peer_id,
+        &federation_self.federated_handle,
+        &active.jwt,
+        &engine.endpoint().device_id,
+    )?;
+    let session = SecureContentSession::new(
+        SecureContentSessionKey {
+            station_peer_id,
+            actor_ptid: actor_ptid.to_string(),
+            device_id: engine.endpoint().device_id.clone(),
+            jwt_session_id: jwt_session_id(&active.jwt)?,
+            window_label: window.label().to_string(),
+            session_generation: 0,
+        },
+        active.account_id,
+        station_url,
+        active.jwt,
+        signing_key_id,
+        profile_version,
+        signing_key,
+        trusted_station_signing_key,
+    );
+    let _transition = state
+        .identity_transition
+        .lock()
+        .map_err(|_| "identity transition lock poisoned".to_string())?;
+    let current = state
+        .sessions
+        .get(window.label())
+        .ok_or_else(|| "secure content session changed during activation".to_string())?;
+    if current.account_id != session.account_id
+        || current.actor.ptid != session.key.actor_ptid
+        || !session.matches_token(&current.jwt)?
+        || station_client::active_station_peer_id().as_deref()
+            != Some(session.key.station_peer_id.as_str())
+        || station_client::station_base_url().trim_end_matches('/')
+            != session.station_url.trim_end_matches('/')
+    {
+        return Err("secure content authority changed during activation".to_string());
+    }
+    let current_engine = state
+        .messaging_engines
+        .get(&session.account_id)?
+        .ok_or_else(|| "secure content device identity changed during activation".to_string())?;
+    if current_engine.endpoint().ptid != session.key.actor_ptid
+        || current_engine.endpoint().device_id != session.key.device_id
+    {
+        return Err("secure content device identity changed during activation".to_string());
+    }
+    state
+        .secure_content
+        .activate_if_epoch(session, renderer_generation, lifecycle_epoch)
+}
+
+fn lease_for_window(
+    state: &AppState,
+    window: &Window,
+    actor_ptid: &str,
+    renderer_generation: u64,
+) -> Result<SecureContentLease, String> {
+    let active = state
+        .sessions
+        .get(window.label())
+        .ok_or_else(|| "secure content requires an authenticated window".to_string())?;
+    if active.actor.ptid != actor_ptid || active.jwt.trim().is_empty() {
+        return Err("secure content actor does not match the authenticated window".to_string());
+    }
+    let lease = state
+        .secure_content
+        .lease(actor_ptid, renderer_generation, window.label())?;
+    if lease.session.account_id != active.account_id
+        || lease.session.key.jwt_session_id != jwt_session_id(&active.jwt)?
+    {
+        return Err(
+            "secure content session no longer matches the authenticated window".to_string(),
+        );
+    }
+    Ok(lease)
+}
+
+fn native_failure(message: String, state: &str) -> AppResult<Value> {
+    let lower = message.to_ascii_lowercase();
+    let (code, app_code) = if lower.contains("auth") || lower.contains("session") {
+        ("UNAUTHORIZED", ErrorCode::Unauthorized)
+    } else if lower.contains("not authorized") || lower.contains("not found") {
+        ("NOT_FOUND_OR_NOT_AUTHORIZED", ErrorCode::NotFound)
+    } else if lower.contains("conflict") || lower.contains("stale") {
+        ("CONFLICT", ErrorCode::Conflict)
+    } else {
+        ("PRIVATE_NATIVE_COMMAND_FAILED", ErrorCode::InternalError)
+    };
+    AppResult::fail(
+        app_code,
+        message,
+        Some(json!({
+            "state": state,
+            "native_error_code": code,
+        })),
+    )
+}

@@ -407,18 +407,28 @@ items:
     architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D09, SC-D11, SC-D12, SC-D13, SC-D16, SC-D20]
     journeyIds: []
     scope:
-      include: [apps/desktop, packages/locales/en/moments.json, packages/locales/zh-CN/moments.json, packages/locales/metadata.json, tooling/development/secure_content/scenarios/desktop_pilot.py, tooling/development/secure_content/scenarios/browser_private_boundary.py]
+      include: [apps/desktop, apps/station/app/subserver/social/application/private_content_service.go, apps/station/app/subserver/social/application/private_content_service_test.go, apps/station/app/subserver/social/infrastructure/private_content_store.go, apps/station/app/subserver/social/infrastructure/private_content_store_test.go, apps/station/app/subserver/social/handler.go, apps/station/app/subserver/social/handler_test.go, packages/secure-content-core, packages/locales/en/moments.json, packages/locales/zh-CN/moments.json, packages/locales/metadata.json, tooling/development/secure_content/run.py, tooling/development/secure_content/test_run.py, tooling/development/secure_content/attached_client.py, tooling/development/secure_content/scenarios/desktop_pilot.py, tooling/development/secure_content/scenarios/browser_private_boundary.py]
       exclude: [remaining private subtypes, Mobile, formal Acceptance, runtime acquisition]
     resources:
       sourceClaims:
         - { pathPrefix: apps/desktop, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/application/private_content_service.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/application/private_content_service_test.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/infrastructure/private_content_store.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/infrastructure/private_content_store_test.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/handler.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/social/handler_test.go, mode: exclusive-write }
+        - { pathPrefix: packages/secure-content-core, mode: exclusive-write }
         - { pathPrefix: packages/locales/en/moments.json, mode: exclusive-write }
         - { pathPrefix: packages/locales/zh-CN/moments.json, mode: exclusive-write }
         - { pathPrefix: packages/locales/metadata.json, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/run.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/test_run.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/attached_client.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/scenarios/desktop_pilot.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/scenarios/browser_private_boundary.py, mode: exclusive-write }
-        - { pathPrefix: tooling/development/secure_content/run.py, mode: shared-read }
-        - { pathPrefix: apps/station/app/subserver/social, mode: shared-read }
+        - { pathPrefix: apps/station/app/subserver/social/domain, mode: shared-read }
+        - { pathPrefix: apps/station/app/subserver/social/infrastructure, mode: shared-read }
       runtimeClaims: []
     authorization:
       checkpoint: { localCommit: allowed, amend: denied }

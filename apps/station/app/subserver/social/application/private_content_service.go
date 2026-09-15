@@ -765,60 +765,66 @@ func (s *PrivateContentService) GetPrivateMoment(
 			"does not match its persisted canonical commitment",
 		)
 	}
-	envelope := &securecontentpb.PreparedContentKeyEnvelope{}
-	if err := proto.Unmarshal(
-		read.Envelope.PreparedEnvelopeBytes,
-		envelope,
-	); err != nil {
-		return nil, socialdomain.WrapPrivateContentError(
-			socialdomain.PrivateContentIntegrityFailed,
-			operation,
-			err,
-		)
-	}
-	envelopeBytes, err := socialdomain.CanonicalProtoBytes(envelope)
-	if err != nil ||
-		!bytes.Equal(
-			privateSHA256(envelopeBytes),
-			read.Envelope.EnvelopeSHA256,
-		) {
-		return nil, socialdomain.NewPrivateContentError(
-			socialdomain.PrivateContentIntegrityFailed,
-			operation,
-			"envelope",
-			"does not match its persisted canonical commitment",
-		)
-	}
-	viewerEnvelope := &securecontentpb.ViewerContentKeyEnvelope{
-		Binding: proto.Clone(
-			envelope.GetBinding(),
-		).(*securecontentpb.ContentKeyEnvelopeBinding),
-		Recipient: &securecontentpb.ViewerContentKeyEnvelope_Endpoint{
-			Endpoint: proto.Clone(viewer).(*actormodel.ActorDeviceRef),
-		},
-		BindingSha256: cloneApplicationBytes(
-			envelope.GetBindingSha256(),
-		),
-		HpkeEncapsulatedKey: cloneApplicationBytes(
-			envelope.GetHpkeEncapsulatedKey(),
-		),
-		HpkeCiphertext: cloneApplicationBytes(
-			envelope.GetHpkeCiphertext(),
-		),
-		SenderSignature: cloneApplicationBytes(
-			envelope.GetSenderSignature(),
-		),
-		PrincipalEpoch: read.Envelope.PrincipalEpoch,
-	}
-	if err := securecontentkernel.ValidateViewerContentKeyEnvelope(
-		viewerEnvelope,
-		s.policy,
-	); err != nil {
-		return nil, socialdomain.WrapPrivateContentError(
-			socialdomain.PrivateContentIntegrityFailed,
-			operation,
-			err,
-		)
+	var (
+		envelope       *securecontentpb.PreparedContentKeyEnvelope
+		viewerEnvelope *securecontentpb.ViewerContentKeyEnvelope
+	)
+	if read.Envelope != nil {
+		envelope = &securecontentpb.PreparedContentKeyEnvelope{}
+		if err := proto.Unmarshal(
+			read.Envelope.PreparedEnvelopeBytes,
+			envelope,
+		); err != nil {
+			return nil, socialdomain.WrapPrivateContentError(
+				socialdomain.PrivateContentIntegrityFailed,
+				operation,
+				err,
+			)
+		}
+		envelopeBytes, err := socialdomain.CanonicalProtoBytes(envelope)
+		if err != nil ||
+			!bytes.Equal(
+				privateSHA256(envelopeBytes),
+				read.Envelope.EnvelopeSHA256,
+			) {
+			return nil, socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentIntegrityFailed,
+				operation,
+				"envelope",
+				"does not match its persisted canonical commitment",
+			)
+		}
+		viewerEnvelope = &securecontentpb.ViewerContentKeyEnvelope{
+			Binding: proto.Clone(
+				envelope.GetBinding(),
+			).(*securecontentpb.ContentKeyEnvelopeBinding),
+			Recipient: &securecontentpb.ViewerContentKeyEnvelope_Endpoint{
+				Endpoint: proto.Clone(viewer).(*actormodel.ActorDeviceRef),
+			},
+			BindingSha256: cloneApplicationBytes(
+				envelope.GetBindingSha256(),
+			),
+			HpkeEncapsulatedKey: cloneApplicationBytes(
+				envelope.GetHpkeEncapsulatedKey(),
+			),
+			HpkeCiphertext: cloneApplicationBytes(
+				envelope.GetHpkeCiphertext(),
+			),
+			SenderSignature: cloneApplicationBytes(
+				envelope.GetSenderSignature(),
+			),
+			PrincipalEpoch: read.Envelope.PrincipalEpoch,
+		}
+		if err := securecontentkernel.ValidateViewerContentKeyEnvelope(
+			viewerEnvelope,
+			s.policy,
+		); err != nil {
+			return nil, socialdomain.WrapPrivateContentError(
+				socialdomain.PrivateContentIntegrityFailed,
+				operation,
+				err,
+			)
+		}
 	}
 	proof := &securecontentpb.ViewerContentCommitProof{}
 	if err := proto.Unmarshal(
@@ -942,7 +948,7 @@ func (s *PrivateContentService) GetPrivateMoment(
 		) ||
 		!bytes.Equal(
 			proof.GetCanonicalPlanSha256(),
-			read.Envelope.CanonicalPlanSHA256,
+			read.CanonicalPlanSHA256,
 		) ||
 		!bytes.Equal(
 			proof.GetObjectDescriptorSetSha256(),
@@ -952,29 +958,11 @@ func (s *PrivateContentService) GetPrivateMoment(
 			read.Post.ObjectDescriptorSetSHA256,
 			objectSetHash[:],
 		) ||
-		!bytes.Equal(
-			envelope.GetBinding().GetPayloadCiphertextSha256(),
-			payload.GetCiphertextSha256(),
-		) ||
-		!bytes.Equal(
-			envelope.GetBinding().GetCanonicalPlanSha256(),
-			proof.GetCanonicalPlanSha256(),
-		) ||
-		!bytes.Equal(
-			envelope.GetBinding().GetAuthorizationSnapshotSha256(),
-			proof.GetAuthorizationSnapshotSha256(),
-		) ||
-		!bytes.Equal(
-			envelope.GetBinding().GetObjectDescriptorSetSha256(),
+		!endpointEnvelopeMatchesCommit(
+			envelope,
+			payload,
+			proof,
 			objectSetHash[:],
-		) ||
-		!proto.Equal(
-			envelope.GetBinding().GetResource(),
-			proof.GetResource(),
-		) ||
-		!proto.Equal(
-			envelope.GetBinding().GetSender(),
-			proof.GetAuthor(),
 		) {
 		return nil, socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentIntegrityFailed,
@@ -1021,6 +1009,41 @@ func (s *PrivateContentService) GetPrivateMoment(
 	}, nil
 }
 
+func endpointEnvelopeMatchesCommit(
+	envelope *securecontentpb.PreparedContentKeyEnvelope,
+	payload *securecontentpb.EncryptedPayload,
+	proof *securecontentpb.ViewerContentCommitProof,
+	objectSetHash []byte,
+) bool {
+	if envelope == nil {
+		return true
+	}
+	return bytes.Equal(
+		envelope.GetBinding().GetPayloadCiphertextSha256(),
+		payload.GetCiphertextSha256(),
+	) &&
+		bytes.Equal(
+			envelope.GetBinding().GetCanonicalPlanSha256(),
+			proof.GetCanonicalPlanSha256(),
+		) &&
+		bytes.Equal(
+			envelope.GetBinding().GetAuthorizationSnapshotSha256(),
+			proof.GetAuthorizationSnapshotSha256(),
+		) &&
+		bytes.Equal(
+			envelope.GetBinding().GetObjectDescriptorSetSha256(),
+			objectSetHash,
+		) &&
+		proto.Equal(
+			envelope.GetBinding().GetResource(),
+			proof.GetResource(),
+		) &&
+		proto.Equal(
+			envelope.GetBinding().GetSender(),
+			proof.GetAuthor(),
+		)
+}
+
 func privateSHA256(value []byte) []byte {
 	digest := sha256.Sum256(value)
 	return digest[:]
@@ -1065,12 +1088,7 @@ func (s *PrivateContentService) submit(
 			err,
 		)
 	}
-	domainCommitID := deterministicPrivateID(
-		"commit",
-		author.GetActor().GetPtid(),
-		material.CommandID,
-		requestPlan.GetPlanId(),
-	)
+	domainCommitID := requestPlan.GetResource().GetContentId()
 	result, err := s.store.ExecuteSubmit(
 		ctx,
 		infrastructure.SubmitCommand{

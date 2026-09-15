@@ -1,6 +1,7 @@
 use hpke_rs::hpke_types::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
 use hpke_rs::rustcrypto::HpkeRustCrypto;
 use hpke_rs::{Hpke, HpkePrivateKey, HpkePublicKey, Mode};
+use rand::{rngs::OsRng, RngCore};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::prekey::{ContentPreKeyPrivate, ContentPreKeyPublic};
@@ -15,8 +16,18 @@ impl ContentKey {
         Self(bytes)
     }
 
+    pub fn generate() -> Self {
+        let mut bytes = [0_u8; CONTENT_KEY_SIZE];
+        OsRng.fill_bytes(&mut bytes);
+        Self(bytes)
+    }
+
     pub fn as_bytes(&self) -> &[u8; CONTENT_KEY_SIZE] {
         &self.0
+    }
+
+    pub fn to_bytes(&self) -> [u8; CONTENT_KEY_SIZE] {
+        self.0
     }
 }
 

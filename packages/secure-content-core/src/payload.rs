@@ -1,11 +1,53 @@
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
+use hkdf::Hkdf;
 use rand::{rngs::OsRng, RngCore};
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 pub const PAYLOAD_KEY_SIZE: usize = 32;
 pub const PAYLOAD_NONCE_SIZE: usize = 12;
+pub const PAYLOAD_FORMAT_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PayloadKeyContext<'a> {
+    pub protocol_version: u32,
+    pub owner_domain: u32,
+    pub content_id: &'a str,
+    pub generation: u64,
+    pub payload_kind: u32,
+}
+
+impl PayloadKeyContext<'_> {
+    fn validate(&self) -> Result<(), String> {
+        if self.protocol_version == 0
+            || self.owner_domain == 0
+            || self.content_id.is_empty()
+            || self.content_id.trim() != self.content_id
+            || self.content_id.as_bytes().contains(&0)
+            || self.content_id.len() > u32::MAX as usize
+            || self.generation == 0
+            || self.payload_kind == 0
+        {
+            return Err("secure content payload key context is invalid".to_string());
+        }
+        Ok(())
+    }
+
+    fn info(&self) -> Result<Vec<u8>, String> {
+        self.validate()?;
+        let content_id_len = u32::try_from(self.content_id.len())
+            .map_err(|_| "secure content payload content ID is too long".to_string())?;
+        let mut info = Vec::with_capacity(4 + 4 + 4 + self.content_id.len() + 8 + 4);
+        info.extend_from_slice(&self.protocol_version.to_be_bytes());
+        info.extend_from_slice(&self.owner_domain.to_be_bytes());
+        info.extend_from_slice(&content_id_len.to_be_bytes());
+        info.extend_from_slice(self.content_id.as_bytes());
+        info.extend_from_slice(&self.generation.to_be_bytes());
+        info.extend_from_slice(&self.payload_kind.to_be_bytes());
+        Ok(info)
+    }
+}
 
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct PayloadKey([u8; PAYLOAD_KEY_SIZE]);
@@ -24,6 +66,19 @@ impl PayloadKey {
     fn as_bytes(&self) -> &[u8; PAYLOAD_KEY_SIZE] {
         &self.0
     }
+}
+
+pub fn derive_payload_key(
+    content_key: &[u8; PAYLOAD_KEY_SIZE],
+    authorization_snapshot_sha256: &[u8; 32],
+    context: &PayloadKeyContext<'_>,
+) -> Result<PayloadKey, String> {
+    let info = context.info()?;
+    let hkdf = Hkdf::<Sha256>::new(Some(authorization_snapshot_sha256), content_key);
+    let mut payload_key = [0_u8; PAYLOAD_KEY_SIZE];
+    hkdf.expand(&info, &mut payload_key)
+        .map_err(|_| "secure content payload key derivation failed".to_string())?;
+    Ok(PayloadKey::from_bytes(payload_key))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,6 +173,66 @@ mod tests {
         let mut tampered = encrypted;
         tampered.ciphertext[0] ^= 1;
         assert!(decrypt_payload(&key, &tampered, b"binding").is_err());
+    }
+
+    #[test]
+    fn secure_content_payload_key_matches_the_architecture_transcript() {
+        let context = PayloadKeyContext {
+            protocol_version: PAYLOAD_FORMAT_VERSION,
+            owner_domain: 2,
+            content_id: "01HX",
+            generation: 7,
+            payload_kind: 1,
+        };
+        assert_eq!(
+            hex(&context.info().unwrap()),
+            "00000001000000020000000430314858000000000000000700000001"
+        );
+
+        let key = derive_payload_key(&[0x42; 32], &[0x11; 32], &context).unwrap();
+        assert_eq!(
+            hex(key.as_bytes()),
+            "6df64b3535cb706881c0157d8eda6b3cae82cee20037d9446ced5e05846ff45d"
+        );
+    }
+
+    #[test]
+    fn secure_content_payload_key_rejects_ambiguous_or_unscoped_contexts() {
+        let valid = PayloadKeyContext {
+            protocol_version: 1,
+            owner_domain: 2,
+            content_id: "content-1",
+            generation: 1,
+            payload_kind: 1,
+        };
+        for invalid in [
+            PayloadKeyContext {
+                protocol_version: 0,
+                ..valid.clone()
+            },
+            PayloadKeyContext {
+                owner_domain: 0,
+                ..valid.clone()
+            },
+            PayloadKeyContext {
+                content_id: " content-1",
+                ..valid.clone()
+            },
+            PayloadKeyContext {
+                content_id: "content\0-1",
+                ..valid.clone()
+            },
+            PayloadKeyContext {
+                generation: 0,
+                ..valid.clone()
+            },
+            PayloadKeyContext {
+                payload_kind: 0,
+                ..valid.clone()
+            },
+        ] {
+            assert!(derive_payload_key(&[1; 32], &[2; 32], &invalid).is_err());
+        }
     }
 
     fn hex(bytes: &[u8]) -> String {

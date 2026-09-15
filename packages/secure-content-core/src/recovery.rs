@@ -18,8 +18,23 @@ const RECOVERY_PREKEY_INFO_DOMAIN: &[u8] = b"peers-touch:secure-content:recovery
 pub struct RecoveryMaster([u8; 32]);
 
 impl RecoveryMaster {
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn try_from_slice(bytes: &[u8]) -> Result<Self, String> {
+        let bytes = bytes
+            .try_into()
+            .map_err(|_| "secure content recovery master must contain exactly 32 bytes")?;
+        Ok(Self::from_bytes(bytes))
+    }
+
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
+    }
+
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.0
     }
 }
 
@@ -159,6 +174,10 @@ mod tests {
             hex(master.as_bytes()),
             "57064757d05c45ddfe290541243c801fa07a8e90b7248b3a5989fae496e155aa"
         );
+
+        let restored = RecoveryMaster::try_from_slice(master.as_bytes()).unwrap();
+        assert_eq!(restored.to_bytes(), master.to_bytes());
+        assert!(RecoveryMaster::try_from_slice(&master.as_bytes()[..31]).is_err());
     }
 
     #[test]

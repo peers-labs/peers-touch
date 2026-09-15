@@ -66,6 +66,10 @@ impl ContentPreKeyPrivate {
         ContentPreKeyPublic(PublicKey::from(&secret).to_bytes())
     }
 
+    pub fn to_bytes(&self) -> [u8; CONTENT_PREKEY_SIZE] {
+        self.0
+    }
+
     pub(crate) fn as_bytes(&self) -> &[u8; CONTENT_PREKEY_SIZE] {
         &self.0
     }

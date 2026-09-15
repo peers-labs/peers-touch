@@ -26,7 +26,8 @@ urlencoding = "2"
 reqwest = { version = "0.12", features = ["blocking", "json", "multipart", "rustls-tls", "stream"] }
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
-ed25519-dalek = { version = "2", features = ["rand_core"] }
+ed25519-dalek = { version = "2", features = ["pem", "rand_core"] }
+data-encoding = "2"
 curve25519-dalek = "4"
 aes-gcm = "0.10"
 argon2 = "0.5"

@@ -87,6 +87,18 @@ func TestPrivateContentServicePrepareSubmitReplay(t *testing.T) {
 		created.GetPost().GetPrivateContent().GetViewerEnvelope() == nil {
 		t.Fatalf("unexpected first private submit response: %+v", created)
 	}
+	metadata := created.GetPost().GetMetadata()
+	proof := created.GetPost().GetPrivateContent().GetVerification().GetCommitProof()
+	if metadata.GetPostId() == "" ||
+		metadata.GetPostId() != metadata.GetContentId() ||
+		proof.GetDomainCommitId() != metadata.GetPostId() ||
+		proof.GetResource().GetContentId() != metadata.GetPostId() {
+		t.Fatalf(
+			"private Moment commit identity is not the resource identity: metadata=%+v proof=%+v",
+			metadata,
+			proof,
+		)
+	}
 	if created.GetPost().GetPrivateContent().GetVerification().
 		GetStationSigningKeyAttestation() != nil {
 		t.Fatal("immutable submit receipt contains a short-lived key attestation")
@@ -119,6 +131,39 @@ func TestPrivateContentServicePrepareSubmitReplay(t *testing.T) {
 			attestation.GetIssuedAt().AsTime().Add(5*time.Minute),
 		) {
 		t.Fatalf("Bob private read attestation = %+v", attestation)
+	}
+	if err := fixture.database.Where(
+		"content_id = ? AND key_kind = ? AND recipient_ptid = ? AND recipient_device_id = ?",
+		first.GetPlan().GetResource().GetContentId(),
+		infrastructure.PrivateContentKeyKindEndpoint,
+		"ptid:bob",
+		"bob-device",
+	).Delete(&dbmodel.SocialPrivateContentEnvelope{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	recoveryPointRead, err := fixture.service.GetPrivateMoment(
+		ctx,
+		&actormodel.ActorDeviceRef{
+			Actor: &actormodel.ActorRef{
+				Ptid: "ptid:bob",
+				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+			},
+			DeviceId: "bob-recovered-device",
+		},
+		first.GetPlan().GetResource().GetContentId(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privatePointRead := recoveryPointRead.GetResource().GetPrivateContent()
+	if privatePointRead == nil ||
+		privatePointRead.GetViewerEnvelope() != nil ||
+		privatePointRead.GetPayload() == nil ||
+		privatePointRead.GetVerification().GetCommitProof() == nil {
+		t.Fatalf(
+			"recovery point read did not preserve ciphertext/proof without an endpoint envelope: %+v",
+			recoveryPointRead,
+		)
 	}
 	_, err = fixture.service.GetPrivateMoment(
 		ctx,

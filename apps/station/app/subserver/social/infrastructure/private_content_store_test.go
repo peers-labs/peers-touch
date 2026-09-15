@@ -509,6 +509,65 @@ func TestGORMPrivateContentStoreSubmitReceiptReplayAndConflict(t *testing.T) {
 	}
 }
 
+func TestGORMPrivateContentStoreAuthorizedPointReadAllowsMissingEndpointEnvelope(
+	t *testing.T,
+) {
+	_, store := openPrivateContentStore(t, "")
+	plan := seedPreparedPlan(
+		t,
+		store,
+		"recovery-point-read",
+		PrivateContentResourcePost,
+	)
+	seedUnattachedObject(t, store, plan)
+	command := submitCommand(plan, "recovery-point-read")
+	if _, err := store.ExecuteSubmit(
+		context.Background(),
+		command,
+		func(
+			ctx context.Context,
+			tx PrivateContentTransaction,
+			locked dbmodel.SocialPrivateContentPlan,
+		) (SubmitMutationResult, error) {
+			response, err := persistSubmitMutation(
+				ctx,
+				tx,
+				locked,
+				"recovery-point-read",
+			)
+			return SubmitMutationResult{
+				ResponseBytes: response,
+				CompletedAt:   fixedTime().Add(time.Minute),
+			}, err
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	read, err := store.GetPrivatePost(
+		context.Background(),
+		"post-recovery-point-read",
+		"ptid:alice",
+		"alice-recovered-device",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.Envelope != nil {
+		t.Fatalf("new device received an unrelated endpoint envelope: %+v", read.Envelope)
+	}
+	if !bytes.Equal(read.CanonicalPlanSHA256, plan.CanonicalPlanSHA256) {
+		t.Fatalf(
+			"point read canonical plan hash = %x, want %x",
+			read.CanonicalPlanSHA256,
+			plan.CanonicalPlanSHA256,
+		)
+	}
+	if read.Post.PostID != "post-recovery-point-read" {
+		t.Fatalf("point read post = %+v", read.Post)
+	}
+}
+
 func TestGORMPrivateContentStoreConcurrentSubmitRunsMutationOnce(t *testing.T) {
 	db, store := openPrivateContentStore(t, "")
 	plan := seedPreparedPlan(t, store, "submit-race", PrivateContentResourcePost)

@@ -85,13 +85,22 @@ pub struct MessagingRecoveryArchive {
 pub struct EncodedRecoveryRevision {
     pub revision_id: String,
     pub format_version: u32,
+    pub recovery_epoch: u64,
     pub bytes: Vec<u8>,
     pub sha256: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedRecoveryRevision {
+    pub recovery_epoch: u64,
+    pub archive: MessagingRecoveryArchive,
 }
 
 #[derive(Serialize, Deserialize)]
 struct RecoveryRevisionEnvelope {
     kdf: BackupKdfParameters,
+    #[serde(default = "initial_recovery_epoch")]
+    recovery_epoch: u64,
     manifest: Vec<u8>,
 }
 
@@ -99,6 +108,8 @@ struct RecoveryRevisionEnvelope {
 struct ActorIdentitySection {
     seed: [u8; 32],
     profile_version: u64,
+    #[serde(default = "initial_recovery_epoch")]
+    recovery_epoch: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -122,9 +133,13 @@ pub fn encode_recovery_revision(
     revision_id: &str,
     created_by_device_id: &str,
     created_at_unix_ms: i64,
+    recovery_epoch: u64,
     archive: &MessagingRecoveryArchive,
 ) -> Result<EncodedRecoveryRevision, String> {
     validate_archive_identity(recovery_phrase, revision_id, created_by_device_id, archive)?;
+    if recovery_epoch == 0 || recovery_epoch > i64::MAX as u64 {
+        return Err("messaging recovery epoch is invalid".to_string());
+    }
     let mut salt = vec![0_u8; BACKUP_SALT_BYTES];
     OsRng.fill_bytes(&mut salt);
     let kdf = BackupKdfParameters {
@@ -145,6 +160,7 @@ pub fn encode_recovery_revision(
         &ActorIdentitySection {
             seed: archive.actor_identity_seed,
             profile_version: archive.actor_profile_version,
+            recovery_epoch,
         },
         1,
     )?);
@@ -199,6 +215,7 @@ pub fn encode_recovery_revision(
     manifest.archive_sha256 = manifest_hash(&manifest);
     let envelope = RecoveryRevisionEnvelope {
         kdf,
+        recovery_epoch,
         manifest: manifest.encode_to_vec(),
     };
     let bytes = serde_json::to_vec(&envelope).map_err(|error| error.to_string())?;
@@ -206,6 +223,7 @@ pub fn encode_recovery_revision(
     Ok(EncodedRecoveryRevision {
         revision_id: revision_id.to_string(),
         format_version: MESSAGING_RECOVERY_FORMAT_VERSION,
+        recovery_epoch,
         bytes,
         sha256,
     })
@@ -217,7 +235,7 @@ pub fn decode_recovery_revision(
     expected_revision_id: &str,
     encoded: &[u8],
     expected_sha256: &[u8],
-) -> Result<MessagingRecoveryArchive, String> {
+) -> Result<DecodedRecoveryRevision, String> {
     validate_mnemonic(recovery_phrase).map_err(|error| error.to_string())?;
     if expected_ptid.trim().is_empty()
         || expected_revision_id.trim().is_empty()
@@ -228,6 +246,9 @@ pub fn decode_recovery_revision(
     }
     let envelope: RecoveryRevisionEnvelope =
         serde_json::from_slice(encoded).map_err(|_| "messaging recovery envelope invalid")?;
+    if envelope.recovery_epoch == 0 || envelope.recovery_epoch > i64::MAX as u64 {
+        return Err("messaging recovery epoch is invalid".to_string());
+    }
     let manifest = OpaqueRecoveryArchiveManifest::decode(envelope.manifest.as_slice())
         .map_err(|_| "messaging recovery manifest invalid")?;
     let manifest_ptid = manifest
@@ -251,6 +272,9 @@ pub fn decode_recovery_revision(
         &manifest,
         OpaqueRecoveryArchiveSectionKind::ActorIdentity,
     )?;
+    if identity.recovery_epoch != envelope.recovery_epoch {
+        return Err("messaging recovery epoch binding is invalid".to_string());
+    }
     let history: MessageHistorySection = decrypt_required_section(
         &key,
         &manifest,
@@ -274,7 +298,14 @@ pub fn decode_recovery_revision(
         trust: trust.trust,
     };
     validate_archive(&archive)?;
-    Ok(archive)
+    Ok(DecodedRecoveryRevision {
+        recovery_epoch: envelope.recovery_epoch,
+        archive,
+    })
+}
+
+fn initial_recovery_epoch() -> u64 {
+    1
 }
 
 // The profile Engine and every legacy connection to the same database must be
@@ -629,7 +660,8 @@ mod tests {
     fn recovery_revision_round_trips_all_recoverable_sections() {
         let expected = archive();
         let encoded =
-            encode_recovery_revision(PHRASE, "revision-1", "alice-device", 10, &expected).unwrap();
+            encode_recovery_revision(PHRASE, "revision-1", "alice-device", 10, 7, &expected)
+                .unwrap();
         let actual = decode_recovery_revision(
             PHRASE,
             "ptid:alice",
@@ -638,13 +670,15 @@ mod tests {
             &encoded.sha256,
         )
         .unwrap();
-        assert_eq!(actual, expected);
+        assert_eq!(actual.recovery_epoch, 7);
+        assert_eq!(actual.archive, expected);
     }
 
     #[test]
     fn wrong_phrase_and_corruption_fail_closed() {
         let encoded =
-            encode_recovery_revision(PHRASE, "revision-1", "alice-device", 10, &archive()).unwrap();
+            encode_recovery_revision(PHRASE, "revision-1", "alice-device", 10, 1, &archive())
+                .unwrap();
         let wrong_phrase = "legal winner thank year wave sausage worth useful legal winner thank yellow legal winner thank year wave sausage worth useful legal winner thank yellow";
         assert!(decode_recovery_revision(
             wrong_phrase,
@@ -663,6 +697,27 @@ mod tests {
             "revision-1",
             &corrupted,
             &encoded.sha256,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn recovery_epoch_is_bound_by_encrypted_identity_section() {
+        let encoded =
+            encode_recovery_revision(PHRASE, "revision-epoch", "alice-device", 10, 7, &archive())
+                .unwrap();
+        let mut envelope: RecoveryRevisionEnvelope =
+            serde_json::from_slice(&encoded.bytes).unwrap();
+        envelope.recovery_epoch = 8;
+        let tampered = serde_json::to_vec(&envelope).unwrap();
+        let tampered_sha = Sha256::digest(&tampered);
+
+        assert!(decode_recovery_revision(
+            PHRASE,
+            "ptid:alice",
+            "revision-epoch",
+            &tampered,
+            tampered_sha.as_slice(),
         )
         .is_err());
     }

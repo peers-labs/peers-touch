@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 
@@ -198,6 +199,7 @@ pub struct ObjectTransferControl {
     shutdown: AtomicBool,
     active: AtomicUsize,
     active_transfer_ids: Mutex<HashSet<String>>,
+    idle: Condvar,
 }
 
 #[derive(Debug)]
@@ -206,17 +208,56 @@ enum AdmissionError {
     Failure(ObjectTransferFailure),
 }
 
+#[derive(Debug)]
+enum DownloadAttemptError {
+    BeforeCompletion(ObjectTransferFailure),
+    Finalization(ObjectTransferFailure),
+}
+
+impl From<ObjectTransferFailure> for DownloadAttemptError {
+    fn from(failure: ObjectTransferFailure) -> Self {
+        Self::BeforeCompletion(failure)
+    }
+}
+
 impl ObjectTransferControl {
     pub fn new() -> Self {
         Self {
             shutdown: AtomicBool::new(false),
             active: AtomicUsize::new(0),
             active_transfer_ids: Mutex::new(HashSet::new()),
+            idle: Condvar::new(),
         }
     }
 
     pub fn request_shutdown(&self) {
         self.shutdown.store(true, Ordering::Release);
+    }
+
+    pub fn request_shutdown_and_wait(&self, timeout: Duration) -> bool {
+        self.request_shutdown();
+        let deadline = Instant::now() + timeout;
+        let mut active_transfer_ids = match self.active_transfer_ids.lock() {
+            Ok(active_transfer_ids) => active_transfer_ids,
+            Err(_) => return false,
+        };
+        while self.active.load(Ordering::Acquire) != 0 {
+            let now = Instant::now();
+            if now >= deadline {
+                return false;
+            }
+            let remaining = deadline.saturating_duration_since(now);
+            match self.idle.wait_timeout(active_transfer_ids, remaining) {
+                Ok((guard, result)) => {
+                    active_transfer_ids = guard;
+                    if result.timed_out() && self.active.load(Ordering::Acquire) != 0 {
+                        return false;
+                    }
+                }
+                Err(_) => return false,
+            }
+        }
+        true
     }
 
     fn check_running(&self) -> Result<(), ObjectTransferFailure> {
@@ -279,7 +320,9 @@ impl Drop for ObjectTransferPermit<'_> {
         if let Ok(mut active_transfer_ids) = self.control.active_transfer_ids.lock() {
             active_transfer_ids.remove(&self.transfer_id);
         }
-        self.control.active.fetch_sub(1, Ordering::AcqRel);
+        if self.control.active.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.control.idle.notify_all();
+        }
     }
 }
 
@@ -427,6 +470,45 @@ impl ObjectTransferWorker {
         cache_ref: &str,
         now_unix_ms: i64,
     ) -> Result<ObjectTransferProgress, ObjectTransferFailure> {
+        let existing = self.required_transfer(transfer_id)?;
+        if existing.state == ObjectTransferState::Complete {
+            let plaintext_staging_ref = plaintext_staging_ref(cache_ref);
+            let validation = (|| -> Result<(), ObjectTransferFailure> {
+                if existing.partial_local_ref == cache_ref
+                    || existing.partial_local_ref == plaintext_staging_ref
+                {
+                    return Err(integrity_failure(
+                        "secure content download artifact paths overlap",
+                    ));
+                }
+                let (_, descriptor_hash) =
+                    self.validate_download_descriptor(&existing, descriptor)?;
+                if existing.descriptor_sha256 != descriptor_hash {
+                    return Err(ObjectTransferFailure::terminal(
+                        ObjectTransferErrorCode::DescriptorMismatch,
+                        "secure content completed object descriptor commitment changed",
+                    ));
+                }
+                self.finalize_completed_download_artifacts(
+                    cache_ref,
+                    &plaintext_staging_ref,
+                    &existing.partial_local_ref,
+                    expected_plaintext_sha256,
+                )
+            })();
+            if let Err(failure) = validation {
+                if failure.retryable {
+                    return Err(failure);
+                }
+                return Err(self.cleanup_download_failure(
+                    failure,
+                    cache_ref,
+                    &plaintext_staging_ref,
+                    &existing.partial_local_ref,
+                ));
+            }
+            return Ok(ObjectTransferProgress::Complete);
+        }
         if let Some(progress) = self.preflight(transfer_id, now_unix_ms)? {
             return Ok(progress);
         }
@@ -438,7 +520,13 @@ impl ObjectTransferWorker {
                 })
             }
             Err(AdmissionError::Failure(failure)) => {
-                return self.persist_failure(transfer_id, now_unix_ms, failure)
+                let failure = self.cleanup_download_failure(
+                    failure,
+                    cache_ref,
+                    &plaintext_staging_ref(cache_ref),
+                    &existing.partial_local_ref,
+                );
+                return self.persist_failure(transfer_id, now_unix_ms, failure);
             }
         };
         match self.download_once(
@@ -452,7 +540,10 @@ impl ObjectTransferWorker {
             Ok(false) => Err(integrity_failure(
                 "secure content object download made no progress",
             )),
-            Err(failure) => self.persist_failure(transfer_id, now_unix_ms, failure),
+            Err(DownloadAttemptError::BeforeCompletion(failure)) => {
+                self.persist_failure(transfer_id, now_unix_ms, failure)
+            }
+            Err(DownloadAttemptError::Finalization(failure)) => Err(failure),
         }
     }
 
@@ -552,127 +643,201 @@ impl ObjectTransferWorker {
         expected_plaintext_sha256: &[u8; 32],
         cache_ref: &str,
         now_unix_ms: i64,
-    ) -> Result<bool, ObjectTransferFailure> {
-        self.control.check_running()?;
-        validate_object_descriptor(descriptor).map_err(integrity_failure)?;
+    ) -> Result<bool, DownloadAttemptError> {
         let mut transfer = self.required_transfer(transfer_id)?;
-        let material = material_from_transfer(&transfer).map_err(integrity_failure)?;
-        if descriptor.commitment.chunk_count != material.chunk_count()
-            || descriptor.commitment.chunk_size != material.chunk_size()
+        let plaintext_staging_ref = plaintext_staging_ref(cache_ref);
+        if transfer.partial_local_ref == cache_ref
+            || transfer.partial_local_ref == plaintext_staging_ref
         {
-            return Err(integrity_failure(
-                "secure content object descriptor/material mismatch",
+            let failure = integrity_failure("secure content download artifact paths overlap");
+            return Err(DownloadAttemptError::BeforeCompletion(
+                self.cleanup_download_failure(
+                    failure,
+                    cache_ref,
+                    &plaintext_staging_ref,
+                    &transfer.partial_local_ref,
+                ),
             ));
         }
-        let descriptor_hash = self.commitments.descriptor_commitment(descriptor)?;
-        if transfer.descriptor_sha256 != vec![0; 32]
-            && transfer.descriptor_sha256 != descriptor_hash
-        {
-            self.blobs.remove(&transfer.partial_local_ref)?;
-            return Err(ObjectTransferFailure::terminal(
-                ObjectTransferErrorCode::DescriptorMismatch,
-                "secure content object descriptor commitment changed",
+        if let Err(failure) = self.control.check_running() {
+            return Err(DownloadAttemptError::BeforeCompletion(
+                self.cleanup_download_failure(
+                    failure,
+                    cache_ref,
+                    &plaintext_staging_ref,
+                    &transfer.partial_local_ref,
+                ),
             ));
         }
-        self.store.update_transfer_prepared(
-            transfer_id,
-            &descriptor_hash,
-            &transfer.partial_local_ref,
-            now_unix_ms,
-        )?;
-        transfer = self.required_transfer(transfer_id)?;
-        validate_bitmap(
-            &transfer.completed_chunk_bitmap,
-            descriptor.commitment.chunk_count,
-        )
-        .map_err(integrity_failure)?;
-        if self.blobs.exists(cache_ref)? {
-            if (0..descriptor.commitment.chunk_count)
-                .all(|index| chunk_complete(&transfer.completed_chunk_bitmap, index))
-                && self.blobs.sha256(cache_ref)? == *expected_plaintext_sha256
-            {
-                self.store
-                    .complete_download(&transfer, descriptor, cache_ref, now_unix_ms)?;
-                return Ok(true);
-            }
-            self.blobs.remove(cache_ref)?;
-            return Err(integrity_failure(
-                "secure content promoted object cache is invalid",
-            ));
-        }
-        validate_partial_blob(self.blobs.as_ref(), &transfer, &material, descriptor)
-            .map_err(integrity_failure)?;
-
-        for chunk_index in 0..descriptor.commitment.chunk_count {
-            self.control.check_running()?;
-            if chunk_complete(&transfer.completed_chunk_bitmap, chunk_index) {
-                continue;
-            }
-            let plaintext_size = expected_plaintext_chunk_size(&material, chunk_index)?;
-            let ciphertext_size = plaintext_size + OBJECT_TAG_SIZE as usize;
-            let start = u64::from(chunk_index)
-                * u64::from(descriptor.commitment.chunk_size + descriptor.commitment.tag_size);
-            let ciphertext = self.transport.get_download_chunk(
-                &transfer,
-                descriptor,
-                chunk_index,
-                start,
-                start + ciphertext_size as u64 - 1,
+        let materialization = (|| -> Result<bool, ObjectTransferFailure> {
+            let (material, descriptor_hash) =
+                self.validate_download_descriptor(&transfer, descriptor)?;
+            self.store.update_transfer_prepared(
+                transfer_id,
+                &descriptor_hash,
+                &transfer.partial_local_ref,
+                now_unix_ms,
             )?;
-            let expected_hash: [u8; 32] = descriptor.commitment.chunk_ciphertext_sha256
-                [chunk_index as usize]
+            transfer = self.required_transfer(transfer_id)?;
+            validate_bitmap(
+                &transfer.completed_chunk_bitmap,
+                descriptor.commitment.chunk_count,
+            )
+            .map_err(integrity_failure)?;
+            if self.blobs.exists(cache_ref)? {
+                if (0..descriptor.commitment.chunk_count)
+                    .all(|index| chunk_complete(&transfer.completed_chunk_bitmap, index))
+                    && self.blobs.sha256(cache_ref)? == *expected_plaintext_sha256
+                {
+                    self.blobs.remove(&plaintext_staging_ref)?;
+                    return Ok(true);
+                }
+                self.blobs.remove(cache_ref)?;
+            }
+            self.blobs.remove(&plaintext_staging_ref)?;
+            validate_partial_ciphertext(self.blobs.as_ref(), &transfer, &material, descriptor)
+                .map_err(integrity_failure)?;
+
+            for chunk_index in 0..descriptor.commitment.chunk_count {
+                self.control.check_running()?;
+                if chunk_complete(&transfer.completed_chunk_bitmap, chunk_index) {
+                    continue;
+                }
+                let ciphertext_size = expected_ciphertext_chunk_size(&material, chunk_index)?;
+                let start = ciphertext_chunk_offset(&material, chunk_index);
+                let ciphertext = self.transport.get_download_chunk(
+                    &transfer,
+                    descriptor,
+                    chunk_index,
+                    start,
+                    start + ciphertext_size as u64 - 1,
+                )?;
+                if ciphertext.len() != ciphertext_size {
+                    return Err(integrity_failure(
+                        "secure content downloaded chunk size mismatch",
+                    ));
+                }
+                if descriptor.commitment.chunk_ciphertext_sha256[chunk_index as usize]
+                    != Sha256::digest(&ciphertext).as_slice()
+                {
+                    return Err(integrity_failure(
+                        "secure content downloaded chunk hash mismatch",
+                    ));
+                }
+                self.blobs
+                    .write_chunk(&transfer.partial_local_ref, start, &ciphertext)?;
+                set_chunk_complete(&mut transfer.completed_chunk_bitmap, chunk_index);
+                self.store.update_transfer_progress(
+                    transfer_id,
+                    ObjectTransferState::Transferring,
+                    &transfer.upload_id,
+                    transfer.generation,
+                    &transfer.completed_chunk_bitmap,
+                    transfer.attempt_count,
+                    0,
+                    None,
+                    now_unix_ms,
+                )?;
+            }
+            self.blobs.truncate(
+                &transfer.partial_local_ref,
+                descriptor.commitment.ciphertext_size,
+            )?;
+            let expected_ciphertext_sha256: [u8; 32] = descriptor
+                .commitment
+                .ciphertext_sha256
                 .as_slice()
                 .try_into()
                 .map_err(|_| {
-                    integrity_failure("secure content object chunk commitment is invalid")
+                    integrity_failure("secure content object ciphertext commitment is invalid")
                 })?;
-            let plaintext = decrypt_object_chunk(
-                &material,
-                &EncryptedObjectChunk {
-                    chunk_index,
-                    ciphertext,
-                    ciphertext_sha256: expected_hash,
-                },
-            )
-            .map_err(integrity_failure)?;
-            self.blobs.write_chunk(
-                &transfer.partial_local_ref,
-                u64::from(chunk_index) * u64::from(material.chunk_size()),
-                &plaintext,
-            )?;
-            set_chunk_complete(&mut transfer.completed_chunk_bitmap, chunk_index);
-            self.store.update_transfer_progress(
-                transfer_id,
-                ObjectTransferState::Transferring,
-                &transfer.upload_id,
-                transfer.generation,
-                &transfer.completed_chunk_bitmap,
-                transfer.attempt_count,
-                0,
-                None,
-                now_unix_ms,
-            )?;
-        }
-        self.blobs
-            .truncate(&transfer.partial_local_ref, material.plaintext_size())?;
-        if self.blobs.sha256(&transfer.partial_local_ref)? != *expected_plaintext_sha256 {
-            self.blobs.remove(&transfer.partial_local_ref)?;
-            return Err(integrity_failure(
-                "secure content object plaintext hash mismatch",
+            if self.blobs.sha256(&transfer.partial_local_ref)? != expected_ciphertext_sha256 {
+                return Err(integrity_failure(
+                    "secure content object ciphertext hash mismatch",
+                ));
+            }
+            for chunk_index in 0..descriptor.commitment.chunk_count {
+                self.control.check_running()?;
+                let expected_hash: [u8; 32] = descriptor.commitment.chunk_ciphertext_sha256
+                    [chunk_index as usize]
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| {
+                        integrity_failure("secure content object chunk commitment is invalid")
+                    })?;
+                let ciphertext = self.blobs.read_chunk(
+                    &transfer.partial_local_ref,
+                    ciphertext_chunk_offset(&material, chunk_index),
+                    expected_ciphertext_chunk_size(&material, chunk_index)?,
+                )?;
+                let plaintext = decrypt_object_chunk(
+                    &material,
+                    &EncryptedObjectChunk {
+                        chunk_index,
+                        ciphertext,
+                        ciphertext_sha256: expected_hash,
+                    },
+                )
+                .map_err(integrity_failure)?;
+                self.blobs.write_chunk(
+                    &plaintext_staging_ref,
+                    u64::from(chunk_index) * u64::from(material.chunk_size()),
+                    &plaintext,
+                )?;
+            }
+            self.blobs
+                .truncate(&plaintext_staging_ref, material.plaintext_size())?;
+            if self.blobs.sha256(&plaintext_staging_ref)? != *expected_plaintext_sha256 {
+                return Err(integrity_failure(
+                    "secure content object plaintext hash mismatch",
+                ));
+            }
+            Ok(false)
+        })();
+        match materialization {
+            Ok(_) => {}
+            Err(failure) => {
+                return Err(DownloadAttemptError::BeforeCompletion(
+                    self.cleanup_download_failure(
+                        failure,
+                        cache_ref,
+                        &plaintext_staging_ref,
+                        &transfer.partial_local_ref,
+                    ),
+                ))
+            }
+        };
+        if let Err(failure) =
+            self.store
+                .complete_download(&transfer, descriptor, cache_ref, now_unix_ms)
+        {
+            return Err(DownloadAttemptError::Finalization(
+                self.cleanup_download_failure(
+                    failure,
+                    cache_ref,
+                    &plaintext_staging_ref,
+                    &transfer.partial_local_ref,
+                ),
             ));
         }
-        self.blobs.promote(&transfer.partial_local_ref, cache_ref)?;
-        self.store
-            .complete_download(&transfer, descriptor, cache_ref, now_unix_ms)?;
+        self.finalize_completed_download_artifacts(
+            cache_ref,
+            &plaintext_staging_ref,
+            &transfer.partial_local_ref,
+            expected_plaintext_sha256,
+        )
+        .map_err(DownloadAttemptError::Finalization)?;
         Ok(true)
     }
 
     pub fn cancel(&self, transfer_id: &str, now_unix_ms: i64) -> Result<(), ObjectTransferFailure> {
         let transfer = self.required_transfer(transfer_id)?;
-        if transfer.state == ObjectTransferState::Complete {
+        if transfer.state == ObjectTransferState::Complete
+            && transfer.direction == ObjectTransferDirection::Download
+        {
             return Err(ObjectTransferFailure::terminal(
                 ObjectTransferErrorCode::DescriptorMismatch,
-                "secure content completed object transfer cannot be cancelled",
+                "secure content completed download cannot be cancelled",
             ));
         }
         if transfer.state == ObjectTransferState::Cancelled {
@@ -705,6 +870,100 @@ impl ObjectTransferWorker {
                 "secure content object transfer is unavailable",
             )
         })
+    }
+
+    fn validate_download_descriptor(
+        &self,
+        transfer: &ObjectTransferRecord,
+        descriptor: &ObjectDescriptor,
+    ) -> Result<(ObjectCryptoMaterial, [u8; 32]), ObjectTransferFailure> {
+        validate_object_descriptor(descriptor).map_err(integrity_failure)?;
+        let material = material_from_transfer(transfer).map_err(integrity_failure)?;
+        let expected_ciphertext_size = material
+            .plaintext_size()
+            .saturating_add(u64::from(material.chunk_count()) * u64::from(OBJECT_TAG_SIZE));
+        if descriptor.commitment.chunk_count != material.chunk_count()
+            || descriptor.commitment.chunk_size != material.chunk_size()
+            || descriptor.commitment.ciphertext_size != expected_ciphertext_size
+        {
+            return Err(integrity_failure(
+                "secure content object descriptor/material mismatch",
+            ));
+        }
+        let descriptor_hash = self.commitments.descriptor_commitment(descriptor)?;
+        if transfer.descriptor_sha256 != vec![0; 32]
+            && transfer.descriptor_sha256 != descriptor_hash
+        {
+            return Err(ObjectTransferFailure::terminal(
+                ObjectTransferErrorCode::DescriptorMismatch,
+                "secure content object descriptor commitment changed",
+            ));
+        }
+        Ok((material, descriptor_hash))
+    }
+
+    fn cleanup_download_failure(
+        &self,
+        failure: ObjectTransferFailure,
+        cache_ref: &str,
+        plaintext_staging_ref: &str,
+        partial_local_ref: &str,
+    ) -> ObjectTransferFailure {
+        let mut cleanup_failed = false;
+        for artifact_ref in [cache_ref, plaintext_staging_ref] {
+            if self.blobs.remove(artifact_ref).is_err() {
+                cleanup_failed = true;
+            }
+        }
+        if !failure.retryable && self.blobs.remove(partial_local_ref).is_err() {
+            cleanup_failed = true;
+        }
+        if cleanup_failed {
+            return integrity_failure("secure content object failure cleanup failed");
+        }
+        failure
+    }
+
+    fn finalize_completed_download_artifacts(
+        &self,
+        cache_ref: &str,
+        plaintext_staging_ref: &str,
+        partial_local_ref: &str,
+        expected_plaintext_sha256: &[u8; 32],
+    ) -> Result<(), ObjectTransferFailure> {
+        let cache_is_valid = self.blobs.exists(cache_ref)?
+            && self.blobs.sha256(cache_ref)? == *expected_plaintext_sha256;
+        if !cache_is_valid {
+            self.blobs.remove(cache_ref)?;
+            if !self.blobs.exists(plaintext_staging_ref)?
+                || self.blobs.sha256(plaintext_staging_ref)? != *expected_plaintext_sha256
+            {
+                return Err(self.cleanup_download_failure(
+                    integrity_failure(
+                        "secure content completed object has no verified plaintext artifact",
+                    ),
+                    cache_ref,
+                    plaintext_staging_ref,
+                    partial_local_ref,
+                ));
+            }
+            self.blobs
+                .promote(plaintext_staging_ref, cache_ref)
+                .map_err(ObjectTransferFailure::from)?;
+            if !self.blobs.exists(cache_ref)?
+                || self.blobs.sha256(cache_ref)? != *expected_plaintext_sha256
+            {
+                return Err(self.cleanup_download_failure(
+                    integrity_failure("secure content promoted object cache is invalid"),
+                    cache_ref,
+                    plaintext_staging_ref,
+                    partial_local_ref,
+                ));
+            }
+        }
+        self.blobs.remove(plaintext_staging_ref)?;
+        self.blobs.remove(partial_local_ref)?;
+        Ok(())
     }
 
     fn preflight(
@@ -907,7 +1166,22 @@ fn set_chunk_complete(bitmap: &mut [u8], index: u32) {
     bitmap[index as usize / 8] |= 1 << (index % 8);
 }
 
-fn validate_partial_blob(
+fn ciphertext_chunk_offset(material: &ObjectCryptoMaterial, index: u32) -> u64 {
+    u64::from(index) * u64::from(material.chunk_size() + OBJECT_TAG_SIZE)
+}
+
+fn expected_ciphertext_chunk_size(
+    material: &ObjectCryptoMaterial,
+    index: u32,
+) -> Result<usize, String> {
+    expected_plaintext_chunk_size(material, index).map(|size| size + OBJECT_TAG_SIZE as usize)
+}
+
+fn plaintext_staging_ref(cache_ref: &str) -> String {
+    format!("{cache_ref}.decrypting")
+}
+
+fn validate_partial_ciphertext(
     blobs: &dyn ObjectBlob,
     transfer: &ObjectTransferRecord,
     material: &ObjectCryptoMaterial,
@@ -923,38 +1197,43 @@ fn validate_partial_blob(
         }
         return Ok(());
     }
-    let expected_min = transfer
-        .completed_chunk_bitmap
-        .iter()
-        .enumerate()
-        .flat_map(|(byte_index, byte)| {
-            (0..8).filter_map(move |bit| {
-                if byte & (1 << bit) != 0 {
-                    Some((byte_index * 8 + bit + 1) as u64)
-                } else {
-                    None
-                }
-            })
-        })
-        .max()
-        .unwrap_or(0)
-        .saturating_mul(u64::from(material.chunk_size()))
-        .min(material.plaintext_size());
-    if blobs.len(&transfer.partial_local_ref)? < expected_min {
-        blobs.remove(&transfer.partial_local_ref)?;
+    let mut completed_prefix = 0;
+    let mut found_gap = false;
+    for chunk_index in 0..material.chunk_count() {
+        if chunk_complete(&transfer.completed_chunk_bitmap, chunk_index) {
+            if found_gap {
+                return Err(
+                    "secure content partial object checkpoint is non-contiguous".to_string()
+                );
+            }
+            completed_prefix += 1;
+        } else {
+            found_gap = true;
+        }
+    }
+    let expected_length = if completed_prefix == 0 {
+        0
+    } else {
+        let last_index = completed_prefix - 1;
+        ciphertext_chunk_offset(material, last_index)
+            + expected_ciphertext_chunk_size(material, last_index)? as u64
+    };
+    let actual_length = blobs.len(&transfer.partial_local_ref)?;
+    if actual_length < expected_length {
         return Err("secure content partial object checkpoint mismatch".to_string());
     }
-    for chunk_index in 0..material.chunk_count() {
-        if !chunk_complete(&transfer.completed_chunk_bitmap, chunk_index) {
-            continue;
-        }
-        let plaintext =
-            read_plaintext_chunk(blobs, &transfer.partial_local_ref, material, chunk_index)?;
-        let encrypted = encrypt_object_chunk(material, chunk_index, &plaintext)?;
+    if actual_length > expected_length {
+        blobs.truncate(&transfer.partial_local_ref, expected_length)?;
+    }
+    for chunk_index in 0..completed_prefix {
+        let ciphertext = blobs.read_chunk(
+            &transfer.partial_local_ref,
+            ciphertext_chunk_offset(material, chunk_index),
+            expected_ciphertext_chunk_size(material, chunk_index)?,
+        )?;
         if descriptor.commitment.chunk_ciphertext_sha256[chunk_index as usize]
-            != encrypted.ciphertext_sha256
+            != Sha256::digest(&ciphertext).as_slice()
         {
-            blobs.remove(&transfer.partial_local_ref)?;
             return Err("secure content partial object integrity mismatch".to_string());
         }
     }
@@ -968,25 +1247,35 @@ mod tests {
     use super::*;
 
     #[derive(Default)]
-    struct MemoryBlob(Mutex<HashMap<String, Vec<u8>>>);
+    struct MemoryBlob {
+        blobs: Mutex<HashMap<String, Vec<u8>>>,
+        reject_next_promotion: AtomicBool,
+    }
 
     impl MemoryBlob {
         fn put(&self, blob_ref: &str, value: Vec<u8>) {
-            self.0.lock().unwrap().insert(blob_ref.to_string(), value);
+            self.blobs
+                .lock()
+                .unwrap()
+                .insert(blob_ref.to_string(), value);
         }
 
         fn bytes(&self, blob_ref: &str) -> Option<Vec<u8>> {
-            self.0.lock().unwrap().get(blob_ref).cloned()
+            self.blobs.lock().unwrap().get(blob_ref).cloned()
+        }
+
+        fn reject_next_promotion(&self) {
+            self.reject_next_promotion.store(true, Ordering::Release);
         }
     }
 
     impl ObjectBlob for MemoryBlob {
         fn exists(&self, blob_ref: &str) -> Result<bool, String> {
-            Ok(self.0.lock().unwrap().contains_key(blob_ref))
+            Ok(self.blobs.lock().unwrap().contains_key(blob_ref))
         }
 
         fn len(&self, blob_ref: &str) -> Result<u64, String> {
-            self.0
+            self.blobs
                 .lock()
                 .unwrap()
                 .get(blob_ref)
@@ -1000,7 +1289,7 @@ mod tests {
             offset: u64,
             length: usize,
         ) -> Result<Vec<u8>, String> {
-            let blobs = self.0.lock().unwrap();
+            let blobs = self.blobs.lock().unwrap();
             let value = blobs
                 .get(blob_ref)
                 .ok_or_else(|| "test object is unavailable".to_string())?;
@@ -1015,7 +1304,7 @@ mod tests {
         fn write_chunk(&self, blob_ref: &str, offset: u64, data: &[u8]) -> Result<(), String> {
             let start = offset as usize;
             let end = start + data.len();
-            let mut blobs = self.0.lock().unwrap();
+            let mut blobs = self.blobs.lock().unwrap();
             let value = blobs.entry(blob_ref.to_string()).or_default();
             value.resize(value.len().max(end), 0);
             value[start..end].copy_from_slice(data);
@@ -1023,7 +1312,7 @@ mod tests {
         }
 
         fn truncate(&self, blob_ref: &str, length: u64) -> Result<(), String> {
-            self.0
+            self.blobs
                 .lock()
                 .unwrap()
                 .entry(blob_ref.to_string())
@@ -1033,7 +1322,7 @@ mod tests {
         }
 
         fn sha256(&self, blob_ref: &str) -> Result<[u8; 32], String> {
-            self.0
+            self.blobs
                 .lock()
                 .unwrap()
                 .get(blob_ref)
@@ -1042,7 +1331,10 @@ mod tests {
         }
 
         fn promote(&self, source_ref: &str, target_ref: &str) -> Result<(), String> {
-            let mut blobs = self.0.lock().unwrap();
+            if self.reject_next_promotion.swap(false, Ordering::AcqRel) {
+                return Err("test object promotion failed".to_string());
+            }
+            let mut blobs = self.blobs.lock().unwrap();
             let value = blobs
                 .remove(source_ref)
                 .ok_or_else(|| "test object is unavailable".to_string())?;
@@ -1051,7 +1343,7 @@ mod tests {
         }
 
         fn remove(&self, blob_ref: &str) -> Result<(), String> {
-            self.0.lock().unwrap().remove(blob_ref);
+            self.blobs.lock().unwrap().remove(blob_ref);
             Ok(())
         }
     }
@@ -1059,6 +1351,7 @@ mod tests {
     #[derive(Default)]
     struct TestStore {
         records: Mutex<HashMap<String, ObjectTransferRecord>>,
+        reject_download_completion: AtomicBool,
     }
 
     impl TestStore {
@@ -1163,6 +1456,13 @@ mod tests {
             _cache_path: &str,
             updated_at_unix_ms: i64,
         ) -> Result<(), ObjectTransferFailure> {
+            if self.reject_download_completion.load(Ordering::Acquire) {
+                return Err(ObjectTransferFailure::retryable(
+                    ObjectTransferErrorCode::RetryLater,
+                    None,
+                    "test download completion lost its session-generation fence",
+                ));
+            }
             self.complete_upload(transfer, descriptor, updated_at_unix_ms)
         }
     }
@@ -1615,6 +1915,20 @@ mod tests {
             .is_err());
         assert!(blobs.exists(&partial).unwrap());
         assert!(!blobs.exists(&cache).unwrap());
+        assert!(!blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+        let checkpoint = blobs.bytes(&partial).unwrap();
+        assert_eq!(
+            checkpoint.len(),
+            expected_ciphertext_chunk_size(&material, 0).unwrap()
+        );
+        assert_eq!(
+            Sha256::digest(&checkpoint).as_slice(),
+            descriptor.commitment.chunk_ciphertext_sha256[0]
+        );
+        assert_ne!(
+            checkpoint,
+            plaintext[..expected_plaintext_chunk_size(&material, 0).unwrap()]
+        );
 
         worker
             .download_once(
@@ -1626,6 +1940,131 @@ mod tests {
             )
             .unwrap();
         assert_eq!(blobs.bytes(&cache).unwrap(), plaintext);
+        assert!(!blobs.exists(&partial).unwrap());
+    }
+
+    #[test]
+    fn stale_generation_download_completion_keeps_ciphertext_and_releases_no_plaintext() {
+        let source = test_ref("stale-completion-source");
+        let partial = test_ref("stale-completion-partial");
+        let cache = test_ref("stale-completion-cache");
+        let plaintext = b"generation-fenced private media".to_vec();
+        let blobs = Arc::new(MemoryBlob::default());
+        blobs.put(&source, plaintext.clone());
+        let upload_record = record(
+            "stale-completion-descriptor",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            OBJECT_CHUNK_SIZE,
+        );
+        let (material, _, descriptor) = prepared_object(blobs.as_ref(), &source, &upload_record);
+        let transport = Arc::new(MemoryTransport::new());
+        seed_encrypted_chunks(transport.as_ref(), blobs.as_ref(), &source, &material);
+        let store = Arc::new(TestStore::default());
+        let mut download_record = record(
+            "stale-completion-transfer",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            OBJECT_CHUNK_SIZE,
+        );
+        download_record.direction = ObjectTransferDirection::Download;
+        download_record.source_local_ref.clear();
+        store.insert(download_record);
+        store
+            .reject_download_completion
+            .store(true, Ordering::Release);
+        let worker =
+            ObjectTransferWorker::new(store.clone(), transport, blobs.clone(), Arc::new(TestCodec));
+
+        assert!(worker
+            .run_download_once(
+                "stale-completion-transfer",
+                &descriptor,
+                &Sha256::digest(&plaintext).into(),
+                &cache,
+                10,
+            )
+            .is_err());
+
+        assert_ne!(
+            store.record("stale-completion-transfer").state,
+            ObjectTransferState::Complete
+        );
+        assert!(blobs.exists(&partial).unwrap());
+        assert!(!blobs.exists(&cache).unwrap());
+        assert!(!blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+        assert_ne!(blobs.bytes(&partial).unwrap(), plaintext);
+    }
+
+    #[test]
+    fn completed_download_recovers_after_plaintext_promotion_failure() {
+        let source = test_ref("promotion-recovery-source");
+        let partial = test_ref("promotion-recovery-partial");
+        let cache = test_ref("promotion-recovery-cache");
+        let plaintext = b"recoverable generation-fenced private media".to_vec();
+        let blobs = Arc::new(MemoryBlob::default());
+        blobs.put(&source, plaintext.clone());
+        let upload_record = record(
+            "promotion-recovery-descriptor",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            OBJECT_CHUNK_SIZE,
+        );
+        let (material, _, descriptor) = prepared_object(blobs.as_ref(), &source, &upload_record);
+        let transport = Arc::new(MemoryTransport::new());
+        seed_encrypted_chunks(transport.as_ref(), blobs.as_ref(), &source, &material);
+        let store = Arc::new(TestStore::default());
+        let mut download_record = record(
+            "promotion-recovery-transfer",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            OBJECT_CHUNK_SIZE,
+        );
+        download_record.direction = ObjectTransferDirection::Download;
+        download_record.source_local_ref.clear();
+        store.insert(download_record);
+        blobs.reject_next_promotion();
+        let worker =
+            ObjectTransferWorker::new(store.clone(), transport, blobs.clone(), Arc::new(TestCodec));
+        let plaintext_hash = Sha256::digest(&plaintext).into();
+
+        let failure = worker
+            .run_download_once(
+                "promotion-recovery-transfer",
+                &descriptor,
+                &plaintext_hash,
+                &cache,
+                10,
+            )
+            .unwrap_err();
+
+        assert!(failure.retryable);
+        assert_eq!(
+            store.record("promotion-recovery-transfer").state,
+            ObjectTransferState::Complete
+        );
+        assert!(!blobs.exists(&cache).unwrap());
+        assert!(blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+        assert!(blobs.exists(&partial).unwrap());
+
+        assert_eq!(
+            worker
+                .run_download_once(
+                    "promotion-recovery-transfer",
+                    &descriptor,
+                    &plaintext_hash,
+                    &cache,
+                    11,
+                )
+                .unwrap(),
+            ObjectTransferProgress::Complete
+        );
+        assert_eq!(blobs.bytes(&cache).unwrap(), plaintext);
+        assert!(!blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
         assert!(!blobs.exists(&partial).unwrap());
     }
 
@@ -1782,6 +2221,249 @@ mod tests {
     }
 
     #[test]
+    fn uncheckpointed_ciphertext_tail_is_discarded_before_resume() {
+        let source = test_ref("uncheckpointed-tail-source");
+        let partial = test_ref("uncheckpointed-tail-partial");
+        let plaintext = vec![19_u8; 1024 * 1024 + 17];
+        let blobs = MemoryBlob::default();
+        blobs.put(&source, plaintext);
+        let mut download_record = record(
+            "uncheckpointed-tail-transfer",
+            &source,
+            &partial,
+            1024 * 1024 + 17,
+            1024 * 1024,
+        );
+        download_record.direction = ObjectTransferDirection::Download;
+        download_record.source_local_ref.clear();
+        set_chunk_complete(&mut download_record.completed_chunk_bitmap, 0);
+        let (material, _, descriptor) = prepared_object(
+            &blobs,
+            &source,
+            &record(
+                "uncheckpointed-tail-descriptor",
+                &source,
+                &partial,
+                1024 * 1024 + 17,
+                1024 * 1024,
+            ),
+        );
+        let first_plaintext = read_plaintext_chunk(&blobs, &source, &material, 0).unwrap();
+        let first_ciphertext = encrypt_object_chunk(&material, 0, &first_plaintext)
+            .unwrap()
+            .ciphertext;
+        let second_plaintext = read_plaintext_chunk(&blobs, &source, &material, 1).unwrap();
+        let second_ciphertext = encrypt_object_chunk(&material, 1, &second_plaintext)
+            .unwrap()
+            .ciphertext;
+        let mut checkpoint = first_ciphertext.clone();
+        checkpoint.extend(second_ciphertext);
+        blobs.put(&partial, checkpoint);
+
+        validate_partial_ciphertext(&blobs, &download_record, &material, &descriptor).unwrap();
+
+        assert_eq!(blobs.bytes(&partial).unwrap(), first_ciphertext);
+    }
+
+    #[test]
+    fn non_contiguous_ciphertext_checkpoint_is_deleted_and_fails_closed() {
+        let source = test_ref("sparse-checkpoint-source");
+        let partial = test_ref("sparse-checkpoint-partial");
+        let cache = test_ref("sparse-checkpoint-cache");
+        let plaintext = vec![23_u8; 1024 * 1024 + 17];
+        let blobs = Arc::new(MemoryBlob::default());
+        blobs.put(&source, plaintext.clone());
+        let descriptor_record = record(
+            "sparse-checkpoint-descriptor",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            1024 * 1024,
+        );
+        let (material, _, descriptor) =
+            prepared_object(blobs.as_ref(), &source, &descriptor_record);
+        let first_plaintext = read_plaintext_chunk(blobs.as_ref(), &source, &material, 0).unwrap();
+        let first_ciphertext = encrypt_object_chunk(&material, 0, &first_plaintext)
+            .unwrap()
+            .ciphertext;
+        let second_plaintext = read_plaintext_chunk(blobs.as_ref(), &source, &material, 1).unwrap();
+        let second_ciphertext = encrypt_object_chunk(&material, 1, &second_plaintext)
+            .unwrap()
+            .ciphertext;
+        let mut checkpoint = first_ciphertext;
+        checkpoint.extend(second_ciphertext);
+        blobs.put(&partial, checkpoint);
+        let mut download_record = record(
+            "sparse-checkpoint-transfer",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            1024 * 1024,
+        );
+        download_record.direction = ObjectTransferDirection::Download;
+        download_record.source_local_ref.clear();
+        set_chunk_complete(&mut download_record.completed_chunk_bitmap, 1);
+        let store = Arc::new(TestStore::default());
+        store.insert(download_record);
+        let worker = ObjectTransferWorker::new(
+            store,
+            Arc::new(MemoryTransport::new()),
+            blobs.clone(),
+            Arc::new(TestCodec),
+        );
+
+        assert!(worker
+            .download_once(
+                "sparse-checkpoint-transfer",
+                &descriptor,
+                &Sha256::digest(&plaintext).into(),
+                &cache,
+                10,
+            )
+            .is_err());
+        assert!(!blobs.exists(&partial).unwrap());
+        assert!(!blobs.exists(&cache).unwrap());
+        assert!(!blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+    }
+
+    #[test]
+    fn whole_ciphertext_hash_mismatch_cleans_checkpoint_before_decrypt() {
+        let source = test_ref("whole-ciphertext-source");
+        let partial = test_ref("whole-ciphertext-partial");
+        let cache = test_ref("whole-ciphertext-cache");
+        let plaintext = vec![29_u8; 1024 * 1024 + 17];
+        let blobs = Arc::new(MemoryBlob::default());
+        blobs.put(&source, plaintext.clone());
+        let descriptor_record = record(
+            "whole-ciphertext-descriptor",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            1024 * 1024,
+        );
+        let (material, _, mut descriptor) =
+            prepared_object(blobs.as_ref(), &source, &descriptor_record);
+        descriptor.commitment.ciphertext_sha256[0] ^= 1;
+        let transport = Arc::new(MemoryTransport::new());
+        seed_encrypted_chunks(transport.as_ref(), blobs.as_ref(), &source, &material);
+        let mut download_record = record(
+            "whole-ciphertext-transfer",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            1024 * 1024,
+        );
+        download_record.direction = ObjectTransferDirection::Download;
+        download_record.source_local_ref.clear();
+        let store = Arc::new(TestStore::default());
+        store.insert(download_record);
+        let worker =
+            ObjectTransferWorker::new(store, transport, blobs.clone(), Arc::new(TestCodec));
+
+        assert!(worker
+            .download_once(
+                "whole-ciphertext-transfer",
+                &descriptor,
+                &Sha256::digest(&plaintext).into(),
+                &cache,
+                10,
+            )
+            .is_err());
+        assert!(!blobs.exists(&partial).unwrap());
+        assert!(!blobs.exists(&cache).unwrap());
+        assert!(!blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+    }
+
+    #[test]
+    fn aead_failure_cleans_ciphertext_and_plaintext_artifacts() {
+        let source = test_ref("aead-failure-source");
+        let partial = test_ref("aead-failure-partial");
+        let cache = test_ref("aead-failure-cache");
+        let plaintext = vec![31_u8; 1024 * 1024 + 17];
+        let blobs = Arc::new(MemoryBlob::default());
+        blobs.put(&source, plaintext.clone());
+        let descriptor_record = record(
+            "aead-failure-descriptor",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            1024 * 1024,
+        );
+        let (material, _, descriptor) =
+            prepared_object(blobs.as_ref(), &source, &descriptor_record);
+        let transport = Arc::new(MemoryTransport::new());
+        seed_encrypted_chunks(transport.as_ref(), blobs.as_ref(), &source, &material);
+        let mut download_record = record(
+            "aead-failure-transfer",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            1024 * 1024,
+        );
+        download_record.direction = ObjectTransferDirection::Download;
+        download_record.source_local_ref.clear();
+        download_record.object_key = vec![8; 32];
+        let store = Arc::new(TestStore::default());
+        store.insert(download_record);
+        let worker =
+            ObjectTransferWorker::new(store, transport, blobs.clone(), Arc::new(TestCodec));
+
+        assert!(worker
+            .download_once(
+                "aead-failure-transfer",
+                &descriptor,
+                &Sha256::digest(&plaintext).into(),
+                &cache,
+                10,
+            )
+            .is_err());
+        assert!(!blobs.exists(&partial).unwrap());
+        assert!(!blobs.exists(&cache).unwrap());
+        assert!(!blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+    }
+
+    #[test]
+    fn plaintext_hash_failure_never_promotes_and_cleans_staging() {
+        let source = test_ref("plaintext-hash-source");
+        let partial = test_ref("plaintext-hash-partial");
+        let cache = test_ref("plaintext-hash-cache");
+        let plaintext = vec![37_u8; 1024 * 1024 + 17];
+        let blobs = Arc::new(MemoryBlob::default());
+        blobs.put(&source, plaintext.clone());
+        let descriptor_record = record(
+            "plaintext-hash-descriptor",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            1024 * 1024,
+        );
+        let (material, _, descriptor) =
+            prepared_object(blobs.as_ref(), &source, &descriptor_record);
+        let transport = Arc::new(MemoryTransport::new());
+        seed_encrypted_chunks(transport.as_ref(), blobs.as_ref(), &source, &material);
+        let mut download_record = record(
+            "plaintext-hash-transfer",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            1024 * 1024,
+        );
+        download_record.direction = ObjectTransferDirection::Download;
+        download_record.source_local_ref.clear();
+        let store = Arc::new(TestStore::default());
+        store.insert(download_record);
+        let worker =
+            ObjectTransferWorker::new(store, transport, blobs.clone(), Arc::new(TestCodec));
+
+        assert!(worker
+            .download_once("plaintext-hash-transfer", &descriptor, &[0; 32], &cache, 10,)
+            .is_err());
+        assert!(!blobs.exists(&partial).unwrap());
+        assert!(!blobs.exists(&cache).unwrap());
+        assert!(!blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+    }
+
+    #[test]
     fn corrupt_download_chunk_and_wrong_etag_fail_closed() {
         let source = test_ref("corrupt-download-source");
         let partial = test_ref("corrupt-download-partial");
@@ -1841,6 +2523,127 @@ mod tests {
     }
 
     #[test]
+    fn completed_download_revalidates_cached_plaintext_before_reuse() {
+        let source = test_ref("completed-download-source");
+        let partial = test_ref("completed-download-partial");
+        let cache = test_ref("completed-download-cache");
+        let plaintext = b"expected private media".to_vec();
+        let blobs = Arc::new(MemoryBlob::default());
+        blobs.put(&source, plaintext.clone());
+        blobs.put(&cache, b"tampered private media".to_vec());
+        let descriptor_record = record(
+            "descriptor",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            OBJECT_CHUNK_SIZE,
+        );
+        let (_, _, descriptor) = prepared_object(blobs.as_ref(), &source, &descriptor_record);
+        blobs.put(&partial, b"stale ciphertext".to_vec());
+        blobs.put(
+            &plaintext_staging_ref(&cache),
+            b"partial plaintext".to_vec(),
+        );
+        let mut download_record = record(
+            "completed-download-transfer",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            OBJECT_CHUNK_SIZE,
+        );
+        download_record.direction = ObjectTransferDirection::Download;
+        download_record.source_local_ref.clear();
+        download_record.state = ObjectTransferState::Complete;
+        download_record.descriptor_sha256 = TestCodec
+            .descriptor_commitment(&descriptor)
+            .unwrap()
+            .to_vec();
+        let store = Arc::new(TestStore::default());
+        store.insert(download_record);
+        let worker = ObjectTransferWorker::new(
+            store,
+            Arc::new(MemoryTransport::new()),
+            blobs.clone(),
+            Arc::new(TestCodec),
+        );
+
+        assert!(worker
+            .run_download_once(
+                "completed-download-transfer",
+                &descriptor,
+                &Sha256::digest(&plaintext).into(),
+                &cache,
+                10,
+            )
+            .is_err());
+        assert!(!blobs.exists(&cache).unwrap());
+        assert!(!blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+        assert!(!blobs.exists(&partial).unwrap());
+    }
+
+    #[test]
+    fn completed_download_reuses_only_a_descriptor_bound_valid_cache() {
+        let source = test_ref("valid-completed-download-source");
+        let partial = test_ref("valid-completed-download-partial");
+        let cache = test_ref("valid-completed-download-cache");
+        let plaintext = b"verified private media".to_vec();
+        let blobs = Arc::new(MemoryBlob::default());
+        blobs.put(&source, plaintext.clone());
+        blobs.put(&partial, b"stale ciphertext".to_vec());
+        blobs.put(&cache, plaintext.clone());
+        blobs.put(
+            &plaintext_staging_ref(&cache),
+            b"partial plaintext".to_vec(),
+        );
+        let descriptor_record = record(
+            "valid-completed-descriptor",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            OBJECT_CHUNK_SIZE,
+        );
+        let (_, _, descriptor) = prepared_object(blobs.as_ref(), &source, &descriptor_record);
+        let mut download_record = record(
+            "valid-completed-download-transfer",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            OBJECT_CHUNK_SIZE,
+        );
+        download_record.direction = ObjectTransferDirection::Download;
+        download_record.source_local_ref.clear();
+        download_record.state = ObjectTransferState::Complete;
+        download_record.descriptor_sha256 = TestCodec
+            .descriptor_commitment(&descriptor)
+            .unwrap()
+            .to_vec();
+        let store = Arc::new(TestStore::default());
+        store.insert(download_record);
+        let worker = ObjectTransferWorker::new(
+            store,
+            Arc::new(MemoryTransport::new()),
+            blobs.clone(),
+            Arc::new(TestCodec),
+        );
+
+        assert_eq!(
+            worker
+                .run_download_once(
+                    "valid-completed-download-transfer",
+                    &descriptor,
+                    &Sha256::digest(&plaintext).into(),
+                    &cache,
+                    10,
+                )
+                .unwrap(),
+            ObjectTransferProgress::Complete
+        );
+        assert_eq!(blobs.bytes(&cache).unwrap(), plaintext);
+        assert!(!blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+        assert!(!blobs.exists(&partial).unwrap());
+    }
+
+    #[test]
     fn hundred_mib_upload_resumes_at_quarter_boundaries() {
         const SIZE: u64 = 100 * 1024 * 1024;
         const CHUNKS: u32 = 100;
@@ -1894,14 +2697,24 @@ mod tests {
             SIZE,
             1024 * 1024,
         );
-        let (_, _, descriptor) = prepared_object(blobs.as_ref(), &source, &descriptor_record);
+        let (material, _, descriptor) =
+            prepared_object(blobs.as_ref(), &source, &descriptor_record);
         let plaintext_hash = blobs.sha256(&source).unwrap();
 
         for completed_chunks in [25_u32, 50, 75] {
             let transfer_id = format!("hundred-mib-download-{completed_chunks}");
             let partial = test_ref(&format!("hundred-mib-download-partial-{completed_chunks}"));
             let cache = test_ref(&format!("hundred-mib-download-cache-{completed_chunks}"));
-            blobs.put(&partial, vec![0; completed_chunks as usize * 1024 * 1024]);
+            let partial_ciphertext = (0..completed_chunks)
+                .flat_map(|index| {
+                    let plaintext =
+                        read_plaintext_chunk(blobs.as_ref(), &source, &material, index).unwrap();
+                    encrypt_object_chunk(&material, index, &plaintext)
+                        .unwrap()
+                        .ciphertext
+                })
+                .collect();
+            blobs.put(&partial, partial_ciphertext);
             let store = Arc::new(TestStore::default());
             let mut download_record = record(&transfer_id, &source, &partial, SIZE, 1024 * 1024);
             download_record.direction = ObjectTransferDirection::Download;
@@ -1969,6 +2782,31 @@ mod tests {
         assert!(!blobs.exists(&partial).unwrap());
         assert_eq!(
             store.record("cancel-transfer").state,
+            ObjectTransferState::Cancelled
+        );
+    }
+
+    #[test]
+    fn completed_upload_can_be_cancelled_while_unattached() {
+        let source = test_ref("completed-upload-source");
+        let partial = test_ref("completed-upload-partial");
+        let blobs = Arc::new(MemoryBlob::default());
+        blobs.put(&source, vec![1_u8; 1024]);
+        let store = Arc::new(TestStore::default());
+        let mut transfer = record("completed-upload", &source, &partial, 1024, 1024);
+        transfer.upload_id = "upload-complete".to_string();
+        transfer.generation = 3;
+        transfer.state = ObjectTransferState::Complete;
+        store.insert(transfer);
+        let transport = Arc::new(MemoryTransport::new());
+        let worker =
+            ObjectTransferWorker::new(store.clone(), transport.clone(), blobs, Arc::new(TestCodec));
+
+        worker.cancel("completed-upload", 10).unwrap();
+
+        assert_eq!(transport.cancel_calls.load(Ordering::Acquire), 1);
+        assert_eq!(
+            store.record("completed-upload").state,
             ObjectTransferState::Cancelled
         );
     }
@@ -2142,6 +2980,79 @@ mod tests {
             ObjectTransferProgress::RetryScheduled { .. }
         ));
         assert!(transport.upload_calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn shutdown_cleans_unverified_plaintext_and_preserves_ciphertext_checkpoint() {
+        let source = test_ref("shutdown-download-source");
+        let partial = test_ref("shutdown-download-partial");
+        let cache = test_ref("shutdown-download-cache");
+        let plaintext = b"shutdown private media".to_vec();
+        let blobs = Arc::new(MemoryBlob::default());
+        blobs.put(&source, plaintext.clone());
+        blobs.put(&partial, b"ciphertext checkpoint".to_vec());
+        blobs.put(&cache, b"unverified plaintext".to_vec());
+        blobs.put(
+            &plaintext_staging_ref(&cache),
+            b"partial plaintext".to_vec(),
+        );
+        let descriptor_record = record(
+            "shutdown-download-descriptor",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            OBJECT_CHUNK_SIZE,
+        );
+        let (_, _, descriptor) = prepared_object(blobs.as_ref(), &source, &descriptor_record);
+        let mut download_record = record(
+            "shutdown-download-transfer",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            OBJECT_CHUNK_SIZE,
+        );
+        download_record.direction = ObjectTransferDirection::Download;
+        download_record.source_local_ref.clear();
+        let store = Arc::new(TestStore::default());
+        store.insert(download_record);
+        let control = Arc::new(ObjectTransferControl::new());
+        control.request_shutdown();
+        let worker = ObjectTransferWorker::with_control(
+            store,
+            Arc::new(MemoryTransport::new()),
+            blobs.clone(),
+            Arc::new(TestCodec),
+            control,
+            ObjectRetryPolicy::default(),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            worker
+                .run_download_once(
+                    "shutdown-download-transfer",
+                    &descriptor,
+                    &Sha256::digest(&plaintext).into(),
+                    &cache,
+                    10,
+                )
+                .unwrap(),
+            ObjectTransferProgress::RetryScheduled { .. }
+        ));
+        assert!(blobs.exists(&partial).unwrap());
+        assert!(!blobs.exists(&cache).unwrap());
+        assert!(!blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+    }
+
+    #[test]
+    fn shutdown_waits_for_active_transfer_permits_to_drain() {
+        let control = ObjectTransferControl::new();
+        let permit = control.try_admit("active-transfer").unwrap();
+
+        assert!(!control.request_shutdown_and_wait(Duration::from_millis(1)));
+        drop(permit);
+        assert!(control.request_shutdown_and_wait(Duration::from_millis(1)));
+        assert!(control.try_admit("new-transfer").is_err());
     }
 
     #[test]

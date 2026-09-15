@@ -22,6 +22,7 @@ import (
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -496,6 +497,133 @@ func TestMomentPathWrapperRejectsBodyAndQuery(t *testing.T) {
 	}
 }
 
+func TestPrivateContentHandlerErrorProjectsStableProtobuf(t *testing.T) {
+	tests := []struct {
+		domainCode domain.PrivateContentErrorCode
+		status     int
+		stableCode model.ErrorCode
+	}{
+		{domain.PrivateContentInvalidArgument, http.StatusBadRequest, model.ErrorCode_ERROR_CODE_INVALID_REQUEST},
+		{domain.PrivateContentUnsupported, http.StatusBadRequest, model.ErrorCode_ERROR_CODE_INVALID_REQUEST},
+		{domain.PrivateContentUnauthorized, http.StatusForbidden, model.ErrorCode_ERROR_CODE_UNAUTHORIZED},
+		{domain.PrivateContentNotFound, http.StatusNotFound, model.ErrorCode_ERROR_CODE_POST_NOT_FOUND},
+		{domain.PrivateContentConflict, http.StatusConflict, model.ErrorCode_ERROR_CODE_INVALID_REQUEST},
+		{domain.PrivateContentStalePlan, http.StatusConflict, model.ErrorCode_ERROR_CODE_INVALID_REQUEST},
+		{domain.PrivateContentExpiredPlan, http.StatusConflict, model.ErrorCode_ERROR_CODE_INVALID_REQUEST},
+		{domain.PrivateContentIntegrityFailed, http.StatusInternalServerError, model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR},
+		{domain.PrivateContentDependency, http.StatusInternalServerError, model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR},
+		{domain.PrivateContentIntegrationGap, http.StatusInternalServerError, model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR},
+		{domain.PrivateContentInternal, http.StatusInternalServerError, model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR},
+	}
+	for _, testCase := range tests {
+		t.Run(string(testCase.domainCode), func(t *testing.T) {
+			handlerError, response := decodePrivateContentHandlerError(
+				t,
+				privateContentHandlerError(
+					domain.NewPrivateContentError(
+						testCase.domainCode,
+						"test.private_content",
+						"",
+						"bounded failure",
+					),
+				),
+			)
+			if handlerError.Code != testCase.status ||
+				response.GetCode() != testCase.stableCode {
+				t.Fatalf(
+					"projection = status %d code %s, want status %d code %s",
+					handlerError.Code,
+					response.GetCode(),
+					testCase.status,
+					testCase.stableCode,
+				)
+			}
+		})
+	}
+}
+
+type privateMomentReaderFunc func(
+	context.Context,
+	*model.ActorDeviceRef,
+	string,
+) (*privatecontentpb.GetMomentResourceResponse, error)
+
+func (f privateMomentReaderFunc) GetPrivateMoment(
+	ctx context.Context,
+	viewer *model.ActorDeviceRef,
+	postID string,
+) (*privatecontentpb.GetMomentResourceResponse, error) {
+	return f(ctx, viewer, postID)
+}
+
+func TestHiddenPrivateMomentReadReturnsTypedPostNotFound(t *testing.T) {
+	const (
+		postID    = "01K55XG0000000000000000000"
+		actorPTID = "ptid:v1:actor:peers:p:eve:eve-fingerprint"
+		deviceID  = "eve-device"
+	)
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/social/moments/"+postID,
+		nil,
+	)
+	request.Header.Set("X-Device-ID", deviceID)
+	var observedViewer *model.ActorDeviceRef
+	reader := privateMomentReaderFunc(func(
+		_ context.Context,
+		viewer *model.ActorDeviceRef,
+		gotPostID string,
+	) (*privatecontentpb.GetMomentResourceResponse, error) {
+		observedViewer = viewer
+		if gotPostID != postID {
+			t.Fatalf("private reader post ID = %q, want %q", gotPostID, postID)
+		}
+		return nil, domain.NewPrivateContentError(
+			domain.PrivateContentNotFound,
+			"test.private_content.hidden_read",
+			"",
+			"resource is missing or hidden",
+		)
+	})
+	handler := serverwrapper.DeviceID()(func(
+		ctx context.Context,
+		_ server.Request,
+		_ server.Response,
+	) error {
+		_, err := (&subServer{}).handleGetMomentResourceWithReader(
+			context.WithValue(
+				ctx,
+				socialMomentPathContextKey{},
+				postID,
+			),
+			&privatecontentpb.GetMomentResourceRequest{PostId: postID},
+			reader,
+		)
+		return err
+	})
+	err := handler(
+		coreauth.WithSubject(
+			context.Background(),
+			&coreauth.Subject{ID: actorPTID},
+		),
+		&socialHTTPRequest{request: request},
+		&socialHTTPResponse{writer: httptest.NewRecorder()},
+	)
+	handlerError, response := decodePrivateContentHandlerError(t, err)
+	if handlerError.Code != http.StatusNotFound ||
+		response.GetCode() != model.ErrorCode_ERROR_CODE_POST_NOT_FOUND {
+		t.Fatalf(
+			"hidden private read = status %d code %s",
+			handlerError.Code,
+			response.GetCode(),
+		)
+	}
+	if observedViewer.GetActor().GetPtid() != actorPTID ||
+		observedViewer.GetDeviceId() != deviceID {
+		t.Fatalf("hidden private read viewer = %+v", observedViewer)
+	}
+}
+
 func TestMomentResourceDoesNotParsePrivateIDAsNumericPrefix(t *testing.T) {
 	fixture := newHandlerFixture(t)
 	public := fixture.seedMoment(
@@ -512,10 +640,49 @@ func TestMomentResourceDoesNotParsePrivateIDAsNumericPrefix(t *testing.T) {
 			PostId: public.GetId() + "ABC",
 		},
 	)
-	handlerErr, ok := err.(*server.HandlerError)
-	if !ok || handlerErr.Code != http.StatusNotFound {
-		t.Fatalf("numeric-prefix private ID error = %v", err)
+	handlerError, response := decodePrivateContentHandlerError(t, err)
+	if handlerError.Code != http.StatusNotFound ||
+		response.GetCode() != model.ErrorCode_ERROR_CODE_POST_NOT_FOUND {
+		t.Fatalf(
+			"numeric-prefix private ID = status %d code %s",
+			handlerError.Code,
+			response.GetCode(),
+		)
 	}
+}
+
+func decodePrivateContentHandlerError(
+	t *testing.T,
+	err error,
+) (*server.HandlerError, *model.ErrorResponse) {
+	t.Helper()
+	handlerError, ok := err.(*server.HandlerError)
+	if !ok {
+		t.Fatalf("private-content error type = %T, want *server.HandlerError", err)
+	}
+	if handlerError.ContentType != server.CanonicalProtobufContentType {
+		t.Fatalf(
+			"private-content content type = %q, want %q",
+			handlerError.ContentType,
+			server.CanonicalProtobufContentType,
+		)
+	}
+	response := &model.ErrorResponse{}
+	if err := proto.Unmarshal(handlerError.Body, response); err != nil {
+		t.Fatalf("decode private-content ErrorResponse: %v", err)
+	}
+	deterministic, err := proto.MarshalOptions{Deterministic: true}.Marshal(response)
+	if err != nil {
+		t.Fatalf("encode private-content ErrorResponse: %v", err)
+	}
+	if !bytes.Equal(handlerError.Body, deterministic) {
+		t.Fatalf(
+			"private-content ErrorResponse is not deterministic: %x != %x",
+			handlerError.Body,
+			deterministic,
+		)
+	}
+	return handlerError, response
 }
 
 func TestPublicMomentResourcePreservesGetPostResponseWire(t *testing.T) {

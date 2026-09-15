@@ -971,28 +971,60 @@ func (s *subServer) privateContentAuthor(
 }
 
 func privateContentHandlerError(err error) error {
+	status := nethttp.StatusInternalServerError
+	code := model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR
+	message := "private-content command failed"
 	switch domain.PrivateContentCodeOf(err) {
 	case domain.PrivateContentInvalidArgument,
 		domain.PrivateContentUnsupported:
-		return server.BadRequestWithCause("invalid private-content command", err)
+		status = nethttp.StatusBadRequest
+		code = model.ErrorCode_ERROR_CODE_INVALID_REQUEST
+		message = "invalid private-content command"
 	case domain.PrivateContentUnauthorized:
-		return server.Forbidden("private-content command is unauthorized")
+		status = nethttp.StatusForbidden
+		code = model.ErrorCode_ERROR_CODE_UNAUTHORIZED
+		message = "private-content command is unauthorized"
 	case domain.PrivateContentNotFound:
-		return server.NotFound("private content not found")
+		status = nethttp.StatusNotFound
+		code = model.ErrorCode_ERROR_CODE_POST_NOT_FOUND
+		message = "private content not found"
 	case domain.PrivateContentConflict,
 		domain.PrivateContentStalePlan,
 		domain.PrivateContentExpiredPlan:
-		return server.NewHandlerErrorWithCause(
-			nethttp.StatusConflict,
-			"private-content command conflicts with current authority",
-			err,
-		)
-	default:
+		status = nethttp.StatusConflict
+		code = model.ErrorCode_ERROR_CODE_INVALID_REQUEST
+		message = "private-content command conflicts with current authority"
+	}
+	return privateContentResponseError(status, code, message, err)
+}
+
+func privateContentResponseError(
+	status int,
+	code model.ErrorCode,
+	message string,
+	cause error,
+) error {
+	body, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		&model.ErrorResponse{
+			Code:    code,
+			Message: message,
+		},
+	)
+	if err != nil {
 		return server.InternalErrorWithCause(
-			"private-content command failed",
+			"encode private-content error response",
 			err,
 		)
 	}
+	handlerError := server.NewHandlerErrorWithResponse(
+		status,
+		message,
+		server.CanonicalProtobufContentType,
+		body,
+		nil,
+	)
+	handlerError.Err = cause
+	return handlerError
 }
 
 // getUserID extracts the authenticated user ID from context.
@@ -1126,6 +1158,26 @@ func (s *subServer) handleGetMomentResource(
 	ctx context.Context,
 	req *privatecontentpb.GetMomentResourceRequest,
 ) (*privatecontentpb.GetMomentResourceResponse, error) {
+	var privateReader privateMomentReader
+	if s.privateContentSvc != nil {
+		privateReader = s.privateContentSvc
+	}
+	return s.handleGetMomentResourceWithReader(ctx, req, privateReader)
+}
+
+type privateMomentReader interface {
+	GetPrivateMoment(
+		context.Context,
+		*model.ActorDeviceRef,
+		string,
+	) (*privatecontentpb.GetMomentResourceResponse, error)
+}
+
+func (s *subServer) handleGetMomentResourceWithReader(
+	ctx context.Context,
+	req *privatecontentpb.GetMomentResourceRequest,
+	privateReader privateMomentReader,
+) (*privatecontentpb.GetMomentResourceResponse, error) {
 	postID, ok := ctx.Value(socialMomentPathContextKey{}).(string)
 	if !ok || postID == "" {
 		return nil, server.BadRequest("moment path is invalid")
@@ -1190,19 +1242,29 @@ func (s *subServer) handleGetMomentResource(
 		"post_id",
 		"social.get_moment_resource",
 	); err != nil {
-		return nil, server.NotFound("moment not found")
+		return nil, privateContentResponseError(
+			nethttp.StatusNotFound,
+			model.ErrorCode_ERROR_CODE_POST_NOT_FOUND,
+			"moment not found",
+			nil,
+		)
 	}
 	actorPTID, ok := getActorPTID(ctx)
 	deviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
 	if !ok || deviceID == "" {
-		return nil, server.NotFound("moment not found")
+		return nil, privateContentResponseError(
+			nethttp.StatusNotFound,
+			model.ErrorCode_ERROR_CODE_POST_NOT_FOUND,
+			"moment not found",
+			nil,
+		)
 	}
-	if s.privateContentSvc == nil {
+	if privateReader == nil {
 		return nil, server.InternalError(
 			"Social private-content service is unavailable",
 		)
 	}
-	response, err := s.privateContentSvc.GetPrivateMoment(
+	response, err := privateReader.GetPrivateMoment(
 		ctx,
 		&model.ActorDeviceRef{
 			Actor: &model.ActorRef{
@@ -1214,10 +1276,6 @@ func (s *subServer) handleGetMomentResource(
 		req.GetPostId(),
 	)
 	if err != nil {
-		if domain.PrivateContentCodeOf(err) ==
-			domain.PrivateContentNotFound {
-			return nil, server.NotFound("moment not found")
-		}
 		return nil, privateContentHandlerError(err)
 	}
 	return response, nil

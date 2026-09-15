@@ -118,9 +118,9 @@ pub use prekeys::{PreKeyPublisher, PreKeyTransport, StationPreKeyTransport};
 pub use public_event::PublicEventProcessor;
 pub use receipt::DeliveryReceiptProcessor;
 pub use recovery::{
-    decode_recovery_revision, encode_recovery_revision, EncodedRecoveryRevision,
-    MessagingRecoveryArchive, RecoveryAttachmentMetadata, RecoveryConversationProjection,
-    RecoveryMessageProjection, RecoveryTrustRecord,
+    decode_recovery_revision, encode_recovery_revision, DecodedRecoveryRevision,
+    EncodedRecoveryRevision, MessagingRecoveryArchive, RecoveryAttachmentMetadata,
+    RecoveryConversationProjection, RecoveryMessageProjection, RecoveryTrustRecord,
 };
 pub use send::{DirectSessionBootstrap, EditTextIntent, SendPreparer, SendTextIntent};
 pub use store::{

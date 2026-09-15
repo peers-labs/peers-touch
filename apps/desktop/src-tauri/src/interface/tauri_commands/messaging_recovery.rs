@@ -22,6 +22,10 @@ use crate::model::recovery::{
     ReadLatestRecoveryRevisionRequest, ReadLatestRecoveryRevisionResponse,
     StoreRecoveryRevisionRequest, StoreRecoveryRevisionResponse,
 };
+use crate::secure_content::recovery::{
+    store_recovery_phrase, INITIAL_SECURE_CONTENT_RECOVERY_EPOCH,
+};
+use crate::secure_content::store::SecureContentStore;
 use crate::state::AppState;
 use messaging_core::proto::actor_device_ptid;
 
@@ -70,6 +74,25 @@ fn require_session(
 
 fn identity_key_ref(actor_ptid: &str) -> String {
     crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid).identity_key_ref()
+}
+
+fn store_secure_content_recovery_master(
+    actor_ptid: &str,
+    recovery_epoch: u64,
+    recovery_phrase: &str,
+) -> Result<(), String> {
+    let store = SecureContentStore::open(actor_ptid)?;
+    store_recovery_phrase(&store, actor_ptid, recovery_epoch, recovery_phrase)
+}
+
+fn next_secure_content_recovery_epoch(actor_ptid: &str) -> Result<u64, String> {
+    let store = SecureContentStore::open(actor_ptid)?;
+    store
+        .latest_recovery_epoch(actor_ptid)?
+        .unwrap_or(INITIAL_SECURE_CONTENT_RECOVERY_EPOCH - 1)
+        .checked_add(1)
+        .filter(|epoch| *epoch <= i64::MAX as u64)
+        .ok_or_else(|| "Secure Content recovery epoch is exhausted".to_string())
 }
 
 fn timestamp_ms(timestamp: Option<&prost_types::Timestamp>) -> i64 {
@@ -125,24 +148,28 @@ fn latest_revision(
     ReadLatestRecoveryRevisionResponse,
     crate::infrastructure::station_client::StationClientError,
 > {
-    let mut revision: ReadLatestRecoveryRevisionResponse =
-        station_client::request_proto_for_device(
-            Method::GET,
-            "/recovery/latest",
-            &session.token,
-            None,
-            None::<&ReadLatestRecoveryRevisionRequest>,
-            device_id,
-        )?;
+    let revision: ReadLatestRecoveryRevisionResponse = station_client::request_proto_for_device(
+        Method::GET,
+        "/recovery/latest",
+        &session.token,
+        None,
+        None::<&ReadLatestRecoveryRevisionRequest>,
+        device_id,
+    )?;
     #[cfg(feature = "acceptance-webdriver")]
-    if std::env::var_os("PT_MESSAGING_RECOVERY_CORRUPT_LATEST_FILE")
-        .map(std::path::PathBuf::from)
-        .is_some_and(|path| path.is_file())
     {
-        if let Some(first) = revision.encrypted_archive.first_mut() {
-            *first ^= 1;
+        let mut revision = revision;
+        if std::env::var_os("PT_MESSAGING_RECOVERY_CORRUPT_LATEST_FILE")
+            .map(std::path::PathBuf::from)
+            .is_some_and(|path| path.is_file())
+        {
+            if let Some(first) = revision.encrypted_archive.first_mut() {
+                *first ^= 1;
+            }
         }
+        return Ok(revision);
     }
+    #[cfg(not(feature = "acceptance-webdriver"))]
     Ok(revision)
 }
 
@@ -187,6 +214,16 @@ pub fn messaging_recovery_create_revision(
             None,
         );
     }
+    let recovery_epoch = match next_secure_content_recovery_epoch(&session.actor_ptid) {
+        Ok(epoch) => epoch,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("failed to allocate Secure Content recovery epoch: {error}"),
+                None,
+            )
+        }
+    };
     let engine = match state.messaging_engines.get(&session.account_id) {
         Ok(Some(engine)) => engine,
         Ok(None) => {
@@ -207,6 +244,7 @@ pub fn messaging_recovery_create_revision(
         &Ulid::new().to_string(),
         &engine.endpoint().device_id,
         crate::messaging::now_unix_ms(),
+        recovery_epoch,
         &archive,
     ) {
         Ok(encoded) => encoded,
@@ -229,6 +267,17 @@ pub fn messaging_recovery_create_revision(
         Ok(response) => response,
         Err(error) => return error.into_app_result("failed to upload recovery revision"),
     };
+    if let Err(error) = store_secure_content_recovery_master(
+        &session.actor_ptid,
+        encoded.recovery_epoch,
+        &input.recovery_phrase,
+    ) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("failed to store Secure Content recovery master: {error}"),
+            None,
+        );
+    }
     to_stub(
         "messaging_recovery_create_revision",
         json!({
@@ -281,14 +330,14 @@ pub fn messaging_recovery_restore_latest(
         Ok(revision) => revision,
         Err(error) => return error.into_app_result("failed to fetch latest recovery revision"),
     };
-    let archive = match decode_recovery_revision(
+    let decoded = match decode_recovery_revision(
         &recovery_phrase,
         &session.ptid,
         &revision.revision_id,
         &revision.encrypted_archive,
         &revision.encrypted_archive_sha256,
     ) {
-        Ok(archive) => archive,
+        Ok(decoded) => decoded,
         Err(_) => {
             return AppResult::fail(
                 ErrorCode::InvalidArgument,
@@ -297,6 +346,18 @@ pub fn messaging_recovery_restore_latest(
             )
         }
     };
+    if let Err(error) = store_secure_content_recovery_master(
+        &session.actor_ptid,
+        decoded.recovery_epoch,
+        &recovery_phrase,
+    ) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("failed to store Secure Content recovery master: {error}"),
+            None,
+        );
+    }
+    let archive = decoded.archive;
 
     let key_ref = identity_key_ref(&session.ptid);
     let previous_seed = match crypto::load_identity_key(&key_ref) {

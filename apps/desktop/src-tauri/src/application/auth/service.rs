@@ -665,6 +665,9 @@ fn run_required_logout_cleanup(
 pub(crate) fn detach_for_station_switch(
     state: &AppState,
 ) -> Result<(), AppResult<AuthSessionPayload>> {
+    if let Err(error) = state.secure_content.shutdown() {
+        tracing::warn!(error = %error, "failed to stop Secure Content for Station switch");
+    }
     if let Err(error) = state.messaging_engines.deactivate_all() {
         tracing::warn!(error = %error, "failed to deactivate messaging engines for Station switch");
     }

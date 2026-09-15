@@ -216,6 +216,15 @@ pub fn device_revoke(
         Ok(t) => t,
         Err(e) => return e,
     };
+    let current_actor = state.sessions.get(window.label()).and_then(|session| {
+        state
+            .messaging_engines
+            .get(&session.account_id)
+            .ok()
+            .flatten()
+            .filter(|engine| engine.endpoint().device_id == input.device_id.as_str())
+            .map(|_| session.actor.ptid)
+    });
     let body = json!({ "device_id": input.device_id });
     match station_client::request_json_auth(
         Method::POST,
@@ -224,7 +233,18 @@ pub fn device_revoke(
         None,
         Some(&body),
     ) {
-        Ok(resp) => AppResult::success(resp),
+        Ok(resp) => {
+            if let Some(actor_ptid) = current_actor {
+                if let Err(error) = state.secure_content.teardown_actor(&actor_ptid) {
+                    return AppResult::fail(
+                        ErrorCode::InternalError,
+                        format!("device revoked but Secure Content teardown failed: {error}"),
+                        None,
+                    );
+                }
+            }
+            AppResult::success(resp)
+        }
         Err(e) => station_err(e, "device revoke failed"),
     }
 }

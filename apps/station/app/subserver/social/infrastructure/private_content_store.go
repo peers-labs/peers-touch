@@ -427,21 +427,23 @@ func migratePrivateContentPost(database *gorm.DB) error {
 }
 
 type PrivatePostReadModel struct {
-	Post           dbmodel.SocialPrivateContentPost
-	Snapshot       dbmodel.SocialPrivateAudienceSnapshot
-	Envelope       dbmodel.SocialPrivateContentEnvelope
-	Objects        []dbmodel.SocialPrivateObjectAttachment
-	CommitProof    dbmodel.SocialPrivateCommitProof
-	AuthorDeviceID string
+	Post                dbmodel.SocialPrivateContentPost
+	Snapshot            dbmodel.SocialPrivateAudienceSnapshot
+	Envelope            *dbmodel.SocialPrivateContentEnvelope
+	Objects             []dbmodel.SocialPrivateObjectAttachment
+	CommitProof         dbmodel.SocialPrivateCommitProof
+	AuthorDeviceID      string
+	CanonicalPlanSHA256 []byte
 }
 
 type PrivateCommentReadModel struct {
-	Comment        dbmodel.SocialPrivateContentComment
-	Snapshot       dbmodel.SocialPrivateAudienceSnapshot
-	Envelope       dbmodel.SocialPrivateContentEnvelope
-	Objects        []dbmodel.SocialPrivateObjectAttachment
-	CommitProof    dbmodel.SocialPrivateCommitProof
-	AuthorDeviceID string
+	Comment             dbmodel.SocialPrivateContentComment
+	Snapshot            dbmodel.SocialPrivateAudienceSnapshot
+	Envelope            *dbmodel.SocialPrivateContentEnvelope
+	Objects             []dbmodel.SocialPrivateObjectAttachment
+	CommitProof         dbmodel.SocialPrivateCommitProof
+	AuthorDeviceID      string
+	CanonicalPlanSHA256 []byte
 }
 
 func (s *GORMPrivateContentStore) GetPrivatePost(
@@ -521,18 +523,20 @@ func (s *GORMPrivateContentStore) GetPrivatePost(
 				return ErrPrivateContentNotFound
 			}
 		}
-		var envelope dbmodel.SocialPrivateContentEnvelope
+		var envelope *dbmodel.SocialPrivateContentEnvelope
+		var endpointEnvelope dbmodel.SocialPrivateContentEnvelope
 		if err := tx.Where(
 			"content_id = ? AND key_kind = ? AND recipient_ptid = ? AND recipient_device_id = ?",
 			post.ContentID,
 			PrivateContentKeyKindEndpoint,
 			viewerPTID,
 			viewerDeviceID,
-		).First(&envelope).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrPrivateContentNotFound
+		).First(&endpointEnvelope).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
 			}
-			return err
+		} else {
+			envelope = &endpointEnvelope
 		}
 		var objects []dbmodel.SocialPrivateObjectAttachment
 		if err := tx.Where(
@@ -559,12 +563,13 @@ func (s *GORMPrivateContentStore) GetPrivatePost(
 			return err
 		}
 		result = &PrivatePostReadModel{
-			Post:           post,
-			Snapshot:       snapshot,
-			Envelope:       envelope,
-			Objects:        objects,
-			CommitProof:    proof,
-			AuthorDeviceID: plan.AuthorDeviceID,
+			Post:                post,
+			Snapshot:            snapshot,
+			Envelope:            envelope,
+			Objects:             objects,
+			CommitProof:         proof,
+			AuthorDeviceID:      plan.AuthorDeviceID,
+			CanonicalPlanSHA256: cloneBytes(plan.CanonicalPlanSHA256),
 		}
 		return nil
 	})
@@ -687,15 +692,20 @@ func (s *GORMPrivateContentStore) GetPrivateComment(
 		).First(&snapshot).Error; err != nil {
 			return err
 		}
-		var envelope dbmodel.SocialPrivateContentEnvelope
+		var envelope *dbmodel.SocialPrivateContentEnvelope
+		var endpointEnvelope dbmodel.SocialPrivateContentEnvelope
 		if err := tx.Where(
 			"content_id = ? AND key_kind = ? AND recipient_ptid = ? AND recipient_device_id = ?",
 			comment.ContentID,
 			PrivateContentKeyKindEndpoint,
 			viewerPTID,
 			viewerDeviceID,
-		).First(&envelope).Error; err != nil {
-			return ErrPrivateContentNotFound
+		).First(&endpointEnvelope).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		} else {
+			envelope = &endpointEnvelope
 		}
 		var objects []dbmodel.SocialPrivateObjectAttachment
 		if err := tx.Where(
@@ -722,12 +732,13 @@ func (s *GORMPrivateContentStore) GetPrivateComment(
 			return err
 		}
 		result = &PrivateCommentReadModel{
-			Comment:        comment,
-			Snapshot:       snapshot,
-			Envelope:       envelope,
-			Objects:        objects,
-			CommitProof:    proof,
-			AuthorDeviceID: plan.AuthorDeviceID,
+			Comment:             comment,
+			Snapshot:            snapshot,
+			Envelope:            envelope,
+			Objects:             objects,
+			CommitProof:         proof,
+			AuthorDeviceID:      plan.AuthorDeviceID,
+			CanonicalPlanSHA256: cloneBytes(plan.CanonicalPlanSHA256),
 		}
 		return nil
 	})
