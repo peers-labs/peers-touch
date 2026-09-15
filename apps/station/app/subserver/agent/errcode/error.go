@@ -35,6 +35,7 @@ const (
 	AgentContextInvalidReference       Code = "CONTEXT_INVALID_REFERENCE"
 	AgentLifecycleCancelled            Code = "LIFECYCLE_CANCELLED"
 	AgentLifecycleInterrupted          Code = "LIFECYCLE_INTERRUPTED"
+	AgentLifecycleStaleVersion         Code = "LIFECYCLE_STALE_VERSION"
 	AgentProviderCredentialMissing     Code = "PROVIDER_CREDENTIAL_MISSING"
 	AgentProviderRateLimit             Code = "PROVIDER_RATE_LIMIT"
 	AgentProviderModelUnavailable      Code = "PROVIDER_MODEL_UNAVAILABLE"
@@ -68,6 +69,7 @@ const (
 	AgentContextInvalidReferenceLocaleKey       = "agent.errors.contextInvalidReference"
 	AgentLifecycleCancelledLocaleKey            = "agent.errors.lifecycleCancelled"
 	AgentLifecycleInterruptedLocaleKey          = "agent.errors.lifecycleInterrupted"
+	AgentLifecycleStaleVersionLocaleKey         = "agent.errors.lifecycleStaleVersion"
 	AgentProviderCredentialMissingLocaleKey     = "agent.errors.providerCredentialMissing"
 	AgentProviderRateLimitLocaleKey             = "agent.errors.providerRateLimit"
 	AgentProviderModelUnavailableLocaleKey      = "agent.errors.providerModelUnavailable"
@@ -401,6 +403,26 @@ func NewLifecycleInterruptedPayload(turnID, reasonCode string) *model.ErrorPaylo
 		Details: map[string]string{
 			"turn_id":     turnID,
 			"reason_code": reasonCode,
+		},
+	}
+}
+
+func NewLifecycleStaleVersion(resourceID string, expectedRevision, actualRevision uint64) *BizError {
+	return &BizError{
+		Code:       AgentLifecycleStaleVersion,
+		HTTPStatus: http.StatusConflict,
+		Message:    AgentLifecycleStaleVersionLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentLifecycleStaleVersionLocaleKey,
+			ErrorType: string(AgentLifecycleStaleVersion),
+			LocaleKey: AgentLifecycleStaleVersionLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"resource_id":       resourceID,
+				"expected_revision": strconv.FormatUint(expectedRevision, 10),
+				"actual_revision":   strconv.FormatUint(actualRevision, 10),
+			},
 		},
 	}
 }

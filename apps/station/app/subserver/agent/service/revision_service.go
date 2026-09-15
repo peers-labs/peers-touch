@@ -85,7 +85,7 @@ func validateRevisionRequest(request RevisionRequest) error {
 
 func loadOwnedConversationTx(tx *gorm.DB, request RevisionRequest) (*persistence.Conversation, error) {
 	var conversation persistence.Conversation
-	if err := tx.Where(
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
 		"id = ? AND actor_ptid = ? AND status != ?",
 		request.ConversationID,
 		request.Ptid,
@@ -99,10 +99,35 @@ func loadOwnedConversationTx(tx *gorm.DB, request RevisionRequest) (*persistence
 			"failed to load conversation", err)
 	}
 	if conversation.Version != request.ExpectedConversationVersion {
-		return nil, errcode.New(errcode.AgentVersionConflict, http.StatusConflict,
-			"conversation version changed", nil)
+		return nil, errcode.NewLifecycleStaleVersion(
+			request.ConversationID,
+			request.ExpectedConversationVersion,
+			conversation.Version,
+		)
 	}
 	return &conversation, nil
+}
+
+func lifecycleStaleVersionTx(tx *gorm.DB, request RevisionRequest) error {
+	var conversation persistence.Conversation
+	if err := tx.Select("version").Where(
+		"id = ? AND actor_ptid = ? AND status != ?",
+		request.ConversationID,
+		request.Ptid,
+		"deleted",
+	).Take(&conversation).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return errcode.New(errcode.AgentNotFound, http.StatusNotFound,
+				"conversation not found", err)
+		}
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to load conversation revision", err)
+	}
+	return errcode.NewLifecycleStaleVersion(
+		request.ConversationID,
+		request.ExpectedConversationVersion,
+		conversation.Version,
+	)
 }
 
 func loadRevisionSourceMessageTx(
@@ -626,7 +651,7 @@ func (s *RevisionService) admitAndExecute(
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			return errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "conversation version changed", nil)
+			return lifecycleStaleVersionTx(tx, request)
 		}
 		admission.TurnID = turnID
 		if err := storeRevisionAdmissionTx(tx, kind, request, admission); err != nil {
@@ -747,7 +772,7 @@ func (s *RevisionService) mutateConversationOnly(
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			return errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "conversation version changed", nil)
+			return lifecycleStaleVersionTx(tx, request)
 		}
 		if err := storeRevisionAdmissionTx(tx, kind, request, admission); err != nil {
 			return err

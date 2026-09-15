@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -400,14 +401,6 @@ func TestRevisionCommandsRejectWithoutMutation(t *testing.T) {
 			},
 			wantCode: errcode.AgentNotFound,
 		},
-		{
-			name: "stale version",
-			mutate: func(request RevisionRequest) RevisionRequest {
-				request.ExpectedConversationVersion = 9
-				return request
-			},
-			wantCode: errcode.AgentVersionConflict,
-		},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -436,6 +429,68 @@ func TestRevisionCommandsRejectWithoutMutation(t *testing.T) {
 					messages, beforeMessages, events, beforeEvents, commands, beforeCommands, version, beforeVersion)
 			}
 		})
+	}
+}
+
+func TestRevisionCommandsRejectStaleVersionWithTypedPayloadWithoutMutation(t *testing.T) {
+	db := openConversationAuthorityDB(t, "revision_reject_stale_version")
+	migrateRevisionModels(t, db)
+	seedRevisionConversation(t, db)
+	if err := db.Model(&persistence.Conversation{}).
+		Where("id = ?", "conversation-revision").
+		Update("version", 2).Error; err != nil {
+		t.Fatalf("seed winning revision: %v", err)
+	}
+	executor := &revisionFakeTurnExecutor{db: db}
+	service := NewRevisionService(NewConversationService(), executor)
+	beforeMessages, beforeEvents, beforeCommands, beforeVersion := revisionStateCounts(t, db)
+
+	_, err := service.EditAndResend(context.Background(), RevisionRequest{
+		Ptid:                        "ptid:person:owner",
+		ConversationID:              "conversation-revision",
+		SourceMessageID:             "user-source",
+		Content:                     "stale revision",
+		IdempotencyKey:              "reject-stale-version",
+		ExpectedConversationVersion: 1,
+	})
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) {
+		t.Fatalf("stale revision error = %T %v, want BizError", err, err)
+	}
+	if bizErr.Code != errcode.AgentLifecycleStaleVersion ||
+		bizErr.HTTPStatus != http.StatusConflict ||
+		bizErr.Message != errcode.AgentLifecycleStaleVersionLocaleKey ||
+		bizErr.Payload == nil ||
+		bizErr.Payload.GetError() != errcode.AgentLifecycleStaleVersionLocaleKey ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentLifecycleStaleVersion) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentLifecycleStaleVersionLocaleKey ||
+		!bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() {
+		t.Fatalf("stale revision lost typed contract: %+v", bizErr)
+	}
+	details := bizErr.Payload.GetDetails()
+	if len(details) != 3 ||
+		details["resource_id"] != "conversation-revision" ||
+		details["expected_revision"] != "1" ||
+		details["actual_revision"] != "2" {
+		t.Fatalf("stale revision details = %+v", details)
+	}
+
+	messages, events, commands, version := revisionStateCounts(t, db)
+	if messages != beforeMessages || events != beforeEvents ||
+		commands != beforeCommands || version != beforeVersion || executor.calls != 0 {
+		t.Fatalf(
+			"stale rejection mutated state: messages=%d/%d events=%d/%d commands=%d/%d version=%d/%d executor_calls=%d",
+			messages,
+			beforeMessages,
+			events,
+			beforeEvents,
+			commands,
+			beforeCommands,
+			version,
+			beforeVersion,
+			executor.calls,
+		)
 	}
 }
 

@@ -4,6 +4,7 @@ import { log } from '../utils/logger';
 import i18n, { resolveI18nValue } from '../i18n/index';
 import {
   api,
+  type AgentConversation,
   type Session,
   type StreamEvent,
   type AgentAttachmentRefInput,
@@ -14,6 +15,8 @@ import {
   type AgentTurnQueueListOutput,
   type AgentRuntimeBudgetInput,
   classifyAgentTurnTerminalEvent,
+  isAgentLifecycleStaleVersionError,
+  normalizeAgentTurnStreamError,
   resolveAgentTypedErrorAction,
 } from '../services/desktop_api';
 import { agentService } from '../services/agent-service';
@@ -285,6 +288,7 @@ function cachedConversationToSession(conversation: CachedAgentConversation): Ses
     agent_name: conversation.agentId,
     title: resolveI18nValue(conversation.title) || '',
     message_count: 0,
+    version: conversation.version,
     model_override: conversation.modelName,
     created_at: conversation.createdAt,
     updated_at: conversation.updatedAt,
@@ -664,6 +668,20 @@ export function extractMessageArtifacts(message: Pick<ChatMessage, 'id' | 'role'
 
 export type ChatOperation = Operation;
 
+export interface AgentRevisionCommandFailure {
+  conversationId: string;
+  resourceId: string;
+  expectedRevision: number;
+  actualRevision: number;
+  typedError: AgentTypedErrorPayload;
+  resolution: AgentErrorResolutionAction & {
+    type: 'reloadLatest';
+    resourceId: string;
+    expectedRevision: number;
+    actualRevision: number;
+  };
+}
+
 interface ChatState {
   sessions: Session[];
   currentSessionKey: string;
@@ -677,6 +695,8 @@ interface ChatState {
   memoryDisabledSessions: Record<string, boolean>;
   draftPromotions: Record<string, string>;
   readinessErrorKey: string | null;
+  revisionCommandFailure: AgentRevisionCommandFailure | null;
+  revisionReloadingConversationId: string | null;
 
 
   wideScreen: boolean;
@@ -727,6 +747,7 @@ interface ChatState {
   ) => Promise<void>;
   retryTurnRecovery: (conversationId?: string) => void;
   reloadTurnSnapshot: (conversationId?: string) => Promise<AgentTurnSnapshotReloadResult>;
+  reloadLatestRevision: (conversationId?: string) => Promise<void>;
   reconcileClientLease: (
     conversationId: string,
     messageId: string,
@@ -768,6 +789,76 @@ function tempId() {
 async function stationConversationVersion(conversationId: string): Promise<number> {
   const conversation = await api.getAgentConversation(conversationId);
   return conversation.version;
+}
+
+async function revisionCommandVersion(
+  conversationId: string,
+  sessions: Session[],
+): Promise<number> {
+  const projectedVersion = sessions.find(
+    (session) => session.key === conversationId,
+  )?.version;
+  if (
+    typeof projectedVersion === 'number'
+    && Number.isSafeInteger(projectedVersion)
+    && projectedVersion > 0
+  ) {
+    return projectedVersion;
+  }
+  return stationConversationVersion(conversationId);
+}
+
+export function projectAgentRevisionCommandFailure(
+  error: unknown,
+  conversationId: string,
+): AgentRevisionCommandFailure | null {
+  const normalized = normalizeAgentTurnStreamError(error);
+  const typedError = normalized.typedError;
+  const resolution = normalized.resolution;
+  if (
+    !isAgentLifecycleStaleVersionError(typedError)
+    || resolution?.type !== 'reloadLatest'
+    || resolution.resourceId !== conversationId
+    || resolution.expectedRevision === undefined
+    || resolution.actualRevision === undefined
+  ) {
+    return null;
+  }
+  return {
+    conversationId,
+    resourceId: typedError.details.resource_id,
+    expectedRevision: resolution.expectedRevision,
+    actualRevision: resolution.actualRevision,
+    typedError,
+    resolution: resolution as AgentRevisionCommandFailure['resolution'],
+  };
+}
+
+function reconcileRevisionSession(
+  sessions: Session[],
+  conversation: AgentConversation,
+): Session[] {
+  const existing = sessions.find(
+    (session) => session.key === conversation.conversation_id,
+  );
+  const reloaded: Session = {
+    id: conversation.conversation_id,
+    key: conversation.conversation_id,
+    agent_name: conversation.agent_id,
+    title: resolveI18nValue(conversation.title) || '',
+    message_count: existing?.message_count ?? 0,
+    version: conversation.version,
+    model_override: conversation.model_name,
+    created_at: conversation.created_at,
+    updated_at: conversation.updated_at,
+    pinned: existing?.pinned,
+    favorite: existing?.favorite,
+  };
+  return existing
+    ? sessions.map((session) => (
+        session.key === conversation.conversation_id ? reloaded : session
+      ))
+    : [reloaded, ...sessions];
 }
 
 function presentChatRuntimeError(message: string): string {
@@ -1227,6 +1318,8 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   memoryDisabledSessions: {},
   draftPromotions: {},
   readinessErrorKey: null,
+  revisionCommandFailure: null,
+  revisionReloadingConversationId: null,
 
 
   wideScreen: false,
@@ -1254,6 +1347,8 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       memoryDisabledSessions: {},
       draftPromotions: {},
       readinessErrorKey: null,
+      revisionCommandFailure: null,
+      revisionReloadingConversationId: null,
       composerFill: null,
       composerReferenceRemoval: null,
       composerResourceSelection: null,
@@ -1591,6 +1686,51 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     const key = conversationId || get().currentSessionKey;
     const { reloadAgentTurnSnapshot } = await import('../runtimes/chatRuntime');
     return reloadAgentTurnSnapshot(key);
+  },
+
+  reloadLatestRevision: async (conversationId) => {
+    const key = conversationId || get().currentSessionKey;
+    const incident = get().revisionCommandFailure;
+    if (!incident || incident.conversationId !== key) return;
+    set({ revisionReloadingConversationId: key });
+    try {
+      const [conversation, synced] = await Promise.all([
+        api.getAgentConversation(key),
+        agentChatCache.refreshConversation(key),
+      ]);
+      const serverMessages = reconcileToolMessages(
+        synced.map(cachedMessageToChatMessage),
+      );
+      set((state) => {
+        const currentIncident = state.revisionCommandFailure;
+        const isSameIncident = (
+          currentIncident?.conversationId === incident.conversationId
+          && currentIncident.expectedRevision === incident.expectedRevision
+          && currentIncident.actualRevision === incident.actualRevision
+        );
+        return {
+          sessions: reconcileRevisionSession(state.sessions, conversation),
+          messages: state.currentSessionKey === key
+            ? serverMessages
+            : state.messages,
+          revisionCommandFailure: isSameIncident
+            ? null
+            : state.revisionCommandFailure,
+          revisionReloadingConversationId:
+            state.revisionReloadingConversationId === key
+              ? null
+              : state.revisionReloadingConversationId,
+        };
+      });
+    } catch (error) {
+      set((state) => ({
+        revisionReloadingConversationId:
+          state.revisionReloadingConversationId === key
+            ? null
+            : state.revisionReloadingConversationId,
+      }));
+      throw error;
+    }
   },
 
   reconcileClientLease: async (
@@ -2016,16 +2156,31 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   regenerateMessage: async (messageId: string) => {
     const { currentSessionKey, isStreaming } = get();
     if (isStreaming) return;
-    const version = await stationConversationVersion(currentSessionKey);
-    await api.regenerateAgentTurn({
-      conversation_id: currentSessionKey,
-      source_assistant_message_id: messageId,
-      client_idempotency_key: tempId(),
-      expected_conversation_version: version,
-    });
-    await agentChatCache.clearConversation(currentSessionKey);
-    await get().syncMessages();
-    await get().loadSessions();
+    try {
+      const version = await revisionCommandVersion(
+        currentSessionKey,
+        get().sessions,
+      );
+      await api.regenerateAgentTurn({
+        conversation_id: currentSessionKey,
+        source_assistant_message_id: messageId,
+        client_idempotency_key: tempId(),
+        expected_conversation_version: version,
+      });
+      await agentChatCache.clearConversation(currentSessionKey);
+      await get().syncMessages();
+      await get().loadSessions();
+    } catch (error) {
+      const failure = projectAgentRevisionCommandFailure(
+        error,
+        currentSessionKey,
+      );
+      if (failure) {
+        set({ revisionCommandFailure: failure });
+        return;
+      }
+      throw error;
+    }
   },
 
   retryMessage: (messageId: string) => {
@@ -2082,7 +2237,10 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
     const request = (async () => {
       try {
-        const version = await stationConversationVersion(currentSessionKey);
+        const version = await revisionCommandVersion(
+          currentSessionKey,
+          get().sessions,
+        );
         // #region debug-point C:retry-api-start
         reportApprovalExpiryRetryDebug('C', 'retry-api-start', {
           conversationVersionPresent: Number.isInteger(version) && version > 0,
@@ -2111,13 +2269,21 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         }
         await get().loadSessions();
       } catch (error) {
-        const stableCode = String(error).match(/\b(?:AGENT|TOOL)_[A-Z0-9_]+\b/)?.[0] ?? null;
+        const stableCode = String(error).match(/\b(?:AGENT|TOOL|LIFECYCLE)_[A-Z0-9_]+\b/)?.[0] ?? null;
         // #region debug-point C:retry-api-error
         reportApprovalExpiryRetryDebug('C', 'retry-api-error', {
           errorName: error instanceof Error ? error.name : typeof error,
           stableCode,
         });
         // #endregion
+        const failure = projectAgentRevisionCommandFailure(
+          error,
+          currentSessionKey,
+        );
+        if (failure) {
+          set({ revisionCommandFailure: failure });
+          return;
+        }
         throw error;
       }
     })().finally(() => {
@@ -2133,16 +2299,31 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   branchFromMessage: async (messageId: string) => {
     const { currentSessionKey } = get();
-    const version = await stationConversationVersion(currentSessionKey);
-    await api.selectAgentActiveBranch({
-      conversation_id: currentSessionKey,
-      active_branch_message_id: messageId,
-      client_idempotency_key: tempId(),
-      expected_conversation_version: version,
-    });
-    await agentChatCache.clearConversation(currentSessionKey);
-    await get().syncMessages();
-    await get().loadSessions();
+    try {
+      const version = await revisionCommandVersion(
+        currentSessionKey,
+        get().sessions,
+      );
+      await api.selectAgentActiveBranch({
+        conversation_id: currentSessionKey,
+        active_branch_message_id: messageId,
+        client_idempotency_key: tempId(),
+        expected_conversation_version: version,
+      });
+      await agentChatCache.clearConversation(currentSessionKey);
+      await get().syncMessages();
+      await get().loadSessions();
+    } catch (error) {
+      const failure = projectAgentRevisionCommandFailure(
+        error,
+        currentSessionKey,
+      );
+      if (failure) {
+        set({ revisionCommandFailure: failure });
+        return;
+      }
+      throw error;
+    }
   },
 
   stopStreaming: () => {
@@ -2187,34 +2368,64 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       });
       return;
     }
-    const version = await stationConversationVersion(currentSessionKey);
-    await api.tombstoneAgentMessage({
-      conversation_id: currentSessionKey,
-      message_id: id,
-      client_idempotency_key: tempId(),
-      expected_conversation_version: version,
-      destructive_confirmed: true,
-      reason: 'user_requested',
-    });
-    await agentChatCache.clearConversation(currentSessionKey);
-    await get().syncMessages();
-    await get().loadSessions();
+    try {
+      const version = await revisionCommandVersion(
+        currentSessionKey,
+        get().sessions,
+      );
+      await api.tombstoneAgentMessage({
+        conversation_id: currentSessionKey,
+        message_id: id,
+        client_idempotency_key: tempId(),
+        expected_conversation_version: version,
+        destructive_confirmed: true,
+        reason: 'user_requested',
+      });
+      await agentChatCache.clearConversation(currentSessionKey);
+      await get().syncMessages();
+      await get().loadSessions();
+    } catch (error) {
+      const failure = projectAgentRevisionCommandFailure(
+        error,
+        currentSessionKey,
+      );
+      if (failure) {
+        set({ revisionCommandFailure: failure });
+        return;
+      }
+      throw error;
+    }
   },
 
   editMessage: async (id: string, content: string) => {
     if (id.startsWith('temp-')) return;
     const { currentSessionKey } = get();
-    const version = await stationConversationVersion(currentSessionKey);
-    await api.editAndResendAgentMessage({
-      conversation_id: currentSessionKey,
-      source_user_message_id: id,
-      revised_content: content,
-      client_idempotency_key: tempId(),
-      expected_conversation_version: version,
-    });
-    await agentChatCache.clearConversation(currentSessionKey);
-    await get().syncMessages();
-    await get().loadSessions();
+    try {
+      const version = await revisionCommandVersion(
+        currentSessionKey,
+        get().sessions,
+      );
+      await api.editAndResendAgentMessage({
+        conversation_id: currentSessionKey,
+        source_user_message_id: id,
+        revised_content: content,
+        client_idempotency_key: tempId(),
+        expected_conversation_version: version,
+      });
+      await agentChatCache.clearConversation(currentSessionKey);
+      await get().syncMessages();
+      await get().loadSessions();
+    } catch (error) {
+      const failure = projectAgentRevisionCommandFailure(
+        error,
+        currentSessionKey,
+      );
+      if (failure) {
+        set({ revisionCommandFailure: failure });
+        return;
+      }
+      throw error;
+    }
   },
 
   translateMessage: async (id: string) => {

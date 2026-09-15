@@ -1345,6 +1345,14 @@ function clearFoundationLocalConversationProjection(
       isStreaming: isCurrent ? false : state.isStreaming,
       streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
       abortController: isCurrent ? null : state.abortController,
+      revisionCommandFailure:
+        state.revisionCommandFailure?.conversationId === conversationId
+          ? null
+          : state.revisionCommandFailure,
+      revisionReloadingConversationId:
+        state.revisionReloadingConversationId === conversationId
+          ? null
+          : state.revisionReloadingConversationId,
     };
   });
 }
@@ -22244,6 +22252,298 @@ export function installAcceptanceHarness(): void {
             bindingRestored
               && conversationDeleted
               && localProjectionCleared
+              ? 'clean'
+              : 'failed',
+        },
+      });
+    },
+
+    async runDevelopmentStaleVersion({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent) {
+        throw new Error('agent.acceptance.lifecycleStaleVersionAgentMissing');
+      }
+      const agentId = agent.id || agent.name;
+      let conversationId = '';
+      let conversationDeleted = false;
+      let localProjectionCleared = false;
+      let capture: Record<string, unknown> | null = null;
+      let primaryError: unknown = null;
+      const cleanupErrors: unknown[] = [];
+
+      try {
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Lifecycle stale version ${sampleId}`,
+          provider_id: agent.provider,
+          model_name: agent.model,
+        });
+        conversationId = conversation.conversation_id;
+        useChatStore.getState().mergeSessions([{
+          id: conversationId,
+          key: conversationId,
+          agent_name: agent.name,
+          title: conversation.title,
+          message_count: 0,
+          version: conversation.version,
+          model_override: conversation.model_name,
+          created_at: conversation.created_at,
+          updated_at: conversation.updated_at,
+        }]);
+        await useChatStore.getState().selectSession(conversationId);
+        const projectedRevision = useChatStore.getState().sessions.find(
+          (session) => session.key === conversationId,
+        )?.version ?? 0;
+        if (projectedRevision !== conversation.version) {
+          throw new Error(
+            'agent.acceptance.lifecycleStaleVersionProjectionMissing',
+          );
+        }
+
+        const winner = await api.updateAgentConversation({
+          conversation_id: conversationId,
+          expected_version: conversation.version,
+          title: `Lifecycle winner ${sampleId}`,
+        });
+        const winnerReadback = await foundationConversationReadback(
+          conversationId,
+        );
+        const winnerHash = await sha256Hex(stableJson(winnerReadback));
+
+        await useChatStore.getState().editMessage(
+          `stale-source-${sampleId}`,
+          `Stale edit ${sampleId}`,
+        );
+        await waitFor(
+          () => {
+            const failure = useChatStore.getState().revisionCommandFailure;
+            const notice = document.querySelector<HTMLElement>(
+              `[data-pt-agent-revision-conflict="${conversationId}"]`,
+            );
+            const reload = document.querySelector<HTMLButtonElement>(
+              `[data-pt-agent-revision-reload-latest="${conversationId}"]`,
+            );
+            return Boolean(
+              failure?.conversationId === conversationId
+              && failure.typedError.error_type
+                === 'LIFECYCLE_STALE_VERSION'
+              && notice
+              && notice.getClientRects().length > 0
+              && reload
+              && reload.getClientRects().length > 0,
+            );
+          },
+          'lifecycle stale-version recovery surface',
+          30_000,
+        );
+
+        const failure = useChatStore.getState().revisionCommandFailure;
+        const notice = document.querySelector<HTMLElement>(
+          `[data-pt-agent-revision-conflict="${conversationId}"]`,
+        );
+        const errorText = document.querySelector<HTMLElement>(
+          '[data-pt-agent-revision-error-text]',
+        );
+        const reload = document.querySelector<HTMLButtonElement>(
+          `[data-pt-agent-revision-reload-latest="${conversationId}"]`,
+        );
+        if (!failure || !notice || !errorText || !reload) {
+          throw new Error(
+            'agent.acceptance.lifecycleStaleVersionRecoveryMissing',
+          );
+        }
+        const afterStaleReadback = await foundationConversationReadback(
+          conversationId,
+        );
+        const afterStaleHash = await sha256Hex(
+          stableJson(afterStaleReadback),
+        );
+        const receiverBeforeReload = {
+          conflictVisible: notice.getClientRects().length > 0,
+          conflictText: errorText.textContent?.trim() ?? '',
+          expectedConflictText: i18n.t(
+            'agent.errors.lifecycleStaleVersion',
+            { ns: 'agent' },
+          ),
+          reloadVisible: reload.getClientRects().length > 0,
+          reloadText: reload.textContent?.trim() ?? '',
+          expectedReloadText: i18n.t(
+            'agent.recovery.reloadLatest',
+            { ns: 'agent' },
+          ),
+          projectedErrorType:
+            notice.dataset.ptAgentRevisionErrorType ?? '',
+          projectedExpectedRevision: Number(
+            notice.dataset.ptAgentRevisionExpected ?? 0,
+          ),
+          projectedActualRevision: Number(
+            notice.dataset.ptAgentRevisionActual ?? 0,
+          ),
+        };
+
+        reload.click();
+        await waitFor(
+          () => {
+            const state = useChatStore.getState();
+            return (
+              state.revisionCommandFailure === null
+              && state.revisionReloadingConversationId === null
+              && state.sessions.find(
+                (session) => session.key === conversationId,
+              )?.version === winner.version
+            );
+          },
+          'lifecycle stale-version authoritative reload',
+          30_000,
+        );
+
+        const afterReloadReadback = await foundationConversationReadback(
+          conversationId,
+        );
+        const afterReloadHash = await sha256Hex(
+          stableJson(afterReloadReadback),
+        );
+        const reloadedSession = useChatStore.getState().sessions.find(
+          (session) => session.key === conversationId,
+        );
+        const receiver = {
+          ...receiverBeforeReload,
+          reloadExecuted: true,
+          reloadedRevision: reloadedSession?.version ?? 0,
+          conflictCleared: !document.querySelector(
+            `[data-pt-agent-revision-conflict="${conversationId}"]`,
+          ),
+        };
+        const typedError = failure.typedError;
+        const details = typedError.details;
+        const resolution = failure.resolution;
+        const facts = {
+          conversationId,
+          typedError,
+          resolution,
+          winner: {
+            resourceId: conversationId,
+            expectedRevision: conversation.version,
+            actualRevision: winner.version,
+            revisionBeforeStale: winnerReadback.conversation.version,
+            revisionAfterStale: afterStaleReadback.conversation.version,
+            revisionAfterReload: afterReloadReadback.conversation.version,
+            hashBeforeStale: winnerHash,
+            hashAfterStale: afterStaleHash,
+            hashAfterReload: afterReloadHash,
+          },
+          staleMutation: {
+            attemptedRevision: projectedRevision,
+            mutationDelta:
+              afterStaleReadback.conversation.version
+              - winnerReadback.conversation.version,
+            messageDelta:
+              afterStaleReadback.messages.length
+              - winnerReadback.messages.length,
+          },
+          receiver,
+          projection: {
+            revisionBeforeStale: projectedRevision,
+            revisionAfterReload: reloadedSession?.version ?? 0,
+            messageCountAfterReload:
+              useChatStore.getState().messages.length,
+          },
+        };
+        capture = {
+          assertions: {
+            typedStaleVersion:
+              typedError.error_type === 'LIFECYCLE_STALE_VERSION'
+              && typedError.locale_key
+                === 'agent.errors.lifecycleStaleVersion'
+              && typedError.retryable === true
+              && typedError.terminal === true
+              && stableJson(Object.keys(details).sort())
+                === stableJson([
+                  'actual_revision',
+                  'expected_revision',
+                  'resource_id',
+                ])
+              && details.resource_id === conversationId
+              && Number(details.expected_revision) === conversation.version
+              && Number(details.actual_revision) === winner.version,
+            localizedReloadLatestVisible:
+              receiver.conflictVisible
+              && receiver.reloadVisible
+              && receiver.conflictText.includes(
+                receiver.expectedConflictText,
+              )
+              && receiver.reloadText === receiver.expectedReloadText
+              && receiver.projectedErrorType
+                === 'LIFECYCLE_STALE_VERSION'
+              && receiver.projectedExpectedRevision === conversation.version
+              && receiver.projectedActualRevision === winner.version
+              && resolution.type === 'reloadLatest',
+            reloadLatestExecuted:
+              receiver.reloadExecuted
+              && receiver.conflictCleared
+              && receiver.reloadedRevision === winner.version,
+            winnerPreserved:
+              winnerReadback.conversation.version === winner.version
+              && afterStaleReadback.conversation.version === winner.version
+              && afterReloadReadback.conversation.version === winner.version
+              && winnerHash === afterStaleHash
+              && winnerHash === afterReloadHash,
+            zeroStaleMutation:
+              facts.staleMutation.mutationDelta === 0
+              && facts.staleMutation.messageDelta === 0,
+            projectionReloaded:
+              facts.projection.revisionBeforeStale === conversation.version
+              && facts.projection.revisionAfterReload === winner.version
+              && facts.projection.messageCountAfterReload
+                === afterReloadReadback.messages.length,
+          },
+          facts,
+        };
+      } catch (error) {
+        primaryError = error;
+      } finally {
+        if (conversationId) {
+          try {
+            clearFoundationLocalConversationProjection(conversationId);
+            localProjectionCleared = (
+              !useChatStore.getState().sessions.some(
+                (session) => session.key === conversationId,
+              )
+              && useChatStore.getState().revisionCommandFailure === null
+            );
+            const deletionErrorCode = await deleteFoundationConversation(
+              conversationId,
+            );
+            conversationDeleted = deletionErrorCode === ''
+              || deletionErrorCode.includes('AGENT_4004');
+          } catch (error) {
+            cleanupErrors.push(error);
+          }
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw Object.assign(
+          new Error('agent.acceptance.lifecycleStaleVersionCleanupFailed'),
+          { primaryError, cleanupErrors },
+        );
+      }
+      if (primaryError) throw primaryError;
+      if (!capture) {
+        throw new Error(
+          'agent.acceptance.lifecycleStaleVersionCaptureMissing',
+        );
+      }
+      return evidenceValue({
+        ...capture,
+        cleanup: {
+          conversationDeleted,
+          localProjectionCleared,
+          status:
+            conversationDeleted && localProjectionCleared
               ? 'clean'
               : 'failed',
         },

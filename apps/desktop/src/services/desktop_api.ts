@@ -890,6 +890,7 @@ export interface Session {
   agent_name: string;
   title: string;
   message_count: number;
+  version?: number;
   model_override?: string;
   created_at: string;
   updated_at: string;
@@ -2536,7 +2537,8 @@ export interface AgentErrorResolutionAction {
     | 'chooseResourceAgain'
     | 'removeReference'
     | 'reconcile'
-    | 'recover';
+    | 'recover'
+    | 'reloadLatest';
   cliId?: string;
   providerId?: string;
   modelId?: string;
@@ -2561,6 +2563,8 @@ export interface AgentErrorResolutionAction {
   expiredAt?: string;
   turnId?: string;
   reasonCode?: string;
+  expectedRevision?: number;
+  actualRevision?: number;
   label: string;
 }
 
@@ -2608,6 +2612,10 @@ export const AGENT_INCOMPATIBLE_CAPABILITY_LOCALE_KEY =
 export const AGENT_LIFECYCLE_INTERRUPTED_ERROR_TYPE = 'LIFECYCLE_INTERRUPTED';
 export const AGENT_LIFECYCLE_INTERRUPTED_LOCALE_KEY =
   'agent.errors.lifecycleInterrupted';
+export const AGENT_LIFECYCLE_STALE_VERSION_ERROR_TYPE =
+  'LIFECYCLE_STALE_VERSION';
+export const AGENT_LIFECYCLE_STALE_VERSION_LOCALE_KEY =
+  'agent.errors.lifecycleStaleVersion';
 
 export type AgentForbiddenActorError = AgentTypedErrorPayload & {
   details: {
@@ -2690,6 +2698,14 @@ export type AgentLifecycleInterruptedError = AgentTypedErrorPayload & {
   details: {
     turn_id: string;
     reason_code: string;
+  };
+};
+
+export type AgentLifecycleStaleVersionError = AgentTypedErrorPayload & {
+  details: {
+    resource_id: string;
+    expected_revision: string;
+    actual_revision: string;
   };
 };
 
@@ -3158,6 +3174,34 @@ export function isAgentClientLeaseExpiredError(
   );
 }
 
+export function isAgentLifecycleStaleVersionError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentLifecycleStaleVersionError {
+  if (
+    error?.error_type !== AGENT_LIFECYCLE_STALE_VERSION_ERROR_TYPE
+    || error.locale_key !== AGENT_LIFECYCLE_STALE_VERSION_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  const expectedRevision = Number(error.details.expected_revision);
+  const actualRevision = Number(error.details.actual_revision);
+  return (
+    detailKeys.length === 3
+    && detailKeys[0] === 'actual_revision'
+    && detailKeys[1] === 'expected_revision'
+    && detailKeys[2] === 'resource_id'
+    && error.details.resource_id.trim().length > 0
+    && /^[1-9]\d*$/u.test(error.details.expected_revision)
+    && /^[1-9]\d*$/u.test(error.details.actual_revision)
+    && Number.isSafeInteger(expectedRevision)
+    && Number.isSafeInteger(actualRevision)
+    && actualRevision > expectedRevision
+  );
+}
+
 export function resolveAgentTypedErrorAction(
   error: AgentTypedErrorPayload | null | undefined,
 ): AgentErrorResolutionAction | undefined {
@@ -3241,6 +3285,15 @@ export function resolveAgentTypedErrorAction(
       turnId: error.details.turn_id,
       reasonCode: error.details.reason_code,
       label: 'agent.recovery.recover',
+    };
+  }
+  if (isAgentLifecycleStaleVersionError(error)) {
+    return {
+      type: 'reloadLatest',
+      resourceId: error.details.resource_id,
+      expectedRevision: Number(error.details.expected_revision),
+      actualRevision: Number(error.details.actual_revision),
+      label: 'agent.recovery.reloadLatest',
     };
   }
   if (isAgentInvalidResourceReferenceError(error)) {
@@ -7509,6 +7562,7 @@ export function agentTurnStreamErrorFromData(
       && suppliedResolution.type !== 'chooseResourceAgain'
       && suppliedResolution.type !== 'removeReference'
       && suppliedResolution.type !== 'retry'
+      && suppliedResolution.type !== 'reloadLatest'
     ) {
       error.resolution = suppliedResolution;
     }
