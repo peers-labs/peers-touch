@@ -1783,6 +1783,19 @@ and zero local-path leakage.
     `45/45`, Native static tests `89/89`, Python compilation, Rust formatting,
     and diff hygiene. The full five-minute exact-source Development Journey
     remains `UNPROVEN` until the next checkpoint is created and executed.
+  - Checkpoint `b3a01a4d7f35a37cb7133af9b1e5cf4c3bc32219` passed the
+    transport boundary in exact-source Development run
+    `20260915T063417388805Z`: the replayed waiting state and later
+    `CLIENT_LEASE_EXPIRED` event both reached the Browser. The run then failed
+    first at `foundationLeaseRecoverySurfaceMissing`. Diagnostic run
+    `20260915T064157523276Z` proved the selected Conversation and target
+    assistant message were rendered, while the Store's newly accepted typed
+    error/reconcile projection had not yet reached that React commit. The
+    Harness now waits for the existing error text and `reconcile` control after
+    the Store predicate instead of reading the prior DOM synchronously. The
+    product component and assertion contract are unchanged; focused Desktop
+    tests pass `68/68`, Native static tests pass `89/89`, and strict TypeScript
+    plus diff hygiene pass.
 
 #### G-FE1 Concurrency Decision
 

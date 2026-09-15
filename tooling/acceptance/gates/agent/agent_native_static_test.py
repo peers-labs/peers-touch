@@ -2162,6 +2162,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             'data-pt-agent-message-error-recovery="reconcile"',
             scenario,
         )
+        self.assertIn("'lease-expired recovery surface'", scenario)
         self.assertIn("recovery.click()", scenario)
         self.assertIn("api.cancelAgentTurn(scenario.turn.turnId)", scenario)
         self.assertIn(

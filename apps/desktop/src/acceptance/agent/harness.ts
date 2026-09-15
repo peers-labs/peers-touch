@@ -4766,18 +4766,71 @@ async function completeFoundationLeaseExpiredScenario(input: {
   if (!receiverMessage) {
     throw new Error('agent.acceptance.foundationLeaseReceiverMissing');
   }
-  const messageElement = document.querySelector<HTMLElement>(
-    `[data-pt-agent-message-id="${receiverMessage.id}"]`,
+  const messageSelector =
+    `[data-pt-agent-message-id="${receiverMessage.id}"]`;
+  const errorSelector =
+    '[data-pt-agent-message-error-text="agent.errors.clientLeaseExpired"]';
+  const recoverySelector =
+    '[data-pt-agent-message-error-recovery="reconcile"]';
+  const readRecoverySurface = () => {
+    const messageElement = document.querySelector<HTMLElement>(messageSelector);
+    return {
+      messageElement,
+      errorElement: messageElement?.querySelector<HTMLElement>(errorSelector)
+        ?? null,
+      recovery: messageElement?.querySelector<HTMLButtonElement>(
+        recoverySelector,
+      ) ?? null,
+    };
+  };
+  let surface = readRecoverySurface();
+  // #region debug-point N-Q:lease-expired-recovery-surface
+  await reportFoundationLeaseApprovalStallDebug('N-O-P-Q', 'surface-probe', {
+    currentSessionMatches:
+      useChatStore.getState().currentSessionKey === scenario.turn.conversationId,
+    messageId: receiverMessage.id,
+    messageElementPresent: Boolean(surface.messageElement),
+    errorElementPresent: Boolean(surface.errorElement),
+    recoveryPresent: Boolean(surface.recovery),
+    errorTogglePresent: Boolean(surface.messageElement?.querySelector(
+      '[data-pt-agent-message-error-toggle]',
+    )),
+    renderedAssistantMessageCount: document.querySelectorAll(
+      '[data-pt-agent-message="assistant"]',
+    ).length,
+    renderedLeaseErrorCount: document.querySelectorAll(
+      '[data-pt-agent-error-type="CLIENT_LEASE_EXPIRED"]',
+    ).length,
+    renderedReconcileCount: document.querySelectorAll(
+      '[data-pt-agent-message-error-recovery="reconcile"]',
+    ).length,
+  });
+  // #endregion
+  await waitFor(
+    () => {
+      surface = readRecoverySurface();
+      return Boolean(
+        surface.messageElement
+        && surface.errorElement
+        && surface.recovery,
+      );
+    },
+    'lease-expired recovery surface',
+    10_000,
   );
-  const errorElement = messageElement?.querySelector<HTMLElement>(
-    '[data-pt-agent-message-error-text="agent.errors.clientLeaseExpired"]',
-  );
-  const recovery = messageElement?.querySelector<HTMLButtonElement>(
-    '[data-pt-agent-message-error-recovery="reconcile"]',
-  );
+  const { messageElement, errorElement, recovery } = surface;
   if (!messageElement || !errorElement || !recovery) {
     throw new Error('agent.acceptance.foundationLeaseRecoverySurfaceMissing');
   }
+  // #region debug-point N-Q:lease-expired-recovery-surface-ready
+  await reportFoundationLeaseApprovalStallDebug('N-O-P-Q', 'surface-ready', {
+    currentSessionMatches:
+      useChatStore.getState().currentSessionKey === scenario.turn.conversationId,
+    messageElementPresent: true,
+    errorElementPresent: true,
+    recoveryPresent: true,
+  });
+  // #endregion
 
   const currentSessionHash = String(
     evidenceField(
