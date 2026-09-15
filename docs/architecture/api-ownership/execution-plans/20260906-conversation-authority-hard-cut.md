@@ -596,8 +596,8 @@ matrices. Local/static success cannot replace native receiver proof.
 | CA-W4 Shared Federation and Social | done | Shared Federation supplies authenticated frames, durable outbox/inbox leases, retry/dedup/hash-conflict behavior, typed Conversation and Social receivers, and same-Station loopback. Conversation command conflicts return durable authority results bound to the originating command SHA-256; remote Device Inbox lane sequence remains target-owned. Social enforces receiver-local block/existing-relationship policy, atomically persists command/projection/result-outbox state, binds results to exact outgoing command bytes, rejects retryable result frames before durable resolution, and resolves remote actor keys from PTID plus a pinned Home Station profile/locator chain rather than `ActorRef.acct`; cached remote keys are revalidated against the latest signed active-key profile. The exact CA-W4 race command, focused `go vet`, `gofmt`, `git diff --check`, Go style, and `messaging-platform-contract` run `20260906T204614333077Z-6c52a4241e67fb14b3a0663a346aa7a5` pass. Two independent post-fix reviews report zero P0/P1 findings. Live DHT/Relay two-Station convergence remains `UNPROVEN` until CA-W5 production composition and CA-W6 runtime Acceptance. |
 | CA-W5-P0 Donor reconciliation | done | `peers-social` remained a read-only donor. The unique Conversation query/persistence/HTTP behavior was reconciled semantically into `peers-group-chat`; divergent contracts, generated bindings, and overlapping Desktop/Mobile/Messaging Core code were rejected. The retired 105-file `conversation/engine/` tree is deleted, and the final source contains no duplicate engine owner. |
 | CA-W5 Atomic production hard cut | source checkpoint ready / runtime unproven | AO-D07 is implemented proto-first across Station, Desktop, Mobile, and portable Messaging Core. Canonical Conversation production composition now owns creation, commands, event truth, follower recovery, attachment control/data forwarding, and Device Inbox effects; Key Exchange owns local reservation and exact-replay irreversible remote KeyPackage claims; shared Federation owns authenticated route/relay transport. Retired Envelope, flat Conversation, engine, superseded proto, generated bindings, callers, stores, aliases, and fallbacks are deleted. `proto-build` run `20260907T095814186121Z-b39852f3e6f655416a20f3194dc3699d`, `station-api-ownership` run `20260907T095552389681Z-9035a2fbed82ec5a54b98f5b260fe383`, `station-messaging-unit` run `20260907T095534375916Z-3761b27ef989ec4449bf94b82a4a2523`, `messaging-platform-contract` run `20260907T095650555959Z-0f85322adf5c78105d9ca8f15a4a351b`, `desktop-check` run `20260907T095738644264Z-aa04882b997b2eeb5f7e9b2001600a10`, and `chat-native-visible-static` run `20260907T100757881125Z-070fde35dba471e1da0351dc8d030cb0` pass. Focused Station race/vet, Desktop 540 tests and build, Desktop Rust library check, Mobile full check, Messaging Core 104+2 tests, Go style, and diff checks pass. The Gap Detector correctly keeps product proof `UNPROVEN` until the CA-W6 native receiver gates run. Repository-wide Station tests also contain unrelated pre-existing Frame/vendor failures and live `:18080` tests; they do not establish CA-W6 runtime proof. |
-| CA-W6 Runtime Acceptance | in progress / W8A-W8C proven; Mobile simulator cells pending | W8A, W8B, and W8C are `PASS/DONE/PROVEN`. W8C run `20260914T122113394691Z-416c2c7dc23f80a5595eb90f8f9e06c2` at `13d867e8fb17d7dd3c3c83d411be25a158af73ee` proves the complete three-client Group/MLS journey and cleanup. The Social-before-Chat/Contacts simulator cells remain open; their provisioner must consume explicit run-scoped `station-primary=four` and `station-secondary=fiveArm` bindings instead of requiring a persisted aggregate profile. |
-| CA-W7 Completion/docs/knowledge audit | pending | — |
+| CA-W6 Runtime Acceptance | available runtime scope passed / physical Mobile unproven | W8A, W8B, and W8C are `PASS/DONE/PROVEN`. Exact-source aggregate run `20260915T060704455259Z-978853563a2e8d1891f97fb5aa9745fa` at `7906691afdcd788d5a9ee9cca24fb679f2559f41` passes ordered Social and Chat/Contacts simulator Journeys plus cleanup on `four` and `fiveArm`. The simulator reports intentionally remain `PARTIAL/UNPROVEN` for physical-device, authoritative-history, forced-event-loss, native background/foreground, tab-remount, and full MS-AG04/MS-AG06 scope. `mobile-native-social-convergence-e2e` and `mobile-native-chat-contacts-e2e` were not run and remain `UNPROVEN`. |
+| CA-W7 Completion/docs/knowledge audit | audit complete / plan readiness partial | Station API ownership, Messaging contract, Desktop/Mobile checks, zero-reference scans, docs/knowledge reconciliation, Gap Detector, and Quality Evidence are complete. Quality report `20260915T062221948784Z-185b20265fab7a733e7996069f0c8798` has zero blocking gaps and is ready for code review. Gap Detector correctly prevents full Mobile product or `PLAN_COMPLETE` claims because physical Mobile Gates remain unrun and simulator Gates do not emit `DONE/PROVEN`. |
 
 ## 14. Risks And Escalation
 
@@ -2325,3 +2325,39 @@ HTTP Gateway delegation to those owner functions, and the retained DKX owner
 without requiring duplicated route strings in the wrapper. The complete
 Messaging Platform contract passes 22/22, Desktop TypeScript checks pass,
 Python compilation passes, and `git diff --check` passes.
+
+CA-W7 zero-reference checks report no production Station `/messaging/*` or
+`/envelope/*` route references, no superseded Conversation command/event
+symbols, and no retired Station Messaging, flat Conversation engine, or
+Desktop command-result owner paths. `station-api-ownership` remains the
+machine-readable authority for all target-absent routes and Station truth
+stores. The existing operational pitfall
+`docs/knowledge/pitfalls/public-api-owner-must-follow-resource-domain.md`
+already records the split-brain root cause, mitigation, and detection commands;
+no duplicate knowledge entry is added.
+
+The final exact-source simulator aggregate at
+`7906691afdcd788d5a9ee9cca24fb679f2559f41` is
+`20260915T060704455259Z-978853563a2e8d1891f97fb5aa9745fa`.
+All five executed Gates pass and both runtime cleanups are complete.
+Gap Detector reports only the accepted evidence boundary: both physical
+Mobile Gates are unrun, and the simulator Gates intentionally emit
+`PASS/PARTIAL/UNPROVEN` rather than physical `DONE/PROVEN`. Quality Evidence
+`20260915T062221948784Z-185b20265fab7a733e7996069f0c8798`
+reports zero blocking gaps and five review gaps, all tied to that explicit
+native/physical proof boundary.
+
+The CA-W7 local aggregate also exposed an Evidence Store conflict while
+persisting the Messaging contract log under the current tool-host credential
+environment. The command itself was rerun directly and passes 22/22; Desktop
+TypeScript, Station ownership, and Station Messaging tests also pass. This
+artifact-writer conflict is recorded as a tooling evidence limitation, not
+converted into a product failure or silently treated as a passed immutable
+artifact.
+
+Final plan judgment: all source, selected Desktop Native, simulator-functional,
+cleanup, ownership, documentation, knowledge, and quality work available in
+the declared environment is complete. The plan remains `PARTIAL/UNPROVEN`,
+not `PLAN_COMPLETE`, because the two required physical Mobile Gates are
+unavailable and the accepted simulator contracts explicitly do not substitute
+for them.
