@@ -1141,6 +1141,8 @@ describe('Agent turn stream completion', () => {
       'ptid:person:owner',
     )
     await vi.waitFor(() => expect(startedStreamId).not.toBe(''))
+    expect(controller.streamId).toMatch(/^agent-turn-/)
+    expect(controller.streamId).toBe(startedStreamId)
 
     controller.abort()
     resolveStart?.()

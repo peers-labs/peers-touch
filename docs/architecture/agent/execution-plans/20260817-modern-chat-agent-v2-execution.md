@@ -1858,6 +1858,18 @@ and zero local-path leakage.
     changing the assertion. Focused Desktop tests pass `49/49`, strict
     TypeScript and Native static tests `89/89` pass, and the next exact-source
     diagnostic remains pending.
+  - The final identity failure is now source-confirmed at the shared Desktop
+    stream boundary. `streamAgentTurn` generated and used the real stream ID
+    for transport and runtime publication but exposed only
+    `streamGeneration`; `startFoundationToolTurn` therefore returned its
+    optional caller input, which the lease-expiry Journey does not provide.
+    The owner fix exposes immutable `streamId` on
+    `AgentTurnStreamController`, makes `FoundationToolTurn.streamId` required,
+    and reads the controller identity without weakening the final assertion.
+    Desktop lease/recovery tests pass `134/134`, Python
+    runner/direct-adapter/probe tests pass `105/105`, Native static tests pass
+    `89/89`, strict Desktop TypeScript, production build, and diff hygiene
+    pass. Exact-source post-fix runtime proof remains pending.
 
 #### G-FE1 Concurrency Decision
 

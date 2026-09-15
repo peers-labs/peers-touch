@@ -6720,6 +6720,7 @@ export interface AgentTurnSourceDelivery {
 }
 
 export interface AgentTurnStreamController extends AbortController {
+  readonly streamId: string;
   readonly streamGeneration: number;
   disconnectTransport(): Promise<void>;
 }
@@ -7251,6 +7252,10 @@ export function streamAgentTurn(
   const controller = new AbortController() as AgentTurnStreamController;
   const streamId = input.stream_id || createAgentTurnStreamId();
   const streamGeneration = nextAgentTurnStreamGeneration();
+  Object.defineProperty(controller, 'streamId', {
+    value: streamId,
+    enumerable: true,
+  });
   Object.defineProperty(controller, 'streamGeneration', {
     value: streamGeneration,
     enumerable: true,

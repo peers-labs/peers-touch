@@ -2136,6 +2136,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
             encoding="utf-8"
         )
         chat_store = DESKTOP_CHAT_STORE.read_text(encoding="utf-8")
+        tool_turn_start = self.source.index(
+            "async function startFoundationToolTurn"
+        )
+        tool_turn_end = self.source.index(
+            "async function runDevelopmentInvalidResourceReferenceScenario",
+            tool_turn_start,
+        )
+        tool_turn = self.source[tool_turn_start:tool_turn_end]
 
         self.assertIn("prepareFoundationExecutorUnavailableScenario", scenario)
         self.assertIn("waitForFoundationToolFacts(", scenario)
@@ -2156,6 +2164,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("status === 'claimed'", persistence_status)
         self.assertIn("'dispatchCommittedAt'", persistence_status)
         self.assertIn("return 'dispatch_committed'", persistence_status)
+        self.assertIn("readonly streamId: string;", desktop_api)
+        self.assertIn(
+            "Object.defineProperty(controller, 'streamId'",
+            desktop_api,
+        )
+        self.assertIn(
+            "const streamId = observed.controller.streamId;",
+            tool_turn,
+        )
+        self.assertNotIn("const streamId = input.streamId;", tool_turn)
         self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
         self.assertIn("foundationLeaseRuntimeIdentityMismatch", scenario)
         self.assertIn(
