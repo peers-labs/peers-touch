@@ -1984,25 +1984,25 @@ and zero local-path leakage.
 
 - **Inventory source**: the reviewed 28-family `foundation_errors` matrix,
   production Station/Desktop paths, and direct Harness/oracle registration.
-- **Closed on source and prior focused runtime evidence (18)**:
+- **Closed on source and prior focused runtime evidence (19)**:
   `BASE-QUEUE_FULL`,
   `BASE-RUNTIME_UNAVAILABLE`,
   `BASE-DUPLICATE_CONFLICT`, `BASE-ACTIVE_MUTATION_CONFLICT`,
   `BASE-FORBIDDEN_ACTOR`, `BASE-INCOMPATIBLE_CAPABILITY`,
   `BASE-EXECUTOR_UNAVAILABLE`, `BASE-LEASE_EXPIRED`,
   `BASE-INVALID_RESOURCE_REF`, `BASE-CREDENTIAL_MISSING`,
-  `BASE-MODEL_UNAVAILABLE`,
+  `BASE-MODEL_UNAVAILABLE`, `BASE-PROVIDER_TIMEOUT`,
   `BASE-CONTEXT_OVERFLOW`, `BASE-INVALID_REFERENCE`,
   `BASE-ATTACHMENT_REJECTED`, `BASE-APPROVAL_DENIED`,
   `BASE-APPROVAL_EXPIRED`, `BASE-CANCELLED`, and `BASE-INTERRUPTED`.
-- **Source-incomplete (10)**:
+- **Source-incomplete (9)**:
 
 | Cluster | Families | Missing closure |
 |---|---|---|
 | `G-FE1-SC1` Admission/ownership | `BASE-UNAUTHORIZED_RESOURCE` | resource-family and removal-owner design decision |
 | `G-FE1-SC2` Runtime selection | `BASE-RESUME_UNAVAILABLE` | external-session reset command, typed outcome, confirmation action, and direct Journey |
 | `G-FE1-SC3` Client execution | `BASE-PERMISSION_DENIED`, `BASE-TARGET_DISCONNECTED` | Desktop/Station implementation beyond Mobile contract-only coverage |
-| `G-FE1-SC4` Provider terminalization | `BASE-RATE_LIMIT`, `BASE-PROVIDER_TIMEOUT` | deterministic real-provider trigger and accepted typed terminal outcome instead of hidden retry/failover |
+| `G-FE1-SC4` Provider terminalization | `BASE-RATE_LIMIT` | deterministic real 429 trigger without a synthetic provider response |
 | `G-FE1-SC5` Tool control | `BASE-UNKNOWN_TOOL`, `BASE-LOOP_BUDGET_EXHAUSTED` | unknown-tool owner path and accepted budget details/action |
 | `G-FE1-SC6` Lifecycle concurrency | `BASE-STALE_VERSION`, `BASE-TERMINAL_MUTATION` | canonical lifecycle rejection and contextual recovery action |
 
@@ -2082,10 +2082,29 @@ and zero local-path leakage.
     `20260915T174040887980Z` then crossed that boundary and exposed a Harness
     trace-shape readback defect; checkpoint `d7aa95d4a` normalized camel/snake
     provider-call fields without weakening the one-attempt assertion.
+  - `BASE-PROVIDER_TIMEOUT` is `FUNCTIONAL_PASS`. Checkpoint `20ca64980`
+    applies a 120-second context deadline to each real provider attempt, lets
+    that context cancel the upstream request, maps the timeout to the exact
+    retryable terminal payload, and exposes only a user-driven `Retry`.
+  - Exact-source Native Development run `20260915T183038836666Z` on
+    `20ca64980` passed all eight independent assertions: one real Ark call
+    lasted `120005ms`, Station classified `FAILOVER_REASON_TIMEOUT`, Desktop
+    projected the exact `provider_id,model_id,deadline` payload and localized
+    `Retry`, no successful assistant completion appeared, and queue state
+    remained unchanged. Conversation, local projection, Fixture, client
+    processes, ports, storage, profile lease, and source lease all cleaned.
+  - Failed run `20260915T182343423847Z` reached the same correct product
+    outcome and its independent Python oracle passed all eight assertions, but
+    the Harness self-check compared the protobuf JSON enum string as a number.
+    Checkpoint `20ca64980` normalized both enum representations without
+    weakening the timeout assertion. Earlier preflight
+    `20260915T182131010037Z` made no product call and recorded the remote
+    BuildKit disk exhaustion; `17.98GB` of fully reclaimable inactive cache was
+    removed without deleting containers, images, volumes, or database data.
   - `BASE-RATE_LIMIT` remains parked until a deterministic real 429 trigger is
     available; the accepted terminalization source must not be counted from a
-    synthetic response. `BASE-PROVIDER_TIMEOUT` is the next dependency-ready
-    owner-layer vertical.
+    synthetic response. `G-FE1-SC5 / BASE-UNKNOWN_TOOL` is the next
+    dependency-ready owner-layer vertical.
 - **Gate boundary**: do not run C08 or the 419-cell Foundation Gate while any
   source-incomplete family remains.
 - **C08 diagnostic after the boundary changed (2026-09-15)**: run
@@ -2093,17 +2112,21 @@ and zero local-path leakage.
   attachment assertions and both Gate/provisioner cleanup contracts on Station
   commit `7618f10c5`, but the aggregate correctly remained
   `PARTIAL / UNPROVEN` because these concurrent plan edits changed the
-  worktree digest during execution. Do not rerun C08 until the 13
+  worktree digest during execution. Do not rerun C08 until the remaining
   source-incomplete families close.
 
 #### G-FE1 Concurrency Decision
 
 - **Mode**: hybrid.
-- **Current provider-timeout slice**: serial. Provider deadline ownership and
+- **Completed provider-timeout slice**: serial. Provider deadline ownership and
   upstream cancellation, typed Station terminalization, Desktop recovery
   projection, the shared disposable Fixture, checkpoint/deploy, and the Native
   receiver Journey form one causally ordered evidence path. The integrator owns
   every write and the final reconciliation.
+- **Next tool-control slice**: serial during owner-path inspection and contract
+  freeze for `BASE-UNKNOWN_TOOL`; shared Tool registry/runtime, Desktop
+  projection, Harness, checkpoint/deploy, and runtime evidence remain
+  integrator-owned.
 - **Shared contract freeze — integrator, serial first**:
   the accepted `PROVIDER_TIMEOUT` payload is
   `provider_id,model_id,deadline`, retryable and terminal, with explicit
