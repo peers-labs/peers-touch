@@ -2506,6 +2506,7 @@ export interface AgentErrorResolutionAction {
     | 'openOriginal'
     | 'editQueue'
     | 'selectRuntime'
+    | 'retryLater'
     | 'switchAccount'
     | 'chooseCompatibleModel'
     | 'chooseResourceAgain'
@@ -2518,6 +2519,7 @@ export interface AgentErrorResolutionAction {
   conversationId?: string;
   capacity?: number;
   runtimeKind?: string;
+  retryAfterMs?: number;
   resourceKind?: string;
   resourceRefHash?: string;
   resourceId?: string;
@@ -2539,6 +2541,9 @@ export const AGENT_QUEUE_FULL_LOCALE_KEY = 'agent.errors.queueFull';
 export const AGENT_RUNTIME_UNAVAILABLE_ERROR_TYPE = 'RUNTIME_UNAVAILABLE';
 export const AGENT_RUNTIME_UNAVAILABLE_LOCALE_KEY =
   'agent.errors.runtimeUnavailable';
+export const AGENT_PROVIDER_RATE_LIMIT_ERROR_TYPE = 'PROVIDER_RATE_LIMIT';
+export const AGENT_PROVIDER_RATE_LIMIT_LOCALE_KEY =
+  'agent.errors.providerRateLimit';
 export const AGENT_CONTEXT_LIMIT_ERROR_TYPE = 'CONTEXT_OVERFLOW';
 export const AGENT_INVALID_REFERENCE_ERROR_TYPE = 'CONTEXT_INVALID_REFERENCE';
 export const AGENT_INVALID_REFERENCE_LOCALE_KEY =
@@ -2579,6 +2584,13 @@ export type AgentRuntimeUnavailableError = AgentTypedErrorPayload & {
   details: {
     runtime_kind: string;
     reason_code: string;
+  };
+};
+
+export type AgentProviderRateLimitError = AgentTypedErrorPayload & {
+  details: {
+    provider_id: string;
+    retry_after_ms: string;
   };
 };
 
@@ -2625,6 +2637,8 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'conversation_id',
   'capacity',
   'runtime_kind',
+  'provider_id',
+  'retry_after_ms',
   'expected_revision',
   'actual_revision',
   'capability_id',
@@ -2791,6 +2805,29 @@ export function isAgentRuntimeUnavailableError(
   );
 }
 
+export function isAgentProviderRateLimitError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentProviderRateLimitError {
+  if (
+    error?.error_type !== AGENT_PROVIDER_RATE_LIMIT_ERROR_TYPE
+    || error.locale_key !== AGENT_PROVIDER_RATE_LIMIT_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  const retryAfterMs = Number(error.details.retry_after_ms);
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'provider_id'
+    && detailKeys[1] === 'retry_after_ms'
+    && error.details.provider_id.trim().length > 0
+    && Number.isInteger(retryAfterMs)
+    && retryAfterMs >= 0
+  );
+}
+
 export function isAgentIncompatibleCapabilityError(
   error: AgentTypedErrorPayload | null | undefined,
 ): error is AgentIncompatibleCapabilityError {
@@ -2901,6 +2938,14 @@ export function isAgentClientLeaseExpiredError(
 export function resolveAgentTypedErrorAction(
   error: AgentTypedErrorPayload | null | undefined,
 ): AgentErrorResolutionAction | undefined {
+  if (isAgentProviderRateLimitError(error)) {
+    return {
+      type: 'retryLater',
+      providerId: error.details.provider_id,
+      retryAfterMs: Number(error.details.retry_after_ms),
+      label: 'agent.recovery.retryLater',
+    };
+  }
   if (isAgentRuntimeUnavailableError(error)) {
     return {
       type: 'selectRuntime',

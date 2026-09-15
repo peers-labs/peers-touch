@@ -35,6 +35,7 @@ const (
 	AgentLifecycleCancelled            Code = "LIFECYCLE_CANCELLED"
 	AgentLifecycleInterrupted          Code = "LIFECYCLE_INTERRUPTED"
 	AgentProviderCredentialMissing     Code = "PROVIDER_CREDENTIAL_MISSING"
+	AgentProviderRateLimit             Code = "PROVIDER_RATE_LIMIT"
 	AgentProviderFailed                Code = "AGENT_5001"
 	AgentCompressionFailed             Code = "AGENT_5002"
 	AgentDelegationFailed              Code = "AGENT_5003"
@@ -64,6 +65,7 @@ const (
 	AgentLifecycleCancelledLocaleKey            = "agent.errors.lifecycleCancelled"
 	AgentLifecycleInterruptedLocaleKey          = "agent.errors.lifecycleInterrupted"
 	AgentProviderCredentialMissingLocaleKey     = "agent.errors.providerCredentialMissing"
+	AgentProviderRateLimitLocaleKey             = "agent.errors.providerRateLimit"
 )
 
 const AgentClientInvalidResourceReference Code = "CLIENT_INVALID_RESOURCE_REFERENCE"
@@ -185,6 +187,28 @@ func NewRuntimeUnavailable(runtimeKind, reasonCode string) *BizError {
 			Details: map[string]string{
 				"runtime_kind": runtimeKind,
 				"reason_code":  reasonCode,
+			},
+		},
+	}
+}
+
+func NewProviderRateLimit(providerID string, retryAfterMS int64) *BizError {
+	if retryAfterMS < 0 {
+		retryAfterMS = 0
+	}
+	return &BizError{
+		Code:       AgentProviderRateLimit,
+		HTTPStatus: http.StatusTooManyRequests,
+		Message:    AgentProviderRateLimitLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentProviderRateLimitLocaleKey,
+			ErrorType: string(AgentProviderRateLimit),
+			LocaleKey: AgentProviderRateLimitLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"provider_id":    providerID,
+				"retry_after_ms": strconv.FormatInt(retryAfterMS, 10),
 			},
 		},
 	}

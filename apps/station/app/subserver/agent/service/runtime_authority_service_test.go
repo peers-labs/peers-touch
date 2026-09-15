@@ -421,6 +421,82 @@ func TestProviderOutputOverrunPersistsAttemptUsage(t *testing.T) {
 	}
 }
 
+func TestProviderRateLimitTerminatesWithoutHiddenRetry(t *testing.T) {
+	service, config, db := setupPinnedProviderExecution(
+		t,
+		"runtime_authority_provider_rate_limit",
+	)
+	if err := db.AutoMigrate(&persistence.Credential{}); err != nil {
+		t.Fatalf("migrate credential: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.Credential{
+		ID:        "credential-rate-limit",
+		ActorPTID: config.ActorID,
+		Provider:  config.Provider,
+		AuthType:  "api_key",
+		Source:    "test",
+		Status:    string(domain.CredentialStatusActive),
+		Version:   1,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed credential pool: %v", err)
+	}
+	service.credentialPool = NewCredentialPoolService()
+	service.errorClassifier = NewErrorClassifierService()
+	service.compression = NewCompressionService()
+	config.MaxRetries = 3
+	providerCalls := 0
+	service.providerCall = func(
+		ctx context.Context,
+		request *ProviderCallRequest,
+	) (*ProviderCallResponse, error) {
+		if err := request.BeforeDispatch(ctx); err != nil {
+			return nil, err
+		}
+		providerCalls++
+		return nil, &ProviderHTTPError{
+			StatusCode: http.StatusTooManyRequests,
+			Body:       "rate limit",
+			Provider:   config.Provider,
+			RetryAfter: "2",
+		}
+	}
+
+	trace := &domain.TurnTrace{}
+	_, _, recordedCalls, _, err := service.providerCallWithRetry(
+		context.Background(),
+		config,
+		config.TurnID,
+		trace,
+		"",
+		nil,
+	)
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) ||
+		bizErr.Code != errcode.AgentProviderRateLimit ||
+		bizErr.Payload.GetErrorType() != string(errcode.AgentProviderRateLimit) ||
+		bizErr.Payload.GetLocaleKey() != errcode.AgentProviderRateLimitLocaleKey ||
+		!bizErr.Payload.GetRetryable() ||
+		!bizErr.Payload.GetTerminal() ||
+		bizErr.Payload.GetDetails()["provider_id"] != config.Provider ||
+		bizErr.Payload.GetDetails()["retry_after_ms"] != "2000" {
+		t.Fatalf("unexpected rate-limit payload: %T %+v", err, bizErr)
+	}
+	if providerCalls != 1 || len(recordedCalls) != 1 {
+		t.Fatalf(
+			"rate limit retried provider call: calls=%d records=%d",
+			providerCalls,
+			len(recordedCalls),
+		)
+	}
+	if len(trace.ErrorClassified) != 1 ||
+		trace.ErrorClassified[0].Reason != domain.FailoverReasonRateLimit {
+		t.Fatalf("classified errors = %+v", trace.ErrorClassified)
+	}
+}
+
 func TestProviderContextOverflowUsesGovernedCompressionAndReplacesLedger(t *testing.T) {
 	service, config, db := setupPinnedProviderExecution(
 		t,

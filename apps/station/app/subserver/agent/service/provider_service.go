@@ -240,6 +240,7 @@ type ProviderHTTPError struct {
 	StatusCode int
 	Body       string
 	Provider   string
+	RetryAfter string
 }
 
 func (e *ProviderHTTPError) Error() string {
@@ -671,6 +672,7 @@ func (s *ProviderService) callOllama(
 			StatusCode: resp.StatusCode,
 			Body:       string(bodyBytes),
 			Provider:   "ollama",
+			RetryAfter: resp.Header.Get("Retry-After"),
 		}
 	}
 
@@ -736,6 +738,7 @@ func (s *ProviderService) callOllamaStream(
 			StatusCode: resp.StatusCode,
 			Body:       string(bodyBytes),
 			Provider:   "ollama",
+			RetryAfter: resp.Header.Get("Retry-After"),
 		}
 	}
 
@@ -913,6 +916,7 @@ func (s *ProviderService) callOpenAI(
 			StatusCode: resp.StatusCode,
 			Body:       string(bodyBytes),
 			Provider:   "openai",
+			RetryAfter: resp.Header.Get("Retry-After"),
 		}
 	}
 
@@ -1036,6 +1040,7 @@ func (s *ProviderService) callOpenAIStream(
 			StatusCode: resp.StatusCode,
 			Body:       string(bodyBytes),
 			Provider:   "openai",
+			RetryAfter: resp.Header.Get("Retry-After"),
 		}
 	}
 
@@ -1315,6 +1320,7 @@ func (s *ProviderService) callAnthropic(
 			StatusCode: resp.StatusCode,
 			Body:       string(bodyBytes),
 			Provider:   "anthropic",
+			RetryAfter: resp.Header.Get("Retry-After"),
 		}
 	}
 
@@ -1385,6 +1391,7 @@ func (s *ProviderService) callAnthropicStream(
 			StatusCode: resp.StatusCode,
 			Body:       string(bodyBytes),
 			Provider:   "anthropic",
+			RetryAfter: resp.Header.Get("Retry-After"),
 		}
 	}
 

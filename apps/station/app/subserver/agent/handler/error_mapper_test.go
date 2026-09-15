@@ -254,6 +254,46 @@ func TestRuntimeUnavailablePreservesTypedPayloadDetails(t *testing.T) {
 	}
 }
 
+func TestProviderRateLimitPreservesTypedPayloadDetails(t *testing.T) {
+	mapped := toHandlerError(
+		errcode.NewProviderRateLimit("provider-1", 2000),
+	)
+	var handlerErr *server.HandlerError
+	if !errors.As(mapped, &handlerErr) {
+		t.Fatalf("expected HandlerError, got %T: %v", mapped, mapped)
+	}
+	if handlerErr.Code != http.StatusTooManyRequests {
+		t.Fatalf(
+			"status=%d, want %d",
+			handlerErr.Code,
+			http.StatusTooManyRequests,
+		)
+	}
+	expectedHeaders := map[string]string{
+		"X-Peers-Error-Code":       string(errcode.AgentProviderRateLimit),
+		"X-Peers-Error-Locale-Key": errcode.AgentProviderRateLimitLocaleKey,
+		"X-Peers-Error-Retryable":  "true",
+		"X-Peers-Error-Terminal":   "true",
+	}
+	for key, value := range expectedHeaders {
+		if handlerErr.Headers[key] != value {
+			t.Fatalf("%s=%q, want %q", key, handlerErr.Headers[key], value)
+		}
+	}
+
+	var details map[string]string
+	if err := json.Unmarshal([]byte(handlerErr.Headers[errorDetailsHeader]), &details); err != nil {
+		t.Fatalf("decode %s: %v", errorDetailsHeader, err)
+	}
+	expectedDetails := map[string]string{
+		"provider_id":    "provider-1",
+		"retry_after_ms": "2000",
+	}
+	if !reflect.DeepEqual(details, expectedDetails) {
+		t.Fatalf("details = %+v, want %+v", details, expectedDetails)
+	}
+}
+
 func TestRuntimeIncompatibleCapabilityPreservesTypedPayloadDetails(t *testing.T) {
 	mapped := toHandlerError(
 		errcode.NewRuntimeIncompatibleCapability(

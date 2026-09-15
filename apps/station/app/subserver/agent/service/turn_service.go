@@ -2685,6 +2685,13 @@ func (s *TurnService) providerCallWithRetry(
 		logger.Warnf(ctx, "provider call failed: turn_id=%s attempt=%d reason=%s retryable=%v",
 			turnID, attempt, classified.Reason.String(), classified.Retryable)
 
+		if classified.Reason == domain.FailoverReasonRateLimit {
+			return "", nil, providerCalls, false, errcode.NewProviderRateLimit(
+				config.Provider,
+				providerRetryAfterMilliseconds(callErr, time.Now().UTC()),
+			)
+		}
+
 		if attempt > 0 && s.growthMetrics != nil {
 			s.growthMetrics.RecordEvent(ctx, config.AgentID, EventTurnRetried, CategoryTurn, turnID, fmt.Sprintf("attempt=%d reason=%s", attempt, classified.Reason.String()), "retry")
 		}
@@ -2772,6 +2779,32 @@ func (s *TurnService) providerCallWithRetry(
 
 	return "", nil, providerCalls, false, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
 		fmt.Sprintf("provider call exhausted %d retries", maxRetries), nil)
+}
+
+func providerRetryAfterMilliseconds(err error, now time.Time) int64 {
+	var providerErr *ProviderHTTPError
+	if !errors.As(err, &providerErr) {
+		return 0
+	}
+	raw := strings.TrimSpace(providerErr.RetryAfter)
+	if raw == "" {
+		return 0
+	}
+	if seconds, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil {
+		if seconds <= 0 {
+			return 0
+		}
+		return (time.Duration(seconds) * time.Second).Milliseconds()
+	}
+	retryAt, parseErr := http.ParseTime(raw)
+	if parseErr != nil {
+		return 0
+	}
+	delay := retryAt.Sub(now)
+	if delay <= 0 {
+		return 0
+	}
+	return delay.Milliseconds()
 }
 
 func estimateToolDefinitionTokens(definitions []*domain.ToolDefinition) uint64 {
