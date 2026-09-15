@@ -4365,6 +4365,34 @@ The dependency-ready remediation is:
 6. retain receiver native-DOM plaintext, identical message ID, and receipt
    assertions as the product proof.
 
+The retained-client safety boundary is explicit:
+
+- loss of a replenish or full-bundle publication response retries the exact
+  persisted OPK IDs and public bytes;
+- replay at Station accepts identical material without changing a consumed OPK
+  back to available;
+- complete Station bundle loss is repaired with the existing identity/SPK and
+  only a newly persisted, monotonically higher OPK batch;
+- loss or partial deletion of the client's local OPK history is not recoverable
+  from account backup, because MP-D05 excludes SPK/OPK live state. The client
+  fails closed before allocating a reused OPK ID; a fresh device lifecycle is
+  required instead. Databases created before the independent high-water mark
+  existed migrate that mark to an explicit untrusted sentinel rather than
+  deriving trust from the possibly incomplete OPK rows.
+
+Focused regressions for this boundary are
+`missing_bundle_retry_after_lost_upload_ack_reuses_the_fresh_opk_batch`,
+`missing_bundle_retry_reuploads_identical_bytes_when_upload_did_not_commit`,
+`prekey_replenishment_fails_closed_when_local_opk_history_has_a_gap`, and
+`TestCanonicalDirectReplenishmentReplayDoesNotReactivateConsumedKey`; the
+legacy migration sentinel is covered by
+`messaging_schema_marks_legacy_prekey_history_untrusted`.
+The 2026-09-15 owner closure makes the local OPK history continuity check
+executable and all listed regressions pass. This closes the source contract that
+Mobile needs before implementing its `PreKeyInventoryRepository` and
+`PreKeyInventoryTransport` adapters; it does not by itself prove Mobile runtime
+delivery or recovery.
+
 Concurrency Decision: hybrid. Three completed read-only analysis lanes audited
 the portable store, Station Key Exchange contract, and Chat Acceptance mapping.
 All source edits, generated-artifact decisions, deployment, profile/runtime

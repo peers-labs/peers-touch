@@ -6194,6 +6194,16 @@ impl MessagingStore {
         {
             return Err("messaging one-time prekey IDs are invalid".to_string());
         }
+        let one_time_prekey_high_watermark = one_time_prekeys
+            .iter()
+            .map(|(id, _)| *id)
+            .max()
+            .ok_or_else(|| "messaging fresh prekey bundle is incomplete".to_string())?;
+        if one_time_prekeys.iter().map(|(id, _)| *id).min() != Some(1)
+            || usize::try_from(one_time_prekey_high_watermark).ok() != Some(one_time_prekeys.len())
+        {
+            return Err("messaging one-time prekey history is not contiguous".to_string());
+        }
         let mut connection = self.connection()?;
         let transaction = connection
             .transaction()
@@ -6214,12 +6224,13 @@ impl MessagingStore {
             .execute(
                 "INSERT INTO messaging_prekey_bundle(
                     id, signed_prekey_id, signed_prekey_private,
-                    state, created_at_unix_ms
-                 ) VALUES (1, ?1, ?2, 'awaiting_publication', ?3)",
+                    state, created_at_unix_ms, one_time_prekey_high_watermark
+                 ) VALUES (1, ?1, ?2, 'awaiting_publication', ?3, ?4)",
                 params![
                     signed_prekey_id,
                     signed_prekey_private.as_slice(),
-                    created_at_unix_ms
+                    created_at_unix_ms,
+                    one_time_prekey_high_watermark,
                 ],
             )
             .map_err(|error| error.to_string())?;
@@ -6307,15 +6318,42 @@ impl MessagingStore {
     }
 
     pub fn next_one_time_prekey_id(&self) -> Result<i32, String> {
-        let current_max = self
-            .connection()?
+        let connection = self.connection()?;
+        let high_watermark = connection
             .query_row(
-                "SELECT COALESCE(MAX(prekey_id), 0) FROM messaging_one_time_prekeys",
+                "SELECT one_time_prekey_high_watermark
+                 FROM messaging_prekey_bundle
+                 WHERE id = 1 AND state = 'published'",
                 [],
                 |row| row.get::<_, i64>(0),
             )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "messaging published prekey bundle is unavailable".to_string())?;
+        let (row_count, current_min, current_max) = connection
+            .query_row(
+                "SELECT COUNT(*),
+                        COALESCE(MIN(prekey_id), 0),
+                        COALESCE(MAX(prekey_id), 0)
+                 FROM messaging_one_time_prekeys",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
+            )
             .map_err(|error| error.to_string())?;
-        i32::try_from(current_max)
+        if high_watermark <= 0
+            || row_count != high_watermark
+            || current_min != 1
+            || current_max != high_watermark
+        {
+            return Err("messaging one-time prekey history is incomplete".to_string());
+        }
+        i32::try_from(high_watermark)
             .ok()
             .and_then(|value| value.checked_add(1))
             .filter(|value| *value > 0)
@@ -6379,6 +6417,32 @@ impl MessagingStore {
         if pending {
             return Err("messaging prekey replenishment is already pending".to_string());
         }
+        let high_watermark = transaction
+            .query_row(
+                "SELECT one_time_prekey_high_watermark
+                 FROM messaging_prekey_bundle
+                 WHERE id = 1 AND state = 'published'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let first_id = one_time_prekeys
+            .iter()
+            .map(|(id, _)| i64::from(*id))
+            .min()
+            .ok_or_else(|| "messaging prekey replenishment is empty".to_string())?;
+        let last_id = one_time_prekeys
+            .iter()
+            .map(|(id, _)| i64::from(*id))
+            .max()
+            .ok_or_else(|| "messaging prekey replenishment is empty".to_string())?;
+        if first_id != high_watermark + 1
+            || last_id - high_watermark
+                != i64::try_from(one_time_prekeys.len())
+                    .map_err(|_| "messaging prekey replenishment is too large".to_string())?
+        {
+            return Err("messaging prekey replenishment IDs are not contiguous".to_string());
+        }
         for (id, private_key) in one_time_prekeys {
             transaction
                 .execute(
@@ -6388,6 +6452,19 @@ impl MessagingStore {
                     params![id, private_key.as_slice()],
                 )
                 .map_err(|error| error.to_string())?;
+        }
+        let changed = transaction
+            .execute(
+                "UPDATE messaging_prekey_bundle
+                 SET one_time_prekey_high_watermark = ?1
+                 WHERE id = 1
+                   AND state = 'published'
+                   AND one_time_prekey_high_watermark = ?2",
+                params![last_id, high_watermark],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging prekey high-water mark did not advance".to_string());
         }
         transaction.commit().map_err(|error| error.to_string())
     }
@@ -10191,7 +10268,88 @@ mod tests {
             vec!["consumed", "available", "consumed", "available"]
         );
         drop(connection);
+        assert_eq!(store.next_one_time_prekey_id().unwrap(), 5);
         assert_eq!(store.load_signed_prekey(7).unwrap(), [7; 32]);
+    }
+
+    #[test]
+    fn prekey_replenishment_fails_closed_when_local_opk_history_has_a_gap() {
+        for missing_id in [2, 3] {
+            let store = MessagingStore::in_memory().unwrap();
+            let identity = IdentityKeyPair::from_seed(&[13; 32]);
+            let fresh =
+                generate_fresh_device_identity("ptid:alice", identity.seed_bytes(), 1).unwrap();
+            store.install_fresh_device_identity(&fresh).unwrap();
+            let device_id = fresh
+                .enrollment
+                .certificate
+                .device
+                .as_ref()
+                .unwrap()
+                .device_id
+                .clone();
+            store.complete_device_enrollment(&device_id).unwrap();
+            store
+                .install_fresh_prekey_bundle(
+                    7,
+                    &[7; 32],
+                    &[(1, [1; 32]), (2, [2; 32]), (3, [3; 32])],
+                    100,
+                )
+                .unwrap();
+            store.complete_prekey_publication(7).unwrap();
+            store
+                .connection()
+                .unwrap()
+                .execute(
+                    "DELETE FROM messaging_one_time_prekeys WHERE prekey_id = ?1",
+                    params![missing_id],
+                )
+                .unwrap();
+
+            assert_eq!(
+                store.next_one_time_prekey_id().unwrap_err(),
+                "messaging one-time prekey history is incomplete"
+            );
+        }
+    }
+
+    #[test]
+    fn messaging_schema_marks_legacy_prekey_history_untrusted() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE messaging_prekey_bundle (
+                    id INTEGER PRIMARY KEY CHECK(id = 1),
+                    signed_prekey_id INTEGER NOT NULL,
+                    signed_prekey_private BLOB NOT NULL,
+                    state TEXT NOT NULL,
+                    created_at_unix_ms INTEGER NOT NULL
+                 );
+                 CREATE TABLE messaging_one_time_prekeys (
+                    prekey_id INTEGER PRIMARY KEY,
+                    private_key BLOB NOT NULL,
+                    state TEXT NOT NULL
+                 );
+                 INSERT INTO messaging_prekey_bundle(
+                    id, signed_prekey_id, signed_prekey_private,
+                    state, created_at_unix_ms
+                 ) VALUES (1, 7, zeroblob(32), 'published', 100);
+                 INSERT INTO messaging_one_time_prekeys(
+                    prekey_id, private_key, state
+                 ) VALUES
+                    (1, zeroblob(32), 'consumed'),
+                    (2, zeroblob(32), 'available'),
+                    (3, zeroblob(32), 'available');",
+            )
+            .unwrap();
+
+        let store = MessagingStore::from_connection(connection).unwrap();
+
+        assert_eq!(
+            store.next_one_time_prekey_id().unwrap_err(),
+            "messaging one-time prekey history is incomplete"
+        );
     }
 
     #[test]

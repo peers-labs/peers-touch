@@ -2329,6 +2329,16 @@ impl PreKeyRepository for MobileMessagingStore {
         {
             return Err("mobile messaging one-time prekey IDs are invalid".to_string());
         }
+        let one_time_prekey_high_watermark = one_time_prekeys
+            .iter()
+            .map(|(id, _)| *id)
+            .max()
+            .ok_or_else(|| "mobile messaging fresh prekey bundle is incomplete".to_string())?;
+        if one_time_prekeys.iter().map(|(id, _)| *id).min() != Some(1)
+            || usize::try_from(one_time_prekey_high_watermark).ok() != Some(one_time_prekeys.len())
+        {
+            return Err("mobile messaging one-time prekey history is not contiguous".to_string());
+        }
         self.with_transaction(|transaction| {
             let active = transaction
                 .query_row(
@@ -2346,12 +2356,13 @@ impl PreKeyRepository for MobileMessagingStore {
                 .execute(
                     "INSERT INTO messaging_prekey_bundle(
                         id, signed_prekey_id, signed_prekey_private,
-                        state, created_at_unix_ms
-                     ) VALUES (1, ?1, ?2, 'awaiting_publication', ?3)",
+                        state, created_at_unix_ms, one_time_prekey_high_watermark
+                     ) VALUES (1, ?1, ?2, 'awaiting_publication', ?3, ?4)",
                     params![
                         signed_prekey_id,
                         signed_prekey_private.as_slice(),
                         created_at_unix_ms,
+                        one_time_prekey_high_watermark,
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -8211,7 +8222,7 @@ mod tests {
             &store,
             7,
             &[8; 32],
-            &[(9, [10; 32])],
+            &[(1, [10; 32])],
             20,
         )
         .is_err());
@@ -8228,17 +8239,31 @@ mod tests {
                 .device_signing_public_key
                 .as_slice()
         );
-        PreKeyRepository::install_fresh_prekey_bundle(&store, 7, &[8; 32], &[(9, [10; 32])], 20)
+        PreKeyRepository::install_fresh_prekey_bundle(&store, 7, &[8; 32], &[(1, [10; 32])], 20)
             .unwrap();
         let bundle = PreKeyRepository::pending_prekey_bundle(&store)
             .unwrap()
             .unwrap();
         assert_eq!(bundle.signed_prekey_id, 7);
-        assert_eq!(bundle.one_time_prekeys, vec![(9, [10; 32])]);
+        assert_eq!(bundle.one_time_prekeys, vec![(1, [10; 32])]);
         PreKeyRepository::complete_prekey_publication(&store, 7).unwrap();
         assert!(PreKeyRepository::pending_prekey_bundle(&store)
             .unwrap()
             .is_none());
+        assert_eq!(
+            store
+                .connection
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT one_time_prekey_high_watermark
+                     FROM messaging_prekey_bundle WHERE id = 1",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
 
         let receipt = DeviceConsumptionReceipt {
             receipt_id: "device-consumed:item-1".to_string(),
@@ -8742,6 +8767,17 @@ mod tests {
                 )
                 .unwrap(),
             "available"
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT one_time_prekey_high_watermark
+                     FROM messaging_prekey_bundle WHERE id = 1",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            -1
         );
         for retired in [
             "messaging_read_cursors",
