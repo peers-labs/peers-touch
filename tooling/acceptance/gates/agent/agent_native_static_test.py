@@ -956,6 +956,23 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
 
+    def test_runtime_unavailable_development_journey_uses_production_paths(self) -> None:
+        start = self.source.index("async runDevelopmentRuntimeUnavailable")
+        end = self.source.index("async sendMessage", start)
+        scenario = self.source[start:end]
+
+        self.assertIn("await api.updateProvider(providerId", scenario)
+        self.assertIn("useChatStore.getState().sendMessage(", scenario)
+        self.assertIn("message.typedError?.error_type === 'RUNTIME_UNAVAILABLE'", scenario)
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="select-runtime"]',
+            scenario,
+        )
+        self.assertIn("getAgentSurface(agent.name) === 'profile'", scenario)
+        self.assertIn("tracesAfter.entries.length === tracesBefore.entries.length", scenario)
+        self.assertIn("readbackAfter.messages.length === readbackBefore.messages.length", scenario)
+        self.assertIn("await deleteFoundationConversation(conversationId)", scenario)
+
     def test_two_topic_restart_scenario_uses_production_authorities(self) -> None:
         snapshot_start = self.source.index(
             "async function foundationF12TopicSnapshot",

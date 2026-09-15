@@ -402,6 +402,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       ? 'open-original'
       : message.resolution?.type === 'editQueue'
         ? 'edit-queue'
+        : message.resolution?.type === 'selectRuntime'
+          ? 'select-runtime'
         : message.resolution?.type === 'switchAccount'
           ? 'switch-account'
         : message.resolution?.type === 'chooseCompatibleModel'
@@ -605,6 +607,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-error-capability-id={message.typedError?.details.capability_id}
       data-pt-agent-error-turn-id={message.typedError?.details.turn_id}
       data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
+      data-pt-agent-error-runtime-kind={message.typedError?.details.runtime_kind}
       data-pt-agent-error-reference-kind={message.typedError?.details.reference_kind}
       data-pt-agent-error-reference-hash={message.typedError?.details.reference_hash}
       data-pt-agent-error-session-id={message.typedError?.details.session_id}
@@ -870,6 +873,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                     danger={
                       message.resolution.type !== 'openOriginal'
                       && message.resolution.type !== 'editQueue'
+                      && message.resolution.type !== 'selectRuntime'
                       && message.resolution.type !== 'switchAccount'
                       && message.resolution.type !== 'chooseCompatibleModel'
                       && message.resolution.type !== 'chooseResourceAgain'
@@ -879,6 +883,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                     icon={
                       message.resolution.type === 'openProviderSettings'
                       || message.resolution.type === 'chooseCompatibleModel'
+                      || message.resolution.type === 'selectRuntime'
                         ? <Settings size={14} />
                         : message.resolution.type === 'openOriginal'
                           ? <ExternalLink size={14} />
@@ -915,6 +920,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         }
                         if (message.resolution!.type === 'editQueue') {
                           await handleEditQueue();
+                          return;
+                        }
+                        if (message.resolution!.type === 'selectRuntime') {
+                          handleChooseCompatibleModel();
                           return;
                         }
                         if (message.resolution!.type === 'switchAccount') {

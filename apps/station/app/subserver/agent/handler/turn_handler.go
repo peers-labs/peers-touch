@@ -701,8 +701,10 @@ func validateFrozenDirectModelRequest(req *model.ExecuteTurnRequest) error {
 	switch provider {
 	case "trae-cli", "codex-cli", "claude-cli", "cursor-cli",
 		"trae", "codex", "claude", "cursor":
-		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
-			"CLI runtimes are not supported by the active Agent profile", nil)
+		return errcode.NewRuntimeUnavailable(
+			"direct_model",
+			"runtime_not_advertised",
+		)
 	}
 	return nil
 }

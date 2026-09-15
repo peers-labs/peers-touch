@@ -2505,6 +2505,7 @@ export interface AgentErrorResolutionAction {
     | 'checkConnection'
     | 'openOriginal'
     | 'editQueue'
+    | 'selectRuntime'
     | 'switchAccount'
     | 'chooseCompatibleModel'
     | 'chooseResourceAgain'
@@ -2516,6 +2517,7 @@ export interface AgentErrorResolutionAction {
   existingCommandId?: string;
   conversationId?: string;
   capacity?: number;
+  runtimeKind?: string;
   resourceKind?: string;
   resourceRefHash?: string;
   resourceId?: string;
@@ -2534,6 +2536,9 @@ export const AGENT_ATTACHMENT_REJECTED_ERROR_TYPE =
   'CONTEXT_ATTACHMENT_REJECTED';
 export const AGENT_QUEUE_FULL_ERROR_TYPE = 'ADMISSION_QUEUE_FULL';
 export const AGENT_QUEUE_FULL_LOCALE_KEY = 'agent.errors.queueFull';
+export const AGENT_RUNTIME_UNAVAILABLE_ERROR_TYPE = 'RUNTIME_UNAVAILABLE';
+export const AGENT_RUNTIME_UNAVAILABLE_LOCALE_KEY =
+  'agent.errors.runtimeUnavailable';
 export const AGENT_CONTEXT_LIMIT_ERROR_TYPE = 'CONTEXT_OVERFLOW';
 export const AGENT_INVALID_REFERENCE_ERROR_TYPE = 'CONTEXT_INVALID_REFERENCE';
 export const AGENT_INVALID_REFERENCE_LOCALE_KEY =
@@ -2567,6 +2572,13 @@ export type AgentQueueFullError = AgentTypedErrorPayload & {
   details: {
     conversation_id: string;
     capacity: string;
+  };
+};
+
+export type AgentRuntimeUnavailableError = AgentTypedErrorPayload & {
+  details: {
+    runtime_kind: string;
+    reason_code: string;
   };
 };
 
@@ -2612,6 +2624,7 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'resource_id',
   'conversation_id',
   'capacity',
+  'runtime_kind',
   'expected_revision',
   'actual_revision',
   'capability_id',
@@ -2757,6 +2770,27 @@ export function isAgentQueueFullError(
   );
 }
 
+export function isAgentRuntimeUnavailableError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentRuntimeUnavailableError {
+  if (
+    error?.error_type !== AGENT_RUNTIME_UNAVAILABLE_ERROR_TYPE
+    || error.locale_key !== AGENT_RUNTIME_UNAVAILABLE_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'reason_code'
+    && detailKeys[1] === 'runtime_kind'
+    && error.details.runtime_kind.trim().length > 0
+    && error.details.reason_code.trim().length > 0
+  );
+}
+
 export function isAgentIncompatibleCapabilityError(
   error: AgentTypedErrorPayload | null | undefined,
 ): error is AgentIncompatibleCapabilityError {
@@ -2867,6 +2901,14 @@ export function isAgentClientLeaseExpiredError(
 export function resolveAgentTypedErrorAction(
   error: AgentTypedErrorPayload | null | undefined,
 ): AgentErrorResolutionAction | undefined {
+  if (isAgentRuntimeUnavailableError(error)) {
+    return {
+      type: 'selectRuntime',
+      runtimeKind: error.details.runtime_kind,
+      reasonCode: error.details.reason_code,
+      label: 'agent.recovery.selectRuntime',
+    };
+  }
   if (isAgentQueueFullError(error)) {
     return {
       type: 'editQueue',

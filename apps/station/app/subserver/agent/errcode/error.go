@@ -23,6 +23,7 @@ const (
 	AgentOwnershipForbiddenActor       Code = "OWNERSHIP_FORBIDDEN_ACTOR"
 	AgentQueueFull                     Code = "ADMISSION_QUEUE_FULL"
 	AgentAttachmentRejected            Code = "CONTEXT_ATTACHMENT_REJECTED"
+	AgentRuntimeUnavailable            Code = "RUNTIME_UNAVAILABLE"
 	AgentRuntimeIncompatibleCapability Code = "RUNTIME_INCOMPATIBLE_CAPABILITY"
 	AgentToolApprovalDenied            Code = "TOOL_APPROVAL_DENIED"
 	AgentToolApprovalExpired           Code = "TOOL_APPROVAL_EXPIRED"
@@ -51,6 +52,7 @@ const (
 	AgentQueueFullLocaleKey                     = "agent.errors.queueFull"
 	AgentOwnershipForbiddenActorLocaleKey       = "agent.errors.forbiddenActor"
 	AgentAttachmentRejectedLocaleKey            = "agent.errors.attachmentRejected"
+	AgentRuntimeUnavailableLocaleKey            = "agent.errors.runtimeUnavailable"
 	AgentRuntimeIncompatibleCapabilityLocaleKey = "agent.errors.incompatibleCapability"
 	AgentToolApprovalDeniedLocaleKey            = "agent.errors.toolApprovalDenied"
 	AgentToolApprovalExpiredLocaleKey           = "agent.errors.toolApprovalExpired"
@@ -164,6 +166,25 @@ func NewAttachmentRejected(attachmentID, reasonCode string) *BizError {
 			Details: map[string]string{
 				"attachment_id": attachmentID,
 				"reason_code":   reasonCode,
+			},
+		},
+	}
+}
+
+func NewRuntimeUnavailable(runtimeKind, reasonCode string) *BizError {
+	return &BizError{
+		Code:       AgentRuntimeUnavailable,
+		HTTPStatus: http.StatusServiceUnavailable,
+		Message:    AgentRuntimeUnavailableLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentRuntimeUnavailableLocaleKey,
+			ErrorType: string(AgentRuntimeUnavailable),
+			LocaleKey: AgentRuntimeUnavailableLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"runtime_kind": runtimeKind,
+				"reason_code":  reasonCode,
 			},
 		},
 	}

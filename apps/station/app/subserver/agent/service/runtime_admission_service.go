@@ -216,17 +216,23 @@ func (r *RuntimeAdmissionResolver) Resolve(
 	}
 
 	if cp != nil && !catalogProviderAdvertised(*cp) {
-		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
-			fmt.Sprintf("provider %q runtime is not supported by the active Agent profile", providerID), nil)
+		return nil, errcode.NewRuntimeUnavailable(
+			runtimeKindForUnavailableProvider(cp.RuntimeKind),
+			"runtime_not_advertised",
+		)
 	}
 	if userMatch != nil && !ProviderRuntimeAdvertised(userMatch.RuntimeKind, userMatch.Protocol) {
-		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
-			fmt.Sprintf("provider %q runtime is not supported by the active Agent profile", providerID), nil)
+		return nil, errcode.NewRuntimeUnavailable(
+			runtimeKindForUnavailableProvider(userMatch.RuntimeKind),
+			"runtime_not_advertised",
+		)
 	}
 
 	if userMatch != nil && !userMatch.Enabled {
-		return nil, errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
-			fmt.Sprintf("provider %q is disabled", providerID), nil)
+		return nil, errcode.NewRuntimeUnavailable(
+			runtimeKindForUnavailableProvider(userMatch.RuntimeKind),
+			"provider_disabled",
+		)
 	}
 
 	if cp != nil {
@@ -375,6 +381,15 @@ func (r *RuntimeAdmissionResolver) Resolve(
 		Capabilities:          capabilities,
 		Budget:                budget,
 	}, nil
+}
+
+func runtimeKindForUnavailableProvider(providerRuntimeKind string) string {
+	switch strings.ToLower(strings.TrimSpace(providerRuntimeKind)) {
+	case "external", "external-agent", "external_agent":
+		return "external_agent"
+	default:
+		return "direct_model"
+	}
 }
 
 type runtimeCapabilityFacts map[string]bool

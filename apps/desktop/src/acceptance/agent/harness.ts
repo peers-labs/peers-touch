@@ -21108,6 +21108,195 @@ export function installAcceptanceHarness(): void {
       }
     },
 
+    async runDevelopmentRuntimeUnavailable({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent?.provider || !agent.model) {
+        throw new Error('agent.acceptance.providerModelUnavailable');
+      }
+      const agentId = agent.id || agent.name;
+      const providerId = agent.provider;
+      const providerBefore = await api.getProvider(providerId);
+      if (!providerBefore.enabled) {
+        throw new Error('agent.acceptance.providerUnavailableBeforeScenario');
+      }
+      const conversation = await api.createAgentConversation({
+        agent_id: agentId,
+        title: `Runtime unavailable ${sampleId}`,
+        provider_id: providerId,
+        model_name: agent.model,
+      });
+      const conversationId = conversation.conversation_id;
+      await useChatStore.getState().selectSession(conversationId);
+
+      let providerDisabled = false;
+      let capture: Record<string, unknown> | null = null;
+      const cleanup: Record<string, unknown> = {
+        providerRestored: false,
+        conversationDeleted: false,
+        localProjectionCleared: false,
+      };
+      try {
+        const [readbackBefore, tracesBefore, queueBefore] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+        await api.updateProvider(providerId, {
+          base_url: providerBefore.base_url || providerBefore.default_base_url,
+          enabled: false,
+          version: providerBefore.version,
+        });
+        providerDisabled = true;
+
+        const messageCountBefore = useChatStore.getState().messages.length;
+        useChatStore.getState().sendMessage(
+          `Runtime unavailable ${sampleId}`,
+        );
+        let errorMessage = useChatStore.getState().messages
+          .slice(messageCountBefore)
+          .find((message) => (
+            message.role === 'assistant'
+            && message.typedError?.error_type === 'RUNTIME_UNAVAILABLE'
+          ));
+        await waitFor(
+          () => {
+            errorMessage = useChatStore.getState().messages
+              .slice(messageCountBefore)
+              .find((message) => (
+                message.role === 'assistant'
+                && message.typedError?.error_type === 'RUNTIME_UNAVAILABLE'
+                && message.resolution?.type === 'selectRuntime'
+              ));
+            const recovery = document.querySelector<HTMLButtonElement>(
+              '[data-pt-agent-message-error-recovery="select-runtime"]',
+            );
+            return Boolean(
+              errorMessage
+              && recovery
+              && recovery.getClientRects().length > 0,
+            );
+          },
+          'runtime-unavailable recovery surface',
+          30_000,
+        );
+        const recovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="select-runtime"]',
+        );
+        if (!errorMessage || !recovery) {
+          throw new Error(
+            'agent.acceptance.runtimeUnavailableRecoveryMissing',
+          );
+        }
+        recovery.click();
+        await waitFor(
+          () => (
+            useAgentStore.getState().getAgentSurface(agent.name) === 'profile'
+            && Boolean(
+              document.querySelector<HTMLElement>(
+                `[data-pt-agent-profile="${agent.id}"]`,
+              )?.getClientRects().length,
+            )
+          ),
+          'runtime selection profile surface',
+          30_000,
+        );
+
+        const [readbackAfter, tracesAfter, queueAfter] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+        const typedError = errorMessage.typedError;
+        const resolution = errorMessage.resolution;
+        const assertions = {
+          typedRuntimeUnavailable:
+            typedError?.error_type === 'RUNTIME_UNAVAILABLE'
+            && typedError.locale_key === 'agent.errors.runtimeUnavailable'
+            && typedError.retryable === true
+            && typedError.terminal === true
+            && stableJson(Object.keys(typedError.details).sort())
+              === stableJson(['reason_code', 'runtime_kind'])
+            && typedError.details.runtime_kind === 'direct_model'
+            && typedError.details.reason_code === 'provider_disabled',
+          localizedRecoveryVisible:
+            recovery.getClientRects().length > 0
+            && Boolean(recovery.textContent?.trim()),
+          selectRuntimeOpened:
+            resolution?.type === 'selectRuntime'
+            && resolution.runtimeKind === 'direct_model'
+            && resolution.reasonCode === 'provider_disabled'
+            && useAgentStore.getState().getAgentSurface(agent.name) === 'profile',
+          zeroAttemptAndProviderCall:
+            tracesAfter.entries.length === tracesBefore.entries.length,
+          stationStateUnchanged:
+            readbackAfter.messages.length === readbackBefore.messages.length
+            && readbackAfter.conversation.version
+              === readbackBefore.conversation.version
+            && queueAfter.entries.length === queueBefore.entries.length
+            && queueAfter.conversation_version
+              === queueBefore.conversation_version,
+        };
+        capture = {
+          assertions,
+          facts: {
+            conversationId,
+            runtimeKind: typedError?.details.runtime_kind ?? '',
+            reasonCode: typedError?.details.reason_code ?? '',
+            resolution,
+            messageDelta:
+              readbackAfter.messages.length - readbackBefore.messages.length,
+            traceDelta:
+              tracesAfter.entries.length - tracesBefore.entries.length,
+            queueDelta:
+              queueAfter.entries.length - queueBefore.entries.length,
+            conversationVersionBefore: readbackBefore.conversation.version,
+            conversationVersionAfter: readbackAfter.conversation.version,
+          },
+        };
+      } finally {
+        if (providerDisabled) {
+          const currentProvider = await api.getProvider(providerId);
+          await api.updateProvider(providerId, {
+            base_url:
+              currentProvider.base_url || currentProvider.default_base_url,
+            enabled: true,
+            version: currentProvider.version,
+          });
+          await useProviderStore.getState().loadProviders();
+          cleanup.providerRestored = true;
+        }
+        useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+        clearFoundationLocalConversationProjection(conversationId);
+        cleanup.localProjectionCleared = true;
+        await deleteFoundationConversation(conversationId);
+        cleanup.conversationDeleted = true;
+      }
+      if (!capture) {
+        throw new Error('agent.acceptance.runtimeUnavailableCaptureMissing');
+      }
+      return evidenceValue({
+        ...capture,
+        cleanup: {
+          ...cleanup,
+          status: Object.values(cleanup).every((value) => value === true)
+            ? 'clean'
+            : 'failed',
+        },
+      });
+    },
+
     async sendMessage({ content }: SendMessageInput) {
       const chatStore = useChatStore.getState();
       const beforeCount = chatStore.messages.length;
