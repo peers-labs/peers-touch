@@ -23,11 +23,11 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | Exact-source C08 and both Browser AS-F10 locale rows pass on `6eb068a6d`; Foundation first failed at Browser English `BASE-CANCELLED`, while resumed diagnostics exposed an earlier shared Browser target-window loss; full runtime proof remains `UNPROVEN` |
+| Current step | C08 passes on `1f6299725`; Foundation crossed AS-F10, AS-F12, both cancellation locales, and both invalid-reference locales before exposing a Browser English invalid-resource executor-capability mismatch; full runtime proof remains `UNPROVEN` |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Generic Browser lifecycle instrumentation now captures safe window cardinality and current-handle validity; `24/24` focused runtime-client tests, Python compilation, and diff hygiene pass |
-| Current action | Checkpoint the Browser-window instrumentation, publish the new HEAD, deploy exact source, and rerun C08 then the unchanged Foundation Gate with F12, Browser lifecycle, and cancellation collectors |
-| Next action | Use the window trace to fix only a proven generic Browser-runtime defect, then continue to the `BASE-CANCELLED` trace and remaining 419-cell frontier |
+| Last completed | The invalid-resource executor target now explicitly resolves `local_file_read` / `filesystem.read`, matching the promoted Development Journey; `88/88` static, `56/56` coordinator, and Desktop strict checks pass |
+| Current action | Checkpoint the invalid-resource target correction, deploy and rebuild exact source, rerun C08, then resume the unchanged Foundation Gate |
+| Next action | Prove the four invalid-resource runtime cells and continue from the next first failed 419-cell tuple |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
@@ -36,7 +36,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | no Goal-level blocker; `BASE-INVALID_RESOURCE_REF` formal Foundation proof remains `UNPROVEN`; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | C08 `20260914T163447713100Z-484765f91556af2a4b438a518064ea52` passed `DONE / PROVEN` on `6eb068a6d` in 48.628 seconds；Foundation `20260914T163606459245Z-4b3d285b3b8db39e579dac2f737b6f2a` proved both Browser AS-F10 rows with `AGENT_4002` and zero execution before `BASE-CANCELLED` exhausted its two real cancellation windows；resumed runs `20260915T010815292634Z-cfce9792de8ff4aad47942250b51623e` and `20260915T012507003363Z-1fc43af078abb9eecd8703f0a11e868d` failed earlier with non-dict Browser Harness responses at different cells；the second lifecycle trace confirmed `NoSuchWindowException` while driver and service ports remained present；Foundation remains `PARTIAL / UNPROVEN` |
+| Evidence | C08 `20260915T014558139866Z-ac234b6711744d66a5a2190771d28b26` passed on `1f6299725` in 39.155 seconds；Foundation `20260915T015153692721Z-00077a23ad6dda979c24c4b0a09cfdfe` crossed both cancellation locales on their first attempts with authoritative `cancelled` terminals and 217.3/212.7 ms latency, retained one valid Browser window, then failed at Browser English `BASE-INVALID_RESOURCE_REF / executor capability changed`；source inspection proves the resolver used the default `local_clipboard_read` while the Journey requires `local_file_read` / `filesystem.read`；Foundation remains `PARTIAL / UNPROVEN` |
 | Last updated | 2026-09-15 |
 
 ---

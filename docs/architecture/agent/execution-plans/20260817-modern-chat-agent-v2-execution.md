@@ -1676,6 +1676,32 @@ and zero local-path leakage.
     to the existing Browser lifecycle trace without retrying a product action
     or changing any Gate contract. Focused runtime-client tests pass `24/24`,
     Python compilation and diff hygiene pass.
+  - Diagnostic checkpoint `1f6299725b62770aaa310c0f76be593de88699f4`
+    passed exact-source C08 run
+    `20260915T014558139866Z-ac234b6711744d66a5a2190771d28b26`
+    in 39.155 seconds. Foundation run
+    `20260915T014705430357Z-94f1aba6ce4e8de8cec444959c4a0bb8`
+    retained exactly one valid Browser window through both AS-F01 locale calls
+    and failed instead on one `turnSubmissionTimeout`; cleanup passed. The
+    unchanged-source run
+    `20260915T015153692721Z-00077a23ad6dda979c24c4b0a09cfdfe`
+    crossed AS-F05, AS-F06, AS-F10, AS-F12, both cancellation locales, and the
+    promoted invalid-reference cells with one valid Browser window throughout.
+    Its cancellation trace records first-attempt authoritative cancellation in
+    both locales, with matching Turn/session identity and 217.3/212.7 ms
+    cancellation latency. The earlier two-attempt cancellation-window failure
+    and Browser target-window loss are therefore not reproduced on this
+    checkpoint.
+  - The new first failure is Browser English `BASE-INVALID_RESOURCE_REF`:
+    `executor capability changed`. The coordinator requires
+    `filesystem.read`, and the shared Development Journey explicitly selects
+    `local_file_read`, but
+    `resolveFoundationInvalidResourceExecutorTarget` selected the generic
+    Desktop default `local_clipboard_read`. The owner-layer correction makes
+    the resolver select `local_file_read`, keeping the target, Native executor
+    counters, and shared Journey on one capability. Static checks pass `88/88`,
+    coordinator tests pass `56/56`, Desktop strict checks pass, and no Gate
+    tuple, timeout, assertion, provider, or cleanup contract changed.
 
 #### G-FE1 Concurrency Decision
 

@@ -1872,6 +1872,15 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "async runDevelopmentInvalidResourceReference",
             self.source,
         )
+        resolver_start = self.source.index(
+            "async resolveFoundationInvalidResourceExecutorTarget"
+        )
+        resolver_end = self.source.index(
+            "async getFoundationClientExecutorCounters",
+            resolver_start,
+        )
+        resolver = self.source[resolver_start:resolver_end]
+        self.assertIn("toolName: 'local_file_read'", resolver)
         self.assertIn(
             "if (cell === 'BASE-INVALID_RESOURCE_REF')",
             self.source,

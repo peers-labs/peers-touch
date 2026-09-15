@@ -20286,6 +20286,7 @@ export function installAcceptanceHarness(): void {
       const fixture = await foundationToolFixture(
         agent.id || agent.name,
         'desktop_app',
+        { toolName: 'local_file_read' },
       );
       const actorPtid = authenticatedFoundationActorPtid();
       const stationSessions = await api.listAgentCapabilitySessions();
