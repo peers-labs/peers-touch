@@ -659,7 +659,10 @@ items:
     authorization:
       checkpoint: { localCommit: allowed, amend: denied }
       delivery: { push: denied, pullRequest: denied }
-      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
+      runtime:
+        deployProfiles: [four, fiveArm]
+        destructiveResetScopes:
+          [station-four-social-private, station-five-arm-social-private]
       history: { rewrite: denied }
 
   - schemaVersion: 1

@@ -219,8 +219,9 @@ lowercase project convention. A new workstream uses `dev-start`, never
 item's heartbeat, Journey, claim or source-HEAD refresh. W1/W2/W3/W6/W7/W9
 remain parked against the current external declaration. W12 declares the intended
 `station-four-social-private` and `station-five-arm-social-private` reset
-resources but keeps `destructiveResetScopes: []`; execution remains impossible
-until an exact Owner authorization updates that array.
+resources. The Owner authorized those exact development-only reset scopes on
+2026-09-15; the work-item manifest now carries the matching
+`destructiveResetScopes` array.
 
 W3-W6 service Journeys boot production handlers/adapters with isolated
 in-process persistence and object fixtures. They do not connect to or mutate a
@@ -372,7 +373,7 @@ The source-owned critical path is 8-12 engineering workdays:
 | W11-W13 hard cut, authorized reset and formal Acceptance | 1-2 days |
 
 This is engineering time, not wall-clock certainty. Waiting for active MCA/
-Station owners to release claims, exact W12 destructive authorization, remote
+Station owners to release claims, W12 runtime-resource availability, remote
 availability or mandatory failure remediation is excluded and keeps the ETA
 explicitly `unknown` while blocked.
 
@@ -1024,6 +1025,12 @@ hard-cut fixtures.
   the final checkpoint, then run the full Desktop/Mobile/recovery/subtype/UOW/
   cleanup Development matrix.
 - **Dependencies**: W5/W11; explicit reset/profile/deploy authorization and leases.
+- **Owner authorization**: on 2026-09-15 the Owner authorized all
+  development-data operations required by this plan. This authorization is
+  interpreted exactly as deploy/reset access for development profiles `four`
+  and `fiveArm`, with destructive scopes `station-four-social-private` and
+  `station-five-arm-social-private`. It excludes production data, other
+  profiles/scopes, push, pull-request creation and history rewrite.
 - **Reset boundary**: `station-four-social-private` and
   `station-five-arm-social-private` only; old private Social rows, legacy private
   schema and old private-media objects are removed while public hashes/counts
@@ -1289,7 +1296,7 @@ observations is invalid.
 | W9 | Mobile | parked | none | NOT_RUN | NOT_RUN | W5/W7/W8; Mobile claim |
 | W10 | Chat regression | parked | none | NOT_RUN | NOT_RUN | W2/W9 FUNCTIONAL_PASS; active Desktop/Station runtime owners |
 | W11 | source/route/generated hard cut | parked | none | NOT_RUN | NOT_RUN | W8/W9/W10 |
-| W12 | physical schema/data cut + full functional | parked | none | NOT_RUN | NOT_RUN | W5/W11; exact two-profile reset/deploy authorization |
+| W12 | physical schema/data cut + full functional | parked | none | NOT_RUN | NOT_RUN | W11; exact runtime leases |
 | W13 | Acceptance | parked | none | NOT_RUN | NOT_RUN | W12 FUNCTIONAL_PASS; active Acceptance owner |
 
 Overall: `8/16`. DWF-D13 removed the cross-worktree source-lock blocker. W1
@@ -1467,4 +1474,5 @@ Hard governance boundaries:
 
 Result: `PASS` from independent review `secure_content_plan_review_v14` on
 2026-09-13. The Owner's autonomous-execution delegation authorizes immediate
-execution; destructive W12 scope remains separately unauthorized.
+execution. The Owner separately authorized the exact W12 development-only
+profiles and destructive reset scopes on 2026-09-15.

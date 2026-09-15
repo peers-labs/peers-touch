@@ -120,16 +120,41 @@ class WorkItemProjectionTest(unittest.TestCase):
                 repo_root=REPO_ROOT,
             )
 
-        with self.assertRaisesRegex(
-            work_item.ManifestError,
-            "destructiveResetScopes",
-        ):
-            work_item.load_projection(
-                MANIFEST,
-                workstream="W12",
-                journey="sc-dj-authorized-reset",
-                repo_root=REPO_ROOT,
+        authorized = work_item.load_projection(
+            MANIFEST,
+            workstream="W12",
+            journey="sc-dj-authorized-reset",
+            repo_root=REPO_ROOT,
+        )
+        self.assertEqual(
+            authorized.authorization["runtime"]["destructiveResetScopes"],
+            [
+                "station-four-social-private",
+                "station-five-arm-social-private",
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as temp:
+            manifest = yaml.safe_load(MANIFEST.read_text(encoding="utf-8"))
+            w12 = next(
+                item
+                for item in manifest["items"]
+                if item["workstreamId"] == "W12"
             )
+            w12["authorization"]["runtime"]["destructiveResetScopes"] = []
+            path = Path(temp) / "manifest.yaml"
+            path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                work_item.ManifestError,
+                "destructiveResetScopes",
+            ):
+                work_item.load_projection(
+                    path,
+                    workstream="W12",
+                    journey="sc-dj-authorized-reset",
+                    repo_root=REPO_ROOT,
+                )
 
     def test_start_invokes_make_and_validates_ledger_readback(self) -> None:
         projection = work_item.load_projection(
