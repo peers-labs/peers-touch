@@ -1110,6 +1110,20 @@ impl MobileMessagingEngine {
         let token = self.access_token()?;
         let plan = self.prepare_send_plan(&token, conversation_id)?;
         let command_id = Ulid::new().to_string();
+        // #region debug-point R-S:interaction-command-route
+        {
+            let debug_data = serde_json::json!({
+                "commandId": command_id,
+                "conversationId": conversation_id,
+                "homeStationPeerId": self.scope.station_peer_id,
+                "authorityStationPeerId": plan.authority_station_peer_id,
+                "authoritySequence": plan.authority_sequence,
+            });
+            std::thread::spawn(move || {
+                let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7787/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-reaction-readback","runId":"pre-fix","hypothesisId":"R-S","location":"apps/mobile/src-tauri/src/messaging/engine.rs:submit_metadata_interaction","msg":"[DEBUG] Mobile prepared metadata interaction route","data":debug_data}).to_string()).send();
+            });
+        }
+        // #endregion
         self.prepare_metadata_with_plan(
             &plan,
             &command_id,
