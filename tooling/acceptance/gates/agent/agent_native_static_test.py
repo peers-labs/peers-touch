@@ -2144,6 +2144,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
             tool_turn_start,
         )
         tool_turn = self.source[tool_turn_start:tool_turn_end]
+        direct_probe_start = self.source.index(
+            "async foundationDirectProbe"
+        )
+        direct_probe = self.source[direct_probe_start:]
 
         self.assertIn("prepareFoundationExecutorUnavailableScenario", scenario)
         self.assertIn("waitForFoundationToolFacts(", scenario)
@@ -2174,6 +2178,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
             tool_turn,
         )
         self.assertNotIn("const streamId = input.streamId;", tool_turn)
+        self.assertIn(
+            "runtimeEvent: preparedRuntimeEvent.current,",
+            direct_probe,
+        )
         self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
         self.assertIn("foundationLeaseRuntimeIdentityMismatch", scenario)
         self.assertIn(

@@ -22449,10 +22449,6 @@ export function installAcceptanceHarness(): void {
         preparedConversationId = String(scenario.conversationId ?? '');
         preparedTurnId = String(scenario.turnId ?? '');
         turnDurationMs = Number(scenario.durationMs ?? 0);
-        scenarioFacts = evidenceRecord(
-          scenario.facts,
-          'foundationLeaseExpiredFacts',
-        );
         const runtimeEvent = evidenceRecord(
           scenario.runtimeEvent,
           'foundationLeaseExpiredRuntimeEvent',
@@ -22477,6 +22473,13 @@ export function installAcceptanceHarness(): void {
           sourceTurnId: String(runtimeEvent.sourceTurnId ?? ''),
           sourceSequence: Number(runtimeEvent.sourceSequence ?? 0),
           sourceEventType: String(runtimeEvent.sourceEventType ?? ''),
+        };
+        scenarioFacts = {
+          ...evidenceRecord(
+            scenario.facts,
+            'foundationLeaseExpiredFacts',
+          ),
+          runtimeEvent: preparedRuntimeEvent.current,
         };
         if (
           !preparedConversationId

@@ -23,10 +23,10 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | `G-FE1-LEASE-EXPIRED` is `FOCUSED_PASS`; the controller-owned stream identity fix and regression set pass locally and are ready for checkpoint plus one serialized exact-source Journey |
+| Current step | `G-FE1-LEASE-EXPIRED` is `FOCUSED_PASS`; checkpoint `c70e52078` passed the product and runtime identity boundaries, then exposed one producer-to-oracle runtime-event projection omission |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Root cause confirmed at the shared Desktop stream boundary: `streamAgentTurn` generated the real transport ID but did not expose it, while the Harness returned an absent optional input; the owner fix passes Desktop lease/recovery tests `134/134`, Python runner/oracle tests `105/105`, Native static tests `89/89`, strict Desktop check, production build, and diff hygiene |
-| Current action | Checkpoint the stream identity owner fix, deploy exact source, and rerun the same serialized five-minute `BASE-LEASE_EXPIRED` Development Journey |
+| Last completed | Exact-source run `20260915T094539450108Z` proved all nine source-delivery identity/payload predicates and clean reverse-order cleanup; the local evidence-owner fix now projects the prepared runtime event into both `scenarioFacts` and `runtime-events`, with Desktop `134/134`, Python `105/105`, Native static `89/89`, strict check, and diff hygiene passing |
+| Current action | Checkpoint the runtime-event evidence projection, deploy exact source, and rerun the same serialized five-minute `BASE-LEASE_EXPIRED` Development Journey |
 | Next action | After `FUNCTIONAL_PASS`, rerun C08 and resume the unchanged 419-cell Foundation Gate |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
@@ -36,7 +36,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | no Goal-level blocker; `BASE-LEASE_EXPIRED` is the next source-defined implementation gap; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | C08 `20260915T023010098430Z-1649875e241d509b825fe65d86142fa4` passed on `6ec143379`；Foundation `20260915T023112205523Z-aacb361dcca1036b0958d29da9fbef4a` first exposed the missing lease vertical；checkpoint `df63cdeab` run `20260915T081455551699Z` proved the typed receiver surface and same-cursor Reconcile state, then failed only the final source-delivery identity guard with clean cleanup；local owner-fix checks pass, while the exact-source Journey and full Foundation remain `UNPROVEN` |
+| Evidence | C08 `20260915T023010098430Z-1649875e241d509b825fe65d86142fa4` passed on `6ec143379`；Foundation `20260915T023112205523Z-aacb361dcca1036b0958d29da9fbef4a` first exposed the missing lease vertical；checkpoint `c70e52078` run `20260915T094539450108Z` crossed typed receiver, Reconcile, and all final identity predicates before failing only the independent oracle's missing `scenarioFacts.runtimeEvent`; local projection fix checks pass, while the exact-source Journey and full Foundation remain `UNPROVEN` |
 | Last updated | 2026-09-15 |
 
 ---

@@ -1870,6 +1870,20 @@ and zero local-path leakage.
     runner/direct-adapter/probe tests pass `105/105`, Native static tests pass
     `89/89`, strict Desktop TypeScript, production build, and diff hygiene
     pass. Exact-source post-fix runtime proof remains pending.
+  - Exact-source Development run `20260915T094539450108Z` on checkpoint
+    `c70e52078` crossed the real lease expiry, typed Browser receiver,
+    Reconcile, Station readback, and final source-delivery guard. Retained Z
+    evidence reports every identity/payload predicate true, so the prior
+    `foundationLeaseRuntimeIdentityMismatch` is closed. The next first failure
+    is evidence projection only: `foundationDirectProbe` emitted the
+    `runtime-events` role from the prepared event but omitted the same event
+    from `scenarioFacts.runtimeEvent`, which the independent oracle requires
+    for role equality. Reverse-order runtime, port, profile, and source-lease
+    cleanup was clean. The local correction projects that already-validated
+    event into both roles; Desktop lease/recovery tests pass `134/134`, Python
+    runner/direct-adapter/probe tests pass `105/105`, Native static tests pass
+    `89/89`, strict Desktop TypeScript and diff hygiene pass. The Journey
+    remains `UNPROVEN` pending a new checkpoint and serialized rerun.
 
 #### G-FE1 Concurrency Decision
 
