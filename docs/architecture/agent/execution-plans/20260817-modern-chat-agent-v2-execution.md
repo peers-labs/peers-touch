@@ -1900,6 +1900,25 @@ and zero local-path leakage.
     Focused Python tests pass `337/337`, Desktop tests pass `81/81`, strict
     TypeScript, Python compilation, and diff hygiene pass. The exact-source
     Journey remains `UNPROVEN` pending checkpoint and rerun.
+  - Checkpoint `25f5d782d` preserves the legitimate pre-expiry dispatch
+    baseline. Exact-source Development run `20260915T115406112822Z` crossed
+    provisioning, both clients, provider/tool approval, dispatch, and the real
+    old-lease 409, then timed out before the Browser projected the non-terminal
+    `CLIENT_LEASE_EXPIRED` event. Station logs show the old pull returning 409
+    at 12:02:38 while the Browser `/conversation/events` request remained open
+    from 12:01:16 through 12:03:15; retained Browser replay evidence stops at
+    sequence 30. This makes event persistence, Station tail selection, and
+    downstream frame delivery the current diagnostic boundary rather than
+    Store or React rendering. The failed cleanup's Browser processes and
+    disposable fixture were subsequently released with the explicit runtime
+    profile and repository `PYTHONPATH`; no residual ports remain. Minimal
+    instrumentation now records replay heartbeats and bounded
+    complete/timeout summaries, including authoritative diagnostic event
+    types, without changing production behavior, timeouts, or assertions.
+    Focused Desktop tests pass `112/112`, Native static tests pass `89/89`,
+    the three Station lease/replay tests pass, strict TypeScript and diff
+    hygiene pass. The Journey remains `UNPROVEN`; C08 and the 419-cell Gate
+    remain `NOT RUN` after this failure.
 
 #### G-FE1 Concurrency Decision
 

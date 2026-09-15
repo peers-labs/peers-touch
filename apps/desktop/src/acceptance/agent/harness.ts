@@ -4463,25 +4463,117 @@ async function prepareFoundationLeaseExpiredScenario(input: {
 }
 
 // #region debug-point A-E:lease-approval-stall
-function reportFoundationLeaseApprovalStallDebug(
+async function reportFoundationLeaseApprovalStallDebug(
   hypothesisId: string,
   stage: string,
   data: Record<string, unknown> = {},
 ): Promise<void> {
-  return fetch('http://127.0.0.1:7777/event', {
+  const report = (
+    reportStage: string,
+    reportData: Record<string, unknown>,
+  ) => fetch('http://127.0.0.1:7777/event', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       sessionId: 'lease-approval-stall',
       runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:dispatchFoundationLeaseExpiredScenario',
-      msg: `[DEBUG] ${stage}`,
-      data,
+      msg: `[DEBUG] ${reportStage}`,
+      data: reportData,
       ts: Date.now(),
     }),
-  }).then(() => undefined).catch(() => undefined);
+  });
+  try {
+    const response = await report(stage, data);
+    if (!response.ok) {
+      await report('report-rejected', {
+        rejectedStage: stage,
+        status: response.status,
+      }).catch(() => undefined);
+    }
+  } catch (error) {
+    await report('report-failed', {
+      failedStage: stage,
+      error: error instanceof Error ? error.message : String(error),
+    }).catch(() => undefined);
+  }
 }
 // #endregion
+
+function foundationLeaseObservedEventSummary(
+  scenario: FoundationExecutorUnavailableScenario,
+): Record<string, unknown>[] {
+  return scenario.turn.observed.events.slice(-8).map((event) => ({
+    eventType: event.event,
+    sequence: Number(event.data.seq ?? event.data.sequence ?? 0),
+    stage: String(event.data.stage ?? ''),
+    errorType: String(
+      event.data.error_type ?? event.data.errorType ?? '',
+    ),
+    hasSourceDelivery: Boolean(event.sourceDelivery),
+  }));
+}
+
+function foundationLeaseDiagnosticReplaySummary(
+  replay: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!replay) return null;
+  const events = optionalEvidenceArray(
+    replay.events,
+    'foundationLeaseDebugReplayEvents',
+  ).map((value) => {
+    const event = evidenceRecord(value, 'foundationLeaseDebugReplayEvent');
+    const data = event.data && typeof event.data === 'object'
+      && !Array.isArray(event.data)
+      ? event.data as Record<string, unknown>
+      : {};
+    return {
+      eventType: String(
+        evidenceField(event, 'eventType', 'event_type')
+        ?? event.event
+        ?? event.type
+        ?? '',
+      ),
+      sequence: Number(event.sequence ?? event.seq ?? data.seq ?? 0),
+      stage: String(data.stage ?? event.stage ?? ''),
+      errorType: String(
+        data.error_type
+        ?? data.errorType
+        ?? event.error_type
+        ?? event.errorType
+        ?? '',
+      ),
+    };
+  });
+  return {
+    status: replay.status ?? null,
+    eventCount: events.length,
+    events: events.slice(-8),
+    toolCallCount: optionalEvidenceArray(
+      evidenceField(replay, 'toolCalls', 'tool_calls'),
+      'foundationLeaseDebugToolCalls',
+    ).length,
+  };
+}
+
+function foundationLeaseMessageDebugSummary(
+  turnId: string,
+): Record<string, unknown>[] {
+  return useChatStore.getState().messages
+    .filter((message) => message.turnId === turnId)
+    .map((message) => ({
+      id: message.id,
+      role: message.role,
+      loading: message.loading === true,
+      terminalStatus: message.terminalStatus ?? null,
+      errorType: message.typedError?.error_type ?? null,
+      resolution: message.resolution?.type ?? null,
+      toolCallPending: message.toolCalls?.some(
+        (toolCall) => toolCall.pending,
+      ) === true,
+    }));
+}
 
 function foundationLeaseDispatchSnapshot(
   fact: Record<string, unknown>,
@@ -4735,12 +4827,15 @@ async function completeFoundationLeaseExpiredScenario(input: {
 
   // #region debug-point F-I:lease-expired-complete-entry
   await reportFoundationLeaseApprovalStallDebug('F-G-H-I', 'complete-entry', {
-    leaseControl: evidenceValue(input.leaseControl),
-    observedEvents: scenario.turn.observed.events.map((event) => ({
-      event: event.event,
-      data: event.data,
-      hasSourceDelivery: Boolean(event.sourceDelivery),
-    })),
+    sourceHttpStatus:
+      evidenceField(sourceStation, 'httpStatus', 'http_status') ?? null,
+    replayHttpStatus:
+      evidenceField(replayStation, 'httpStatus', 'http_status') ?? null,
+    sourceErrorCode:
+      evidenceField(stationError, 'errorCode', 'error_code') ?? null,
+    observedEventCount: scenario.turn.observed.events.length,
+    observedEvents: foundationLeaseObservedEventSummary(scenario),
+    messages: foundationLeaseMessageDebugSummary(scenario.turn.turnId),
   });
   // #endregion
   try {
@@ -4770,24 +4865,12 @@ async function completeFoundationLeaseExpiredScenario(input: {
       'receiver-timeout',
       {
         error: error instanceof Error ? error.message : String(error),
-        observedEvents: scenario.turn.observed.events.map((event) => ({
-          event: event.event,
-          data: event.data,
-          sourceDelivery: event.sourceDelivery ?? null,
-        })),
-        messages: useChatStore.getState().messages
-          .filter((message) => message.turnId === scenario.turn.turnId)
-          .map((message) => ({
-            id: message.id,
-            loading: message.loading,
-            terminalStatus: message.terminalStatus ?? null,
-            error: message.error ?? null,
-            typedError: message.typedError ?? null,
-            resolution: message.resolution ?? null,
-            toolCalls: message.toolCalls ?? [],
-          })),
-        replay,
-        facts,
+        observedEventCount: scenario.turn.observed.events.length,
+        observedEvents: foundationLeaseObservedEventSummary(scenario),
+        messages: foundationLeaseMessageDebugSummary(scenario.turn.turnId),
+        replay: foundationLeaseDiagnosticReplaySummary(replay),
+        factCount: facts.length,
+        factStatuses: facts.map(diagnosticToolPersistenceStatus),
       },
     );
     // #endregion

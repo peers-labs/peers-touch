@@ -6961,6 +6961,7 @@ async function consumeAgentSSE(
   response: Response,
   signal: AbortSignal,
   onFrame: (event: StreamEvent) => boolean,
+  onActivity?: (activity: 'heartbeat') => void,
 ): Promise<boolean> {
   if (!response.ok) {
     const data = await agentTurnHttpErrorData(response);
@@ -7006,6 +7007,7 @@ async function consumeAgentSSE(
         && !dataText
         && lines.every((line) => !line.trim() || line.startsWith(':'))
       ) {
+        onActivity?.('heartbeat');
         boundary = buffer.indexOf('\n\n');
         continue;
       }
@@ -7864,6 +7866,14 @@ export function streamAgentTurnReplay(
               deliverReplayEvent(sourceEvent);
             }
             return liveTailEstablished && terminalStatus !== null;
+          }, () => {
+            // #region debug-point F-H:lease-replay-heartbeat
+            reportLeaseReplayFetchDebug('F-H', 'stream-heartbeat', {
+              attempt: attempt + 1,
+              afterSequence: input.after_seq,
+              liveTailEstablished,
+            });
+            // #endregion
           });
           if (terminal || controller.signal.aborted) return;
           replayError = new Error(

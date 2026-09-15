@@ -23,10 +23,10 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | `G-FE1-LEASE-EXPIRED` is `FOCUSED_PASS`; checkpoint `1e14dccae` passed runtime-event role projection, then exposed receiver-snapshot timing and Station dispatch-baseline assertion defects |
+| Current step | `G-FE1-LEASE-EXPIRED` is `FOCUSED_PASS`; checkpoint `25f5d782d` passed the dispatch-baseline correction, then exact-source run `20260915T115406112822Z` exposed a missing Browser replay event after the real old-lease 409 |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source run `20260915T101716600575Z` proved runtime-event role parity and clean reverse-order cleanup; the local evidence-owner correction now freezes receiver visibility before Reconcile and proves zero replay deltas against the legitimate pre-expiry dispatch baseline, with Python `337/337`, Desktop `81/81`, strict check, Python compilation, and diff hygiene passing |
-| Current action | Checkpoint the receiver/baseline fact correction, deploy exact source, and rerun the same serialized five-minute `BASE-LEASE_EXPIRED` Development Journey |
+| Last completed | Failed-run cleanup is closed: Browser gateway/renderer ports and the disposable fixture were released through their owning controls; minimal heartbeat and bounded diagnostic-summary instrumentation passes Desktop `112/112`, Native static `89/89`, three Station lease/replay tests, strict TypeScript, and diff hygiene |
+| Current action | Checkpoint the instrumentation-only delta, deploy exact source, and rerun the same serialized `BASE-LEASE_EXPIRED` Development Journey to distinguish Station persistence/tail selection from gateway delivery |
 | Next action | After `FUNCTIONAL_PASS`, rerun C08 and resume the unchanged 419-cell Foundation Gate |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
@@ -36,7 +36,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | no Goal-level blocker; `BASE-LEASE_EXPIRED` is the next source-defined implementation gap; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | C08 `20260915T023010098430Z-1649875e241d509b825fe65d86142fa4` passed on `6ec143379`；Foundation `20260915T023112205523Z-aacb361dcca1036b0958d29da9fbef4a` first exposed the missing lease vertical；checkpoint `1e14dccae` run `20260915T101716600575Z` crossed typed receiver, Reconcile, runtime identity, and runtime-event role parity before exposing only the two corrected fact-mapping defects; the exact-source Journey and full Foundation remain `UNPROVEN` |
+| Evidence | C08 `20260915T023010098430Z-1649875e241d509b825fe65d86142fa4` passed on `6ec143379`；Foundation `20260915T023112205523Z-aacb361dcca1036b0958d29da9fbef4a` first exposed the missing lease vertical；checkpoint `25f5d782d` run `20260915T115406112822Z` reached the real old-lease 409 while its Browser replay stream remained open but received no event after sequence 30; the exact-source Journey and full Foundation remain `UNPROVEN` |
 | Last updated | 2026-09-15 |
 
 ---
