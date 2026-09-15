@@ -15,11 +15,14 @@ use std::time::Duration;
 const INTERACTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const TURN_EXECUTION_WALL_TIME: Duration = Duration::from_secs(300);
 const TURN_EXECUTION_RESPONSE_MARGIN: Duration = Duration::from_secs(5);
-const SAFE_ERROR_DETAIL_FIELDS: [&str; 7] = [
+const SAFE_ERROR_DETAIL_FIELDS: [&str; 10] = [
     "resource_kind",
     "resource_id",
     "expected_revision",
     "actual_revision",
+    "session_id",
+    "lease_id",
+    "expired_at",
     "operation",
     "field",
     "reason",
@@ -1673,6 +1676,40 @@ mod tests {
         assert_eq!(details["reason"], "is not an active Federation Station");
         assert!(details.get("ignored_string").is_none());
         assert!(details.get("ignored_number").is_none());
+    }
+
+    #[test]
+    fn lease_expiry_details_survive_json_transport() {
+        let headers = json!({
+            "x-peers-error-code": "CLIENT_LEASE_EXPIRED",
+            "x-peers-error-locale-key": "agent.errors.clientLeaseExpired",
+            "x-peers-error-retryable": "true",
+            "x-peers-error-terminal": "false",
+            "x-peers-error-details": r#"{
+                "session_id":"capability-session-expired",
+                "lease_id":"lease-expired",
+                "expired_at":"2026-09-15T03:00:00Z",
+                "device_signing_key_id":"must-not-cross"
+            }"#,
+        });
+        let error = build_error_for_status_with_headers(
+            409,
+            "/sub-agent/agent/capability/requests/pull",
+            "{\"error\":\"lease expired\"}",
+            Some(&headers),
+        );
+        let result = error.into_app_result::<serde_json::Value>("Capability pull failed");
+        let app_error = result.error.expect("AppResult error");
+        assert_eq!(app_error.code, ErrorCode::Conflict);
+        let details = app_error.details.expect("typed error details");
+        assert_eq!(details["error_code"], "CLIENT_LEASE_EXPIRED");
+        assert_eq!(details["locale_key"], "agent.errors.clientLeaseExpired");
+        assert_eq!(details["retryable"], "true");
+        assert_eq!(details["terminal"], "false");
+        assert_eq!(details["session_id"], "capability-session-expired");
+        assert_eq!(details["lease_id"], "lease-expired");
+        assert_eq!(details["expired_at"], "2026-09-15T03:00:00Z");
+        assert!(details.get("device_signing_key_id").is_none());
     }
 
     #[test]

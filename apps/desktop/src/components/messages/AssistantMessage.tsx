@@ -358,6 +358,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const retryMessage = useChatStore(s => s.retryMessage);
   const retryTurnRecovery = useChatStore(s => s.retryTurnRecovery);
   const reloadTurnSnapshot = useChatStore(s => s.reloadTurnSnapshot);
+  const reconcileClientLease = useChatStore(s => s.reconcileClientLease);
   const requestComposerFocus = useChatStore(s => s.requestComposerFocus);
   const requestComposerReferenceRemoval = useChatStore(
     s => s.requestComposerReferenceRemoval,
@@ -403,6 +404,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           ? 'choose-compatible-model'
           : message.resolution?.type === 'recover'
             ? 'recover'
+            : message.resolution?.type === 'reconcile'
+              ? 'reconcile'
             : message.resolution?.type === 'chooseResourceAgain'
               ? 'choose-resource-again'
             : message.resolution?.type === 'removeReference'
@@ -443,6 +446,27 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const handleReloadSnapshot = useCallback(() => {
     void reloadTurnSnapshot(currentSessionKey);
   }, [currentSessionKey, reloadTurnSnapshot]);
+
+  const handleReconcileClientLease = useCallback(() => {
+    const resolution = message.resolution;
+    if (resolution?.type !== 'reconcile') return Promise.resolve();
+    if (!resolution.sessionId || !resolution.leaseId) {
+      throw new Error('agent.errors.clientLeaseExpired');
+    }
+    return reconcileClientLease(
+      currentSessionKey,
+      message.id,
+      resolution.sessionId,
+      resolution.leaseId,
+      message.turnId,
+    );
+  }, [
+    currentSessionKey,
+    message.id,
+    message.resolution,
+    message.turnId,
+    reconcileClientLease,
+  ]);
 
   const handleOpenTurnDetails = useCallback(() => {
     if (message.turnId) openTurnDetails(message.id, message.turnId);
@@ -510,6 +534,9 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
       data-pt-agent-error-reference-kind={message.typedError?.details.reference_kind}
       data-pt-agent-error-reference-hash={message.typedError?.details.reference_hash}
+      data-pt-agent-error-session-id={message.typedError?.details.session_id}
+      data-pt-agent-error-lease-id={message.typedError?.details.lease_id}
+      data-pt-agent-error-expired-at={message.typedError?.details.expired_at}
       id={`agent-message-${message.id}`}
       align="flex-start"
       gap={8}
@@ -762,6 +789,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                       && message.resolution.type !== 'switchAccount'
                       && message.resolution.type !== 'chooseCompatibleModel'
                       && message.resolution.type !== 'chooseResourceAgain'
+                      && message.resolution.type !== 'reconcile'
                       && message.resolution.type !== 'recover'
                     }
                     icon={
@@ -774,6 +802,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                             ? <LogOut size={14} />
                             : message.resolution.type === 'recover'
                               ? <RotateCcw size={14} />
+                              : message.resolution.type === 'reconcile'
+                                ? <RotateCcw size={14} />
                               : message.resolution.type === 'chooseResourceAgain'
                                 ? <FileText size={14} />
                               : message.resolution.type === 'removeReference'
@@ -807,6 +837,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         }
                         if (message.resolution!.type === 'recover') {
                           await handleRetry();
+                          return;
+                        }
+                        if (message.resolution!.type === 'reconcile') {
+                          await handleReconcileClientLease();
                           return;
                         }
                         if (message.resolution!.type === 'chooseResourceAgain') {

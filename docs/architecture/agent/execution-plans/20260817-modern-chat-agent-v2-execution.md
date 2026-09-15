@@ -1702,6 +1702,66 @@ and zero local-path leakage.
     counters, and shared Journey on one capability. Static checks pass `88/88`,
     coordinator tests pass `56/56`, Desktop strict checks pass, and no Gate
     tuple, timeout, assertion, provider, or cleanup contract changed.
+  - Checkpoint `6ec143379df4ff9b78d6490119190fb9985c8ad1` passed
+    exact-source C08 run
+    `20260915T023010098430Z-1649875e241d509b825fe65d86142fa4`
+    in 36.76 seconds. The same-source Foundation run
+    `20260915T023112205523Z-aacb361dcca1036b0958d29da9fbef4a`
+    crossed both Browser `BASE-INVALID_RESOURCE_REF` locales through the
+    shared Development Journey and independent oracle, with one valid Browser
+    window and clean client/Provisioner cleanup. The next immutable first
+    failure is Browser English `BASE-LEASE_EXPIRED`: the direct-runtime
+    business group is not implemented. Foundation remains
+    `PARTIAL / UNPROVEN`.
+
+#### G-FE1 DevelopmentWorkItem: Client Capability Lease Expiry
+
+- **ID**: `G-FE1-LEASE-EXPIRED`.
+- **Status**: `FOCUSED_PASS`; exact-source Development Journey remains
+  `UNPROVEN`.
+- **Product contract**: `CLIENT_LEASE_EXPIRED` /
+  `agent.errors.clientLeaseExpired`, retryable and non-terminal, with exactly
+  `session_id`, `lease_id`, and `expired_at`; `Reconcile` preserves the current
+  lease while the old client command remains audit-only.
+- **Owning layers**:
+  - Station client-capability authority classifies an authenticated command
+    against an expired historical lease, persists the rejected command
+    acknowledgement, and emits no dispatch, result, continuation, or lease
+    mutation.
+  - Desktop Rust owns real lease expiry/re-registration and exposes the
+    source-bound incident through the existing capability-runtime boundary.
+  - Desktop Web owns the non-terminal localized projection and the read-only
+    `Reconcile` action.
+  - Agent Acceptance reuses that product Journey and independently verifies
+    typed details, receiver state, audit replay, current-lease stability, zero
+    execution/side effects, and cleanup.
+- **Execution fence**: no database clock mutation, mock response, shortened
+  Gate timeout, tuple reduction, hidden retry, direct Store injection, or
+  compatibility fallback. Any Acceptance control may only pause the
+  disposable client lease and exercise the real signed Station command path.
+- **Required proof sequence**: focused Station/Rust/Web/Harness/oracle checks;
+  authorized checkpoint; exact-source deploy/build; C08 first; unchanged
+  419-cell Foundation Gate.
+- **Focused implementation evidence (2026-09-15)**:
+  - Station classifies the naturally expired historical lease, stores the
+    deterministic typed acknowledgement on every signed command, and emits at
+    most one source-bound non-terminal `client_lease_expired` progress event
+    per `(lease, turn, attempt)`, including across distinct command IDs.
+  - Desktop Rust pauses pull and renewal, waits past the real lease boundary,
+    registers the replacement lease, and sends the identical old signed pull
+    twice; Desktop Web preserves the active Turn and pending ToolCall and
+    fences `Reconcile` by Turn, capability session, and lease identity.
+  - The shared Harness and Python oracle now produce and independently verify
+    all nine required assertions, the 900-second measurement budget, Station
+    readback, source-bound runtime event, receiver DOM, replay, side-effect,
+    and cleanup roles for Desktop Native and Browser.
+  - Station Agent packages pass; eight focused Rust lease tests and
+    `cargo check --locked --features e2e-testing` pass; Desktop strict check,
+    focused Web tests `16/16`, Desktop production build, Agent
+    Foundation/static tests `345/345`, Python compilation, proto coverage,
+    locale validation, hard rules, Rust/Go formatting, and diff hygiene pass.
+    Formal Acceptance validation remains source-stale until the required
+    checkpoint and exact-source runtime proof are produced.
 
 #### G-FE1 Concurrency Decision
 

@@ -21,6 +21,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_interrupted,
     evaluate_base_invalid_reference,
     evaluate_base_invalid_resource_reference,
+    evaluate_base_lease_expired,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -1953,6 +1954,147 @@ def valid_approval_denied_capture() -> dict[str, object]:
     }
 
 
+def valid_lease_expired_capture() -> dict[str, object]:
+    session_id = "capability-session-expired"
+    lease_id = "capability-lease-expired"
+    current_session_id = "capability-session-current"
+    current_lease_id = "capability-lease-current"
+    expired_at = "2026-09-15T03:00:00Z"
+    current_expires_at = "2026-09-15T03:05:00Z"
+    request_hash = "1" * 64
+    station_error = {
+        "status": 409,
+        "body": "agent.errors.clientLeaseExpired",
+        "error_code": "CLIENT_LEASE_EXPIRED",
+        "locale_key": "agent.errors.clientLeaseExpired",
+        "retryable": "true",
+        "terminal": "false",
+        "session_id": session_id,
+        "lease_id": lease_id,
+        "expired_at": expired_at,
+    }
+    station_request = {
+        "endpoint": "/sub-agent/agent/capability/requests/pull",
+        "requestSent": True,
+        "responseReceived": True,
+        "requestHash": request_hash,
+        "commandErrorCode": None,
+        "httpStatus": 409,
+        "transportErrorKind": "httpStatus",
+        "stationErrorDetails": station_error,
+    }
+    station_error_hash = canonical_payload_hash(station_error)
+    return {
+        "runtimeEvent": {
+            "eventId": "event-lease-expired",
+            "sequence": 7,
+            "eventType": "progress",
+            "observedAt": "2026-09-15T03:00:01Z",
+            "streamGeneration": 1,
+            "streamIdHash": "2" * 64,
+            "conversationIdHash": "3" * 64,
+            "payloadHash": "4" * 64,
+            "errorType": "CLIENT_LEASE_EXPIRED",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "5" * 64,
+            "sourceConversationId": "conversation-lease-expired",
+            "sourceTurnId": "turn-lease-expired",
+            "sourceSequence": 7,
+            "sourceEventType": "progress",
+        },
+        "outcome": {
+            "error": "agent.errors.clientLeaseExpired",
+            "error_type": "CLIENT_LEASE_EXPIRED",
+            "locale_key": "agent.errors.clientLeaseExpired",
+            "retryable": True,
+            "terminal": False,
+            "details": {
+                "session_id": session_id,
+                "lease_id": lease_id,
+                "expired_at": expired_at,
+            },
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "The client capability lease has expired.",
+            "expectedErrorText": "The client capability lease has expired.",
+            "recoveryVisible": True,
+            "recoveryText": "Reconcile",
+            "expectedRecoveryText": "Reconcile",
+            "recoveryExecuted": True,
+            "errorClearedAfterReconcile": True,
+            "messageLoading": True,
+            "terminalStatus": "",
+            "toolCallPending": True,
+        },
+        "station": {
+            "toolCallId": "tool-call-lease-expired",
+            "status": "dispatch_committed",
+            "resultId": "",
+            "continuationId": "",
+            "executionClaimId": "",
+            "executionAttemptCount": 0,
+            "sourceHash": "6" * 64,
+            "replayHash": "6" * 64,
+        },
+        "lease": {
+            "sourceCapabilitySessionIdHash": hashlib.sha256(
+                session_id.encode("utf-8")
+            ).hexdigest(),
+            "sourceLeaseIdHash": hashlib.sha256(
+                lease_id.encode("utf-8")
+            ).hexdigest(),
+            "sourceLeaseRevision": 9,
+            "sourceExpiresAtMs": 1789441200000,
+            "currentCapabilitySessionIdHash": hashlib.sha256(
+                current_session_id.encode("utf-8")
+            ).hexdigest(),
+            "currentLeaseIdHash": hashlib.sha256(
+                current_lease_id.encode("utf-8")
+            ).hexdigest(),
+            "currentExpiresAtMs": 1789441500000,
+            "currentLeaseRevision": 1,
+            "currentPullCursor": 0,
+            "currentSessionIdBefore": current_session_id,
+            "currentLeaseIdBefore": current_lease_id,
+            "currentLeaseRevisionBefore": 1,
+            "currentExpiresAtBefore": current_expires_at,
+            "currentSessionIdAfter": current_session_id,
+            "currentLeaseIdAfter": current_lease_id,
+            "currentLeaseRevisionAfter": 1,
+            "currentExpiresAtAfter": current_expires_at,
+        },
+        "audit": {
+            "source": copy.deepcopy(station_request),
+            "replay": copy.deepcopy(station_request),
+            "sourceRequestHash": request_hash,
+            "replayRequestHash": request_hash,
+            "sourceErrorHash": station_error_hash,
+            "replayErrorHash": station_error_hash,
+        },
+        "executor": {
+            "before": {
+                "localExecutionAttemptCount": 2,
+                "localSideEffectCount": 1,
+            },
+            "after": {
+                "localExecutionAttemptCount": 2,
+                "localSideEffectCount": 1,
+            },
+        },
+        "replay": {
+            "sourceHash": station_error_hash,
+            "replayHash": station_error_hash,
+            "equal": True,
+        },
+        "cleanup": {
+            "bindingRestored": True,
+            "turnCancelled": True,
+            "conversationDeleted": True,
+        },
+    }
+
+
 def valid_executor_unavailable_capture() -> dict[str, object]:
     station = {
         "policy": "manual",
@@ -3829,6 +3971,137 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "cleanupComplete",
         ):
             evaluate_base_invalid_resource_reference(capture)
+
+    def test_lease_expired_accepts_exact_product_facts(self) -> None:
+        assertions = evaluate_base_lease_expired(
+            valid_lease_expired_capture()
+        )
+
+        self.assertEqual(
+            set(assertions),
+            {
+                "typedLeaseExpired",
+                "boundedDetails",
+                "localizedReconcileVisible",
+                "nonTerminalTurnPreserved",
+                "oldCommandAuditOnly",
+                "currentLeaseUnchanged",
+                "zeroExecutionAndSideEffect",
+                "replayEqual",
+                "cleanupComplete",
+            },
+        )
+        self.assertTrue(all(assertions.values()))
+        self.assertTrue(all(type(value) is bool for value in assertions.values()))
+
+    def test_lease_expired_rejects_typed_contract_drift(self) -> None:
+        for key, value in (
+            ("error_type", "CLIENT_EXECUTOR_UNAVAILABLE"),
+            ("locale_key", "agent.errors.executorUnavailable"),
+            ("retryable", False),
+            ("terminal", True),
+        ):
+            with self.subTest(key=key):
+                capture = valid_lease_expired_capture()
+                capture["outcome"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "typedLeaseExpired",
+                ):
+                    evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_requires_exact_rfc3339_details(self) -> None:
+        capture = valid_lease_expired_capture()
+        capture["outcome"]["details"]["expired_at"] = "2026-09-15 03:00:00"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "expired_at must be an RFC3339 timestamp",
+        ):
+            evaluate_base_lease_expired(capture)
+
+        capture = valid_lease_expired_capture()
+        capture["outcome"]["details"]["device_id"] = "private-device"
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "boundedDetails",
+        ):
+            evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_requires_visible_executed_reconcile(self) -> None:
+        capture = valid_lease_expired_capture()
+        capture["receiver"]["recoveryExecuted"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "localizedReconcileVisible",
+        ):
+            evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_preserves_non_terminal_turn_and_tool_call(
+        self,
+    ) -> None:
+        capture = valid_lease_expired_capture()
+        capture["receiver"]["toolCallPending"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "nonTerminalTurnPreserved",
+        ):
+            evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_requires_signed_old_command_audit(self) -> None:
+        capture = valid_lease_expired_capture()
+        capture["audit"]["replay"]["httpStatus"] = 200
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "oldCommandAuditOnly",
+        ):
+            evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_requires_current_lease_stability(self) -> None:
+        capture = valid_lease_expired_capture()
+        capture["lease"]["currentLeaseRevisionAfter"] = 2
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "currentLeaseUnchanged",
+        ):
+            evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_rejects_execution_or_side_effect(self) -> None:
+        capture = valid_lease_expired_capture()
+        capture["executor"]["after"]["localSideEffectCount"] = 2
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroExecutionAndSideEffect",
+        ):
+            evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_requires_identical_request_and_error_replay(
+        self,
+    ) -> None:
+        capture = valid_lease_expired_capture()
+        capture["audit"]["replay"]["requestHash"] = "9" * 64
+        capture["audit"]["replayRequestHash"] = "9" * 64
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "oldCommandAuditOnly|replayEqual",
+        ):
+            evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_requires_full_cleanup(self) -> None:
+        capture = valid_lease_expired_capture()
+        capture["cleanup"]["conversationDeleted"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_lease_expired(capture)
 
     def test_duplicate_conflict_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_duplicate_conflict(

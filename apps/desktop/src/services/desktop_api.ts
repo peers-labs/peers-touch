@@ -2508,6 +2508,7 @@ export interface AgentErrorResolutionAction {
     | 'chooseCompatibleModel'
     | 'chooseResourceAgain'
     | 'removeReference'
+    | 'reconcile'
     | 'recover';
   cliId?: string;
   providerId?: string;
@@ -2518,6 +2519,9 @@ export interface AgentErrorResolutionAction {
   referenceKind?: string;
   referenceHash?: string;
   capabilityId?: string;
+  sessionId?: string;
+  leaseId?: string;
+  expiredAt?: string;
   turnId?: string;
   reasonCode?: string;
   label: string;
@@ -2533,6 +2537,10 @@ export const AGENT_INVALID_RESOURCE_REFERENCE_ERROR_TYPE =
   'CLIENT_INVALID_RESOURCE_REFERENCE';
 export const AGENT_INVALID_RESOURCE_REFERENCE_LOCALE_KEY =
   'agent.errors.invalidResourceReference';
+export const AGENT_CLIENT_LEASE_EXPIRED_ERROR_TYPE =
+  'CLIENT_LEASE_EXPIRED';
+export const AGENT_CLIENT_LEASE_EXPIRED_LOCALE_KEY =
+  'agent.errors.clientLeaseExpired';
 export const AGENT_FORBIDDEN_ACTOR_ERROR_TYPE = 'OWNERSHIP_FORBIDDEN_ACTOR';
 export const AGENT_FORBIDDEN_ACTOR_LOCALE_KEY = 'agent.errors.forbiddenActor';
 export const AGENT_INCOMPATIBLE_CAPABILITY_ERROR_TYPE =
@@ -2578,6 +2586,14 @@ export type AgentInvalidResourceReferenceError = AgentTypedErrorPayload & {
   };
 };
 
+export type AgentClientLeaseExpiredError = AgentTypedErrorPayload & {
+  details: {
+    session_id: string;
+    lease_id: string;
+    expired_at: string;
+  };
+};
+
 const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'resource_kind',
   'resource_ref_hash',
@@ -2589,6 +2605,9 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'reason_code',
   'reference_kind',
   'reference_hash',
+  'session_id',
+  'lease_id',
+  'expired_at',
 ] as const;
 
 const AGENT_INVALID_REFERENCE_KINDS = new Set([
@@ -2785,6 +2804,29 @@ export function isAgentInvalidResourceReferenceError(
   );
 }
 
+export function isAgentClientLeaseExpiredError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentClientLeaseExpiredError {
+  if (
+    error?.error_type !== AGENT_CLIENT_LEASE_EXPIRED_ERROR_TYPE
+    || error.locale_key !== AGENT_CLIENT_LEASE_EXPIRED_LOCALE_KEY
+    || !error.retryable
+    || error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 3
+    && detailKeys[0] === 'expired_at'
+    && detailKeys[1] === 'lease_id'
+    && detailKeys[2] === 'session_id'
+    && error.details.session_id.trim().length > 0
+    && error.details.lease_id.trim().length > 0
+    && Number.isFinite(Date.parse(error.details.expired_at))
+  );
+}
+
 export function resolveAgentTypedErrorAction(
   error: AgentTypedErrorPayload | null | undefined,
 ): AgentErrorResolutionAction | undefined {
@@ -2818,6 +2860,15 @@ export function resolveAgentTypedErrorAction(
       resourceKind: error.details.resource_kind,
       resourceRefHash: error.details.resource_ref_hash,
       label: 'agent.recovery.chooseResourceAgain',
+    };
+  }
+  if (isAgentClientLeaseExpiredError(error)) {
+    return {
+      type: 'reconcile',
+      sessionId: error.details.session_id,
+      leaseId: error.details.lease_id,
+      expiredAt: error.details.expired_at,
+      label: 'agent.recovery.reconcile',
     };
   }
   if (isAgentInvalidReferenceError(error)) {
@@ -3144,13 +3195,16 @@ export type AgentCapabilityNegativeControl =
   | 'unauthorized'
   | 'signatureTamper'
   | 'schemaMismatch'
-  | 'crossDevice';
+  | 'crossDevice'
+  | 'leasePause'
+  | 'leaseExpired';
 
 export interface AgentCapabilityNegativeControlFact {
   control: AgentCapabilityNegativeControl;
   availability: 'available' | 'unavailable';
   unavailableReason?: string;
   capabilitySessionIdHash: string;
+  workerPaused?: boolean;
   before: {
     localExecutionAttemptCount: number;
     localSideEffectCount: number;
@@ -3163,6 +3217,20 @@ export interface AgentCapabilityNegativeControlFact {
     httpStatus?: number;
     transportErrorKind?: string;
     stationErrorDetails?: Record<string, unknown>;
+    requestHash?: string;
+  };
+  sourceStation?: AgentCapabilityNegativeControlFact['station'];
+  replayStation?: AgentCapabilityNegativeControlFact['station'];
+  leaseTransition?: {
+    sourceCapabilitySessionIdHash: string;
+    sourceLeaseIdHash: string;
+    sourceLeaseRevision: number;
+    sourceExpiresAtMs: number;
+    currentCapabilitySessionIdHash: string;
+    currentLeaseIdHash: string;
+    currentExpiresAtMs: number;
+    currentLeaseRevision: number;
+    currentPullCursor: number;
   };
   after: {
     localExecutionAttemptCount: number;

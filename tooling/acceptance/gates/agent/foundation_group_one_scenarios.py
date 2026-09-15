@@ -7,6 +7,7 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any
 
 
@@ -3569,6 +3570,404 @@ def evaluate_base_executor_unavailable(
     return assertions
 
 
+def evaluate_base_lease_expired(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-LEASE_EXPIRED"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    lease = _mapping(capture, "lease", scenario=scenario)
+    audit = _mapping(capture, "audit", scenario=scenario)
+    executor = _mapping(capture, "executor", scenario=scenario)
+    executor_before = _mapping(executor, "before", scenario=scenario)
+    executor_after = _mapping(executor, "after", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+    source_station = _mapping(audit, "source", scenario=scenario)
+    replay_station = _mapping(audit, "replay", scenario=scenario)
+    source_error = _mapping(
+        source_station,
+        "stationErrorDetails",
+        scenario=scenario,
+    )
+    replay_error = _mapping(
+        replay_station,
+        "stationErrorDetails",
+        scenario=scenario,
+    )
+
+    session_id = _nonempty_string(
+        details,
+        "session_id",
+        scenario=scenario,
+    )
+    lease_id = _nonempty_string(details, "lease_id", scenario=scenario)
+    expired_at_ms = _rfc3339_millis(
+        details,
+        "expired_at",
+        scenario=scenario,
+    )
+    source_session_hash = _sha256_string(
+        lease,
+        "sourceCapabilitySessionIdHash",
+        scenario=scenario,
+    )
+    source_lease_hash = _sha256_string(
+        lease,
+        "sourceLeaseIdHash",
+        scenario=scenario,
+    )
+    current_session_hash = _sha256_string(
+        lease,
+        "currentCapabilitySessionIdHash",
+        scenario=scenario,
+    )
+    current_lease_hash = _sha256_string(
+        lease,
+        "currentLeaseIdHash",
+        scenario=scenario,
+    )
+    source_expires_at_ms = _positive_int(
+        lease,
+        "sourceExpiresAtMs",
+        scenario=scenario,
+    )
+    current_expires_at_ms = _positive_int(
+        lease,
+        "currentExpiresAtMs",
+        scenario=scenario,
+    )
+    current_session_before = _nonempty_string(
+        lease,
+        "currentSessionIdBefore",
+        scenario=scenario,
+    )
+    current_session_after = _nonempty_string(
+        lease,
+        "currentSessionIdAfter",
+        scenario=scenario,
+    )
+    current_lease_before = _nonempty_string(
+        lease,
+        "currentLeaseIdBefore",
+        scenario=scenario,
+    )
+    current_lease_after = _nonempty_string(
+        lease,
+        "currentLeaseIdAfter",
+        scenario=scenario,
+    )
+    current_expiry_before_ms = _rfc3339_millis(
+        lease,
+        "currentExpiresAtBefore",
+        scenario=scenario,
+    )
+    current_expiry_after_ms = _rfc3339_millis(
+        lease,
+        "currentExpiresAtAfter",
+        scenario=scenario,
+    )
+    source_request_hash = _sha256_string(
+        audit,
+        "sourceRequestHash",
+        scenario=scenario,
+    )
+    replay_request_hash = _sha256_string(
+        audit,
+        "replayRequestHash",
+        scenario=scenario,
+    )
+    source_error_hash = _sha256_string(
+        audit,
+        "sourceErrorHash",
+        scenario=scenario,
+    )
+    replay_error_hash = _sha256_string(
+        audit,
+        "replayErrorHash",
+        scenario=scenario,
+    )
+
+    station_error_matches = (
+        source_error == replay_error
+        and source_error.get("error_code") == "CLIENT_LEASE_EXPIRED"
+        and source_error.get("locale_key")
+        == "agent.errors.clientLeaseExpired"
+        and (
+            source_error.get("retryable") is True
+            or source_error.get("retryable") == "true"
+        )
+        and (
+            source_error.get("terminal") is False
+            or source_error.get("terminal") == "false"
+        )
+        and source_error.get("session_id") == session_id
+        and source_error.get("lease_id") == lease_id
+        and source_error.get("expired_at") == details.get("expired_at")
+    )
+    source_station_is_signed_rejection = (
+        source_station == replay_station
+        and source_station.get("endpoint")
+        == "/sub-agent/agent/capability/requests/pull"
+        and source_station.get("requestSent") is True
+        and source_station.get("responseReceived") is True
+        and source_station.get("commandErrorCode") is None
+        and source_station.get("httpStatus") == 409
+        and source_station.get("transportErrorKind") == "httpStatus"
+        and source_station.get("requestHash") == source_request_hash
+        and replay_station.get("requestHash") == replay_request_hash
+        and station_error_matches
+    )
+
+    assertions = {
+        "typedLeaseExpired": (
+            outcome.get("error") == "agent.errors.clientLeaseExpired"
+            and outcome.get("error_type") == "CLIENT_LEASE_EXPIRED"
+            and outcome.get("locale_key")
+            == "agent.errors.clientLeaseExpired"
+            and outcome.get("retryable") is True
+            and outcome.get("terminal") is False
+            and runtime_event.get("eventType") == "progress"
+            and runtime_event.get("errorType") == "CLIENT_LEASE_EXPIRED"
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and runtime_event.get("sourceEventType") == "progress"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            )
+            == _positive_int(
+                runtime_event,
+                "sourceSequence",
+                scenario=scenario,
+            )
+            and bool(
+                _nonempty_string(
+                    runtime_event,
+                    "eventId",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _nonempty_string(
+                    runtime_event,
+                    "observedAt",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _nonempty_string(
+                    runtime_event,
+                    "sourceConversationId",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _nonempty_string(
+                    runtime_event,
+                    "sourceTurnId",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "streamIdHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "conversationIdHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "payloadHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "sourcePtidHash",
+                    scenario=scenario,
+                )
+            )
+        ),
+        "boundedDetails": (
+            sorted(details) == ["expired_at", "lease_id", "session_id"]
+            and hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+            == source_session_hash
+            and hashlib.sha256(lease_id.encode("utf-8")).hexdigest()
+            == source_lease_hash
+            and expired_at_ms == source_expires_at_ms
+        ),
+        "localizedReconcileVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryExecuted") is True
+            and receiver.get("errorClearedAfterReconcile") is True
+        ),
+        "nonTerminalTurnPreserved": (
+            receiver.get("messageLoading") is True
+            and receiver.get("terminalStatus") == ""
+            and receiver.get("toolCallPending") is True
+            and station.get("status") == "dispatch_committed"
+        ),
+        "oldCommandAuditOnly": (
+            source_station_is_signed_rejection
+            and _nonempty_string(
+                station,
+                "toolCallId",
+                scenario=scenario,
+            )
+            and source_session_hash != current_session_hash
+            and source_lease_hash != current_lease_hash
+            and _positive_int(
+                lease,
+                "sourceLeaseRevision",
+                scenario=scenario,
+            )
+            > 0
+            and _nonnegative_int(
+                lease,
+                "currentPullCursor",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "currentLeaseUnchanged": (
+            current_session_before == current_session_after
+            and current_lease_before == current_lease_after
+            and hashlib.sha256(
+                current_session_before.encode("utf-8")
+            ).hexdigest()
+            == current_session_hash
+            and hashlib.sha256(
+                current_lease_before.encode("utf-8")
+            ).hexdigest()
+            == current_lease_hash
+            and _positive_int(
+                lease,
+                "currentLeaseRevisionBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                lease,
+                "currentLeaseRevisionAfter",
+                scenario=scenario,
+            )
+            == _positive_int(
+                lease,
+                "currentLeaseRevision",
+                scenario=scenario,
+            )
+            and current_expiry_before_ms
+            == current_expiry_after_ms
+            == current_expires_at_ms
+            and current_expires_at_ms > source_expires_at_ms
+        ),
+        "zeroExecutionAndSideEffect": (
+            _nonnegative_int(
+                executor_before,
+                "localExecutionAttemptCount",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                executor_after,
+                "localExecutionAttemptCount",
+                scenario=scenario,
+            )
+            and _nonnegative_int(
+                executor_before,
+                "localSideEffectCount",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                executor_after,
+                "localSideEffectCount",
+                scenario=scenario,
+            )
+            and _nonnegative_int(
+                station,
+                "executionAttemptCount",
+                scenario=scenario,
+            )
+            == 0
+            and station.get("executionClaimId") == ""
+            and station.get("resultId") == ""
+            and station.get("continuationId") == ""
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and source_request_hash == replay_request_hash
+            and source_error_hash == replay_error_hash
+            and source_error_hash == _canonical_payload_hash(source_error)
+            and replay_error_hash == _canonical_payload_hash(replay_error)
+            and _sha256_string(
+                station,
+                "sourceHash",
+                scenario=scenario,
+            )
+            == _sha256_string(
+                station,
+                "replayHash",
+                scenario=scenario,
+            )
+            and _sha256_string(
+                replay,
+                "sourceHash",
+                scenario=scenario,
+            )
+            == source_error_hash
+            and _sha256_string(
+                replay,
+                "replayHash",
+                scenario=scenario,
+            )
+            == replay_error_hash
+        ),
+        "cleanupComplete": (
+            cleanup.get("bindingRestored") is True
+            and cleanup.get("turnCancelled") is True
+            and cleanup.get("conversationDeleted") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_approval_denied(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:
@@ -5384,6 +5783,35 @@ def _sha256_string(
             f"{scenario} {key} must be a lowercase SHA-256 digest"
         )
     return item
+
+
+def _rfc3339_millis(
+    value: Mapping[str, Any],
+    key: str,
+    *,
+    scenario: str,
+) -> int:
+    item = _nonempty_string(value, key, scenario=scenario)
+    if re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?"
+        r"(?:Z|[+-]\d{2}:\d{2})",
+        item,
+    ) is None:
+        raise GroupOneScenarioError(
+            f"{scenario} {key} must be an RFC3339 timestamp"
+        )
+    normalized = f"{item[:-1]}+00:00" if item.endswith("Z") else item
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as error:
+        raise GroupOneScenarioError(
+            f"{scenario} {key} must be an RFC3339 timestamp"
+        ) from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise GroupOneScenarioError(
+            f"{scenario} {key} must include an RFC3339 offset"
+        )
+    return int(parsed.timestamp() * 1000)
 
 
 def _hex_identity_matches(left: str, right: str) -> bool:

@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -61,6 +62,46 @@ func TestActiveMutationConflictPreservesTypedPayloadDetails(t *testing.T) {
 		"resource_id":       "agent-1",
 		"expected_revision": "4",
 		"actual_revision":   "5",
+	}
+	if !reflect.DeepEqual(details, expectedDetails) {
+		t.Fatalf("details = %+v, want %+v", details, expectedDetails)
+	}
+}
+
+func TestToolHandlerErrorPreservesClientLeaseExpiredHeaders(t *testing.T) {
+	expiredAt := time.Date(2026, time.September, 15, 3, 0, 0, 123, time.UTC)
+	mapped := toolHandlerError(errcode.NewClientLeaseExpired(
+		"capability-session-1",
+		"capability-lease-1",
+		expiredAt,
+	))
+	var handlerErr *server.HandlerError
+	if !errors.As(mapped, &handlerErr) {
+		t.Fatalf("expected HandlerError, got %T: %v", mapped, mapped)
+	}
+	if handlerErr.Code != http.StatusConflict {
+		t.Fatalf("status=%d, want %d", handlerErr.Code, http.StatusConflict)
+	}
+	expectedHeaders := map[string]string{
+		"X-Peers-Error-Code":       string(errcode.AgentClientLeaseExpired),
+		"X-Peers-Error-Locale-Key": errcode.AgentClientLeaseExpiredLocaleKey,
+		"X-Peers-Error-Retryable":  "true",
+		"X-Peers-Error-Terminal":   "false",
+	}
+	for key, value := range expectedHeaders {
+		if handlerErr.Headers[key] != value {
+			t.Fatalf("%s=%q, want %q", key, handlerErr.Headers[key], value)
+		}
+	}
+
+	var details map[string]string
+	if err := json.Unmarshal([]byte(handlerErr.Headers[errorDetailsHeader]), &details); err != nil {
+		t.Fatalf("decode %s: %v", errorDetailsHeader, err)
+	}
+	expectedDetails := map[string]string{
+		"session_id": "capability-session-1",
+		"lease_id":   "capability-lease-1",
+		"expired_at": expiredAt.Format(time.RFC3339Nano),
 	}
 	if !reflect.DeepEqual(details, expectedDetails) {
 		t.Fatalf("details = %+v, want %+v", details, expectedDetails)

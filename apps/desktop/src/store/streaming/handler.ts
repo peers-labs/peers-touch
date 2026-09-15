@@ -129,6 +129,17 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
           lastEventAt: Date.now(),
         };
       }
+      const typedError = projectAgentTurnOutcomeErrorPayload(d);
+      if (typedError?.terminal === false) {
+        return {
+          ...msg,
+          error: typedError.locale_key,
+          typedError,
+          resolution: resolveAgentTypedErrorAction(typedError) ?? null,
+          loading: true,
+          lastEventAt: Date.now(),
+        };
+      }
       return { ...msg, lastEventAt: Date.now() };
     }
 
@@ -313,6 +324,12 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
 }
 
 export function isTerminalEvent(event: TurnStreamEvent): boolean {
+  if (
+    event.event === 'error'
+    && projectAgentTurnOutcomeErrorPayload(event.data)?.terminal === false
+  ) {
+    return false;
+  }
   return event.event === 'done'
     || event.event === 'error'
     || event.event === 'budget_exhausted'

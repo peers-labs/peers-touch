@@ -20,6 +20,7 @@ Environment:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -482,6 +483,214 @@ class FoundationExecutorUnavailableCoordinator:
             if cleanup_errors:
                 raise ScenarioRunnerError(
                     "BASE-EXECUTOR_UNAVAILABLE cleanup failed: "
+                    f"primary={primary_error}; cleanup={cleanup_errors}"
+                )
+
+
+class FoundationLeaseExpiredCoordinator:
+    def __init__(self, runtime_pair: "FoundationRuntimePair") -> None:
+        self._runtime_pair = runtime_pair
+
+    @staticmethod
+    def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
+        return "|".join(
+            (
+                probe_input.platform,
+                probe_input.locale,
+                probe_input.cell,
+                probe_input.sample_id,
+            )
+        )
+
+    def _receiver(self, platform: str) -> Any:
+        if platform == "desktop_app":
+            return self._runtime_pair.native
+        if platform == "browser":
+            return self._runtime_pair.browser
+        raise ScenarioRunnerError(
+            f"BASE-LEASE_EXPIRED has no receiver for {platform}"
+        )
+
+    @staticmethod
+    def _target_value(target: Mapping[str, Any], key: str) -> str:
+        value = target.get(key)
+        if not isinstance(value, str) or not value:
+            raise ScenarioRunnerError(
+                f"BASE-LEASE_EXPIRED target {key} is invalid"
+            )
+        return value
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        receiver = self._receiver(probe_input.platform)
+        executor = self._runtime_pair.native
+        scenario_key = self._scenario_key(probe_input)
+        locale = receiver.harness(
+            "setFoundationLocale",
+            {"locale": probe_input.locale},
+            timeout=30,
+        )
+        if (
+            not isinstance(locale, Mapping)
+            or locale.get("locale") != probe_input.locale
+        ):
+            raise ScenarioRunnerError(
+                "BASE-LEASE_EXPIRED locale did not converge"
+            )
+        target = executor.harness(
+            "getFoundationClientExecutorTarget",
+            timeout=60,
+        )
+        if not isinstance(target, Mapping):
+            raise ScenarioRunnerError(
+                "BASE-LEASE_EXPIRED target is invalid"
+            )
+        target_session_id = self._target_value(
+            target,
+            "capabilitySessionId",
+        )
+        lifecycle_input = {
+            "targetCapabilitySessionId": target_session_id,
+            "targetDeviceId": self._target_value(target, "targetDeviceId"),
+            "targetCapabilityId": self._target_value(
+                target,
+                "targetCapabilityId",
+            ),
+        }
+        capability_session_id_hash = hashlib.sha256(
+            target_session_id.encode("utf-8")
+        ).hexdigest()
+        expiry_control_finished = False
+        primary_error: BaseException | None = None
+        cleanup_errors: list[str] = []
+        try:
+            pause = executor.harness(
+                "runFoundationCapabilityNegativeControl",
+                {
+                    "control": "leasePause",
+                    "capabilitySessionIdHash": capability_session_id_hash,
+                },
+                timeout=60,
+            )
+            if (
+                not isinstance(pause, Mapping)
+                or pause.get("control") != "leasePause"
+                or pause.get("availability") != "available"
+                or pause.get("capabilitySessionIdHash")
+                != capability_session_id_hash
+                or pause.get("workerPaused") is not True
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED lease pause is invalid"
+                )
+            prepared = receiver.harness(
+                "prepareFoundationLeaseExpired",
+                {
+                    "scenarioKey": scenario_key,
+                    "platform": probe_input.platform,
+                    "sampleId": probe_input.sample_id,
+                    **lifecycle_input,
+                },
+                timeout=180,
+            )
+            if not isinstance(prepared, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED preparation is invalid"
+                )
+            dispatched = receiver.harness(
+                "dispatchFoundationLeaseExpired",
+                {"scenarioKey": scenario_key},
+                timeout=180,
+            )
+            if not isinstance(dispatched, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED dispatch is invalid"
+                )
+            lease_control = executor.harness(
+                "runFoundationCapabilityNegativeControl",
+                {
+                    "control": "leaseExpired",
+                    "capabilitySessionIdHash": capability_session_id_hash,
+                },
+                timeout=360,
+            )
+            expiry_control_finished = True
+            if (
+                not isinstance(lease_control, Mapping)
+                or lease_control.get("control") != "leaseExpired"
+                or lease_control.get("availability") != "available"
+                or lease_control.get("capabilitySessionIdHash")
+                != capability_session_id_hash
+                or lease_control.get("workerPaused") is not False
+            ):
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED expiry control is invalid"
+                )
+            completed = receiver.harness(
+                "completeFoundationLeaseExpired",
+                {
+                    "scenarioKey": scenario_key,
+                    "leaseControl": dict(lease_control),
+                },
+                timeout=180,
+            )
+            if not isinstance(completed, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED completion is invalid"
+                )
+            capture = receiver.harness(
+                "foundationDirectProbe",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "cell": probe_input.cell,
+                    "sampleId": probe_input.sample_id,
+                    "scenarioKey": scenario_key,
+                    "preparedScenario": dict(completed),
+                },
+                timeout=300,
+            )
+            if not isinstance(capture, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED direct capture is invalid"
+                )
+            assert_group_one_capture(probe_input, capture)
+            return capture
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            try:
+                receiver.harness(
+                    "abortFoundationLeaseExpired",
+                    {"scenarioKey": scenario_key},
+                    timeout=120,
+                )
+            except BaseException as error:
+                cleanup_errors.append(f"scenario cleanup: {error}")
+            if not expiry_control_finished:
+                for available in (False, True):
+                    try:
+                        restored = executor.harness(
+                            "setFoundationClientExecutorAvailable",
+                            {
+                                "available": available,
+                                **lifecycle_input,
+                            },
+                            timeout=60,
+                        )
+                        if not isinstance(restored, Mapping):
+                            raise ScenarioRunnerError(
+                                "executor restore returned invalid evidence"
+                            )
+                    except BaseException as error:
+                        action = "withdraw" if not available else "restore"
+                        cleanup_errors.append(f"executor {action}: {error}")
+            if cleanup_errors:
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED cleanup failed: "
                     f"primary={primary_error}; cleanup={cleanup_errors}"
                 )
 
@@ -954,6 +1163,8 @@ def _make_direct_probe(
         "FoundationInterruptedCoordinator | None" = None,
     executor_unavailable_coordinator:
         "FoundationExecutorUnavailableCoordinator | None" = None,
+    lease_expired_coordinator:
+        "FoundationLeaseExpiredCoordinator | None" = None,
     invalid_resource_reference_coordinator:
         "FoundationInvalidResourceReferenceCoordinator | None" = None,
     forbidden_actor_coordinator:
@@ -978,6 +1189,12 @@ def _make_direct_probe(
                     "BASE-EXECUTOR_UNAVAILABLE requires executor orchestration"
                 )
             return executor_unavailable_coordinator.capture(probe_input)
+        if probe_input.cell == "BASE-LEASE_EXPIRED":
+            if lease_expired_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED requires lease orchestration"
+                )
+            return lease_expired_coordinator.capture(probe_input)
         if probe_input.cell == "BASE-INVALID_RESOURCE_REF":
             if invalid_resource_reference_coordinator is None:
                 raise ScenarioRunnerError(
@@ -2647,6 +2864,9 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         executor_unavailable_coordinator = (
             FoundationExecutorUnavailableCoordinator(runtime_pair)
         )
+        lease_expired_coordinator = FoundationLeaseExpiredCoordinator(
+            runtime_pair
+        )
         invalid_resource_reference_coordinator = (
             FoundationInvalidResourceReferenceCoordinator(runtime_pair)
         )
@@ -2670,6 +2890,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 executor_unavailable_coordinator=(
                     executor_unavailable_coordinator
                 ),
+                lease_expired_coordinator=lease_expired_coordinator,
                 invalid_resource_reference_coordinator=(
                     invalid_resource_reference_coordinator
                 ),
@@ -2687,6 +2908,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 executor_unavailable_coordinator=(
                     executor_unavailable_coordinator
                 ),
+                lease_expired_coordinator=lease_expired_coordinator,
                 invalid_resource_reference_coordinator=(
                     invalid_resource_reference_coordinator
                 ),

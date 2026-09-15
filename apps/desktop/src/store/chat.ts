@@ -736,6 +736,13 @@ interface ChatState {
   ) => Promise<void>;
   retryTurnRecovery: (conversationId?: string) => void;
   reloadTurnSnapshot: (conversationId?: string) => Promise<AgentTurnSnapshotReloadResult>;
+  reconcileClientLease: (
+    conversationId: string,
+    messageId: string,
+    sessionId: string,
+    leaseId: string,
+    turnId?: string,
+  ) => Promise<void>;
   syncTurnQueue: (conversationId?: string) => Promise<void>;
   cancelQueuedTurn: (conversationId: string, queueEntryId: string) => Promise<void>;
   setWideScreen: (wide: boolean) => void;
@@ -798,6 +805,33 @@ function applyProjectedStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMe
     mergeToolProjection(reduced, toolCalls),
     event,
   );
+}
+
+export function clearReconciledClientLeaseError(
+  message: ChatMessage,
+  messageId: string,
+  sessionId: string,
+  leaseId: string,
+  turnId?: string,
+): ChatMessage {
+  if (
+    message.id !== messageId
+    || (turnId && message.turnId !== turnId)
+    || message.typedError?.error_type !== 'CLIENT_LEASE_EXPIRED'
+    || message.typedError.details.session_id !== sessionId
+    || message.typedError.details.lease_id !== leaseId
+  ) {
+    return message;
+  }
+  return {
+    ...message,
+    error: undefined,
+    typedError: undefined,
+    errorDetail: undefined,
+    resolution: undefined,
+    loading: true,
+    terminalStatus: undefined,
+  };
 }
 
 function bindStreamEventTurnIdentity(
@@ -1552,6 +1586,39 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     const key = conversationId || get().currentSessionKey;
     const { reloadAgentTurnSnapshot } = await import('../runtimes/chatRuntime');
     return reloadAgentTurnSnapshot(key);
+  },
+
+  reconcileClientLease: async (
+    conversationId,
+    messageId,
+    sessionId,
+    leaseId,
+    turnId,
+  ) => {
+    const result = await get().reloadTurnSnapshot(conversationId);
+    if (turnId && result.turnId !== turnId) {
+      throw new Error('chat.agentTurnRecovery.reloadTargetChanged');
+    }
+    set((state) => {
+      const clear = (messages: ChatMessage[]) => messages.map((message) =>
+        clearReconciledClientLeaseError(
+          message,
+          messageId,
+          sessionId,
+          leaseId,
+          turnId,
+        ));
+      const isCurrent = state.currentSessionKey === conversationId;
+      return {
+        messages: isCurrent ? clear(state.messages) : state.messages,
+        sessionBuffers: {
+          ...state.sessionBuffers,
+          [conversationId]: clear(
+            state.sessionBuffers[conversationId] ?? [],
+          ),
+        },
+      };
+    });
   },
 
   syncTurnQueue: async (conversationId) => {

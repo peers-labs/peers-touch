@@ -2118,6 +2118,68 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertNotIn("mock", scenario.lower())
 
+    def test_lease_expired_uses_real_lease_control_and_reconcile(self) -> None:
+        scenario_start = self.source.index(
+            "async function prepareFoundationLeaseExpiredScenario"
+        )
+        scenario_end = self.source.index(
+            "async function runFoundationApprovalDeniedScenario",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+        supervisor = CAPABILITY_SUPERVISOR.read_text(encoding="utf-8")
+        runtime_evidence = DESKTOP_RUNTIME_EVIDENCE.read_text(
+            encoding="utf-8"
+        )
+        desktop_api = DESKTOP_API.read_text(encoding="utf-8")
+        assistant_message = DESKTOP_ASSISTANT_MESSAGE.read_text(
+            encoding="utf-8"
+        )
+        chat_store = DESKTOP_CHAT_STORE.read_text(encoding="utf-8")
+
+        self.assertIn("prepareFoundationExecutorUnavailableScenario", scenario)
+        self.assertIn("waitForFoundationToolFacts(", scenario)
+        self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn("foundationLeaseRuntimeIdentityMismatch", scenario)
+        self.assertIn(
+            'data-pt-agent-message-error-recovery="reconcile"',
+            scenario,
+        )
+        self.assertIn("recovery.click()", scenario)
+        self.assertIn("api.cancelAgentTurn(scenario.turn.turnId)", scenario)
+        self.assertIn(
+            "restoreFoundationExecutorUnavailableBinding(scenario)",
+            scenario,
+        )
+        self.assertIn("cleanupFoundationLeaseExpiredScenario", scenario)
+        measurement_start = self.source.index("const measurementLimitMs =")
+        measurement_end = self.source.index(
+            "const measurementReport:",
+            measurement_start,
+        )
+        measurement = self.source[measurement_start:measurement_end]
+        self.assertIn("cell === 'BASE-LEASE_EXPIRED'", measurement)
+        self.assertIn("? 900_000", measurement)
+        for role_marker in (
+            "foundationLeaseExpiredStation",
+            "foundationLeaseExpiredExecutorBefore",
+            "foundationLeaseExpiredCleanup",
+            "foundationLeaseExpiredReplay",
+            "agent-client-capability-lease",
+        ):
+            with self.subTest(role_marker=role_marker):
+                self.assertIn(role_marker, self.source)
+        self.assertIn("Self::LeasePause", supervisor)
+        self.assertIn("Self::LeaseExpired", supervisor)
+        self.assertIn("Duration::from_secs(6 * 60)", supervisor)
+        self.assertIn('"leasePause" => Some(', runtime_evidence)
+        self.assertIn('"leaseExpired" => Some(', runtime_evidence)
+        self.assertIn("AGENT_CLIENT_LEASE_EXPIRED_ERROR_TYPE", desktop_api)
+        self.assertIn("label: 'agent.recovery.reconcile'", desktop_api)
+        self.assertIn("message.resolution!.type === 'reconcile'", assistant_message)
+        self.assertIn("reconcileClientLease: async (", chat_store)
+        self.assertNotIn("mock", scenario.lower())
+
     def test_harness_drives_as_f05_through_production_boundaries(self) -> None:
         scenario_start = self.source.index(
             "async function runFoundationF05Scenario",

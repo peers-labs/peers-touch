@@ -306,6 +306,22 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
             },
         )
 
+    def test_lease_expired_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-LEASE_EXPIRED"],
+            {
+                "typedLeaseExpired",
+                "boundedDetails",
+                "localizedReconcileVisible",
+                "nonTerminalTurnPreserved",
+                "oldCommandAuditOnly",
+                "currentLeaseUnchanged",
+                "zeroExecutionAndSideEffect",
+                "replayEqual",
+                "cleanupComplete",
+            },
+        )
+
     def test_group_one_cells_are_explicitly_supported_on_both_receivers(self) -> None:
         adapter = self.adapter()
         producer = FoundationCandidateProducer(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import tempfile
 import time
@@ -29,6 +30,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_executor_unavailable,
     evaluate_base_forbidden_actor,
     evaluate_base_invalid_resource_reference,
+    evaluate_base_lease_expired,
     evaluate_as_f04,
     evaluate_as_f06,
     evaluate_as_f12,
@@ -38,6 +40,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_executor_unavailable_capture,
     valid_forbidden_actor_capture,
     valid_invalid_resource_reference_capture,
+    valid_lease_expired_capture,
     valid_as_f04_capture,
     valid_as_f06_capture,
     valid_as_f12_capture,
@@ -139,6 +142,132 @@ class ExecutorUnavailableHarnessClient:
             return result
         if method == "abortFoundationExecutorUnavailable":
             return {"scenarioKey": request["scenarioKey"], "cleaned": True}
+        raise AssertionError(f"unexpected method: {method}")
+
+
+class LeaseExpiredHarnessClient:
+    def __init__(
+        self,
+        platform: str,
+        *,
+        call_log: list[str],
+        fail_expiry: bool = False,
+    ) -> None:
+        self.platform = platform
+        self.call_log = call_log
+        self.fail_expiry = fail_expiry
+        self.negative_control_timeouts: dict[str, float] = {}
+        self.executor_availability: list[bool] = []
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        request = payload or {}
+        self.call_log.append(f"{self.platform}:{method}")
+        session_id = "capability-session-expired"
+        session_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+        if method == "setFoundationLocale":
+            return {"locale": request["locale"]}
+        if method == "getFoundationClientExecutorTarget":
+            return {
+                "capabilitySessionId": session_id,
+                "targetDeviceId": "device-executor",
+                "targetCapabilityId": "clipboard.read",
+            }
+        if method == "runFoundationCapabilityNegativeControl":
+            control = str(request["control"])
+            self.negative_control_timeouts[control] = timeout
+            if request.get("capabilitySessionIdHash") != session_hash:
+                raise AssertionError("coordinator did not hash the raw session")
+            if control == "leasePause":
+                return {
+                    "control": control,
+                    "availability": "available",
+                    "capabilitySessionIdHash": session_hash,
+                    "workerPaused": True,
+                    "before": {
+                        "localExecutionAttemptCount": 2,
+                        "localSideEffectCount": 1,
+                    },
+                    "after": {
+                        "localExecutionAttemptCount": 2,
+                        "localSideEffectCount": 1,
+                    },
+                }
+            if control == "leaseExpired":
+                if self.fail_expiry:
+                    raise RuntimeError("lease expiry control timed out")
+                facts = valid_lease_expired_capture()
+                return {
+                    "control": control,
+                    "availability": "available",
+                    "capabilitySessionIdHash": session_hash,
+                    "workerPaused": False,
+                    "before": facts["executor"]["before"],
+                    "sourceStation": facts["audit"]["source"],
+                    "replayStation": facts["audit"]["replay"],
+                    "leaseTransition": facts["lease"],
+                    "after": facts["executor"]["after"],
+                }
+            raise AssertionError(f"unexpected negative control: {control}")
+        if method == "prepareFoundationLeaseExpired":
+            return {
+                "scenarioKey": request["scenarioKey"],
+                "conversationId": "conversation-lease-expired",
+                "turnId": "turn-lease-expired",
+            }
+        if method == "dispatchFoundationLeaseExpired":
+            return {
+                "scenarioKey": request["scenarioKey"],
+                "toolCallId": "tool-call-lease-expired",
+            }
+        if method == "completeFoundationLeaseExpired":
+            facts = valid_lease_expired_capture()
+            facts["cleanup"]["conversationDeleted"] = False
+            return {
+                "conversationId": "conversation-lease-expired",
+                "turnId": "turn-lease-expired",
+                "durationMs": 1,
+                "runtimeEvent": facts["runtimeEvent"],
+                "facts": facts,
+            }
+        if method == "foundationDirectProbe":
+            prepared = request.get("preparedScenario")
+            if not isinstance(prepared, dict):
+                raise AssertionError("prepared lease scenario is invalid")
+            facts = prepared.get("facts")
+            if not isinstance(facts, dict):
+                raise AssertionError("prepared lease facts are invalid")
+            facts["cleanup"] = {
+                "bindingRestored": True,
+                "turnCancelled": True,
+                "conversationDeleted": True,
+            }
+            probe = DirectRuntimeProbeInput(
+                platform=str(request["platform"]),
+                locale=str(request["locale"]),
+                cell=str(request["cell"]),
+                sample_id=str(request["sampleId"]),
+            )
+            result = capture(probe)
+            result["scenarioFacts"] = facts
+            result["assertions"] = evaluate_base_lease_expired(facts)
+            result["runtime-events"] = typed_runtime_role(facts)
+            result["runtimeAttestation"]["actorIdentityHash"] = (
+                facts["runtimeEvent"]["sourcePtidHash"]
+            )
+            return result
+        if method == "abortFoundationLeaseExpired":
+            return {"scenarioKey": request["scenarioKey"], "cleaned": True}
+        if method == "setFoundationClientExecutorAvailable":
+            self.executor_availability.append(bool(request["available"]))
+            return {
+                "available": request["available"],
+                "restored": request["available"],
+            }
         raise AssertionError(f"unexpected method: {method}")
 
 
@@ -2546,6 +2675,99 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                 "browser:abortFoundationExecutorUnavailable",
             ],
         )
+
+    def test_lease_expired_coordinates_browser_receiver_and_native_executor(
+        self,
+    ) -> None:
+        call_log: list[str] = []
+        native = LeaseExpiredHarnessClient(
+            "desktop_app",
+            call_log=call_log,
+        )
+        browser = LeaseExpiredHarnessClient(
+            "browser",
+            call_log=call_log,
+        )
+        coordinator = (
+            foundation_scenario_runner.FoundationLeaseExpiredCoordinator(
+                SimpleNamespace(native=native, browser=browser)
+            )
+        )
+        probe = foundation_scenario_runner._make_direct_probe(
+            browser,
+            lease_expired_coordinator=coordinator,
+        )
+
+        result = probe(
+            DirectRuntimeProbeInput(
+                platform="browser",
+                locale="en",
+                cell="BASE-LEASE_EXPIRED",
+                sample_id="sample-001",
+            )
+        )
+
+        self.assertTrue(result["assertions"]["typedLeaseExpired"])
+        self.assertEqual(
+            native.negative_control_timeouts,
+            {"leasePause": 60, "leaseExpired": 360},
+        )
+        self.assertEqual(
+            call_log,
+            [
+                "browser:setFoundationLocale",
+                "desktop_app:getFoundationClientExecutorTarget",
+                "desktop_app:runFoundationCapabilityNegativeControl",
+                "browser:prepareFoundationLeaseExpired",
+                "browser:dispatchFoundationLeaseExpired",
+                "desktop_app:runFoundationCapabilityNegativeControl",
+                "browser:completeFoundationLeaseExpired",
+                "browser:foundationDirectProbe",
+                "browser:abortFoundationLeaseExpired",
+            ],
+        )
+
+    def test_lease_expired_restores_executor_when_expiry_control_fails(
+        self,
+    ) -> None:
+        call_log: list[str] = []
+        native = LeaseExpiredHarnessClient(
+            "desktop_app",
+            call_log=call_log,
+            fail_expiry=True,
+        )
+        browser = LeaseExpiredHarnessClient(
+            "browser",
+            call_log=call_log,
+        )
+        coordinator = (
+            foundation_scenario_runner.FoundationLeaseExpiredCoordinator(
+                SimpleNamespace(native=native, browser=browser)
+            )
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "lease expiry control timed out",
+        ):
+            coordinator.capture(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="en",
+                    cell="BASE-LEASE_EXPIRED",
+                    sample_id="sample-001",
+                )
+            )
+
+        self.assertEqual(
+            call_log[-3:],
+            [
+                "browser:abortFoundationLeaseExpired",
+                "desktop_app:setFoundationClientExecutorAvailable",
+                "desktop_app:setFoundationClientExecutorAvailable",
+            ],
+        )
+        self.assertEqual(native.executor_availability, [False, True])
 
     def test_invalid_resource_reuses_development_journey_for_browser(
         self,

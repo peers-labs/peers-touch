@@ -27,6 +27,7 @@ const (
 	AgentToolApprovalDenied            Code = "TOOL_APPROVAL_DENIED"
 	AgentToolApprovalExpired           Code = "TOOL_APPROVAL_EXPIRED"
 	AgentClientExecutorUnavailable     Code = "CLIENT_EXECUTOR_UNAVAILABLE"
+	AgentClientLeaseExpired            Code = "CLIENT_LEASE_EXPIRED"
 	AgentToolBudgetExhausted           Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
 	AgentContextOverflow               Code = "CONTEXT_OVERFLOW"
 	AgentContextInvalidReference       Code = "CONTEXT_INVALID_REFERENCE"
@@ -53,6 +54,7 @@ const (
 	AgentToolApprovalDeniedLocaleKey            = "agent.errors.toolApprovalDenied"
 	AgentToolApprovalExpiredLocaleKey           = "agent.errors.toolApprovalExpired"
 	AgentClientExecutorUnavailableLocaleKey     = "agent.errors.executorUnavailable"
+	AgentClientLeaseExpiredLocaleKey            = "agent.errors.clientLeaseExpired"
 	AgentToolBudgetExhaustedLocaleKey           = "agent.errors.toolLoopBudgetExhausted"
 	AgentContextOverflowLocaleKey               = "agent.errors.contextOverflow"
 	AgentContextInvalidReferenceLocaleKey       = "agent.errors.contextInvalidReference"
@@ -205,6 +207,30 @@ func NewClientExecutorUnavailablePayload(targetDeviceID, capabilityID string) *m
 			"target_device_id": targetDeviceID,
 			"capability_id":    capabilityID,
 		},
+	}
+}
+
+func NewClientLeaseExpired(sessionID, leaseID string, expiredAt time.Time) *BizError {
+	return NewClientLeaseExpiredFromPayload(&model.ErrorPayload{
+		Error:     AgentClientLeaseExpiredLocaleKey,
+		ErrorType: string(AgentClientLeaseExpired),
+		LocaleKey: AgentClientLeaseExpiredLocaleKey,
+		Retryable: true,
+		Terminal:  false,
+		Details: map[string]string{
+			"session_id": sessionID,
+			"lease_id":   leaseID,
+			"expired_at": expiredAt.UTC().Format(time.RFC3339Nano),
+		},
+	})
+}
+
+func NewClientLeaseExpiredFromPayload(payload *model.ErrorPayload) *BizError {
+	return &BizError{
+		Code:       AgentClientLeaseExpired,
+		HTTPStatus: http.StatusConflict,
+		Message:    AgentClientLeaseExpiredLocaleKey,
+		Payload:    payload,
 	}
 }
 

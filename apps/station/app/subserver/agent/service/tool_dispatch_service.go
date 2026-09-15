@@ -19,6 +19,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
@@ -101,6 +102,7 @@ type ProposalDecision struct {
 type ToolDispatchService struct {
 	now             func() time.Time
 	capabilityProof *ClientCapabilityProofService
+	conversations   *ConversationService
 }
 
 func NewToolDispatchService() *ToolDispatchService {
@@ -109,6 +111,10 @@ func NewToolDispatchService() *ToolDispatchService {
 
 func (s *ToolDispatchService) SetCapabilityProofService(proof *ClientCapabilityProofService) {
 	s.capabilityProof = proof
+}
+
+func (s *ToolDispatchService) SetConversationService(conversations *ConversationService) {
+	s.conversations = conversations
 }
 
 func (s *ToolDispatchService) getDB(ctx context.Context) (*gorm.DB, error) {
@@ -1076,25 +1082,84 @@ func (s *ToolDispatchService) PullCapabilityRequests(
 	if limit <= 0 || limit > maxCapabilityPullLimit {
 		limit = maxCapabilityPullLimit
 	}
+	now := s.now()
 	var rows []persistence.ToolDispatchOutbox
+	var leaseExpiredError *errcode.BizError
+	var notifications []clientLeaseExpiredTurn
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, _, err := bindCapabilityCommandTx(
+		command, replayed, err := bindCapabilityCommandTx(
 			tx,
 			actorID,
 			model.ClientCapabilityCommandDomain_CLIENT_CAPABILITY_COMMAND_DOMAIN_PULL_REQUESTS,
 			verified,
-			s.now(),
-		); err != nil {
-			return err
-		}
-		lease, err := loadActiveCapabilityLeaseTx(
-			tx,
-			actorID,
-			request.GetCapabilitySessionId(),
-			s.now(),
+			now,
 		)
 		if err != nil {
 			return err
+		}
+		if replayed && len(command.ResponseRef) > 0 {
+			var payload model.ErrorPayload
+			if err := proto.Unmarshal(command.ResponseRef, &payload); err != nil {
+				return internalToolError("decode capability pull replay", err)
+			}
+			if payload.GetErrorType() != string(errcode.AgentClientLeaseExpired) {
+				return invalidToolState("capability pull replay response is invalid")
+			}
+			leaseExpiredError = errcode.NewClientLeaseExpiredFromPayload(&payload)
+			return nil
+		}
+
+		var leaseRow persistence.ClientCapabilityLease
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where(
+				"session_id = ? AND actor_id = ?",
+				request.GetCapabilitySessionId(),
+				actorID,
+			).
+			First(&leaseRow).Error; err != nil {
+			return notFoundToolError("active capability lease", err)
+		}
+		if leaseRow.RevokedAt != nil {
+			return notFoundToolError("active capability lease", gorm.ErrRecordNotFound)
+		}
+		if !leaseRow.ExpiresAt.After(now) {
+			if leaseRow.DeviceID != deviceID {
+				return notFoundToolError("active capability lease", gorm.ErrRecordNotFound)
+			}
+			leaseExpiredError = errcode.NewClientLeaseExpired(
+				leaseRow.SessionID,
+				leaseRow.LeaseID,
+				leaseRow.ExpiresAt,
+			)
+			encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+				leaseExpiredError.Payload,
+			)
+			if err != nil {
+				return internalToolError("encode expired capability lease outcome", err)
+			}
+			if err := storeCapabilityCommandOutcomeTx(
+				tx,
+				command.CommandID,
+				0,
+				leaseRow.LeaseID,
+				leaseRow.LeaseRevision,
+				encoded,
+			); err != nil {
+				return err
+			}
+			notifications, err = s.appendClientLeaseExpiredEventsTx(
+				tx,
+				actorID,
+				leaseRow.SessionID,
+				leaseExpiredError.Payload,
+				now,
+			)
+			return err
+		}
+
+		var lease model.ClientCapabilityLease
+		if err := proto.Unmarshal(leaseRow.LeasePayload, &lease); err != nil {
+			return internalToolError("decode capability lease", err)
 		}
 		if lease.GetDeviceId() != deviceID {
 			return unauthorizedToolRequest(
@@ -1118,6 +1183,12 @@ func (s *ToolDispatchService) PullCapabilityRequests(
 	if err != nil {
 		return nil, err
 	}
+	for _, notification := range notifications {
+		s.conversations.notifyTurnEvent(notification.conversationID, notification.turnID)
+	}
+	if leaseExpiredError != nil {
+		return nil, leaseExpiredError
+	}
 
 	response := &model.PullClientCapabilityRequestsResponse{}
 	for _, row := range rows {
@@ -1129,6 +1200,166 @@ func (s *ToolDispatchService) PullCapabilityRequests(
 		response.LastSequence = row.DispatchSequence
 	}
 	return response, nil
+}
+
+type clientLeaseExpiredTurn struct {
+	conversationID string
+	turnID         string
+}
+
+func (s *ToolDispatchService) appendClientLeaseExpiredEventsTx(
+	tx *gorm.DB,
+	actorID string,
+	sessionID string,
+	outcome *model.ErrorPayload,
+	now time.Time,
+) ([]clientLeaseExpiredTurn, error) {
+	var calls []persistence.ToolCall
+	if err := tx.Where(
+		"actor_id = ? AND capability_session_id = ? AND status = ?",
+		actorID,
+		sessionID,
+		persistence.ToolCallStatusDispatchCommitted,
+	).
+		Order("turn_id ASC, attempt_id ASC, tool_call_id ASC").
+		Find(&calls).Error; err != nil {
+		return nil, internalToolError("load expired-lease pending tool calls", err)
+	}
+	if len(calls) == 0 {
+		return nil, nil
+	}
+	if s.conversations == nil {
+		return nil, internalToolError(
+			"persist expired-lease turn event",
+			errors.New("conversation service is not configured"),
+		)
+	}
+
+	outcomeJSON, err := (protojson.MarshalOptions{
+		UseProtoNames:   true,
+		EmitUnpopulated: true,
+	}).Marshal(outcome)
+	if err != nil {
+		return nil, internalToolError("encode expired-lease turn outcome", err)
+	}
+	retryable := outcome.GetRetryable()
+	terminal := outcome.GetTerminal()
+	details := make(map[string]string, len(outcome.GetDetails()))
+	for key, value := range outcome.GetDetails() {
+		details[key] = value
+	}
+
+	seen := make(map[string]struct{}, len(calls))
+	notifications := make([]clientLeaseExpiredTurn, 0, len(calls))
+	for i := range calls {
+		key := calls[i].TurnID + "\x00" + calls[i].AttemptID
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		var batch persistence.ToolBatch
+		if err := tx.Where(
+			"id = ? AND actor_id = ? AND turn_id = ? AND attempt_id = ?",
+			calls[i].ToolBatchID,
+			actorID,
+			calls[i].TurnID,
+			calls[i].AttemptID,
+		).
+			First(&batch).Error; err != nil {
+			return nil, internalToolError("load expired-lease tool batch", err)
+		}
+		alreadyEmitted, err := hasClientLeaseExpiredEventTx(
+			tx,
+			batch.ConversationID,
+			calls[i].TurnID,
+			calls[i].AttemptID,
+			sessionID,
+			outcome.GetDetails()["lease_id"],
+		)
+		if err != nil {
+			return nil, internalToolError("load expired-lease turn event", err)
+		}
+		if alreadyEmitted {
+			continue
+		}
+		event := TurnEvent{
+			Type:           "progress",
+			TurnID:         calls[i].TurnID,
+			AttemptID:      calls[i].AttemptID,
+			ConversationID: batch.ConversationID,
+			AgentID:        batch.AgentID,
+			Stage:          "client_lease_expired",
+			Error:          outcome.GetError(),
+			ErrorType:      outcome.GetErrorType(),
+			LocaleKey:      outcome.GetLocaleKey(),
+			Retryable:      &retryable,
+			Terminal:       &terminal,
+			Details:        details,
+			OutcomeError:   outcomeJSON,
+		}
+		payload, err := json.Marshal(event)
+		if err != nil {
+			return nil, internalToolError("encode expired-lease turn event", err)
+		}
+		if _, err := s.conversations.persistTurnEventTx(
+			tx,
+			batch.ConversationID,
+			calls[i].TurnID,
+			calls[i].AttemptID,
+			event.Type,
+			payload,
+			now,
+		); err != nil {
+			return nil, internalToolError("persist expired-lease turn event", err)
+		}
+		notifications = append(notifications, clientLeaseExpiredTurn{
+			conversationID: batch.ConversationID,
+			turnID:         calls[i].TurnID,
+		})
+	}
+	return notifications, nil
+}
+
+func hasClientLeaseExpiredEventTx(
+	tx *gorm.DB,
+	conversationID string,
+	turnID string,
+	attemptID string,
+	sessionID string,
+	leaseID string,
+) (bool, error) {
+	var turn persistence.AgentTurn
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND conversation_id = ?", turnID, conversationID).
+		First(&turn).Error; err != nil {
+		return false, err
+	}
+
+	var rows []persistence.TurnEvent
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where(
+			"turn_id = ? AND attempt_id = ? AND event_type = ?",
+			turnID,
+			attemptID,
+			"progress",
+		).
+		Find(&rows).Error; err != nil {
+		return false, err
+	}
+	for i := range rows {
+		var event TurnEvent
+		if err := json.Unmarshal([]byte(rows[i].Payload), &event); err != nil {
+			return false, err
+		}
+		if event.Stage == "client_lease_expired" &&
+			event.ErrorType == string(errcode.AgentClientLeaseExpired) &&
+			event.Details["session_id"] == sessionID &&
+			event.Details["lease_id"] == leaseID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *ToolDispatchService) SubmitReceipt(

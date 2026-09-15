@@ -11,6 +11,7 @@ import {
   AuthCommandException,
   classifyAgentTurnTerminalEvent,
   isAgentCapabilityReady,
+  projectAgentTurnOutcomeErrorPayload,
   projectAgentTypedErrorPayload,
   streamAgentTurn,
   streamAgentTurnReplay,
@@ -1938,6 +1939,8 @@ interface FoundationExecutorUnavailableScenario {
 }
 
 const foundationExecutorUnavailableScenarios =
+  new Map<string, FoundationExecutorUnavailableScenario>();
+const foundationLeaseExpiredScenarios =
   new Map<string, FoundationExecutorUnavailableScenario>();
 const foundationInvalidResourceReferenceScenarios =
   new Map<string, { conversationId: string; turnId: string }>();
@@ -4422,6 +4425,436 @@ async function recoverFoundationExecutorUnavailableScenario(input: {
       },
     },
   };
+}
+
+async function prepareFoundationLeaseExpiredScenario(input: {
+  scenarioKey: string;
+  platform: string;
+  sampleId: string;
+  targetCapabilitySessionId: string;
+  targetDeviceId: string;
+  targetCapabilityId: string;
+}): Promise<Record<string, unknown>> {
+  const prepared = await prepareFoundationExecutorUnavailableScenario(input);
+  const scenario = foundationExecutorUnavailableScenarios.get(
+    input.scenarioKey,
+  );
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationLeaseScenarioMissing');
+  }
+  foundationExecutorUnavailableScenarios.delete(input.scenarioKey);
+  foundationLeaseExpiredScenarios.set(input.scenarioKey, scenario);
+  return prepared;
+}
+
+async function dispatchFoundationLeaseExpiredScenario(
+  scenarioKey: string,
+): Promise<Record<string, unknown>> {
+  const scenario = foundationLeaseExpiredScenarios.get(scenarioKey);
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationLeaseScenarioMissing');
+  }
+  const toolCallElement = document.querySelector<HTMLElement>(
+    `[data-pt-agent-tool-call="${scenario.toolCallId}"]`,
+  );
+  if (!toolCallElement) {
+    throw new Error('agent.acceptance.foundationToolCallSurfaceMissing');
+  }
+  let approve = toolCallElement.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-tool-decision="approve"]',
+  );
+  if (!approve) {
+    toolCallElement.querySelector<HTMLElement>(
+      '[data-pt-agent-tool-call-toggle]',
+    )?.click();
+    await waitFor(
+      () => Boolean(toolCallElement.querySelector(
+        '[data-pt-agent-tool-decision="approve"]',
+      )),
+      'lease-expired approve action',
+      10_000,
+    );
+    approve = toolCallElement.querySelector<HTMLButtonElement>(
+      '[data-pt-agent-tool-decision="approve"]',
+    );
+  }
+  if (!approve || approve.disabled) {
+    throw new Error('agent.acceptance.foundationToolApproveMissing');
+  }
+  approve.click();
+  const dispatched = await waitForFoundationToolFacts(
+    scenario.turn.turnId,
+    (facts) => (
+      facts.length === 1
+      && toolStatusName(
+        evidenceField(facts[0], 'status', 'status'),
+      ) === 'dispatch_committed'
+    ),
+    'lease-expired Station dispatch',
+  );
+  return {
+    scenarioKey,
+    conversationId: scenario.turn.conversationId,
+    turnId: scenario.turn.turnId,
+    toolCallId: scenario.toolCallId,
+    source: dispatched,
+  };
+}
+
+async function foundationSessionByHash(
+  sessionHash: string,
+): Promise<Awaited<
+  ReturnType<typeof api.listAgentCapabilitySessions>
+>['sessions'][number] | null> {
+  const sessions = (await api.listAgentCapabilitySessions()).sessions;
+  const matches = (
+    await Promise.all(sessions.map(async (session) => ({
+      session,
+      hash: await sha256Hex(session.session_id),
+    })))
+  ).filter(({ hash }) => hash === sessionHash);
+  if (matches.length > 1) {
+    throw new Error('agent.acceptance.capabilitySessionAmbiguous');
+  }
+  return matches[0]?.session ?? null;
+}
+
+async function completeFoundationLeaseExpiredScenario(input: {
+  scenarioKey: string;
+  leaseControl: Record<string, unknown>;
+}): Promise<Record<string, unknown>> {
+  const scenario = foundationLeaseExpiredScenarios.get(input.scenarioKey);
+  if (!scenario) {
+    throw new Error('agent.acceptance.foundationLeaseScenarioMissing');
+  }
+  const sourceStation = evidenceRecord(
+    evidenceField(input.leaseControl, 'sourceStation', 'source_station'),
+    'foundationLeaseExpiredSourceStation',
+  );
+  const replayStation = evidenceRecord(
+    evidenceField(input.leaseControl, 'replayStation', 'replay_station'),
+    'foundationLeaseExpiredReplayStation',
+  );
+  const leaseTransition = evidenceRecord(
+    evidenceField(input.leaseControl, 'leaseTransition', 'lease_transition'),
+    'foundationLeaseExpiredTransition',
+  );
+  const stationError = evidenceRecord(
+    evidenceField(
+      sourceStation,
+      'stationErrorDetails',
+      'station_error_details',
+    ),
+    'foundationLeaseExpiredStationError',
+  );
+  const outcome = projectAgentTypedErrorPayload({
+    error: stationError.locale_key,
+    error_type: stationError.error_code,
+    locale_key: stationError.locale_key,
+    retryable: stationError.retryable,
+    terminal: stationError.terminal,
+    session_id: stationError.session_id,
+    lease_id: stationError.lease_id,
+    expired_at: stationError.expired_at,
+  });
+  if (!outcome) {
+    throw new Error('agent.acceptance.foundationLeaseOutcomeMissing');
+  }
+
+  await waitFor(
+    () => useChatStore.getState().messages.some((message) => (
+      message.turnId === scenario.turn.turnId
+      && message.typedError?.error_type === 'CLIENT_LEASE_EXPIRED'
+      && message.resolution?.type === 'reconcile'
+      && message.loading === true
+      && message.terminalStatus === undefined
+    )),
+    'lease-expired non-terminal receiver projection',
+    30_000,
+  );
+  const receiverMessage = useChatStore.getState().messages.find(
+    (message) => (
+      message.turnId === scenario.turn.turnId
+      && message.typedError?.error_type === 'CLIENT_LEASE_EXPIRED'
+    ),
+  );
+  if (!receiverMessage) {
+    throw new Error('agent.acceptance.foundationLeaseReceiverMissing');
+  }
+  const messageElement = document.querySelector<HTMLElement>(
+    `[data-pt-agent-message-id="${receiverMessage.id}"]`,
+  );
+  const errorElement = messageElement?.querySelector<HTMLElement>(
+    '[data-pt-agent-message-error-text="agent.errors.clientLeaseExpired"]',
+  );
+  const recovery = messageElement?.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-message-error-recovery="reconcile"]',
+  );
+  if (!messageElement || !errorElement || !recovery) {
+    throw new Error('agent.acceptance.foundationLeaseRecoverySurfaceMissing');
+  }
+
+  const currentSessionHash = String(
+    evidenceField(
+      leaseTransition,
+      'currentCapabilitySessionIdHash',
+      'current_capability_session_id_hash',
+    ) ?? '',
+  );
+  const currentBefore = await foundationSessionByHash(currentSessionHash);
+  if (!currentBefore) {
+    throw new Error('agent.acceptance.foundationLeaseReplacementMissing');
+  }
+  const beforeReconcile = {
+    messageLoading: receiverMessage.loading === true,
+    terminalStatus: receiverMessage.terminalStatus ?? '',
+    toolCallPending: receiverMessage.toolCalls?.some(
+      (toolCall) => toolCall.id === scenario.toolCallId && toolCall.pending,
+    ) === true,
+  };
+  const errorText = errorElement.textContent?.trim() ?? '';
+  const recoveryText = recovery.textContent?.trim() ?? '';
+  recovery.click();
+  await waitFor(
+    () => {
+      const message = useChatStore.getState().messages.find(
+        (candidate) => candidate.id === receiverMessage.id,
+      );
+      return Boolean(
+        message
+        && message.typedError === undefined
+        && message.resolution === undefined
+        && message.loading === true
+        && message.terminalStatus === undefined,
+      );
+    },
+    'lease-expired reconciliation',
+    30_000,
+  );
+  const currentAfter = await foundationSessionByHash(currentSessionHash);
+  if (!currentAfter) {
+    throw new Error('agent.acceptance.foundationLeaseReplacementMissing');
+  }
+
+  const source = await waitForFoundationToolFacts(
+    scenario.turn.turnId,
+    (facts) => (
+      facts.length === 1
+      && toolStatusName(
+        evidenceField(facts[0], 'status', 'status'),
+      ) === 'dispatch_committed'
+    ),
+    'lease-expired Station source readback',
+  );
+  const replayed = await waitForFoundationToolFacts(
+    scenario.turn.turnId,
+    (facts) => (
+      facts.length === 1
+      && toolStatusName(
+        evidenceField(facts[0], 'status', 'status'),
+      ) === 'dispatch_committed'
+    ),
+    'lease-expired Station replay readback',
+  );
+  const sourceFact = source.facts[0];
+  const replayedFact = replayed.facts[0];
+  const sourceErrorHash = await sha256Hex(stableJson(stationError));
+  const replayErrorHash = await sha256Hex(stableJson(
+    evidenceRecord(
+      evidenceField(
+        replayStation,
+        'stationErrorDetails',
+        'station_error_details',
+      ),
+      'foundationLeaseExpiredReplayError',
+    ),
+  ));
+  const sourceRequestHash = String(
+    evidenceField(sourceStation, 'requestHash', 'request_hash') ?? '',
+  );
+  const replayRequestHash = String(
+    evidenceField(replayStation, 'requestHash', 'request_hash') ?? '',
+  );
+  const runtimeEvent = [...scenario.turn.observed.events]
+    .reverse()
+    .find((event) => {
+      const projected = projectAgentTurnOutcomeErrorPayload(event.data);
+      return projected?.error_type === 'CLIENT_LEASE_EXPIRED';
+    });
+  if (!runtimeEvent) {
+    throw new Error('agent.acceptance.foundationLeaseRuntimeEventMissing');
+  }
+
+  const cancellation = await api.cancelAgentTurn(scenario.turn.turnId);
+  const turnCancelled =
+    String(cancellation.status ?? '').toLowerCase() === 'cancelled';
+  if (!turnCancelled) {
+    throw new Error('agent.acceptance.foundationLeaseTurnCleanupFailed');
+  }
+  const bindingRestored =
+    await restoreFoundationExecutorUnavailableBinding(scenario);
+  scenario.bindingRestored = bindingRestored;
+  const sourceDelivery = runtimeEvent.sourceDelivery;
+  const streamId = scenario.turn.streamId;
+  if (
+    !sourceDelivery
+    || !streamId
+    || sourceDelivery.transport !== 'station-sse'
+    || sourceDelivery.ptid !== authenticatedFoundationActorPtid()
+    || sourceDelivery.conversationId !== scenario.turn.conversationId
+    || sourceDelivery.turnId !== scenario.turn.turnId
+    || sourceDelivery.sequence <= 0
+    || sourceDelivery.rawPayload.eventType !== 'progress'
+    || stableJson(
+      normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+    ) !== stableJson(
+      normalizeProjectedStationPayload(runtimeEvent.data),
+    )
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationLeaseRuntimeIdentityMismatch',
+    );
+  }
+  const payloadHash = await sha256Hex(
+    stableJson(sourceDelivery.rawPayload),
+  );
+  const streamGeneration = scenario.turn.observed.controller.streamGeneration;
+
+  return {
+    conversationId: scenario.turn.conversationId,
+    turnId: scenario.turn.turnId,
+    durationMs: performance.now() - scenario.startedAt,
+    runtimeEvent: {
+      eventId: await sha256Hex(stableJson({
+        streamId,
+        streamGeneration,
+        conversationId: scenario.turn.conversationId,
+        turnId: scenario.turn.turnId,
+        sequence: sourceDelivery.sequence,
+        payloadHash,
+      })),
+      eventType: runtimeEvent.event,
+      sequence: sourceDelivery.sequence,
+      observedAt: runtimeEvent.observedAt,
+      streamGeneration,
+      streamIdHash: await sha256Hex(streamId),
+      conversationIdHash: await sha256Hex(sourceDelivery.conversationId),
+      payloadHash,
+      errorType: outcome.error_type,
+      sourceTransport: sourceDelivery.transport,
+      sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+      sourceConversationId: sourceDelivery.conversationId,
+      sourceTurnId: sourceDelivery.turnId,
+      sourceSequence: sourceDelivery.sequence,
+      sourceEventType: sourceDelivery.rawPayload.eventType,
+    },
+    facts: {
+      outcome,
+      receiver: {
+        errorVisible: errorElement.getClientRects().length > 0,
+        errorText,
+        expectedErrorText: i18n.t(
+          'agent.errors.clientLeaseExpired',
+          { ns: 'agent' },
+        ),
+        recoveryVisible: recovery.getClientRects().length > 0,
+        recoveryText,
+        expectedRecoveryText: i18n.t(
+          'agent.recovery.reconcile',
+          { ns: 'agent' },
+        ),
+        recoveryExecuted: true,
+        errorClearedAfterReconcile: true,
+        ...beforeReconcile,
+      },
+      station: {
+        toolCallId: String(
+          evidenceField(sourceFact, 'toolCallId', 'tool_call_id') ?? '',
+        ),
+        status: toolStatusName(
+          evidenceField(sourceFact, 'status', 'status'),
+        ),
+        resultId: String(
+          evidenceField(sourceFact, 'resultId', 'result_id') ?? '',
+        ),
+        continuationId: String(
+          evidenceField(
+            sourceFact,
+            'continuationId',
+            'continuation_id',
+          ) ?? '',
+        ),
+        executionClaimId: String(
+          evidenceField(
+            sourceFact,
+            'executionClaimId',
+            'execution_claim_id',
+          ) ?? '',
+        ),
+        executionAttemptCount: Number(
+          evidenceField(
+            sourceFact,
+            'executionAttemptCount',
+            'execution_attempt_count',
+          ) ?? 0,
+        ),
+        sourceHash: await sha256Hex(stableJson(sourceFact)),
+        replayHash: await sha256Hex(stableJson(replayedFact)),
+      },
+      lease: {
+        ...leaseTransition,
+        currentSessionIdBefore: currentBefore.session_id,
+        currentLeaseIdBefore: currentBefore.lease_id,
+        currentLeaseRevisionBefore: currentBefore.lease_revision,
+        currentExpiresAtBefore: timestampIso(currentBefore.expires_at),
+        currentSessionIdAfter: currentAfter.session_id,
+        currentLeaseIdAfter: currentAfter.lease_id,
+        currentLeaseRevisionAfter: currentAfter.lease_revision,
+        currentExpiresAtAfter: timestampIso(currentAfter.expires_at),
+      },
+      audit: {
+        source: sourceStation,
+        replay: replayStation,
+        sourceRequestHash,
+        replayRequestHash,
+        sourceErrorHash,
+        replayErrorHash,
+      },
+      executor: {
+        before: input.leaseControl.before,
+        after: input.leaseControl.after,
+      },
+      replay: {
+        sourceHash: sourceErrorHash,
+        replayHash: replayErrorHash,
+        equal:
+          sourceRequestHash.length === 64
+          && sourceRequestHash === replayRequestHash
+          && sourceErrorHash === replayErrorHash
+          && String(sourceFact.toolCallId ?? sourceFact.tool_call_id ?? '')
+            === String(
+              replayedFact.toolCallId
+              ?? replayedFact.tool_call_id
+              ?? '',
+            ),
+      },
+      cleanup: {
+        bindingRestored,
+        turnCancelled,
+        conversationDeleted: false,
+      },
+    },
+  };
+}
+
+async function cleanupFoundationLeaseExpiredScenario(
+  scenarioKey: string,
+): Promise<void> {
+  const scenario = foundationLeaseExpiredScenarios.get(scenarioKey);
+  if (!scenario) return;
+  foundationLeaseExpiredScenarios.delete(scenarioKey);
+  foundationExecutorUnavailableScenarios.set(scenarioKey, scenario);
+  await cleanupFoundationExecutorUnavailableScenario(scenarioKey);
 }
 
 async function runFoundationApprovalDeniedScenario(input: {
@@ -16883,6 +17316,8 @@ async function evaluateDirectCellAssertions(
       return evaluateBaseCredentialMissing(ctx);
     case 'BASE-EXECUTOR_UNAVAILABLE':
       return evaluateBaseExecutorUnavailable(ctx);
+    case 'BASE-LEASE_EXPIRED':
+      return evaluateBaseLeaseExpired(ctx);
     case 'BASE-APPROVAL_DENIED':
       return evaluateBaseApprovalDenied(ctx);
     case 'BASE-APPROVAL_EXPIRED':
@@ -17229,6 +17664,137 @@ function evaluateBaseExecutorUnavailable(
     cleanupComplete: (
       cleanup.bindingRestored === true
       && cleanup.executorRestored === true
+      && cleanup.turnCancelled === true
+      && cleanup.conversationDeleted === true
+    ),
+  };
+}
+
+function evaluateBaseLeaseExpired(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  const facts = evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationLeaseExpiredFacts',
+  );
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationLeaseExpiredOutcome',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationLeaseExpiredDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationLeaseExpiredReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationLeaseExpiredStation',
+  );
+  const lease = evidenceRecord(
+    facts.lease,
+    'foundationLeaseExpiredLease',
+  );
+  const audit = evidenceRecord(
+    facts.audit,
+    'foundationLeaseExpiredAudit',
+  );
+  const sourceAudit = evidenceRecord(
+    audit.source,
+    'foundationLeaseExpiredAuditSource',
+  );
+  const replayAudit = evidenceRecord(
+    audit.replay,
+    'foundationLeaseExpiredAuditReplay',
+  );
+  const executor = evidenceRecord(
+    facts.executor,
+    'foundationLeaseExpiredExecutor',
+  );
+  const before = evidenceRecord(
+    executor.before,
+    'foundationLeaseExpiredExecutorBefore',
+  );
+  const after = evidenceRecord(
+    executor.after,
+    'foundationLeaseExpiredExecutorAfter',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationLeaseExpiredReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationLeaseExpiredCleanup',
+  );
+  const safeDetailKeys = Object.keys(details).sort();
+  return {
+    typedLeaseExpired: (
+      outcome.error === 'agent.errors.clientLeaseExpired'
+      && outcome.error_type === 'CLIENT_LEASE_EXPIRED'
+      && outcome.locale_key === 'agent.errors.clientLeaseExpired'
+      && outcome.retryable === true
+      && outcome.terminal === false
+    ),
+    boundedDetails: (
+      safeDetailKeys.length === 3
+      && safeDetailKeys[0] === 'expired_at'
+      && safeDetailKeys[1] === 'lease_id'
+      && safeDetailKeys[2] === 'session_id'
+      && String(details.session_id).length > 0
+      && String(details.lease_id).length > 0
+      && Number.isFinite(Date.parse(String(details.expired_at)))
+    ),
+    localizedReconcileVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+      && receiver.recoveryExecuted === true
+      && receiver.errorClearedAfterReconcile === true
+    ),
+    nonTerminalTurnPreserved: (
+      receiver.messageLoading === true
+      && receiver.terminalStatus === ''
+      && receiver.toolCallPending === true
+      && station.status === 'dispatch_committed'
+    ),
+    oldCommandAuditOnly: (
+      Number(sourceAudit.httpStatus) === 409
+      && sourceAudit.transportErrorKind === 'httpStatus'
+      && Number(replayAudit.httpStatus) === 409
+      && replayAudit.transportErrorKind === 'httpStatus'
+      && station.resultId === ''
+      && station.continuationId === ''
+      && station.sourceHash === station.replayHash
+    ),
+    currentLeaseUnchanged: (
+      String(lease.currentSessionIdBefore).length > 0
+      && lease.currentSessionIdBefore === lease.currentSessionIdAfter
+      && String(lease.currentLeaseIdBefore).length > 0
+      && lease.currentLeaseIdBefore === lease.currentLeaseIdAfter
+      && Number(lease.currentLeaseRevisionBefore)
+        === Number(lease.currentLeaseRevisionAfter)
+      && lease.currentExpiresAtBefore === lease.currentExpiresAtAfter
+    ),
+    zeroExecutionAndSideEffect: (
+      Number(before.localExecutionAttemptCount)
+        === Number(after.localExecutionAttemptCount)
+      && Number(before.localSideEffectCount)
+        === Number(after.localSideEffectCount)
+      && station.resultId === ''
+      && station.continuationId === ''
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+      && replay.sourceHash === audit.sourceErrorHash
+      && audit.sourceRequestHash === audit.replayRequestHash
+    ),
+    cleanupComplete: (
+      cleanup.bindingRestored === true
       && cleanup.turnCancelled === true
       && cleanup.conversationDeleted === true
     ),
@@ -20591,6 +21157,47 @@ export function installAcceptanceHarness(): void {
       return { scenarioKey, cleaned: true };
     },
 
+    async prepareFoundationLeaseExpired(input: {
+      scenarioKey: string;
+      platform: string;
+      sampleId: string;
+      targetCapabilitySessionId: string;
+      targetDeviceId: string;
+      targetCapabilityId: string;
+    }) {
+      return evidenceValue(
+        await prepareFoundationLeaseExpiredScenario(input),
+      );
+    },
+
+    async dispatchFoundationLeaseExpired({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      return evidenceValue(
+        await dispatchFoundationLeaseExpiredScenario(scenarioKey),
+      );
+    },
+
+    async completeFoundationLeaseExpired(input: {
+      scenarioKey: string;
+      leaseControl: Record<string, unknown>;
+    }) {
+      return evidenceValue(
+        await completeFoundationLeaseExpiredScenario(input),
+      );
+    },
+
+    async abortFoundationLeaseExpired({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      await cleanupFoundationLeaseExpiredScenario(scenarioKey);
+      return { scenarioKey, cleaned: true };
+    },
+
     async runFoundationCapabilityNegativeControl({
       control,
       capabilitySessionIdHash,
@@ -20601,7 +21208,9 @@ export function installAcceptanceHarness(): void {
         | 'unauthorized'
         | 'signatureTamper'
         | 'schemaMismatch'
-        | 'crossDevice';
+        | 'crossDevice'
+        | 'leasePause'
+        | 'leaseExpired';
       capabilitySessionIdHash: string;
       crossDeviceSessionId?: string;
     }) {
@@ -21515,6 +22124,57 @@ export function installAcceptanceHarness(): void {
         ) {
           throw new Error(
             'agent.acceptance.foundationExecutorPreparedScenarioInvalid',
+          );
+        }
+      }
+
+      if (cell === 'BASE-LEASE_EXPIRED') {
+        const scenario = evidenceRecord(
+          preparedScenario,
+          'foundationLeaseExpiredPreparedScenario',
+        );
+        preparedConversationId = String(scenario.conversationId ?? '');
+        preparedTurnId = String(scenario.turnId ?? '');
+        turnDurationMs = Number(scenario.durationMs ?? 0);
+        scenarioFacts = evidenceRecord(
+          scenario.facts,
+          'foundationLeaseExpiredFacts',
+        );
+        const runtimeEvent = evidenceRecord(
+          scenario.runtimeEvent,
+          'foundationLeaseExpiredRuntimeEvent',
+        );
+        preparedRuntimeEvent.current = {
+          eventId: String(runtimeEvent.eventId ?? ''),
+          eventType: String(runtimeEvent.eventType ?? ''),
+          sequence: Number(runtimeEvent.sequence ?? 0),
+          observedAt: String(runtimeEvent.observedAt ?? ''),
+          streamGeneration: Number(runtimeEvent.streamGeneration ?? 0),
+          streamIdHash: String(runtimeEvent.streamIdHash ?? ''),
+          conversationIdHash: String(
+            runtimeEvent.conversationIdHash ?? '',
+          ),
+          payloadHash: String(runtimeEvent.payloadHash ?? ''),
+          errorType: String(runtimeEvent.errorType ?? ''),
+          sourceTransport: String(runtimeEvent.sourceTransport ?? ''),
+          sourcePtidHash: String(runtimeEvent.sourcePtidHash ?? ''),
+          sourceConversationId: String(
+            runtimeEvent.sourceConversationId ?? '',
+          ),
+          sourceTurnId: String(runtimeEvent.sourceTurnId ?? ''),
+          sourceSequence: Number(runtimeEvent.sourceSequence ?? 0),
+          sourceEventType: String(runtimeEvent.sourceEventType ?? ''),
+        };
+        if (
+          !preparedConversationId
+          || !preparedTurnId
+          || !turnDurationMs
+          || preparedRuntimeEvent.current.eventType !== 'progress'
+          || preparedRuntimeEvent.current.sequence <= 0
+          || !preparedRuntimeEvent.current.observedAt
+        ) {
+          throw new Error(
+            'agent.acceptance.foundationLeasePreparedScenarioInvalid',
           );
         }
       }
@@ -23076,6 +23736,7 @@ export function installAcceptanceHarness(): void {
           cell === 'BASE-FORBIDDEN_ACTOR'
           || cell === 'BASE-INCOMPATIBLE_CAPABILITY'
           || cell === 'BASE-EXECUTOR_UNAVAILABLE'
+          || cell === 'BASE-LEASE_EXPIRED'
           || cell === 'BASE-APPROVAL_DENIED'
           || cell === 'BASE-APPROVAL_EXPIRED'
           || cell === 'BASE-ATTACHMENT_REJECTED'
@@ -23130,6 +23791,8 @@ export function installAcceptanceHarness(): void {
                 ? 'foundationCredentialMissingCleanup'
               : cell === 'BASE-EXECUTOR_UNAVAILABLE'
                 ? 'foundationExecutorUnavailableCleanup'
+              : cell === 'BASE-LEASE_EXPIRED'
+                ? 'foundationLeaseExpiredCleanup'
               : cell === 'BASE-APPROVAL_DENIED'
                 ? 'foundationApprovalDeniedCleanup'
                 : cell === 'BASE-APPROVAL_EXPIRED'
@@ -23161,6 +23824,13 @@ export function installAcceptanceHarness(): void {
           ).localProjectionCleared === true
         ) {
           foundationInvalidResourceReferenceScenarios.delete(scenarioKey);
+        }
+        if (
+          cell === 'BASE-LEASE_EXPIRED'
+          && scenarioKey
+          && conversationDeleted
+        ) {
+          foundationLeaseExpiredScenarios.delete(scenarioKey);
         }
         if (cell === 'BASE-CONTEXT_OVERFLOW') {
           const contextOverflowCleanup = evidenceRecord(
@@ -23466,6 +24136,50 @@ export function installAcceptanceHarness(): void {
             station.continuationId === '' ? 0 : 1,
         };
       }
+      if (cell === 'BASE-LEASE_EXPIRED' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationLeaseExpiredStation',
+        );
+        const lease = evidenceRecord(
+          scenarioFacts.lease,
+          'foundationLeaseExpiredLease',
+        );
+        const executor = evidenceRecord(
+          scenarioFacts.executor,
+          'foundationLeaseExpiredExecutor',
+        );
+        const before = evidenceRecord(
+          executor.before,
+          'foundationLeaseExpiredExecutorBefore',
+        );
+        const after = evidenceRecord(
+          executor.after,
+          'foundationLeaseExpiredExecutorAfter',
+        );
+        stationReadback.entityKind = 'agent-client-capability-lease';
+        stationReadback.entityIdHash = await sha256Hex(
+          String(station.toolCallId),
+        );
+        stationReadback.revision = Number(lease.sourceLeaseRevision);
+        stationReadback.stateHash = await sha256Hex(stableJson({
+          station,
+          lease,
+          audit: scenarioFacts.audit,
+        }));
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          executionAttempt:
+            Number(after.localExecutionAttemptCount)
+            - Number(before.localExecutionAttemptCount),
+          localSideEffect:
+            Number(after.localSideEffectCount)
+            - Number(before.localSideEffectCount),
+          stationExecutionAttempt: Number(station.executionAttemptCount),
+          result: station.resultId === '' ? 0 : 1,
+          continuation: station.continuationId === '' ? 0 : 1,
+        };
+      }
       if (cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts) {
         const station = evidenceRecord(
           scenarioFacts.station,
@@ -23646,6 +24360,7 @@ export function installAcceptanceHarness(): void {
             || cell === 'BASE-CONTEXT_OVERFLOW'
             || cell === 'BASE-INVALID_REFERENCE'
             || cell === 'BASE-INVALID_RESOURCE_REF'
+            || cell === 'BASE-LEASE_EXPIRED'
             || cell === 'BASE-DUPLICATE_CONFLICT'
             || cell === 'BASE-CREDENTIAL_MISSING'
           ) && observedRuntimeEvent
@@ -23668,6 +24383,7 @@ export function installAcceptanceHarness(): void {
                     || cell === 'BASE-CONTEXT_OVERFLOW'
                     || cell === 'BASE-INVALID_REFERENCE'
                     || cell === 'BASE-INVALID_RESOURCE_REF'
+                    || cell === 'BASE-LEASE_EXPIRED'
                     || cell === 'BASE-DUPLICATE_CONFLICT'
                     || cell === 'BASE-CREDENTIAL_MISSING'
                   )
@@ -23712,7 +24428,8 @@ export function installAcceptanceHarness(): void {
         : { eventId: '', sequence: 0, eventType: '', occurredAt: '' };
 
       const measurementLimitMs =
-        cell === 'AS-F04'
+        cell === 'BASE-LEASE_EXPIRED'
+        || cell === 'AS-F04'
         || cell === 'AS-F12'
         || cell === 'BASE-APPROVAL_EXPIRED'
           ? 900_000
@@ -23942,6 +24659,52 @@ export function installAcceptanceHarness(): void {
                     executionAttemptDelta,
                     sideEffectDelta,
                     providerContinuationDelta,
+                  },
+                };
+              })()
+          : cell === 'BASE-LEASE_EXPIRED' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationLeaseExpiredStation',
+                );
+                const executor = evidenceRecord(
+                  scenarioFacts.executor,
+                  'foundationLeaseExpiredExecutor',
+                );
+                const before = evidenceRecord(
+                  executor.before,
+                  'foundationLeaseExpiredExecutorBefore',
+                );
+                const after = evidenceRecord(
+                  executor.after,
+                  'foundationLeaseExpiredExecutorAfter',
+                );
+                const executionAttemptDelta =
+                  Number(after.localExecutionAttemptCount)
+                  - Number(before.localExecutionAttemptCount);
+                const localSideEffectDelta =
+                  Number(after.localSideEffectCount)
+                  - Number(before.localSideEffectCount);
+                const stationResultDelta = station.resultId === '' ? 0 : 1;
+                const continuationDelta =
+                  station.continuationId === '' ? 0 : 1;
+                return {
+                  counterId: String(station.toolCallId),
+                  count:
+                    executionAttemptDelta
+                    + localSideEffectDelta
+                    + Number(station.executionAttemptCount)
+                    + stationResultDelta
+                    + continuationDelta,
+                  maximum: 0,
+                  measurements: {
+                    executionAttemptDelta,
+                    localSideEffectDelta,
+                    stationExecutionAttemptCount:
+                      station.executionAttemptCount,
+                    stationResultDelta,
+                    continuationDelta,
                   },
                 };
               })()
@@ -24191,6 +24954,13 @@ export function installAcceptanceHarness(): void {
               'foundationInvalidResourceReferenceCleanup',
             )
           : null;
+      const leaseExpiredCleanup =
+        cell === 'BASE-LEASE_EXPIRED' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationLeaseExpiredCleanup',
+            )
+          : null;
       const duplicateConflictCleanup =
         cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
           ? evidenceRecord(
@@ -24223,6 +24993,12 @@ export function installAcceptanceHarness(): void {
                     === true
                   && invalidResourceReferenceCleanup.conversationDeleted
                     === true
+                )
+            : leaseExpiredCleanup
+              ? (
+                  leaseExpiredCleanup.bindingRestored === true
+                  && leaseExpiredCleanup.turnCancelled === true
+                  && leaseExpiredCleanup.conversationDeleted === true
                 )
             : incompatibleCapabilityCleanup
               ? (
@@ -24404,6 +25180,8 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-INVALID_RESOURCE_REF' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-LEASE_EXPIRED' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-CREDENTIAL_MISSING' && scenarioFacts
@@ -24424,6 +25202,7 @@ export function installAcceptanceHarness(): void {
         || cell === 'BASE-CONTEXT_OVERFLOW'
         || cell === 'BASE-INVALID_REFERENCE'
         || cell === 'BASE-INVALID_RESOURCE_REF'
+        || cell === 'BASE-LEASE_EXPIRED'
         || cell === 'BASE-DUPLICATE_CONFLICT'
         || cell === 'BASE-CREDENTIAL_MISSING'
       ) && scenarioFacts
@@ -24574,6 +25353,23 @@ export function installAcceptanceHarness(): void {
             + '[data-pt-agent-message-error-recovery='
             + '"choose-resource-again"],'
             + '[data-pt-agent-resource-picker]';
+          receiverText = {
+            errorText: receiver.errorText,
+            recoveryText: receiver.recoveryText,
+          };
+        } else if (cell === 'BASE-LEASE_EXPIRED') {
+          receiverVisible =
+            receiver.errorVisible === true
+            && receiver.recoveryVisible === true
+            && receiver.recoveryExecuted === true
+            && receiver.errorClearedAfterReconcile === true
+            && receiver.messageLoading === true
+            && receiver.terminalStatus === ''
+            && receiver.toolCallPending === true;
+          receiverSelector =
+            '[data-pt-agent-message-error-text='
+            + '"agent.errors.clientLeaseExpired"],'
+            + '[data-pt-agent-message-error-recovery="reconcile"]';
           receiverText = {
             errorText: receiver.errorText,
             recoveryText: receiver.recoveryText,
@@ -24741,6 +25537,16 @@ export function installAcceptanceHarness(): void {
           scenarioFacts.station,
           'foundationInvalidResourceReferenceStation',
         ).turnId;
+      }
+      if (cell === 'BASE-LEASE_EXPIRED' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationLeaseExpiredReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+        replayEvidence.turnId = preparedTurnId;
       }
       if (cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts) {
         const replay = evidenceRecord(
@@ -25049,6 +25855,24 @@ export function installAcceptanceHarness(): void {
             throw Object.assign(
               new Error(
                 'agent.acceptance.foundationInvalidResourceCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-LEASE_EXPIRED'
+          && scenarioKey
+        ) {
+          try {
+            await cleanupFoundationLeaseExpiredScenario(scenarioKey);
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationLeaseExpiredCleanupFailed',
               ),
               {
                 primaryError: error,

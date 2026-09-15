@@ -23,20 +23,20 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | C08 passes on `1f6299725`; Foundation crossed AS-F10, AS-F12, both cancellation locales, and both invalid-reference locales before exposing a Browser English invalid-resource executor-capability mismatch; full runtime proof remains `UNPROVEN` |
+| Current step | `G-FE1-LEASE-EXPIRED` is `FOCUSED_PASS` on the dirty tree above `6ec143379`; exact-source Development Journey and full runtime proof remain `UNPROVEN` |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | The invalid-resource executor target now explicitly resolves `local_file_read` / `filesystem.read`, matching the promoted Development Journey; `88/88` static, `56/56` coordinator, and Desktop strict checks pass |
-| Current action | Checkpoint the invalid-resource target correction, deploy and rebuild exact source, rerun C08, then resume the unchanged Foundation Gate |
-| Next action | Prove the four invalid-resource runtime cells and continue from the next first failed 419-cell tuple |
+| Last completed | Checkpoint `6ec143379` passed C08 and both Browser `BASE-INVALID_RESOURCE_REF` cells through the shared Development Journey and independent oracle; the full Gate cleaned up successfully |
+| Current action | Create the authorized clean checkpoint, deploy that exact source, and run the real five-minute `BASE-LEASE_EXPIRED` Development Journey |
+| Next action | After `FUNCTIONAL_PASS`, rerun C08 and resume the unchanged 419-cell Foundation Gate |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
 | Overnight stop conditions | `WORKTREE_IDENTITY_MISMATCH`、undefined PRODUCT/DESIGN semantics、unauthorized destructive reset、secret leak、or exhausted external runtime resources park the affected action；focused implementation failures return to the owner layer |
 | Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, new PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | no Goal-level blocker; `BASE-INVALID_RESOURCE_REF` formal Foundation proof remains `UNPROVEN`; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
+| Blockers | no Goal-level blocker; `BASE-LEASE_EXPIRED` is the next source-defined implementation gap; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | C08 `20260915T014558139866Z-ac234b6711744d66a5a2190771d28b26` passed on `1f6299725` in 39.155 seconds；Foundation `20260915T015153692721Z-00077a23ad6dda979c24c4b0a09cfdfe` crossed both cancellation locales on their first attempts with authoritative `cancelled` terminals and 217.3/212.7 ms latency, retained one valid Browser window, then failed at Browser English `BASE-INVALID_RESOURCE_REF / executor capability changed`；source inspection proves the resolver used the default `local_clipboard_read` while the Journey requires `local_file_read` / `filesystem.read`；Foundation remains `PARTIAL / UNPROVEN` |
+| Evidence | C08 `20260915T023010098430Z-1649875e241d509b825fe65d86142fa4` passed on `6ec143379` in 36.76 seconds；Foundation `20260915T023112205523Z-aacb361dcca1036b0958d29da9fbef4a` crossed both Browser `BASE-INVALID_RESOURCE_REF` locales, `BASE-EXECUTOR_UNAVAILABLE`, cancellation, invalid-reference, and earlier foundation cells, then failed at Browser English `BASE-LEASE_EXPIRED / direct-runtime group is not implemented`；Provisioner cleanup passed and source identity remained exact；Foundation remains `PARTIAL / UNPROVEN` |
 | Last updated | 2026-09-15 |
 
 ---

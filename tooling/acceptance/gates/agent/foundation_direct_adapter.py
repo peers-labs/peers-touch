@@ -291,6 +291,19 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-LEASE_EXPIRED": frozenset(
+        {
+            "typedLeaseExpired",
+            "boundedDetails",
+            "localizedReconcileVisible",
+            "nonTerminalTurnPreserved",
+            "oldCommandAuditOnly",
+            "currentLeaseUnchanged",
+            "zeroExecutionAndSideEffect",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
     "BASE-APPROVAL_DENIED": frozenset(
         {
             "typedDenialProjected",

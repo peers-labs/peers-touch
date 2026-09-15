@@ -253,20 +253,22 @@ pub fn capability_negative_control(
             Some(json!({ "reason": "acceptanceEnvironmentDisabled" })),
         );
     }
-    let control = match input.control.as_str() {
-        "unsupported" => RequestedCapabilityNegativeControl::Unsupported,
-        "unauthorized" => RequestedCapabilityNegativeControl::Unauthorized,
-        "signatureTamper" => RequestedCapabilityNegativeControl::SignatureTamper,
-        "schemaMismatch" => RequestedCapabilityNegativeControl::SchemaMismatch,
-        "crossDevice" => RequestedCapabilityNegativeControl::CrossDevice,
-        _ => {
-            return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                "agent.capabilityNegativeControlInvalid",
-                None,
-            )
-        }
+    let Some(control) = requested_negative_control(&input.control) else {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "agent.capabilityNegativeControlInvalid",
+            None,
+        );
     };
+    if control.requires_lease_lifecycle_control()
+        && std::env::var(GFE1_EXECUTOR_CONTROL_ENV).as_deref() != Ok("1")
+    {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "agent.capabilityNegativeControlUnavailable",
+            Some(json!({ "reason": "leaseControlEnvironmentDisabled" })),
+        );
+    }
     match supervisor.emit_negative_control(
         control,
         input.capability_session_id_hash,
@@ -285,6 +287,19 @@ pub fn capability_negative_control(
             "agent.capabilityNegativeControlFailed",
             Some(json!({ "cause": error })),
         ),
+    }
+}
+
+fn requested_negative_control(value: &str) -> Option<RequestedCapabilityNegativeControl> {
+    match value {
+        "unsupported" => Some(RequestedCapabilityNegativeControl::Unsupported),
+        "unauthorized" => Some(RequestedCapabilityNegativeControl::Unauthorized),
+        "signatureTamper" => Some(RequestedCapabilityNegativeControl::SignatureTamper),
+        "schemaMismatch" => Some(RequestedCapabilityNegativeControl::SchemaMismatch),
+        "crossDevice" => Some(RequestedCapabilityNegativeControl::CrossDevice),
+        "leasePause" => Some(RequestedCapabilityNegativeControl::LeasePause),
+        "leaseExpired" => Some(RequestedCapabilityNegativeControl::LeaseExpired),
+        _ => None,
     }
 }
 
@@ -628,5 +643,18 @@ mod tests {
         assert!(status.contains("\"tool_call_side_effect_counts\":[]"));
         assert!(!status.contains("filesystem.read"));
         assert!(!status.contains("shell.execute"));
+    }
+
+    #[test]
+    fn capability_negative_control_names_include_lease_lifecycle_controls() {
+        assert_eq!(
+            requested_negative_control("leasePause"),
+            Some(RequestedCapabilityNegativeControl::LeasePause)
+        );
+        assert_eq!(
+            requested_negative_control("leaseExpired"),
+            Some(RequestedCapabilityNegativeControl::LeaseExpired)
+        );
+        assert_eq!(requested_negative_control("lease_expired"), None);
     }
 }
