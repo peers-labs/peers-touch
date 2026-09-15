@@ -78,11 +78,17 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          range_base="$BASE_SHA"
-          if ! git merge-base --is-ancestor "$range_base" "$HEAD_SHA"; then
-            range_base="$(git merge-base "$range_base" "$HEAD_SHA")"
+          base_tree="$(git rev-parse "$BASE_SHA^{tree}")"
+          range_base="$(
+            git log --topo-order --format='%H %T' "$HEAD_SHA" |
+              awk -v base="$BASE_SHA" -v tree="$base_tree" \
+                '$1 != base && $2 == tree && !found { print $1; found=1 }'
+          )"
+          if [ -z "$range_base" ]; then
+            range_base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
           fi
 
+          echo "Linting commits after $range_base"
           while read -r commit_sha; do
             git show -s --format=%B "$commit_sha" | npx commitlint --verbose
           done < <(
