@@ -988,9 +988,11 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
         self.assertIn(
-            "(latestTrace?.trace?.providerCalls.length ?? 0) === 1",
+            "evidenceField(\n            latestTraceRecord,\n"
+            "            'providerCalls',\n            'provider_calls',",
             scenario,
         )
+        self.assertIn("latestProviderCalls.length === 1", scenario)
         self.assertIn("zeroSuccessfulCompletion:", scenario)
         self.assertIn(
             "const deletionErrorCode = await deleteFoundationConversation(",

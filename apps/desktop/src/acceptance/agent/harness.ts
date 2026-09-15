@@ -21425,6 +21425,20 @@ export function installAcceptanceHarness(): void {
         const resolution = errorMessage.resolution;
         const latestTrace =
           tracesAfter.entries[tracesAfter.entries.length - 1];
+        const latestTraceRecord = latestTrace?.trace
+          ? evidenceRecord(
+              evidenceValue(latestTrace.trace),
+              'providerModelUnavailableTrace',
+            )
+          : {};
+        const latestProviderCalls = optionalEvidenceArray(
+          evidenceField(
+            latestTraceRecord,
+            'providerCalls',
+            'provider_calls',
+          ),
+          'providerModelUnavailableProviderCalls',
+        );
         const completedAssistantMessages = readbackAfter.messages.filter(
           (message) => (
             String(message.role).toLowerCase() === 'assistant'
@@ -21454,7 +21468,7 @@ export function installAcceptanceHarness(): void {
                 === 'profile',
             oneTerminalProviderAttempt:
               tracesAfter.entries.length === tracesBefore.entries.length + 1
-              && (latestTrace?.trace?.providerCalls.length ?? 0) === 1,
+              && latestProviderCalls.length === 1,
             zeroSuccessfulCompletion: completedAssistantMessages.length === 0,
             queueUnchanged:
               queueAfter.entries.length === queueBefore.entries.length,
