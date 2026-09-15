@@ -134,6 +134,44 @@ impl StationAttachmentTransferTransport {
         }
         Ok(body.to_vec())
     }
+
+    fn download_chunk_request(
+        &self,
+        transfer: &AttachmentTransferRecord,
+        descriptor: &EncryptedObjectDescriptor,
+        start: u64,
+        end: u64,
+    ) -> Result<reqwest::blocking::RequestBuilder, AttachmentTransferFailure> {
+        let url = reqwest::Url::parse(&format!(
+            "{}/conversation/attachments/objects/{}",
+            self.station_origin.trim_end_matches('/'),
+            descriptor.object_id
+        ))
+        .map_err(|error| {
+            AttachmentTransferFailure::terminal(
+                AttachmentTransferErrorCode::DescriptorMismatch,
+                format!("build mobile messaging attachment download URL: {error}"),
+            )
+        })?;
+        Ok(self
+            .client
+            .get(url)
+            .header(
+                AUTHORIZATION,
+                format!("Bearer {}", self.access_token.as_str()),
+            )
+            .header("X-Device-ID", &self.device_id)
+            .header("X-Peers-Conversation-ID", &transfer.conversation_id)
+            .header(
+                "X-Peers-Authority-Station-ID",
+                &transfer.authority_station_id,
+            )
+            .header(
+                IF_MATCH,
+                format!("\"{}\"", hex_bytes(&descriptor.ciphertext_sha256)),
+            )
+            .header(RANGE, format!("bytes={start}-{end}")))
+    }
 }
 
 impl AttachmentTransferTransport for StationAttachmentTransferTransport {
@@ -290,36 +328,8 @@ impl AttachmentTransferTransport for StationAttachmentTransferTransport {
         start: u64,
         end: u64,
     ) -> Result<Vec<u8>, AttachmentTransferFailure> {
-        let mut url = reqwest::Url::parse(&format!(
-            "{}/conversation/attachments/objects/{}",
-            self.station_origin.trim_end_matches('/'),
-            descriptor.object_id
-        ))
-        .map_err(|error| {
-            AttachmentTransferFailure::terminal(
-                AttachmentTransferErrorCode::DescriptorMismatch,
-                format!("build mobile messaging attachment download URL: {error}"),
-            )
-        })?;
-        url.query_pairs_mut()
-            .append_pair("conversation_id", &transfer.conversation_id);
         let response = self
-            .client
-            .get(url)
-            .header(
-                AUTHORIZATION,
-                format!("Bearer {}", self.access_token.as_str()),
-            )
-            .header("X-Device-ID", &self.device_id)
-            .header(
-                "X-Peers-Authority-Station-ID",
-                &transfer.authority_station_id,
-            )
-            .header(
-                IF_MATCH,
-                format!("\"{}\"", hex_bytes(&descriptor.ciphertext_sha256)),
-            )
-            .header(RANGE, format!("bytes={start}-{end}"))
+            .download_chunk_request(transfer, descriptor, start, end)?
             .send()
             .map_err(|error| attachment_transport_error(error.to_string()))?;
         if response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
@@ -1338,6 +1348,79 @@ mod tests {
                 "mobile messaging attachment Station returned HTTP 416".to_string(),
             )
         );
+    }
+
+    #[test]
+    fn attachment_download_request_uses_canonical_conversation_header() {
+        let transport = StationAttachmentTransferTransport::new(
+            "http://127.0.0.1:18080".to_string(),
+            "token".to_string(),
+            "bob-1".to_string(),
+            CryptoEndpoint {
+                ptid: "ptid:bob".to_string(),
+                device_id: "bob-1".to_string(),
+            },
+        )
+        .unwrap();
+        let transfer = AttachmentTransferRecord {
+            attachment_id: "attachment-1".to_string(),
+            conversation_id: "conversation-1".to_string(),
+            message_id: "message-1".to_string(),
+            authority_station_id: "station:local".to_string(),
+            direction: 2,
+            state: AttachmentTransferState::Queued as i32,
+            upload_id: String::new(),
+            generation: 0,
+            descriptor_sha256: vec![0; 32],
+            completed_chunk_bitmap: vec![0],
+            source_local_ref: String::new(),
+            partial_local_ref: "attachment-1.part".to_string(),
+            object_key: vec![1; 32],
+            base_nonce: vec![2; 12],
+            plaintext_size: 4,
+            chunk_size: 4,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 1,
+            last_error_code: 0,
+            updated_at_unix_ms: 1,
+        };
+        let descriptor = EncryptedObjectDescriptor {
+            object_id: "object-1".to_string(),
+            storage_ref: "storage-1".to_string(),
+            ciphertext_size: 20,
+            ciphertext_sha256: vec![3; 32],
+            media_type: "application/octet-stream".to_string(),
+            chunk_size: 4,
+            chunk_count: 1,
+            encryption_suite: 1,
+            tag_size: 16,
+            nonce_strategy: 1,
+            chunk_ciphertext_sha256: vec![vec![4; 32]],
+        };
+
+        let request = transport
+            .download_chunk_request(&transfer, &descriptor, 0, 19)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            request.url().as_str(),
+            "http://127.0.0.1:18080/conversation/attachments/objects/object-1"
+        );
+        assert_eq!(
+            request.headers()["X-Peers-Conversation-ID"],
+            "conversation-1"
+        );
+        assert_eq!(
+            request.headers()["X-Peers-Authority-Station-ID"],
+            "station:local"
+        );
+        assert_eq!(
+            request.headers()[IF_MATCH],
+            format!("\"{}\"", "03".repeat(32))
+        );
+        assert_eq!(request.headers()[RANGE], "bytes=0-19");
     }
 
     #[test]

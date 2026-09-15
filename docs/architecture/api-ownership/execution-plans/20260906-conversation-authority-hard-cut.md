@@ -2045,3 +2045,25 @@ headers, but the peer client still omits them from its error chain. CA-W6
 admits one final diagnostic-only refinement to include those bounded headers
 and identify the exact owner-layer operation, field, and reason before any
 behavioral correction.
+
+Diagnostic checkpoint `d11a0bd1ff39fc48b6f2b8110dc1c183fa76d6a1`
+was deployed exactly to both Stations. Run
+`20260915T022051068995Z-07fc86aa04fcf6acb5e9c93b7446d9f4`
+returns the exact typed authority failure:
+`CONVERSATION_INVALID_ARGUMENT`, `operation=valueobject.validate`,
+`field=conversation_id`, `reason=is required`. Mobile alone encodes the
+attachment conversation scope as a `conversation_id` query parameter, while
+the canonical Station handler and Desktop transport require
+`X-Peers-Conversation-ID`. The receiver Home therefore constructs a federated
+request with an empty Conversation ID. CA-W6 admits the Mobile transport owner
+fix: remove the non-canonical query parameter, emit the canonical header, and
+add request-construction regression coverage matching Desktop. Station must
+not gain a compatibility query read or fallback.
+
+The Mobile transport owner fix is implemented: attachment object requests now
+send `X-Peers-Conversation-ID` and no longer encode the Conversation identity
+as a query parameter. The focused
+`attachment_download_request_uses_canonical_conversation_header` regression
+passes and asserts the canonical URL plus Conversation, Authority, ETag, and
+Range headers. Exact-source checkpoint, deployment, and the same receiver-open
+Journey remain required before `FUNCTIONAL_PASS`.
