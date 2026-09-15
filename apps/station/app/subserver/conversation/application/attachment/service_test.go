@@ -204,9 +204,15 @@ type attachmentRuntime struct {
 
 func TestServiceUploadGrantAndRangeDownload(t *testing.T) {
 	ctx := context.Background()
-	service, repository, conversations := newAttachmentFixture(t)
 	alice := valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-1"}
 	bob := valueobject.Endpoint{Actor: "ptid:bob", Device: "bob-1"}
+	runtime := newAttachmentRuntime(
+		t,
+		validConversationSnapshot(alice, bob),
+	)
+	service := runtime.service
+	repository := runtime.repository
+	conversations := runtime.conversations
 	ciphertext := bytes.Repeat([]byte{0x7a}, 32)
 	ciphertextHash := valueobject.HashBytes(ciphertext)
 	spec := attachment.UploadSpec{
@@ -383,6 +389,57 @@ func TestServiceUploadGrantAndRangeDownload(t *testing.T) {
 		End:              -1,
 	}); !attachment.IsCode(err, attachment.ErrorCodeETagMismatch) {
 		t.Fatalf("wrong ETag error = %v", err)
+	}
+
+	runtime.activeDevices[bob] = false
+	if _, err := service.Download(ctx, bob, attachment.DownloadRequest{
+		ConversationID:   "conversation-1",
+		ObjectID:         completed.Object.ObjectID,
+		ExpectedETag:     ciphertextHash,
+		AuthorityStation: "station:local",
+		Start:            4,
+		End:              9,
+	}); !attachment.IsCode(err, attachment.ErrorCodeUnauthorized) {
+		t.Fatalf("inactive local endpoint download error = %v", err)
+	}
+	remoteDownload, err := service.DownloadFromVerifiedHome(
+		ctx,
+		bob,
+		"station:remote",
+		attachment.DownloadRequest{
+			ConversationID:   "conversation-1",
+			ObjectID:         completed.Object.ObjectID,
+			ExpectedETag:     ciphertextHash,
+			AuthorityStation: "station:local",
+			Start:            4,
+			End:              9,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer remoteDownload.Body.Close()
+	remoteBody, err := io.ReadAll(remoteDownload.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(remoteBody, ciphertext[4:10]) {
+		t.Fatalf("remote download body = %x", remoteBody)
+	}
+	if _, err := service.DownloadFromVerifiedHome(
+		ctx,
+		bob,
+		"station:local",
+		attachment.DownloadRequest{
+			ConversationID:   "conversation-1",
+			ObjectID:         completed.Object.ObjectID,
+			ExpectedETag:     ciphertextHash,
+			AuthorityStation: "station:local",
+			Start:            4,
+			End:              9,
+		},
+	); !attachment.IsCode(err, attachment.ErrorCodeInvalidArgument) {
+		t.Fatalf("local Station used verified-remote download path: %v", err)
 	}
 }
 

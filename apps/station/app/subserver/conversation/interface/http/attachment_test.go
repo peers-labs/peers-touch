@@ -15,7 +15,10 @@ import (
 )
 
 type attachmentApplicationStub struct {
-	beginRequest attachment.BeginRequest
+	beginRequest       attachment.BeginRequest
+	downloadEndpoint   valueobject.Endpoint
+	downloadRequest    attachment.DownloadRequest
+	downloadSourceHome valueobject.StationID
 }
 
 func (s *attachmentApplicationStub) Begin(
@@ -74,10 +77,12 @@ func (s *attachmentApplicationStub) Cancel(
 }
 
 func (s *attachmentApplicationStub) Download(
-	context.Context,
-	valueobject.Endpoint,
-	attachment.DownloadRequest,
+	_ context.Context,
+	authenticated valueobject.Endpoint,
+	request attachment.DownloadRequest,
 ) (attachment.DownloadResult, error) {
+	s.downloadEndpoint = authenticated
+	s.downloadRequest = request
 	return attachment.DownloadResult{
 		Object: attachment.Object{
 			ObjectID:   "object-1",
@@ -99,6 +104,16 @@ func (s *attachmentApplicationStub) Download(
 		Start:     0,
 		End:       3,
 	}, nil
+}
+
+func (s *attachmentApplicationStub) DownloadFromVerifiedHome(
+	ctx context.Context,
+	authenticated valueobject.Endpoint,
+	sourceHome valueobject.StationID,
+	request attachment.DownloadRequest,
+) (attachment.DownloadResult, error) {
+	s.downloadSourceHome = sourceHome
+	return s.Download(ctx, authenticated, request)
 }
 
 func TestAttachmentHandlerMapsCanonicalBeginContract(t *testing.T) {
@@ -181,7 +196,8 @@ func TestAttachmentHandlerMapsCanonicalBeginContract(t *testing.T) {
 }
 
 func TestAttachmentHandlerMapsDownloadAndTypedErrors(t *testing.T) {
-	handler, err := conversationhttp.NewAttachmentHandler(&attachmentApplicationStub{})
+	stub := &attachmentApplicationStub{}
+	handler, err := conversationhttp.NewAttachmentHandler(stub)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,6 +226,37 @@ func TestAttachmentHandlerMapsDownloadAndTypedErrors(t *testing.T) {
 		download.Start != 0 ||
 		download.End != 3 {
 		t.Fatalf("download = %+v", download)
+	}
+	remoteDownload, err := handler.DownloadFromVerifiedHome(
+		context.Background(),
+		conversationhttp.AuthenticatedActor{
+			PTID:     "ptid:bob",
+			DeviceID: "bob-1",
+		},
+		"station:remote",
+		&chat.GetAttachmentObjectRequest{
+			ConversationId:     "conversation-1",
+			ObjectId:           "object-1",
+			ExpectedEtagSha256: expectedETag.Bytes(),
+			AuthorityStationId: "station:local",
+		},
+		0,
+		3,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer remoteDownload.Body.Close()
+	if stub.downloadSourceHome != "station:remote" ||
+		stub.downloadEndpoint !=
+			(valueobject.Endpoint{Actor: "ptid:bob", Device: "bob-1"}) ||
+		stub.downloadRequest.ConversationID != "conversation-1" {
+		t.Fatalf(
+			"verified remote download source=%q endpoint=%+v request=%+v",
+			stub.downloadSourceHome,
+			stub.downloadEndpoint,
+			stub.downloadRequest,
+		)
 	}
 
 	wireError := conversationhttp.AttachmentTransferError(

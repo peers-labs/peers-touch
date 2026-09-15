@@ -2067,3 +2067,28 @@ as a query parameter. The focused
 passes and asserts the canonical URL plus Conversation, Authority, ETag, and
 Range headers. Exact-source checkpoint, deployment, and the same receiver-open
 Journey remain required before `FUNCTIONAL_PASS`.
+
+Header-fix checkpoint `9ceaf88338283201df057ecf4498e6e6995fa5ca`
+was deployed exactly to both Stations. Run
+`20260915T023108381775Z-aaef0221857b9a6792bf70beff7bea3e`
+eliminates the 400 and advances into attachment authorization. Authority
+`four` now reports `attachment.download: device: is not active for the
+authenticated actor`: the local attachment path incorrectly applies its
+authority-local Actor Device lookup to Bob, whose device truth is owned by the
+signed remote Home `fiveArm`. CA-W6 admits the owner-layer correction already
+required by MP-D23: keep local client downloads behind authority-local active
+device checks, add an explicit verified-remote-Home application path that
+relies on the authenticated peer assertion, and retain the immutable
+event-time recipient grant as the sole object ACL. No remote Actor shadow row,
+current-membership lookup, client-to-authority call, or fallback is permitted.
+Focused application, HTTP adapter, and production composition regressions must
+prove both the local-device rejection and remote verified-Home success before
+the next exact-source Journey.
+
+The verified-remote-Home attachment path is implemented. Local downloads still
+require an authority-local active device; federated downloads require a
+distinct validated source Home, consume the already verified peer identity,
+and authorize object access only through the immutable actor grant. The
+focused service/HTTP/production tests, complete Conversation race suite,
+focused `go vet`, and `git diff --check` pass. Exact-source checkpoint,
+deployment, and the same receiver-open Journey remain required.
