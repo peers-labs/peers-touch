@@ -2761,7 +2761,7 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("...capabilitySession.facts", scenario)
         self.assertIn("...capabilitySession.facts", loop_helper)
         self.assertIn("turnId: turn.turnId", scenario)
-        self.assertIn("turnId: turn.turnId", loop_helper)
+        self.assertIn("turnId,", loop_helper)
 
         resolver_start = source.index(
             "async function resolveFoundationToolTurnSession"

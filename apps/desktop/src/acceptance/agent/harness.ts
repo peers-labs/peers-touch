@@ -2690,7 +2690,6 @@ async function startFoundationToolTurn(input: {
   label: string;
   repeatUntilStopped?: boolean;
   requestedBudget?: AgentRuntimeBudgetInput;
-  selectConversation?: boolean;
   streamId?: string;
   onConversationCreated?: (
     conversationId: string,
@@ -2704,13 +2703,10 @@ async function startFoundationToolTurn(input: {
     provider_id: input.agent.provider,
     model_name: input.agent.model,
   });
-  if (input.selectConversation) {
-    await useChatStore.getState().selectSession(conversation.conversation_id);
-  }
-  const argumentsJSON = JSON.stringify(input.fixture.arguments);
-  const content = input.repeatUntilStopped
-    ? `Call ${input.fixture.toolName} with ${argumentsJSON}. After every tool result, call the same tool again with the same arguments. Do not stop voluntarily; let the runtime tool-loop budget stop the turn.`
-    : `Call ${input.fixture.toolName} exactly once with ${argumentsJSON}. After the tool result, answer with one short sentence and do not call another tool.`;
+  const content = foundationToolTurnContent(
+    input.fixture,
+    input.repeatUntilStopped === true,
+  );
   const observed = startObservedFoundationTurn({
     conversationId: conversation.conversation_id,
     agentId,
@@ -2745,6 +2741,16 @@ async function startFoundationToolTurn(input: {
     streamId,
     observed,
   };
+}
+
+function foundationToolTurnContent(
+  fixture: FoundationToolFixture,
+  repeatUntilStopped: boolean,
+): string {
+  const argumentsJSON = JSON.stringify(fixture.arguments);
+  return repeatUntilStopped
+    ? `Call ${fixture.toolName} with ${argumentsJSON}. After every tool result, call the same tool again with the same arguments. Do not stop voluntarily; let the runtime tool-loop budget stop the turn.`
+    : `Call ${fixture.toolName} exactly once with ${argumentsJSON}. After the tool result, answer with one short sentence and do not call another tool.`;
 }
 
 async function runDevelopmentInvalidResourceReferenceScenario(input: {
@@ -3552,82 +3558,152 @@ async function runFoundationToolLoopBudget(input: {
   sampleId: string;
   selectConversation?: boolean;
 }): Promise<{
-  turn: FoundationToolTurn;
+  conversationId: string;
+  turnId: string;
+  events: ObservedFoundationTurnResult['events'];
   sourceReplay: Record<string, unknown>;
   replay: Record<string, unknown>;
   facts: Record<string, unknown>;
 }> {
   const capabilitySession = await resolveFoundationToolTurnSession();
-  const turn = await startFoundationToolTurn({
-    agent: input.agent,
-    capabilitySessionId: capabilitySession.capabilitySessionId,
-    fixture: input.fixture,
-    sampleId: input.sampleId,
-    label: 'loop-budget',
-    repeatUntilStopped: true,
-    selectConversation: input.selectConversation,
-    requestedBudget: {
-      max_tool_calls: FOUNDATION_LOOP_MAX_TOOL_CALLS,
-    },
-  });
-  const source = await waitForFoundationToolFacts(
-    turn.turnId,
-    (facts, replay) =>
-      facts.length > 0
-      && facts.every((fact) => Number(fact.status) === ToolCallStatus.SUCCEEDED)
-      && Number(replay.status) === AgentTurnStatus.FAILED
-      && String(
-        evidenceField(replay, 'terminalReason', 'terminal_reason') ?? '',
-      ) === 'max_tool_calls_exhausted',
-    'Foundation ToolCall loop budget',
-    600_000,
-  );
-  const observedIterations = Number(
-    evidenceField(source.replay, 'toolIterations', 'tool_iterations') ?? 0,
-  );
-  const maximumIterations = Number(
-    evidenceField(
-      source.replay,
-      'toolIterationLimit',
-      'tool_iteration_limit',
-    ) ?? 0,
-  );
-  const attempts = evidenceArray(
-    evidenceField(source.replay, 'attempts', 'attempts'),
-    'foundationF04LoopAttempts',
-  );
-  const latestAttempt = evidenceRecord(
-    attempts[attempts.length - 1],
-    'foundationF04LoopAttempt',
-  );
-  const runtimeSnapshot = evidenceRecord(
-    evidenceField(latestAttempt, 'runtimeSnapshot', 'runtime_snapshot'),
-    'foundationF04LoopRuntimeSnapshot',
-  );
-  const effectiveBudget = evidenceRecord(
-    evidenceField(runtimeSnapshot, 'budget', 'budget'),
-    'foundationF04LoopEffectiveBudget',
-  );
-  const effectiveLimit = Number(
-    evidenceField(effectiveBudget, 'maxToolCalls', 'max_tool_calls') ?? 0,
-  );
-  const terminalReason = String(
-    evidenceField(source.replay, 'terminalReason', 'terminal_reason') ?? '',
-  );
-  if (
-    observedIterations !== FOUNDATION_LOOP_MAX_TOOL_CALLS
-    || effectiveLimit !== FOUNDATION_LOOP_MAX_TOOL_CALLS
-    || maximumIterations !== FOUNDATION_LOOP_MAX_TOOL_CALLS
-    || terminalReason !== 'max_tool_calls_exhausted'
-    || source.facts.length !== observedIterations
-  ) {
-    throw new Error('agent.acceptance.foundationToolLoopBudgetNotObserved');
+  let conversationId = '';
+  let turnId = '';
+  let events: ObservedFoundationTurnResult['events'] = [];
+  let unsubscribe: (() => void) | null = null;
+  if (input.selectConversation) {
+    const agentId = input.agent.id || input.agent.name;
+    const conversation = await api.createAgentConversation({
+      agent_id: agentId,
+      title: `Foundation loop-budget ${input.sampleId}`,
+      provider_id: input.agent.provider,
+      model_name: input.agent.model,
+    });
+    conversationId = conversation.conversation_id;
+    await useChatStore.getState().selectSession(conversationId);
+    unsubscribe = eventBus.subscribe(EVENT.AGENT_TURN_STREAM_EVENT, (payload) => {
+      if (payload.conversationId !== conversationId) return;
+      const sourceDelivery = (
+        payload as typeof payload & {
+          sourceDelivery?: AgentTurnSourceDelivery;
+        }
+      ).sourceDelivery;
+      events.push({
+        event: payload.event,
+        data: evidenceValue(payload.data) as Record<string, unknown>,
+        observedAt: new Date().toISOString(),
+        sourceDelivery,
+      });
+    });
+    const sent = useChatStore.getState().sendMessage(
+      foundationToolTurnContent(input.fixture, true),
+      [],
+      {
+        clientIdempotencyKey: crypto.randomUUID(),
+        requestedBudget: {
+          max_tool_calls: FOUNDATION_LOOP_MAX_TOOL_CALLS,
+        },
+      },
+    );
+    if (!sent) {
+      unsubscribe();
+      throw new Error('agent.acceptance.loopBudgetSendRejected');
+    }
+    await waitFor(
+      () => {
+        turnId = useChatStore.getState().operations[conversationId]?.turnId
+          ?? observedTurnId(events);
+        return turnId.length > 0;
+      },
+      'loop-budget Turn identity',
+      30_000,
+    );
+  } else {
+    const turn = await startFoundationToolTurn({
+      agent: input.agent,
+      capabilitySessionId: capabilitySession.capabilitySessionId,
+      fixture: input.fixture,
+      sampleId: input.sampleId,
+      label: 'loop-budget',
+      repeatUntilStopped: true,
+      requestedBudget: {
+        max_tool_calls: FOUNDATION_LOOP_MAX_TOOL_CALLS,
+      },
+    });
+    conversationId = turn.conversationId;
+    turnId = turn.turnId;
+    events = turn.observed.events;
   }
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  const replay = await foundationDiagnosticReplay(turn.turnId);
-  const executionAfterLimit =
-    foundationDiagnosticToolFacts(replay)
-      .reduce(
+  try {
+    const source = await waitForFoundationToolFacts(
+      turnId,
+      (facts, replay) =>
+        facts.length > 0
+        && facts.every((fact) => Number(fact.status) === ToolCallStatus.SUCCEEDED)
+        && Number(replay.status) === AgentTurnStatus.FAILED
+        && String(
+          evidenceField(replay, 'terminalReason', 'terminal_reason') ?? '',
+        ) === 'max_tool_calls_exhausted',
+      'Foundation ToolCall loop budget',
+      600_000,
+    );
+    const observedIterations = Number(
+      evidenceField(source.replay, 'toolIterations', 'tool_iterations') ?? 0,
+    );
+    const maximumIterations = Number(
+      evidenceField(
+        source.replay,
+        'toolIterationLimit',
+        'tool_iteration_limit',
+      ) ?? 0,
+    );
+    const attempts = evidenceArray(
+      evidenceField(source.replay, 'attempts', 'attempts'),
+      'foundationF04LoopAttempts',
+    );
+    const latestAttempt = evidenceRecord(
+      attempts[attempts.length - 1],
+      'foundationF04LoopAttempt',
+    );
+    const runtimeSnapshot = evidenceRecord(
+      evidenceField(latestAttempt, 'runtimeSnapshot', 'runtime_snapshot'),
+      'foundationF04LoopRuntimeSnapshot',
+    );
+    const effectiveBudget = evidenceRecord(
+      evidenceField(runtimeSnapshot, 'budget', 'budget'),
+      'foundationF04LoopEffectiveBudget',
+    );
+    const effectiveLimit = Number(
+      evidenceField(effectiveBudget, 'maxToolCalls', 'max_tool_calls') ?? 0,
+    );
+    const terminalReason = String(
+      evidenceField(source.replay, 'terminalReason', 'terminal_reason') ?? '',
+    );
+    if (
+      observedIterations !== FOUNDATION_LOOP_MAX_TOOL_CALLS
+      || effectiveLimit !== FOUNDATION_LOOP_MAX_TOOL_CALLS
+      || maximumIterations !== FOUNDATION_LOOP_MAX_TOOL_CALLS
+      || terminalReason !== 'max_tool_calls_exhausted'
+      || source.facts.length !== observedIterations
+    ) {
+      throw new Error('agent.acceptance.foundationToolLoopBudgetNotObserved');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const replay = await foundationDiagnosticReplay(turnId);
+    const executionAfterLimit =
+      foundationDiagnosticToolFacts(replay)
+        .reduce(
+          (total, fact) =>
+            total
+            + Number(
+              evidenceField(
+                fact,
+                'executionAttemptCount',
+                'execution_attempt_count',
+              ) ?? 0,
+            ),
+          0,
+        )
+      - source.facts.reduce(
         (total, fact) =>
           total
           + Number(
@@ -3638,41 +3714,34 @@ async function runFoundationToolLoopBudget(input: {
             ) ?? 0,
           ),
         0,
-      )
-    - source.facts.reduce(
-      (total, fact) =>
-        total
-        + Number(
-          evidenceField(
-            fact,
-            'executionAttemptCount',
-            'execution_attempt_count',
-          ) ?? 0,
-        ),
-      0,
-    );
-  return {
-    turn,
-    sourceReplay: source.replay,
-    replay,
-    facts: {
-      stopped:
-        terminalReason === 'max_tool_calls_exhausted'
-        && observedIterations === FOUNDATION_LOOP_MAX_TOOL_CALLS
-        && effectiveLimit === FOUNDATION_LOOP_MAX_TOOL_CALLS
-        && maximumIterations === FOUNDATION_LOOP_MAX_TOOL_CALLS,
-      terminalReason,
-      requestedLimit: FOUNDATION_LOOP_MAX_TOOL_CALLS,
-      effectiveLimit,
-      observedIterations,
-      maximumIterations,
-      capabilitySession: {
-        ...capabilitySession.facts,
-        turnId: turn.turnId,
+      );
+    return {
+      conversationId,
+      turnId,
+      events,
+      sourceReplay: source.replay,
+      replay,
+      facts: {
+        stopped:
+          terminalReason === 'max_tool_calls_exhausted'
+          && observedIterations === FOUNDATION_LOOP_MAX_TOOL_CALLS
+          && effectiveLimit === FOUNDATION_LOOP_MAX_TOOL_CALLS
+          && maximumIterations === FOUNDATION_LOOP_MAX_TOOL_CALLS,
+        terminalReason,
+        requestedLimit: FOUNDATION_LOOP_MAX_TOOL_CALLS,
+        effectiveLimit,
+        observedIterations,
+        maximumIterations,
+        capabilitySession: {
+          ...capabilitySession.facts,
+          turnId,
+        },
+        executionAfterLimit,
       },
-      executionAfterLimit,
-    },
-  };
+    };
+  } finally {
+    unsubscribe?.();
+  }
 }
 
 async function runFoundationF04Scenario(input: {
@@ -21919,8 +21988,8 @@ export function installAcceptanceHarness(): void {
           sampleId,
           selectConversation: true,
         });
-        conversationId = loop.turn.conversationId;
-        turnId = loop.turn.turnId;
+        conversationId = loop.conversationId;
+        turnId = loop.turnId;
 
         let errorMessage = useChatStore.getState().messages.find(
           (message) => (
@@ -21994,7 +22063,7 @@ export function installAcceptanceHarness(): void {
           countProviderCalls(replayAfterAction);
         const toolCallsAfterAction =
           foundationDiagnosticToolFacts(replayAfterAction).length;
-        const terminalEvents = loop.turn.observed.events.filter(
+        const terminalEvents = loop.events.filter(
           (event) => ['error', 'cancelled', 'done'].includes(event.event),
         );
         const stationError = terminalEvents[0]?.data ?? {};
