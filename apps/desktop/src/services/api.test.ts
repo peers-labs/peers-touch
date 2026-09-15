@@ -1152,6 +1152,76 @@ describe('Agent turn stream completion', () => {
         input: { stream_id: startedStreamId },
       })
     })
+    expect(invoke).not.toHaveBeenCalledWith('agent_cancel_turn', expect.anything())
+  })
+
+  it('keeps native stream abort transport-only after observing the turn', async () => {
+    type NativeTurnEvent = {
+      payload: {
+        streamId: string
+        ptid: string
+        event: string
+        data: Record<string, unknown>
+      }
+    }
+    let listener: ((event: NativeTurnEvent) => void) | undefined
+    let startedStreamId = ''
+    mockListen.mockImplementation(async (_event, callback) => {
+      listener = callback as (event: NativeTurnEvent) => void
+      return () => undefined
+    })
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      const streamId = String(
+        (args as { input?: { stream_id?: string } })?.input?.stream_id || '',
+      )
+      if (command === 'agent_execute_turn_stream') startedStreamId = streamId
+      if (command === 'agent_execute_turn_stream' || command === 'agent_cancel_turn_stream') {
+        return Promise.resolve({
+          ok: true,
+          data: {
+            command,
+            status: JSON.stringify({ stream_id: streamId }),
+          },
+        })
+      }
+      return Promise.reject(new Error(`unexpected command: ${command}`))
+    })
+
+    const controller = streamAgentTurn(
+      {
+        client_idempotency_key: 'request-native-transport-only',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'hello',
+      },
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      'ptid:person:owner',
+    )
+    await vi.waitFor(() => expect(startedStreamId).not.toBe(''))
+    listener?.({
+      payload: {
+        streamId: startedStreamId,
+        ptid: 'ptid:person:owner',
+        event: 'text',
+        data: {
+          turnId: 'turn-1',
+          conversationId: 'conversation-1',
+          seq: 1,
+          text: 'partial',
+        },
+      },
+    })
+
+    controller.abort()
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('agent_cancel_turn_stream', {
+        input: { stream_id: startedStreamId },
+      })
+    })
+    expect(invoke).not.toHaveBeenCalledWith('agent_cancel_turn', expect.anything())
   })
 
   it('disconnects a native transport without cancelling the durable turn', async () => {
@@ -1327,11 +1397,7 @@ describe('Agent turn stream completion', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1)
     expect(invoke).not.toHaveBeenCalledWith('agent_cancel_turn', expect.anything())
     controller.abort()
-    await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith('agent_cancel_turn', {
-        input: { turn_id: 'turn-1' },
-      })
-    })
+    expect(invoke).not.toHaveBeenCalledWith('agent_cancel_turn', expect.anything())
   })
 
   it('stops forwarding buffered Browser frames after transport disconnect', async () => {

@@ -22550,6 +22550,332 @@ export function installAcceptanceHarness(): void {
       });
     },
 
+    async runDevelopmentTerminalMutation({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent?.provider || !agent.model) {
+        throw new Error(
+          'agent.acceptance.lifecycleTerminalMutationAgentMissing',
+        );
+      }
+      const agentId = agent.id || agent.name;
+      let conversationId = '';
+      let conversationDeleted = false;
+      let localProjectionCleared = false;
+      let capture: Record<string, unknown> | null = null;
+      let primaryError: unknown = null;
+      const cleanupErrors: unknown[] = [];
+
+      try {
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Lifecycle terminal mutation ${sampleId}`,
+          provider_id: agent.provider,
+          model_name: agent.model,
+        });
+        conversationId = conversation.conversation_id;
+        await useChatStore.getState().selectSession(conversationId);
+        const messageCountBefore = useChatStore.getState().messages.length;
+        const sent = useChatStore.getState().sendMessage(
+          `Reply with exactly "terminal result ${sampleId}" and nothing else.`,
+          [],
+          { clientIdempotencyKey: crypto.randomUUID() },
+        );
+        if (!sent) {
+          throw new Error(
+            'agent.acceptance.lifecycleTerminalMutationSendRejected',
+          );
+        }
+        await waitFor(
+          () => useChatStore.getState().messages
+            .slice(messageCountBefore)
+            .some((message) => (
+              message.role === 'assistant'
+              && message.terminalStatus === 'completed'
+              && Boolean(message.turnId)
+              && message.content.trim().length > 0
+            )),
+          'completed terminal-mutation source Turn',
+          120_000,
+        );
+        const completed = [...useChatStore.getState().messages]
+          .reverse()
+          .find((message) => (
+            message.role === 'assistant'
+            && message.terminalStatus === 'completed'
+            && Boolean(message.turnId)
+          ));
+        if (!completed?.turnId) {
+          throw new Error(
+            'agent.acceptance.lifecycleTerminalMutationTurnMissing',
+          );
+        }
+        const turnId = completed.turnId;
+        await useChatStore.getState().syncMessages();
+        const authoritativeMessage = [...useChatStore.getState().messages]
+          .reverse()
+          .find((message) => (
+            message.role === 'assistant'
+            && message.turnId === turnId
+            && message.terminalStatus === 'completed'
+          ));
+        if (!authoritativeMessage) {
+          throw new Error(
+            'agent.acceptance.lifecycleTerminalMutationMessageMissing',
+          );
+        }
+
+        const [readbackBefore, replayBefore] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          foundationDiagnosticReplay(turnId),
+        ]);
+        const terminalHashBefore = await sha256Hex(stableJson({
+          readback: readbackBefore,
+          replay: replayBefore,
+        }));
+        await useChatStore.getState().requestTurnCancellation(
+          turnId,
+          authoritativeMessage.id,
+        );
+
+        await waitFor(
+          () => {
+            const projected = useChatStore.getState().messages.find(
+              (message) => (
+                message.id === authoritativeMessage.id
+                && message.turnId === turnId
+                && message.typedError?.error_type
+                  === 'LIFECYCLE_TERMINAL_MUTATION'
+                && message.resolution?.type === 'openResult'
+              ),
+            );
+            const recovery = document.querySelector<HTMLButtonElement>(
+              '[data-pt-agent-message-error-recovery="open-result"]',
+            );
+            return Boolean(
+              projected
+              && recovery
+              && recovery.getClientRects().length > 0,
+            );
+          },
+          'lifecycle terminal-mutation recovery surface',
+          30_000,
+        );
+
+        const projected = useChatStore.getState().messages.find(
+          (message) => (
+            message.id === authoritativeMessage.id
+            && message.turnId === turnId
+          ),
+        );
+        const recovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="open-result"]',
+        );
+        const errorSurface = document.querySelector<HTMLElement>(
+          `[data-pt-agent-message-id="${authoritativeMessage.id}"]`,
+        );
+        const errorText = errorSurface?.querySelector<HTMLElement>(
+          '[data-pt-agent-message-error-text="agent.errors.lifecycleTerminalMutation"]',
+        );
+        if (!projected || !recovery || !errorSurface || !errorText) {
+          throw new Error(
+            'agent.acceptance.lifecycleTerminalMutationRecoveryMissing',
+          );
+        }
+        const typedError = projected.typedError;
+        const resolution = projected.resolution;
+        const recoveryLabel = recovery.textContent?.trim() ?? '';
+        const errorLabel = errorText.textContent?.trim() ?? '';
+        recovery.click();
+        await waitFor(
+          () => {
+            const view = usePortalStore.getState().activeView;
+            return view?.type === 'turnDetails' && view.turnId === turnId;
+          },
+          'terminal-mutation Turn details',
+          30_000,
+        );
+        await waitFor(
+          () => Boolean(document.querySelector(
+            `[data-agent-turn-details="${turnId}"]`
+            + ' [data-turn-details-state="ready"]',
+          )),
+          'terminal-mutation result readback',
+          30_000,
+        );
+
+        const [readbackAfter, replayAfter] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          foundationDiagnosticReplay(turnId),
+        ]);
+        const terminalHashAfter = await sha256Hex(stableJson({
+          readback: readbackAfter,
+          replay: replayAfter,
+        }));
+        const stationAssistantBefore = readbackBefore.messages.find(
+          (message) => message.turnId === turnId && String(message.role) === '3',
+        ) ?? readbackBefore.messages.find(
+          (message) => (
+            message.turnId === turnId
+            && String(message.role).toLowerCase() === 'assistant'
+          ),
+        );
+        const stationAssistantAfter = readbackAfter.messages.find(
+          (message) => message.messageId === stationAssistantBefore?.messageId,
+        );
+        const eventsBefore = optionalEvidenceArray(
+          evidenceField(replayBefore, 'events', 'events'),
+          'terminalMutationEventsBefore',
+        );
+        const eventsAfter = optionalEvidenceArray(
+          evidenceField(replayAfter, 'events', 'events'),
+          'terminalMutationEventsAfter',
+        );
+        const activeView = usePortalStore.getState().activeView;
+        const facts = {
+          conversationId,
+          turnId,
+          typedError,
+          resolution,
+          receiver: {
+            recoveryVisible: recovery.getClientRects().length > 0,
+            recoveryLabel,
+            expectedRecoveryLabel: i18n.t(
+              'agent.recovery.openResult',
+              { ns: 'agent' },
+            ),
+            errorLabel,
+            expectedErrorLabel: i18n.t(
+              'agent.errors.lifecycleTerminalMutation',
+              { ns: 'agent' },
+            ),
+            projectedResourceId:
+              errorSurface.dataset.ptAgentErrorResourceId ?? '',
+            projectedTerminalStatus:
+              errorSurface.dataset.ptAgentErrorTerminalStatus ?? '',
+            messageTerminalStatus: projected.terminalStatus ?? '',
+            contentBefore: authoritativeMessage.content,
+            contentAfter: projected.content,
+          },
+          result: {
+            opened:
+              activeView?.type === 'turnDetails'
+              && activeView.turnId === turnId,
+            turnId:
+              activeView?.type === 'turnDetails'
+                ? activeView.turnId
+                : '',
+          },
+          terminal: {
+            hashBefore: terminalHashBefore,
+            hashAfter: terminalHashAfter,
+            conversationVersionBefore: readbackBefore.conversation.version,
+            conversationVersionAfter: readbackAfter.conversation.version,
+            messageCountBefore: readbackBefore.messages.length,
+            messageCountAfter: readbackAfter.messages.length,
+            eventCountBefore: eventsBefore.length,
+            eventCountAfter: eventsAfter.length,
+            messageIdBefore: stationAssistantBefore?.messageId ?? '',
+            messageIdAfter: stationAssistantAfter?.messageId ?? '',
+            messageStatusBefore: stationAssistantBefore?.status ?? null,
+            messageStatusAfter: stationAssistantAfter?.status ?? null,
+            messageContentBefore: stationAssistantBefore?.content ?? '',
+            messageContentAfter: stationAssistantAfter?.content ?? '',
+          },
+        };
+        capture = {
+          assertions: {
+            typedTerminalMutation:
+              typedError?.error_type === 'LIFECYCLE_TERMINAL_MUTATION'
+              && typedError.locale_key
+                === 'agent.errors.lifecycleTerminalMutation'
+              && typedError.retryable === false
+              && typedError.terminal === true
+              && stableJson(Object.keys(typedError.details).sort())
+                === stableJson(['resource_id', 'terminal_status'])
+              && typedError.details.resource_id === turnId
+              && typedError.details.terminal_status === 'completed',
+            localizedOpenResultVisible:
+              facts.receiver.recoveryVisible
+              && recoveryLabel === facts.receiver.expectedRecoveryLabel
+              && errorLabel === facts.receiver.expectedErrorLabel,
+            terminalIdentityProjected:
+              facts.receiver.projectedResourceId === turnId
+              && facts.receiver.projectedTerminalStatus === 'completed'
+              && facts.receiver.messageTerminalStatus === 'completed'
+              && resolution?.type === 'openResult'
+              && resolution.turnId === turnId
+              && resolution.terminalStatus === 'completed',
+            openResultOpenedTurnDetails:
+              facts.result.opened
+              && facts.result.turnId === turnId,
+            terminalHashUnchanged:
+              terminalHashBefore === terminalHashAfter
+              && terminalHashBefore.length === 64,
+            zeroTerminalMutation:
+              facts.terminal.conversationVersionBefore
+                === facts.terminal.conversationVersionAfter
+              && facts.terminal.messageCountBefore
+                === facts.terminal.messageCountAfter
+              && facts.terminal.eventCountBefore
+                === facts.terminal.eventCountAfter
+              && facts.terminal.messageIdBefore
+                === facts.terminal.messageIdAfter
+              && facts.terminal.messageStatusBefore
+                === facts.terminal.messageStatusAfter
+              && facts.terminal.messageContentBefore
+                === facts.terminal.messageContentAfter
+              && facts.receiver.contentBefore
+                === facts.receiver.contentAfter,
+          },
+          facts,
+        };
+      } catch (error) {
+        primaryError = error;
+      } finally {
+        usePortalStore.getState().close();
+        if (conversationId) {
+          try {
+            clearFoundationLocalConversationProjection(conversationId);
+            localProjectionCleared = true;
+            const deletionErrorCode = await deleteFoundationConversation(
+              conversationId,
+            );
+            conversationDeleted = deletionErrorCode === ''
+              || deletionErrorCode.includes('AGENT_4004');
+          } catch (error) {
+            cleanupErrors.push(error);
+          }
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw Object.assign(
+          new Error('agent.acceptance.lifecycleTerminalMutationCleanupFailed'),
+          { primaryError, cleanupErrors },
+        );
+      }
+      if (primaryError) throw primaryError;
+      if (!capture) {
+        throw new Error(
+          'agent.acceptance.lifecycleTerminalMutationCaptureMissing',
+        );
+      }
+      return evidenceValue({
+        ...capture,
+        cleanup: {
+          conversationDeleted,
+          localProjectionCleared,
+          status:
+            conversationDeleted && localProjectionCleared
+              ? 'clean'
+              : 'failed',
+        },
+      });
+    },
+
     async runDevelopmentUnknownTool({
       sampleId,
     }: {

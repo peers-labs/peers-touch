@@ -1416,46 +1416,84 @@ func TestRequestCancelDoesNotSignalBeforeDurableCommit(t *testing.T) {
 	}
 }
 
-func TestRequestCancelReturnsDurableTerminalWinner(t *testing.T) {
-	db := openConversationAuthorityDB(t, "cancel_terminal_winner")
-	now := time.Now()
-	if err := db.Create(&persistence.Conversation{
-		ID: "conv_cancel_winner", AgentID: "agent_1", ActorPTID: "actor_1",
-		Title: "Cancel terminal winner", Status: "active", CreatedAt: now, UpdatedAt: now,
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Create(&persistence.AgentTurn{
-		ID: "turn_cancel_winner", ConversationID: "conv_cancel_winner",
-		AgentID: "agent_1", Status: string(domain.TurnStatusCompleted), StartedAt: now, EndedAt: &now,
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
+func TestRequestCancelRejectsDurableTerminalWinnerWithoutMutation(t *testing.T) {
+	for _, terminalStatus := range []domain.TurnStatus{
+		domain.TurnStatusCompleted,
+		domain.TurnStatusFailed,
+		domain.TurnStatusCancelled,
+		domain.TurnStatusInterrupted,
+	} {
+		t.Run(string(terminalStatus), func(t *testing.T) {
+			db := openConversationAuthorityDB(t, "cancel_terminal_winner_"+string(terminalStatus))
+			now := time.Now()
+			conversationID := "conv_cancel_winner_" + string(terminalStatus)
+			turnID := "turn_cancel_winner_" + string(terminalStatus)
+			if err := db.Create(&persistence.Conversation{
+				ID: conversationID, AgentID: "agent_1", ActorPTID: "actor_1",
+				Title: "Cancel terminal winner", Status: "active", CreatedAt: now, UpdatedAt: now,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			turn := persistence.AgentTurn{
+				ID: turnID, ConversationID: conversationID,
+				AgentID: "agent_1", Status: string(terminalStatus), StartedAt: now, EndedAt: &now,
+			}
+			if err := db.Create(&turn).Error; err != nil {
+				t.Fatal(err)
+			}
+			before, err := json.Marshal(turn)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	svc := TurnService{convService: NewConversationService()}
-	executionCtx, release := svc.RegisterTurn(context.Background(), "turn_cancel_winner")
-	defer release()
+			svc := TurnService{convService: NewConversationService()}
+			executionCtx, release := svc.RegisterTurn(context.Background(), turnID)
+			defer release()
 
-	status, err := svc.RequestCancelTurn(context.Background(), "actor_1", "turn_cancel_winner")
-	if err != nil {
-		t.Fatalf("request cancellation: %v", err)
-	}
-	if status != string(domain.TurnStatusCompleted) {
-		t.Fatalf("cancel status = %q, want durable completed winner", status)
-	}
-	select {
-	case <-executionCtx.Done():
-		t.Fatalf("completed winner was signalled as cancelled: %v", context.Cause(executionCtx))
-	default:
-	}
-	var cancelledEvents int64
-	if err := db.Model(&persistence.TurnEvent{}).
-		Where("turn_id = ? AND event_type = ?", "turn_cancel_winner", "cancelled").
-		Count(&cancelledEvents).Error; err != nil {
-		t.Fatal(err)
-	}
-	if cancelledEvents != 0 {
-		t.Fatalf("completed winner produced %d cancellation events", cancelledEvents)
+			_, err = svc.RequestCancelTurn(context.Background(), "actor_1", turnID)
+			var businessError *errcode.BizError
+			if !errors.As(err, &businessError) {
+				t.Fatalf("request cancellation error = %T %v, want BizError", err, err)
+			}
+			if businessError.Code != errcode.AgentLifecycleTerminalMutation {
+				t.Fatalf("error code = %q, want %q", businessError.Code, errcode.AgentLifecycleTerminalMutation)
+			}
+			if businessError.Payload == nil ||
+				businessError.Payload.GetErrorType() != string(errcode.AgentLifecycleTerminalMutation) ||
+				businessError.Payload.GetLocaleKey() != errcode.AgentLifecycleTerminalMutationLocaleKey ||
+				businessError.Payload.GetRetryable() ||
+				!businessError.Payload.GetTerminal() ||
+				businessError.Payload.GetDetails()["resource_id"] != turnID ||
+				businessError.Payload.GetDetails()["terminal_status"] != string(terminalStatus) {
+				t.Fatalf("terminal mutation payload = %+v", businessError.Payload)
+			}
+			select {
+			case <-executionCtx.Done():
+				t.Fatalf("terminal winner was signalled as cancelled: %v", context.Cause(executionCtx))
+			default:
+			}
+
+			var reloaded persistence.AgentTurn
+			if err := db.First(&reloaded, "id = ?", turnID).Error; err != nil {
+				t.Fatal(err)
+			}
+			after, err := json.Marshal(reloaded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(after) != string(before) {
+				t.Fatalf("terminal turn mutated:\nbefore=%s\nafter=%s", before, after)
+			}
+			var cancellationEvents int64
+			if err := db.Model(&persistence.TurnEvent{}).
+				Where("turn_id = ?", turnID).
+				Count(&cancellationEvents).Error; err != nil {
+				t.Fatal(err)
+			}
+			if cancellationEvents != 0 {
+				t.Fatalf("terminal winner produced %d events", cancellationEvents)
+			}
+		})
 	}
 }
 

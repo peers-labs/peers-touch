@@ -36,6 +36,7 @@ const (
 	AgentLifecycleCancelled            Code = "LIFECYCLE_CANCELLED"
 	AgentLifecycleInterrupted          Code = "LIFECYCLE_INTERRUPTED"
 	AgentLifecycleStaleVersion         Code = "LIFECYCLE_STALE_VERSION"
+	AgentLifecycleTerminalMutation     Code = "LIFECYCLE_TERMINAL_MUTATION"
 	AgentProviderCredentialMissing     Code = "PROVIDER_CREDENTIAL_MISSING"
 	AgentProviderRateLimit             Code = "PROVIDER_RATE_LIMIT"
 	AgentProviderModelUnavailable      Code = "PROVIDER_MODEL_UNAVAILABLE"
@@ -70,6 +71,7 @@ const (
 	AgentLifecycleCancelledLocaleKey            = "agent.errors.lifecycleCancelled"
 	AgentLifecycleInterruptedLocaleKey          = "agent.errors.lifecycleInterrupted"
 	AgentLifecycleStaleVersionLocaleKey         = "agent.errors.lifecycleStaleVersion"
+	AgentLifecycleTerminalMutationLocaleKey     = "agent.errors.lifecycleTerminalMutation"
 	AgentProviderCredentialMissingLocaleKey     = "agent.errors.providerCredentialMissing"
 	AgentProviderRateLimitLocaleKey             = "agent.errors.providerRateLimit"
 	AgentProviderModelUnavailableLocaleKey      = "agent.errors.providerModelUnavailable"
@@ -422,6 +424,26 @@ func NewLifecycleStaleVersion(resourceID string, expectedRevision, actualRevisio
 				"resource_id":       resourceID,
 				"expected_revision": strconv.FormatUint(expectedRevision, 10),
 				"actual_revision":   strconv.FormatUint(actualRevision, 10),
+			},
+		},
+	}
+}
+
+// NewLifecycleTerminalMutation rejects mutation of an already-terminal resource.
+func NewLifecycleTerminalMutation(resourceID, terminalStatus string) *BizError {
+	return &BizError{
+		Code:       AgentLifecycleTerminalMutation,
+		HTTPStatus: http.StatusConflict,
+		Message:    AgentLifecycleTerminalMutationLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentLifecycleTerminalMutationLocaleKey,
+			ErrorType: string(AgentLifecycleTerminalMutation),
+			LocaleKey: AgentLifecycleTerminalMutationLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"resource_id":     resourceID,
+				"terminal_status": terminalStatus,
 			},
 		},
 	}

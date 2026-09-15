@@ -400,6 +400,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     ? 'configure-credential'
     : message.resolution?.type === 'openOriginal'
       ? 'open-original'
+      : message.resolution?.type === 'openResult'
+        ? 'open-result'
       : message.resolution?.type === 'editQueue'
         ? 'edit-queue'
         : message.resolution?.type === 'selectRuntime'
@@ -522,6 +524,27 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     openTurnDetails(message.id, resolution.turnId);
   }, [message.id, message.resolution, message.turnId, openTurnDetails, t]);
 
+  const handleOpenResult = useCallback(() => {
+    const resolution = message.resolution;
+    if (
+      resolution?.type !== 'openResult'
+      || !resolution.turnId
+      || resolution.turnId !== message.turnId
+      || resolution.terminalStatus !== message.terminalStatus
+    ) {
+      toast.error(t('chat.message.turnDetails.loadFailed'));
+      return;
+    }
+    openTurnDetails(message.id, resolution.turnId);
+  }, [
+    message.id,
+    message.resolution,
+    message.terminalStatus,
+    message.turnId,
+    openTurnDetails,
+    t,
+  ]);
+
   const handleOpenOriginal = useCallback((turnId: string) => {
     const originalMessage = useChatStore.getState().messages.find(
       (candidate) => (
@@ -625,6 +648,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-error-resource-kind={message.typedError?.details.resource_kind}
       data-pt-agent-error-resource-ref-hash={message.typedError?.details.resource_ref_hash}
       data-pt-agent-error-resource-id={message.typedError?.details.resource_id}
+      data-pt-agent-error-terminal-status={message.typedError?.details.terminal_status}
       data-pt-agent-error-capability-id={message.typedError?.details.capability_id}
       data-pt-agent-error-turn-id={message.typedError?.details.turn_id}
       data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
@@ -901,6 +925,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                     size="small"
                     danger={
                       message.resolution.type !== 'openOriginal'
+                      && message.resolution.type !== 'openResult'
                       && message.resolution.type !== 'editQueue'
                       && message.resolution.type !== 'selectRuntime'
                       && message.resolution.type !== 'retryLater'
@@ -921,6 +946,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         ? <Settings size={14} />
                         : message.resolution.type === 'openOriginal'
                           ? <ExternalLink size={14} />
+                          : message.resolution.type === 'openResult'
+                            ? <Activity size={14} />
                           : message.resolution.type === 'editQueue'
                             ? <ListOrdered size={14} />
                             : message.resolution.type === 'switchAccount'
@@ -956,6 +983,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                           handleOpenOriginal(
                             message.resolution!.existingCommandId ?? '',
                           );
+                          return;
+                        }
+                        if (message.resolution!.type === 'openResult') {
+                          handleOpenResult();
                           return;
                         }
                         if (message.resolution!.type === 'editQueue') {

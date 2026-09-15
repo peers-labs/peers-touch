@@ -6870,6 +6870,9 @@ func (s *TurnService) cancelTurnWithResult(
 				}
 			}
 			result.Status = turn.Status
+			if isTerminalTurnDomainStatus(domain.TurnStatus(turn.Status)) {
+				return errcode.NewLifecycleTerminalMutation(turn.ID, turn.Status)
+			}
 			if turn.Status != string(domain.TurnStatusRunning) &&
 				turn.Status != string(domain.TurnStatusWaitingLocalTool) {
 				return nil

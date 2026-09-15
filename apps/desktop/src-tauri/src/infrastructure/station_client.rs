@@ -15,9 +15,10 @@ use std::time::Duration;
 const INTERACTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const TURN_EXECUTION_WALL_TIME: Duration = Duration::from_secs(300);
 const TURN_EXECUTION_RESPONSE_MARGIN: Duration = Duration::from_secs(5);
-const SAFE_ERROR_DETAIL_FIELDS: [&str; 10] = [
+const SAFE_ERROR_DETAIL_FIELDS: [&str; 11] = [
     "resource_kind",
     "resource_id",
+    "terminal_status",
     "expected_revision",
     "actual_revision",
     "session_id",
@@ -1709,6 +1710,41 @@ mod tests {
         assert_eq!(details["reason"], "is not an active Federation Station");
         assert!(details.get("ignored_string").is_none());
         assert!(details.get("ignored_number").is_none());
+    }
+
+    #[test]
+    fn lifecycle_terminal_mutation_details_survive_json_transport() {
+        let headers = json!({
+            "x-peers-error-code": "LIFECYCLE_TERMINAL_MUTATION",
+            "x-peers-error-locale-key": "agent.errors.lifecycleTerminalMutation",
+            "x-peers-error-retryable": "false",
+            "x-peers-error-terminal": "true",
+            "x-peers-error-details": r#"{
+                "resource_id":"turn-1",
+                "terminal_status":"completed",
+                "private_detail":"must-not-cross"
+            }"#,
+        });
+        let error = build_error_for_status_with_headers(
+            409,
+            "/sub-agent/agent/turn/cancel",
+            "{\"error\":\"terminal mutation\"}",
+            Some(&headers),
+        );
+        let result = error.into_app_result::<serde_json::Value>("Agent turn cancel failed");
+        let app_error = result.error.expect("AppResult error");
+        assert_eq!(app_error.code, ErrorCode::Conflict);
+        let details = app_error.details.expect("typed error details");
+        assert_eq!(details["error_code"], "LIFECYCLE_TERMINAL_MUTATION");
+        assert_eq!(
+            details["locale_key"],
+            "agent.errors.lifecycleTerminalMutation"
+        );
+        assert_eq!(details["retryable"], "false");
+        assert_eq!(details["terminal"], "true");
+        assert_eq!(details["resource_id"], "turn-1");
+        assert_eq!(details["terminal_status"], "completed");
+        assert!(details.get("private_detail").is_none());
     }
 
     #[test]

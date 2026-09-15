@@ -2520,6 +2520,12 @@ export interface AgentTypedErrorPayload {
   details: Record<string, string>;
 }
 
+export type AgentTerminalMutationStatus =
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted';
+
 export interface AgentErrorResolutionAction {
   type:
     | 'reauthCli'
@@ -2538,7 +2544,8 @@ export interface AgentErrorResolutionAction {
     | 'removeReference'
     | 'reconcile'
     | 'recover'
-    | 'reloadLatest';
+    | 'reloadLatest'
+    | 'openResult';
   cliId?: string;
   providerId?: string;
   modelId?: string;
@@ -2565,6 +2572,7 @@ export interface AgentErrorResolutionAction {
   reasonCode?: string;
   expectedRevision?: number;
   actualRevision?: number;
+  terminalStatus?: AgentTerminalMutationStatus;
   label: string;
 }
 
@@ -2616,6 +2624,10 @@ export const AGENT_LIFECYCLE_STALE_VERSION_ERROR_TYPE =
   'LIFECYCLE_STALE_VERSION';
 export const AGENT_LIFECYCLE_STALE_VERSION_LOCALE_KEY =
   'agent.errors.lifecycleStaleVersion';
+export const AGENT_LIFECYCLE_TERMINAL_MUTATION_ERROR_TYPE =
+  'LIFECYCLE_TERMINAL_MUTATION';
+export const AGENT_LIFECYCLE_TERMINAL_MUTATION_LOCALE_KEY =
+  'agent.errors.lifecycleTerminalMutation';
 
 export type AgentForbiddenActorError = AgentTypedErrorPayload & {
   details: {
@@ -2709,6 +2721,13 @@ export type AgentLifecycleStaleVersionError = AgentTypedErrorPayload & {
   };
 };
 
+export type AgentLifecycleTerminalMutationError = AgentTypedErrorPayload & {
+  details: {
+    resource_id: string;
+    terminal_status: AgentTerminalMutationStatus;
+  };
+};
+
 export type AgentInvalidReferenceError = AgentTypedErrorPayload & {
   details: {
     reference_kind: string;
@@ -2746,6 +2765,7 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'tool_version',
   'expected_revision',
   'actual_revision',
+  'terminal_status',
   'capability_id',
   'turn_id',
   'budget_kind',
@@ -2783,6 +2803,12 @@ const AGENT_RUNTIME_BUDGET_KINDS = new Set<AgentRuntimeBudgetKind>([
   'output_tokens',
   'attachments',
   'cost',
+]);
+const AGENT_TERMINAL_MUTATION_STATUSES = new Set<AgentTerminalMutationStatus>([
+  'completed',
+  'failed',
+  'cancelled',
+  'interrupted',
 ]);
 const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/u;
 const RFC3339_UTC_PATTERN =
@@ -3202,6 +3228,29 @@ export function isAgentLifecycleStaleVersionError(
   );
 }
 
+export function isAgentLifecycleTerminalMutationError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentLifecycleTerminalMutationError {
+  if (
+    error?.error_type !== AGENT_LIFECYCLE_TERMINAL_MUTATION_ERROR_TYPE
+    || error.locale_key !== AGENT_LIFECYCLE_TERMINAL_MUTATION_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'resource_id'
+    && detailKeys[1] === 'terminal_status'
+    && error.details.resource_id.trim().length > 0
+    && AGENT_TERMINAL_MUTATION_STATUSES.has(
+      error.details.terminal_status as AgentTerminalMutationStatus,
+    )
+  );
+}
+
 export function resolveAgentTypedErrorAction(
   error: AgentTypedErrorPayload | null | undefined,
 ): AgentErrorResolutionAction | undefined {
@@ -3294,6 +3343,15 @@ export function resolveAgentTypedErrorAction(
       expectedRevision: Number(error.details.expected_revision),
       actualRevision: Number(error.details.actual_revision),
       label: 'agent.recovery.reloadLatest',
+    };
+  }
+  if (isAgentLifecycleTerminalMutationError(error)) {
+    return {
+      type: 'openResult',
+      resourceId: error.details.resource_id,
+      turnId: error.details.resource_id,
+      terminalStatus: error.details.terminal_status,
+      label: 'agent.recovery.openResult',
     };
   }
   if (isAgentInvalidResourceReferenceError(error)) {
@@ -7563,6 +7621,7 @@ export function agentTurnStreamErrorFromData(
       && suppliedResolution.type !== 'removeReference'
       && suppliedResolution.type !== 'retry'
       && suppliedResolution.type !== 'reloadLatest'
+      && suppliedResolution.type !== 'openResult'
     ) {
       error.resolution = suppliedResolution;
     }
@@ -7821,11 +7880,6 @@ export function streamAgentTurn(
       };
       controller.signal.addEventListener('abort', () => {
         transportController.abort();
-        if (turnId) {
-          api.cancelAgentTurn(turnId).catch((error) => {
-            log.warn('api', 'Browser Agent turn cancel failed', { error: String(error) });
-          });
-        }
       }, { once: true });
       try {
         const gatewayBase = String((window as any).__PT_GATEWAY_BASE__ || '');
@@ -7854,9 +7908,6 @@ export function streamAgentTurn(
             });
           }
           if (controller.signal.aborted) {
-            if (turnId) {
-              await api.cancelAgentTurn(turnId);
-            }
             return;
           }
           terminal = await consumeAgentSSE(
@@ -7996,17 +8047,7 @@ export function streamAgentTurn(
       transportDisconnectRequested = true;
       return disconnectTransport();
     };
-    const cancelSemanticTurn = () => {
-      if (!capturedTurnId) return;
-      void api.cancelAgentTurn(capturedTurnId).catch((error) => {
-        log.warn('api', 'Agent turn cancel failed', {
-          turnId: capturedTurnId,
-          error: String(error),
-        });
-      });
-    };
     const abortNativeStream = () => {
-      cancelSemanticTurn();
       cancelTransport();
       cleanup();
     };
@@ -8074,13 +8115,6 @@ export function streamAgentTurn(
         const payload = tauriEvent.payload;
         if (payload.streamId !== streamId) return;
         if (controller.signal.aborted) {
-          const abortedTurnId = typeof payload.data?.turnId === 'string'
-            ? payload.data.turnId
-            : typeof payload.data?.turn_id === 'string'
-              ? payload.data.turn_id
-              : '';
-          if (abortedTurnId) capturedTurnId = abortedTurnId;
-          cancelSemanticTurn();
           unlistenLive?.();
           return;
         }

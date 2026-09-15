@@ -16,6 +16,7 @@ import {
   type AgentRuntimeBudgetInput,
   classifyAgentTurnTerminalEvent,
   isAgentLifecycleStaleVersionError,
+  isAgentLifecycleTerminalMutationError,
   normalizeAgentTurnStreamError,
   resolveAgentTypedErrorAction,
 } from '../services/desktop_api';
@@ -725,6 +726,10 @@ interface ChatState {
   retryMessage: (messageId: string) => Promise<void>;
   deleteAndRegenerateMessage: (messageId: string) => Promise<void>;
   branchFromMessage: (messageId: string) => Promise<void>;
+  requestTurnCancellation: (
+    turnId: string,
+    assistantMessageId?: string,
+  ) => Promise<void>;
   stopStreaming: () => void;
   stopOperation: (sessionKey: string) => void;
   continueGeneration: (messageId: string) => void;
@@ -831,6 +836,43 @@ export function projectAgentRevisionCommandFailure(
     actualRevision: resolution.actualRevision,
     typedError,
     resolution: resolution as AgentRevisionCommandFailure['resolution'],
+  };
+}
+
+export function projectAgentTerminalMutationMessage(
+  message: ChatMessage,
+  error: AgentTurnStreamError,
+  turnId: string,
+  assistantMessageId?: string,
+): ChatMessage {
+  const typedError = error.typedError;
+  const resolution = error.resolution;
+  const matchesMessage = (
+    message.role === 'assistant'
+    && (
+      (assistantMessageId !== undefined && message.id === assistantMessageId)
+      || message.turnId === turnId
+    )
+  );
+  if (
+    !matchesMessage
+    || !isAgentLifecycleTerminalMutationError(typedError)
+    || resolution?.type !== 'openResult'
+    || resolution.resourceId !== turnId
+    || resolution.turnId !== turnId
+    || resolution.terminalStatus !== typedError.details.terminal_status
+  ) {
+    return message;
+  }
+  return {
+    ...message,
+    error: typedError.locale_key,
+    typedError,
+    errorDetail: error.errorDetail || message.errorDetail,
+    resolution,
+    loading: false,
+    terminalStatus: resolution.terminalStatus,
+    cancelled: resolution.terminalStatus === 'cancelled',
   };
 }
 
@@ -2326,6 +2368,57 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     }
   },
 
+  requestTurnCancellation: async (turnId, assistantMessageId) => {
+    try {
+      await api.cancelAgentTurn(turnId);
+    } catch (error) {
+      const normalized = normalizeAgentTurnStreamError(error);
+      const typedError = normalized.typedError;
+      const resolution = normalized.resolution;
+      if (
+        !isAgentLifecycleTerminalMutationError(typedError)
+        || resolution?.type !== 'openResult'
+        || resolution.resourceId !== turnId
+        || resolution.turnId !== turnId
+        || resolution.terminalStatus !== typedError.details.terminal_status
+      ) {
+        throw error;
+      }
+
+      let projected = false;
+      const projectMessages = (messages: ChatMessage[]): ChatMessage[] => {
+        let changed = false;
+        const next = messages.map((message) => {
+          const projectedMessage = projectAgentTerminalMutationMessage(
+            message,
+            normalized,
+            turnId,
+            assistantMessageId,
+          );
+          if (projectedMessage !== message) {
+            projected = true;
+            changed = true;
+          }
+          return projectedMessage;
+        });
+        return changed ? next : messages;
+      };
+      set((state) => {
+        const sessionBuffers = Object.fromEntries(
+          Object.entries(state.sessionBuffers).map(([key, messages]) => [
+            key,
+            projectMessages(messages),
+          ]),
+        );
+        return {
+          messages: projectMessages(state.messages),
+          sessionBuffers,
+        };
+      });
+      if (!projected) throw normalized;
+    }
+  },
+
   stopStreaming: () => {
     get().stopOperation(get().currentSessionKey);
   },
@@ -2334,6 +2427,15 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     log.info('chat', 'Streaming stopped', { sessionKey });
     const op = get().operations[sessionKey];
     if (!op || !isActiveOperation(op)) return;
+    if (op.turnId) {
+      void get().requestTurnCancellation(op.turnId, op.assistantMessageId)
+        .catch((error) => {
+          log.warn('chat', 'Agent turn cancellation failed', {
+            turnId: op.turnId,
+            error: String(error),
+          });
+        });
+    }
     const cancelled = cancelOperation(op);
     set((state) => {
       const isCurrent = state.currentSessionKey === sessionKey;
