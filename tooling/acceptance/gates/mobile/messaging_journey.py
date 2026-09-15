@@ -111,7 +111,7 @@ class MobileMessagingJourney:
             raise GateError(
                 f"{actor.client_id} authenticated identity does not match its Fixture"
             )
-        self._activate_authenticated_shell(session, actor.client_id)
+        self._activate_authenticated_shell(session, actor)
         return {
             "clientId": actor.client_id,
             "stationPeerId": actor.station_peer_id,
@@ -714,21 +714,22 @@ class MobileMessagingJourney:
     def _activate_authenticated_shell(
         self,
         session: MessagingJourneySession,
-        client_id: str,
+        actor: MessagingActor,
     ) -> None:
         restart = self._mapping(
             session.call_action("lifecycle.restart"),
-            f"{client_id} post-login restart",
+            f"{actor.client_id} post-login restart",
         )
         if restart != {"requested": True, "scope": "webview"}:
             raise GateError(
-                f"{client_id} post-login restart was not acknowledged"
+                f"{actor.client_id} post-login restart was not acknowledged"
             )
         session.refresh_webview()
         session.switch_to_app_webview()
+        self._await_authenticated_runtime_scope(session, actor)
         self._await_condition(
-            lambda: self._social_runtime_active(session, client_id),
-            f"{client_id} Social runtime activation",
+            lambda: self._social_runtime_active(session, actor.client_id),
+            f"{actor.client_id} Social runtime activation",
         )
 
     @staticmethod

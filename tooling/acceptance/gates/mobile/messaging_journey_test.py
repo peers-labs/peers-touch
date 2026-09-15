@@ -466,6 +466,7 @@ class MobileMessagingJourneyTests(unittest.TestCase):
     def test_authentication_resolves_canonical_station_account_reference(
         self,
     ) -> None:
+        self.sender_session.scope_bootstrap_reads_per_refresh = 1
         self.journey.authenticate(
             self.sender_session,
             self.sender,
@@ -476,6 +477,10 @@ class MobileMessagingJourneyTests(unittest.TestCase):
         self.assertEqual(self.sender_session.lifecycle_restart_count, 1)
         self.assertEqual(self.sender_session.refresh_count, 1)
         self.assertTrue(self.sender_session.social_runtime_active)
+        self.assertEqual(
+            self.sender_session.lifecycle_scope_phases,
+            ["BOOTSTRAPPING", "ACTIVE"],
+        )
 
     def test_authentication_rejects_non_station_account_reference(self) -> None:
         malformed = MessagingActor(
@@ -510,6 +515,7 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             self.receiver,
             password="1",
         )
+        self.receiver_session.lifecycle_scope_phases.clear()
         self.receiver_session.scope_bootstrap_reads_per_refresh = 1
 
         result = self.journey.run_chat_contacts(

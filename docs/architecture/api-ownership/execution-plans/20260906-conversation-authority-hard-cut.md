@@ -2259,3 +2259,32 @@ membership routing, and Group/event response binding; Mobile Rust compilation,
 formatting, Journey tests, Python compilation, and `git diff --check` pass.
 This is `FOCUSED_PASS`; exact-source checkpoint, two-Station deployment, and
 the same Chat/Contacts Journey remain required.
+
+Checkpoint `caa25aaeffecda220b1852679e37824e6e9b1171` was deployed
+exactly to `four` and `fiveArm`. Chat/Contacts run
+`20260915T053408334229Z-e4575473fde232fe01afd55b7b97192c`
+reaches receiver-perspective `FUNCTIONAL_PASS` for both Direct and Group:
+attachment delivery/open, reaction, edit, read receipt, search, and restart
+readback all pass, as does deterministic cleanup. The ordered final Social run
+`20260915T053922542452Z-e74f374063b569f2bd4bba59f00b477e`
+also passes typing, message delivery, read receipt, and cleanup at the same
+source.
+
+The combined Acceptance run then reproduced the known intermittent post-login
+activation race: Social run
+`20260915T054950878270Z-8e513e3cdab6f7d42206804e1b702c2a`
+timed out waiting for the iOS Social runtime, while the following Chat/Contacts
+run `20260915T055241597000Z-0e92362c33cfea8ac5051fc81b12724b`
+again passed the complete Direct and Group journey. The remaining Social
+failure is the same missing post-refresh readiness barrier in
+`_activate_authenticated_shell`: it polls a business projection immediately
+after WebView refresh instead of first requiring the exact authenticated
+lifecycle scope. CA-W6 admits reusing the existing `ACTIVE` Station/actor
+barrier before Social activation polling, with a focused `BOOTSTRAPPING`
+regression. Product auth, teardown, and Social semantics remain unchanged.
+
+The shared post-refresh barrier now guards both post-login activation and
+message restart readback. The focused Messaging Journey, Social wrapper, and
+Station lifecycle cohort passes 13/13, Python compilation passes, and
+`git diff --check` passes. This is `FOCUSED_PASS`; the ordered exact-source
+Social and Chat/Contacts Gates must be rerun before CA-W6 closure.
