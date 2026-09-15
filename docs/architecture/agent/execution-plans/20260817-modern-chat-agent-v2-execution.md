@@ -1977,14 +1977,14 @@ and zero local-path leakage.
     Blocked preflights no longer reset a fixture they did not acquire.
   - Native process, renderer, gateway, WebDriver, Conversation, actor Fixture,
     profile lease, source lease, and provisioner cleanup all completed.
-- **Next action**: freeze the shared typed-error contract and implement
-  `G-FE1-SC1` without running C08 or the 419-cell Foundation Gate.
+- **Next action**: advance to `G-FE1-SC6 / BASE-STALE_VERSION` without
+  running C08 or the 419-cell Foundation Gate.
 
 #### G-FE1 Source Closure Inventory
 
 - **Inventory source**: the reviewed 28-family `foundation_errors` matrix,
   production Station/Desktop paths, and direct Harness/oracle registration.
-- **Owner-layer source complete (20)**:
+- **Owner-layer source complete (21)**:
   `BASE-QUEUE_FULL`,
   `BASE-RUNTIME_UNAVAILABLE`,
   `BASE-DUPLICATE_CONFLICT`, `BASE-ACTIVE_MUTATION_CONFLICT`,
@@ -1994,13 +1994,13 @@ and zero local-path leakage.
   `BASE-MODEL_UNAVAILABLE`, `BASE-PROVIDER_TIMEOUT`,
   `BASE-CONTEXT_OVERFLOW`, `BASE-INVALID_REFERENCE`,
   `BASE-ATTACHMENT_REJECTED`, `BASE-APPROVAL_DENIED`,
-  `BASE-APPROVAL_EXPIRED`, `BASE-CANCELLED`, `BASE-INTERRUPTED`, and
-  `BASE-UNKNOWN_TOOL`.
-- **Exact-source `FUNCTIONAL_PASS` (19)**: all owner-layer-complete families
+  `BASE-APPROVAL_EXPIRED`, `BASE-LOOP_BUDGET_EXHAUSTED`, `BASE-CANCELLED`,
+  `BASE-INTERRUPTED`, and `BASE-UNKNOWN_TOOL`.
+- **Exact-source `FUNCTIONAL_PASS` (20)**: all owner-layer-complete families
   above except `BASE-UNKNOWN_TOOL`, whose real-provider Development Journey is
   blocked before product execution by the disposable Agent's missing enabled
   `skills_list` binding.
-- **Source-incomplete (8)**:
+- **Source-incomplete (7)**:
 
 | Cluster | Families | Missing closure |
 |---|---|---|
@@ -2008,7 +2008,6 @@ and zero local-path leakage.
 | `G-FE1-SC2` Runtime selection | `BASE-RESUME_UNAVAILABLE` | external-session reset command, typed outcome, confirmation action, and direct Journey |
 | `G-FE1-SC3` Client execution | `BASE-PERMISSION_DENIED`, `BASE-TARGET_DISCONNECTED` | Desktop/Station implementation beyond Mobile contract-only coverage |
 | `G-FE1-SC4` Provider terminalization | `BASE-RATE_LIMIT` | deterministic real 429 trigger without a synthetic provider response |
-| `G-FE1-SC5` Tool control | `BASE-LOOP_BUDGET_EXHAUSTED` | accepted budget details/action |
 | `G-FE1-SC6` Lifecycle concurrency | `BASE-STALE_VERSION`, `BASE-TERMINAL_MUTATION` | canonical lifecycle rejection and contextual recovery action |
 
 - **Execution order**: finish `G-FE1-NORMAL-SEND`, freeze the shared typed-error
@@ -2129,7 +2128,26 @@ and zero local-path leakage.
     unchanged precondition failure.
   - `BASE-UNKNOWN_TOOL` remains `FUNCTIONAL_UNPROVEN` until the disposable
     profile contains a real user-configured enabled `skills_list` binding.
-    `BASE-LOOP_BUDGET_EXHAUSTED` is the next dependency-ready source vertical.
+  - `BASE-LOOP_BUDGET_EXHAUSTED` is `FUNCTIONAL_PASS`. Checkpoints
+    `95d7703a0` through `42ed40d18` replace public `reason,limit,consumed`
+    inference with the exact `turn_id,budget_kind,limit` Station payload,
+    persist that payload on the terminal assistant message, and expose only
+    the localized `Inspect budget` action into the existing Turn Details
+    surface.
+  - Exact-source Native Development run `20260915T210907965069Z` on
+    `42ed40d18` passed all seven independent assertions: the real AS-F04
+    repeated-tool path stopped at `max_tool_calls=2`, emitted one typed
+    terminal, produced no next ToolCall or execution, rendered and activated
+    `Inspect budget`, opened the matching Turn Details, performed no automatic
+    retry, and completed Conversation/binding/Fixture/process/port/storage/
+    provisioner cleanup.
+  - Failed run `20260915T204112333743Z` exposed that the first runner used a
+    direct stream outside the Chat store. Failed run
+    `20260915T205904285999Z` then proved the canonical SSE payload while
+    authoritative message sync erased recovery because terminal
+    `error_json` was absent. Both root causes are closed in the passing source.
+    `G-FE1-SC6 / BASE-STALE_VERSION` is the next dependency-ready source
+    vertical.
 - **Gate boundary**: do not run C08 or the 419-cell Foundation Gate while any
   source-incomplete family remains.
 - **C08 diagnostic after the boundary changed (2026-09-15)**: run
@@ -2143,7 +2161,7 @@ and zero local-path leakage.
 #### G-FE1 Concurrency Decision
 
 - **Mode**: hybrid.
-- **Active loop-budget slice**: serial. The Station turn-scoped budget
+- **Completed loop-budget slice**: serial. The Station turn-scoped budget
   terminal payload, Desktop typed-error projection and `Inspect budget`
   action, shared AS-F04 loop driver, checkpoint/deploy, and Native receiver
   Journey form one causally ordered path. The integrator owns
@@ -2156,8 +2174,8 @@ and zero local-path leakage.
   projection, the shared disposable Fixture, checkpoint/deploy, and the Native
   receiver Journey form one causally ordered evidence path. The integrator owns
   every write and the final reconciliation.
-- **Next tool-control slice**: serial during owner-path inspection and contract
-  freeze for `BASE-UNKNOWN_TOOL`; shared Tool registry/runtime, Desktop
+- **Next lifecycle slice**: serial during owner-path inspection and contract
+  freeze for `BASE-STALE_VERSION`; shared lifecycle services, Desktop
   projection, Harness, checkpoint/deploy, and runtime evidence remain
   integrator-owned.
 - **Shared contract freeze — integrator, serial first**:
