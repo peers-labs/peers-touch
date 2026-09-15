@@ -7,6 +7,7 @@ import unittest
 
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
+    _rfc3339_millis,
     evaluate_base_attachment_rejected,
     evaluate_base_approval_expired,
     evaluate_base_approval_denied,
@@ -4037,6 +4038,31 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "boundedDetails",
         ):
             evaluate_base_lease_expired(capture)
+
+    def test_lease_expired_accepts_variable_rfc3339_fraction_precision(
+        self,
+    ) -> None:
+        for timestamp, equivalent in (
+            ("2026-09-15T13:28:44.1Z", "2026-09-15T13:28:44.100000Z"),
+            ("2026-09-15T13:28:44.91269Z", "2026-09-15T13:28:44.912690Z"),
+            (
+                "2026-09-15T13:28:44.123456789+08:00",
+                "2026-09-15T13:28:44.123456+08:00",
+            ),
+        ):
+            with self.subTest(timestamp=timestamp):
+                self.assertEqual(
+                    _rfc3339_millis(
+                        {"expired_at": timestamp},
+                        "expired_at",
+                        scenario="BASE-LEASE-EXPIRED",
+                    ),
+                    _rfc3339_millis(
+                        {"expired_at": equivalent},
+                        "expired_at",
+                        scenario="BASE-LEASE-EXPIRED",
+                    ),
+                )
 
     def test_lease_expired_requires_visible_executed_reconcile(self) -> None:
         capture = valid_lease_expired_capture()

@@ -5830,15 +5830,22 @@ def _rfc3339_millis(
     scenario: str,
 ) -> int:
     item = _nonempty_string(value, key, scenario=scenario)
-    if re.fullmatch(
-        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?"
-        r"(?:Z|[+-]\d{2}:\d{2})",
+    match = re.fullmatch(
+        r"(?P<date>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"
+        r"(?:\.(?P<fraction>\d+))?"
+        r"(?P<offset>Z|[+-]\d{2}:\d{2})",
         item,
-    ) is None:
+    )
+    if match is None:
         raise GroupOneScenarioError(
             f"{scenario} {key} must be an RFC3339 timestamp"
         )
-    normalized = f"{item[:-1]}+00:00" if item.endswith("Z") else item
+    fraction = match.group("fraction")
+    normalized_fraction = (
+        f".{fraction[:6].ljust(6, '0')}" if fraction is not None else ""
+    )
+    offset = "+00:00" if match.group("offset") == "Z" else match.group("offset")
+    normalized = f"{match.group('date')}{normalized_fraction}{offset}"
     try:
         parsed = datetime.fromisoformat(normalized)
     except ValueError as error:
