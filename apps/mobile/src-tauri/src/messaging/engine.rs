@@ -1401,9 +1401,7 @@ impl MobileMessagingEngine {
                 "payloadType": item.payload_type,
                 "payloadSize": item.opaque_payload.len(),
             });
-            std::thread::spawn(move || {
-                let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"V-X","location":"apps/mobile/src-tauri/src/messaging/engine.rs:consume.entry","msg":"[DEBUG] Mobile inbox consumer received item","data":debug_data}).to_string()).send();
-            });
+            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"V-X","location":"apps/mobile/src-tauri/src/messaging/engine.rs:consume.entry","msg":"[DEBUG] Mobile inbox consumer received item","data":debug_data}).to_string()).send();
         }
         // #endregion
         // #region debug-point X-Y:command-result-shape
@@ -1425,9 +1423,7 @@ impl MobileMessagingEngine {
                     "error": error.to_string(),
                 }),
             };
-            std::thread::spawn(move || {
-                let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"X-Y","location":"apps/mobile/src-tauri/src/messaging/engine.rs:consume.command_result","msg":"[DEBUG] Mobile decoded command-result queue item","data":debug_data}).to_string()).send();
-            });
+            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"X-Y","location":"apps/mobile/src-tauri/src/messaging/engine.rs:consume.command_result","msg":"[DEBUG] Mobile decoded command-result queue item","data":debug_data}).to_string()).send();
         }
         // #endregion
         let result = self.consumer.consume(item, consumer_epoch);
@@ -1438,9 +1434,7 @@ impl MobileMessagingEngine {
                 "payloadType": item.payload_type,
                 "result": result.as_ref().err(),
             });
-            std::thread::spawn(move || {
-                let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"V-W","location":"apps/mobile/src-tauri/src/messaging/engine.rs:consume.exit","msg":"[DEBUG] Mobile inbox consumer completed item","data":debug_data}).to_string()).send();
-            });
+            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7788/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-command-result-consume","runId":"pre-fix","hypothesisId":"V-W","location":"apps/mobile/src-tauri/src/messaging/engine.rs:consume.exit","msg":"[DEBUG] Mobile inbox consumer completed item","data":debug_data}).to_string()).send();
         }
         // #endregion
         result
