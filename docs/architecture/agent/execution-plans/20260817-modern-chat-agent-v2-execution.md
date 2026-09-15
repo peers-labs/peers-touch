@@ -1717,7 +1717,7 @@ and zero local-path leakage.
 #### G-FE1 DevelopmentWorkItem: Client Capability Lease Expiry
 
 - **ID**: `G-FE1-LEASE-EXPIRED`.
-- **Status**: `FOCUSED_PASS`; exact-source Development Journey remains
+- **Status**: `FUNCTIONAL_PASS`; C08 and the complete Foundation Gate remain
   `UNPROVEN`.
 - **Product contract**: `CLIENT_LEASE_EXPIRED` /
   `agent.errors.clientLeaseExpired`, retryable and non-terminal, with exactly
@@ -1919,6 +1919,25 @@ and zero local-path leakage.
     the three Station lease/replay tests pass, strict TypeScript and diff
     hygiene pass. The Journey remains `UNPROVEN`; C08 and the 419-cell Gate
     remain `NOT RUN` after this failure.
+  - Instrumentation checkpoint `2086b4d71` disproved the remaining
+    persistence/tail/parser hypotheses in Development run
+    `20260915T132305999899Z`: Station durably emitted sequence 39, the open
+    Browser replay consumed it, and the receiver rendered
+    `CLIENT_LEASE_EXPIRED` with `Reconcile`. All nine business assertions were
+    true. The run failed only because Python 3.9 `datetime.fromisoformat`
+    rejected Station's valid five-digit RFC3339 fractional seconds.
+  - Checkpoint `3e745334c` normalizes RFC3339 fractional seconds to Python's
+    six-digit parser precision without weakening timestamp validation; focused
+    Group One scenario/probe tests pass `189/189`, Python compilation and diff
+    hygiene pass, the dedicated Desktop Acceptance binary
+    `dbf6da819ff65c7a4fede0ffe8a61f4d7e44c50e9f38c1214a5f153253213158`
+    passes embedded-WebDriver smoke, and Station attests the same clean source.
+    Exact-source Browser/en Development run `20260915T134604170541Z` passes all
+    nine lease-expiry assertions, including receiver DOM, authoritative
+    sequence 30 runtime delivery, unchanged current lease, zero replay-created
+    execution/side effects, replay equality, and complete reverse cleanup.
+    `G-FE1-LEASE-EXPIRED` is therefore `FUNCTIONAL_PASS`. C08 and the unchanged
+    419-cell Foundation Gate remain `NOT RUN` on this checkpoint.
 
 #### G-FE1 Concurrency Decision
 
