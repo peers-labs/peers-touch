@@ -81,7 +81,7 @@ The route prefix follows the semantic owner:
 | Recovery revision | Recovery | `/recovery/*` | opaque Station storage |
 | Attachment byte transfer | Conversation Authority data plane | `/conversation/attachments/*` | opaque byte-store adapter |
 | Direct/MLS key packages and DKX | Key Exchange | `/key-exchange/*` | Actor Device Identity |
-| Content PreKey publish/inventory (`SC-D20` proposed) | Key Exchange | `/key-exchange/content-prekeys/*` | Actor Device Identity verified-key capability |
+| Content PreKey publish/inventory (`SC-D20` accepted) | Key Exchange | `/key-exchange/content-prekeys/*` | Actor Device Identity verified-key capability |
 | Cross-Station delivery | Federation transport | peer-only `/federation/*` | typed domain adapters |
 
 ## 4. Runtime Units And Boundaries

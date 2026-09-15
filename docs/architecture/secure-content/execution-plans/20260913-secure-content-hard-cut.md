@@ -403,6 +403,11 @@ Mode: `hybrid`.
 - W5 follows W6 because its real recovery query consumes the Social-owned
   private resource, grant and recovery-envelope substrate.
 - W6 is serial because one Social UOW/schema owner integrates the minimal slice.
+- W7A source execution is serial under one integrator because the accepted
+  proto, scoped generated outputs, canonical server mode, auth proof, Key
+  Exchange receipt transaction and exact-source service Journey form one
+  interface/verification chain. Independent read-only review may run in
+  parallel after the combined source is stable.
 - W7 checkpoint, deploy, runtime and Journey are serial.
 - After W7 `FUNCTIONAL_PASS`, W8 runs its subtype Journeys; W9 consumes the
   resulting complete Social contract and remains serial behind W8.
@@ -861,8 +866,8 @@ python3 -m tooling.development.secure_content.run \
   scoped proto/generated outputs, API-ownership registry/Gate and an
   exact-source service Journey. W7 depends on W7A and owns the
   Desktop Native/store/UI plus serial Desktop and Browser runtime Journeys.
-  W7A has no runtime claims and remains non-executable until `SC-D20` is
-  accepted.
+  W7A has no runtime claims; the 2026-09-15 Owner acceptance of `SC-D20`
+  released it to the source execution queue.
 - **Native lifecycle**: W7 owns encrypted persist-before-publish state,
   `UNKNOWN_COMMIT` reconciliation, per-key root-commit deletion, epoch-keyed
   recovery handling, account/device/session-generation supervision and
@@ -1369,7 +1374,7 @@ observations is invalid.
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
 | W5 | recovery | complete | `9bf7e3934` | PASS (`sc-dj-recovery-consumer`) | NOT_RUN | none |
 | W6 | Social minimum | complete | `d2731a220` | PASS (`sc-dj-social-uow-atomicity`) | NOT_RUN | none |
-| W7A | Content PreKey client boundary | parked | none | NOT_RUN | NOT_RUN | `SC-D20` Owner acceptance |
+| W7A | Content PreKey client boundary | in progress | none | NOT_RUN | NOT_RUN | none |
 | W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | W7A; active MCA Desktop and NDR Station owners |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
 | W9 | Mobile | parked | none | NOT_RUN | NOT_RUN | W5/W7/W8; Mobile claim |
@@ -1521,12 +1526,12 @@ Current evidence:
 - W7 pre-execution inventory found that W3 exposes Content PreKey publication
   and inventory only as an internal Key Exchange capability. No governed
   client route, API-ownership entry, Desktop Native transport, encrypted local
-  PreKey lifecycle or W7-authorized Station write set exists. Proposed
-  `SC-D20` defines the bounded client boundary. Final independent
+  PreKey lifecycle or W7-authorized Station write set exists. `SC-D20` defines
+  the bounded client boundary. Final independent
   security/lifecycle and architecture/API ownership reviews returned `PASS`
-  with no material findings; Owner acceptance remains required before W7A
-  implementation. Active MCA Desktop and NDR Station/runtime claims remain
-  separately parked.
+  with no material findings; the Owner accepted `SC-D20` on 2026-09-15 and
+  released source-only W7A implementation. Active MCA Desktop and NDR
+  Station/runtime claims remain separately parked.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level

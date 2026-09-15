@@ -30,7 +30,7 @@
 | `SC-D17` | Social private prepare and submit use durable records and distinct routes | accepted |
 | `SC-D18` | Social encrypted objects use typed control messages and bounded raw-byte routes | accepted |
 | `SC-D19` | Durable content proofs use current-key attestations for retained Station public keys | accepted |
-| `SC-D20` | Content PreKey maintenance uses canonical Key Exchange client routes | proposed |
+| `SC-D20` | Content PreKey maintenance uses canonical Key Exchange client routes | accepted |
 
 ---
 
@@ -860,7 +860,7 @@ The Owner accepted this decision on 2026-09-14.
 
 ## SC-D20: Content PreKey Maintenance Uses Canonical Key Exchange Client Routes
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-09-15
 
 ### Context
@@ -1221,8 +1221,7 @@ epoch or heuristic expiry.
 
 ### Consequences
 
-The execution plan now carries source-only `W7A` before W7, parked until Owner
-acceptance:
+The execution plan carries source-only `W7A` before W7:
 
 | Field | Required projection |
 |---|---|
@@ -1272,6 +1271,8 @@ persist-before-publish crash recovery, batch/per-key state, fresh-inventory
 reconciliation, supervisor teardown and retained-key safety. W7 still requires
 its existing exact-source Desktop and Browser `FUNCTIONAL_PASS`; W7A service
 evidence does not satisfy that exit.
+
+The Owner accepted this decision on 2026-09-15.
 
 ---
 
