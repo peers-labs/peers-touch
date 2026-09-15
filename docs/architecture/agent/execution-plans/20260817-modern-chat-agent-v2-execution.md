@@ -1844,6 +1844,20 @@ and zero local-path leakage.
     strict check and production build pass, Native static tests pass `89/89`,
     and diff hygiene passes. The exact-source Development Journey remains
     `UNPROVEN` pending a new checkpoint and serialized rerun.
+  - Exact-source run `20260915T081455551699Z` on checkpoint `df63cdeab`
+    confirmed the same-cursor recovery correction in the real Browser
+    receiver. The sequence-33 `waiting_local_tool` snapshot was accepted and
+    the assistant projection converged to `loading=true` with no terminal
+    marker, so the prior `lease-expired reconciliation` timeout did not recur.
+    The next first failure was
+    `agent.acceptance.foundationLeaseRuntimeIdentityMismatch` in the final
+    source-delivery check. Reverse-order cleanup was clean. Acceptance-only
+    boolean instrumentation now distinguishes source-delivery presence,
+    stream identity, transport, actor, Conversation, Turn, sequence, event
+    type, and normalized-payload equality without exposing identifiers or
+    changing the assertion. Focused Desktop tests pass `49/49`, strict
+    TypeScript and Native static tests `89/89` pass, and the next exact-source
+    diagnostic remains pending.
 
 #### G-FE1 Concurrency Decision
 

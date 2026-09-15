@@ -4989,6 +4989,30 @@ async function completeFoundationLeaseExpiredScenario(input: {
   scenario.bindingRestored = bindingRestored;
   const sourceDelivery = runtimeEvent.sourceDelivery;
   const streamId = scenario.turn.streamId;
+  // #region debug-point Z:lease-runtime-identity
+  const sourcePayload = sourceDelivery
+    ? normalizeProjectedStationPayload(sourceDelivery.rawPayload.data)
+    : null;
+  const runtimePayload = normalizeProjectedStationPayload(runtimeEvent.data);
+  await reportFoundationLeaseApprovalStallDebug('Z', 'runtime-identity-check', {
+    sourceDeliveryPresent: Boolean(sourceDelivery),
+    streamIdPresent: Boolean(streamId),
+    transportMatches: sourceDelivery?.transport === 'station-sse',
+    actorMatches:
+      sourceDelivery?.ptid === authenticatedFoundationActorPtid(),
+    conversationMatches:
+      sourceDelivery?.conversationId === scenario.turn.conversationId,
+    turnMatches: sourceDelivery?.turnId === scenario.turn.turnId,
+    sequencePositive: Number(sourceDelivery?.sequence ?? 0) > 0,
+    eventTypeMatches: sourceDelivery?.rawPayload.eventType === 'progress',
+    payloadMatches:
+      sourcePayload !== null
+      && stableJson(sourcePayload) === stableJson(runtimePayload),
+    sourcePayloadHash:
+      sourcePayload === null ? null : await sha256Hex(stableJson(sourcePayload)),
+    runtimePayloadHash: await sha256Hex(stableJson(runtimePayload)),
+  });
+  // #endregion
   if (
     !sourceDelivery
     || !streamId
