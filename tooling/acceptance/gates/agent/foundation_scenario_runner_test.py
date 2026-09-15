@@ -159,6 +159,23 @@ class LeaseExpiredHarnessClient:
         self.negative_control_timeouts: dict[str, float] = {}
         self.executor_availability: list[bool] = []
 
+    @staticmethod
+    def _dispatch_baseline() -> dict[str, object]:
+        facts = valid_lease_expired_capture()
+        station = facts["station"]
+        if not isinstance(station, dict):
+            raise AssertionError("lease station fixture is invalid")
+        return {
+            "toolCallId": station["toolCallIdBefore"],
+            "status": station["statusBefore"],
+            "executionClaimId": station["executionClaimIdBefore"],
+            "executionAttemptCount": station["executionAttemptCountBefore"],
+            "dispatchSequence": station["dispatchSequenceBefore"],
+            "sideEffectReceiptId": station["sideEffectReceiptIdBefore"],
+            "resultId": station["resultId"],
+            "continuationId": station["continuationId"],
+        }
+
     def harness(
         self,
         method: str,
@@ -228,8 +245,13 @@ class LeaseExpiredHarnessClient:
             return {
                 "scenarioKey": request["scenarioKey"],
                 "toolCallId": "tool-call-lease-expired",
+                "dispatchBaseline": self._dispatch_baseline(),
             }
         if method == "completeFoundationLeaseExpired":
+            if request.get("dispatchBaseline") != self._dispatch_baseline():
+                raise AssertionError(
+                    "coordinator did not preserve the dispatch baseline"
+                )
             facts = valid_lease_expired_capture()
             facts["cleanup"]["conversationDeleted"] = False
             return {

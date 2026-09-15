@@ -4483,6 +4483,38 @@ function reportFoundationLeaseApprovalStallDebug(
 }
 // #endregion
 
+function foundationLeaseDispatchSnapshot(
+  fact: Record<string, unknown>,
+): Record<string, unknown> {
+  const stringField = (camelCase: string, snakeCase: string): string =>
+    String(evidenceField(fact, camelCase, snakeCase) ?? '');
+  const numberField = (camelCase: string, snakeCase: string): number =>
+    Number(evidenceField(fact, camelCase, snakeCase) ?? 0);
+
+  return {
+    toolCallId: stringField('toolCallId', 'tool_call_id'),
+    status: diagnosticToolPersistenceStatus(fact),
+    executionClaimId: stringField(
+      'executionClaimId',
+      'execution_claim_id',
+    ),
+    executionAttemptCount: numberField(
+      'executionAttemptCount',
+      'execution_attempt_count',
+    ),
+    dispatchSequence: numberField(
+      'dispatchSequence',
+      'dispatch_sequence',
+    ),
+    sideEffectReceiptId: stringField(
+      'sideEffectReceiptId',
+      'side_effect_receipt_id',
+    ),
+    resultId: stringField('resultId', 'result_id'),
+    continuationId: stringField('continuationId', 'continuation_id'),
+  };
+}
+
 async function dispatchFoundationLeaseExpiredScenario(
   scenarioKey: string,
 ): Promise<Record<string, unknown>> {
@@ -4610,6 +4642,7 @@ async function dispatchFoundationLeaseExpiredScenario(
       turnId: scenario.turn.turnId,
       toolCallId: scenario.toolCallId,
       source: dispatched,
+      dispatchBaseline: foundationLeaseDispatchSnapshot(dispatched.facts[0]),
     };
   } catch (error) {
     const projection = toolRuntime.getProjection(scenario.toolCallId);
@@ -4656,6 +4689,7 @@ async function foundationSessionByHash(
 async function completeFoundationLeaseExpiredScenario(input: {
   scenarioKey: string;
   leaseControl: Record<string, unknown>;
+  dispatchBaseline: Record<string, unknown>;
 }): Promise<Record<string, unknown>> {
   const scenario = foundationLeaseExpiredScenarios.get(input.scenarioKey);
   if (!scenario) {
@@ -4680,6 +4714,10 @@ async function completeFoundationLeaseExpiredScenario(input: {
       'station_error_details',
     ),
     'foundationLeaseExpiredStationError',
+  );
+  const dispatchBaseline = evidenceRecord(
+    input.dispatchBaseline,
+    'foundationLeaseExpiredDispatchBaseline',
   );
   const outcome = projectAgentTypedErrorPayload({
     error: stationError.locale_key,
@@ -4898,15 +4936,25 @@ async function completeFoundationLeaseExpiredScenario(input: {
   if (!currentBefore) {
     throw new Error('agent.acceptance.foundationLeaseReplacementMissing');
   }
-  const beforeReconcile = {
+  const receiverBeforeReconcile = {
+    errorVisible: errorElement.getClientRects().length > 0,
+    errorText: errorElement.textContent?.trim() ?? '',
+    expectedErrorText: i18n.t(
+      'agent.errors.clientLeaseExpired',
+      { ns: 'agent' },
+    ),
+    recoveryVisible: recovery.getClientRects().length > 0,
+    recoveryText: recovery.textContent?.trim() ?? '',
+    expectedRecoveryText: i18n.t(
+      'agent.recovery.reconcile',
+      { ns: 'agent' },
+    ),
     messageLoading: receiverMessage.loading === true,
     terminalStatus: receiverMessage.terminalStatus ?? '',
     toolCallPending: receiverMessage.toolCalls?.some(
       (toolCall) => toolCall.id === scenario.toolCallId && toolCall.pending,
     ) === true,
   };
-  const errorText = errorElement.textContent?.trim() ?? '';
-  const recoveryText = recovery.textContent?.trim() ?? '';
   recovery.click();
   await waitFor(
     () => {
@@ -4949,6 +4997,7 @@ async function completeFoundationLeaseExpiredScenario(input: {
   );
   const sourceFact = source.facts[0];
   const replayedFact = replayed.facts[0];
+  const dispatchAfter = foundationLeaseDispatchSnapshot(sourceFact);
   const sourceErrorHash = await sha256Hex(stableJson(stationError));
   const replayErrorHash = await sha256Hex(stableJson(
     evidenceRecord(
@@ -5066,51 +5115,29 @@ async function completeFoundationLeaseExpiredScenario(input: {
     facts: {
       outcome,
       receiver: {
-        errorVisible: errorElement.getClientRects().length > 0,
-        errorText,
-        expectedErrorText: i18n.t(
-          'agent.errors.clientLeaseExpired',
-          { ns: 'agent' },
-        ),
-        recoveryVisible: recovery.getClientRects().length > 0,
-        recoveryText,
-        expectedRecoveryText: i18n.t(
-          'agent.recovery.reconcile',
-          { ns: 'agent' },
-        ),
+        ...receiverBeforeReconcile,
         recoveryExecuted: true,
         errorClearedAfterReconcile: true,
-        ...beforeReconcile,
       },
       station: {
-        toolCallId: String(
-          evidenceField(sourceFact, 'toolCallId', 'tool_call_id') ?? '',
-        ),
-        status: diagnosticToolPersistenceStatus(sourceFact),
-        resultId: String(
-          evidenceField(sourceFact, 'resultId', 'result_id') ?? '',
-        ),
-        continuationId: String(
-          evidenceField(
-            sourceFact,
-            'continuationId',
-            'continuation_id',
-          ) ?? '',
-        ),
-        executionClaimId: String(
-          evidenceField(
-            sourceFact,
-            'executionClaimId',
-            'execution_claim_id',
-          ) ?? '',
-        ),
-        executionAttemptCount: Number(
-          evidenceField(
-            sourceFact,
-            'executionAttemptCount',
-            'execution_attempt_count',
-          ) ?? 0,
-        ),
+        toolCallId: dispatchAfter.toolCallId,
+        toolCallIdBefore: dispatchBaseline.toolCallId,
+        status: dispatchAfter.status,
+        statusBefore: dispatchBaseline.status,
+        resultId: dispatchAfter.resultId,
+        continuationId: dispatchAfter.continuationId,
+        executionClaimIdBefore: dispatchBaseline.executionClaimId,
+        executionClaimIdAfter: dispatchAfter.executionClaimId,
+        executionAttemptCountBefore:
+          dispatchBaseline.executionAttemptCount,
+        executionAttemptCountAfter: dispatchAfter.executionAttemptCount,
+        dispatchSequenceBefore: dispatchBaseline.dispatchSequence,
+        dispatchSequenceAfter: dispatchAfter.dispatchSequence,
+        sideEffectReceiptIdBefore:
+          dispatchBaseline.sideEffectReceiptId,
+        sideEffectReceiptIdAfter: dispatchAfter.sideEffectReceiptId,
+        resultIdBefore: dispatchBaseline.resultId,
+        continuationIdBefore: dispatchBaseline.continuationId,
         sourceHash: await sha256Hex(stableJson(sourceFact)),
         replayHash: await sha256Hex(stableJson(replayedFact)),
       },
@@ -18097,7 +18124,22 @@ function evaluateBaseLeaseExpired(
         === Number(after.localExecutionAttemptCount)
       && Number(before.localSideEffectCount)
         === Number(after.localSideEffectCount)
+      && String(station.toolCallIdBefore).length > 0
+      && station.toolCallIdBefore === station.toolCallId
+      && station.statusBefore === 'dispatch_committed'
+      && String(station.executionClaimIdBefore).length > 0
+      && station.executionClaimIdBefore === station.executionClaimIdAfter
+      && Number(station.executionAttemptCountBefore) > 0
+      && Number(station.executionAttemptCountBefore)
+        === Number(station.executionAttemptCountAfter)
+      && Number(station.dispatchSequenceBefore) > 0
+      && Number(station.dispatchSequenceBefore)
+        === Number(station.dispatchSequenceAfter)
+      && station.sideEffectReceiptIdBefore === ''
+      && station.sideEffectReceiptIdAfter === ''
+      && station.resultIdBefore === ''
       && station.resultId === ''
+      && station.continuationIdBefore === ''
       && station.continuationId === ''
     ),
     replayEqual: (
@@ -21496,6 +21538,7 @@ export function installAcceptanceHarness(): void {
     async completeFoundationLeaseExpired(input: {
       scenarioKey: string;
       leaseControl: Record<string, unknown>;
+      dispatchBaseline: Record<string, unknown>;
     }) {
       return evidenceValue(
         await completeFoundationLeaseExpiredScenario(input),
@@ -24492,7 +24535,17 @@ export function installAcceptanceHarness(): void {
           localSideEffect:
             Number(after.localSideEffectCount)
             - Number(before.localSideEffectCount),
-          stationExecutionAttempt: Number(station.executionAttemptCount),
+          stationExecutionAttempt:
+            Number(station.executionAttemptCountAfter)
+            - Number(station.executionAttemptCountBefore),
+          stationExecutionClaim:
+            station.executionClaimIdBefore === station.executionClaimIdAfter
+              ? 0
+              : 1,
+          stationSideEffect:
+            station.sideEffectReceiptIdBefore === station.sideEffectReceiptIdAfter
+              ? 0
+              : 1,
           result: station.resultId === '' ? 0 : 1,
           continuation: station.continuationId === '' ? 0 : 1,
         };
@@ -25003,6 +25056,19 @@ export function installAcceptanceHarness(): void {
                 const localSideEffectDelta =
                   Number(after.localSideEffectCount)
                   - Number(before.localSideEffectCount);
+                const stationExecutionAttemptDelta =
+                  Number(station.executionAttemptCountAfter)
+                  - Number(station.executionAttemptCountBefore);
+                const stationExecutionClaimDelta =
+                  station.executionClaimIdBefore
+                    === station.executionClaimIdAfter
+                    ? 0
+                    : 1;
+                const stationSideEffectDelta =
+                  station.sideEffectReceiptIdBefore
+                    === station.sideEffectReceiptIdAfter
+                    ? 0
+                    : 1;
                 const stationResultDelta = station.resultId === '' ? 0 : 1;
                 const continuationDelta =
                   station.continuationId === '' ? 0 : 1;
@@ -25011,15 +25077,18 @@ export function installAcceptanceHarness(): void {
                   count:
                     executionAttemptDelta
                     + localSideEffectDelta
-                    + Number(station.executionAttemptCount)
+                    + stationExecutionAttemptDelta
+                    + stationExecutionClaimDelta
+                    + stationSideEffectDelta
                     + stationResultDelta
                     + continuationDelta,
                   maximum: 0,
                   measurements: {
                     executionAttemptDelta,
                     localSideEffectDelta,
-                    stationExecutionAttemptCount:
-                      station.executionAttemptCount,
+                    stationExecutionAttemptDelta,
+                    stationExecutionClaimDelta,
+                    stationSideEffectDelta,
                     stationResultDelta,
                     continuationDelta,
                   },

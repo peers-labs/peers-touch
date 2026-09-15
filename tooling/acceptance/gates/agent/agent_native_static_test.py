@@ -2189,6 +2189,23 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
         self.assertIn("'lease-expired recovery surface'", scenario)
+        self.assertLess(
+            scenario.index("const receiverBeforeReconcile ="),
+            scenario.index("recovery.click()"),
+        )
+        self.assertIn("...receiverBeforeReconcile,", scenario)
+        self.assertIn(
+            "dispatchBaseline: foundationLeaseDispatchSnapshot(",
+            scenario,
+        )
+        self.assertIn(
+            "executionClaimIdBefore: dispatchBaseline.executionClaimId",
+            scenario,
+        )
+        self.assertIn(
+            "executionAttemptCountAfter: dispatchAfter.executionAttemptCount",
+            scenario,
+        )
         self.assertIn("recovery.click()", scenario)
         self.assertIn("api.cancelAgentTurn(scenario.turn.turnId)", scenario)
         self.assertIn(

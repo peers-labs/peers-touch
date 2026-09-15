@@ -2029,11 +2029,21 @@ def valid_lease_expired_capture() -> dict[str, object]:
         },
         "station": {
             "toolCallId": "tool-call-lease-expired",
+            "toolCallIdBefore": "tool-call-lease-expired",
             "status": "dispatch_committed",
+            "statusBefore": "dispatch_committed",
             "resultId": "",
             "continuationId": "",
-            "executionClaimId": "",
-            "executionAttemptCount": 0,
+            "executionClaimIdBefore": "execution-claim-lease-expired",
+            "executionClaimIdAfter": "execution-claim-lease-expired",
+            "executionAttemptCountBefore": 1,
+            "executionAttemptCountAfter": 1,
+            "dispatchSequenceBefore": 1,
+            "dispatchSequenceAfter": 1,
+            "sideEffectReceiptIdBefore": "",
+            "sideEffectReceiptIdAfter": "",
+            "resultIdBefore": "",
+            "continuationIdBefore": "",
             "sourceHash": "6" * 64,
             "replayHash": "6" * 64,
         },
@@ -4079,6 +4089,23 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "zeroExecutionAndSideEffect",
         ):
             evaluate_base_lease_expired(capture)
+
+        for key, value in (
+            ("executionClaimIdAfter", "execution-claim-replayed"),
+            ("executionAttemptCountAfter", 2),
+            ("dispatchSequenceAfter", 2),
+            ("sideEffectReceiptIdAfter", "side-effect-replayed"),
+            ("resultIdBefore", "result-before-expiry"),
+            ("continuationIdBefore", "continuation-before-expiry"),
+        ):
+            with self.subTest(key=key):
+                capture = valid_lease_expired_capture()
+                capture["station"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "zeroExecutionAndSideEffect",
+                ):
+                    evaluate_base_lease_expired(capture)
 
     def test_lease_expired_requires_identical_request_and_error_replay(
         self,

@@ -1884,6 +1884,22 @@ and zero local-path leakage.
     runner/direct-adapter/probe tests pass `105/105`, Native static tests pass
     `89/89`, strict Desktop TypeScript and diff hygiene pass. The Journey
     remains `UNPROVEN` pending a new checkpoint and serialized rerun.
+  - Checkpoint `1e14dccae` restored the missing runtime-event fact projection.
+    Exact-source Development run `20260915T101716600575Z` then crossed that
+    independent role comparison and failed only
+    `localizedReconcileVisible` and `zeroExecutionAndSideEffect`; reverse-order
+    client, port, profile, and source-lease cleanup was clean. Source and
+    retained runtime evidence identified two evidence-owner defects: the
+    Harness sampled detached error/recovery nodes after `Reconcile` removed
+    them, and the Python oracle treated the legitimate pre-expiry
+    `dispatch_committed` claim as if the rejected old-command replay had
+    created it. The correction freezes receiver visibility/text before the
+    click and carries the dispatch baseline across the coordinator boundary,
+    then requires unchanged ToolCall, claim, attempt count, dispatch sequence,
+    local executor counts, and empty side-effect/result/continuation fields.
+    Focused Python tests pass `337/337`, Desktop tests pass `81/81`, strict
+    TypeScript, Python compilation, and diff hygiene pass. The exact-source
+    Journey remains `UNPROVEN` pending checkpoint and rerun.
 
 #### G-FE1 Concurrency Decision
 

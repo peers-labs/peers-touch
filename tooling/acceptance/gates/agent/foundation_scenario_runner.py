@@ -629,6 +629,11 @@ class FoundationLeaseExpiredCoordinator:
                 raise ScenarioRunnerError(
                     "BASE-LEASE_EXPIRED dispatch is invalid"
                 )
+            dispatch_baseline = dispatched.get("dispatchBaseline")
+            if not isinstance(dispatch_baseline, Mapping):
+                raise ScenarioRunnerError(
+                    "BASE-LEASE_EXPIRED dispatch baseline is invalid"
+                )
             lease_control = executor.harness(
                 "runFoundationCapabilityNegativeControl",
                 {
@@ -654,6 +659,7 @@ class FoundationLeaseExpiredCoordinator:
                 {
                     "scenarioKey": scenario_key,
                     "leaseControl": dict(lease_control),
+                    "dispatchBaseline": dict(dispatch_baseline),
                 },
                 timeout=180,
             )

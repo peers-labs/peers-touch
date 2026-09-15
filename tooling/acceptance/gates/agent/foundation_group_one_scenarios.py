@@ -3915,14 +3915,52 @@ def evaluate_base_lease_expired(
                 "localSideEffectCount",
                 scenario=scenario,
             )
-            and _nonnegative_int(
+            and _nonempty_string(
                 station,
-                "executionAttemptCount",
+                "toolCallIdBefore",
                 scenario=scenario,
             )
-            == 0
-            and station.get("executionClaimId") == ""
+            == _nonempty_string(
+                station,
+                "toolCallId",
+                scenario=scenario,
+            )
+            and station.get("statusBefore") == "dispatch_committed"
+            and _nonempty_string(
+                station,
+                "executionClaimIdBefore",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                station,
+                "executionClaimIdAfter",
+                scenario=scenario,
+            )
+            and _positive_int(
+                station,
+                "executionAttemptCountBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                station,
+                "executionAttemptCountAfter",
+                scenario=scenario,
+            )
+            and _positive_int(
+                station,
+                "dispatchSequenceBefore",
+                scenario=scenario,
+            )
+            == _positive_int(
+                station,
+                "dispatchSequenceAfter",
+                scenario=scenario,
+            )
+            and station.get("sideEffectReceiptIdBefore") == ""
+            and station.get("sideEffectReceiptIdAfter") == ""
+            and station.get("resultIdBefore") == ""
             and station.get("resultId") == ""
+            and station.get("continuationIdBefore") == ""
             and station.get("continuationId") == ""
         ),
         "replayEqual": (
