@@ -21999,28 +21999,60 @@ export function installAcceptanceHarness(): void {
             && message.resolution?.type === 'inspectBudget'
           ),
         );
-        await waitFor(
-          () => {
-            errorMessage = useChatStore.getState().messages.find(
-              (message) => (
-                message.turnId === turnId
-                && message.typedError?.error_type
-                  === 'TOOL_LOOP_BUDGET_EXHAUSTED'
-                && message.resolution?.type === 'inspectBudget'
-              ),
-            );
-            const recovery = document.querySelector<HTMLButtonElement>(
-              '[data-pt-agent-message-error-recovery="inspect-budget"]',
-            );
-            return Boolean(
-              errorMessage
-              && recovery
-              && recovery.getClientRects().length > 0,
-            );
-          },
-          'loop-budget Inspect budget recovery',
-          60_000,
-        );
+        try {
+          await waitFor(
+            () => {
+              errorMessage = useChatStore.getState().messages.find(
+                (message) => (
+                  message.turnId === turnId
+                  && message.typedError?.error_type
+                    === 'TOOL_LOOP_BUDGET_EXHAUSTED'
+                  && message.resolution?.type === 'inspectBudget'
+                ),
+              );
+              const recovery = document.querySelector<HTMLButtonElement>(
+                '[data-pt-agent-message-error-recovery="inspect-budget"]',
+              );
+              return Boolean(
+                errorMessage
+                && recovery
+                && recovery.getClientRects().length > 0,
+              );
+            },
+            'loop-budget Inspect budget recovery',
+            60_000,
+          );
+        } catch (error) {
+          const state = useChatStore.getState();
+          throw new Error(
+            'agent.acceptance.loopBudgetRecoveryTimeout:'
+            + stableJson({
+              cause: error instanceof Error ? error.message : String(error),
+              diagnostics: {
+                currentSessionKey: state.currentSessionKey,
+                operation: state.operations[conversationId] ?? null,
+                messages: state.messages.map((message) => ({
+                  id: message.id,
+                  turnId: message.turnId ?? null,
+                  role: message.role,
+                  error: message.error ?? null,
+                  errorType: message.typedError?.error_type ?? null,
+                  details: message.typedError?.details ?? null,
+                  resolution: message.resolution?.type ?? null,
+                  budgetKind: message.budgetNotice?.kind ?? null,
+                })),
+                terminalEvents: loop.events
+                  .filter((event) => (
+                    ['error', 'cancelled', 'done'].includes(event.event)
+                  ))
+                  .map((event) => ({
+                    event: event.event,
+                    data: event.data,
+                  })),
+              },
+            }),
+          );
+        }
         const recovery = document.querySelector<HTMLButtonElement>(
           '[data-pt-agent-message-error-recovery="inspect-budget"]',
         );
