@@ -1374,7 +1374,7 @@ observations is invalid.
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
 | W5 | recovery | complete | `9bf7e3934` | PASS (`sc-dj-recovery-consumer`) | NOT_RUN | none |
 | W6 | Social minimum | complete | `d2731a220` | PASS (`sc-dj-social-uow-atomicity`) | NOT_RUN | none |
-| W7A | Content PreKey client boundary | in progress | none | NOT_RUN | NOT_RUN | none |
+| W7A | Content PreKey client boundary | in progress | `2eac1fc28` | SOURCE_CHECK/PASS; EC5A BLOCKED/UNPROVEN | NOT_RUN | `MESSAGING_TEST_POSTGRES_DSN` unavailable |
 | W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | W7A; active MCA Desktop and NDR Station owners |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
 | W9 | Mobile | parked | none | NOT_RUN | NOT_RUN | W5/W7/W8; Mobile claim |
@@ -1532,6 +1532,15 @@ Current evidence:
   with no material findings; the Owner accepted `SC-D20` on 2026-09-15 and
   released source-only W7A implementation. Active MCA Desktop and NDR
   Station/runtime claims remain separately parked.
+- W7A source checkpoint `2eac1fc28` implements the accepted canonical protobuf
+  publish/inventory boundary, device-possession proof, transaction-held
+  publication receipts, typed errors, scoped generation and API ownership.
+  Scoped generation/check, Station Go race tests, Desktop/Mobile Rust checks,
+  Desktop/Mobile TypeScript checks, Secure Content Core tests, error parity,
+  API ownership and Development runner tests pass. EC5A remains
+  `BLOCKED/UNPROVEN`: the mandatory fail-closed PostgreSQL corpus cannot run
+  because `MESSAGING_TEST_POSTGRES_DSN` is unavailable, and no substitute
+  evidence is accepted.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level
