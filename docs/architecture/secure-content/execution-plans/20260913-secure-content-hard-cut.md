@@ -814,8 +814,9 @@ python3 -m tooling.development.secure_content.run \
   receipt; exact API ownership entries; service Journey coverage.
 - **Source boundary**: Key Exchange, shared server transport and exact HTTP
   auth/device wrappers, exact PreKey proto and generated outputs, API ownership
-  registry and route scanner, and the W7A Development scenario only. Desktop
-  Native/UI implementation remains W7.
+  registry and route scanner, and the W7A Development scenario plus the shared
+  runner's fail-closed environment-blocker classification. Desktop Native/UI
+  implementation remains W7.
 - **Failure**: noncanonical wire, wrong actor/device, revoked publisher, stale
   epoch, changed command hash, invalid material, oversized body and dependency
   failure return the exact typed code without mutation. Lost-response replay is

@@ -347,6 +347,53 @@ class SecureContentRunnerTest(unittest.TestCase):
             self.assertNotIn(secret, persisted)
             self.assertIn("scenario execution failed", persisted)
 
+    def test_environment_blocker_writes_blocked_result(self) -> None:
+        def execute(_: run.ScenarioContext) -> dict[str, object]:
+            raise run.ScenarioBlocked(
+                "required PostgreSQL DSN is unavailable",
+                kind="DRIVER_FAILED",
+                owner="local-dev-control-plane",
+                retryable=True,
+            )
+
+        scenario = run.ScenarioDefinition(
+            scenario_id="blocked-service",
+            journey_id="journey-1",
+            work_item_id="work-1",
+            runtimes=frozenset({"service"}),
+            evidence_path=Path("W1/SC-AS01/result.json"),
+            execute=execute,
+        )
+
+        with tempfile.TemporaryDirectory() as temp:
+            output_root = Path(temp)
+            with self.assertRaises(run.ScenarioBlocked) as raised:
+                run.execute_scenario(
+                    runtime="service",
+                    scenario_id=scenario.scenario_id,
+                    budget_seconds=10,
+                    repo_root=REPO_ROOT,
+                    result_root=output_root,
+                    registry={scenario.scenario_id: scenario},
+                    workspace_identity=IDENTITY,
+                    command_runner=control_plane_runner(scenario),
+                )
+
+            result = json.loads(
+                (output_root / scenario.evidence_path).read_text(encoding="utf-8")
+            )
+            self.assertEqual("BLOCKED", result["result"])
+            self.assertEqual("DRIVER_FAILED", result["firstFailure"]["kind"])
+            self.assertEqual(
+                "local-dev-control-plane",
+                result["firstFailure"]["owner"],
+            )
+            self.assertTrue(result["firstFailure"]["retryable"])
+            self.assertEqual(
+                (output_root / scenario.evidence_path).resolve(),
+                raised.exception.result_path.resolve(),
+            )
+
     def test_requires_exactly_one_active_current_workspace_declaration(self) -> None:
         scenario = run.ScenarioDefinition(
             scenario_id="test-service",

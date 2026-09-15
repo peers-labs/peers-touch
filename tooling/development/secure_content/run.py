@@ -72,6 +72,22 @@ class ScenarioBudgetExceeded(RunnerError):
     pass
 
 
+class ScenarioBlocked(RunnerError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: str,
+        owner: str,
+        retryable: bool,
+    ):
+        super().__init__(message)
+        self.kind = kind
+        self.owner = owner
+        self.retryable = retryable
+        self.result_path: Optional[Path] = None
+
+
 @dataclass(frozen=True)
 class ScenarioDefinition:
     scenario_id: str
@@ -507,6 +523,8 @@ def _failure_summary(
     error: Exception,
     checks: Sequence[Mapping[str, Any]],
 ) -> str:
+    if isinstance(error, ScenarioBlocked):
+        return str(error)
     if isinstance(error, ScenarioBudgetExceeded):
         return "scenario exceeded the declared budget"
     if checks and checks[-1].get("result") == "FAIL":
@@ -648,10 +666,19 @@ def execute_scenario(
     failure: Optional[str] = None
     detail: Mapping[str, Any] = {}
     failure_kind = "PRODUCT_ASSERTION_FAILED"
+    failure_owner = "source"
+    failure_retryable = False
+    blocked_error: Optional[ScenarioBlocked] = None
     try:
         with _scenario_budget(context.remaining_seconds()):
             detail = _validated_detail(scenario.execute(context))
         context.remaining_seconds()
+    except ScenarioBlocked as error:
+        failure = _failure_summary(error, context.checks)
+        failure_kind = error.kind
+        failure_owner = error.owner
+        failure_retryable = error.retryable
+        blocked_error = error
     except ScenarioBudgetExceeded as error:
         failure = _failure_summary(error, context.checks)
         failure_kind = "TIMEOUT"
@@ -674,7 +701,7 @@ def execute_scenario(
         "scenarioId": scenario.scenario_id,
         "runtime": runtime,
         "verificationClass": VERIFICATION_CLASS,
-        "result": "FAIL" if failure else "PASS",
+        "result": "BLOCKED" if blocked_error else ("FAIL" if failure else "PASS"),
         "workspaceId": identity["workspaceId"],
         "branch": identity["branch"],
         "sourceCommit": identity["head"],
@@ -704,11 +731,14 @@ def execute_scenario(
         result["firstFailure"] = {
             "kind": failure_kind,
             "stage": "FUNCTIONAL_RUNNING",
-            "owner": "source",
+            "owner": failure_owner,
             "summary": failure,
-            "retryable": False,
+            "retryable": failure_retryable,
         }
     _write_json_atomic(output_path, result)
+    if blocked_error:
+        blocked_error.result_path = output_path
+        raise blocked_error
     if failure:
         raise ScenarioFailed(failure, output_path)
     return result
@@ -742,6 +772,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             clients=clients,
             result_root=args.result_root,
         )
+    except ScenarioBlocked as error:
+        output = {"status": "BLOCKED", "message": str(error)}
+        if error.result_path is not None:
+            output["resultPath"] = str(error.result_path)
+        print(json.dumps(output, sort_keys=True), file=sys.stderr)
+        return 2
     except ScenarioFailed as error:
         print(
             json.dumps(

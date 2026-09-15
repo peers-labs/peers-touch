@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
 from tooling.development.secure_content.run import (
     RunnerError,
+    ScenarioBlocked,
     ScenarioContext,
     ScenarioDefinition,
 )
@@ -15,6 +17,13 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
         raise RunnerError(
             "content-prekey-client-boundary service scenario does not accept "
             "profiles or clients"
+        )
+    if not os.environ.get("MESSAGING_TEST_POSTGRES_DSN", "").strip():
+        raise ScenarioBlocked(
+            "MESSAGING_TEST_POSTGRES_DSN is required",
+            kind="DRIVER_FAILED",
+            owner="local-dev-control-plane",
+            retryable=True,
         )
 
     context.run_check(
