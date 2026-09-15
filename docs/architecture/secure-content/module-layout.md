@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-09-13 | **Updated**: 2026-09-14
+> **Created**: 2026-09-13 | **Updated**: 2026-09-15
 > **Owner**: Architecture Team
 
 ---
@@ -12,6 +12,7 @@
 ```text
 model/domain/
 ├── actor/actor.proto
+├── error/error.proto
 ├── key_exchange/key_exchange.proto
 ├── secure_content/
 │   ├── content.proto
@@ -64,6 +65,18 @@ apps/station/frame/core/types/securecontent/
 
 apps/station/frame/touch/model/privatecontent/
 └── private_content.pb.go      # Social-owned generated child package
+
+apps/station/app/subserver/key_exchange/
+├── content_prekey_capability.go
+├── handler.go
+├── application/content_prekey_service.go
+├── domain/content_prekey.go
+└── infrastructure/content_prekey_store.go
+
+apps/station/frame/core/
+├── server/                    # canonical protobuf mode + error projector port
+├── auth/adapter/http/         # structured auth-failure propagation
+└── plugin/native/server/wrapper/
 
 apps/station/app/subserver/conversation/
 ├── application/attachment/     # Conversation route/UOW/grant adapter
@@ -122,8 +135,12 @@ direction may not change.
 | `model/domain/secure_content/` | generic payload/object/envelope contracts | Social audience or Conversation membership |
 | `apps/station/frame/core/types/securecontent/` | generated neutral Secure Content and Content PreKey wire values | Key Exchange pool/service behavior |
 | `apps/station/frame/touch/model/privatecontent/` | generated Social private-content wire projection | shared crypto semantics or independent business authority |
+| `model/domain/error/error.proto` | shared Station API error codes and `ErrorResponse` | Key Exchange pool/replay policy |
 | `packages/secure-content-core/` | portable crypto, codec, object and transfer FSM | platform or business policy |
 | `apps/station/app/internal/securecontent/` | pure validation/transitions/policy/conformance | route, DB, transaction, worker, ACL |
+| `apps/station/app/subserver/key_exchange/` | Content PreKey publish/inventory/claim pools, receipts, quotas and replay | Native private keys or Social policy |
+| `apps/station/frame/core/server/` | model-neutral canonical-protobuf and route-error projector mechanics | generated app-domain error model |
+| auth HTTP/native wrappers | credential validation and structured failure propagation | Key Exchange error-code selection |
 | `conversation/application/attachment/` | Chat route, UOW and grant adapter | copied crypto/transition algorithms |
 | `conversation/infrastructure/attachment/` | Conversation tables, object adapter and workers | Social object state |
 | `social/` | Moment audience, Post/Comment UOW, Social object/grant plane | Chat policy or copied crypto |
@@ -144,6 +161,11 @@ Conversation attachment adapter-+
                                          |
                                          v
                                  storage.Backend
+
+Desktop/Mobile Native
+  -> canonical Key Exchange client routes
+  -> Key Exchange Content PreKey service/store
+  -> Actor Identity verified-device fence
 ```
 
 Forbidden:
@@ -170,6 +192,12 @@ Content PreKey wire values are declared in
 quota, claim and replay authority and imports those frame-owned values through
 the normal `app -> frame` dependency direction. Frame packages must never
 import `app/subserver/key_exchange/model`.
+
+Proposed `SC-D20` adds only Key Exchange-owned publish/inventory routes. The
+shared server exposes a model-neutral error-projector port; the Key Exchange app
+adapter supplies the generated shared `ErrorResponse`, preserving
+`frame/core -> frame/touch/model` separation. W7A owns this source boundary;
+W7 owns Native private-key storage and supervision.
 
 ## 4. Extraction Boundary
 

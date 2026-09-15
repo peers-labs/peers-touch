@@ -193,7 +193,8 @@ planRef = docs/architecture/secure-content/execution-plans/20260913-secure-conte
 | `secure-content-w4` | infrastructure | `SOC-SEC-C03`; `SOC-SEC-AS04` | `SC-A05`; `SC-D08` | `SOC-SEC-J03` | Optional JWT plus generic Development runner bootstrap; exclude domain policy and later scenario logic |
 | `secure-content-w5` | infrastructure | `SOC-SEC-C04/C06/C08`; `SOC-SEC-AS08` | `SC-A02/A08`; `SC-D05/D09` | `SOC-SEC-J07` | recovery derivation/query; exclude Messaging history redesign |
 | `secure-content-w6` | product-behavior | `SOC-SEC-C01/C02/C03/C05/C07`; `SOC-SEC-AS01/03/04/05/06/07/10/12/13/15/16` | `SC-A01..A08`; `SC-D01..D08/D11..D13` | `SOC-SEC-J01/J02/J03/J04/J06/J09` | FRIENDS text+image Social minimum and outer-UOW atomicity; exclude remaining subtypes/Mobile |
-| `secure-content-w7` | product-behavior | `SOC-SEC-C01/C02/C03/C05/C07`; `SOC-SEC-AS01/02/03/04/05/07/10/11/13/15` | `SC-A01..A08`; `SC-D01..D08/D11..D13` | `SOC-SEC-J01/J02/J03/J06/J09` | Desktop pilot plus authenticated Browser boundary Journeys; exclude Acceptance |
+| `secure-content-w7a` | infrastructure | `SOC-SEC-C04/C05/C08`; supporting evidence only | `SC-A03/A04/A08`; `SC-D05/D09/D15/D16/D20` | `sc-dj-content-prekey-client-boundary` | canonical client-facing Content PreKey route and receipt; exclude Desktop UI/runtime and internal claim exposure |
+| `secure-content-w7` | product-behavior | `SOC-SEC-C01/C02/C03/C04/C05/C07`; `SOC-SEC-AS01/02/03/04/05/07/10/11/13/15` | `SC-A01..A08`; `SC-D01..D09/D11..D13/D16/D20` | `SOC-SEC-J01/J02/J03/J06/J09` | Desktop pilot plus authenticated Browser boundary Journeys; exclude Acceptance |
 | `secure-content-w8` | product-behavior | `SOC-SEC-C01..C07/C09`; `SOC-SEC-AS05/06/07/09/10/11/12/15/16` | `SC-A01..A08`; `SC-D01..D13` | `SOC-SEC-J04/J05/J08/J09` | remaining Social behavior; exclude Mobile/Chat |
 | `secure-content-w9` | product-behavior | `SOC-SEC-C01..C08`; `SOC-SEC-AS01..AS16` | `SC-A01..A08`; `SC-D01..D13` | `SOC-SEC-J01..J09` | Mobile parity; exclude Chat authority change |
 | `secure-content-w10` | refactor | `MP-C13`; `MP-G13` | `SC-D02/D03/D13`; `MP-D23` | `MP-J11` | Chat regression only; exclude wire/API/schema changes |
@@ -309,6 +310,7 @@ command uses the ineffective `make station-restart PROFILE=...` form.
 | EC3 | W3 | real Social prepare consumer claims/replays Content PreKeys |
 | EC4 | W4 | real HTTP requests pass the complete Optional JWT matrix |
 | EC5 | W5 | recovery query/core opens never-read content in a real consumer integration |
+| EC5A | W7A | canonical Content PreKey publish/inventory HTTP boundary passes exact replay, auth, wire and isolation checks |
 | EC6 | W6 + W7 | Social outer-UOW failpoint matrix plus minimal source and Desktop receiver `FUNCTIONAL_PASS` |
 | EC7 | W8 | every subtype/relationship micro-slice reaches its own `FUNCTIONAL_PASS` |
 | EC8 | W9 | complete required Mobile matrix reaches `FUNCTIONAL_PASS` |
@@ -335,7 +337,10 @@ W2A
 W2A + W3 + W4
   -> W6 Minimal Social FRIENDS text+image closure
        -> W5 Recovery
-       -> W7 Desktop pilot FUNCTIONAL_PASS
+       -> W7A Content PreKey client boundary
+
+W5 + W7A
+  -> W7 Desktop pilot FUNCTIONAL_PASS
 
 W7 FUNCTIONAL_PASS
   -> W8 Remaining Social subtypes/relationships
@@ -791,12 +796,80 @@ python3 -m tooling.development.secure_content.run \
   --runtime service --scenario social-uow-atomicity --budget-seconds 1200
 ```
 
+### SC-W7A: Content PreKey Client Boundary
+
+- **Responsibility**: implement accepted `SC-D20` as a Key Exchange-owned,
+  canonical protobuf client boundary with durable publication receipts and no
+  public claim/validation route.
+- **Dependencies**: W3/W6; `SC-D20` Owner acceptance.
+- **Deliverables**: additive publish command identity/exact-replay and typed
+  device-possession proof; shared `ErrorResponse` codes; scoped generated
+  outputs; canonical protobuf-only server mode; route-matched protobuf
+  auth/device errors; publish/inventory handlers; transaction-held publication
+  receipt; exact API ownership entries; service Journey coverage.
+- **Source boundary**: Key Exchange, shared server transport and exact HTTP
+  auth/device wrappers, exact PreKey proto and generated outputs, API ownership
+  registry, and the W7A Development scenario only. Desktop Native/UI
+  implementation remains W7.
+- **Failure**: noncanonical wire, wrong actor/device, revoked publisher, stale
+  epoch, changed command hash, invalid material, oversized body and dependency
+  failure return the exact typed code without mutation. Lost-response replay is
+  serialized by the command receipt and cannot regress current inventory.
+- **Checks**:
+
+```bash
+./tooling/scripts/proto-gen-secure-content.sh --scope content-prekey-client --apply
+./tooling/scripts/proto-gen-secure-content.sh --scope content-prekey-client --check
+(cd apps/station && go test -race -count=1 ./frame/core/server/... ./app/subserver/key_exchange/...)
+node --test tooling/scripts/run-content-prekey-postgres-tests.test.mjs
+node tooling/scripts/run-content-prekey-postgres-tests.mjs
+./tooling/scripts/test-secure-content-core.sh prekey
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml -p peers-touch-desktop
+cargo check --manifest-path apps/mobile/src-tauri/Cargo.toml -p peers-touch-mobile
+pnpm --dir apps/desktop run check
+pnpm --dir apps/mobile run check:social-wire
+node tooling/scripts/check-content-prekey-errors.mjs
+node --test tooling/scripts/check-content-prekey-errors.test.mjs
+python3 -m unittest tooling.acceptance.gates.mobile.proof_contracts_test
+python3 tooling/scripts/acceptance-run.py --gate station-api-ownership
+python3 -m unittest tooling.development.secure_content.test_run tooling.development.secure_content.test_work_item
+python3 -m tooling.development.secure_content.run \
+  --runtime service --scenario content-prekey-client-boundary \
+  --budget-seconds 1200
+```
+
+- **Exit**: exact-source `sc-dj-content-prekey-client-boundary` records
+  `FUNCTIONAL_CHECK/PASS` at
+  `development/secure-content/W7A/EC5A/result.json`. This service result does
+  not establish the W7 Desktop or Browser product Journey. EC5A fails closed
+  when `MESSAGING_TEST_POSTGRES_DSN` is absent or any required PostgreSQL
+  receipt-contention, pool/Actor lock-order, profile-rotation or revocation race
+  test skips.
+
 ### SC-W7: Desktop Pilot Functional Pass
 
 - **Responsibility**: Desktop Native adapter/store/worker, FRIENDS text+image,
   strict read/deny, public continuity, draft retention and cleanup.
-- **Dependencies**: W6; Desktop claim released; checkpoint/deploy/profile
+- **Dependencies**: W5/W6/W7A; Desktop claim released; checkpoint/deploy/profile
   authorization and leases available.
+- **Design gate**: `SC-D20` must define and receive Owner acceptance for the
+  client-facing Content PreKey publication/inventory boundary before W7 source
+  implementation. The existing W3 capability intentionally has no public
+  route, and W7 cannot invent one locally.
+- **Execution decomposition**: source-only `W7A` owns the canonical
+  protobuf handler mode, Content PreKey publish/inventory routes and receipts,
+  scoped proto/generated outputs, API-ownership registry/Gate and an
+  exact-source service Journey. W7 depends on W7A and owns the
+  Desktop Native/store/UI plus serial Desktop and Browser runtime Journeys.
+  W7A has no runtime claims and remains non-executable until `SC-D20` is
+  accepted.
+- **Native lifecycle**: W7 owns encrypted persist-before-publish state,
+  `UNKNOWN_COMMIT` reconciliation, per-key root-commit deletion, epoch-keyed
+  recovery handling, account/device/session-generation supervision and
+  logout/switch/revocation/shutdown zeroization. W7 proves those behaviors in
+  Native tests and the `desktop-pilot` result at
+  `W7/SC-AS01/result.json`; W7A does not claim them or the complete AS08/AS09
+  product journeys.
 - **Focused checks**:
 
 ```bash
@@ -1034,9 +1107,9 @@ hard-cut fixtures.
 - **Reset boundary**: `station-four-social-private` and
   `station-five-arm-social-private` only; old private Social rows, legacy private
   schema and old private-media objects are removed while public hashes/counts
-  remain identical. The command is forbidden while
-  `destructiveResetScopes: []`. After exact authorization is recorded, the reset
-  procedure first updates the current workspace registration to add
+  remain identical. The work-item manifest now contains exactly those two
+  authorized scopes. The reset procedure first updates the current workspace
+  registration to add
   `station.reset`, then the reset runner must acquire and hold the W0R-owned
   `station.reset` lease across pre-audit, deletion, nested canonical
   `make station` deploy/restart/health and post-audit, releasing it only after
@@ -1127,6 +1200,8 @@ python3 -m tooling.development.secure_content.run \
 
 | Gate | Budget |
 |---|---:|
+| `station-api-ownership` | 10m |
+| `secure-content-prekey-client-boundary` | 20m |
 | `secure-content-contract-static` | 10m |
 | `secure-content-crypto-vectors` | 10m |
 | `social-private-content-station` | 20m |
@@ -1144,6 +1219,8 @@ python3 -m tooling.development.secure_content.run \
 python3 tooling/scripts/acceptance-plan.py \
   --root tooling/acceptance \
   --range 2d54851f95994d717928105aca6470c30adf3657...HEAD
+python3 tooling/scripts/acceptance-run.py --gate station-api-ownership
+python3 tooling/scripts/acceptance-run.py --gate secure-content-prekey-client-boundary
 python3 tooling/scripts/acceptance-run.py --gate secure-content-contract-static
 python3 tooling/scripts/acceptance-run.py --gate secure-content-crypto-vectors
 python3 tooling/scripts/acceptance-run.py --gate social-private-content-station
@@ -1216,13 +1293,14 @@ Development runner:
 ```bash
 python3 -m tooling.development.secure_content.run \
   --runtime <source-only|service|desktop|mobile> \
-  --scenario <SC-AS-ID> \
+  --scenario <scenario-id> \
   --profile <profile> \
   --budget-seconds <journey-functionalRunSeconds>
 ```
 
 | Scenario | Workstream/runtime | Focused budget | Functional budget | Retry | Development evidence |
 |---|---|---:|---:|---|---|
+| EC5A | W7A service | 20m | 20m | exact command replay only | `W7A/EC5A/result.json` |
 | SC-AS01 | W7 Desktop; W9 Mobile | 20m | 20m | one observation retry | `W7/SC-AS01/result.json`; `W9/MSC-M01/SC-AS01/result.json` |
 | SC-AS02 | W4 service; W7 Desktop; W9 Mobile | 10m | 10m W4 / 20m Native | none for invalid auth | `W4/SC-AS02/result.json`; `W9/MSC-M01/SC-AS02/result.json` |
 | SC-AS03 | W8 Desktop; W9 Mobile | 20m | 20m | one range observation retry | `W8/SC-AS03/result.json`; `W9/MSC-M01/SC-AS03/result.json` |
@@ -1230,13 +1308,13 @@ python3 -m tooling.development.secure_content.run \
 | SC-AS05 | W5 source; W9/W12 Native | 20m | 20m per recovery page/restart | none after crypto failure | `W5/SC-AS05/result.json`; `W9/MSC-M04/SC-AS05/result.json` |
 | SC-AS06 | W8 Desktop; W9 Mobile | 20m | 20m | none after stale-plan rejection | `W8/SC-AS06/result.json`; `W9/MSC-M02/SC-AS06/result.json` |
 | SC-AS07 | W8 Desktop; W9 Mobile | 20m per subtype | 20m per subtype | none after policy failure | `W8/SC-AS07/subtype-results.json`; `W9/MSC-M03/SC-AS07/result.json` |
-| SC-AS08 | W7/W8 Desktop; W9 Mobile | 20m | 20m | one receipt/status observation retry | `W8/SC-AS08/result.json`; `W9/MSC-M05/SC-AS08/result.json` |
+| SC-AS08 | W8 Desktop; W9 Mobile | 20m | 20m | one receipt/status observation retry | `W8/SC-AS08/result.json`; `W9/MSC-M05/SC-AS08/result.json` |
 | SC-AS09 | W8 Desktop; W9 Mobile | 20m | 20m | none after revoke | `W8/SC-AS09/result.json`; `W9/MSC-M05/SC-AS09/result.json` |
 | SC-AS10 | W7/W11/W12 Browser; W9 Mobile public continuity | 20m | 20m | one public-read observation retry | per-workstream `SC-AS10/browser-result.json`; `W9/MSC-M06/SC-AS10/result.json` |
 | SC-AS11 | W8 Desktop; W9 Mobile | 20m | 20m | none after bounded rejection | `W8/SC-AS11/result.json`; `W9/MSC-M06/SC-AS11/result.json` |
 | SC-AS12 | W2/W10/W11/W12 Desktop and Mobile Chat | 30m | 30m Desktop / 60m Mobile | one idempotent read observation retry | per-workstream `SC-AS12/desktop-result.json` and `SC-AS12/mobile-result.json` |
 | SC-AS13 | W8 Desktop; W9 Mobile | 20m | 20m | none | `W8/SC-AS13/result.json`; `W9/MSC-M02/SC-AS13/result.json` |
-| SC-AS14 | W7/W8 Desktop; W9 Mobile | 20m | 20m | none | `W7/SC-AS14/result.json`; `W9/MSC-M01/SC-AS14/result.json` |
+| SC-AS14 | W9 Mobile | 20m | 20m | none | `W9/MSC-M01/SC-AS14/result.json` |
 | SC-AS15 | W9/W11/W12 Mobile | 30m focused check | 120m aggregate per full matrix run | one observation retry | per-workstream `SC-AS15/mobile-matrix-result.json` |
 | SC-AS16 | W6/W12 service | 20m | 20m | none after injected failure | `W6/SC-AS16/result.json`; `W12/SC-AS16/result.json` |
 
@@ -1291,7 +1369,8 @@ observations is invalid.
 | W4 | auth | complete | `8260e4330` | PASS (`sc-dj-optional-auth`) | NOT_RUN | none |
 | W5 | recovery | complete | `9bf7e3934` | PASS (`sc-dj-recovery-consumer`) | NOT_RUN | none |
 | W6 | Social minimum | complete | `d2731a220` | PASS (`sc-dj-social-uow-atomicity`) | NOT_RUN | none |
-| W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | active MCA Desktop claim and Station runtime owner |
+| W7A | Content PreKey client boundary | parked | none | NOT_RUN | NOT_RUN | `SC-D20` Owner acceptance |
+| W7 | Desktop pilot | parked | none | NOT_RUN | NOT_RUN | W7A; active MCA Desktop and NDR Station owners |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
 | W9 | Mobile | parked | none | NOT_RUN | NOT_RUN | W5/W7/W8; Mobile claim |
 | W10 | Chat regression | parked | none | NOT_RUN | NOT_RUN | W2/W9 FUNCTIONAL_PASS; active Desktop/Station runtime owners |
@@ -1299,7 +1378,7 @@ observations is invalid.
 | W12 | physical schema/data cut + full functional | parked | none | NOT_RUN | NOT_RUN | W11; exact runtime leases |
 | W13 | Acceptance | parked | none | NOT_RUN | NOT_RUN | W12 FUNCTIONAL_PASS; active Acceptance owner |
 
-Overall: `8/16`. DWF-D13 removed the cross-worktree source-lock blocker. W1
+Overall: `8/17`. DWF-D13 removed the cross-worktree source-lock blocker. W1
 completed the accepted `SC-D14` wire contracts, scoped generation and all five
 generated consumer closures. W2A completed the atomic source cut; W2D must add
 the real Desktop/Mobile Development drivers before the Desktop/Mobile Native
@@ -1439,6 +1518,15 @@ Current evidence:
   `FUNCTIONAL_CHECK/PASS` for `sc-dj-recovery-consumer` at
   `~/.peers-touch/dev/workspaces/9eb2cb904c9ae460/development/secure-content/W5/SC-AS08/result.json`.
   W5 is complete; formal Acceptance remains `NOT_RUN`.
+- W7 pre-execution inventory found that W3 exposes Content PreKey publication
+  and inventory only as an internal Key Exchange capability. No governed
+  client route, API-ownership entry, Desktop Native transport, encrypted local
+  PreKey lifecycle or W7-authorized Station write set exists. Proposed
+  `SC-D20` defines the bounded client boundary. Final independent
+  security/lifecycle and architecture/API ownership reviews returned `PASS`
+  with no material findings; Owner acceptance remains required before W7A
+  implementation. Active MCA Desktop and NDR Station/runtime claims remain
+  separately parked.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level

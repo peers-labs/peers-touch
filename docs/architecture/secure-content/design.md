@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-14
+> **Created**: 2026-09-13 | **Updated**: 2026-09-15
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `packages/secure-content-core/`, `apps/station/app/internal/securecontent/`
 
@@ -191,6 +191,33 @@ PreKey claims are irreversible when exposed. Replaying the same prepare command
 returns the same claim; abandoned plans consume capacity and are replenished through
 Key Exchange policy. No partial recipient publish is allowed.
 
+### 8.1 Proposed Content PreKey Client Boundary
+
+Proposed `SC-D20` makes the existing Key Exchange publication/inventory
+capability usable by authenticated Native clients without creating a Secure
+Content service:
+
+```text
+Native encrypted key store
+  -> device-possession proof + canonical protobuf
+  -> /key-exchange/content-prekeys/{publish,inventory}
+  -> Key Exchange pool/receipt transaction
+  -> Actor Identity verified-device fence
+```
+
+JWT authenticates the actor/session only. A fresh Ed25519 proof binds the local
+Station peer ID, JWT session ID, active device, capability, request hash, nonce
+and issued-at; `X-Device-ID` is only a consistency assertion. Key Exchange owns
+the routes, pools, publication receipts and API capability entries. The shared
+server owns transport parsing through a model-neutral error-projector port; Key
+Exchange supplies the shared protobuf `ErrorResponse` projection.
+
+W7A owns the server/proto/API source closure with no runtime claims. W7 owns the
+Desktop encrypted private-key store, process-scoped maintenance supervisor,
+unknown-outcome reconciliation, per-key root-commit deletion and Native
+product evidence. Claim and claim-validation capabilities remain internal to
+domain prepare/submit workflows.
+
 `SC-D17` makes the prepare crash boundary explicit:
 `social_private_content_plans` persists `plan_id` and the canonical prepare hash
 plus the exact canonical claim request before Key Exchange is called. It then
@@ -206,7 +233,7 @@ epoch. Drift rejects the complete plan without partial resource writes. Exact
 submit replay returns the persisted business result and derives the
 `exact_replay` response flag at read time rather than storing two result forms.
 
-### 8.1 Social Object Transfer
+### 8.2 Social Object Transfer
 
 `SC-D18` separates typed control from bounded ciphertext bytes:
 

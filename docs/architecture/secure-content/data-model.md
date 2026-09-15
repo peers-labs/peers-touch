@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-14
+> **Created**: 2026-09-13 | **Updated**: 2026-09-15
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `model/domain/social/`, `model/domain/key_exchange/`
 
@@ -350,6 +350,53 @@ normalization. A future raw-wire publication endpoint additionally requires
 decode/re-encode equality to reject duplicate singular fields, non-minimal
 varints, and non-canonical field order. The signature authenticates publication;
 it does not attest recovery-secret derivation.
+
+### Proposed Content PreKey Client Projection
+
+Proposed `SC-D20` extends `prekey.proto` without replacing fields:
+
+- `PublishContentPreKeysRequest.command_id = 6`;
+- `PublishContentPreKeysRequest.proof = 7`;
+- `PublishContentPreKeysResponse.exact_replay = 2`;
+- `GetContentPreKeyInventoryRequest.request_id = 3`;
+- `GetContentPreKeyInventoryRequest.proof = 4`;
+- `ContentPreKeyClientSigningInput` and `ContentPreKeyClientProof`.
+
+The proof signs the capability ID, local Station peer ID, validated JWT session
+ID, active actor/device, current signing-key ID and profile version, request ID,
+SHA-256 of the canonical request with proof cleared, a 32-byte nonce and
+issued-at timestamp. Publication command ID is the domain-prefixed SHA-256 of
+canonical request fields 1 through 5, so one semantic batch has one command
+identity.
+
+The shared `model/domain/error/error.proto` gains Content PreKey error codes
+`30201..30209` in the governed content range; responses keep using the
+canonical `ErrorResponse` message.
+Retry timing is an HTTP `Retry-After` header rather than another error model.
+
+Key Exchange adds:
+
+```text
+key_exchange_content_prekey_publication_receipts
+```
+
+Its primary identity is `(publisher_ptid, publisher_device_id, command_id)`.
+It stores the proof-free request bytes/hash, response bytes/hash,
+`PENDING|COMPLETED` state and timestamps in the same transaction as key/pool
+mutation. A first-time completed receipt must add at least one immutable key
+row. Response bytes persist for the endpoint lifetime; a non-secret command
+hash tombstone remains while corresponding immutable key rows remain.
+
+Native command state is independent from per-key state:
+
+```text
+command: PENDING_PUBLICATION -> IN_FLIGHT -> UNKNOWN_COMMIT | PUBLISHED
+key:     PENDING_PUBLICATION -> PUBLISHED -> ROOT_COMMITTED
+```
+
+Only the exact key whose envelope root key committed may enter
+`ROOT_COMMITTED`. Orphaned send leases become `UNKNOWN_COMMIT` at bootstrap.
+Endpoint keys are not deleted heuristically while Station may reference them.
 
 ### Proposed Recovery PreKey Derivation
 

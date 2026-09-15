@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-06 | **Updated**: 2026-09-07
+> **Created**: 2026-09-06 | **Updated**: 2026-09-15
 > **Owner**: Architecture Team
 > **Module**: `apps/station/`, `model/domain/`, `tooling/acceptance/`
 
@@ -44,7 +44,7 @@ Desktop / Mobile
   +-- /device/* ----------------> Actor Device Identity
   +-- /device/inbox/* ----------> Conversation Device Delivery
   +-- /recovery/* --------------> Opaque Recovery Repository
-  +-- /key-exchange/* ----------> Direct/MLS public material
+  +-- /key-exchange/* ----------> Direct/MLS/Content PreKey public material
 
 Social Graph Authority -----------+
                                   | typed domain command/event adapters
@@ -80,7 +80,8 @@ The route prefix follows the semantic owner:
 | Actor read position | Station Conversation | `/conversation/read-cursor` | Device projection |
 | Recovery revision | Recovery | `/recovery/*` | opaque Station storage |
 | Attachment byte transfer | Conversation Authority data plane | `/conversation/attachments/*` | opaque byte-store adapter |
-| Key packages and DKX | Key Exchange | `/key-exchange/*` | Actor Device Identity |
+| Direct/MLS key packages and DKX | Key Exchange | `/key-exchange/*` | Actor Device Identity |
+| Content PreKey publish/inventory (`SC-D20` proposed) | Key Exchange | `/key-exchange/content-prekeys/*` | Actor Device Identity verified-key capability |
 | Cross-Station delivery | Federation transport | peer-only `/federation/*` | typed domain adapters |
 
 ## 4. Runtime Units And Boundaries

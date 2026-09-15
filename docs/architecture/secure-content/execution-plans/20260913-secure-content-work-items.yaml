@@ -403,8 +403,8 @@ items:
     workClass: product-behavior
     planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
     workstreamId: W7
-    productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C05, SOC-SEC-C07, SOC-SEC-AS01, SOC-SEC-AS02, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS07, SOC-SEC-AS10, SOC-SEC-AS11, SOC-SEC-AS13, SOC-SEC-AS15]
-    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D11, SC-D12, SC-D13]
+    productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C07, SOC-SEC-AS01, SOC-SEC-AS02, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS07, SOC-SEC-AS10, SOC-SEC-AS11, SOC-SEC-AS13, SOC-SEC-AS15]
+    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D09, SC-D11, SC-D12, SC-D13, SC-D16, SC-D20]
     journeyIds: [sc-dj-desktop-pilot, sc-dj-browser-private-boundary]
     scope:
       include: [apps/desktop, tooling/development/secure_content/scenarios/desktop_pilot.py, tooling/development/secure_content/scenarios/browser_private_boundary.py]
@@ -432,6 +432,66 @@ items:
       checkpoint: { localCommit: allowed, amend: denied }
       delivery: { push: denied, pullRequest: denied }
       runtime: { deployProfiles: [four], destructiveResetScopes: [] }
+      history: { rewrite: denied }
+
+  - schemaVersion: 1
+    id: secure-content-w7a
+    workClass: infrastructure
+    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
+    workstreamId: W7A
+    productRefs: [SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C08]
+    architectureRefs: [SC-A03, SC-A04, SC-A08, SC-D05, SC-D09, SC-D15, SC-D16, SC-D20]
+    journeyIds: [sc-dj-content-prekey-client-boundary]
+    scope:
+      include: [model/domain/secure_content/prekey.proto, model/domain/error/error.proto, apps/station/frame/core/types/securecontent/prekey.pb.go, apps/station/frame/touch/model/error.pb.go, apps/station/frame/touch/model/errors.go, apps/desktop/src/gen/proto/domain/secure_content/prekey_pb.ts, apps/desktop/src/gen/proto/domain/error/error_pb.ts, apps/mobile/src/gen/proto/domain/secure_content/prekey_pb.ts, apps/mobile/src/gen/proto/domain/error/error_pb.ts, apps/mobile/src-tauri/build.rs, apps/mobile/src-tauri/src/secure_content/proto.rs, apps/station/frame/core/server, apps/station/frame/core/auth/adapter/http, apps/station/frame/core/plugin/native/server/wrapper, apps/station/app/subserver/key_exchange, packages/locales/en/errors.json, packages/locales/zh-CN/errors.json, packages/locales/metadata.json, docs/architecture/api-ownership/design.md, docs/architecture/api-ownership/station-api-capabilities.yaml, docs/architecture/i18n/i18n-architecture.md, docs/architecture/secure-content/design.md, docs/architecture/secure-content/data-model.md, docs/architecture/secure-content/integration.md, docs/architecture/secure-content/module-layout.md, docs/architecture/secure-content/operations.md, docs/architecture/secure-content/security.md, docs/global/coding-guide/common/error-handling.md, docs/global/coding-guide/common/proto.md, tooling/scripts/proto-gen-secure-content.mjs, tooling/scripts/proto-gen-secure-content.sh, tooling/scripts/proto-gen-secure-content.test.mjs, tooling/scripts/check-content-prekey-errors.mjs, tooling/scripts/check-content-prekey-errors.test.mjs, tooling/scripts/run-content-prekey-postgres-tests.mjs, tooling/scripts/run-content-prekey-postgres-tests.test.mjs, tooling/scripts/test-secure-content-core.sh, tooling/development/secure_content/scenarios/content_prekey_client_boundary.py]
+      exclude: [Desktop UI/runtime, Mobile UI/runtime, Content PreKey claim routes, Direct, MLS]
+    resources:
+      sourceClaims:
+        - { pathPrefix: model/domain/secure_content/prekey.proto, mode: exclusive-write }
+        - { pathPrefix: model/domain/error/error.proto, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/types/securecontent/prekey.pb.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/touch/model/error.pb.go, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/touch/model/errors.go, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/secure_content/prekey_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/desktop/src/gen/proto/domain/error/error_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/secure_content/prekey_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src/gen/proto/domain/error/error_pb.ts, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src-tauri/build.rs, mode: exclusive-write }
+        - { pathPrefix: apps/mobile/src-tauri/src/secure_content/proto.rs, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/server, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/auth/adapter/http, mode: exclusive-write }
+        - { pathPrefix: apps/station/frame/core/plugin/native/server/wrapper, mode: exclusive-write }
+        - { pathPrefix: apps/station/app/subserver/key_exchange, mode: exclusive-write }
+        - { pathPrefix: packages/locales/en/errors.json, mode: exclusive-write }
+        - { pathPrefix: packages/locales/zh-CN/errors.json, mode: exclusive-write }
+        - { pathPrefix: packages/locales/metadata.json, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/api-ownership/design.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/api-ownership/station-api-capabilities.yaml, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/i18n/i18n-architecture.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content/design.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content/data-model.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content/integration.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content/module-layout.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content/operations.md, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content/security.md, mode: exclusive-write }
+        - { pathPrefix: docs/global/coding-guide/common/error-handling.md, mode: exclusive-write }
+        - { pathPrefix: docs/global/coding-guide/common/proto.md, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.sh, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/proto-gen-secure-content.test.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/check-content-prekey-errors.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/check-content-prekey-errors.test.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/run-content-prekey-postgres-tests.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/run-content-prekey-postgres-tests.test.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/test-secure-content-core.sh, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/scenarios/content_prekey_client_boundary.py, mode: exclusive-write }
+        - { pathPrefix: tooling/development/secure_content/run.py, mode: shared-read }
+        - { pathPrefix: tooling/acceptance/gates.yaml, mode: shared-read }
+      runtimeClaims: []
+    authorization:
+      checkpoint: { localCommit: allowed, amend: denied }
+      delivery: { push: denied, pullRequest: denied }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
       history: { rewrite: denied }
 
   - schemaVersion: 1
@@ -671,8 +731,8 @@ items:
     planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md
     workstreamId: W13
     productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C06, SOC-SEC-C07, SOC-SEC-C08, SOC-SEC-C09, SOC-SEC-AS01, SOC-SEC-AS02, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS06, SOC-SEC-AS07, SOC-SEC-AS08, SOC-SEC-AS09, SOC-SEC-AS10, SOC-SEC-AS11, SOC-SEC-AS12, SOC-SEC-AS13, SOC-SEC-AS14, SOC-SEC-AS15, SOC-SEC-AS16, MP-G13]
-    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D09, SC-D10, SC-D11, SC-D12, SC-D13, MP-D23]
-    journeyIds: [sc-dj-social-uow-atomicity, sc-dj-final-desktop, sc-dj-final-mobile, sc-dj-browser-private-boundary, sc-dj-chat-revalidation, sc-dj-chat-attachment-mobile]
+    architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D09, SC-D10, SC-D11, SC-D12, SC-D13, SC-D14, SC-D15, SC-D16, SC-D17, SC-D18, SC-D19, SC-D20, MP-D23]
+    journeyIds: [sc-dj-content-prekey-client-boundary, sc-dj-social-uow-atomicity, sc-dj-final-desktop, sc-dj-final-mobile, sc-dj-browser-private-boundary, sc-dj-chat-revalidation, sc-dj-chat-attachment-mobile]
     scope:
       include: [tooling/acceptance, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md]
       exclude: [product/design changes]

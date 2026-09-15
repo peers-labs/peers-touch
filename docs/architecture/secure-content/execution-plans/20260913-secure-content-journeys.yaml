@@ -141,6 +141,40 @@ journeys:
     promotionGateIds: [secure-content-contract-static, social-private-content-station]
 
   - schemaVersion: 1
+    id: sc-dj-content-prekey-client-boundary
+    domain: key-exchange
+    title: Canonical client Content PreKey publication and inventory
+    productAcceptanceRefs: []
+    workClasses: [infrastructure]
+    runtimeClass: service
+    actorRoles: [publisher, revoked_publisher]
+    clientRoles: [http_client]
+    requiredServiceRoles: [station_http, key_exchange, actor_identity, postgresql]
+    steps:
+      - id: canonical-publish-inventory
+        action: publish endpoint and recovery pools through the canonical protobuf routes and read current inventory
+        expected: [JWT actor header device and fresh device-possession proof are exact, returned inventory matches committed pool state, Direct and MLS state is unchanged]
+        negative: [JSON query alternate duplicate unknown non-minimal and out-of-order protobuf encodings are rejected before mutation]
+      - id: publication-receipt
+        action: lose the first publish response then concurrently replay the exact command across a publisher profile rotation
+        expected: [one command reservation and one atomic mutation exist, exact replay proves the commit, fresh inventory determines current readiness, completed receipt count never exceeds newly inserted immutable key count]
+        negative: [changed or arbitrary command IDs conflict, first-time all-existing batches leave no receipt, concurrent retries leave no dangling PENDING, absent receipt never hides committed key rows]
+      - id: publisher-races
+        action: race publication and first claim against signing-key rotation and endpoint revocation
+        expected: [Actor Identity row fencing yields one valid before-state or one typed rejection, unclaimed revoked or stale material is never exposed]
+        negative: [no partial pool mutation, no claim after revocation fence, no Direct or MLS state change]
+      - id: postgresql-contention
+        action: execute receipt reservation, pool and Actor Identity lock ordering, concurrent replay, rotation and revocation races on PostgreSQL
+        expected: [all required PostgreSQL tests execute without skip and produce one serializable receipt and pool outcome]
+        negative: [missing DSN or skipped PostgreSQL evidence blocks EC5A, SQLite cannot substitute]
+      - id: auth-error-lifecycle
+        action: exercise missing invalid revoked wrong-actor wrong-device invalid-material oversized quota and dependency failures
+        expected: [every route-matched response is the declared protobuf error with a stable code, only retryable quota or dependency failures carry Retry-After in 1..300, terminal failures omit it]
+        negative: [wrong Station, wrong session, capability substitution, missing or invalid possession signature, short nonce, expired or future proof, and invalid per-PreKey issuer signature all fail before read or mutation with their distinct typed codes, no JSON error body, anonymous retry, secret log, handler-local queue, public claim route, or Direct/MLS alias]
+    budgets: { focusedCheckSeconds: 1200, functionalRunSeconds: 1200, cleanupSeconds: 300 }
+    promotionGateIds: [station-api-ownership, secure-content-prekey-client-boundary]
+
+  - schemaVersion: 1
     id: sc-dj-optional-auth
     domain: station-auth
     title: Strict Optional JWT credential matrix
@@ -220,6 +254,10 @@ journeys:
     clientRoles: [desktop_alice, desktop_bob, desktop_eve]
     requiredServiceRoles: [station_four, social, key_exchange, object_backend]
     steps:
+      - id: native-prekey-lifecycle
+        action: bootstrap the process-owned Content PreKey supervisor and inject crashes before send after send and after response before local commit
+        expected: [orphaned pending and in-flight commands reconcile by exact command payload, batch completion never marks unopened keys committed, fresh inventory controls readiness]
+        negative: [no duplicate worker per window, no stale-session callback, no private material in Web state or logs]
       - id: publish
         action: Alice selects FRIENDS and publishes text plus image
         expected: [readiness states reach PUBLISHED only after durable readback]
@@ -232,6 +270,14 @@ journeys:
         action: Eve requests Post and object while invalid credentials are also supplied
         expected: [Eve gets not-found, invalid credential gets 401]
         receiverRole: eve
+      - id: teardown-and-retention
+        action: switch account and Station then revoke the publishing device and reopen an older recovery epoch
+        expected: [old callbacks are fenced, memory secrets are zeroized, endpoint keys delete only after root commit or explicit local destruction following acknowledged endpoint revocation, SC-D15 prevents every unclaimed revoked-publisher key from later exposure, exact recovery epoch or phrase-required state is used]
+        negative: [no age/count key eviction, current recovery epoch never substitutes for the envelope epoch, offline local wipe makes no recovery claim]
+      - id: supervisor-teardown
+        action: logout, lock the account vault and shut down while inventory and publication work are queued or in flight
+        expected: [new admission stops, calls bounded-drain or cancel, unknown outcomes persist for next-session reconciliation, all in-memory key and proof material is zeroized]
+        negative: [no stale callback mutates the next session, no durable key rows are deleted by teardown]
     budgets: { focusedCheckSeconds: 1200, deploySeconds: 1200, functionalRunSeconds: 1200, cleanupSeconds: 600 }
     promotionGateIds: [social-private-content-desktop-native-e2e, social-private-content-security-negative]
 

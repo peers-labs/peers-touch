@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Created**: 2026-09-13 | **Updated**: 2026-09-15
 > **Owner**: Architecture Team
 
 ---
@@ -51,6 +51,27 @@ distributed database transaction:
 6. If the plan is abandoned, claimed keys remain consumed and are replenished.
 
 This chooses safe key loss over unsafe PreKey reuse.
+
+### 2.1 Proposed Client Publication Boundary
+
+Under proposed `SC-D20`, Native publishes and inventories Content PreKeys only
+through canonical Key Exchange protobuf routes. Publication uses a deterministic
+proof-free command ID, fresh Station/session/device possession proof and one
+transaction-held `PENDING -> COMPLETED` receipt. A first-time command must add
+at least one immutable key; exact retry returns the receipt, then Native reads
+fresh inventory.
+
+Before network send, Native persists private material, proof-free command bytes
+and a session-generation send lease in encrypted local storage. Bootstrap turns
+orphaned pending/in-flight work into `UNKNOWN_COMMIT` and retries the same
+command with a fresh proof. Command state and per-key root-commit state remain
+separate. Logout, account/Station switch, vault lock, revocation and shutdown
+stop admission, fence callbacks and zeroize in-memory secrets.
+
+EC5A requires PostgreSQL receipt contention, pool/Actor lock ordering,
+profile-rotation and revocation races. Its runner requires a DSN, parses
+`go test -json`, and rejects missing, renamed, zero-match, skipped or non-pass
+mandatory cases.
 
 ## 3. Object State Machine
 
@@ -113,6 +134,7 @@ tables, transactions, audit correlation, and retention remain domain-owned.
 |---|---|---|
 | prepare | `(domain, actor, command_id)` | same canonical hash returns exact plan |
 | PreKey claim | `(plan_id, slot_id)` | same hash returns exact claimed key |
+| PreKey publication | deterministic `(publisher endpoint, command_id)` | transaction-held same command/hash replays; another hash conflicts |
 | submit | `(domain, actor, command_id)` | same hash returns exact resource receipt |
 | upload part | `(upload_id, generation, chunk_index)` | same hash succeeds, different hash conflicts |
 | object attach | `(object_id, domain_commit_id)` | exact replay succeeds |
@@ -127,6 +149,10 @@ canonical protobuf bytes.
 | Failure | Behavior |
 |---|---|
 | recipient PreKey unavailable | fail prepare with exact missing-recipient count; preserve draft |
+| publication response lost | retain `UNKNOWN_COMMIT`; retry same proof-free command with a fresh Station/session/device proof |
+| publication stale epoch | read fresh inventory; sign a new deterministic command |
+| terminal publication error | omit `Retry-After`; do not retry |
+| retryable publication error | shared `ErrorResponse` plus `Retry-After` in `1..300` |
 | abandoned prepare | expire plan; never reuse claimed PreKeys |
 | upload interruption | resume verified missing chunks only |
 | stale audience/member revision | reject submit; require fresh prepare and encryption |
@@ -159,6 +185,10 @@ Initial protocol policy:
 | unattached object TTL | 24 hours |
 | plan lifetime | 5 minutes |
 | read/recovery page | 100 resources |
+| Content PreKeys per publication/pool | 100 |
+| Content PreKey publish/inventory body | 128 KiB / 4 KiB |
+| possession-proof clock skew | 60 seconds |
+| retry-after hint | 300 seconds maximum |
 
 Additional domain admission:
 
@@ -246,6 +276,8 @@ After reset:
 - domain transaction failpoints at every write boundary;
 - exact replay and conflicting replay tests;
 - PreKey depletion/replenishment and abandoned-plan tests;
+- canonical publish/inventory wire, possession-proof, receipt-growth and
+  mandatory PostgreSQL concurrency tests;
 - concurrent submit/delete/block/member-change tests;
 - object interruption, restart, corruption, cancellation, quota and GC tests;
 - recovery pagination, restart, never-opened content and revoked-content tests;

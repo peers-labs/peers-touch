@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-14
+> **Created**: 2026-09-13 | **Updated**: 2026-09-15
 > **Owner**: Architecture Team
 
 ---
@@ -85,6 +85,18 @@ not represented by generic OSS visibility rows and cannot be fetched through
 ## 3. Domain API Ownership
 
 No `/secure-content/*` public API is introduced.
+
+Proposed `SC-D20` adds two Key Exchange-owned client support routes:
+
+```text
+POST /key-exchange/content-prekeys/publish
+POST /key-exchange/content-prekeys/inventory
+```
+
+They reuse the generated Secure Content PreKey contract, require actor JWT plus
+fresh device-possession proof, and return the shared protobuf `ErrorResponse`.
+Publication/inventory do not move pool, claim or replay ownership into Social.
+`ClaimContentPreKeys` and `ValidateContentPreKeyClaims` remain internal.
 
 Conversation retains:
 
@@ -204,6 +216,12 @@ decryption, local SQLCipher projection, and recovery. Web layers own plaintext
 composition/rendering but never cryptographic material or transfer state.
 
 Browser supports PUBLIC only and rejects private operations before network send.
+
+Under proposed `SC-D20`, source-only W7A lands the Key Exchange routes,
+canonical protobuf/error projection, publication receipt and API registry
+before W7. W7 then adds the Desktop Native publisher/store/supervisor and proves
+persist-before-publish, unknown-outcome replay, root-key-before-key-deletion,
+account/Station switching, revocation and teardown through the product Journey.
 
 ## 7. Transaction Integration
 

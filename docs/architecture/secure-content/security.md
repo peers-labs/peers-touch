@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-14
+> **Created**: 2026-09-13 | **Updated**: 2026-09-15
 > **Owner**: Architecture Team
 
 ---
@@ -100,6 +100,25 @@ A compromised currently authorized device may rotate or replenish that actor's
 recovery pool while authorized, but revocation makes its unclaimed keys
 ineligible for future content. Completed claims remain replayable because their
 public material was already exposed.
+
+Proposed `SC-D20` adds a separate device-possession proof to each client publish
+and inventory request. Actor JWT authenticates only the actor;
+`X-Device-ID` is caller-controlled consistency metadata. The request proof
+uses the active Actor Identity Ed25519 key and binds capability ID,
+local Station peer ID, JWT session ID, actor/device, signing-key ID/profile,
+proof-free request hash, request/command ID, nonce and issued-at. Station
+accepts at most 60 seconds of clock skew and checks the signed Station/session/
+device against local Station identity, the validated JWT session, JWT PTID and
+the header before reading or mutating a pool.
+
+Publication private material is encrypted locally before network send. A
+deterministic command ID and transaction-held receipt make unknown outcomes and
+concurrent replay decidable. Endpoint private keys remain until their exact
+root key commits or the endpoint is explicitly destroyed after acknowledged
+revocation. Revoked-publisher keys need no separate retirement
+acknowledgement: the accepted `SC-D15` claim-time Actor Identity fence makes
+every unclaimed key ineligible before exposure. Recovery private keys are
+derived for the exact envelope epoch; another epoch is never substituted.
 
 `SC-D16` replaces the previous underspecified recovery formula with one
 byte-exact transcript. The accepted 24-word BIP39 phrase must first pass the

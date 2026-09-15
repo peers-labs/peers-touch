@@ -17,7 +17,10 @@
 | 0-1 | 基础 | UNSPECIFIED(0), UNDEFINED(1) |
 | 10000-10999 | 业务逻辑 | Actor、Peer 等领域实体相关错误 |
 | 20000-20999 | 协议/请求 | 认证、参数校验、序列化等通信层错误 |
-| 30000-30999 | 内容操作 | Post、Comment 等内容实体的 CRUD 错误 |
+| 30000-30099 | Social 内容操作 | Post、Comment 等内容实体的 CRUD 错误 |
+| 30100-30199 | Note 内容操作 | Note CRUD 错误 |
+| 30200-30299 | 内容安全密钥 | proposed `SC-D20` Content PreKey client errors |
+| 40000-40999 | Federation | Federation resolve / visibility / readiness errors |
 
 完整定义：
 
@@ -66,6 +69,10 @@ enum ErrorCode {
   ERROR_CODE_CREATE_COMMENT_FAILED      = 30015;
   ERROR_CODE_GET_COMMENTS_FAILED        = 30016;
   ERROR_CODE_DELETE_COMMENT_FAILED      = 30017;
+
+  // --- 30200s: Content PreKey (proposed SC-D20) ---
+  ERROR_CODE_CONTENT_PREKEY_FORBIDDEN    = 30201;
+  // 30202..30209 are reserved by SC-D20.
 }
 ```
 

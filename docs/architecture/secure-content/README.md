@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-13
+> **Created**: 2026-09-13 | **Updated**: 2026-09-15
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `packages/secure-content-core/`, `apps/station/app/internal/securecontent/`
 
@@ -78,6 +78,7 @@ wire, storage, and recovery behavior.
 | [execution-plans/20260913-secure-content-hard-cut-review-prompt.md](./execution-plans/20260913-secure-content-hard-cut-review-prompt.md) | Independent PLAN review contract |
 | [execution-plans/20260914-recovery-social-durability-amendment-review-prompt.md](./execution-plans/20260914-recovery-social-durability-amendment-review-prompt.md) | Completed independent review contract for accepted `SC-D16` and `SC-D17` |
 | [execution-plans/20260914-social-object-transfer-amendment-review-prompt.md](./execution-plans/20260914-social-object-transfer-amendment-review-prompt.md) | Completed independent review contract for accepted `SC-D18` and `SC-D19` |
+| [execution-plans/20260915-content-prekey-client-boundary-review-prompt.md](./execution-plans/20260915-content-prekey-client-boundary-review-prompt.md) | Pending Owner review contract for proposed `SC-D20` and W7A |
 | [execution-plans/20260913-secure-content-work-items.yaml](./execution-plans/20260913-secure-content-work-items.yaml) | Machine-shaped DevelopmentWorkItem contracts |
 | [execution-plans/20260913-secure-content-journeys.yaml](./execution-plans/20260913-secure-content-journeys.yaml) | Machine-shaped DevelopmentJourney contracts and budgets |
 
@@ -93,5 +94,8 @@ Accepted product inputs:
 - [`../social/acceptance-matrix.md`](../social/acceptance-matrix.md):
   `SOC-SEC-AS01` through `SOC-SEC-AS16`.
 
-The product and architecture contracts are accepted. Implementation and runtime
-readiness remain governed by the formal execution plan and evidence gates.
+The product contract and `SC-D01` through `SC-D19` are accepted. `SC-D20`, the
+client-facing Content PreKey boundary required by W7, passed independent
+security and architecture/ownership review and remains proposed until Owner
+acceptance. Implementation and runtime readiness remain governed by the formal
+execution plan and evidence gates.

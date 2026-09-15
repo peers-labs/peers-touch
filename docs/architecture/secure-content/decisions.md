@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-14
+> **Created**: 2026-09-13 | **Updated**: 2026-09-15
 > **Owner**: Architecture Team
 
 ---
@@ -30,6 +30,7 @@
 | `SC-D17` | Social private prepare and submit use durable records and distinct routes | accepted |
 | `SC-D18` | Social encrypted objects use typed control messages and bounded raw-byte routes | accepted |
 | `SC-D19` | Durable content proofs use current-key attestations for retained Station public keys | accepted |
+| `SC-D20` | Content PreKey maintenance uses canonical Key Exchange client routes | proposed |
 
 ---
 
@@ -854,6 +855,423 @@ prove wrong actor/epoch/key ID divergence, and open a real HPKE envelope with a
 derived recovery key. Any future transcript change requires a new version and
 cannot silently reinterpret existing recovery PreKey IDs.
 The Owner accepted this decision on 2026-09-14.
+
+---
+
+## SC-D20: Content PreKey Maintenance Uses Canonical Key Exchange Client Routes
+
+**Status**: proposed
+**Date**: 2026-09-15
+
+### Context
+
+`SC-D15` defines authenticated Content PreKey publication, inventory, epochs,
+signatures, replay, quotas and claim-time validation. W3 implements those rules
+behind `ContentPreKeyCapabilities`, but that capability intentionally registers
+no public route. W7 therefore cannot build a real Native publisher,
+replenishment worker or recipient path without inventing a client boundary.
+
+The existing generated contract already contains the publish and inventory
+messages. The missing architecture is the route ownership, command-level
+unknown-outcome recovery, canonical transport, typed error projection,
+authentication boundary and Native private-key lifecycle.
+
+### Decision
+
+Key Exchange exposes exactly two client-facing support capabilities:
+
+| Capability ID | Method and path | Request / response |
+|---|---|---|
+| `key_exchange.content_prekey.publish` | `POST /key-exchange/content-prekeys/publish` | `PublishContentPreKeysRequest` / `PublishContentPreKeysResponse` |
+| `key_exchange.content_prekey.inventory` | `POST /key-exchange/content-prekeys/inventory` | `GetContentPreKeyInventoryRequest` / `GetContentPreKeyInventoryResponse` |
+
+Both routes are Key Exchange-owned and use only `application/protobuf`. They
+accept no query alternative, JSON representation, route alias or public
+`/secure-content/*` facade. Publish has a 128 KiB body limit and inventory has
+a 4 KiB body limit, both enforced before allocation through the shared server
+transport. Each request completes synchronously within the shared request
+timeout; no handler-local queue is added.
+
+The shared server layer adds one reusable canonical-protobuf handler mode. It:
+
+1. rejects every non-protobuf content type and any query data;
+2. reads no more than the route-specific body limit;
+3. rejects recursive unknown fields and duplicate singular or oneof fields;
+4. decodes and deterministically re-encodes the message;
+5. requires exact equality with the received bytes, rejecting non-minimal
+   varints, explicit default encodings and non-canonical field order.
+
+For publication, the Key Exchange application additionally requires the
+repeated PreKeys to be in ascending canonical `key_id` order before applying
+the existing `SC-D15` semantic normalization. Transport canonicality does not
+silently reorder a signed mutation.
+
+`PublishContentPreKeysRequest` adds a bounded canonical `command_id`; its
+response adds `exact_replay`. Both publish and inventory requests add a
+`ContentPreKeyClientProof`. The proof signs:
+
+```text
+"peers-touch:secure-content:client-command:v1\0"
+|| canonical(ContentPreKeyClientSigningInput)
+```
+
+The input binds format version, capability ID, authenticated publisher
+`ActorDeviceRef`, canonical Station peer ID, authenticated JWT session ID,
+current signing-key ID and profile version, command/request ID, SHA-256 of the
+canonical request with the proof cleared, a 32-byte nonce and issued-at time.
+Station resolves the active device signing key through Actor Identity, requires
+the signed actor/device to equal both the JWT subject and `X-Device-ID`,
+requires the signed Station/session to equal the local Station identity and
+`Subject.SessionID`, permits at most 60 seconds of clock skew, and verifies the
+signature before accessing inventory or publication state. The route rejects a
+JWT without a non-empty validated session ID. JWT authenticates the actor and
+session; the device-possession proof, not the caller-controlled header,
+authenticates the device. Station/session binding prevents a proof captured on
+one Station or login session from authorizing another.
+
+Publication command identity is deterministic:
+
+```text
+publication_payload =
+  canonical(PublishContentPreKeysRequest fields 1..5)
+
+command_id =
+  "cpk-pub-v1-" || lowercase_hex(SHA-256(publication_payload))
+```
+
+The server recomputes and requires this exact value. The request hash bound by
+the possession proof and receipt is the canonical request containing fields
+1..6 with `proof` cleared. Identical signed publication material therefore has
+one command ID; arbitrary command IDs cannot amplify receipt state. Because a
+first-time command must insert at least one new immutable key row, receipt
+growth is no greater than published-key growth. A new command whose entire
+batch already exists rolls back its pending receipt and returns
+`REPLAY_CONFLICT`; only the original command may replay an all-existing batch.
+
+Key Exchange persists one
+`key_exchange_content_prekey_publication_receipts` row keyed by
+`(publisher_ptid, publisher_device_id, command_id)`. The row binds the exact
+canonical proof-free command bytes/hash, response bytes/hash and completion
+time in the same transaction as pool/key mutation. The stored response always has
+`exact_replay=false`; an exact retry returns a verified clone with
+`exact_replay=true`. Reusing the command ID with another request hash is a
+terminal conflict.
+
+The publication transaction first inserts or locks the command-key receipt.
+Concurrent requests for the same command therefore serialize before either can
+inspect or mutate pool state. A `PENDING` receipt carries the immutable request
+bytes/hash; the owning transaction changes it to `COMPLETED` with the response
+bytes/hash only after all key and pool mutations succeed. Transaction rollback
+removes the reservation and every mutation together. A waiter with the same
+hash returns the completed response, while a different hash conflicts. There
+is no check-then-insert window in which two callers can both own the command.
+
+After a fresh possession proof establishes the same active endpoint, receipt
+lookup precedes revalidation of the historical per-key signing-key/profile
+fields. This lets the same active device resolve a response lost before a later
+profile rotation without re-authorizing a new mutation. A revoked endpoint
+cannot create the fresh proof accepted by Actor Identity and receives the exact
+typed authorization failure. If no receipt exists, the transaction did not
+commit either the receipt or any key rows; the request is evaluated as a new
+mutation against current state.
+
+Completed publication receipts are retained for the lifetime of the publisher
+endpoint and are not independently garbage-collected. After acknowledged
+endpoint/account destruction, Key Exchange may remove response bytes but
+retains the non-secret command/request hash tombstone for as long as any
+corresponding immutable key row remains; the destroyed endpoint is no longer
+authorized to replay it.
+
+The additive proto projection is:
+
+```protobuf
+message PublishContentPreKeysRequest {
+  // Existing fields 1..5 remain unchanged.
+  string command_id = 6;
+  ContentPreKeyClientProof proof = 7;
+}
+
+message PublishContentPreKeysResponse {
+  ContentPreKeyInventory inventory = 1;
+  bool exact_replay = 2;
+}
+
+message GetContentPreKeyInventoryRequest {
+  // Existing fields 1..2 remain unchanged.
+  string request_id = 3;
+  ContentPreKeyClientProof proof = 4;
+}
+
+message ContentPreKeyClientSigningInput {
+  uint32 format_version = 1;
+  string capability_id = 2;
+  string station_peer_id = 3;
+  string session_id = 4;
+  peers_touch.model.actor.v1.ActorDeviceRef publisher = 5;
+  string publisher_signing_key_id = 6;
+  uint64 publisher_profile_version = 7;
+  string request_id = 8;
+  bytes request_sha256 = 9;
+  bytes nonce = 10;
+  google.protobuf.Timestamp issued_at = 11;
+}
+
+message ContentPreKeyClientProof {
+  ContentPreKeyClientSigningInput input = 1;
+  bytes signature = 2;
+}
+```
+
+`command_id` and `request_id` are non-empty, trim-stable, NUL-free identifiers
+of at most 128 UTF-8 bytes. Exact publication retry may carry a fresh proof
+while preserving the same proof-free command bytes/hash.
+
+Both routes require a valid Bearer JWT, `X-Device-ID` and valid device-possession
+proof. Their canonical PTID and device ID form the authenticated publisher only
+after all three agree. The request publisher must equal that endpoint. An
+endpoint-pool target must equal the same endpoint; a recovery-pool target must
+equal the same actor. Actor Identity remains the device activity,
+signing-key and profile-version authority, and its existing transaction fence
+remains held through publication.
+
+Publication preserves the existing `SC-D15` contract:
+
+- one request contains 1 through 100 keys for exactly one principal and epoch;
+- endpoint epoch equals the current publisher profile version;
+- recovery epoch permits only `0 -> 1`, `N -> N` or `N -> N+1`;
+- exact same signed material replays successfully;
+- any changed identity, epoch, key, public material or signature conflicts;
+- consumed or retired public material never becomes available again.
+
+Inventory is self-scoped. A missing pool returns not found; Native treats that
+as an initial publication with expected epoch zero. Otherwise the response
+returns the accepted current epoch, available count, capacity, replenishment
+threshold and `needs_replenishment`. `ClaimContentPreKeys` and
+`ValidateContentPreKeyClaims` remain internal capabilities used only by
+domain-owned prepare/submit workflows.
+
+Failures use the shared `peers_touch.model.error.v1.ErrorResponse` from
+`model/domain/error/error.proto`. That enum adds stable Content PreKey codes for
+forbidden endpoint, invalid material, pool not found, stale epoch, replay
+conflict, pool depleted, payload too large, quota exceeded and dependency
+unavailable. The body carries only the stable code and bounded generic message;
+it contains no free-form server cause, credential, identity, key material or
+stack text. Retry timing uses the HTTP `Retry-After` header, with a maximum of
+300 seconds, rather than a second domain error envelope.
+
+```protobuf
+ERROR_CODE_CONTENT_PREKEY_FORBIDDEN = 30201;
+ERROR_CODE_CONTENT_PREKEY_INVALID_MATERIAL = 30202;
+ERROR_CODE_CONTENT_PREKEY_POOL_NOT_FOUND = 30203;
+ERROR_CODE_CONTENT_PREKEY_STALE_EPOCH = 30204;
+ERROR_CODE_CONTENT_PREKEY_REPLAY_CONFLICT = 30205;
+ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED = 30206;
+ERROR_CODE_CONTENT_PREKEY_PAYLOAD_TOO_LARGE = 30207;
+ERROR_CODE_CONTENT_PREKEY_QUOTA_EXCEEDED = 30208;
+ERROR_CODE_CONTENT_PREKEY_DEPENDENCY_UNAVAILABLE = 30209;
+```
+
+Success and failure responses both use `application/protobuf`, including
+transport and authentication failures emitted before the application handler.
+The canonical handler owns those route-matched error bodies; JWT and device
+wrappers return structured errors to it instead of writing JSON directly.
+Router-level unmatched-route `404` and method-level `405` responses are outside
+this two-route protobuf guarantee.
+
+The HTTP/code mapping is:
+
+| Condition | HTTP | `ErrorResponse.code` | Native action |
+|---|---:|---|---|
+| missing/invalid/revoked JWT or missing device header | `401` | `ERROR_CODE_UNAUTHORIZED` | refresh or end the session; never retry anonymously |
+| invalid/missing possession proof, wrong Station/session/capability/device, or inactive/revoked endpoint | `403` | `ERROR_CODE_CONTENT_PREKEY_FORBIDDEN` | terminal for the current session generation |
+| unsupported content type or missing body | `415` / `400` | `ERROR_CODE_INVALID_REQUEST_BODY` | terminal; send the declared protobuf body |
+| query data on either POST route | `400` | `ERROR_CODE_INVALID_QUERY_PARAMETERS` | terminal; remove the alternate input |
+| body read failure or timeout before decode | `400` / `408` | `ERROR_CODE_FAILED_TO_READ_BODY` | retry the same command payload with a fresh proof only after timeout |
+| malformed or non-canonical request | `400` | `ERROR_CODE_INVALID_PROTOBUF` | terminal; do not retry |
+| invalid per-PreKey issuer signature or X25519 public material | `400` | `ERROR_CODE_CONTENT_PREKEY_INVALID_MATERIAL` | terminal; delete only an uncommitted pending batch |
+| inventory pool not yet published | `404` | `ERROR_CODE_CONTENT_PREKEY_POOL_NOT_FOUND` | create an initial publication with expected epoch zero |
+| stale epoch | `409` | `ERROR_CODE_CONTENT_PREKEY_STALE_EPOCH` | query inventory and build a newly signed command |
+| reused command/key identity with different bytes | `409` | `ERROR_CODE_CONTENT_PREKEY_REPLAY_CONFLICT` | terminal; never rewrite the original command |
+| depleted pool | `409` | `ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED` | surface unavailable readiness and await owner-device replenishment |
+| body too large | `413` | `ERROR_CODE_CONTENT_PREKEY_PAYLOAD_TOO_LARGE` | terminal; reduce to the declared batch bound |
+| pool/batch quota exceeded | `429` | `ERROR_CODE_CONTENT_PREKEY_QUOTA_EXCEEDED` | honor `Retry-After` and bounded backoff |
+| Actor Identity or persistence dependency unavailable | `503` | `ERROR_CODE_CONTENT_PREKEY_DEPENDENCY_UNAVAILABLE` | retry the same command payload with a fresh proof and bounded backoff |
+| unclassified internal failure | `500` | `ERROR_CODE_INTERNAL_SERVER_ERROR` | preserve unknown outcome and reconcile before retry |
+
+Native owns one supervisor keyed by
+`(station_peer_id, actor_ptid, device_id, session_generation)`, not one worker
+per UI window. It queries endpoint and recovery inventory after authenticated
+session bootstrap, foreground resume and a bounded periodic wakeup. Only one
+maintenance operation per principal is in flight. When inventory is absent or
+at/below threshold, Native replenishes toward the declared capacity with a
+bounded batch and applies retry backoff; it never busy-polls.
+
+Before any publication request, Native atomically stores the private material,
+exact canonical proof-free command bytes/hash and command state in its encrypted
+per-account store. Command states are `PENDING_PUBLICATION`, `IN_FLIGHT`,
+`UNKNOWN_COMMIT` and `PUBLISHED`. The supervisor persists a
+session-generation-fenced send lease before moving `PENDING_PUBLICATION` to
+`IN_FLIGHT`. A timeout moves that command to `UNKNOWN_COMMIT`. On bootstrap,
+every `IN_FLIGHT` command, and every `PENDING_PUBLICATION` command without its
+matching live send lease, is conservatively reclassified as
+`UNKNOWN_COMMIT`. The next matching session retries the same canonical
+proof-free command bytes and command ID with a fresh possession proof before
+generating replacement material. A typed stale response is a proven rejection
+only after the exact receipt lookup reports no committed command.
+
+An exact replay response is commit proof, not current inventory truth. Native
+marks the command `PUBLISHED`, then immediately performs a fresh inventory
+request. It never regresses local epoch, count or readiness from the historical
+inventory snapshot stored in the receipt response.
+
+Each endpoint private PreKey has a separate local state:
+`PENDING_PUBLICATION`, `PUBLISHED`, or `ROOT_COMMITTED`. A batch response moves
+only the matching keys to `PUBLISHED`; it never marks any key opened.
+Opening one endpoint envelope atomically commits that resource's root content
+key before only the matching PreKey becomes `ROOT_COMMITTED` and deletable.
+Endpoint private PreKeys are never evicted by age or count while they may still
+be referenced by Station. Unopened and abandoned-claim keys remain encrypted
+durable state until a future accepted disposition protocol or explicit
+account/device data destruction. Normal local destruction first requires
+Station acknowledgement that the endpoint is revoked. No separate pool
+retirement acknowledgement is required: accepted `SC-D15` already re-resolves
+the publisher and fences Actor Identity before every new claim, so every
+unclaimed key from that revoked endpoint is ineligible before exposure.
+Previously claimed but unopened resources then use their mandatory actor
+recovery envelope; explicit device destruction intentionally abandons the
+endpoint envelope path.
+An explicitly forced offline wipe is irreversible, must be presented as such
+to the user, and makes no historical-access claim.
+This content/claim-proportional local growth is an accepted negative
+consequence; heuristic deletion is forbidden.
+
+Recovery private PreKeys are derived on demand from the exact envelope epoch
+and key ID and are not stored individually. Encrypted recovery masters form a
+keyring keyed by `(actor_ptid, recovery_epoch)` and are retained until explicit
+actor recovery reset. If the exact epoch master is absent, Native requires
+re-entry of the recovery phrase or returns the existing typed
+phrase-required/key-unavailable state; it never substitutes the current epoch.
+
+On logout, account switch, vault lock, device revocation, Station switch or
+process shutdown, the supervisor stops admission, cancels or bounded-drains
+in-flight calls, records `UNKNOWN_COMMIT` when no response was observed,
+invalidates callbacks from the prior session generation and zeroizes in-memory
+private/signing/recovery material. It retains only the encrypted durable states
+authorized above.
+
+The target API-ownership projection is:
+
+| Capability ID | Domain/truth owner | Truth stores | Allowed dependency |
+|---|---|---|---|
+| `key_exchange.content_prekey.publish` | `station.key_exchange` / `key_exchange.content_prekey_public_material` | `key_exchange_content_prekey_pools`, `key_exchange_content_prekeys`, `key_exchange_content_prekey_publication_receipts` | `actor.device_directory.read` |
+| `key_exchange.content_prekey.inventory` | `station.key_exchange` / `key_exchange.content_prekey_public_material` | `key_exchange_content_prekey_pools`, `key_exchange_content_prekeys` | `actor.device_directory.read` |
+
+Both entries have client exposure, no aliases and no superseded symbols. Route
+registration and registry entries land atomically so the fail-closed
+`station-api-ownership` Gate never observes a declared route without an owner
+or an owner entry without a handler. Browser code does not call these routes
+and never receives private/signing material.
+
+The canonical protobuf handler owns encoding transport/authentication failures
+for these two routes without importing the generated application model into
+`frame/core/server`. The server package defines a transport-neutral route error
+projector callback over HTTP status, stable error code and optional
+`Retry-After`; Key Exchange supplies the projector that deterministically
+encodes the shared `model.ErrorResponse`. JWT and device wrappers propagate a
+structured auth failure to the route handler instead of writing their existing
+JSON body directly. Other routes retain their current error representation.
+
+### Rationale
+
+The existing proto and application capability already express the correct
+business semantics. A narrow Key Exchange-owned transport makes that capability
+usable by Native without creating another authority, another wire model or a
+Social proxy. Canonical raw-wire equality preserves `SC-D15` signing and replay
+identity. Persist-before-publish prevents a crash from advertising public keys
+whose private material was never durably stored.
+
+Command receipts make a lost response decidable without weakening publisher
+eligibility for new mutations. Retaining endpoint private keys until successful
+root-key commit avoids making historical access depend on an assumed recovery
+epoch or heuristic expiry.
+
+### Alternatives Considered
+
+- Reuse Direct/MLS prekey routes or tables: rejected because their contracts,
+  quotas and lifecycle owners are distinct.
+- Add `/secure-content/*` routes: rejected because Secure Content is not a
+  business or persistence authority.
+- Proxy publication through Social: rejected because Social does not own
+  PreKey inventory or Actor Identity signing truth.
+- Use JSON or the current generic strict typed handler alone: rejected because
+  semantic normalization would accept multiple raw encodings for one signed
+  mutation.
+- Add separate endpoint and recovery route families: rejected because the
+  accepted typed principal already distinguishes the pools and the duplicated
+  transport would drift.
+- Add one reconcile command that conditionally mutates: rejected because it
+  combines a read with a signed CAS mutation and complicates timeout replay.
+- Infer publication success from inventory counts: rejected because counts do
+  not identify the exact committed key IDs or request.
+- Evict endpoint private keys by age or pool capacity: rejected because a
+  still-claimable key may protect an envelope whose recovery epoch is not
+  locally available.
+- Store private Content PreKeys in TypeScript or Web storage: rejected by the
+  Native secret boundary.
+
+### Consequences
+
+The execution plan now carries source-only `W7A` before W7, parked until Owner
+acceptance:
+
+| Field | Required projection |
+|---|---|
+| Dependencies | W3/W6 complete; `SC-D20` accepted |
+| Exclusive source ownership | `model/domain/secure_content/prekey.proto`; `model/domain/error/error.proto`; generated outputs plus `apps/station/frame/touch/model/errors.go`; Mobile Rust build/proto registration; scoped generator/tests; `apps/station/frame/core/server`; `apps/station/frame/core/auth/adapter/http`; `apps/station/frame/core/plugin/native/server/wrapper`; `apps/station/app/subserver/key_exchange`; API ownership, error/proto/i18n governance docs; shared error locale catalogs and metadata; Content PreKey Development scenario/tests |
+| Shared-read source | `tooling/acceptance/gates.yaml` and the existing API-ownership validator |
+| Runtime claims | none |
+| Focused checks | scoped proto generation with zero drift; Key Exchange/server Go race suites; Rust PreKey vectors; Desktop/Mobile generated-contract checks; `station-api-ownership`; Development runner tests |
+| Functional evidence | exact-source `sc-dj-content-prekey-client-boundary` supporting service Journey through the real publish/inventory HTTP boundary |
+| Evidence destination | `development/secure-content/W7A/EC5A/result.json` |
+
+The scoped generator adds `--scope content-prekey-client`. That scope includes
+only `prekey.proto`, `error.proto` and W7A's declared Go/Desktop/Mobile outputs;
+apply/check fails if the tool observes or would write any other manifest
+destination. Generator tests prove both the allowlist and rollback behavior.
+Desktop and Mobile Rust packages compile the same proto inputs from their
+build-time generation paths.
+
+W7A adds one deterministic error/localization parity check covering
+`error.proto`, Go messages, generated Desktop/Mobile enums, English/Chinese
+catalog keys and a required locale metadata version increment. It also makes
+PostgreSQL receipt-contention, pool/Actor lock ordering, profile-rotation and
+revocation tests mandatory: EC5A fails if the PostgreSQL DSN is absent or a
+required test skips. A checked test manifest names every required PostgreSQL
+case. The fail-closed runner requires `MESSAGING_TEST_POSTGRES_DSN`, executes
+`go test -json`, and rejects zero matches, missing names, `skip` events or
+non-pass terminal events. The corpus includes
+arbitrary-command rejection, all-existing first-command rollback with no
+receipt, concurrent exact/conflicting replay with no dangling `PENDING`, and
+`completed_receipt_count <= newly_inserted_immutable_key_count`. SQLite and Go
+race execution remain supplemental.
+
+The Secure Content Core focused-test wrapper copies the exact crate source to a
+temporary directory, uses a temporary Cargo target/lock boundary, runs the
+requested test filter, and removes the temporary tree. It cannot create a
+crate-local lockfile or target directory in the repository.
+
+W7 then depends on W7A and owns the Desktop Native store/worker/transport and UI
+projection; runtime deployment and Journeys remain serial behind the existing
+Desktop/Station leases.
+
+W7A evidence is limited to canonical/non-canonical wire tests, authentication
+and typed error mapping, transaction-held publication replay/conflict,
+publication-response loss across profile rotation, epoch/revocation races and
+proof that Direct/MLS state is unchanged. W7 owns encrypted
+persist-before-publish crash recovery, batch/per-key state, fresh-inventory
+reconciliation, supervisor teardown and retained-key safety. W7 still requires
+its existing exact-source Desktop and Browser `FUNCTIONAL_PASS`; W7A service
+evidence does not satisfy that exit.
 
 ---
 
