@@ -37,6 +37,7 @@ import { useProviderStore } from '../../store/provider';
 import { useSessionStore } from '../../store/session';
 import {
   AgentTurnStatus,
+  FailoverReason,
   ToolCallStatus,
   ToolExecutionOwner,
 } from '../../gen/proto/domain/agent/agent_pb';
@@ -21680,6 +21681,14 @@ export function installAcceptanceHarness(): void {
         ).map((value) => evidenceRecord(value, 'providerTimeoutClassifiedError'));
         const providerCall = latestProviderCalls[0] ?? {};
         const classifiedError = classifiedErrors[0] ?? {};
+        const classifiedReason = evidenceField(
+          classifiedError,
+          'reason',
+          'reason',
+        );
+        const timeoutClassified =
+          classifiedReason === FailoverReason.TIMEOUT
+          || classifiedReason === 'FAILOVER_REASON_TIMEOUT';
         const completedAssistantMessages = readbackAfter.messages.filter(
           (message) => (
             String(message.role).toLowerCase() === 'assistant'
@@ -21717,9 +21726,7 @@ export function installAcceptanceHarness(): void {
               ) === agent.model,
             upstreamTimeoutCancelled:
               classifiedErrors.length === 1
-              && Number(
-                evidenceField(classifiedError, 'reason', 'reason') ?? -1,
-              ) === 7
+              && timeoutClassified
               && Number(
                 evidenceField(providerCall, 'latencyMs', 'latency_ms') ?? 0,
               ) >= providerDeadlineMs - 5_000,

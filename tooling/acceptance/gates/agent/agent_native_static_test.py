@@ -1026,6 +1026,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertIn("latestProviderCalls.length === 1", scenario)
         self.assertIn("classifiedErrors.length === 1", scenario)
+        self.assertIn(
+            "classifiedReason === FailoverReason.TIMEOUT",
+            scenario,
+        )
+        self.assertIn(
+            "classifiedReason === 'FAILOVER_REASON_TIMEOUT'",
+            scenario,
+        )
         self.assertIn("zeroSuccessfulCompletion:", scenario)
         self.assertIn(
             "clearFoundationLocalConversationProjection(conversationId)",
