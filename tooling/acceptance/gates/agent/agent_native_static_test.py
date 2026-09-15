@@ -927,6 +927,35 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario.index("return foundationDomSnapshot();"),
         )
 
+    def test_queue_development_slice_stops_after_recovery_and_cleans_up(self) -> None:
+        direct_probe = self.source.index("async foundationDirectProbe")
+        scenario_start = self.source.index(
+            "if (cell === 'AS-F02')",
+            direct_probe,
+        )
+        scenario_end = self.source.index(
+            "if (cell === 'AS-F03')",
+            scenario_start,
+        )
+        scenario = self.source[scenario_start:scenario_end]
+
+        self.assertIn("if (developmentSlice === 'queue-full')", scenario)
+        self.assertIn("typedQueueFull:", scenario)
+        self.assertIn("editQueueFocused: queueFocused", scenario)
+        self.assertIn("queueStateUnchanged:", scenario)
+        self.assertIn("zeroAutomaticResend:", scenario)
+        self.assertIn("cleanupComplete,", scenario)
+        self.assertIn(
+            "await cancelFoundationQueuedTurns(conversation.conversation_id)",
+            scenario,
+        )
+        self.assertIn(
+            "await deleteFoundationConversation(\n"
+            "            conversation.conversation_id,\n"
+            "          )",
+            scenario,
+        )
+
     def test_two_topic_restart_scenario_uses_production_authorities(self) -> None:
         snapshot_start = self.source.index(
             "async function foundationF12TopicSnapshot",

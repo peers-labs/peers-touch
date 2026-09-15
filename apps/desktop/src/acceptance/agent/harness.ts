@@ -22420,6 +22420,7 @@ export function installAcceptanceHarness(): void {
       stationRestart,
       durableReloadEvidence,
       preparedScenario,
+      developmentSlice,
     }: {
       platform: string;
       locale: string;
@@ -22429,7 +22430,11 @@ export function installAcceptanceHarness(): void {
       stationRestart?: Record<string, unknown>;
       durableReloadEvidence?: Record<string, unknown>;
       preparedScenario?: Record<string, unknown>;
+      developmentSlice?: 'queue-full';
     }) {
+      if (developmentSlice && cell !== 'AS-F02') {
+        throw new Error('agent.acceptance.foundationDevelopmentSliceMismatch');
+      }
       await reportFoundationCapabilityIsolationDebug(
         'C-D',
         'entry-restoration-start',
@@ -23479,6 +23484,85 @@ export function installAcceptanceHarness(): void {
         );
         const queueFullTypedError = queueFullMessage.typedError;
         const queueFullResolution = queueFullMessage.resolution;
+        if (developmentSlice === 'queue-full') {
+          const queueFocused =
+            document.activeElement instanceof HTMLElement
+            && document.activeElement.dataset.ptAgentTurnQueue
+              === conversation.conversation_id;
+          const recoveryVisible =
+            queueFullRecovery.getClientRects().length > 0;
+          await cancelFoundationQueuedTurns(conversation.conversation_id);
+          const activeCancellation = await api.cancelAgentTurn(activeTurnId);
+          active.controller.abort();
+          duplicate.controller.abort();
+          for (const queued of queuedTurns) queued.controller.abort();
+          await restorePersistedFoundationCapabilityIsolation();
+          await restorePersistedFoundationCapabilityFixture();
+          const capabilityFixtureRestored =
+            readFoundationCapabilityFixtureJournal() === null;
+          const capabilityIsolationRestored =
+            readFoundationCapabilityIsolationJournal() === null;
+          clearFoundationLocalConversationProjection(
+            conversation.conversation_id,
+          );
+          const deletionErrorCode = await deleteFoundationConversation(
+            conversation.conversation_id,
+          );
+          const cleanupComplete = (
+            deletionErrorCode.includes('AGENT_4004')
+            || deletionErrorCode === ''
+          ) && capabilityFixtureRestored && capabilityIsolationRestored;
+          const details = queueFullTypedError?.details ?? {};
+          const assertions = {
+            queueAtCapacity:
+              queueAtCapacity.entries.length === queueAtCapacity.queue_capacity,
+            typedQueueFull:
+              observedErrorCode(overflowResult.error) === 'ADMISSION_QUEUE_FULL'
+              && queueFullTypedError?.error_type === 'ADMISSION_QUEUE_FULL'
+              && queueFullTypedError?.locale_key === 'agent.errors.queueFull'
+              && queueFullTypedError.retryable === true
+              && queueFullTypedError.terminal === true
+              && stableJson(Object.keys(details).sort())
+                === stableJson(['capacity', 'conversation_id'])
+              && details.conversation_id === conversation.conversation_id
+              && Number(details.capacity) === queueAtCapacity.queue_capacity,
+            localizedRecoveryVisible:
+              recoveryVisible
+              && Boolean(queueFullRecovery.textContent?.trim()),
+            editQueueFocused: queueFocused,
+            queueStateUnchanged:
+              queueAfterEditAction.entries.length
+                === queueBeforeEditAction.entries.length
+              && queueAfterEditAction.conversation_version
+                === queueBeforeEditAction.conversation_version,
+            zeroAutomaticResend:
+              readbackAfterEditAction.messages.length
+                === readbackBeforeEditAction.messages.length,
+            cleanupComplete,
+          };
+          return evidenceValue({
+            assertions,
+            scenarioFacts: {
+              queueCapacity: queueAtCapacity.queue_capacity,
+              queueSizeBeforeAction: queueBeforeEditAction.entries.length,
+              queueSizeAfterAction: queueAfterEditAction.entries.length,
+              typedError: queueFullTypedError,
+              resolution: queueFullResolution,
+              recovery: {
+                visible: recoveryVisible,
+                queueFocused,
+              },
+              activeCancellationStatus: activeCancellation.status,
+              deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
+            },
+            cleanup: {
+              status: cleanupComplete ? 'clean' : 'failed',
+              conversationDeleted: cleanupComplete,
+              capabilityFixtureRestored,
+              capabilityIsolationRestored,
+            },
+          });
+        }
         void reportFoundationQueueCapacityDebug(
           'A,H',
           'capacity-observations-completed',
