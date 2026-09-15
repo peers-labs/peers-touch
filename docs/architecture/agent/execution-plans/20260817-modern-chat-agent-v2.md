@@ -23,11 +23,11 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | `G-FE1-LEASE-EXPIRED` is `FUNCTIONAL_PASS` on exact source `3e745334c` and recorded by checkpoint `7618f10c5`; the 28-family inventory is 15 closed and 13 source-incomplete |
+| Current step | `G-FE1-NORMAL-SEND` is `FUNCTIONAL_PASS` on exact source `fe254ca7d`; the 28-family BASE inventory remains 15 closed and 13 source-incomplete |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Exact-source run `20260915T134604170541Z` passed all nine `BASE-LEASE_EXPIRED` assertions and complete process/port/Fixture/source-lease cleanup; checkpoint `7618f10c5` records that product result |
-| Current action | Implement and run `G-FE1-NORMAL-SEND`, the focused Desktop Native send → non-empty stream → terminal → durable reload → client restart/replay Development Journey |
-| Next action | Freeze the shared typed-error contract and close `G-FE1-SC1` admission/ownership before moving through the remaining five source clusters |
+| Last completed | Exact-source run `20260915T143820839970Z` passed Desktop Native send → non-empty stream → one Station terminal → page reload → client restart/replay with no duplicate messages or ToolCalls and complete cleanup |
+| Current action | Freeze the shared typed-error contract and implement `G-FE1-SC1` admission/ownership: `BASE-QUEUE_FULL` and `BASE-UNAUTHORIZED_RESOURCE` |
+| Next action | Run focused SC1 Development Journeys, then continue with `G-FE1-SC2`; do not run C08 or Foundation while any source-incomplete family remains |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
@@ -36,7 +36,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | no Goal-level blocker; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | Checkpoint `3e745334c` focused Group One scenario/probe tests `189/189` and embedded-WebDriver smoke PASS；exact-source Development run `20260915T134604170541Z` passed all nine `BASE-LEASE_EXPIRED` assertions with Browser receiver DOM, Station sequence 30 delivery, zero replay-created side effects, and complete cleanup；source inventory classifies 15/28 families closed and 13/28 source-incomplete；C08 and the full Foundation Gate remain `UNPROVEN` |
+| Evidence | Exact-source Development run `20260915T134604170541Z` proves `BASE-LEASE_EXPIRED`; run `20260915T143820839970Z` proves normal Native send/stream/terminal/reload/restart/replay on `fe254ca7d`; source inventory classifies 15/28 BASE families closed and 13/28 source-incomplete；C08 and the full Foundation Gate remain `UNPROVEN` |
 | Last updated | 2026-09-15 |
 
 ---

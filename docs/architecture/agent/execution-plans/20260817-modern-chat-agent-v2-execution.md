@@ -1942,8 +1942,8 @@ and zero local-path leakage.
 #### G-FE1 DevelopmentWorkItem: Normal Agent Send Baseline
 
 - **ID**: `G-FE1-NORMAL-SEND`.
-- **Status**: `SOURCE_INVENTORY_COMPLETE`; exact-source Development Journey is
-  `UNPROVEN`.
+- **Status**: `FUNCTIONAL_PASS`; broader G-F source closure and Acceptance
+  remain `UNPROVEN`.
 - **Product contract**: reuse the accepted F1/F2 and AS-F06 behavior without
   adding a new product state: Desktop Native submits one ordinary text Turn,
   receives non-empty sequenced text, reaches exactly one authoritative
@@ -1963,8 +1963,22 @@ and zero local-path leakage.
   non-empty text before terminal, one terminal, Station Turn/message readback,
   durable reload equality, client restart replay equality, zero duplicate
   side effects, and complete process/port/storage cleanup.
-- **Next action**: add the focused Development adapter and run it once on the
-  current exact source before starting the first source-missing BASE cluster.
+- **Functional evidence (2026-09-15)**:
+  - The focused Development adapter is
+    `tooling/acceptance/gates/agent/foundation_normal_send_development.py`;
+    its closed-set verifier has eight focused regressions.
+  - Exact-source run `20260915T143820839970Z` on checkpoint `fe254ca7d`
+    passed non-empty sequenced streaming, one authoritative completed
+    Station assistant message, streamed-prefix preservation, Station/content
+    equality, page reload equality, client restart/replay equality, no
+    duplicate messages, and zero ToolCalls.
+  - The Journey used one newly created Conversation after provider setup,
+    preserving MCA-D03's immutable conversation runtime-binding contract.
+    Blocked preflights no longer reset a fixture they did not acquire.
+  - Native process, renderer, gateway, WebDriver, Conversation, actor Fixture,
+    profile lease, source lease, and provisioner cleanup all completed.
+- **Next action**: freeze the shared typed-error contract and implement
+  `G-FE1-SC1` without running C08 or the 419-cell Foundation Gate.
 
 #### G-FE1 Source Closure Inventory
 
