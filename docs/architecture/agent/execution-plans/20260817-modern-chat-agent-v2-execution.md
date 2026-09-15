@@ -1984,7 +1984,7 @@ and zero local-path leakage.
 
 - **Inventory source**: the reviewed 28-family `foundation_errors` matrix,
   production Station/Desktop paths, and direct Harness/oracle registration.
-- **Closed on source and prior focused runtime evidence (19)**:
+- **Owner-layer source complete (20)**:
   `BASE-QUEUE_FULL`,
   `BASE-RUNTIME_UNAVAILABLE`,
   `BASE-DUPLICATE_CONFLICT`, `BASE-ACTIVE_MUTATION_CONFLICT`,
@@ -1994,8 +1994,13 @@ and zero local-path leakage.
   `BASE-MODEL_UNAVAILABLE`, `BASE-PROVIDER_TIMEOUT`,
   `BASE-CONTEXT_OVERFLOW`, `BASE-INVALID_REFERENCE`,
   `BASE-ATTACHMENT_REJECTED`, `BASE-APPROVAL_DENIED`,
-  `BASE-APPROVAL_EXPIRED`, `BASE-CANCELLED`, and `BASE-INTERRUPTED`.
-- **Source-incomplete (9)**:
+  `BASE-APPROVAL_EXPIRED`, `BASE-CANCELLED`, `BASE-INTERRUPTED`, and
+  `BASE-UNKNOWN_TOOL`.
+- **Exact-source `FUNCTIONAL_PASS` (19)**: all owner-layer-complete families
+  above except `BASE-UNKNOWN_TOOL`, whose real-provider Development Journey is
+  blocked before product execution by the disposable Agent's missing enabled
+  `skills_list` binding.
+- **Source-incomplete (8)**:
 
 | Cluster | Families | Missing closure |
 |---|---|---|
@@ -2003,7 +2008,7 @@ and zero local-path leakage.
 | `G-FE1-SC2` Runtime selection | `BASE-RESUME_UNAVAILABLE` | external-session reset command, typed outcome, confirmation action, and direct Journey |
 | `G-FE1-SC3` Client execution | `BASE-PERMISSION_DENIED`, `BASE-TARGET_DISCONNECTED` | Desktop/Station implementation beyond Mobile contract-only coverage |
 | `G-FE1-SC4` Provider terminalization | `BASE-RATE_LIMIT` | deterministic real 429 trigger without a synthetic provider response |
-| `G-FE1-SC5` Tool control | `BASE-UNKNOWN_TOOL`, `BASE-LOOP_BUDGET_EXHAUSTED` | unknown-tool owner path and accepted budget details/action |
+| `G-FE1-SC5` Tool control | `BASE-LOOP_BUDGET_EXHAUSTED` | accepted budget details/action |
 | `G-FE1-SC6` Lifecycle concurrency | `BASE-STALE_VERSION`, `BASE-TERMINAL_MUTATION` | canonical lifecycle rejection and contextual recovery action |
 
 - **Execution order**: finish `G-FE1-NORMAL-SEND`, freeze the shared typed-error
@@ -2103,8 +2108,28 @@ and zero local-path leakage.
     removed without deleting containers, images, volumes, or database data.
   - `BASE-RATE_LIMIT` remains parked until a deterministic real 429 trigger is
     available; the accepted terminalization source must not be counted from a
-    synthetic response. `G-FE1-SC5 / BASE-UNKNOWN_TOOL` is the next
+    synthetic response. `G-FE1-SC5 / BASE-LOOP_BUDGET_EXHAUSTED` is the next
     dependency-ready owner-layer vertical.
+- **SC5 split**:
+  - `BASE-UNKNOWN_TOOL` is owner-layer source complete at checkpoint
+    `3915b0e7a`. New Tool batches lock and re-read the exact pinned
+    binding/manifest before atomically committing the assistant ToolCall
+    projection and ToolBatch/ToolCall rows. Missing, disabled, tombstoned, or
+    retired exact tools return non-retryable terminal `TOOL_UNKNOWN` with
+    `tool_id,tool_version`; ownership, revision, and non-retirement
+    availability drift remain `INVALID_SOURCE_STATE`. Existing durable batches
+    replay from pinned authority after later revocation.
+  - Native Development run `20260915T201143165434Z` on exact source
+    `3915b0e7a` stopped before a Provider call because the selected disposable
+    Agent had no enabled `skills_list` binding. The runner correctly refused to
+    invent a capability fixture. Client processes, ports, storage, and
+    provisioner leases were clean; the cleanup profile activation hit the
+    repository's Xcode-PATH issue, after which `make -e profile` and the
+    authorized disposable Fixture reset completed manually. Do not repeat this
+    unchanged precondition failure.
+  - `BASE-UNKNOWN_TOOL` remains `FUNCTIONAL_UNPROVEN` until the disposable
+    profile contains a real user-configured enabled `skills_list` binding.
+    `BASE-LOOP_BUDGET_EXHAUSTED` is the next dependency-ready source vertical.
 - **Gate boundary**: do not run C08 or the 419-cell Foundation Gate while any
   source-incomplete family remains.
 - **C08 diagnostic after the boundary changed (2026-09-15)**: run

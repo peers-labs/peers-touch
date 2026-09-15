@@ -74,6 +74,7 @@ class UnknownToolDevelopmentTest(unittest.TestCase):
         self.assertNotIn("AGENT_V2_FOUNDATION_GATE", source)
         self.assertNotIn("foundation_unknown_tool", source)
         self.assertNotIn('UNKNOWN_TOOL_VERSION = "unregistered"', source)
+        self.assertIn('["make", "-e", "profile"', source)
 
     def test_accepts_unknown_tool_facts(self) -> None:
         assertions = evaluate_unknown_tool(valid_capture())

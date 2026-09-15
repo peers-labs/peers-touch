@@ -273,7 +273,7 @@ def main() -> int:
                 )
             try:
                 activated = subprocess.run(
-                    ["make", "profile", f"PROFILE={PROFILE}"],
+                    ["make", "-e", "profile", f"PROFILE={PROFILE}"],
                     cwd=ROOT,
                     check=False,
                     capture_output=True,
