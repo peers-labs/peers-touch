@@ -1039,9 +1039,20 @@ func TestToolDispatchServiceProposeAuthorizedBatchFailsClosed(t *testing.T) {
 		name      string
 		enabled   bool
 		readiness model.CapabilityReadinessState
+		wantCode  errcode.Code
 	}{
-		{name: "disabled binding", enabled: false, readiness: model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY},
-		{name: "unavailable snapshot", enabled: true, readiness: model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE},
+		{
+			name:      "disabled binding",
+			enabled:   false,
+			readiness: model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+			wantCode:  errcode.AgentToolUnknown,
+		},
+		{
+			name:      "unavailable snapshot",
+			enabled:   true,
+			readiness: model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
+			wantCode:  errcode.AgentInvalidSourceState,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1055,7 +1066,7 @@ func TestToolDispatchServiceProposeAuthorizedBatchFailsClosed(t *testing.T) {
 			)
 			if _, err := fixture.service.ProposeAuthorizedBatch(
 				context.Background(), proposal,
-			); !isCapabilityError(err, errcode.AgentInvalidSourceState) {
+			); !isCapabilityError(err, test.wantCode) {
 				t.Fatalf("invalid authority accepted: %v", err)
 			}
 			var count int64
@@ -1068,6 +1079,278 @@ func TestToolDispatchServiceProposeAuthorizedBatchFailsClosed(t *testing.T) {
 				t.Fatalf("invalid authority persisted %d tool calls", count)
 			}
 		})
+	}
+}
+
+func TestToolDispatchServiceMapsRetiredToolToUnknownBeforeProjection(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	proposal := fixture.authorizedProposal(
+		t,
+		"retired-before-projection",
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+	)
+	retiredAt := fixture.now.Add(time.Second)
+	if err := fixture.db.Model(&persistence.CapabilityManifest{}).
+		Where(
+			"capability_id = ? AND version = ?",
+			proposal.Calls[0].CapabilityID,
+			proposal.Calls[0].SchemaVersion,
+		).
+		Updates(map[string]interface{}{
+			"availability": int32(
+				model.CapabilityAvailability_CAPABILITY_AVAILABILITY_BLOCKED,
+			),
+			"retired_at": retiredAt,
+		}).Error; err != nil {
+		t.Fatalf("retire advertised Tool manifest: %v", err)
+	}
+	projected := false
+	decisions, projectionCommitted, err :=
+		fixture.service.proposeAuthorizedBatchWithProjection(
+			context.Background(),
+			proposal,
+			func(*gorm.DB) error {
+				projected = true
+				return nil
+			},
+		)
+	var toolErr *errcode.BizError
+	if decisions != nil ||
+		projectionCommitted ||
+		projected ||
+		!errors.As(err, &toolErr) ||
+		toolErr.Code != errcode.AgentToolUnknown ||
+		toolErr.Payload.GetDetails()["tool_id"] != proposal.Calls[0].ToolName ||
+		toolErr.Payload.GetDetails()["tool_version"] !=
+			proposal.Calls[0].SchemaVersion {
+		t.Fatalf(
+			"retired advertised Tool result: decisions=%+v projected=%v callback=%v err=%#v",
+			decisions,
+			projectionCommitted,
+			projected,
+			err,
+		)
+	}
+	for name, record := range map[string]interface{}{
+		"tool batch": &persistence.ToolBatch{},
+		"tool call":  &persistence.ToolCall{},
+	} {
+		var count int64
+		if err := fixture.db.Model(record).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("retired advertised Tool persisted %d %s rows", count, name)
+		}
+	}
+}
+
+func TestToolDispatchServiceKeepsAuthorityDriftInvalidSourceState(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*testing.T, toolDispatchFixture, ToolBatchProposal)
+	}{
+		{
+			name: "binding ownership",
+			mutate: func(
+				t *testing.T,
+				fixture toolDispatchFixture,
+				proposal ToolBatchProposal,
+			) {
+				if err := fixture.db.Model(&persistence.AgentCapabilityBinding{}).
+					Where("binding_id = ?", proposal.Calls[0].BindingID).
+					Update("ptid", "ptid:person:other").Error; err != nil {
+					t.Fatalf("change advertised Tool binding owner: %v", err)
+				}
+			},
+		},
+		{
+			name: "manifest availability without retirement",
+			mutate: func(
+				t *testing.T,
+				fixture toolDispatchFixture,
+				proposal ToolBatchProposal,
+			) {
+				if err := fixture.db.Model(&persistence.CapabilityManifest{}).
+					Where(
+						"capability_id = ? AND version = ?",
+						proposal.Calls[0].CapabilityID,
+						proposal.Calls[0].SchemaVersion,
+					).
+					Update(
+						"availability",
+						int32(
+							model.CapabilityAvailability_CAPABILITY_AVAILABILITY_BLOCKED,
+						),
+					).Error; err != nil {
+					t.Fatalf("block advertised Tool manifest: %v", err)
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newToolDispatchFixture(t)
+			proposal := fixture.authorizedProposal(
+				t,
+				"authority-drift-"+strings.ReplaceAll(test.name, " ", "-"),
+				model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO,
+				model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+				true,
+			)
+			test.mutate(t, fixture, proposal)
+			projected := false
+			decisions, projectionCommitted, err :=
+				fixture.service.proposeAuthorizedBatchWithProjection(
+					context.Background(),
+					proposal,
+					func(*gorm.DB) error {
+						projected = true
+						return nil
+					},
+				)
+			if decisions != nil ||
+				projectionCommitted ||
+				projected ||
+				!isCapabilityError(err, errcode.AgentInvalidSourceState) {
+				t.Fatalf(
+					"authority drift result: decisions=%+v projected=%v callback=%v err=%#v",
+					decisions,
+					projectionCommitted,
+					projected,
+					err,
+				)
+			}
+		})
+	}
+}
+
+func TestToolDispatchServiceReplaysPinnedBatchAfterBindingDisabled(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	proposal := fixture.authorizedProposal(
+		t,
+		"replay-after-disable",
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+	)
+	projectionCount := 0
+	first, projected, err := fixture.service.proposeAuthorizedBatchWithProjection(
+		context.Background(),
+		proposal,
+		func(*gorm.DB) error {
+			projectionCount++
+			return nil
+		},
+	)
+	if err != nil || !projected || len(first) != 1 || projectionCount != 1 {
+		t.Fatalf(
+			"initial Tool batch: decisions=%+v projected=%v projections=%d err=%v",
+			first,
+			projected,
+			projectionCount,
+			err,
+		)
+	}
+	if err := fixture.db.Model(&persistence.AgentCapabilityBinding{}).
+		Where("binding_id = ?", proposal.Calls[0].BindingID).
+		Updates(map[string]interface{}{
+			"enabled":  false,
+			"revision": proposal.Calls[0].BindingRevision + 1,
+		}).Error; err != nil {
+		t.Fatalf("disable binding after Tool batch commit: %v", err)
+	}
+
+	replayed, replayProjected, err :=
+		fixture.service.proposeAuthorizedBatchWithProjection(
+			context.Background(),
+			proposal,
+			func(*gorm.DB) error {
+				projectionCount++
+				return nil
+			},
+		)
+	if err != nil ||
+		replayProjected ||
+		len(replayed) != 1 ||
+		projectionCount != 1 ||
+		replayed[0].ToolCallID != first[0].ToolCallID {
+		t.Fatalf(
+			"pinned Tool batch replay: decisions=%+v projected=%v projections=%d err=%v",
+			replayed,
+			replayProjected,
+			projectionCount,
+			err,
+		)
+	}
+	var call persistence.ToolCall
+	if err := fixture.db.First(
+		&call,
+		"actor_id = ? AND tool_call_id = ?",
+		proposal.ActorID,
+		proposal.Calls[0].ToolCallID,
+	).Error; err != nil {
+		t.Fatalf("load replayed ToolCall: %v", err)
+	}
+	if call.DuplicateDeliveryCount != 1 {
+		t.Fatalf(
+			"replayed ToolCall duplicate count = %d, want 1",
+			call.DuplicateDeliveryCount,
+		)
+	}
+}
+
+func TestToolDispatchServiceProjectionFailureRollsBackNewBatch(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	proposal := fixture.authorizedProposal(
+		t,
+		"projection-rollback",
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+	)
+	projectionErr := errors.New("projection failed")
+	decisions, projected, err :=
+		fixture.service.proposeAuthorizedBatchWithProjection(
+			context.Background(),
+			proposal,
+			func(tx *gorm.DB) error {
+				if err := tx.Create(&persistence.TurnEvent{
+					ID:             "projection-event",
+					ConversationID: proposal.ConversationID,
+					TurnID:         proposal.TurnID,
+					AttemptID:      proposal.AttemptID,
+					EventSeq:       1,
+					EventType:      "tool_call",
+					Payload:        "{}",
+					CreatedAt:      fixture.now,
+				}).Error; err != nil {
+					return err
+				}
+				return projectionErr
+			},
+		)
+	if decisions != nil || projected || !errors.Is(err, projectionErr) {
+		t.Fatalf(
+			"projection rollback result: decisions=%+v projected=%v err=%v",
+			decisions,
+			projected,
+			err,
+		)
+	}
+	for name, record := range map[string]interface{}{
+		"projection event": &persistence.TurnEvent{},
+		"tool batch":       &persistence.ToolBatch{},
+		"tool call":        &persistence.ToolCall{},
+	} {
+		var count int64
+		if err := fixture.db.Model(record).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("failed projection persisted %d %s rows", count, name)
+		}
 	}
 }
 

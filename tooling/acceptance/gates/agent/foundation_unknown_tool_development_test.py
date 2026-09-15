@@ -22,20 +22,28 @@ def valid_capture() -> dict[str, object]:
                 "retryable": False,
                 "terminal": True,
                 "details": {
-                    "tool_id": "foundation_unknown_tool",
-                    "tool_version": "unregistered",
+                    "tool_id": "skills_list",
+                    "tool_version": "builtin-v1",
                 },
             },
             "resolution": {
                 "type": "chooseTool",
-                "toolId": "foundation_unknown_tool",
-                "toolVersion": "unregistered",
+                "toolId": "skills_list",
+                "toolVersion": "builtin-v1",
                 "label": "agent.recovery.chooseTool",
             },
             "recoveryLabel": "Choose tool",
             "recoveryVisible": True,
-            "projectedToolId": "foundation_unknown_tool",
-            "projectedToolVersion": "unregistered",
+            "advertisedToolId": "skills_list",
+            "advertisedToolVersion": "builtin-v1",
+            "bindingId": "binding-skills-list",
+            "originalBindingRevision": "7",
+            "isolatedBindingRevision": "8",
+            "isolatedBindingEnabled": False,
+            "providerStartObserved": True,
+            "providerStartSequence": 12,
+            "projectedToolId": "skills_list",
+            "projectedToolVersion": "builtin-v1",
             "providerCalls": [{"provider": "provider-1", "model": "model-1"}],
             "providerCallCountBefore": 0,
             "providerCallCountAfter": 1,
@@ -62,7 +70,10 @@ class UnknownToolDevelopmentTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn('GATE_ID = "agent-v2-kernel-foundation-e2e"', source)
+        self.assertIn('UNKNOWN_TOOL_ID = "skills_list"', source)
         self.assertNotIn("AGENT_V2_FOUNDATION_GATE", source)
+        self.assertNotIn("foundation_unknown_tool", source)
+        self.assertNotIn('UNKNOWN_TOOL_VERSION = "unregistered"', source)
 
     def test_accepts_unknown_tool_facts(self) -> None:
         assertions = evaluate_unknown_tool(valid_capture())
@@ -96,6 +107,26 @@ class UnknownToolDevelopmentTest(unittest.TestCase):
         with self.assertRaisesRegex(
             UnknownToolError,
             "typedUnknownTool",
+        ):
+            evaluate_unknown_tool(capture)
+
+    def test_rejects_version_not_pinned_to_advertised_manifest(self) -> None:
+        capture = copy.deepcopy(valid_capture())
+        capture["facts"]["typedError"]["details"]["tool_version"] = "stale-v0"
+
+        with self.assertRaisesRegex(
+            UnknownToolError,
+            "typedUnknownTool",
+        ):
+            evaluate_unknown_tool(capture)
+
+    def test_rejects_missing_provider_binding_race(self) -> None:
+        capture = copy.deepcopy(valid_capture())
+        capture["facts"]["isolatedBindingRevision"] = "9"
+
+        with self.assertRaisesRegex(
+            UnknownToolError,
+            "providerBindingRace",
         ):
             evaluate_unknown_tool(capture)
 

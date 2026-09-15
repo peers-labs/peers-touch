@@ -2179,6 +2179,60 @@ async function foundationReadyCapabilityHash(
   return sha256Hex(stableJson(ready));
 }
 
+async function prepareFoundationSelectiveCapabilityIsolation(
+  agent: NonNullable<ReturnType<typeof selectedAgent>>,
+  binding: AgentCapabilityBinding,
+  capabilitySessionId: string,
+): Promise<FoundationCapabilityIsolationJournal> {
+  await restorePersistedFoundationCapabilityIsolation();
+  if (!binding.enabled || binding.tombstonedAt) {
+    throw new Error(
+      'agent.acceptance.foundationSelectiveCapabilityBindingUnavailable',
+    );
+  }
+  const agentId = agent.id || agent.name;
+  const readiness = await api.getAgentCapabilityReadiness({
+    agent_id: agentId,
+    client_capability_session_id: capabilitySessionId,
+  });
+  const readyCapabilities = readiness.capabilities.filter(
+    isAgentCapabilityReady,
+  );
+  if (!readyCapabilities.some((capability) => (
+    capability.capability_id === binding.capabilityId
+    && capability.capability_version === binding.capabilityVersion
+  ))) {
+    throw new Error(
+      'agent.acceptance.foundationSelectiveCapabilityReadinessUnavailable',
+    );
+  }
+  const originalReadyCapabilityHash = await foundationReadyCapabilityHash(
+    readiness,
+  );
+  const journal: FoundationCapabilityIsolationJournal = {
+    agentId,
+    agentVersion: agent.version,
+    originalReadyCapabilityCount: readyCapabilities.length,
+    originalReadyCapabilityHash,
+    bindings: [{
+      bindingId: binding.bindingId,
+      capabilityId: binding.capabilityId,
+      capabilityVersion: binding.capabilityVersion,
+      approvalPolicy: binding.approvalPolicy,
+      originalRevision: binding.revision.toString(),
+      isolatedRevision: (binding.revision + 1n).toString(),
+      restoredRevision: (binding.revision + 2n).toString(),
+    }],
+  };
+  const serializedJournal = JSON.stringify(journal);
+  parseFoundationCapabilityIsolationJournal(serializedJournal);
+  window.localStorage.setItem(
+    FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY,
+    serializedJournal,
+  );
+  return journal;
+}
+
 function readFoundationCapabilityIsolationJournal(
 ): FoundationCapabilityIsolationJournal | null {
   return parseFoundationCapabilityIsolationJournal(
@@ -21807,284 +21861,401 @@ export function installAcceptanceHarness(): void {
         throw new Error('agent.acceptance.unknownTool');
       }
       const agentId = agent.id || agent.name;
-      const unknownToolId = 'foundation_unknown_tool';
-      const unknownToolVersion = 'unregistered';
+      const unknownToolId = 'skills_list';
       let conversationId = '';
       let turnId = '';
       let capture: Record<string, unknown> | null = null;
       let bindingRestored = false;
       let conversationDeleted = false;
       let localProjectionCleared = false;
+      let unsubscribeProviderStart: (() => void) | null = null;
+      const isolationRef: {
+        current: Promise<AgentCapabilityBinding> | null;
+      } = { current: null };
+      let primaryError: unknown = null;
+      const cleanupErrors: unknown[] = [];
 
-      await withFoundationReadyCapabilityFixture(
-        agent,
-        'browser',
-        async (authoritativeAgent) => {
-          try {
-            const capabilitySession = await resolveFoundationToolTurnSession();
-            const conversation = await api.createAgentConversation({
-              agent_id: agentId,
-              title: `Unknown tool ${sampleId}`,
-              provider_id: authoritativeAgent.provider,
-              model_name: authoritativeAgent.model,
-            });
-            conversationId = conversation.conversation_id;
-            await useChatStore.getState().selectSession(conversationId);
+      try {
+        await restorePersistedFoundationCapabilityIsolation();
+        const authoritativeAgent = await api.getAgent(agentId);
+        const fixture = await foundationToolFixture(agentId, 'browser', {
+          toolName: unknownToolId,
+        });
+        const advertisedBinding = fixture.binding;
+        if (!advertisedBinding?.enabled || advertisedBinding.tombstonedAt) {
+          throw new Error(
+            'agent.acceptance.unknownToolAdvertisedBindingUnavailable',
+          );
+        }
+        const unknownToolVersion = fixture.manifest.version;
+        const capabilitySession = await resolveFoundationToolTurnSession();
+        const isolationJournal =
+          await prepareFoundationSelectiveCapabilityIsolation(
+            authoritativeAgent,
+            advertisedBinding,
+            capabilitySession.capabilitySessionId,
+          );
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Unknown tool ${sampleId}`,
+          provider_id: authoritativeAgent.provider,
+          model_name: authoritativeAgent.model,
+        });
+        conversationId = conversation.conversation_id;
+        await useChatStore.getState().selectSession(conversationId);
 
-            const [
-              readbackBefore,
-              tracesBefore,
-              queueBefore,
-              executionBefore,
-            ] = await Promise.all([
-              foundationConversationReadback(conversationId),
-              api.listAgentTurnTraces(agentId, {
-                conversationId,
-                page: 1,
-                pageSize: 200,
-              }),
-              api.listAgentTurnQueue(conversationId),
-              foundationIncompatibleExecutionSnapshot(
-                agentId,
-                conversationId,
-              ),
-            ]);
-            const messageCountBefore =
-              useChatStore.getState().messages.length;
-            const sent = useChatStore.getState().sendMessage(
-                `Emit exactly one native tool call named ${unknownToolId} `
-                + 'with the arguments {}. Do not call any advertised tool, '
-                + 'do not answer with text, and do not retry.',
-              [],
-              {
-                clientIdempotencyKey: crypto.randomUUID(),
-              },
-            );
-            if (!sent) {
-              throw new Error('agent.acceptance.unknownToolSendRejected');
+        const [
+          readbackBefore,
+          tracesBefore,
+          queueBefore,
+          executionBefore,
+        ] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+          foundationIncompatibleExecutionSnapshot(
+            agentId,
+            conversationId,
+          ),
+        ]);
+        const messageCountBefore = useChatStore.getState().messages.length;
+        let providerStartObserved = false;
+        let providerStartSequence = 0;
+        unsubscribeProviderStart = eventBus.subscribe(
+          EVENT.AGENT_TURN_STREAM_EVENT,
+          (payload) => {
+            if (
+              isolationRef.current
+              || payload.conversationId !== conversationId
+              || payload.event !== 'progress'
+              || payload.data.stage !== 'provider_call_started'
+            ) {
+              return;
             }
+            providerStartObserved = true;
+            providerStartSequence = Number(payload.data.seq ?? 0);
+            const sourceDelivery = (
+              payload as typeof payload & {
+                sourceDelivery?: AgentTurnSourceDelivery;
+              }
+            ).sourceDelivery;
+            turnId = String(
+              payload.data.turnId
+              ?? payload.data.turn_id
+              ?? sourceDelivery?.turnId
+              ?? '',
+            );
+            isolationRef.current = updateFoundationCapabilityBindingEnabled(
+              authoritativeAgent,
+              advertisedBinding,
+              false,
+            );
+          },
+        );
+        const sent = useChatStore.getState().sendMessage(
+          `Call the advertised ${unknownToolId} tool exactly once with `
+          + 'the arguments {} before answering. Do not answer with text '
+          + 'before the tool call and do not retry.',
+          [],
+          {
+            clientIdempotencyKey: crypto.randomUUID(),
+          },
+        );
+        if (!sent) {
+          throw new Error('agent.acceptance.unknownToolSendRejected');
+        }
+        await waitFor(
+          () => isolationRef.current !== null,
+          'unknown-tool provider start',
+          60_000,
+        );
+        const pendingIsolation = isolationRef.current;
+        if (!pendingIsolation) {
+          throw new Error(
+            'agent.acceptance.unknownToolBindingIsolationMissing',
+          );
+        }
+        const isolatedBinding = await pendingIsolation;
+        unsubscribeProviderStart();
+        unsubscribeProviderStart = null;
+        if (
+          isolatedBinding.enabled
+          || isolatedBinding.revision !== advertisedBinding.revision + 1n
+        ) {
+          throw new Error(
+            'agent.acceptance.unknownToolBindingIsolationFailed',
+          );
+        }
 
-            let errorMessage = useChatStore.getState().messages
+        let errorMessage = useChatStore.getState().messages
+          .slice(messageCountBefore)
+          .find((message) => (
+            message.role === 'assistant'
+            && message.typedError?.error_type === 'TOOL_UNKNOWN'
+          ));
+        await waitFor(
+          () => {
+            errorMessage = useChatStore.getState().messages
               .slice(messageCountBefore)
               .find((message) => (
                 message.role === 'assistant'
                 && message.typedError?.error_type === 'TOOL_UNKNOWN'
+                && message.resolution?.type === 'chooseTool'
               ));
-            await waitFor(
-              () => {
-                errorMessage = useChatStore.getState().messages
-                  .slice(messageCountBefore)
-                  .find((message) => (
-                    message.role === 'assistant'
-                    && message.typedError?.error_type === 'TOOL_UNKNOWN'
-                    && message.resolution?.type === 'chooseTool'
-                  ));
-                const recovery = document.querySelector<HTMLButtonElement>(
-                  '[data-pt-agent-message-error-recovery="choose-tool"]',
-                );
-                const errorSurface = document.querySelector<HTMLElement>(
-                  '[data-pt-agent-error-type="TOOL_UNKNOWN"]',
-                );
-                return Boolean(
-                  errorMessage
-                  && recovery
-                  && recovery.getClientRects().length > 0
-                  && errorSurface
-                  && errorSurface.getClientRects().length > 0,
-                );
-              },
-              'unknown-tool recovery surface',
-              180_000,
-            );
             const recovery = document.querySelector<HTMLButtonElement>(
               '[data-pt-agent-message-error-recovery="choose-tool"]',
             );
             const errorSurface = document.querySelector<HTMLElement>(
               '[data-pt-agent-error-type="TOOL_UNKNOWN"]',
             );
-            if (!errorMessage || !recovery || !errorSurface) {
-              throw new Error(
-                'agent.acceptance.unknownToolRecoveryMissing',
-              );
-            }
-            turnId = errorMessage.turnId ?? '';
-            if (!turnId) {
-              throw new Error('agent.acceptance.unknownToolTurnMissing');
-            }
-            const recoveryVisible =
-              recovery.getClientRects().length > 0;
-            const recoveryLabel = recovery.textContent?.trim() ?? '';
-            const typedError = errorMessage.typedError;
-            const resolution = errorMessage.resolution;
-
-            const [
-              readbackAfter,
-              tracesAfter,
-              queueAfter,
-              executionAfter,
-            ] = await Promise.all([
-              foundationConversationReadback(conversationId),
-              api.listAgentTurnTraces(agentId, {
-                conversationId,
-                page: 1,
-                pageSize: 200,
-              }),
-              api.listAgentTurnQueue(conversationId),
-              foundationIncompatibleExecutionSnapshot(
-                agentId,
-                conversationId,
-              ),
-            ]);
-            const traceEntry = tracesAfter.entries.find(
-              (entry) => entry.turn?.turnId === turnId,
+            return Boolean(
+              errorMessage
+              && recovery
+              && recovery.getClientRects().length > 0
+              && errorSurface
+              && errorSurface.getClientRects().length > 0,
             );
-            const traceRecord = traceEntry?.trace
-              ? evidenceRecord(
-                  evidenceValue(traceEntry.trace),
-                  'unknownToolTrace',
-                )
-              : {};
-            const providerCalls = optionalEvidenceArray(
-              evidenceField(
-                traceRecord,
-                'providerCalls',
-                'provider_calls',
-              ),
-              'unknownToolProviderCalls',
-            );
-            const completedAssistantMessages =
-              readbackAfter.messages.filter((message) => (
-                message.turnId === turnId
-                && String(message.role).toLowerCase() === 'assistant'
-                && String(message.status).toLowerCase() === 'completed'
-              ));
+          },
+          'unknown-tool recovery surface',
+          180_000,
+        );
+        const recovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="choose-tool"]',
+        );
+        const errorSurface = document.querySelector<HTMLElement>(
+          '[data-pt-agent-error-type="TOOL_UNKNOWN"]',
+        );
+        if (!errorMessage || !recovery || !errorSurface) {
+          throw new Error('agent.acceptance.unknownToolRecoveryMissing');
+        }
+        turnId = errorMessage.turnId ?? '';
+        if (!turnId) {
+          throw new Error('agent.acceptance.unknownToolTurnMissing');
+        }
+        const recoveryVisible = recovery.getClientRects().length > 0;
+        const recoveryLabel = recovery.textContent?.trim() ?? '';
+        const typedError = errorMessage.typedError;
+        const resolution = errorMessage.resolution;
 
-            const executionBeforeRecovery =
-              await foundationIncompatibleExecutionSnapshot(
-                agentId,
-                conversationId,
-              );
-            recovery.click();
-            await waitFor(
-              () => (
-                useAgentStore.getState().getAgentSurface(agent.name)
-                  === 'profile'
-                && Boolean(
-                  document.querySelector<HTMLElement>(
-                    `[data-pt-agent-profile="${agent.id}"]`,
-                  )?.getClientRects().length,
-                )
-              ),
-              'unknown-tool Agent Profile surface',
-              30_000,
-            );
-            await new Promise((resolve) => setTimeout(resolve, 500));
-            const executionAfterRecovery =
-              await foundationIncompatibleExecutionSnapshot(
-                agentId,
-                conversationId,
-              );
+        const [
+          readbackAfter,
+          tracesAfter,
+          queueAfter,
+          executionAfter,
+        ] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+          foundationIncompatibleExecutionSnapshot(
+            agentId,
+            conversationId,
+          ),
+        ]);
+        const traceEntry = tracesAfter.entries.find(
+          (entry) => entry.turn?.turnId === turnId,
+        );
+        const traceRecord = traceEntry?.trace
+          ? evidenceRecord(
+              evidenceValue(traceEntry.trace),
+              'unknownToolTrace',
+            )
+          : {};
+        const providerCalls = optionalEvidenceArray(
+          evidenceField(
+            traceRecord,
+            'providerCalls',
+            'provider_calls',
+          ),
+          'unknownToolProviderCalls',
+        );
+        const completedAssistantMessages =
+          readbackAfter.messages.filter((message) => (
+            message.turnId === turnId
+            && String(message.role).toLowerCase() === 'assistant'
+            && String(message.status).toLowerCase() === 'completed'
+          ));
 
-            const assertions = {
-              typedUnknownTool:
-                typedError?.error_type === 'TOOL_UNKNOWN'
-                && typedError.locale_key === 'agent.errors.toolUnknown'
-                && typedError.retryable === false
-                && typedError.terminal === true
-                && stableJson(Object.keys(typedError.details).sort())
-                  === stableJson(['tool_id', 'tool_version'])
-                && typedError.details.tool_id === unknownToolId
-                && typedError.details.tool_version
-                  === unknownToolVersion,
-              localizedChooseToolVisible:
-                recoveryVisible
-                && recoveryLabel === i18n.t(
-                  'agent.recovery.chooseTool',
-                  { ns: 'agent' },
-                )
-                && resolution?.type === 'chooseTool'
-                && resolution.toolId === unknownToolId
-                && resolution.toolVersion === unknownToolVersion,
-              toolIdentityProjected:
-                errorSurface.dataset.ptAgentErrorToolId
-                  === unknownToolId
-                && errorSurface.dataset.ptAgentErrorToolVersion
-                  === unknownToolVersion,
-              oneTerminalProviderAttempt:
-                tracesAfter.entries.length
-                  === tracesBefore.entries.length + 1
-                && providerCalls.length === 1,
-              zeroDecisionOrExecution:
-                executionAfter.toolCallCount
-                  === executionBefore.toolCallCount
-                && executionAfter.toolExecutionCount
-                  === executionBefore.toolExecutionCount
-                && executionAfter.sideEffectCount
-                  === executionBefore.sideEffectCount,
-              zeroSuccessfulCompletion:
-                completedAssistantMessages.length === 0,
-              chooseToolHasNoAutomaticRetry:
-                executionAfterRecovery.turnCount
-                  === executionBeforeRecovery.turnCount
-                && executionAfterRecovery.providerCallCount
-                  === executionBeforeRecovery.providerCallCount
-                && useAgentStore.getState().getAgentSurface(agent.name)
-                  === 'profile',
-              queueUnchanged:
-                queueAfter.entries.length === queueBefore.entries.length,
-            };
-            capture = {
-              assertions,
-              facts: {
+        const executionBeforeRecovery =
+          await foundationIncompatibleExecutionSnapshot(
+            agentId,
+            conversationId,
+          );
+        recovery.click();
+        await waitFor(
+          () => (
+            useAgentStore.getState().getAgentSurface(agent.name)
+              === 'profile'
+            && Boolean(
+              document.querySelector<HTMLElement>(
+                `[data-pt-agent-profile="${agent.id}"]`,
+              )?.getClientRects().length,
+            )
+          ),
+          'unknown-tool Agent Profile surface',
+          30_000,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const executionAfterRecovery =
+          await foundationIncompatibleExecutionSnapshot(
+            agentId,
+            conversationId,
+          );
+
+        const assertions = {
+          providerBindingRace:
+            providerStartObserved
+            && providerStartSequence > 0
+            && isolatedBinding.bindingId === advertisedBinding.bindingId
+            && isolatedBinding.revision === advertisedBinding.revision + 1n
+            && !isolatedBinding.enabled,
+          typedUnknownTool:
+            typedError?.error_type === 'TOOL_UNKNOWN'
+            && typedError.locale_key === 'agent.errors.toolUnknown'
+            && typedError.retryable === false
+            && typedError.terminal === true
+            && stableJson(Object.keys(typedError.details).sort())
+              === stableJson(['tool_id', 'tool_version'])
+            && typedError.details.tool_id === unknownToolId
+            && typedError.details.tool_version === unknownToolVersion,
+          localizedChooseToolVisible:
+            recoveryVisible
+            && recoveryLabel === i18n.t(
+              'agent.recovery.chooseTool',
+              { ns: 'agent' },
+            )
+            && resolution?.type === 'chooseTool'
+            && resolution.toolId === unknownToolId
+            && resolution.toolVersion === unknownToolVersion,
+          toolIdentityProjected:
+            errorSurface.dataset.ptAgentErrorToolId === unknownToolId
+            && errorSurface.dataset.ptAgentErrorToolVersion
+              === unknownToolVersion,
+          oneTerminalProviderAttempt:
+            tracesAfter.entries.length === tracesBefore.entries.length + 1
+            && providerCalls.length === 1,
+          zeroDecisionOrExecution:
+            executionAfter.toolCallCount === executionBefore.toolCallCount
+            && executionAfter.toolExecutionCount
+              === executionBefore.toolExecutionCount
+            && executionAfter.sideEffectCount
+              === executionBefore.sideEffectCount,
+          zeroSuccessfulCompletion:
+            completedAssistantMessages.length === 0,
+          chooseToolHasNoAutomaticRetry:
+            executionAfterRecovery.turnCount
+              === executionBeforeRecovery.turnCount
+            && executionAfterRecovery.providerCallCount
+              === executionBeforeRecovery.providerCallCount
+            && useAgentStore.getState().getAgentSurface(agent.name)
+              === 'profile',
+          queueUnchanged:
+            queueAfter.entries.length === queueBefore.entries.length,
+        };
+        capture = {
+          assertions,
+          facts: {
+            conversationId,
+            turnId,
+            typedError,
+            resolution,
+            recoveryLabel,
+            recoveryVisible,
+            advertisedToolId: unknownToolId,
+            advertisedToolVersion: unknownToolVersion,
+            bindingId: advertisedBinding.bindingId,
+            originalBindingRevision: advertisedBinding.revision.toString(),
+            isolatedBindingRevision: isolatedBinding.revision.toString(),
+            isolatedBindingEnabled: isolatedBinding.enabled,
+            providerStartObserved,
+            providerStartSequence,
+            projectedToolId:
+              errorSurface.dataset.ptAgentErrorToolId ?? '',
+            projectedToolVersion:
+              errorSurface.dataset.ptAgentErrorToolVersion ?? '',
+            providerCalls,
+            providerCallCountBefore:
+              executionBefore.providerCallCount,
+            providerCallCountAfter:
+              executionAfter.providerCallCount,
+            toolCallCountBefore: executionBefore.toolCallCount,
+            toolCallCountAfter: executionAfter.toolCallCount,
+            toolExecutionCountBefore:
+              executionBefore.toolExecutionCount,
+            toolExecutionCountAfter:
+              executionAfter.toolExecutionCount,
+            sideEffectCountBefore: executionBefore.sideEffectCount,
+            sideEffectCountAfter: executionAfter.sideEffectCount,
+            completedAssistantMessageCount:
+              completedAssistantMessages.length,
+            traceCountBefore: tracesBefore.entries.length,
+            traceCountAfter: tracesAfter.entries.length,
+            queueCountBefore: queueBefore.entries.length,
+            queueCountAfter: queueAfter.entries.length,
+            messageCountBefore: readbackBefore.messages.length,
+            messageCountAfter: readbackAfter.messages.length,
+            originalReadyCapabilityCount:
+              isolationJournal.originalReadyCapabilityCount,
+            originalReadyCapabilityHash:
+              isolationJournal.originalReadyCapabilityHash,
+            capabilitySession: capabilitySession.facts,
+          },
+        };
+      } catch (error) {
+        primaryError = error;
+      } finally {
+        unsubscribeProviderStart?.();
+        if (isolationRef.current) {
+          try {
+            await isolationRef.current;
+          } catch (error) {
+            cleanupErrors.push(error);
+          }
+        }
+        useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+        if (conversationId) {
+          try {
+            clearFoundationLocalConversationProjection(conversationId);
+            localProjectionCleared = true;
+            if (primaryError && turnId) {
+              await cleanupFoundationToolConversation(
                 conversationId,
                 turnId,
-                typedError,
-                resolution,
-                recoveryLabel,
-                recoveryVisible,
-                projectedToolId:
-                  errorSurface.dataset.ptAgentErrorToolId ?? '',
-                projectedToolVersion:
-                  errorSurface.dataset.ptAgentErrorToolVersion ?? '',
-                providerCalls,
-                providerCallCountBefore:
-                  executionBefore.providerCallCount,
-                providerCallCountAfter:
-                  executionAfter.providerCallCount,
-                toolCallCountBefore: executionBefore.toolCallCount,
-                toolCallCountAfter: executionAfter.toolCallCount,
-                toolExecutionCountBefore:
-                  executionBefore.toolExecutionCount,
-                toolExecutionCountAfter:
-                  executionAfter.toolExecutionCount,
-                sideEffectCountBefore: executionBefore.sideEffectCount,
-                sideEffectCountAfter: executionAfter.sideEffectCount,
-                completedAssistantMessageCount:
-                  completedAssistantMessages.length,
-                traceCountBefore: tracesBefore.entries.length,
-                traceCountAfter: tracesAfter.entries.length,
-                queueCountBefore: queueBefore.entries.length,
-                queueCountAfter: queueAfter.entries.length,
-                messageCountBefore: readbackBefore.messages.length,
-                messageCountAfter: readbackAfter.messages.length,
-                capabilitySession: capabilitySession.facts,
-              },
-            };
-          } finally {
-            useAgentStore.getState().setAgentSurface(agent.name, 'chat');
-            if (conversationId) {
-              clearFoundationLocalConversationProjection(conversationId);
-              localProjectionCleared = true;
+              );
+              conversationDeleted = true;
+            } else {
               const deletionErrorCode = await deleteFoundationConversation(
                 conversationId,
               );
               conversationDeleted = deletionErrorCode === ''
                 || deletionErrorCode.includes('AGENT_4004');
             }
+          } catch (error) {
+            cleanupErrors.push(error);
           }
-        },
-      );
-      bindingRestored = true;
+        }
+        try {
+          const restoration =
+            await restorePersistedFoundationCapabilityIsolation();
+          bindingRestored = restoration?.restorationVerified === true;
+        } catch (error) {
+          cleanupErrors.push(error);
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw Object.assign(
+          new Error('agent.acceptance.unknownToolCleanupFailed'),
+          { primaryError, cleanupErrors },
+        );
+      }
+      if (primaryError) throw primaryError;
 
       if (!capture) {
         throw new Error('agent.acceptance.unknownToolCaptureMissing');

@@ -25,8 +25,7 @@ WORK_ITEM_ID = "MCA-001"
 JOURNEY_ID = "G-FE1-SC5-UNKNOWN-TOOL"
 DEPLOYMENT_ENVIRONMENT = "chat-native-disposable-station"
 GATE_ID = "agent-v2-kernel-foundation-e2e"
-UNKNOWN_TOOL_ID = "foundation_unknown_tool"
-UNKNOWN_TOOL_VERSION = "unregistered"
+UNKNOWN_TOOL_ID = "skills_list"
 
 
 class UnknownToolError(RuntimeError):
@@ -56,26 +55,50 @@ def evaluate_unknown_tool(capture: Mapping[str, Any]) -> dict[str, bool]:
     details = require_mapping(typed_error.get("details"), "typed error details")
     resolution = require_mapping(facts.get("resolution"), "resolution")
     provider_calls = require_list(facts.get("providerCalls"), "provider calls")
+    advertised_tool_id = str(facts.get("advertisedToolId") or "")
+    advertised_tool_version = str(facts.get("advertisedToolVersion") or "")
+    binding_id = str(facts.get("bindingId") or "")
+    original_binding_revision = str(
+        facts.get("originalBindingRevision") or ""
+    )
+    isolated_binding_revision = str(
+        facts.get("isolatedBindingRevision") or ""
+    )
+    binding_revision_advanced = (
+        original_binding_revision.isdigit()
+        and isolated_binding_revision.isdigit()
+        and int(isolated_binding_revision)
+        == int(original_binding_revision) + 1
+    )
     assertions = {
+        "providerBindingRace": (
+            advertised_tool_id == UNKNOWN_TOOL_ID
+            and bool(advertised_tool_version)
+            and bool(binding_id)
+            and facts.get("providerStartObserved") is True
+            and int(facts.get("providerStartSequence") or 0) > 0
+            and facts.get("isolatedBindingEnabled") is False
+            and binding_revision_advanced
+        ),
         "typedUnknownTool": (
             typed_error.get("error_type") == "TOOL_UNKNOWN"
             and typed_error.get("locale_key") == "agent.errors.toolUnknown"
             and typed_error.get("retryable") is False
             and typed_error.get("terminal") is True
             and sorted(details) == ["tool_id", "tool_version"]
-            and details.get("tool_id") == UNKNOWN_TOOL_ID
-            and details.get("tool_version") == UNKNOWN_TOOL_VERSION
+            and details.get("tool_id") == advertised_tool_id
+            and details.get("tool_version") == advertised_tool_version
         ),
         "localizedChooseToolVisible": (
             facts.get("recoveryVisible") is True
             and bool(str(facts.get("recoveryLabel") or ""))
             and resolution.get("type") == "chooseTool"
-            and resolution.get("toolId") == UNKNOWN_TOOL_ID
-            and resolution.get("toolVersion") == UNKNOWN_TOOL_VERSION
+            and resolution.get("toolId") == advertised_tool_id
+            and resolution.get("toolVersion") == advertised_tool_version
         ),
         "toolIdentityProjected": (
-            facts.get("projectedToolId") == UNKNOWN_TOOL_ID
-            and facts.get("projectedToolVersion") == UNKNOWN_TOOL_VERSION
+            facts.get("projectedToolId") == advertised_tool_id
+            and facts.get("projectedToolVersion") == advertised_tool_version
         ),
         "oneTerminalProviderAttempt": (
             int(facts.get("traceCountAfter") or 0)

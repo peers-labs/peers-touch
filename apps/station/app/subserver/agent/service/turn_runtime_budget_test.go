@@ -11,6 +11,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"google.golang.org/protobuf/proto"
+	"gorm.io/gorm"
 )
 
 func TestDelegatedTurnConfigInheritsActorDepthAndPinnedBudget(t *testing.T) {
@@ -162,6 +163,171 @@ func TestProcessToolCallsRejectsUnknownToolBeforePersistence(t *testing.T) {
 		}
 		if count != 0 {
 			t.Fatalf("unknown Tool rejection persisted %d %s rows", count, name)
+		}
+	}
+}
+
+func TestProcessToolCallsMapsDisabledAdvertisedToolToUnknownBeforePersistence(t *testing.T) {
+	fixture, service, config, providerToolCall := setupProviderToolAuthorityFixture(
+		t,
+		"disabled-advertised-tool",
+	)
+	authorized, ok := config.AuthorizedCapabilities.Tool(providerToolCall.Name)
+	if !ok {
+		t.Fatal("advertised Tool authority is unavailable")
+	}
+	if err := fixture.db.Model(&persistence.AgentCapabilityBinding{}).
+		Where("binding_id = ?", authorized.Binding.GetBindingId()).
+		Updates(map[string]interface{}{
+			"enabled":  false,
+			"revision": authorized.Binding.GetRevision() + 1,
+		}).Error; err != nil {
+		t.Fatalf("disable advertised Tool binding: %v", err)
+	}
+	response := ""
+
+	iterations, paused, err := service.processToolCalls(
+		context.Background(),
+		config,
+		config.TurnID,
+		nil,
+		"",
+		nil,
+		&response,
+		[]ProviderToolCall{providerToolCall},
+		0,
+	)
+	var toolErr *errcode.BizError
+	if !errors.As(err, &toolErr) ||
+		toolErr.Code != errcode.AgentToolUnknown ||
+		toolErr.Payload.GetErrorType() != string(errcode.AgentToolUnknown) ||
+		toolErr.Payload.GetLocaleKey() != errcode.AgentToolUnknownLocaleKey ||
+		toolErr.Payload.GetRetryable() ||
+		!toolErr.Payload.GetTerminal() ||
+		len(toolErr.Payload.GetDetails()) != 2 ||
+		toolErr.Payload.GetDetails()["tool_id"] != providerToolCall.Name ||
+		toolErr.Payload.GetDetails()["tool_version"] !=
+			authorized.Manifest.GetVersion() {
+		t.Fatalf("disabled advertised Tool rejection = %#v", err)
+	}
+	if iterations != 0 || paused {
+		t.Fatalf(
+			"disabled advertised Tool changed loop state: iterations=%d paused=%v",
+			iterations,
+			paused,
+		)
+	}
+	assertNoProviderToolPersistence(t, fixture.db)
+}
+
+func TestProcessToolCallsRejectsEnabledBindingRevisionDriftAsInvalidSourceState(
+	t *testing.T,
+) {
+	fixture, service, config, providerToolCall := setupProviderToolAuthorityFixture(
+		t,
+		"enabled-binding-revision-drift",
+	)
+	authorized, ok := config.AuthorizedCapabilities.Tool(providerToolCall.Name)
+	if !ok {
+		t.Fatal("advertised Tool authority is unavailable")
+	}
+	if err := fixture.db.Model(&persistence.AgentCapabilityBinding{}).
+		Where("binding_id = ?", authorized.Binding.GetBindingId()).
+		Update("revision", authorized.Binding.GetRevision()+1).Error; err != nil {
+		t.Fatalf("advance advertised Tool binding revision: %v", err)
+	}
+	response := ""
+
+	iterations, paused, err := service.processToolCalls(
+		context.Background(),
+		config,
+		config.TurnID,
+		nil,
+		"",
+		nil,
+		&response,
+		[]ProviderToolCall{providerToolCall},
+		0,
+	)
+	var stateErr *errcode.BizError
+	if !errors.As(err, &stateErr) ||
+		stateErr.Code != errcode.AgentInvalidSourceState {
+		t.Fatalf("enabled binding revision drift error = %#v", err)
+	}
+	if iterations != 0 || paused {
+		t.Fatalf(
+			"binding revision drift changed loop state: iterations=%d paused=%v",
+			iterations,
+			paused,
+		)
+	}
+	assertNoProviderToolPersistence(t, fixture.db)
+}
+
+func setupProviderToolAuthorityFixture(
+	t *testing.T,
+	suffix string,
+) (toolDispatchFixture, *TurnService, *TurnConfig, ProviderToolCall) {
+	t.Helper()
+	fixture := newToolDispatchFixture(t)
+	proposal := fixture.authorizedProposalForOwner(
+		t,
+		suffix,
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION,
+	)
+	fixture.seedTurnAuthority(t, proposal)
+	if err := fixture.db.Model(&persistence.TurnAttempt{}).
+		Where("id = ?", proposal.AttemptID).
+		Update("readiness_snapshot_id", proposal.ReadinessSnapshotID).Error; err != nil {
+		t.Fatalf("bind readiness snapshot to turn attempt: %v", err)
+	}
+	config := &TurnConfig{
+		AgentID:                   proposal.AgentID,
+		ActorID:                   proposal.ActorID,
+		ConversationID:            proposal.ConversationID,
+		TurnID:                    proposal.TurnID,
+		AttemptID:                 proposal.AttemptID,
+		ClientCapabilitySessionID: proposal.ClientCapabilitySessionID,
+		RuntimeBudget:             defaultRuntimeBudget(128000),
+		RuntimeCapabilities: &model.RuntimeCapabilitySnapshot{
+			Agentic: &model.RuntimeAgenticCapabilities{NativeTools: true},
+		},
+	}
+	authorized, err := LoadAuthorizedCapabilitySet(
+		context.Background(),
+		fixture.db,
+		config,
+	)
+	if err != nil {
+		t.Fatalf("load advertised Tool authority: %v", err)
+	}
+	config.AuthorizedCapabilities = authorized
+	return fixture, &TurnService{
+			toolDispatch: fixture.service,
+		}, config, ProviderToolCall{
+			ID:        "provider-call-" + suffix,
+			Name:      proposal.Calls[0].ToolName,
+			Arguments: `{}`,
+		}
+}
+
+func assertNoProviderToolPersistence(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for name, record := range map[string]interface{}{
+		"assistant message": &persistence.AgentMessage{},
+		"turn event":        &persistence.TurnEvent{},
+		"tool call":         &persistence.ToolCall{},
+		"tool batch":        &persistence.ToolBatch{},
+	} {
+		var count int64
+		if err := db.Model(record).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("provider Tool rejection persisted %d %s rows", count, name)
 		}
 	}
 }

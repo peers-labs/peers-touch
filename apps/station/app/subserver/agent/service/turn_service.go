@@ -3148,6 +3148,71 @@ func (s *TurnService) persistToolProcessingFailureTrace(
 	return processingErr
 }
 
+func (s *TurnService) persistToolCallProjectionTx(
+	tx *gorm.DB,
+	config *TurnConfig,
+	turnID string,
+	response string,
+	toolCallsJSON json.RawMessage,
+	events []TurnEvent,
+) error {
+	if err := s.persistMessageRecordTx(
+		tx,
+		config.ConversationID,
+		turnID,
+		string(domain.MessageRoleAssistant),
+		response,
+		config.Model,
+		toolCallsJSON,
+		nil,
+		nil,
+		"",
+		"",
+		"",
+	); err != nil {
+		return fmt.Errorf("persist assistant tool-call message: %w", err)
+	}
+	if s.convService == nil {
+		return nil
+	}
+	for index := range events {
+		event := &events[index]
+		event.TurnID = turnID
+		event.ConversationID = config.ConversationID
+		event.AgentID = config.AgentID
+		event.AttemptID = config.AttemptID
+		payload, err := json.Marshal(event)
+		if err != nil {
+			return fmt.Errorf(
+				"%w: encode turn_id=%s type=%s: %w",
+				errTurnEventPersistence,
+				turnID,
+				event.Type,
+				err,
+			)
+		}
+		event.Seq, err = s.convService.persistTurnEventTx(
+			tx,
+			config.ConversationID,
+			turnID,
+			config.AttemptID,
+			event.Type,
+			payload,
+			time.Now(),
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"%w: turn_id=%s type=%s: %w",
+				errTurnEventPersistence,
+				turnID,
+				event.Type,
+				err,
+			)
+		}
+	}
+	return nil
+}
+
 // processToolCalls parses tool_calls from the assistant response, executes
 // them (including delegation), appends results as tool-role messages,
 // re-invokes the provider, and loops until the assistant stops producing
@@ -3201,10 +3266,12 @@ func (s *TurnService) processToolCalls(
 			return iterations, false, err
 		}
 
-		iterations++
-		logger.Infof(ctx, "tool iteration %d: turn_id=%s tool_count=%d", iterations, turnID, len(toolCalls))
-
-		toolBatchID := stableToolBatchID(turnID, config.AttemptID, iterations)
+		nextIteration := iterations + 1
+		toolBatchID := stableToolBatchID(
+			turnID,
+			config.AttemptID,
+			nextIteration,
+		)
 		for index := range toolCalls {
 			toolCalls[index].ProviderCallID = stableToolCallID(
 				toolBatchID,
@@ -3216,46 +3283,19 @@ func (s *TurnService) processToolCalls(
 		if err != nil {
 			return iterations, false, fmt.Errorf("encode assistant ToolCalls: %w", err)
 		}
-		if err := s.persistMessageRecord(
-			ctx,
-			config.ConversationID,
-			turnID,
-			string(domain.MessageRoleAssistant),
-			*responsePtr,
-			config.Model,
-			toolCallsJSON,
-			nil,
-			nil,
-			"",
-			"",
-			"",
-		); err != nil {
-			return iterations, false, fmt.Errorf("persist assistant tool-call message: %w", err)
-		}
-		messages = append(messages, domain.Message{
-			MessageID:      generateID("msg"),
-			ConversationID: config.ConversationID,
-			TurnID:         turnID,
-			Role:           domain.MessageRoleAssistant,
-			Content:        *responsePtr,
-			ToolCallsJSON:  toolCallsJSON,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-		})
 
 		proposals := make([]AuthorizedToolProposal, 0, len(toolCalls))
+		toolEvents := make([]TurnEvent, 0, len(toolCalls))
 
 		for index, tc := range toolCalls {
 			callID := stableToolCallID(toolBatchID, index, tc)
-			if err := s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+			toolEvents = append(toolEvents, TurnEvent{
 				Type:       "tool_call",
 				ToolCallID: callID,
 				ToolName:   tc.ToolName,
 				Arguments:  tc.Arguments,
-				Iteration:  iterations,
-			}); err != nil {
-				return iterations, false, err
-			}
+				Iteration:  nextIteration,
+			})
 
 			authorized, ok := config.AuthorizedCapabilities.Tool(tc.ToolName)
 			if !ok {
@@ -3279,7 +3319,7 @@ func (s *TurnService) processToolCalls(
 		if s.toolDispatch == nil {
 			return iterations, false, fmt.Errorf("tool dispatch not configured")
 		}
-		decisions, err := s.toolDispatch.ProposeAuthorizedBatch(ctx, ToolBatchProposal{
+		proposal := ToolBatchProposal{
 			ActorID:                   config.ActorID,
 			TurnID:                    turnID,
 			AttemptID:                 config.AttemptID,
@@ -3291,7 +3331,7 @@ func (s *TurnService) processToolCalls(
 			Effort:                    config.Effort,
 			ThinkingMode:              string(config.ThinkingMode),
 			SystemPrompt:              systemPrompt,
-			Iteration:                 uint32(iterations),
+			Iteration:                 uint32(nextIteration),
 			MaxRetries:                uint32(config.MaxRetries),
 			ContextWindowSize:         uint32(config.ContextWindowSize),
 			DelegationDepth:           uint32(config.Depth),
@@ -3302,9 +3342,55 @@ func (s *TurnService) processToolCalls(
 			ReadinessSnapshotID:       config.AuthorizedCapabilities.SnapshotID,
 			Deadline:                  time.Now().UTC().Add(localToolTimeout),
 			Calls:                     proposals,
-		})
+		}
+		unlockOwnership, err := s.lockTurnExecutionOwnership(ctx, turnID)
 		if err != nil {
 			return iterations, false, err
+		}
+		decisions, projected, err :=
+			s.toolDispatch.proposeAuthorizedBatchWithProjection(
+				ctx,
+				proposal,
+				func(tx *gorm.DB) error {
+					return s.persistToolCallProjectionTx(
+						tx,
+						config,
+						turnID,
+						*responsePtr,
+						toolCallsJSON,
+						toolEvents,
+					)
+				},
+			)
+		unlockOwnership()
+		if err != nil {
+			return iterations, false, err
+		}
+		iterations = nextIteration
+		logger.Infof(
+			ctx,
+			"tool iteration %d: turn_id=%s tool_count=%d",
+			iterations,
+			turnID,
+			len(toolCalls),
+		)
+		if projected {
+			messages = append(messages, domain.Message{
+				MessageID:      generateID("msg"),
+				ConversationID: config.ConversationID,
+				TurnID:         turnID,
+				Role:           domain.MessageRoleAssistant,
+				Content:        *responsePtr,
+				ToolCallsJSON:  toolCallsJSON,
+				CreatedAt:      time.Now(),
+				UpdatedAt:      time.Now(),
+			})
+			if s.convService != nil {
+				s.convService.notifyTurnEvent(config.ConversationID, turnID)
+			}
+			for _, event := range toolEvents {
+				emitLiveTurnEvent(ctx, config, turnID, event)
+			}
 		}
 		for _, decision := range decisions {
 			if err := s.emitTurnEvent(ctx, config, turnID, toolDecisionTurnEvent(decision, iterations)); err != nil {
@@ -5468,6 +5554,54 @@ func (s *TurnService) persistMessageRecord(
 		return err
 	}
 
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return s.persistMessageRecordTx(
+			tx,
+			conversationID,
+			turnID,
+			role,
+			content,
+			modelName,
+			toolCallsJSON,
+			metadataJSON,
+			attachmentsJSON,
+			branchID,
+			parentMessageID,
+			replacesMessageID,
+		)
+	}); err != nil {
+		logger.Errorf(
+			ctx,
+			"failed to persist message: conversation_id=%s role=%s err=%v",
+			conversationID,
+			role,
+			err,
+		)
+		return errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to persist message",
+			err,
+		)
+	}
+
+	return nil
+}
+
+func (s *TurnService) persistMessageRecordTx(
+	tx *gorm.DB,
+	conversationID string,
+	turnID string,
+	role string,
+	content string,
+	modelName string,
+	toolCallsJSON json.RawMessage,
+	metadataJSON json.RawMessage,
+	attachmentsJSON json.RawMessage,
+	branchID string,
+	parentMessageID string,
+	replacesMessageID string,
+) error {
 	now := time.Now()
 	msg := &persistence.AgentMessage{
 		ID:             generateID("msg"),
@@ -5498,40 +5632,31 @@ func (s *TurnService) persistMessageRecord(
 		msg.ReplacesMessageID = &replacesMessageID
 	}
 
-	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var conversation persistence.Conversation
-		if err := tx.First(&conversation, "id = ?", conversationID).Error; err != nil {
-			return err
-		}
-		var maxSeq struct{ MaxSeq int64 }
-		if err := tx.Model(&persistence.AgentMessage{}).
-			Where("conversation_id = ?", conversationID).
-			Select("COALESCE(MAX(seq), 0) as max_seq").
-			Scan(&maxSeq).Error; err != nil {
-			return err
-		}
-		msg.Seq = maxSeq.MaxSeq + 1
-		effectiveParentID := strings.TrimSpace(parentMessageID)
-		if effectiveParentID == "" {
-			effectiveParentID = conversation.ActiveBranchMessageID
-		}
-		msg.ParentMessageID = optionalString(effectiveParentID)
-		if err := tx.Create(msg).Error; err != nil {
-			return err
-		}
-		return tx.Model(&conversation).Updates(map[string]interface{}{
-			"active_branch_message_id": msg.ID,
-			"updated_at":               now,
-			"version":                  gorm.Expr("version + 1"),
-		}).Error
-	}); err != nil {
-		logger.Errorf(ctx, "failed to persist message: conversation_id=%s role=%s seq=%d err=%v",
-			conversationID, role, msg.Seq, err)
-		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to persist message", err)
+	var conversation persistence.Conversation
+	if err := tx.First(&conversation, "id = ?", conversationID).Error; err != nil {
+		return err
 	}
-
-	return nil
+	var maxSeq struct{ MaxSeq int64 }
+	if err := tx.Model(&persistence.AgentMessage{}).
+		Where("conversation_id = ?", conversationID).
+		Select("COALESCE(MAX(seq), 0) as max_seq").
+		Scan(&maxSeq).Error; err != nil {
+		return err
+	}
+	msg.Seq = maxSeq.MaxSeq + 1
+	effectiveParentID := strings.TrimSpace(parentMessageID)
+	if effectiveParentID == "" {
+		effectiveParentID = conversation.ActiveBranchMessageID
+	}
+	msg.ParentMessageID = optionalString(effectiveParentID)
+	if err := tx.Create(msg).Error; err != nil {
+		return err
+	}
+	return tx.Model(&conversation).Updates(map[string]interface{}{
+		"active_branch_message_id": msg.ID,
+		"updated_at":               now,
+		"version":                  gorm.Expr("version + 1"),
+	}).Error
 }
 
 func (s *TurnService) completeAssistantMessage(

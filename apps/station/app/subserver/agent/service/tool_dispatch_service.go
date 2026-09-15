@@ -514,22 +514,35 @@ func (s *ToolDispatchService) ProposeAuthorizedBatch(
 	ctx context.Context,
 	proposal ToolBatchProposal,
 ) ([]ProposalDecision, error) {
-	return s.proposeBatch(ctx, proposal)
+	decisions, _, err := s.proposeBatch(ctx, proposal, nil)
+	return decisions, err
+}
+
+func (s *ToolDispatchService) proposeAuthorizedBatchWithProjection(
+	ctx context.Context,
+	proposal ToolBatchProposal,
+	project func(*gorm.DB) error,
+) ([]ProposalDecision, bool, error) {
+	// Projection joins only new-batch admission; durable batch replay bypasses
+	// current mutable authority and reuses its pinned ToolCall records.
+	return s.proposeBatch(ctx, proposal, project)
 }
 
 func (s *ToolDispatchService) proposeBatch(
 	ctx context.Context,
 	proposal ToolBatchProposal,
-) ([]ProposalDecision, error) {
+	project func(*gorm.DB) error,
+) ([]ProposalDecision, bool, error) {
 	if err := validateToolBatchProposal(proposal); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	db, err := s.getDB(ctx)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	var decisions []ProposalDecision
+	projected := false
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		now := s.now()
 		deadline := canonicalToolDeadline(proposal.Deadline)
@@ -575,27 +588,13 @@ func (s *ToolDispatchService) proposeBatch(
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return internalToolError("load existing tool batch", err)
 		}
-		if err := tx.Create(batch).Error; err != nil {
-			if !isUniqueViolation(err) {
-				return internalToolError("persist tool batch", err)
-			}
-			if loadErr := tx.Where(
-				"actor_id = ? AND turn_id = ? AND attempt_id = ? AND iteration = ?",
-				batch.ActorID,
-				batch.TurnID,
-				batch.AttemptID,
-				batch.Iteration,
-			).First(&existing).Error; loadErr != nil {
-				return internalToolError("load existing tool batch", loadErr)
-			}
-			var replayErr error
-			decisions, replayErr = loadToolBatchProposalReplayTx(tx, proposal, &existing)
-			return replayErr
-		}
 
 		var lease *model.ClientCapabilityLease
-		decisions = make([]ProposalDecision, 0, len(proposal.Calls))
-		for _, call := range proposal.Calls {
+		authorizations := make(
+			[]*toolCapabilityAuthorization,
+			len(proposal.Calls),
+		)
+		for index, call := range proposal.Calls {
 			authorization, err := resolveToolCapabilityAuthorizationTx(
 				tx,
 				proposal,
@@ -626,12 +625,41 @@ func (s *ToolDispatchService) proposeBatch(
 					"Station-owned tools cannot consume client resource references",
 				)
 			}
+			authorizations[index] = authorization
+		}
+		createBatch := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(batch)
+		if createBatch.Error != nil {
+			return internalToolError("persist tool batch", createBatch.Error)
+		}
+		if createBatch.RowsAffected == 0 {
+			if loadErr := tx.Where(
+				"actor_id = ? AND turn_id = ? AND attempt_id = ? AND iteration = ?",
+				batch.ActorID,
+				batch.TurnID,
+				batch.AttemptID,
+				batch.Iteration,
+			).First(&existing).Error; loadErr != nil {
+				return internalToolError("load existing tool batch", loadErr)
+			}
+			var replayErr error
+			decisions, replayErr = loadToolBatchProposalReplayTx(tx, proposal, &existing)
+			return replayErr
+		}
+		if project != nil {
+			if err := project(tx); err != nil {
+				return err
+			}
+			projected = true
+		}
+
+		decisions = make([]ProposalDecision, 0, len(proposal.Calls))
+		for index, call := range proposal.Calls {
 			decision, err := s.proposeCallTx(
 				tx,
 				proposal,
 				lease,
 				call,
-				authorization,
+				authorizations[index],
 				deadline,
 				now,
 			)
@@ -667,7 +695,10 @@ func (s *ToolDispatchService) proposeBatch(
 		}
 		return nil
 	})
-	return decisions, err
+	if err != nil {
+		return nil, false, err
+	}
+	return decisions, projected, nil
 }
 
 func loadToolBatchProposalReplayTx(
@@ -2200,39 +2231,51 @@ func resolveToolCapabilityAuthorizationTx(
 	}
 
 	var binding persistence.AgentCapabilityBinding
-	if err := tx.Where(
-		"binding_id = ? AND ptid = ? AND agent_id = ? AND tombstoned_at IS NULL",
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
+		"binding_id = ?",
 		bindingID,
-		proposal.ActorID,
-		proposal.AgentID,
 	).First(&binding).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, invalidToolState("capability binding is missing or not owned by the actor")
+			return nil, errcode.NewToolUnknown(call.ToolName, call.SchemaVersion)
 		}
 		return nil, internalToolError("load capability binding for tool dispatch", err)
 	}
-	if !binding.Enabled ||
-		binding.CapabilityID != call.CapabilityID ||
+	if binding.Ptid != proposal.ActorID ||
+		binding.AgentID != proposal.AgentID {
+		return nil, invalidToolState(
+			"capability binding is not owned by the admitted actor and Agent",
+		)
+	}
+	if binding.TombstonedAt != nil || !binding.Enabled {
+		return nil, errcode.NewToolUnknown(call.ToolName, call.SchemaVersion)
+	}
+	if binding.CapabilityID != call.CapabilityID ||
 		binding.CapabilityVersion != call.SchemaVersion ||
 		binding.Revision != call.BindingRevision {
-		return nil, invalidToolState("capability binding is disabled or stale")
+		return nil, invalidToolState("capability binding identity or revision is stale")
 	}
 
 	var manifest persistence.CapabilityManifest
-	if err := tx.Where(
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
 		"capability_id = ? AND version = ?",
 		binding.CapabilityID,
 		binding.CapabilityVersion,
 	).First(&manifest).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, invalidToolState("capability manifest is missing")
+			return nil, errcode.NewToolUnknown(call.ToolName, call.SchemaVersion)
 		}
 		return nil, internalToolError("load capability manifest for tool dispatch", err)
 	}
-	if manifest.RetiredAt != nil ||
-		model.CapabilityAvailability(manifest.Availability) !=
-			model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE {
-		return nil, invalidToolState("capability manifest is retired or unavailable")
+	if manifest.RetiredAt != nil {
+		return nil, errcode.NewToolUnknown(call.ToolName, call.SchemaVersion)
+	}
+	if model.CapabilityAvailability(manifest.Availability) !=
+		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE {
+		return nil, invalidToolState("capability manifest is unavailable")
+	}
+	if (manifest.OwnerPtid != "" && manifest.OwnerPtid != proposal.ActorID) ||
+		manifest.SourceInstanceID != call.ToolName {
+		return nil, invalidToolState("capability manifest authority is stale")
 	}
 	executionOwner := model.ToolExecutionOwner(manifest.ExecutionOwner)
 	if executionOwner == model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_UNSPECIFIED ||

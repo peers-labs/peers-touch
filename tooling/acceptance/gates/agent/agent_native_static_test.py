@@ -1050,9 +1050,20 @@ class AgentHarnessStaticTest(unittest.TestCase):
         end = self.source.index("async sendMessage", start)
         scenario = self.source[start:end]
 
-        self.assertIn("withFoundationReadyCapabilityFixture(", scenario)
+        self.assertIn("foundationToolFixture(agentId, 'browser'", scenario)
+        self.assertIn("toolName: unknownToolId", scenario)
+        self.assertIn(
+            "prepareFoundationSelectiveCapabilityIsolation(",
+            scenario,
+        )
+        self.assertIn("EVENT.AGENT_TURN_STREAM_EVENT", scenario)
+        self.assertIn("payload.data.stage !== 'provider_call_started'", scenario)
+        self.assertIn(
+            "updateFoundationCapabilityBindingEnabled(",
+            scenario,
+        )
         self.assertIn("useChatStore.getState().sendMessage(", scenario)
-        self.assertIn("foundation_unknown_tool", scenario)
+        self.assertIn("const unknownToolId = 'skills_list'", scenario)
         self.assertIn("=== 'TOOL_UNKNOWN'", scenario)
         self.assertIn(
             '[data-pt-agent-message-error-recovery="choose-tool"]',
@@ -1070,6 +1081,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "await deleteFoundationConversation(",
             scenario,
         )
+        self.assertIn(
+            "cleanupFoundationToolConversation(",
+            scenario,
+        )
+        self.assertIn(
+            "restorePersistedFoundationCapabilityIsolation()",
+            scenario,
+        )
+        self.assertNotIn("foundation_unknown_tool", scenario)
+        self.assertNotIn("unregistered", scenario)
         self.assertNotIn("addModel(", scenario)
 
     def test_two_topic_restart_scenario_uses_production_authorities(self) -> None:
