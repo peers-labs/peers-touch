@@ -86,6 +86,19 @@ def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def canonical_enum_matches(
+    value: object,
+    *,
+    numeric: int,
+    textual: str,
+) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return value == numeric
+    return isinstance(value, str) and value.strip().lower() == textual
+
+
 def port_released(port: int) -> bool:
     for family, address in (
         (socket.AF_INET, "127.0.0.1"),
@@ -137,8 +150,16 @@ def evaluate_normal_send(
         message
         for message in station_messages
         if message.get("turnId") == turn_id
-        and int(message.get("role") or 0) == ASSISTANT_MESSAGE_ROLE
-        and int(message.get("status") or 0) == COMPLETED_MESSAGE_STATUS
+        and canonical_enum_matches(
+            message.get("role"),
+            numeric=ASSISTANT_MESSAGE_ROLE,
+            textual="assistant",
+        )
+        and canonical_enum_matches(
+            message.get("status"),
+            numeric=COMPLETED_MESSAGE_STATUS,
+            textual="completed",
+        )
     ]
     message_ids = [
         str(message.get("messageId") or "")

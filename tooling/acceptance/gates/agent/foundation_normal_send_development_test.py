@@ -53,15 +53,15 @@ def valid_capture() -> dict[str, object]:
                 {
                     "messageId": "message-user",
                     "turnId": "turn-1",
-                    "role": 2,
-                    "status": 3,
+                    "role": "user",
+                    "status": "completed",
                     "content": "prompt",
                 },
                 {
                     "messageId": "message-assistant",
                     "turnId": "turn-1",
-                    "role": 3,
-                    "status": 3,
+                    "role": "assistant",
+                    "status": "completed",
                     "content": "1\n2\n3",
                 },
             ],
@@ -89,6 +89,17 @@ class NormalSendDevelopmentTest(unittest.TestCase):
 
         self.assertTrue(all(assertions.values()))
 
+    def test_accepts_numeric_proto_enums(self) -> None:
+        capture = valid_capture()
+        capture["station"]["messages"][0]["role"] = 2
+        capture["station"]["messages"][0]["status"] = 3
+        capture["station"]["messages"][1]["role"] = 3
+        capture["station"]["messages"][1]["status"] = 3
+
+        assertions = evaluate_normal_send(capture)
+
+        self.assertTrue(all(assertions.values()))
+
     def test_rejects_missing_stream_content(self) -> None:
         capture = valid_capture()
         capture["active"]["assistant"]["content"] = ""
@@ -110,7 +121,7 @@ class NormalSendDevelopmentTest(unittest.TestCase):
 
     def test_rejects_completed_user_message_as_terminal(self) -> None:
         capture = valid_capture()
-        capture["station"]["messages"][1]["role"] = 2
+        capture["station"]["messages"][1]["role"] = "user"
 
         with self.assertRaisesRegex(
             NormalSendError,
@@ -120,7 +131,7 @@ class NormalSendDevelopmentTest(unittest.TestCase):
 
     def test_rejects_failed_station_terminal(self) -> None:
         capture = valid_capture()
-        capture["station"]["messages"][1]["status"] = 5
+        capture["station"]["messages"][1]["status"] = "failed"
 
         with self.assertRaisesRegex(
             NormalSendError,
