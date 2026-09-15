@@ -108,6 +108,16 @@ class NormalSendDevelopmentTest(unittest.TestCase):
         ):
             evaluate_normal_send(capture)
 
+    def test_rejects_failed_station_terminal(self) -> None:
+        capture = valid_capture()
+        capture["station"]["messages"][1]["status"] = 5
+
+        with self.assertRaisesRegex(
+            NormalSendError,
+            "singleAuthoritativeTerminal",
+        ):
+            evaluate_normal_send(capture)
+
     def test_rejects_restart_projection_drift(self) -> None:
         capture = valid_capture()
         capture["restarted"]["assistant"]["content"] = "different"

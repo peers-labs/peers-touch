@@ -18,7 +18,11 @@ from pathlib import Path
 from typing import Any
 
 from tooling.acceptance.core import ENVIRONMENTS_DIR, EnvironmentContract
-from tooling.acceptance.core.evidence_store import EvidenceStore, source_identity
+from tooling.acceptance.core.evidence_store import (
+    EvidenceStore,
+    source_identity,
+    workspace_id,
+)
 from tooling.acceptance.core.harness import harness_ready
 from tooling.acceptance.core.provisioner import load_env_file
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
@@ -37,12 +41,12 @@ from tooling.acceptance.provisioners.home_station import (
 
 
 ROOT = Path(__file__).resolve().parents[4]
-WORKSPACE_ID = "65e7b6da4dc9be85"
+WORKSPACE_ID = workspace_id(ROOT)
 WORK_ITEM_ID = "MCA-001"
 JOURNEY_ID = "G-FE1-NORMAL-SEND"
 PROFILE = "chat-native-disposable"
 DEPLOYMENT_ENVIRONMENT = "chat-native-disposable-station"
-TERMINAL_MESSAGE_STATUSES = frozenset({3, 4, 5, 6})
+COMPLETED_MESSAGE_STATUS = 3
 
 
 class NormalSendError(RuntimeError):
@@ -133,7 +137,7 @@ def evaluate_normal_send(
         for message in station_messages
         if message.get("turnId") == turn_id
         and message.get("role") == "assistant"
-        and message.get("status") in TERMINAL_MESSAGE_STATUSES
+        and message.get("status") == COMPLETED_MESSAGE_STATUS
     ]
     message_ids = [
         str(message.get("messageId") or "")
