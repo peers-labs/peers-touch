@@ -1007,7 +1007,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
     def test_provider_timeout_development_journey_uses_real_provider(self) -> None:
         start = self.source.index("async runDevelopmentProviderTimeout")
-        end = self.source.index("async sendMessage", start)
+        end = self.source.index("async runDevelopmentUnknownTool", start)
         scenario = self.source[start:end]
 
         self.assertIn("useChatStore.getState().sendMessage(", scenario)
@@ -1044,6 +1044,33 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
         self.assertNotIn("recovery.click()", scenario)
+
+    def test_unknown_tool_development_journey_uses_real_provider(self) -> None:
+        start = self.source.index("async runDevelopmentUnknownTool")
+        end = self.source.index("async sendMessage", start)
+        scenario = self.source[start:end]
+
+        self.assertIn("withFoundationReadyCapabilityFixture(", scenario)
+        self.assertIn("startObservedFoundationTurn({", scenario)
+        self.assertIn("foundation_unknown_tool", scenario)
+        self.assertIn("=== 'TOOL_UNKNOWN'", scenario)
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="choose-tool"]',
+            scenario,
+        )
+        self.assertIn(
+            "foundationIncompatibleExecutionSnapshot(",
+            scenario,
+        )
+        self.assertIn("providerCalls.length === 1", scenario)
+        self.assertIn("zeroDecisionOrExecution:", scenario)
+        self.assertIn("chooseToolHasNoAutomaticRetry:", scenario)
+        self.assertIn("recovery.click()", scenario)
+        self.assertIn(
+            "await deleteFoundationConversation(",
+            scenario,
+        )
+        self.assertNotIn("addModel(", scenario)
 
     def test_two_topic_restart_scenario_uses_production_authorities(self) -> None:
         snapshot_start = self.source.index(

@@ -2531,6 +2531,7 @@ export interface AgentErrorResolutionAction {
     | 'retry'
     | 'switchAccount'
     | 'chooseCompatibleModel'
+    | 'chooseTool'
     | 'chooseResourceAgain'
     | 'removeReference'
     | 'reconcile'
@@ -2550,6 +2551,8 @@ export interface AgentErrorResolutionAction {
   referenceKind?: string;
   referenceHash?: string;
   capabilityId?: string;
+  toolId?: string;
+  toolVersion?: string;
   sessionId?: string;
   leaseId?: string;
   expiredAt?: string;
@@ -2575,6 +2578,8 @@ export const AGENT_PROVIDER_MODEL_UNAVAILABLE_LOCALE_KEY =
 export const AGENT_PROVIDER_TIMEOUT_ERROR_TYPE = 'PROVIDER_TIMEOUT';
 export const AGENT_PROVIDER_TIMEOUT_LOCALE_KEY =
   'agent.errors.providerTimeout';
+export const AGENT_TOOL_UNKNOWN_ERROR_TYPE = 'TOOL_UNKNOWN';
+export const AGENT_TOOL_UNKNOWN_LOCALE_KEY = 'agent.errors.toolUnknown';
 export const AGENT_CONTEXT_LIMIT_ERROR_TYPE = 'CONTEXT_OVERFLOW';
 export const AGENT_INVALID_REFERENCE_ERROR_TYPE = 'CONTEXT_INVALID_REFERENCE';
 export const AGENT_INVALID_REFERENCE_LOCALE_KEY =
@@ -2640,6 +2645,13 @@ export type AgentProviderTimeoutError = AgentTypedErrorPayload & {
   };
 };
 
+export type AgentToolUnknownError = AgentTypedErrorPayload & {
+  details: {
+    tool_id: string;
+    tool_version: string;
+  };
+};
+
 export type AgentIncompatibleCapabilityError = AgentTypedErrorPayload & {
   details: {
     capability_id: string;
@@ -2687,6 +2699,8 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'model_id',
   'deadline',
   'retry_after_ms',
+  'tool_id',
+  'tool_version',
   'expected_revision',
   'actual_revision',
   'capability_id',
@@ -2948,6 +2962,27 @@ export function isAgentProviderTimeoutError(
   );
 }
 
+export function isAgentToolUnknownError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentToolUnknownError {
+  if (
+    error?.error_type !== AGENT_TOOL_UNKNOWN_ERROR_TYPE
+    || error.locale_key !== AGENT_TOOL_UNKNOWN_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'tool_id'
+    && detailKeys[1] === 'tool_version'
+    && error.details.tool_id.trim().length > 0
+    && error.details.tool_version.trim().length > 0
+  );
+}
+
 export function isAgentIncompatibleCapabilityError(
   error: AgentTypedErrorPayload | null | undefined,
 ): error is AgentIncompatibleCapabilityError {
@@ -3081,6 +3116,14 @@ export function resolveAgentTypedErrorAction(
       providerId: error.details.provider_id,
       modelId: error.details.model_id,
       label: 'agent.recovery.chooseCompatibleModel',
+    };
+  }
+  if (isAgentToolUnknownError(error)) {
+    return {
+      type: 'chooseTool',
+      toolId: error.details.tool_id,
+      toolVersion: error.details.tool_version,
+      label: 'agent.recovery.chooseTool',
     };
   }
   if (isAgentRuntimeUnavailableError(error)) {

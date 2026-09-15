@@ -83,7 +83,7 @@ func TestDelegatedToolRestrictionRejectsUnlistedProviderTool(t *testing.T) {
 		AvailableTools:  []string{"tool-a"},
 		RestrictedTools: []string{"tool-a"},
 	}
-	err := validateProviderToolCallsBeforePersistence(
+	err := (&TurnService{}).validateProviderToolCallsBeforePersistence(
 		config,
 		[]toolCallEntry{{ToolName: "tool-b"}},
 	)
@@ -91,6 +91,78 @@ func TestDelegatedToolRestrictionRejectsUnlistedProviderTool(t *testing.T) {
 	if !errors.As(err, &bizErr) ||
 		bizErr.Code != errcode.AgentInvalidSourceState {
 		t.Fatalf("unexpected delegated tool rejection: %#v", err)
+	}
+}
+
+func TestProcessToolCallsRejectsUnknownToolBeforePersistence(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	registry := NewToolRegistryService(nil, nil)
+	expectedVersion, ok := registry.ManifestVersion("skills_list")
+	if !ok || expectedVersion == "" {
+		t.Fatal("skills_list manifest version is unavailable")
+	}
+	service := &TurnService{
+		toolDispatch: fixture.service,
+		toolRegistry: registry,
+	}
+	config := &TurnConfig{
+		TurnID:        "turn-unknown-tool",
+		AttemptID:     "attempt-unknown-tool",
+		RuntimeBudget: defaultRuntimeBudget(128000),
+		RuntimeCapabilities: &model.RuntimeCapabilitySnapshot{
+			Agentic: &model.RuntimeAgenticCapabilities{NativeTools: true},
+		},
+		AuthorizedCapabilities: &AuthorizedCapabilitySet{},
+	}
+	response := ""
+
+	iterations, paused, err := service.processToolCalls(
+		context.Background(),
+		config,
+		config.TurnID,
+		nil,
+		"",
+		nil,
+		&response,
+		[]ProviderToolCall{{
+			ID:        "provider-call-1",
+			Name:      "skills_list",
+			Arguments: `{}`,
+		}},
+		0,
+	)
+	var toolErr *errcode.BizError
+	if !errors.As(err, &toolErr) ||
+		toolErr.Code != errcode.AgentToolUnknown ||
+		toolErr.Payload.GetErrorType() != string(errcode.AgentToolUnknown) ||
+		toolErr.Payload.GetLocaleKey() != errcode.AgentToolUnknownLocaleKey ||
+		toolErr.Payload.GetRetryable() ||
+		!toolErr.Payload.GetTerminal() ||
+		len(toolErr.Payload.GetDetails()) != 2 ||
+		toolErr.Payload.GetDetails()["tool_id"] != "skills_list" ||
+		toolErr.Payload.GetDetails()["tool_version"] != expectedVersion {
+		t.Fatalf("unexpected unknown Tool rejection: %#v", err)
+	}
+	if iterations != 0 || paused {
+		t.Fatalf(
+			"unknown Tool changed loop state: iterations=%d paused=%v",
+			iterations,
+			paused,
+		)
+	}
+	for name, record := range map[string]interface{}{
+		"assistant message": &persistence.AgentMessage{},
+		"turn event":        &persistence.TurnEvent{},
+		"tool call":         &persistence.ToolCall{},
+		"tool batch":        &persistence.ToolBatch{},
+	} {
+		var count int64
+		if err := fixture.db.Model(record).Count(&count).Error; err != nil {
+			t.Fatalf("count %s rows: %v", name, err)
+		}
+		if count != 0 {
+			t.Fatalf("unknown Tool rejection persisted %d %s rows", count, name)
+		}
 	}
 }
 

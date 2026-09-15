@@ -412,6 +412,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           ? 'switch-account'
         : message.resolution?.type === 'chooseCompatibleModel'
           ? 'choose-compatible-model'
+          : message.resolution?.type === 'chooseTool'
+            ? 'choose-tool'
           : message.resolution?.type === 'recover'
             ? 'recover'
             : message.resolution?.type === 'reconcile'
@@ -616,6 +618,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-error-model-id={message.typedError?.details.model_id}
       data-pt-agent-error-deadline={message.typedError?.details.deadline}
       data-pt-agent-error-retry-after-ms={message.typedError?.details.retry_after_ms}
+      data-pt-agent-error-tool-id={message.typedError?.details.tool_id}
+      data-pt-agent-error-tool-version={message.typedError?.details.tool_version}
       data-pt-agent-error-reference-kind={message.typedError?.details.reference_kind}
       data-pt-agent-error-reference-hash={message.typedError?.details.reference_hash}
       data-pt-agent-error-session-id={message.typedError?.details.session_id}
@@ -886,6 +890,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                       && message.resolution.type !== 'retry'
                       && message.resolution.type !== 'switchAccount'
                       && message.resolution.type !== 'chooseCompatibleModel'
+                      && message.resolution.type !== 'chooseTool'
                       && message.resolution.type !== 'chooseResourceAgain'
                       && message.resolution.type !== 'reconcile'
                       && message.resolution.type !== 'recover'
@@ -893,6 +898,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                     icon={
                       message.resolution.type === 'openProviderSettings'
                       || message.resolution.type === 'chooseCompatibleModel'
+                      || message.resolution.type === 'chooseTool'
                       || message.resolution.type === 'selectRuntime'
                         ? <Settings size={14} />
                         : message.resolution.type === 'openOriginal'
@@ -953,6 +959,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                           return;
                         }
                         if (message.resolution!.type === 'chooseCompatibleModel') {
+                          handleChooseCompatibleModel();
+                          return;
+                        }
+                        if (message.resolution!.type === 'chooseTool') {
                           handleChooseCompatibleModel();
                           return;
                         }

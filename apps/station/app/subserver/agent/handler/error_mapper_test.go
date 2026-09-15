@@ -336,6 +336,46 @@ func TestProviderModelUnavailablePreservesTypedPayloadDetails(t *testing.T) {
 	}
 }
 
+func TestUnknownToolPreservesTypedPayloadDetails(t *testing.T) {
+	mapped := toHandlerError(
+		errcode.NewToolUnknown("skills_list", "manifest-version"),
+	)
+	var handlerErr *server.HandlerError
+	if !errors.As(mapped, &handlerErr) {
+		t.Fatalf("expected HandlerError, got %T: %v", mapped, mapped)
+	}
+	if handlerErr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf(
+			"status=%d, want %d",
+			handlerErr.Code,
+			http.StatusUnprocessableEntity,
+		)
+	}
+	expectedHeaders := map[string]string{
+		"X-Peers-Error-Code":       string(errcode.AgentToolUnknown),
+		"X-Peers-Error-Locale-Key": errcode.AgentToolUnknownLocaleKey,
+		"X-Peers-Error-Retryable":  "false",
+		"X-Peers-Error-Terminal":   "true",
+	}
+	for key, value := range expectedHeaders {
+		if handlerErr.Headers[key] != value {
+			t.Fatalf("%s=%q, want %q", key, handlerErr.Headers[key], value)
+		}
+	}
+
+	var details map[string]string
+	if err := json.Unmarshal([]byte(handlerErr.Headers[errorDetailsHeader]), &details); err != nil {
+		t.Fatalf("decode %s: %v", errorDetailsHeader, err)
+	}
+	expectedDetails := map[string]string{
+		"tool_id":      "skills_list",
+		"tool_version": "manifest-version",
+	}
+	if !reflect.DeepEqual(details, expectedDetails) {
+		t.Fatalf("details = %+v, want %+v", details, expectedDetails)
+	}
+}
+
 func TestRuntimeIncompatibleCapabilityPreservesTypedPayloadDetails(t *testing.T) {
 	mapped := toHandlerError(
 		errcode.NewRuntimeIncompatibleCapability(

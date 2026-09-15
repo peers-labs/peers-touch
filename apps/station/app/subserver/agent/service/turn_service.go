@@ -2908,6 +2908,7 @@ const (
 	toolContinuationPollInterval      = 250 * time.Millisecond
 	toolContinuationLeaseTTL          = 2 * time.Minute
 	preparedTakeoverReconcileInterval = 5 * time.Second
+	unregisteredProviderToolVersion   = "unregistered"
 )
 
 func validateTurnRuntimeCapabilities(
@@ -3075,7 +3076,7 @@ func validateProviderRequestInputBudget(
 	)
 }
 
-func validateProviderToolCallsBeforePersistence(
+func (s *TurnService) validateProviderToolCallsBeforePersistence(
 	config *TurnConfig,
 	toolCalls []toolCallEntry,
 ) error {
@@ -3115,9 +3116,17 @@ func validateProviderToolCallsBeforePersistence(
 			)
 		}
 		if _, ok := config.AuthorizedCapabilities.Tool(toolCall.ToolName); !ok {
-			return capabilityStateError(
-				"tool is not authorized by the admitted capability set",
-				nil,
+			toolVersion := unregisteredProviderToolVersion
+			if s != nil && s.toolRegistry != nil {
+				if version, registered := s.toolRegistry.ManifestVersion(
+					toolCall.ToolName,
+				); registered {
+					toolVersion = version
+				}
+			}
+			return errcode.NewToolUnknown(
+				strings.TrimSpace(toolCall.ToolName),
+				toolVersion,
 			)
 		}
 	}
@@ -3173,7 +3182,7 @@ func (s *TurnService) processToolCalls(
 		if exhaustion := budgetState.admit(budget, toolCalls); exhaustion != nil {
 			return iterations, false, exhaustion
 		}
-		if err := validateProviderToolCallsBeforePersistence(config, toolCalls); err != nil {
+		if err := s.validateProviderToolCallsBeforePersistence(config, toolCalls); err != nil {
 			return iterations, false, err
 		}
 

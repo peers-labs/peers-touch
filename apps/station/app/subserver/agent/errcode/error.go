@@ -25,6 +25,7 @@ const (
 	AgentAttachmentRejected            Code = "CONTEXT_ATTACHMENT_REJECTED"
 	AgentRuntimeUnavailable            Code = "RUNTIME_UNAVAILABLE"
 	AgentRuntimeIncompatibleCapability Code = "RUNTIME_INCOMPATIBLE_CAPABILITY"
+	AgentToolUnknown                   Code = "TOOL_UNKNOWN"
 	AgentToolApprovalDenied            Code = "TOOL_APPROVAL_DENIED"
 	AgentToolApprovalExpired           Code = "TOOL_APPROVAL_EXPIRED"
 	AgentClientExecutorUnavailable     Code = "CLIENT_EXECUTOR_UNAVAILABLE"
@@ -57,6 +58,7 @@ const (
 	AgentAttachmentRejectedLocaleKey            = "agent.errors.attachmentRejected"
 	AgentRuntimeUnavailableLocaleKey            = "agent.errors.runtimeUnavailable"
 	AgentRuntimeIncompatibleCapabilityLocaleKey = "agent.errors.incompatibleCapability"
+	AgentToolUnknownLocaleKey                   = "agent.errors.toolUnknown"
 	AgentToolApprovalDeniedLocaleKey            = "agent.errors.toolApprovalDenied"
 	AgentToolApprovalExpiredLocaleKey           = "agent.errors.toolApprovalExpired"
 	AgentClientExecutorUnavailableLocaleKey     = "agent.errors.executorUnavailable"
@@ -271,6 +273,25 @@ func NewRuntimeIncompatibleCapability(capabilityID, reasonCode string) *BizError
 			Details: map[string]string{
 				"capability_id": capabilityID,
 				"reason_code":   reasonCode,
+			},
+		},
+	}
+}
+
+func NewToolUnknown(toolID, toolVersion string) *BizError {
+	return &BizError{
+		Code:       AgentToolUnknown,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    AgentToolUnknownLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentToolUnknownLocaleKey,
+			ErrorType: string(AgentToolUnknown),
+			LocaleKey: AgentToolUnknownLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"tool_id":      toolID,
+				"tool_version": toolVersion,
 			},
 		},
 	}

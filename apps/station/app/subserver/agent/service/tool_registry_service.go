@@ -156,6 +156,18 @@ func (r *ToolRegistryService) Has(name string) bool {
 	return ok
 }
 
+// ManifestVersion returns the canonical capability-manifest version generated
+// from the registered Tool definition.
+func (r *ToolRegistryService) ManifestVersion(name string) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	definition, ok := r.tools[name]
+	if !ok {
+		return "", false
+	}
+	return capabilityToolManifestSeed(definition).manifest.GetVersion(), true
+}
+
 // ToolNames returns the names of all registered tools, sorted.
 func (r *ToolRegistryService) ToolNames() []string {
 	r.mu.RLock()
