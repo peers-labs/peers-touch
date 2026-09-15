@@ -1160,6 +1160,7 @@ export interface AvailableModel {
   type: string;
   context_window: number;
   enabled: boolean;
+  streaming?: boolean;
   function_call?: boolean;
   vision?: boolean;
   reasoning?: boolean;
@@ -1177,6 +1178,7 @@ interface AvailableModelWire {
   type?: unknown;
   context_window?: unknown;
   enabled?: unknown;
+  capabilities?: unknown;
 }
 
 export interface ProviderListItem {
@@ -1199,12 +1201,31 @@ export interface ModelItem {
   type: string;
   enabled: boolean;
   context_window: number;
+  streaming?: boolean;
   function_call?: boolean;
   vision?: boolean;
   reasoning?: boolean;
   search?: boolean;
   image_output?: boolean;
   video?: boolean;
+}
+
+export interface ProviderModelConfigInput {
+  display_name?: string;
+  type?: string;
+  context_window?: number;
+  enabled?: boolean;
+  streaming?: boolean;
+  function_call?: boolean;
+  vision?: boolean;
+  reasoning?: boolean;
+  search?: boolean;
+  image_output?: boolean;
+  video?: boolean;
+}
+
+export interface ProviderModelCreateData extends ProviderModelConfigInput {
+  id: string;
 }
 
 export interface ProviderDetail extends ProviderListItem {
@@ -4850,6 +4871,11 @@ export const api = {
         type: String(model.type || ''),
         context_window: Number(model.context_window || 0),
         enabled: Boolean(model.enabled),
+        streaming: modelCapabilityFlag(model, 'streaming'),
+        function_call: modelCapabilityFlag(model, 'native-tools'),
+        vision: modelCapabilityFlag(model, 'image-input'),
+        reasoning: modelCapabilityFlag(model, 'reasoning'),
+        image_output: modelCapabilityFlag(model, 'image-output'),
       }))
       : [];
     return { models, default: models[0]?.id || '' };
@@ -4896,17 +4922,17 @@ export const api = {
   deleteProvider: (id: string) =>
     invokeRustDataFromStatus<ProviderIdInput, { success: boolean }>('provider_delete', { id }),
 
-  addModel: (providerId: string, data: { id: string; display_name?: string; type?: string; context_window?: number; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean; enabled?: boolean }) =>
+  addModel: (providerId: string, data: ProviderModelCreateData) =>
     invokeRustDataFromStatus<ProviderModelAddInput, { ok: boolean }>('model_add', {
       provider_id: providerId,
-      data,
+      data: withModelCapabilityConfig(data),
     }),
 
-  updateModel: (providerId: string, modelId: string, data: { display_name?: string; type?: string; context_window?: number; enabled?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean }) =>
+  updateModel: (providerId: string, modelId: string, data: ProviderModelConfigInput) =>
     invokeRustDataFromStatus<ProviderModelUpdateInput, { ok: boolean }>('model_update', {
       provider_id: providerId,
       model_id: modelId,
-      data,
+      data: withModelCapabilityConfig(data),
     }),
 
   deleteModel: (providerId: string, modelId: string) =>
@@ -6944,6 +6970,44 @@ function parseJSONSafe(input?: string): Record<string, any> {
   try { return JSON.parse(input); } catch { return {}; }
 }
 
+function modelCapabilityFlags(model: unknown): Record<string, boolean> {
+  if (!model || typeof model !== 'object' || Array.isArray(model)) return {};
+  const capabilities = (model as Record<string, unknown>).capabilities;
+  if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) return {};
+  const flags = (capabilities as Record<string, unknown>).flags;
+  if (!flags || typeof flags !== 'object' || Array.isArray(flags)) return {};
+  return flags as Record<string, boolean>;
+}
+
+function modelCapabilityFlag(model: unknown, capabilityId: string): boolean {
+  return Boolean(modelCapabilityFlags(model)[capabilityId]);
+}
+
+function withModelCapabilityConfig<T extends ProviderModelConfigInput>(data: T): T & {
+  capabilities?: { flags: Record<string, boolean> };
+} {
+  const flags: Record<string, boolean> = {};
+  const assignments: Array<[keyof ProviderModelConfigInput, string]> = [
+    ['streaming', 'streaming'],
+    ['function_call', 'native-tools'],
+    ['vision', 'image-input'],
+    ['reasoning', 'reasoning'],
+    ['image_output', 'image-output'],
+  ];
+  for (const [field, capabilityId] of assignments) {
+    if (data[field] !== undefined) {
+      flags[capabilityId] = Boolean(data[field]);
+    }
+  }
+  if (Object.keys(flags).length === 0) {
+    return data;
+  }
+  return {
+    ...data,
+    capabilities: { flags },
+  };
+}
+
 function mapAIChatProviderToListItem(item: any): ProviderListItem {
   return {
     id: item.id,
@@ -6979,11 +7043,12 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
         type: String(model?.type || 'chat'),
         enabled: Boolean(model?.enabled ?? true),
         context_window: Number(model?.context_window || 0),
-        function_call: Boolean(model?.function_call),
-        vision: Boolean(model?.vision),
-        reasoning: Boolean(model?.reasoning),
+        streaming: modelCapabilityFlag(model, 'streaming'),
+        function_call: modelCapabilityFlag(model, 'native-tools'),
+        vision: modelCapabilityFlag(model, 'image-input'),
+        reasoning: modelCapabilityFlag(model, 'reasoning'),
         search: Boolean(model?.search),
-        image_output: Boolean(model?.image_output),
+        image_output: modelCapabilityFlag(model, 'image-output'),
         video: Boolean(model?.video),
       } as ModelItem;
     })

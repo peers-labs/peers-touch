@@ -21326,6 +21326,7 @@ export function installAcceptanceHarness(): void {
           display_name: missingModel,
           type: 'chat',
           context_window: 128_000,
+          streaming: true,
           enabled: true,
         });
         modelAdded = true;

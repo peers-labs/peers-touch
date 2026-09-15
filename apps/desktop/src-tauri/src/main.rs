@@ -612,6 +612,7 @@ fn main() {
             provider::model_toggle,
             provider::model_delete,
             provider::model_add,
+            provider::model_update,
             agents::agents_list,
             agents::agents_get_selected,
             agents::agents_set_selected,

@@ -22,6 +22,10 @@ pub struct StationModel {
     pub model_id: String,
     pub display_name: String,
     pub enabled: bool,
+    #[serde(default)]
+    pub context_window: i32,
+    #[serde(default)]
+    pub capabilities: Option<Value>,
     #[serde(deserialize_with = "deserialize_proto_i64")]
     pub version: i64,
 }
@@ -166,14 +170,18 @@ pub fn create_model(
     display_name: &str,
     enabled: bool,
     context_window: i32,
+    capabilities: Option<&Value>,
 ) -> Result<Value, StationApiError> {
-    let body = json!({
+    let mut body = json!({
         "provider_id": provider_id,
         "model_id": model_id,
         "display_name": display_name,
         "enabled": enabled,
         "context_window": context_window,
     });
+    if let Some(value) = capabilities {
+        body["capabilities"] = value.clone();
+    }
     Ok(station_client::request_json_auth(
         Method::POST,
         "/sub-agent/agent/model/create",
@@ -290,6 +298,8 @@ pub fn update_model(
     version: i64,
     display_name: Option<&str>,
     enabled: Option<bool>,
+    context_window: Option<i32>,
+    capabilities: Option<&Value>,
 ) -> Result<StationModel, StationApiError> {
     let mut body = json!({
         "provider_id": provider_id,
@@ -301,6 +311,12 @@ pub fn update_model(
     }
     if let Some(v) = enabled {
         body["enabled"] = json!(v);
+    }
+    if let Some(v) = context_window {
+        body["context_window"] = json!(v);
+    }
+    if let Some(value) = capabilities {
+        body["capabilities"] = value.clone();
     }
 
     let resp = station_client::request_json_auth(

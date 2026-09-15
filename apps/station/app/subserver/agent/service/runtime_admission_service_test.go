@@ -706,6 +706,10 @@ func TestRuntimeAdmissionListAvailableModels(t *testing.T) {
 	if models[0].ID != "test-model" {
 		t.Fatalf("expected test-model, got %s", models[0].ID)
 	}
+	if !models[0].Capabilities["streaming"] ||
+		!models[0].Capabilities["native-tools"] {
+		t.Fatalf("available model dropped runtime capabilities: %+v", models[0])
+	}
 }
 
 func TestRuntimeAdmissionListAvailableModelsExcludesUnconfigured(t *testing.T) {

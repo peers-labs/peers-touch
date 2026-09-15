@@ -22,6 +22,52 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ModelCapabilityConfig struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Canonical runtime capability IDs from RuntimeCapabilitySnapshot.
+	// Explicit false values override catalog capabilities.
+	Flags         map[string]bool `protobuf:"bytes,1,rep,name=flags,proto3" json:"flags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModelCapabilityConfig) Reset() {
+	*x = ModelCapabilityConfig{}
+	mi := &file_domain_agent_provider_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModelCapabilityConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModelCapabilityConfig) ProtoMessage() {}
+
+func (x *ModelCapabilityConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_provider_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModelCapabilityConfig.ProtoReflect.Descriptor instead.
+func (*ModelCapabilityConfig) Descriptor() ([]byte, []int) {
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ModelCapabilityConfig) GetFlags() map[string]bool {
+	if x != nil {
+		return x.Flags
+	}
+	return nil
+}
+
 type ProviderModelInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -29,13 +75,14 @@ type ProviderModelInfo struct {
 	Type          string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
 	Enabled       bool                   `protobuf:"varint,4,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	ContextWindow int32                  `protobuf:"varint,5,opt,name=context_window,json=contextWindow,proto3" json:"context_window,omitempty"`
+	Capabilities  *ModelCapabilityConfig `protobuf:"bytes,6,opt,name=capabilities,proto3" json:"capabilities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ProviderModelInfo) Reset() {
 	*x = ProviderModelInfo{}
-	mi := &file_domain_agent_provider_proto_msgTypes[0]
+	mi := &file_domain_agent_provider_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -47,7 +94,7 @@ func (x *ProviderModelInfo) String() string {
 func (*ProviderModelInfo) ProtoMessage() {}
 
 func (x *ProviderModelInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[0]
+	mi := &file_domain_agent_provider_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -60,7 +107,7 @@ func (x *ProviderModelInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderModelInfo.ProtoReflect.Descriptor instead.
 func (*ProviderModelInfo) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{0}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ProviderModelInfo) GetId() string {
@@ -98,6 +145,13 @@ func (x *ProviderModelInfo) GetContextWindow() int32 {
 	return 0
 }
 
+func (x *ProviderModelInfo) GetCapabilities() *ModelCapabilityConfig {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
 type AgentProviderInfo struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -125,7 +179,7 @@ type AgentProviderInfo struct {
 
 func (x *AgentProviderInfo) Reset() {
 	*x = AgentProviderInfo{}
-	mi := &file_domain_agent_provider_proto_msgTypes[1]
+	mi := &file_domain_agent_provider_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -137,7 +191,7 @@ func (x *AgentProviderInfo) String() string {
 func (*AgentProviderInfo) ProtoMessage() {}
 
 func (x *AgentProviderInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[1]
+	mi := &file_domain_agent_provider_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -150,7 +204,7 @@ func (x *AgentProviderInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentProviderInfo.ProtoReflect.Descriptor instead.
 func (*AgentProviderInfo) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{1}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *AgentProviderInfo) GetId() string {
@@ -297,13 +351,15 @@ type AgentModelInfo struct {
 	Version       int64                  `protobuf:"varint,7,opt,name=version,proto3" json:"version,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	ContextWindow int32                  `protobuf:"varint,10,opt,name=context_window,json=contextWindow,proto3" json:"context_window,omitempty"`
+	Capabilities  *ModelCapabilityConfig `protobuf:"bytes,11,opt,name=capabilities,proto3" json:"capabilities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AgentModelInfo) Reset() {
 	*x = AgentModelInfo{}
-	mi := &file_domain_agent_provider_proto_msgTypes[2]
+	mi := &file_domain_agent_provider_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -315,7 +371,7 @@ func (x *AgentModelInfo) String() string {
 func (*AgentModelInfo) ProtoMessage() {}
 
 func (x *AgentModelInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[2]
+	mi := &file_domain_agent_provider_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -328,7 +384,7 @@ func (x *AgentModelInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentModelInfo.ProtoReflect.Descriptor instead.
 func (*AgentModelInfo) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{2}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *AgentModelInfo) GetId() string {
@@ -394,6 +450,20 @@ func (x *AgentModelInfo) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *AgentModelInfo) GetContextWindow() int32 {
+	if x != nil {
+		return x.ContextWindow
+	}
+	return 0
+}
+
+func (x *AgentModelInfo) GetCapabilities() *ModelCapabilityConfig {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
 type CredentialStatusInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ProviderId    string                 `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
@@ -406,7 +476,7 @@ type CredentialStatusInfo struct {
 
 func (x *CredentialStatusInfo) Reset() {
 	*x = CredentialStatusInfo{}
-	mi := &file_domain_agent_provider_proto_msgTypes[3]
+	mi := &file_domain_agent_provider_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -418,7 +488,7 @@ func (x *CredentialStatusInfo) String() string {
 func (*CredentialStatusInfo) ProtoMessage() {}
 
 func (x *CredentialStatusInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[3]
+	mi := &file_domain_agent_provider_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -431,7 +501,7 @@ func (x *CredentialStatusInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CredentialStatusInfo.ProtoReflect.Descriptor instead.
 func (*CredentialStatusInfo) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{3}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *CredentialStatusInfo) GetProviderId() string {
@@ -474,7 +544,7 @@ type CredentialResolveInfo struct {
 
 func (x *CredentialResolveInfo) Reset() {
 	*x = CredentialResolveInfo{}
-	mi := &file_domain_agent_provider_proto_msgTypes[4]
+	mi := &file_domain_agent_provider_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -486,7 +556,7 @@ func (x *CredentialResolveInfo) String() string {
 func (*CredentialResolveInfo) ProtoMessage() {}
 
 func (x *CredentialResolveInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[4]
+	mi := &file_domain_agent_provider_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -499,7 +569,7 @@ func (x *CredentialResolveInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CredentialResolveInfo.ProtoReflect.Descriptor instead.
 func (*CredentialResolveInfo) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{4}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CredentialResolveInfo) GetProviderId() string {
@@ -540,7 +610,7 @@ type VerifyCliRequest struct {
 
 func (x *VerifyCliRequest) Reset() {
 	*x = VerifyCliRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[5]
+	mi := &file_domain_agent_provider_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -552,7 +622,7 @@ func (x *VerifyCliRequest) String() string {
 func (*VerifyCliRequest) ProtoMessage() {}
 
 func (x *VerifyCliRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[5]
+	mi := &file_domain_agent_provider_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -565,7 +635,7 @@ func (x *VerifyCliRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyCliRequest.ProtoReflect.Descriptor instead.
 func (*VerifyCliRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{5}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *VerifyCliRequest) GetCliCommand() string {
@@ -588,7 +658,7 @@ type VerifyCliResponse struct {
 
 func (x *VerifyCliResponse) Reset() {
 	*x = VerifyCliResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[6]
+	mi := &file_domain_agent_provider_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -600,7 +670,7 @@ func (x *VerifyCliResponse) String() string {
 func (*VerifyCliResponse) ProtoMessage() {}
 
 func (x *VerifyCliResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[6]
+	mi := &file_domain_agent_provider_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -613,7 +683,7 @@ func (x *VerifyCliResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyCliResponse.ProtoReflect.Descriptor instead.
 func (*VerifyCliResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{6}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *VerifyCliResponse) GetAvailable() bool {
@@ -661,7 +731,7 @@ type FetchCliModelsRequest struct {
 
 func (x *FetchCliModelsRequest) Reset() {
 	*x = FetchCliModelsRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[7]
+	mi := &file_domain_agent_provider_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -673,7 +743,7 @@ func (x *FetchCliModelsRequest) String() string {
 func (*FetchCliModelsRequest) ProtoMessage() {}
 
 func (x *FetchCliModelsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[7]
+	mi := &file_domain_agent_provider_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -686,7 +756,7 @@ func (x *FetchCliModelsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchCliModelsRequest.ProtoReflect.Descriptor instead.
 func (*FetchCliModelsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{7}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *FetchCliModelsRequest) GetProviderId() string {
@@ -705,7 +775,7 @@ type FetchCliModelsResponse struct {
 
 func (x *FetchCliModelsResponse) Reset() {
 	*x = FetchCliModelsResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[8]
+	mi := &file_domain_agent_provider_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -717,7 +787,7 @@ func (x *FetchCliModelsResponse) String() string {
 func (*FetchCliModelsResponse) ProtoMessage() {}
 
 func (x *FetchCliModelsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[8]
+	mi := &file_domain_agent_provider_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -730,7 +800,7 @@ func (x *FetchCliModelsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchCliModelsResponse.ProtoReflect.Descriptor instead.
 func (*FetchCliModelsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{8}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *FetchCliModelsResponse) GetModels() []string {
@@ -749,7 +819,7 @@ type ListProvidersRequest struct {
 
 func (x *ListProvidersRequest) Reset() {
 	*x = ListProvidersRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[9]
+	mi := &file_domain_agent_provider_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -761,7 +831,7 @@ func (x *ListProvidersRequest) String() string {
 func (*ListProvidersRequest) ProtoMessage() {}
 
 func (x *ListProvidersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[9]
+	mi := &file_domain_agent_provider_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -774,7 +844,7 @@ func (x *ListProvidersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProvidersRequest.ProtoReflect.Descriptor instead.
 func (*ListProvidersRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{9}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{10}
 }
 
 type ListProvidersResponse struct {
@@ -786,7 +856,7 @@ type ListProvidersResponse struct {
 
 func (x *ListProvidersResponse) Reset() {
 	*x = ListProvidersResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[10]
+	mi := &file_domain_agent_provider_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -798,7 +868,7 @@ func (x *ListProvidersResponse) String() string {
 func (*ListProvidersResponse) ProtoMessage() {}
 
 func (x *ListProvidersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[10]
+	mi := &file_domain_agent_provider_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -811,7 +881,7 @@ func (x *ListProvidersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProvidersResponse.ProtoReflect.Descriptor instead.
 func (*ListProvidersResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{10}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListProvidersResponse) GetProviders() []*AgentProviderInfo {
@@ -830,7 +900,7 @@ type GetProviderRequest struct {
 
 func (x *GetProviderRequest) Reset() {
 	*x = GetProviderRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[11]
+	mi := &file_domain_agent_provider_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -842,7 +912,7 @@ func (x *GetProviderRequest) String() string {
 func (*GetProviderRequest) ProtoMessage() {}
 
 func (x *GetProviderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[11]
+	mi := &file_domain_agent_provider_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -855,7 +925,7 @@ func (x *GetProviderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProviderRequest.ProtoReflect.Descriptor instead.
 func (*GetProviderRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{11}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetProviderRequest) GetProviderId() string {
@@ -874,7 +944,7 @@ type GetProviderResponse struct {
 
 func (x *GetProviderResponse) Reset() {
 	*x = GetProviderResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[12]
+	mi := &file_domain_agent_provider_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -886,7 +956,7 @@ func (x *GetProviderResponse) String() string {
 func (*GetProviderResponse) ProtoMessage() {}
 
 func (x *GetProviderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[12]
+	mi := &file_domain_agent_provider_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -899,7 +969,7 @@ func (x *GetProviderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProviderResponse.ProtoReflect.Descriptor instead.
 func (*GetProviderResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{12}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetProviderResponse) GetProvider() *AgentProviderInfo {
@@ -917,7 +987,7 @@ type ListAvailableModelsRequest struct {
 
 func (x *ListAvailableModelsRequest) Reset() {
 	*x = ListAvailableModelsRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[13]
+	mi := &file_domain_agent_provider_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -929,7 +999,7 @@ func (x *ListAvailableModelsRequest) String() string {
 func (*ListAvailableModelsRequest) ProtoMessage() {}
 
 func (x *ListAvailableModelsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[13]
+	mi := &file_domain_agent_provider_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -942,7 +1012,7 @@ func (x *ListAvailableModelsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAvailableModelsRequest.ProtoReflect.Descriptor instead.
 func (*ListAvailableModelsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{13}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{14}
 }
 
 type ListAvailableModelsResponse struct {
@@ -954,7 +1024,7 @@ type ListAvailableModelsResponse struct {
 
 func (x *ListAvailableModelsResponse) Reset() {
 	*x = ListAvailableModelsResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[14]
+	mi := &file_domain_agent_provider_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -966,7 +1036,7 @@ func (x *ListAvailableModelsResponse) String() string {
 func (*ListAvailableModelsResponse) ProtoMessage() {}
 
 func (x *ListAvailableModelsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[14]
+	mi := &file_domain_agent_provider_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -979,7 +1049,7 @@ func (x *ListAvailableModelsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAvailableModelsResponse.ProtoReflect.Descriptor instead.
 func (*ListAvailableModelsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{14}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListAvailableModelsResponse) GetModels() []*AvailableModelInfo {
@@ -998,13 +1068,14 @@ type AvailableModelInfo struct {
 	Type          string                 `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
 	Enabled       bool                   `protobuf:"varint,6,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	ContextWindow int32                  `protobuf:"varint,7,opt,name=context_window,json=contextWindow,proto3" json:"context_window,omitempty"`
+	Capabilities  *ModelCapabilityConfig `protobuf:"bytes,8,opt,name=capabilities,proto3" json:"capabilities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AvailableModelInfo) Reset() {
 	*x = AvailableModelInfo{}
-	mi := &file_domain_agent_provider_proto_msgTypes[15]
+	mi := &file_domain_agent_provider_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1016,7 +1087,7 @@ func (x *AvailableModelInfo) String() string {
 func (*AvailableModelInfo) ProtoMessage() {}
 
 func (x *AvailableModelInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[15]
+	mi := &file_domain_agent_provider_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1029,7 +1100,7 @@ func (x *AvailableModelInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AvailableModelInfo.ProtoReflect.Descriptor instead.
 func (*AvailableModelInfo) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{15}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *AvailableModelInfo) GetId() string {
@@ -1081,6 +1152,13 @@ func (x *AvailableModelInfo) GetContextWindow() int32 {
 	return 0
 }
 
+func (x *AvailableModelInfo) GetCapabilities() *ModelCapabilityConfig {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
 type CreateProviderRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ProviderId    string                 `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
@@ -1094,7 +1172,7 @@ type CreateProviderRequest struct {
 
 func (x *CreateProviderRequest) Reset() {
 	*x = CreateProviderRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[16]
+	mi := &file_domain_agent_provider_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1106,7 +1184,7 @@ func (x *CreateProviderRequest) String() string {
 func (*CreateProviderRequest) ProtoMessage() {}
 
 func (x *CreateProviderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[16]
+	mi := &file_domain_agent_provider_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1119,7 +1197,7 @@ func (x *CreateProviderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProviderRequest.ProtoReflect.Descriptor instead.
 func (*CreateProviderRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{16}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CreateProviderRequest) GetProviderId() string {
@@ -1166,7 +1244,7 @@ type CreateProviderResponse struct {
 
 func (x *CreateProviderResponse) Reset() {
 	*x = CreateProviderResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[17]
+	mi := &file_domain_agent_provider_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1178,7 +1256,7 @@ func (x *CreateProviderResponse) String() string {
 func (*CreateProviderResponse) ProtoMessage() {}
 
 func (x *CreateProviderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[17]
+	mi := &file_domain_agent_provider_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1191,7 +1269,7 @@ func (x *CreateProviderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProviderResponse.ProtoReflect.Descriptor instead.
 func (*CreateProviderResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{17}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CreateProviderResponse) GetProvider() *AgentProviderInfo {
@@ -1216,7 +1294,7 @@ type UpdateProviderRequest struct {
 
 func (x *UpdateProviderRequest) Reset() {
 	*x = UpdateProviderRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[18]
+	mi := &file_domain_agent_provider_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1228,7 +1306,7 @@ func (x *UpdateProviderRequest) String() string {
 func (*UpdateProviderRequest) ProtoMessage() {}
 
 func (x *UpdateProviderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[18]
+	mi := &file_domain_agent_provider_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1241,7 +1319,7 @@ func (x *UpdateProviderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProviderRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProviderRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{18}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *UpdateProviderRequest) GetProviderId() string {
@@ -1302,7 +1380,7 @@ type UpdateProviderResponse struct {
 
 func (x *UpdateProviderResponse) Reset() {
 	*x = UpdateProviderResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[19]
+	mi := &file_domain_agent_provider_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1314,7 +1392,7 @@ func (x *UpdateProviderResponse) String() string {
 func (*UpdateProviderResponse) ProtoMessage() {}
 
 func (x *UpdateProviderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[19]
+	mi := &file_domain_agent_provider_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1327,7 +1405,7 @@ func (x *UpdateProviderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProviderResponse.ProtoReflect.Descriptor instead.
 func (*UpdateProviderResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{19}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *UpdateProviderResponse) GetProvider() *AgentProviderInfo {
@@ -1347,7 +1425,7 @@ type DeleteProviderRequest struct {
 
 func (x *DeleteProviderRequest) Reset() {
 	*x = DeleteProviderRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[20]
+	mi := &file_domain_agent_provider_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1359,7 +1437,7 @@ func (x *DeleteProviderRequest) String() string {
 func (*DeleteProviderRequest) ProtoMessage() {}
 
 func (x *DeleteProviderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[20]
+	mi := &file_domain_agent_provider_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1372,7 +1450,7 @@ func (x *DeleteProviderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProviderRequest.ProtoReflect.Descriptor instead.
 func (*DeleteProviderRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{20}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DeleteProviderRequest) GetProviderId() string {
@@ -1398,7 +1476,7 @@ type DeleteProviderResponse struct {
 
 func (x *DeleteProviderResponse) Reset() {
 	*x = DeleteProviderResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[21]
+	mi := &file_domain_agent_provider_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1410,7 +1488,7 @@ func (x *DeleteProviderResponse) String() string {
 func (*DeleteProviderResponse) ProtoMessage() {}
 
 func (x *DeleteProviderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[21]
+	mi := &file_domain_agent_provider_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1423,7 +1501,7 @@ func (x *DeleteProviderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProviderResponse.ProtoReflect.Descriptor instead.
 func (*DeleteProviderResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{21}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DeleteProviderResponse) GetDeleted() bool {
@@ -1443,7 +1521,7 @@ type ListModelsRequest struct {
 
 func (x *ListModelsRequest) Reset() {
 	*x = ListModelsRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[22]
+	mi := &file_domain_agent_provider_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1455,7 +1533,7 @@ func (x *ListModelsRequest) String() string {
 func (*ListModelsRequest) ProtoMessage() {}
 
 func (x *ListModelsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[22]
+	mi := &file_domain_agent_provider_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1468,7 +1546,7 @@ func (x *ListModelsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListModelsRequest.ProtoReflect.Descriptor instead.
 func (*ListModelsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{22}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ListModelsRequest) GetProviderId() string {
@@ -1487,7 +1565,7 @@ type ListModelsResponse struct {
 
 func (x *ListModelsResponse) Reset() {
 	*x = ListModelsResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[23]
+	mi := &file_domain_agent_provider_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1499,7 +1577,7 @@ func (x *ListModelsResponse) String() string {
 func (*ListModelsResponse) ProtoMessage() {}
 
 func (x *ListModelsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[23]
+	mi := &file_domain_agent_provider_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1512,7 +1590,7 @@ func (x *ListModelsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListModelsResponse.ProtoReflect.Descriptor instead.
 func (*ListModelsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{23}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListModelsResponse) GetModels() []*AgentModelInfo {
@@ -1529,13 +1607,14 @@ type CreateModelRequest struct {
 	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	Enabled       bool                   `protobuf:"varint,4,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	ContextWindow int32                  `protobuf:"varint,5,opt,name=context_window,json=contextWindow,proto3" json:"context_window,omitempty"`
+	Capabilities  *ModelCapabilityConfig `protobuf:"bytes,6,opt,name=capabilities,proto3" json:"capabilities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateModelRequest) Reset() {
 	*x = CreateModelRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[24]
+	mi := &file_domain_agent_provider_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1547,7 +1626,7 @@ func (x *CreateModelRequest) String() string {
 func (*CreateModelRequest) ProtoMessage() {}
 
 func (x *CreateModelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[24]
+	mi := &file_domain_agent_provider_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1560,7 +1639,7 @@ func (x *CreateModelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateModelRequest.ProtoReflect.Descriptor instead.
 func (*CreateModelRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{24}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *CreateModelRequest) GetProviderId() string {
@@ -1598,6 +1677,13 @@ func (x *CreateModelRequest) GetContextWindow() int32 {
 	return 0
 }
 
+func (x *CreateModelRequest) GetCapabilities() *ModelCapabilityConfig {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
 type CreateModelResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Model         *AgentModelInfo        `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
@@ -1607,7 +1693,7 @@ type CreateModelResponse struct {
 
 func (x *CreateModelResponse) Reset() {
 	*x = CreateModelResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[25]
+	mi := &file_domain_agent_provider_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1619,7 +1705,7 @@ func (x *CreateModelResponse) String() string {
 func (*CreateModelResponse) ProtoMessage() {}
 
 func (x *CreateModelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[25]
+	mi := &file_domain_agent_provider_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1632,7 +1718,7 @@ func (x *CreateModelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateModelResponse.ProtoReflect.Descriptor instead.
 func (*CreateModelResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{25}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *CreateModelResponse) GetModel() *AgentModelInfo {
@@ -1649,13 +1735,15 @@ type UpdateModelRequest struct {
 	Version       int64                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
 	DisplayName   *string                `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3,oneof" json:"display_name,omitempty"`
 	Enabled       *bool                  `protobuf:"varint,5,opt,name=enabled,proto3,oneof" json:"enabled,omitempty"`
+	ContextWindow *int32                 `protobuf:"varint,6,opt,name=context_window,json=contextWindow,proto3,oneof" json:"context_window,omitempty"`
+	Capabilities  *ModelCapabilityConfig `protobuf:"bytes,7,opt,name=capabilities,proto3" json:"capabilities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateModelRequest) Reset() {
 	*x = UpdateModelRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[26]
+	mi := &file_domain_agent_provider_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1667,7 +1755,7 @@ func (x *UpdateModelRequest) String() string {
 func (*UpdateModelRequest) ProtoMessage() {}
 
 func (x *UpdateModelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[26]
+	mi := &file_domain_agent_provider_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1680,7 +1768,7 @@ func (x *UpdateModelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateModelRequest.ProtoReflect.Descriptor instead.
 func (*UpdateModelRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{26}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *UpdateModelRequest) GetProviderId() string {
@@ -1718,6 +1806,20 @@ func (x *UpdateModelRequest) GetEnabled() bool {
 	return false
 }
 
+func (x *UpdateModelRequest) GetContextWindow() int32 {
+	if x != nil && x.ContextWindow != nil {
+		return *x.ContextWindow
+	}
+	return 0
+}
+
+func (x *UpdateModelRequest) GetCapabilities() *ModelCapabilityConfig {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
 type UpdateModelResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Model         *AgentModelInfo        `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
@@ -1727,7 +1829,7 @@ type UpdateModelResponse struct {
 
 func (x *UpdateModelResponse) Reset() {
 	*x = UpdateModelResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[27]
+	mi := &file_domain_agent_provider_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1739,7 +1841,7 @@ func (x *UpdateModelResponse) String() string {
 func (*UpdateModelResponse) ProtoMessage() {}
 
 func (x *UpdateModelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[27]
+	mi := &file_domain_agent_provider_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1752,7 +1854,7 @@ func (x *UpdateModelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateModelResponse.ProtoReflect.Descriptor instead.
 func (*UpdateModelResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{27}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *UpdateModelResponse) GetModel() *AgentModelInfo {
@@ -1773,7 +1875,7 @@ type SetCredentialRequest struct {
 
 func (x *SetCredentialRequest) Reset() {
 	*x = SetCredentialRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[28]
+	mi := &file_domain_agent_provider_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1785,7 +1887,7 @@ func (x *SetCredentialRequest) String() string {
 func (*SetCredentialRequest) ProtoMessage() {}
 
 func (x *SetCredentialRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[28]
+	mi := &file_domain_agent_provider_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1798,7 +1900,7 @@ func (x *SetCredentialRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetCredentialRequest.ProtoReflect.Descriptor instead.
 func (*SetCredentialRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{28}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *SetCredentialRequest) GetProviderId() string {
@@ -1824,7 +1926,7 @@ type SetCredentialResponse struct {
 
 func (x *SetCredentialResponse) Reset() {
 	*x = SetCredentialResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[29]
+	mi := &file_domain_agent_provider_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1836,7 +1938,7 @@ func (x *SetCredentialResponse) String() string {
 func (*SetCredentialResponse) ProtoMessage() {}
 
 func (x *SetCredentialResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[29]
+	mi := &file_domain_agent_provider_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1849,7 +1951,7 @@ func (x *SetCredentialResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetCredentialResponse.ProtoReflect.Descriptor instead.
 func (*SetCredentialResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{29}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SetCredentialResponse) GetStatus() *CredentialStatusInfo {
@@ -1869,7 +1971,7 @@ type DeleteCredentialRequest struct {
 
 func (x *DeleteCredentialRequest) Reset() {
 	*x = DeleteCredentialRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[30]
+	mi := &file_domain_agent_provider_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1881,7 +1983,7 @@ func (x *DeleteCredentialRequest) String() string {
 func (*DeleteCredentialRequest) ProtoMessage() {}
 
 func (x *DeleteCredentialRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[30]
+	mi := &file_domain_agent_provider_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1894,7 +1996,7 @@ func (x *DeleteCredentialRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteCredentialRequest.ProtoReflect.Descriptor instead.
 func (*DeleteCredentialRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{30}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *DeleteCredentialRequest) GetProviderId() string {
@@ -1920,7 +2022,7 @@ type DeleteCredentialResponse struct {
 
 func (x *DeleteCredentialResponse) Reset() {
 	*x = DeleteCredentialResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[31]
+	mi := &file_domain_agent_provider_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1932,7 +2034,7 @@ func (x *DeleteCredentialResponse) String() string {
 func (*DeleteCredentialResponse) ProtoMessage() {}
 
 func (x *DeleteCredentialResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[31]
+	mi := &file_domain_agent_provider_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1945,7 +2047,7 @@ func (x *DeleteCredentialResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteCredentialResponse.ProtoReflect.Descriptor instead.
 func (*DeleteCredentialResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{31}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *DeleteCredentialResponse) GetDeleted() bool {
@@ -1964,7 +2066,7 @@ type GetCredentialStatusRequest struct {
 
 func (x *GetCredentialStatusRequest) Reset() {
 	*x = GetCredentialStatusRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[32]
+	mi := &file_domain_agent_provider_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1976,7 +2078,7 @@ func (x *GetCredentialStatusRequest) String() string {
 func (*GetCredentialStatusRequest) ProtoMessage() {}
 
 func (x *GetCredentialStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[32]
+	mi := &file_domain_agent_provider_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1989,7 +2091,7 @@ func (x *GetCredentialStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCredentialStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetCredentialStatusRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{32}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *GetCredentialStatusRequest) GetProviderId() string {
@@ -2008,7 +2110,7 @@ type GetCredentialStatusResponse struct {
 
 func (x *GetCredentialStatusResponse) Reset() {
 	*x = GetCredentialStatusResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[33]
+	mi := &file_domain_agent_provider_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2020,7 +2122,7 @@ func (x *GetCredentialStatusResponse) String() string {
 func (*GetCredentialStatusResponse) ProtoMessage() {}
 
 func (x *GetCredentialStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[33]
+	mi := &file_domain_agent_provider_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2033,7 +2135,7 @@ func (x *GetCredentialStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCredentialStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetCredentialStatusResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{33}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GetCredentialStatusResponse) GetStatus() *CredentialStatusInfo {
@@ -2052,7 +2154,7 @@ type ResolveCredentialRequest struct {
 
 func (x *ResolveCredentialRequest) Reset() {
 	*x = ResolveCredentialRequest{}
-	mi := &file_domain_agent_provider_proto_msgTypes[34]
+	mi := &file_domain_agent_provider_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2064,7 +2166,7 @@ func (x *ResolveCredentialRequest) String() string {
 func (*ResolveCredentialRequest) ProtoMessage() {}
 
 func (x *ResolveCredentialRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[34]
+	mi := &file_domain_agent_provider_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2077,7 +2179,7 @@ func (x *ResolveCredentialRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveCredentialRequest.ProtoReflect.Descriptor instead.
 func (*ResolveCredentialRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{34}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ResolveCredentialRequest) GetProviderId() string {
@@ -2096,7 +2198,7 @@ type ResolveCredentialResponse struct {
 
 func (x *ResolveCredentialResponse) Reset() {
 	*x = ResolveCredentialResponse{}
-	mi := &file_domain_agent_provider_proto_msgTypes[35]
+	mi := &file_domain_agent_provider_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2108,7 +2210,7 @@ func (x *ResolveCredentialResponse) String() string {
 func (*ResolveCredentialResponse) ProtoMessage() {}
 
 func (x *ResolveCredentialResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_provider_proto_msgTypes[35]
+	mi := &file_domain_agent_provider_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2121,7 +2223,7 @@ func (x *ResolveCredentialResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveCredentialResponse.ProtoReflect.Descriptor instead.
 func (*ResolveCredentialResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_provider_proto_rawDescGZIP(), []int{35}
+	return file_domain_agent_provider_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ResolveCredentialResponse) GetCredential() *CredentialResolveInfo {
@@ -2135,13 +2237,20 @@ var File_domain_agent_provider_proto protoreflect.FileDescriptor
 
 const file_domain_agent_provider_proto_rawDesc = "" +
 	"\n" +
-	"\x1bdomain/agent/provider.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9b\x01\n" +
+	"\x1bdomain/agent/provider.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa5\x01\n" +
+	"\x15ModelCapabilityConfig\x12R\n" +
+	"\x05flags\x18\x01 \x03(\v2<.peers_touch.model.agent.v1.ModelCapabilityConfig.FlagsEntryR\x05flags\x1a8\n" +
+	"\n" +
+	"FlagsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\bR\x05value:\x028\x01\"\xf2\x01\n" +
 	"\x11ProviderModelInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x12\n" +
 	"\x04type\x18\x03 \x01(\tR\x04type\x12\x18\n" +
 	"\aenabled\x18\x04 \x01(\bR\aenabled\x12%\n" +
-	"\x0econtext_window\x18\x05 \x01(\x05R\rcontextWindow\"\xf3\x04\n" +
+	"\x0econtext_window\x18\x05 \x01(\x05R\rcontextWindow\x12U\n" +
+	"\fcapabilities\x18\x06 \x01(\v21.peers_touch.model.agent.v1.ModelCapabilityConfigR\fcapabilities\"\xf3\x04\n" +
 	"\x11AgentProviderInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -2164,7 +2273,7 @@ const file_domain_agent_provider_proto_rawDesc = "" +
 	"\vcli_command\x18\x11 \x01(\tR\n" +
 	"cliCommand\x12E\n" +
 	"\x06models\x18\x12 \x03(\v2-.peers_touch.model.agent.v1.ProviderModelInfoR\x06models\x12%\n" +
-	"\x0emodels_command\x18\x13 \x01(\tR\rmodelsCommand\"\xc8\x02\n" +
+	"\x0emodels_command\x18\x13 \x01(\tR\rmodelsCommand\"\xc6\x03\n" +
 	"\x0eAgentModelInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -2178,7 +2287,10 @@ const file_domain_agent_provider_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x89\x01\n" +
+	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12%\n" +
+	"\x0econtext_window\x18\n" +
+	" \x01(\x05R\rcontextWindow\x12U\n" +
+	"\fcapabilities\x18\v \x01(\v21.peers_touch.model.agent.v1.ModelCapabilityConfigR\fcapabilities\"\x89\x01\n" +
 	"\x14CredentialStatusInfo\x12\x1f\n" +
 	"\vprovider_id\x18\x01 \x01(\tR\n" +
 	"providerId\x12\x1e\n" +
@@ -2217,7 +2329,7 @@ const file_domain_agent_provider_proto_rawDesc = "" +
 	"\bprovider\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.AgentProviderInfoR\bprovider\"\x1c\n" +
 	"\x1aListAvailableModelsRequest\"e\n" +
 	"\x1bListAvailableModelsResponse\x12F\n" +
-	"\x06models\x18\x01 \x03(\v2..peers_touch.model.agent.v1.AvailableModelInfoR\x06models\"\xe2\x01\n" +
+	"\x06models\x18\x01 \x03(\v2..peers_touch.model.agent.v1.AvailableModelInfoR\x06models\"\xb9\x02\n" +
 	"\x12AvailableModelInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vprovider_id\x18\x02 \x01(\tR\n" +
@@ -2226,7 +2338,8 @@ const file_domain_agent_provider_proto_rawDesc = "" +
 	"\fdisplay_name\x18\x04 \x01(\tR\vdisplayName\x12\x12\n" +
 	"\x04type\x18\x05 \x01(\tR\x04type\x12\x18\n" +
 	"\aenabled\x18\x06 \x01(\bR\aenabled\x12%\n" +
-	"\x0econtext_window\x18\a \x01(\x05R\rcontextWindow\"\xb3\x01\n" +
+	"\x0econtext_window\x18\a \x01(\x05R\rcontextWindow\x12U\n" +
+	"\fcapabilities\x18\b \x01(\v21.peers_touch.model.agent.v1.ModelCapabilityConfigR\fcapabilities\"\xb3\x01\n" +
 	"\x15CreateProviderRequest\x12\x1f\n" +
 	"\vprovider_id\x18\x01 \x01(\tR\n" +
 	"providerId\x12!\n" +
@@ -2264,26 +2377,30 @@ const file_domain_agent_provider_proto_rawDesc = "" +
 	"\vprovider_id\x18\x01 \x01(\tR\n" +
 	"providerId\"X\n" +
 	"\x12ListModelsResponse\x12B\n" +
-	"\x06models\x18\x01 \x03(\v2*.peers_touch.model.agent.v1.AgentModelInfoR\x06models\"\xb4\x01\n" +
+	"\x06models\x18\x01 \x03(\v2*.peers_touch.model.agent.v1.AgentModelInfoR\x06models\"\x8b\x02\n" +
 	"\x12CreateModelRequest\x12\x1f\n" +
 	"\vprovider_id\x18\x01 \x01(\tR\n" +
 	"providerId\x12\x19\n" +
 	"\bmodel_id\x18\x02 \x01(\tR\amodelId\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x18\n" +
 	"\aenabled\x18\x04 \x01(\bR\aenabled\x12%\n" +
-	"\x0econtext_window\x18\x05 \x01(\x05R\rcontextWindow\"W\n" +
+	"\x0econtext_window\x18\x05 \x01(\x05R\rcontextWindow\x12U\n" +
+	"\fcapabilities\x18\x06 \x01(\v21.peers_touch.model.agent.v1.ModelCapabilityConfigR\fcapabilities\"W\n" +
 	"\x13CreateModelResponse\x12@\n" +
-	"\x05model\x18\x01 \x01(\v2*.peers_touch.model.agent.v1.AgentModelInfoR\x05model\"\xce\x01\n" +
+	"\x05model\x18\x01 \x01(\v2*.peers_touch.model.agent.v1.AgentModelInfoR\x05model\"\xe4\x02\n" +
 	"\x12UpdateModelRequest\x12\x1f\n" +
 	"\vprovider_id\x18\x01 \x01(\tR\n" +
 	"providerId\x12\x19\n" +
 	"\bmodel_id\x18\x02 \x01(\tR\amodelId\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\x03R\aversion\x12&\n" +
 	"\fdisplay_name\x18\x04 \x01(\tH\x00R\vdisplayName\x88\x01\x01\x12\x1d\n" +
-	"\aenabled\x18\x05 \x01(\bH\x01R\aenabled\x88\x01\x01B\x0f\n" +
+	"\aenabled\x18\x05 \x01(\bH\x01R\aenabled\x88\x01\x01\x12*\n" +
+	"\x0econtext_window\x18\x06 \x01(\x05H\x02R\rcontextWindow\x88\x01\x01\x12U\n" +
+	"\fcapabilities\x18\a \x01(\v21.peers_touch.model.agent.v1.ModelCapabilityConfigR\fcapabilitiesB\x0f\n" +
 	"\r_display_nameB\n" +
 	"\n" +
-	"\b_enabled\"W\n" +
+	"\b_enabledB\x11\n" +
+	"\x0f_context_window\"W\n" +
 	"\x13UpdateModelResponse\x12@\n" +
 	"\x05model\x18\x01 \x01(\v2*.peers_touch.model.agent.v1.AgentModelInfoR\x05model\"P\n" +
 	"\x14SetCredentialRequest\x12\x1f\n" +
@@ -2323,66 +2440,74 @@ func file_domain_agent_provider_proto_rawDescGZIP() []byte {
 	return file_domain_agent_provider_proto_rawDescData
 }
 
-var file_domain_agent_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
+var file_domain_agent_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_domain_agent_provider_proto_goTypes = []any{
-	(*ProviderModelInfo)(nil),           // 0: peers_touch.model.agent.v1.ProviderModelInfo
-	(*AgentProviderInfo)(nil),           // 1: peers_touch.model.agent.v1.AgentProviderInfo
-	(*AgentModelInfo)(nil),              // 2: peers_touch.model.agent.v1.AgentModelInfo
-	(*CredentialStatusInfo)(nil),        // 3: peers_touch.model.agent.v1.CredentialStatusInfo
-	(*CredentialResolveInfo)(nil),       // 4: peers_touch.model.agent.v1.CredentialResolveInfo
-	(*VerifyCliRequest)(nil),            // 5: peers_touch.model.agent.v1.VerifyCliRequest
-	(*VerifyCliResponse)(nil),           // 6: peers_touch.model.agent.v1.VerifyCliResponse
-	(*FetchCliModelsRequest)(nil),       // 7: peers_touch.model.agent.v1.FetchCliModelsRequest
-	(*FetchCliModelsResponse)(nil),      // 8: peers_touch.model.agent.v1.FetchCliModelsResponse
-	(*ListProvidersRequest)(nil),        // 9: peers_touch.model.agent.v1.ListProvidersRequest
-	(*ListProvidersResponse)(nil),       // 10: peers_touch.model.agent.v1.ListProvidersResponse
-	(*GetProviderRequest)(nil),          // 11: peers_touch.model.agent.v1.GetProviderRequest
-	(*GetProviderResponse)(nil),         // 12: peers_touch.model.agent.v1.GetProviderResponse
-	(*ListAvailableModelsRequest)(nil),  // 13: peers_touch.model.agent.v1.ListAvailableModelsRequest
-	(*ListAvailableModelsResponse)(nil), // 14: peers_touch.model.agent.v1.ListAvailableModelsResponse
-	(*AvailableModelInfo)(nil),          // 15: peers_touch.model.agent.v1.AvailableModelInfo
-	(*CreateProviderRequest)(nil),       // 16: peers_touch.model.agent.v1.CreateProviderRequest
-	(*CreateProviderResponse)(nil),      // 17: peers_touch.model.agent.v1.CreateProviderResponse
-	(*UpdateProviderRequest)(nil),       // 18: peers_touch.model.agent.v1.UpdateProviderRequest
-	(*UpdateProviderResponse)(nil),      // 19: peers_touch.model.agent.v1.UpdateProviderResponse
-	(*DeleteProviderRequest)(nil),       // 20: peers_touch.model.agent.v1.DeleteProviderRequest
-	(*DeleteProviderResponse)(nil),      // 21: peers_touch.model.agent.v1.DeleteProviderResponse
-	(*ListModelsRequest)(nil),           // 22: peers_touch.model.agent.v1.ListModelsRequest
-	(*ListModelsResponse)(nil),          // 23: peers_touch.model.agent.v1.ListModelsResponse
-	(*CreateModelRequest)(nil),          // 24: peers_touch.model.agent.v1.CreateModelRequest
-	(*CreateModelResponse)(nil),         // 25: peers_touch.model.agent.v1.CreateModelResponse
-	(*UpdateModelRequest)(nil),          // 26: peers_touch.model.agent.v1.UpdateModelRequest
-	(*UpdateModelResponse)(nil),         // 27: peers_touch.model.agent.v1.UpdateModelResponse
-	(*SetCredentialRequest)(nil),        // 28: peers_touch.model.agent.v1.SetCredentialRequest
-	(*SetCredentialResponse)(nil),       // 29: peers_touch.model.agent.v1.SetCredentialResponse
-	(*DeleteCredentialRequest)(nil),     // 30: peers_touch.model.agent.v1.DeleteCredentialRequest
-	(*DeleteCredentialResponse)(nil),    // 31: peers_touch.model.agent.v1.DeleteCredentialResponse
-	(*GetCredentialStatusRequest)(nil),  // 32: peers_touch.model.agent.v1.GetCredentialStatusRequest
-	(*GetCredentialStatusResponse)(nil), // 33: peers_touch.model.agent.v1.GetCredentialStatusResponse
-	(*ResolveCredentialRequest)(nil),    // 34: peers_touch.model.agent.v1.ResolveCredentialRequest
-	(*ResolveCredentialResponse)(nil),   // 35: peers_touch.model.agent.v1.ResolveCredentialResponse
-	(*timestamppb.Timestamp)(nil),       // 36: google.protobuf.Timestamp
+	(*ModelCapabilityConfig)(nil),       // 0: peers_touch.model.agent.v1.ModelCapabilityConfig
+	(*ProviderModelInfo)(nil),           // 1: peers_touch.model.agent.v1.ProviderModelInfo
+	(*AgentProviderInfo)(nil),           // 2: peers_touch.model.agent.v1.AgentProviderInfo
+	(*AgentModelInfo)(nil),              // 3: peers_touch.model.agent.v1.AgentModelInfo
+	(*CredentialStatusInfo)(nil),        // 4: peers_touch.model.agent.v1.CredentialStatusInfo
+	(*CredentialResolveInfo)(nil),       // 5: peers_touch.model.agent.v1.CredentialResolveInfo
+	(*VerifyCliRequest)(nil),            // 6: peers_touch.model.agent.v1.VerifyCliRequest
+	(*VerifyCliResponse)(nil),           // 7: peers_touch.model.agent.v1.VerifyCliResponse
+	(*FetchCliModelsRequest)(nil),       // 8: peers_touch.model.agent.v1.FetchCliModelsRequest
+	(*FetchCliModelsResponse)(nil),      // 9: peers_touch.model.agent.v1.FetchCliModelsResponse
+	(*ListProvidersRequest)(nil),        // 10: peers_touch.model.agent.v1.ListProvidersRequest
+	(*ListProvidersResponse)(nil),       // 11: peers_touch.model.agent.v1.ListProvidersResponse
+	(*GetProviderRequest)(nil),          // 12: peers_touch.model.agent.v1.GetProviderRequest
+	(*GetProviderResponse)(nil),         // 13: peers_touch.model.agent.v1.GetProviderResponse
+	(*ListAvailableModelsRequest)(nil),  // 14: peers_touch.model.agent.v1.ListAvailableModelsRequest
+	(*ListAvailableModelsResponse)(nil), // 15: peers_touch.model.agent.v1.ListAvailableModelsResponse
+	(*AvailableModelInfo)(nil),          // 16: peers_touch.model.agent.v1.AvailableModelInfo
+	(*CreateProviderRequest)(nil),       // 17: peers_touch.model.agent.v1.CreateProviderRequest
+	(*CreateProviderResponse)(nil),      // 18: peers_touch.model.agent.v1.CreateProviderResponse
+	(*UpdateProviderRequest)(nil),       // 19: peers_touch.model.agent.v1.UpdateProviderRequest
+	(*UpdateProviderResponse)(nil),      // 20: peers_touch.model.agent.v1.UpdateProviderResponse
+	(*DeleteProviderRequest)(nil),       // 21: peers_touch.model.agent.v1.DeleteProviderRequest
+	(*DeleteProviderResponse)(nil),      // 22: peers_touch.model.agent.v1.DeleteProviderResponse
+	(*ListModelsRequest)(nil),           // 23: peers_touch.model.agent.v1.ListModelsRequest
+	(*ListModelsResponse)(nil),          // 24: peers_touch.model.agent.v1.ListModelsResponse
+	(*CreateModelRequest)(nil),          // 25: peers_touch.model.agent.v1.CreateModelRequest
+	(*CreateModelResponse)(nil),         // 26: peers_touch.model.agent.v1.CreateModelResponse
+	(*UpdateModelRequest)(nil),          // 27: peers_touch.model.agent.v1.UpdateModelRequest
+	(*UpdateModelResponse)(nil),         // 28: peers_touch.model.agent.v1.UpdateModelResponse
+	(*SetCredentialRequest)(nil),        // 29: peers_touch.model.agent.v1.SetCredentialRequest
+	(*SetCredentialResponse)(nil),       // 30: peers_touch.model.agent.v1.SetCredentialResponse
+	(*DeleteCredentialRequest)(nil),     // 31: peers_touch.model.agent.v1.DeleteCredentialRequest
+	(*DeleteCredentialResponse)(nil),    // 32: peers_touch.model.agent.v1.DeleteCredentialResponse
+	(*GetCredentialStatusRequest)(nil),  // 33: peers_touch.model.agent.v1.GetCredentialStatusRequest
+	(*GetCredentialStatusResponse)(nil), // 34: peers_touch.model.agent.v1.GetCredentialStatusResponse
+	(*ResolveCredentialRequest)(nil),    // 35: peers_touch.model.agent.v1.ResolveCredentialRequest
+	(*ResolveCredentialResponse)(nil),   // 36: peers_touch.model.agent.v1.ResolveCredentialResponse
+	nil,                                 // 37: peers_touch.model.agent.v1.ModelCapabilityConfig.FlagsEntry
+	(*timestamppb.Timestamp)(nil),       // 38: google.protobuf.Timestamp
 }
 var file_domain_agent_provider_proto_depIdxs = []int32{
-	0,  // 0: peers_touch.model.agent.v1.AgentProviderInfo.models:type_name -> peers_touch.model.agent.v1.ProviderModelInfo
-	36, // 1: peers_touch.model.agent.v1.AgentModelInfo.created_at:type_name -> google.protobuf.Timestamp
-	36, // 2: peers_touch.model.agent.v1.AgentModelInfo.updated_at:type_name -> google.protobuf.Timestamp
-	1,  // 3: peers_touch.model.agent.v1.ListProvidersResponse.providers:type_name -> peers_touch.model.agent.v1.AgentProviderInfo
-	1,  // 4: peers_touch.model.agent.v1.GetProviderResponse.provider:type_name -> peers_touch.model.agent.v1.AgentProviderInfo
-	15, // 5: peers_touch.model.agent.v1.ListAvailableModelsResponse.models:type_name -> peers_touch.model.agent.v1.AvailableModelInfo
-	1,  // 6: peers_touch.model.agent.v1.CreateProviderResponse.provider:type_name -> peers_touch.model.agent.v1.AgentProviderInfo
-	1,  // 7: peers_touch.model.agent.v1.UpdateProviderResponse.provider:type_name -> peers_touch.model.agent.v1.AgentProviderInfo
-	2,  // 8: peers_touch.model.agent.v1.ListModelsResponse.models:type_name -> peers_touch.model.agent.v1.AgentModelInfo
-	2,  // 9: peers_touch.model.agent.v1.CreateModelResponse.model:type_name -> peers_touch.model.agent.v1.AgentModelInfo
-	2,  // 10: peers_touch.model.agent.v1.UpdateModelResponse.model:type_name -> peers_touch.model.agent.v1.AgentModelInfo
-	3,  // 11: peers_touch.model.agent.v1.SetCredentialResponse.status:type_name -> peers_touch.model.agent.v1.CredentialStatusInfo
-	3,  // 12: peers_touch.model.agent.v1.GetCredentialStatusResponse.status:type_name -> peers_touch.model.agent.v1.CredentialStatusInfo
-	4,  // 13: peers_touch.model.agent.v1.ResolveCredentialResponse.credential:type_name -> peers_touch.model.agent.v1.CredentialResolveInfo
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	37, // 0: peers_touch.model.agent.v1.ModelCapabilityConfig.flags:type_name -> peers_touch.model.agent.v1.ModelCapabilityConfig.FlagsEntry
+	0,  // 1: peers_touch.model.agent.v1.ProviderModelInfo.capabilities:type_name -> peers_touch.model.agent.v1.ModelCapabilityConfig
+	1,  // 2: peers_touch.model.agent.v1.AgentProviderInfo.models:type_name -> peers_touch.model.agent.v1.ProviderModelInfo
+	38, // 3: peers_touch.model.agent.v1.AgentModelInfo.created_at:type_name -> google.protobuf.Timestamp
+	38, // 4: peers_touch.model.agent.v1.AgentModelInfo.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 5: peers_touch.model.agent.v1.AgentModelInfo.capabilities:type_name -> peers_touch.model.agent.v1.ModelCapabilityConfig
+	2,  // 6: peers_touch.model.agent.v1.ListProvidersResponse.providers:type_name -> peers_touch.model.agent.v1.AgentProviderInfo
+	2,  // 7: peers_touch.model.agent.v1.GetProviderResponse.provider:type_name -> peers_touch.model.agent.v1.AgentProviderInfo
+	16, // 8: peers_touch.model.agent.v1.ListAvailableModelsResponse.models:type_name -> peers_touch.model.agent.v1.AvailableModelInfo
+	0,  // 9: peers_touch.model.agent.v1.AvailableModelInfo.capabilities:type_name -> peers_touch.model.agent.v1.ModelCapabilityConfig
+	2,  // 10: peers_touch.model.agent.v1.CreateProviderResponse.provider:type_name -> peers_touch.model.agent.v1.AgentProviderInfo
+	2,  // 11: peers_touch.model.agent.v1.UpdateProviderResponse.provider:type_name -> peers_touch.model.agent.v1.AgentProviderInfo
+	3,  // 12: peers_touch.model.agent.v1.ListModelsResponse.models:type_name -> peers_touch.model.agent.v1.AgentModelInfo
+	0,  // 13: peers_touch.model.agent.v1.CreateModelRequest.capabilities:type_name -> peers_touch.model.agent.v1.ModelCapabilityConfig
+	3,  // 14: peers_touch.model.agent.v1.CreateModelResponse.model:type_name -> peers_touch.model.agent.v1.AgentModelInfo
+	0,  // 15: peers_touch.model.agent.v1.UpdateModelRequest.capabilities:type_name -> peers_touch.model.agent.v1.ModelCapabilityConfig
+	3,  // 16: peers_touch.model.agent.v1.UpdateModelResponse.model:type_name -> peers_touch.model.agent.v1.AgentModelInfo
+	4,  // 17: peers_touch.model.agent.v1.SetCredentialResponse.status:type_name -> peers_touch.model.agent.v1.CredentialStatusInfo
+	4,  // 18: peers_touch.model.agent.v1.GetCredentialStatusResponse.status:type_name -> peers_touch.model.agent.v1.CredentialStatusInfo
+	5,  // 19: peers_touch.model.agent.v1.ResolveCredentialResponse.credential:type_name -> peers_touch.model.agent.v1.CredentialResolveInfo
+	20, // [20:20] is the sub-list for method output_type
+	20, // [20:20] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_provider_proto_init() }
@@ -2390,15 +2515,15 @@ func file_domain_agent_provider_proto_init() {
 	if File_domain_agent_provider_proto != nil {
 		return
 	}
-	file_domain_agent_provider_proto_msgTypes[18].OneofWrappers = []any{}
-	file_domain_agent_provider_proto_msgTypes[26].OneofWrappers = []any{}
+	file_domain_agent_provider_proto_msgTypes[19].OneofWrappers = []any{}
+	file_domain_agent_provider_proto_msgTypes[27].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_provider_proto_rawDesc), len(file_domain_agent_provider_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   36,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
