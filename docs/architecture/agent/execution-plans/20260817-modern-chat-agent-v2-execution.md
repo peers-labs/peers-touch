@@ -1977,14 +1977,16 @@ and zero local-path leakage.
     Blocked preflights no longer reset a fixture they did not acquire.
   - Native process, renderer, gateway, WebDriver, Conversation, actor Fixture,
     profile lease, source lease, and provisioner cleanup all completed.
-- **Next action**: advance to `G-FE1-SC6 / BASE-STALE_VERSION` without
-  running C08 or the 419-cell Foundation Gate.
+- **Follow-on**: `G-FE1-SC6 / BASE-STALE_VERSION` reached
+  `FUNCTIONAL_PASS` in exact-source Native run `20260915T221919169052Z`;
+  `BASE-TERMINAL_MUTATION` is the next dependency-ready lifecycle cell. C08
+  and the 419-cell Foundation Gate remain `NOT RUN`.
 
 #### G-FE1 Source Closure Inventory
 
 - **Inventory source**: the reviewed 28-family `foundation_errors` matrix,
   production Station/Desktop paths, and direct Harness/oracle registration.
-- **Owner-layer source complete (21)**:
+- **Owner-layer source complete (22)**:
   `BASE-QUEUE_FULL`,
   `BASE-RUNTIME_UNAVAILABLE`,
   `BASE-DUPLICATE_CONFLICT`, `BASE-ACTIVE_MUTATION_CONFLICT`,
@@ -1995,12 +1997,12 @@ and zero local-path leakage.
   `BASE-CONTEXT_OVERFLOW`, `BASE-INVALID_REFERENCE`,
   `BASE-ATTACHMENT_REJECTED`, `BASE-APPROVAL_DENIED`,
   `BASE-APPROVAL_EXPIRED`, `BASE-LOOP_BUDGET_EXHAUSTED`, `BASE-CANCELLED`,
-  `BASE-INTERRUPTED`, and `BASE-UNKNOWN_TOOL`.
-- **Exact-source `FUNCTIONAL_PASS` (20)**: all owner-layer-complete families
+  `BASE-INTERRUPTED`, `BASE-STALE_VERSION`, and `BASE-UNKNOWN_TOOL`.
+- **Exact-source `FUNCTIONAL_PASS` (21)**: all owner-layer-complete families
   above except `BASE-UNKNOWN_TOOL`, whose real-provider Development Journey is
   blocked before product execution by the disposable Agent's missing enabled
   `skills_list` binding.
-- **Source-incomplete (7)**:
+- **Source-incomplete (6)**:
 
 | Cluster | Families | Missing closure |
 |---|---|---|
@@ -2008,7 +2010,7 @@ and zero local-path leakage.
 | `G-FE1-SC2` Runtime selection | `BASE-RESUME_UNAVAILABLE` | external-session reset command, typed outcome, confirmation action, and direct Journey |
 | `G-FE1-SC3` Client execution | `BASE-PERMISSION_DENIED`, `BASE-TARGET_DISCONNECTED` | Desktop/Station implementation beyond Mobile contract-only coverage |
 | `G-FE1-SC4` Provider terminalization | `BASE-RATE_LIMIT` | deterministic real 429 trigger without a synthetic provider response |
-| `G-FE1-SC6` Lifecycle concurrency | `BASE-STALE_VERSION`, `BASE-TERMINAL_MUTATION` | canonical lifecycle rejection and contextual recovery action |
+| `G-FE1-SC6` Lifecycle concurrency | `BASE-TERMINAL_MUTATION` | reject terminal-resource mutation and open the immutable result |
 
 - **Execution order**: finish `G-FE1-NORMAL-SEND`, freeze the shared typed-error
   contract, then implement `SC1` through `SC6` in dependency-safe owner lanes.
@@ -2146,8 +2148,38 @@ and zero local-path leakage.
     `20260915T205904285999Z` then proved the canonical SSE payload while
     authoritative message sync erased recovery because terminal
     `error_json` was absent. Both root causes are closed in the passing source.
-    `G-FE1-SC6 / BASE-STALE_VERSION` is the next dependency-ready source
-    vertical.
+    `G-FE1-SC6 / BASE-STALE_VERSION` is now `FUNCTIONAL_PASS`;
+    `BASE-TERMINAL_MUTATION` is the next dependency-ready source vertical.
+- **SC6 split**:
+  - `BASE-STALE_VERSION` is `FUNCTIONAL_PASS`. Station row-locks the owned
+    Conversation before comparing `expected_conversation_version` and returns
+    exact retryable terminal `LIFECYCLE_STALE_VERSION` details
+    `resource_id,expected_revision,actual_revision`. Desktop sends the
+    currently projected revision for all five revision commands, owns one
+    transient conflict projection, renders localized `Reload latest`, and
+    reloads Station authority without replaying the failed mutation.
+  - Exact-source Native run `20260915T220918660191Z` reached the real Chat
+    store edit command and preserved the Station 409, but exposed that
+    `request_json_with_policy` consumed the response body without first
+    retaining typed error headers. Checkpoint `085874eca` fixes that shared
+    Desktop Rust transport path while preserving the existing safe-field
+    allowlist; its request-path regression rejects non-allowlisted details.
+  - Exact-source Native Development run `20260915T221919169052Z` on
+    `085874eca` passed all six independent assertions: exact typed payload,
+    visible localized `Reload latest`, authoritative reload, winner
+    revision/hash preservation, zero stale message/revision mutation, and
+    projection convergence from revision 1 to 2. Conversation, local
+    projection, Fixture, process, port, storage, profile lease, source lease,
+    and provisioner cleanup all completed.
+  - Growth decision: `acceptance_gate`. The standalone Development adapter and
+    request-path regression retain the same stale-mutation business Journey
+    for later promotion into the unchanged Foundation Gate after all source
+    gaps close; this Development evidence is not `PROVEN`.
+  - `BASE-TERMINAL_MUTATION` remains source-incomplete and is the next
+    dependency-ready owner-layer vertical. It must preserve the accepted
+    terminal resource hash, reject the mutation with exact
+    `LIFECYCLE_TERMINAL_MUTATION`, expose `Open result`, and produce zero
+    mutation.
 - **Gate boundary**: do not run C08 or the 419-cell Foundation Gate while any
   source-incomplete family remains.
 - **C08 diagnostic after the boundary changed (2026-09-15)**: run
@@ -2161,6 +2193,10 @@ and zero local-path leakage.
 #### G-FE1 Concurrency Decision
 
 - **Mode**: hybrid.
+- **Completed stale-version slice**: serial. Station revision ownership,
+  Desktop Rust typed-error transport, Web projection and recovery state, the
+  shared Harness, checkpoint/deploy, and Native receiver Journey formed one
+  causally ordered path. No parallel writer was admitted.
 - **Completed loop-budget slice**: serial. The Station turn-scoped budget
   terminal payload, Desktop typed-error projection and `Inspect budget`
   action, shared AS-F04 loop driver, checkpoint/deploy, and Native receiver
@@ -2175,7 +2211,7 @@ and zero local-path leakage.
   receiver Journey form one causally ordered evidence path. The integrator owns
   every write and the final reconciliation.
 - **Next lifecycle slice**: serial during owner-path inspection and contract
-  freeze for `BASE-STALE_VERSION`; shared lifecycle services, Desktop
+  freeze for `BASE-TERMINAL_MUTATION`; shared lifecycle services, Desktop
   projection, Harness, checkpoint/deploy, and runtime evidence remain
   integrator-owned.
 - **Shared contract freeze — integrator, serial first**:
