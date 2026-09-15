@@ -2092,3 +2092,42 @@ and authorize object access only through the immutable actor grant. The
 focused service/HTTP/production tests, complete Conversation race suite,
 focused `go vet`, and `git diff --check` pass. Exact-source checkpoint,
 deployment, and the same receiver-open Journey remain required.
+
+Exact-source run
+`20260915T024817046059Z-02438b918aa56a901996efd98e44bed8`
+at checkpoint `e29cf628c76ab04a3cb070a1baee1b98ed510578` proves the
+cross-Station receiver attachment-open path end to end: authority `four` and
+Home `fiveArm` both return HTTP 206, the Mobile transfer reaches `Complete`,
+and `messaging.attachment.open` returns `ready`. The first product-visible
+failure advances to sender reaction readback.
+
+Instrumented exact-source run
+`20260915T031126378304Z-a32f72c840e74f16baf99d50d97c8fa4`
+at `e3653ea5b4d60010f4226af133082b2cb07e40ac` confirms the next
+owner-layer defect. Bob prepares command `01M2HGWKR86GM2YD6N3Q2G5M8H`
+against authority sequence 2 with distinct Home and Authority Station
+identities, but Mobile submits the raw local-authority `command` envelope.
+Bob's Home rejects it before durable Federation admission with
+`STALE_DELIVERY_PLAN`, no `current_plan`, no forwarding acceptance, and no
+event. The resulting `missing_stale_plan` is therefore a secondary Mobile
+decode symptom, not the command failure owner.
+
+AO-D07 already defines the correction and Desktop proves the implementation
+shape: Mobile must use raw `ChatCommand` only when Home is the authority;
+otherwise it must derive the active follower public head, construct the
+canonical D-17 actor-device-signed proposal from its enrolled device signing
+identity, and submit that proposal to its Home for durable Federation
+admission. No client-to-authority shortcut, unsigned remote command, fallback
+read, or Station compatibility branch is permitted. Focused Mobile transport
+and engine regressions, exact-source deployment, and the same Chat/Contacts
+Journey remain required before `FUNCTIONAL_PASS`.
+
+The Mobile D-17 path is implemented. Command dispatch reconstructs the active
+enrolled device signing identity, binds it to the current Home Station, and
+selects raw command submission only for a local authority. A remote authority
+requires an active follower public head and produces the canonical signed
+proposal with exact command hash, command kind, authority epoch, and bounded
+lifetime. The focused Mobile transport cohort passes 9/9, Mobile Rust
+compilation passes, formatting is clean, and `git diff --check` passes. The
+instrumentation remains active with `runId=post-fix`; checkpoint, exact-source
+deployment, and the same receiver-perspective Journey remain required.

@@ -1120,7 +1120,7 @@ impl MobileMessagingEngine {
                 "authoritySequence": plan.authority_sequence,
             });
             std::thread::spawn(move || {
-                let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7787/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-reaction-readback","runId":"pre-fix","hypothesisId":"R-S","location":"apps/mobile/src-tauri/src/messaging/engine.rs:submit_metadata_interaction","msg":"[DEBUG] Mobile prepared metadata interaction route","data":debug_data}).to_string()).send();
+                let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7787/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-reaction-readback","runId":"post-fix","hypothesisId":"R-S","location":"apps/mobile/src-tauri/src/messaging/engine.rs:submit_metadata_interaction","msg":"[DEBUG] Mobile prepared metadata interaction route","data":debug_data}).to_string()).send();
             });
         }
         // #endregion
@@ -1437,12 +1437,19 @@ impl MobileMessagingEngine {
             .lock()
             .map_err(|_| "mobile messaging dispatch lock poisoned".to_string())?;
         let token = self.access_token()?;
+        let (enrollment, signing_key) = self.store.active_device_signing_identity()?;
         let progress = CommandOutboxWorker::new(
             MobileOutboxStore(self.store.clone()),
             StationCommandTransport::new(
                 self.scope.station_origin.clone(),
                 token,
                 self.scope.device_id.clone(),
+            )?
+            .with_remote_command_identity(
+                self.scope.actor_ptid.clone(),
+                self.scope.station_peer_id.clone(),
+                enrollment.certificate.signing_key_id,
+                signing_key,
             )?,
             COMMAND_RETRY_POLICY,
         )?
