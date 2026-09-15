@@ -543,30 +543,30 @@ def main() -> int:
                     target = artifact_dir / runtime / client.log_path.name
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(client.log_path, target)
-        try:
-            activated = subprocess.run(
-                ["make", "profile", f"PROFILE={PROFILE}"],
-                cwd=ROOT,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            require(
-                activated.returncode == 0,
-                "failed to restore the authorized cleanup profile",
-            )
-            reset_fixture(
-                DEPLOYMENT_ENVIRONMENT,
-                ("alice", "bob"),
-                reset_authorized=True,
-            )
-            cleanup["fixtureResetAfter"] = True
-        except BaseException as error:
-            cleanup["status"] = "failed"
-            cleanup["failures"].append(
-                f"fixture cleanup: {type(error).__name__}: {error}"
-            )
+            try:
+                activated = subprocess.run(
+                    ["make", "profile", f"PROFILE={PROFILE}"],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                require(
+                    activated.returncode == 0,
+                    "failed to restore the authorized cleanup profile",
+                )
+                reset_fixture(
+                    DEPLOYMENT_ENVIRONMENT,
+                    ("alice", "bob"),
+                    reset_authorized=True,
+                )
+                cleanup["fixtureResetAfter"] = True
+            except BaseException as error:
+                cleanup["status"] = "failed"
+                cleanup["failures"].append(
+                    f"fixture cleanup: {type(error).__name__}: {error}"
+                )
         try:
             cleanup["provisionerResourcesReleased"] = list(
                 provisioner.cleanup()
