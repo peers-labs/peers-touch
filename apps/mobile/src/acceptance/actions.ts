@@ -396,7 +396,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       file: new File([bytes.buffer], filename, { type: mimeType }),
     });
     // #region debug-point A:attachment-stage-result
-    void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-attachment-delivery', runId: 'pre-fix', hypothesisId: 'A', location: 'apps/mobile/src/acceptance/actions.ts:messaging.attachment.stage', msg: '[DEBUG] Mobile attachment stage completed', data: { stageId: staged.stageId, completed: staged.completed, plaintextSize: staged.plaintextSize, maxChunkBytes: staged.maxChunkBytes }, ts: Date.now() }) }).catch(() => {});
+    void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-attachment-delivery', runId: 'post-fix', hypothesisId: 'A', location: 'apps/mobile/src/acceptance/actions.ts:messaging.attachment.stage', msg: '[DEBUG] Mobile attachment stage completed', data: { stageId: staged.stageId, completed: staged.completed, plaintextSize: staged.plaintextSize, maxChunkBytes: staged.maxChunkBytes }, ts: Date.now() }) }).catch(() => {});
     // #endregion
     return {
       stageId: staged.stageId,
@@ -438,7 +438,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       attachmentStageIds: input?.attachmentStageIds,
     });
     // #region debug-point A-B:attachment-send-result
-    void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-attachment-delivery', runId: 'pre-fix', hypothesisId: 'A-B', location: 'apps/mobile/src/acceptance/actions.ts:messaging.send', msg: '[DEBUG] Mobile messaging send returned', data: { conversationId, messageId: result.messageId, commandId: 'commandId' in result ? result.commandId : null, state: result.state, attachmentIds: result.attachmentIds }, ts: Date.now() }) }).catch(() => {});
+    void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-attachment-delivery', runId: 'post-fix', hypothesisId: 'A-B', location: 'apps/mobile/src/acceptance/actions.ts:messaging.send', msg: '[DEBUG] Mobile messaging send returned', data: { conversationId, messageId: result.messageId, commandId: 'commandId' in result ? result.commandId : null, state: result.state, attachmentIds: result.attachmentIds }, ts: Date.now() }) }).catch(() => {});
     // #endregion
     return { conversationId, ...result };
   },
@@ -521,7 +521,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   'messaging.reconcile': async () => {
     const result = await reconcileActiveMessagingSession();
     // #region debug-point B-C:attachment-reconcile-result
-    void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-attachment-delivery', runId: 'pre-fix', hypothesisId: 'B-C', location: 'apps/mobile/src/acceptance/actions.ts:messaging.reconcile', msg: '[DEBUG] Mobile messaging reconciliation completed', data: result, ts: Date.now() }) }).catch(() => {});
+    void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-attachment-delivery', runId: 'post-fix', hypothesisId: 'B-C', location: 'apps/mobile/src/acceptance/actions.ts:messaging.reconcile', msg: '[DEBUG] Mobile messaging reconciliation completed', data: result, ts: Date.now() }) }).catch(() => {});
     // #endregion
     return result;
   },
@@ -575,7 +575,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     ] as const)));
     const projection = sanitizeMessagingProjection({ runtime, conversations, messages });
     // #region debug-point C-D:attachment-projection-read
-    void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-attachment-delivery', runId: 'pre-fix', hypothesisId: 'C-D', location: 'apps/mobile/src/acceptance/actions.ts:messaging.projection.read', msg: '[DEBUG] Mobile messaging projection read', data: { requestedConversationId, conversations: projection.conversations.map((conversation) => conversation.conversationId), messages: Object.fromEntries(Object.entries(projection.messages).map(([conversationId, projectedMessages]) => [conversationId, projectedMessages.map((message) => ({ messageId: message.messageId, eventId: message.eventId ?? null, eventSequence: message.eventSequence ?? null, state: message.state, attachmentIds: message.attachments.map((attachment) => attachment.attachmentId), attachmentStates: message.attachments.map((attachment) => attachment.availabilityState ?? null) }))])) }, ts: Date.now() }) }).catch(() => {});
+    void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-attachment-delivery', runId: 'post-fix', hypothesisId: 'C-D', location: 'apps/mobile/src/acceptance/actions.ts:messaging.projection.read', msg: '[DEBUG] Mobile messaging projection read', data: { requestedConversationId, conversations: projection.conversations.map((conversation) => conversation.conversationId), messages: Object.fromEntries(Object.entries(projection.messages).map(([conversationId, projectedMessages]) => [conversationId, projectedMessages.map((message) => ({ messageId: message.messageId, eventId: message.eventId ?? null, eventSequence: message.eventSequence ?? null, state: message.state, attachmentIds: message.attachments.map((attachment) => attachment.attachmentId), attachmentStates: message.attachments.map((attachment) => attachment.availabilityState ?? null) }))])) }, ts: Date.now() }) }).catch(() => {});
     // #endregion
     return projection;
   },

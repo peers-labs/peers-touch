@@ -1124,9 +1124,9 @@ impl MobileMessagingStore {
             let generation = i64::try_from(transfer.generation)
                 .map_err(|_| "mobile messaging attachment generation overflow")?;
             self.with_transaction(|transaction| {
-                let draft_media_type = transaction
+                let draft_exists = transaction
                     .query_row(
-                        "SELECT mime_type FROM messaging_attachment_drafts
+                        "SELECT 1 FROM messaging_attachment_drafts
                          WHERE attachment_id = ?1
                            AND conversation_id = ?2
                            AND message_id = ?3",
@@ -1135,18 +1135,11 @@ impl MobileMessagingStore {
                             transfer.conversation_id,
                             transfer.message_id
                         ],
-                        |row| row.get::<_, String>(0),
+                        |row| row.get::<_, i64>(0),
                     )
                     .optional()
-                    .map_err(|error| error.to_string())?;
-                let mime_type = draft_media_type
-                    .as_deref()
-                    .unwrap_or(descriptor.media_type.as_str());
-                if mime_type != descriptor.media_type {
-                    return Err(
-                        "mobile messaging attachment completion media type mismatch".to_string()
-                    );
-                }
+                    .map_err(|error| error.to_string())?
+                    .is_some();
                 let transfer_changed = transaction
                     .execute(
                         "UPDATE messaging_attachment_transfers
@@ -1185,10 +1178,7 @@ impl MobileMessagingStore {
                         params![transfer.attachment_id, descriptor_bytes],
                     )
                     .map_err(|error| error.to_string())?;
-                let draft_fenced = match draft_media_type {
-                    Some(_) => draft_changed == 1,
-                    None => draft_changed == 0,
-                };
+                let draft_fenced = draft_changed == usize::from(draft_exists);
                 if transfer_changed != 1 || !draft_fenced {
                     return Err("mobile messaging attachment completion was not fenced".to_string());
                 }
@@ -1205,7 +1195,7 @@ impl MobileMessagingStore {
                 "error": result.as_ref().err(),
             });
             std::thread::spawn(move || {
-                let _ = reqwest::blocking::Client::new().post("http://10.4.44.83:7784/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"pre-fix","hypothesisId":"G","location":"apps/mobile/src-tauri/src/messaging/adapter.rs:complete_attachment_upload","msg":"[DEBUG] Mobile attachment local completion finished","data":debug_data}).to_string()).send();
+                let _ = reqwest::blocking::Client::new().post("http://10.4.44.83:7784/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"G","location":"apps/mobile/src-tauri/src/messaging/adapter.rs:complete_attachment_upload","msg":"[DEBUG] Mobile attachment local completion finished","data":debug_data}).to_string()).send();
             });
         }
         // #endregion
@@ -6499,7 +6489,7 @@ mod tests {
             storage_ref: "oss://messaging/object-1".to_string(),
             ciphertext_size: 33,
             ciphertext_sha256: vec![5; 32],
-            media_type: "text/plain".to_string(),
+            media_type: "application/octet-stream".to_string(),
             chunk_size: messaging_core::attachment::ATTACHMENT_CHUNK_SIZE,
             chunk_count: 1,
             encryption_suite: AttachmentEncryptionSuite::Aes256GcmChunked as i32,
@@ -8341,6 +8331,11 @@ mod tests {
                 &ready.attachments,
             )
             .unwrap();
+        assert_eq!(ready.attachments[0].mime_type, "text/plain");
+        assert_eq!(
+            ready.attachments[0].object.as_ref().unwrap().media_type,
+            "application/octet-stream"
+        );
         let private_content =
             encode_message_private_content(&ready.plaintext, &ready.attachments).unwrap();
         store

@@ -1524,7 +1524,7 @@ impl MobileMessagingEngine {
                 "snapshotError": transfer_after.as_ref().err(),
             });
             std::thread::spawn(move || {
-                let _ = reqwest::blocking::Client::new().post("http://10.4.44.83:7784/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"pre-fix","hypothesisId":"F","location":"apps/mobile/src-tauri/src/messaging/engine.rs:resume_attachment_upload_once","msg":"[DEBUG] Mobile attachment upload result persisted","data":debug_data}).to_string()).send();
+                let _ = reqwest::blocking::Client::new().post("http://10.4.44.83:7784/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"F","location":"apps/mobile/src-tauri/src/messaging/engine.rs:resume_attachment_upload_once","msg":"[DEBUG] Mobile attachment upload result persisted","data":debug_data}).to_string()).send();
             });
         }
         // #endregion

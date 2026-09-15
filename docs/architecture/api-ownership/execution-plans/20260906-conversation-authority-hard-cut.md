@@ -1978,3 +1978,23 @@ therefore inside the Mobile local completion transaction, after successful
 authority completion and before the descriptor makes the draft eligible. The
 next diagnostic records that transaction's exact error without changing
 transfer behavior.
+
+Diagnostic run
+`20260915T011951396799Z-2d1789b78b9b356bfd0f1bb37eab9573`
+at source `2633d39410d245052cd613594da9c6127bb79ad0` confirms the
+local rejection is `mobile messaging attachment completion media type
+mismatch`. The ciphertext descriptor correctly uses the canonical
+`application/octet-stream` media type, while the durable draft retains the
+original plaintext attachment media type (`text/plain`) inside encrypted
+private metadata. The Mobile store incorrectly compared those intentionally
+different fields before persisting the descriptor. CA-W6 admits the owner-layer
+correction: retain the draft row existence/fencing check, remove the invalid
+cross-layer MIME equality, and add a regression proving plaintext MIME remains
+private while the public ciphertext descriptor remains octet-stream.
+
+The Mobile owner-layer correction is implemented. The focused attachment-draft
+regression now passes, the complete Mobile Rust library suite passes 91/91, and
+`pnpm mobile:check` passes its wire/runtime boundaries, TypeScript, production
+build, Rust check, and iOS project inspection. Debug instrumentation remains
+active with `runId=post-fix`; checkpoint, exact-source simulator execution, and
+receiver-perspective evidence remain required before `FUNCTIONAL_PASS`.
