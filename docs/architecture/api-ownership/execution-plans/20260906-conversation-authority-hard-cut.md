@@ -1998,3 +1998,20 @@ regression now passes, the complete Mobile Rust library suite passes 91/91, and
 build, Rust check, and iOS project inspection. Debug instrumentation remains
 active with `runId=post-fix`; checkpoint, exact-source simulator execution, and
 receiver-perspective evidence remain required before `FUNCTIONAL_PASS`.
+
+Checkpoint `a7ee0f05e1ded0d395aa250d94f324d144e2522a` was deployed
+exactly to `four` and `fiveArm`. Post-fix Chat/Contacts run
+`20260915T013009076126Z-e57e2cb9ed27f21a215eccec78524821`
+advances past attachment delivery, proving the Mobile MIME-boundary correction
+in the receiver projection. The next product-visible failure is receiver
+attachment open: `fiveArm` accepts the local object GET and forwards it through
+shared Federation `OpenPeerStream`, but authority Station `four` returns HTTP
+400 from `/federation/conversation/attachments/objects/:object_id`; `fiveArm`
+then surfaces HTTP 500 to Mobile. The status class excludes attachment claims
+(403) and Range parsing (416), so CA-W6 mechanically admits one bounded
+instrumentation-only diagnostic at the authority GET entry to distinguish a
+missing/corrupt metadata header from an object path-versus-metadata mismatch.
+The existing serial Concurrency Decision remains valid because the Station
+object stream, `four`/`fiveArm` deployments, simulator fixture, and rerun are
+shared mutable resources. CA-W6 remains `PARTIAL/UNPROVEN`; CA-W7 remains
+pending until the receiver-open Journey reaches `FUNCTIONAL_PASS`.

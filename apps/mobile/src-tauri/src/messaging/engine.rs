@@ -1524,7 +1524,7 @@ impl MobileMessagingEngine {
                 "snapshotError": transfer_after.as_ref().err(),
             });
             std::thread::spawn(move || {
-                let _ = reqwest::blocking::Client::new().post("http://10.4.44.83:7784/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"F","location":"apps/mobile/src-tauri/src/messaging/engine.rs:resume_attachment_upload_once","msg":"[DEBUG] Mobile attachment upload result persisted","data":debug_data}).to_string()).send();
+                let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7785/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"F","location":"apps/mobile/src-tauri/src/messaging/engine.rs:resume_attachment_upload_once","msg":"[DEBUG] Mobile attachment upload result persisted","data":debug_data}).to_string()).send();
             });
         }
         // #endregion
@@ -1556,13 +1556,45 @@ impl MobileMessagingEngine {
                 "mobile messaging attachment plaintext commitment is invalid".to_string()
             })?;
         let cache_ref = self.attachment_cache_ref(&attachment_id)?;
-        self.attachment_transfer_worker()?.run_download_once(
+        let transfer_before = self.store.attachment_transfer(&attachment_id)?;
+        let progress = self.attachment_transfer_worker()?.run_download_once(
             &attachment_id,
             descriptor,
             &plaintext_sha256,
             &cache_ref,
             now_unix_ms,
-        )?;
+        );
+        let transfer_after = self.store.attachment_transfer(&attachment_id);
+        // #region debug-point H-J:attachment-download-result
+        {
+            let debug_data = serde_json::json!({
+                "attachmentId": attachment_id,
+                "progress": progress.as_ref().map(|value| format!("{value:?}")).ok(),
+                "error": progress.as_ref().err(),
+                "before": transfer_before.as_ref().map(|transfer| serde_json::json!({
+                    "state": transfer.state,
+                    "attemptCount": transfer.attempt_count,
+                    "nextAttemptAtUnixMs": transfer.next_attempt_at_unix_ms,
+                    "lastErrorCode": transfer.last_error_code,
+                    "completedChunkBitmap": transfer.completed_chunk_bitmap,
+                })),
+                "after": transfer_after.as_ref().ok().and_then(|transfer| {
+                    transfer.as_ref().map(|transfer| serde_json::json!({
+                        "state": transfer.state,
+                        "attemptCount": transfer.attempt_count,
+                        "nextAttemptAtUnixMs": transfer.next_attempt_at_unix_ms,
+                        "lastErrorCode": transfer.last_error_code,
+                        "completedChunkBitmap": transfer.completed_chunk_bitmap,
+                    }))
+                }),
+                "snapshotError": transfer_after.as_ref().err(),
+            });
+            std::thread::spawn(move || {
+                let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7785/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"H-J","location":"apps/mobile/src-tauri/src/messaging/engine.rs:resume_attachment_download_once","msg":"[DEBUG] Mobile attachment download result persisted","data":debug_data}).to_string()).send();
+            });
+        }
+        // #endregion
+        progress?;
         Ok(true)
     }
 

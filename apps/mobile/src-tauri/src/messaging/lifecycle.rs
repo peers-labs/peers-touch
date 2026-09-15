@@ -710,7 +710,7 @@ fn run_engine_cycle(
             Err(error) => serde_json::json!({"progressed": false, "error": error}),
         };
         thread::spawn(move || {
-            let _ = reqwest::blocking::Client::new().post("http://10.4.44.83:7784/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"A","location":"apps/mobile/src-tauri/src/messaging/lifecycle.rs:run_engine_cycle.attachment_upload","msg":"[DEBUG] Mobile attachment upload cycle completed","data":debug_data}).to_string()).send();
+            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7785/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"A","location":"apps/mobile/src-tauri/src/messaging/lifecycle.rs:run_engine_cycle.attachment_upload","msg":"[DEBUG] Mobile attachment upload cycle completed","data":debug_data}).to_string()).send();
         });
     }
     // #endregion
@@ -730,7 +730,7 @@ fn run_engine_cycle(
             Err(error) => serde_json::json!({"progress": null, "error": error}),
         };
         thread::spawn(move || {
-            let _ = reqwest::blocking::Client::new().post("http://10.4.44.83:7784/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"A","location":"apps/mobile/src-tauri/src/messaging/lifecycle.rs:run_engine_cycle.message_draft","msg":"[DEBUG] Mobile attachment draft cycle completed","data":debug_data}).to_string()).send();
+            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7785/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"A","location":"apps/mobile/src-tauri/src/messaging/lifecycle.rs:run_engine_cycle.message_draft","msg":"[DEBUG] Mobile attachment draft cycle completed","data":debug_data}).to_string()).send();
         });
     }
     // #endregion
@@ -750,7 +750,7 @@ fn run_engine_cycle(
             Err(error) => serde_json::json!({"progress": null, "error": error}),
         };
         thread::spawn(move || {
-            let _ = reqwest::blocking::Client::new().post("http://10.4.44.83:7784/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"A-B","location":"apps/mobile/src-tauri/src/messaging/lifecycle.rs:run_engine_cycle.command","msg":"[DEBUG] Mobile attachment command cycle completed","data":debug_data}).to_string()).send();
+            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7785/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"A-B","location":"apps/mobile/src-tauri/src/messaging/lifecycle.rs:run_engine_cycle.command","msg":"[DEBUG] Mobile attachment command cycle completed","data":debug_data}).to_string()).send();
         });
     }
     // #endregion

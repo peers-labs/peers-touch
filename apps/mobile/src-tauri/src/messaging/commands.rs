@@ -920,7 +920,7 @@ fn wake_after_durable_prepare(
     {
         let debug_error = wake_result.as_ref().err().map(ToString::to_string);
         std::thread::spawn(move || {
-            let _ = reqwest::blocking::Client::new().post("http://10.4.44.83:7784/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"A","location":"apps/mobile/src-tauri/src/messaging/commands.rs:wake_after_durable_prepare","msg":"[DEBUG] Mobile messaging worker wake requested","data":{"error":debug_error}}).to_string()).send();
+            let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7785/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-attachment-delivery","runId":"post-fix","hypothesisId":"A","location":"apps/mobile/src-tauri/src/messaging/commands.rs:wake_after_durable_prepare","msg":"[DEBUG] Mobile messaging worker wake requested","data":{"error":debug_error}}).to_string()).send();
         });
     }
     // #endregion
