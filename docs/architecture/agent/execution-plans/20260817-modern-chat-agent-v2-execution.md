@@ -1939,6 +1939,71 @@ and zero local-path leakage.
     `G-FE1-LEASE-EXPIRED` is therefore `FUNCTIONAL_PASS`. C08 and the unchanged
     419-cell Foundation Gate remain `NOT RUN` on this checkpoint.
 
+#### G-FE1 DevelopmentWorkItem: Normal Agent Send Baseline
+
+- **ID**: `G-FE1-NORMAL-SEND`.
+- **Status**: `SOURCE_INVENTORY_COMPLETE`; exact-source Development Journey is
+  `UNPROVEN`.
+- **Product contract**: reuse the accepted F1/F2 and AS-F06 behavior without
+  adding a new product state: Desktop Native submits one ordinary text Turn,
+  receives non-empty sequenced text, reaches exactly one authoritative
+  terminal, reloads the durable snapshot, restarts the client, and converges to
+  Station replay without duplicate messages or side effects.
+- **Scope boundary**: this is a focused Development Journey, not C08, AS-F06,
+  or the 419-cell Foundation Gate. It must not execute the aggregate Gate,
+  change provider/model policy, add a mock response, or weaken restart/replay
+  assertions.
+- **Existing source to reuse**:
+  `native_agent_runner.py#stream-resilience` owns real send, streaming,
+  transport recovery, terminal and Station equality; the AS-F06 Harness owns
+  non-empty-text fencing, durable reload, restart and replay. The Development
+  adapter composes those existing product actions and assertions rather than
+  copying or redefining them.
+- **Required evidence**: exact source identity, Desktop Native receiver DOM,
+  non-empty text before terminal, one terminal, Station Turn/message readback,
+  durable reload equality, client restart replay equality, zero duplicate
+  side effects, and complete process/port/storage cleanup.
+- **Next action**: add the focused Development adapter and run it once on the
+  current exact source before starting the first source-missing BASE cluster.
+
+#### G-FE1 Source Closure Inventory
+
+- **Inventory source**: the reviewed 28-family `foundation_errors` matrix,
+  production Station/Desktop paths, and direct Harness/oracle registration.
+- **Closed on source and prior focused runtime evidence (15)**:
+  `BASE-DUPLICATE_CONFLICT`, `BASE-ACTIVE_MUTATION_CONFLICT`,
+  `BASE-FORBIDDEN_ACTOR`, `BASE-INCOMPATIBLE_CAPABILITY`,
+  `BASE-EXECUTOR_UNAVAILABLE`, `BASE-LEASE_EXPIRED`,
+  `BASE-INVALID_RESOURCE_REF`, `BASE-CREDENTIAL_MISSING`,
+  `BASE-CONTEXT_OVERFLOW`, `BASE-INVALID_REFERENCE`,
+  `BASE-ATTACHMENT_REJECTED`, `BASE-APPROVAL_DENIED`,
+  `BASE-APPROVAL_EXPIRED`, `BASE-CANCELLED`, and `BASE-INTERRUPTED`.
+- **Source-incomplete (13)**:
+
+| Cluster | Families | Missing closure |
+|---|---|---|
+| `G-FE1-SC1` Admission/ownership | `BASE-QUEUE_FULL`, `BASE-UNAUTHORIZED_RESOURCE` | exact typed payload/action and direct Journey |
+| `G-FE1-SC2` Runtime selection | `BASE-RUNTIME_UNAVAILABLE`, `BASE-RESUME_UNAVAILABLE` | canonical Station outcome, recovery action, direct Journey |
+| `G-FE1-SC3` Client execution | `BASE-PERMISSION_DENIED`, `BASE-TARGET_DISCONNECTED` | Desktop/Station implementation beyond Mobile contract-only coverage |
+| `G-FE1-SC4` Provider terminalization | `BASE-RATE_LIMIT`, `BASE-MODEL_UNAVAILABLE`, `BASE-PROVIDER_TIMEOUT` | accepted typed terminal outcome instead of failover-only classification |
+| `G-FE1-SC5` Tool control | `BASE-UNKNOWN_TOOL`, `BASE-LOOP_BUDGET_EXHAUSTED` | unknown-tool owner path and accepted budget details/action |
+| `G-FE1-SC6` Lifecycle concurrency | `BASE-STALE_VERSION`, `BASE-TERMINAL_MUTATION` | canonical lifecycle rejection and contextual recovery action |
+
+- **Execution order**: finish `G-FE1-NORMAL-SEND`, freeze the shared typed-error
+  contract, then implement `SC1` through `SC6` in dependency-safe owner lanes.
+  Shared error contracts, Desktop error projection, Harness dispatch, oracle
+  registration, generated artifacts, checkpoint/deploy, and final integration
+  remain serial.
+- **Gate boundary**: do not run C08 or the 419-cell Foundation Gate while any
+  source-incomplete family remains.
+- **C08 diagnostic after the boundary changed (2026-09-15)**: run
+  `20260915T135536486149Z-80dfd9aeb133ad478f0f89dac301e0e6` passed all 19
+  attachment assertions and both Gate/provisioner cleanup contracts on Station
+  commit `7618f10c5`, but the aggregate correctly remained
+  `PARTIAL / UNPROVEN` because these concurrent plan edits changed the
+  worktree digest during execution. Do not rerun C08 until the 13
+  source-incomplete families close.
+
 #### G-FE1 Concurrency Decision
 
 - **Mode**: hybrid.
@@ -2378,16 +2443,14 @@ and zero local-path leakage.
   detach the already-observed nodes. The local correction freezes the receiver
   facts before recovery and cleanup. The independent oracle, recovery action,
   cleanup, tuple, and timeout contracts are unchanged.
-- **Critical path**: shared contract freeze -> four source lanes -> reconcile
-  and focused checks -> checkpoint/deploy -> 419-cell G-F.
+- **Critical path**: normal-send functional baseline -> shared typed-error
+  contract freeze -> six source-closure clusters -> reconcile and focused
+  Journeys -> checkpoint/deploy -> one unchanged 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error
-  families; the direct adapter currently implements 10 and leaves 18
-  fail-closed.
-- **Forecast**: 5-8 working days to batch-close the remaining G-FE1 error
-  families and obtain one exact-source full-Gate result; 4-6 weeks for the
-  unchanged full plan through W9. Confidence is low until the first parallel
-  batch establishes measured throughput, after which the Anchor must replace
-  this range with observed data.
+  families; 15 are closed on source plus focused runtime evidence and 13 are
+  source-incomplete.
+- **Forecast**: unknown until the normal-send Journey and first source-closure
+  cluster establish current observed throughput.
 
 ### F4 — Tool Policy And Observability Baseline
 
