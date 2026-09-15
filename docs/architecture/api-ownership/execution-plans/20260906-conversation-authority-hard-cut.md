@@ -2168,3 +2168,51 @@ suite passes 121/121, the complete Mobile library suite passes 97/97, Core
 command-result tests pass 4/4, the MLS matching-cleanup regression passes, and
 Mobile accepted-result plus claim-replay tests pass. A final read-only
 rereview reports no remaining P0/P1 finding.
+
+Checkpoint `88d2142082802954735510aa5a881ae327a1aabd` was deployed
+exactly to `four` and `fiveArm`. Run
+`20260915T044506794348Z-5241254715052208207c19bbf081dd7b`
+proves the canonical `COMMAND_RESULT` item is decoded and atomically consumed
+with no error; later lane items continue through sequences 5, 6, and 7. The
+same Chat/Contacts Journey then advances through reaction, edit, read receipt,
+and search before its first remaining failure,
+`acceptance.mobile.activeMessagingSessionRequired`, during restart readback.
+
+Instrumented checkpoint `247153f474102b3f07e52bd41faef4985c8f4a2e`
+and run `20260915T045420869706Z-e1ba86cf959a6a07486b55f2a775100a`
+locate that failure at the shared Journey readiness boundary. The in-document
+`lifecycle.restart` returns only after the graph is `ACTIVE`, the exact Station
+and actor session are restored, and every runtime is ready. The Driver then
+refreshes the WebView document. Harness inventory becomes visible while the new
+document is still `BOOTSTRAPPING`, auth has no active session, and Messaging is
+pending; `messaging.projection.read` executes immediately and fails. Auth
+restores the same Station-bound actor session approximately 90 ms later.
+Session persistence, Station selection, and product runtime restoration are
+therefore not the defect.
+
+CA-W6 mechanically admits the missing post-refresh readiness barrier in the
+shared Mobile Messaging Journey. After switching to the refreshed app WebView,
+the Journey must poll the existing `lifecycle.scope.read` action until
+`phase=ACTIVE`, `activeStationPeerId` and `runtimeStationPeerId` both equal the
+receiver Home Station, and `activeActorPtid` equals the receiver PTID. Only
+then may it perform the unchanged durable message readback. The correction
+must not add a fixed delay, retry a business action, weaken projection
+assertions, or change Mobile auth/session behavior. A focused fake-session
+regression must expose `BOOTSTRAPPING` before `ACTIVE` and prove no Messaging
+projection read occurs before readiness.
+
+Concurrency Decision: serial. The Journey and fake regression share one
+readiness contract, and checkpoint, `four`/`fiveArm` deployment, and the
+simulator Journey consume the same source and runtime resources. CA-W6 remains
+`PARTIAL/UNPROVEN`; CA-W7 remains pending until the same receiver-perspective
+Journey reaches `FUNCTIONAL_PASS`.
+
+The shared Journey correction is implemented. Its post-refresh barrier polls
+the existing lifecycle scope and requires the exact `ACTIVE` Station/actor
+runtime before the unchanged Messaging projection readback. The fake-session
+regression exposes `BOOTSTRAPPING -> ACTIVE` for both Direct and Group restart
+paths and proves no Messaging projection read occurs while bootstrapping.
+Messaging Journey plus Social wrapper tests pass 10/10, the adjacent Station
+lifecycle cohort passes 3/3, Python compilation passes, and
+`git diff --check` passes. This is `FOCUSED_PASS`; checkpoint, exact-source
+deployment, and the same Chat/Contacts Journey remain required.

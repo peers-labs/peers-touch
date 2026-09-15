@@ -542,6 +542,10 @@ class MobileMessagingJourney:
             raise GateError("Receiver lifecycle restart was not acknowledged")
         receiver_session.refresh_webview()
         receiver_session.switch_to_app_webview()
+        self._await_authenticated_runtime_scope(
+            receiver_session,
+            receiver,
+        )
         self._await_message(
             receiver_session,
             conversation_id,
@@ -613,6 +617,30 @@ class MobileMessagingJourney:
 
         elapsed_ms = self._await_condition(check, label)
         return observed, elapsed_ms
+
+    def _await_authenticated_runtime_scope(
+        self,
+        session: MessagingJourneySession,
+        actor: MessagingActor,
+    ) -> int:
+        def ready() -> bool:
+            scope = self._mapping(
+                session.call_action("lifecycle.scope.read"),
+                f"{actor.client_id} lifecycle scope",
+            )
+            return (
+                scope.get("phase") == "ACTIVE"
+                and scope.get("activeStationPeerId")
+                == actor.station_peer_id
+                and scope.get("runtimeStationPeerId")
+                == actor.station_peer_id
+                and scope.get("activeActorPtid") == actor.ptid
+            )
+
+        return self._await_condition(
+            ready,
+            f"{actor.client_id} authenticated runtime",
+        )
 
     def _projection(
         self,

@@ -58,6 +58,11 @@ class FakeMessagingSession:
         self.login_emails: list[str] = []
         self.lifecycle_restart_count = 0
         self.social_runtime_active = False
+        self.scope_bootstrap_reads_per_refresh = 0
+        self.scope_bootstrap_reads_remaining = 0
+        self.runtime_phase = "ACTIVE"
+        self.lifecycle_scope_phases: list[str] = []
+        self.messaging_projection_reads_while_bootstrapping = 0
         self.network.actors[actor.ptid] = actor
 
     def call_action(
@@ -302,6 +307,8 @@ class FakeMessagingSession:
                 "commandState": "idle",
             }
         if action == "messaging.projection.read":
+            if self.runtime_phase != "ACTIVE":
+                self.messaging_projection_reads_while_bootstrapping += 1
             return {
                 "runtime": {
                     "active": True,
@@ -322,11 +329,40 @@ class FakeMessagingSession:
         if action == "lifecycle.restart":
             self.lifecycle_restart_count += 1
             return {"requested": True, "scope": "webview"}
+        if action == "lifecycle.scope.read":
+            if self.scope_bootstrap_reads_remaining > 0:
+                self.scope_bootstrap_reads_remaining -= 1
+                self.runtime_phase = "BOOTSTRAPPING"
+                actor_ptid = None
+                runtime_station_peer_id = None
+                launch_state = "app-boot"
+            else:
+                self.runtime_phase = "ACTIVE"
+                actor_ptid = self.actor.ptid
+                runtime_station_peer_id = self.actor.station_peer_id
+                launch_state = "shell"
+            self.lifecycle_scope_phases.append(self.runtime_phase)
+            return {
+                "generation": self.lifecycle_restart_count,
+                "phase": self.runtime_phase,
+                "launchState": launch_state,
+                "activeStationPeerId": self.actor.station_peer_id,
+                "activeActorPtid": actor_ptid,
+                "runtimeStationPeerId": runtime_station_peer_id,
+            }
         raise AssertionError(f"unexpected action: {action}")
 
     def refresh_webview(self) -> None:
         self.refresh_count += 1
         self.social_runtime_active = True
+        self.scope_bootstrap_reads_remaining = (
+            self.scope_bootstrap_reads_per_refresh
+        )
+        self.runtime_phase = (
+            "BOOTSTRAPPING"
+            if self.scope_bootstrap_reads_remaining > 0
+            else "ACTIVE"
+        )
 
     def switch_to_app_webview(self, timeout: float = 30.0) -> str:
         del timeout
@@ -463,13 +499,16 @@ class MobileMessagingJourneyTests(unittest.TestCase):
         self.assertEqual(self.sender_session.lifecycle_restart_count, 0)
         self.assertEqual(self.sender_session.refresh_count, 0)
 
-    def test_chat_contacts_covers_direct_group_attachment_and_restart(self) -> None:
+    def test_chat_contacts_waits_for_authenticated_runtime_after_restart(
+        self,
+    ) -> None:
         self.journey.authenticate(self.sender_session, self.sender, password="1")
         self.journey.authenticate(
             self.receiver_session,
             self.receiver,
             password="1",
         )
+        self.receiver_session.scope_bootstrap_reads_per_refresh = 1
 
         result = self.journey.run_chat_contacts(
             sender_session=self.sender_session,
@@ -486,6 +525,19 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             self.assertTrue(result[kind]["interactionReadback"])
             self.assertTrue(result[kind]["receiptReadback"])
         self.assertEqual(self.receiver_session.refresh_count, 3)
+        self.assertEqual(
+            self.receiver_session.lifecycle_scope_phases,
+            [
+                "BOOTSTRAPPING",
+                "ACTIVE",
+                "BOOTSTRAPPING",
+                "ACTIVE",
+            ],
+        )
+        self.assertEqual(
+            self.receiver_session.messaging_projection_reads_while_bootstrapping,
+            0,
+        )
 
     def test_authentication_rejects_wrong_fixture_identity(self) -> None:
         wrong = MessagingActor(
