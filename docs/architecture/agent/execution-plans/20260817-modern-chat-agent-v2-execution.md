@@ -1647,6 +1647,35 @@ and zero local-path leakage.
     negative control. Focused Agent/Foundation regressions pass `231/231`,
     Desktop strict TypeScript checks pass, and diff hygiene passes. No product
     contract, Gate tuple, timeout, assertion, provider, or cleanup rule changes.
+  - Checkpoint `6eb068a6d444e24a13677977f47667dc52ba8181` passed exact-source
+    C08 run `20260914T163447713100Z-484765f91556af2a4b438a518064ea52`
+    `DONE / PROVEN` in 48.628 seconds. The same-source Foundation run
+    `20260914T163606459245Z-4b3d285b3b8db39e579dac2f737b6f2a`
+    proved AS-F10 for both Browser locales with `AGENT_4002` and zero
+    execution, then failed first at Browser English `BASE-CANCELLED` because
+    both bounded real cancellation attempts completed before cancellation won.
+    Cleanup and source identity passed; Foundation remains
+    `PARTIAL / UNPROVEN`.
+  - A resumed exact-source diagnostic
+    `20260915T010815292634Z-cfce9792de8ff4aad47942250b51623e`
+    stopped earlier at Browser English AS-F12 because the Harness bridge
+    returned non-dict `None`; client and Provisioner cleanup both passed.
+    Evidence-bearing rerun
+    `20260915T012507003363Z-1fc43af078abb9eecd8703f0a11e868d`
+    crossed both AS-F04 locales and AS-F05 English, then returned non-dict
+    `None` during AS-F05 Simplified Chinese. The Browser lifecycle trace
+    records the immediately following restoration call failing with
+    `NoSuchWindowException: target window already closed` while the driver
+    session, Chrome object, gateway, renderer, and WebDriver ports remained
+    present. Local client recovery and cleanup completed; outer Provisioner
+    cleanup separately failed its bounded remote source-lease release.
+  - The repeated cross-cell `None` response is therefore owned by the generic
+    Browser Acceptance runtime, not AS-F05, AS-F12, or `BASE-CANCELLED`
+    business semantics. The current instrumentation-only remediation adds
+    window cardinality, current-handle availability, and handle-set membership
+    to the existing Browser lifecycle trace without retrying a product action
+    or changing any Gate contract. Focused runtime-client tests pass `24/24`,
+    Python compilation and diff hygiene pass.
 
 #### G-FE1 Concurrency Decision
 

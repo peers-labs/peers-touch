@@ -963,6 +963,43 @@ class FoundationRuntimeClient:
         return snapshot
     # #endregion
 
+    # #region debug-point A-D:browser-window-snapshot
+    def _browser_window_debug_snapshot(self) -> dict[str, Any]:
+        if self.driver is None:
+            return {
+                "windowCount": None,
+                "currentWindowAvailable": False,
+                "currentWindowInHandles": False,
+                "errorType": "driver-missing",
+            }
+        raw_driver = (
+            self.driver.driver
+            if hasattr(self.driver, "driver")
+            else self.driver
+        )
+        handles: list[str] | None = None
+        current_handle: str | None = None
+        error_types: list[str] = []
+        try:
+            handles = list(raw_driver.window_handles)
+        except Exception as error:
+            error_types.append(type(error).__name__)
+        try:
+            current_handle = str(raw_driver.current_window_handle)
+        except Exception as error:
+            error_types.append(type(error).__name__)
+        return {
+            "windowCount": None if handles is None else len(handles),
+            "currentWindowAvailable": current_handle is not None,
+            "currentWindowInHandles": (
+                current_handle in handles
+                if current_handle is not None and handles is not None
+                else False
+            ),
+            "errorType": ",".join(error_types),
+        }
+    # #endregion
+
     # #region debug-point A-D:browser-runtime-snapshot
     def _browser_lifecycle_debug_snapshot(self) -> dict[str, Any]:
         process_return_code = (
@@ -1003,6 +1040,7 @@ class FoundationRuntimeClient:
             "gatewayPortOpen": port_open(self.spec.gateway_port),
             "rendererPortOpen": port_open(self.spec.renderer_port),
             "webdriverPortOpen": port_open(self.spec.webdriver_port),
+            "windowState": self._browser_window_debug_snapshot(),
         }
     # #endregion
 

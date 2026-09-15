@@ -338,6 +338,27 @@ class FoundationClientSpecTest(unittest.TestCase):
                 client._process_alive()
             client.stop()
 
+    def test_browser_window_debug_snapshot_reports_handle_membership(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "browser"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            raw_driver = Mock()
+            raw_driver.window_handles = ["application", "attachment"]
+            raw_driver.current_window_handle = "attachment"
+            client.driver = Mock(driver=raw_driver)
+
+            snapshot = client._browser_window_debug_snapshot()
+
+            self.assertEqual(snapshot["windowCount"], 2)
+            self.assertTrue(snapshot["currentWindowAvailable"])
+            self.assertTrue(snapshot["currentWindowInHandles"])
+            self.assertEqual(snapshot["errorType"], "")
+            client.driver = None
+            client.stop()
+
     def test_runtime_pair_requires_exact_native_and_browser_clients(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
