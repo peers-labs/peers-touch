@@ -1028,6 +1028,10 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 			taskID := "task_" + test.name
 			stepID := "step_" + test.name
 			pendingContent := ""
+			assistantStatus := "pending"
+			if test.name == "runtime_budget_wins" {
+				assistantStatus = "completed"
+			}
 			records := []struct {
 				name  string
 				value interface{}
@@ -1048,7 +1052,7 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 				{name: "assistant message", value: &persistence.AgentMessage{
 					ID: "message_" + test.name, ConversationID: "conv_" + test.name,
 					TurnID: &turnID, Role: string(domain.MessageRoleAssistant),
-					Status: "pending", Content: &pendingContent, Seq: 1,
+					Status: assistantStatus, Content: &pendingContent, Seq: 1,
 					CreatedAt: now, UpdatedAt: now,
 				}},
 				{name: "task", value: &persistence.TaskRun{
@@ -1109,10 +1113,23 @@ func TestSettleAdmittedTurnAfterPostAdmissionFailure(t *testing.T) {
 			if attempt.Status != string(test.wantStatus) || attempt.EndedAt == nil {
 				t.Fatalf("attempt remained nonterminal: %+v", attempt)
 			}
-			if message.Status != string(test.wantStatus) {
+			if test.name != "runtime_budget_wins" &&
+				message.Status != string(test.wantStatus) {
 				t.Fatalf("assistant message remained nonterminal: %+v", message)
 			}
 			if test.name == "runtime_budget_wins" {
+				if message.Status != "completed" {
+					t.Fatalf("completed tool projection was rewritten: %+v", message)
+				}
+				message = persistence.AgentMessage{}
+				if err := db.Where(
+					"turn_id = ? AND role = ? AND status = ?",
+					turnID,
+					string(domain.MessageRoleAssistant),
+					string(domain.TurnStatusFailed),
+				).Order("seq DESC").First(&message).Error; err != nil {
+					t.Fatalf("load runtime-budget assistant outcome: %v", err)
+				}
 				var messageError model.ErrorPayload
 				if err := json.Unmarshal(message.ErrorJSON, &messageError); err != nil {
 					t.Fatalf("decode runtime-budget assistant error: %v", err)

@@ -6635,10 +6635,50 @@ func (s *TurnService) failTurnWithEvent(
 			if len(errorJSON) > 0 {
 				messageUpdates["error_json"] = errorJSON
 			}
-			if err := tx.Model(&persistence.AgentMessage{}).
+			messageResult := tx.Model(&persistence.AgentMessage{}).
 				Where("turn_id = ? AND role = ? AND status = ?", turnID, string(domain.MessageRoleAssistant), "pending").
-				Updates(messageUpdates).Error; err != nil {
-				return err
+				Updates(messageUpdates)
+			if messageResult.Error != nil {
+				return messageResult.Error
+			}
+			if messageResult.RowsAffected == 0 && len(errorJSON) > 0 {
+				var conversation persistence.Conversation
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("id = ?", turn.ConversationID).
+					First(&conversation).Error; err != nil {
+					return err
+				}
+				var maxSeq struct{ MaxSeq int64 }
+				if err := tx.Model(&persistence.AgentMessage{}).
+					Where("conversation_id = ?", turn.ConversationID).
+					Select("COALESCE(MAX(seq), 0) AS max_seq").
+					Scan(&maxSeq).Error; err != nil {
+					return err
+				}
+				content := ""
+				messageID := generateID("msg")
+				if err := tx.Create(&persistence.AgentMessage{
+					ID:              messageID,
+					ConversationID:  turn.ConversationID,
+					TurnID:          &turnID,
+					Role:            string(domain.MessageRoleAssistant),
+					Status:          string(domain.TurnStatusFailed),
+					Content:         &content,
+					ErrorJSON:       errorJSON,
+					Seq:             maxSeq.MaxSeq + 1,
+					ParentMessageID: optionalString(conversation.ActiveBranchMessageID),
+					CreatedAt:       now,
+					UpdatedAt:       now,
+				}).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&conversation).Updates(map[string]interface{}{
+					"active_branch_message_id": messageID,
+					"updated_at":               now,
+					"version":                  gorm.Expr("version + 1"),
+				}).Error; err != nil {
+					return err
+				}
 			}
 			var boundStep persistence.ExecutionStep
 			if strings.TrimSpace(stepID) == "" {
