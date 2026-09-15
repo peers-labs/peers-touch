@@ -489,7 +489,8 @@ items:
         - { pathPrefix: tooling/development/secure_content/test_run.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/scenarios/content_prekey_client_boundary.py, mode: exclusive-write }
         - { pathPrefix: tooling/acceptance/gates.yaml, mode: shared-read }
-      runtimeClaims: []
+      runtimeClaims:
+        - { kind: fixture, resourceId: secure-content-w7a-postgres, mode: exclusive }
     authorization:
       checkpoint: { localCommit: allowed, amend: denied }
       delivery: { push: denied, pullRequest: denied }

@@ -867,8 +867,9 @@ python3 -m tooling.development.secure_content.run \
   scoped proto/generated outputs, API-ownership registry/Gate and an
   exact-source service Journey. W7 depends on W7A and owns the
   Desktop Native/store/UI plus serial Desktop and Browser runtime Journeys.
-  W7A has no runtime claims; the 2026-09-15 Owner acceptance of `SC-D20`
-  released it to the source execution queue.
+  W7A uses only the worktree-isolated `secure-content-w7a-postgres` test
+  fixture; it has no Station profile, deploy, client-storage or slot claim.
+  The 2026-09-15 Owner acceptance of `SC-D20` released it to execution.
 - **Native lifecycle**: W7 owns encrypted persist-before-publish state,
   `UNKNOWN_COMMIT` reconciliation, per-key root-commit deletion, epoch-keyed
   recovery handling, account/device/session-generation supervision and
