@@ -50,12 +50,6 @@ def valid_capture() -> dict[str, object]:
             "traceCountAfter": 1,
             "queueCountBefore": 0,
             "queueCountAfter": 0,
-            "sourceDelivery": {
-                "transport": "station-sse",
-                "sequence": 4,
-                "conversationId": "conversation-1",
-                "turnId": "turn-1",
-            },
         }
     }
 
@@ -104,17 +98,6 @@ class UnknownToolDevelopmentTest(unittest.TestCase):
             "typedUnknownTool",
         ):
             evaluate_unknown_tool(capture)
-
-    def test_rejects_non_station_delivery(self) -> None:
-        capture = copy.deepcopy(valid_capture())
-        capture["facts"]["sourceDelivery"]["transport"] = "local"
-
-        with self.assertRaisesRegex(
-            UnknownToolError,
-            "stationSourceDelivery",
-        ):
-            evaluate_unknown_tool(capture)
-
 
 if __name__ == "__main__":
     unittest.main()

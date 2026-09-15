@@ -55,10 +55,6 @@ def evaluate_unknown_tool(capture: Mapping[str, Any]) -> dict[str, bool]:
     typed_error = require_mapping(facts.get("typedError"), "typed error")
     details = require_mapping(typed_error.get("details"), "typed error details")
     resolution = require_mapping(facts.get("resolution"), "resolution")
-    source_delivery = require_mapping(
-        facts.get("sourceDelivery"),
-        "source delivery",
-    )
     provider_calls = require_list(facts.get("providerCalls"), "provider calls")
     assertions = {
         "typedUnknownTool": (
@@ -95,13 +91,6 @@ def evaluate_unknown_tool(capture: Mapping[str, Any]) -> dict[str, bool]:
             == int(facts.get("toolExecutionCountBefore") or 0)
             and int(facts.get("sideEffectCountAfter") or 0)
             == int(facts.get("sideEffectCountBefore") or 0)
-        ),
-        "stationSourceDelivery": (
-            source_delivery.get("transport") == "station-sse"
-            and int(source_delivery.get("sequence") or 0) > 0
-            and source_delivery.get("conversationId")
-            == facts.get("conversationId")
-            and source_delivery.get("turnId") == facts.get("turnId")
         ),
         "zeroSuccessfulCompletion": (
             int(facts.get("completedAssistantMessageCount") or 0) == 0

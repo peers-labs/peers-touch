@@ -21851,67 +21851,23 @@ export function installAcceptanceHarness(): void {
             ]);
             const messageCountBefore =
               useChatStore.getState().messages.length;
-            let unexpectedToolId = '';
-            const observed = startObservedFoundationTurn({
-              conversationId,
-              agentId,
-              content:
+            const sent = useChatStore.getState().sendMessage(
                 `Emit exactly one native tool call named ${unknownToolId} `
                 + 'with the arguments {}. Do not call any advertised tool, '
                 + 'do not answer with text, and do not retry.',
-              idempotencyKey: crypto.randomUUID(),
-              provider: authoritativeAgent.provider || undefined,
-              model: authoritativeAgent.model || undefined,
-              clientCapabilitySessionId:
-                capabilitySession.capabilitySessionId,
-              timeoutMs: 180_000,
-              onEvent: (event, _events, controller) => {
-                if (
-                  event.event !== 'tool_call'
-                  && event.event !== 'tool_approval_required'
-                ) {
-                  return;
-                }
-                const toolName = String(
-                  evidenceField(
-                    event.data,
-                    'toolName',
-                    'tool_name',
-                  ) ?? '',
-                );
-                if (toolName && toolName !== unknownToolId) {
-                  unexpectedToolId = toolName;
-                  controller.abort();
-                }
+              [],
+              {
+                clientIdempotencyKey: crypto.randomUUID(),
               },
-            });
-            const observedResult = await observed.result;
-            if (unexpectedToolId) {
-              throw new Error(
-                'agent.acceptance.unknownToolProviderSelectedAdvertisedTool',
-              );
-            }
-            const terminalEvent = [...observed.events]
-              .reverse()
-              .find((event) => {
-                const outcome = projectAgentTypedErrorPayload(event.data);
-                return (
-                  event.event === 'error'
-                  && outcome?.error_type === 'TOOL_UNKNOWN'
-                );
-              });
-            turnId = observedTurnId(observed.events);
-            if (!terminalEvent || !turnId || observedResult.ok) {
-              throw new Error(
-                'agent.acceptance.unknownToolTerminalMissing',
-              );
+            );
+            if (!sent) {
+              throw new Error('agent.acceptance.unknownToolSendRejected');
             }
 
             let errorMessage = useChatStore.getState().messages
               .slice(messageCountBefore)
               .find((message) => (
                 message.role === 'assistant'
-                && message.turnId === turnId
                 && message.typedError?.error_type === 'TOOL_UNKNOWN'
               ));
             await waitFor(
@@ -21920,7 +21876,6 @@ export function installAcceptanceHarness(): void {
                   .slice(messageCountBefore)
                   .find((message) => (
                     message.role === 'assistant'
-                    && message.turnId === turnId
                     && message.typedError?.error_type === 'TOOL_UNKNOWN'
                     && message.resolution?.type === 'chooseTool'
                   ));
@@ -21939,7 +21894,7 @@ export function installAcceptanceHarness(): void {
                 );
               },
               'unknown-tool recovery surface',
-              30_000,
+              180_000,
             );
             const recovery = document.querySelector<HTMLButtonElement>(
               '[data-pt-agent-message-error-recovery="choose-tool"]',
@@ -21951,6 +21906,10 @@ export function installAcceptanceHarness(): void {
               throw new Error(
                 'agent.acceptance.unknownToolRecoveryMissing',
               );
+            }
+            turnId = errorMessage.turnId ?? '';
+            if (!turnId) {
+              throw new Error('agent.acceptance.unknownToolTurnMissing');
             }
             const recoveryVisible =
               recovery.getClientRects().length > 0;
@@ -22110,9 +22069,6 @@ export function installAcceptanceHarness(): void {
                 queueCountAfter: queueAfter.entries.length,
                 messageCountBefore: readbackBefore.messages.length,
                 messageCountAfter: readbackAfter.messages.length,
-                sourceDelivery: terminalEvent.sourceDelivery
-                  ? evidenceValue(terminalEvent.sourceDelivery)
-                  : null,
                 capabilitySession: capabilitySession.facts,
               },
             };

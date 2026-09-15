@@ -1051,7 +1051,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         scenario = self.source[start:end]
 
         self.assertIn("withFoundationReadyCapabilityFixture(", scenario)
-        self.assertIn("startObservedFoundationTurn({", scenario)
+        self.assertIn("useChatStore.getState().sendMessage(", scenario)
         self.assertIn("foundation_unknown_tool", scenario)
         self.assertIn("=== 'TOOL_UNKNOWN'", scenario)
         self.assertIn(
