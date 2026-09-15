@@ -274,10 +274,12 @@ func (c *peerClient) Open(
 
 		detail := fmt.Errorf("peer returned HTTP %d", response.StatusCode)
 		// #region debug-point K:federated-attachment-error-body
-		if len(diagnosticBody) > 0 {
+		if call.Route == PeerRouteConversationAttachmentObject {
 			detail = fmt.Errorf(
-				"peer returned HTTP %d: %s",
+				"peer returned HTTP %d code=%q details=%q body=%s",
 				response.StatusCode,
+				response.Header.Get("X-Peers-Error-Code"),
+				response.Header.Get("X-Peers-Error-Details"),
 				strings.TrimSpace(string(diagnosticBody)),
 			)
 		}

@@ -2031,3 +2031,17 @@ response body before wrapping the status. CA-W6 therefore admits one
 diagnostic-only change to preserve that bounded error body in the returned
 error chain. This changes no status, retry classification, route, claim,
 storage, or success-path behavior.
+
+Diagnostic checkpoint `008b14aa8650aeb787dc671f3aeb812ac11d0665`
+was deployed exactly to both Stations. Run
+`20260915T020929574463Z-15b4fab465a88e7da113cf19d28276f1`
+again reaches the receiver-open boundary and cleanup passes. The preserved
+authority response is `{"code":400,"error":"invalid Conversation request"}`.
+That body is emitted only by the Conversation domain error mapper after
+attachment metadata, object path, signed claims, and Range parsing have
+completed, so the three transport-entry hypotheses are rejected. The same
+response carries typed `X-Peers-Error-Code` and `X-Peers-Error-Details`
+headers, but the peer client still omits them from its error chain. CA-W6
+admits one final diagnostic-only refinement to include those bounded headers
+and identify the exact owner-layer operation, field, and reason before any
+behavioral correction.
