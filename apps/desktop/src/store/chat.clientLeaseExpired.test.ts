@@ -60,7 +60,34 @@ describe('client lease-expired reconciliation', () => {
     expect(reconciled.resolution).toBeUndefined();
     expect(reconciled.terminalStatus).toBeUndefined();
     expect(reconciled.loading).toBe(true);
+    expect(reconciled.cancelled).toBe(false);
     expect(reconciled.toolCalls).toEqual(source.toolCalls);
+  });
+
+  it('clears a stale terminal projection after snapshot reconciliation removes the incident', () => {
+    const source = leaseExpiredMessage();
+    const reconciled = clearReconciledClientLeaseError(
+      {
+        ...source,
+        error: undefined,
+        typedError: undefined,
+        resolution: undefined,
+        loading: false,
+        cancelled: true,
+        terminalStatus: 'completed',
+      },
+      source.id,
+      source.typedError!.details.session_id,
+      source.typedError!.details.lease_id,
+      source.turnId,
+    );
+
+    expect(reconciled.error).toBeUndefined();
+    expect(reconciled.typedError).toBeUndefined();
+    expect(reconciled.resolution).toBeUndefined();
+    expect(reconciled.terminalStatus).toBeUndefined();
+    expect(reconciled.loading).toBe(true);
+    expect(reconciled.cancelled).toBe(false);
   });
 
   it('does not clear a different message or error class', () => {

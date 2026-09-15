@@ -1816,6 +1816,17 @@ and zero local-path leakage.
     the shared-Turn identity collision and stale terminal state; focused
     lease/recovery tests pass `65/65`, strict Desktop TypeScript passes, and
     the exact-source Development Journey remains pending a new checkpoint.
+  - Exact-source run `20260915T074726279750Z` on checkpoint `764749bea`
+    crossed the receiver recovery surface: AssistantMessage rendered the
+    `CLIENT_LEASE_EXPIRED` error and `reconcile` action with non-terminal state.
+    The next failure was `lease-expired reconciliation`. Snapshot reload
+    removed the incident payload but restored a stale completed projection,
+    after which `clearReconciledClientLeaseError` rejected the row because the
+    typed error was already absent. The Store now clears that stale projection
+    when message and Turn identity still match, while preserving any newer
+    typed incident and refusing to reopen a snapshot-confirmed terminal Turn.
+    Focused lease/recovery tests pass `66/66`, strict Desktop TypeScript passes,
+    and reverse-order cleanup for the exact-source failure was clean.
 
 #### G-FE1 Concurrency Decision
 

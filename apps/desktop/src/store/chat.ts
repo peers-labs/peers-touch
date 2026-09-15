@@ -817,9 +817,16 @@ export function clearReconciledClientLeaseError(
   if (
     message.id !== messageId
     || (turnId && message.turnId !== turnId)
-    || message.typedError?.error_type !== 'CLIENT_LEASE_EXPIRED'
-    || message.typedError.details.session_id !== sessionId
-    || message.typedError.details.lease_id !== leaseId
+  ) {
+    return message;
+  }
+  if (
+    message.typedError
+    && (
+      message.typedError.error_type !== 'CLIENT_LEASE_EXPIRED'
+      || message.typedError.details.session_id !== sessionId
+      || message.typedError.details.lease_id !== leaseId
+    )
   ) {
     return message;
   }
@@ -830,6 +837,7 @@ export function clearReconciledClientLeaseError(
     errorDetail: undefined,
     resolution: undefined,
     loading: true,
+    cancelled: false,
     terminalStatus: undefined,
   };
 }
@@ -1605,6 +1613,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     if (turnId && result.turnId !== turnId) {
       throw new Error('chat.agentTurnRecovery.reloadTargetChanged');
     }
+    if (result.terminal) return;
     set((state) => {
       const clear = (messages: ChatMessage[]) => messages.map((message) =>
         clearReconciledClientLeaseError(

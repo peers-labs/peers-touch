@@ -23,10 +23,10 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | `G-FE1-LEASE-EXPIRED` is `FOCUSED_PASS`; dirty-source diagnostic `20260915T072128647381Z` confirmed recovered events were projected onto the user row when user and assistant shared a Turn ID, and the Store owner fix is ready for checkpoint |
+| Current step | `G-FE1-LEASE-EXPIRED` is `FOCUSED_PASS`; checkpoint `764749bea` crossed the recovery surface and exposed a stale completed projection after Reconcile snapshot reload, now fixed in the Store |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Store owner fix restricts recovered events to assistant messages and clears stale terminal markers for non-terminal incidents; focused lease/recovery tests pass `65/65`, strict Desktop TypeScript and diff hygiene pass |
-| Current action | Create an authorized clean checkpoint, deploy that exact source, and rerun the real five-minute `BASE-LEASE_EXPIRED` Development Journey |
+| Last completed | Reconcile now clears the matching stale snapshot projection without erasing a newer incident or reopening an authoritative terminal Turn; focused lease/recovery tests pass `66/66`, strict Desktop TypeScript and diff hygiene pass |
+| Current action | Create the next authorized checkpoint and rerun the same serialized five-minute `BASE-LEASE_EXPIRED` Development Journey |
 | Next action | After `FUNCTIONAL_PASS`, rerun C08 and resume the unchanged 419-cell Foundation Gate |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
 | Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
@@ -36,7 +36,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | no Goal-level blocker; `BASE-LEASE_EXPIRED` is the next source-defined implementation gap; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | C08 `20260915T023010098430Z-1649875e241d509b825fe65d86142fa4` passed on `6ec143379`；Foundation `20260915T023112205523Z-aacb361dcca1036b0958d29da9fbef4a` first exposed the missing lease vertical；checkpoint `a00fab827` exact-source run `20260915T070309149665Z` disproved a bounded render delay；dirty diagnostic `20260915T072128647381Z` proved Store/List held the lease error on the user row while AssistantMessage retained the completed assistant row；assistant-only projection and non-terminal-state regressions pass focused tests `65/65` and strict TypeScript；full Journey and Foundation remain `UNPROVEN` |
+| Evidence | C08 `20260915T023010098430Z-1649875e241d509b825fe65d86142fa4` passed on `6ec143379`；Foundation `20260915T023112205523Z-aacb361dcca1036b0958d29da9fbef4a` first exposed the missing lease vertical；checkpoint `764749bea` run `20260915T074726279750Z` proved assistant-owned lease error/reconcile DOM and then failed at stale snapshot reconciliation with clean cleanup；the owner fix passes focused tests `66/66` and strict TypeScript；full Journey and Foundation remain `UNPROVEN` |
 | Last updated | 2026-09-15 |
 
 ---
