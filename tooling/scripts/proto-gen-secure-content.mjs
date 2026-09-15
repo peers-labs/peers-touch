@@ -43,8 +43,15 @@ export const PROTO_INPUTS = Object.freeze([
   'domain/key_exchange/key_exchange.proto',
 ]);
 
+export const CONTENT_PREKEY_CLIENT_SCOPE = 'content-prekey-client';
+export const CONTENT_PREKEY_CLIENT_PROTO_INPUTS = Object.freeze([
+  'domain/secure_content/prekey.proto',
+  'domain/error/error.proto',
+]);
+
 const ALLOWED_PROTO_ROOTS = Object.freeze([
   'domain/common',
+  'domain/error',
   'domain/secure_content',
   'domain/social',
   'domain/key_exchange',
@@ -52,6 +59,7 @@ const ALLOWED_PROTO_ROOTS = Object.freeze([
 
 const GO_OUTPUT_DIRECTORIES = Object.freeze({
   'domain/common/common.proto': 'frame/core/types',
+  'domain/error/error.proto': 'frame/touch/model',
   'domain/secure_content/content.proto': 'frame/core/types/securecontent',
   'domain/secure_content/prekey.proto': 'frame/core/types/securecontent',
   'domain/secure_content/object.proto': 'frame/core/types/securecontent',
@@ -67,6 +75,7 @@ const GO_OUTPUT_DIRECTORIES = Object.freeze({
 
 const GO_PACKAGE_NAMES = Object.freeze({
   'domain/common/common.proto': 'types',
+  'domain/error/error.proto': 'model',
   'domain/secure_content/content.proto': 'securecontent',
   'domain/secure_content/prekey.proto': 'securecontent',
   'domain/secure_content/object.proto': 'securecontent',
@@ -212,17 +221,26 @@ function assertAllowedInput(relativePath) {
   }
 }
 
-export function buildOutputManifest(projectRootValue) {
+function inputsForScope(scope) {
+  if (scope === undefined || scope === null) return PROTO_INPUTS;
+  if (scope === CONTENT_PREKEY_CLIENT_SCOPE) {
+    return CONTENT_PREKEY_CLIENT_PROTO_INPUTS;
+  }
+  fail('INVALID_ARGUMENT', `unsupported scope: ${scope}`);
+}
+
+export function buildOutputManifest(projectRootValue, scope) {
   const projectRoot = canonicalRoot(projectRootValue);
   const modelRoot = path.join(projectRoot, 'model');
   const canonicalModelRoot = canonicalRoot(modelRoot);
+  const inputs = inputsForScope(scope);
   const allowedOutputRoots = [
     'apps/station',
     'apps/desktop/src/gen/proto',
     'apps/mobile/src/gen/proto',
   ].map((relative) => canonicalRoot(path.join(projectRoot, relative)));
   const outputs = [];
-  for (const input of PROTO_INPUTS) {
+  for (const input of inputs) {
     assertAllowedInput(input);
     const source = assertRepositoryPath(
       projectRoot,
@@ -312,7 +330,7 @@ export function buildOutputManifest(projectRootValue) {
   return {
     projectRoot,
     modelRoot,
-    inputs: [...PROTO_INPUTS],
+    inputs: [...inputs],
     outputs: outputs.sort((left, right) =>
       left.destination.localeCompare(right.destination),
     ),
@@ -349,6 +367,7 @@ export function parseArguments(argv) {
       '--go-plugin': 'goPlugin',
       '--desktop-plugin': 'desktopPlugin',
       '--mobile-plugin': 'mobilePlugin',
+      '--scope': 'scope',
     }[token];
     if (!key) {
       fail('INVALID_ARGUMENT', `unsupported argument: ${token}`);
@@ -367,6 +386,7 @@ export function parseArguments(argv) {
   if (options.mode === null) {
     fail('INVALID_ARGUMENT', 'choose exactly one of --check or --apply');
   }
+  inputsForScope(options.scope);
   options.budgetSeconds = parsePositiveInteger(
     options.budgetSeconds,
     'budget-seconds',
@@ -707,7 +727,7 @@ export function executeGeneration(options) {
   const environment = options.environment ?? process.env;
   const runCommand = options.runCommand ?? defaultRunCommand;
   const projectRoot = canonicalRoot(options.projectRoot);
-  const manifest = buildOutputManifest(projectRoot);
+  const manifest = buildOutputManifest(projectRoot, options.scope);
   const deadline = Date.now() + options.budgetSeconds * 1_000;
   const stageRoot = mkdtempSync(path.join(tmpdir(), 'pt-secure-content-proto-'));
   const goStage = path.join(stageRoot, 'go');

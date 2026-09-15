@@ -4,6 +4,7 @@ package peers_touch.model.secure_content.v1;
 
 import "domain/actor/actor.proto";
 import "domain/secure_content/content.proto";
+import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent;securecontent";
 
@@ -35,12 +36,33 @@ message ContentPreKeySigningInput {
   uint64 publisher_profile_version = 11;
 }
 
+message ContentPreKeyClientSigningInput {
+  uint32 format_version = 1;
+  string capability_id = 2;
+  string station_peer_id = 3;
+  string session_id = 4;
+  peers_touch.model.actor.v1.ActorDeviceRef publisher = 5;
+  string publisher_signing_key_id = 6;
+  uint64 publisher_profile_version = 7;
+  string request_id = 8;
+  bytes request_sha256 = 9;
+  bytes nonce = 10;
+  google.protobuf.Timestamp issued_at = 11;
+}
+
+message ContentPreKeyClientProof {
+  ContentPreKeyClientSigningInput input = 1;
+  bytes signature = 2;
+}
+
 message PublishContentPreKeysRequest {
   peers_touch.model.actor.v1.ActorDeviceRef publisher = 1;
   string publisher_signing_key_id = 2;
   uint64 publisher_profile_version = 3;
   uint64 expected_pool_epoch = 4;
   repeated ContentOneTimePreKey prekeys = 5;
+  string command_id = 6;
+  ContentPreKeyClientProof proof = 7;
 }
 
 message ContentPreKeyClaimTarget {
@@ -62,11 +84,14 @@ message ContentPreKeyInventory {
 
 message PublishContentPreKeysResponse {
   ContentPreKeyInventory inventory = 1;
+  bool exact_replay = 2;
 }
 
 message GetContentPreKeyInventoryRequest {
   peers_touch.model.actor.v1.ActorDeviceRef publisher = 1;
   ContentPreKeyClaimTarget target = 2;
+  string request_id = 3;
+  ContentPreKeyClientProof proof = 4;
 }
 
 message GetContentPreKeyInventoryResponse {

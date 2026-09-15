@@ -25,10 +25,22 @@ type ContentPreKeyStore interface {
 		publication domain.ContentPreKeyPublication,
 		publishedAt time.Time,
 	) (domain.ContentPreKeyInventory, error)
+	PublishContentPreKeysClient(
+		ctx context.Context,
+		command domain.ContentPreKeyClientPublication,
+		publishedAt time.Time,
+	) (*securecontentpb.PublishContentPreKeysResponse, error)
 	ContentPreKeyInventory(
 		ctx context.Context,
 		publisher domain.Endpoint,
 		principal domain.ContentPreKeyPrincipal,
+		observedAt time.Time,
+	) (domain.ContentPreKeyInventory, error)
+	ContentPreKeyInventoryClient(
+		ctx context.Context,
+		publisher domain.Endpoint,
+		principal domain.ContentPreKeyPrincipal,
+		authorization domain.ContentPreKeyClientAuthorization,
 		observedAt time.Time,
 	) (domain.ContentPreKeyInventory, error)
 	ClaimContentPreKeys(
@@ -44,6 +56,32 @@ type ContentPreKeyStore interface {
 		response *securecontentpb.ClaimContentPreKeysResponse,
 		principals []domain.ContentPreKeyPrincipal,
 	) error
+}
+
+func (s *ContentPreKeyService) PublishContentPreKeysClient(
+	ctx context.Context,
+	authenticatedPublisher domain.Endpoint,
+	stationPeerID string,
+	sessionID string,
+	request *securecontentpb.PublishContentPreKeysRequest,
+) (*securecontentpb.PublishContentPreKeysResponse, error) {
+	now := s.now()
+	command, err := domain.NormalizeContentPreKeyClientPublication(
+		publishContentPreKeysOperation+".client",
+		authenticatedPublisher,
+		stationPeerID,
+		sessionID,
+		request,
+		now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.store.PublishContentPreKeysClient(ctx, command, now)
+	if err != nil {
+		return nil, wrapStoreError(publishContentPreKeysOperation+".client", err)
+	}
+	return proto.Clone(response).(*securecontentpb.PublishContentPreKeysResponse), nil
 }
 
 // ContentPreKeyService is the Key Exchange application boundary consumed by
@@ -149,6 +187,74 @@ func (s *ContentPreKeyService) ContentPreKeyInventory(
 		return domain.ContentPreKeyInventory{}, err
 	}
 	return inventory, nil
+}
+
+func (s *ContentPreKeyService) ContentPreKeyInventoryClient(
+	ctx context.Context,
+	authenticatedPublisher domain.Endpoint,
+	stationPeerID string,
+	sessionID string,
+	request *securecontentpb.GetContentPreKeyInventoryRequest,
+) (*securecontentpb.GetContentPreKeyInventoryResponse, error) {
+	const operation = inventoryContentPreKeysOperation + ".client"
+
+	now := s.now()
+	authorization, err := domain.NormalizeContentPreKeyInventoryAuthorization(
+		operation,
+		authenticatedPublisher,
+		stationPeerID,
+		sessionID,
+		request,
+		now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	principal, err := domain.ContentPreKeyPrincipalFromTarget(
+		operation,
+		request.GetTarget(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if principal.ActorPTID != authenticatedPublisher.ActorPTID ||
+		(principal.Kind ==
+			securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ENDPOINT &&
+			principal.DeviceID != authenticatedPublisher.DeviceID) {
+		return nil, domain.NewError(
+			domain.ErrorCodeUnauthorized,
+			operation,
+			"principal",
+			"does not belong to the authenticated endpoint",
+		)
+	}
+	inventory, err := s.store.ContentPreKeyInventoryClient(
+		ctx,
+		authenticatedPublisher,
+		principal,
+		authorization,
+		now,
+	)
+	if err != nil {
+		return nil, wrapStoreError(operation, err)
+	}
+	if err := validateContentPreKeyInventory(
+		operation,
+		inventory,
+		principal,
+	); err != nil {
+		return nil, err
+	}
+	return &securecontentpb.GetContentPreKeyInventoryResponse{
+		Inventory: &securecontentpb.ContentPreKeyInventory{
+			Target:             inventory.Principal.ClaimTarget(),
+			CurrentEpoch:       inventory.CurrentEpoch,
+			Available:          uint32(inventory.Available),
+			Capacity:           uint32(inventory.Capacity),
+			ReplenishAtOrBelow: uint32(inventory.ReplenishAtOrBelow),
+			NeedsReplenishment: inventory.NeedsReplenishment,
+		},
+	}, nil
 }
 
 func (s *ContentPreKeyService) ClaimContentPreKeys(

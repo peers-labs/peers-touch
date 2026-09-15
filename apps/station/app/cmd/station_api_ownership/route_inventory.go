@@ -16,12 +16,13 @@ import (
 const stationServerImport = "github.com/peers-labs/peers-touch/station/frame/core/server"
 
 var handlerConstructors = map[string]struct{}{
-	"NewHandler":        {},
-	"NewHandlerWithURL": {},
-	"NewHertzHandler":   {},
-	"NewHTTPHandler":    {},
-	"NewSimpleHandler":  {},
-	"NewTypedHandler":   {},
+	"NewHandler":                  {},
+	"NewHandlerWithURL":           {},
+	"NewHertzHandler":             {},
+	"NewHTTPHandler":              {},
+	"NewSimpleHandler":            {},
+	"NewTypedHandler":             {},
+	"NewCanonicalProtobufHandler": {},
 }
 
 type parsedGoFile struct {
@@ -285,7 +286,8 @@ func routeFromCall(
 ) (discoveredRoute, bool) {
 	var nameExpression, pathExpression, methodExpression ast.Expr
 	switch constructor {
-	case "NewTypedHandler", "NewHTTPHandler", "NewSimpleHandler", "NewHertzHandler":
+	case "NewTypedHandler", "NewCanonicalProtobufHandler",
+		"NewHTTPHandler", "NewSimpleHandler", "NewHertzHandler":
 		if len(call.Args) < 3 {
 			return discoveredRoute{}, false
 		}

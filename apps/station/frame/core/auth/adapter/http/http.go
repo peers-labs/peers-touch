@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
 // RequireJWT validates the Bearer JWT and checks the embedded session through
@@ -19,6 +21,51 @@ func RequireJWT(p coreauth.Provider, sv ...coreauth.SessionValidator) func(ctx c
 // supplied malformed, invalid, expired, or revoked credential fails closed.
 func OptionalJWT(p coreauth.Provider, sv ...coreauth.SessionValidator) func(ctx context.Context, next http.Handler) http.Handler {
 	return jwtMiddleware(p, false, sv...)
+}
+
+// RequireStructuredJWT propagates authentication failures to a route-local
+// projector instead of committing a representation from middleware.
+func RequireStructuredJWT(
+	provider coreauth.Provider,
+	unauthorizedCode int32,
+	requireSession bool,
+	sessionValidators ...coreauth.SessionValidator,
+) func(context.Context, http.Handler) http.Handler {
+	return func(ctx context.Context, next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+			result := coreauth.ValidateBearerCredential(
+				ctx,
+				request.Header.Get("Authorization"),
+				provider,
+				sessionValidators...,
+			)
+			if result.Status != coreauth.BearerCredentialAuthenticated ||
+				result.Subject == nil ||
+				(requireSession &&
+					strings.TrimSpace(result.Subject.SessionID) == "") {
+				logger.Warn(ctx, "[StructuredJWT] credentials rejected")
+				failure := server.RouteError{
+					Status:     http.StatusUnauthorized,
+					StableCode: unauthorizedCode,
+					Message:    "unauthorized",
+				}
+				next.ServeHTTP(
+					w,
+					request.WithContext(
+						server.WithRouteFailure(request.Context(), failure),
+					),
+				)
+				return
+			}
+
+			next.ServeHTTP(
+				w,
+				request.WithContext(
+					coreauth.WithSubject(request.Context(), result.Subject),
+				),
+			)
+		})
+	}
 }
 
 func jwtMiddleware(

@@ -24,7 +24,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const contentPreKeyStoreOperation = "key_exchange.store.content_prekeys"
+const (
+	contentPreKeyStoreOperation                  = "key_exchange.store.content_prekeys"
+	contentPreKeyPublicationReceiptStatePending  = "PENDING"
+	contentPreKeyPublicationReceiptStateComplete = "COMPLETED"
+)
 
 // ContentPreKeyPoolModel is a lockable per-principal inventory fence. Endpoint
 // and actor-recovery kinds always produce different rows.
@@ -84,6 +88,23 @@ type ContentPreKeyClaimReceiptModel struct {
 
 func (*ContentPreKeyClaimReceiptModel) TableName() string {
 	return "key_exchange_content_prekey_claim_receipts"
+}
+
+type ContentPreKeyPublicationReceiptModel struct {
+	PublisherPTID     string     `gorm:"column:publisher_ptid;size:255;primaryKey"`
+	PublisherDeviceID string     `gorm:"column:publisher_device_id;size:128;primaryKey"`
+	CommandID         string     `gorm:"column:command_id;size:128;primaryKey"`
+	RequestBytes      []byte     `gorm:"column:request_bytes;type:bytea;not null"`
+	RequestSHA256     []byte     `gorm:"column:request_sha256;type:bytea;not null"`
+	State             string     `gorm:"column:state;size:16;not null"`
+	ResponseBytes     []byte     `gorm:"column:response_bytes;type:bytea"`
+	ResponseSHA256    []byte     `gorm:"column:response_sha256;type:bytea"`
+	CreatedAt         time.Time  `gorm:"column:created_at;not null"`
+	CompletedAt       *time.Time `gorm:"column:completed_at"`
+}
+
+func (*ContentPreKeyPublicationReceiptModel) TableName() string {
+	return "key_exchange_content_prekey_publication_receipts"
 }
 
 // ContentPreKeyStore is deliberately separate from CanonicalStore so Direct,
@@ -147,6 +168,7 @@ func (s *ContentPreKeyStore) Migrate(ctx context.Context) error {
 		&ContentPreKeyPoolModel{},
 		&ContentPreKeyModel{},
 		&ContentPreKeyClaimReceiptModel{},
+		&ContentPreKeyPublicationReceiptModel{},
 	); err != nil {
 		return domain.WrapError(
 			domain.ErrorCodeInternal,
@@ -174,10 +196,110 @@ func (s *ContentPreKeyStore) PublishContentPreKeys(
 	publication domain.ContentPreKeyPublication,
 	publishedAt time.Time,
 ) (domain.ContentPreKeyInventory, error) {
+	inventory, _, err := s.publishContentPreKeys(
+		ctx,
+		publication,
+		nil,
+		publishedAt,
+	)
+	return inventory, err
+}
+
+func (s *ContentPreKeyStore) PublishContentPreKeysClient(
+	ctx context.Context,
+	command domain.ContentPreKeyClientPublication,
+	publishedAt time.Time,
+) (*securecontentpb.PublishContentPreKeysResponse, error) {
+	inventory, exactReplay, err := s.publishContentPreKeys(
+		ctx,
+		command.Publication,
+		&command,
+		publishedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &securecontentpb.PublishContentPreKeysResponse{
+		Inventory:   contentPreKeyInventoryResponse(inventory),
+		ExactReplay: exactReplay,
+	}, nil
+}
+
+func (s *ContentPreKeyStore) publishContentPreKeys(
+	ctx context.Context,
+	publication domain.ContentPreKeyPublication,
+	clientCommand *domain.ContentPreKeyClientPublication,
+	publishedAt time.Time,
+) (domain.ContentPreKeyInventory, bool, error) {
 	const operation = contentPreKeyStoreOperation + ".publish"
 
+	var verifiedClientKey *actormodel.VerifiedActorDeviceSigningKey
+	if clientCommand != nil {
+		var err error
+		verifiedClientKey, err = s.verifyContentPreKeyClientAuthorization(
+			ctx,
+			clientCommand.Authorization,
+			operation,
+		)
+		if err != nil {
+			return domain.ContentPreKeyInventory{}, false, err
+		}
+	}
 	var inventory domain.ContentPreKeyInventory
+	var exactReplay bool
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var publicationReceipt ContentPreKeyPublicationReceiptModel
+		if clientCommand != nil {
+			var err error
+			publicationReceipt, err = claimContentPreKeyPublicationReceipt(
+				tx,
+				clientCommand.Authorization,
+				clientCommand.CommandID,
+				publishedAt,
+			)
+			if err != nil {
+				return err
+			}
+			if publicationReceipt.State ==
+				contentPreKeyPublicationReceiptStateComplete {
+				if err := fenceContentPreKeyClientAuthorization(
+					tx,
+					verifiedClientKey,
+					operation,
+				); err != nil {
+					return err
+				}
+				replayed, err := decodeContentPreKeyPublicationReceipt(
+					publicationReceipt,
+					publication.Principal,
+					publication.PoolEpoch,
+				)
+				if err != nil {
+					return err
+				}
+				inventory, err = contentPreKeyInventoryFromResponse(
+					replayed.GetInventory(),
+					publication.Principal,
+					publication.PoolEpoch,
+				)
+				if err != nil {
+					return err
+				}
+				exactReplay = true
+				return nil
+			}
+			if clientCommand.Authorization.SigningKeyID !=
+				publication.PublisherSigningKeyID ||
+				clientCommand.Authorization.ProfileVersion !=
+					publication.PublisherProfileVersion {
+				return domain.NewError(
+					domain.ErrorCodeUnauthorized,
+					operation,
+					"proof.input.publisher_signing_key",
+					"does not authorize the publication identity",
+				)
+			}
+		}
 		pool, poolFound, err := findAndLockContentPreKeyPool(
 			tx,
 			publication.Principal,
@@ -199,12 +321,22 @@ func (s *ContentPreKeyStore) PublishContentPreKeys(
 			poolFound = !created
 		}
 
-		publisherKey, err := s.resolveAndFenceContentPreKeyPublisher(
-			ctx,
-			tx,
-			publication,
-			operation,
-		)
+		var publisherKey *actormodel.VerifiedActorDeviceSigningKey
+		if clientCommand != nil {
+			err = fenceContentPreKeyClientAuthorization(
+				tx,
+				verifiedClientKey,
+				operation,
+			)
+			publisherKey = verifiedClientKey
+		} else {
+			publisherKey, err = s.resolveAndFenceContentPreKeyPublisher(
+				ctx,
+				tx,
+				publication,
+				operation,
+			)
+		}
 		if err != nil {
 			return err
 		}
@@ -262,6 +394,14 @@ func (s *ContentPreKeyStore) PublishContentPreKeys(
 		}
 
 		if len(newKeys) == 0 {
+			if clientCommand != nil {
+				return domain.NewError(
+					domain.ErrorCodeConflict,
+					operation,
+					"command_id",
+					"first publication command must insert immutable key material",
+				)
+			}
 			if !poolFound {
 				return domain.NewError(
 					domain.ErrorCodeInternal,
@@ -381,12 +521,25 @@ func (s *ContentPreKeyStore) PublishContentPreKeys(
 			uint64(pool.CurrentEpoch),
 			available,
 		)
+		if clientCommand != nil {
+			response := &securecontentpb.PublishContentPreKeysResponse{
+				Inventory: contentPreKeyInventoryResponse(inventory),
+			}
+			if err := completeContentPreKeyPublicationReceipt(
+				tx,
+				publicationReceipt,
+				response,
+				publishedAt,
+			); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	if err != nil {
-		return domain.ContentPreKeyInventory{}, err
+		return domain.ContentPreKeyInventory{}, false, err
 	}
-	return inventory, nil
+	return inventory, exactReplay, nil
 }
 
 func (s *ContentPreKeyStore) ContentPreKeyInventory(
@@ -395,7 +548,52 @@ func (s *ContentPreKeyStore) ContentPreKeyInventory(
 	principal domain.ContentPreKeyPrincipal,
 	observedAt time.Time,
 ) (domain.ContentPreKeyInventory, error) {
+	return s.contentPreKeyInventory(
+		ctx,
+		publisher,
+		principal,
+		nil,
+		observedAt,
+	)
+}
+
+func (s *ContentPreKeyStore) ContentPreKeyInventoryClient(
+	ctx context.Context,
+	publisher domain.Endpoint,
+	principal domain.ContentPreKeyPrincipal,
+	authorization domain.ContentPreKeyClientAuthorization,
+	observedAt time.Time,
+) (domain.ContentPreKeyInventory, error) {
+	return s.contentPreKeyInventory(
+		ctx,
+		publisher,
+		principal,
+		&authorization,
+		observedAt,
+	)
+}
+
+func (s *ContentPreKeyStore) contentPreKeyInventory(
+	ctx context.Context,
+	publisher domain.Endpoint,
+	principal domain.ContentPreKeyPrincipal,
+	authorization *domain.ContentPreKeyClientAuthorization,
+	observedAt time.Time,
+) (domain.ContentPreKeyInventory, error) {
 	const operation = contentPreKeyStoreOperation + ".inventory"
+
+	var verifiedClientKey *actormodel.VerifiedActorDeviceSigningKey
+	if authorization != nil {
+		var err error
+		verifiedClientKey, err = s.verifyContentPreKeyClientAuthorization(
+			ctx,
+			*authorization,
+			operation,
+		)
+		if err != nil {
+			return domain.ContentPreKeyInventory{}, err
+		}
+	}
 
 	var inventory domain.ContentPreKeyInventory
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -403,15 +601,26 @@ func (s *ContentPreKeyStore) ContentPreKeyInventory(
 		if err != nil {
 			return err
 		}
-		_, err =
-			actoridentitypersistence.LockActiveDeviceProfileVersionForMutation(
+		if authorization != nil {
+			err = fenceContentPreKeyClientAuthorization(
 				tx,
-				actoridentitypersistence.DeviceLocator{
-					PTID:     publisher.ActorPTID,
-					DeviceID: publisher.DeviceID,
-				},
+				verifiedClientKey,
+				operation,
 			)
-		if err != nil {
+			if err != nil {
+				return err
+			}
+		} else {
+			_, err =
+				actoridentitypersistence.LockActiveDeviceProfileVersionForMutation(
+					tx,
+					actoridentitypersistence.DeviceLocator{
+						PTID:     publisher.ActorPTID,
+						DeviceID: publisher.DeviceID,
+					},
+				)
+		}
+		if authorization == nil && err != nil {
 			return mapContentPreKeyActorIdentityError(operation, err)
 		}
 		if !found {
@@ -1221,6 +1430,66 @@ func (s *ContentPreKeyStore) resolveAndFenceContentPreKeyPublisher(
 	return resolved, nil
 }
 
+func (s *ContentPreKeyStore) verifyContentPreKeyClientAuthorization(
+	ctx context.Context,
+	authorization domain.ContentPreKeyClientAuthorization,
+	operation string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	resolved, err := s.publishers.ResolveVerifiedActorDeviceSigningKey(
+		ctx,
+		contentPreKeyTransaction{db: s.db.WithContext(ctx)},
+		authorization.Publisher.ActorPTID,
+		authorization.Publisher.DeviceID,
+		authorization.SigningKeyID,
+	)
+	if err != nil {
+		return nil, mapContentPreKeyClientActorIdentityError(operation, err)
+	}
+	if resolved == nil ||
+		resolved.GetActorPtid() != authorization.Publisher.ActorPTID ||
+		resolved.GetActorDeviceId() != authorization.Publisher.DeviceID ||
+		resolved.GetSigningKeyId() != authorization.SigningKeyID ||
+		resolved.GetProfileVersion() <= 0 ||
+		uint64(resolved.GetProfileVersion()) != authorization.ProfileVersion ||
+		resolved.GetRevokedAtUnixMs() != 0 ||
+		len(resolved.GetEd25519PublicKey()) != ed25519.PublicKeySize ||
+		!trustedContentPreKeyVerificationSource(
+			resolved.GetVerificationSource(),
+		) {
+		return nil, domain.NewError(
+			domain.ErrorCodeUnauthorized,
+			operation,
+			"proof.input.publisher",
+			"is not the active verified Actor endpoint",
+		)
+	}
+	if !ed25519.Verify(
+		resolved.GetEd25519PublicKey(),
+		authorization.SigningBytes,
+		authorization.Signature,
+	) {
+		return nil, domain.NewError(
+			domain.ErrorCodeUnauthorized,
+			operation,
+			"proof.signature",
+			"is invalid",
+		)
+	}
+	return resolved, nil
+}
+
+func fenceContentPreKeyClientAuthorization(
+	tx *gorm.DB,
+	verified *actormodel.VerifiedActorDeviceSigningKey,
+	operation string,
+) error {
+	if err := actoridentitypersistence.
+		RequireVerifiedActorDeviceSigningKeyForMutation(tx, verified); err != nil {
+		return mapContentPreKeyClientActorIdentityError(operation, err)
+	}
+	return nil
+}
+
 func (s *ContentPreKeyStore) resolveAndFenceContentPreKeyPublishers(
 	ctx context.Context,
 	tx *gorm.DB,
@@ -1874,6 +2143,237 @@ func persistedContentPreKeyInvalid(field string) error {
 		field,
 		"does not satisfy the persisted Content PreKey contract",
 	)
+}
+
+func claimContentPreKeyPublicationReceipt(
+	tx *gorm.DB,
+	authorization domain.ContentPreKeyClientAuthorization,
+	commandID string,
+	createdAt time.Time,
+) (ContentPreKeyPublicationReceiptModel, error) {
+	candidate := ContentPreKeyPublicationReceiptModel{
+		PublisherPTID:     authorization.Publisher.ActorPTID,
+		PublisherDeviceID: authorization.Publisher.DeviceID,
+		CommandID:         commandID,
+		RequestBytes:      append([]byte(nil), authorization.RequestBytes...),
+		RequestSHA256:     append([]byte(nil), authorization.RequestSHA256[:]...),
+		State:             contentPreKeyPublicationReceiptStatePending,
+		CreatedAt:         createdAt.UTC(),
+	}
+	result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&candidate)
+	if result.Error != nil {
+		return ContentPreKeyPublicationReceiptModel{},
+			contentPreKeyStoreFailure("reserve publication receipt", result.Error)
+	}
+
+	var receipt ContentPreKeyPublicationReceiptModel
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where(
+			"publisher_ptid = ? AND publisher_device_id = ? AND command_id = ?",
+			candidate.PublisherPTID,
+			candidate.PublisherDeviceID,
+			candidate.CommandID,
+		).
+		First(&receipt).Error; err != nil {
+		return ContentPreKeyPublicationReceiptModel{},
+			contentPreKeyStoreFailure("lock publication receipt", err)
+	}
+	requestHash := sha256.Sum256(receipt.RequestBytes)
+	if len(receipt.RequestBytes) == 0 ||
+		len(receipt.RequestSHA256) != sha256.Size ||
+		!bytes.Equal(requestHash[:], receipt.RequestSHA256) {
+		return ContentPreKeyPublicationReceiptModel{}, persistedContentPreKeyInvalid(
+			"publication_receipt.request_sha256",
+		)
+	}
+	if !bytes.Equal(receipt.RequestSHA256, authorization.RequestSHA256[:]) ||
+		!bytes.Equal(receipt.RequestBytes, authorization.RequestBytes) {
+		return ContentPreKeyPublicationReceiptModel{}, domain.NewError(
+			domain.ErrorCodeConflict,
+			contentPreKeyStoreOperation+".publish",
+			"command_id",
+			"is already bound to another publication request",
+		)
+	}
+	switch receipt.State {
+	case contentPreKeyPublicationReceiptStatePending:
+		if result.RowsAffected != 1 ||
+			receipt.CompletedAt != nil ||
+			len(receipt.ResponseBytes) != 0 ||
+			len(receipt.ResponseSHA256) != 0 {
+			return ContentPreKeyPublicationReceiptModel{}, persistedContentPreKeyInvalid(
+				"publication_receipt.state",
+			)
+		}
+	case contentPreKeyPublicationReceiptStateComplete:
+		if result.RowsAffected != 0 ||
+			receipt.CompletedAt == nil ||
+			len(receipt.ResponseBytes) == 0 ||
+			len(receipt.ResponseSHA256) != sha256.Size ||
+			receipt.CompletedAt.Before(receipt.CreatedAt) {
+			return ContentPreKeyPublicationReceiptModel{}, persistedContentPreKeyInvalid(
+				"publication_receipt.state",
+			)
+		}
+	default:
+		return ContentPreKeyPublicationReceiptModel{}, domain.NewError(
+			domain.ErrorCodeInvalidMaterial,
+			contentPreKeyStoreOperation+".decode",
+			"publication_receipt.state",
+			"is not a recognized publication receipt state",
+		)
+	}
+	return receipt, nil
+}
+
+func completeContentPreKeyPublicationReceipt(
+	tx *gorm.DB,
+	receipt ContentPreKeyPublicationReceiptModel,
+	response *securecontentpb.PublishContentPreKeysResponse,
+	completedAt time.Time,
+) error {
+	response.ExactReplay = false
+	responseBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(response)
+	if err != nil {
+		return contentPreKeyStoreFailure("encode publication receipt", err)
+	}
+	responseHash := sha256.Sum256(responseBytes)
+	result := tx.Model(&ContentPreKeyPublicationReceiptModel{}).
+		Where(
+			"publisher_ptid = ? AND publisher_device_id = ? AND command_id = ? "+
+				"AND state = ? AND completed_at IS NULL",
+			receipt.PublisherPTID,
+			receipt.PublisherDeviceID,
+			receipt.CommandID,
+			contentPreKeyPublicationReceiptStatePending,
+		).
+		Updates(map[string]any{
+			"response_bytes":  responseBytes,
+			"response_sha256": responseHash[:],
+			"state":           contentPreKeyPublicationReceiptStateComplete,
+			"completed_at":    completedAt.UTC(),
+		})
+	if result.Error != nil {
+		return contentPreKeyStoreFailure("complete publication receipt", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return domain.NewError(
+			domain.ErrorCodeConflict,
+			contentPreKeyStoreOperation+".publish",
+			"publication_receipt",
+			"completion lost transaction ownership",
+		)
+	}
+	return nil
+}
+
+func decodeContentPreKeyPublicationReceipt(
+	receipt ContentPreKeyPublicationReceiptModel,
+	expectedPrincipal domain.ContentPreKeyPrincipal,
+	expectedEpoch uint64,
+) (*securecontentpb.PublishContentPreKeysResponse, error) {
+	if receipt.State != contentPreKeyPublicationReceiptStateComplete ||
+		receipt.CompletedAt == nil ||
+		receipt.CompletedAt.Before(receipt.CreatedAt) ||
+		len(receipt.ResponseBytes) == 0 ||
+		len(receipt.ResponseSHA256) != sha256.Size {
+		return nil, persistedContentPreKeyInvalid(
+			"publication_receipt.state",
+		)
+	}
+	hash := sha256.Sum256(receipt.ResponseBytes)
+	if !bytes.Equal(hash[:], receipt.ResponseSHA256) {
+		return nil, persistedContentPreKeyInvalid(
+			"publication_receipt.response_sha256",
+		)
+	}
+	var response securecontentpb.PublishContentPreKeysResponse
+	if err := proto.Unmarshal(receipt.ResponseBytes, &response); err != nil {
+		return nil, persistedContentPreKeyInvalid(
+			"publication_receipt.response_bytes",
+		)
+	}
+	canonical, err := proto.MarshalOptions{Deterministic: true}.Marshal(&response)
+	if err != nil || !bytes.Equal(canonical, receipt.ResponseBytes) ||
+		response.GetExactReplay() {
+		return nil, persistedContentPreKeyInvalid(
+			"publication_receipt.response_bytes",
+		)
+	}
+	if _, err := contentPreKeyInventoryFromResponse(
+		response.GetInventory(),
+		expectedPrincipal,
+		expectedEpoch,
+	); err != nil {
+		return nil, err
+	}
+	replayed := proto.Clone(&response).(*securecontentpb.PublishContentPreKeysResponse)
+	replayed.ExactReplay = true
+	return replayed, nil
+}
+
+func contentPreKeyInventoryResponse(
+	inventory domain.ContentPreKeyInventory,
+) *securecontentpb.ContentPreKeyInventory {
+	return &securecontentpb.ContentPreKeyInventory{
+		Target:             inventory.Principal.ClaimTarget(),
+		CurrentEpoch:       inventory.CurrentEpoch,
+		Available:          uint32(inventory.Available),
+		Capacity:           uint32(inventory.Capacity),
+		ReplenishAtOrBelow: uint32(inventory.ReplenishAtOrBelow),
+		NeedsReplenishment: inventory.NeedsReplenishment,
+	}
+}
+
+func contentPreKeyInventoryFromResponse(
+	inventory *securecontentpb.ContentPreKeyInventory,
+	expectedPrincipal domain.ContentPreKeyPrincipal,
+	expectedEpoch uint64,
+) (domain.ContentPreKeyInventory, error) {
+	if inventory == nil {
+		return domain.ContentPreKeyInventory{}, persistedContentPreKeyInvalid(
+			"publication_receipt.inventory",
+		)
+	}
+	principal, err := domain.ContentPreKeyPrincipalFromTarget(
+		contentPreKeyStoreOperation+".decode_publication_receipt",
+		inventory.GetTarget(),
+	)
+	if err != nil {
+		return domain.ContentPreKeyInventory{}, persistedContentPreKeyInvalid(
+			"publication_receipt.inventory",
+		)
+	}
+	expected := domain.NewContentPreKeyInventory(
+		principal,
+		inventory.GetCurrentEpoch(),
+		int64(inventory.GetAvailable()),
+	)
+	if principal != expectedPrincipal ||
+		inventory.GetCurrentEpoch() != expectedEpoch ||
+		inventory.GetAvailable() == 0 ||
+		inventory.GetAvailable() > uint32(domain.MaxContentPreKeysPerPool) ||
+		inventory.GetCapacity() != uint32(expected.Capacity) ||
+		inventory.GetReplenishAtOrBelow() != uint32(expected.ReplenishAtOrBelow) ||
+		inventory.GetNeedsReplenishment() != expected.NeedsReplenishment {
+		return domain.ContentPreKeyInventory{}, persistedContentPreKeyInvalid(
+			"publication_receipt.inventory",
+		)
+	}
+	return expected, nil
+}
+
+func mapContentPreKeyClientActorIdentityError(
+	operation string,
+	err error,
+) error {
+	switch actoridentitydomain.CodeOf(err) {
+	case actoridentitydomain.ErrorCodeInvalidProof,
+		actoridentitydomain.ErrorCodeDeviceConflict:
+		return domain.WrapError(domain.ErrorCodeUnauthorized, operation, err)
+	default:
+		return mapContentPreKeyActorIdentityError(operation, err)
+	}
 }
 
 func mapContentPreKeyActorIdentityError(

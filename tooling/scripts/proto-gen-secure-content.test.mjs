@@ -16,6 +16,8 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+  CONTENT_PREKEY_CLIENT_PROTO_INPUTS,
+  CONTENT_PREKEY_CLIENT_SCOPE,
   PROTO_INPUTS,
   SecureContentProtoError,
   buildOutputManifest,
@@ -28,6 +30,9 @@ const STATION_PREFIX = 'github.com/peers-labs/peers-touch/station/';
 function goPackageFor(input) {
   if (input === 'domain/common/common.proto') {
     return `${STATION_PREFIX}frame/core/types;types`;
+  }
+  if (input === 'domain/error/error.proto') {
+    return `${STATION_PREFIX}frame/touch/model;model`;
   }
   if (input.startsWith('domain/secure_content/')) {
     return `${STATION_PREFIX}frame/core/types/securecontent;securecontent`;
@@ -44,7 +49,11 @@ function goPackageFor(input) {
 function fixture() {
   const root = mkdtempSync(path.join(tmpdir(), 'pt-secure-content-generator-'));
   mkdirSync(path.join(root, 'model'), { recursive: true });
-  for (const input of PROTO_INPUTS) {
+  const fixtureInputs = new Set([
+    ...PROTO_INPUTS,
+    ...CONTENT_PREKEY_CLIENT_PROTO_INPUTS,
+  ]);
+  for (const input of fixtureInputs) {
     const destination = path.join(root, 'model', input);
     mkdirSync(path.dirname(destination), { recursive: true });
     writeFileSync(
@@ -235,6 +244,30 @@ test('builds one fixed three-channel output manifest', () => {
           output.destination ===
           'apps/station/frame/touch/model/privatecontent/private_content.pb.go',
       ),
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('content-prekey-client scope contains exactly its six declared outputs', () => {
+  const scope = fixture();
+  try {
+    const manifest = buildOutputManifest(
+      scope.root,
+      CONTENT_PREKEY_CLIENT_SCOPE,
+    );
+    assert.deepEqual(manifest.inputs, CONTENT_PREKEY_CLIENT_PROTO_INPUTS);
+    assert.deepEqual(
+      manifest.outputs.map((output) => output.destination),
+      [
+        'apps/desktop/src/gen/proto/domain/error/error_pb.ts',
+        'apps/desktop/src/gen/proto/domain/secure_content/prekey_pb.ts',
+        'apps/mobile/src/gen/proto/domain/error/error_pb.ts',
+        'apps/mobile/src/gen/proto/domain/secure_content/prekey_pb.ts',
+        'apps/station/frame/core/types/securecontent/prekey.pb.go',
+        'apps/station/frame/touch/model/error.pb.go',
+      ],
     );
   } finally {
     scope.close();
@@ -650,6 +683,58 @@ test('rolls back the complete manifest when a later rename fails', () => {
   }
 });
 
+test('content-prekey-client scope rolls back all six outputs atomically', () => {
+  const scope = fixture();
+  try {
+    const scopedOptions = {
+      ...generationOptions(
+        scope,
+        'apply',
+        fakeRunner({ projectRoot: scope.root, generatedPrefix: 'v1' }),
+      ),
+      scope: CONTENT_PREKEY_CLIENT_SCOPE,
+    };
+    executeGeneration(scopedOptions);
+    const manifest = buildOutputManifest(
+      scope.root,
+      CONTENT_PREKEY_CLIENT_SCOPE,
+    );
+    const before = new Map(
+      manifest.outputs.map((output) => [
+        output.destination,
+        readFileSync(path.join(scope.root, output.destination)),
+      ]),
+    );
+    let renameCount = 0;
+
+    assert.throws(
+      () =>
+        executeGeneration({
+          ...scopedOptions,
+          runCommand: fakeRunner({
+            projectRoot: scope.root,
+            generatedPrefix: 'v2',
+          }),
+          renameFile(source, destination) {
+            renameCount += 1;
+            if (renameCount === 2) {
+              throw new Error('injected scoped rename failure');
+            }
+            renameSync(source, destination);
+          },
+        }),
+      (error) =>
+        error instanceof SecureContentProtoError &&
+        error.code === 'APPLY_FAILED',
+    );
+    for (const [destination, bytes] of before) {
+      assert.deepEqual(readFileSync(path.join(scope.root, destination)), bytes);
+    }
+  } finally {
+    scope.close();
+  }
+});
+
 test('removes newly created outputs when the apply transaction fails', () => {
   const scope = fixture();
   try {
@@ -697,6 +782,24 @@ test('requires one bounded mode and rejects duplicate options', () => {
   );
   assert.throws(
     () => parseArguments(['--check', '--budget-seconds', '0']),
+    (error) =>
+      error instanceof SecureContentProtoError &&
+      error.code === 'INVALID_ARGUMENT',
+  );
+  assert.deepEqual(
+    parseArguments([
+      '--scope',
+      CONTENT_PREKEY_CLIENT_SCOPE,
+      '--apply',
+    ]),
+    {
+      mode: 'apply',
+      budgetSeconds: 600,
+      scope: CONTENT_PREKEY_CLIENT_SCOPE,
+    },
+  );
+  assert.throws(
+    () => parseArguments(['--check', '--scope', 'unknown']),
     (error) =>
       error instanceof SecureContentProtoError &&
       error.code === 'INVALID_ARGUMENT',

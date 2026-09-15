@@ -10,6 +10,7 @@ import (
 	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -298,20 +299,198 @@ func (*ContentPreKeySigningInput_Endpoint) isContentPreKeySigningInput_Principal
 
 func (*ContentPreKeySigningInput_RecoveryActor) isContentPreKeySigningInput_Principal() {}
 
+type ContentPreKeyClientSigningInput struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	FormatVersion           uint32                 `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	CapabilityId            string                 `protobuf:"bytes,2,opt,name=capability_id,json=capabilityId,proto3" json:"capability_id,omitempty"`
+	StationPeerId           string                 `protobuf:"bytes,3,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
+	SessionId               string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Publisher               *model.ActorDeviceRef  `protobuf:"bytes,5,opt,name=publisher,proto3" json:"publisher,omitempty"`
+	PublisherSigningKeyId   string                 `protobuf:"bytes,6,opt,name=publisher_signing_key_id,json=publisherSigningKeyId,proto3" json:"publisher_signing_key_id,omitempty"`
+	PublisherProfileVersion uint64                 `protobuf:"varint,7,opt,name=publisher_profile_version,json=publisherProfileVersion,proto3" json:"publisher_profile_version,omitempty"`
+	RequestId               string                 `protobuf:"bytes,8,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	RequestSha256           []byte                 `protobuf:"bytes,9,opt,name=request_sha256,json=requestSha256,proto3" json:"request_sha256,omitempty"`
+	Nonce                   []byte                 `protobuf:"bytes,10,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	IssuedAt                *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=issued_at,json=issuedAt,proto3" json:"issued_at,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *ContentPreKeyClientSigningInput) Reset() {
+	*x = ContentPreKeyClientSigningInput{}
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContentPreKeyClientSigningInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContentPreKeyClientSigningInput) ProtoMessage() {}
+
+func (x *ContentPreKeyClientSigningInput) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContentPreKeyClientSigningInput.ProtoReflect.Descriptor instead.
+func (*ContentPreKeyClientSigningInput) Descriptor() ([]byte, []int) {
+	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ContentPreKeyClientSigningInput) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *ContentPreKeyClientSigningInput) GetCapabilityId() string {
+	if x != nil {
+		return x.CapabilityId
+	}
+	return ""
+}
+
+func (x *ContentPreKeyClientSigningInput) GetStationPeerId() string {
+	if x != nil {
+		return x.StationPeerId
+	}
+	return ""
+}
+
+func (x *ContentPreKeyClientSigningInput) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ContentPreKeyClientSigningInput) GetPublisher() *model.ActorDeviceRef {
+	if x != nil {
+		return x.Publisher
+	}
+	return nil
+}
+
+func (x *ContentPreKeyClientSigningInput) GetPublisherSigningKeyId() string {
+	if x != nil {
+		return x.PublisherSigningKeyId
+	}
+	return ""
+}
+
+func (x *ContentPreKeyClientSigningInput) GetPublisherProfileVersion() uint64 {
+	if x != nil {
+		return x.PublisherProfileVersion
+	}
+	return 0
+}
+
+func (x *ContentPreKeyClientSigningInput) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ContentPreKeyClientSigningInput) GetRequestSha256() []byte {
+	if x != nil {
+		return x.RequestSha256
+	}
+	return nil
+}
+
+func (x *ContentPreKeyClientSigningInput) GetNonce() []byte {
+	if x != nil {
+		return x.Nonce
+	}
+	return nil
+}
+
+func (x *ContentPreKeyClientSigningInput) GetIssuedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.IssuedAt
+	}
+	return nil
+}
+
+type ContentPreKeyClientProof struct {
+	state         protoimpl.MessageState           `protogen:"open.v1"`
+	Input         *ContentPreKeyClientSigningInput `protobuf:"bytes,1,opt,name=input,proto3" json:"input,omitempty"`
+	Signature     []byte                           `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContentPreKeyClientProof) Reset() {
+	*x = ContentPreKeyClientProof{}
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContentPreKeyClientProof) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContentPreKeyClientProof) ProtoMessage() {}
+
+func (x *ContentPreKeyClientProof) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContentPreKeyClientProof.ProtoReflect.Descriptor instead.
+func (*ContentPreKeyClientProof) Descriptor() ([]byte, []int) {
+	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ContentPreKeyClientProof) GetInput() *ContentPreKeyClientSigningInput {
+	if x != nil {
+		return x.Input
+	}
+	return nil
+}
+
+func (x *ContentPreKeyClientProof) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
 type PublishContentPreKeysRequest struct {
-	state                   protoimpl.MessageState  `protogen:"open.v1"`
-	Publisher               *model.ActorDeviceRef   `protobuf:"bytes,1,opt,name=publisher,proto3" json:"publisher,omitempty"`
-	PublisherSigningKeyId   string                  `protobuf:"bytes,2,opt,name=publisher_signing_key_id,json=publisherSigningKeyId,proto3" json:"publisher_signing_key_id,omitempty"`
-	PublisherProfileVersion uint64                  `protobuf:"varint,3,opt,name=publisher_profile_version,json=publisherProfileVersion,proto3" json:"publisher_profile_version,omitempty"`
-	ExpectedPoolEpoch       uint64                  `protobuf:"varint,4,opt,name=expected_pool_epoch,json=expectedPoolEpoch,proto3" json:"expected_pool_epoch,omitempty"`
-	Prekeys                 []*ContentOneTimePreKey `protobuf:"bytes,5,rep,name=prekeys,proto3" json:"prekeys,omitempty"`
+	state                   protoimpl.MessageState    `protogen:"open.v1"`
+	Publisher               *model.ActorDeviceRef     `protobuf:"bytes,1,opt,name=publisher,proto3" json:"publisher,omitempty"`
+	PublisherSigningKeyId   string                    `protobuf:"bytes,2,opt,name=publisher_signing_key_id,json=publisherSigningKeyId,proto3" json:"publisher_signing_key_id,omitempty"`
+	PublisherProfileVersion uint64                    `protobuf:"varint,3,opt,name=publisher_profile_version,json=publisherProfileVersion,proto3" json:"publisher_profile_version,omitempty"`
+	ExpectedPoolEpoch       uint64                    `protobuf:"varint,4,opt,name=expected_pool_epoch,json=expectedPoolEpoch,proto3" json:"expected_pool_epoch,omitempty"`
+	Prekeys                 []*ContentOneTimePreKey   `protobuf:"bytes,5,rep,name=prekeys,proto3" json:"prekeys,omitempty"`
+	CommandId               string                    `protobuf:"bytes,6,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	Proof                   *ContentPreKeyClientProof `protobuf:"bytes,7,opt,name=proof,proto3" json:"proof,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
 
 func (x *PublishContentPreKeysRequest) Reset() {
 	*x = PublishContentPreKeysRequest{}
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[2]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -323,7 +502,7 @@ func (x *PublishContentPreKeysRequest) String() string {
 func (*PublishContentPreKeysRequest) ProtoMessage() {}
 
 func (x *PublishContentPreKeysRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[2]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -336,7 +515,7 @@ func (x *PublishContentPreKeysRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishContentPreKeysRequest.ProtoReflect.Descriptor instead.
 func (*PublishContentPreKeysRequest) Descriptor() ([]byte, []int) {
-	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{2}
+	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PublishContentPreKeysRequest) GetPublisher() *model.ActorDeviceRef {
@@ -374,6 +553,20 @@ func (x *PublishContentPreKeysRequest) GetPrekeys() []*ContentOneTimePreKey {
 	return nil
 }
 
+func (x *PublishContentPreKeysRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *PublishContentPreKeysRequest) GetProof() *ContentPreKeyClientProof {
+	if x != nil {
+		return x.Proof
+	}
+	return nil
+}
+
 type ContentPreKeyClaimTarget struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Kind  ContentPreKeyKind      `protobuf:"varint,1,opt,name=kind,proto3,enum=peers_touch.model.secure_content.v1.ContentPreKeyKind" json:"kind,omitempty"`
@@ -388,7 +581,7 @@ type ContentPreKeyClaimTarget struct {
 
 func (x *ContentPreKeyClaimTarget) Reset() {
 	*x = ContentPreKeyClaimTarget{}
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[3]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -400,7 +593,7 @@ func (x *ContentPreKeyClaimTarget) String() string {
 func (*ContentPreKeyClaimTarget) ProtoMessage() {}
 
 func (x *ContentPreKeyClaimTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[3]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -413,7 +606,7 @@ func (x *ContentPreKeyClaimTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContentPreKeyClaimTarget.ProtoReflect.Descriptor instead.
 func (*ContentPreKeyClaimTarget) Descriptor() ([]byte, []int) {
-	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{3}
+	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ContentPreKeyClaimTarget) GetKind() ContentPreKeyKind {
@@ -478,7 +671,7 @@ type ContentPreKeyInventory struct {
 
 func (x *ContentPreKeyInventory) Reset() {
 	*x = ContentPreKeyInventory{}
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[4]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -490,7 +683,7 @@ func (x *ContentPreKeyInventory) String() string {
 func (*ContentPreKeyInventory) ProtoMessage() {}
 
 func (x *ContentPreKeyInventory) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[4]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -503,7 +696,7 @@ func (x *ContentPreKeyInventory) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContentPreKeyInventory.ProtoReflect.Descriptor instead.
 func (*ContentPreKeyInventory) Descriptor() ([]byte, []int) {
-	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{4}
+	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ContentPreKeyInventory) GetTarget() *ContentPreKeyClaimTarget {
@@ -551,13 +744,14 @@ func (x *ContentPreKeyInventory) GetNeedsReplenishment() bool {
 type PublishContentPreKeysResponse struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	Inventory     *ContentPreKeyInventory `protobuf:"bytes,1,opt,name=inventory,proto3" json:"inventory,omitempty"`
+	ExactReplay   bool                    `protobuf:"varint,2,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PublishContentPreKeysResponse) Reset() {
 	*x = PublishContentPreKeysResponse{}
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[5]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -569,7 +763,7 @@ func (x *PublishContentPreKeysResponse) String() string {
 func (*PublishContentPreKeysResponse) ProtoMessage() {}
 
 func (x *PublishContentPreKeysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[5]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -582,7 +776,7 @@ func (x *PublishContentPreKeysResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishContentPreKeysResponse.ProtoReflect.Descriptor instead.
 func (*PublishContentPreKeysResponse) Descriptor() ([]byte, []int) {
-	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{5}
+	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PublishContentPreKeysResponse) GetInventory() *ContentPreKeyInventory {
@@ -592,17 +786,26 @@ func (x *PublishContentPreKeysResponse) GetInventory() *ContentPreKeyInventory {
 	return nil
 }
 
+func (x *PublishContentPreKeysResponse) GetExactReplay() bool {
+	if x != nil {
+		return x.ExactReplay
+	}
+	return false
+}
+
 type GetContentPreKeyInventoryRequest struct {
 	state         protoimpl.MessageState    `protogen:"open.v1"`
 	Publisher     *model.ActorDeviceRef     `protobuf:"bytes,1,opt,name=publisher,proto3" json:"publisher,omitempty"`
 	Target        *ContentPreKeyClaimTarget `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
+	RequestId     string                    `protobuf:"bytes,3,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Proof         *ContentPreKeyClientProof `protobuf:"bytes,4,opt,name=proof,proto3" json:"proof,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetContentPreKeyInventoryRequest) Reset() {
 	*x = GetContentPreKeyInventoryRequest{}
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[6]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -614,7 +817,7 @@ func (x *GetContentPreKeyInventoryRequest) String() string {
 func (*GetContentPreKeyInventoryRequest) ProtoMessage() {}
 
 func (x *GetContentPreKeyInventoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[6]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -627,7 +830,7 @@ func (x *GetContentPreKeyInventoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetContentPreKeyInventoryRequest.ProtoReflect.Descriptor instead.
 func (*GetContentPreKeyInventoryRequest) Descriptor() ([]byte, []int) {
-	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{6}
+	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetContentPreKeyInventoryRequest) GetPublisher() *model.ActorDeviceRef {
@@ -644,6 +847,20 @@ func (x *GetContentPreKeyInventoryRequest) GetTarget() *ContentPreKeyClaimTarget
 	return nil
 }
 
+func (x *GetContentPreKeyInventoryRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *GetContentPreKeyInventoryRequest) GetProof() *ContentPreKeyClientProof {
+	if x != nil {
+		return x.Proof
+	}
+	return nil
+}
+
 type GetContentPreKeyInventoryResponse struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	Inventory     *ContentPreKeyInventory `protobuf:"bytes,1,opt,name=inventory,proto3" json:"inventory,omitempty"`
@@ -653,7 +870,7 @@ type GetContentPreKeyInventoryResponse struct {
 
 func (x *GetContentPreKeyInventoryResponse) Reset() {
 	*x = GetContentPreKeyInventoryResponse{}
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[7]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -665,7 +882,7 @@ func (x *GetContentPreKeyInventoryResponse) String() string {
 func (*GetContentPreKeyInventoryResponse) ProtoMessage() {}
 
 func (x *GetContentPreKeyInventoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[7]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -678,7 +895,7 @@ func (x *GetContentPreKeyInventoryResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use GetContentPreKeyInventoryResponse.ProtoReflect.Descriptor instead.
 func (*GetContentPreKeyInventoryResponse) Descriptor() ([]byte, []int) {
-	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{7}
+	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetContentPreKeyInventoryResponse) GetInventory() *ContentPreKeyInventory {
@@ -700,7 +917,7 @@ type ClaimedContentPreKey struct {
 
 func (x *ClaimedContentPreKey) Reset() {
 	*x = ClaimedContentPreKey{}
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[8]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -712,7 +929,7 @@ func (x *ClaimedContentPreKey) String() string {
 func (*ClaimedContentPreKey) ProtoMessage() {}
 
 func (x *ClaimedContentPreKey) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[8]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -725,7 +942,7 @@ func (x *ClaimedContentPreKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimedContentPreKey.ProtoReflect.Descriptor instead.
 func (*ClaimedContentPreKey) Descriptor() ([]byte, []int) {
-	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{8}
+	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ClaimedContentPreKey) GetClaimId() string {
@@ -767,7 +984,7 @@ type ClaimContentPreKeysRequest struct {
 
 func (x *ClaimContentPreKeysRequest) Reset() {
 	*x = ClaimContentPreKeysRequest{}
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[9]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -779,7 +996,7 @@ func (x *ClaimContentPreKeysRequest) String() string {
 func (*ClaimContentPreKeysRequest) ProtoMessage() {}
 
 func (x *ClaimContentPreKeysRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[9]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -792,7 +1009,7 @@ func (x *ClaimContentPreKeysRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimContentPreKeysRequest.ProtoReflect.Descriptor instead.
 func (*ClaimContentPreKeysRequest) Descriptor() ([]byte, []int) {
-	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{9}
+	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ClaimContentPreKeysRequest) GetPlanId() string {
@@ -826,7 +1043,7 @@ type ClaimContentPreKeysResponse struct {
 
 func (x *ClaimContentPreKeysResponse) Reset() {
 	*x = ClaimContentPreKeysResponse{}
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[10]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -838,7 +1055,7 @@ func (x *ClaimContentPreKeysResponse) String() string {
 func (*ClaimContentPreKeysResponse) ProtoMessage() {}
 
 func (x *ClaimContentPreKeysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_secure_content_prekey_proto_msgTypes[10]
+	mi := &file_domain_secure_content_prekey_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -851,7 +1068,7 @@ func (x *ClaimContentPreKeysResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimContentPreKeysResponse.ProtoReflect.Descriptor instead.
 func (*ClaimContentPreKeysResponse) Descriptor() ([]byte, []int) {
-	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{10}
+	return file_domain_secure_content_prekey_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ClaimContentPreKeysResponse) GetClaims() []*ClaimedContentPreKey {
@@ -872,7 +1089,7 @@ var File_domain_secure_content_prekey_proto protoreflect.FileDescriptor
 
 const file_domain_secure_content_prekey_proto_rawDesc = "" +
 	"\n" +
-	"\"domain/secure_content/prekey.proto\x12#peers_touch.model.secure_content.v1\x1a\x18domain/actor/actor.proto\x1a#domain/secure_content/content.proto\"\xb1\x03\n" +
+	"\"domain/secure_content/prekey.proto\x12#peers_touch.model.secure_content.v1\x1a\x18domain/actor/actor.proto\x1a#domain/secure_content/content.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb1\x03\n" +
 	"\x14ContentOneTimePreKey\x12J\n" +
 	"\x04kind\x18\x01 \x01(\x0e26.peers_touch.model.secure_content.v1.ContentPreKeyKindR\x04kind\x12\x15\n" +
 	"\x06key_id\x18\x02 \x01(\tR\x05keyId\x12*\n" +
@@ -896,13 +1113,34 @@ const file_domain_secure_content_prekey_proto_rawDesc = "" +
 	"\x18publisher_signing_key_id\x18\n" +
 	" \x01(\tR\x15publisherSigningKeyId\x12:\n" +
 	"\x19publisher_profile_version\x18\v \x01(\x04R\x17publisherProfileVersionB\v\n" +
-	"\tprincipal\"\xe2\x02\n" +
+	"\tprincipal\"\x88\x04\n" +
+	"\x1fContentPreKeyClientSigningInput\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12#\n" +
+	"\rcapability_id\x18\x02 \x01(\tR\fcapabilityId\x12&\n" +
+	"\x0fstation_peer_id\x18\x03 \x01(\tR\rstationPeerId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x04 \x01(\tR\tsessionId\x12H\n" +
+	"\tpublisher\x18\x05 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\tpublisher\x127\n" +
+	"\x18publisher_signing_key_id\x18\x06 \x01(\tR\x15publisherSigningKeyId\x12:\n" +
+	"\x19publisher_profile_version\x18\a \x01(\x04R\x17publisherProfileVersion\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\b \x01(\tR\trequestId\x12%\n" +
+	"\x0erequest_sha256\x18\t \x01(\fR\rrequestSha256\x12\x14\n" +
+	"\x05nonce\x18\n" +
+	" \x01(\fR\x05nonce\x127\n" +
+	"\tissued_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\bissuedAt\"\x94\x01\n" +
+	"\x18ContentPreKeyClientProof\x12Z\n" +
+	"\x05input\x18\x01 \x01(\v2D.peers_touch.model.secure_content.v1.ContentPreKeyClientSigningInputR\x05input\x12\x1c\n" +
+	"\tsignature\x18\x02 \x01(\fR\tsignature\"\xd6\x03\n" +
 	"\x1cPublishContentPreKeysRequest\x12H\n" +
 	"\tpublisher\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\tpublisher\x127\n" +
 	"\x18publisher_signing_key_id\x18\x02 \x01(\tR\x15publisherSigningKeyId\x12:\n" +
 	"\x19publisher_profile_version\x18\x03 \x01(\x04R\x17publisherProfileVersion\x12.\n" +
 	"\x13expected_pool_epoch\x18\x04 \x01(\x04R\x11expectedPoolEpoch\x12S\n" +
-	"\aprekeys\x18\x05 \x03(\v29.peers_touch.model.secure_content.v1.ContentOneTimePreKeyR\aprekeys\"\x8c\x02\n" +
+	"\aprekeys\x18\x05 \x03(\v29.peers_touch.model.secure_content.v1.ContentOneTimePreKeyR\aprekeys\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x06 \x01(\tR\tcommandId\x12S\n" +
+	"\x05proof\x18\a \x01(\v2=.peers_touch.model.secure_content.v1.ContentPreKeyClientProofR\x05proof\"\x8c\x02\n" +
 	"\x18ContentPreKeyClaimTarget\x12J\n" +
 	"\x04kind\x18\x01 \x01(\x0e26.peers_touch.model.secure_content.v1.ContentPreKeyKindR\x04kind\x12H\n" +
 	"\bendpoint\x18\x02 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefH\x00R\bendpoint\x12M\n" +
@@ -914,12 +1152,16 @@ const file_domain_secure_content_prekey_proto_rawDesc = "" +
 	"\tavailable\x18\x03 \x01(\rR\tavailable\x12\x1a\n" +
 	"\bcapacity\x18\x04 \x01(\rR\bcapacity\x121\n" +
 	"\x15replenish_at_or_below\x18\x05 \x01(\rR\x12replenishAtOrBelow\x12/\n" +
-	"\x13needs_replenishment\x18\x06 \x01(\bR\x12needsReplenishment\"z\n" +
+	"\x13needs_replenishment\x18\x06 \x01(\bR\x12needsReplenishment\"\x9d\x01\n" +
 	"\x1dPublishContentPreKeysResponse\x12Y\n" +
-	"\tinventory\x18\x01 \x01(\v2;.peers_touch.model.secure_content.v1.ContentPreKeyInventoryR\tinventory\"\xc3\x01\n" +
+	"\tinventory\x18\x01 \x01(\v2;.peers_touch.model.secure_content.v1.ContentPreKeyInventoryR\tinventory\x12!\n" +
+	"\fexact_replay\x18\x02 \x01(\bR\vexactReplay\"\xb7\x02\n" +
 	" GetContentPreKeyInventoryRequest\x12H\n" +
 	"\tpublisher\x18\x01 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\tpublisher\x12U\n" +
-	"\x06target\x18\x02 \x01(\v2=.peers_touch.model.secure_content.v1.ContentPreKeyClaimTargetR\x06target\"~\n" +
+	"\x06target\x18\x02 \x01(\v2=.peers_touch.model.secure_content.v1.ContentPreKeyClaimTargetR\x06target\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x03 \x01(\tR\trequestId\x12S\n" +
+	"\x05proof\x18\x04 \x01(\v2=.peers_touch.model.secure_content.v1.ContentPreKeyClientProofR\x05proof\"~\n" +
 	"!GetContentPreKeyInventoryResponse\x12Y\n" +
 	"\tinventory\x18\x01 \x01(\v2;.peers_touch.model.secure_content.v1.ContentPreKeyInventoryR\tinventory\"\x90\x02\n" +
 	"\x14ClaimedContentPreKey\x12\x19\n" +
@@ -947,50 +1189,58 @@ func file_domain_secure_content_prekey_proto_rawDescGZIP() []byte {
 	return file_domain_secure_content_prekey_proto_rawDescData
 }
 
-var file_domain_secure_content_prekey_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_domain_secure_content_prekey_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_domain_secure_content_prekey_proto_goTypes = []any{
 	(*ContentOneTimePreKey)(nil),              // 0: peers_touch.model.secure_content.v1.ContentOneTimePreKey
 	(*ContentPreKeySigningInput)(nil),         // 1: peers_touch.model.secure_content.v1.ContentPreKeySigningInput
-	(*PublishContentPreKeysRequest)(nil),      // 2: peers_touch.model.secure_content.v1.PublishContentPreKeysRequest
-	(*ContentPreKeyClaimTarget)(nil),          // 3: peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget
-	(*ContentPreKeyInventory)(nil),            // 4: peers_touch.model.secure_content.v1.ContentPreKeyInventory
-	(*PublishContentPreKeysResponse)(nil),     // 5: peers_touch.model.secure_content.v1.PublishContentPreKeysResponse
-	(*GetContentPreKeyInventoryRequest)(nil),  // 6: peers_touch.model.secure_content.v1.GetContentPreKeyInventoryRequest
-	(*GetContentPreKeyInventoryResponse)(nil), // 7: peers_touch.model.secure_content.v1.GetContentPreKeyInventoryResponse
-	(*ClaimedContentPreKey)(nil),              // 8: peers_touch.model.secure_content.v1.ClaimedContentPreKey
-	(*ClaimContentPreKeysRequest)(nil),        // 9: peers_touch.model.secure_content.v1.ClaimContentPreKeysRequest
-	(*ClaimContentPreKeysResponse)(nil),       // 10: peers_touch.model.secure_content.v1.ClaimContentPreKeysResponse
-	(ContentPreKeyKind)(0),                    // 11: peers_touch.model.secure_content.v1.ContentPreKeyKind
-	(*model.ActorDeviceRef)(nil),              // 12: peers_touch.model.actor.v1.ActorDeviceRef
-	(*model.ActorRef)(nil),                    // 13: peers_touch.model.actor.v1.ActorRef
+	(*ContentPreKeyClientSigningInput)(nil),   // 2: peers_touch.model.secure_content.v1.ContentPreKeyClientSigningInput
+	(*ContentPreKeyClientProof)(nil),          // 3: peers_touch.model.secure_content.v1.ContentPreKeyClientProof
+	(*PublishContentPreKeysRequest)(nil),      // 4: peers_touch.model.secure_content.v1.PublishContentPreKeysRequest
+	(*ContentPreKeyClaimTarget)(nil),          // 5: peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget
+	(*ContentPreKeyInventory)(nil),            // 6: peers_touch.model.secure_content.v1.ContentPreKeyInventory
+	(*PublishContentPreKeysResponse)(nil),     // 7: peers_touch.model.secure_content.v1.PublishContentPreKeysResponse
+	(*GetContentPreKeyInventoryRequest)(nil),  // 8: peers_touch.model.secure_content.v1.GetContentPreKeyInventoryRequest
+	(*GetContentPreKeyInventoryResponse)(nil), // 9: peers_touch.model.secure_content.v1.GetContentPreKeyInventoryResponse
+	(*ClaimedContentPreKey)(nil),              // 10: peers_touch.model.secure_content.v1.ClaimedContentPreKey
+	(*ClaimContentPreKeysRequest)(nil),        // 11: peers_touch.model.secure_content.v1.ClaimContentPreKeysRequest
+	(*ClaimContentPreKeysResponse)(nil),       // 12: peers_touch.model.secure_content.v1.ClaimContentPreKeysResponse
+	(ContentPreKeyKind)(0),                    // 13: peers_touch.model.secure_content.v1.ContentPreKeyKind
+	(*model.ActorDeviceRef)(nil),              // 14: peers_touch.model.actor.v1.ActorDeviceRef
+	(*model.ActorRef)(nil),                    // 15: peers_touch.model.actor.v1.ActorRef
+	(*timestamppb.Timestamp)(nil),             // 16: google.protobuf.Timestamp
 }
 var file_domain_secure_content_prekey_proto_depIdxs = []int32{
-	11, // 0: peers_touch.model.secure_content.v1.ContentOneTimePreKey.kind:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyKind
-	12, // 1: peers_touch.model.secure_content.v1.ContentOneTimePreKey.endpoint:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	13, // 2: peers_touch.model.secure_content.v1.ContentOneTimePreKey.recovery_actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	11, // 3: peers_touch.model.secure_content.v1.ContentPreKeySigningInput.kind:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyKind
-	12, // 4: peers_touch.model.secure_content.v1.ContentPreKeySigningInput.endpoint:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	13, // 5: peers_touch.model.secure_content.v1.ContentPreKeySigningInput.recovery_actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	12, // 6: peers_touch.model.secure_content.v1.ContentPreKeySigningInput.publisher:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	12, // 7: peers_touch.model.secure_content.v1.PublishContentPreKeysRequest.publisher:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	0,  // 8: peers_touch.model.secure_content.v1.PublishContentPreKeysRequest.prekeys:type_name -> peers_touch.model.secure_content.v1.ContentOneTimePreKey
-	11, // 9: peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget.kind:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyKind
-	12, // 10: peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget.endpoint:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	13, // 11: peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget.recovery_actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	3,  // 12: peers_touch.model.secure_content.v1.ContentPreKeyInventory.target:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget
-	4,  // 13: peers_touch.model.secure_content.v1.PublishContentPreKeysResponse.inventory:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyInventory
-	12, // 14: peers_touch.model.secure_content.v1.GetContentPreKeyInventoryRequest.publisher:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	3,  // 15: peers_touch.model.secure_content.v1.GetContentPreKeyInventoryRequest.target:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget
-	4,  // 16: peers_touch.model.secure_content.v1.GetContentPreKeyInventoryResponse.inventory:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyInventory
-	3,  // 17: peers_touch.model.secure_content.v1.ClaimedContentPreKey.target:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget
-	0,  // 18: peers_touch.model.secure_content.v1.ClaimedContentPreKey.prekey:type_name -> peers_touch.model.secure_content.v1.ContentOneTimePreKey
-	3,  // 19: peers_touch.model.secure_content.v1.ClaimContentPreKeysRequest.targets:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget
-	8,  // 20: peers_touch.model.secure_content.v1.ClaimContentPreKeysResponse.claims:type_name -> peers_touch.model.secure_content.v1.ClaimedContentPreKey
-	21, // [21:21] is the sub-list for method output_type
-	21, // [21:21] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	13, // 0: peers_touch.model.secure_content.v1.ContentOneTimePreKey.kind:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyKind
+	14, // 1: peers_touch.model.secure_content.v1.ContentOneTimePreKey.endpoint:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	15, // 2: peers_touch.model.secure_content.v1.ContentOneTimePreKey.recovery_actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	13, // 3: peers_touch.model.secure_content.v1.ContentPreKeySigningInput.kind:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyKind
+	14, // 4: peers_touch.model.secure_content.v1.ContentPreKeySigningInput.endpoint:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	15, // 5: peers_touch.model.secure_content.v1.ContentPreKeySigningInput.recovery_actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	14, // 6: peers_touch.model.secure_content.v1.ContentPreKeySigningInput.publisher:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	14, // 7: peers_touch.model.secure_content.v1.ContentPreKeyClientSigningInput.publisher:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	16, // 8: peers_touch.model.secure_content.v1.ContentPreKeyClientSigningInput.issued_at:type_name -> google.protobuf.Timestamp
+	2,  // 9: peers_touch.model.secure_content.v1.ContentPreKeyClientProof.input:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyClientSigningInput
+	14, // 10: peers_touch.model.secure_content.v1.PublishContentPreKeysRequest.publisher:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	0,  // 11: peers_touch.model.secure_content.v1.PublishContentPreKeysRequest.prekeys:type_name -> peers_touch.model.secure_content.v1.ContentOneTimePreKey
+	3,  // 12: peers_touch.model.secure_content.v1.PublishContentPreKeysRequest.proof:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyClientProof
+	13, // 13: peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget.kind:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyKind
+	14, // 14: peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget.endpoint:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	15, // 15: peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget.recovery_actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	5,  // 16: peers_touch.model.secure_content.v1.ContentPreKeyInventory.target:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget
+	6,  // 17: peers_touch.model.secure_content.v1.PublishContentPreKeysResponse.inventory:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyInventory
+	14, // 18: peers_touch.model.secure_content.v1.GetContentPreKeyInventoryRequest.publisher:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	5,  // 19: peers_touch.model.secure_content.v1.GetContentPreKeyInventoryRequest.target:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget
+	3,  // 20: peers_touch.model.secure_content.v1.GetContentPreKeyInventoryRequest.proof:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyClientProof
+	6,  // 21: peers_touch.model.secure_content.v1.GetContentPreKeyInventoryResponse.inventory:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyInventory
+	5,  // 22: peers_touch.model.secure_content.v1.ClaimedContentPreKey.target:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget
+	0,  // 23: peers_touch.model.secure_content.v1.ClaimedContentPreKey.prekey:type_name -> peers_touch.model.secure_content.v1.ContentOneTimePreKey
+	5,  // 24: peers_touch.model.secure_content.v1.ClaimContentPreKeysRequest.targets:type_name -> peers_touch.model.secure_content.v1.ContentPreKeyClaimTarget
+	10, // 25: peers_touch.model.secure_content.v1.ClaimContentPreKeysResponse.claims:type_name -> peers_touch.model.secure_content.v1.ClaimedContentPreKey
+	26, // [26:26] is the sub-list for method output_type
+	26, // [26:26] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_domain_secure_content_prekey_proto_init() }
@@ -1007,7 +1257,7 @@ func file_domain_secure_content_prekey_proto_init() {
 		(*ContentPreKeySigningInput_Endpoint)(nil),
 		(*ContentPreKeySigningInput_RecoveryActor)(nil),
 	}
-	file_domain_secure_content_prekey_proto_msgTypes[3].OneofWrappers = []any{
+	file_domain_secure_content_prekey_proto_msgTypes[5].OneofWrappers = []any{
 		(*ContentPreKeyClaimTarget_Endpoint)(nil),
 		(*ContentPreKeyClaimTarget_RecoveryActor)(nil),
 	}
@@ -1017,7 +1267,7 @@ func file_domain_secure_content_prekey_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_secure_content_prekey_proto_rawDesc), len(file_domain_secure_content_prekey_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

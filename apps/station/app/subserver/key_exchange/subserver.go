@@ -12,14 +12,17 @@ import (
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
 
 type subServer struct {
-	status      server.Status
-	addrs       []string
-	jwtWrapper  server.Wrapper
-	composition *canonicalComposition
-	api         canonicalAPI
+	status                  server.Status
+	addrs                   []string
+	jwtWrapper              server.Wrapper
+	contentPreKeyJWTWrapper server.Wrapper
+	composition             *canonicalComposition
+	api                     canonicalAPI
+	localStationID          string
 }
 
 // NewKeyExchangeSubServer constructs the canonical Key Exchange HTTP subserver.
@@ -37,6 +40,13 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	s.jwtWrapper = withCanonicalKeyExchangeSubject(
 		server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider)),
 		resolveKeyExchangeSubjectPTID,
+	)
+	s.contentPreKeyJWTWrapper = server.HTTPWrapperAdapter(
+		httpadapter.RequireStructuredJWT(
+			provider,
+			int32(actormodel.ErrorCode_ERROR_CODE_UNAUTHORIZED),
+			true,
+		),
 	)
 
 	rds, err := store.GetRDS(ctx)
@@ -82,6 +92,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	}
 	s.composition = composition
 	s.api = composition.api
+	s.localStationID = localStationID
 
 	return nil
 }

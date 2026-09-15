@@ -474,6 +474,63 @@ func TestMapCanonicalErrorPreservesFailureClass(t *testing.T) {
 	}
 }
 
+func TestMapContentPreKeyRouteErrorUsesStableTypedCodes(t *testing.T) {
+	tests := []struct {
+		domainCode domain.ErrorCode
+		status     int
+		wireCode   actormodel.ErrorCode
+	}{
+		{domain.ErrorCodeInvalidArgument, http.StatusBadRequest, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_INVALID_MATERIAL},
+		{domain.ErrorCodeUnauthorized, http.StatusForbidden, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_FORBIDDEN},
+		{domain.ErrorCodeNotFound, http.StatusNotFound, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_NOT_FOUND},
+		{domain.ErrorCodeStaleMaterial, http.StatusConflict, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_STALE_EPOCH},
+		{domain.ErrorCodeConflict, http.StatusConflict, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_REPLAY_CONFLICT},
+		{domain.ErrorCodePoolDepleted, http.StatusConflict, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_POOL_DEPLETED},
+		{domain.ErrorCodePayloadTooLarge, http.StatusRequestEntityTooLarge, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_PAYLOAD_TOO_LARGE},
+		{domain.ErrorCodeQuotaExceeded, http.StatusTooManyRequests, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_QUOTA_EXCEEDED},
+		{domain.ErrorCodeDependency, http.StatusServiceUnavailable, actormodel.ErrorCode_ERROR_CODE_CONTENT_PREKEY_DEPENDENCY_UNAVAILABLE},
+		{domain.ErrorCodeInternal, http.StatusInternalServerError, actormodel.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR},
+	}
+	for _, testCase := range tests {
+		t.Run(string(testCase.domainCode), func(t *testing.T) {
+			mapped := mapContentPreKeyRouteError(
+				context.Background(),
+				"test Content PreKey operation",
+				domain.NewError(testCase.domainCode, "test", "field", "cause"),
+			)
+			var routeError *server.RouteError
+			if !errors.As(mapped, &routeError) {
+				t.Fatalf("mapped error = %T, want *server.RouteError", mapped)
+			}
+			if routeError.Status != testCase.status ||
+				routeError.StableCode != int32(testCase.wireCode) {
+				t.Fatalf(
+					"mapped status/code = %d/%d, want %d/%d",
+					routeError.Status,
+					routeError.StableCode,
+					testCase.status,
+					testCase.wireCode,
+				)
+			}
+			body, err := projectContentPreKeyRouteError(*routeError)
+			if err != nil {
+				t.Fatalf("project error: %v", err)
+			}
+			var projected actormodel.ErrorResponse
+			if err := proto.Unmarshal(body, &projected); err != nil {
+				t.Fatalf("decode projected error: %v", err)
+			}
+			if projected.GetCode() != testCase.wireCode {
+				t.Fatalf(
+					"projected code = %s, want %s",
+					projected.GetCode(),
+					testCase.wireCode,
+				)
+			}
+		})
+	}
+}
+
 func keyExchangeTestJWTWrapper() server.Wrapper {
 	return func(next server.EndpointHandler) server.EndpointHandler {
 		return func(

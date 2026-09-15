@@ -12,6 +12,7 @@ import (
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
 type authLogCapture struct {
@@ -281,5 +282,39 @@ func TestRequireJWTSessionRejectionLogExcludesSubjectSessionAndReason(t *testing
 	}
 	if !strings.Contains(output, "credentials rejected: session invalid") {
 		t.Fatalf("captured logs missing session rejection outcome: %s", output)
+	}
+}
+
+func TestRequireStructuredJWTPropagatesFailureWithoutWritingResponse(t *testing.T) {
+	called := false
+	handler := RequireStructuredJWT(
+		authTestProvider{err: errors.New("invalid token")},
+		20001,
+		true,
+	)(context.Background(), http.HandlerFunc(func(
+		writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		called = true
+		failure, ok := server.RouteFailureFromContext(request.Context())
+		if !ok ||
+			failure.Status != http.StatusUnauthorized ||
+			failure.StableCode != 20001 {
+			t.Fatalf("structured failure = %+v, present=%t", failure, ok)
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	request := httptest.NewRequest(http.MethodPost, "/protected", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if !called || response.Code != http.StatusNoContent || response.Body.Len() != 0 {
+		t.Fatalf(
+			"downstream called=%t status=%d body=%q",
+			called,
+			response.Code,
+			response.Body.String(),
+		)
 	}
 }

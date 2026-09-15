@@ -15,6 +15,7 @@ fn main() {
         "../../../model/domain/auth/auth.proto",
         "../../../model/domain/access_gate/access_gate.proto",
         "../../../model/domain/common/common.proto",
+        "../../../model/domain/error/error.proto",
         "../../../model/domain/oauth/mobile_oauth.proto",
         "../../../model/domain/secure_content/content.proto",
         "../../../model/domain/secure_content/prekey.proto",
