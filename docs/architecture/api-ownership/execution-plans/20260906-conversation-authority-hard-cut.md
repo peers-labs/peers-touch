@@ -2231,3 +2231,31 @@ Group request. CA-W6 mechanically admits the Journey-only correction to pass
 a missing or mismatched Federation. No product contract, authority path, or
 runtime behavior changes. The focused Journey and Social wrapper cohort passes
 10/10, Python compilation passes, and `git diff --check` passes.
+
+Checkpoint `a8498e0ee615b73f53ee16cbea1e56a2eca6d3b5` was deployed
+exactly to `four` and `fiveArm`. Run
+`20260915T051942975658Z-a89c0949931c1c09998492290d39c883`
+passes the canonical Group action input and both Direct restart checks, then
+times out waiting for the sender Group projection. Existing transport
+instrumentation identifies command `01M2HR904PYKKEV83CC80JGHR0` as an
+epoch-zero, authority-plan-bound membership transition sent to the generic
+`/conversation/command` path; the authority returns reject code 21 with no
+event. The canonical `/conversation/command` path requires an existing
+Conversation, so the rejection is expected for not-yet-created Group state.
+
+AO-D07.2 requires prepared Group genesis to submit its exact `ChatCommand`
+through `POST /conversation/group`; established membership transitions and all
+ordinary commands remain on `POST /conversation/command`. Desktop already
+implements and tests this discriminator. CA-W6 therefore admits the missing
+Mobile transport parity correction: recognize only an epoch `0 -> 1`
+membership transition with a non-empty authority plan ID/hash as Group genesis,
+submit it to the canonical Group creation route, and validate both returned
+Group identity and committed event binding before the outbox marks success.
+No new route, fallback, or alternative owner is permitted.
+
+The Mobile route hard cut is implemented in parity with Desktop. Focused
+transport tests pass 12/12, including epoch-zero Group selection, established
+membership routing, and Group/event response binding; Mobile Rust compilation,
+formatting, Journey tests, Python compilation, and `git diff --check` pass.
+This is `FOCUSED_PASS`; exact-source checkpoint, two-Station deployment, and
+the same Chat/Contacts Journey remain required.

@@ -21,9 +21,10 @@ use messaging_core::proto::chat::{
     CancelAttachmentUploadRequest, CancelAttachmentUploadResponse, ChatCommand,
     ClaimDeviceInboxRequest, ClaimDeviceInboxResponse, CompleteAttachmentUploadRequest,
     CompleteAttachmentUploadResponse, ConversationCommandKind, ConversationCommandProposal,
-    ConversationCommandProposalSigningInput, ConversationCommandRejectCode, ConversationPublicHead,
-    ConversationPublicHeadSource, CreateDirectConversationRequest,
-    CreateDirectConversationResponse, CryptoEndpoint, DeviceConsumptionReceipt,
+    ConversationCommandProposalSigningInput, ConversationCommandRejectCode, ConversationKind,
+    ConversationPublicHead, ConversationPublicHeadSource, CreateDirectConversationRequest,
+    CreateDirectConversationResponse, CreateGroupConversationRequest,
+    CreateGroupConversationResponse, CryptoEndpoint, DeviceConsumptionReceipt,
     EncryptedObjectDescriptor, GetConversationPublicHeadRequest, GetConversationPublicHeadResponse,
     ListConversationsRequest, ListConversationsResponse, PrepareConversationCommandRequest,
     PrepareConversationCommandResponse, PrepareConversationGroupRequest,
@@ -52,6 +53,8 @@ use zeroize::Zeroizing;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const GROUP_CREATION_PATH: &str = "/conversation/group";
+const AUTHORITY_COMMAND_PATH: &str = "/conversation/command";
 const COMMAND_PROPOSAL_FORMAT_VERSION: u32 = 1;
 const COMMAND_PROPOSAL_LIFETIME_MS: i64 = 5 * 60 * 1_000;
 
@@ -959,6 +962,21 @@ enum CommandSubmissionKind {
     RemoteAuthority,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CommandSubmissionRoute {
+    GroupCreation,
+    AuthorityCommand,
+}
+
+impl CommandSubmissionRoute {
+    fn path(self) -> &'static str {
+        match self {
+            Self::GroupCreation => GROUP_CREATION_PATH,
+            Self::AuthorityCommand => AUTHORITY_COMMAND_PATH,
+        }
+    }
+}
+
 impl StationCommandTransport {
     pub fn new(
         station_origin: String,
@@ -1067,6 +1085,20 @@ impl StationCommandTransport {
         )
         .map(|_| ())
         .map_err(|error| error.to_string())
+    }
+
+    fn submit_group_creation(&self, command: &ChatCommand) -> Result<(), CommandSubmitFailure> {
+        let response = post_proto::<_, CreateGroupConversationResponse>(
+            &self.station_origin,
+            self.access_token.as_str(),
+            &self.device_id,
+            CommandSubmissionRoute::GroupCreation.path(),
+            &CreateGroupConversationRequest {
+                command: Some(command.clone()),
+            },
+        )
+        .map_err(classify_command_error)?;
+        validate_group_creation_response(command, response)
     }
 
     fn build_remote_command_proposal(
@@ -1189,6 +1221,9 @@ impl CommandTransport for StationCommandTransport {
                 code: "endpoint_mismatch".to_string(),
             });
         }
+        if command_submission_route(&command) == CommandSubmissionRoute::GroupCreation {
+            return self.submit_group_creation(&command);
+        }
         let identity =
             self.remote_identity
                 .as_ref()
@@ -1225,7 +1260,7 @@ impl CommandTransport for StationCommandTransport {
             &self.station_origin,
             self.access_token.as_str(),
             &self.device_id,
-            "/conversation/command",
+            CommandSubmissionRoute::AuthorityCommand.path(),
             &SubmitConversationAuthorityCommandRequest {
                 submission: Some(submission),
             },
@@ -1285,20 +1320,26 @@ impl CommandTransport for StationCommandTransport {
         if response.accepted_for_forwarding {
             return Ok(());
         }
-        let event = response
-            .event
-            .ok_or_else(|| CommandSubmitFailure::Terminal {
-                code: "missing_event".to_string(),
-            })?;
-        if event.command_id != command.command_id
-            || event.conversation_id != command.conversation_id
-            || event.actor != command.sender
-        {
-            return Err(CommandSubmitFailure::Terminal {
-                code: "response_binding".to_string(),
-            });
-        }
-        Ok(())
+        validate_committed_event(&command, response.event)
+    }
+}
+
+fn command_submission_route(command: &ChatCommand) -> CommandSubmissionRoute {
+    let Some(chat_command::Payload::MembershipTransition(transition)) = command.payload.as_ref()
+    else {
+        return CommandSubmissionRoute::AuthorityCommand;
+    };
+    if command.observed_membership_epoch == 0
+        && command.observed_mls_epoch == 0
+        && transition.from_membership_epoch == 0
+        && transition.from_mls_epoch == 0
+        && transition.to_mls_epoch == 1
+        && !transition.authority_plan_id.trim().is_empty()
+        && !transition.authority_plan_sha256.is_empty()
+    {
+        CommandSubmissionRoute::GroupCreation
+    } else {
+        CommandSubmissionRoute::AuthorityCommand
     }
 }
 
@@ -1430,6 +1471,43 @@ fn command_timestamp_unix_ms(command: &ChatCommand) -> Option<i64> {
         .filter(|value| *value > 0)
 }
 
+fn validate_committed_event(
+    command: &ChatCommand,
+    event: Option<messaging_core::proto::chat::ConversationEvent>,
+) -> Result<(), CommandSubmitFailure> {
+    let event = event.ok_or_else(|| CommandSubmitFailure::Terminal {
+        code: "missing_event".to_string(),
+    })?;
+    if event.command_id != command.command_id
+        || event.conversation_id != command.conversation_id
+        || event.actor != command.sender
+    {
+        return Err(CommandSubmitFailure::Terminal {
+            code: "response_binding".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_group_creation_response(
+    command: &ChatCommand,
+    response: CreateGroupConversationResponse,
+) -> Result<(), CommandSubmitFailure> {
+    let conversation = response
+        .conversation
+        .ok_or_else(|| CommandSubmitFailure::Terminal {
+            code: "missing_conversation".to_string(),
+        })?;
+    if conversation.conversation_id != command.conversation_id
+        || conversation.kind != ConversationKind::Group as i32
+    {
+        return Err(CommandSubmitFailure::Terminal {
+            code: "response_binding".to_string(),
+        });
+    }
+    validate_committed_event(command, response.event)
+}
+
 fn get_proto<Request, Response>(
     station_origin: &str,
     access_token: &str,
@@ -1538,7 +1616,7 @@ mod tests {
     use super::*;
     use ed25519_dalek::{Signature, Verifier};
     use messaging_core::identity::IdentityKeyPair;
-    use messaging_core::proto::chat::ReactionIntent;
+    use messaging_core::proto::chat::{Conversation, MembershipTransitionIntent, ReactionIntent};
 
     fn remote_command_identity() -> RemoteCommandIdentity {
         let actor_identity = IdentityKeyPair::from_seed(&[6; 32]);
@@ -1573,6 +1651,40 @@ mod tests {
                 reaction: "ack".to_string(),
                 remove: false,
             })),
+        }
+    }
+
+    fn prepared_group_genesis_command() -> ChatCommand {
+        ChatCommand {
+            command_id: "command-group".to_string(),
+            conversation_id: "group-1".to_string(),
+            sender: Some(CryptoEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: "device-1".to_string(),
+            }),
+            observed_membership_epoch: 0,
+            observed_mls_epoch: 0,
+            client_timestamp: Some(prost_types::Timestamp {
+                seconds: 1_800_000_000,
+                nanos: 0,
+            }),
+            delivery_plan_sha256: vec![7; 32],
+            authority_station_peer_id: "station-four".to_string(),
+            payload: Some(chat_command::Payload::MembershipTransition(
+                MembershipTransitionIntent {
+                    transition_id: "transition-1".to_string(),
+                    from_membership_epoch: 0,
+                    from_mls_epoch: 0,
+                    to_mls_epoch: 1,
+                    changes: Vec::new(),
+                    mls_commit: vec![1],
+                    mls_commit_sha256: vec![2; 32],
+                    welcome_payloads: Vec::new(),
+                    leave_intent_id: String::new(),
+                    authority_plan_id: "plan-1".to_string(),
+                    authority_plan_sha256: vec![7; 32],
+                },
+            )),
         }
     }
 
@@ -1734,6 +1846,75 @@ mod tests {
         assert_eq!(
             command_submission_kind(&local, &identity),
             Ok(CommandSubmissionKind::LocalAuthority)
+        );
+    }
+
+    #[test]
+    fn prepared_epoch_zero_group_genesis_uses_group_creation_route() {
+        let command = prepared_group_genesis_command();
+
+        assert_eq!(
+            command_submission_route(&command),
+            CommandSubmissionRoute::GroupCreation
+        );
+        assert_eq!(
+            command_submission_route(&command).path(),
+            "/conversation/group"
+        );
+    }
+
+    #[test]
+    fn established_membership_transition_uses_authority_command_route() {
+        let mut command = prepared_group_genesis_command();
+        command.observed_membership_epoch = 1;
+        command.observed_mls_epoch = 1;
+        let transition = match command.payload.as_mut() {
+            Some(chat_command::Payload::MembershipTransition(transition)) => transition,
+            _ => panic!("expected membership transition"),
+        };
+        transition.from_membership_epoch = 1;
+        transition.from_mls_epoch = 1;
+        transition.to_mls_epoch = 2;
+
+        assert_eq!(
+            command_submission_route(&command),
+            CommandSubmissionRoute::AuthorityCommand
+        );
+    }
+
+    #[test]
+    fn group_creation_response_requires_bound_group_and_event() {
+        let command = prepared_group_genesis_command();
+        let response = CreateGroupConversationResponse {
+            conversation: Some(Conversation {
+                conversation_id: command.conversation_id.clone(),
+                kind: ConversationKind::Group as i32,
+                ..Default::default()
+            }),
+            event: Some(messaging_core::proto::chat::ConversationEvent {
+                command_id: command.command_id.clone(),
+                conversation_id: command.conversation_id.clone(),
+                actor: command.sender.clone(),
+                ..Default::default()
+            }),
+        };
+
+        assert_eq!(
+            validate_group_creation_response(&command, response.clone()),
+            Ok(())
+        );
+
+        let mut wrong_kind = response;
+        wrong_kind
+            .conversation
+            .as_mut()
+            .expect("group conversation")
+            .kind = ConversationKind::Direct as i32;
+        assert_eq!(
+            validate_group_creation_response(&command, wrong_kind),
+            Err(CommandSubmitFailure::Terminal {
+                code: "response_binding".to_string(),
+            })
         );
     }
 
