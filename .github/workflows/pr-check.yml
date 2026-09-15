@@ -78,11 +78,12 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          # A squash merge preserves the reviewed tree but not the branch ancestry.
           base_tree="$(git rev-parse "$BASE_SHA^{tree}")"
           range_base="$(
-            git log --topo-order --format='%H %T' "$HEAD_SHA" |
-              awk -v base="$BASE_SHA" -v tree="$base_tree" \
-                '$1 != base && $2 == tree && !found { print $1; found=1 }'
+            git log --topo-order --format='%H %T' "$BASE_SHA..$HEAD_SHA" |
+              awk -v tree="$base_tree" \
+                '$2 == tree && !found { print $1; found=1 }'
           )"
           if [ -z "$range_base" ]; then
             range_base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
