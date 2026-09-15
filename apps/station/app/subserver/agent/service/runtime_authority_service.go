@@ -1,10 +1,12 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -19,6 +21,57 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+// #region debug-point A-D:normal-send-runtime-authority
+func reportNormalSendRuntimeAuthorityDebug(
+	hypothesisID string,
+	stage string,
+	err error,
+	data map[string]interface{},
+) {
+	eventData := map[string]interface{}{
+		"failed": err != nil,
+	}
+	var businessError *errcode.BizError
+	if errors.As(err, &businessError) {
+		eventData["errorCode"] = string(businessError.Code)
+		eventData["httpStatus"] = businessError.HTTPStatus
+	}
+	for key, value := range data {
+		eventData[key] = value
+	}
+	event, marshalErr := json.Marshal(map[string]interface{}{
+		"sessionId":    "normal-send-runtime-authority",
+		"runId":        "pre-fix",
+		"hypothesisId": hypothesisID,
+		"location":     "runtime_authority_service.go:persistRuntimeAuthority",
+		"msg":          "[DEBUG] " + stage,
+		"data":         eventData,
+		"ts":           time.Now().UnixMilli(),
+	})
+	if marshalErr != nil {
+		return
+	}
+	go func() {
+		request, requestErr := http.NewRequest(
+			http.MethodPost,
+			"http://10.4.41.27:7778/event",
+			bytes.NewReader(event),
+		)
+		if requestErr != nil {
+			return
+		}
+		request.Header.Set("Content-Type", "application/json")
+		response, requestErr := (&http.Client{
+			Timeout: 500 * time.Millisecond,
+		}).Do(request)
+		if requestErr == nil {
+			_ = response.Body.Close()
+		}
+	}()
+}
+
+// #endregion
 
 func MigrateRuntimeSnapshotThinkingModes(db *gorm.DB) error {
 	if db == nil {
@@ -91,7 +144,37 @@ func (s *TurnService) persistRuntimeAuthority(
 	admission *AdmissionSnapshot,
 	readiness *model.CapabilityReadinessSnapshot,
 	expectedAgentVersion uint64,
-) error {
+) (resultErr error) {
+	debugStage := "preflight"
+	defer func() {
+		reportNormalSendRuntimeAuthorityDebug(
+			"A-D",
+			debugStage,
+			resultErr,
+			map[string]interface{}{
+				"completed": resultErr == nil,
+			},
+		)
+	}()
+	reportNormalSendRuntimeAuthorityDebug(
+		"C",
+		"preflight-shape",
+		nil,
+		map[string]interface{}{
+			"configPresent":          config != nil,
+			"admissionPresent":       admission != nil,
+			"readinessPresent":       readiness != nil,
+			"attemptPresent":         config != nil && strings.TrimSpace(config.AttemptID) != "",
+			"readinessSnapshot":      readiness != nil && strings.TrimSpace(readiness.GetSnapshotId()) != "",
+			"agentVersionPresent":    expectedAgentVersion != 0,
+			"actorMatches":           config != nil && readiness != nil && readiness.GetPtid() == config.ActorID,
+			"agentMatches":           config != nil && readiness != nil && readiness.GetAgentId() == config.AgentID,
+			"runtimeSnapshotMatches": admission != nil && readiness != nil && readiness.GetRuntimeSnapshotId() == admission.SnapshotID,
+			"clientSessionMatches": config != nil && readiness != nil &&
+				(readiness.GetSelectedClientSessionId() == "" ||
+					readiness.GetSelectedClientSessionId() == config.ClientCapabilitySessionID),
+		},
+	)
 	if config == nil || admission == nil || readiness == nil ||
 		strings.TrimSpace(config.AttemptID) == "" ||
 		strings.TrimSpace(readiness.GetSnapshotId()) == "" ||
@@ -136,12 +219,14 @@ func (s *TurnService) persistRuntimeAuthority(
 			nil,
 		)
 	}
+	debugStage = "database-open"
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
 	}
 
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		debugStage = "conversation-load"
 		var conversation persistence.Conversation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where(
@@ -162,11 +247,28 @@ func (s *TurnService) persistRuntimeAuthority(
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 				"load conversation runtime binding", err)
 		}
+		reportNormalSendRuntimeAuthorityDebug(
+			"A",
+			"conversation-loaded",
+			nil,
+			map[string]interface{}{
+				"bindingPresent": len(conversation.RuntimeBinding) > 0,
+			},
+		)
 
+		debugStage = "agent-version-check"
 		agentVersion, err := loadAgentConfigVersionTx(tx, config.ActorID, config.AgentID)
 		if err != nil {
 			return err
 		}
+		reportNormalSendRuntimeAuthorityDebug(
+			"B",
+			"agent-version-loaded",
+			nil,
+			map[string]interface{}{
+				"agentVersionMatches": uint64(agentVersion) == expectedAgentVersion,
+			},
+		)
 		if uint64(agentVersion) != expectedAgentVersion {
 			return errcode.New(
 				errcode.AgentVersionConflict,
@@ -195,6 +297,7 @@ func (s *TurnService) persistRuntimeAuthority(
 
 		var binding *model.ConversationRuntimeBinding
 		if len(conversation.RuntimeBinding) == 0 {
+			debugStage = "binding-install"
 			binding, err = newConversationRuntimeBinding(snapshot, time.Now().UTC())
 			if err != nil {
 				return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
@@ -224,6 +327,7 @@ func (s *TurnService) persistRuntimeAuthority(
 					"conversation runtime binding changed during installation", nil)
 			}
 		} else {
+			debugStage = "binding-reconcile"
 			binding, err = persistence.UnmarshalConversationRuntimeBinding(conversation.RuntimeBinding)
 			if err != nil {
 				return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
@@ -235,6 +339,7 @@ func (s *TurnService) persistRuntimeAuthority(
 			}
 		}
 
+		debugStage = "attempt-snapshot-build"
 		encodedSnapshot, err := persistence.MarshalRuntimeSnapshot(snapshot)
 		if err != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
@@ -246,6 +351,7 @@ func (s *TurnService) persistRuntimeAuthority(
 				"hash turn attempt runtime snapshot", err)
 		}
 		var persistedAttempt persistence.TurnAttempt
+		debugStage = "attempt-load"
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Table("agent_turn_attempts AS attempts").
 			Select("attempts.*").
@@ -263,7 +369,19 @@ func (s *TurnService) persistRuntimeAuthority(
 				err,
 			)
 		}
+		reportNormalSendRuntimeAuthorityDebug(
+			"D",
+			"attempt-loaded",
+			nil,
+			map[string]interface{}{
+				"runtimeSnapshotPresent": len(persistedAttempt.RuntimeSnapshot) > 0,
+				"readinessSnapshotPresent": strings.TrimSpace(
+					persistedAttempt.ReadinessSnapshotID,
+				) != "",
+			},
+		)
 		if len(persistedAttempt.RuntimeSnapshot) > 0 {
+			debugStage = "attempt-immutability-check"
 			persistedSnapshot, err := persistence.UnmarshalRuntimeSnapshot(
 				persistedAttempt.RuntimeSnapshot,
 			)
@@ -285,6 +403,16 @@ func (s *TurnService) persistRuntimeAuthority(
 					err,
 				)
 			}
+			reportNormalSendRuntimeAuthorityDebug(
+				"D",
+				"attempt-immutability-compared",
+				nil,
+				map[string]interface{}{
+					"integrityMatches":         persistedAttempt.RuntimeSnapshotHash == persistedHash,
+					"runtimeSnapshotMatches":   persistedHash == snapshotHash,
+					"readinessSnapshotMatches": persistedAttempt.ReadinessSnapshotID == readiness.GetSnapshotId(),
+				},
+			)
 			if persistedHash != snapshotHash ||
 				persistedAttempt.ReadinessSnapshotID != readiness.GetSnapshotId() {
 				return errcode.New(
@@ -296,6 +424,7 @@ func (s *TurnService) persistRuntimeAuthority(
 			}
 			return nil
 		}
+		debugStage = "attempt-snapshot-insert"
 		result := tx.Model(&persistence.TurnAttempt{}).
 			Where("id = ? AND runtime_snapshot IS NULL", config.AttemptID).
 			Updates(map[string]interface{}{
@@ -307,6 +436,14 @@ func (s *TurnService) persistRuntimeAuthority(
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 				"persist turn attempt runtime snapshot", result.Error)
 		}
+		reportNormalSendRuntimeAuthorityDebug(
+			"D",
+			"attempt-snapshot-inserted",
+			nil,
+			map[string]interface{}{
+				"rowsAffected": result.RowsAffected,
+			},
+		)
 		if result.RowsAffected != 1 {
 			return errcode.New(errcode.AgentInvalidSourceState, http.StatusConflict,
 				"turn attempt does not belong to the admitted conversation", nil)
