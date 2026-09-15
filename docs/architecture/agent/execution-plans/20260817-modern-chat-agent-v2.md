@@ -23,9 +23,9 @@
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
 | Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
-| Current step | `G-FE1-LEASE-EXPIRED` is `FOCUSED_PASS`; checkpoint `764749bea` crossed the recovery surface and exposed a stale completed projection after Reconcile snapshot reload, now fixed in the Store |
+| Current step | `G-FE1-LEASE-EXPIRED` is `FOCUSED_PASS`; checkpoint `764749bea` crossed the recovery surface, then exposed same-cursor authoritative snapshot rejection during Reconcile; the recovery reducer fix is ready for checkpoint |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | Reconcile now clears the matching stale snapshot projection without erasing a newer incident or reopening an authoritative terminal Turn; focused lease/recovery tests pass `66/66`, strict Desktop TypeScript and diff hygiene pass |
+| Last completed | Recovery now accepts an authoritative non-terminal snapshot at the persisted cursor while still rejecting older snapshots and duplicate non-snapshot events; focused recovery tests `46/46`, Desktop tests `720/720` with one unrelated skip, strict check, production build, Native static tests `89/89`, and diff hygiene pass |
 | Current action | Create the next authorized checkpoint and rerun the same serialized five-minute `BASE-LEASE_EXPIRED` Development Journey |
 | Next action | After `FUNCTIONAL_PASS`, rerun C08 and resume the unchanged 419-cell Foundation Gate |
 | Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
@@ -36,7 +36,7 @@
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
 | Blockers | no Goal-level blocker; `BASE-LEASE_EXPIRED` is the next source-defined implementation gap; AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | C08 `20260915T023010098430Z-1649875e241d509b825fe65d86142fa4` passed on `6ec143379`；Foundation `20260915T023112205523Z-aacb361dcca1036b0958d29da9fbef4a` first exposed the missing lease vertical；checkpoint `764749bea` run `20260915T074726279750Z` proved assistant-owned lease error/reconcile DOM and then failed at stale snapshot reconciliation with clean cleanup；the owner fix passes focused tests `66/66` and strict TypeScript；full Journey and Foundation remain `UNPROVEN` |
+| Evidence | C08 `20260915T023010098430Z-1649875e241d509b825fe65d86142fa4` passed on `6ec143379`；Foundation `20260915T023112205523Z-aacb361dcca1036b0958d29da9fbef4a` first exposed the missing lease vertical；checkpoint `764749bea` run `20260915T074726279750Z` proved assistant-owned lease error/reconcile DOM and clean cleanup, while `.dbg/trae-debug-log-native-replay-timeout.ndjson:163910-163915` proved Station returned non-terminal `waiting_local_tool` at the current cursor before the client rejected it；the owner fix passes focused and full Desktop checks plus Native static tests；full Journey and Foundation remain `UNPROVEN` |
 | Last updated | 2026-09-15 |
 
 ---

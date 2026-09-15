@@ -276,6 +276,7 @@ export function reduceAgentTurnRecovery(
     && sequence > 0
     && sequence <= current.cursor
     && !recoveryPhase
+    && payload.event !== 'snapshot'
   ) {
     return { accepted: false, terminal: false, record: current };
   }

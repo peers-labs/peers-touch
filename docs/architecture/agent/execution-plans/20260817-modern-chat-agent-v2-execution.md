@@ -1827,6 +1827,23 @@ and zero local-path leakage.
     typed incident and refusing to reopen a snapshot-confirmed terminal Turn.
     Focused lease/recovery tests pass `66/66`, strict Desktop TypeScript passes,
     and reverse-order cleanup for the exact-source failure was clean.
+  - The same run's retained Native replay evidence at
+    `.dbg/trae-debug-log-native-replay-timeout.ndjson:163910-163915` exposed
+    the next owner-layer boundary after checkpoint `154e326df`: Station
+    authoritatively returned sequence `31`, status `waiting_local_tool`, and no
+    terminal status, but the recovery reducer rejected that non-terminal
+    snapshot because its sequence equalled the persisted cursor. This raised
+    `chat.agentTurnRecovery.snapshotRejected` before
+    `reconcileClientLease` could execute the stale-projection cleanup already
+    present at `154e326df`. The recovery state machine now admits same-cursor
+    Station snapshots as idempotent reconciliation inputs while continuing to
+    reject lower sequences, duplicate non-snapshot events, older generations,
+    and mismatched Turns. The exact same-cursor runtime regression fails before
+    the correction and passes after it; focused recovery tests pass `46/46`,
+    the full Desktop suite passes `720/720` with one unrelated skip, Desktop
+    strict check and production build pass, Native static tests pass `89/89`,
+    and diff hygiene passes. The exact-source Development Journey remains
+    `UNPROVEN` pending a new checkpoint and serialized rerun.
 
 #### G-FE1 Concurrency Decision
 

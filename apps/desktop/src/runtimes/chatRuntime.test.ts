@@ -885,7 +885,7 @@ describe('chatRuntime Agent turn recovery', () => {
         turnId: 'turn-1',
         conversationId: 'conversation-1',
         status: 'running',
-        seq: 7,
+        seq: 4,
     }));
     await Promise.resolve();
 
@@ -899,12 +899,12 @@ describe('chatRuntime Agent turn recovery', () => {
 
     expect(useAgentTurnRecoveryStore.getState().active['conversation-1']).toMatchObject({
       phase: 'CONNECTED',
-      cursor: 7,
+      cursor: 4,
     });
     expect(result).toMatchObject({
       source: 'station-snapshot-reconcile',
       status: 'running',
-      sequence: 7,
+      sequence: 4,
       terminal: false,
       terminalStatus: null,
     });
