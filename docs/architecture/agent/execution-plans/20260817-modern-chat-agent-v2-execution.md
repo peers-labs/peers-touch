@@ -1984,24 +1984,25 @@ and zero local-path leakage.
 
 - **Inventory source**: the reviewed 28-family `foundation_errors` matrix,
   production Station/Desktop paths, and direct Harness/oracle registration.
-- **Closed on source and prior focused runtime evidence (17)**:
+- **Closed on source and prior focused runtime evidence (18)**:
   `BASE-QUEUE_FULL`,
   `BASE-RUNTIME_UNAVAILABLE`,
   `BASE-DUPLICATE_CONFLICT`, `BASE-ACTIVE_MUTATION_CONFLICT`,
   `BASE-FORBIDDEN_ACTOR`, `BASE-INCOMPATIBLE_CAPABILITY`,
   `BASE-EXECUTOR_UNAVAILABLE`, `BASE-LEASE_EXPIRED`,
   `BASE-INVALID_RESOURCE_REF`, `BASE-CREDENTIAL_MISSING`,
+  `BASE-MODEL_UNAVAILABLE`,
   `BASE-CONTEXT_OVERFLOW`, `BASE-INVALID_REFERENCE`,
   `BASE-ATTACHMENT_REJECTED`, `BASE-APPROVAL_DENIED`,
   `BASE-APPROVAL_EXPIRED`, `BASE-CANCELLED`, and `BASE-INTERRUPTED`.
-- **Source-incomplete (11)**:
+- **Source-incomplete (10)**:
 
 | Cluster | Families | Missing closure |
 |---|---|---|
 | `G-FE1-SC1` Admission/ownership | `BASE-UNAUTHORIZED_RESOURCE` | resource-family and removal-owner design decision |
 | `G-FE1-SC2` Runtime selection | `BASE-RESUME_UNAVAILABLE` | external-session reset command, typed outcome, confirmation action, and direct Journey |
 | `G-FE1-SC3` Client execution | `BASE-PERMISSION_DENIED`, `BASE-TARGET_DISCONNECTED` | Desktop/Station implementation beyond Mobile contract-only coverage |
-| `G-FE1-SC4` Provider terminalization | `BASE-RATE_LIMIT`, `BASE-MODEL_UNAVAILABLE`, `BASE-PROVIDER_TIMEOUT` | accepted typed terminal outcome instead of failover-only classification |
+| `G-FE1-SC4` Provider terminalization | `BASE-RATE_LIMIT`, `BASE-PROVIDER_TIMEOUT` | deterministic real-provider trigger and accepted typed terminal outcome instead of hidden retry/failover |
 | `G-FE1-SC5` Tool control | `BASE-UNKNOWN_TOOL`, `BASE-LOOP_BUDGET_EXHAUSTED` | unknown-tool owner path and accepted budget details/action |
 | `G-FE1-SC6` Lifecycle concurrency | `BASE-STALE_VERSION`, `BASE-TERMINAL_MUTATION` | canonical lifecycle rejection and contextual recovery action |
 
@@ -2063,6 +2064,28 @@ and zero local-path leakage.
     to generic `CapabilityOperation`; the accepted cell requires a Turn-bound
     client request to remain pending and expose `Reconnect`. No production
     projection bridges those ownership models.
+- **SC4 split**:
+  - `BASE-MODEL_UNAVAILABLE` is `FUNCTIONAL_PASS`. Custom-model create/update
+    now carries canonical capability flags through `provider.proto`, Station
+    persistence/readback, Desktop Rust transport, and Desktop Web projection;
+    runtime admission therefore accepts the explicitly streaming disposable
+    model and the real Ark provider owns the missing-model terminal.
+  - Exact-source native Development run `20260915T174534211770Z` on
+    `d7aa95d4a` produced one `PROVIDER_MODEL_UNAVAILABLE` terminal provider
+    attempt, rendered the localized `Choose compatible model` action, opened
+    the existing Agent Profile, produced zero successful completion, and left
+    queue state unchanged. The Agent and model were restored, the disposable
+    model and Conversation were removed, and Fixture/process/port/storage
+    cleanup completed.
+  - Failed run `20260915T170742603657Z` remains the pre-fix evidence that model
+    capability metadata was dropped before runtime admission. Run
+    `20260915T174040887980Z` then crossed that boundary and exposed a Harness
+    trace-shape readback defect; checkpoint `d7aa95d4a` normalized camel/snake
+    provider-call fields without weakening the one-attempt assertion.
+  - `BASE-RATE_LIMIT` remains parked until a deterministic real 429 trigger is
+    available; the accepted terminalization source must not be counted from a
+    synthetic response. `BASE-PROVIDER_TIMEOUT` is the next dependency-ready
+    owner-layer vertical.
 - **Gate boundary**: do not run C08 or the 419-cell Foundation Gate while any
   source-incomplete family remains.
 - **C08 diagnostic after the boundary changed (2026-09-15)**: run
