@@ -128,29 +128,34 @@ type TurnConfig struct {
 type TurnEventSink func(ctx context.Context, event TurnEvent)
 
 type TurnEvent struct {
-	Type             string          `json:"type"`
-	Seq              int64           `json:"seq,omitempty"`
-	TurnID           string          `json:"turnId,omitempty"`
-	AttemptID        string          `json:"attemptId,omitempty"`
-	ConversationID   string          `json:"conversationId,omitempty"`
-	AgentID          string          `json:"agentId,omitempty"`
-	Stage            string          `json:"stage,omitempty"`
-	Text             string          `json:"text,omitempty"`
-	ToolCallID       string          `json:"toolCallId,omitempty"`
-	ToolName         string          `json:"toolName,omitempty"`
-	Arguments        string          `json:"arguments,omitempty"`
-	ApprovalID       string          `json:"approvalId,omitempty"`
-	DecisionID       string          `json:"decisionId,omitempty"`
-	DecisionRevision uint64          `json:"decisionRevision,omitempty"`
-	ExpiresAt        string          `json:"expiresAt,omitempty"`
-	Approved         bool            `json:"approved,omitempty"`
-	PayloadHash      string          `json:"payloadHash,omitempty"`
-	Source           string          `json:"source,omitempty"`
-	ServerName       string          `json:"serverName,omitempty"`
-	Result           string          `json:"result,omitempty"`
-	Error            string          `json:"error,omitempty"`
-	OutcomeError     json.RawMessage `json:"outcome_error,omitempty"`
-	Iteration        int             `json:"iteration,omitempty"`
+	Type             string            `json:"type"`
+	Seq              int64             `json:"seq,omitempty"`
+	TurnID           string            `json:"turnId,omitempty"`
+	AttemptID        string            `json:"attemptId,omitempty"`
+	ConversationID   string            `json:"conversationId,omitempty"`
+	AgentID          string            `json:"agentId,omitempty"`
+	Stage            string            `json:"stage,omitempty"`
+	Text             string            `json:"text,omitempty"`
+	ToolCallID       string            `json:"toolCallId,omitempty"`
+	ToolName         string            `json:"toolName,omitempty"`
+	Arguments        string            `json:"arguments,omitempty"`
+	ApprovalID       string            `json:"approvalId,omitempty"`
+	DecisionID       string            `json:"decisionId,omitempty"`
+	DecisionRevision uint64            `json:"decisionRevision,omitempty"`
+	ExpiresAt        string            `json:"expiresAt,omitempty"`
+	Approved         bool              `json:"approved,omitempty"`
+	PayloadHash      string            `json:"payloadHash,omitempty"`
+	Source           string            `json:"source,omitempty"`
+	ServerName       string            `json:"serverName,omitempty"`
+	Result           string            `json:"result,omitempty"`
+	Error            string            `json:"error,omitempty"`
+	ErrorType        string            `json:"error_type,omitempty"`
+	LocaleKey        string            `json:"locale_key,omitempty"`
+	Retryable        *bool             `json:"retryable,omitempty"`
+	Terminal         *bool             `json:"terminal,omitempty"`
+	Details          map[string]string `json:"details,omitempty"`
+	OutcomeError     json.RawMessage   `json:"outcome_error,omitempty"`
+	Iteration        int               `json:"iteration,omitempty"`
 }
 
 var errTurnEventPersistence = errors.New("turn event persistence failed")
@@ -251,9 +256,9 @@ func (l *executionLifecycle) stop(ctx context.Context) error {
 // ---------------------------------------------------------------------------
 
 // TurnService orchestrates the full lifecycle of a single agent turn:
-// context reference preprocessing → prompt assembly → compression check →
-// credential lease → provider call → error recovery → tool dispatch →
-// nudge evaluation → persistence.
+// input validation → prompt assembly → compression check → credential lease →
+// provider call → error recovery → tool dispatch → nudge evaluation →
+// persistence.
 type TurnService struct {
 	errorClassifier      *ErrorClassifierService
 	memoryService        *MemoryService
@@ -310,6 +315,9 @@ func (s *TurnService) PreflightTurn(
 ) error {
 	if request == nil {
 		return nil
+	}
+	if err := validateNoRetiredInlineContextReference(request.GetUserInput()); err != nil {
+		return err
 	}
 	config, err := s.queuedTurnConfig(actorID, request, "")
 	if err != nil {
@@ -979,6 +987,7 @@ func (s *TurnService) failTurnAfterError(
 		config.TaskID,
 		config.StepID,
 		reason,
+		cause,
 	)
 	if err != nil {
 		return errors.Join(cause, err)
@@ -1095,17 +1104,17 @@ func (s *TurnService) SettleAdmittedTurnAfterError(
 // ExecuteTurn runs the complete turn loop and returns the finished Turn domain
 // object. The loop follows these stages:
 //
+//	Admission — reject retired inline context references
 //	Step 1  — create turn record (status=running)
 //	Step 2  — persist user message
-//	Step 3  — preprocess context references (@file, @url, …)
+//	Step 3  — load conversation messages
 //	Step 4  — assemble system prompt
-//	Step 5  — load conversation messages
-//	Step 6  — check / run compression
-//	Step 7  — credential lease + provider call with error recovery loop
-//	Step 8  — tool call iteration loop (includes delegation)
-//	Step 9  — nudge state counters
-//	Step 10 — persist assistant message + complete turn
-//	Step 11 — save TurnTrace
+//	Step 5  — check / run compression
+//	Step 6  — credential lease + provider call with error recovery loop
+//	Step 7  — tool call iteration loop (includes delegation)
+//	Step 8  — nudge state counters
+//	Step 9  — persist assistant message + complete turn
+//	Step 10 — save TurnTrace
 func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userInput string) (*domain.Turn, error) {
 	if config == nil {
 		return nil, errcode.New(
@@ -1114,6 +1123,9 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 			"turn config is required",
 			nil,
 		)
+	}
+	if err := validateNoRetiredInlineContextReference(userInput); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(config.TurnID) == "" {
 		switch {
@@ -1320,6 +1332,12 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		agentVersion,
 	); persistErr != nil {
 		return nil, settleRunningFailure("failed to persist runtime authority", persistErr)
+	}
+	if incompatibilityErr := runtimeCapabilityReadinessError(readiness); incompatibilityErr != nil {
+		return nil, settleRunningFailure(
+			"runtime capability rejected before execution",
+			incompatibilityErr,
+		)
 	}
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -2404,6 +2422,20 @@ func (s *TurnService) callProviderWithRuntimeAuthority(
 	request.ExpectedCapabilitySourceVersion = config.CapabilitySourceVersion
 	request.BeforeDispatch = func(dispatchCtx context.Context) error {
 		return s.reserveProviderAttempt(dispatchCtx, config)
+	}
+	if len(request.Tools) > 0 && config.Provider == "ark" {
+		agentic := config.RuntimeCapabilities.GetAgentic()
+		// #region debug-point C-D:foundation-f04-runtime-authority
+		reportFoundationF04DuplicateToolCallsDebug(
+			"C-D",
+			"runtime-tool-authority",
+			map[string]any{
+				"nativeTools":   agentic.GetNativeTools(),
+				"parallelTools": agentic.GetParallelTools(),
+				"toolCount":     len(request.Tools),
+			},
+		)
+		// #endregion
 	}
 	var response *ProviderCallResponse
 	var err error
@@ -4030,6 +4062,13 @@ func (s *TurnService) interruptTurnWithEvent(
 			if err != nil {
 				return err
 			}
+			outcomeErrorJSON, err := (protojson.MarshalOptions{
+				UseProtoNames:   true,
+				EmitUnpopulated: true,
+			}).Marshal(errcode.NewLifecycleInterruptedPayload(turnID, reasonCode))
+			if err != nil {
+				return err
+			}
 			conversationID = turn.ConversationID
 			if err := tx.Model(&turn).
 				Updates(map[string]interface{}{
@@ -4053,6 +4092,7 @@ func (s *TurnService) interruptTurnWithEvent(
 				Where("turn_id = ? AND role = ? AND status = ?", turnID, string(domain.MessageRoleAssistant), "pending").
 				Updates(map[string]interface{}{
 					"status":     string(domain.TurnStatusInterrupted),
+					"error_json": outcomeErrorJSON,
 					"updated_at": now,
 				}).Error; err != nil {
 				return err
@@ -4085,6 +4125,7 @@ func (s *TurnService) interruptTurnWithEvent(
 				AgentID:        agentID,
 				Stage:          reasonCode,
 				Error:          reasonCode,
+				OutcomeError:   outcomeErrorJSON,
 			}
 			payload, err := json.Marshal(event)
 			if err != nil {
@@ -6091,8 +6132,30 @@ func (s *TurnService) completeAssistantMessageTx(
 // ---------------------------------------------------------------------------
 
 func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, taskID, stepID, reason string) error {
-	_, err := s.failTurnWithEvent(ctx, agentID, turnID, taskID, stepID, reason)
+	_, err := s.failTurnWithEvent(ctx, agentID, turnID, taskID, stepID, reason, nil)
 	return err
+}
+
+func applyTypedTurnError(event *TurnEvent, cause error) {
+	if event == nil || cause == nil {
+		return
+	}
+	var biz *errcode.BizError
+	if !errors.As(cause, &biz) || biz.Payload == nil {
+		return
+	}
+	retryable := biz.Payload.GetRetryable()
+	terminal := biz.Payload.GetTerminal()
+	details := make(map[string]string, len(biz.Payload.GetDetails()))
+	for key, value := range biz.Payload.GetDetails() {
+		details[key] = value
+	}
+	event.Error = biz.Payload.GetError()
+	event.ErrorType = biz.Payload.GetErrorType()
+	event.LocaleKey = biz.Payload.GetLocaleKey()
+	event.Retryable = &retryable
+	event.Terminal = &terminal
+	event.Details = details
 }
 
 func (s *TurnService) failTurnWithEvent(
@@ -6102,6 +6165,7 @@ func (s *TurnService) failTurnWithEvent(
 	taskID string,
 	stepID string,
 	reason string,
+	cause error,
 ) (TurnEvent, error) {
 	ownershipCtx := ctx
 	ctx = context.WithoutCancel(ctx)
@@ -6205,6 +6269,7 @@ func (s *TurnService) failTurnWithEvent(
 				Stage:          boundedReason,
 				Error:          reason,
 			}
+			applyTypedTurnError(&event, cause)
 			payload, err := json.Marshal(event)
 			if err != nil {
 				return err

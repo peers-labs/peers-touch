@@ -176,6 +176,7 @@ describe('mergeServerMessages', () => {
         cancelled: true,
         terminalStatus: 'cancelled',
         error: typedError.locale_key,
+        errorDetail: 'cancelled_by_user',
         typedError,
       }),
     ];
@@ -200,6 +201,7 @@ describe('mergeServerMessages', () => {
       cancelled: true,
       terminalStatus: 'cancelled',
       error: 'agent.errors.lifecycleCancelled',
+      errorDetail: 'cancelled_by_user',
       typedError,
     });
   });

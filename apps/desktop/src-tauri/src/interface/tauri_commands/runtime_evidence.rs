@@ -70,6 +70,33 @@ pub fn agent_browser_capability_session_close(
 }
 
 #[tauri::command]
+pub fn agent_client_executor_supervisor_start(
+    state: State<'_, Arc<AppState>>,
+    supervisor: State<'_, Arc<CapabilityWorkerSupervisor>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    if let Err(error) = authenticated_token(state.inner(), &window) {
+        return error;
+    }
+    application_runtime_evidence::set_client_executor_supervisor_available(supervisor.inner(), true)
+}
+
+#[tauri::command]
+pub fn agent_client_executor_supervisor_stop(
+    state: State<'_, Arc<AppState>>,
+    supervisor: State<'_, Arc<CapabilityWorkerSupervisor>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    if let Err(error) = authenticated_token(state.inner(), &window) {
+        return error;
+    }
+    application_runtime_evidence::set_client_executor_supervisor_available(
+        supervisor.inner(),
+        false,
+    )
+}
+
+#[tauri::command]
 pub fn agent_runtime_activity_station(
     input: AgentRuntimeActivityInput,
     state: State<'_, Arc<AppState>>,

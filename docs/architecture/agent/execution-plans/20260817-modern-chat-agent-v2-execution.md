@@ -251,7 +251,7 @@ Parallel policy:
 | W0 Contract/Evidence/Gates | complete | Owner EXECUTE approval received; W0 verification and completion audit PASS |
 | F1 Agent/Conversation Authority | complete | W0 complete |
 | F2 Runtime/Stream/Capability/Portability | implementation checks complete: Q4 C06 and Q5/Q6 C10 source closures pass; product proof remains pending G-F | F1 |
-| F3 Context/Resource Intelligence | C04 core and C08 product source complete; exact-source C08 run `20260909T091942082203Z-5ecd651bb57a293a45c0032d5b46861d` is `DONE / PROVEN` | F2 |
+| F3 Context/Resource Intelligence | C04 core and C08 product source complete; exact-source C08 run `20260913T122723703780Z-3c46e80a6f615d4110b062ef50fb1f41` on `80358d815ccdb031582517134e6a2bb563d96760` is `DONE / PROVEN` with 19/19 assertions and complete cleanup | F2 |
 | F4 Tool Policy/Observability | G1-A through G1-F and pre-W1 G1-XR diagnostic complete through AS-F03; post-W8a G-F pending | F2 + accepted D19A/D19B/D19C |
 | W1 Capability Authority | implementation checks complete; product proof UNPROVEN until W9 Gate | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
 | W2 Home Projection | pending | G-F complete 419-cell Foundation Gate |
@@ -260,7 +260,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress; exact-source run `20260909T141502294542Z-5a3fca9b8d25c0a8f7ac1582a5b320b7` crossed all four AS-F06 tuples and stopped at the planned missing `BASE-EXECUTOR-UNAVAILABLE` direct-runtime vertical; Foundation remains `PARTIAL / UNPROVEN` | W8a |
+| G-F Complete Foundation Gate | partial / unproven; checkpoint `d3e6feaa3051763c79f1252593c7bbcfff06f6b1` preserves retained-Attempt replay; C08 run `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN`; fully authorized Foundation run `20260913T150542388406Z-46ced7c0b785bb9094b7b948a34b86d3` crossed all AS-F06 and both-locale `BASE-INTERRUPTED` cells, then first failed at Browser English `BASE-INVALID_REFERENCE` because the real product vertical is absent; G-FE1 now executes that accepted MCA-J06 behavior as a product-first DevelopmentWorkItem before Acceptance promotion | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -1238,6 +1238,102 @@ and zero local-path leakage.
   independent Python oracle. The staged C13 `CapabilityOperation` routes remain
   inactive until W8b. G-F remains `PARTIAL / UNPROVEN`.
 
+#### G-FE1 DevelopmentWorkItem: MCA-J06 Invalid Reference Recovery
+
+- **ID**: `G-FE1-J06-INVALID-REFERENCE`.
+- **Status**: `FUNCTIONAL_PASS`; Foundation promotion implementation is
+  `FOCUSED_PASS`, while the Foundation runtime cell remains `UNPROVEN`.
+- **Product Journey**: `MCA-J06 Work With Files And Images`.
+- **Accepted behavior**: a user submits a draft containing an invalid or
+  unavailable context reference; Station rejects it with
+  `CONTEXT_INVALID_REFERENCE / agent.errors.contextInvalidReference`,
+  `retryable=false`, `terminal=true`, and only
+  `reference_kind,reference_hash`; the Desktop receiver preserves the draft,
+  exposes localized `Remove reference`, removes only the rejected reference,
+  and can resend the remaining draft successfully.
+- **Authority**: Station validates and hashes the reference before context
+  inclusion or provider execution. Desktop owns the local draft and the
+  remove-reference interaction; it cannot fabricate the typed error.
+- **Existing contract reuse**: the retired explicit
+  `@file/@folder/@url/@diff/@staged/@git` syntax in `user_input` is recognized
+  only as invalid presentation input and is never restored as filesystem,
+  network, Git, or shared-path authority. Station rejects it before
+  persistence; the typed error envelope and accepted
+  `agent.recovery.removeReference` copy drive local draft recovery. Valid files
+  continue through the existing opaque `AgentAttachmentRef` path. A future
+  valid client-local context picker requires a separate `ClientResourceRef`
+  product slice rather than a fake sidecar in this negative Journey.
+- **Focused checks**: Station invalid-reference admission and zero-inclusion /
+  zero-provider regressions; Desktop typed-error projection, draft
+  preservation, exact reference removal, and resend input; Rust transport only
+  if the existing request envelope cannot carry the accepted contract.
+- **Functional fence**: one exact-source Desktop product Journey must visibly
+  reject, preserve, remove, and resend through the real Station path before
+  any Foundation adapter/oracle work or broad Gate execution.
+- **Prototype disposition**: implementation must match the confirmed
+  `modern-attachment-failure` behavior; update the prototype only if the
+  accepted visible contract changes.
+- **Acceptance promotion**: after `FUNCTIONAL_PASS`, promote this same business
+  Journey into the existing `BASE-INVALID_REFERENCE` Foundation cell without a
+  second Harness-only implementation.
+- **Scope boundary**: no Home, MCP, Connector, Evaluation, W8b, version,
+  provider, timeout, matrix, or destructive Fixture changes.
+- **Concurrency decision**: `hybrid`; after this contract freeze, the Station
+  admission/error lane and Desktop Web draft/recovery lane own disjoint files
+  and run focused checks independently. Desktop Rust, Proto/generated output,
+  locales, prototype source, Acceptance, Git index, deployment, and functional
+  runtime remain integrator-owned or untouched.
+- **Focused evidence (2026-09-14)**:
+  - Station rejects only retired explicit reference tokens before Turn ID,
+    conversation, message, attempt, queue, ContextLedger, or provider work and
+    returns the exact hash-only typed payload.
+  - Desktop validates the exact payload, keeps draft ownership in the composer,
+    removes every matching token only after the user action, preserves
+    unrelated text and attachments, and restores focus without navigation.
+  - Exact-source native run on checkpoint `41b23ab6e79d246a36d105616b76be20eb374292`
+    reached the real Station rejection, preserved the full draft, removed only
+    `@file:/missing/reference`, and completed the corrected Ark turn with
+    `TEST_OK`; the run remains below `FUNCTIONAL_PASS` because Desktop rendered
+    both the optimistic and authoritative assistant projections.
+  - Root cause: the direct stream projection did not copy the Station `turnId`
+    onto the optimistic assistant message, so authoritative reconciliation
+    could not identify both records as one response. The focused fix binds
+    stream events to that canonical Turn identity before message merge.
+  - Checkpoint `3a7f4ce5cb7fcc7dcf5fd980bdc850f30942552d` also binds the
+    admission-header Turn and conversation identities onto every forwarded
+    native live-stream payload when Station frames omit them.
+  - A committed-only native build from `3a7f4ce5c` completed the full
+    `MCA-J06` flow with `CLEAN_OK`: typed rejection, full draft preservation,
+    localized `Remove reference`, exact token removal, accepted resend, and
+    exactly one canonical assistant response all passed.
+  - Diagnostic evidence from the same source showed the native `done`,
+    optimistic assistant, operation, and authoritative assistant shared one
+    Turn ID before merge; merge output contained one assistant row. The prior
+    duplicate was not reproduced after rebuilding both Web assets and the
+    native bundle from the committed source.
+  - Acceptance mode `COMPLETE` keeps the existing `agent` Domain,
+    `agent-v2-kernel-foundation` Feature/Capability, Registry rule, Gate
+    Catalog entry, and 419-cell matrix unchanged. The missing closure was the
+    business-owned `BASE-INVALID_REFERENCE` Harness scenario and independent
+    direct-runtime oracle for Desktop and Browser in both locales.
+  - The promoted scenario drives the real composer twice, proves the
+    pre-admission error and zero rejected-path side effects, removes only the
+    hash-matched reference, completes the corrected provider turn, observes a
+    maximum of one matching assistant row, verifies authoritative Station
+    readback/replay, and performs local plus Station cleanup.
+  - `go test ./app/subserver/agent/service ./app/subserver/agent/handler
+    -count=1`: PASS.
+  - focused Desktop Vitest after the reconciliation fix: 62/62 PASS.
+  - focused Foundation Python/static suite after Acceptance promotion:
+    262/262 PASS.
+  - `pnpm run check`: PASS.
+  - `make acceptance-validate DOMAIN=agent`: expected `UNPROVEN` because the
+    latest Foundation evidence predates this source and the promoted runtime
+    cell has not run.
+  - Prototype disposition: no drift; the implementation follows the confirmed
+    attachment-failure preservation/removal behavior. No prototype source
+    change is required.
+
 #### G-FE1 Concurrency Decision
 
 - **Mode**: hybrid.
@@ -1270,10 +1366,412 @@ and zero local-path leakage.
   sources, or Git index; each lane re-reads owned files before patching, stops
   on unexpected writes, and returns its exact changed-file list; the integrator
   reviews the combined diff and interface compatibility before verification.
+- **Source checkpoint**: `ff7bfa9f8342a154c2b637e1f0170b2c61c8a31c`
+  preserves the Station rejection-before-mutation contract, adds the
+  Acceptance-gated production supervisor withdrawal/restoration control,
+  keeps `toolRuntime` as the sole Web projection owner, renders localized
+  `Reconnect executor`, and adds the complete Harness plus independent Python
+  oracle. Browser recovery waits for the exact target device/capability to
+  re-advertise and never starts or fabricates a Browser executor.
+- **Local checkpoint evidence**: Station executor-unavailable regression,
+  Desktop typecheck, `590` Vitest tests with one environment-only skip,
+  Desktop production build, Rust format and `cargo check --locked --features
+  e2e-testing`, `280` Foundation/static tests, Agent Domain structural
+  validation, locale validation, hard rules, and diff checks pass.
+- **Parked non-slice evidence**: the generated broad Acceptance plan also
+  selected `acceptance-runtime-provisioning-self`; its pre-existing
+  `local-desktop-gateway` Fixture expectation is stale against the current
+  environment contract. This unrelated Acceptance Infra repair remains outside
+  G-FE1 and is not used as product proof.
+- **Exact-source protocol attestation remediation (2026-09-10)**: after the
+  approved disposable PostgreSQL volume was recreated, Station checkpoint
+  `ead122653e3b1fd29170a7c8adf5a848255d57ce` became healthy and source-clean.
+  Current-source C08 run
+  `20260910T052534864517Z-98e42e981668a2f3cd5fe5e0d9cba987` then stopped at
+  `source-identity:proto` before Fixture mutation. Local attestation selected
+  only tracked Proto/generated bindings, while the remote adapter additionally
+  selected 21 ordinary Station Dashboard TypeScript files under
+  `apps/station`. The accepted D-07/D-08 source-identity contract already
+  requires one protocol artifact set, so the dependency-ready remediation is
+  to make the remote adapter consume the same exact pathspec set as Core and
+  add a regression excluding non-protocol Station TypeScript. This is
+  Acceptance Infra only: C08/G-F assertions, timeouts, runtime cells, product
+  semantics, and proof state remain unchanged and `UNPROVEN`.
+- **C08 launcher/session remediation (2026-09-10)**: clean checkpoint
+  `03c895e0c40402f8a29a22aa9e086eb40ae5adac` restored exact local/remote
+  protocol-digest parity and C08 run
+  `20260910T054309187739Z-91c78d39bad933eb55820ac65650cf05`
+  reached `FIXTURE_READY`. The Gate then failed before native launch because
+  `native_agent_runner.py` still passed process, profile, storage, and gateway
+  arguments to the attach-only `TauriDriver` after the accepted D-13
+  launcher/session split. The dependency-ready correction is to restore the
+  existing caller-owned log path on `LocalTauriLauncher` and compose
+  `TauriSession(LocalTauriLauncher(...))` in the business runner. This changes
+  no C08 assertion, timeout, runtime cell, or product behavior.
+- **Current-source C08 proof and Foundation diagnostic (2026-09-10)**:
+  checkpoint `52cc444b6d1f980c7e4b1c18b5cf01a65c02ded5` passed C08 run
+  `20260910T055522829091Z-9681f326699ee03f46adacc14c119f39`
+  with 19/19 assertions, exact Station source, and complete process, port, and
+  storage cleanup. The unchanged 419-cell Foundation run
+  `20260910T055707604178Z-af431ffdcb8a1a040ddc0687391de851`
+  then failed at Browser `AS-F05 / en / single / sample-001` because the
+  positive attachment Turn did not reach a terminal event within its existing
+  120-second bound. Provisioner cleanup passed. The open
+  `foundation-attachment-timeout` debug session now adds only credential-safe
+  Turn submission and SSE lifecycle instrumentation to distinguish transport,
+  terminal-event, provider, and capability-session ownership. It does not
+  change timeout, tuple order/count, assertion, retry, or product behavior.
+- **Pre-AS-F05 F12 isolation diagnostic (2026-09-10)**: instrumentation
+  checkpoint `46a17197824480620f86d33e74f0da6efa520ad1` did not reach
+  AS-F05. Run
+  `20260910T063541600785Z-66f9f64175626498fe1e0a22aa0845b7`
+  failed only `noCrossTopicReferences` in Browser `AS-F12 / en / single /
+  sample-001`; restart identity, payload/hash equality, branch restoration,
+  runtime binding, scope, and source-restart diagnostics passed, as did
+  cleanup. The existing `foundation-f12-projection` session therefore adds
+  only per-subcondition booleans and invalid-reference counts for message
+  ownership, own/foreign fact visibility, and runtime matching. No topic,
+  message, conversation, Turn, branch, fact, or runtime identity is logged,
+  and the F12 assertion remains unchanged.
+- **AS-F05 thinking-only root cause (2026-09-10)**: exact-source run
+  `20260910T072607175644Z-c90314dd22ec5c31a74c08cfb37c5cc8`
+  reproduced Browser `AS-F05 / en / single / sample-001`. The Turn was
+  admitted with its target capability session and emitted four ordered
+  progress events plus 1,074 ordered thinking events through sequence 1,078
+  over the existing 120-second bound, but no answer or terminal event.
+  Provisioner cleanup passed. Because AS-F05 proves attachment behavior rather
+  than thinking behavior, its source-backed remediation is to submit the
+  focused attachment Turn with the existing production
+  `thinkingMode=disabled` contract. Provider, model, attachments, timeout,
+  assertions, evidence roles, and matrix tuples remain unchanged.
+- **G-FE1 matrix identifier closure (2026-09-10)**: exact-source run
+  `20260910T095838995350Z-5b30e67ab7a6fa7b11e1f9f54bc32bdd`
+  on `7485d1c224065a789f521f6531c2701c6083fda5` crossed Browser
+  AS-F01 through AS-F12 and reached the planned
+  `BASE-EXECUTOR_UNAVAILABLE` cell. The cell failed closed before runtime
+  execution because the G-FE1 direct adapter, Harness, coordinator, and oracle
+  used the non-canonical hyphenated identifier
+  `BASE-EXECUTOR-UNAVAILABLE`, while the reviewed 419-cell matrix and Mobile
+  contract use `BASE-EXECUTOR_UNAVAILABLE`. Checkpoint `7485d1c22` aligns the
+  existing vertical to the canonical matrix identifier without changing
+  assertions, tuple count, timeout, product behavior, or Station/proto
+  contracts. Full Agent Gate tests pass `372/372`, native-static checks pass
+  `83/83`, Desktop TypeScript passes, and `git diff --check` passes.
+- **G-FE1 focused runtime evidence (2026-09-10)**: on exact source
+  `5a625c62a24ca7d0324e7bae7d892191e09e82e9`, the production
+  `FoundationExecutorUnavailableCoordinator` executed both Desktop and Browser
+  `BASE-EXECUTOR_UNAVAILABLE / en / single / sample-001` tuples independently.
+  Each tuple passed all 9 independent assertions: typed error and localized
+  recovery, one rejected approval, preserved waiting-approval state, zero
+  execution claim and side effect, replay equality, exact executor reconnect,
+  and complete cleanup. Both runtime pairs released actor identity, storage,
+  and all ports. This focused evidence proves the vertical behavior but does
+  not replace the unchanged 419-cell Gate.
+- **Current-source C08 and full-Gate boundary (2026-09-10)**: C08 run
+  `20260910T153114899448Z-81ad0db7ab3ea3f037c936fb85d6c30f`
+  on `5a625c62a24ca7d0324e7bae7d892191e09e82e9` is
+  `DONE / PROVEN` with 19/19 assertions, exact Station attestation, and clean
+  process, port, and storage release. The unchanged Foundation run
+  `20260910T145017268064Z-b114c90ac7be2cb442602d3be7e003df`
+  passed the first regenerate in 106.610 seconds, then the second regenerate
+  failed after 300.172 seconds. Remote Station logs prove two Ark provider
+  `context deadline exceeded` failures, terminal
+  `wall_time_exhausted`, and HTTP 422. A focused retry run independently
+  observed the same external boundary after two provider timeouts and
+  `max_attempts_exhausted`. No timeout inflation, provider fallback, mock, or
+  tuple reduction is authorized. G-F therefore remains
+  `PARTIAL / UNPROVEN`; the external Ark runtime is parked until it can execute
+  the unchanged provider-backed AS-F07 sequence.
+- **AS-F07 closure and next typed-error frontier (2026-09-11)**: canonical
+  profile injection selects Ark model `ep-20260623145021-n4xdm` through the
+  internal `https://ark-cn-beijing.bytedance.net/api/v3` endpoint. Station
+  revision commands now preserve the source Turn's immutable
+  `thinking_mode`, so exact source
+  `48c7065ce97b2442df3c82d17840dd120c44651e` passed C08 run
+  `20260911T031908377408Z-020712763e7168d9fcf4bdefb39ec604`
+  with 19/19 assertions. The unchanged Foundation run
+  `20260911T032023594492Z-4af15b4006f3a3fb625e4ba4cc009f30`
+  crossed all AS-F06 and AS-F07 tuples, then failed closed at Browser English
+  `BASE-FORBIDDEN_ACTOR` because its direct-runtime vertical is not yet
+  implemented. Both runs completed process, port, storage, actor-identity, and
+  Provisioner cleanup.
+- **BASE-FORBIDDEN_ACTOR execution projection (2026-09-11)**: use a
+  Bob-owned private Agent conversation as the Station resource and Alice as
+  the rejecting receiver. Station must inspect only ownership metadata before
+  returning `OWNERSHIP_FORBIDDEN_ACTOR`; it must not reinterpret forbidden as
+  missing or create an Alice conversation with the supplied ID. The Desktop
+  and Browser receivers preserve the typed payload, render the existing
+  localized `Switch account` action, and delegate recovery to the identity
+  runtime. The Acceptance coordinator owns two-actor setup/restoration, while
+  the Harness and independent Python oracle prove zero foreign read payload,
+  zero conversation/Turn/message/queue/provider mutation, replay equality,
+  owner-state preservation, and cleanup. Station, Desktop receiver, and
+  Acceptance oracle files are independent read/write lanes until the
+  integrator-owned Harness/coordinator reconciliation barrier; fixture
+  provisioning, plan state, commits, deployment, and final Gates remain
+  serial.
+- **BASE-FORBIDDEN_ACTOR first runtime attempt (2026-09-11)**: checkpoint
+  `6afce95271381aa1d0c2ed7a331bf728b3f40e36` was deployed exact-source to
+  `chat-native-disposable`. C08 run
+  `20260911T044710291528Z-2a7016d83a804dbf19694fb22131e1e6`
+  completed `DONE / PROVEN` with clean Provisioner cleanup. The unchanged
+  Foundation run
+  `20260911T044824404452Z-1bd6e65bb4094a3cdbc03dd37f0af86a`
+  failed before the new direct-runtime cell while Browser English AS-F06
+  recovered from its intentional transport cut. Existing provider
+  instrumentation proves the corresponding Ark request used the canonical
+  internal endpoint, received HTTP `200`, and completed in about 2.2 seconds.
+  The regression was in Desktop Browser transport classification: the new
+  immediate typed HTTP-error path projected every non-2xx response, including
+  an untyped transient `502`, as a terminal SSE error and cleared the recovery
+  record. The local correction emits terminal error events only for complete
+  typed-error contracts and leaves untyped HTTP failures on the existing
+  replay retry path. Focused Desktop API tests pass `47/47`, Desktop check
+  passes, and outer runtime cleanup released both clients, all ports, storage,
+  and actor identity. Exact-source C08 and the unchanged Foundation Gate must
+  be rerun after checkpoint and deployment.
+- **BASE-INCOMPATIBLE_CAPABILITY source closure (2026-09-11)**: the next
+  plan-defined Foundation error vertical is implemented locally without
+  changing the 419-cell matrix, timeout, or provider fallback policy. Station
+  now versions canonical built-in Tool manifests with the `native-tools`
+  requirement, reconciles legacy embedded-config bindings to that manifest
+  version, persists the rejected runtime/readiness snapshot, and emits
+  `RUNTIME_INCOMPATIBLE_CAPABILITY /
+  agent.errors.incompatibleCapability` before provider or Tool execution.
+  Desktop preserves the exact typed error through immediate Browser/Native,
+  live, cached, and replay projections, and `Choose compatible model` opens
+  the selected Agent's real model configuration without mutating the model.
+  The production Harness uses the canonical Ark profile
+  `ep-20260623145021-n4xdm` as the configured source, creates and removes a
+  run-scoped catalog-backed incompatible provider binding through production
+  APIs, replays the persisted typed terminal event through Station, and
+  measures the allowed single failed Turn against zero messages, queue rows,
+  provider calls, ToolCalls, Tool executions, and side-effect receipts. The
+  independent Python oracle verifies typed payload, localized recovery,
+  readiness/model immutability, replay equality, and complete cleanup. Local
+  verification passes Station Agent packages, Desktop `606/606` tests,
+  Desktop check/build, Agent Python `398/398`, hard rules, and diff hygiene.
+  Product proof remains `UNPROVEN` until a clean checkpoint is deployed and
+  exact-source C08 plus the unchanged full Foundation Gate finish.
+- **Current-source C08 and BASE-CANCELLED frontier (2026-09-11)**: exact source
+  `0512c74fdee14aecef190cb75c3cdcbbc1360030` passed C08 run
+  `20260911T135839105483Z-640fb2902d4b27d9304a70280fc71829`
+  as `DONE / PROVEN` with source-matching Station attestation, clean
+  Provisioner cleanup, and a passing secret scan. The unchanged Foundation run
+  `20260911T135944321826Z-c11956eb39a2d98c5c2c1f0481964cba`
+  crossed `BASE-FORBIDDEN_ACTOR` and the previously reached typed-error cells,
+  then failed at Browser Simplified Chinese `BASE-CANCELLED` with
+  `agent.acceptance.foundationCancellationLostRace`. The outer result is
+  `PARTIAL / UNPROVEN`; cleanup and secret scanning passed. The Station contract
+  correctly lets a committed completion beat a later cancellation, so the
+  recoverable defect is the single-attempt live-provider cancellation-window
+  acquisition in the independent `BASE-CANCELLED` producer. Checkpoint
+  `2c8716aa083fe3c33d575300408acef320a0b91a` adds only pre-fix
+  request/response/terminal instrumentation; no Gate, timeout, matrix tuple, or
+  product behavior changed. Exact-source C08 and Foundation reproduction remain
+  pending for that diagnostic checkpoint.
+- **Cancellation closure, incompatible fixture diagnostics, and C08 isolation
+  correction (2026-09-12)**: checkpoint
+  `795b063e294c834f5a5f902f32b118455c8029f3` passed both Browser
+  `BASE-CANCELLED` locale cells with authoritative Station cancellation and
+  then failed `BASE-INCOMPATIBLE_CAPABILITY` cleanup. Diagnostic checkpoint
+  `1e6f8c290bdb9aed694046eb1f129117d616fbf2` passed C08 run
+  `20260911T154347342462Z-2fcba4ec93404d8b5091120bc7d72792`
+  with 19/19 assertions, then the unchanged Foundation run
+  `20260911T154504429998Z-909db68477dae4e6ff1851f9610aaf1b`
+  failed earlier because the fixed `anthropic` provider fixture was already
+  configured before scenario setup. Checkpoint
+  `8e88a63b26e82af0f17fd1f40ad2e31e3228e7ab` adds credential-safe provider
+  precondition telemetry only. Its C08 run
+  `20260911T163226025417Z-a4b0aae2aa8f3bbbcce3bb7b4b622f5e`
+  submitted the canonical Ark attachment Turn with
+  `thinking_mode=disabled`, but the Turn emitted `tool_call` and
+  `tool_approval_required` before the existing 120-second bound. Source
+  inspection confirms AS-F05 disabled only one platform-selected Tool binding,
+  allowing another active binding to enter this attachment-only baseline.
+  The local correction reuses the existing all-binding isolation journal around
+  the positive attachment Turn and removes the single-binding mutation path.
+  No provider, product execution, timeout, matrix, assertion, or evidence role
+  changed. Checkpoint `ada4295633891d70b9039b20b7f6a825804a2130`
+  subsequently passed exact-source C08 run
+  `20260911T170355761021Z-3175df8f9955e5f19863b51c31390eb5`
+  with 19/19 assertions and clean cleanup. The unchanged Foundation run
+  `20260911T170543628428Z-e3b5ae2fe8a6c5ec41f421eaf6e3fce3`
+  crossed AS-F05 and again stopped at Browser
+  `BASE-INCOMPATIBLE_CAPABILITY / en / single / sample-001`.
+- **Incompatible provider Fixture wire root cause (2026-09-12)**:
+  credential-safe telemetry from the failed `ada429563` Foundation run records
+  every source/catalog/model prerequisite as valid except
+  `fixtureProviderVersion=1`; the fixed provider has no credential. Read-only
+  Station evidence shows exactly that one Alice `anthropic` provider row,
+  created during the earlier cleanup failure, and no stale
+  `foundation-incompatible-*` Agent or capability binding. The Station public
+  provider response omits internal persistence fields that the Desktop Rust
+  `StationProvider` DTO required. Consequently `createProvider` persisted the
+  row and then failed response decoding, while `deleteProvider` silently
+  converted the same list-decode failure to an empty provider list and returned
+  NotFound before deletion. The local owner-layer correction narrows the DTO to
+  the public response fields, propagates provider-list decode failures, and
+  makes the destructive approved Fixture setup delete and re-read a configured
+  fixed provider before requiring the catalog `version=0` baseline. It does not
+  change provider semantics, the Ark configuration, matrix, timeout, or Gate
+  assertions. Focused Rust wire decoding, Desktop check, 85 Agent native static
+  tests, and diff hygiene pass; exact-source post-fix proof remains pending.
+- **Repeated BASE-CANCELLED window race (2026-09-12)**: checkpoint
+  `03eb3b26e35d141a2a42779a6aabbc688311a1de` passed exact-source C08 run
+  `20260911T180453978234Z-7f2b66fa96067e56cdbc57b57283091f`
+  with 19/19 assertions. The unchanged Foundation run
+  `20260911T180613134845Z-78c1fede027216c67171edb0fe191983`
+  then stopped at Browser English `BASE-CANCELLED`. Debug evidence shows the
+  cancellation request started from matching Turn text sequence 3 after
+  3255 ms, but its 433 ms round trip returned Station's legitimate
+  `completed` winner after `done` sequence 43 was committed. The separate
+  `BASE-CANCELLED` producer had not adopted the bounded acquisition policy
+  already used by AS-F03. The local correction permits at most two real
+  attempts, deletes a legitimately completed attempt before retry, fails every
+  inconsistent terminal combination, and still requires one authoritative
+  `cancelled` terminal for proof. The matrix, timeout, Ark configuration, and
+  Station winner semantics remain unchanged. Desktop check, 85 Agent native
+  static tests, hard rules, and diff hygiene pass; exact-source proof remains
+  pending.
+- **Capability enrollment closure and AS-F04 duplicate ToolCalls
+  (2026-09-12)**: telemetry-only checkpoint
+  `546b6058c312adefd3f646cda152ef81bb91e1f9` proved the prior 90-second
+  capability-session wait was caused by two foreign Mobile clients
+  re-enrolling first after the disposable reset. Terminating only those two
+  Mobile App processes left both Simulators booted and allowed Native and
+  Browser to match one local session against three Station sessions on their
+  first poll. Exact-source C08 run
+  `20260911T193922706008Z-2ba9a5841230120cf3b3a7f8051ff14a` then passed
+  `DONE / PROVEN` with 19/19 assertions and clean cleanup. The unchanged
+  Foundation run
+  `20260911T194053654495Z-418a8fadbb819a6c415d575dbc98c314`
+  advanced to Browser Simplified Chinese AS-F04 auto settlement and timed out:
+  Station readback showed one completed Turn, one provider attempt, one
+  ToolBatch, two distinct succeeded same-batch `skills_list` ToolCalls, two
+  results, and one continuation. The model advertises `parallel-tools`,
+  `ProviderCallRequest` has no per-turn parallel policy, and the
+  OpenAI-compatible payload currently omits `parallel_tool_calls`; the strict
+  `facts.length == 1` oracle is retained. The active diagnostic records only
+  the pinned parallel capability, explicit request-policy presence, returned
+  ToolCall indices/fragment counts, assembled count, and finish reason. It
+  must distinguish a provider-parallel response from stream-assembly
+  duplication before any owner-layer fix; a blanket
+  `parallel_tool_calls=false`, budget exhaustion, truncation, deduplication,
+  retry-until-green, or Gate weakening is forbidden. The Gap Detector keeps
+  the aggregate claim `UNPROVEN`: the complete Foundation Gate is failed and
+  the instrumentation checkpoint still requires a new exact-source
+  Acceptance plan/run pair.
+- **BASE-INCOMPATIBLE_CAPABILITY Turn count frontier (2026-09-12)**:
+  instrumentation checkpoint `08804b583c033f3405eb9496d24a85545e270cc9`
+  passed exact-source C08 run
+  `20260911T200746805524Z-bbc4c4a8ae77900f39b01ab5a8d7c737`
+  as `DONE / PROVEN` with 19/19 assertions and clean cleanup. The unchanged
+  Foundation run
+  `20260911T200947839067Z-84a957de981a94b0b2fc02210b09fe67`
+  crossed AS-F04 with 22 one-index ToolCall responses and no two-index
+  response, crossed the completed typed-error prefix through
+  `BASE-FORBIDDEN_ACTOR`, and failed first at Browser English
+  `BASE-INCOMPATIBLE_CAPABILITY` because the independent oracle requires one
+  failed Turn while the producer emitted `turnDelta=0`. Existing telemetry
+  proves the stale provider was reset to catalog version zero, the typed
+  rejection and recovery facts were produced, and conversation, binding,
+  disposable Agent, configured provider, selected Agent, local projection,
+  and outer Provisioner cleanup all completed. The next telemetry-only
+  checkpoint compares trace-list counts with direct Turn trace and diagnostic
+  replay availability for the source-bound rejected Turn; no oracle, timeout,
+  matrix, or product behavior changes.
+- Diagnostic checkpoint `8d798aa8e49455566972a34070eac94b532c2b7d`
+  passed exact-source C08 run
+  `20260911T205804498399Z-a9f342630d73138031a61c41d6551937`
+  and reproduced the same Foundation failure in
+  `20260911T205909121513Z-22bd370b1d423b0fd40e435aca4200d2`.
+  The safe boundary recorded trace-list totals `0 -> 0`; direct trace lookup
+  was unavailable, while source-bound diagnostic replay was available with
+  status `FAILED(12)`, exactly one Attempt, and a persisted runtime snapshot.
+  This matches the focused Station contract: pre-provider incompatibility
+  persists one failed Turn, Attempt, readiness snapshot, and typed event with
+  zero message/provider/tool/side-effect rows, but intentionally has no
+  `agent_turn_traces` row. The local Acceptance correction computes the strict
+  union of trace-listed Turns and that source-bound diagnostic Turn. A future
+  trace row cannot double count because the union uses `max`; extra trace rows
+  still violate the exact-one oracle. Desktop check, 234 focused
+  static/independent tests, and diff hygiene pass; exact-source post-fix proof
+  remains pending.
+- Exact-source checkpoint `040912bcabad6eb67db15fda2d37c5d7066da0dc`
+  passed C08 run
+  `20260911T214403167521Z-884c868de07aec4a5a91ad6c44d8cbc6`
+  and Foundation run
+  `20260911T214508595389Z-0e79b626b70d9158805ecc8382e7e54e`
+  crossed BASE-INCOMPATIBLE_CAPABILITY, confirming the rejected-Turn union.
+  The next first failure was Browser Simplified Chinese
+  `BASE-CONTEXT-OVERFLOW`, where only `localizedRecoveryVisible` was false.
+  Typed payload, zero-persistence/provider facts, draft preservation, recovery
+  execution, replay, source identity, and outer cleanup did not fail. Source
+  inspection shows the producer samples recovery visibility after clicking
+  the recovery action and replacing the draft. The next telemetry-only
+  checkpoint records locale, matching-surface count, pre/post-click
+  error/recovery visibility, localized text equality hashes, focus, and
+  reduced-draft completion; it changes no assertion, timeout, or product
+  behavior.
+- Exact-source checkpoint `07351dcf4f28fd8b81a2de58f493609b7086177a`
+  passed C08 run
+  `20260911T222805881767Z-f6325398e35ef10bbc86e10e3f291ff1`
+  with 19/19 assertions and clean cleanup. Foundation run
+  `20260911T222932042410Z-f62cac19455ffd1a5c5bb8bd182423b4`
+  crossed both Browser `BASE-CONTEXT-OVERFLOW` locale cells. Its four
+  pre/post-click events prove one current surface, matching localized error and
+  recovery hashes, visible receiver controls, restored focus, and reduced-draft
+  completion for `en` and `zh-CN`; no context-overflow correction is justified.
+  The next first failure is Browser Simplified Chinese
+  `BASE-DUPLICATE-CONFLICT`, where the recovery action timed out waiting for the
+  original Turn details view. Provisioner cleanup completed
+  `DONE / PROVEN / passed`. The next telemetry-only checkpoint distinguishes a
+  stale recovery node, mismatched target, missing original assistant
+  projection, absent portal transition, and overwritten portal transition
+  without changing product behavior, assertions, tuples, or timeouts.
+- Exact-source checkpoint `43f94f5ef0838dd51ea458857e4f025ce135559a`
+  used Acceptance binary
+  `096b20f33ce3478b1fae062670b41d2e2c96a0e6f77431b2b49de57205af1f49`
+  and passed C08 run
+  `20260911T231620368290Z-b71583aba9e8415b4c964204c34edb19`
+  with 19/19 assertions and clean cleanup. Foundation run
+  `20260911T231733779911Z-ca94e3b2c6d9c4870f95d3ddabee4c02`
+  crossed both context-overflow and duplicate-conflict locale cells. All eight
+  duplicate-conflict click/portal/projection events matched the accepted
+  recovery path, so that prior timeout does not justify a correction. The run
+  failed at Browser English `BASE-INCOMPATIBLE-CAPABILITY` only on
+  `stationReadinessReadback` and `cleanupComplete`. Retained cleanup telemetry
+  shows all four delete commands completed, provider and selection restoration
+  passed, while the producer misclassified the Conversation `deleted` status
+  and canonical Agent/binding not-found responses. The local correction aligns
+  those readbacks with their public contracts. Source reconciliation also found
+  that the independent Python oracle incorrectly required an unchanged
+  Conversation version even though Station persists one failed Turn and the
+  TypeScript producer requires the exact `before + 1` transition. The Python
+  oracle and valid fixture now enforce that same strict transition, while safe
+  predicate-level readiness telemetry remains enabled. Desktop check, 206
+  focused Harness/oracle tests, and diff hygiene pass; exact-source post-fix
+  proof remains pending.
+- Exact-source checkpoint `ae12997a91ea4e5525b2e17e5817e2396c8abca4`
+  used Acceptance binary
+  `b9e8655659ddb015ca38692c59289083129e3cad94a7f3fec46e9986364a286a`
+  and passed C08 run
+  `20260912T000527387739Z-0d146c9dcdf795efbfc787cbee66292c`
+  with 19/19 assertions and clean cleanup. Foundation run
+  `20260912T000634915947Z-ab105f5f3f6e2f29fdfedf9169d85b02`
+  stopped at Browser Simplified Chinese `BASE-CONTEXT-OVERFLOW` with only
+  `localizedRecoveryVisible=false`; outer cleanup passed. The current run's
+  pre/post-click telemetry again proves both localized elements visible and
+  matching. The final facts were sampled only after
+  `clearFoundationLocalConversationProjection`, so React commit timing could
+  detach the already-observed nodes. The local correction freezes the receiver
+  facts before recovery and cleanup. The independent oracle, recovery action,
+  cleanup, tuple, and timeout contracts are unchanged.
 - **Critical path**: shared contract freeze -> four source lanes -> reconcile
   and focused checks -> checkpoint/deploy -> 419-cell G-F.
 - **Progress baseline**: the reviewed matrix contains 28 `BASE-*` error
-  families; the direct adapter currently implements 8 and leaves 20
+  families; the direct adapter currently implements 10 and leaves 18
   fail-closed.
 - **Forecast**: 5-8 working days to batch-close the remaining G-FE1 error
   families and obtain one exact-source full-Gate result; 4-6 weeks for the
@@ -4446,7 +4944,7 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   without reaching `retry-source-cancel-requested`; cleanup and exact-source
   attestation passed. The retry fixture currently waits for the external
   provider's first text token before requesting cancellation, although the
-  accepted retry contract requires only a durable failed/cancelled source.
+  accepted retry contract requires only a durable failed/cancelled/interrupted source.
   The producer will instead cancel at the production
   `provider_call_started` progress event, which occurs after the source user
   message is durable and before external first-token latency, while retaining
@@ -6818,6 +7316,707 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Desktop tests with one unrelated environment-dependent skip, Desktop
   production build, `75/75` Agent native static tests, and
   `git diff --check` pass. Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- Exact-source C08 run
+  `20260910T172812081259Z-ebfc1012506f229d31270592d50e0d52`
+  on `0db2aff8201ef1d2b0fb1117b99d132f44b00d4b` completed
+  `DONE / PROVEN` with all `19/19` assertions and clean resource release.
+  The subsequent unchanged Foundation run
+  `20260910T174705841217Z-b9f6cba8654841d5a809bc1953da3f1f`
+  crossed all four AS-F06 tuples. Every tuple requested and acknowledged the
+  transport cut before Turn settlement, so the intermittent
+  terminal-before-fault race did not reproduce.
+- The same Foundation run reached Browser English AS-F07. Station accepted the
+  retry, persisted provider progress, completed the Turn, and returned HTTP
+  `200` after `117.852s`; the Browser BFF was automatically terminated by
+  macOS after running headless for approximately five minutes, and its fetch
+  failed six milliseconds after process exit. Inner cleanup then exposed a
+  separate lifecycle defect: the Foundation client forgot the owned POSIX
+  process group when the direct `make` child had already exited, leaving Vite
+  on renderer port `3510`, and the cleanup wrapper retained only the primary
+  exception type.
+- The local correction prevents only code-less automatic exit for
+  `PT_CLIENT_SURFACE=browser`, preserves explicit Desktop/browser exits,
+  retains the launched PGID until all descendants are gone, escalates from
+  TERM to KILL within existing cleanup budgets, and records a redacted primary
+  exception chain when cleanup also fails. The `373/373` Agent Acceptance
+  Python tests, the focused Rust main test, Desktop TypeScript check, Rust
+  formatting check, Python compilation, and `git diff --check` pass. No
+  provider, timeout, tuple, assertion, or product semantic changed.
+  Exact-source C08 and unchanged 419-cell post-fix proof remain pending.
+- Checkpoint `d18a40cb48dce01f97285e581eb1409a422417a9` was deployed
+  exact-source to `chat-native-disposable`. C08 run
+  `20260910T185939301238Z-7e4f05f12a702632660e732aee6c476f`
+  completed `DONE / PROVEN` with `19/19` assertions. Unchanged Foundation run
+  `20260910T190158567694Z-34c18f11a6fe5ecfb85225d8e5125909`
+  then crossed all four AS-F06 tuples and kept the restarted Browser BFF alive
+  beyond the previous five-minute automatic-termination boundary.
+- Browser English AS-F07 cancelled its source Turn, completed retry after
+  `111.426s`, and completed the baseline Turn. First regenerate reached the
+  full `300.395s` operation boundary and returned HTTP `422`. Remote Station
+  evidence records provider attempt deadlines at 120 and 240 seconds, final
+  `wall_time_exhausted`, and `/turn/regenerate` returning `422` after
+  `5m0.020s`.
+- Inner cleanup preserved the full redacted `FoundationCandidateError` chain
+  and released both clients, both fault transports, all six client ports,
+  storage, and actor identity. Outer Provisioner cleanup completed
+  `DONE / PROVEN / passed`. The source-owned Browser lifetime, process-group
+  cleanup, and failure-preservation defects are closed. Foundation/G-F remain
+  `PARTIAL / UNPROVEN` only because the unchanged AS-F07 provider-backed
+  sequence did not complete; no source-authorized substitute exists.
+- Exact-source checkpoint
+  `4ca50a1b0088e5a31da35753fc00117c29d5a641` froze
+  `BASE-CONTEXT-OVERFLOW` receiver facts before local projection cleanup.
+  C08 run
+  `20260912T004956133520Z-4c4e04249e3297881a3475afba06bb31`
+  completed `DONE / PROVEN` with `19/19` assertions and clean cleanup.
+  Unchanged Foundation run
+  `20260912T005105177245Z-a2e74dde0946da7a7ca5a3cf58e3d2fe`
+  failed earlier at Native `AS-F06 / en / single / sample-001`: restart cleanup
+  judged the retained process group exited, but renderer port `3410` still
+  accepted loopback connections. Gateway and embedded WebDriver ports were
+  already released. Outer run
+  `20260912T005105057682Z-a3acb135a6ecd9e0170d1188c01192a1`
+  completed Provisioner cleanup `DONE / PROVEN`, so no final process or port
+  residue remained.
+- This is an Acceptance Infra lifecycle mismatch, not an Agent product
+  assertion failure. The active diagnostic records the retained root
+  PID/PGID/session, TERM/KILL wait outcome, and the listener
+  PID/PPID/PGID/command after the existing immediate release verdict. It does
+  not change the `15s`/`5s` deadlines, retry the Gate, weaken cleanup, or alter
+  any Foundation tuple. Foundation/G-F remain `PARTIAL / UNPROVEN`.
+- Instrumentation checkpoint
+  `24c7e3e04330d8c0968cf99cd6cb5bcd603af21e` used dedicated
+  Acceptance binary SHA-256
+  `948d9bf978c4cfd88a3a40ba7f6a156b772143ec86f93f308e077280007d32dd`;
+  embedded-WebDriver smoke passed and the approved Station reported the same
+  commit. C08 run
+  `20260912T012820159809Z-4ce386dda8bc33cd50afb936234a01e5`
+  completed `DONE / PROVEN` with `19/19` assertions.
+- During the same-source Foundation run, the expected Native Gateway and
+  WebDriver belonged to process group `55568`, while a later
+  `peers-group-chat` Acceptance runtime replaced renderer port `3410` with
+  process group `59637`. That foreign run exited before the first Native
+  restart. Native restart generations one and two then released their retained
+  groups and all three ports after TERM in `535ms` and `490ms`; no KILL was
+  required. This rejects a detached Native child and an early port verdict for
+  the observed restarts and confirms cross-worktree port takeover.
+- Foundation run
+  `20260912T012949927697Z-6d3190d85eefa6885987842e0bc08383`
+  then failed at Browser English AS-F06 when the Native executor's
+  `setFoundationLocale` call returned `acceptance harness not mounted`.
+  Inner cleanup recorded the primary chain, and outer cleanup released all
+  client/fault ports, storage, actor identity, and leases
+  `DONE / PROVEN`. The next instrumentation compares Native URL, document
+  readiness, Harness namespace, WebDriver/process liveness, and listener
+  ownership at one-shot startup readiness and locale dispatch. No startup
+  policy, deadline, retry, tuple, or assertion changes.
+- Exact-source checkpoint
+  `98631c455267c53c003b3b0096b0e3c1ad30102c` used dedicated
+  Acceptance binary SHA-256
+  `e9b4677286bdf94eba1ceabeb1cafc51f83b75e147996c98ace7084d9e0d17d6`;
+  embedded-WebDriver smoke passed and the approved Station reported the same
+  commit. C08 runs
+  `20260912T020355956900Z-784cfd570bb868b30b25683b2b39103c`
+  and
+  `20260912T023434831395Z-dc4a3d0ab9740c4baa9b3b64419957a4`
+  both completed `DONE / PROVEN`.
+- Isolated Foundation run
+  `20260912T023608539671Z-044de305ad05ee857f80db5d636c939b`
+  kept every Native renderer, Gateway, and WebDriver listener in the retained
+  process group. Both Native restart generations remained at
+  `http://localhost:3410/#/agent` with complete DOM, mounted Acceptance/Agent
+  namespaces, and a live locale method before and after locale dispatch. The
+  run crossed AS-F06 and rejected the independent Native startup hypotheses.
+- The first later failure was Browser English `BASE-CANCELLED /
+  localizedCancellationVisible`. Fresh receiver telemetry proves live and
+  reload projections were correct. Replay carried
+  `terminalReason=cancelled_by_user`, and immediate
+  `reconcileRecoveredTurn` state retained that detail; the receiver snapshot
+  311 ms later still rendered the correct typed/localized cancellation on the
+  same canonical message but had `errorDetail=""`.
+- Root cause is the Desktop projection merge owner:
+  `carryChainOfThoughtFields` discarded local `errorDetail` whenever the
+  server message was terminal, even when both messages identified the same
+  Turn and agreed on the same terminal status. The local correction preserves
+  only a missing same-terminal detail. A different server terminal remains
+  authoritative and continues to clear stale local details. Focused Web tests
+  pass `40/40`, complete Desktop tests pass `606/606` with one
+  environment-dependent skip, Desktop TypeScript passes, focused
+  Foundation/oracle/static tests pass `234/234`, and Acceptance Infra boundary
+  tests pass `8/8`. Exact-source proof remains pending.
+- Checkpoint `1362900aa41d2afa2d7f912fb34f8abc1e6bf30d` deployed
+  exact-source with Acceptance binary SHA-256
+  `560c9839fb4a4c1a9b8986accd6b6dc55dbe31b11f8aba85101bb803170d5c49`.
+  C08 run
+  `20260912T033904525557Z-d6822c40db31c543386eb94ec994b4e0`
+  completed `DONE / PROVEN`; unchanged Foundation run
+  `20260912T034122773227Z-6f85ea63620dd1dca04bff43347bb8ba`
+  crossed AS-F06 and `BASE-CANCELLED`, proving the same-terminal detail
+  correction, then failed only
+  `BASE-INCOMPATIBLE_CAPABILITY / cleanupComplete`.
+- Fresh incompatible-capability telemetry records successful Conversation
+  archive, binding deletion, Agent deletion, provider restoration, prior
+  selection restoration, and zero active bindings before parent deletion. The
+  final producer nevertheless set `capabilityBindingRemoved=false` because it
+  called the child-list API after deleting the parent Agent and received the
+  Desktop wrapper error `agent.capabilityBindingListFailed`.
+- The local correction performs the zero-active-binding readback immediately
+  after binding deletion while the Agent still exists, then carries that
+  verified result into final cleanup facts. Conversation and Agent deletion
+  readbacks remain independently required. Desktop TypeScript and focused
+  `234/234` Foundation/oracle/static tests pass; no product path, tuple,
+  timeout, or cleanup requirement changed. Exact-source proof remains pending.
+- **BASE-INCOMPATIBLE_CAPABILITY proof and next frontier (2026-09-12)**:
+  checkpoint `64511e23628c16003bc45703049b7e974f6f3110` deployed exact-source.
+  C08 run
+  `20260912T044940388295Z-e4198462d6841359eb30ec467e4fc976`
+  completed `DONE / PROVEN` with `19/19` assertions and complete cleanup.
+  The unchanged Foundation run
+  `20260912T045125090233Z-1e96c04957a4d44b519fcbdc2f295cdc`
+  crossed AS-F06, `BASE-CANCELLED`, and
+  `BASE-INCOMPATIBLE_CAPABILITY`, then failed at
+  `BASE-INTERRUPTED` because its direct-runtime group was not implemented.
+  This classifies the next action as `RECOVERABLE_IMPLEMENTATION`; no Gate
+  tuple, timeout, provider, or evidence requirement changed.
+- **Git Server and workflow synchronization (2026-09-12)**: remote default
+  `fix/windows-native-chat-closure@29f75b0687681079433e8b0ae08fe3139d746ff1`
+  was merged as
+  `8d315217f0cf90e23ce8a8834fac9e4119c791b6`. The pre-sync WIP is retained
+  by safety stash `025099bd9fe00278cb6bece07269f1c8d6fe07df`, was reapplied
+  without conflict, and remains present in the worktree. Removed legacy shell
+  owners were not restored. The official TRAE Skill installation now resolves
+  `.trae/skills` to `tooling/skills`; Developer Toolchain operations use
+  `node tooling/devctl/index.mjs`, while Make remains only a compatibility
+  entrypoint. The synchronized provisioning suite also exposed one test
+  isolation defect: the Actor Manifest serialization test invoked separately
+  covered friendship seeding after replacing the repository root with a
+  temporary directory. The test now isolates that side effect while the
+  production Fixture path remains unchanged; all `159/159` provisioning model,
+  owner, lease, and launch-context tests pass.
+- **Synchronized preflight corrections (2026-09-12)**: C08 run
+  `20260912T070046991021Z-445a476c9f6427dd0aacc6ff6f552747`
+  stopped before resource acquisition because the new Home Station Provisioner
+  defaulted its approved profile identity to `one`; the explicitly authorized
+  `chat-native-disposable` identity is now supplied through
+  `PT_ACCEPTANCE_APPROVED_PROFILE` without changing `PT_DEV_PROFILE`. Run
+  `20260912T070250232142Z-09da8bd06ea9d3966075e6d99fa41cc9`
+  then reached exact-source Station attestation and stopped before reset because
+  the Provisioner verified `CHAT_ACCEPTANCE_RESET=1` from the canonical profile
+  but its reset child inherited only the outer process environment. The Fixture
+  now threads that already-validated boolean into the child environment without
+  forwarding provider credentials or other profile values. Both blocked runs
+  performed complete Provisioner cleanup and executed no product assertion.
+- **C08 proof and remote same-Station Fixture closure (2026-09-12)**:
+  exact-source C08 run
+  `20260912T070721099163Z-96070381bb1ebd5f4ed0332961603360`
+  on `4a844a64e07c984dcce443599e292ed6d5700edd` completed
+  `DONE / PROVEN` with all `19/19` assertions and complete process, port,
+  storage, and Provisioner cleanup. The subsequent Foundation run
+  `20260912T070925565032Z-0ab2f9288035bf85a7f64df16098a73b`
+  stopped during Fixture provisioning before any matrix tuple because
+  synchronized same-Station friendship seeding supported only local SQLite.
+  The Fixture owner now executes the same one-federation, one-membership, one
+  accepted-request, and two-directional-projection transaction through the
+  existing verified remote PostgreSQL transport. Focused reset and
+  provisioning-owner tests pass `43/43`; the failed run completed Provisioner
+  cleanup and remains `PARTIAL / UNPROVEN`.
+- **Foundation devctl profile closure (2026-09-12)**: exact-source C08 run
+  `20260912T071438908670Z-e065e04e11685b66e1e74c2317d75ed3`
+  on `674b5d87bd256cc834b40469ab0694cf07337305` completed
+  `DONE / PROVEN` with `19/19` assertions and clean cleanup. The next
+  Foundation attempt allocated run
+  `20260912T071608435037Z-ca808b293ce3fb1734940c3ccae11647`
+  but was cancelled before any tuple after its Native log proved that the
+  generated runtime-profile filename `agent-v2-foundation-native.env`
+  disagreed with the approved `PT_DEV_PROFILE=chat-native-disposable`; new
+  devctl correctly rejected that split identity. `FoundationRuntimeClient`
+  now derives both the generated filename and launch environment from the same
+  approved profile identity while retaining the independent client profile
+  label. Focused runtime-client/restart tests pass `31/31`; the cancelled run
+  produced no product evidence and its diagnostic runtime directory is
+  intentionally retained.
+- **Foundation devctl feature closure (2026-09-12)**: the next bounded
+  Foundation diagnostic reached the Native dev runtime with matching profile
+  identity, then waited for embedded WebDriver while renderer and Gateway were
+  healthy. Runtime inspection proved the synchronized `desktop.mjs` launcher
+  had dropped the prior `PT_DESKTOP_E2E=true -> --features e2e-testing`
+  contract. The run was cancelled before any tuple or product claim, its exact
+  owned process group and ports were released, and the stale source lease was
+  terminated before reuse. The devctl Desktop owner now adds the existing
+  `e2e-testing` feature only for Acceptance launches and leaves ordinary
+  development unchanged. The same validation exposed that synchronous POSIX
+  stop polling treated an already-exited zombie child as live; the process
+  adapter now classifies `Z` state as exited after signaling the owned process
+  group. All `22/22` devctl tests and focused runtime-client/restart/scenario
+  tests pass.
+- **BASE-INTERRUPTED source closure (2026-09-12)**: Station now persists the
+  exact `LIFECYCLE_INTERRUPTED / agent.errors.lifecycleInterrupted`
+  `retryable=true / terminal=true` payload with only `turn_id` and
+  `reason_code` on both startup recovery and live lifecycle interruption.
+  Retrying clears the reused Assistant Message's stale `error_json` before the
+  new Attempt executes. Desktop projects the same terminal through message and
+  operation state, rejects malformed or unsafe details, renders localized
+  `Recover`, and closes the stream lifecycle so retry admission is not blocked.
+  The Harness uses one F06-style real in-flight Turn, a source-bound abrupt
+  Station restart, Station persistence/replay readback, real receiver action,
+  exactly one new cancelled recovery Attempt, full original Attempt and
+  terminal-event immutability checks, and reverse cleanup of Station state,
+  Desktop projection, recovery state, handoff, and cleanup locator. The Python
+  oracle independently recomputes all eight assertions for all four
+  Desktop/Browser x English/Simplified-Chinese tuples. Current local checks
+  pass: Station Agent packages, Desktop check, Desktop `621/621`, focused
+  Desktop `102/102`, Desktop production build, Foundation/oracle/static
+  `304/304`, Python compilation, Go formatting, hard rules, and
+  `git diff --check`. Agent Domain validation remains correctly
+  stale-source `UNPROVEN` until the clean checkpoint is deployed and C08 then
+  the unchanged 419-cell Foundation Gate execute.
+- **Foundation devctl Harness and cleanup closure (2026-09-12)**: the final
+  `f1963a7f2567a05cbbaaafe3a23ff7f9f493b53d` Acceptance binary has SHA-256
+  `3948b4a2d2934711c7ded241befd96d2b2d6398407aec0fc57d1015b81c3e97b`
+  and passes embedded-WebDriver smoke. Exact-source C08 run
+  `20260912T082711692343Z-79fcf43c5d6f4a857834e3f6d20a8939` is
+  `DONE / PROVEN` with `19/19` assertions and complete cleanup. The following
+  Foundation run
+  `20260912T082943713422Z-b48301566d031c38e6ea7aca840bfd5e`
+  stopped before the first matrix tuple: the native renderer had
+  `PT_DESKTOP_E2E=true` but no `VITE_ACCEPTANCE_HARNESS=1`, so its root and
+  Tauri bridge were healthy while the Acceptance root and Agent namespace
+  remained absent. Cleanup then terminated the short-lived `make desktop`
+  process group but not the detached Vite and Tauri children owned by devctl.
+  The Domain runtime owner now writes and launches with the existing Harness
+  flag and invokes the matching devctl `desktop stop --mode app|web` lifecycle
+  before final port verification. A real Native post-fix comparison proves the
+  Agent Harness and locale method are mounted and all Gateway, renderer,
+  WebDriver, fault-control, and fault-proxy ports are released. Foundation,
+  runtime, and static tests pass `367/367`; devctl tests pass `22/22`; hard
+  rules, Python compilation, and diff hygiene pass. No Gate tuple, timeout,
+  provider, or evidence requirement changed. Clean checkpoint deployment and
+  same-source C08 then Foundation proof remain pending.
+- **BASE-CONTEXT-OVERFLOW cleanup diagnostic (2026-09-12)**: checkpoint
+  `f94b2fb4d360b6ae1f6f8401ac1df81955142903` deployed exact-source after
+  reclaiming `27.83GB` of inactive Docker build cache on the approved Station
+  host; no image in use, container, database volume, source, or evidence was
+  removed. PostgreSQL and Station returned healthy, and C08 run
+  `20260912T090634799644Z-5a0cf759ba34269c19ba21ab82242462`
+  completed `DONE / PROVEN` with `19/19` assertions. The unchanged Foundation
+  run `20260912T090751589578Z-8609947413ae347978a77156d5021b64`
+  crossed `BASE-INTERRUPTED` and failed first at Browser English
+  `BASE-CONTEXT-OVERFLOW / cleanupComplete`. Both runtime clients released all
+  process, port, storage, and fault-transport resources, and outer Provisioner
+  cleanup is `DONE / PROVEN`. The retained context-overflow instrumentation now
+  records the draft, local projection, and Conversation cleanup facts before
+  the shared deletion phase. Exact-field evidence remains pending one
+  source-bound diagnostic checkpoint; no cleanup assertion or Gate tuple was
+  weakened.
+- **Foundation devctl client-identity closure (2026-09-12)**: checkpoint
+  `0a8c04977ad1d951d1970d550df74df9f5ee49a5` retained the
+  context-overflow cleanup instrumentation and passed exact-source C08 run
+  `20260912T102443766254Z-b54c0863776672d25291bfe12d204847`
+  with complete cleanup. Foundation runs
+  `20260912T101751744551Z-8c254412faed073c37cfce05934b7b99`
+  and
+  `20260912T102603877808Z-15c8bb3648cb9ef33b1526c79f66fa78`
+  stopped before any product tuple because the Desktop devctl owner replaced
+  the Runtime Manifest's isolated `agent-v2-foundation-native|browser`
+  profile and `/tmp/pt-agent-v2-*/native|browser/storage` roots with its
+  shared `chat-native-disposable-app|web` development defaults. Station
+  readback retained one Desktop capability session while the affected client
+  reported zero local sessions, which confirms a split local device identity
+  rather than a missing Station session. devctl now preserves explicit
+  `PT_PROFILE` and `PEERS_STORAGE_ROOT` launch overrides and creates the
+  resolved storage root while ordinary development retains the existing
+  profile-scoped defaults. Local checks pass: devctl `24/24`, Foundation
+  runtime client `20/20`, Desktop strict check, and diff hygiene. No Gate
+  tuple, identity oracle, timeout, provider, cleanup, or proof requirement
+  changed. Clean checkpoint, dedicated-binary rebuild/smoke, exact-source
+  deployment, C08-first proof, and the unchanged Foundation matrix remain
+  pending.
+- **Foundation managed-launcher lifecycle diagnostic (2026-09-12)**:
+  checkpoint `a3979445150bce05158bd0bdc23b0943bedc4c3f` produced
+  dedicated binary SHA-256
+  `aa9b848f40056dc03729745af17814f375f2eaceb5d4b56c71e92005bd0e6d45`,
+  passed embedded-WebDriver smoke, deployed exact source, and passed C08 run
+  `20260912T105004727136Z-0d64e02674e4c9ce26eed7d76bace6fe`
+  with `19/19` assertions and complete cleanup. Foundation run
+  `20260912T110041844602Z-ec9969fcf6c374c695bba2d8d74fcd51`
+  then used the manifest-assigned Native and Browser profile/storage roots and
+  crossed initial capability-session enrollment, proving the preceding devctl
+  identity fix. During AS-F06 Browser restart, the compatibility
+  `make desktop-web` launcher returned code 0 after devctl transferred
+  lifecycle ownership to detached managed children; the Foundation client
+  treated that successful one-shot command exit as runtime death and exhausted
+  the existing bounded startup wait. Provisioner cleanup remained
+  `DONE / PROVEN` and released all client processes, ports, and storage. The
+  Foundation runtime owner now accepts only a code-0 managed-launcher handoff
+  while retaining immediate failure for direct launchers and nonzero managed
+  exits. Focused Foundation runtime/scenario tests pass `74/74`; Agent static
+  tests pass `85/85`; hard rules and diff hygiene pass. No Gate assertion,
+  timeout, product behavior, or cleanup contract changed. Clean checkpoint and
+  same-source C08-first/Foundation proof remain pending.
+- **AS-F06 acknowledged-cut terminal race (2026-09-12)**: checkpoint
+  `68417f9f19bf8e2a78700dd2799edd4e958ea7db` passed C08 run
+  `20260912T112721385973Z-279bb5e3f6b8b59a48213b223ef3508f`
+  with `19/19` assertions and complete cleanup. Foundation run
+  `20260912T112845134359Z-c05aa8bcfaf45a91f7e171c27a90c915`
+  proved the managed-launcher fix across Browser restart generations one and
+  two and completed Browser English AS-F06. Browser Simplified Chinese then
+  requested the real proxy cut at 2616 ms, received its acknowledgement at
+  2617 ms with the exact active recovery record still `CONNECTED`, and
+  consumed an already-buffered `done` at 2618 ms before the recovery phase
+  transition removed the race. The first local cleanup attempt also stopped
+  on `agent.turnCancelFailed` for the already-terminal Turn even though its
+  durable cleanup locator had the exact Turn and Conversation; outer cleanup
+  subsequently released all clients, ports, storage, source lease, and profile
+  lease. The local correction preserves the external proxy as the sole fault
+  authority, invokes the existing production transport disconnect only after
+  proxy acknowledgement to discard buffered post-cut frames, and lets cleanup
+  continue from terminal Turn cancellation through queue cancellation,
+  Conversation deletion, and final residue verification. Desktop API tests
+  pass `60/60`, Foundation runtime/scenario tests pass `74/74`, Agent static
+  tests pass `85/85`, Desktop strict check, hard rules, and diff hygiene pass.
+  No retry, timeout increase, synthetic terminal, Gate assertion, or product
+  behavior changed. Clean checkpoint, binary rebuild/smoke, exact-source
+  deployment, C08-first proof, and the unchanged Foundation matrix remain
+  pending.
+- **AS-F06 proof and forbidden-actor account-gate frontier (2026-09-12)**:
+  checkpoint `8a080bf6878ca11bdd49f88db8d3ba92cba84b70` used dedicated
+  Acceptance binary SHA-256
+  `94a2920ba8447822a2978aed8f6505b7fec10f2004dfe7139ee88ad603d48920`
+  and was deployed exact-source to `chat-native-disposable-station`. C08 run
+  `20260912T120726450221Z-fad550ba6b11f323b0aa3a7ea4657f2b`
+  completed `DONE / PROVEN` with `19/19` assertions, source-matching Station
+  attestation, secret scan, and complete cleanup. The unchanged Foundation run
+  `20260912T120931452932Z-eaa05a1591ac11c0a71664540cb4d52e`
+  crossed all four AS-F06 runtime/locale tuples. Each tuple acknowledged the
+  real proxy cut before restart/replay, and every scenario reported
+  `conversationDeleted=true`, `handoffCleared=true`,
+  `cleanupLocatorCleared=true`, `recoveryRecordCleared=true`,
+  `localProjectionCleared=true`, and `cleanupComplete=true`. The run also
+  captured matching visible context-overflow error/recovery surfaces and
+  reduced-draft focus restoration in both locales. Its first failure was
+  Browser English `BASE-FORBIDDEN_ACTOR`, where the source-bound typed
+  rejection and visible `Switch account` recovery completed but the Harness
+  timed out waiting for `identityRuntime.phase=accountGate` and an
+  unauthenticated session. Outer Provisioner cleanup completed
+  `DONE / PROVEN / passed`; Foundation/G-F remain `PARTIAL / UNPROVEN`.
+  Retained session `foundation-forbidden-actor-account-gate` now observes the
+  recovery click, Identity Runtime logout, session logout, per-handler identity
+  pipeline, and final account-gate state without changing behavior, timeouts,
+  matrix tuples, or assertions.
+- **Context-overflow cleanup branch diagnostic (2026-09-12)**: diagnostic
+  checkpoint `08d16193949cd19757c099302fa25dda35dfb836` used Acceptance
+  binary SHA-256
+  `33365d738b0864adda7a3e2242a94c14894f57205a003dfb357d72a3e07a2aed`,
+  passed exact-source C08 run
+  `20260912T125646628616Z-710277c0ccf2c2b5a90fe9d998816ce7`
+  with `19/19` assertions and complete cleanup, and crossed all four AS-F06
+  tuples again. Foundation run
+  `20260912T125854097224Z-4aadb1165f439562306772b14ce522c5`
+  then failed first at Browser English
+  `BASE-CONTEXT-OVERFLOW / cleanupComplete`. Its pre/post recovery telemetry
+  proves one visible localized error/recovery surface, restored composer
+  focus, and the reduced draft. The expected `cleanup-dispatch-entered`
+  observation was absent, so the next instrumentation is moved to the exact
+  context-overflow scenario return and records cleanup-branch admission,
+  authoritative deletion, and the final assertion input. The
+  forbidden-actor account-gate instrumentation was not reached and remains
+  queued. Outer Provisioner cleanup completed `DONE / PROVEN / passed`; no
+  timeout, tuple, assertion, cleanup requirement, or product behavior changed.
+- **Context-overflow canonical cell-ID correction (2026-09-12)**: the missing
+  cleanup telemetry and failed assertion have one source-confirmed cause. The
+  matrix and evaluator use `BASE-CONTEXT_OVERFLOW`, while four shared Harness
+  cleanup/telemetry branches compared against the stale hyphenated
+  `BASE-CONTEXT-OVERFLOW`. The scenario therefore returned its intentional
+  pre-deletion `conversationDeleted=false`, skipped authoritative Conversation
+  deletion and cleanup fact enrichment, and failed `cleanupComplete`. The
+  local correction uses the canonical matrix ID in all four branches and adds
+  a static regression rejecting the stale alias. It retains the existing
+  Conversation deletion owner, all cleanup predicates, Gate tuples, timeout,
+  provider, and proof requirements. Exact-source C08 and Foundation proof
+  remain pending.
+- **Context-overflow proof and interrupted-recovery frontier (2026-09-12)**:
+  checkpoint `09a6897e3d4b4c4399cc53cd69a4a75153f0fe18` used Acceptance
+  binary SHA-256
+  `ee0b1241ee4f414b2f9c56a7ab5c7cd89f95fceb5e9c691115b45d0926210238`
+  and passed exact-source C08 run
+  `20260912T134813555538Z-1f9395aff32137b9257f32727cb728e0fb9ec909287`.
+  Foundation run
+  `20260912T134934601704Z-2a47f9cf4b4e32fb5b07225daad92a1c`
+  proved both context-overflow locale cells with
+  `draftCleared=true`, `localProjectionCleared=true`, and
+  `conversationDeleted=true`, and it also crossed the prior forbidden-actor
+  account-gate timeout with an observed
+  `authenticated -> loggingOut -> accountGate` transition. The first new
+  failure was Browser English `BASE-INTERRUPTED`: terminal snapshot
+  reconciliation cleared the generation-bound recovery record, then the same
+  in-flight `connected` callback continued and recreated it. The first cleanup
+  therefore had only `recoveryRecordCleared=false`; the idempotent retry
+  cleared the late record and passed. The `chatRuntime` owner now rechecks the
+  exact recovery generation after authoritative `connected` reconciliation,
+  stops and persists the closed subscription when reconciliation removed it,
+  and does not publish or consume that stale lifecycle event. A focused
+  runtime regression reproduces the ordering. No sleep, retry, timeout, tuple,
+  assertion, or cleanup weakening is introduced.
+- **Controlled composer cleanup correction (2026-09-12)**: checkpoint
+  `b4d086986beb22cf7bcd345157d7b10e69d2efcf` used dedicated Acceptance
+  binary SHA-256
+  `4ef0c9ca15894ae1ece881999360ad5ed29e38f8804e33e732352baa213310be`
+  and passed exact-source C08 run
+  `20260912T144402476036Z-831b8f4aad987ea9bb221f17361d5736`.
+  Foundation run
+  `20260912T144543109509Z-bc0f12ef86eccfff0a1261c8526c6f7b`
+  then failed first at Browser English
+  `BASE-CONTEXT_OVERFLOW / cleanupComplete`. Retained telemetry showed the
+  native textarea value empty immediately after Harness cleanup, then
+  non-empty before shared deletion; `localProjectionCleared=true` and
+  `conversationDeleted=true` remained valid. The source owner is
+  `ChatInput`'s controlled local draft, while the Harness had bypassed it with
+  `HTMLTextAreaElement.prototype.value`. The local correction routes reduced
+  and empty draft transitions through the existing production
+  `useChatStore.fillComposer()` request, waits for request consumption and the
+  controlled DOM commit, and removes the direct setter from success and
+  cleanup paths. It also updates the stale static budget-error assertion to
+  preserve the accepted conditional `interrupted` terminal state. Agent
+  Acceptance tests pass `418/418`; Desktop tests pass `622/622` with one
+  existing environment-only skip; Desktop strict check, production build,
+  and diff hygiene pass. No product state, matrix tuple, timeout, cleanup
+  predicate, or provider behavior changed. Exact-source post-fix C08,
+  Foundation, and the separately selected stream-resilience Gate remain
+  pending.
+- **Composer owner post-fix diagnostic (2026-09-12)**: checkpoint
+  `7c10521a51d521f30cf36c0173171e4175d0b418` passed exact-source C08 run
+  `20260912T154305828038Z-5576a1b0184154cc2ea5f09b08bc5c40`.
+  Same-source Foundation run
+  `20260912T154441125137Z-e0e1b6e88414d48337d349c72bc4883c`
+  again failed only Browser English
+  `BASE-CONTEXT_OVERFLOW / cleanupComplete`. The post-fix collector records
+  `draftCleared=true` immediately after the empty owner request, then
+  `draftCleared=false` before shared deletion; local projection and
+  Conversation cleanup remain true. This proves that `composerFill` request
+  consumption plus one DOM observation does not yet establish stable
+  `ChatInput` state/draft-cache commit. The next instrumentation records only
+  fill-request length/emptiness, controlled input-state length, per-session
+  draft-restore length, native-input occurrence, and captured-node identity.
+  It changes no product behavior, matrix tuple, timeout, or assertion.
+  Focused Agent tests pass `126/126`; Desktop tests pass `622/622` with one
+  existing environment-only skip; Desktop strict check and diff hygiene pass.
+  Outer Provisioner cleanup completed `DONE / PROVEN / passed`. A pre-deploy
+  neutrality review found that the first instrumentation checkpoint
+  `33c8b21436958d4964dda422f570806199128a26` had moved draft lookup before the
+  original previous-session write and added `currentSessionKey` to the
+  composer-fill effect dependencies. Checkpoint
+  `263b72ed2` restores both original semantics while retaining the same bounded
+  observation points. Agent focused tests remain `126/126`, Desktop tests
+  remain `622/622` with one existing environment-only skip, Desktop strict
+  check passes, and the corrected source has not yet been deployed.
+- **AS-F06 native handoff persistence regression (2026-09-12)**: exact-source
+  C08 run `20260912T164209337981Z-1dd91d795d071a4d07025ed07620fcc3`
+  on `e68640fc6ef195f1e805443c827a4fa71a4fcb58` completed
+  `DONE / PROVEN`. Two fail-closed Foundation invocations exposed omitted
+  AS-F06 authorization variables and released all resources. Fully authorized
+  Foundation run
+  `20260912T170246593060Z-c3aa9e29803ff2ee6cf45578ac99fffc`
+  then crossed Browser English and Simplified Chinese AS-F06. Desktop English
+  finalized its handoff and switched away from Agent, but the native client
+  failed bounded warm-up after Station restart and was restarted. The
+  subsequent capability-isolation restore failed with
+  `agent.acceptance.foundationRecoveryHandoffMissing`; cleanup remained
+  `DONE / PROVEN / passed`. The next instrumentation records only handoff
+  storage presence, serialized length, entry count, target-entry presence,
+  null field names, and strict parser acceptance before navigation and after
+  Station recovery. It does not reseed state, relax persistence proof, or
+  change product behavior.
+  Exact-source run
+  `20260912T173659604871Z-1f7f52da5b4decfe75a9e4e31440e1f2`
+  on `f504880cf60ae1c880e82558b81462e87e70e74d` did not reproduce the
+  earlier loss at capability restoration. Browser English, Browser Simplified
+  Chinese, and Desktop English each persisted one valid handoff and retained
+  it through Station recovery with no `null` fields and strict parser
+  acceptance. Desktop English then completed durable reload, the coordinator
+  performed its explicit client restart, and `foundationDirectProbe` failed
+  with `agent.acceptance.foundationRecoveryHandoffMissing`. The next
+  instrumentation records the same bounded storage snapshot at that
+  DirectProbe entry; no state is reinjected and no proof is weakened.
+  Exact-source run
+  `20260912T180742830795Z-694e471ddbaec21631a4f8e75d5ed7e1`
+  on `69011df9f388c4d50627c331b0dfbbd61fe78bc8` confirms the
+  distinction. Browser retained one valid parsed handoff after client restart.
+  Desktop retained one valid parsed handoff through Station recovery, then
+  reported `storagePresent=false` and `parsedHandoffPresent=false` at
+  DirectProbe entry after the explicit native client restart. The Acceptance
+  runner therefore becomes the restart-surviving owner of this test-only
+  oracle: it exports the latest validated handoff after durable reload and
+  imports it only into the Desktop native Harness after restart with exact
+  scenario/platform validation. Browser keeps its native persistence path.
+  The transfer is excluded from product evidence and cannot replace Station
+  snapshot, cursor replay, or receiver assertions.
+- **BASE-CONTEXT_OVERFLOW cleanup owner ordering (2026-09-13)**:
+  exact-source C08 run
+  `20260912T184141268751Z-7159a0985434bdfdb6886536d4934e98`
+  on `dcbe51435408bf25c46de3adff5bdfa01aa6b7aa` completed
+  `DONE / PROVEN`. Fully authorized same-source Foundation run
+  `20260912T184304342469Z-8866672e9f3932fc3fcfbcf6932d1773`
+  crossed all four AS-F06 tuples and failed first at Browser English
+  `BASE-CONTEXT_OVERFLOW / cleanupComplete`; Provisioner cleanup completed
+  `DONE / PROVEN / passed`. Retained N-Q telemetry proves the empty
+  `fillComposer` request committed controlled input, current topic cache, and
+  current DOM to length zero. Local Conversation projection cleanup then
+  changed `currentSessionKey`, and the normal per-topic owner restored a
+  surviving topic's 57-character draft before shared cleanup sampled the
+  final tuple. Per-topic draft restoration is accepted product behavior and
+  remains unchanged. The local Harness correction orders the isolated
+  cleanup transaction as projection removal followed by the production
+  `fillComposer('')` owner request, samples the returned current textarea,
+  and applies the same order to failure and outer cleanup. Static coverage
+  rejects reversing that order. Desktop tests pass `622/622` with one
+  existing environment-only skip; Agent focused tests pass `266/266`;
+  Desktop strict check, production build, Acceptance planner/self-tests, and
+  diff hygiene pass. The implementation and diagnostic record are committed at
+  `ab765cb9543819cb519e3a29d00e819925463255`; the next action is final
+  documentation synchronization followed by Native binary rebuild and smoke.
+  Exact-source C08 run
+  `20260912T234312907224Z-d1244d088d9980940826c8f449985217`
+  on `7e148f83bd7b90805d95cb3b3bbbec2e18bdb01e` completed
+  `DONE / PROVEN`. The same-source Foundation run
+  `20260912T234615828770Z-2f4a011183adcc54ad3a57d694361c27`
+  proved both Browser locale cleanup tuples with `draftCleared=true`,
+  `localProjectionCleared=true`, and `conversationDeleted=true`.
+- **BASE-INTERRUPTED persisted-outcome diagnostic (2026-09-13)**: the same
+  Foundation run advanced to Browser English `BASE-INTERRUPTED` and failed at
+  `foundationInterruptedPersistedOutcomeMissing` before receiver or recovery
+  assertions. Provisioner cleanup completed `DONE / PROVEN / passed`.
+  Read-only PostgreSQL inspection shows that actually interrupted Turns have
+  `interrupted` Assistant Messages with valid 276-byte typed `error_json`;
+  Station startup logs record interrupted-step reclamation during the earlier
+  AS-F06 restarts but not in this later failure window. The next bounded
+  instrumentation records only Conversation/message status, message count,
+  error JSON presence/length/type, parsed key names, typed-field types, detail
+  key names, and projector acceptance. It distinguishes response omission,
+  wrong-message selection, strict-shape rejection, early readback, and a Turn
+  completing between the client fault boundary and Station restart. No
+  product behavior, matrix tuple, timeout, cleanup, provider, or assertion is
+  changed.
+  Diagnostic checkpoint `bf1af73241b76e4e7b3b857aa29091dbf63fcda9`
+  passed exact-source C08 run
+  `20260913T003619586251Z-f9d282299dedcaf1e19e40c011255774`.
+  Fully authorized Foundation run
+  `20260913T003753703208Z-727e7fa98b35bbad6ac31bf02f8ed1be`
+  proves V-Z are not the current failure: Browser readback contains exactly
+  one matching `interrupted` Assistant Message, its `error_json` is present
+  at 276 bytes, parsed keys and detail keys match the accepted contract, all
+  strict field types match, and `persistedOutcomePresent=true`. The first
+  failure moved to `foundationInterruptedReceiverMissing`; cleanup remains
+  `DONE / PROVEN / passed`. The next AA-AD instrumentation samples the
+  post-wait message, recovery, primary-error selector, store projection, and
+  current-session presence using only booleans, counts, and typed
+  status/attribute values.
+- **BASE-DUPLICATE_CONFLICT receiver diagnostic (2026-09-13)**: diagnostic
+  checkpoint `acf98eb3bd0f59a206351488777f89d7a64106e4` passed exact-source C08
+  run `20260913T012013690791Z-a87dd97ff5c3a0acf76621e915eaa84d`.
+  Fully authorized same-source Foundation run
+  `20260913T013756664860Z-5244311931c42973f9cfccf9571b6c72`
+  crossed the earlier AS-F10 transient and failed first at Browser Simplified
+  Chinese `BASE-DUPLICATE_CONFLICT / duplicate conflict receiver`. This
+  boundary occurs after the typed Station event and `onRejected` callback but
+  before the retained Open-original click/Portal instrumentation. Provisioner
+  cleanup completed `DONE / PROVEN / passed`. The next F-I instrumentation
+  records only locale, session match, current/buffered message counts, stable
+  typed-error codes, operation status, loading state, matching DOM counts, and
+  the peak matching DOM count. It distinguishes delayed store projection,
+  off-session buffering, store/DOM shape mismatch, and a transient receiver
+  replacement without changing product behavior, assertions, matrix tuples,
+  timeout, cleanup, or provider configuration. Agent Acceptance tests pass
+  `418/418`; Desktop tests pass `622/622` with one existing environment-only
+  skip; Desktop strict check, production build, and diff hygiene pass.
+  Instrumentation checkpoint
+  `09974e4e77fb1c470c491bc7438ab2798740dcc6` is ready for Native binary
+  rebuild, smoke, exact-source deployment, C08, and Foundation.
+- **BASE-INTERRUPTED visible receiver correction (2026-09-13)**: exact-source
+  C08 run `20260913T022558987346Z-78df1003eb513fa7302eded75bda3d75`
+  on `a56c2989953deae1c1454640ac4646d1d464ddd1` completed
+  `DONE / PROVEN`. Fully authorized same-source Foundation run
+  `20260913T023858647859Z-b63d363ceb9dc4769ea169c39523d037`
+  crossed all AS-F06 and both Duplicate Conflict locale cells. F-I shows both
+  Duplicate Conflict receivers progressed from loading through one stable
+  typed DOM projection and matching Open-original transition, rejecting all
+  four new Duplicate hypotheses. The run then failed first at Browser English
+  `BASE-INTERRUPTED / foundationInterruptedReceiverMissing`; AA-AD records
+  `waitReadyObserved=true`, a visible message with terminal status
+  `interrupted`, `LIFECYCLE_INTERRUPTED`, a visible Recover action, and a
+  matching store Turn, while only `errorElementPresent=false`. The root cause
+  is that the actual visible `presentedError` node lacked the stable evidence
+  selector, which existed only inside collapsed Diagnostics. The local
+  correction places the selector on the visible error copy and strengthens its
+  source-contract regression without changing localized copy, layout,
+  recovery, store/runtime ownership, Gate assertions, matrix tuples, timeout,
+  cleanup, or provider configuration. Desktop tests pass `622/622` with one
+  existing environment-only skip; Agent Acceptance tests pass `418/418`;
+  Desktop strict check, Agent static `85/85`, and diff hygiene pass.
+- The selector-correction source
+  `d5bfa071a260116a1c5f1f25a48cb45cec0920d6` passed exact-source C08 run
+  `20260913T032341973486Z-0e8f949da6e64423747d4206ff53c3f0`.
+  Fully authorized Foundation run
+  `20260913T032512505621Z-53d0a764362fb2dc00ce9d4ecc93c1b2`
+  crossed all AS-F06 and both Duplicate Conflict locale cells, then failed
+  before receiver sampling because the source Assistant Message was already
+  `completed` without `error_json`. The prior run had proved the same source
+  path can persist interruption, so this is a real orchestration race rather
+  than a missing Station contract. Source inspection confirms Station emits
+  durable `turn_started` and `provider_call_started` progress events before
+  entering the real provider call, while the old coordinator waited for the
+  first text token and then performed remote source/container preflight before
+  `docker kill`. The local correction preserves AS-F06's text-prefix boundary
+  and gives only `BASE-INTERRUPTED` an explicit `provider-started` boundary.
+  Restart source/container preflight now completes before the Turn starts, then
+  the verified container is killed immediately after the prepared handoff.
+  There remains one real Ark Turn, one real abrupt Station restart, no retry
+  loop, no timeout increase, and no provider substitution. Local verification
+  passes Desktop `622/622`, Agent `419/419`, strict check, restart `13/13`,
+  scenario runner `51/51`, static `85/85`, production build, and diff hygiene.
+- The exact-source diagnostic checkpoint
+  `949db8bfeafb4118db853e4cf872407073592434` passed C08 run
+  `20260913T044659655544Z-0ea49420274739d9fa5702f8291f78b6`.
+  Fully authorized same-source Foundation run
+  `20260913T044822781627Z-fdf5f8888571425b8f35372d39250d24`
+  crossed all AS-F06 tuples and both Browser AS-F07 locale tuples, then advanced
+  Browser English `BASE-INTERRUPTED` through persisted interruption, the typed
+  outcome, localized visible error, and visible Recover action before failing
+  at recovery-attempt creation. Provisioner cleanup completed
+  `DONE / PROVEN / passed`. A subsequent same-source run
+  `20260913T053738347832Z-0991bc6cc7ae542d9870d9c75bb5bb47`
+  reproduced the remaining AS-F06 fault-control race: the first durable text
+  arrived at 2245 ms, terminal at 2247 ms, and the real proxy cut acknowledged
+  at 2248 ms. The local correction retains the TCP proxy as sole fault owner
+  but performs the loopback cut request synchronously, so Browser JavaScript
+  cannot consume terminal data between the acknowledged text prefix and the
+  completed external socket cut. Existing post-ack transport disconnect remains
+  only a buffered-frame discard. Desktop strict check, Agent static `85/85`,
+  and diff hygiene pass; exact-source post-fix C08/Foundation proof remains
+  pending.
+- Exact-source checkpoint `80358d815ccdb031582517134e6a2bb563d96760`
+  passed C08 run
+  `20260913T122723703780Z-3c46e80a6f615d4110b062ef50fb1f41`
+  with `19/19`, `DONE / PROVEN`, and complete cleanup. Fully authorized
+  same-source Foundation run
+  `20260913T122942301669Z-a65d8f1a59c417365f070daa3dc3a6d1`
+  advanced Browser English `BASE-INTERRUPTED` through the real Station restart,
+  persisted typed interruption, localized receiver, Recover dispatch, and one
+  new recovery Attempt. After cancelling the recovery Attempt, the Gate retained
+  the source Attempt in diagnostic replay but failed to find its original
+  terminal event by sequence. Station event rows are append-only; the defect is
+  that every new SSE replay automatically reloads the latest Attempt fence, so
+  retry makes the retained source event invisible even though it remains in
+  storage. The local owner correction keeps default recovery fenced to the
+  current Attempt and adds optional, actor-scoped `attempt_id` selection for
+  immutable retained-Attempt events and snapshot. Explicit historical selection
+  excludes unbound legacy events. Browser and Native transports forward the
+  selector only for the source-lineage readback. Station service/handler tests,
+  Desktop strict check, Desktop `623/623`, focused Web `95/95`, and focused
+  Agent contract/scenario `268/268`, Native Rust replay request `2/2`, and the
+  Desktop production build pass. The full Agent suite passes `421/422`; only
+  its clean-source candidate identity check is expectedly blocked by the
+  uncommitted fix. Clean-checkpoint exact-source C08/Foundation proof remains
+  pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

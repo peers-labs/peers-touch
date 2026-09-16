@@ -11,6 +11,7 @@
         mobile mobile-stop mobile-restart \
         status stop restart
 
+DEVCTL := node tooling/devctl/index.mjs
 LOCAL_DEV_SCRIPTS := tooling/scripts/local-dev
 MACHINE_DEV_SCRIPT := $(LOCAL_DEV_SCRIPTS)/machine-dev.mjs
 PROFILE_ARG := $(or $(PROFILE),$(word 2,$(MAKECMDGOALS)))
@@ -75,10 +76,10 @@ profile-init:
 	@SLOT=$(SLOT_ARG) /bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh init $(PROFILE_ARG)
 
 profiles:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh list
+	@$(DEVCTL) profile list
 
 config:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/config.sh
+	@$(DEVCTL) config
 
 dev-start:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_PURPOSE_ARG)" ] || [ -z "$(DEV_SOURCE_CLAIMS_ARG)" ]; then \
@@ -133,76 +134,76 @@ dev-release:
 		$(if $(DEV_SESSION_ARG),--session "$(DEV_SESSION_ARG)",)
 
 station:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/station-dev.sh
+	@$(DEVCTL) station start
 
 station-check:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/station-check.sh
+	@$(DEVCTL) station check
 
 station-status:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/station-status.sh
+	@$(DEVCTL) station status
 
 station-logs:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/station-logs.sh
+	@bash $(LOCAL_DEV_SCRIPTS)/station-logs.sh
 
 station-stop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh station
+	@$(DEVCTL) station stop
 
 station-restart:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh station
+	@$(DEVCTL) station restart
 
 relay:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/relay-dev.sh
+	@bash $(LOCAL_DEV_SCRIPTS)/relay-dev.sh
 
 relay-check:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/relay-check.sh
+	@bash $(LOCAL_DEV_SCRIPTS)/relay-check.sh
 
 relay-status:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/relay-status.sh
+	@bash $(LOCAL_DEV_SCRIPTS)/relay-status.sh
 
 relay-logs:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/relay-logs.sh
+	@bash $(LOCAL_DEV_SCRIPTS)/relay-logs.sh
 
 relay-stop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh relay
+	@bash $(LOCAL_DEV_SCRIPTS)/stop.sh relay
 
 relay-restart:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh relay
+	@bash $(LOCAL_DEV_SCRIPTS)/restart.sh relay
 
 desktop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/desktop-dev.sh app
+	@$(DEVCTL) desktop start --mode app
 
 desktop-stop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh desktop
+	@$(DEVCTL) desktop stop --mode app
 
 desktop-restart:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh desktop
+	@$(DEVCTL) desktop restart --mode app
 
 desktop-web:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/desktop-dev.sh web
+	@$(DEVCTL) desktop start --mode web
 
 desktop-web-stop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh desktop
+	@$(DEVCTL) desktop stop --mode web
 
 desktop-web-restart:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh desktop-web
+	@$(DEVCTL) desktop restart --mode web
 
 mobile:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/mobile-ios-sim.sh
+	@bash $(LOCAL_DEV_SCRIPTS)/mobile-ios-sim.sh
 
 mobile-stop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh mobile
+	@bash $(LOCAL_DEV_SCRIPTS)/stop.sh mobile
 
 mobile-restart:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh mobile
+	@bash $(LOCAL_DEV_SCRIPTS)/restart.sh mobile
 
 status:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/status.sh
+	@$(DEVCTL) status
 
 stop:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/stop.sh all
+	@$(DEVCTL) stop all
 
 restart:
-	@/bin/bash $(LOCAL_DEV_SCRIPTS)/restart.sh all
+	@$(DEVCTL) restart all
 
 .DEFAULT:
 	@if [[ "$(firstword $(MAKECMDGOALS))" == "profile" || "$(firstword $(MAKECMDGOALS))" == "profile-authorize" || "$(firstword $(MAKECMDGOALS))" == "profile-init" || "$(firstword $(MAKECMDGOALS))" == "run-prototype" ]]; then \

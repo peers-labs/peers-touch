@@ -50,6 +50,10 @@ use tauri::{Emitter, Manager};
 
 const MESSAGING_PROJECTION_CHANGED_EVENT: &str = "messaging:projection-changed";
 
+fn should_prevent_headless_browser_exit(client_surface: &str, exit_code: Option<i32>) -> bool {
+    client_surface.trim().eq_ignore_ascii_case("browser") && exit_code.is_none()
+}
+
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
 fn configure_acceptance_window_level(window: &tauri::WebviewWindow) -> std::io::Result<()> {
     use dispatch2::DispatchQueue;
@@ -705,6 +709,8 @@ fn main() {
             runtime_evidence::agent_capability_sessions,
             runtime_evidence::agent_browser_capability_session_open,
             runtime_evidence::agent_browser_capability_session_close,
+            runtime_evidence::agent_client_executor_supervisor_start,
+            runtime_evidence::agent_client_executor_supervisor_stop,
             runtime_evidence::agent_runtime_activity_station,
             runtime_evidence::agent_runtime_activity_local,
             runtime_evidence::agent_capability_session_snapshot,
@@ -1043,9 +1049,9 @@ fn main() {
             conversation::conversation_list_messages,
             conversation::conversation_list_thread_messages,
             conversation::conversation_sync_from_station,
-            conversation::keypackage_upload,
-            conversation::keypackage_fetch,
-            conversation::keypackage_count,
+            key_exchange::keypackage_upload,
+            key_exchange::keypackage_fetch,
+            key_exchange::keypackage_count,
             conversation::device_list,
             conversation::device_revoke,
             conversation::dkx_send,
@@ -1072,7 +1078,15 @@ fn main() {
                     );
                 }
             }
-            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+                let client_surface = std::env::var("PT_CLIENT_SURFACE").unwrap_or_default();
+                if should_prevent_headless_browser_exit(&client_surface, *code) {
+                    api.prevent_exit();
+                    tracing::info!(
+                        "prevented automatic exit for headless browser gateway"
+                    );
+                    return;
+                }
                 let capability_supervisor = app
                     .state::<Arc<application::desktop_executor_worker::CapabilityWorkerSupervisor>>();
                 if let Err(error) = capability_supervisor.shutdown() {
@@ -1130,4 +1144,17 @@ fn main() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_prevent_headless_browser_exit;
+
+    #[test]
+    fn headless_browser_prevents_only_automatic_exit() {
+        assert!(should_prevent_headless_browser_exit("browser", None));
+        assert!(should_prevent_headless_browser_exit(" Browser ", None));
+        assert!(!should_prevent_headless_browser_exit("desktop", None));
+        assert!(!should_prevent_headless_browser_exit("browser", Some(0)));
+    }
 }

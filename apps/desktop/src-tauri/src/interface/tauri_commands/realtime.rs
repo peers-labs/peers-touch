@@ -109,6 +109,15 @@ pub struct RealtimeSignalInput {
     pub payload_b64: String,
 }
 
+fn signal_request_body(input: RealtimeSignalInput) -> Value {
+    json!({
+        "recipient_ptid": input.recipient_actor_ptid,
+        "session_ulid": input.session_ulid,
+        "kind": input.kind,
+        "payload_b64": input.payload_b64,
+    })
+}
+
 /// Publishes a single WebRTC signaling event onto the recipient's
 /// (and, for multi-device, sender's own) realtime SSE stream via
 /// Station's `POST /realtime/signal` ingress (contract §2.7.1).
@@ -139,12 +148,7 @@ pub fn realtime_signal_send(
             None,
         );
     }
-    let body = json!({
-        "recipient_actor_ptid": input.recipient_actor_ptid,
-        "session_ulid":       input.session_ulid,
-        "kind":               input.kind,
-        "payload_b64":        input.payload_b64,
-    });
+    let body = signal_request_body(input);
     let resp = match station_client::request_json(
         Method::POST,
         "/realtime/signal",
@@ -159,4 +163,22 @@ pub fn realtime_signal_send(
         }
     };
     to_stub("realtime_signal_send", resp)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{signal_request_body, RealtimeSignalInput};
+
+    #[test]
+    fn signal_request_uses_station_wire_field_names() {
+        let body = signal_request_body(RealtimeSignalInput {
+            recipient_actor_ptid: "ptid:bob".to_string(),
+            session_ulid: "session-1".to_string(),
+            kind: "OFFER".to_string(),
+            payload_b64: "cGF5bG9hZA==".to_string(),
+        });
+
+        assert_eq!(body["recipient_ptid"], "ptid:bob");
+        assert!(body.get("recipient_actor_ptid").is_none());
+    }
 }

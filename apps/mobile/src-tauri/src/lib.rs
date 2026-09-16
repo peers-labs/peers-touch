@@ -5,6 +5,7 @@ pub mod messaging;
 mod platform;
 pub mod runtime;
 pub mod secure_content;
+mod station_origin;
 
 use messaging::lifecycle::MobileMessagingRuntime;
 #[cfg(not(target_os = "android"))]

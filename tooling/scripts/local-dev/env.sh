@@ -69,7 +69,15 @@ else
 fi
 
 # shellcheck disable=SC1090
+profile_allexport_enabled=0
+case "$-" in
+  *a*) profile_allexport_enabled=1 ;;
+esac
+set -a
 source "$PROFILE_FILE"
+if [[ "$profile_allexport_enabled" -eq 0 ]]; then
+  set +a
+fi
 
 : "${PT_DEV_PROFILE:?PT_DEV_PROFILE not set in profile}"
 
@@ -78,6 +86,18 @@ if [[ "$PROFILE_FROM_MACHINE" == "1" ]] \
   echo "[ERROR] Machine binding and profile definition identities do not match."
   exit 1
 fi
+
+for tool_bin in \
+  "${PT_GO_BIN:-}" \
+  "${PT_PYTHON_BIN:-}" \
+  "${PT_NODE_BIN:-}" \
+  "${PT_NPM_BIN:-}" \
+  "${PT_PROTOC_BIN:-}"; do
+  if [[ -n "$tool_bin" && ":$PATH:" != *":$tool_bin:"* ]]; then
+    PATH="$tool_bin:$PATH"
+  fi
+done
+export PATH
 
 if [[ -n "${PT_MACHINE_WORKSPACE_ID:-}" ]]; then
   # Machine allocation owns local ports. Profile slot/port values are legacy

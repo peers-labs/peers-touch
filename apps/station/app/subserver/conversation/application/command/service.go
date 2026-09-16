@@ -99,6 +99,26 @@ func (s *Service) BindUnitOfWork(unitOfWork ports.UnitOfWork) (*Service, error) 
 	return &bound, nil
 }
 
+// BindPostCommitPublisher replaces the publisher used after the bound unit of
+// work completes. Federation receivers use this to defer wake hints until the
+// shared inbox transaction commits.
+func (s *Service) BindPostCommitPublisher(
+	postCommit ports.PostCommitPublisher,
+) (*Service, error) {
+	if s == nil || postCommit == nil {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"application.bind_post_commit_publisher",
+			"post_commit",
+			"is required",
+		)
+	}
+	bound := *s
+	bound.postCommit = postCommit
+
+	return &bound, nil
+}
+
 type CreateDirectRequest struct {
 	Creator           valueobject.Endpoint
 	Peer              valueobject.PTID
@@ -127,6 +147,7 @@ type SubmitRequest struct {
 	Settings          *valueobject.SettingsPatch
 	Dissolve          bool
 	VerifiedRoutes    []ports.EndpointRoute
+	ManifestStateHash valueobject.Hash
 	AuthorityPlanID   valueobject.PlanID
 	AuthorityPlanHash valueobject.Hash
 	ExactCommandBytes []byte
@@ -172,10 +193,13 @@ type Result struct {
 }
 
 type PrepareMembershipRequest struct {
-	ConversationID valueobject.ConversationID
-	Requester      valueobject.Endpoint
-	Changes        []entity.MembershipChange
-	TTL            time.Duration
+	ConversationID    valueobject.ConversationID
+	Requester         valueobject.Endpoint
+	Changes           []entity.MembershipChange
+	VerifiedRoutes    []ports.EndpointRoute
+	ManifestSetHash   valueobject.Hash
+	ManifestStateHash valueobject.Hash
+	TTL               time.Duration
 }
 
 type PrepareCommandRequest struct {
@@ -1115,11 +1139,13 @@ func (s *Service) PrepareMembership(
 	request PrepareMembershipRequest,
 ) (entity.AuthorityPlan, error) {
 	if request.ConversationID == "" || request.Requester.Validate() != nil ||
-		len(request.Changes) == 0 {
+		len(request.Changes) == 0 ||
+		request.ManifestSetHash.IsZero() ||
+		request.ManifestStateHash.IsZero() {
 		return entity.AuthorityPlan{}, invalid(
 			"application.prepare_membership",
 			"request",
-			"conversation, requester, and changes are required",
+			"conversation, requester, changes, and endpoint manifests are required",
 		)
 	}
 	ttl, err := authorityPlanTTL(request.TTL)
@@ -1153,7 +1179,7 @@ func (s *Service) PrepareMembership(
 		for _, change := range request.Changes {
 			planActors = append(planActors, change.Actor)
 		}
-		routes, err := resolveActorRoutes(ctx, transaction.Identity, planActors)
+		routes, err := canonicalActorRoutes(request.VerifiedRoutes, planActors)
 		if err != nil {
 			return err
 		}
@@ -1196,22 +1222,26 @@ func (s *Service) PrepareMembership(
 			changes,
 			reservations,
 			expiresAt,
+			request.ManifestSetHash,
+			request.ManifestStateHash,
 		)
 		plan, err := entity.NewAuthorityPlan(entity.AuthorityPlan{
-			ID:                     planID,
-			ConversationID:         request.ConversationID,
-			FederationID:           snapshot.FederationID,
-			AuthorityEpoch:         snapshot.AuthorityEpoch,
-			Requester:              request.Requester,
-			AuthorityHead:          preview.Head,
-			Changes:                changes,
-			PreEndpoints:           preview.PreEndpoints,
-			PostEndpoints:          preview.PostEndpoints,
-			AddedEndpoints:         preview.AddedEndpoints,
-			RemovedEndpoints:       preview.RemovedEndpoints,
-			Hash:                   planHash,
-			ExpiresAt:              expiresAt,
-			KeyPackageReservations: reservations,
+			ID:                        planID,
+			ConversationID:            request.ConversationID,
+			FederationID:              snapshot.FederationID,
+			AuthorityEpoch:            snapshot.AuthorityEpoch,
+			Requester:                 request.Requester,
+			AuthorityHead:             preview.Head,
+			Changes:                   changes,
+			PreEndpoints:              preview.PreEndpoints,
+			PostEndpoints:             preview.PostEndpoints,
+			AddedEndpoints:            preview.AddedEndpoints,
+			RemovedEndpoints:          preview.RemovedEndpoints,
+			EndpointManifestSetHash:   request.ManifestSetHash,
+			EndpointManifestStateHash: request.ManifestStateHash,
+			Hash:                      planHash,
+			ExpiresAt:                 expiresAt,
+			KeyPackageReservations:    reservations,
 		})
 		if err != nil {
 			return err
@@ -1721,9 +1751,23 @@ func (s *Service) applyMembership(
 			"authority head changed after preparation",
 		), nil
 	}
-	currentRoutes, err := resolveActorRoutes(
-		ctx,
-		transaction.Identity,
+	if request.ManifestStateHash.IsZero() ||
+		request.ManifestStateHash != plan.EndpointManifestStateHash {
+		if err := supersedePlan(ctx, transaction, &plan, now); err != nil {
+			return aggregate.Transition{}, nil, err
+		}
+		return aggregate.Transition{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeAuthorityPlanStale,
+			"application.submit_membership",
+			"endpoint_manifest",
+			"active directory state changed after preparation",
+		), nil
+	}
+	currentRoutes, err := canonicalActorRoutes(
+		filterRoutesByActors(
+			request.VerifiedRoutes,
+			conversation.ActiveMemberActors(),
+		),
 		conversation.ActiveMemberActors(),
 	)
 	if err != nil {
@@ -1749,9 +1793,8 @@ func (s *Service) applyMembership(
 			"pre-transition endpoint snapshot changed after preparation",
 		), nil
 	}
-	activeRoutes, err := resolveActorRoutes(
-		ctx,
-		transaction.Identity,
+	activeRoutes, err := canonicalActorRoutes(
+		request.VerifiedRoutes,
 		uniqueActorsFromPlan(plan),
 	)
 	if err != nil {
@@ -3044,6 +3087,23 @@ func filterRoutesByEndpoints(
 	sort.Slice(result, func(left int, right int) bool {
 		return result[left].Endpoint.Key() < result[right].Endpoint.Key()
 	})
+	return result
+}
+
+func filterRoutesByActors(
+	routes []ports.EndpointRoute,
+	actors []valueobject.PTID,
+) []ports.EndpointRoute {
+	expected := make(map[valueobject.PTID]struct{}, len(actors))
+	for _, actor := range actors {
+		expected[actor] = struct{}{}
+	}
+	result := make([]ports.EndpointRoute, 0, len(routes))
+	for _, route := range routes {
+		if _, exists := expected[route.Endpoint.Actor]; exists {
+			result = append(result, route)
+		}
+	}
 	return result
 }
 

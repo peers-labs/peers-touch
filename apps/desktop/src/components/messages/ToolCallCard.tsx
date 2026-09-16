@@ -18,6 +18,7 @@ import { usePortalStore } from '../../store/portal';
 import {
   logToolDecisionFailure,
   logToolRecoveryFailure,
+  reconnectAgentToolExecutor,
   resolveToolCallProjection,
   submitAgentToolDecision,
   toolRuntime,
@@ -109,6 +110,7 @@ export function ToolCallItem({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [submittingDecision, setSubmittingDecision] = useState(false);
+  const [reconnectingExecutor, setReconnectingExecutor] = useState(false);
   const [requestingAgain, setRequestingAgain] = useState(false);
   const { token } = theme.useToken();
   const { t } = useTranslation(['chat', 'agent']);
@@ -119,9 +121,13 @@ export function ToolCallItem({
   );
   const tool = resolveToolCallProjection(sourceTool, projection);
   const approvalRequired = tool.status === 'approval_required' && !!tool.approvalId;
+  const executorUnavailable =
+    approvalRequired
+    && tool.error === 'agent.errors.executorUnavailable';
   const canSubmitDecision = approvalRequired &&
     tool.decisionRevision !== undefined &&
     !submittingDecision;
+  const canApprove = canSubmitDecision && !executorUnavailable;
   const denied =
     tool.status === 'denied'
     || tool.status === 'error'
@@ -129,7 +135,7 @@ export function ToolCallItem({
   const approvalExpired =
     tool.status === 'expired'
     && tool.error === 'agent.errors.toolApprovalExpired';
-  const deniedMessage = denied && tool.error
+  const toolErrorMessage = tool.error
     ? (
         tool.error.startsWith('agent.')
           ? t(tool.error, { ns: 'agent' })
@@ -251,7 +257,8 @@ export function ToolCallItem({
           {approvalRequired && tool.approvalId && (
             <Flexbox horizontal gap={8} style={{ marginBottom: 8 }}>
               <button
-                disabled={!canSubmitDecision}
+                data-pt-agent-tool-decision="approve"
+                disabled={!canApprove}
                 onClick={(event) => {
                   event.stopPropagation();
                   setSubmittingDecision(true);
@@ -265,7 +272,7 @@ export function ToolCallItem({
                   border: 'none',
                   background: token.colorPrimary,
                   color: '#fff',
-                  cursor: 'pointer',
+                  cursor: canApprove ? 'pointer' : 'not-allowed',
                   fontSize: 12,
                 }}
               >
@@ -295,13 +302,43 @@ export function ToolCallItem({
               </button>
             </Flexbox>
           )}
-          {deniedMessage && (
+          {toolErrorMessage && (
             <div
               data-pt-agent-tool-error={tool.error}
               style={{ marginBottom: 8, color: token.colorErrorText }}
             >
-              {deniedMessage}
+              {toolErrorMessage}
             </div>
+          )}
+          {executorUnavailable && (
+            <button
+              data-pt-agent-tool-recovery="reconnect-executor"
+              disabled={reconnectingExecutor}
+              onClick={(event) => {
+                event.stopPropagation();
+                setReconnectingExecutor(true);
+                void reconnectAgentToolExecutor(tool.id)
+                  .catch((error: unknown) =>
+                    logToolRecoveryFailure(tool.id, error))
+                  .finally(() => setReconnectingExecutor(false));
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                marginBottom: 8,
+                borderRadius: 6,
+                border: `1px solid ${token.colorBorder}`,
+                background: token.colorBgContainer,
+                color: token.colorText,
+                cursor: reconnectingExecutor ? 'not-allowed' : 'pointer',
+                fontSize: 12,
+              }}
+            >
+              <RotateCcw size={12} />
+              {t('agent.recovery.reconnectExecutor', { ns: 'agent' })}
+            </button>
           )}
           {approvalExpired && onRequestAgain && (
             <button
@@ -309,24 +346,6 @@ export function ToolCallItem({
               disabled={requestingAgain}
               onClick={(event) => {
                 event.stopPropagation();
-                // #region debug-point A:recovery-click
-                void fetch('http://127.0.0.1:7777/event', {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    sessionId: 'approval-expiry-retry',
-                    runId: 'post-fix',
-                    hypothesisId: 'A',
-                    location: 'ToolCallCard.tsx:request-again',
-                    msg: '[DEBUG] request-again-clicked',
-                    data: {
-                      requestingAgain,
-                      messageIdPresent: Boolean(messageId),
-                      toolStatus: tool.status ?? null,
-                    },
-                    ts: Date.now(),
-                  }),
-                }).catch(() => {});
-                // #endregion
                 setRequestingAgain(true);
                 void onRequestAgain()
                   .catch((error: unknown) =>

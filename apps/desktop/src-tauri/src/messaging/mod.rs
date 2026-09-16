@@ -1,7 +1,6 @@
 mod attachment_transfer;
 mod command_outbox;
 mod command_reconciliation;
-mod command_result;
 mod consumer;
 mod conversation_state;
 mod direct;
@@ -83,7 +82,6 @@ pub use command_outbox::{
 pub use command_reconciliation::{
     CommandReconciliationProgress, CommandReconciliationWorker, CommandResultTransport,
 };
-pub use command_result::CommandResultProcessor;
 pub use consumer::MessagingItemConsumer;
 pub use conversation_state::ConversationStateProcessor;
 pub use direct::DirectMessageProcessor;
@@ -112,6 +110,7 @@ pub use messaging_core::codec::private_content::{
 };
 pub use messaging_core::crypto::prekeys::PendingPreKeyBundle;
 pub use messaging_core::identity::{FreshDeviceEnrollment, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION};
+pub use messaging_core::inbox::CommandResultProcessor;
 pub use mls_key_packages::StationMlsKeyPackageTransport;
 pub use mls_leave_intent::StationMlsLeaveIntentTransport;
 pub use prekeys::{PreKeyPublisher, PreKeyTransport, StationPreKeyTransport};

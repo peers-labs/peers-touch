@@ -13,44 +13,52 @@ import (
 type Code string
 
 const (
-	AgentInvalidRequest            Code = "AGENT_4001"
-	AgentUnauthorized              Code = "AGENT_4002"
-	AgentNotFound                  Code = "AGENT_4004"
-	AgentVersionConflict           Code = "AGENT_4009"
-	AgentIdempotencyConflict       Code = "IDEMPOTENCY_CONFLICT"
-	AgentInvalidSourceState        Code = "INVALID_SOURCE_STATE"
-	AgentActiveDependency          Code = "ACTIVE_DEPENDENCY"
-	AgentQueueFull                 Code = "ADMISSION_QUEUE_FULL"
-	AgentAttachmentRejected        Code = "CONTEXT_ATTACHMENT_REJECTED"
-	AgentToolApprovalDenied        Code = "TOOL_APPROVAL_DENIED"
-	AgentToolApprovalExpired       Code = "TOOL_APPROVAL_EXPIRED"
-	AgentClientExecutorUnavailable Code = "CLIENT_EXECUTOR_UNAVAILABLE"
-	AgentToolBudgetExhausted       Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
-	AgentContextOverflow           Code = "CONTEXT_OVERFLOW"
-	AgentLifecycleCancelled        Code = "LIFECYCLE_CANCELLED"
-	AgentProviderCredentialMissing Code = "PROVIDER_CREDENTIAL_MISSING"
-	AgentProviderFailed            Code = "AGENT_5001"
-	AgentCompressionFailed         Code = "AGENT_5002"
-	AgentDelegationFailed          Code = "AGENT_5003"
-	AgentCredentialFailed          Code = "AGENT_5004"
-	AgentProviderDisabled          Code = "AGENT_5005"
-	AgentSecurityViolation         Code = "AGENT_4003"
-	AgentInternal                  Code = "AGENT_5000"
+	AgentInvalidRequest                Code = "AGENT_4001"
+	AgentUnauthorized                  Code = "AGENT_4002"
+	AgentNotFound                      Code = "AGENT_4004"
+	AgentVersionConflict               Code = "AGENT_4009"
+	AgentIdempotencyConflict           Code = "IDEMPOTENCY_CONFLICT"
+	AgentInvalidSourceState            Code = "INVALID_SOURCE_STATE"
+	AgentActiveDependency              Code = "ACTIVE_DEPENDENCY"
+	AgentOwnershipForbiddenActor       Code = "OWNERSHIP_FORBIDDEN_ACTOR"
+	AgentQueueFull                     Code = "ADMISSION_QUEUE_FULL"
+	AgentAttachmentRejected            Code = "CONTEXT_ATTACHMENT_REJECTED"
+	AgentRuntimeIncompatibleCapability Code = "RUNTIME_INCOMPATIBLE_CAPABILITY"
+	AgentToolApprovalDenied            Code = "TOOL_APPROVAL_DENIED"
+	AgentToolApprovalExpired           Code = "TOOL_APPROVAL_EXPIRED"
+	AgentClientExecutorUnavailable     Code = "CLIENT_EXECUTOR_UNAVAILABLE"
+	AgentToolBudgetExhausted           Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
+	AgentContextOverflow               Code = "CONTEXT_OVERFLOW"
+	AgentContextInvalidReference       Code = "CONTEXT_INVALID_REFERENCE"
+	AgentLifecycleCancelled            Code = "LIFECYCLE_CANCELLED"
+	AgentLifecycleInterrupted          Code = "LIFECYCLE_INTERRUPTED"
+	AgentProviderCredentialMissing     Code = "PROVIDER_CREDENTIAL_MISSING"
+	AgentProviderFailed                Code = "AGENT_5001"
+	AgentCompressionFailed             Code = "AGENT_5002"
+	AgentDelegationFailed              Code = "AGENT_5003"
+	AgentCredentialFailed              Code = "AGENT_5004"
+	AgentProviderDisabled              Code = "AGENT_5005"
+	AgentSecurityViolation             Code = "AGENT_4003"
+	AgentInternal                      Code = "AGENT_5000"
 
 	AgentAdmissionDuplicateConflict Code = "ADMISSION_DUPLICATE_CONFLICT"
 	AgentCanvasSingleAgentNotReady  Code = "AGENT_CANVAS_SINGLE_AGENT_NOT_READY"
 
-	AgentAdmissionDuplicateConflictLocaleKey   = "agent.errors.duplicateConflict"
-	AgentCanvasSingleAgentNotReadyLocaleKey    = "agent.errors.canvasSingleAgentNotReady"
-	AgentCanvasSingleAgentNotReadyRequiredGate = "agent-v2-kernel-foundation-e2e"
-	AgentAttachmentRejectedLocaleKey           = "agent.errors.attachmentRejected"
-	AgentToolApprovalDeniedLocaleKey           = "agent.errors.toolApprovalDenied"
-	AgentToolApprovalExpiredLocaleKey          = "agent.errors.toolApprovalExpired"
-	AgentClientExecutorUnavailableLocaleKey    = "agent.errors.executorUnavailable"
-	AgentToolBudgetExhaustedLocaleKey          = "agent.errors.toolLoopBudgetExhausted"
-	AgentContextOverflowLocaleKey              = "agent.errors.contextOverflow"
-	AgentLifecycleCancelledLocaleKey           = "agent.errors.lifecycleCancelled"
-	AgentProviderCredentialMissingLocaleKey    = "agent.errors.providerCredentialMissing"
+	AgentAdmissionDuplicateConflictLocaleKey    = "agent.errors.duplicateConflict"
+	AgentCanvasSingleAgentNotReadyLocaleKey     = "agent.errors.canvasSingleAgentNotReady"
+	AgentCanvasSingleAgentNotReadyRequiredGate  = "agent-v2-kernel-foundation-e2e"
+	AgentOwnershipForbiddenActorLocaleKey       = "agent.errors.forbiddenActor"
+	AgentAttachmentRejectedLocaleKey            = "agent.errors.attachmentRejected"
+	AgentRuntimeIncompatibleCapabilityLocaleKey = "agent.errors.incompatibleCapability"
+	AgentToolApprovalDeniedLocaleKey            = "agent.errors.toolApprovalDenied"
+	AgentToolApprovalExpiredLocaleKey           = "agent.errors.toolApprovalExpired"
+	AgentClientExecutorUnavailableLocaleKey     = "agent.errors.executorUnavailable"
+	AgentToolBudgetExhaustedLocaleKey           = "agent.errors.toolLoopBudgetExhausted"
+	AgentContextOverflowLocaleKey               = "agent.errors.contextOverflow"
+	AgentContextInvalidReferenceLocaleKey       = "agent.errors.contextInvalidReference"
+	AgentLifecycleCancelledLocaleKey            = "agent.errors.lifecycleCancelled"
+	AgentLifecycleInterruptedLocaleKey          = "agent.errors.lifecycleInterrupted"
+	AgentProviderCredentialMissingLocaleKey     = "agent.errors.providerCredentialMissing"
 )
 
 const AgentActiveMutationConflict Code = "ADMISSION_ACTIVE_MUTATION_CONFLICT"
@@ -97,6 +105,25 @@ func NewCanvasSingleAgentNotReady() *BizError {
 	}
 }
 
+func NewOwnershipForbiddenActor(resourceKind, resourceID string) *BizError {
+	return &BizError{
+		Code:       AgentOwnershipForbiddenActor,
+		HTTPStatus: http.StatusForbidden,
+		Message:    AgentOwnershipForbiddenActorLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentOwnershipForbiddenActorLocaleKey,
+			ErrorType: string(AgentOwnershipForbiddenActor),
+			LocaleKey: AgentOwnershipForbiddenActorLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"resource_kind": resourceKind,
+				"resource_id":   resourceID,
+			},
+		},
+	}
+}
+
 func NewAttachmentRejected(attachmentID, reasonCode string) *BizError {
 	return &BizError{
 		Code:       AgentAttachmentRejected,
@@ -110,6 +137,25 @@ func NewAttachmentRejected(attachmentID, reasonCode string) *BizError {
 			Terminal:  true,
 			Details: map[string]string{
 				"attachment_id": attachmentID,
+				"reason_code":   reasonCode,
+			},
+		},
+	}
+}
+
+func NewRuntimeIncompatibleCapability(capabilityID, reasonCode string) *BizError {
+	return &BizError{
+		Code:       AgentRuntimeIncompatibleCapability,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    AgentRuntimeIncompatibleCapabilityLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentRuntimeIncompatibleCapabilityLocaleKey,
+			ErrorType: string(AgentRuntimeIncompatibleCapability),
+			LocaleKey: AgentRuntimeIncompatibleCapabilityLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"capability_id": capabilityID,
 				"reason_code":   reasonCode,
 			},
 		},
@@ -172,6 +218,20 @@ func NewLifecycleCancelledPayload(resourceKind, resourceID string) *model.ErrorP
 	}
 }
 
+func NewLifecycleInterruptedPayload(turnID, reasonCode string) *model.ErrorPayload {
+	return &model.ErrorPayload{
+		Error:     AgentLifecycleInterruptedLocaleKey,
+		ErrorType: string(AgentLifecycleInterrupted),
+		LocaleKey: AgentLifecycleInterruptedLocaleKey,
+		Retryable: true,
+		Terminal:  true,
+		Details: map[string]string{
+			"turn_id":     turnID,
+			"reason_code": reasonCode,
+		},
+	}
+}
+
 func NewContextOverflow(limitTokens, actualTokens uint64) *BizError {
 	return &BizError{
 		Code:       AgentContextOverflow,
@@ -186,6 +246,29 @@ func NewContextOverflow(limitTokens, actualTokens uint64) *BizError {
 			Details: map[string]string{
 				"limit_tokens":  strconv.FormatUint(limitTokens, 10),
 				"actual_tokens": strconv.FormatUint(actualTokens, 10),
+			},
+		},
+	}
+}
+
+// NewContextInvalidReference returns the typed rejection for retired inline
+// context syntax without exposing the reference token to clients.
+func NewContextInvalidReference(referenceKind, referenceToken string) *BizError {
+	referenceHash := sha256.Sum256([]byte(referenceToken))
+
+	return &BizError{
+		Code:       AgentContextInvalidReference,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    AgentContextInvalidReferenceLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentContextInvalidReferenceLocaleKey,
+			ErrorType: string(AgentContextInvalidReference),
+			LocaleKey: AgentContextInvalidReferenceLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"reference_kind": referenceKind,
+				"reference_hash": fmt.Sprintf("%x", referenceHash),
 			},
 		},
 	}

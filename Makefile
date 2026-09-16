@@ -1,4 +1,4 @@
-SHELL := /bin/bash
+SHELL := bash
 export PATH := /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$(PATH)
 .DEFAULT_GOAL := help
 

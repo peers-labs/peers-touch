@@ -2505,9 +2505,325 @@ export interface AgentTypedErrorPayload {
   details: Record<string, string>;
 }
 
+export interface AgentErrorResolutionAction {
+  type:
+    | 'reauthCli'
+    | 'openProviderSettings'
+    | 'checkConnection'
+    | 'openOriginal'
+    | 'switchAccount'
+    | 'chooseCompatibleModel'
+    | 'removeReference'
+    | 'recover';
+  cliId?: string;
+  providerId?: string;
+  existingCommandId?: string;
+  resourceKind?: string;
+  resourceId?: string;
+  referenceKind?: string;
+  referenceHash?: string;
+  capabilityId?: string;
+  turnId?: string;
+  reasonCode?: string;
+  label: string;
+}
+
+export const AGENT_ATTACHMENT_REJECTED_ERROR_TYPE =
+  'CONTEXT_ATTACHMENT_REJECTED';
+export const AGENT_CONTEXT_LIMIT_ERROR_TYPE = 'CONTEXT_OVERFLOW';
+export const AGENT_INVALID_REFERENCE_ERROR_TYPE = 'CONTEXT_INVALID_REFERENCE';
+export const AGENT_INVALID_REFERENCE_LOCALE_KEY =
+  'agent.errors.contextInvalidReference';
+export const AGENT_FORBIDDEN_ACTOR_ERROR_TYPE = 'OWNERSHIP_FORBIDDEN_ACTOR';
+export const AGENT_FORBIDDEN_ACTOR_LOCALE_KEY = 'agent.errors.forbiddenActor';
+export const AGENT_INCOMPATIBLE_CAPABILITY_ERROR_TYPE =
+  'RUNTIME_INCOMPATIBLE_CAPABILITY';
+export const AGENT_INCOMPATIBLE_CAPABILITY_LOCALE_KEY =
+  'agent.errors.incompatibleCapability';
+export const AGENT_LIFECYCLE_INTERRUPTED_ERROR_TYPE = 'LIFECYCLE_INTERRUPTED';
+export const AGENT_LIFECYCLE_INTERRUPTED_LOCALE_KEY =
+  'agent.errors.lifecycleInterrupted';
+
+export type AgentForbiddenActorError = AgentTypedErrorPayload & {
+  details: {
+    resource_kind: string;
+    resource_id: string;
+  };
+};
+
+export type AgentIncompatibleCapabilityError = AgentTypedErrorPayload & {
+  details: {
+    capability_id: string;
+    reason_code: string;
+  };
+};
+
+export type AgentLifecycleInterruptedError = AgentTypedErrorPayload & {
+  details: {
+    turn_id: string;
+    reason_code: string;
+  };
+};
+
+export type AgentInvalidReferenceError = AgentTypedErrorPayload & {
+  details: {
+    reference_kind: string;
+    reference_hash: string;
+  };
+};
+
+const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
+  'resource_kind',
+  'resource_id',
+  'expected_revision',
+  'actual_revision',
+  'capability_id',
+  'turn_id',
+  'reason_code',
+  'reference_kind',
+  'reference_hash',
+] as const;
+
+const AGENT_INVALID_REFERENCE_KINDS = new Set([
+  'file',
+  'folder',
+  'url',
+  'diff',
+  'staged',
+  'git',
+]);
+const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/u;
+
+function agentTypedErrorBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return undefined;
+}
+
+function agentTypedErrorDetails(
+  data: Record<string, unknown>,
+): Record<string, string> | undefined {
+  if (data.details && typeof data.details === 'object' && !Array.isArray(data.details)) {
+    const entries = Object.entries(data.details as Record<string, unknown>);
+    if (entries.some(([, value]) => typeof value !== 'string')) {
+      return undefined;
+    }
+    return Object.fromEntries(entries) as Record<string, string>;
+  }
+  return Object.fromEntries(
+    AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS
+      .map((field) => [field, data[field]] as const)
+      .filter((entry): entry is [typeof AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS[number], string] => (
+        typeof entry[1] === 'string'
+      )),
+  );
+}
+
+export function projectAgentTypedErrorPayload(
+  data: Record<string, unknown>,
+): AgentTypedErrorPayload | undefined {
+  const errorType = typeof (data.error_type ?? data.errorType ?? data.error_code) === 'string'
+    ? String(data.error_type ?? data.errorType ?? data.error_code)
+    : '';
+  const localeKey = typeof (data.locale_key ?? data.localeKey) === 'string'
+    ? String(data.locale_key ?? data.localeKey)
+    : '';
+  const retryable = agentTypedErrorBoolean(data.retryable);
+  const terminal = agentTypedErrorBoolean(data.terminal);
+  if (!errorType || !localeKey || retryable === undefined || terminal === undefined) {
+    return undefined;
+  }
+  const details = agentTypedErrorDetails(data);
+  if (!details) {
+    return undefined;
+  }
+  return {
+    error: typeof data.error === 'string' ? data.error : localeKey,
+    error_type: errorType,
+    locale_key: localeKey,
+    retryable,
+    terminal,
+    details,
+  };
+}
+
+export function projectAgentTurnOutcomeErrorPayload(
+  data: Record<string, unknown>,
+): AgentTypedErrorPayload | undefined {
+  const outcome = data.outcome_error ?? data.outcomeError;
+  if (!outcome || typeof outcome !== 'object' || Array.isArray(outcome)) {
+    return undefined;
+  }
+  return projectAgentTypedErrorPayload(outcome as Record<string, unknown>);
+}
+
+export function projectAgentTurnErrorPayload(
+  data: Record<string, unknown>,
+): AgentTypedErrorPayload | undefined {
+  if (data.outcome_error !== undefined || data.outcomeError !== undefined) {
+    return projectAgentTurnOutcomeErrorPayload(data);
+  }
+  return projectAgentTypedErrorPayload(data);
+}
+
+export function isAgentForbiddenActorError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentForbiddenActorError {
+  if (
+    error?.error_type !== AGENT_FORBIDDEN_ACTOR_ERROR_TYPE
+    || error.locale_key !== AGENT_FORBIDDEN_ACTOR_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'resource_id'
+    && detailKeys[1] === 'resource_kind'
+    && error.details.resource_kind.trim().length > 0
+    && error.details.resource_id.trim().length > 0
+  );
+}
+
+export function isAgentIncompatibleCapabilityError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentIncompatibleCapabilityError {
+  if (
+    error?.error_type !== AGENT_INCOMPATIBLE_CAPABILITY_ERROR_TYPE
+    || error.locale_key !== AGENT_INCOMPATIBLE_CAPABILITY_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'capability_id'
+    && detailKeys[1] === 'reason_code'
+    && error.details.capability_id.trim().length > 0
+    && error.details.reason_code.trim().length > 0
+  );
+}
+
+export function isAgentLifecycleInterruptedError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentLifecycleInterruptedError {
+  if (
+    error?.error_type !== AGENT_LIFECYCLE_INTERRUPTED_ERROR_TYPE
+    || error.locale_key !== AGENT_LIFECYCLE_INTERRUPTED_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'reason_code'
+    && detailKeys[1] === 'turn_id'
+    && error.details.turn_id.trim().length > 0
+    && error.details.reason_code.trim().length > 0
+  );
+}
+
+export function isAgentInvalidReferenceError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentInvalidReferenceError {
+  if (
+    error?.error_type !== AGENT_INVALID_REFERENCE_ERROR_TYPE
+    || error.locale_key !== AGENT_INVALID_REFERENCE_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'reference_hash'
+    && detailKeys[1] === 'reference_kind'
+    && AGENT_INVALID_REFERENCE_KINDS.has(error.details.reference_kind)
+    && SHA256_HEX_PATTERN.test(error.details.reference_hash)
+  );
+}
+
+export function resolveAgentTypedErrorAction(
+  error: AgentTypedErrorPayload | null | undefined,
+): AgentErrorResolutionAction | undefined {
+  if (isAgentForbiddenActorError(error)) {
+    return {
+      type: 'switchAccount',
+      resourceKind: error.details.resource_kind,
+      resourceId: error.details.resource_id,
+      label: 'agent.recovery.switchAccount',
+    };
+  }
+  if (isAgentIncompatibleCapabilityError(error)) {
+    return {
+      type: 'chooseCompatibleModel',
+      capabilityId: error.details.capability_id,
+      reasonCode: error.details.reason_code,
+      label: 'agent.recovery.chooseCompatibleModel',
+    };
+  }
+  if (isAgentLifecycleInterruptedError(error)) {
+    return {
+      type: 'recover',
+      turnId: error.details.turn_id,
+      reasonCode: error.details.reason_code,
+      label: 'agent.recovery.recover',
+    };
+  }
+  if (isAgentInvalidReferenceError(error)) {
+    return {
+      type: 'removeReference',
+      referenceKind: error.details.reference_kind,
+      referenceHash: error.details.reference_hash,
+      label: 'agent.recovery.removeReference',
+    };
+  }
+  if (
+    error?.error_type === 'PROVIDER_CREDENTIAL_MISSING'
+    && error.details.provider_id
+  ) {
+    return {
+      type: 'openProviderSettings',
+      providerId: error.details.provider_id,
+      label: 'agent.recovery.configureCredential',
+    };
+  }
+  if (
+    error?.error_type === 'ADMISSION_DUPLICATE_CONFLICT'
+    && error.details.existing_command_id
+  ) {
+    return {
+      type: 'openOriginal',
+      existingCommandId: error.details.existing_command_id,
+      label: 'agent.recovery.openOriginal',
+    };
+  }
+  return undefined;
+}
+
+export function isAgentAttachmentRejectedError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentTypedErrorPayload {
+  return error?.error_type === AGENT_ATTACHMENT_REJECTED_ERROR_TYPE;
+}
+
+export function isAgentContextOverflowError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentTypedErrorPayload {
+  return error?.error_type === AGENT_CONTEXT_LIMIT_ERROR_TYPE;
+}
+
 export interface AgentTurnStreamError extends Error {
   typedError?: AgentTypedErrorPayload;
-  resolution?: unknown;
+  resolution?: AgentErrorResolutionAction;
   errorDetail?: string;
   providerId?: string;
 }
@@ -2579,6 +2895,7 @@ export interface AgentTurnReplayStreamInput {
   conversation_id: string;
   turn_id: string;
   after_seq: number;
+  attempt_id?: string;
 }
 
 export interface AgentTurnReplayStreamCancelInput {
@@ -2589,11 +2906,13 @@ export function toAgentTurnReplayWireInput(input: Omit<AgentTurnReplayStreamInpu
   conversation_id: string;
   turn_id: string;
   afterSequence: number;
+  attempt_id?: string;
 } {
   return {
     conversation_id: input.conversation_id,
     turn_id: input.turn_id,
     afterSequence: input.after_seq,
+    ...(input.attempt_id ? { attempt_id: input.attempt_id } : {}),
   };
 }
 
@@ -5006,6 +5325,18 @@ export const api = {
       {},
     ),
 
+  startAgentClientExecutorSupervisor: () =>
+    invokeRustDataFromStatus<Record<string, never>, { available: boolean; state: string }>(
+      'agent_client_executor_supervisor_start',
+      {},
+    ),
+
+  stopAgentClientExecutorSupervisor: () =>
+    invokeRustDataFromStatus<Record<string, never>, { available: boolean; state: string }>(
+      'agent_client_executor_supervisor_stop',
+      {},
+    ),
+
   listAgentConversations: (agentId: string, options?: { status?: string; page?: number; pageSize?: number }) =>
     invokeRustDataFromStatus<AgentConversationListInput, { ok: boolean; conversations: AgentConversation[]; total: number }>(
       'agent_conversation_list',
@@ -6298,7 +6629,7 @@ export interface AgentTurnSourceDelivery {
 
 export interface AgentTurnStreamController extends AbortController {
   readonly streamGeneration: number;
-  disconnectTransport(): void;
+  disconnectTransport(): Promise<void>;
 }
 
 export interface ChatImageInput {
@@ -6461,12 +6792,71 @@ function waitForAgentReplay(delayMs: number, signal: AbortSignal): Promise<void>
   });
 }
 
+async function agentTurnHttpErrorData(
+  response: Response,
+): Promise<Record<string, unknown>> {
+  const bodyText = await response.text();
+  let body: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(bodyText);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      body = parsed as Record<string, unknown>;
+    }
+  } catch {
+    body = {};
+  }
+  let headerDetails: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(response.headers.get('x-peers-error-details') || '');
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      headerDetails = parsed as Record<string, unknown>;
+    }
+  } catch {
+    headerDetails = {};
+  }
+  const details = Object.fromEntries(
+    AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS
+      .map((field) => [field, headerDetails[field]] as const)
+      .filter((entry): entry is [typeof AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS[number], string] => (
+        typeof entry[1] === 'string'
+      )),
+  );
+  const errorType = response.headers.get('x-peers-error-code')
+    || (typeof body.error_type === 'string' ? body.error_type : '');
+  const localeKey = response.headers.get('x-peers-error-locale-key')
+    || (typeof body.locale_key === 'string' ? body.locale_key : '');
+  const retryable = agentTypedErrorBoolean(
+    response.headers.get('x-peers-error-retryable') ?? body.retryable,
+  );
+  const terminal = agentTypedErrorBoolean(
+    response.headers.get('x-peers-error-terminal') ?? body.terminal,
+  );
+  return {
+    type: 'error',
+    error: localeKey
+      || (typeof body.error === 'string' ? body.error : `Agent stream returned HTTP ${response.status}`),
+    ...(errorType ? { error_type: errorType } : {}),
+    ...(localeKey ? { locale_key: localeKey } : {}),
+    ...(retryable === undefined ? {} : { retryable }),
+    ...(terminal === undefined ? {} : { terminal }),
+    details,
+  };
+}
+
 async function consumeAgentSSE(
   response: Response,
   signal: AbortSignal,
   onFrame: (event: StreamEvent) => boolean,
 ): Promise<boolean> {
-  if (!response.ok || !response.body) {
+  if (!response.ok) {
+    const data = await agentTurnHttpErrorData(response);
+    if (projectAgentTypedErrorPayload(data)) {
+      onFrame({ event: 'error', data });
+      return true;
+    }
+    throw new Error(String(data.error));
+  }
+  if (!response.body) {
     throw new Error(`Agent stream returned HTTP ${response.status}`);
   }
   const reader = response.body.getReader();
@@ -6504,6 +6894,10 @@ async function consumeAgentSSE(
           data = parsed as Record<string, unknown>;
         }
       }
+      if (signal.aborted) {
+        await reader.cancel();
+        return terminal;
+      }
       terminal = onFrame({ event, data }) || terminal;
       if (signal.aborted) {
         await reader.cancel();
@@ -6522,7 +6916,10 @@ async function consumeAgentSSE(
 export function classifyAgentTurnTerminalEvent(
   event: StreamEvent,
 ): 'completed' | 'cancelled' | 'queued' | 'failed' | 'interrupted' | null {
-  if (event.event === 'error') return 'failed';
+  if (event.event === 'error') {
+    const outcome = projectAgentTurnOutcomeErrorPayload(event.data);
+    return isAgentLifecycleInterruptedError(outcome) ? 'interrupted' : 'failed';
+  }
   if (event.event === 'queued' || event.event === 'admission_replayed') return 'queued';
   if (event.event === 'done') return 'completed';
   if (event.event === 'cancelled') return 'cancelled';
@@ -6538,54 +6935,23 @@ export function classifyAgentTurnTerminalEvent(
 export function agentTurnStreamErrorFromData(
   data: Record<string, unknown>,
 ): AgentTurnStreamError {
-  const details = data.details && typeof data.details === 'object' && !Array.isArray(data.details)
-    ? Object.fromEntries(
-        Object.entries(data.details as Record<string, unknown>)
-          .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-      )
-    : {};
-  const errorType = typeof data.error_type === 'string' ? data.error_type : '';
-  const localeKey = typeof data.locale_key === 'string' ? data.locale_key : '';
-  const typedError = (
-    errorType
-    && localeKey
-    && typeof data.retryable === 'boolean'
-    && typeof data.terminal === 'boolean'
-  )
-    ? {
-        error: typeof data.error === 'string' ? data.error : localeKey,
-        error_type: errorType,
-        locale_key: localeKey,
-        retryable: data.retryable,
-        terminal: data.terminal,
-        details,
-      }
-    : undefined;
+  const typedError = projectAgentTurnErrorPayload(data);
   const error = new Error(
     typedError?.locale_key
     || (typeof data.error === 'string' ? data.error : 'agent.error.streamFailed'),
   ) as AgentTurnStreamError;
   error.typedError = typedError;
-  if (data.resolution && typeof data.resolution === 'object') {
-    error.resolution = data.resolution;
-  } else if (
-    typedError?.error_type === 'PROVIDER_CREDENTIAL_MISSING'
-    && typedError.details.provider_id
-  ) {
-    error.resolution = {
-      type: 'openProviderSettings',
-      providerId: typedError.details.provider_id,
-      label: 'agent.recovery.configureCredential',
-    };
-  } else if (
-    typedError?.error_type === 'ADMISSION_DUPLICATE_CONFLICT'
-    && typedError.details.existing_command_id
-  ) {
-    error.resolution = {
-      type: 'openOriginal',
-      existingCommandId: typedError.details.existing_command_id,
-      label: 'agent.recovery.openOriginal',
-    };
+  const mappedResolution = resolveAgentTypedErrorAction(typedError);
+  if (mappedResolution) {
+    error.resolution = mappedResolution;
+  } else if (data.resolution && typeof data.resolution === 'object') {
+    const suppliedResolution = data.resolution as AgentErrorResolutionAction;
+    if (
+      suppliedResolution.type !== 'recover'
+      && suppliedResolution.type !== 'removeReference'
+    ) {
+      error.resolution = suppliedResolution;
+    }
   }
   if (typeof data.detail === 'string') error.errorDetail = data.detail;
   if (typeof data.providerId === 'string') {
@@ -6594,6 +6960,26 @@ export function agentTurnStreamErrorFromData(
     error.providerId = typedError.details.provider_id;
   }
   return error;
+}
+
+export function normalizeAgentTurnStreamError(error: unknown): AgentTurnStreamError {
+  if (error instanceof Error && 'typedError' in error) {
+    return error as AgentTurnStreamError;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  if (error && typeof error === 'object' && 'details' in error) {
+    const details = error.details;
+    if (details && typeof details === 'object' && !Array.isArray(details)) {
+      const normalized = agentTurnStreamErrorFromData({
+        ...(details as Record<string, unknown>),
+        error: message,
+      });
+      if (normalized.typedError) return normalized;
+    }
+  }
+  return error instanceof Error
+    ? error as AgentTurnStreamError
+    : new Error(message) as AgentTurnStreamError;
 }
 
 export function createAgentTurnSourceDelivery(
@@ -6750,14 +7136,23 @@ export function streamAgentTurn(
   if (isHttpGatewayMode()) {
     const transportController = new AbortController();
     let transportDisconnectRequested = false;
+    let resolveTransportDisconnect = () => {};
+    let rejectTransportDisconnect = (_error: Error) => {};
+    const transportDisconnectCompletion = new Promise<void>((resolve, reject) => {
+      resolveTransportDisconnect = resolve;
+      rejectTransportDisconnect = reject;
+    });
     const foundationFaultProbe =
       input.user_input === FOUNDATION_F06_STREAM_PROBE_INPUT;
     const foundationFaultProbeStartedAt = performance.now();
     Object.defineProperty(controller, 'disconnectTransport', {
       value: () => {
-        if (transportDisconnectRequested || controller.signal.aborted) return;
-        transportDisconnectRequested = true;
-        transportController.abort();
+        if (controller.signal.aborted) return Promise.resolve();
+        if (!transportDisconnectRequested) {
+          transportDisconnectRequested = true;
+          transportController.abort();
+        }
+        return transportDisconnectCompletion;
       },
       enumerable: true,
     });
@@ -6788,16 +7183,19 @@ export function streamAgentTurn(
         onEvent(projectedEvent);
         const terminal = classifyAgentTurnTerminalEvent(projectedEvent);
         if (terminal === 'failed') {
+          resolveTransportDisconnect();
           onError(agentTurnStreamErrorFromData(projectedEvent.data));
           settled = true;
           return true;
         }
-        if (terminal === 'completed' || terminal === 'cancelled' || terminal === 'queued') {
+        if (
+          terminal === 'completed'
+          || terminal === 'cancelled'
+          || terminal === 'queued'
+          || terminal === 'interrupted'
+        ) {
+          resolveTransportDisconnect();
           onDone();
-          settled = true;
-          return true;
-        }
-        if (terminal === 'interrupted') {
           settled = true;
           return true;
         }
@@ -6902,8 +7300,14 @@ export function streamAgentTurn(
                 : liveTransportError?.message || 'station_stream_closed',
             },
           });
+          resolveTransportDisconnect();
         }
       } catch (err: unknown) {
+        if (transportDisconnectRequested) {
+          rejectTransportDisconnect(
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        }
         if (!controller.signal.aborted && !settled) {
           onError(err instanceof Error ? err : new Error(String(err)));
         }
@@ -6912,13 +7316,20 @@ export function streamAgentTurn(
     return controller;
   }
   let transportDisconnectRequested = false;
-  let disconnectNativeTransport = () => {
+  let resolveTransportDisconnect = () => {};
+  let rejectTransportDisconnect = (_error: Error) => {};
+  const transportDisconnectCompletion = new Promise<void>((resolve, reject) => {
+    resolveTransportDisconnect = resolve;
+    rejectTransportDisconnect = reject;
+  });
+  let disconnectNativeTransport = (): Promise<void> => {
     transportDisconnectRequested = true;
+    return transportDisconnectCompletion;
   };
   Object.defineProperty(controller, 'disconnectTransport', {
     value: () => {
-      if (controller.signal.aborted) return;
-      disconnectNativeTransport();
+      if (controller.signal.aborted) return Promise.resolve();
+      return disconnectNativeTransport();
     },
     enumerable: true,
   });
@@ -6948,18 +7359,24 @@ export function streamAgentTurn(
       });
     };
     const disconnectTransport = () => {
-      if (!startCompleted || transportCancellationSent) return;
+      if (!startCompleted || transportCancellationSent) {
+        return transportDisconnectCompletion;
+      }
       transportCancellationSent = true;
       void api.disconnectAgentTurnStream(streamId).catch((error) => {
         log.warn('api', 'Agent turn transport disconnect failed', {
           streamId,
           error: String(error),
         });
+        rejectTransportDisconnect(
+          error instanceof Error ? error : new Error(String(error)),
+        );
       });
+      return transportDisconnectCompletion;
     };
     disconnectNativeTransport = () => {
       transportDisconnectRequested = true;
-      disconnectTransport();
+      return disconnectTransport();
     };
     const cancelSemanticTurn = () => {
       if (!capturedTurnId) return;
@@ -7049,8 +7466,15 @@ export function streamAgentTurn(
           unlistenLive?.();
           return;
         }
+        if (
+          transportDisconnectRequested
+          && payload.event !== 'connection_lost'
+        ) {
+          return;
+        }
         forwardEvent(payload);
         if (payload.event === 'connection_lost' && payload.data?.recoveryHandoff === true) {
+          resolveTransportDisconnect();
           cleanup();
           return;
         }
@@ -7058,19 +7482,23 @@ export function streamAgentTurn(
           event: payload.event,
           data: payload.data || {},
         });
-        if (terminal === 'completed' || terminal === 'cancelled' || terminal === 'queued') {
+        if (
+          terminal === 'completed'
+          || terminal === 'cancelled'
+          || terminal === 'queued'
+          || terminal === 'interrupted'
+        ) {
+          resolveTransportDisconnect();
           unlistenLive?.();
           unlistenLive = undefined;
           onDone();
           settle();
         }
         if (terminal === 'failed') {
+          resolveTransportDisconnect();
           unlistenLive?.();
           unlistenLive = undefined;
           onError(agentTurnStreamErrorFromData(payload.data || {}));
-          settle();
-        }
-        if (terminal === 'interrupted') {
           settle();
         }
       });
@@ -7090,12 +7518,45 @@ export function streamAgentTurn(
         return;
       }
       if (transportDisconnectRequested) {
-        disconnectTransport();
+        await disconnectTransport();
       }
     } catch (err: unknown) {
+      if (transportDisconnectRequested) {
+        rejectTransportDisconnect(
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
       cleanup();
       if (!settled) {
-        onError(err instanceof Error ? err : new Error(String(err)));
+        const normalized = normalizeAgentTurnStreamError(err);
+        if (normalized.typedError) {
+          const sourceData: Record<string, unknown> = {
+            ...normalized.typedError,
+            conversationId: input.conversation_id,
+            agentId: input.agent_id,
+          };
+          const event: StreamEvent = {
+            event: 'error',
+            data: { ...sourceData, streamGeneration },
+            ptid: sourcePtid,
+            sourceDelivery: createAgentTurnSourceDelivery(
+              'error',
+              sourceData,
+              sourcePtid,
+              input.conversation_id,
+            ),
+          };
+          publishAgentTurnRuntimeEvent(
+            streamId,
+            streamGeneration,
+            sourcePtid,
+            input.conversation_id,
+            input.agent_id,
+            event,
+          );
+          onEvent(event);
+        }
+        onError(normalized);
       }
     }
   })();

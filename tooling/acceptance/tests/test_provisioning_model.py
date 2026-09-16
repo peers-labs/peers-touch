@@ -159,6 +159,21 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(contract.id, "local-desktop-gateway")
         self.assertIn("station", contract.services)
         self.assertIn("desktop-gateway", contract.services)
+        self.assertEqual(len(contract.fixtures), 1)
+        self.assertEqual(contract.fixtures[0].id, "chat-native-actors")
+        self.assertTrue(contract.fixtures[0].authorization_required)
+        self.assertEqual(
+            contract.fixtures[0].authorization_ref,
+            "env:CHAT_ACCEPTANCE_RESET",
+        )
+        self.assertEqual(len(contract.credentials), 1)
+        self.assertEqual(contract.credentials[0].id, "chat-password")
+        self.assertEqual(
+            contract.credentials[0].source_ref,
+            "fixture:apps/station/app/conf/actor.yml#preset_users",
+        )
+        self.assertTrue(contract.credentials[0].required)
+        self.assertFalse(contract.credentials[0].generated_if_missing)
         self.assertEqual(
             [fixture.id for fixture in contract.fixtures],
             ["chat-native-actors"],
@@ -258,6 +273,19 @@ class EnvironmentContractTests(unittest.TestCase):
         )
         self.assertTrue(
             all(service.kind == "station" for service in contract.services.values())
+        )
+
+    def test_native_tauri_services_use_canonical_profiles(self):
+        from tooling.acceptance.provisioners import (
+            native_tauri_embedded_webdriver,
+        )
+
+        self.assertEqual(
+            native_tauri_embedded_webdriver._SERVICE_PROFILES,
+            {
+                "station-four": "four",
+                "station-five": "fiveArm",
+            },
         )
 
     def test_load_native_tauri_current_profile_contract(self):

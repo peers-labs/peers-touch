@@ -286,7 +286,7 @@ impl ObjectTransferRepository for RepositoryAdapter {
     ) -> Result<Option<String>, ObjectTransferFailure> {
         self.inner
             .attachment_upload_media_type(transfer_id)
-            .map(Some)
+            .map(|_| Some("application/octet-stream".to_string()))
             .map_err(repository_failure)
     }
 

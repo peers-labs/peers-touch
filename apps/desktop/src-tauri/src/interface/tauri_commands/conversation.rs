@@ -9,6 +9,8 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tauri::{State, Window};
 
+use super::key_exchange::active_key_exchange_context;
+
 // --- Input types ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,18 +21,6 @@ pub struct ConversationGetInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationGetMembersInput {
     pub conversation_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyPackageUploadInput {
-    pub device_id: String,
-    pub data: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyPackageFetchInput {
-    pub ptid: String,
-    pub home_station_peer_id: Option<String>,
 }
 
 // --- Helper ---
@@ -111,78 +101,6 @@ pub fn conversation_get_members(
     }
 }
 
-// --- KeyPackage commands ---
-
-#[tauri::command]
-pub fn keypackage_upload(
-    input: KeyPackageUploadInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Value> {
-    let token = match get_token(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let body = json!({
-        "device_id": input.device_id,
-        "data": input.data,
-    });
-    match station_client::request_json_auth(
-        Method::POST,
-        "/key-exchange/mls/key-package/upload",
-        &token,
-        None,
-        Some(&body),
-    ) {
-        Ok(resp) => AppResult::success(resp),
-        Err(e) => station_err(e, "keypackage upload failed"),
-    }
-}
-
-#[tauri::command]
-pub fn keypackage_fetch(
-    input: KeyPackageFetchInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Value> {
-    let token = match get_token(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let mut body = json!({ "ptid": input.ptid });
-    if let Some(ref station_id) = input.home_station_peer_id {
-        body["home_station_peer_id"] = json!(station_id);
-    }
-    match station_client::request_json_auth(
-        Method::POST,
-        "/key-exchange/mls/key-package/fetch",
-        &token,
-        None,
-        Some(&body),
-    ) {
-        Ok(resp) => AppResult::success(resp),
-        Err(e) => station_err(e, "keypackage fetch failed"),
-    }
-}
-
-#[tauri::command]
-pub fn keypackage_count(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<Value> {
-    let token = match get_token(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    match station_client::request_json_auth(
-        Method::GET,
-        "/key-exchange/mls/key-package/count",
-        &token,
-        None,
-        None,
-    ) {
-        Ok(resp) => AppResult::success(resp),
-        Err(e) => station_err(e, "keypackage count failed"),
-    }
-}
-
 fn user_scope_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> String {
     session_resolver::ptid_for_window(state.inner(), window).unwrap_or_default()
 }
@@ -204,6 +122,7 @@ pub fn device_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceRevokeInput {
     pub device_id: String,
+    pub observed_profile_version: u64,
 }
 
 #[tauri::command]
@@ -212,36 +131,36 @@ pub fn device_revoke(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    let token = match get_token(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
+    let context = match active_key_exchange_context::<Value>(&state, &window) {
+        Ok(context) => context,
+        Err(error) => return error,
     };
-    let current_actor = state.sessions.get(window.label()).and_then(|session| {
-        state
-            .messaging_engines
-            .get(&session.account_id)
-            .ok()
-            .flatten()
-            .filter(|engine| engine.endpoint().device_id == input.device_id.as_str())
-            .map(|_| session.actor.ptid)
+    if input.device_id != context.device_id {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "revoked device does not match the active Messaging endpoint",
+            None,
+        );
+    }
+    let body = json!({
+        "device_id": context.device_id,
+        "observed_profile_version": input.observed_profile_version,
     });
-    let body = json!({ "device_id": input.device_id });
-    match station_client::request_json_auth(
+    match station_client::request_json_auth_with_device_id(
         Method::POST,
         "/device/revoke",
-        &token,
+        &context.token,
         None,
         Some(&body),
+        &input.device_id,
     ) {
         Ok(resp) => {
-            if let Some(actor_ptid) = current_actor {
-                if let Err(error) = state.secure_content.teardown_actor(&actor_ptid) {
-                    return AppResult::fail(
-                        ErrorCode::InternalError,
-                        format!("device revoked but Secure Content teardown failed: {error}"),
-                        None,
-                    );
-                }
+            if let Err(error) = state.secure_content.teardown_actor(&context.actor_ptid) {
+                return AppResult::fail(
+                    ErrorCode::InternalError,
+                    format!("device revoked but Secure Content teardown failed: {error}"),
+                    None,
+                );
             }
             AppResult::success(resp)
         }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,12 +11,14 @@ from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.core.evidence import new_report
-from tooling.acceptance.gates.chat import desktop_gateway_e2e
+from tooling.acceptance.gates.chat import desktop_gateway_e2e, native_support
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
     cleanup_preserving_primary_failure,
     is_native_tauri_url,
     is_station_authorization_rejection,
+    shared_federation_id,
+    wait_for_peer_key_bundle,
 )
 from tooling.acceptance.gates.chat.native_multi_device_runner import (
     NativeMultiDeviceGate,
@@ -197,6 +200,12 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         for source in (get_device, revoke_device):
             self.assertIn("messagingAcceptanceCurrentEndpoint", source)
             self.assertNotIn("accountGetDeviceId", source)
+        self.assertIn("imServiceV1.device.list()", revoke_device)
+        self.assertIn("current.profileVersion", revoke_device)
+        self.assertIn(
+            "imServiceV1.device.revoke(deviceId, current.profileVersion)",
+            revoke_device,
+        )
         rust_commands = (
             ROOT
             / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
@@ -211,6 +220,75 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         endpoint_source = rust_commands[endpoint_start:endpoint_end]
         self.assertIn("engine.endpoint().device_id.as_str()", endpoint_source)
         self.assertIn("engine.endpoint().ptid != actor_ptid", endpoint_source)
+        conversation_commands = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/conversation.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            '"observed_profile_version": input.observed_profile_version',
+            conversation_commands,
+        )
+        revoke_start = conversation_commands.index("pub fn device_revoke(")
+        revoke_end = conversation_commands.index(
+            "\n// --- Direct Key Exchange",
+            revoke_start,
+        )
+        revoke_source = conversation_commands[revoke_start:revoke_end]
+        self.assertIn(
+            "request_json_auth_with_device_id(",
+            revoke_source,
+        )
+        self.assertIn(
+            "active_key_exchange_context::<Value>",
+            revoke_source,
+        )
+        self.assertIn(
+            "input.device_id != context.device_id",
+            revoke_source,
+        )
+        self.assertIn("&input.device_id", revoke_source)
+
+    def test_mls_keypackage_commands_bind_window_endpoint_identity(self) -> None:
+        conversation_commands = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/conversation.rs"
+        ).read_text(encoding="utf-8")
+        key_exchange_commands = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/key_exchange.rs"
+        ).read_text(encoding="utf-8")
+        main = (
+            ROOT / "apps/desktop/src-tauri/src/main.rs"
+        ).read_text(encoding="utf-8")
+        gateway = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
+        ).read_text(encoding="utf-8")
+
+        for command in (
+            "keypackage_upload",
+            "keypackage_fetch",
+            "keypackage_count",
+        ):
+            self.assertNotIn(f"pub fn {command}(", conversation_commands)
+            self.assertIn(f"pub fn {command}(", key_exchange_commands)
+            self.assertIn(f"key_exchange::{command}", main)
+        self.assertIn(
+            "active_key_exchange_context_for_account",
+            key_exchange_commands,
+        )
+        self.assertIn(
+            "kemodel::CountMlsKeyPackagesRequest",
+            key_exchange_commands,
+        )
+        self.assertIn(
+            "request_proto_for_device::<",
+            key_exchange_commands,
+        )
+        self.assertIn(
+            "execute_keypackage_count(context)",
+            gateway,
+        )
 
     def test_native_acceptance_commands_are_registered_with_tauri(self) -> None:
         main = (
@@ -330,6 +408,33 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                     "self.client_lifecycles.transfer_preserved_session(",
                     source,
                 )
+
+    def test_offline_metadata_mutations_wait_for_their_authority_dependency(
+        self,
+    ) -> None:
+        source = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_interactions_runner.py",
+            "prove_offline_recovery",
+        )
+        reaction_commit = source.index("offline reaction commit")
+        pin_submit = source.index('"interaction": "pin"')
+        self.assertLess(reaction_commit, pin_submit)
+        self.assertIn(
+            '(snapshot.get("intent") or {}).get("state") == "committed"',
+            source,
+        )
+
+    def test_nested_thread_waits_for_authority_projection(self) -> None:
+        source = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_interactions_runner.py",
+            "prove_lifecycle",
+        )
+        reply_projection = source.index("reply authority projection")
+        thread_submit = source.index(f'{{claim_kind}}.thread.send')
+        thread_projection = source.index("thread authority projection")
+        nested_submit = source.index(f'{{claim_kind}}.thread.nested.send')
+        self.assertLess(reply_projection, thread_submit)
+        self.assertLess(thread_projection, nested_submit)
 
     def test_revoked_typing_is_submitted_and_receiver_stays_inactive(self) -> None:
         source = self.function_source(
@@ -1024,7 +1129,166 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("SshTransport(", support)
         self.assertIn("SshTarget(", support)
+        self.assertIn("'readerPtid', ptid", support)
+        self.assertIn("ORDER BY ptid", support)
+        self.assertIn("SELECT ptid AS reader_ptid", support)
         self.assertNotIn("StrictHostKeyChecking=no", support)
+
+    def test_shared_federation_requires_one_id_for_every_actor(self) -> None:
+        clients = {
+            "alice": object(),
+            "bob": object(),
+            "charlie": object(),
+        }
+        contexts = {
+            clients["alice"]: {
+                "federations": [
+                    {"federationId": "fed-other"},
+                    {"federationId": "fed-shared"},
+                ]
+            },
+            clients["bob"]: {
+                "federations": [{"federationId": "fed-shared"}]
+            },
+            clients["charlie"]: {
+                "federations": [{"federationId": "fed-shared"}]
+            },
+        }
+        with patch(
+            "tooling.acceptance.gates.chat.native_support.async_harness",
+            side_effect=lambda client, *_args, **_kwargs: contexts[client],
+        ):
+            self.assertEqual(
+                shared_federation_id(
+                    clients,  # type: ignore[arg-type]
+                    ("alice", "bob", "charlie"),
+                ),
+                "fed-shared",
+            )
+
+    def test_peer_key_readiness_waits_for_positive_bundle_count(self) -> None:
+        with patch(
+            "tooling.acceptance.gates.chat.native_support.async_harness",
+            side_effect=(
+                {"peerPtid": "ptid:bob", "bundleCount": 0},
+                {
+                    "peerPtid": "ptid:bob",
+                    "bundleCount": 1,
+                    "deviceIds": ["bob-device"],
+                },
+            ),
+        ) as harness, patch(
+            "tooling.acceptance.gates.chat.native_support.time.sleep",
+        ):
+            result = wait_for_peer_key_bundle(
+                object(),  # type: ignore[arg-type]
+                "ptid:bob",
+                "station-five",
+                timeout=1,
+            )
+
+        self.assertEqual(result["deviceIds"], ["bob-device"])
+        self.assertEqual(harness.call_count, 2)
+        self.assertEqual(
+            harness.call_args.args[2],
+            {
+                "peerPtid": "ptid:bob",
+                "homeStationPeerId": "station-five",
+            },
+        )
+
+    def test_station_readback_supports_bound_local_source_database(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "station.db"
+            connection = sqlite3.connect(database)
+            try:
+                connection.executescript(
+                    """
+CREATE TABLE conversation_events (
+  event_id TEXT, conversation_id TEXT, sequence INTEGER,
+  command_id TEXT, message_id TEXT, event_hash BLOB
+);
+CREATE TABLE device_queue_items (
+  item_id TEXT, event_id TEXT, conversation_id TEXT,
+  recipient_ptid TEXT, recipient_device_id TEXT,
+  lane_sequence INTEGER, state TEXT, attempt_count INTEGER,
+  payload_sha256 BLOB
+);
+CREATE TABLE conversation_read_cursors (
+  conversation_id TEXT, ptid TEXT, last_read_sequence INTEGER
+);
+INSERT INTO conversation_events VALUES
+  ('event-1', 'conversation-1', 1, 'command-1', 'message-1', x'0102');
+INSERT INTO device_queue_items VALUES
+  ('item-1', 'event-1', 'conversation-1', 'ptid:bob', 'device-1',
+   1, 'pending', 0, x'0a0b');
+INSERT INTO conversation_read_cursors VALUES
+  ('conversation-1', 'ptid:bob', 1);
+"""
+                )
+            finally:
+                connection.close()
+            with patch.object(
+                native_support,
+                "acceptance_station_environment",
+                return_value={
+                    "PT_ACCEPTANCE_RUNTIME_KIND": "local-source",
+                    "PT_ACCEPTANCE_LOCAL_DATABASE": str(database),
+                },
+            ):
+                result = native_support.station_readback(
+                    "conversation-1",
+                    "message-1",
+                    station_url="http://127.0.0.1:18080",
+                )
+
+        self.assertEqual(result["events"][0]["hashBytes"], 2)
+        self.assertEqual(result["queue"][0]["payloadSha256"], "0a0b")
+        self.assertEqual(result["readCursors"][0]["lastReadSequence"], 1)
+
+    def test_typing_start_client_does_not_reference_unbound_client(self) -> None:
+        start_client = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
+            "start_client",
+        )
+        self.assertEqual(
+            start_client.count("self.start_injected_client(actor)"),
+            1,
+        )
+        self.assertNotIn("enter_chat_page(client)", start_client)
+
+    def test_windows_storage_clone_is_scoped_by_runtime_run(self) -> None:
+        clone = self.function_source(
+            ROOT
+            / "tooling/acceptance/provisioners/native_desktop_windows.py",
+            "clone_actor_storage",
+        )
+        self.assertGreaterEqual(clone.count('str(state["runId"])'), 2)
+        self.assertGreaterEqual(clone.count("_windows_verbatim_path("), 2)
+
+    def test_recovery_exports_each_current_log_once_during_cleanup(self) -> None:
+        runners = {
+            "recovery": "native_recovery_runner.py",
+            "typing": "native_typing_runner.py",
+            "multi-device": "native_multi_device_runner.py",
+            "group-mls": "native_group_mls_runner.py",
+        }
+        for name, filename in runners.items():
+            with self.subTest(runner=name):
+                source = (
+                    ROOT / "tooling/acceptance/gates/chat" / filename
+                ).read_text(encoding="utf-8")
+                self.assertEqual(
+                    source.count("self.save_app_log(client, actor)"),
+                    1,
+                )
+
+    def test_group_mls_start_client_launches_injected_runtime(self) -> None:
+        start_client = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_group_mls_runner.py",
+            "start_client",
+        )
+        self.assertIn("self.start_injected_client(actor)", start_client)
 
     def test_typing_contract_is_unchanged(self) -> None:
         self.assertEqual(
@@ -1056,6 +1320,25 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 "resources_released",
             },
         )
+        tree = ast.parse(self.source("typing"))
+        create_direct_calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "async_harness"
+            and len(node.args) >= 3
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == "createDirectConversation"
+        ]
+        self.assertEqual(len(create_direct_calls), 1)
+        for call in create_direct_calls:
+            payload = call.args[2]
+            self.assertIsInstance(payload, ast.Dict)
+            self.assertIn(
+                "federationId",
+                [ast.literal_eval(key) for key in payload.keys],
+            )
 
     def test_group_creation_uses_current_production_harness_contract(
         self,
@@ -1083,6 +1366,10 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 self.assertIsInstance(payload, ast.Dict)
                 self.assertIn(
                     "memberPtids",
+                    [ast.literal_eval(key) for key in payload.keys],
+                )
+                self.assertIn(
+                    "federationId",
                     [ast.literal_eval(key) for key in payload.keys],
                 )
                 self.assertNotIn(
@@ -1130,6 +1417,50 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self.assertIn('"memberPtid": self.ptids["charlie"]', group_runner)
         self.assertNotIn('"memberDid":', group_runner)
 
+    def test_typing_group_sync_waits_for_exact_member_projection(self) -> None:
+        sync = self.function_source(
+            ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py",
+            "sync",
+        )
+        self.assertIn("expected_members = sorted(self.ptids.values())", sync)
+        self.assertIn('result.get("memberPtids", [])', sync)
+        self.assertIn("return wait_until(", sync)
+        self.assertIn("STEP_TIMEOUT", sync)
+
+    def test_direct_creation_uses_current_production_harness_contract(
+        self,
+    ) -> None:
+        for filename in (
+            "native_interactions_runner.py",
+            "native_multi_device_runner.py",
+            "native_recovery_runner.py",
+            "native_typing_runner.py",
+            "native_two_client_runner.py",
+        ):
+            with self.subTest(runner=filename):
+                source = (
+                    ROOT / "tooling/acceptance/gates/chat" / filename
+                ).read_text(encoding="utf-8")
+                tree = ast.parse(source)
+                create_direct_calls = [
+                    node
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "async_harness"
+                    and len(node.args) >= 3
+                    and isinstance(node.args[1], ast.Constant)
+                    and node.args[1].value == "createDirectConversation"
+                ]
+                self.assertTrue(create_direct_calls)
+                for call in create_direct_calls:
+                    payload = call.args[2]
+                    self.assertIsInstance(payload, ast.Dict)
+                    self.assertIn(
+                        "federationId",
+                        [ast.literal_eval(key) for key in payload.keys],
+                    )
+
     def test_typing_lifecycle_uses_native_surface_events(self) -> None:
         source = (
             ROOT / "tooling/acceptance/gates/chat/native_typing_runner.py"
@@ -1155,7 +1486,12 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             self.assertIn('"[data-chat-send]"', lifecycle)
             self.assertIn('"arguments[0].blur()"', lifecycle)
             self.assertIn("select_conversation(", lifecycle)
+        self.assertIn('"group",\n            alternate_group_id', prove_direct)
         self.assertNotIn('"submitTyping"', prove_direct)
+        self.assertLess(
+            source.index('"createGroup"'),
+            source.index("self.prove_direct("),
+        )
         self.assertEqual(
             prove_group.count('"submitTyping"'),
             1,

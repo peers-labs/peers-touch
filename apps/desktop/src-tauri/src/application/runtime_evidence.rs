@@ -16,6 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const RUNTIME_ID_EXTERNAL_AGENT: &str = "external-agent";
 const RUNTIME_ID_TRAE_CLI: &str = "trae-cli";
 const AS_F10_NEGATIVE_CONTROL_ENV: &str = "PT_AGENT_AS_F10_NEGATIVE_CONTROL";
+const GFE1_EXECUTOR_CONTROL_ENV: &str = "PT_AGENT_GFE1_EXECUTOR_CONTROL";
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -341,6 +342,63 @@ pub fn close_browser_capability_session(
             Some(json!({ "cause": error })),
         ),
     }
+}
+
+pub fn set_client_executor_supervisor_available(
+    supervisor: &CapabilityWorkerSupervisor,
+    available: bool,
+) -> AppResult<StubPayload> {
+    if supervisor.is_browser_surface() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "agent.clientExecutorSupervisorRequiresDesktopSurface",
+            None,
+        );
+    }
+    if !executor_control_feature_enabled() {
+        return AppResult::fail(
+            ErrorCode::NotImplemented,
+            "agent.capabilitySupervisorControlUnavailable",
+            Some(json!({ "reason": "acceptanceFeatureDisabled" })),
+        );
+    }
+    if std::env::var(GFE1_EXECUTOR_CONTROL_ENV).as_deref() != Ok("1") {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "agent.capabilitySupervisorControlUnavailable",
+            Some(json!({ "reason": "acceptanceEnvironmentDisabled" })),
+        );
+    }
+
+    let result = if available {
+        supervisor.start()
+    } else {
+        supervisor.shutdown()
+    };
+    match result {
+        Ok(()) => success_payload(
+            "agent_client_executor_supervisor_control",
+            json!({
+                "available": available,
+                "state": if available { "starting" } else { "stopped" },
+            }),
+        ),
+        Err(error) => AppResult::fail(
+            ErrorCode::InternalError,
+            "agent.capabilitySupervisorControlFailed",
+            Some(json!({ "cause": error })),
+        ),
+    }
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+fn executor_control_feature_enabled() -> bool {
+    true
+}
+
+#[cfg(not(feature = "acceptance-webdriver"))]
+fn executor_control_feature_enabled() -> bool {
+    false
 }
 
 fn runtime_activity_request(

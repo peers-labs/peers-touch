@@ -31,7 +31,7 @@ pub(super) fn test_attachment_metadata(
             storage_ref: format!("opaque/{attachment_id}"),
             ciphertext_size: ciphertext.len() as u64,
             ciphertext_sha256: Sha256::digest(&ciphertext).to_vec(),
-            media_type: "text/plain".to_string(),
+            media_type: "application/octet-stream".to_string(),
             chunk_size: ATTACHMENT_CHUNK_SIZE,
             chunk_count: 1,
             encryption_suite: AttachmentEncryptionSuite::Aes256GcmChunked as i32,

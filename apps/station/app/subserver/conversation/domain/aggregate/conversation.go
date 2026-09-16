@@ -395,17 +395,20 @@ func Rehydrate(snapshot Snapshot) (*Conversation, error) {
 	return conversation, nil
 }
 
-func ValidateCommittedMembershipProjection(
+// ReconcileCommittedMembershipProjection validates authority-visible state and
+// restores lifecycle metadata that is intentionally absent from the wire snapshot.
+func ReconcileCommittedMembershipProjection(
 	current Snapshot,
 	changes []entity.MembershipChange,
 	post Snapshot,
-) error {
+) (Snapshot, error) {
 	conversation, err := Rehydrate(current)
 	if err != nil {
-		return err
+		return Snapshot{}, err
 	}
 	if conversation.kind != valueobject.ConversationKindGroup {
-		return membershipProjectionError("membership transition requires a group Conversation")
+		return Snapshot{},
+			membershipProjectionError("membership transition requires a group Conversation")
 	}
 	if post.ID != current.ID ||
 		post.Kind != current.Kind ||
@@ -419,33 +422,36 @@ func ValidateCommittedMembershipProjection(
 		post.Head.Sequence != current.Head.Sequence.Next() ||
 		post.Head.MembershipEpoch != current.Head.MembershipEpoch.Next() ||
 		post.Head.MLSEpoch != current.Head.MLSEpoch.Next() {
-		return membershipProjectionError(
+		return Snapshot{}, membershipProjectionError(
 			"post-state scope, metadata, or authority head does not match the transition",
 		)
 	}
 	if err := validateMembershipChangeBatch(changes); err != nil {
-		return membershipProjectionError(err.Error())
+		return Snapshot{}, membershipProjectionError(err.Error())
 	}
 	candidate := conversation.clone()
 	for _, change := range changes {
 		if err := candidate.applyMembershipChange(change, post.Head.Sequence); err != nil {
-			return membershipProjectionError(err.Error())
+			return Snapshot{}, membershipProjectionError(err.Error())
 		}
 	}
 	candidate.head.MembershipEpoch = post.Head.MembershipEpoch
 	candidate.head.MLSEpoch = post.Head.MLSEpoch
 	if err := candidate.validateState(post.Head.Sequence); err != nil {
-		return membershipProjectionError(err.Error())
+		return Snapshot{}, membershipProjectionError(err.Error())
 	}
 	expectedMembers := activeMembers(candidate.Members())
 	expectedDevices := activeDevices(candidate.MemberDevices())
-	if !equalMembers(expectedMembers, post.Members) ||
-		!equalMemberDevices(expectedDevices, post.Devices) {
-		return membershipProjectionError(
+	if !equalCommittedMembers(expectedMembers, post.Members) ||
+		!equalCommittedMemberDevices(expectedDevices, post.Devices) {
+		return Snapshot{}, membershipProjectionError(
 			"declared membership changes do not produce the committed post-state",
 		)
 	}
-	return nil
+	post.Members = expectedMembers
+	post.Devices = expectedDevices
+
+	return post, nil
 }
 
 func (c *Conversation) Snapshot() Snapshot {
@@ -1657,26 +1663,53 @@ func activeDevices(devices []entity.MemberDevice) []entity.MemberDevice {
 	return active
 }
 
-func equalMembers(left []entity.Member, right []entity.Member) bool {
+func equalCommittedMembers(left []entity.Member, right []entity.Member) bool {
 	if len(left) != len(right) {
 		return false
 	}
-	for index := range left {
-		if left[index] != right[index] {
+	expected := make(map[valueobject.PTID]entity.Member, len(left))
+	for _, member := range left {
+		expected[member.Actor] = member
+	}
+	seen := make(map[valueobject.PTID]struct{}, len(right))
+	for _, member := range right {
+		want, exists := expected[member.Actor]
+		if !exists ||
+			member.Role != want.Role ||
+			member.Status != want.Status ||
+			member.HomeStation != want.HomeStation {
 			return false
 		}
+		if _, duplicate := seen[member.Actor]; duplicate {
+			return false
+		}
+		seen[member.Actor] = struct{}{}
 	}
 	return true
 }
 
-func equalMemberDevices(left []entity.MemberDevice, right []entity.MemberDevice) bool {
+func equalCommittedMemberDevices(left []entity.MemberDevice, right []entity.MemberDevice) bool {
 	if len(left) != len(right) {
 		return false
 	}
-	for index := range left {
-		if left[index] != right[index] {
+	expected := make(map[string]entity.MemberDevice, len(left))
+	for _, device := range left {
+		expected[device.Endpoint.Key()] = device
+	}
+	seen := make(map[string]struct{}, len(right))
+	for _, device := range right {
+		key := device.Endpoint.Key()
+		want, exists := expected[key]
+		if !exists ||
+			device.Endpoint != want.Endpoint ||
+			device.HomeStation != want.HomeStation ||
+			device.Active != want.Active {
 			return false
 		}
+		if _, duplicate := seen[key]; duplicate {
+			return false
+		}
+		seen[key] = struct{}{}
 	}
 	return true
 }

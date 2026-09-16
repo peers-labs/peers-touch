@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-14
-covered_docs_hash: d8c254f8bcaacc2a513f42957b4040e1a030c5980234de93c1804de06c531a01
+last_verified_at: 2026-09-16
+covered_docs_hash: 98e31bce49997a3a540c21e963cafe509a823cc843558ad877d546ebefdd76ad
 
 covered_docs:
   - AGENTS.md
@@ -202,3 +202,22 @@ blocking development. Same-workspace overlap, same-branch writes, and exclusive
 runtime resources remain fail-closed. This changes development coordination,
 not PR review severity or evidence semantics, so no review fixture or
 `pt-github-review/SKILL.md` behavior change is required.
+
+## 2026-09-15 Review
+
+The covered-document drift records source-bound Native Desktop Runtime evidence,
+scope boundaries, and navigation to the already-reviewed cross-platform
+`devctl` architecture. It does not change PR review severity, ownership, or
+evidence semantics. Existing Acceptance review rules and the
+`station-profile-bypass` and `unauthorized-environment-creation` hard rules
+already cover these changes, so no `pt-github-review/SKILL.md` update or new
+review fixture is required.
+
+## 2026-09-16 Review
+
+PR #112 reconciliation combines the reviewed Native Desktop and Mobile
+reliability contracts with the Secure Content hard cut and Machine Dev Control
+Plane. The merged sources preserve existing review severity, exact-source
+evidence, environment authorization, source-of-truth ownership, and old-path
+deletion rules. No `pt-github-review/SKILL.md` behavior or fixture change is
+required.

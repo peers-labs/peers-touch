@@ -239,6 +239,15 @@ class FakeCommandExecutor:
                 0,
                 f"ChromeDriver {self.driver_version}\n",
             )
+        if command == ("pnpm", "--dir", "apps/mobile", "run", "build"):
+            dist = self.repo_root / "apps" / "mobile" / "dist"
+            (dist / "assets").mkdir(parents=True, exist_ok=True)
+            (dist / "index.html").write_text("mobile\n", encoding="utf-8")
+            (dist / "assets" / "main.js").write_text(
+                "mobile\n",
+                encoding="utf-8",
+            )
+            return CommandResult(0)
         if command and command[0] == "xcodebuild":
             derived_data = Path(command[command.index("-derivedDataPath") + 1])
             app = (
@@ -654,6 +663,168 @@ class MobileSimulatorContractTests(unittest.TestCase):
             "__PEERS_MOBILE_ACCEPTANCE__",
         )
 
+    def test_social_simulator_accepts_explicit_station_profiles(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        bindings = {
+            "station-primary": "four",
+            "station-secondary": "fiveArm",
+        }
+        provisioner = get_provisioner(
+            contract,
+            station_profiles=bindings,
+            service_profiles={"relay": "one"},
+        )
+
+        self.assertIsInstance(
+            provisioner,
+            MobileSocialSimulatorProvisioner,
+        )
+        self.assertEqual(
+            provisioner._required_station_profiles(),
+            bindings,
+        )
+        self.assertEqual(
+            provisioner._required_service_profiles(),
+            {"relay": "one"},
+        )
+
+    def test_social_simulator_rejects_invalid_station_profile_sets(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+
+        for bindings in (
+            {"station-primary": "four"},
+            {
+                "station-primary": "four",
+                "station-secondary": "fiveArm",
+                "station-extra": "six",
+            },
+            {
+                "station-primary": "four",
+                "station-secondary": "four",
+            },
+            {
+                "station-primary": "../four",
+                "station-secondary": "fiveArm",
+            },
+        ):
+            with self.subTest(bindings=bindings):
+                provisioner = get_provisioner(
+                    contract,
+                    station_profiles=bindings,
+                )
+                with self.assertRaises(BlockedError):
+                    provisioner._required_station_profiles()
+
+    def test_social_simulator_rejects_invalid_service_profile_sets(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+
+        for bindings in (
+            {"station-primary": "four"},
+            {"relay": "../one"},
+        ):
+            with self.subTest(bindings=bindings):
+                provisioner = get_provisioner(
+                    contract,
+                    service_profiles=bindings,
+                )
+                with self.assertRaises(BlockedError):
+                    provisioner._required_service_profiles()
+
+    def test_social_simulator_injects_station_profiles_in_memory(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        provisioner = MobileSocialSimulatorProvisioner(
+            contract,
+            station_profiles={
+                "station-primary": "four",
+                "station-secondary": "fiveArm",
+            },
+        )
+        active = {
+            "PT_DEV_PROFILE": "four",
+            "PT_RELAY_URL": "https://relay.example",
+            "PT_RELAY_DEPLOY_ENV": "relay",
+        }
+        station_profiles = {
+            "four.env": {
+                "PT_DEV_PROFILE": "four",
+                "PT_STATION_MODE": "remote",
+                "PT_STATION_URL": "https://four.example",
+                "PT_STATION_DEPLOY_ENV": "station-four",
+            },
+            "fiveArm.env": {
+                "PT_DEV_PROFILE": "fiveArm",
+                "PT_STATION_MODE": "remote",
+                "PT_STATION_URL": "https://five.example",
+                "PT_STATION_DEPLOY_ENV": "station-five-arm",
+            },
+        }
+
+        with (
+            patch.object(Path, "is_file", return_value=True),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "load_env_file",
+                side_effect=lambda profile_path: station_profiles[
+                    profile_path.name
+                ],
+            ),
+        ):
+            merged = provisioner._inject_station_profile_bindings(active)
+
+        self.assertEqual(
+            merged,
+            {
+                **active,
+                "PT_MOBILE_STATION_PRIMARY_URL": "https://four.example",
+                "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "station-four",
+                "PT_MOBILE_STATION_SECONDARY_URL": "https://five.example",
+                "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "station-five-arm",
+            },
+        )
+        self.assertNotIn("PT_MOBILE_STATION_PRIMARY_URL", active)
+
+    def test_social_simulator_injects_relay_profile_in_memory(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        provisioner = MobileSocialSimulatorProvisioner(
+            contract,
+            service_profiles={"relay": "one"},
+        )
+        active = {
+            "PT_DEV_PROFILE": "four",
+            "PT_RELAY_URL": "https://stale-relay.example",
+            "PT_RELAY_DEPLOY_ENV": "relay",
+        }
+        with (
+            patch.object(Path, "is_file", return_value=True),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "load_env_file",
+                return_value={
+                    "PT_DEV_PROFILE": "one",
+                    "PT_RELAY_MODE": "remote",
+                    "PT_RELAY_URL": "https://relay.example",
+                    "PT_RELAY_HEALTH_URL": (
+                        "https://relay.example/healthz"
+                    ),
+                    "PT_RELAY_DEPLOY_ENV": "relay-1",
+                },
+            ),
+        ):
+            merged = provisioner._inject_service_profile_bindings(active)
+
+        self.assertEqual(merged["PT_RELAY_URL"], "https://relay.example")
+        self.assertEqual(merged["PT_RELAY_DEPLOY_ENV"], "relay-1")
+        self.assertEqual(
+            merged["PT_RELAY_HEALTH_URL"],
+            "https://relay.example/healthz",
+        )
+        self.assertEqual(active["PT_RELAY_DEPLOY_ENV"], "relay")
+
     def test_social_simulator_preserves_base_harness_actions(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -661,6 +832,74 @@ class MobileSimulatorContractTests(unittest.TestCase):
         self.assertLessEqual(
             set(REQUIRED_HARNESS_ACTIONS),
             set(payload["harness"]["required_actions"]),
+        )
+
+    def test_social_fixture_resolves_actor_with_deployment_before_role(
+        self,
+    ) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        provisioner = MobileSocialSimulatorProvisioner(contract)
+        evidence = FakeEvidenceRun()
+        provisioner.bind_evidence_run(evidence)  # type: ignore[arg-type]
+        profile = {
+            "PT_MOBILE_STATION_PRIMARY_URL": "https://primary.example",
+            "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "deploy-primary",
+            "PT_MOBILE_STATION_SECONDARY_URL": "https://secondary.example",
+            "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "deploy-secondary",
+        }
+        calls: list[tuple[str, str, str]] = []
+
+        def resolve(
+            station_url: str,
+            deployment_environment: str,
+            role: str,
+        ) -> SimpleNamespace:
+            calls.append((station_url, deployment_environment, role))
+            return SimpleNamespace(
+                role=role,
+                account_ref=f"station-account:{role}@p.t",
+                ptid=f"ptid:{role}",
+                device_policy="single-active-session",
+                federated_handle=f"@{role}@station.example",
+                home_station_peer_id=f"station-{role}",
+            )
+
+        with (
+            patch.dict(
+                "os.environ",
+                {"MOBILE_ACCEPTANCE_RESET": "1"},
+                clear=False,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "verify_reset_target",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "reset_fixture",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "resolve_actor_identity",
+                side_effect=resolve,
+            ),
+        ):
+            provisioner._prepare_actor_fixture(
+                "mobile-simulator-social-convergence-e2e",
+                profile,
+                provisioner._load_overlay(),
+            )
+            provisioner.cleanup()
+
+        self.assertEqual(
+            calls,
+            [
+                ("https://primary.example", "deploy-primary", "alice"),
+                ("https://primary.example", "deploy-primary", "bob"),
+                ("https://secondary.example", "deploy-secondary", "alice"),
+                ("https://secondary.example", "deploy-secondary", "bob"),
+            ],
         )
 
     def test_station_lifecycle_overlay_has_exact_topology_and_bindings(
@@ -1418,6 +1657,8 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                     account_ref="station-account:alice@p.t",
                     ptid="ptid:alice",
                     device_policy="single-active-session",
+                    federated_handle="@alice@station.example",
+                    home_station_peer_id="station-alice",
                 ),
             ),
         ):
@@ -1917,6 +2158,20 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
             self.android_manifest.read_text(encoding="utf-8"),
             self.android_manifest_baseline,
         )
+        ios_assets = (
+            self.repo_root
+            / "apps"
+            / "mobile"
+            / "src-tauri"
+            / "gen"
+            / "apple"
+            / "assets"
+        )
+        self.assertEqual(
+            (ios_assets / "index.html").read_text(encoding="utf-8"),
+            "mobile\n",
+        )
+        self.assertTrue((ios_assets / "assets" / "main.js").is_file())
         self.assertEqual(self.fetches, [])
 
         for platform in ("ios", "android"):
@@ -1970,10 +2225,20 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
                 "storageRoot"
             ]
         ).parents[1]
+        ios_assets = (
+            self.repo_root
+            / "apps"
+            / "mobile"
+            / "src-tauri"
+            / "gen"
+            / "apple"
+            / "assets"
+        )
 
         completed = self.provisioner.cleanup()
 
         self.assertFalse(runtime_root.exists())
+        self.assertFalse(ios_assets.exists())
         self.assertLess(
             completed.index("appium-process"),
             completed.index(

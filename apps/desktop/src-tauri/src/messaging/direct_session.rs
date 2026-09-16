@@ -84,8 +84,23 @@ fn same_actor_device_identity(
 
 #[cfg(test)]
 mod tests {
-    use super::same_actor_device_identity;
-    use messaging_core::proto::actor_device_ref;
+    use super::*;
+    use messaging_core::proto::{actor, actor_device_ref};
+
+    #[test]
+    fn endpoint_binding_ignores_redundant_actor_kind_representation() {
+        let expected = actor_device_ref("ptid:v1:actor:peers:p:bob:1220abc", "bob-device");
+        let returned = actor::ActorDeviceRef {
+            actor: Some(actor::ActorRef {
+                ptid: actor_device_ptid(&expected).unwrap().to_string(),
+                ..Default::default()
+            }),
+            device_id: expected.device_id.clone(),
+        };
+
+        assert_ne!(returned, expected);
+        assert!(same_actor_device_identity(&returned, &expected).unwrap());
+    }
 
     #[test]
     fn endpoint_binding_ignores_non_identity_actor_metadata() {

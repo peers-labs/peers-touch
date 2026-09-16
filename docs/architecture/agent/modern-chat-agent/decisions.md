@@ -306,6 +306,12 @@ before projection. Delivery is at least once. Clients deduplicate by
 `(turn_id, sequence)`, reconnect with a cursor, replay retained events, then
 reconcile from a turn snapshot.
 
+Normal recovery replays the current Attempt. A read-only replay may explicitly
+pin a retained `attempt_id` when validating retry lineage or immutable terminal
+evidence; Station verifies that the Attempt belongs to the Turn and fences both
+events and snapshot to that exact Attempt. Selecting a retained Attempt never
+changes the Turn's active Attempt.
+
 ### Rationale
 
 Exactly-once network delivery is unnecessary; idempotent projection is
@@ -379,7 +385,7 @@ either drop accepted product behavior or preserve destructive local authority.
 
 | Command | Result |
 |---|---|
-| `RetryTurn` | New attempt under the same failed/cancelled Turn |
+| `RetryTurn` | New attempt under the same failed/cancelled/interrupted Turn |
 | `RegenerateTurn` | New Turn and sibling assistant branch |
 | `EditAndResend` | Revised user sibling plus new Turn |
 | `SelectActiveBranch` | Conversation branch-head CAS only |

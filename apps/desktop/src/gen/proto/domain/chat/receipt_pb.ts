@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/chat/receipt.proto.
  */
 export const file_domain_chat_receipt: GenFile = /*@__PURE__*/
-  fileDesc("Chlkb21haW4vY2hhdC9yZWNlaXB0LnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxIo4CChhEZXZpY2VDb25zdW1wdGlvblJlY2VpcHQSEgoKcmVjZWlwdF9pZBgBIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAiABKAkSEAoIZXZlbnRfaWQYAyABKAkSOwoIY29uc3VtZXIYBCABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNyeXB0b0VuZHBvaW50EhYKDmV2ZW50X3NlcXVlbmNlGAUgASgDEhUKDWxhbmVfc2VxdWVuY2UYBiABKAMSFgoOcGF5bG9hZF9zaGEyNTYYByABKAwSLwoLY29uc3VtZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIosBCg9BY3RvclJlYWRDdXJzb3ISFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEhMKC3JlYWRlcl9wdGlkGAIgASgJEhoKEmxhc3RfcmVhZF9zZXF1ZW5jZRgDIAEoAxIuCgp1cGRhdGVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLzAQoYTWVzc2FnZURlbGl2ZXJ5QWdncmVnYXRlEhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIQCghldmVudF9pZBgCIAEoCRIWCg5ldmVudF9zZXF1ZW5jZRgDIAEoAxIdChVyZXF1aXJlZF9kZXZpY2VfY291bnQYBCABKA0SHQoVY29uc3VtZWRfZGV2aWNlX2NvdW50GAUgASgNEhwKFHJldm9rZWRfZGV2aWNlX2NvdW50GAYgASgNEhEKCWRlbGl2ZXJlZBgHIAEoCBIXCg9mdWxseV9kZWxpdmVyZWQYCCABKAgSDAoEcmVhZBgJIAEoCCJhCiNTdWJtaXRDb252ZXJzYXRpb25SZWFkQ3Vyc29yUmVxdWVzdBI6CgZjdXJzb3IYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkFjdG9yUmVhZEN1cnNvciJiCiRTdWJtaXRDb252ZXJzYXRpb25SZWFkQ3Vyc29yUmVzcG9uc2USOgoGY3Vyc29yGAEgASgLMioucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5BY3RvclJlYWRDdXJzb3IicAooU3VibWl0Q29udmVyc2F0aW9uRGVsaXZlcnlSZWNlaXB0UmVxdWVzdBJECgdyZWNlaXB0GAEgASgLMjMucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5EZXZpY2VDb25zdW1wdGlvblJlY2VpcHQicgopU3VibWl0Q29udmVyc2F0aW9uRGVsaXZlcnlSZWNlaXB0UmVzcG9uc2USRQoIZGVsaXZlcnkYASABKAsyMy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2VEZWxpdmVyeUFnZ3JlZ2F0ZUJHWkVnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9jaGF0O2NoYXRiBnByb3RvMw", [file_domain_chat_endpoint, file_google_protobuf_timestamp]);
+  fileDesc("Chlkb21haW4vY2hhdC9yZWNlaXB0LnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxIo4CChhEZXZpY2VDb25zdW1wdGlvblJlY2VpcHQSEgoKcmVjZWlwdF9pZBgBIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAiABKAkSEAoIZXZlbnRfaWQYAyABKAkSOwoIY29uc3VtZXIYBCABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNyeXB0b0VuZHBvaW50EhYKDmV2ZW50X3NlcXVlbmNlGAUgASgDEhUKDWxhbmVfc2VxdWVuY2UYBiABKAMSFgoOcGF5bG9hZF9zaGEyNTYYByABKAwSLwoLY29uc3VtZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIosBCg9BY3RvclJlYWRDdXJzb3ISFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEhMKC3JlYWRlcl9wdGlkGAIgASgJEhoKEmxhc3RfcmVhZF9zZXF1ZW5jZRgDIAEoAxIuCgp1cGRhdGVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKhAgofRmVkZXJhdGVkQ29udmVyc2F0aW9uUmVhZEN1cnNvchIWCg5mb3JtYXRfdmVyc2lvbhgBIAEoDRIVCg1mZWRlcmF0aW9uX2lkGAIgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgDIAEoCRIhChlhdXRob3JpdHlfc3RhdGlvbl9wZWVyX2lkGAQgASgJEhcKD2F1dGhvcml0eV9lcG9jaBgFIAEoBBI5CgZyZWFkZXIYBiABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNyeXB0b0VuZHBvaW50EiMKG3JlYWRlcl9ob21lX3N0YXRpb25fcGVlcl9pZBgHIAEoCRIaChJsYXN0X3JlYWRfc2VxdWVuY2UYCCABKAMi8wEKGE1lc3NhZ2VEZWxpdmVyeUFnZ3JlZ2F0ZRIXCg9jb252ZXJzYXRpb25faWQYASABKAkSEAoIZXZlbnRfaWQYAiABKAkSFgoOZXZlbnRfc2VxdWVuY2UYAyABKAMSHQoVcmVxdWlyZWRfZGV2aWNlX2NvdW50GAQgASgNEh0KFWNvbnN1bWVkX2RldmljZV9jb3VudBgFIAEoDRIcChRyZXZva2VkX2RldmljZV9jb3VudBgGIAEoDRIRCglkZWxpdmVyZWQYByABKAgSFwoPZnVsbHlfZGVsaXZlcmVkGAggASgIEgwKBHJlYWQYCSABKAgiYQojU3VibWl0Q29udmVyc2F0aW9uUmVhZEN1cnNvclJlcXVlc3QSOgoGY3Vyc29yGAEgASgLMioucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5BY3RvclJlYWRDdXJzb3IiYgokU3VibWl0Q29udmVyc2F0aW9uUmVhZEN1cnNvclJlc3BvbnNlEjoKBmN1cnNvchgBIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQWN0b3JSZWFkQ3Vyc29yInAKKFN1Ym1pdENvbnZlcnNhdGlvbkRlbGl2ZXJ5UmVjZWlwdFJlcXVlc3QSRAoHcmVjZWlwdBgBIAEoCzIzLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRGV2aWNlQ29uc3VtcHRpb25SZWNlaXB0InIKKVN1Ym1pdENvbnZlcnNhdGlvbkRlbGl2ZXJ5UmVjZWlwdFJlc3BvbnNlEkUKCGRlbGl2ZXJ5GAEgASgLMjMucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5NZXNzYWdlRGVsaXZlcnlBZ2dyZWdhdGVCR1pFZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvY2hhdDtjaGF0YgZwcm90bzM", [file_domain_chat_endpoint, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.chat.v1.DeviceConsumptionReceipt
@@ -101,6 +101,58 @@ export const ActorReadCursorSchema: GenMessage<ActorReadCursor> = /*@__PURE__*/
   messageDesc(file_domain_chat_receipt, 1);
 
 /**
+ * @generated from message peers_touch.model.chat.v1.FederatedConversationReadCursor
+ */
+export type FederatedConversationReadCursor = Message<"peers_touch.model.chat.v1.FederatedConversationReadCursor"> & {
+  /**
+   * @generated from field: uint32 format_version = 1;
+   */
+  formatVersion: number;
+
+  /**
+   * @generated from field: string federation_id = 2;
+   */
+  federationId: string;
+
+  /**
+   * @generated from field: string conversation_id = 3;
+   */
+  conversationId: string;
+
+  /**
+   * @generated from field: string authority_station_peer_id = 4;
+   */
+  authorityStationPeerId: string;
+
+  /**
+   * @generated from field: uint64 authority_epoch = 5;
+   */
+  authorityEpoch: bigint;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.CryptoEndpoint reader = 6;
+   */
+  reader?: CryptoEndpoint | undefined;
+
+  /**
+   * @generated from field: string reader_home_station_peer_id = 7;
+   */
+  readerHomeStationPeerId: string;
+
+  /**
+   * @generated from field: int64 last_read_sequence = 8;
+   */
+  lastReadSequence: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.FederatedConversationReadCursor.
+ * Use `create(FederatedConversationReadCursorSchema)` to create a new message.
+ */
+export const FederatedConversationReadCursorSchema: GenMessage<FederatedConversationReadCursor> = /*@__PURE__*/
+  messageDesc(file_domain_chat_receipt, 2);
+
+/**
  * @generated from message peers_touch.model.chat.v1.MessageDeliveryAggregate
  */
 export type MessageDeliveryAggregate = Message<"peers_touch.model.chat.v1.MessageDeliveryAggregate"> & {
@@ -155,7 +207,7 @@ export type MessageDeliveryAggregate = Message<"peers_touch.model.chat.v1.Messag
  * Use `create(MessageDeliveryAggregateSchema)` to create a new message.
  */
 export const MessageDeliveryAggregateSchema: GenMessage<MessageDeliveryAggregate> = /*@__PURE__*/
-  messageDesc(file_domain_chat_receipt, 2);
+  messageDesc(file_domain_chat_receipt, 3);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SubmitConversationReadCursorRequest
@@ -172,7 +224,7 @@ export type SubmitConversationReadCursorRequest = Message<"peers_touch.model.cha
  * Use `create(SubmitConversationReadCursorRequestSchema)` to create a new message.
  */
 export const SubmitConversationReadCursorRequestSchema: GenMessage<SubmitConversationReadCursorRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_receipt, 3);
+  messageDesc(file_domain_chat_receipt, 4);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SubmitConversationReadCursorResponse
@@ -189,7 +241,7 @@ export type SubmitConversationReadCursorResponse = Message<"peers_touch.model.ch
  * Use `create(SubmitConversationReadCursorResponseSchema)` to create a new message.
  */
 export const SubmitConversationReadCursorResponseSchema: GenMessage<SubmitConversationReadCursorResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_receipt, 4);
+  messageDesc(file_domain_chat_receipt, 5);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptRequest
@@ -206,7 +258,7 @@ export type SubmitConversationDeliveryReceiptRequest = Message<"peers_touch.mode
  * Use `create(SubmitConversationDeliveryReceiptRequestSchema)` to create a new message.
  */
 export const SubmitConversationDeliveryReceiptRequestSchema: GenMessage<SubmitConversationDeliveryReceiptRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_receipt, 5);
+  messageDesc(file_domain_chat_receipt, 6);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptResponse
@@ -223,5 +275,5 @@ export type SubmitConversationDeliveryReceiptResponse = Message<"peers_touch.mod
  * Use `create(SubmitConversationDeliveryReceiptResponseSchema)` to create a new message.
  */
 export const SubmitConversationDeliveryReceiptResponseSchema: GenMessage<SubmitConversationDeliveryReceiptResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_receipt, 6);
+  messageDesc(file_domain_chat_receipt, 7);
 

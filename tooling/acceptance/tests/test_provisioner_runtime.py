@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import socket
 import tempfile
 import unittest
@@ -54,6 +55,150 @@ class ProvisionerBaseClassTests(unittest.TestCase):
         self.assertIsInstance(
             get_provisioner(contract),
             MobileNativeProvisioner,
+        )
+
+    def test_native_tauri_defaults_to_canonical_station_profiles(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
+        )
+        provisioner = get_provisioner(contract)
+
+        self.assertEqual(
+            provisioner._required_station_profiles(),
+            {
+                "station-four": "four",
+                "station-five": "fiveArm",
+            },
+        )
+
+    def test_native_tauri_rejects_incomplete_runtime_station_profiles(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
+        )
+        provisioner = get_provisioner(
+            contract,
+            station_profiles={"station-four": "four"},
+        )
+        with self.assertRaisesRegex(
+            BlockedError,
+            r"--station-profile SERVICE_ID=PROFILE.*missing=station-five",
+        ):
+            provisioner._required_station_profiles()
+
+        provisioner = get_provisioner(
+            contract,
+            station_profiles={
+                "station-four": "four",
+                "station-five": "fiveArm",
+                "station-unknown": "sixwin-unknown",
+            },
+        )
+        with self.assertRaisesRegex(
+            BlockedError,
+            r"unexpected=station-unknown",
+        ):
+            provisioner._required_station_profiles()
+
+    def test_native_tauri_accepts_runtime_station_profile(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
+        )
+        bindings = {
+            "station-four": "four",
+            "station-five": "fiveArm",
+        }
+        provisioner = get_provisioner(
+            contract,
+            station_profiles=bindings,
+        )
+
+        self.assertEqual(provisioner._required_station_profiles(), bindings)
+
+    def test_native_tauri_local_station_needs_no_deploy_environment(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
+        )
+        contract = dataclasses.replace(
+            contract,
+            services={"station-four": contract.services["station-four"]},
+            clients=tuple(
+                client
+                for client in contract.clients
+                if client.service_bindings["station"].service_id
+                == "station-four"
+            ),
+        )
+        provisioner = get_provisioner(
+            contract,
+            station_profiles={"station-four": "sixwin"},
+        )
+        manifest = provisioner._new_base_manifest(
+            "chat-native-product-closure-e2e"
+        )
+        attestation = ServiceAttestation(
+            service_id="station-four",
+            service_kind="station",
+            environment_id=contract.id,
+            deployment_environment="local",
+            endpoint="http://127.0.0.1:18080",
+            live_commit=manifest.source_commit,
+            workspace_digest="clean",
+            protocol_digest="proto-digest",
+            artifact_ref={},
+            produced_at="2026-09-10T00:00:00+00:00",
+            producer="station-deployment",
+            runtime_identity="sixwin-station",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile_dir = root / ".local" / "dev" / "profiles"
+            profile_dir.mkdir(parents=True)
+            (profile_dir / "sixwin.env").write_text(
+                "\n".join(
+                    (
+                        "PT_DEV_PROFILE=sixwin",
+                        "PT_STATION_MODE=local",
+                        "PT_STATION_URL=http://127.0.0.1:18080",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with patch(
+                "tooling.acceptance.provisioners."
+                "native_tauri_embedded_webdriver.REPO_ROOT",
+                root,
+            ), patch.object(
+                provisioner,
+                "_station_ready",
+                return_value=True,
+            ), patch.object(
+                provisioner,
+                "acquire_profile_lease",
+            ) as profile_lease, patch.object(
+                provisioner,
+                "acquire_remote_git_source_lease",
+            ) as remote_lease, patch(
+                "tooling.acceptance.provisioners."
+                "native_tauri_embedded_webdriver.source_proto_digest",
+                return_value="proto-digest",
+            ), patch(
+                "tooling.acceptance.provisioners."
+                "native_tauri_embedded_webdriver.produce_station_attestation",
+                return_value=attestation,
+            ) as produce:
+                services = provisioner._provision_station_services(manifest)
+
+        self.assertEqual(services, {"station-four": attestation})
+        profile_lease.assert_called_once()
+        remote_lease.assert_not_called()
+        self.assertEqual(
+            produce.call_args.kwargs["profile_env"]["PT_STATION_MODE"],
+            "local",
+        )
+        self.assertIsNone(
+            produce.call_args.kwargs["remote_source_identity_provider"]
         )
 
     def test_cleanup_runs_in_reverse_order(self):
@@ -591,7 +736,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
                     "mediaType": "application/json",
                 },
             ),
-        ), patch.object(
+        ) as actor_manifest, patch.object(
             provisioner,
             "acquire_profile_lease",
         ) as profile_lease, patch.object(
@@ -657,6 +802,10 @@ class ProvisionerBlockingTests(unittest.TestCase):
         source_lease.assert_called_once_with(
             "station-1",
             f"acceptance:agent-v2-kernel-foundation-e2e:{manifest.run_id}",
+        )
+        self.assertEqual(
+            actor_manifest.call_args.kwargs["roles"],
+            ("alice", "bob"),
         )
         self.assertEqual(
             provisioner.cleanup(),

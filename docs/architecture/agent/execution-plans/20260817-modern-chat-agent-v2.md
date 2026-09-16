@@ -2,12 +2,13 @@
 
 > **Status**: active
 > **Version**: v0.1
-> **Created**: 2026-08-17 | **Updated**: 2026-09-09
+> **Created**: 2026-08-17 | **Updated**: 2026-09-11
 > **Owner**: Peers-Touch Agent Team
 > **Plan type**: PRODUCT → DESIGN → PLAN → EXECUTE（Owner approval 已收到）
 > **Predecessor**: `20260816-lobehub-parity-full-landing.md`
 > **Governing product**: `../modern-chat-agent/`
-> **Benchmark evidence**: `../lobehub-feature-topology.md`、`../lobehub-parity/`
+> **Benchmark evidence**: `../lobehub-feature-topology.md`、
+> `../modern-chat-agent/lobehub-v2-reference-analysis.md`
 
 ---
 
@@ -21,22 +22,22 @@
 | Worktree | `<repo-root>` |
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
-| Current workstream | Exact-source checkpoint, C08 product proof, and G-F Foundation proof |
-| Current step | C08 `DONE / PROVEN`；G-F crossed all four AS-F06 tuples and is implementing the planned `BASE-EXECUTOR-UNAVAILABLE` vertical |
+| Current workstream | G-FE1 typed-error closure through product-first DevelopmentWorkItems |
+| Current step | MCA-J06 is `FUNCTIONAL_PASS`; `BASE-INVALID_REFERENCE` promotion is implemented and focused-pass, with source-bound Foundation execution pending |
 | Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；4/16 formal execution workstreams complete |
-| Last completed | C08 exact-source attachment journey `DONE / PROVEN`；G-F exact-source run crossed Browser/Desktop AS-F06 recovery tuples with cleanup proven |
-| Current action | Close the accepted G-FE1 typed-error backlog through non-overlapping Station、Desktop、Rust runtime control、and Acceptance lanes |
-| Next action | Reconcile the parallel lanes，run focused checks once，then let the integrator checkpoint、deploy exact source with `make station`、and rerun G-F |
-| Autonomous execution window | Use a hybrid topology selected from actual dependencies、write sets、generated outputs、shared runtime resources、verification isolation、and integration order；the integrator alone owns shared contracts/generated artifacts、reconcile、commit、deployment、Fixture reset、and product Gates |
-| Overnight slice result | F2 Q5/Q6、C08 source/Gate wiring、C08 exact-source proof、and AS-F06 recovery crossing are complete；remaining G-F typed-error verticals and downstream W2/W4/W5/W7/W8b/W9 remain open |
+| Last completed | Checkpoint `d3e6feaa3051763c79f1252593c7bbcfff06f6b1` preserves retained-Attempt replay; C08 run `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN`; fully authorized Foundation run `20260913T150542388406Z-46ced7c0b785bb9094b7b948a34b86d3` crossed all AS-F06 and both-locale `BASE-INTERRUPTED` cells before exposing unimplemented `BASE-INVALID_REFERENCE` |
+| Current action | Checkpoint the `BASE-INVALID_REFERENCE` Harness/oracle promotion and prepare its exact-source Foundation execution |
+| Next action | Execute the promoted Desktop/Browser locale cells, preserve evidence, then continue from the next real Foundation failure |
+| Autonomous execution window | Product-first hybrid execution: integrator freezes shared contracts and generated artifacts；disjoint Station、Desktop Web、and Desktop Rust lanes may proceed in parallel；checkpoint、deployment、real Journey、Acceptance promotion、and final Gate remain serial |
+| Overnight slice result | PR #111 integration and cross-worktree source-claim correction are pushed; the next tangible product slice is MCA-J06 invalid-reference recovery rather than another broad Foundation run |
 | Parallel policy | Freeze shared contracts first；parallelize only lanes with reserved disjoint write sets、isolated checks、and no shared runtime mutation；insert serial barriers for dependencies、shared files、generators、database/Fixture state、integration、commit、deployment、and final Gate execution |
-| Overnight stop conditions | `DIRTY_BASELINE_MISMATCH`、`CHECKPOINT_REVIEW_FAILED`、`ACCEPTANCE_INFRA_REQUIRED`、wrong profile/Station、commit mismatch、unauthorized reset、secret leak or incomplete cleanup stop the dependent path；no unchanged Gate retry |
-| Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, push, PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
+| Overnight stop conditions | `WORKTREE_IDENTITY_MISMATCH`、undefined PRODUCT/DESIGN semantics、unauthorized destructive reset、secret leak、or exhausted external runtime resources park the affected action；focused implementation failures return to the owner layer |
+| Overnight non-scope | No Home/MCP/Connector/Evaluation/W8b/W9 execution, new PR, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | No external blocker. G-F is source-blocked by the planned but incomplete `BASE-EXECUTOR-UNAVAILABLE` vertical；Foundation and downstream work remain `PARTIAL / UNPROVEN` until the exact-source Gate passes |
+| Blockers | none for MCA-J06 Acceptance promotion；AS-F04 per-turn sequential-tool control remains parked because later source-matched runs crossed AS-F04 |
 | Decisions required | none |
-| Evidence | C08 run `20260909T091942082203Z-5ecd651bb57a293a45c0032d5b46861d` is `DONE / PROVEN`。G-F run `20260909T141502294542Z-5a3fca9b8d25c0a8f7ac1582a5b320b7` crossed all four AS-F06 tuples，then failed closed at `BASE-EXECUTOR-UNAVAILABLE` with Provisioner cleanup `DONE / PROVEN / passed` |
-| Last updated | 2026-09-09 |
+| Evidence | Ark model `ep-20260623145021-n4xdm` and internal `/api/v3` endpoint remain canonical；C08 `20260913T145322729198Z-95307990b13786a7eb17d06ce2810f06` is `DONE / PROVEN` on `d3e6feaa3`；Foundation `20260913T150542388406Z-46ced7c0b785bb9094b7b948a34b86d3` first fails at Browser English `BASE-INVALID_REFERENCE`；checkpoint `3a7f4ce5c` binds canonical Turn identity across Web and native boundaries；a committed-only native build completed reject→preserve→remove→resend and rendered exactly one `CLEAN_OK`, establishing MCA-J06 `FUNCTIONAL_PASS`；the promoted Harness/oracle/static suite passes 262 tests and Desktop typecheck, while the Foundation runtime cell remains `UNPROVEN` until execution |
+| Last updated | 2026-09-14 |
 
 ---
 

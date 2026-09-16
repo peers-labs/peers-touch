@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from tooling.acceptance.core import (
     EnvironmentContract,
     EnvironmentProvisioner,
@@ -52,11 +54,35 @@ _RUNTIME_CELL_LIFECYCLES: dict[str, type[RuntimeCellLifecycle]] = {
 }
 
 
-def get_provisioner(contract: EnvironmentContract) -> EnvironmentProvisioner:
+def get_provisioner(
+    contract: EnvironmentContract,
+    *,
+    station_profiles: Mapping[str, str] | None = None,
+    service_profiles: Mapping[str, str] | None = None,
+) -> EnvironmentProvisioner:
     provisioner_class = _PROVISIONERS.get(contract.id)
     if provisioner_class is None:
         raise ProvisioningError(
             f"no provisioner registered for environment: {contract.id}"
+        )
+    if provisioner_class is NativeTauriEmbeddedWebDriverProvisioner:
+        if service_profiles:
+            raise ProvisioningError(
+                f"environment {contract.id!r} does not accept service profile bindings"
+            )
+        return provisioner_class(
+            contract,
+            station_profiles=station_profiles,
+        )
+    if provisioner_class is MobileSocialSimulatorProvisioner:
+        return provisioner_class(
+            contract,
+            station_profiles=station_profiles,
+            service_profiles=service_profiles,
+        )
+    if station_profiles or service_profiles:
+        raise ProvisioningError(
+            f"environment {contract.id!r} does not accept runtime profile bindings"
         )
     return provisioner_class(contract)
 

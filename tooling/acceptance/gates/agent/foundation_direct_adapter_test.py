@@ -226,6 +226,67 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
     def adapter(self, probe=capture) -> DirectRuntimeFoundationAdapter:
         return DirectRuntimeFoundationAdapter(probe)
 
+    def test_forbidden_actor_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-FORBIDDEN_ACTOR"],
+            {
+                "typedForbiddenActorRejected",
+                "localizedRecoveryVisible",
+                "switchAccountExecuted",
+                "foreignReadRejected",
+                "ownerStatePreserved",
+                "zeroCrossMutation",
+                "replayEqual",
+                "cleanupComplete",
+            },
+        )
+
+    def test_incompatible_capability_requires_exact_assertion_contract(
+        self,
+    ) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-INCOMPATIBLE_CAPABILITY"],
+            {
+                "typedIncompatibleCapabilityRejected",
+                "localizedChooseCompatibleModelRecovery",
+                "stationReadinessReadback",
+                "zeroRejectedPathSideEffects",
+                "replayEqual",
+                "cleanupComplete",
+            },
+        )
+
+    def test_interrupted_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-INTERRUPTED"],
+            {
+                "typedInterruptionProjected",
+                "localizedRecoveryVisible",
+                "recoverExecuted",
+                "interruptedPersisted",
+                "exactlyOneAuthoritativeTerminal",
+                "zeroCompletedInference",
+                "replayEqual",
+                "cleanupComplete",
+            },
+        )
+
+    def test_invalid_reference_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-INVALID_REFERENCE"],
+            {
+                "typedInvalidReferenceRejected",
+                "localizedRemovalVisible",
+                "rejectedDraftPreserved",
+                "onlyRejectedReferenceRemoved",
+                "correctedResendCompleted",
+                "exactlyOneAuthoritativeAssistant",
+                "zeroRejectedPathSideEffects",
+                "replayEqual",
+                "cleanupComplete",
+            },
+        )
+
     def test_group_one_cells_are_explicitly_supported_on_both_receivers(self) -> None:
         adapter = self.adapter()
         producer = FoundationCandidateProducer(

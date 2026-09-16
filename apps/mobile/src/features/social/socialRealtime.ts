@@ -37,6 +37,9 @@ export async function startRealtimeStream(
     },
     signal,
   });
+  // #region debug-point K:realtime-stream-response
+  void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-social-activation', runId: 'typing-pre-fix', hypothesisId: 'K', location: 'apps/mobile/src/features/social/socialRealtime.ts:startRealtimeStream', msg: '[DEBUG] Mobile realtime stream response', data: { ok: response.ok, status: response.status, hasBody: response.body !== null, stationScheme: session.stationUrl.split(':', 1)[0] }, ts: Date.now() }) }).catch(() => {});
+  // #endregion
   if (!response.ok || !response.body) throw new Error('mobile.social.realtimeUnavailable');
 
   const reader = response.body.getReader();
@@ -55,6 +58,11 @@ export async function startRealtimeStream(
 
 function dispatchWireEvents(chunk: string, handlers: RealtimeHandlers) {
   decodeRealtimeSseChunk(chunk).forEach((event) => {
+    if (event.kind === 'typing') {
+      // #region debug-point K-L:typing-event-decoded
+      void fetch('http://10.4.44.83:7784/event', { method: 'POST', body: JSON.stringify({ sessionId: 'mobile-social-activation', runId: 'typing-pre-fix', hypothesisId: 'K-L', location: 'apps/mobile/src/features/social/socialRealtime.ts:dispatchWireEvents', msg: '[DEBUG] Mobile typing event decoded', data: { conversationId: event.sessionUlid, fromActorPtid: event.fromActorPtid, typing: event.typing }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
+    }
     if (event.kind === 'message') {
       handlers.onMessage(event.sessionUlid, event.message);
       return;

@@ -232,6 +232,7 @@ func (c *actorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
 	actorPTID string,
+	expectedHomeStationPeerID string,
 	deviceID string,
 	signingKeyID string,
 ) (*actormodel.VerifiedActorDeviceSigningKey, error) {
@@ -250,6 +251,15 @@ func (c *actorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 	}
 	if err := domain.ValidateDeviceID(operation, deviceID); err != nil {
 		return nil, err
+	}
+	if expectedHomeStationPeerID == "" ||
+		expectedHomeStationPeerID != strings.TrimSpace(expectedHomeStationPeerID) {
+		return nil, domain.NewError(
+			domain.ErrorCodeInvalidArgument,
+			operation,
+			"home_station_peer_id",
+			"is required and must be canonical",
+		)
 	}
 	if signingKeyID == "" || signingKeyID != strings.TrimSpace(signingKeyID) {
 		return nil, domain.NewError(
@@ -281,19 +291,17 @@ func (c *actorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 		)
 	}
 
-	homeStationPeerID := ""
 	if found {
-		homeStationPeerID = current.GetHomeStationPeerId()
-	} else {
-		homeStationPeerID, err = repository.ResolveActorHomeStationPeerID(
-			ctx,
-			actorPTID,
-		)
-		if err != nil {
-			return nil, err
+		if current.GetHomeStationPeerId() != expectedHomeStationPeerID {
+			return nil, domain.NewError(
+				domain.ErrorCodeIdentityConflict,
+				operation,
+				"home_station_peer_id",
+				"does not match the established Actor device",
+			)
 		}
 	}
-	if homeStationPeerID == c.localStationID {
+	if expectedHomeStationPeerID == c.localStationID {
 		if !found {
 			return nil, nil
 		}
@@ -342,14 +350,18 @@ func (c *actorCapabilities) ResolveVerifiedActorDeviceSigningKey(
 			"is not configured",
 		)
 	}
-	hydrated, err := hydrator.Hydrate(ctx, actorPTID, homeStationPeerID)
+	hydrated, err := hydrator.Hydrate(
+		ctx,
+		actorPTID,
+		expectedHomeStationPeerID,
+	)
 	if err != nil {
 		return nil, err
 	}
 	if err := repository.UpsertVerifiedRemoteDeviceSigningKeys(
 		ctx,
 		actorPTID,
-		homeStationPeerID,
+		expectedHomeStationPeerID,
 		hydrated,
 	); err != nil {
 		return nil, err

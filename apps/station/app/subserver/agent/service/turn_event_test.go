@@ -389,6 +389,15 @@ func TestLifecycleCancellationInterruptsDirectTurnForRetry(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	pendingContent := "partial"
+	if err := db.Create(&persistence.AgentMessage{
+		ID: "message_lifecycle", ConversationID: "conv_lifecycle",
+		TurnID: optionalString("turn_lifecycle"), Role: string(domain.MessageRoleAssistant),
+		Status: "pending", Content: &pendingContent, Seq: 1,
+		CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	lifecycleCtx, stopLifecycle := context.WithCancel(context.Background())
 	stopLifecycle()
@@ -414,6 +423,81 @@ func TestLifecycleCancellationInterruptsDirectTurnForRetry(t *testing.T) {
 	}
 	if turn.TerminalReason == "cancelled_by_user" {
 		t.Fatal("Station lifecycle cancellation was persisted as user cancellation")
+	}
+
+	var message persistence.AgentMessage
+	if err := db.First(&message, "id = ?", "message_lifecycle").Error; err != nil {
+		t.Fatal(err)
+	}
+	if message.Status != string(domain.TurnStatusInterrupted) {
+		t.Fatalf("assistant message status = %q, want interrupted", message.Status)
+	}
+	var messageError model.ErrorPayload
+	if err := json.Unmarshal(message.ErrorJSON, &messageError); err != nil {
+		t.Fatalf("decode interrupted assistant error: %v", err)
+	}
+	assertLifecycleInterruptedJSON(t, message.ErrorJSON)
+	assertLifecycleInterruptedPayload(
+		t,
+		&messageError,
+		"turn_lifecycle",
+		"station_lifecycle_interrupted",
+	)
+
+	var event persistence.TurnEvent
+	if err := db.First(
+		&event,
+		"turn_id = ? AND attempt_id = ? AND event_type = ?",
+		"turn_lifecycle",
+		"attempt_lifecycle",
+		"error",
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	var eventPayload TurnEvent
+	if err := json.Unmarshal([]byte(event.Payload), &eventPayload); err != nil {
+		t.Fatalf("decode interrupted terminal event: %v", err)
+	}
+	var eventError model.ErrorPayload
+	if err := json.Unmarshal(eventPayload.OutcomeError, &eventError); err != nil {
+		t.Fatalf("decode interrupted event outcome: %v", err)
+	}
+	assertLifecycleInterruptedJSON(t, eventPayload.OutcomeError)
+	assertLifecycleInterruptedPayload(
+		t,
+		&eventError,
+		"turn_lifecycle",
+		"station_lifecycle_interrupted",
+	)
+	repeatedEvent, err := svc.interruptTurnWithEvent(
+		context.Background(),
+		"agent_1",
+		"turn_lifecycle",
+		"conv_lifecycle",
+		"",
+		"",
+		"must_not_replace_terminal_reason",
+	)
+	if err != nil {
+		t.Fatalf("repeat lifecycle interruption: %v", err)
+	}
+	if repeatedEvent.Seq != 0 {
+		t.Fatalf("repeat lifecycle interruption emitted event: %+v", repeatedEvent)
+	}
+	var terminalEventCount int64
+	if err := db.Model(&persistence.TurnEvent{}).
+		Where("turn_id = ? AND event_type = ?", "turn_lifecycle", "error").
+		Count(&terminalEventCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if terminalEventCount != 1 {
+		t.Fatalf("repeat lifecycle interruption created %d terminal events", terminalEventCount)
+	}
+	if err := db.First(&turn, "id = ?", "turn_lifecycle").Error; err != nil {
+		t.Fatal(err)
+	}
+	if turn.TerminalReason != "station_lifecycle_interrupted" {
+		t.Fatalf("repeat lifecycle interruption replaced terminal reason: %+v", turn)
 	}
 }
 
@@ -1125,6 +1209,39 @@ func assertLifecycleCancelledPayload(
 		payload.GetDetails()["resource_kind"] != "turn" ||
 		payload.GetDetails()["resource_id"] != turnID {
 		t.Fatalf("lifecycle cancellation payload = %+v", payload)
+	}
+}
+
+func assertLifecycleInterruptedJSON(t *testing.T, encoded []byte) {
+	t.Helper()
+	var payload map[string]interface{}
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatalf("decode lifecycle interruption JSON: %v", err)
+	}
+	retryable, retryablePresent := payload["retryable"]
+	terminal, terminalPresent := payload["terminal"]
+	if !retryablePresent || retryable != true || !terminalPresent || terminal != true {
+		t.Fatalf("lifecycle interruption booleans are incomplete: %+v", payload)
+	}
+}
+
+func assertLifecycleInterruptedPayload(
+	t *testing.T,
+	payload *model.ErrorPayload,
+	turnID string,
+	reasonCode string,
+) {
+	t.Helper()
+	if payload == nil ||
+		payload.GetError() != errcode.AgentLifecycleInterruptedLocaleKey ||
+		payload.GetErrorType() != string(errcode.AgentLifecycleInterrupted) ||
+		payload.GetLocaleKey() != errcode.AgentLifecycleInterruptedLocaleKey ||
+		!payload.GetRetryable() ||
+		!payload.GetTerminal() ||
+		len(payload.GetDetails()) != 2 ||
+		payload.GetDetails()["turn_id"] != turnID ||
+		payload.GetDetails()["reason_code"] != reasonCode {
+		t.Fatalf("lifecycle interruption payload = %+v", payload)
 	}
 }
 

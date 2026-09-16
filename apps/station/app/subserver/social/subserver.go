@@ -28,10 +28,10 @@ type subServer struct {
 	status server.Status
 
 	// Wrappers
-	commonWrapper            server.Wrapper
-	jwtWrapper               server.Wrapper
-	optionalJWTWrapper       server.Wrapper
-	privateContentJWTWrapper server.Wrapper
+	commonWrapper                    server.Wrapper
+	jwtWrapper                       server.Wrapper
+	optionalJWTWrapper               server.Wrapper
+	privateContentJWTWrapper         server.Wrapper
 	privateContentOptionalJWTWrapper server.Wrapper
 
 	// Application services
@@ -201,10 +201,6 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err := federatedStore.Migrate(ctx); err != nil {
 		return fmt.Errorf("migrate Social Friend Request store: %w", err)
 	}
-	keyHydrator, err := infrastructure.NewVerifiedFriendRequestActorKeyHydrator(rds)
-	if err != nil {
-		return fmt.Errorf("initialize Social Friend Request identity: %w", err)
-	}
 	s.federatedFriendRequestSvc, err = application.NewFederatedFriendRequestService(
 		federatedStore,
 		federationRuntime.Signer(),
@@ -214,7 +210,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return fmt.Errorf("initialize federated Friend Request service: %w", err)
 	}
-	s.federatedFriendRequestSvc.WithActorKeyHydrator(keyHydrator)
+	s.federatedFriendRequestSvc.WithActorDeviceKeyResolver(actorDeviceKeyPort{})
 	if err := federationRuntime.RegisterReceivers(func(registry *delivery.Registry) error {
 		return infrastructure.RegisterFederatedFriendRequestReceivers(
 			registry,

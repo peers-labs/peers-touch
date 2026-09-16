@@ -7,10 +7,13 @@ import {
   type Session,
   type StreamEvent,
   type AgentAttachmentRefInput,
+  type AgentErrorResolutionAction,
   type AgentTypedErrorPayload,
   type AgentTurnStreamError,
   type AgentTurnQueueListOutput,
   type AgentRuntimeBudgetInput,
+  classifyAgentTurnTerminalEvent,
+  resolveAgentTypedErrorAction,
 } from '../services/desktop_api';
 import { agentService } from '../services/agent-service';
 import { useAgentStore } from './agent';
@@ -120,6 +123,13 @@ export interface AgentSendLifecycle {
   clientIdempotencyKey?: string;
 }
 
+export interface ComposerReferenceRemovalIntent {
+  sessionKey: string;
+  referenceKind: string;
+  referenceHash: string;
+  nonce: number;
+}
+
 export type BudgetExhaustionKind =
   | 'tool_calls'
   | 'wall_time'
@@ -145,17 +155,7 @@ export interface RecoveredTurnTerminal {
   content?: string;
 }
 
-export interface ErrorResolutionAction {
-  type:
-    | 'reauthCli'
-    | 'openProviderSettings'
-    | 'checkConnection'
-    | 'openOriginal';
-  cliId?: string;
-  providerId?: string;
-  existingCommandId?: string;
-  label: string;
-}
+export type ErrorResolutionAction = AgentErrorResolutionAction;
 
 export interface ChatMessage {
   id: string;
@@ -251,6 +251,28 @@ function reportApprovalExpiryRetryDebug(
 }
 // #endregion
 
+// #region debug-point N-Q:foundation-attachment-receiver
+function reportFoundationAttachmentReceiverDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown>,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  void fetch('http://127.0.0.1:7787/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-attachment-timeout',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'chat.ts:sendMessage',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 const agentChatCache = getDesktopAgentChatCache();
 
 function cachedConversationToSession(conversation: CachedAgentConversation): Session {
@@ -266,7 +288,7 @@ function cachedConversationToSession(conversation: CachedAgentConversation): Ses
   };
 }
 
-function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
+export function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
   const persistedStatus = String(message.status || '').toLowerCase();
   const terminalStatus = (
     ['completed', 'failed', 'cancelled', 'interrupted'] as const
@@ -282,6 +304,7 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
       typedError = undefined;
     }
   }
+  const resolution = resolveAgentTypedErrorAction(typedError);
   const chatMessage: ChatMessage = {
     id: message.messageId,
     role: message.role,
@@ -293,6 +316,8 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
     turnId: message.turnId,
     error: typedError?.locale_key,
     typedError,
+    resolution,
+    providerId: typedError?.details.provider_id,
     attachments: message.attachments?.map((attachment) => ({
       cid: attachment.objectRef,
       filename: attachment.filename,
@@ -416,6 +441,8 @@ function isInFlightMessage(message: ChatMessage): boolean {
 
 function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): ChatMessage {
   const targetOwnsTerminal = Boolean(target.terminalStatus);
+  const terminalStatusMatches = targetOwnsTerminal
+    && target.terminalStatus === source.terminalStatus;
   const hasCot = source.toolCalls
     || source.thinking
     || source.thinkingDone != null
@@ -446,7 +473,11 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     typedError:
       targetOwnsTerminal ? target.typedError : target.typedError ?? source.typedError,
     errorDetail:
-      targetOwnsTerminal ? target.errorDetail : target.errorDetail ?? source.errorDetail,
+      targetOwnsTerminal
+        ? target.errorDetail ?? (
+          terminalStatusMatches ? source.errorDetail : undefined
+        )
+        : target.errorDetail ?? source.errorDetail,
     resolution:
       targetOwnsTerminal ? target.resolution : target.resolution ?? source.resolution,
     budgetNotice: target.budgetNotice ?? source.budgetNotice,
@@ -651,6 +682,7 @@ interface ChatState {
   // draft WITHOUT sending, aligning with LobeHub `fillInputMessage`. ChatInput consumes
   // the pending value, writes it into its draft, focuses, and clears the request.
   composerFill: { text: string; nonce: number } | null;
+  composerReferenceRemoval: ComposerReferenceRemovalIntent | null;
   composerFocusNonce: number;
 
   loadSessions: () => Promise<void>;
@@ -696,6 +728,11 @@ interface ChatState {
   setWideScreen: (wide: boolean) => void;
   fillComposer: (text: string) => void;
   consumeComposerFill: () => void;
+  requestComposerReferenceRemoval: (
+    referenceKind: string,
+    referenceHash: string,
+  ) => void;
+  consumeComposerReferenceRemoval: (nonce: number) => void;
   requestComposerFocus: () => void;
   consumeComposerFocus: () => void;
   toggleSessionMemory: (sessionKey?: string) => void;
@@ -704,6 +741,7 @@ interface ChatState {
 }
 
 let messageCounter = 0;
+let composerReferenceRemovalCounter = 0;
 const pendingMessageRetries = new Map<string, Promise<void>>();
 
 function tempId() {
@@ -728,13 +766,32 @@ function presentChatRuntimeError(message: string): string {
 export function applyStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMessage {
   const reduced = reduceStreamEvent(msg, event as TurnStreamEvent);
   const toolCalls = toolRuntime.reduceToolCalls(reduced.toolCalls, event);
-  return mergeToolProjection(reduced, toolCalls);
+  return bindStreamEventTurnIdentity(
+    mergeToolProjection(reduced, toolCalls),
+    event,
+  );
 }
 
 function applyProjectedStreamEvent(msg: ChatMessage, event: StreamEvent): ChatMessage {
   const reduced = reduceStreamEvent(msg, event as TurnStreamEvent);
   const toolCalls = toolRuntime.projectToolCalls(reduced.toolCalls, event);
-  return mergeToolProjection(reduced, toolCalls);
+  return bindStreamEventTurnIdentity(
+    mergeToolProjection(reduced, toolCalls),
+    event,
+  );
+}
+
+function bindStreamEventTurnIdentity(
+  message: ChatMessage,
+  event: StreamEvent,
+): ChatMessage {
+  const turnId = typeof event.data?.turnId === 'string'
+    ? event.data.turnId
+    : typeof event.data?.turn_id === 'string'
+      ? event.data.turn_id
+      : '';
+  if (!turnId || message.turnId === turnId) return message;
+  return { ...message, turnId };
 }
 
 function mergeToolProjection(
@@ -966,6 +1023,9 @@ export function applyOperationEventIdentity(
   const snapshotStatus = event.event === 'snapshot'
     ? String(event.data?.status || '').toLowerCase()
     : '';
+  const terminalStatus = classifyAgentTurnTerminalEvent(event);
+  const terminalRunState =
+    terminalStatus === 'queued' ? null : terminalStatus;
   const runState = ({
     connection_lost: 'connection_lost',
     reconnecting: 'reconnecting',
@@ -973,10 +1033,8 @@ export function applyOperationEventIdentity(
     reconciling: 'reconciling',
     connected: 'streaming',
     recovery_failed: 'recovery_failed',
-    done: 'completed',
-    error: 'failed',
-    cancelled: 'cancelled',
   } as const)[event.event]
+    ?? terminalRunState
     ?? ({
       completed: 'completed',
       failed: 'failed',
@@ -1033,12 +1091,22 @@ export function isMessageRetryBlocked(
   isStreaming: boolean,
   operation: ChatOperation | undefined,
   sourceTurnId: string | undefined,
+  sourceTerminalStatus?: ChatMessage['terminalStatus'],
 ): boolean {
   if (!isStreaming) return false;
+  const matchesActiveTurn = Boolean(
+    sourceTurnId && operation?.turnId === sourceTurnId,
+  );
+  if (
+    matchesActiveTurn
+    && sourceTerminalStatus === 'interrupted'
+    && operation?.runState === 'replaying'
+  ) {
+    return false;
+  }
   return (
     operation?.runState !== 'recovery_failed'
-    || !sourceTurnId
-    || operation.turnId !== sourceTurnId
+    || !matchesActiveTurn
   );
 }
 
@@ -1088,6 +1156,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   wideScreen: false,
   composerFill: null,
+  composerReferenceRemoval: null,
   composerFocusNonce: 0,
 
   reset: () => {
@@ -1110,6 +1179,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       draftPromotions: {},
       readinessErrorKey: null,
       composerFill: null,
+      composerReferenceRemoval: null,
       composerFocusNonce: 0,
     });
   },
@@ -1514,11 +1584,24 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     const assistantId = assistantMsg.id;
     let resolvedSessionKey = currentSessionKey;
     let acceptedByStation = false;
+    const attachmentDiagnostic = attachments.length > 0;
     const notifyAccepted = () => {
       if (acceptedByStation) return;
       acceptedByStation = true;
       lifecycle?.onAccepted?.();
     };
+    if (attachmentDiagnostic) {
+      reportFoundationAttachmentReceiverDebug('N-P', 'stream-started', {
+        currentSessionPresent: currentSessionKey.length > 0,
+        currentSessionMatches: get().currentSessionKey === currentSessionKey,
+        assistantPresent: get().messages.some(
+          (message) => message.id === assistantId,
+        ),
+        bufferedAssistantPresent: (
+          get().sessionBuffers[currentSessionKey] ?? []
+        ).some((message) => message.id === assistantId),
+      });
+    }
 
     const controller = agentService.streamTurn(
       buildAgentTurnInput(
@@ -1652,9 +1735,39 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
       (err: AgentTurnStreamError) => {
+        const attachmentRejected =
+          err.typedError?.error_type === 'CONTEXT_ATTACHMENT_REJECTED';
+        if (attachmentDiagnostic && attachmentRejected) {
+          const stateBeforeError = get();
+          reportFoundationAttachmentReceiverDebug(
+            'N-P',
+            'error-callback-entered',
+            {
+              acceptedByStation,
+              currentSessionMatches:
+                stateBeforeError.currentSessionKey === resolvedSessionKey,
+              assistantPresent: stateBeforeError.messages.some(
+                (message) => message.id === assistantId,
+              ),
+              bufferedAssistantPresent: (
+                stateBeforeError.sessionBuffers[resolvedSessionKey] ?? []
+              ).some((message) => message.id === assistantId),
+              operationPresent:
+                stateBeforeError.operations[resolvedSessionKey] !== undefined,
+              operationRunState:
+                stateBeforeError.operations[resolvedSessionKey]?.runState
+                ?? null,
+            },
+          );
+        }
         if (!acceptedByStation) lifecycle?.onRejected?.(err.typedError);
         log.error('chat', 'Send message failed', { error: err.message });
-        const resolution = err.resolution as ErrorResolutionAction | undefined;
+        const mappedResolution = resolveAgentTypedErrorAction(err.typedError);
+        const resolution = mappedResolution ?? (
+          err.resolution?.type === 'removeReference'
+            ? undefined
+            : err.resolution
+        );
         set((state) => {
           const isCurrent = state.currentSessionKey === resolvedSessionKey;
           const applyError = (m: ChatMessage): ChatMessage => {
@@ -1674,6 +1787,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
               ...m,
               error: presentChatRuntimeError(err.message),
               typedError: err.typedError ?? m.typedError,
+              resolution: undefined,
               loading: false,
             };
           };
@@ -1694,6 +1808,35 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             operations: failOperationInMap(state.operations, resolvedSessionKey, err.message),
           };
         });
+        if (attachmentDiagnostic && attachmentRejected) {
+          const stateAfterError = get();
+          const currentAssistant = stateAfterError.messages.find(
+            (message) => message.id === assistantId,
+          );
+          const bufferedAssistant = (
+            stateAfterError.sessionBuffers[resolvedSessionKey] ?? []
+          ).find((message) => message.id === assistantId);
+          reportFoundationAttachmentReceiverDebug(
+            'N-Q',
+            'error-state-projected',
+            {
+              currentSessionMatches:
+                stateAfterError.currentSessionKey === resolvedSessionKey,
+              assistantPresent: currentAssistant !== undefined,
+              assistantErrorPresent: Boolean(currentAssistant?.error),
+              assistantTypedError:
+                currentAssistant?.typedError?.error_type ?? null,
+              bufferedAssistantPresent: bufferedAssistant !== undefined,
+              bufferedAssistantErrorPresent: Boolean(bufferedAssistant?.error),
+              bufferedAssistantTypedError:
+                bufferedAssistant?.typedError?.error_type ?? null,
+              operationRunState:
+                stateAfterError.operations[resolvedSessionKey]?.runState
+                ?? null,
+              isStreaming: stateAfterError.isStreaming,
+            },
+          );
+        }
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
       currentAuthenticatedActorPtid() || '',
@@ -1723,6 +1866,32 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         sessionBuffers: { ...state.sessionBuffers, [currentSessionKey]: baseMessages },
       };
     });
+    if (attachmentDiagnostic) {
+      const installedState = get();
+      const currentAssistant = installedState.messages.find(
+        (message) => message.id === assistantId,
+      );
+      const bufferedAssistant = (
+        installedState.sessionBuffers[currentSessionKey] ?? []
+      ).find((message) => message.id === assistantId);
+      reportFoundationAttachmentReceiverDebug(
+        'N-P',
+        'optimistic-state-installed',
+        {
+          currentSessionMatches:
+            installedState.currentSessionKey === currentSessionKey,
+          assistantPresent: currentAssistant !== undefined,
+          assistantErrorPresent: Boolean(currentAssistant?.error),
+          bufferedAssistantPresent: bufferedAssistant !== undefined,
+          bufferedAssistantErrorPresent: Boolean(bufferedAssistant?.error),
+          operationPresent:
+            installedState.operations[currentSessionKey] !== undefined,
+          operationRunState:
+            installedState.operations[currentSessionKey]?.runState ?? null,
+          isStreaming: installedState.isStreaming,
+        },
+      );
+    }
     return true;
   },
 
@@ -1750,6 +1919,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       isStreaming,
       operation,
       sourceTurnId,
+      source?.terminalStatus,
     );
     const retryKey = `${currentSessionKey}:${messageId}`;
     const pending = pendingMessageRetries.get(retryKey);
@@ -1990,6 +2160,26 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   consumeComposerFill: () => {
     set({ composerFill: null });
+  },
+
+  requestComposerReferenceRemoval: (referenceKind, referenceHash) => {
+    composerReferenceRemovalCounter += 1;
+    set({
+      composerReferenceRemoval: {
+        sessionKey: get().currentSessionKey,
+        referenceKind,
+        referenceHash,
+        nonce: composerReferenceRemovalCounter,
+      },
+    });
+  },
+
+  consumeComposerReferenceRemoval: (nonce) => {
+    set((state) => (
+      state.composerReferenceRemoval?.nonce === nonce
+        ? { composerReferenceRemoval: null }
+        : {}
+    ));
   },
 
   requestComposerFocus: () => {

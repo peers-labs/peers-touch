@@ -797,6 +797,7 @@ pub async fn agent_replay_turn_stream(
     ptid: String,
     conversation_id: String,
     turn_id: String,
+    attempt_id: String,
     after_sequence: i64,
     mut cancellation: ReplayCancellation,
 ) {
@@ -808,6 +809,7 @@ pub async fn agent_replay_turn_stream(
         &ptid,
         &conversation_id,
         &turn_id,
+        &attempt_id,
         after_sequence,
         &mut cancellation.receiver,
     )
@@ -998,6 +1000,7 @@ async fn stream_station_turn(
                 &mut conversation_id,
                 &mut last_sequence,
             );
+            let data = bind_turn_stream_identity(data, &turn_id, &conversation_id);
             match live_stream_control(cancellation) {
                 LiveStreamControl::CancelTurn => {
                     if turn_id.is_empty() {
@@ -1029,7 +1032,7 @@ async fn stream_station_turn(
             }
         }
     }
-    if !buffer.is_empty() {
+    if should_flush_live_stream_tail(transport_disconnect_requested, &buffer) {
         let frame = String::from_utf8(buffer)
             .map_err(|error| format!("Station turn stream returned invalid UTF-8: {error}"))?;
         if let Some((event, data)) = parse_sse_frame(&frame) {
@@ -1039,6 +1042,7 @@ async fn stream_station_turn(
                 &mut conversation_id,
                 &mut last_sequence,
             );
+            let data = bind_turn_stream_identity(data, &turn_id, &conversation_id);
             if matches!(event.as_str(), "done" | "error" | "cancelled") {
                 terminal_received = true;
             }
@@ -1213,6 +1217,22 @@ fn update_turn_cursor(
     }
 }
 
+fn bind_turn_stream_identity(mut data: Value, turn_id: &str, conversation_id: &str) -> Value {
+    let Some(payload) = data.as_object_mut() else {
+        return data;
+    };
+    if !turn_id.is_empty() && !payload.contains_key("turnId") && !payload.contains_key("turn_id") {
+        payload.insert("turnId".to_string(), json!(turn_id));
+    }
+    if !conversation_id.is_empty()
+        && !payload.contains_key("conversationId")
+        && !payload.contains_key("conversation_id")
+    {
+        payload.insert("conversationId".to_string(), json!(conversation_id));
+    }
+    data
+}
+
 fn replay_is_cancelled(cancellation: &watch::Receiver<bool>) -> bool {
     *cancellation.borrow()
 }
@@ -1237,6 +1257,7 @@ async fn replay_station_turn_events_with_retry(
     ptid: &str,
     conversation_id: &str,
     turn_id: &str,
+    attempt_id: &str,
     after_sequence: i64,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<(), String> {
@@ -1289,6 +1310,7 @@ async fn replay_station_turn_events_with_retry(
             ptid,
             conversation_id,
             turn_id,
+            attempt_id,
             after_sequence,
             cancellation,
         )
@@ -1330,12 +1352,21 @@ fn replay_event_closes_stream(event: &str, data: &Value, live_tail_established: 
     replay_event_is_terminal(event, data) && (live_tail_established || event == "snapshot")
 }
 
-fn build_replay_request_body(conversation_id: &str, turn_id: &str, after_sequence: i64) -> Value {
-    json!({
+fn build_replay_request_body(
+    conversation_id: &str,
+    turn_id: &str,
+    attempt_id: &str,
+    after_sequence: i64,
+) -> Value {
+    let mut body = json!({
         "conversation_id": conversation_id,
         "turn_id": turn_id,
         "afterSequence": after_sequence,
-    })
+    });
+    if !attempt_id.trim().is_empty() {
+        body["attempt_id"] = json!(attempt_id.trim());
+    }
+    body
 }
 
 fn take_sse_frame(buffer: &mut Vec<u8>) -> Result<Option<(String, Value)>, String> {
@@ -1356,6 +1387,10 @@ fn take_sse_frame(buffer: &mut Vec<u8>) -> Result<Option<(String, Value)>, Strin
     let frame = String::from_utf8(frame[..index].to_vec())
         .map_err(|error| format!("Station turn replay returned invalid UTF-8: {error}"))?;
     Ok(parse_sse_frame(&frame))
+}
+
+fn should_flush_live_stream_tail(transport_disconnect_requested: bool, buffer: &[u8]) -> bool {
+    !transport_disconnect_requested && !buffer.is_empty()
 }
 
 fn emit_replay_event(
@@ -1447,6 +1482,7 @@ async fn replay_station_turn_events(
     ptid: &str,
     conversation_id: &str,
     turn_id: &str,
+    attempt_id: &str,
     after_sequence: i64,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<ReplayOutcome, String> {
@@ -1473,6 +1509,7 @@ async fn replay_station_turn_events(
                 .json(&build_replay_request_body(
                     conversation_id,
                     turn_id,
+                    attempt_id,
                     after_sequence,
                 ))
                 .send(),
@@ -2651,6 +2688,47 @@ mod tests {
     }
 
     #[test]
+    fn live_stream_identity_binds_header_turn_to_forwarded_payload() {
+        let payload = bind_turn_stream_identity(
+            json!({ "type": "done", "model": "model-1" }),
+            "turn-1",
+            "conversation-1",
+        );
+
+        assert_eq!(
+            payload.get("turnId").and_then(Value::as_str),
+            Some("turn-1")
+        );
+        assert_eq!(
+            payload.get("conversationId").and_then(Value::as_str),
+            Some("conversation-1"),
+        );
+    }
+
+    #[test]
+    fn live_stream_identity_preserves_station_payload_identity() {
+        let payload = bind_turn_stream_identity(
+            json!({
+                "turn_id": "turn-station",
+                "conversationId": "conversation-station",
+            }),
+            "turn-header",
+            "conversation-request",
+        );
+
+        assert_eq!(
+            payload.get("turn_id").and_then(Value::as_str),
+            Some("turn-station"),
+        );
+        assert_eq!(
+            payload.get("conversationId").and_then(Value::as_str),
+            Some("conversation-station"),
+        );
+        assert!(payload.get("turnId").is_none());
+        assert!(payload.get("conversation_id").is_none());
+    }
+
+    #[test]
     fn replay_backoff_is_bounded() {
         assert_eq!(AGENT_REPLAY_BACKOFF_MS, [500, 1_000, 2_000, 4_000, 8_000]);
         assert_eq!(AGENT_REPLAY_BACKOFF_MS.iter().sum::<u64>(), 15_500);
@@ -2675,11 +2753,24 @@ mod tests {
     #[test]
     fn replay_request_uses_the_canonical_protojson_cursor_name() {
         assert_eq!(
-            build_replay_request_body("conversation-1", "turn-1", 4),
+            build_replay_request_body("conversation-1", "turn-1", "", 4),
             json!({
                 "conversation_id": "conversation-1",
                 "turn_id": "turn-1",
                 "afterSequence": 4,
+            }),
+        );
+    }
+
+    #[test]
+    fn replay_request_can_select_a_retained_source_attempt() {
+        assert_eq!(
+            build_replay_request_body("conversation-1", "turn-1", "attempt-1", 0),
+            json!({
+                "conversation_id": "conversation-1",
+                "turn_id": "turn-1",
+                "attempt_id": "attempt-1",
+                "afterSequence": 0,
             }),
         );
     }
@@ -2802,6 +2893,15 @@ mod tests {
             read,
             LiveStreamItem::Control(LiveStreamControl::DisconnectTransport)
         ));
+    }
+
+    #[test]
+    fn live_stream_disconnect_discards_buffered_tail() {
+        let buffered_terminal = b"event: done\ndata: {\"seq\":4}\n\n";
+
+        assert!(!should_flush_live_stream_tail(true, buffered_terminal));
+        assert!(should_flush_live_stream_tail(false, buffered_terminal));
+        assert!(!should_flush_live_stream_tail(false, &[]));
     }
 
     #[tokio::test(flavor = "current_thread")]

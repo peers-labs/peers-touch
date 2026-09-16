@@ -345,8 +345,8 @@ func TestPrivateContentRouteStackWritesProtobufAuthenticationErrors(t *testing.T
 	) server.EndpointHandler {
 		return next
 	}
-	const secret = "test-secret-that-is-long-enough-for-auth"
-	provider := coreauth.NewJWTProvider(secret, time.Hour)
+	const testSigningKey = "fixture-hmac-signing-key-material-v1"
+	provider := coreauth.NewJWTProvider(testSigningKey, time.Hour)
 	fixture.subserver.privateContentJWTWrapper = server.HTTPWrapperAdapter(
 		httpadapter.RequireStructuredJWT(
 			provider,
@@ -1014,8 +1014,8 @@ func serveSocialHandlerWithEndpoint(
 
 func TestSocialPublicReadRoutesUseStrictOptionalJWT(t *testing.T) {
 	fixture := newHandlerFixture(t)
-	const secret = "test-secret-that-is-long-enough-for-auth"
-	provider := coreauth.NewJWTProvider(secret, time.Hour)
+	const testSigningKey = "fixture-hmac-signing-key-material-v1"
+	provider := coreauth.NewJWTProvider(testSigningKey, time.Hour)
 	fixture.subserver.commonWrapper = func(next server.EndpointHandler) server.EndpointHandler {
 		return next
 	}
@@ -1030,7 +1030,7 @@ func TestSocialPublicReadRoutesUseStrictOptionalJWT(t *testing.T) {
 				true,
 				socialSessionValidator{},
 			),
-	)
+		)
 
 	publicPost, err := fixture.subserver.handleCreatePost(
 		fixture.withViewer(41),
@@ -1053,7 +1053,7 @@ func TestSocialPublicReadRoutesUseStrictOptionalJWT(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mint revoked token: %v", err)
 	}
-	expiredProvider := coreauth.NewJWTProvider(secret, -time.Minute)
+	expiredProvider := coreauth.NewJWTProvider(testSigningKey, -time.Minute)
 	_, expiredToken, err := expiredProvider.Authenticate(context.Background(), coreauth.Credentials{
 		SubjectID: publicPost.Post.AuthorPtid,
 	})
@@ -1116,8 +1116,8 @@ func TestSocialPublicReadRoutesUseStrictOptionalJWT(t *testing.T) {
 
 func TestSocialPublicCapableCollectionsUseStrictOptionalJWT(t *testing.T) {
 	fixture := newHandlerFixture(t)
-	const secret = "test-secret-that-is-long-enough-for-auth"
-	provider := coreauth.NewJWTProvider(secret, time.Hour)
+	const testSigningKey = "fixture-hmac-signing-key-material-v1"
+	provider := coreauth.NewJWTProvider(testSigningKey, time.Hour)
 	fixture.subserver.commonWrapper = func(next server.EndpointHandler) server.EndpointHandler {
 		return next
 	}

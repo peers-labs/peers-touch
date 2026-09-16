@@ -637,6 +637,35 @@ func (s *Service) Download(
 	authenticated valueobject.Endpoint,
 	request DownloadRequest,
 ) (DownloadResult, error) {
+	return s.download(ctx, authenticated, request, true)
+}
+
+// DownloadFromVerifiedHome relies on the signed peer boundary to attest the
+// remote endpoint. The immutable actor grant remains the authority ACL.
+func (s *Service) DownloadFromVerifiedHome(
+	ctx context.Context,
+	authenticated valueobject.Endpoint,
+	sourceHome valueobject.StationID,
+	request DownloadRequest,
+) (DownloadResult, error) {
+	if sourceHome == "" || sourceHome == s.localStation {
+		return DownloadResult{}, NewError(
+			ErrorCodeInvalidArgument,
+			"attachment.download",
+			"source_home_station",
+			"must identify a verified remote Home Station",
+		)
+	}
+
+	return s.download(ctx, authenticated, request, false)
+}
+
+func (s *Service) download(
+	ctx context.Context,
+	authenticated valueobject.Endpoint,
+	request DownloadRequest,
+	requireLocalDevice bool,
+) (DownloadResult, error) {
 	if err := s.validateAuthorityRequest(
 		"attachment.download",
 		request.ConversationID,
@@ -654,21 +683,23 @@ func (s *Service) Download(
 			"requires endpoint, object, and immutable ETag",
 		)
 	}
-	active, err := s.devices.IsActive(ctx, authenticated)
-	if err != nil {
-		return DownloadResult{}, WrapError(
-			ErrorCodePersistence,
-			"attachment.download.authorize_device",
-			err,
-		)
-	}
-	if !active {
-		return DownloadResult{}, NewError(
-			ErrorCodeUnauthorized,
-			"attachment.download",
-			"device",
-			"is not active for the authenticated actor",
-		)
+	if requireLocalDevice {
+		active, err := s.devices.IsActive(ctx, authenticated)
+		if err != nil {
+			return DownloadResult{}, WrapError(
+				ErrorCodePersistence,
+				"attachment.download.authorize_device",
+				err,
+			)
+		}
+		if !active {
+			return DownloadResult{}, NewError(
+				ErrorCodeUnauthorized,
+				"attachment.download",
+				"device",
+				"is not active for the authenticated actor",
+			)
+		}
 	}
 	object, err := s.repository.GetGrantedObject(
 		ctx,

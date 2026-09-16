@@ -190,13 +190,17 @@ CONTEXT_BUILDING
   -> RUNNING | FAILED | CANCELLED
 RUNNING
   -> WAITING_APPROVAL | WAITING_LOCAL_TOOL | COMPRESSING
-  -> RETRYING | FALLING_BACK
+  -> FALLING_BACK
   -> COMPLETED | FAILED | CANCELLED | INTERRUPTED
 WAITING_* / COMPRESSING / RETRYING / FALLING_BACK
   -> RUNNING | FAILED | CANCELLED | INTERRUPTED
+FAILED / CANCELLED / INTERRUPTED
+  -> RETRYING  # actor-scoped RetryTurn only
 ```
 
-Terminal states never transition.
+Attempt terminal states never transition. `RetryTurn` may reopen the aggregate
+Turn through `RETRYING`, but it appends a new Attempt and leaves every prior
+Attempt and terminal TurnEvent immutable.
 
 ### 2.6 TurnAttempt
 
@@ -213,6 +217,13 @@ One provider/runtime execution attempt within a turn.
 | `provider_request_ref` | Redacted diagnostic reference |
 
 Retry creates a new attempt. Regenerate creates a new turn.
+
+Turn-event recovery defaults to the current Attempt so an older terminal event
+cannot close a reopened Turn. Immutable lineage readback may provide
+`attempt_id`; Station then returns only that retained Attempt's events and
+snapshot. Unbound legacy events remain available only through the default
+current-attempt compatibility fence and are never inferred into an explicitly
+selected historical Attempt.
 
 ### 2.7 RuntimeSnapshot
 
@@ -617,7 +628,7 @@ by the actor, and part of the named conversation.
 
 #### RetryTurn
 
-Requires one failed or cancelled `source_turn_id`. It creates a new
+Requires one failed, cancelled, or interrupted `source_turn_id`. It creates a new
 `TurnAttempt` under that same Turn and does not create a message branch.
 Request carries conversation ID, source Turn ID, idempotency key, and expected
 conversation version. Retry is rejected for non-terminal, completed, or

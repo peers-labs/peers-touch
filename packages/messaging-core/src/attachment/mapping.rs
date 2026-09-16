@@ -34,6 +34,9 @@ pub fn validate_chat_attachment_transfer_record(
 pub(crate) fn chat_upload_spec_to_core(
     spec: &EncryptedObjectUploadSpec,
 ) -> Result<ObjectUploadSpec, String> {
+    if spec.media_type != "application/octet-stream" {
+        return Err("messaging attachment descriptor is invalid".to_string());
+    }
     let encryption_suite = match AttachmentEncryptionSuite::try_from(spec.encryption_suite) {
         Ok(AttachmentEncryptionSuite::Aes256GcmChunked) => ObjectEncryptionSuite::Aes256GcmChunked,
         _ => return Err("messaging attachment descriptor is invalid".to_string()),

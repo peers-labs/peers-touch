@@ -9,6 +9,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from tooling.acceptance.gates.agent import foundation_scenario_runner
+from tooling.acceptance.gates.agent.foundation_candidate_producer import (
+    FoundationCandidateError,
+)
 from tooling.acceptance.gates.agent.foundation_direct_adapter import (
     DirectRuntimeProbeInput,
 )
@@ -18,16 +21,227 @@ from tooling.acceptance.gates.agent.foundation_direct_adapter_test import (
 from tooling.acceptance.gates.agent.foundation_group_one_probe import (
     GroupOneProbeError,
 )
+from tooling.acceptance.gates.agent.foundation_group_one_probe_test import (
+    typed_runtime_role,
+)
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
+    evaluate_base_interrupted,
+    evaluate_base_executor_unavailable,
+    evaluate_base_forbidden_actor,
     evaluate_as_f04,
     evaluate_as_f06,
     evaluate_as_f12,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
+    valid_interrupted_capture,
+    valid_executor_unavailable_capture,
+    valid_forbidden_actor_capture,
     valid_as_f04_capture,
     valid_as_f06_capture,
     valid_as_f12_capture,
 )
+
+
+class ExecutorUnavailableHarnessClient:
+    def __init__(
+        self,
+        platform: str,
+        *,
+        call_log: list[str],
+    ) -> None:
+        self.platform = platform
+        self.call_log = call_log
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        del timeout
+        request = payload or {}
+        self.call_log.append(f"{self.platform}:{method}")
+        if method == "setFoundationLocale":
+            return {"locale": request["locale"]}
+        if method == "getFoundationClientExecutorTarget":
+            return {
+                "capabilitySessionId": "session-native",
+                "targetDeviceId": "device-executor",
+                "targetCapabilityId": "clipboard.read",
+            }
+        if method == "prepareFoundationExecutorUnavailable":
+            return {
+                "scenarioKey": request["scenarioKey"],
+                "conversationId": "conversation-executor",
+                "turnId": "turn-executor",
+            }
+        if method == "setFoundationClientExecutorAvailable":
+            available = bool(request["available"])
+            return {
+                "sessionRemoved": not available,
+                "localSessionRemoved": not available,
+                "sessionRestored": available,
+                "restoredDeviceId": (
+                    "device-executor" if available else ""
+                ),
+                "restoredCapabilityId": (
+                    "clipboard.read" if available else ""
+                ),
+                "withdrawnExecutionAttemptCount": 0,
+                "withdrawnSideEffectCount": 0,
+                "restoredExecutionAttemptCount": 0,
+                "restoredSideEffectCount": 0,
+            }
+        if method == "rejectFoundationExecutorUnavailable":
+            facts = valid_executor_unavailable_capture()
+            facts["cleanup"]["conversationDeleted"] = False
+            facts["cleanup"]["bindingRestored"] = False
+            facts["cleanup"]["executorRestored"] = False
+            facts["receiver"]["recoveryExecuted"] = False
+            facts["receiver"]["approvalEnabledAfterRecovery"] = False
+            return {
+                "conversationId": "conversation-executor",
+                "turnId": "turn-executor",
+                "durationMs": 1,
+                "runtimeEvent": {
+                    "eventType": "tool_approval_required",
+                    "sequence": 1,
+                    "observedAt": "2026-09-10T00:00:00Z",
+                },
+                "facts": facts,
+            }
+        if method == "recoverFoundationExecutorUnavailable":
+            facts = valid_executor_unavailable_capture()
+            return {
+                "conversationId": "conversation-executor",
+                "turnId": "turn-executor",
+                "durationMs": 2,
+                "runtimeEvent": {
+                    "eventType": "tool_approval_required",
+                    "sequence": 1,
+                    "observedAt": "2026-09-10T00:00:00Z",
+                },
+                "facts": facts,
+            }
+        if method == "foundationDirectProbe":
+            probe = DirectRuntimeProbeInput(
+                platform=str(request["platform"]),
+                locale=str(request["locale"]),
+                cell=str(request["cell"]),
+                sample_id=str(request["sampleId"]),
+            )
+            result = capture(probe)
+            facts = valid_executor_unavailable_capture()
+            result["scenarioFacts"] = facts
+            result["assertions"] = evaluate_base_executor_unavailable(facts)
+            return result
+        if method == "abortFoundationExecutorUnavailable":
+            return {"scenarioKey": request["scenarioKey"], "cleaned": True}
+        raise AssertionError(f"unexpected method: {method}")
+
+
+class ForbiddenActorHarnessClient:
+    def __init__(
+        self,
+        platform: str,
+        *,
+        call_log: list[str],
+        fail_rejection: bool = False,
+    ) -> None:
+        self.platform = platform
+        self.call_log = call_log
+        self.fail_rejection = fail_rejection
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        del timeout
+        request = payload or {}
+        self.call_log.append(f"{self.platform}:{method}")
+        if method == "setFoundationLocale":
+            return {"locale": request["locale"]}
+        if method == "loginWithPassword":
+            account = str(request["account"])
+            return {
+                "authenticated": True,
+                "actorId": f"ptid:{account}",
+            }
+        if method == "navigateToAgent":
+            return {"navigated": True}
+        if method == "prepareFoundationForbiddenActorOwner":
+            return {
+                "scenarioKey": request["scenarioKey"],
+                "resourceKind": "conversation",
+                "conversationId": "conversation-foreign",
+                "agentId": "agent-foreign",
+                "ownerActorHash": "a" * 64,
+                "beforeHash": "c" * 64,
+                "beforeVersion": 1,
+            }
+        if method == "rejectFoundationForbiddenActor":
+            if self.fail_rejection:
+                raise RuntimeError("forbidden rejection failed")
+            facts = valid_forbidden_actor_capture()
+            facts["cleanup"]["foreignResourceDeleted"] = False
+            facts["cleanup"]["foreignAgentDeleted"] = False
+            facts["cleanup"]["ownerSelectionRestored"] = False
+            facts["cleanup"]["receiverRestored"] = False
+            facts["cleanup"]["conversationDeleted"] = False
+            facts["receiver"]["receiverRestored"] = False
+            return {
+                "scenarioKey": request["scenarioKey"],
+                "durationMs": 1,
+                "runtimeEvent": {
+                    "eventType": "error",
+                    "sequence": 1,
+                    "observedAt": "2026-09-11T00:00:00Z",
+                },
+                "facts": facts,
+            }
+        if method == "readFoundationForbiddenActorOwner":
+            facts = valid_forbidden_actor_capture()
+            return dict(facts["owner"])
+        if method == "cleanupFoundationForbiddenActorOwner":
+            return {
+                "scenarioKey": request["scenarioKey"],
+                "resourceDeleted": True,
+                "agentDeleted": True,
+                "priorSelectionRestored": True,
+            }
+        if method == "completeFoundationForbiddenActorRecovery":
+            facts = valid_forbidden_actor_capture()
+            return {
+                "scenarioKey": request["scenarioKey"],
+                "durationMs": 2,
+                "runtimeEvent": {
+                    "eventType": "error",
+                    "sequence": 1,
+                    "observedAt": "2026-09-11T00:00:00Z",
+                },
+                "facts": facts,
+            }
+        if method == "foundationDirectProbe":
+            probe = DirectRuntimeProbeInput(
+                platform=str(request["platform"]),
+                locale=str(request["locale"]),
+                cell=str(request["cell"]),
+                sample_id=str(request["sampleId"]),
+            )
+            result = capture(probe)
+            facts = valid_forbidden_actor_capture()
+            result["scenarioFacts"] = facts
+            result["assertions"] = evaluate_base_forbidden_actor(facts)
+            result["runtime-events"] = typed_runtime_role(facts)
+            result["runtimeAttestation"]["actorIdentityHash"] = (
+                facts["runtimeEvent"]["sourcePtidHash"]
+            )
+            return result
+        if method == "abortFoundationForbiddenActor":
+            return {"scenarioKey": request["scenarioKey"], "cleaned": True}
+        raise AssertionError(f"unexpected method: {method}")
 
 
 class DirectProbeHarnessClient:
@@ -113,6 +327,8 @@ class F06HarnessClient:
         self.failure_calls: list[dict[str, object]] = []
         self.restoration_calls: list[dict[str, object]] = []
         self.reload_calls: list[dict[str, object]] = []
+        self.export_calls: list[dict[str, object]] = []
+        self.import_calls: list[dict[str, object]] = []
         self.complete_calls: list[dict[str, object]] = []
         self.cleanup_calls: list[dict[str, object]] = []
         self.handoffs: dict[str, dict[str, object]] = {}
@@ -121,6 +337,8 @@ class F06HarnessClient:
         self.restart_count += 1
         if self.event_log is not None:
             self.event_log.append(f"{self.platform}:client-restart")
+        if self.platform == "desktop_app":
+            self.handoffs.clear()
 
     def prepare_foundation_f06(
         self,
@@ -165,6 +383,9 @@ class F06HarnessClient:
             suffix = f"{self.platform}-{len(self.prepare_calls)}"
             handoff = {
                 "scenarioKey": str(request["scenarioKey"]),
+                "platform": str(request["platform"]),
+                "locale": str(request["locale"]),
+                "sampleId": str(request["sampleId"]),
                 "conversationId": f"conversation-{suffix}",
                 "turnId": f"turn-{suffix}",
                 "toolIsolation": {
@@ -232,6 +453,20 @@ class F06HarnessClient:
                     },
                 }
             }
+        if method == "foundationF06ExportRestartHandoff":
+            self.export_calls.append(request)
+            if self.event_log is not None:
+                self.event_log.append(f"{self.platform}:handoff-exported")
+            return self.handoffs[str(request["scenarioKey"])]
+        if method == "foundationF06ImportRestartHandoff":
+            self.import_calls.append(request)
+            handoff = request["handoff"]
+            if not isinstance(handoff, dict):
+                raise AssertionError("invalid fake restart handoff")
+            self.handoffs[str(request["scenarioKey"])] = handoff
+            if self.event_log is not None:
+                self.event_log.append(f"{self.platform}:handoff-imported")
+            return handoff
         if method == "foundationF06Cleanup":
             self.cleanup_calls.append(request)
             if self.cleanup_log is not None:
@@ -261,6 +496,65 @@ class F06HarnessClient:
             locale=probe.locale,
             sample_id=probe.sample_id,
         )
+        return result
+
+
+class InterruptedHarnessClient(F06HarnessClient):
+    def __init__(
+        self,
+        platform: str,
+        *,
+        cleanup_log: list[str] | None = None,
+        event_log: list[str] | None = None,
+        fail_direct: bool = False,
+    ) -> None:
+        super().__init__(
+            platform,
+            cleanup_log=cleanup_log,
+            event_log=event_log,
+        )
+        self.fail_direct = fail_direct
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        if method != "foundationDirectProbe":
+            return super().harness(method, payload, timeout)
+        if self.fail_direct:
+            raise RuntimeError("interrupted direct probe failed")
+        request = payload or {}
+        self.complete_calls.append(request)
+        probe = DirectRuntimeProbeInput(
+            platform=str(request["platform"]),
+            locale=str(request["locale"]),
+            cell=str(request["cell"]),
+            sample_id=str(request["sampleId"]),
+        )
+        result = capture(probe)
+        facts = valid_interrupted_capture(probe.locale)
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_interrupted(facts)
+        runtime_event = facts["runtimeEvent"]
+        result["runtime-events"] = {
+            "eventId": runtime_event["eventId"],
+            "sequence": runtime_event["sequence"],
+            "eventType": runtime_event["eventType"],
+            "occurredAt": runtime_event["observedAt"],
+            "streamGeneration": runtime_event["streamGeneration"],
+            "streamIdHash": runtime_event["streamIdHash"],
+            "conversationIdHash": runtime_event["conversationIdHash"],
+            "payloadHash": runtime_event["payloadHash"],
+            "errorType": runtime_event["errorType"],
+            "sourceTransport": runtime_event["sourceTransport"],
+            "sourcePtidHash": runtime_event["sourcePtidHash"],
+            "sourceConversationId": runtime_event["sourceConversationId"],
+            "sourceTurnId": runtime_event["sourceTurnId"],
+            "sourceSequence": runtime_event["sourceSequence"],
+            "sourceEventType": runtime_event["sourceEventType"],
+        }
         return result
 
 
@@ -929,7 +1223,7 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertIn("RuntimeError", errors[0])
         self.assertNotIn("ptid:private", errors[0])
 
-    def test_run_scenario_withholds_produced_candidate_on_restore_failure(
+    def test_run_scenario_preserves_primary_on_restore_failure(
         self,
     ) -> None:
         runtime_pair = Mock()
@@ -940,7 +1234,9 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         store = Mock()
         store.begin_run.return_value = run
         producer = Mock()
-        producer.produce.return_value = Path("/candidate/manifest.json")
+        producer.produce.side_effect = FoundationCandidateError(
+            "browser AS-F07 failed api_key=private-token"
+        )
 
         with (
             patch.object(
@@ -1000,10 +1296,12 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 foundation_scenario_runner.ScenarioRunnerError,
-                "CLEANUP_FAILED: capability isolation restoration failed",
-            ):
+                "CLEANUP_FAILED: capability isolation restoration failed; "
+                "primary=FoundationCandidateError: browser AS-F07 failed",
+            ) as raised:
                 foundation_scenario_runner.run_scenario()
 
+        self.assertNotIn("private-token", str(raised.exception))
         producer.produce.assert_called_once_with(run)
         runtime_pair.stop.assert_called_once_with(remove_storage=False)
         run.write_json.assert_called_once()
@@ -1012,6 +1310,15 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(
             cleanup["capabilityIsolationFailures"],
             ["browser capability identity changed"],
+        )
+        self.assertEqual(
+            cleanup["primaryFailure"],
+            [
+                {
+                    "type": "FoundationCandidateError",
+                    "message": "browser AS-F07 failed api_key=[REDACTED]",
+                }
+            ],
         )
 
     def test_initial_setup_selects_verified_station_before_login(self) -> None:
@@ -1350,11 +1657,17 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                     f"{platform}:authenticate:station-restart",
                     f"{platform}:capability-restored",
                     f"{platform}:durable-reload",
-                    f"{platform}:client-restart",
-                    f"{platform}:authenticate:client-restart",
-                    f"{platform}:complete",
                 )
             )
+            if platform == "desktop_app":
+                expected_order.append(f"{platform}:handoff-exported")
+            expected_order.extend((
+                f"{platform}:client-restart",
+                f"{platform}:authenticate:client-restart",
+            ))
+            if platform == "desktop_app":
+                expected_order.append(f"{platform}:handoff-imported")
+            expected_order.append(f"{platform}:complete")
         self.assertEqual(event_log, expected_order)
         self.assertEqual(len(native.prepare_calls), 2)
         self.assertEqual(len(browser.prepare_calls), 2)
@@ -1366,6 +1679,10 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(len(browser.restoration_calls), 2)
         self.assertEqual(len(native.reload_calls), 2)
         self.assertEqual(len(browser.reload_calls), 2)
+        self.assertEqual(len(native.export_calls), 2)
+        self.assertEqual(len(browser.export_calls), 0)
+        self.assertEqual(len(native.import_calls), 2)
+        self.assertEqual(len(browser.import_calls), 0)
         self.assertEqual(len(native.complete_calls), 2)
         self.assertEqual(len(browser.complete_calls), 2)
         for call in (*native.complete_calls, *browser.complete_calls):
@@ -1681,6 +1998,176 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             ],
         )
 
+    def test_base_interrupted_orders_source_bound_restart_and_probe(
+        self,
+    ) -> None:
+        event_log: list[str] = []
+        native = InterruptedHarnessClient("desktop_app")
+        browser = InterruptedHarnessClient("browser", event_log=event_log)
+        runtime_pair = SimpleNamespace(native=native, browser=browser)
+        coordinator = (
+            foundation_scenario_runner.FoundationInterruptedCoordinator(
+                runtime_pair,
+                {"profile": {"resolvedName": "chat-native-disposable"}},
+                {},
+            )
+        )
+        probe = foundation_scenario_runner._make_direct_probe(
+            browser,
+            interrupted_coordinator=coordinator,
+        )
+        restart_evidence = {
+            "outageObserved": True,
+            "stationUrlHash": "c" * 64,
+            "protoDigest": "d" * 64,
+            "containerId": "e" * 64,
+            "imageId": "f" * 64,
+            "imageRef": "foundation-station:test",
+            "beforeStartedAt": "2026-09-12T00:00:00Z",
+            "afterStartedAt": "2026-09-12T00:01:00Z",
+            "sourceCommit": "a" * 40,
+            "beforeCommit": "a" * 12,
+            "afterCommit": "a" * 12,
+        }
+
+        def restart_station(*_args: object, **kwargs: object) -> dict[str, object]:
+            event_log.append("station:preflight")
+            kwargs["before_outage"]()
+            event_log.append("station:kill")
+            kwargs["during_outage"](time.monotonic() + 165)
+            event_log.append("station:start")
+            return restart_evidence
+
+        with (
+            patch.object(
+                foundation_scenario_runner,
+                "restart_foundation_station",
+                side_effect=restart_station,
+            ) as station_restart,
+            patch.object(
+                foundation_scenario_runner,
+                "_authenticate_clients",
+            ) as authenticate,
+        ):
+            result = probe(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="zh-CN",
+                    cell="BASE-INTERRUPTED",
+                    sample_id="sample-001",
+                )
+            )
+            replay = probe(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="zh-CN",
+                    cell="BASE-INTERRUPTED",
+                    sample_id="sample-001",
+                )
+            )
+
+        station_restart.assert_called_once()
+        self.assertIs(
+            station_restart.call_args.kwargs["prearm_outage"],
+            True,
+        )
+        authenticate.assert_called_once()
+        self.assertEqual(native.prepare_calls, [])
+        self.assertEqual(len(browser.prepare_calls), 1)
+        self.assertEqual(
+            browser.prepare_calls[0]["faultBoundary"],
+            "provider-started",
+        )
+        self.assertEqual(len(browser.finalize_calls), 1)
+        self.assertEqual(len(browser.restoration_calls), 1)
+        self.assertEqual(browser.transport_restore_count, 1)
+        self.assertEqual(browser.restart_count, 0)
+        self.assertEqual(len(browser.complete_calls), 1)
+        self.assertEqual(
+            browser.complete_calls[0]["stationRestart"],
+            restart_evidence,
+        )
+        self.assertEqual(browser.cleanup_calls, [])
+        self.assertEqual(result["cleanup"]["status"], "clean")
+        self.assertEqual(replay, result)
+        self.assertLess(
+            event_log.index("station:preflight"),
+            event_log.index("browser:transport-cut"),
+        )
+        self.assertLess(
+            event_log.index("browser:transport-cut"),
+            event_log.index("station:kill"),
+        )
+        self.assertLess(
+            event_log.index("station:kill"),
+            event_log.index("browser:boundary-finalized"),
+        )
+        self.assertLess(
+            event_log.index("browser:boundary-finalized"),
+            event_log.index("station:start"),
+        )
+
+    def test_base_interrupted_failure_runs_explicit_cleanup(self) -> None:
+        cleanup_log: list[str] = []
+        native = InterruptedHarnessClient("desktop_app")
+        browser = InterruptedHarnessClient(
+            "browser",
+            cleanup_log=cleanup_log,
+            fail_direct=True,
+        )
+        coordinator = (
+            foundation_scenario_runner.FoundationInterruptedCoordinator(
+                SimpleNamespace(native=native, browser=browser),
+                {"profile": {"resolvedName": "chat-native-disposable"}},
+                {},
+            )
+        )
+        probe = foundation_scenario_runner._make_direct_probe(
+            browser,
+            interrupted_coordinator=coordinator,
+        )
+        restart_evidence = {
+            "outageObserved": True,
+            "sourceCommit": "a" * 40,
+            "beforeCommit": "a" * 12,
+            "afterCommit": "a" * 12,
+        }
+
+        def restart_station(*_args: object, **kwargs: object) -> dict[str, object]:
+            kwargs["before_outage"]()
+            kwargs["during_outage"](time.monotonic() + 165)
+            return restart_evidence
+
+        with (
+            patch.object(
+                foundation_scenario_runner,
+                "restart_foundation_station",
+                side_effect=restart_station,
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "_authenticate_clients",
+            ) as authenticate,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "interrupted direct probe failed",
+            ):
+                probe(
+                    DirectRuntimeProbeInput(
+                        platform="browser",
+                        locale="en",
+                        cell="BASE-INTERRUPTED",
+                        sample_id="sample-001",
+                    )
+                )
+
+        self.assertEqual(authenticate.call_count, 2)
+        self.assertEqual(
+            cleanup_log,
+            ["browser|en|BASE-INTERRUPTED|sample-001"],
+        )
+
     def test_as_f12_orders_restart_and_owning_client_restoration(
         self,
     ) -> None:
@@ -1877,6 +2364,145 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
 
         self.assertEqual(native.cleanup_calls, [])
         self.assertEqual(browser.cleanup_calls, [])
+
+    def test_executor_unavailable_coordinates_native_executor_for_browser_receiver(
+        self,
+    ) -> None:
+        call_log: list[str] = []
+        native = ExecutorUnavailableHarnessClient(
+            "desktop_app",
+            call_log=call_log,
+        )
+        browser = ExecutorUnavailableHarnessClient(
+            "browser",
+            call_log=call_log,
+        )
+        coordinator = (
+            foundation_scenario_runner.FoundationExecutorUnavailableCoordinator(
+                SimpleNamespace(native=native, browser=browser)
+            )
+        )
+        probe = foundation_scenario_runner._make_direct_probe(
+            browser,
+            executor_unavailable_coordinator=coordinator,
+        )
+
+        result = probe(
+            DirectRuntimeProbeInput(
+                platform="browser",
+                locale="en",
+                cell="BASE-EXECUTOR_UNAVAILABLE",
+                sample_id="sample-001",
+            )
+        )
+
+        self.assertTrue(result["assertions"]["typedExecutorUnavailable"])
+        self.assertEqual(
+            call_log,
+            [
+                "browser:setFoundationLocale",
+                "desktop_app:getFoundationClientExecutorTarget",
+                "browser:prepareFoundationExecutorUnavailable",
+                "desktop_app:setFoundationClientExecutorAvailable",
+                "browser:rejectFoundationExecutorUnavailable",
+                "desktop_app:setFoundationClientExecutorAvailable",
+                "browser:recoverFoundationExecutorUnavailable",
+                "browser:foundationDirectProbe",
+                "browser:abortFoundationExecutorUnavailable",
+            ],
+        )
+
+    def test_forbidden_actor_coordinates_bob_owner_and_browser_receiver(
+        self,
+    ) -> None:
+        call_log: list[str] = []
+        native = ForbiddenActorHarnessClient(
+            "desktop_app",
+            call_log=call_log,
+        )
+        browser = ForbiddenActorHarnessClient(
+            "browser",
+            call_log=call_log,
+        )
+        coordinator = foundation_scenario_runner.FoundationForbiddenActorCoordinator(
+            SimpleNamespace(native=native, browser=browser),
+            {"CHAT_NATIVE_DEMO_PASSWORD": "fixture-password"},
+        )
+        probe = foundation_scenario_runner._make_direct_probe(
+            browser,
+            forbidden_actor_coordinator=coordinator,
+        )
+
+        result = probe(
+            DirectRuntimeProbeInput(
+                platform="browser",
+                locale="en",
+                cell="BASE-FORBIDDEN_ACTOR",
+                sample_id="sample-001",
+            )
+        )
+
+        self.assertTrue(result["assertions"]["typedForbiddenActorRejected"])
+        self.assertEqual(
+            call_log,
+            [
+                "browser:setFoundationLocale",
+                "desktop_app:loginWithPassword",
+                "desktop_app:navigateToAgent",
+                "desktop_app:prepareFoundationForbiddenActorOwner",
+                "browser:rejectFoundationForbiddenActor",
+                "desktop_app:readFoundationForbiddenActorOwner",
+                "desktop_app:cleanupFoundationForbiddenActorOwner",
+                "desktop_app:loginWithPassword",
+                "desktop_app:navigateToAgent",
+                "browser:loginWithPassword",
+                "browser:navigateToAgent",
+                "browser:completeFoundationForbiddenActorRecovery",
+                "browser:foundationDirectProbe",
+                "browser:abortFoundationForbiddenActor",
+            ],
+        )
+
+    def test_forbidden_actor_failure_restores_both_clients_and_owner_fixture(
+        self,
+    ) -> None:
+        call_log: list[str] = []
+        native = ForbiddenActorHarnessClient(
+            "desktop_app",
+            call_log=call_log,
+        )
+        browser = ForbiddenActorHarnessClient(
+            "browser",
+            call_log=call_log,
+            fail_rejection=True,
+        )
+        coordinator = foundation_scenario_runner.FoundationForbiddenActorCoordinator(
+            SimpleNamespace(native=native, browser=browser),
+            {"CHAT_NATIVE_DEMO_PASSWORD": "fixture-password"},
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "forbidden rejection failed"):
+            coordinator.capture(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="en",
+                    cell="BASE-FORBIDDEN_ACTOR",
+                    sample_id="sample-001",
+                )
+            )
+
+        self.assertEqual(
+            call_log[-7:],
+            [
+                "browser:rejectFoundationForbiddenActor",
+                "desktop_app:cleanupFoundationForbiddenActorOwner",
+                "desktop_app:loginWithPassword",
+                "desktop_app:navigateToAgent",
+                "browser:loginWithPassword",
+                "browser:navigateToAgent",
+                "browser:abortFoundationForbiddenActor",
+            ],
+        )
 
 
 if __name__ == "__main__":

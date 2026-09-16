@@ -129,6 +129,21 @@ protos plus Desktop TypeScript and Station Go generated bindings.
 `CHAT_NATIVE_CLIENT_WORKTREES` accepts one worktree path per client, separated
 by commas; one path may be reused for local process-isolation checks.
 
+Native Tauri Chat Gates do not select Station hosts in the Gate catalog or
+environment contract. Every required Station slot must be bound explicitly at
+run time:
+
+```bash
+python3 tooling/scripts/acceptance-run.py \
+  --gate chat-native-product-closure-e2e \
+  --runtime-cell desktop-windows-native \
+  --station-profile station-primary=sixwin
+```
+
+Each selected profile supplies its Station endpoint and
+local/remote lifecycle. Missing, unknown, or duplicate bindings fail closed
+before Station provisioning.
+
 `chat-native-current-profile-two-client-e2e` reuses non-destructive Desktop
 actor identity instead of resetting Station. Alice launches from
 `peers-chat-high-chat`; Bob launches first from `peers-group-chat`; both
@@ -164,6 +179,22 @@ python3 tooling/scripts/acceptance-run.py \
 The Provisioner validates each existing marker against the actor, worktree, and
 profile before deletion, then rebuilds the persistent state from the read-only
 identity seed. The reset flag must not remain set for normal repeated runs.
+
+Multi-Station Chat Gates on explicitly approved protected development Stations
+use an exact deployment-environment allowlist:
+
+```bash
+CHAT_ACCEPTANCE_RESET=1 \
+CHAT_ACCEPTANCE_RESET_ENVIRONMENTS=station-four,station-five-arm \
+python3 tooling/scripts/acceptance-run.py \
+  --gate chat-native-typing-e2e \
+  --runtime-cell desktop-macos-native
+```
+
+`CHAT_ACCEPTANCE_RESET_ENVIRONMENTS` and
+`CHAT_ACCEPTANCE_RESET_PROFILE` are mutually exclusive. Every listed target
+must match its reviewed deployment host, health endpoint origin, Compose
+project, Station/PostgreSQL containers, and PostgreSQL volume before mutation.
 
 ### Agent R6 Stream Resilience
 

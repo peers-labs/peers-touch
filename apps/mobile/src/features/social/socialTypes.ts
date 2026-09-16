@@ -202,6 +202,7 @@ export interface FederationResolveView {
   locatorSeq?: number | string;
   locator_seq?: number | string;
   profile?: {
+    id?: string;
     ptid?: string;
     username?: string;
     preferredUsername?: string;
@@ -209,6 +210,15 @@ export interface FederationResolveView {
     displayName?: string;
     display_name?: string;
     avatar?: string;
+    ref?: {
+      ptid?: string;
+    };
+    peersTouch?: {
+      networkId?: string;
+    };
+    peers_touch?: {
+      network_id?: string;
+    };
   };
 }
 

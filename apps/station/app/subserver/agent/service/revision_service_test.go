@@ -9,6 +9,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"gorm.io/gorm"
 )
 
@@ -20,6 +21,7 @@ type revisionFakeTurnExecutor struct {
 	observedTurnStatus         string
 	observedAttemptStatus      string
 	observedAssistantMsgStatus string
+	observedAssistantErrorJSON []byte
 }
 
 func (f *revisionFakeTurnExecutor) ExecuteTurn(
@@ -40,6 +42,7 @@ func (f *revisionFakeTurnExecutor) ExecuteTurn(
 			var assistant persistence.AgentMessage
 			_ = f.db.First(&assistant, "id = ?", config.AssistantMessageID).Error
 			f.observedAssistantMsgStatus = assistant.Status
+			f.observedAssistantErrorJSON = assistant.ErrorJSON
 		}
 	}
 	if f.err != nil {
@@ -166,6 +169,31 @@ func migrateRevisionModels(t *testing.T, db *gorm.DB) {
 	}
 }
 
+func seedRevisionRuntimeSnapshot(
+	t *testing.T,
+	db *gorm.DB,
+	turnID string,
+	thinkingMode domain.ThinkingMode,
+) {
+	t.Helper()
+	encoded, err := persistence.MarshalRuntimeSnapshot(&model.RuntimeSnapshot{
+		ThinkingMode: string(thinkingMode),
+	})
+	if err != nil {
+		t.Fatalf("encode runtime snapshot: %v", err)
+	}
+	if err := db.Create(&persistence.TurnAttempt{
+		ID:              "attempt-" + turnID,
+		TurnID:          turnID,
+		AttemptIndex:    1,
+		Status:          string(domain.TurnStatusCompleted),
+		RuntimeSnapshot: encoded,
+		StartedAt:       time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("seed runtime snapshot: %v", err)
+	}
+}
+
 func revisionStateCounts(t *testing.T, db *gorm.DB) (messages, events, commands int64, version uint64) {
 	t.Helper()
 	if err := db.Model(&persistence.AgentMessage{}).Count(&messages).Error; err != nil {
@@ -190,6 +218,7 @@ func TestEditAndResendIsAtomicAndIdempotent(t *testing.T) {
 	db := openConversationAuthorityDB(t, "revision_edit_resend")
 	migrateRevisionModels(t, db)
 	seedRevisionConversation(t, db)
+	seedRevisionRuntimeSnapshot(t, db, "turn-source", domain.ThinkingModeDisabled)
 	executor := &revisionFakeTurnExecutor{db: db}
 	service := NewRevisionService(NewConversationService(), executor)
 	request := RevisionRequest{
@@ -211,6 +240,10 @@ func TestEditAndResendIsAtomicAndIdempotent(t *testing.T) {
 	}
 	if executor.calls != 1 {
 		t.Fatalf("executor calls=%d, want 1", executor.calls)
+	}
+	if len(executor.configs) != 1 ||
+		executor.configs[0].ThinkingMode != domain.ThinkingModeDisabled {
+		t.Fatalf("edit thinking mode was not inherited: %+v", executor.configs)
 	}
 	if first.Turn.TurnID != replay.Turn.TurnID ||
 		first.Message.MessageID != replay.Message.MessageID {
@@ -456,6 +489,7 @@ func TestRetryAddsAttemptUnderSameTurnWithoutBranchMutation(t *testing.T) {
 	branch := "branch-failed"
 	failedContent := ""
 	turnID := "turn-failed"
+	errorJSON := []byte(`{"error_type":"LIFECYCLE_INTERRUPTED"}`)
 	if err := db.Create(&persistence.AgentMessage{
 		ID:              "assistant-failed",
 		ConversationID:  "conversation-revision",
@@ -463,6 +497,7 @@ func TestRetryAddsAttemptUnderSameTurnWithoutBranchMutation(t *testing.T) {
 		Role:            string(domain.MessageRoleAssistant),
 		Status:          "failed",
 		Content:         &failedContent,
+		ErrorJSON:       errorJSON,
 		Seq:             2,
 		BranchID:        &branch,
 		ParentMessageID: &parent,
@@ -476,6 +511,7 @@ func TestRetryAddsAttemptUnderSameTurnWithoutBranchMutation(t *testing.T) {
 		Update("active_branch_message_id", "assistant-failed").Error; err != nil {
 		t.Fatal(err)
 	}
+	seedRevisionRuntimeSnapshot(t, db, "turn-failed", domain.ThinkingModeDisabled)
 	executor := &revisionFakeTurnExecutor{db: db}
 	service := NewRevisionService(NewConversationService(), executor)
 	result, err := service.RetryTurn(context.Background(), RevisionRequest{
@@ -488,23 +524,26 @@ func TestRetryAddsAttemptUnderSameTurnWithoutBranchMutation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retry turn: %v", err)
 	}
-	if result.Turn.TurnID != "turn-failed" || result.Attempt.AttemptIndex != 1 {
+	if result.Turn.TurnID != "turn-failed" || result.Attempt.AttemptIndex != 2 {
 		t.Fatalf("retry identity changed: %+v", result)
 	}
 	if executor.calls != 1 || len(executor.configs) != 1 ||
 		executor.configs[0].ExistingTurnID != "turn-failed" ||
 		executor.configs[0].PrecreatedTurnID != "" ||
-		executor.configs[0].AssistantMessageID != "assistant-failed" {
+		executor.configs[0].AssistantMessageID != "assistant-failed" ||
+		executor.configs[0].ThinkingMode != domain.ThinkingModeDisabled {
 		t.Fatalf("retry executor config=%+v", executor.configs)
 	}
 	if executor.observedTurnStatus != string(domain.TurnStatusRunning) ||
 		executor.observedAttemptStatus != string(domain.TurnStatusRunning) ||
-		executor.observedAssistantMsgStatus != "pending" {
+		executor.observedAssistantMsgStatus != "pending" ||
+		len(executor.observedAssistantErrorJSON) != 0 {
 		t.Fatalf(
-			"retry authority was not atomically admitted before execution: turn=%q attempt=%q assistant=%q",
+			"retry authority was not atomically admitted before execution: turn=%q attempt=%q assistant=%q error_json=%q",
 			executor.observedTurnStatus,
 			executor.observedAttemptStatus,
 			executor.observedAssistantMsgStatus,
+			executor.observedAssistantErrorJSON,
 		)
 	}
 	var messageCount int64
@@ -821,12 +860,15 @@ func TestRegenerateCreatesAssistantSiblingFromTerminalSource(t *testing.T) {
 	db := openConversationAuthorityDB(t, "revision_regenerate")
 	migrateRevisionModels(t, db)
 	seedRevisionConversation(t, db)
+	seedRevisionRuntimeSnapshot(t, db, "turn-source", domain.ThinkingModeDisabled)
 	now := time.Now()
 	answer := "original answer"
 	parent := "user-source"
+	sourceTurnID := "turn-source"
 	if err := db.Create(&persistence.AgentMessage{
 		ID:              "assistant-source",
 		ConversationID:  "conversation-revision",
+		TurnID:          &sourceTurnID,
 		Role:            string(domain.MessageRoleAssistant),
 		Status:          "completed",
 		Content:         &answer,
@@ -859,12 +901,63 @@ func TestRegenerateCreatesAssistantSiblingFromTerminalSource(t *testing.T) {
 		result.Conversation.ActiveBranchMessageID != result.Message.MessageID {
 		t.Fatalf("invalid regenerate lineage: %+v", result)
 	}
+	if len(executor.configs) != 1 ||
+		executor.configs[0].ThinkingMode != domain.ThinkingModeDisabled {
+		t.Fatalf("regenerate thinking mode was not inherited: %+v", executor.configs)
+	}
 	var source persistence.AgentMessage
 	if err := db.First(&source, "id = ?", "assistant-source").Error; err != nil {
 		t.Fatal(err)
 	}
 	if revisionStringValue(source.Content) != "original answer" || source.TombstonedAt != nil {
 		t.Fatalf("regenerate mutated source: %+v", source)
+	}
+}
+
+func TestRegenerateRejectsInvalidSourceRuntimeSnapshot(t *testing.T) {
+	db := openConversationAuthorityDB(t, "revision_regenerate_invalid_runtime")
+	migrateRevisionModels(t, db)
+	seedRevisionConversation(t, db)
+	now := time.Now()
+	if err := db.Create(&persistence.TurnAttempt{
+		ID:              "attempt-turn-source",
+		TurnID:          "turn-source",
+		AttemptIndex:    1,
+		Status:          string(domain.TurnStatusCompleted),
+		RuntimeSnapshot: []byte{0xff},
+		StartedAt:       now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	answer := "original answer"
+	parent := "user-source"
+	sourceTurnID := "turn-source"
+	if err := db.Create(&persistence.AgentMessage{
+		ID:              "assistant-source",
+		ConversationID:  "conversation-revision",
+		TurnID:          &sourceTurnID,
+		Role:            string(domain.MessageRoleAssistant),
+		Status:          "completed",
+		Content:         &answer,
+		Seq:             2,
+		ParentMessageID: &parent,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	executor := &revisionFakeTurnExecutor{db: db}
+	service := NewRevisionService(NewConversationService(), executor)
+	_, err := service.RegenerateTurn(context.Background(), RevisionRequest{
+		Ptid:                        "ptid:person:owner",
+		ConversationID:              "conversation-revision",
+		SourceMessageID:             "assistant-source",
+		IdempotencyKey:              "regenerate-invalid-runtime",
+		ExpectedConversationVersion: 1,
+	})
+	requireBizCode(t, err, errcode.AgentInvalidSourceState)
+	if executor.calls != 0 {
+		t.Fatalf("invalid source runtime reached execution: calls=%d", executor.calls)
 	}
 }
 

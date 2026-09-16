@@ -572,7 +572,9 @@ def _atomic_write(path: Path, value: bytes, *, path_role: str) -> None:
             path_role=path_role,
         )
     _private_directory(path.parent, f"{path_role}-parent")
-    temporary = path.with_name(f".{path.name}.tmp-{secrets.token_hex(8)}")
+    # Keep the temporary basename bounded so long artifact names remain below
+    # Windows MAX_PATH while preserving same-directory atomic replacement.
+    temporary = path.parent / f".tmp-{secrets.token_hex(8)}"
     try:
         with temporary.open("xb") as handle:
             if os.name != "nt":
