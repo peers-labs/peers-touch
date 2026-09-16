@@ -36,8 +36,18 @@ export function workspaceIdForRoot(root = repoRoot) {
   return createHash('sha256').update(canonicalRoot).digest('hex').slice(0, 16);
 }
 
-export function machineDevRoot(home = homedir()) {
-  return path.join(home, '.peers-touch', 'dev');
+export function machineDevRoot(home) {
+  if (home !== undefined) {
+    return path.join(home, '.peers-touch', 'dev');
+  }
+  const override = process.env.PT_MACHINE_DEV_ROOT?.trim();
+  if (override) {
+    if (!path.isAbsolute(override)) {
+      throw new Error('PT_MACHINE_DEV_ROOT must be absolute');
+    }
+    return path.resolve(override);
+  }
+  return path.join(homedir(), '.peers-touch', 'dev');
 }
 
 export function developmentWorkLedgerPath(home = homedir()) {
@@ -46,6 +56,32 @@ export function developmentWorkLedgerPath(home = homedir()) {
 
 export function developmentWorkLockPath(home = homedir()) {
   return path.join(machineDevRoot(home), 'work.lock');
+}
+
+export function machineRegistryPath(home) {
+  return path.join(machineDevRoot(home), 'registry.json');
+}
+
+export function machineRegistryLockPath(home) {
+  return path.join(machineDevRoot(home), 'registry.lock');
+}
+
+export function machineLeaseRoot(home) {
+  return path.join(machineDevRoot(home), 'leases');
+}
+
+export function machineLeasePath(resourceKind, resourceId, home = homedir()) {
+  const kind = requireIdentifier(resourceKind, 'lease resource kind');
+  const id = requireIdentifier(resourceId, 'lease resource id');
+  return path.join(machineLeaseRoot(home), `${kind.replaceAll('.', '-')}-${id}.lock`);
+}
+
+export function workspaceStatePath(options = {}) {
+  return path.join(
+    machineDevRoot(options.home),
+    'workspaces',
+    resolveWorkspaceId(options),
+  );
 }
 
 export function workspaceWorkflowPath(workItemId, options = {}) {
