@@ -102,6 +102,25 @@ func TestMigrateSchemaPreservesLegacyFederationCreatorIdentity(t *testing.T) {
 	if db.Migrator().HasColumn("federation", "created_by_actor_id") {
 		t.Fatal("legacy created_by_actor_id column remains after migration")
 	}
+	if err := db.Exec(`INSERT INTO federation (
+		federation_id,
+		name,
+		sequencer_station_peer_id,
+		genesis_hash,
+		head_hash,
+		created_by_actor_ptid,
+		created_by_station_peer_id
+	) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"fed_legacy",
+		"Duplicate Federation",
+		"station-peer",
+		[]byte("genesis"),
+		[]byte("head"),
+		"ptid:other-creator",
+		"station-peer",
+	).Error; err == nil {
+		t.Fatal("migration no longer enforces unique federation_id")
+	}
 }
 
 func openMigrationTestDB(t *testing.T) *gorm.DB {

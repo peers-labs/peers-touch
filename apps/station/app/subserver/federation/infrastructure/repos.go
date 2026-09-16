@@ -77,7 +77,7 @@ func MigrateIdentityColumns(db *gorm.DB) error {
 
 type federationModel struct {
 	ID                     int64     `gorm:"primaryKey;autoIncrement"`
-	FederationID           string    `gorm:"uniqueIndex;type:varchar(30);not null"`
+	FederationID           string    `gorm:"unique;type:varchar(30);not null"`
 	Name                   string    `gorm:"type:varchar(255);not null"`
 	Description            string    `gorm:"type:text;not null;default:''"`
 	Status                 string    `gorm:"type:varchar(20);not null;default:'active';index"`
