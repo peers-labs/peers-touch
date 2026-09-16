@@ -528,6 +528,7 @@
       "require": [
         "mobile-contract-static",
         "mobile-simulator-access-e2e",
+        "mobile-simulator-runtime-lifecycle-e2e",
         "mobile-simulator-station-lifecycle-e2e",
         "mobile-ios-simulator-layout-accessibility-e2e"
       ]
@@ -575,7 +576,8 @@
           "apps/mobile/src/App.tsx",
           "apps/mobile/src/app/**",
           "apps/mobile/src/components/MobileShell.tsx",
-          "apps/mobile/src/runtimes/runtimeRegistry.ts"
+          "apps/mobile/src/runtimes/runtimeRegistry.ts",
+          "apps/mobile/src/runtimes/stationRuntime.ts"
         ]
       },
       "require": [
@@ -633,6 +635,9 @@
       "when": {
         "paths": [
           "apps/mobile/src/runtimes/commandRuntime.ts",
+          "apps/mobile/src/features/chat/chatCommands.ts",
+          "apps/mobile/src/features/social/contactCommands.ts",
+          "apps/mobile/src/pages/moments/MomentCommentsSection.tsx",
           "apps/mobile/src-tauri/src/runtime/command_ledger/**",
           "apps/mobile/src-tauri/src/runtime/draft_store/**",
           "apps/mobile/src-tauri/src/messaging/adapter.rs"
@@ -640,8 +645,28 @@
       },
       "require": [
         "mobile-contract-static",
+        "mobile-hard-cut-static",
         "mobile-native-recovery-e2e",
         "mobile-native-recovery-ui-e2e"
+      ]
+    },
+    {
+      "id": "mobile-service-bindings",
+      "features": [
+        "mobile-station-trust",
+        "mobile-access-gate-oauth",
+        "mobile-session-lifecycle"
+      ],
+      "when": {
+        "paths": [
+          "tooling/acceptance/provisioners/mobile_service_bindings.py"
+        ]
+      },
+      "require": [
+        "mobile-contract-static",
+        "mobile-native-access-e2e",
+        "mobile-simulator-runtime-lifecycle-e2e",
+        "mobile-simulator-station-lifecycle-e2e"
       ]
     },
     {
@@ -670,6 +695,8 @@
       "when": {
         "paths": [
           "apps/mobile/src/features/group/**",
+          "apps/mobile/src/features/chat/chatCommands.ts",
+          "apps/mobile/src/features/social/contactCommands.ts",
           "apps/mobile/src/services/gateways/socialGateway.ts",
           "apps/mobile/src/pages/ChatPage.tsx",
           "apps/mobile/src/pages/ContactsPage.tsx"
@@ -680,6 +707,61 @@
         "mobile-simulator-chat-contacts-e2e",
         "mobile-native-social-convergence-e2e",
         "mobile-native-chat-contacts-e2e"
+      ]
+    },
+    {
+      "id": "mobile-shared-social-projections",
+      "features": [
+        "mobile-chat-contacts-groups",
+        "mobile-moments-participation",
+        "mobile-profile-settings"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/runtimes/socialEventIngress.ts",
+          "apps/mobile/src/runtimes/socialProjectionRuntime.ts",
+          "apps/mobile/src/runtimes/runtimeRegistry.ts"
+        ]
+      },
+      "require": [
+        "mobile-simulator-social-convergence-e2e",
+        "mobile-simulator-chat-contacts-e2e",
+        "mobile-native-social-convergence-e2e",
+        "mobile-native-chat-contacts-e2e",
+        "mobile-native-moments-e2e",
+        "mobile-native-settings-e2e"
+      ]
+    },
+    {
+      "id": "mobile-moments-projection",
+      "features": [
+        "mobile-moments-participation"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/runtimes/momentsProjectionDescriptor.ts"
+        ]
+      },
+      "require": [
+        "mobile-simulator-social-convergence-e2e",
+        "mobile-native-social-convergence-e2e",
+        "mobile-native-moments-e2e"
+      ]
+    },
+    {
+      "id": "mobile-profile-projection",
+      "features": [
+        "mobile-profile-settings"
+      ],
+      "when": {
+        "paths": [
+          "apps/mobile/src/runtimes/profileProjectionDescriptor.ts"
+        ]
+      },
+      "require": [
+        "mobile-simulator-social-convergence-e2e",
+        "mobile-native-social-convergence-e2e",
+        "mobile-native-settings-e2e"
       ]
     },
     {
@@ -709,7 +791,8 @@
       ],
       "when": {
         "paths": [
-          "apps/mobile/src/pages/MomentsPage.tsx"
+          "apps/mobile/src/pages/MomentsPage.tsx",
+          "apps/mobile/src/pages/moments/MomentCommentsSection.tsx"
         ]
       },
       "require": [

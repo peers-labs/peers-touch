@@ -101,20 +101,32 @@ class AcceptanceRunTest(unittest.TestCase):
         module = load_module()
         store = mock.Mock()
         store.root = Path("synthetic-artifacts")
-        reference = mock.Mock()
-        reference.to_dict.return_value = {"path": "plans/acceptance.json"}
-        store.latest_artifact_ref.side_effect = [
-            EvidenceManifestInvalid("missing plan"),
-            reference,
-        ]
-        store.read_json.return_value = {"gates": []}
 
-        with mock.patch.object(module.subprocess, "run") as run:
+        def project_plan(command: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+            output = Path(command[command.index("--output") + 1])
+            output.write_text(
+                json.dumps(
+                    {
+                        "execution": {
+                            "formalPlan": "plans/active/plan.md",
+                        },
+                        "gates": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with mock.patch.object(
+            module.subprocess,
+            "run",
+            side_effect=project_plan,
+        ) as run:
             plan, source = module.load_plan(None, store)
 
         self.assertEqual(run.call_args.args[0][0], sys.executable)
-        self.assertEqual(plan, {"gates": []})
-        self.assertEqual(source, {"path": "plans/acceptance.json"})
+        self.assertEqual(plan["gates"], [])
+        self.assertEqual(source, "plans/active/plan.md")
 
     def test_source_identity_drift_preserves_aggregate_baseline(self) -> None:
         module = load_module()

@@ -34,12 +34,19 @@ const REPO_ROOT = path.resolve(
   '..',
   '..',
 );
-const BRANCH = 'merge-desktop-prototype';
-const INITIAL_HEAD = '3d4e858ce0c8e28969e01a736e2b238269aedb3b';
-const EXPECTED_HEAD = '771605c8d768ea3ef73a1b9b1a63befae354292f';
+const BRANCH = execFileSync('git', ['branch', '--show-current'], {
+  cwd: REPO_ROOT,
+  encoding: 'utf8',
+}).trim();
+const EXPECTED_HEAD = execFileSync('git', ['rev-parse', 'HEAD'], {
+  cwd: REPO_ROOT,
+  encoding: 'utf8',
+}).trim();
+const INITIAL_HEAD =
+  EXPECTED_HEAD === '0'.repeat(40) ? '1'.repeat(40) : '0'.repeat(40);
 const WORKTREE_SET_DIGEST =
   '4b41b36f2a0a6704e9779efc97495b76bbe1cd0b1427a1d564baf306025281c4';
-const WORKSPACE_ID = 'b0a926025d2b25b9';
+const WORKSPACE_ID = workspaceIdForRoot(REPO_ROOT);
 const START_TIME = Date.parse('2026-09-16T12:00:00.000Z');
 
 function fixture({

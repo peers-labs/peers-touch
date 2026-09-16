@@ -119,7 +119,6 @@ test('rejects source and runtime conflicts but permits shared reads', () => {
     expectCode('RESOURCE_DECLARATION_CONFLICT', () =>
       startOrUpdateDeclaration(
         options(scope, {
-          workspaceRoot: scope.workspaceB,
           workItemId: 'source-conflict',
           sessionId: 'session-b',
           branch: 'other-branch',
@@ -153,6 +152,40 @@ test('rejects source and runtime conflicts but permits shared reads', () => {
         }),
       ),
     );
+  } finally {
+    scope.close();
+  }
+});
+
+test('warns but allows overlapping writes on independent branches', () => {
+  const scope = fixture();
+  try {
+    const first = startOrUpdateDeclaration(options(scope));
+    const warnings = [];
+    const second = startOrUpdateDeclaration(
+      options(scope, {
+        workspaceRoot: scope.workspaceB,
+        workItemId: 'independent-branch',
+        sessionId: 'session-b',
+        branch: 'independent-branch',
+        sourceHead: '8'.repeat(40),
+        sourceClaims: 'exclusive-write:tooling/scripts/local-dev',
+        runtimeClaims: '',
+      }),
+      { onWarning: (warning) => warnings.push(warning) },
+    );
+
+    assert.notEqual(second.workspaceId, first.workspaceId);
+    assert.deepEqual(warnings, [
+      {
+        declarationId: first.declarationId,
+        workspaceId: first.workspaceId,
+        branch: first.branch,
+        kind: 'SOURCE_OVERLAP_WARNING',
+        resource: 'tooling/scripts/local-dev',
+        otherPathPrefix: 'tooling/scripts/local-dev',
+      },
+    ]);
   } finally {
     scope.close();
   }

@@ -375,13 +375,15 @@ function conflictWith(candidate, current) {
   ) {
     return { kind: 'BRANCH_WRITE_CONFLICT', resource: candidate.branch };
   }
-  for (const left of candidate.sourceClaims) {
-    for (const right of current.sourceClaims) {
-      if (
-        pathsOverlap(left.pathPrefix, right.pathPrefix) &&
-        (left.mode === 'exclusive-write' || right.mode === 'exclusive-write')
-      ) {
-        return { kind: 'SOURCE_WRITE_CONFLICT', resource: left.pathPrefix };
+  if (candidate.workspaceId === current.workspaceId) {
+    for (const left of candidate.sourceClaims) {
+      for (const right of current.sourceClaims) {
+        if (
+          pathsOverlap(left.pathPrefix, right.pathPrefix) &&
+          (left.mode === 'exclusive-write' || right.mode === 'exclusive-write')
+        ) {
+          return { kind: 'SOURCE_WRITE_CONFLICT', resource: left.pathPrefix };
+        }
       }
     }
   }
@@ -395,6 +397,30 @@ function conflictWith(candidate, current) {
         return {
           kind: 'RUNTIME_RESOURCE_CONFLICT',
           resource: `${left.kind}:${left.resourceId}`,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function sourceOverlapWarning(candidate, current) {
+  if (
+    candidate.workspaceId === current.workspaceId ||
+    candidate.branch === current.branch
+  ) {
+    return null;
+  }
+  for (const left of candidate.sourceClaims) {
+    for (const right of current.sourceClaims) {
+      if (
+        pathsOverlap(left.pathPrefix, right.pathPrefix) &&
+        (left.mode === 'exclusive-write' || right.mode === 'exclusive-write')
+      ) {
+        return {
+          kind: 'SOURCE_OVERLAP_WARNING',
+          resource: left.pathPrefix,
+          otherPathPrefix: right.pathPrefix,
         };
       }
     }
@@ -504,9 +530,10 @@ function mutateLedger(options, mutation) {
 
 export function startOrUpdateDeclaration(
   options,
-  { requireExisting = false } = {},
+  { requireExisting = false, onWarning = () => {} } = {},
 ) {
-  return mutateLedger(options, (ledger, now) => {
+  const warnings = [];
+  const declaration = mutateLedger(options, (ledger, now) => {
     const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
     const workspaceId = workspaceIdForRoot(workspaceRoot);
     const workItemId = requiredIdentifier(options.workItemId, 'workItemId');
@@ -558,10 +585,23 @@ export function startOrUpdateDeclaration(
           ...conflict,
         });
       }
+      const warning = sourceOverlapWarning(candidate, current);
+      if (warning) {
+        warnings.push({
+          declarationId: current.declarationId,
+          workspaceId: current.workspaceId,
+          branch: current.branch,
+          ...warning,
+        });
+      }
     }
     ledger.declarations[id] = candidate;
     return candidate;
   }).output;
+  for (const warning of warnings) {
+    onWarning(warning);
+  }
+  return declaration;
 }
 
 function ownedDeclaration(options, ledger) {

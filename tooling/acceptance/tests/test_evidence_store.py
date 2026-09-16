@@ -193,7 +193,7 @@ class ArtifactRootResolverTests(unittest.TestCase):
 class EvidenceStoreTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
-        self.base = Path(self.temporary.name)
+        self.base = Path(self.temporary.name).resolve()
         self.worktree = self.base / "repo"
         self.worktree.mkdir()
         self.root = self.base / "artifacts"
