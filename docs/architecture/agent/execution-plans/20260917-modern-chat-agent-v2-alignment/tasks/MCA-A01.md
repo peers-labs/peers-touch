@@ -28,13 +28,13 @@
   ],
   "budgets": {
     "focusedCheckSeconds": 900,
-    "functionalRunSeconds": 7200,
+    "functionalRunSeconds": 21600,
     "cleanupSeconds": 300
   },
   "checks": [
     {
       "id": "agent-domain-structure",
-      "command": "make acceptance-validate DOMAIN=agent && make plan-validate PLAN=docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+      "command": "make acceptance-validate DOMAIN=agent && node tooling/scripts/plan/planctl.mjs validate --plan docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
       "verificationClass": "STRUCTURAL_CHECK"
     },
     {
@@ -44,7 +44,7 @@
     }
   ],
   "doneWhen": [
-    "All seven formal Gates pass on the final exact source with required receiver, Station, lineage, replay, cleanup, and source-identity artifacts",
+    "All seven parity Gates and all registry-required regression Gates pass on the final exact source with required receiver, Station, lineage, replay, cleanup, and source-identity artifacts",
     "The mind-map P3, E1, X3, and mapped V2 overlay rows cite current source and immutable Acceptance evidence",
     "The SVG and all current navigation/status sources agree with the parseable mind map",
     "Completion and quality audits report no unowned required scope or false proof claim"
@@ -68,4 +68,6 @@ execution plan, Acceptance registry, mind map, SVG, and navigation agree.
 
 - Six V2 product Gates are registered but remain `UNPROVEN`.
 - The X3 catalog Gate must be implemented and registered by MCA-X3.
+- The aggregate closure includes the sixteen additional regression Gates
+  required by Acceptance impact analysis for the current Plan baseline.
 - No aggregate completion claim exists for the current exact source.

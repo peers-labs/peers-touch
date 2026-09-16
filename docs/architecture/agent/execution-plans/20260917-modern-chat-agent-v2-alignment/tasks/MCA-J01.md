@@ -55,12 +55,17 @@
     "Do not infer readiness from labels or cached configuration",
     "Return the first source or runtime failure to its owning layer"
   ],
-  "updatedAt": "2026-09-16T16:49:11Z",
+  "updatedAt": "2026-09-16T17:27:35Z",
   "durableEvidence": [
     {
       "verificationClass": "SOURCE_CHECK",
       "result": "PASS",
       "ref": "apps/desktop:vitest:home-9-pass;apps/station:go-test:TestHome-pass"
+    },
+    {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "workspace://65e7b6da4dc9be85/runtime/two/data/v2-j01-native-bfdc1ae5f-run4/journey-result.json"
     }
   ]
 }
@@ -77,4 +82,6 @@ canonical Chat/Task handoff.
   and product page exist.
 - Current-source Home focused checks pass: 9 Desktop tests plus Station Home
   service tests.
-- Exact-source native functional replay and formal Acceptance remain unproven.
+- Exact-source native Chat/Task/restart functional replay passes on Profile
+  `two`, Slot `1`, including disposable-work cleanup and pin restoration.
+- Formal Acceptance remains owned by the aggregate MCA-A01 closure.
