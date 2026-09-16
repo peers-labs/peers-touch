@@ -10,7 +10,7 @@ from tooling.acceptance.gates.agent.capability_binding_development import (
     CapabilityBindingDevelopmentError,
     ROOT,
     evaluate_capability_binding,
-    seed_native_actor_identity,
+    seed_native_client_state,
 )
 
 
@@ -106,7 +106,7 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
         self.assertNotIn("reset_fixture", source)
         self.assertNotIn("CHAT_ACCEPTANCE_RESET", source)
 
-    def test_clones_only_an_accepted_matching_actor_identity(self) -> None:
+    def test_clones_only_accepted_matching_native_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             seed = root / "seed"
@@ -117,6 +117,9 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
             )
             identity.mkdir(parents=True)
             (identity / "actor.key").write_bytes(b"identity")
+            storage = seed / "storage"
+            storage.mkdir()
+            (storage / "device.db").write_bytes(b"device")
             (seed / "journey-result.json").write_text(
                 json.dumps({
                     "journey": "V2-J01",
@@ -125,21 +128,27 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
                 }),
                 encoding="utf-8",
             )
-            target = root / "target"
+            target_identity = root / "target-identity"
+            target_storage = root / "target-storage"
 
-            seed_native_actor_identity(
+            seed_native_client_state(
                 seed_root=seed,
-                target_root=target,
+                target_storage_root=target_storage,
+                target_root=target_identity,
                 station_url="https://station.example/",
             )
 
             self.assertEqual(
                 (
-                    target
+                    target_identity
                     / "peers-touch/desktop/data/secure-store/"
                     "identity-keys/actor.key"
                 ).read_bytes(),
                 b"identity",
+            )
+            self.assertEqual(
+                (target_storage / "device.db").read_bytes(),
+                b"device",
             )
 
     def test_rejects_unproven_actor_identity_seed(self) -> None:
@@ -162,8 +171,9 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
                 CapabilityBindingDevelopmentError,
                 "does not match Profile two",
             ):
-                seed_native_actor_identity(
+                seed_native_client_state(
                     seed_root=seed,
+                    target_storage_root=root / "target-storage",
                     target_root=root / "target",
                     station_url="https://station.example",
                 )
