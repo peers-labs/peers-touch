@@ -21316,49 +21316,57 @@ async function runCapabilityBindingDevelopmentJourney(
     );
     const readyComposer = capabilityDevelopmentComposerSnapshot();
 
-    const staleAgent = await useAgentStore.getState().updateAgentProfile(
+    const staleTraceBefore = await api.listAgentTurnTraces(
       disposableAgentId,
-      { description: `V2-J02 stale binding ${sampleId}` },
+      { page: 1, pageSize: 200 },
     );
-    await useAgentCapabilityStore.getState().loadAgent(disposableAgentId, {
-      clientCapabilitySessionId: capabilitySessionId,
-    });
-    await waitFor(
-      () => capabilityDevelopmentComposerSnapshot().reasonCode
-        === 'binding_agent_revision_stale',
-      'stale binding composer rejection',
-      30_000,
+    let staleErrorCode = '';
+    try {
+      await useAgentCapabilityStore.getState().upsertBinding({
+        bindingId: knowledgeBinding.bindingId,
+        agentId: disposableAgentId,
+        capabilityId: manifest.capabilityId,
+        capabilityVersion: manifest.version,
+        enabled: true,
+        approvalPolicy: CapabilityApprovalPolicy.AUTO,
+        expectedAgentVersion: disposable.version,
+        expectedBindingRevision: createdRevision,
+        idempotencyKey: crypto.randomUUID(),
+        clientCapabilitySessionId: capabilitySessionId,
+      });
+    } catch (error) {
+      staleErrorCode = observedErrorCode(error);
+    }
+    const staleTraceAfter = await api.listAgentTurnTraces(
+      disposableAgentId,
+      { page: 1, pageSize: 200 },
     );
-    const staleComposer = capabilityDevelopmentComposerSnapshot();
-    const stale = await runCapabilityAdmissionRejection({
-      agentId: disposableAgentId,
-      providerId: runtimeFixture.providerId,
-      modelId: runtimeFixture.modelId,
-      capabilityId: manifest.capabilityId,
-      expectedReasonCode: 'binding_agent_revision_stale',
-      capabilitySessionId,
-      sampleId,
-    });
-
-    knowledgeBinding = await useAgentCapabilityStore.getState().upsertBinding({
-      bindingId: knowledgeBinding.bindingId,
-      agentId: disposableAgentId,
-      capabilityId: manifest.capabilityId,
-      capabilityVersion: manifest.version,
-      enabled: true,
-      approvalPolicy: knowledgeBinding.approvalPolicy,
-      expectedAgentVersion: staleAgent.version,
-      expectedBindingRevision: knowledgeBinding.revision,
-      idempotencyKey: crypto.randomUUID(),
-      clientCapabilitySessionId: capabilitySessionId,
-    });
+    const staleBinding = (
+      await api.listAgentCapabilityBindings(disposableAgentId)
+    ).find((binding) => (
+      binding.bindingId === knowledgeBindingId
+      && !binding.tombstonedAt
+    ));
+    if (!staleBinding) {
+      throw new Error('agent.acceptance.capabilityStaleReadbackMissing');
+    }
+    const stale = {
+      errorCode: staleErrorCode,
+      submittedRevision: createdRevision.toString(),
+      authoritativeRevision: staleBinding.revision.toString(),
+      authoritativePolicy: staleBinding.approvalPolicy,
+      turnTraceDelta:
+        Number(staleTraceAfter.total ?? staleTraceAfter.entries.length)
+        - Number(staleTraceBefore.total ?? staleTraceBefore.entries.length),
+    };
+    knowledgeBinding = staleBinding;
 
     const clientFixture = await foundationToolFixture(
       disposableAgentId,
       'desktop_app',
     );
     const clientBinding = await updateFoundationToolPolicy(
-      staleAgent,
+      disposable,
       clientFixture,
       clientFixture.binding,
       CapabilityApprovalPolicy.AUTO,
@@ -21452,10 +21460,12 @@ async function runCapabilityBindingDevelopmentJourney(
           && readyComposer.compatibility === 'compatible'
           && readyComposer.authority === 'station-capability-authority',
         staleRejectedBeforeExecution:
-          staleComposer.reasonCode === 'binding_agent_revision_stale'
-          && Object.values(
-            evidenceRecord(stale.assertions, 'staleAssertions'),
-          ).every(Boolean),
+          stale.errorCode === 'VERSION_CONFLICT'
+          && stale.submittedRevision === createdRevision.toString()
+          && stale.authoritativeRevision
+            === updatedBinding.revision.toString()
+          && stale.authoritativePolicy === CapabilityApprovalPolicy.MANUAL
+          && stale.turnTraceDelta === 0,
         disconnectedRejectedBeforeExecution:
           disconnectedComposer.reasonCode === 'client_session_required'
           && Object.values(
@@ -21477,7 +21487,6 @@ async function runCapabilityBindingDevelopmentJourney(
         unboundInventory,
         boundInventory,
         readyComposer,
-        staleComposer,
         disconnectedComposer,
         retiredComposer,
         binding: {
