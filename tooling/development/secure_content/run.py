@@ -188,11 +188,23 @@ class RuntimeManifestBinding:
         client = self.client(client_id)
         source = self.payload.get("source")
         source_commit = source.get("commit") if isinstance(source, Mapping) else None
+        try:
+            _, station = require_runtime_client_service(
+                dict(self.payload),
+                client_id,
+                "station",
+            )
+        except ProvisioningError as error:
+            raise RunnerError(
+                f"runtime manifest client {client_id!r} station binding "
+                f"is invalid: {error}"
+            ) from error
         return validated_harness_identity(
             client_id,
             client,
             client.get("harness_identity"),
             source_commit=source_commit,
+            station=station,
         )
 
 
@@ -203,6 +215,7 @@ def validated_harness_identity(
     *,
     actor_ptids_by_role: Optional[Mapping[str, str]] = None,
     source_commit: object = None,
+    station: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, str]:
     if not isinstance(identity, Mapping):
         raise RunnerError(
@@ -311,7 +324,144 @@ def validated_harness_identity(
             f"runtime manifest client {client_id!r} non-Native harness "
             "identity must not contain nativeRuntimeIdentitySha256"
         )
+
+    if not isinstance(station, Mapping):
+        raise RunnerError(
+            f"runtime manifest client {client_id!r} cannot bind the "
+            "declared Station"
+        )
+    station_runtime_identity = station.get("runtimeIdentity")
+    station_endpoint = station.get("endpoint")
+    if (
+        not isinstance(station_runtime_identity, str)
+        or not station_runtime_identity
+        or station_runtime_identity != station_runtime_identity.strip()
+        or not isinstance(station_endpoint, str)
+        or not station_endpoint
+        or station_endpoint != station_endpoint.strip()
+    ):
+        raise RunnerError(
+            f"runtime manifest client {client_id!r} declared Station "
+            "identity is invalid"
+        )
+    expected_station_identity = {
+        "stationRuntimeIdentitySha256": hashlib.sha256(
+            station_runtime_identity.encode("utf-8")
+        ).hexdigest(),
+        "stationEndpointSha256": hashlib.sha256(
+            station_endpoint.rstrip("/").encode("utf-8")
+        ).hexdigest(),
+    }
+    for field_name, expected_digest in expected_station_identity.items():
+        observed_digest = identity.get(field_name)
+        if (
+            not isinstance(observed_digest, str)
+            or SHA256.fullmatch(observed_digest) is None
+            or not hmac.compare_digest(observed_digest, expected_digest)
+        ):
+            raise RunnerError(
+                f"runtime manifest client {client_id!r} live "
+                f"{field_name} does not match the declared Station"
+            )
+        result[field_name] = observed_digest
     return result
+
+
+def validate_actor_manifest_reference(
+    actor_ref: object,
+    *,
+    source_manifest_path: Path,
+    actor_manifest_path: Path,
+    workspace_id: str,
+    gate_id: str,
+    run_id: str,
+    sha256: str,
+) -> None:
+    if not isinstance(actor_ref, Mapping):
+        raise RunnerError("runtime manifest actorManifest must be an ArtifactRef")
+    expected_fields = {
+        "artifactKind": "acceptance-artifact-ref",
+        "workspaceId": workspace_id,
+        "gateId": gate_id,
+        "runId": run_id,
+        "mediaType": "application/json",
+    }
+    for field_name, expected_value in expected_fields.items():
+        if actor_ref.get(field_name) != expected_value:
+            raise RunnerError(
+                f"runtime manifest actorManifest {field_name} is invalid"
+            )
+    reference_sha256 = actor_ref.get("sha256")
+    if (
+        not isinstance(reference_sha256, str)
+        or SHA256.fullmatch(reference_sha256) is None
+        or not hmac.compare_digest(reference_sha256, sha256)
+    ):
+        raise RunnerError("runtime manifest actorManifest sha256 is invalid")
+    reference_path = actor_ref.get("path")
+    if (
+        not isinstance(reference_path, str)
+        or not reference_path
+        or "\x00" in reference_path
+        or "\\" in reference_path
+        or re.match(r"^[A-Za-z]:", reference_path) is not None
+        or any(ord(character) < 32 or ord(character) == 127 for character in reference_path)
+        or any(part in {"", ".", ".."} for part in reference_path.split("/"))
+    ):
+        raise RunnerError(
+            "runtime manifest actorManifest path is not canonical relative POSIX"
+        )
+    relative_path = Path(reference_path)
+    if relative_path.is_absolute() or relative_path.as_posix() != reference_path:
+        raise RunnerError(
+            "runtime manifest actorManifest path is not canonical relative POSIX"
+        )
+    source_run_dir = source_manifest_path.parent
+    referenced_path = source_run_dir.joinpath(relative_path)
+    try:
+        resolved_run_dir = source_run_dir.resolve(strict=True)
+        expected_path = referenced_path.resolve(strict=True)
+        resolved_actor_path = actor_manifest_path.resolve(strict=True)
+    except OSError as error:
+        raise RunnerError(
+            "runtime manifest actorManifest path cannot be resolved"
+        ) from error
+    if (
+        expected_path == resolved_run_dir
+        or resolved_run_dir not in expected_path.parents
+        or resolved_actor_path == resolved_run_dir
+        or resolved_run_dir not in resolved_actor_path.parents
+    ):
+        raise RunnerError(
+            "runtime manifest actorManifest path resolves outside the source "
+            "manifest run directory"
+        )
+    try:
+        actor_relative_path = actor_manifest_path.relative_to(source_run_dir)
+    except ValueError as error:
+        raise RunnerError(
+            "runtime manifest actorManifest path is outside the source "
+            "manifest run directory"
+        ) from error
+    for candidate_relative_path in (relative_path, actor_relative_path):
+        candidate_path = source_run_dir
+        for part in candidate_relative_path.parts:
+            candidate_path = candidate_path / part
+            try:
+                candidate_stat = candidate_path.lstat()
+            except OSError as error:
+                raise RunnerError(
+                    "runtime manifest actorManifest path cannot be resolved"
+                ) from error
+            if stat_module.S_ISLNK(candidate_stat.st_mode):
+                raise RunnerError(
+                    "runtime manifest actorManifest path must not contain "
+                    "symbolic links"
+                )
+    if expected_path != resolved_actor_path:
+        raise RunnerError(
+            "runtime manifest actorManifest path does not match the actor artifact"
+        )
 
 
 def canonical_actor_ptids(actor_manifest: Mapping[str, Any]) -> dict[str, str]:
@@ -1026,6 +1176,9 @@ def _runtime_manifest_binding(
         or source_manifest_payload.get("runId") != attachment["sourceManifestRunId"]
     ):
         raise RunnerError("runtime manifest attachment source lineage is invalid")
+    manifest_run_id = payload.get("runId")
+    if not isinstance(manifest_run_id, str) or not manifest_run_id:
+        raise RunnerError("runtime manifest run id is required")
     reconstructed_source = json.loads(json.dumps(payload))
     reconstructed_source.pop("developmentAttachment", None)
     for client in reconstructed_source.get("clients", []):
@@ -1061,12 +1214,19 @@ def _runtime_manifest_binding(
         raise
     except (OSError, ProvisioningError) as error:
         raise RunnerError(f"runtime manifest actor provenance is invalid: {error}") from error
+    actor_manifest_sha256 = hashlib.sha256(actor_manifest_bytes).hexdigest()
+    validate_actor_manifest_reference(
+        actor_ref,
+        source_manifest_path=source_manifest_path,
+        actor_manifest_path=actor_manifest_path,
+        workspace_id=identity["workspaceId"],
+        gate_id=scenario.journey_id,
+        run_id=manifest_run_id,
+        sha256=actor_manifest_sha256,
+    )
     if (
-        hashlib.sha256(actor_manifest_bytes).hexdigest()
-        != attachment["actorManifestSha256"]
-        or actor_ref.get("sha256") != attachment["actorManifestSha256"]
-        or actor_ref.get("runId") != payload.get("runId")
-        or actor_manifest.get("runId") != payload.get("runId")
+        actor_manifest_sha256 != attachment["actorManifestSha256"]
+        or actor_manifest.get("runId") != manifest_run_id
         or actor_manifest.get("environmentId") != payload.get("environmentId")
     ):
         raise RunnerError("runtime manifest actor provenance is invalid")
@@ -1093,9 +1253,6 @@ def _runtime_manifest_binding(
         )
     if source.get("workspaceDigest") != "clean":
         raise RunnerError("runtime manifest source workspace is not clean")
-    manifest_run_id = payload.get("runId")
-    if not isinstance(manifest_run_id, str) or not manifest_run_id:
-        raise RunnerError("runtime manifest run id is required")
     environment_id = payload.get("environmentId")
     if not isinstance(environment_id, str) or not environment_id:
         raise RunnerError("runtime manifest environment id is required")
@@ -1355,6 +1512,7 @@ def _runtime_manifest_binding(
             raw_client.get("harness_identity"),
             actor_ptids_by_role=actor_ptids_by_role,
             source_commit=identity["head"],
+            station=station,
         )
         clients_by_id[client_id] = raw_client
 
@@ -1784,6 +1942,24 @@ def _recover_prepared_result(
     result = journal.get("result")
     if not isinstance(result, Mapping):
         raise RunnerError("prepared result journal has no result")
+    result_checks = result.get("checks")
+    if (
+        not isinstance(result_checks, list)
+        or any(not isinstance(check, Mapping) for check in result_checks)
+    ):
+        raise RunnerError("prepared result journal checks are invalid")
+    expected_runtime_binding_digest = _runtime_binding_digest(
+        declaration_digest=declaration["declarationDigest"],
+        source_commit=identity["head"],
+        runtime=runtime,
+        profile=profile,
+        profiles=profiles,
+        clients=clients,
+        checks=result_checks,
+        runtime_manifest_digest=(
+            runtime_manifest.sha256 if runtime_manifest is not None else None
+        ),
+    )
     expected_result = {
         "schemaVersion": SCHEMA_VERSION,
         "kind": RESULT_KIND,
@@ -1791,12 +1967,15 @@ def _recover_prepared_result(
         "journeyId": scenario.journey_id,
         "scenarioId": scenario.scenario_id,
         "runtime": runtime,
+        "verificationClass": VERIFICATION_CLASS,
         "result": "PASS",
         "workspaceId": identity["workspaceId"],
         "branch": identity["branch"],
         "sourceCommit": identity["head"],
         "sessionId": declaration["sessionId"],
         "declarationId": declaration["declarationId"],
+        "declarationDigest": declaration["declarationDigest"],
+        "runtimeBindingDigest": expected_runtime_binding_digest,
         "commandDigest": command_digest,
         "profile": profile,
         "profiles": list(profiles),
@@ -1838,6 +2017,7 @@ def _recover_prepared_result(
     if not isinstance(consumptions, list) or not consumptions:
         raise RunnerError("prepared result journal has no consumptions")
 
+    receipts_to_publish: list[tuple[Path, Mapping[str, Any]]] = []
     for consumption in consumptions:
         if not isinstance(consumption, Mapping):
             raise RunnerError("prepared result consumption is invalid")
@@ -1910,8 +2090,12 @@ def _recover_prepared_result(
                     "prepared result consumption receipt conflicts with journal"
                 )
         else:
-            _write_json_immutable(receipt_path, receipt)
+            receipts_to_publish.append((receipt_path, receipt))
 
+    if runtime_manifest is not None:
+        runtime_manifest.verify_unchanged()
+    for receipt_path, receipt in receipts_to_publish:
+        _write_json_immutable(receipt_path, receipt)
     _write_bytes_atomic(output_path, result_bytes)
     try:
         if not hmac.compare_digest(output_path.read_bytes(), result_bytes):

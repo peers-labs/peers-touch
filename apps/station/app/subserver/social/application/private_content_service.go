@@ -30,6 +30,13 @@ const (
 	privateContentActiveState   = "ACTIVE"
 )
 
+// ErrPrivateContentInactiveEndpoint is returned only after Actor Identity
+// successfully verifies a manifest that does not contain the requested
+// endpoint. Lookup and verification failures must return their original error.
+var ErrPrivateContentInactiveEndpoint = errors.New(
+	"private-content endpoint is inactive",
+)
+
 // PrivateContentStore is the current Social W6 durable prepare/submit
 // substrate. The alias keeps production composition on the existing store
 // contract rather than introducing a second persistence authority.
@@ -727,11 +734,18 @@ func (s *PrivateContentService) GetPrivateMoment(
 		)
 	}
 	if err := s.recipients.ValidateActiveEndpoint(ctx, viewer); err != nil {
-		return nil, socialdomain.NewPrivateContentError(
-			socialdomain.PrivateContentNotFound,
+		if errors.Is(err, ErrPrivateContentInactiveEndpoint) {
+			return nil, socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentNotFound,
+				operation,
+				"viewer",
+				"does not identify an active authorized endpoint",
+			)
+		}
+		return nil, socialdomain.WrapPrivateContentError(
+			socialdomain.PrivateContentDependency,
 			operation,
-			"viewer",
-			"does not identify an active authorized endpoint",
+			err,
 		)
 	}
 	read, err := s.store.GetPrivatePost(
@@ -849,6 +863,24 @@ func (s *PrivateContentService) GetPrivateMoment(
 			operation,
 			"commit_proof",
 			"does not match its persisted canonical commitment",
+		)
+	}
+	if read.Post.PostID != postID ||
+		read.Post.ContentID != postID ||
+		read.CommitProof.ContentID != read.Post.ContentID ||
+		read.CommitProof.Generation != read.Post.Generation ||
+		read.CommitProof.DomainCommitID != postID ||
+		read.CommitProof.ResourceKind !=
+			string(socialdomain.PrivateContentResourcePost) ||
+		proof.GetDomainCommitId() != postID ||
+		proof.GetDomainCommitId() != read.CommitProof.DomainCommitID ||
+		proof.GetStationSigningKeyId() !=
+			read.CommitProof.StationSigningKeyID {
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentIntegrityFailed,
+			operation,
+			"commit_proof.identity",
+			"does not match the requested persisted Post",
 		)
 	}
 	proofSigningBytes, err :=

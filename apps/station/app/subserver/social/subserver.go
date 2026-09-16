@@ -28,9 +28,11 @@ type subServer struct {
 	status server.Status
 
 	// Wrappers
-	commonWrapper      server.Wrapper
-	jwtWrapper         server.Wrapper
-	optionalJWTWrapper server.Wrapper
+	commonWrapper            server.Wrapper
+	jwtWrapper               server.Wrapper
+	optionalJWTWrapper       server.Wrapper
+	privateContentJWTWrapper server.Wrapper
+	privateContentOptionalJWTWrapper server.Wrapper
 
 	// Application services
 	momentSvc         *application.MomentService
@@ -65,6 +67,20 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
 	s.optionalJWTWrapper = server.HTTPWrapperAdapter(httpadapter.OptionalJWT(provider))
+	s.privateContentJWTWrapper = server.HTTPWrapperAdapter(
+		httpadapter.RequireStructuredJWT(
+			provider,
+			int32(model.ErrorCode_ERROR_CODE_UNAUTHORIZED),
+			true,
+		),
+	)
+	s.privateContentOptionalJWTWrapper = server.HTTPWrapperAdapter(
+		httpadapter.OptionalStructuredJWT(
+			provider,
+			int32(model.ErrorCode_ERROR_CODE_UNAUTHORIZED),
+			true,
+		),
+	)
 
 	rds, err := store.GetRDS(ctx)
 	if err != nil {

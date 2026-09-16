@@ -692,18 +692,25 @@ impl StationObjectTransferTransport {
     }
 
     fn map_failure(error: NativeTransportError) -> ObjectTransferFailure {
+        let trusted_not_granted = error.http_status == Some(404)
+            && error.stable_code == error_model::ErrorCode::PostNotFound as i32;
+        let untrusted_auth_or_not_found =
+            matches!(error.http_status, Some(401 | 403 | 404)) && !trusted_not_granted;
         let code = match error.http_status {
-            Some(401 | 403 | 404) => ObjectTransferErrorCode::NotGranted,
+            _ if trusted_not_granted => ObjectTransferErrorCode::NotGranted,
             Some(409) => ObjectTransferErrorCode::PartConflict,
             Some(412) => ObjectTransferErrorCode::DescriptorMismatch,
             Some(416) => ObjectTransferErrorCode::RangeInvalid,
             Some(429) => ObjectTransferErrorCode::QuotaExceeded,
             _ => ObjectTransferErrorCode::RetryLater,
         };
-        if matches!(
-            error.disposition,
-            NativeErrorDisposition::Retryable | NativeErrorDisposition::UnknownCommit
-        ) {
+        if untrusted_auth_or_not_found
+            || (!trusted_not_granted
+                && matches!(
+                    error.disposition,
+                    NativeErrorDisposition::Retryable | NativeErrorDisposition::UnknownCommit
+                ))
+        {
             ObjectTransferFailure::retryable(
                 code,
                 error
@@ -1034,6 +1041,41 @@ mod tests {
             malformed_read_error.disposition,
             NativeErrorDisposition::Terminal
         );
+    }
+
+    #[test]
+    fn secure_content_object_not_granted_requires_trusted_status_and_code() {
+        for http_status in [401, 403, 404] {
+            let failure = StationObjectTransferTransport::map_failure(NativeTransportError {
+                http_status: Some(http_status),
+                stable_code: error_model::ErrorCode::Undefined as i32,
+                retry_after_seconds: None,
+                disposition: NativeErrorDisposition::Terminal,
+                message: "untrusted proxy status".to_string(),
+            });
+            assert_eq!(failure.code, ObjectTransferErrorCode::RetryLater);
+            assert!(failure.retryable);
+        }
+
+        let trusted = StationObjectTransferTransport::map_failure(NativeTransportError {
+            http_status: Some(404),
+            stable_code: error_model::ErrorCode::PostNotFound as i32,
+            retry_after_seconds: None,
+            disposition: NativeErrorDisposition::Terminal,
+            message: "ERROR_CODE_POST_NOT_FOUND".to_string(),
+        });
+        assert_eq!(trusted.code, ObjectTransferErrorCode::NotGranted);
+        assert!(!trusted.retryable);
+
+        let mismatched = StationObjectTransferTransport::map_failure(NativeTransportError {
+            http_status: Some(500),
+            stable_code: error_model::ErrorCode::PostNotFound as i32,
+            retry_after_seconds: None,
+            disposition: NativeErrorDisposition::UnknownCommit,
+            message: "mismatched status and code".to_string(),
+        });
+        assert_eq!(mismatched.code, ObjectTransferErrorCode::RetryLater);
+        assert!(mismatched.retryable);
     }
 
     #[test]

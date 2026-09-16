@@ -12,6 +12,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tauri::{State, Window};
 
+#[cfg(feature = "acceptance-webdriver")]
+use crate::application::station_binding::{self, StationBindingPhase, StationBindingState};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
 use crate::model::federation::FederationSelfView;
@@ -29,6 +31,51 @@ use self::private_moment::{
 static ACCEPTANCE_RUNTIME_BOOT_ID: OnceLock<String> = OnceLock::new();
 #[cfg(feature = "acceptance-webdriver")]
 static ACCEPTANCE_EXECUTABLE_SHA256: OnceLock<Result<String, String>> = OnceLock::new();
+
+#[cfg(feature = "acceptance-webdriver")]
+fn acceptance_station_binding_digests(
+    station_peer_id: &str,
+    station_url: &str,
+    binding: &StationBindingState,
+    confirmed_binding: &StationBindingState,
+    registry_active_url: Option<&str>,
+) -> Result<(String, String), String> {
+    if binding != confirmed_binding {
+        return Err("secure content Station binding changed during identity capture".to_string());
+    }
+    if binding.phase != StationBindingPhase::Bound {
+        return Err("secure content Station binding is not complete".to_string());
+    }
+    if station_peer_id.is_empty() || station_peer_id != station_peer_id.trim() {
+        return Err("secure content active Station peer ID is invalid".to_string());
+    }
+    if station_url.is_empty() || station_url != station_url.trim() {
+        return Err("secure content active Station URL is invalid".to_string());
+    }
+    let normalized_url = station_url.trim_end_matches('/');
+    if normalized_url.is_empty() {
+        return Err("secure content active Station URL is invalid".to_string());
+    }
+    let normalized_bound_url = binding
+        .bound_url
+        .as_deref()
+        .map(str::trim)
+        .map(|url| url.trim_end_matches('/'))
+        .filter(|url| !url.is_empty())
+        .ok_or_else(|| "secure content bound Station URL is unavailable".to_string())?;
+    let normalized_registry_url = registry_active_url
+        .map(str::trim)
+        .map(|url| url.trim_end_matches('/'))
+        .filter(|url| !url.is_empty())
+        .ok_or_else(|| "secure content registry Station URL is unavailable".to_string())?;
+    if normalized_bound_url != normalized_url || normalized_registry_url != normalized_url {
+        return Err("secure content Station binding identity is inconsistent".to_string());
+    }
+    Ok((
+        hex::encode(Sha256::digest(station_peer_id.as_bytes())),
+        hex::encode(Sha256::digest(normalized_url.as_bytes())),
+    ))
+}
 
 #[derive(Debug, Deserialize)]
 pub struct PrivateMomentsBootstrapInput {
@@ -362,11 +409,37 @@ pub fn social_private_moments_acceptance_runtime_identity() -> AppResult<Value> 
         Ok(digest) => digest,
         Err(error) => return native_failure(error.clone(), "INTEGRITY_FAILURE"),
     };
+    let binding = station_binding::service().state();
+    let station_peer_id = match station_client::active_station_peer_id() {
+        Some(value) => value,
+        None => {
+            return native_failure(
+                "secure content active Station peer ID is unavailable".to_string(),
+                "INTEGRITY_FAILURE",
+            )
+        }
+    };
+    let station_url = station_client::station_base_url();
+    let registry_active_url = station_client::station_registry().active_url();
+    let confirmed_binding = station_binding::service().state();
+    let (station_runtime_identity_sha256, station_endpoint_sha256) =
+        match acceptance_station_binding_digests(
+            &station_peer_id,
+            &station_url,
+            &binding,
+            &confirmed_binding,
+            registry_active_url.as_deref(),
+        ) {
+            Ok(value) => value,
+            Err(error) => return native_failure(error, "INTEGRITY_FAILURE"),
+        };
     AppResult::success(json!({
         "processId": std::process::id(),
         "bootId": boot_id,
         "sourceCommit": env!("PT_BUILD_SOURCE_COMMIT"),
         "executableSha256": executable_sha256,
+        "stationRuntimeIdentitySha256": station_runtime_identity_sha256,
+        "stationEndpointSha256": station_endpoint_sha256,
     }))
 }
 
@@ -524,4 +597,124 @@ fn native_failure(message: String, state: &str) -> AppResult<Value> {
             "native_error_code": code,
         })),
     )
+}
+
+#[cfg(all(test, feature = "acceptance-webdriver"))]
+mod tests {
+    use super::acceptance_station_binding_digests;
+    use crate::application::station_binding::{StationBindingPhase, StationBindingState};
+
+    fn binding(phase: StationBindingPhase, generation: u64) -> StationBindingState {
+        StationBindingState {
+            phase,
+            selected_url: Some("https://station.invalid".to_string()),
+            bound_url: Some("https://station.invalid".to_string()),
+            target_url: None,
+            generation,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn acceptance_station_binding_uses_peer_id_and_canonical_endpoint() {
+        let binding = binding(StationBindingPhase::Bound, 1);
+        let without_slash = acceptance_station_binding_digests(
+            "station-peer-four",
+            "https://station.invalid",
+            &binding,
+            &binding,
+            Some("https://station.invalid"),
+        )
+        .expect("station binding should hash");
+        let with_slash = acceptance_station_binding_digests(
+            "station-peer-four",
+            "https://station.invalid/",
+            &binding,
+            &binding,
+            Some("https://station.invalid/"),
+        )
+        .expect("station binding should normalize");
+
+        assert_eq!(without_slash, with_slash);
+        assert_ne!(without_slash.0, without_slash.1);
+    }
+
+    #[test]
+    fn acceptance_station_binding_rejects_missing_identity() {
+        let binding = binding(StationBindingPhase::Bound, 1);
+        assert!(acceptance_station_binding_digests(
+            "",
+            "https://station.invalid",
+            &binding,
+            &binding,
+            Some("https://station.invalid"),
+        )
+        .is_err());
+        assert!(acceptance_station_binding_digests(
+            "station-peer-four",
+            "",
+            &binding,
+            &binding,
+            Some("https://station.invalid"),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn acceptance_station_binding_rejects_every_non_bound_phase() {
+        for phase in [
+            StationBindingPhase::Unbound,
+            StationBindingPhase::Connecting,
+            StationBindingPhase::AccessGate,
+            StationBindingPhase::Switching,
+            StationBindingPhase::Failed,
+        ] {
+            let binding = binding(phase, 1);
+            assert!(acceptance_station_binding_digests(
+                "station-peer-four",
+                "https://station.invalid",
+                &binding,
+                &binding,
+                Some("https://station.invalid"),
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn acceptance_station_binding_rejects_divergent_urls() {
+        let mut divergent_bound = binding(StationBindingPhase::Bound, 1);
+        divergent_bound.bound_url = Some("https://other-station.invalid".to_string());
+        assert!(acceptance_station_binding_digests(
+            "station-peer-four",
+            "https://station.invalid",
+            &divergent_bound,
+            &divergent_bound,
+            Some("https://station.invalid"),
+        )
+        .is_err());
+        let binding = binding(StationBindingPhase::Bound, 1);
+        assert!(acceptance_station_binding_digests(
+            "station-peer-four",
+            "https://station.invalid",
+            &binding,
+            &binding,
+            Some("https://other-station.invalid"),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn acceptance_station_binding_rejects_generation_change_during_capture() {
+        let before = binding(StationBindingPhase::Bound, 1);
+        let after = binding(StationBindingPhase::Bound, 2);
+        assert!(acceptance_station_binding_digests(
+            "station-peer-four",
+            "https://station.invalid",
+            &before,
+            &after,
+            Some("https://station.invalid"),
+        )
+        .is_err());
+    }
 }

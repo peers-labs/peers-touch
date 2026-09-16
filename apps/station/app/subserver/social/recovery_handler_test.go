@@ -17,7 +17,7 @@ func TestRecoverablePrivateContentRoute(t *testing.T) {
 	) server.EndpointHandler {
 		return next
 	}
-	fixture.subserver.jwtWrapper = func(
+	fixture.subserver.privateContentJWTWrapper = func(
 		next server.EndpointHandler,
 	) server.EndpointHandler {
 		return next

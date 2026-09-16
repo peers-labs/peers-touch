@@ -31,6 +31,40 @@ func RequireStructuredJWT(
 	requireSession bool,
 	sessionValidators ...coreauth.SessionValidator,
 ) func(context.Context, http.Handler) http.Handler {
+	return structuredJWTMiddleware(
+		provider,
+		unauthorizedCode,
+		true,
+		requireSession,
+		sessionValidators...,
+	)
+}
+
+// OptionalStructuredJWT preserves anonymous access only when Authorization is
+// absent. Supplied invalid credentials are propagated to a route-local
+// projector without committing a response representation in middleware.
+func OptionalStructuredJWT(
+	provider coreauth.Provider,
+	unauthorizedCode int32,
+	requireSession bool,
+	sessionValidators ...coreauth.SessionValidator,
+) func(context.Context, http.Handler) http.Handler {
+	return structuredJWTMiddleware(
+		provider,
+		unauthorizedCode,
+		false,
+		requireSession,
+		sessionValidators...,
+	)
+}
+
+func structuredJWTMiddleware(
+	provider coreauth.Provider,
+	unauthorizedCode int32,
+	required bool,
+	requireSession bool,
+	sessionValidators ...coreauth.SessionValidator,
+) func(context.Context, http.Handler) http.Handler {
 	return func(ctx context.Context, next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 			result := coreauth.ValidateBearerCredential(
@@ -39,6 +73,11 @@ func RequireStructuredJWT(
 				provider,
 				sessionValidators...,
 			)
+			if !required &&
+				result.Status == coreauth.BearerCredentialAbsent {
+				next.ServeHTTP(w, request)
+				return
+			}
 			if result.Status != coreauth.BearerCredentialAuthenticated ||
 				result.Subject == nil ||
 				(requireSession &&

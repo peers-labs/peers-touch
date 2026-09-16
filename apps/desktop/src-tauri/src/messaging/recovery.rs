@@ -14,7 +14,8 @@ use crate::model::recovery::{
 };
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
-use messaging_core::identity::{generate_fresh_device_identity, FreshDeviceEnrollment};
+use messaging_core::identity::enrollment::generate_fresh_device_identity_from_seed;
+use messaging_core::identity::FreshDeviceEnrollment;
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -22,11 +23,11 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 pub const MESSAGING_RECOVERY_FORMAT_VERSION: u32 = 2;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryMessageProjection {
     pub conversation_id: String,
     pub event_id: String,
@@ -56,21 +57,49 @@ pub struct RecoveryConversationProjection {
     pub updated_at_unix_ms: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl Zeroize for RecoveryConversationProjection {
+    fn zeroize(&mut self) {
+        self.conversation_id.zeroize();
+        self.authority_station_id.zeroize();
+        self.federation_id.zeroize();
+        self.kind.zeroize();
+        self.name.zeroize();
+        self.owner_ptid.zeroize();
+        self.member_ptids.zeroize();
+        for (mut ptid, mut role) in std::mem::take(&mut self.member_roles) {
+            ptid.zeroize();
+            role.zeroize();
+        }
+        self.membership_epoch.zeroize();
+        self.mls_epoch.zeroize();
+        self.active.zeroize();
+        self.updated_at_unix_ms.zeroize();
+    }
+}
+
+impl Drop for RecoveryConversationProjection {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for RecoveryConversationProjection {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryAttachmentMetadata {
     pub message_id: String,
     pub attachment_id: String,
     pub metadata: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryTrustRecord {
     pub peer_ptid: String,
     pub fingerprint: String,
     pub verified_at_unix_ms: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct MessagingRecoveryArchive {
     pub ptid: String,
     pub actor_identity_seed: [u8; 32],
@@ -104,7 +133,7 @@ struct RecoveryRevisionEnvelope {
     manifest: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 struct ActorIdentitySection {
     seed: [u8; 32],
     profile_version: u64,
@@ -112,20 +141,43 @@ struct ActorIdentitySection {
     recovery_epoch: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 struct MessageHistorySection {
     conversations: Vec<RecoveryConversationProjection>,
     messages: Vec<RecoveryMessageProjection>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 struct AttachmentSection {
     attachments: Vec<RecoveryAttachmentMetadata>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 struct TrustSection {
     trust: Vec<RecoveryTrustRecord>,
+}
+
+#[derive(Serialize)]
+struct ActorIdentitySectionRef<'a> {
+    seed: &'a [u8; 32],
+    profile_version: u64,
+    recovery_epoch: u64,
+}
+
+#[derive(Serialize)]
+struct MessageHistorySectionRef<'a> {
+    conversations: &'a [RecoveryConversationProjection],
+    messages: &'a [RecoveryMessageProjection],
+}
+
+#[derive(Serialize)]
+struct AttachmentSectionRef<'a> {
+    attachments: &'a [RecoveryAttachmentMetadata],
+}
+
+#[derive(Serialize)]
+struct TrustSectionRef<'a> {
+    trust: &'a [RecoveryTrustRecord],
 }
 
 pub fn encode_recovery_revision(
@@ -149,16 +201,17 @@ pub fn encode_recovery_revision(
         parallelism: ARGON2_PARALLELISM,
         output_length: BACKUP_KEY_BYTES as u32,
     };
-    let mut key =
-        derive_backup_key(recovery_phrase.as_bytes(), &kdf).map_err(|error| error.to_string())?;
+    let key = Zeroizing::new(
+        derive_backup_key(recovery_phrase.as_bytes(), &kdf).map_err(|error| error.to_string())?,
+    );
     let mut sections = Vec::new();
     sections.push(encrypt_section(
         &key,
         archive,
         revision_id,
         OpaqueRecoveryArchiveSectionKind::ActorIdentity,
-        &ActorIdentitySection {
-            seed: archive.actor_identity_seed,
+        &ActorIdentitySectionRef {
+            seed: &archive.actor_identity_seed,
             profile_version: archive.actor_profile_version,
             recovery_epoch,
         },
@@ -169,9 +222,9 @@ pub fn encode_recovery_revision(
         archive,
         revision_id,
         OpaqueRecoveryArchiveSectionKind::MessageHistory,
-        &MessageHistorySection {
-            conversations: archive.conversations.clone(),
-            messages: archive.messages.clone(),
+        &MessageHistorySectionRef {
+            conversations: &archive.conversations,
+            messages: &archive.messages,
         },
         (archive.conversations.len() + archive.messages.len()) as u64,
     )?);
@@ -180,8 +233,8 @@ pub fn encode_recovery_revision(
         archive,
         revision_id,
         OpaqueRecoveryArchiveSectionKind::AttachmentMetadata,
-        &AttachmentSection {
-            attachments: archive.attachments.clone(),
+        &AttachmentSectionRef {
+            attachments: &archive.attachments,
         },
         archive.attachments.len() as u64,
     )?);
@@ -190,13 +243,11 @@ pub fn encode_recovery_revision(
         archive,
         revision_id,
         OpaqueRecoveryArchiveSectionKind::Trust,
-        &TrustSection {
-            trust: archive.trust.clone(),
+        &TrustSectionRef {
+            trust: &archive.trust,
         },
         archive.trust.len() as u64,
     )?);
-    key.zeroize();
-
     let mut manifest = OpaqueRecoveryArchiveManifest {
         format_version: MESSAGING_RECOVERY_FORMAT_VERSION,
         actor: Some(ActorRef {
@@ -265,9 +316,11 @@ pub fn decode_recovery_revision(
     {
         return Err("messaging recovery manifest binding is invalid".to_string());
     }
-    let mut key = derive_backup_key(recovery_phrase.as_bytes(), &envelope.kdf)
-        .map_err(|_| "messaging recovery phrase or KDF invalid".to_string())?;
-    let identity: ActorIdentitySection = decrypt_required_section(
+    let key = Zeroizing::new(
+        derive_backup_key(recovery_phrase.as_bytes(), &envelope.kdf)
+            .map_err(|_| "messaging recovery phrase or KDF invalid".to_string())?,
+    );
+    let mut identity: ActorIdentitySection = decrypt_required_section(
         &key,
         &manifest,
         OpaqueRecoveryArchiveSectionKind::ActorIdentity,
@@ -275,27 +328,26 @@ pub fn decode_recovery_revision(
     if identity.recovery_epoch != envelope.recovery_epoch {
         return Err("messaging recovery epoch binding is invalid".to_string());
     }
-    let history: MessageHistorySection = decrypt_required_section(
+    let mut history: MessageHistorySection = decrypt_required_section(
         &key,
         &manifest,
         OpaqueRecoveryArchiveSectionKind::MessageHistory,
     )?;
-    let attachments: AttachmentSection = decrypt_required_section(
+    let mut attachments: AttachmentSection = decrypt_required_section(
         &key,
         &manifest,
         OpaqueRecoveryArchiveSectionKind::AttachmentMetadata,
     )?;
-    let trust: TrustSection =
+    let mut trust: TrustSection =
         decrypt_required_section(&key, &manifest, OpaqueRecoveryArchiveSectionKind::Trust)?;
-    key.zeroize();
     let archive = MessagingRecoveryArchive {
         ptid: manifest_ptid.to_string(),
-        actor_identity_seed: identity.seed,
+        actor_identity_seed: std::mem::take(&mut identity.seed),
         actor_profile_version: identity.profile_version,
-        conversations: history.conversations,
-        messages: history.messages,
-        attachments: attachments.attachments,
-        trust: trust.trust,
+        conversations: std::mem::take(&mut history.conversations),
+        messages: std::mem::take(&mut history.messages),
+        attachments: std::mem::take(&mut attachments.attachments),
+        trust: std::mem::take(&mut trust.trust),
     };
     validate_archive(&archive)?;
     Ok(DecodedRecoveryRevision {
@@ -342,15 +394,15 @@ pub fn restore_profile_database_atomically(
             .map_err(|error| format!("{error:?}"))?;
         let staging = MessagingStore::from_connection(connection)?;
         staging.populate_recovery_staging(archive)?;
-        let fresh_device = generate_fresh_device_identity(
+        let fresh_device = generate_fresh_device_identity_from_seed(
             &archive.ptid,
-            archive.actor_identity_seed,
+            &archive.actor_identity_seed,
             archive.actor_profile_version,
         )?;
         staging.install_fresh_device_identity(&fresh_device)?;
         let readback = staging.build_recovery_archive(
             &archive.ptid,
-            archive.actor_identity_seed,
+            &archive.actor_identity_seed,
             archive.actor_profile_version,
         )?;
         if &readback != archive {
@@ -462,7 +514,7 @@ fn encrypt_section<T: Serialize>(
     value: &T,
     record_count: u64,
 ) -> Result<OpaqueRecoveryArchiveSection, String> {
-    let plaintext = serde_json::to_vec(value).map_err(|error| error.to_string())?;
+    let plaintext = Zeroizing::new(serde_json::to_vec(value).map_err(|error| error.to_string())?);
     let mut nonce = [0_u8; BACKUP_NONCE_BYTES];
     OsRng.fill_bytes(&mut nonce);
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "recovery AES init failed")?;
@@ -507,23 +559,25 @@ fn decrypt_required_section<T: DeserializeOwned>(
     }
     let (nonce, ciphertext) = section.ciphertext.split_at(BACKUP_NONCE_BYTES);
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "recovery AES init failed")?;
-    let plaintext = cipher
-        .decrypt(
-            Nonce::from_slice(nonce),
-            Payload {
-                msg: ciphertext,
-                aad: &section_aad(
-                    manifest
-                        .actor
-                        .as_ref()
-                        .map(|actor| actor.ptid.as_str())
-                        .unwrap_or_default(),
-                    &manifest.revision_id,
-                    kind,
-                ),
-            },
-        )
-        .map_err(|_| "messaging recovery phrase or section integrity invalid")?;
+    let plaintext = Zeroizing::new(
+        cipher
+            .decrypt(
+                Nonce::from_slice(nonce),
+                Payload {
+                    msg: ciphertext,
+                    aad: &section_aad(
+                        manifest
+                            .actor
+                            .as_ref()
+                            .map(|actor| actor.ptid.as_str())
+                            .unwrap_or_default(),
+                        &manifest.revision_id,
+                        kind,
+                    ),
+                },
+            )
+            .map_err(|_| "messaging recovery phrase or section integrity invalid")?,
+    );
     serde_json::from_slice(&plaintext).map_err(|_| "messaging recovery section invalid".to_string())
 }
 
@@ -580,6 +634,21 @@ mod tests {
     use crate::messaging::private_content::test_attachment_metadata;
 
     const PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+
+    #[test]
+    fn recovery_secret_bearing_types_zeroize_on_drop() {
+        fn require_zeroize_on_drop<T: ZeroizeOnDrop>() {}
+
+        require_zeroize_on_drop::<RecoveryMessageProjection>();
+        require_zeroize_on_drop::<RecoveryConversationProjection>();
+        require_zeroize_on_drop::<RecoveryAttachmentMetadata>();
+        require_zeroize_on_drop::<RecoveryTrustRecord>();
+        require_zeroize_on_drop::<MessagingRecoveryArchive>();
+        require_zeroize_on_drop::<ActorIdentitySection>();
+        require_zeroize_on_drop::<MessageHistorySection>();
+        require_zeroize_on_drop::<AttachmentSection>();
+        require_zeroize_on_drop::<TrustSection>();
+    }
 
     fn archive() -> MessagingRecoveryArchive {
         MessagingRecoveryArchive {
@@ -766,15 +835,15 @@ mod tests {
     #[test]
     fn recovery_generates_fresh_cross_signed_device_identity() {
         let archive = archive();
-        let first = generate_fresh_device_identity(
+        let first = generate_fresh_device_identity_from_seed(
             &archive.ptid,
-            archive.actor_identity_seed,
+            &archive.actor_identity_seed,
             archive.actor_profile_version,
         )
         .unwrap();
-        let second = generate_fresh_device_identity(
+        let second = generate_fresh_device_identity_from_seed(
             &archive.ptid,
-            archive.actor_identity_seed,
+            &archive.actor_identity_seed,
             archive.actor_profile_version,
         )
         .unwrap();

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -298,6 +299,65 @@ func TestPrivateObjectServiceImageUploadAttachAndRead(t *testing.T) {
 		socialdomain.PrivateContentNotFound,
 	) {
 		t.Fatalf("unauthorized object read error = %v", err)
+	}
+}
+
+func TestPrivateObjectDownloadDistinguishesEndpointFailure(t *testing.T) {
+	fixture := newPrivateContentServiceFixture(t)
+	objectService := newPrivateObjectTestService(t, fixture)
+	viewer := &actormodel.ActorDeviceRef{
+		Actor: &actormodel.ActorRef{
+			Ptid: "ptid:bob",
+			Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+		},
+		DeviceId: "bob-device",
+	}
+	tests := []struct {
+		name       string
+		validation error
+		wantCode   socialdomain.PrivateContentErrorCode
+	}{
+		{
+			name:       "proven inactive endpoint stays private",
+			validation: ErrPrivateContentInactiveEndpoint,
+			wantCode:   socialdomain.PrivateContentNotFound,
+		},
+		{
+			name:       "directory outage remains dependency failure",
+			validation: errors.New("endpoint directory unavailable"),
+			wantCode:   socialdomain.PrivateContentDependency,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			objectService.endpoints = privateObjectEndpointDirectoryFunc(
+				func(
+					context.Context,
+					*actormodel.ActorDeviceRef,
+				) error {
+					return testCase.validation
+				},
+			)
+			download, err := objectService.Download(
+				context.Background(),
+				viewer,
+				strings.Repeat("a", 64),
+				bytes.Repeat([]byte{0x01}, sha256.Size),
+				-1,
+				-1,
+			)
+			if download.Body != nil {
+				_ = download.Body.Close()
+				t.Fatal("endpoint validation exposed an object body")
+			}
+			if !socialdomain.IsPrivateContentCode(err, testCase.wantCode) {
+				t.Fatalf(
+					"endpoint validation error = %v, want %s",
+					err,
+					testCase.wantCode,
+				)
+			}
+		})
 	}
 }
 
@@ -1447,6 +1507,18 @@ func (s *privateObjectOpenFailureStore) Open(
 
 type privateObjectCorruptOpenStore struct {
 	PrivateObjectBlobStore
+}
+
+type privateObjectEndpointDirectoryFunc func(
+	context.Context,
+	*actormodel.ActorDeviceRef,
+) error
+
+func (f privateObjectEndpointDirectoryFunc) ValidateActiveEndpoint(
+	ctx context.Context,
+	endpoint *actormodel.ActorDeviceRef,
+) error {
+	return f(ctx, endpoint)
 }
 
 func (s *privateObjectCorruptOpenStore) Open(

@@ -107,19 +107,24 @@ func (s *subServer) Handlers() []server.Handler {
 	jw := s.jwtWrapper
 	ojw := s.optionalJWTWrapper
 	deviceIDWrapper := serverwrapper.DeviceID()
+	privateContentJWTWrapper := s.privateContentJWTWrapper
+	privateContentOptionalJWTWrapper := s.privateContentOptionalJWTWrapper
+	privateContentDeviceWrapper := serverwrapper.RequireStructuredDeviceID(
+		int32(model.ErrorCode_ERROR_CODE_UNAUTHORIZED),
+	)
 
 	return []server.Handler{
 		// Moments / Posts (write)
 		server.NewTypedHandler("social-create-post", routeSocialPosts, server.POST, s.handleCreatePost, cw, jw),
 		server.NewTypedHandler("social-create-moment", routeSocialMoments, server.POST, s.handleCreatePost, cw, jw),
-		server.NewStrictTypedHandler("social-prepare-private-moment", routeSocialPreparePrivateMoment, server.POST, s.handlePreparePrivateMoment, cw, deviceIDWrapper, jw),
-		server.NewStrictTypedHandler("social-submit-private-moment", routeSocialSubmitPrivateMoment, server.POST, s.handleSubmitPrivateMoment, cw, deviceIDWrapper, jw),
-		server.NewStrictTypedHandler("social-private-object-upload-begin", routeSocialObjectUploadBegin, server.POST, s.handleBeginPrivateObjectUpload, cw, deviceIDWrapper, jw),
-		server.NewHTTPHandler("social-private-object-upload-status", routeSocialObjectUploadStatus, server.GET, socialObjectRawHandler(s.handlePrivateObjectUploadStatus), cw, deviceIDWrapper, jw),
-		server.NewHTTPHandler("social-private-object-upload-chunk", routeSocialObjectUploadChunk, server.PUT, socialObjectRawHandler(s.handlePrivateObjectChunk), cw, deviceIDWrapper, jw),
-		server.NewStrictTypedHandler("social-private-object-upload-complete", routeSocialObjectUploadComplete, server.POST, s.handleCompletePrivateObjectUpload, socialObjectPathWrapper("/api/v1/social/moments/objects/uploads/", "/complete"), cw, deviceIDWrapper, jw),
-		server.NewStrictTypedHandler("social-private-object-upload-cancel", routeSocialObjectUploadCancel, server.POST, s.handleCancelPrivateObjectUpload, socialObjectPathWrapper("/api/v1/social/moments/objects/uploads/", "/cancel"), cw, deviceIDWrapper, jw),
-		server.NewHTTPHandler("social-private-object-download", routeSocialObjectDownload, server.GET, socialObjectRawHandler(s.handlePrivateObjectDownload), cw, deviceIDWrapper, jw),
+		server.NewStrictTypedHandler("social-prepare-private-moment", routeSocialPreparePrivateMoment, server.POST, s.handlePreparePrivateMoment, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
+		server.NewStrictTypedHandler("social-submit-private-moment", routeSocialSubmitPrivateMoment, server.POST, s.handleSubmitPrivateMoment, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
+		server.NewStrictTypedHandler("social-private-object-upload-begin", routeSocialObjectUploadBegin, server.POST, s.handleBeginPrivateObjectUpload, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
+		server.NewHTTPHandler("social-private-object-upload-status", routeSocialObjectUploadStatus, server.GET, socialObjectRawHandler(s.handlePrivateObjectUploadStatus), cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
+		server.NewHTTPHandler("social-private-object-upload-chunk", routeSocialObjectUploadChunk, server.PUT, socialObjectRawHandler(s.handlePrivateObjectChunk), cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
+		server.NewStrictTypedHandler("social-private-object-upload-complete", routeSocialObjectUploadComplete, server.POST, s.handleCompletePrivateObjectUpload, socialObjectPathWrapper("/api/v1/social/moments/objects/uploads/", "/complete"), cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
+		server.NewStrictTypedHandler("social-private-object-upload-cancel", routeSocialObjectUploadCancel, server.POST, s.handleCancelPrivateObjectUpload, socialObjectPathWrapper("/api/v1/social/moments/objects/uploads/", "/cancel"), cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
+		server.NewHTTPHandler("social-private-object-download", routeSocialObjectDownload, server.GET, socialObjectRawHandler(s.handlePrivateObjectDownload), cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
 		server.NewTypedHandler("social-update-post", routeSocialPost, server.PUT, s.handleUpdatePost, cw, jw),
 		server.NewTypedHandler("social-delete-post", routeSocialPost, server.DELETE, s.handleDeletePost, cw, jw),
 		server.NewTypedHandler("social-delete-moment", routeSocialMoment, server.DELETE, s.handleDeletePost, cw, jw),
@@ -127,8 +132,8 @@ func (s *subServer) Handlers() []server.Handler {
 
 		// Moments / Posts (read)
 		server.NewTypedHandler("social-get-post", routeSocialPost, server.GET, s.handleGetPost, cw, ojw),
-		server.NewStrictTypedHandler("social-list-recoverable-private-content", routeSocialRecoverablePrivateContent, server.GET, s.handleListRecoverablePrivateContent, socialRecoverableQueryWrapper, cw, jw),
-		server.NewTypedHandler("social-get-moment", routeSocialMoment, server.GET, s.handleGetMomentResource, socialMomentPathWrapper, cw, deviceIDWrapper, ojw),
+		server.NewStrictTypedHandler("social-list-recoverable-private-content", routeSocialRecoverablePrivateContent, server.GET, s.handleListRecoverablePrivateContent, socialRecoverableQueryWrapper, cw, privateContentAuthenticationFailureWrapper, privateContentJWTWrapper),
+		server.NewTypedHandler("social-get-moment", routeSocialMoment, server.GET, s.handleGetMomentResource, socialMomentPathWrapper, cw, privateContentAuthenticationFailureWrapper, deviceIDWrapper, privateContentOptionalJWTWrapper),
 		server.NewTypedHandler("social-get-timeline", routeSocialTimeline, server.GET, s.handleGetTimeline, cw, ojw),
 		server.NewTypedHandler("social-sync-moments-projection", routeSocialMomentsSync, server.POST, s.handleSyncMomentsProjection, cw, jw),
 		server.NewTypedHandler("social-get-user-posts", routeSocialUserPosts, server.GET, s.handleGetUserPosts, cw, ojw),
@@ -142,8 +147,8 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewTypedHandler("social-get-moment-comments", routeSocialMomentComment, server.GET, s.handleGetPostComments, cw, ojw),
 		server.NewTypedHandler("social-create-comment", routeSocialPostComments, server.POST, s.handleCreateComment, cw, jw),
 		server.NewTypedHandler("social-create-moment-comment", routeSocialMomentComment, server.POST, s.handleCreateComment, cw, jw),
-		server.NewStrictTypedHandler("social-prepare-private-comment", routeSocialPreparePrivateComment, server.POST, s.handlePreparePrivateComment, cw, deviceIDWrapper, jw),
-		server.NewStrictTypedHandler("social-submit-private-comment", routeSocialSubmitPrivateComment, server.POST, s.handleSubmitPrivateComment, cw, deviceIDWrapper, jw),
+		server.NewStrictTypedHandler("social-prepare-private-comment", routeSocialPreparePrivateComment, server.POST, s.handlePreparePrivateComment, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
+		server.NewStrictTypedHandler("social-submit-private-comment", routeSocialSubmitPrivateComment, server.POST, s.handleSubmitPrivateComment, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
 		server.NewTypedHandler("social-delete-comment", routeSocialComment, server.DELETE, s.handleDeleteComment, cw, jw),
 
 		// Relationships
@@ -497,19 +502,7 @@ func (s *subServer) handlePrivateObjectDownload(
 		end,
 	)
 	if err != nil {
-		if domain.PrivateContentCodeOf(err) ==
-			domain.PrivateContentNotFound {
-			return server.NotFound("private object not found")
-		}
-		if partial &&
-			domain.PrivateContentCodeOf(err) ==
-				domain.PrivateContentInvalidArgument {
-			return server.NewHandlerError(
-				nethttp.StatusRequestedRangeNotSatisfiable,
-				"private object range is not satisfiable",
-			)
-		}
-		return privateContentHandlerError(err)
+		return privateObjectDownloadHandlerError(err, partial)
 	}
 	descriptorHex := hex.EncodeToString(download.DescriptorSHA256)
 	resp.SetHeader("Accept-Ranges", "bytes")
@@ -551,6 +544,18 @@ func (s *subServer) handlePrivateObjectDownload(
 	defer download.Body.Close()
 	_, err = io.Copy(resp, download.Body)
 	return err
+}
+
+func privateObjectDownloadHandlerError(err error, partial bool) error {
+	if partial &&
+		domain.PrivateContentCodeOf(err) ==
+			domain.PrivateContentInvalidArgument {
+		return server.NewHandlerError(
+			nethttp.StatusRequestedRangeNotSatisfiable,
+			"private object range is not satisfiable",
+		)
+	}
+	return privateContentHandlerError(err)
 }
 
 func (s *subServer) privateObjectEndpoint(
@@ -879,6 +884,35 @@ func writeSocialObjectProto(
 	return err
 }
 
+func privateContentAuthenticationFailureWrapper(
+	next server.EndpointHandler,
+) server.EndpointHandler {
+	return func(
+		ctx context.Context,
+		request server.Request,
+		response server.Response,
+	) error {
+		_, ok := server.RouteFailureFromContext(ctx)
+		if !ok {
+			return next(ctx, request, response)
+		}
+		body, err := privateContentErrorResponseBody(
+			model.ErrorCode_ERROR_CODE_UNAUTHORIZED,
+			"unauthorized",
+		)
+		if err != nil {
+			return err
+		}
+		response.SetHeader(
+			"Content-Type",
+			server.CanonicalProtobufContentType,
+		)
+		response.WriteHeader(nethttp.StatusUnauthorized)
+		_, err = response.Write(body)
+		return err
+	}
+}
+
 func socialObjectRawHandler(
 	next server.EndpointHandler,
 ) server.EndpointHandler {
@@ -1004,12 +1038,7 @@ func privateContentResponseError(
 	message string,
 	cause error,
 ) error {
-	body, err := proto.MarshalOptions{Deterministic: true}.Marshal(
-		&model.ErrorResponse{
-			Code:    code,
-			Message: message,
-		},
-	)
+	body, err := privateContentErrorResponseBody(code, message)
 	if err != nil {
 		return server.InternalErrorWithCause(
 			"encode private-content error response",
@@ -1025,6 +1054,18 @@ func privateContentResponseError(
 	)
 	handlerError.Err = cause
 	return handlerError
+}
+
+func privateContentErrorResponseBody(
+	code model.ErrorCode,
+	message string,
+) ([]byte, error) {
+	return proto.MarshalOptions{Deterministic: true}.Marshal(
+		&model.ErrorResponse{
+			Code:    code,
+			Message: message,
+		},
+	)
 }
 
 // getUserID extracts the authenticated user ID from context.

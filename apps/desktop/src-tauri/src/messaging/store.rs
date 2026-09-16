@@ -49,6 +49,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::{Mutex, MutexGuard};
+use zeroize::Zeroizing;
 
 pub const COMMAND_RECONCILIATION_BATCH_LIMIT: usize = 64;
 
@@ -4554,7 +4555,7 @@ impl MessagingStore {
     pub fn build_recovery_archive(
         &self,
         ptid: &str,
-        actor_identity_seed: [u8; 32],
+        actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
     ) -> Result<MessagingRecoveryArchive, String> {
         if ptid.trim().is_empty() || actor_profile_version == 0 {
@@ -4727,7 +4728,7 @@ impl MessagingStore {
             .map_err(|error| error.to_string())?;
         Ok(MessagingRecoveryArchive {
             ptid: ptid.to_string(),
-            actor_identity_seed,
+            actor_identity_seed: *actor_identity_seed,
             actor_profile_version,
             conversations,
             messages,
@@ -6148,21 +6149,27 @@ impl MessagingStore {
         }
     }
 
-    pub fn device_signing_seed(&self) -> Result<Option<([u8; 32], String)>, String> {
+    pub fn device_signing_seed(&self) -> Result<Option<(Zeroizing<[u8; 32]>, String)>, String> {
         self.connection()?
             .query_row(
                 "SELECT device_signing_seed, signing_key_id
                  FROM messaging_device_identity WHERE id = 1",
                 [],
-                |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?)),
+                |row| {
+                    let seed = Zeroizing::new(row.get::<_, Vec<u8>>(0)?);
+                    let key_id = row.get::<_, String>(1)?;
+                    Ok((seed, key_id))
+                },
             )
             .optional()
             .map_err(|error| error.to_string())?
             .map(|(seed, key_id)| {
-                let seed: [u8; 32] = seed
-                    .try_into()
-                    .map_err(|_| "device signing seed is not 32 bytes".to_string())?;
-                Ok((seed, key_id))
+                if seed.len() != 32 {
+                    return Err("device signing seed is not 32 bytes".to_string());
+                }
+                let mut seed_bytes = Zeroizing::new([0_u8; 32]);
+                seed_bytes.copy_from_slice(&seed);
+                Ok((seed_bytes, key_id))
             })
             .transpose()
     }
@@ -11899,7 +11906,7 @@ mod tests {
         drop(connection);
 
         let archive = store
-            .build_recovery_archive("ptid:alice", [42; 32], 1)
+            .build_recovery_archive("ptid:alice", &[42; 32], 1)
             .unwrap();
         assert_eq!(archive.conversations.len(), 1);
         assert_eq!(
@@ -12360,7 +12367,7 @@ mod tests {
             .unwrap();
 
         let exported = store
-            .build_recovery_archive("ptid:alice", [42; 32], 3)
+            .build_recovery_archive("ptid:alice", &[42; 32], 3)
             .unwrap();
         assert_eq!(exported, recovery_archive());
         let restored = store

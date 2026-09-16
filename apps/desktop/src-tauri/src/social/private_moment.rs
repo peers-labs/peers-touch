@@ -1486,7 +1486,8 @@ fn attach_recovery_envelope(
 fn requires_private_resource_purge(
     error: &crate::secure_content::adapter::NativeTransportError,
 ) -> bool {
-    error.stable_code == crate::model::error::ErrorCode::PostNotFound as i32
+    error.http_status == Some(404)
+        && error.stable_code == crate::model::error::ErrorCode::PostNotFound as i32
 }
 
 fn recovery_transport_failure(
@@ -1878,6 +1879,12 @@ mod tests {
             recovery_transport_failure(&typed),
             (PrivateRecoveryFailureKind::NotAuthorized, true)
         );
+
+        let mismatched = crate::secure_content::adapter::NativeTransportError {
+            http_status: Some(500),
+            ..typed
+        };
+        assert!(!requires_private_resource_purge(&mismatched));
     }
 
     #[test]
@@ -1974,6 +1981,64 @@ mod tests {
     }
 
     #[test]
+    fn secure_content_terminal_upload_cleanup_removes_the_owner_journal() {
+        let station_key = SigningKey::from_bytes(&[8; 32]);
+        let lease = lease(&station_key);
+        let store = lease.store.clone();
+        let root = std::env::temp_dir().join(format!(
+            "secure-content-terminal-upload-cleanup-{}",
+            ulid::Ulid::new()
+        ));
+        let source = root.join("source.jpg");
+        let partial = root.join("partial.ciphertext");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&source, [1_u8; 128]).unwrap();
+        std::fs::write(&partial, [2_u8; 64]).unwrap();
+        let transfer = secure_content_core::object::ObjectTransferRecord {
+            transfer_id: "upload-terminal-cleanup".to_string(),
+            owner_scope_id: "content-terminal-cleanup".to_string(),
+            operation_id: "object-terminal-cleanup".to_string(),
+            authority_id: "plan-terminal-cleanup".to_string(),
+            direction: ObjectTransferDirection::Upload,
+            state: secure_content_core::object::ObjectTransferState::Terminal,
+            upload_id: String::new(),
+            generation: 0,
+            descriptor_sha256: vec![0; 32],
+            completed_chunk_bitmap: vec![0],
+            source_local_ref: source.display().to_string(),
+            partial_local_ref: partial.display().to_string(),
+            object_key: vec![7; 32],
+            base_nonce: vec![0; 12],
+            plaintext_size: 128,
+            chunk_size: 128,
+            attempt_count: 1,
+            next_attempt_at_unix_ms: 0,
+            last_error: Some(ObjectTransferErrorCode::IntegrityFailed),
+            updated_at_unix_ms: 1,
+        };
+        store
+            .ensure_object_upload_transfer(&transfer, "image/jpeg")
+            .unwrap();
+        let supervisor = SecureContentSupervisor::new();
+        let orchestrator = PrivateMomentOrchestrator {
+            supervisor: &supervisor,
+            transport: SecureContentTransport::new(lease.session.clone()).unwrap(),
+            lease,
+        };
+
+        orchestrator
+            .purge_abandoned_upload(&transfer.transfer_id)
+            .unwrap();
+
+        assert!(store
+            .object_transfer(&transfer.transfer_id)
+            .unwrap()
+            .is_none());
+        assert!(!partial.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn secure_content_deterministic_publish_failure_cleans_draft_reservation() {
         let station_key = SigningKey::from_bytes(&[8; 32]);
         let lease = lease(&station_key);
@@ -2028,7 +2093,7 @@ mod tests {
             (PrivateRecoveryFailureKind::Retryable, false)
         );
         let revoked = crate::secure_content::adapter::NativeTransportError {
-            http_status: Some(403),
+            http_status: Some(404),
             stable_code: crate::model::error::ErrorCode::PostNotFound as i32,
             retry_after_seconds: None,
             disposition: NativeErrorDisposition::Terminal,

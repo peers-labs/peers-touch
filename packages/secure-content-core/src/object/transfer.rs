@@ -843,10 +843,26 @@ impl ObjectTransferWorker {
         if transfer.state == ObjectTransferState::Cancelled {
             return Ok(());
         }
+        let preserve_terminal_state = transfer.state == ObjectTransferState::Terminal;
+        if preserve_terminal_state && transfer.direction != ObjectTransferDirection::Upload {
+            return Err(ObjectTransferFailure::terminal(
+                transfer
+                    .last_error
+                    .unwrap_or(ObjectTransferErrorCode::DescriptorMismatch),
+                "secure content terminal download cannot be cancelled",
+            ));
+        }
         if !transfer.upload_id.is_empty() {
-            self.transport.cancel_upload(&transfer)?;
+            if let Err(failure) = self.transport.cancel_upload(&transfer) {
+                if !preserve_terminal_state || failure.retryable {
+                    return Err(failure);
+                }
+            }
         }
         self.blobs.remove(&transfer.partial_local_ref)?;
+        if preserve_terminal_state {
+            return Ok(());
+        }
         self.store.update_transfer_progress(
             transfer_id,
             ObjectTransferState::Cancelled,
@@ -1005,6 +1021,17 @@ impl ObjectTransferWorker {
         let transfer = self.required_transfer(transfer_id)?;
         if transfer.state == ObjectTransferState::Complete {
             return Ok(ObjectTransferProgress::Complete);
+        }
+        if matches!(
+            transfer.state,
+            ObjectTransferState::Cancelled | ObjectTransferState::Terminal
+        ) {
+            return Err(ObjectTransferFailure::terminal(
+                transfer
+                    .last_error
+                    .unwrap_or(ObjectTransferErrorCode::DescriptorMismatch),
+                "secure content object transfer is terminal",
+            ));
         }
         let attempt_count = transfer.attempt_count.saturating_add(1);
         if failure.retryable {
@@ -1499,6 +1526,7 @@ mod tests {
         corrupt_download_once: Mutex<Option<u32>>,
         reject_etag: AtomicBool,
         cancel_calls: AtomicUsize,
+        cancel_failure: Mutex<Option<ObjectTransferFailure>>,
     }
 
     impl MemoryTransport {
@@ -1512,6 +1540,7 @@ mod tests {
                 corrupt_download_once: Mutex::new(None),
                 reject_etag: AtomicBool::new(false),
                 cancel_calls: AtomicUsize::new(0),
+                cancel_failure: Mutex::new(None),
             }
         }
 
@@ -1617,6 +1646,9 @@ mod tests {
             _transfer: &ObjectTransferRecord,
         ) -> Result<(), ObjectTransferFailure> {
             self.cancel_calls.fetch_add(1, Ordering::AcqRel);
+            if let Some(failure) = self.cancel_failure.lock().unwrap().clone() {
+                return Err(failure);
+            }
             Ok(())
         }
     }
@@ -2809,6 +2841,86 @@ mod tests {
             store.record("completed-upload").state,
             ObjectTransferState::Cancelled
         );
+    }
+
+    #[test]
+    fn terminal_upload_cleanup_preserves_journal_and_rejects_late_failure_callbacks() {
+        let source = test_ref("terminal-cleanup-source");
+        let partial = test_ref("terminal-cleanup-partial");
+        let blobs = Arc::new(MemoryBlob::default());
+        blobs.put(&source, vec![1_u8; 1024]);
+        blobs.put(&partial, vec![2_u8; 128]);
+        let store = Arc::new(TestStore::default());
+        let mut transfer = record("terminal-cleanup", &source, &partial, 1024, 1024);
+        transfer.upload_id = "upload-terminal".to_string();
+        transfer.generation = 5;
+        transfer.state = ObjectTransferState::Terminal;
+        transfer.attempt_count = 2;
+        transfer.last_error = Some(ObjectTransferErrorCode::IntegrityFailed);
+        transfer.updated_at_unix_ms = 9;
+        let terminal_journal = transfer.clone();
+        store.insert(transfer);
+        let transport = Arc::new(MemoryTransport::new());
+        let worker = ObjectTransferWorker::new(
+            store.clone(),
+            transport.clone(),
+            blobs.clone(),
+            Arc::new(TestCodec),
+        );
+
+        worker.cancel("terminal-cleanup", 10).unwrap();
+
+        assert_eq!(transport.cancel_calls.load(Ordering::Acquire), 1);
+        assert!(!blobs.exists(&partial).unwrap());
+        assert_eq!(store.record("terminal-cleanup"), terminal_journal);
+
+        let late_failure = worker
+            .persist_failure(
+                "terminal-cleanup",
+                11,
+                ObjectTransferFailure::retryable(
+                    ObjectTransferErrorCode::RetryLater,
+                    None,
+                    "late callback",
+                ),
+            )
+            .unwrap_err();
+        assert_eq!(late_failure.code, ObjectTransferErrorCode::IntegrityFailed);
+        assert_eq!(store.record("terminal-cleanup"), terminal_journal);
+    }
+
+    #[test]
+    fn terminal_upload_cleanup_continues_after_terminal_remote_rejection() {
+        let source = test_ref("terminal-rejected-cleanup-source");
+        let partial = test_ref("terminal-rejected-cleanup-partial");
+        let blobs = Arc::new(MemoryBlob::default());
+        blobs.put(&source, vec![1_u8; 1024]);
+        blobs.put(&partial, vec![2_u8; 128]);
+        let store = Arc::new(TestStore::default());
+        let mut transfer = record("terminal-rejected-cleanup", &source, &partial, 1024, 1024);
+        transfer.upload_id = "upload-terminal".to_string();
+        transfer.generation = 5;
+        transfer.state = ObjectTransferState::Terminal;
+        transfer.last_error = Some(ObjectTransferErrorCode::IntegrityFailed);
+        let terminal_journal = transfer.clone();
+        store.insert(transfer);
+        let transport = Arc::new(MemoryTransport::new());
+        *transport.cancel_failure.lock().unwrap() = Some(ObjectTransferFailure::terminal(
+            ObjectTransferErrorCode::PartConflict,
+            "remote upload is already terminal",
+        ));
+        let worker = ObjectTransferWorker::new(
+            store.clone(),
+            transport.clone(),
+            blobs.clone(),
+            Arc::new(TestCodec),
+        );
+
+        worker.cancel("terminal-rejected-cleanup", 10).unwrap();
+
+        assert_eq!(transport.cancel_calls.load(Ordering::Acquire), 1);
+        assert!(!blobs.exists(&partial).unwrap());
+        assert_eq!(store.record("terminal-rejected-cleanup"), terminal_journal);
     }
 
     #[test]

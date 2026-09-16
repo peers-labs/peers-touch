@@ -52,6 +52,7 @@ vi.mock('../../services/desktop_api', () => ({
   api: {
     ossResolveUrl: vi.fn(),
     ossUploadEncryptedAttachmentSocial: vi.fn(),
+    stationList: vi.fn(),
   },
 }));
 
@@ -126,6 +127,20 @@ describe('Moments acceptance harness', () => {
     vi.mocked(invoke).mockReset();
     vi.mocked(api.ossResolveUrl).mockReset();
     vi.mocked(api.ossUploadEncryptedAttachmentSocial).mockReset();
+    vi.mocked(api.stationList).mockReset();
+    vi.mocked(api.stationList).mockResolvedValue({
+      active_url: 'https://station.invalid/',
+      binding: {
+        phase: 'bound',
+        bound_url: 'https://station.invalid',
+        generation: 1,
+      },
+      entries: [{
+        url: 'https://station.invalid',
+        peer_id: 'peer-station-four',
+        online: true,
+      }],
+    });
     vi.stubGlobal('window', {
       location: new URL('http://localhost:3210/'),
     });
@@ -245,6 +260,8 @@ describe('Moments acceptance harness', () => {
         bootId: 'boot-secret',
         sourceCommit: __PT_SOURCE_COMMIT__,
         executableSha256: 'a'.repeat(64),
+        stationRuntimeIdentitySha256: 'b'.repeat(64),
+        stationEndpointSha256: 'c'.repeat(64),
       },
     });
 
@@ -265,12 +282,33 @@ describe('Moments acceptance harness', () => {
     expect(
       (result as { clientArtifactSha256?: string }).clientArtifactSha256,
     ).toMatch(/^[0-9a-f]{64}$/);
+    expect(result).toMatchObject({
+      stationRuntimeIdentitySha256: 'b'.repeat(64),
+      stationEndpointSha256: 'c'.repeat(64),
+    });
     expect((result as { sourceCommit?: string }).sourceCommit).toBe(
       __PT_SOURCE_COMMIT__,
     );
     expect(serialized).not.toContain('boot-secret');
     expect(result).not.toHaveProperty('processId');
     expect(result).not.toHaveProperty('bootId');
+  });
+
+  it('fails closed when Native cannot report its active Station identity', async () => {
+    privateState.platform = 'native';
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        processId: 321,
+        bootId: 'boot-secret',
+        sourceCommit: __PT_SOURCE_COMMIT__,
+        executableSha256: 'a'.repeat(64),
+      },
+    });
+
+    await expect(harness().snapshot()).rejects.toThrow(
+      'moments.acceptance.nativeRuntimeIdentityMissing',
+    );
   });
 
   it('changes the live Browser artifact digest when renderer bytes change', async () => {
@@ -323,8 +361,117 @@ describe('Moments acceptance harness', () => {
     expect(
       (result as { sessionIdentitySha256?: string }).sessionIdentitySha256,
     ).toMatch(/^[0-9a-f]{64}$/);
+    expect(
+      (result as { stationRuntimeIdentitySha256?: string })
+        .stationRuntimeIdentitySha256,
+    ).toMatch(/^[0-9a-f]{64}$/);
+    expect(
+      (result as { stationEndpointSha256?: string }).stationEndpointSha256,
+    ).toMatch(/^[0-9a-f]{64}$/);
     expect(result).not.toHaveProperty('actorPtidSha256');
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when Browser cannot resolve the active Station peer', async () => {
+    vi.mocked(api.stationList).mockResolvedValue({
+      active_url: 'https://station.invalid',
+      binding: {
+        phase: 'bound',
+        bound_url: 'https://station.invalid',
+        generation: 1,
+      },
+      entries: [{
+        url: 'https://station.invalid',
+        online: true,
+      }],
+    });
+
+    await expect(harness().snapshot()).rejects.toThrow(
+      'moments.acceptance.stationIdentityMissing',
+    );
+  });
+
+  it.each([
+    'unbound',
+    'connecting',
+    'access_gate',
+    'switching',
+    'failed',
+  ] as const)(
+    'fails closed when Browser Station binding phase is %s',
+    async (phase) => {
+      vi.mocked(api.stationList).mockResolvedValue({
+        active_url: 'https://station.invalid',
+        binding: {
+          phase,
+          bound_url: 'https://station.invalid',
+          generation: 2,
+        },
+        entries: [{
+          url: 'https://station.invalid',
+          peer_id: 'peer-station-four',
+          online: true,
+        }],
+      });
+
+      await expect(harness().snapshot()).rejects.toThrow(
+        'moments.acceptance.stationIdentityMissing',
+      );
+    },
+  );
+
+  it('fails closed when Browser active and bound Station URLs diverge', async () => {
+    vi.mocked(api.stationList).mockResolvedValue({
+      active_url: 'https://station-two.invalid',
+      binding: {
+        phase: 'bound',
+        bound_url: 'https://station-one.invalid',
+        generation: 2,
+      },
+      entries: [{
+        url: 'https://station-one.invalid',
+        peer_id: 'peer-station-four',
+        online: true,
+      }],
+    });
+
+    await expect(harness().snapshot()).rejects.toThrow(
+      'moments.acceptance.stationIdentityMissing',
+    );
+  });
+
+  it('fails closed when Browser Station binding changes during capture', async () => {
+    vi.mocked(api.stationList)
+      .mockResolvedValueOnce({
+        active_url: 'https://station-one.invalid',
+        binding: {
+          phase: 'bound',
+          bound_url: 'https://station-one.invalid',
+          generation: 2,
+        },
+        entries: [{
+          url: 'https://station-one.invalid',
+          peer_id: 'peer-station-one',
+          online: true,
+        }],
+      })
+      .mockResolvedValueOnce({
+        active_url: 'https://station-two.invalid',
+        binding: {
+          phase: 'bound',
+          bound_url: 'https://station-two.invalid',
+          generation: 3,
+        },
+        entries: [{
+          url: 'https://station-two.invalid',
+          peer_id: 'peer-station-two',
+          online: true,
+        }],
+      });
+
+    await expect(harness().snapshot()).rejects.toThrow(
+      'moments.acceptance.stationIdentityMissing',
+    );
   });
 
   it('reads public image bytes through the production OSS resolver', async () => {

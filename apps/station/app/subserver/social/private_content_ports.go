@@ -169,7 +169,7 @@ func (d *privateContentRecipientDirectory) ValidateActiveEndpoint(
 			return nil
 		}
 	}
-	return errors.New("endpoint is not active in Actor Identity")
+	return application.ErrPrivateContentInactiveEndpoint
 }
 
 func (d *privateContentRecipientDirectory) endpointManifest(

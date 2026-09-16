@@ -30,9 +30,9 @@ use crate::model::chat::{
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
+use messaging_core::identity::enrollment::load_or_create_device_identity_from_seed;
 use messaging_core::identity::{
-    is_stale_endpoint_error, load_or_create_device_identity, DeviceEnrollmentManager,
-    FreshDeviceEnrollment,
+    is_stale_endpoint_error, DeviceEnrollmentManager, FreshDeviceEnrollment,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -64,6 +64,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use ulid::Ulid;
+use zeroize::Zeroizing;
 
 const INTERACTION_PREFLIGHT_DRAIN_LIMIT: u32 = 100;
 const ATTACHMENT_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
@@ -405,7 +406,7 @@ impl MessagingEngine {
     pub fn open_profile(
         profile_id: String,
         ptid: String,
-        actor_identity_seed: [u8; 32],
+        actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
     ) -> Result<Self, String> {
         if profile_id.trim().is_empty() || ptid.trim().is_empty() || actor_profile_version == 0 {
@@ -426,11 +427,11 @@ impl MessagingEngine {
     fn from_profile_store(
         profile_id: String,
         ptid: String,
-        actor_identity_seed: [u8; 32],
+        actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
         store: Arc<MessagingStore>,
     ) -> Result<Self, String> {
-        let enrollment = load_or_create_device_identity(
+        let enrollment = load_or_create_device_identity_from_seed(
             store.as_ref(),
             &ptid,
             actor_identity_seed,
@@ -449,7 +450,7 @@ impl MessagingEngine {
             profile_id,
             endpoint,
             store,
-            Some(Arc::new(IdentityKeyPair::from_seed(&actor_identity_seed))),
+            Some(Arc::new(IdentityKeyPair::from_seed(actor_identity_seed))),
         )
     }
 
@@ -874,14 +875,15 @@ impl MessagingEngine {
         &self,
         actor_profile_version: u64,
     ) -> Result<MessagingRecoveryArchive, String> {
-        let actor_identity_seed = self
-            .actor_identity
-            .as_ref()
-            .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?
-            .seed_bytes();
+        let actor_identity_seed = Zeroizing::new(
+            self.actor_identity
+                .as_ref()
+                .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?
+                .seed_bytes(),
+        );
         self.store.build_recovery_archive(
             &self.endpoint.ptid,
-            actor_identity_seed,
+            &actor_identity_seed,
             actor_profile_version,
         )
     }
@@ -2048,7 +2050,7 @@ impl EngineRegistry {
         &self,
         profile_id: String,
         ptid: String,
-        actor_identity_seed: [u8; 32],
+        actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
     ) -> Result<Arc<MessagingEngine>, String> {
         let notifier = self
@@ -2248,11 +2250,13 @@ impl EngineRegistry {
                         .to_string(),
                 );
             }
-            let previous_seed = engine
-                .actor_identity
-                .as_ref()
-                .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?
-                .seed_bytes();
+            let previous_seed = Zeroizing::new(
+                engine
+                    .actor_identity
+                    .as_ref()
+                    .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?
+                    .seed_bytes(),
+            );
             let previous_profile_version = engine
                 .store
                 .device_enrollment()?
@@ -2317,7 +2321,7 @@ impl EngineRegistry {
                 let engine = Arc::new(MessagingEngine::open_profile(
                     profile_id.to_string(),
                     archive.ptid.clone(),
-                    archive.actor_identity_seed,
+                    &archive.actor_identity_seed,
                     archive.actor_profile_version,
                 )?);
                 self.install_profile_runtime(profile_id, engine, worker_token)?;
@@ -2327,7 +2331,7 @@ impl EngineRegistry {
                 let rollback = MessagingEngine::open_profile(
                     profile_id.to_string(),
                     previous_ptid,
-                    previous_seed,
+                    &previous_seed,
                     previous_profile_version,
                 )
                 .and_then(|engine| {
@@ -3274,7 +3278,7 @@ mod tests {
         let first = MessagingEngine::from_profile_store(
             "alice-profile".to_string(),
             "ptid:alice".to_string(),
-            [17; 32],
+            &[17; 32],
             3,
             store.clone(),
         )
@@ -3291,7 +3295,7 @@ mod tests {
         let reopened = MessagingEngine::from_profile_store(
             "alice-profile".to_string(),
             "ptid:alice".to_string(),
-            [17; 32],
+            &[17; 32],
             3,
             store.clone(),
         )
@@ -3302,7 +3306,7 @@ mod tests {
         assert!(MessagingEngine::from_profile_store(
             "alice-profile".to_string(),
             "ptid:alice".to_string(),
-            [18; 32],
+            &[18; 32],
             3,
             store.clone(),
         )
@@ -3310,7 +3314,7 @@ mod tests {
         assert!(MessagingEngine::from_profile_store(
             "alice-profile".to_string(),
             "ptid:alice".to_string(),
-            [17; 32],
+            &[17; 32],
             4,
             store,
         )
@@ -3324,7 +3328,7 @@ mod tests {
             MessagingEngine::from_profile_store(
                 "alice-profile".to_string(),
                 "ptid:alice".to_string(),
-                [17; 32],
+                &[17; 32],
                 3,
                 Arc::new(MessagingStore::in_memory().unwrap()),
             )
@@ -3362,7 +3366,7 @@ mod tests {
             MessagingEngine::from_profile_store(
                 "alice-profile".to_string(),
                 "ptid:alice".to_string(),
-                [17; 32],
+                &[17; 32],
                 3,
                 Arc::new(MessagingStore::in_memory().unwrap()),
             )
@@ -3410,7 +3414,7 @@ mod tests {
             MessagingEngine::from_profile_store(
                 "alice-profile".to_string(),
                 "ptid:alice".to_string(),
-                [17; 32],
+                &[17; 32],
                 3,
                 Arc::new(MessagingStore::in_memory().unwrap()),
             )

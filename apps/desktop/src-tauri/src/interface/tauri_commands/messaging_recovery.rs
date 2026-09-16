@@ -7,6 +7,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tauri::{State, Window};
 use ulid::Ulid;
+use zeroize::Zeroizing;
 
 use crate::application::session_resolver;
 use crate::contracts::StubPayload;
@@ -203,11 +204,12 @@ pub fn messaging_recovery_create_revision(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
+    let recovery_phrase = Zeroizing::new(input.recovery_phrase);
     let session = match require_session(&state, &window) {
         Ok(session) => session,
         Err(error) => return error,
     };
-    if let Err(error) = crypto::validate_mnemonic(&input.recovery_phrase) {
+    if let Err(error) = crypto::validate_mnemonic(&recovery_phrase) {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
             format!("invalid recovery phrase: {error}"),
@@ -240,7 +242,7 @@ pub fn messaging_recovery_create_revision(
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
     let encoded = match encode_recovery_revision(
-        &input.recovery_phrase,
+        &recovery_phrase,
         &Ulid::new().to_string(),
         &engine.endpoint().device_id,
         crate::messaging::now_unix_ms(),
@@ -270,7 +272,7 @@ pub fn messaging_recovery_create_revision(
     if let Err(error) = store_secure_content_recovery_master(
         &session.actor_ptid,
         encoded.recovery_epoch,
-        &input.recovery_phrase,
+        &recovery_phrase,
     ) {
         return AppResult::fail(
             ErrorCode::InternalError,
@@ -302,6 +304,7 @@ pub fn messaging_recovery_restore_latest(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
+    let recovery_phrase = Zeroizing::new(recovery_phrase);
     let session = match require_session(&state, &window) {
         Ok(session) => session,
         Err(error) => return error,
@@ -361,7 +364,7 @@ pub fn messaging_recovery_restore_latest(
 
     let key_ref = identity_key_ref(&session.ptid);
     let previous_seed = match crypto::load_identity_key(&key_ref) {
-        Ok(identity) => identity.map(|value| value.seed_bytes()),
+        Ok(identity) => identity.map(|value| Zeroizing::new(value.seed_bytes())),
         Err(error) => {
             return AppResult::fail(
                 ErrorCode::InternalError,

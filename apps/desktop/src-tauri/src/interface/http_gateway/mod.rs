@@ -1275,6 +1275,18 @@ fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
     })
 }
 
+fn station_list_payload(
+    entries: Vec<crate::infrastructure::station_registry::StationEntry>,
+    active_url: Option<String>,
+    binding: crate::application::station_binding::StationBindingState,
+) -> Value {
+    json!({
+        "entries": entries,
+        "active_url": active_url,
+        "binding": binding,
+    })
+}
+
 fn friend_request_projection(request: &model::social::SocialFriendRequest) -> Value {
     json!({
         "request_id": request.request_id.as_str(),
@@ -6711,10 +6723,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let reg = crate::infrastructure::station_client::station_registry();
             let entries = reg.list();
             let active = reg.active_url();
-            let payload = json!({
-                "entries": entries,
-                "active_url": active,
-            });
+            let payload = station_list_payload(
+                entries,
+                active,
+                crate::application::station_binding::service().state(),
+            );
             to_json(AppResult::success(StubPayload {
                 command: "station_list".into(),
                 status: serde_json::to_string(&payload).unwrap_or_default(),
@@ -7832,6 +7845,30 @@ mod tests {
             body.read(&mut [0_u8; 1])
                 .expect("terminated body should stay at EOF"),
             0
+        );
+    }
+
+    #[test]
+    fn station_list_exposes_binding_state_to_browser_clients() {
+        let payload = station_list_payload(
+            Vec::new(),
+            Some("https://station.invalid".to_string()),
+            crate::application::station_binding::StationBindingState {
+                phase: crate::application::station_binding::StationBindingPhase::Bound,
+                selected_url: Some("https://station.invalid".to_string()),
+                bound_url: Some("https://station.invalid".to_string()),
+                target_url: None,
+                generation: 3,
+                error: None,
+            },
+        );
+        let binding = payload
+            .get("binding")
+            .and_then(Value::as_object)
+            .expect("station_list must expose the binding state");
+        assert!(
+            binding.get("phase").and_then(Value::as_str).is_some(),
+            "station_list binding must expose its phase: {binding:?}"
         );
     }
 

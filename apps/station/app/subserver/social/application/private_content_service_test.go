@@ -776,6 +776,166 @@ func TestPrivateContentServiceReadRejectsForgedCommitProofSignature(
 	}
 }
 
+func TestPrivateContentServiceReadRejectsMismatchedCommitIdentity(
+	t *testing.T,
+) {
+	fixture := newPrivateContentServiceFixture(t)
+	ctx := context.Background()
+	prepared, err := fixture.service.PreparePrivateMoment(
+		ctx,
+		fixture.author,
+		privateMomentPrepareRequest(
+			"prepare-commit-identity-tamper",
+			"content-commit-identity-tamper",
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	submit := privateTextSubmitRequest(
+		t,
+		prepared.GetPlan(),
+		fixture.author.Endpoint,
+		fixture.authorPrivateKey,
+		"submit-commit-identity-tamper",
+		"ciphertext-commit-identity-tamper",
+	)
+	if _, err := fixture.service.SubmitPrivateMoment(
+		ctx,
+		fixture.author.Endpoint,
+		submit,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	var row dbmodel.SocialPrivateCommitProof
+	if err := fixture.database.Where(
+		"content_id = ?",
+		prepared.GetPlan().GetResource().GetContentId(),
+	).Take(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	proof := &securecontentpb.ViewerContentCommitProof{}
+	if err := proto.Unmarshal(row.CanonicalProofBytes, proof); err != nil {
+		t.Fatal(err)
+	}
+	forgedCommitID := privateTestContentID("forged-domain-commit")
+	proof.DomainCommitId = forgedCommitID
+	signingBytes, err := socialdomain.CanonicalCommitProofSigningBytes(proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof.StationSignature, err = fixture.service.stationSigner.Sign(
+		ctx,
+		proof.GetStationSigningKeyId(),
+		signingBytes,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proofBytes, err := socialdomain.CanonicalProtoBytes(proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proofHash := sha256.Sum256(proofBytes)
+	if err := fixture.database.Model(
+		&dbmodel.SocialPrivateCommitProof{},
+	).Where(
+		"content_id = ? AND generation = ?",
+		row.ContentID,
+		row.Generation,
+	).Updates(map[string]any{
+		"domain_commit_id":       forgedCommitID,
+		"canonical_proof_bytes":  proofBytes,
+		"canonical_proof_sha256": proofHash[:],
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = fixture.service.GetPrivateMoment(
+		ctx,
+		&actormodel.ActorDeviceRef{
+			Actor: &actormodel.ActorRef{
+				Ptid: "ptid:bob",
+				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+			},
+			DeviceId: "bob-device",
+		},
+		prepared.GetPlan().GetResource().GetContentId(),
+	)
+	if !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentIntegrityFailed,
+	) {
+		t.Fatalf("mismatched commit identity error = %v", err)
+	}
+}
+
+func TestPrivateContentServiceGetPrivateMomentDistinguishesEndpointFailure(
+	t *testing.T,
+) {
+	fixture := newPrivateContentServiceFixture(t)
+	viewer := &actormodel.ActorDeviceRef{
+		Actor: &actormodel.ActorRef{
+			Ptid: "ptid:bob",
+			Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+		},
+		DeviceId: "bob-device",
+	}
+	tests := []struct {
+		name       string
+		validation error
+		wantCode   socialdomain.PrivateContentErrorCode
+	}{
+		{
+			name: "proven inactive endpoint stays private",
+			validation: fmt.Errorf(
+				"test endpoint inactive: %w",
+				ErrPrivateContentInactiveEndpoint,
+			),
+			wantCode: socialdomain.PrivateContentNotFound,
+		},
+		{
+			name:       "directory outage remains dependency failure",
+			validation: errors.New("endpoint directory unavailable"),
+			wantCode:   socialdomain.PrivateContentDependency,
+		},
+		{
+			name: "upstream not-found is not trusted endpoint absence",
+			validation: socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentNotFound,
+				"test.endpoint_lookup",
+				"",
+				"manifest lookup failed",
+			),
+			wantCode: socialdomain.PrivateContentDependency,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture.service.recipients = privateContentTestRecipients{
+				author:        fixture.author.Endpoint,
+				validationErr: testCase.validation,
+			}
+			response, err := fixture.service.GetPrivateMoment(
+				context.Background(),
+				viewer,
+				privateTestContentID("endpoint-validation"),
+			)
+			if response != nil {
+				t.Fatalf("endpoint validation exposed response: %+v", response)
+			}
+			if !socialdomain.IsPrivateContentCode(err, testCase.wantCode) {
+				t.Fatalf(
+					"endpoint validation error = %v, want %s",
+					err,
+					testCase.wantCode,
+				)
+			}
+		})
+	}
+}
+
 type privateContentServiceFixture struct {
 	database         *gorm.DB
 	service          *PrivateContentService
@@ -928,7 +1088,8 @@ func (a *privateContentTestAudience) ResolvePrivateCommentSnapshot(
 }
 
 type privateContentTestRecipients struct {
-	author *actormodel.ActorDeviceRef
+	author        *actormodel.ActorDeviceRef
+	validationErr error
 }
 
 func (r privateContentTestRecipients) ResolveContentPreKeyTargets(
@@ -960,9 +1121,15 @@ func (r privateContentTestRecipients) ValidateActiveEndpoint(
 	_ context.Context,
 	endpoint *actormodel.ActorDeviceRef,
 ) error {
+	if r.validationErr != nil {
+		return r.validationErr
+	}
 	if endpoint == nil || endpoint.GetActor() == nil ||
 		endpoint.GetDeviceId() == "revoked-device" {
-		return fmt.Errorf("endpoint is inactive")
+		return fmt.Errorf(
+			"endpoint is inactive: %w",
+			ErrPrivateContentInactiveEndpoint,
+		)
 	}
 	return nil
 }

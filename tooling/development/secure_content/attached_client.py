@@ -16,8 +16,14 @@ from urllib.parse import urlparse
 from selenium import webdriver
 from selenium.webdriver.remote.webdriver import WebDriver
 
+from tooling.acceptance.core.evidence_store import workspace_id
 from tooling.acceptance.core.harness import call_async_harness, harness_ready
-from tooling.acceptance.core.provisioning import load_json_artifact, load_runtime_manifest
+from tooling.acceptance.core.provisioning import (
+    ProvisioningError,
+    load_json_artifact,
+    load_runtime_manifest,
+    require_runtime_client_service,
+)
 from tooling.acceptance.core.redaction import (
     redact_text,
     redact_text_with_values,
@@ -27,6 +33,7 @@ from tooling.development.secure_content.run import (
     RunnerError,
     ScenarioContext,
     canonical_actor_ptids,
+    validate_actor_manifest_reference,
     validated_harness_identity,
 )
 
@@ -593,8 +600,9 @@ class AttachedProductClient:
             and response_headers_count < observed_response_count
         ):
             capture_gaps.add("response-header-coverage-incomplete")
-        if websocket_event_count > 0:
-            capture_gaps.add("stream-terminal-barrier-unavailable")
+        # CDP performance logs do not expose a deterministic barrier proving
+        # that an already-open WebSocket or EventSource cannot emit later.
+        capture_gaps.add("stream-terminal-barrier-unavailable")
         if require_response_body:
             if not request_urls:
                 capture_gaps.add("request-control-missing")
@@ -767,11 +775,18 @@ def write_attached_runtime_manifest(
     except Exception as error:
         raise RunnerError(f"actor manifest is invalid: {error}") from error
     actor_ref = source_payload.get("actorManifest")
+    actor_sha256 = hashlib.sha256(actor_bytes).hexdigest()
+    validate_actor_manifest_reference(
+        actor_ref,
+        source_manifest_path=source_path,
+        actor_manifest_path=actor_path,
+        workspace_id=workspace_id(repo_root),
+        gate_id=journey_id,
+        run_id=str(source_payload.get("runId") or ""),
+        sha256=actor_sha256,
+    )
     if (
-        not isinstance(actor_ref, Mapping)
-        or actor_ref.get("sha256") != hashlib.sha256(actor_bytes).hexdigest()
-        or actor_ref.get("runId") != source_payload.get("runId")
-        or actor_payload.get("runId") != source_payload.get("runId")
+        actor_payload.get("runId") != source_payload.get("runId")
         or actor_payload.get("environmentId") != source_payload.get("environmentId")
     ):
         raise RunnerError("actor manifest does not match the source runtime manifest")
@@ -840,12 +855,24 @@ def write_attached_runtime_manifest(
                 f"runtime client {client_id!r} live platform does not match "
                 "the source runtime manifest"
             )
+        try:
+            _, station = require_runtime_client_service(
+                source_payload,
+                client_id,
+                "station",
+            )
+        except ProvisioningError as error:
+            raise RunnerError(
+                f"runtime client {client_id!r} Station binding is invalid: "
+                f"{error}"
+            ) from error
         harness_identity = validated_harness_identity(
             client_id,
             client,
             snapshot,
             actor_ptids_by_role=actor_ptids_by_role,
             source_commit=source_payload.get("source", {}).get("commit"),
+            station=station,
         )
         attached_client = dict(client)
         attached_client["webdriver_session_id"] = session_id
@@ -874,7 +901,7 @@ def write_attached_runtime_manifest(
         "sourceManifestPath": str(source_path),
         "sourceManifestSha256": source_digest,
         "actorManifestPath": str(actor_path),
-        "actorManifestSha256": hashlib.sha256(actor_bytes).hexdigest(),
+        "actorManifestSha256": actor_sha256,
         "capturedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
         "namespace": namespace,
     }

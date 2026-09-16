@@ -3,6 +3,7 @@ package social
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -337,18 +338,44 @@ func TestPrivateAndObjectRoutesRegisterWithHertz(t *testing.T) {
 	}
 }
 
-func TestPrivateObjectRawHandlersWriteTypedHTTPError(t *testing.T) {
+func TestPrivateContentRouteStackWritesProtobufAuthenticationErrors(t *testing.T) {
 	fixture := newHandlerFixture(t)
-	for _, testCase := range []struct {
-		name   string
-		method string
-		path   string
+	fixture.subserver.commonWrapper = func(
+		next server.EndpointHandler,
+	) server.EndpointHandler {
+		return next
+	}
+	const secret = "test-secret-that-is-long-enough-for-auth"
+	provider := coreauth.NewJWTProvider(secret, time.Hour)
+	fixture.subserver.privateContentJWTWrapper = server.HTTPWrapperAdapter(
+		httpadapter.RequireStructuredJWT(
+			provider,
+			int32(model.ErrorCode_ERROR_CODE_UNAUTHORIZED),
+			true,
+		),
+	)
+	_, token, err := provider.Authenticate(
+		context.Background(),
+		coreauth.Credentials{
+			SubjectID: "ptid:v1:actor:peers:p:alice:alice-fingerprint",
+			SessionID: "private-content-session",
+		},
+	)
+	if err != nil {
+		t.Fatalf("mint private-content token: %v", err)
+	}
+
+	routes := []struct {
+		name           string
+		method         string
+		path           string
+		requiresDevice bool
 	}{
 		{
-			name:   "social-private-object-upload-chunk",
-			method: http.MethodPut,
-			path: "/api/v1/social/moments/objects/uploads/upload-1" +
-				"/chunks/0",
+			name:           "social-prepare-private-moment",
+			method:         http.MethodPost,
+			path:           routeSocialPreparePrivateMoment,
+			requiresDevice: true,
 		},
 		{
 			name:   "social-private-object-download",
@@ -356,42 +383,198 @@ func TestPrivateObjectRawHandlersWriteTypedHTTPError(t *testing.T) {
 			path: "/api/v1/social/moments/objects/object-1" +
 				"?expected_descriptor_sha256=" +
 				strings.Repeat("0", 64),
+			requiresDevice: true,
 		},
-	} {
+		{
+			name:   "social-list-recoverable-private-content",
+			method: http.MethodGet,
+			path:   routeSocialRecoverablePrivateContent + "?limit=1",
+		},
+	}
+	for _, testCase := range routes {
 		t.Run(testCase.name, func(t *testing.T) {
 			handler := socialHandlerByName(
 				t,
 				fixture.subserver.Handlers(),
 				testCase.name,
 			)
-			request := httptest.NewRequest(
+			testServer := serveSocialHandler(t, handler)
+			t.Cleanup(testServer.Close)
+
+			request, err := http.NewRequest(
 				testCase.method,
-				testCase.path,
+				testServer.URL+testCase.path,
 				nil,
-			)
-			recorder := httptest.NewRecorder()
-			response := &socialHTTPResponse{writer: recorder}
-			err := handler.Handler()(
-				context.Background(),
-				&socialHTTPRequest{request: request},
-				response,
 			)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if recorder.Code != http.StatusUnauthorized ||
-				!strings.Contains(
-					recorder.Header().Get("Content-Type"),
-					"application/json",
-				) {
-				t.Fatalf(
-					"raw handler response = status %d headers %v body %s",
-					recorder.Code,
-					recorder.Header(),
-					recorder.Body.String(),
-				)
+			if testCase.requiresDevice {
+				request.Header.Set("X-Device-ID", "alice-device")
 			}
+			response, err := testServer.Client().Do(request)
+			if err != nil {
+				t.Fatalf("request private-content route: %v", err)
+			}
+			assertPrivateContentHTTPError(
+				t,
+				response,
+				http.StatusUnauthorized,
+				model.ErrorCode_ERROR_CODE_UNAUTHORIZED,
+			)
+
+			if !testCase.requiresDevice {
+				return
+			}
+			request, err = http.NewRequest(
+				testCase.method,
+				testServer.URL+testCase.path,
+				nil,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Authorization", "Bearer "+token.Value)
+			response, err = testServer.Client().Do(request)
+			if err != nil {
+				t.Fatalf("request private-content route without device: %v", err)
+			}
+			assertPrivateContentHTTPError(
+				t,
+				response,
+				http.StatusUnauthorized,
+				model.ErrorCode_ERROR_CODE_UNAUTHORIZED,
+			)
 		})
+	}
+}
+
+func assertPrivateContentHTTPError(
+	t *testing.T,
+	response *http.Response,
+	status int,
+	code model.ErrorCode,
+) {
+	t.Helper()
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read private-content error body: %v", err)
+	}
+	errorResponse := &model.ErrorResponse{}
+	if err := proto.Unmarshal(body, errorResponse); err != nil {
+		t.Fatalf("decode private-content ErrorResponse: %v", err)
+	}
+	if response.StatusCode != status ||
+		response.Header.Get("Content-Type") !=
+			server.CanonicalProtobufContentType ||
+		errorResponse.GetCode() != code {
+		t.Fatalf(
+			"private-content response = status %d headers %v body %x",
+			response.StatusCode,
+			response.Header,
+			body,
+		)
+	}
+	deterministic, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		errorResponse,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, deterministic) {
+		t.Fatalf(
+			"private-content ErrorResponse is not deterministic: %x != %x",
+			body,
+			deterministic,
+		)
+	}
+}
+
+func TestPrivateObjectRawHandlerDoesNotTypeGenericNotFound(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	err := socialObjectRawHandler(func(
+		context.Context,
+		server.Request,
+		server.Response,
+	) error {
+		return server.NotFound("private object not found")
+	})(
+		context.Background(),
+		&socialHTTPRequest{
+			request: httptest.NewRequest(
+				http.MethodGet,
+				"/api/v1/social/moments/objects/private-object",
+				nil,
+			),
+		},
+		&socialHTTPResponse{writer: recorder},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusNotFound ||
+		recorder.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf(
+			"generic raw not-found response = status %d headers %v body %s",
+			recorder.Code,
+			recorder.Header(),
+			recorder.Body.String(),
+		)
+	}
+	response := map[string]any{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode generic raw not-found response: %v", err)
+	}
+	if response["code"] != float64(http.StatusNotFound) {
+		t.Fatalf("generic raw not-found response = %v", response)
+	}
+}
+
+func TestPrivateObjectRawHandlerPreservesTypedDomainNotFound(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	err := socialObjectRawHandler(func(
+		context.Context,
+		server.Request,
+		server.Response,
+	) error {
+		return privateObjectDownloadHandlerError(
+			domain.NewPrivateContentError(
+				domain.PrivateContentNotFound,
+				"test.private_object.download",
+				"object_id",
+				"was not found",
+			),
+			false,
+		)
+	})(
+		context.Background(),
+		&socialHTTPRequest{
+			request: httptest.NewRequest(
+				http.MethodGet,
+				"/api/v1/social/moments/objects/private-object",
+				nil,
+			),
+		},
+		&socialHTTPResponse{writer: recorder},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &model.ErrorResponse{}
+	if err := proto.Unmarshal(recorder.Body.Bytes(), response); err != nil {
+		t.Fatalf("decode typed raw not-found ErrorResponse: %v", err)
+	}
+	if recorder.Code != http.StatusNotFound ||
+		recorder.Header().Get("Content-Type") !=
+			server.CanonicalProtobufContentType ||
+		response.GetCode() != model.ErrorCode_ERROR_CODE_POST_NOT_FOUND {
+		t.Fatalf(
+			"typed raw not-found response = status %d headers %v body %x",
+			recorder.Code,
+			recorder.Header(),
+			recorder.Body.Bytes(),
+		)
 	}
 }
 
@@ -839,8 +1022,14 @@ func TestSocialPublicReadRoutesUseStrictOptionalJWT(t *testing.T) {
 	fixture.subserver.jwtWrapper = server.HTTPWrapperAdapter(
 		httpadapter.RequireJWT(provider, socialSessionValidator{}),
 	)
-	fixture.subserver.optionalJWTWrapper = server.HTTPWrapperAdapter(
-		httpadapter.OptionalJWT(provider, socialSessionValidator{}),
+	fixture.subserver.privateContentOptionalJWTWrapper =
+		server.HTTPWrapperAdapter(
+			httpadapter.OptionalStructuredJWT(
+				provider,
+				int32(model.ErrorCode_ERROR_CODE_UNAUTHORIZED),
+				true,
+				socialSessionValidator{},
+			),
 	)
 
 	publicPost, err := fixture.subserver.handleCreatePost(
@@ -912,6 +1101,14 @@ func TestSocialPublicReadRoutesUseStrictOptionalJWT(t *testing.T) {
 			if response.StatusCode != test.wantStatus {
 				body, _ := io.ReadAll(response.Body)
 				t.Fatalf("status = %d, want %d, body=%s", response.StatusCode, test.wantStatus, body)
+			}
+			if test.wantStatus == http.StatusUnauthorized {
+				assertPrivateContentHTTPError(
+					t,
+					response,
+					http.StatusUnauthorized,
+					model.ErrorCode_ERROR_CODE_UNAUTHORIZED,
+				)
 			}
 		})
 	}

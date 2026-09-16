@@ -162,6 +162,19 @@ def _require_runtime_binding(context: ScenarioContext) -> None:
 
 def _execute(context: ScenarioContext) -> Mapping[str, Any]:
     _require_runtime_binding(context)
+    context.block(
+        (
+            "DESIGN_AMENDMENT_REQUIRED: desktop-pilot cannot produce "
+            "FUNCTIONAL_CHECK/PASS until the accepted design defines "
+            "deterministic persist/send/response lifecycle barriers, "
+            "runtime-owner restart acknowledgement and fresh-manifest "
+            "continuation, and account/Station switch, publisher-device "
+            "revocation, and historical-recovery-epoch fixture inputs"
+        ),
+        kind="DESIGN_AMENDMENT_REQUIRED",
+        owner="secure-content-architecture",
+        retryable=False,
+    )
     resume = _load_resume_artifact(context)
     if resume is not None:
         with AttachedProductClient(context, EXPECTED_CLIENTS[1]) as bob:

@@ -318,3 +318,45 @@ func TestRequireStructuredJWTPropagatesFailureWithoutWritingResponse(t *testing.
 		)
 	}
 }
+
+func TestOptionalStructuredJWTAllowsAbsentAndProjectsSuppliedFailure(t *testing.T) {
+	handler := OptionalStructuredJWT(
+		authTestProvider{err: errors.New("invalid token")},
+		20001,
+		true,
+	)(context.Background(), http.HandlerFunc(func(
+		writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		if request.Header.Get("Authorization") == "" {
+			if _, ok := server.RouteFailureFromContext(request.Context()); ok {
+				t.Fatal("absent optional credential produced a route failure")
+			}
+		} else {
+			failure, ok := server.RouteFailureFromContext(request.Context())
+			if !ok ||
+				failure.Status != http.StatusUnauthorized ||
+				failure.StableCode != 20001 {
+				t.Fatalf("structured failure = %+v, present=%t", failure, ok)
+			}
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+
+	for _, authorization := range []string{"", "Bearer invalid"} {
+		request := httptest.NewRequest(http.MethodGet, "/optional", nil)
+		request.Header.Set("Authorization", authorization)
+		response := httptest.NewRecorder()
+
+		handler.ServeHTTP(response, request)
+
+		if response.Code != http.StatusNoContent || response.Body.Len() != 0 {
+			t.Fatalf(
+				"authorization=%q status=%d body=%q",
+				authorization,
+				response.Code,
+				response.Body.String(),
+			)
+		}
+	}
+}

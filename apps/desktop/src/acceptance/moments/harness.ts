@@ -46,6 +46,8 @@ interface RuntimeIdentityResult {
     bootId?: unknown;
     sourceCommit?: unknown;
     executableSha256?: unknown;
+    stationRuntimeIdentitySha256?: unknown;
+    stationEndpointSha256?: unknown;
   };
 }
 
@@ -124,14 +126,77 @@ function rendererArtifactSha256(): Promise<string> {
   return rendererArtifactSha256Promise;
 }
 
+async function browserStationIdentitySha256(): Promise<{
+  stationRuntimeIdentitySha256: string;
+  stationEndpointSha256: string;
+}> {
+  const first = resolveBoundBrowserStation(await api.stationList());
+  const confirmed = resolveBoundBrowserStation(await api.stationList());
+  if (
+    first.generation !== confirmed.generation
+    || first.stationPeerId !== confirmed.stationPeerId
+    || first.stationUrl !== confirmed.stationUrl
+  ) {
+    throw new Error('moments.acceptance.stationIdentityMissing');
+  }
+  return {
+    stationRuntimeIdentitySha256: await sha256(confirmed.stationPeerId),
+    stationEndpointSha256: await sha256(confirmed.stationUrl),
+  };
+}
+
+function resolveBoundBrowserStation(
+  registry: Awaited<ReturnType<typeof api.stationList>>,
+): {
+  generation: number;
+  stationPeerId: string;
+  stationUrl: string;
+} {
+  const boundUrl = typeof registry.binding?.bound_url === 'string'
+    ? registry.binding.bound_url.trim().replace(/\/+$/, '')
+    : '';
+  const activeUrl = typeof registry.active_url === 'string'
+    ? registry.active_url.trim().replace(/\/+$/, '')
+    : '';
+  if (
+    registry.binding?.phase !== 'bound'
+    || !Number.isSafeInteger(registry.binding.generation)
+    || registry.binding.generation < 0
+    || !boundUrl
+    || !activeUrl
+    || boundUrl !== activeUrl
+  ) {
+    throw new Error('moments.acceptance.stationIdentityMissing');
+  }
+  const activeEntry = registry.entries.find(
+    (entry) => entry.url.trim().replace(/\/+$/, '') === boundUrl,
+  );
+  const stationPeerId = activeEntry?.peer_id;
+  if (
+    typeof stationPeerId !== 'string'
+    || !stationPeerId.trim()
+    || stationPeerId !== stationPeerId.trim()
+  ) {
+    throw new Error('moments.acceptance.stationIdentityMissing');
+  }
+  return {
+    generation: registry.binding.generation,
+    stationPeerId,
+    stationUrl: boundUrl,
+  };
+}
+
 async function nativeRuntimeIdentitySha256(
   platform: string,
 ): Promise<{
   nativeRuntimeIdentitySha256?: string;
+  stationRuntimeIdentitySha256: string;
+  stationEndpointSha256: string;
   clientArtifactSha256: string;
 }> {
   if (platform !== 'native') {
     return {
+      ...await browserStationIdentitySha256(),
       clientArtifactSha256: await rendererArtifactSha256(),
     };
   }
@@ -142,6 +207,9 @@ async function nativeRuntimeIdentitySha256(
   const bootId = result.data?.bootId;
   const sourceCommit = result.data?.sourceCommit;
   const executableSha256 = result.data?.executableSha256;
+  const stationRuntimeIdentitySha256 =
+    result.data?.stationRuntimeIdentitySha256;
+  const stationEndpointSha256 = result.data?.stationEndpointSha256;
   if (
     result.ok !== true
     || typeof processId !== 'number'
@@ -151,11 +219,17 @@ async function nativeRuntimeIdentitySha256(
     || sourceCommit !== __PT_SOURCE_COMMIT__
     || typeof executableSha256 !== 'string'
     || !/^[0-9a-f]{64}$/.test(executableSha256)
+    || typeof stationRuntimeIdentitySha256 !== 'string'
+    || !/^[0-9a-f]{64}$/.test(stationRuntimeIdentitySha256)
+    || typeof stationEndpointSha256 !== 'string'
+    || !/^[0-9a-f]{64}$/.test(stationEndpointSha256)
   ) {
     throw new Error('moments.acceptance.nativeRuntimeIdentityMissing');
   }
   return {
     nativeRuntimeIdentitySha256: await sha256(`${processId}:${bootId}`),
+    stationRuntimeIdentitySha256,
+    stationEndpointSha256,
     clientArtifactSha256: await sha256(JSON.stringify({
       schemaVersion: 1,
       executableSha256,

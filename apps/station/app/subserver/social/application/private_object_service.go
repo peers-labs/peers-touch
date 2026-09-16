@@ -735,12 +735,18 @@ func (s *PrivateObjectService) Download(
 ) (PrivateObjectDownload, error) {
 	const operation = "social.private_object.download"
 	if err := s.validateActiveEndpoint(ctx, viewer, operation); err != nil {
-		return PrivateObjectDownload{}, socialdomain.NewPrivateContentError(
-			socialdomain.PrivateContentNotFound,
-			operation,
-			"object_id",
-			"was not found",
-		)
+		if socialdomain.IsPrivateContentCode(
+			err,
+			socialdomain.PrivateContentUnauthorized,
+		) {
+			return PrivateObjectDownload{}, socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentNotFound,
+				operation,
+				"object_id",
+				"was not found",
+			)
+		}
+		return PrivateObjectDownload{}, err
 	}
 	if err := socialdomain.ValidatePrivateObjectID(
 		objectID,
@@ -930,8 +936,15 @@ func (s *PrivateObjectService) validateActiveEndpoint(
 		)
 	}
 	if err := s.endpoints.ValidateActiveEndpoint(ctx, endpoint); err != nil {
+		if errors.Is(err, ErrPrivateContentInactiveEndpoint) {
+			return socialdomain.WrapPrivateContentError(
+				socialdomain.PrivateContentUnauthorized,
+				operation,
+				err,
+			)
+		}
 		return socialdomain.WrapPrivateContentError(
-			socialdomain.PrivateContentUnauthorized,
+			socialdomain.PrivateContentDependency,
 			operation,
 			err,
 		)
