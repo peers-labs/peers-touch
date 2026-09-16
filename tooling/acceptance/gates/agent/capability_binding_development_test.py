@@ -8,10 +8,11 @@ from pathlib import Path
 
 from tooling.acceptance.gates.agent.capability_binding_development import (
     CapabilityBindingDevelopmentError,
+    J02_ACTOR_ACCOUNT,
     ROOT,
-    accepted_seed_profile,
     evaluate_capability_binding,
-    seed_native_client_state,
+    persist_native_actor_identity,
+    seed_native_actor_identity,
 )
 
 
@@ -102,81 +103,109 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
         self.assertNotIn(".local/dev/active", source)
         self.assertIn('manifest.state.value == "FIXTURE_READY"', source)
         self.assertIn("authenticate_native_client(client, profile_env)", source)
+        self.assertIn('"account": J02_ACTOR_ACCOUNT', source)
+        self.assertIn("persist_native_actor_identity(", source)
         self.assertNotIn("_authenticate_clients(", source)
         self.assertNotIn('"ensureProvider"', source)
         self.assertNotIn("reset_fixture", source)
         self.assertNotIn("CHAT_ACCEPTANCE_RESET", source)
+        self.assertNotIn("J01_IDENTITY_SEED", source)
+        self.assertNotIn("seed_native_client_state", source)
         self.assertIn('"debugCapabilitySnapshot"', source)
         self.assertIn("copy_native_runtime_logs(", source)
 
-    def test_clones_only_accepted_matching_native_state(self) -> None:
+    def test_seeds_only_matching_retained_actor_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            seed = root / "seed"
+            fixture = root / "fixture"
             identity = (
-                seed
+                fixture
                 / "actor-identity/peers-touch/desktop/data/"
                 "secure-store/identity-keys"
             )
             identity.mkdir(parents=True)
-            (identity / "actor.key").write_bytes(b"identity")
-            storage = seed / "storage"
-            storage.mkdir()
-            (storage / "device.db").write_bytes(b"device")
-            (seed / "journey-result.json").write_text(
+            (identity / "actor.key").write_text("ab" * 32, encoding="utf-8")
+            (fixture / "fixture.json").write_text(
                 json.dumps({
-                    "journey": "V2-J01",
+                    "schemaVersion": 1,
+                    "profile": "two",
+                    "account": J02_ACTOR_ACCOUNT,
+                    "actorId": "ptid:bob",
                     "stationUrl": "https://station.example",
-                    "status": "FUNCTIONAL_PASS",
                 }),
                 encoding="utf-8",
             )
             target_identity = root / "target-identity"
-            target_storage = root / "target-storage"
 
-            seed_native_client_state(
-                seed_root=seed,
-                target_storage_root=target_storage,
+            metadata = seed_native_actor_identity(
+                fixture_root=fixture,
                 target_root=target_identity,
                 station_url="https://station.example/",
             )
 
+            self.assertEqual(metadata["actorId"], "ptid:bob")
             self.assertEqual(
                 (
                     target_identity
                     / "peers-touch/desktop/data/secure-store/"
                     "identity-keys/actor.key"
-                ).read_bytes(),
-                b"identity",
-            )
-            self.assertEqual(
-                (target_storage / "device.db").read_bytes(),
-                b"device",
+                ).read_text(encoding="utf-8"),
+                "ab" * 32,
             )
 
-    def test_derives_the_single_accepted_seed_profile(self) -> None:
+    def test_persists_actor_identity_and_rejects_actor_rebinding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "storage/peers-touch/desktop").mkdir(parents=True)
-            (root / "storage/peers-touch/two-v2-j01").mkdir()
+            source = (
+                root
+                / "source/peers-touch/desktop/data/"
+                "secure-store/identity-keys"
+            )
+            source.mkdir(parents=True)
+            (source / "actor.key").write_text("cd" * 32, encoding="utf-8")
+            fixture = root / "fixture"
 
-            self.assertEqual(
-                accepted_seed_profile(root),
-                "two-v2-j01",
+            metadata = persist_native_actor_identity(
+                source_root=root / "source",
+                fixture_root=fixture,
+                station_url="https://station.example/",
+                actor_id="ptid:bob",
             )
 
-    def test_rejects_unproven_actor_identity_seed(self) -> None:
+            self.assertEqual(metadata["account"], J02_ACTOR_ACCOUNT)
+            self.assertEqual(
+                (
+                    fixture
+                    / "actor-identity/peers-touch/desktop/data/"
+                    "secure-store/identity-keys/actor.key"
+                ).read_text(encoding="utf-8"),
+                "cd" * 32,
+            )
+            with self.assertRaisesRegex(
+                CapabilityBindingDevelopmentError,
+                "belongs to another actor",
+            ):
+                persist_native_actor_identity(
+                    source_root=root / "source",
+                    fixture_root=fixture,
+                    station_url="https://station.example",
+                    actor_id="ptid:mallory",
+                )
+
+    def test_rejects_mismatched_or_malformed_identity_fixture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            seed = root / "seed"
-            identity = seed / "actor-identity/identity-keys"
+            fixture = root / "fixture"
+            identity = fixture / "actor-identity/identity-keys"
             identity.mkdir(parents=True)
-            (identity / "actor.key").write_bytes(b"identity")
-            (seed / "journey-result.json").write_text(
+            (identity / "actor.key").write_text("not-a-key", encoding="utf-8")
+            (fixture / "fixture.json").write_text(
                 json.dumps({
-                    "journey": "V2-J01",
-                    "stationUrl": "https://station.example",
-                    "status": "FUNCTIONAL_FAIL",
+                    "schemaVersion": 1,
+                    "profile": "two",
+                    "account": J02_ACTOR_ACCOUNT,
+                    "actorId": "ptid:bob",
+                    "stationUrl": "https://other-station.example",
                 }),
                 encoding="utf-8",
             )
@@ -185,9 +214,27 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
                 CapabilityBindingDevelopmentError,
                 "does not match Profile two",
             ):
-                seed_native_client_state(
-                    seed_root=seed,
-                    target_storage_root=root / "target-storage",
+                seed_native_actor_identity(
+                    fixture_root=fixture,
+                    target_root=root / "target",
+                    station_url="https://station.example",
+                )
+            (fixture / "fixture.json").write_text(
+                json.dumps({
+                    "schemaVersion": 1,
+                    "profile": "two",
+                    "account": J02_ACTOR_ACCOUNT,
+                    "actorId": "ptid:bob",
+                    "stationUrl": "https://station.example",
+                }),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                CapabilityBindingDevelopmentError,
+                "fixture key is invalid",
+            ):
+                seed_native_actor_identity(
+                    fixture_root=fixture,
                     target_root=root / "target",
                     station_url="https://station.example",
                 )

@@ -43,7 +43,8 @@ WORKSPACE_ID = workspace_id(ROOT)
 WORK_ITEM_ID = "MCA-V2-ALIGNMENT-J02"
 JOURNEY_ID = "V2-J02"
 PROFILE = "two"
-J01_IDENTITY_SEED = (
+J02_ACTOR_ACCOUNT = "bob@p.t"
+J02_IDENTITY_FIXTURE = (
     Path.home()
     / ".peers-touch"
     / "dev"
@@ -51,8 +52,8 @@ J01_IDENTITY_SEED = (
     / WORKSPACE_ID
     / "runtime"
     / PROFILE
-    / "data"
-    / "v2-j01-native-bfdc1ae5f-run4"
+    / "fixtures"
+    / "agent-v2-capability-binding"
 )
 
 
@@ -129,66 +130,124 @@ def resolve_machine_profile() -> tuple[str, Path, int, dict[str, str]]:
     return profile_name, profile_file, slot, values
 
 
-def seed_native_client_state(
-    *,
-    seed_root: Path,
-    target_storage_root: Path,
-    target_root: Path,
+def _validate_actor_identity_root(root: Path) -> None:
+    require(
+        root.is_dir() and not root.is_symlink(),
+        "actor identity root is invalid",
+    )
+    require(
+        not any(path.is_symlink() for path in root.rglob("*")),
+        "actor identity root contains a symlink",
+    )
+    key_files = tuple(path for path in root.rglob("*.key") if path.is_file())
+    require(
+        len(key_files) == 1,
+        "actor identity root must contain exactly one key",
+    )
+    key_text = key_files[0].read_text(encoding="utf-8").strip()
+    require(
+        len(key_text) == 64
+        and all(character in "0123456789abcdefABCDEF" for character in key_text),
+        "actor identity fixture key is invalid",
+    )
+
+
+def _load_actor_identity_fixture(
+    fixture_root: Path,
     station_url: str,
-) -> None:
-    result_path = seed_root / "journey-result.json"
-    identity_root = seed_root / "actor-identity"
-    storage_root = seed_root / "storage"
+) -> dict[str, Any]:
     try:
-        result = json.loads(result_path.read_text(encoding="utf-8"))
+        metadata = json.loads(
+            (fixture_root / "fixture.json").read_text(encoding="utf-8")
+        )
     except (OSError, json.JSONDecodeError) as error:
         raise CapabilityBindingDevelopmentError(
-            "accepted J01 identity seed evidence is unavailable"
+            "retained J02 actor identity metadata is unavailable"
         ) from error
     require(
-        result.get("status") == "FUNCTIONAL_PASS"
-        and result.get("journey") == "V2-J01"
-        and str(result.get("stationUrl") or "").rstrip("/")
-        == station_url.rstrip("/"),
-        "accepted J01 identity seed does not match Profile two",
+        metadata.get("schemaVersion") == 1
+        and metadata.get("profile") == PROFILE
+        and metadata.get("account") == J02_ACTOR_ACCOUNT
+        and str(metadata.get("stationUrl") or "").rstrip("/")
+        == station_url.rstrip("/")
+        and bool(metadata.get("actorId")),
+        "retained J02 actor identity does not match Profile two",
     )
+    _validate_actor_identity_root(fixture_root / "actor-identity")
+    return dict(metadata)
+
+
+def seed_native_actor_identity(
+    *,
+    fixture_root: Path,
+    target_root: Path,
+    station_url: str,
+) -> dict[str, Any] | None:
+    if not fixture_root.exists():
+        return None
+    metadata = _load_actor_identity_fixture(fixture_root, station_url)
+    identity_root = fixture_root / "actor-identity"
     require(
-        identity_root.is_dir()
-        and storage_root.is_dir()
-        and len(tuple(identity_root.rglob("*.key"))) == 1,
-        "accepted J01 Native state seed is incomplete",
-    )
-    require(
-        not identity_root.is_symlink()
-        and not storage_root.is_symlink()
-        and not any(path.is_symlink() for path in identity_root.rglob("*")),
-        "accepted J01 Native state seed contains a symlink",
-    )
-    require(
-        not any(path.is_symlink() for path in storage_root.rglob("*")),
-        "accepted J01 Native storage seed contains a symlink",
-    )
-    require(
-        not target_root.exists() and not target_storage_root.exists(),
-        "J02 temporary Native state root already exists",
+        not target_root.exists(),
+        "J02 temporary actor identity root already exists",
     )
     target_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     shutil.copytree(identity_root, target_root, symlinks=False)
-    target_storage_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    shutil.copytree(storage_root, target_storage_root, symlinks=False)
+    return dict(metadata)
 
 
-def accepted_seed_profile(seed_root: Path) -> str:
-    profiles = tuple(
-        path.name
-        for path in (seed_root / "storage" / "peers-touch").iterdir()
-        if path.is_dir() and path.name != "desktop"
-    )
-    require(
-        len(profiles) == 1,
-        "accepted J01 Native seed profile is ambiguous",
-    )
-    return profiles[0]
+def persist_native_actor_identity(
+    *,
+    source_root: Path,
+    fixture_root: Path,
+    station_url: str,
+    actor_id: str,
+) -> dict[str, Any]:
+    _validate_actor_identity_root(source_root)
+    metadata = {
+        "schemaVersion": 1,
+        "profile": PROFILE,
+        "account": J02_ACTOR_ACCOUNT,
+        "actorId": actor_id,
+        "stationUrl": station_url.rstrip("/"),
+    }
+    if fixture_root.exists():
+        seeded = _load_actor_identity_fixture(fixture_root, station_url)
+        require(
+            seeded.get("actorId") == actor_id,
+            "retained J02 actor identity belongs to another actor",
+        )
+        return dict(seeded)
+
+    fixture_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temporary = fixture_root.parent / f".{fixture_root.name}.tmp-{os.getpid()}"
+    shutil.rmtree(temporary, ignore_errors=True)
+    try:
+        shutil.copytree(source_root, temporary / "actor-identity", symlinks=False)
+        metadata_path = temporary / "fixture.json"
+        metadata_path.write_text(
+            json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        metadata_path.chmod(0o600)
+        os.replace(temporary, fixture_root)
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
+    return metadata
+
+
+def identity_fixture_evidence(
+    metadata: Mapping[str, Any],
+    *,
+    reused: bool,
+) -> dict[str, Any]:
+    return {
+        "profile": metadata["profile"],
+        "account": metadata["account"],
+        "actorId": metadata["actorId"],
+        "stationUrl": metadata["stationUrl"],
+        "reused": reused,
+    }
 
 
 def port_released(port: int) -> bool:
@@ -259,12 +318,12 @@ def evaluate_capability_binding(
 def authenticate_native_client(
     client: FoundationRuntimeClient,
     profile_env: Mapping[str, str],
-) -> None:
+) -> dict[str, Any]:
     client.configure_station(timeout=60)
     login = client.harness(
         "loginWithPassword",
         {
-            "account": "alice@p.t",
+            "account": J02_ACTOR_ACCOUNT,
             "password": profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
         },
         timeout=120,
@@ -290,6 +349,7 @@ def authenticate_native_client(
         isinstance(health, Mapping) and health.get("ready") is True,
         "Native Agent Harness is unavailable",
     )
+    return dict(login)
 
 
 def cleanup_clients(runtime_pair: FoundationRuntimePair) -> dict[str, Any]:
@@ -395,9 +455,6 @@ def main() -> int:
         slot,
         dict(profile_env),
     )
-    os.environ["PT_AGENT_V2_BINDING_NATIVE_PROFILE"] = (
-        accepted_seed_profile(J01_IDENTITY_SEED)
-    )
     os.environ.update(profile_env)
     os.environ["PT_DEV_PROFILE"] = PROFILE
     deployment_environment = profile_env.get("PT_STATION_DEPLOY_ENV", "")
@@ -431,14 +488,23 @@ def main() -> int:
             startup_timeout=900,
         )
         client = runtime_pair.native
-        seed_native_client_state(
-            seed_root=J01_IDENTITY_SEED,
-            target_storage_root=client.spec.storage_root,
+        seeded_identity = seed_native_actor_identity(
+            fixture_root=J02_IDENTITY_FIXTURE,
             target_root=client.actor_identity_root,
             station_url=profile_env["PT_STATION_URL"],
         )
         client.start()
-        authenticate_native_client(client, profile_env)
+        login = authenticate_native_client(client, profile_env)
+        identity_metadata = persist_native_actor_identity(
+            source_root=client.actor_identity_root,
+            fixture_root=J02_IDENTITY_FIXTURE,
+            station_url=profile_env["PT_STATION_URL"],
+            actor_id=str(login["actorId"]),
+        )
+        capture["identityFixture"] = identity_fixture_evidence(
+            identity_metadata,
+            reused=seeded_identity is not None,
+        )
         sample_id = f"mca-j02-{artifact_run_id}"
         capture["capabilityPreflight"] = client.harness(
             "debugCapabilitySnapshot",
@@ -465,10 +531,12 @@ def main() -> int:
             and isinstance(incompatible, Mapping),
             "V2-J02 Harness returned invalid evidence",
         )
-        capture = {
-            "inventory": dict(inventory),
-            "incompatible": dict(incompatible),
-        }
+        capture.update(
+            {
+                "inventory": dict(inventory),
+                "incompatible": dict(incompatible),
+            }
+        )
         capture["assertions"] = evaluate_capability_binding(capture)
     except BaseException as error:
         primary_error = error

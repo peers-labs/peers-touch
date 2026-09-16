@@ -273,7 +273,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             os.environ.get("PT_AGENT_V2_BINDING_WORKTREE", str(REPO_ROOT))
         ).expanduser().resolve()
         native = ClientRuntime(
-            actor="alice",
+            actor="bob",
             runtime="native-tauri",
             worktree=str(worktree),
             gateway_port=int(
@@ -307,7 +307,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             storage_root=str(run_root / "native" / "storage"),
         )
         browser = ClientRuntime(
-            actor="alice",
+            actor="bob",
             runtime="browser",
             worktree=str(worktree),
             gateway_port=int(

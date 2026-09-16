@@ -1074,6 +1074,8 @@ class ProvisionerBlockingTests(unittest.TestCase):
         native, browser = manifest.clients
         self.assertEqual(native.runtime, "native-tauri")
         self.assertEqual(browser.runtime, "browser")
+        self.assertEqual(native.actor, "bob")
+        self.assertEqual(browser.actor, "bob")
         self.assertEqual(native.profile, "agent-v2-binding-native")
         self.assertEqual(browser.profile, "agent-v2-binding-browser")
         self.assertNotEqual(native.storage_root, browser.storage_root)
