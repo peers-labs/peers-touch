@@ -140,6 +140,63 @@ func TestHomeProjectionUsesStationAgentsAndRecentConversations(t *testing.T) {
 	}
 }
 
+func TestHomeProjectionIgnoresUnpinnedAgentReadinessFailure(t *testing.T) {
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	svc := NewHomeProjectionService(
+		homeAgentListerStub{agents: []domain.Agent{
+			{
+				AgentID:    "agent-pinned",
+				Name:       "ready",
+				ProviderID: "provider-1",
+				ModelName:  "model-1",
+				ConfigJSON: `{"pinned":true}`,
+				UpdatedAt:  now,
+			},
+			{
+				AgentID:    "agent-unpinned",
+				Name:       "unconfigured",
+				ConfigJSON: `{"pinned":false}`,
+				UpdatedAt:  now,
+			},
+		}},
+		homeConversationListerStub{},
+		homeReadinessGetterStub{
+			byAgent: map[string]*model.CapabilityReadinessSnapshot{
+				"agent-pinned": {
+					SnapshotId:        "readiness-pinned",
+					AgentId:           "agent-pinned",
+					RuntimeSnapshotId: "runtime-pinned",
+					CreatedAt:         timestamppb.New(now),
+				},
+			},
+			errors: map[string]error{
+				"agent-unpinned": errors.New("provider is not configured"),
+			},
+		},
+		nil,
+	)
+	svc.now = func() time.Time { return now }
+
+	projection, err := svc.Get(context.Background(), "ptid:actor-1", 0)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if projection.GetFreshness() != model.HomeProjectionFreshness_HOME_PROJECTION_FRESHNESS_FRESH {
+		t.Fatalf("freshness = %s, want fresh", projection.GetFreshness())
+	}
+	if len(projection.GetPinnedAgents()) != 1 ||
+		projection.GetPinnedAgents()[0].GetAgentId() != "agent-pinned" {
+		t.Fatalf("pinned agents = %+v", projection.GetPinnedAgents())
+	}
+	if len(projection.GetReadiness()) != 1 ||
+		projection.GetReadiness()[0].GetAgentId() != "agent-pinned" {
+		t.Fatalf("readiness = %+v", projection.GetReadiness())
+	}
+	if len(projection.GetSliceErrors()) != 0 {
+		t.Fatalf("slice errors = %+v, want none", projection.GetSliceErrors())
+	}
+}
+
 func TestHomeProjectionPreservesValidSlicesWhenOneConversationSourceFails(t *testing.T) {
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 	svc := NewHomeProjectionService(

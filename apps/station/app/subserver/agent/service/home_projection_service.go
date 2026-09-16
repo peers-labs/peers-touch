@@ -92,56 +92,56 @@ func (s *HomeProjectionService) Get(
 		projection.Revision = maxHomeRevision(projection.Revision, agent.UpdatedAt)
 
 		config := decodeHomeAgentConfig(agent.ConfigJSON)
-		readinessSnapshotID := ""
-		if s.readiness != nil {
-			snapshot, readinessErr := s.readiness.Get(
-				ctx,
-				ptid,
-				&model.GetCapabilityReadinessRequest{AgentId: agent.AgentID},
-			)
-			if readinessErr != nil || snapshot == nil {
-				projection.Freshness = model.HomeProjectionFreshness_HOME_PROJECTION_FRESHNESS_PARTIAL
-				projection.Readiness = append(projection.Readiness, &model.HomeReadiness{
-					AgentId:     agent.AgentID,
-					State:       "unavailable",
-					ReasonCodes: []string{"readiness_unresolved"},
-				})
-				projection.SliceErrors = append(projection.SliceErrors, &model.HomeSliceError{
-					SliceId:        "readiness:" + agent.AgentID,
-					Code:           model.HomeErrorCode_HOME_ERROR_CODE_READINESS_UNRESOLVED,
-					Retryable:      true,
-					RecoveryAction: "retry",
-				})
-			} else {
-				readinessSnapshotID = snapshot.GetSnapshotId()
-				projection.Revision = maxHomeRevision(
-					projection.Revision,
-					snapshot.GetCreatedAt().AsTime(),
+		if config.Pinned {
+			readinessSnapshotID := ""
+			if s.readiness != nil {
+				snapshot, readinessErr := s.readiness.Get(
+					ctx,
+					ptid,
+					&model.GetCapabilityReadinessRequest{AgentId: agent.AgentID},
 				)
-				projection.Readiness = append(
-					projection.Readiness,
-					homeReadinessFromSnapshot(snapshot),
-				)
-				for _, capability := range snapshot.GetCapabilities() {
-					key := capability.GetCapabilityId() + "\x00" + capability.GetCapabilityVersion()
-					if _, ok := capabilitySummarySeen[key]; ok {
-						continue
-					}
-					capabilitySummarySeen[key] = struct{}{}
-					projection.CapabilitySummaries = append(
-						projection.CapabilitySummaries,
-						&model.HomeCapabilitySummary{
-							CapabilityId:      capability.GetCapabilityId(),
-							CapabilityVersion: capability.GetCapabilityVersion(),
-							DisplayName:       capability.GetCapabilityId(),
-							ReadinessState:    homeCapabilityReadinessState(capability.GetState()),
-							ReasonCode:        capability.GetReasonCode(),
-						},
+				if readinessErr != nil || snapshot == nil {
+					projection.Freshness = model.HomeProjectionFreshness_HOME_PROJECTION_FRESHNESS_PARTIAL
+					projection.Readiness = append(projection.Readiness, &model.HomeReadiness{
+						AgentId:     agent.AgentID,
+						State:       "unavailable",
+						ReasonCodes: []string{"readiness_unresolved"},
+					})
+					projection.SliceErrors = append(projection.SliceErrors, &model.HomeSliceError{
+						SliceId:        "readiness:" + agent.AgentID,
+						Code:           model.HomeErrorCode_HOME_ERROR_CODE_READINESS_UNRESOLVED,
+						Retryable:      true,
+						RecoveryAction: "retry",
+					})
+				} else {
+					readinessSnapshotID = snapshot.GetSnapshotId()
+					projection.Revision = maxHomeRevision(
+						projection.Revision,
+						snapshot.GetCreatedAt().AsTime(),
 					)
+					projection.Readiness = append(
+						projection.Readiness,
+						homeReadinessFromSnapshot(snapshot),
+					)
+					for _, capability := range snapshot.GetCapabilities() {
+						key := capability.GetCapabilityId() + "\x00" + capability.GetCapabilityVersion()
+						if _, ok := capabilitySummarySeen[key]; ok {
+							continue
+						}
+						capabilitySummarySeen[key] = struct{}{}
+						projection.CapabilitySummaries = append(
+							projection.CapabilitySummaries,
+							&model.HomeCapabilitySummary{
+								CapabilityId:      capability.GetCapabilityId(),
+								CapabilityVersion: capability.GetCapabilityVersion(),
+								DisplayName:       capability.GetCapabilityId(),
+								ReadinessState:    homeCapabilityReadinessState(capability.GetState()),
+								ReasonCode:        capability.GetReasonCode(),
+							},
+						)
+					}
 				}
 			}
-		}
-		if config.Pinned {
 			projection.PinnedAgents = append(projection.PinnedAgents, &model.HomePinnedAgent{
 				AgentId:             agent.AgentID,
 				DisplayName:         firstNonEmpty(agent.Title, agent.Name),
