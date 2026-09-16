@@ -1,14 +1,19 @@
 # Modern Chat Agent V2 — Formal Execution Plan
 
-> **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-17 | **Updated**: 2026-09-16
+> **Status**: superseded
+> **Version**: v1.2
+> **Created**: 2026-08-17 | **Updated**: 2026-09-17
 > **Owner**: Peers-Touch Agent Team
 > **Plan gate**: `OWNER_APPROVED_EXECUTION`
 > **Entry gate**: Owner accepted MCA-D19A/D19B/D19C into the main Goal G1 task on 2026-08-22
 > **Current amendment**: Owner approved [Home-first sequencing](./20260908-agent-delivery-recovery.md) on 2026-09-16
+> **Superseded by**: [Modern Chat Agent V2 Alignment Plan Package](./20260917-modern-chat-agent-v2-alignment/plan.md)
 
 ---
+
+This document remains the detailed historical DAG and evidence source. Current
+Task lifecycle, worktree binding, and Acceptance scheduling are owned only by
+the replacement Plan Package above.
 
 ## 1. Accepted Inputs
 

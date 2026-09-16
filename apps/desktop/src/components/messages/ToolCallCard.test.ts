@@ -15,10 +15,10 @@ describe('ToolCallsBlock approval visibility', () => {
       'Boolean(toolCall.approvalId)',
     );
     expect(source).toContain(
-      'const [expanded, setExpanded] = useState(actionableToolState)',
+      'const [expanded, setExpanded] = useState(false)',
     );
     expect(source).toContain(
-      'if (actionableToolState) setExpanded(true)',
+      'expanded || actionableToolState || pendingCount > 0',
     );
 
     const approveDecision = source.indexOf(
@@ -105,5 +105,28 @@ describe('ToolCallsBlock approval visibility', () => {
     expect(runtimeSource).toContain('api.listAgentCapabilitySessions()');
     expect(runtimeSource).not.toContain('claimAgentTool');
     expect(runtimeSource).not.toContain('executeAgentTool');
+  });
+
+  it('projects governed invocation metadata from Station diagnostics', () => {
+    const source = readFileSync(
+      new URL('./ToolCallCard.tsx', import.meta.url),
+      'utf8',
+    );
+    const runtimeSource = readFileSync(
+      new URL('../../runtimes/toolRuntime.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toContain('data-pt-agent-tool-governance');
+    expect(source).toContain('data-pt-agent-tool-turn');
+    expect(source).toContain('tool.manifestId');
+    expect(source).toContain('manifest?.riskClass');
+    expect(source).toContain('tool.executionOwner');
+    expect(source).toContain('tool.targetDeviceId');
+    expect(source).toContain('tool.readinessSnapshotId');
+    expect(runtimeSource).toContain('executionOwner: fact.executionOwner');
+    expect(runtimeSource).toContain('approvalPolicy: fact.approvalPolicy');
+    expect(runtimeSource).toContain('manifestId: fact.manifestId');
+    expect(runtimeSource).toContain('targetDeviceId: fact.targetDeviceId');
   });
 });

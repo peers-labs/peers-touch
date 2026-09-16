@@ -10,7 +10,10 @@ vi.mock('../services/desktop_api', () => ({
   },
 }));
 
-import { ToolCallStatus as AgentToolCallStatus } from '../gen/proto/domain/agent/agent_pb';
+import {
+  ToolCallStatus as AgentToolCallStatus,
+  ToolExecutionOwner,
+} from '../gen/proto/domain/agent/agent_pb';
 import {
   reconcileToolProjectionState,
   reduceToolProjection,
@@ -29,6 +32,7 @@ const approvalRequired = {
     arguments: '{"resource_ref":"opaque-1"}',
     approvalId: 'approval-1',
     decisionRevision: 0,
+    expiresAt: '2026-09-16T12:00:00Z',
   },
 };
 
@@ -69,6 +73,7 @@ describe('toolRuntime projection authority', () => {
       status: 'approval_required',
       approvalId: 'approval-1',
       decisionRevision: 0,
+      expiresAt: '2026-09-16T12:00:00Z',
     });
   });
 
@@ -85,6 +90,14 @@ describe('toolRuntime projection authority', () => {
           decisionId: '',
           decisionRevision: 0n,
           errorCode: '',
+          executionOwner: ToolExecutionOwner.CLIENT_CAPABILITY,
+          approvalPolicy: 'manual',
+          manifestId: 'filesystem.read',
+          manifestVersion: '1',
+          bindingId: 'binding-1',
+          bindingRevision: 3n,
+          readinessSnapshotId: 'readiness-1',
+          targetDeviceId: 'device-1',
         }],
       },
     });
@@ -110,7 +123,61 @@ describe('toolRuntime projection authority', () => {
       approvalId: 'approval-1',
       decisionRevision: 0,
       payloadHash: 'payload-1',
+      executionOwner: ToolExecutionOwner.CLIENT_CAPABILITY,
+      approvalPolicy: 'manual',
+      manifestId: 'filesystem.read',
+      manifestVersion: '1',
+      bindingId: 'binding-1',
+      bindingRevision: 3,
+      readinessSnapshotId: 'readiness-1',
+      targetDeviceId: 'device-1',
     });
+  });
+
+  it('hydrates a live approval proposal from authoritative Turn diagnostics', async () => {
+    exportAgentTurnDiagnostics.mockResolvedValue({
+      replay: {
+        turnId: 'turn-1',
+        toolCalls: [{
+          toolCallId: 'tool-call-1',
+          toolName: 'filesystem.read',
+          redactedArguments: '{"resource_ref":"opaque-1"}',
+          status: AgentToolCallStatus.WAITING_APPROVAL,
+          approvalId: 'approval-1',
+          decisionId: '',
+          decisionRevision: 0n,
+          errorCode: '',
+          executionOwner: ToolExecutionOwner.CLIENT_CAPABILITY,
+          approvalPolicy: 'manual',
+          manifestId: 'filesystem.read',
+          manifestVersion: '1',
+          bindingId: 'binding-1',
+          bindingRevision: 3n,
+          readinessSnapshotId: 'readiness-1',
+          targetDeviceId: 'device-1',
+        }],
+      },
+    });
+
+    toolRuntime.consume(approvalRequired);
+
+    await vi.waitFor(() => {
+      expect(toolRuntime.getProjection('tool-call-1')).toMatchObject({
+        status: 'approval_required',
+        pending: true,
+        approvalId: 'approval-1',
+        executionOwner: ToolExecutionOwner.CLIENT_CAPABILITY,
+        approvalPolicy: 'manual',
+        manifestId: 'filesystem.read',
+        manifestVersion: '1',
+        bindingId: 'binding-1',
+        bindingRevision: 3,
+        readinessSnapshotId: 'readiness-1',
+        targetDeviceId: 'device-1',
+      });
+    });
+    expect(exportAgentTurnDiagnostics).toHaveBeenCalledOnce();
+    expect(exportAgentTurnDiagnostics).toHaveBeenCalledWith('turn-1');
   });
 
   it('does not regress a newer event projection with stale Turn diagnostics', async () => {

@@ -78,8 +78,9 @@ A Modern Chat Agent is:
 | [module-layout.md](./module-layout.md) | Target ownership packages, registries, dependency direction, and forbidden imports |
 | [integration.md](./integration.md) | Current-code mapping, product acceptance contract, canonical completion locator, and planning handoff |
 | [prototype/README.md](./prototype/README.md) | Peers-owned executable product prototype, review states, and confirmation blockers |
-| [Execution plan](../execution-plans/20260817-modern-chat-agent-v2.md) | **ACTIVE PRODUCT PLAN** — V2 scope reconciliation, prototype review, architecture handoff, and later execution phases |
-| [Formal V2 execution plan](../execution-plans/20260817-modern-chat-agent-v2-execution.md) | Dependency DAG, W0/F1-F4/W1-W9 closures, atomic cutovers, Gates, and acceptance scenarios |
+| [Current V2 Alignment Plan Package](../execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md) | **CURRENT EXECUTION SOURCE** — V2-J01..V2-J06, X3 trusted catalog, and aggregate Acceptance as bounded vertical Task Slices |
+| [Product plan](../execution-plans/20260817-modern-chat-agent-v2.md) | Active product and scope source; execution tracking moved to the current Plan Package |
+| [Legacy formal V2 execution plan](../execution-plans/20260817-modern-chat-agent-v2-execution.md) | Superseded execution source retained for the detailed historical DAG, cutovers, Gates, and scenarios |
 | [Reviewed V2 runtime matrix](../execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml) | Immutable Gate/platform/runtime/cell/locale/order/sample expansion, Mobile semantic-contract cells, and frozen P12/CLI non-advertisement |
 | [Prior V1 plan](../execution-plans/20260730-modern-chat-agent-v1.md) | Historical first-loop plan; does not own current V2 status |
 | [Old blocked plan](../execution-plans/20260730-modern-chat-agent.md) | Superseded — drafted before PRODUCT/DESIGN completion, retained for historical reference only |

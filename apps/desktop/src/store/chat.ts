@@ -39,6 +39,7 @@ import { getDesktopAgentChatCache } from '../storage/desktopAgentChatCache';
 import { toolRuntime } from '../runtimes/toolRuntime';
 import type { CachedAgentConversation, CachedAgentMessage } from '@peers-touch/client-chat-core';
 import type { AgentTurnSnapshotReloadResult } from '../runtimes/chatRuntime';
+import type { ToolExecutionOwner } from '../gen/proto/domain/agent/agent_pb';
 import {
   reduceStreamEvent,
   projectAgentTypedError,
@@ -86,6 +87,15 @@ export interface ToolCallInfo {
   decisionId?: string;
   decisionRevision?: number;
   payloadHash?: string;
+  expiresAt?: string;
+  executionOwner?: ToolExecutionOwner;
+  approvalPolicy?: string;
+  manifestId?: string;
+  manifestVersion?: string;
+  bindingId?: string;
+  bindingRevision?: number;
+  readinessSnapshotId?: string;
+  targetDeviceId?: string;
   error?: string;
   delegationResults?: DelegationTaskInfo[];
 }
@@ -372,6 +382,17 @@ export function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMes
         decision_id?: string;
         decision_revision?: number;
         payload_hash?: string;
+        expires_at?: string;
+        execution_owner?: ToolExecutionOwner;
+        approval_policy?: string;
+        manifest_id?: string;
+        manifest_version?: string;
+        binding_id?: string;
+        binding_revision?: number;
+        readiness_snapshot_id?: string;
+        target_device_id?: string;
+        server_name?: string;
+        source?: string;
         function?: {
           name?: string;
           arguments?: string;
@@ -390,6 +411,17 @@ export function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMes
         decisionId: toolCall.decision_id,
         decisionRevision: toolCall.decision_revision,
         payloadHash: toolCall.payload_hash,
+        expiresAt: toolCall.expires_at,
+        executionOwner: toolCall.execution_owner,
+        approvalPolicy: toolCall.approval_policy,
+        manifestId: toolCall.manifest_id,
+        manifestVersion: toolCall.manifest_version,
+        bindingId: toolCall.binding_id,
+        bindingRevision: toolCall.binding_revision,
+        readinessSnapshotId: toolCall.readiness_snapshot_id,
+        targetDeviceId: toolCall.target_device_id,
+        serverName: toolCall.server_name,
+        source: toolCall.source,
       }));
     } catch {
       // Malformed persisted tool-call payload; render message without tool calls.
@@ -521,6 +553,37 @@ export function mergeServerMessages(currentMessages: ChatMessage[], serverMessag
     if (!match) return serverMessage;
     return carryChainOfThoughtFields(serverMessage, match);
   });
+
+  for (const currentMessage of currentMessages) {
+    if (
+      currentMessage.role !== 'assistant'
+      || !currentMessage.turnId
+      || !currentMessage.toolCalls?.length
+      || (!isOptimisticMessageId(currentMessage.id)
+        && !isInFlightMessage(currentMessage))
+      || merged.some(
+        (message) =>
+          message.role === 'assistant'
+          && message.turnId === currentMessage.turnId,
+      )
+    ) {
+      continue;
+    }
+    const unkeyedAssistantIndex = merged.findIndex(
+      (message) =>
+        message.role === 'assistant'
+        && !message.turnId
+        && message.timestamp >= currentMessage.timestamp - 1000,
+    );
+    if (unkeyedAssistantIndex === -1) continue;
+    merged[unkeyedAssistantIndex] = carryChainOfThoughtFields(
+      {
+        ...merged[unkeyedAssistantIndex],
+        turnId: currentMessage.turnId,
+      },
+      currentMessage,
+    );
+  }
 
   const mergedIds = new Set(merged.map((message) => message.id));
   const mergedAssistantTurnIds = new Set(

@@ -2,6 +2,7 @@ import type { RuntimeDescriptor } from '../kernel/runtime';
 import { isBrowserGatewayRuntime } from '../kernel/gateway';
 import {
   ToolCallStatus as AgentToolCallStatus,
+  ToolExecutionOwner,
   type TurnDiagnosticToolFact,
 } from '../gen/proto/domain/agent/agent_pb';
 import {
@@ -32,8 +33,17 @@ export interface ToolProjection {
   decisionId?: string;
   decisionRevision: number;
   payloadHash?: string;
+  expiresAt?: string;
   approvalActor?: string;
   decidedAt?: string;
+  executionOwner?: ToolExecutionOwner;
+  approvalPolicy?: string;
+  manifestId?: string;
+  manifestVersion?: string;
+  bindingId?: string;
+  bindingRevision?: number;
+  readinessSnapshotId?: string;
+  targetDeviceId?: string;
   decisionErrorCode?: string;
   decisionOutcome?: AgentTypedErrorPayload;
   delegationResults?: DelegationTaskInfo[];
@@ -307,6 +317,9 @@ export function reduceToolProjection(
       decisionId: decisionId || current?.decisionId,
       decisionRevision,
       payloadHash: payloadHash || current?.payloadHash,
+      expiresAt:
+        stringValue(data, 'expiresAt', 'expires_at')
+        || current?.expiresAt,
     };
     return { ...state, [toolCallId]: next };
   }
@@ -382,6 +395,15 @@ function toToolCallInfo(projection: ToolProjection): ToolCallInfo {
     decisionId: projection.decisionId,
     decisionRevision: projection.decisionRevision,
     payloadHash: projection.payloadHash,
+    expiresAt: projection.expiresAt,
+    executionOwner: projection.executionOwner,
+    approvalPolicy: projection.approvalPolicy,
+    manifestId: projection.manifestId,
+    manifestVersion: projection.manifestVersion,
+    bindingId: projection.bindingId,
+    bindingRevision: projection.bindingRevision,
+    readinessSnapshotId: projection.readinessSnapshotId,
+    targetDeviceId: projection.targetDeviceId,
     error:
       projection.error
       || decisionOutcomeError(projection.decisionOutcome)
@@ -514,8 +536,17 @@ function sameToolProjection(
     && left.decisionId === right.decisionId
     && left.decisionRevision === right.decisionRevision
     && left.payloadHash === right.payloadHash
+    && left.expiresAt === right.expiresAt
     && left.approvalActor === right.approvalActor
     && left.decidedAt === right.decidedAt
+    && left.executionOwner === right.executionOwner
+    && left.approvalPolicy === right.approvalPolicy
+    && left.manifestId === right.manifestId
+    && left.manifestVersion === right.manifestVersion
+    && left.bindingId === right.bindingId
+    && left.bindingRevision === right.bindingRevision
+    && left.readinessSnapshotId === right.readinessSnapshotId
+    && left.targetDeviceId === right.targetDeviceId
     && left.decisionErrorCode === right.decisionErrorCode
     && left.decisionOutcome === right.decisionOutcome
     && left.delegationResults === right.delegationResults;
@@ -563,8 +594,23 @@ export function reconcileToolProjectionState(
           progress: projection.progress ?? current.progress,
           progressPct: projection.progressPct ?? current.progressPct,
           payloadHash: projection.payloadHash ?? current.payloadHash,
+          expiresAt: projection.expiresAt ?? current.expiresAt,
           approvalActor: projection.approvalActor ?? current.approvalActor,
           decidedAt: projection.decidedAt ?? current.decidedAt,
+          executionOwner:
+            projection.executionOwner ?? current.executionOwner,
+          approvalPolicy:
+            projection.approvalPolicy ?? current.approvalPolicy,
+          manifestId: projection.manifestId ?? current.manifestId,
+          manifestVersion:
+            projection.manifestVersion ?? current.manifestVersion,
+          bindingId: projection.bindingId ?? current.bindingId,
+          bindingRevision:
+            projection.bindingRevision ?? current.bindingRevision,
+          readinessSnapshotId:
+            projection.readinessSnapshotId ?? current.readinessSnapshotId,
+          targetDeviceId:
+            projection.targetDeviceId ?? current.targetDeviceId,
           decisionErrorCode:
             projection.decisionErrorCode ?? current.decisionErrorCode,
           decisionOutcome:
@@ -612,6 +658,16 @@ function projectionFromDiagnostic(
       ? decisionRevision
       : 0,
     payloadHash: source.payloadHash,
+    expiresAt: source.expiresAt,
+    executionOwner: fact.executionOwner,
+    approvalPolicy: fact.approvalPolicy || source.approvalPolicy,
+    manifestId: fact.manifestId || source.manifestId,
+    manifestVersion: fact.manifestVersion || source.manifestVersion,
+    bindingId: fact.bindingId || source.bindingId,
+    bindingRevision: Number(fact.bindingRevision) || source.bindingRevision,
+    readinessSnapshotId:
+      fact.readinessSnapshotId || source.readinessSnapshotId,
+    targetDeviceId: fact.targetDeviceId || source.targetDeviceId,
   };
 }
 
@@ -675,6 +731,22 @@ class ToolRuntime implements RuntimeDescriptor {
     const next = reduceToolProjection(this.state, event);
     if (next === this.state) return false;
     this.replaceState(next);
+    if (event.event === 'tool_approval_required') {
+      const { toolCallId } = projectionIdentity(event.data);
+      const proposal = next[toolCallId];
+      if (proposal?.turnId) {
+        void this.reconcileMessages([{
+          turnId: proposal.turnId,
+          toolCalls: [toToolCallInfo(proposal)],
+        }]).catch((error) => {
+          log.warn(
+            'toolRuntime',
+            'Failed to hydrate ToolCall proposal from Station diagnostics',
+            { turnId: proposal.turnId, toolCallId, error: String(error) },
+          );
+        });
+      }
+    }
     return true;
   }
 
@@ -759,8 +831,17 @@ class ToolRuntime implements RuntimeDescriptor {
             decisionId: persisted.decisionId,
             decisionRevision: persisted.decisionRevision ?? 0,
             payloadHash: persisted.payloadHash,
+            expiresAt: persisted.expiresAt,
             approvalActor: persisted.approvalActor,
             decidedAt: persisted.approvedAt,
+            executionOwner: persisted.executionOwner,
+            approvalPolicy: persisted.approvalPolicy,
+            manifestId: persisted.manifestId,
+            manifestVersion: persisted.manifestVersion,
+            bindingId: persisted.bindingId,
+            bindingRevision: persisted.bindingRevision,
+            readinessSnapshotId: persisted.readinessSnapshotId,
+            targetDeviceId: persisted.targetDeviceId,
             delegationResults: persisted.delegationResults,
           },
         };

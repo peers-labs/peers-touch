@@ -1,8 +1,8 @@
 # Modern Chat Agent V2 — 产品级迭代计划
 
 > **Status**: active
-> **Version**: v0.2
-> **Created**: 2026-08-17 | **Updated**: 2026-09-16
+> **Version**: v0.3
+> **Created**: 2026-08-17 | **Updated**: 2026-09-17
 > **Owner**: Peers-Touch Agent Team
 > **Plan type**: PRODUCT → DESIGN → PLAN → EXECUTE（Owner approval 已收到）
 > **Predecessor**: `20260816-lobehub-parity-full-landing.md`
@@ -17,27 +17,27 @@
 | Field | Current value |
 |---|---|
 | Main task | 将 Peers-Touch 单 Agent Chat 从源码能力对齐推进到 LobeHub 级产品体验与运行可靠性 |
-| Plan source | `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-execution.md` |
+| Plan source | `docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md` |
 | Tracking source | this product-level overview、`docs/architecture/agent/modern-chat-agent/`、and `docs/architecture/agent/lobehub-parity-mindmap.source.md` |
 | Worktree | `<repo-root>` |
 | Branch | `feat/p0-streaming-runtime-message-actions` |
-| Stage | `EXECUTE` |
-| Current workstream | `MCA-V2-H01 / W2 Home Projection / V2-J01` |
-| Current step | Inventory the existing Home proto, Station owners, Desktop projection/runtime, and C11 old paths; then land the first Station-backed Home projection/Chat command vertical |
-| Progress | Product capability progress is measured by required Journeys: `V2-J01` is current and `FUNCTIONAL_UNPROVEN`; 0/9 V2 combined capabilities are `PROVEN` |
-| Last completed | Exact-source Native run `20260915T221919169052Z` on `085874eca` passed `BASE-STALE_VERSION`: exact `resource_id,expected_revision,actual_revision`, visible localized `Reload latest`, authoritative reload without replay, unchanged winner revision/hash, zero stale mutation, projection convergence, and clean runtime/Fixture cleanup |
-| Current action | Implement the smallest user-visible V2-J01 increment: Station-owned Home readback and canonical Chat start/resume into Desktop Home |
-| Next action | Reconcile `home.proto` and existing Home/Conversation owners, implement the first end-to-end projection/command path, then run the exact-source Home Journey before broad Acceptance |
-| Autonomous execution window | W2 only: one vertical Home increment at a time through Station, transport, `homeRuntime`, and Desktop UI; focused checks and a real Journey precede formal Gate promotion |
-| Overnight slice result | Foundation hardening no longer owns the active queue; incomplete `BASE-*` work is parked and does not count as V2 product progress |
-| Parallel policy | Keep shared proto/generated artifacts and integration serial; parallelize only disjoint Station and Desktop implementation after the contract is frozen |
+| Stage | `PLAN_PERSISTED` |
+| Current workstream | `MCA-J01 / V2-J01 Home Command Center` |
+| Current step | Activate the validated Plan Package and reprove J01 on exact source |
+| Progress | J01/J02 have prior development passes; J03 source fixes are complete; all current package Tasks and seven formal Gates remain uncredited until current-source workflow transitions |
+| Last completed | Validated the 2026-09-17 Plan Package with eight vertical Task Slices and exact worktree binding |
+| Current action | Select MCA-J01, run focused checks, then execute the deterministic native Home Journey |
+| Next action | Advance through J02/J03, implement J04-J06 and X3, then run aggregate Acceptance and update the mind map |
+| Autonomous execution window | Full accepted package through delivery; use one bounded vertical Task at a time and continue while any dependency-ready work remains |
+| Overnight slice result | Legacy foundation and W2-only scheduling are historical inputs, not current lifecycle owners |
+| Parallel policy | Plan lifecycle and shared contracts remain serial; only disjoint read-only investigation or verified source lanes may parallelize |
 | Overnight stop conditions | `WORKTREE_IDENTITY_MISMATCH`、undefined PRODUCT/DESIGN semantics、unauthorized destructive reset、secret leak、or exhausted external runtime resources park the affected action；focused implementation failures return to the owner layer |
-| Overnight non-scope | No G-F/BASE matrix expansion, MCP, Connector, Evaluation, W8b/W9, Mobile UI, release, version bump, profile `two`, `station-two`, or unrelated Acceptance Infra repair |
+| Overnight non-scope | No G-F/BASE matrix expansion, Mobile UI, hosted commercial marketplace/Community, image/video generation, version bump, or unrelated Acceptance repair |
 | Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
-| Blockers | none for W2 entry; incomplete `BASE-*` proof and SC1-SC3 amendment/precondition edges remain parked and must not block V2-J01 |
+| Blockers | none for Plan activation; runtime resources are acquired per current Task and released after each functional Journey |
 | Decisions required | none |
-| Evidence | Accepted MCA-D14/C11/A15 contracts and the approved 2026-09-16 Home-first sequencing amendment authorize W2; prior Foundation runs remain historical diagnostics, while G-F and the Home product Gate remain `UNPROVEN` |
-| Last updated | 2026-09-16 |
+| Evidence | Accepted MCA-D14-D18/C11-C15/A15-A20 contracts, P4-3, the parity mind map, and the validated 2026-09-17 package; all formal product Gates remain `UNPROVEN` |
+| Last updated | 2026-09-17 |
 
 ---
 
