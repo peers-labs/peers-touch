@@ -549,14 +549,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         slot: int,
         profile_env: dict[str, str],
     ) -> RuntimeManifest:
-        if profile_env.get("CHAT_ACCEPTANCE_RESET") != "1":
-            raise BlockedError(
-                reason=(
-                    "Agent V2 capability binding actor Fixture reset requires "
-                    "CHAT_ACCEPTANCE_RESET=1 in the approved profile"
-                ),
-                resource="fixture-reset:authorization",
-            )
         missing_configuration = sorted(
             name
             for name in ("CHAT_NATIVE_DEMO_PASSWORD",)
@@ -571,15 +563,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 resource=f"profile:{missing_configuration[0]}",
             )
         credential_refs = ("profile:CHAT_NATIVE_DEMO_PASSWORD",)
-        _, _, actor_ref = produce_actor_manifest(
-            environment_id=self.environment_id,
-            run_id=manifest.run_id,
-            station_url=station_url,
-            deployment_environment=deployment_environment,
-            roles=GATE_ROLES[AGENT_V2_BINDING_GATE],
-            credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
-            reset_authorized=True,
-        )
         clients = self._agent_v2_binding_clients(
             manifest.run_id,
             slot,
@@ -587,7 +570,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         )
         return dataclasses.replace(
             manifest,
-            actor_manifest_ref=actor_ref,
             credential_refs=credential_refs,
             clients=clients,
             cleanup_resources=self.contract.cleanup.resources,

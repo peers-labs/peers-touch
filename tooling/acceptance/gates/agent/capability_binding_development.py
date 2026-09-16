@@ -26,7 +26,6 @@ from tooling.acceptance.core.evidence_store import (
     workspace_id,
 )
 from tooling.acceptance.core.provisioner import load_env_file
-from tooling.acceptance.fixtures.chat_native_actors import reset_fixture
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationRuntimeClient,
     FoundationRuntimePair,
@@ -281,8 +280,6 @@ def main() -> int:
     os.environ["PT_ACCEPTANCE_GATE_ID"] = AGENT_V2_BINDING_GATE
     os.environ["PT_ACCEPTANCE_RUN_ID"] = attestation_run.run_id
     os.environ["PT_ACCEPTANCE_APPROVED_PROFILE"] = PROFILE
-    os.environ["CHAT_ACCEPTANCE_RESET"] = "1"
-    os.environ["CHAT_ACCEPTANCE_RESET_PROFILE"] = PROFILE
 
     activation = subprocess.run(
         ["make", "profile", f"PROFILE={PROFILE}"],
@@ -323,7 +320,6 @@ def main() -> int:
     cleanup: dict[str, Any] = {
         "status": "clean",
         "clients": None,
-        "fixtureResetAfter": False,
         "provisionerResourcesReleased": [],
         "failures": [],
     }
@@ -394,18 +390,6 @@ def main() -> int:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(client.log_path, target)
         try:
-            reset_fixture(
-                deployment_environment,
-                ("alice", "bob"),
-                reset_authorized=True,
-            )
-            cleanup["fixtureResetAfter"] = True
-        except BaseException as error:
-            cleanup["status"] = "failed"
-            cleanup["failures"].append(
-                f"fixture cleanup: {type(error).__name__}: {error}"
-            )
-        try:
             cleanup["provisionerResourcesReleased"] = list(
                 provisioner.cleanup()
             )
@@ -422,7 +406,6 @@ def main() -> int:
             primary_error is None
             and isinstance(assertions, Mapping)
             and all(assertions.values())
-            and cleanup["fixtureResetAfter"] is True
             and cleanup["status"] == "clean"
         )
         else "FAIL"

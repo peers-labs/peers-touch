@@ -99,6 +99,8 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
         self.assertIn("authenticate_native_client(client, profile_env)", source)
         self.assertNotIn("_authenticate_clients(", source)
         self.assertNotIn('"ensureProvider"', source)
+        self.assertNotIn("reset_fixture", source)
+        self.assertNotIn("CHAT_ACCEPTANCE_RESET", source)
 
 
 if __name__ == "__main__":

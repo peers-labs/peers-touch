@@ -332,7 +332,6 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "PT_DESKTOP_WEB_GATEWAY_PORT": "24031",
                 "PT_DESKTOP_WEB_WEB_PORT": "24211",
                 "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
-                "CHAT_ACCEPTANCE_RESET": "1",
             },
         )
 
@@ -1086,11 +1085,8 @@ class ProvisionerBlockingTests(unittest.TestCase):
             manifest.credential_refs,
             ("profile:CHAT_NATIVE_DEMO_PASSWORD",),
         )
-        actor_manifest.assert_called_once()
-        self.assertEqual(
-            actor_manifest.call_args.kwargs["roles"],
-            ("alice", "bob"),
-        )
+        actor_manifest.assert_not_called()
+        self.assertIsNone(manifest.actor_manifest_ref)
         profile_lease.assert_called_once_with(
             "station-2",
             f"acceptance:agent-v2-capability-binding-e2e:{manifest.run_id}",
