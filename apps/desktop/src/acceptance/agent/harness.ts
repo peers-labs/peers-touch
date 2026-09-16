@@ -1488,6 +1488,13 @@ function normalizeProjectedStationPayload(
     ...(evidenceValue(value) as Record<string, unknown>),
   };
   delete normalized.streamGeneration;
+  if (typeof normalized.text === 'string' || typeof normalized.result === 'string') {
+    delete normalized.content;
+  }
+  if (typeof normalized.toolCallId === 'string') delete normalized.id;
+  if (typeof normalized.toolName === 'string') delete normalized.name;
+  if (typeof normalized.arguments === 'string') delete normalized.args;
+  if (typeof normalized.stage === 'string') delete normalized.message;
   return normalized;
 }
 
@@ -15417,6 +15424,15 @@ async function runFoundationIncompatibleCapabilityAttempt(input: {
     errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
   const sourceDelivery = errorEvent?.sourceDelivery;
   const actorPtid = authenticatedFoundationActorPtid();
+  const sourcePayloadMatches = Boolean(
+    errorEvent
+    && sourceDelivery
+    && stableJson(
+      normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+    ) === stableJson(
+      normalizeProjectedStationPayload(errorEvent.data),
+    ),
+  );
   if (
     !errorEvent
     || !sourceDelivery
@@ -15426,14 +15442,21 @@ async function runFoundationIncompatibleCapabilityAttempt(input: {
     || !sourceDelivery.turnId
     || sourceDelivery.sequence <= 0
     || sourceDelivery.rawPayload.eventType !== 'error'
-    || stableJson(
-      normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
-    ) !== stableJson(
-      normalizeProjectedStationPayload(errorEvent.data),
-    )
+    || !sourcePayloadMatches
   ) {
     throw new Error(
-      'agent.acceptance.foundationIncompatibleCapabilitySourceIdentityMismatch',
+      'agent.acceptance.foundationIncompatibleCapabilitySourceIdentityMismatch:'
+      + stableJson({
+        sourceDeliveryPresent: Boolean(sourceDelivery),
+        transport: sourceDelivery?.transport ?? '',
+        actorMatches: sourceDelivery?.ptid === actorPtid,
+        conversationMatches:
+          sourceDelivery?.conversationId === input.conversationId,
+        turnIdPresent: Boolean(sourceDelivery?.turnId),
+        sequence: sourceDelivery?.sequence ?? 0,
+        eventType: sourceDelivery?.rawPayload.eventType ?? '',
+        sourcePayloadMatches,
+      }),
     );
   }
   return {

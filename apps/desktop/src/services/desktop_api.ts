@@ -557,7 +557,7 @@ export async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
   if (response.error?.code === 'UNAUTHORIZED') {
     throw new AuthCommandException(response.error);
   }
-  throw new Error(response.error?.message || `${command} failed`);
+  throw new RustCommandException(command, response.error);
 }
 
 async function invokeRustProtoRequest<

@@ -142,6 +142,7 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
         )
         self.assertIn("submittedRevision: createdRevision.toString()", source)
         self.assertNotIn("stale binding composer rejection", source)
+        self.assertIn("delete normalized.message", source)
         self.assertIn("fixtureModelDeleted", source)
         self.assertNotIn(
             "sourceProvider.api_key",
