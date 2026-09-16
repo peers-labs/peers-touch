@@ -1986,7 +1986,7 @@ and zero local-path leakage.
 
 - **Inventory source**: the reviewed 28-family `foundation_errors` matrix,
   production Station/Desktop paths, and direct Harness/oracle registration.
-- **Owner-layer source complete (22)**:
+- **Owner-layer source complete (23)**:
   `BASE-QUEUE_FULL`,
   `BASE-RUNTIME_UNAVAILABLE`,
   `BASE-DUPLICATE_CONFLICT`, `BASE-ACTIVE_MUTATION_CONFLICT`,
@@ -1997,12 +1997,14 @@ and zero local-path leakage.
   `BASE-CONTEXT_OVERFLOW`, `BASE-INVALID_REFERENCE`,
   `BASE-ATTACHMENT_REJECTED`, `BASE-APPROVAL_DENIED`,
   `BASE-APPROVAL_EXPIRED`, `BASE-LOOP_BUDGET_EXHAUSTED`, `BASE-CANCELLED`,
-  `BASE-INTERRUPTED`, `BASE-STALE_VERSION`, and `BASE-UNKNOWN_TOOL`.
+  `BASE-INTERRUPTED`, `BASE-STALE_VERSION`, `BASE-TERMINAL_MUTATION`, and
+  `BASE-UNKNOWN_TOOL`.
 - **Exact-source `FUNCTIONAL_PASS` (21)**: all owner-layer-complete families
   above except `BASE-UNKNOWN_TOOL`, whose real-provider Development Journey is
   blocked before product execution by the disposable Agent's missing enabled
-  `skills_list` binding.
-- **Source-incomplete (6)**:
+  `skills_list` binding, and `BASE-TERMINAL_MUTATION`, whose corrected
+  exact-source rerun is pending.
+- **Source-incomplete (5)**:
 
 | Cluster | Families | Missing closure |
 |---|---|---|
@@ -2010,7 +2012,6 @@ and zero local-path leakage.
 | `G-FE1-SC2` Runtime selection | `BASE-RESUME_UNAVAILABLE` | external-session reset command, typed outcome, confirmation action, and direct Journey |
 | `G-FE1-SC3` Client execution | `BASE-PERMISSION_DENIED`, `BASE-TARGET_DISCONNECTED` | Desktop/Station implementation beyond Mobile contract-only coverage |
 | `G-FE1-SC4` Provider terminalization | `BASE-RATE_LIMIT` | deterministic real 429 trigger without a synthetic provider response |
-| `G-FE1-SC6` Lifecycle concurrency | `BASE-TERMINAL_MUTATION` | reject terminal-resource mutation and open the immutable result |
 
 - **Execution order**: finish `G-FE1-NORMAL-SEND`, freeze the shared typed-error
   contract, then implement `SC1` through `SC6` in dependency-safe owner lanes.
@@ -2175,11 +2176,26 @@ and zero local-path leakage.
     request-path regression retain the same stale-mutation business Journey
     for later promotion into the unchanged Foundation Gate after all source
     gaps close; this Development evidence is not `PROVEN`.
-  - `BASE-TERMINAL_MUTATION` remains source-incomplete and is the next
-    dependency-ready owner-layer vertical. It must preserve the accepted
-    terminal resource hash, reject the mutation with exact
-    `LIFECYCLE_TERMINAL_MUTATION`, expose `Open result`, and produce zero
-    mutation.
+  - `BASE-TERMINAL_MUTATION` is owner-layer source complete at checkpoint
+    `3987b20a2`. Station rejects cancellation of completed, failed, cancelled,
+    or interrupted Turns after the row lock with exact non-retryable terminal
+    `LIFECYCLE_TERMINAL_MUTATION` details `resource_id,terminal_status`.
+    Desktop Rust preserves only the safe typed fields; Web owns the single
+    cancellation intent and projects localized `Open result` onto the existing
+    assistant message while stream abort remains transport-only.
+  - Exact-source Native Development run `20260915T230015785427Z` on
+    `3987b20a2` reached a real provider-completed Turn but sent cancellation
+    before Station diagnostics exposed the durable `COMPLETED` state. The
+    command therefore validly cancelled the still-active Turn and no terminal
+    mutation surface appeared. This is preserved as a Development Journey
+    fencing failure, not product failure or `FUNCTIONAL_PASS`; process, port,
+    storage, Fixture, source-lease, and profile-lease cleanup passed.
+  - Checkpoint `8314ec660` fences the same Journey on authoritative Station
+    diagnostics `COMPLETED` before calling the production Chat-store
+    cancellation intent. Its focused TypeScript and independent Python oracle
+    checks pass. The corrected exact-source rerun remains pending; the current
+    worktree contains four unrelated formatting-only dirty files that the
+    integrator is not authorized to restore or include.
 - **Gate boundary**: do not run C08 or the 419-cell Foundation Gate while any
   source-incomplete family remains.
 - **C08 diagnostic after the boundary changed (2026-09-15)**: run
