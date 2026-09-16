@@ -12,11 +12,13 @@
 | Existing owner/path | Current role | Target relationship |
 |---|---|---|
 | `docs/global/workflow.md` | Outer development stages | Retains stages; points PLAN/EXECUTE to Plan Package and Session |
-| `pt-dev-workflow` | Stage classification and dispatch | Sole intake-to-close orchestrator |
-| `pt-plan-and-document` | Writes a monolithic plan | Creates bounded Plan Package + initial Task set |
-| `pt-execution-plan-guardian` | Scope, queue and plan conformance | Selects one Task/Journey and drives its Session |
-| `pt-context-anchor` | Reads plan plus free-text active step | Projects stable task pointers and Session state |
-| `pt-trae-goal-orchestrator` | Builds Goal queues | Uses manifest DAG and Task states |
+| `pt-god-view` | Methodology entry facade | Classifies intent and routes exactly one owner; never executes or persists |
+| `pt-dev-workflow` | Stage classification and dispatch | Sole intake-to-close Development Run application service |
+| `pt-architecture-execution-methodology` | Execution-plan analysis | Produces the vertical dependency model without writing files |
+| `pt-plan-and-document` | Document writer | Persists the accepted model as a bounded Plan Package and initial tracked locator |
+| `pt-trae-goal-orchestrator` | Goal scheduler | Projects Ready/Parked work, order, and concurrency without durable mutation |
+| `pt-execution-plan-guardian` | Plan-conformance guard | Returns a read-only allow/deny/escalate decision for one proposed action |
+| `pt-context-anchor` | Status adapter | Validates owners and renders a read-only chat projection |
 | `execution-plan.py` | Finds active single-file plans | Finds package `plan.md` and resolves current Task |
 | `acceptance-plan.py` | Selects current closure Gates | Uses current Task `closureId` from package |
 | `tooling/scripts/local-dev/` | Make-backed runtime commands | Adds public declaration and Session commands |
@@ -49,6 +51,8 @@ No layer duplicates another:
 - Session event journal owns current transition/attempt; `session.json` is its projection.
 - Local Dev owns allocation, not task completion.
 - Acceptance owns proof, not development iteration.
+- God View routes, Dev Workflow coordinates the Run, Goal schedules, Guardian
+  authorizes, and Context Anchor projects.
 
 ## 3. Command Surface
 
@@ -101,27 +105,38 @@ All commands:
 
 - permits read-only intake before declaration;
 - requires active declaration before first mutation;
-- creates or validates a Plan Package before EXECUTE;
-- starts one Session for the current Task;
+- dispatches stage owners and coordinates one Development Run;
+- asks the Goal scheduler what is ready and the Guardian whether each proposed
+  action may execute;
+- performs allowed work and persists Session, Task, manifest, and
+  `active_work` updates through their owning commands;
 - reports task/Journey progress, not file/Gate counts;
 - fences Acceptance before `FUNCTIONAL_PASS`;
 - releases declaration and leases on close/cancel.
 
+### `pt-architecture-execution-methodology`
+
+- derives vertical Journey/functional closures and their dependency DAG;
+- defines atomic cutovers and risk/state-based verification;
+- does not persist package files, schedule lanes, or execute work.
+
 ### `pt-plan-and-document`
 
-- creates `plan.md` plus `tasks/*.md`;
+- renders an accepted plan model into `plan.md` plus `tasks/*.md`;
 - enforces manifest/task/current-snapshot bounds;
-- registers `active_work.current_task_id/current_task_path/dev_state`;
+- registers the initial
+  `active_work.current_task_id/current_task_path/dev_state`;
 - creates no Context Anchor section and no progress appendix;
 - uses archive only for migrated historical input.
 
 ### `pt-execution-plan-guardian`
 
-- validates package and selects the current Task before mutation;
-- derives Ready/Parked queues from manifest DAG plus manifest Task statuses;
-- binds one Journey/functional boundary and one Session;
-- keeps shared files with one integrator owner;
-- updates Task durable snapshot only at meaningful milestones.
+- consumes one scheduler-proposed action;
+- validates binding, current Task, dependencies, scope, ownership,
+  authorization, concurrency safety, and evidence policy;
+- returns allow, deny, or typed amendment escalation;
+- never selects work, executes commands, or mutates Plan/Task/Session/tracking
+  state.
 
 ### `pt-context-anchor`
 
@@ -134,13 +149,16 @@ Reads only:
 5. referenced durable evidence when needed.
 
 It does not scan `archive/`, all Task bodies or conversation history. The chat
-projection labels `dev_state` as Session-owned and Task lifecycle as manifest-owned.
+projection labels `dev_state` as Session-owned and Task lifecycle as
+manifest-owned. Any mismatch is reported to Dev Workflow; the Anchor does not
+repair it.
 
 ### `pt-trae-goal-orchestrator`
 
 - builds ready queue from manifest DAG;
-- maps one Goal slice to one or more dependency-ready Task IDs;
-- never rewrites manifest Task status from agent runtime metadata;
+- maps one Goal Slice to dependency-ready actions inside the current Task;
+- chooses serial/parallel/hybrid lanes and one integration order;
+- never rewrites manifest, Task, Session, `active_work`, or evidence;
 - treats stale/unaddressable agent records as runtime metadata, not blockers.
 
 ### `pt-completion-auditor`

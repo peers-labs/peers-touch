@@ -9,7 +9,7 @@ Score each dimension from 0 to 2.
 | Slice closure | The Slice is dependency-, ownership-, evidence-, recovery-, and scope-closed |
 | Queue completeness | All in-scope actions are classified as ready, in progress, parked, or done |
 | Queue liveness | A blocked action is parked and the complete ready frontier continues |
-| Dynamic admission | Newly discovered work is admitted only when accepted sources determine it and the durable plan is updated first |
+| Dynamic admission | Only already-modeled remediation is admitted; new deliverables return `PLAN_AMENDMENT_REQUIRED` to the Development Run |
 | Exhaustion proof | Goal-level blocked requires an empty Ready Queue, no legal remediation, and explicit hard blockers |
 | Scope fidelity | Selected work and remainder match the owning workflow or formal plan |
 | Dependency fidelity | The Goal does not invent, remove, or reorder semantic dependencies |
@@ -72,6 +72,8 @@ Reject regardless of score when:
 - the Goal crosses a stage review boundary;
 - an EXECUTE Goal has no approved plan or matching tracked-work state;
 - the Goal changes product, architecture, or plan semantics;
+- the Goal, scheduler, or Guardian writes Plan, Task, Session, `active_work`, or
+  evidence state instead of returning the result to `pt-dev-workflow`;
 - concurrent writers overlap;
 - execution mode is chosen from task count or speed preference without explicit
   dependency, write-set, generated-output, shared-resource, verification, and

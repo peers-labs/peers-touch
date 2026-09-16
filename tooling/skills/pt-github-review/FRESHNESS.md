@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-16
-covered_docs_hash: 98e31bce49997a3a540c21e963cafe509a823cc843558ad877d546ebefdd76ad
+covered_docs_hash: cbf243edc868095aaad3ec8c0215b391ac56bfca971d4d86e514128ae8aebfa4
 
 covered_docs:
   - AGENTS.md
@@ -221,3 +221,12 @@ Plane. The merged sources preserve existing review severity, exact-source
 evidence, environment authorization, source-of-truth ownership, and old-path
 deletion rules. No `pt-github-review/SKILL.md` behavior or fixture change is
 required.
+
+The Development Skill responsibility refinement makes `pt-god-view` a thin
+router, `pt-dev-workflow` the sole Development Run application service,
+`pt-trae-goal-orchestrator` the scheduler, `pt-execution-plan-guardian` a
+read-only policy guard, and `pt-context-anchor` a read-only projection. PLAN is
+split between vertical dependency modeling and repository persistence.
+Review severity is unchanged, but review must reject any change that lets the
+router, scheduler, policy guard, or projection mutate durable workflow state,
+or that restores a generic five-variant Acceptance requirement.

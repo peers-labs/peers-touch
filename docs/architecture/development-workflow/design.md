@@ -92,6 +92,30 @@ No owner may copy another owner's complete state. In particular:
 - Context Anchor does not read `archive/` or scan every task body.
 - Development records do not satisfy formal Acceptance proof.
 
+### 4.1 Methodology Runtime Boundaries
+
+| Role | Owner | May mutate durable state? |
+|---|---|---|
+| Facade/router | `pt-god-view` | No |
+| Development Run application service | `pt-dev-workflow` | Yes, only through the owning Plan/Task/Session/`active_work` commands |
+| Vertical dependency modeling | `pt-architecture-execution-methodology` | No |
+| Repository persistence | `pt-plan-and-document` | Yes, for accepted documents/package and initial tracked locator |
+| Scheduler / WHAT runs next | `pt-trae-goal-orchestrator` | No |
+| Policy / MAY this action run | `pt-execution-plan-guardian` | No |
+| Chat projection | `pt-context-anchor` | No |
+
+The runtime call direction is:
+
+```text
+God View -> Dev Workflow -> Scheduler -> Guardian -> Dev Workflow executes
+                               |                         |
+                               +------ read only --------+
+Dev Workflow -> owner commands persist -> Context Anchor projects
+```
+
+No scheduler or policy result is itself a Task/Session transition. No
+projection repairs its inputs.
+
 ## 5. Plan Package Contract
 
 An active formal plan is a directory:
@@ -165,10 +189,11 @@ Task handoff is one atomic manifest update performed by `planctl advance`:
 3. select an explicit dependency-ready successor, or no successor when complete;
 4. mark that successor `in_progress`;
 5. atomically replace `plan.md`;
-6. update `active_work` as a projection.
+6. let `pt-dev-workflow` update `active_work` through its owner path.
 
-If execution stops after step 5, resume repairs `active_work` from the manifest.
-It never reverses the manifest from a stale projection.
+If execution stops after step 5, `pt-dev-workflow` repairs `active_work` from
+the manifest during resume. `pt-context-anchor` only reports the mismatch, and
+no component reverses the manifest from a stale projection.
 
 If a blocked Task has no ready successor, the same atomic update sets package
 status `blocked`. If a ready Task exists, the package remains `active` and that

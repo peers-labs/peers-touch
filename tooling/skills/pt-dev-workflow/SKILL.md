@@ -1,66 +1,95 @@
 ---
 name: pt-dev-workflow
 description: >-
-  Orchestrates Peers-Touch development from requirement classification through
-  public resource declaration, product-first execution, Acceptance promotion,
-  review and delivery. Invoke for every non-trivial task or tracked-work resume.
+  Runs one non-trivial Peers-Touch development lifecycle from verified intake
+  through resource declaration, stage dispatch, product-functional proof,
+  Acceptance promotion, delivery, and resource release.
 stage: orchestrator
 requires: []
-produces: ["declared and closed development work item", "product-functional evidence", "formal delivery evidence"]
+produces: ["closed Development Run", "durable workflow state", "bounded delivery claim"]
 ---
 
 # Dev Workflow
 
-This is the single entry point for non-trivial Peers-Touch development. It owns
-workflow order and claim discipline; specialist Skills own their stages.
+This is the single entry point for non-trivial Peers-Touch development.
+
+It is the application service for one Development Run. It coordinates owners,
+state transitions, authorization, and cleanup. It does not absorb specialist
+methodologies.
 
 Architecture source:
 `docs/architecture/development-workflow/README.md`.
 
+## Responsibility Boundary
+
+| Concern | Owner |
+|---|---|
+| Route into this workflow | `pt-god-view` |
+| Product Journey and visible states | `pt-product-design-methodology` |
+| Architecture boundaries and contracts | `pt-architecture-design-methodology` |
+| Vertical dependency plan model | `pt-architecture-execution-methodology` |
+| Plan Package persistence and initial `active_work` registration | `pt-plan-and-document` |
+| Ready/Parked selection and concurrency lanes | `pt-trae-goal-orchestrator` |
+| Whether a proposed action may run | `pt-execution-plan-guardian` |
+| Plan/Task/Session/`active_work` mutation order | `pt-dev-workflow` through their owning commands |
+| Status projection | read-only `pt-context-anchor` |
+| Formal product proof | Acceptance owning Skills |
+| Delivery review | commit, PR, quality, completion, and review Skills |
+
+The scheduler proposes **what runs**. The Guardian decides **whether that
+proposed action may run**. Dev Workflow performs the allowed action and
+persists the result. No other Skill may duplicate this RUN loop.
+
 ## Invoke When
 
-- Starting or resuming a non-trivial feature, bug fix, refactor, migration, or
-  cross-module task.
-- The user asks to implement, continue, finish, verify, submit, or deliver
-  tracked work.
-- A task needs PRODUCT, DESIGN, PLAN, EXECUTE, Acceptance, or DELIVER routing.
+- Starting or resuming a non-trivial implementation, migration, refactor, bug
+  closure, verification, or delivery.
+- A read-only discussion is about to perform its first write or acquire a
+  runtime resource.
+- A tracked Development Run must continue, close, or recover.
 
-Do not use for read-only discussion or trivial typo/comment changes with no
-product or runtime impact.
+Do not use for status-only projection or a trivial text-only correction.
 
-## Core Rule
+## Run Lifecycle
 
 ```text
-read-only intake
-  -> public resource declaration before first write/runtime acquisition
-  -> PRODUCT -> DESIGN -> PLAN
-  -> product-first EXECUTE
-  -> exact-source FUNCTIONAL_PASS
-  -> Acceptance promotion and proof
-  -> Quality and DELIVER
-  -> release declaration and leases
+INTAKE
+  -> DECLARED
+  -> PRODUCT
+  -> DESIGN
+  -> PLAN_MODEL
+  -> PLAN_PERSISTED
+  -> EXECUTING
+  -> FUNCTIONAL_PASS
+  -> ACCEPTANCE
+  -> DELIVER
+  -> RELEASED
 ```
 
-Never enter broad Acceptance while a required product Journey is not
+A stage may be skipped only when its owning Skill proves it is unnecessary.
+Never enter broad Acceptance while a required Journey is not
 `FUNCTIONAL_PASS`.
 
-## 1. Read-Only Intake
+## 1. Intake And Binding
 
 Before mutation:
 
-1. Bind and verify the explicit worktree.
-2. Classify the task: product behavior, infrastructure, refactor, or docs.
-3. Resolve existing product, architecture, plan, Journey and `active_work`
-   sources.
-4. Derive preliminary source and runtime claims.
-5. Record the authorization envelope for local checkpoint, push, PR, deploy,
-   reset and history rewrite.
+1. Bind one explicitly selected worktree. Never infer it from a Skill path,
+   branch name, plan path, or nearby repository.
+2. Capture and verify canonical root, branch, `workspaceId`, initial HEAD,
+   expected HEAD, and worktree-set digest with
+   `tooling/scripts/verify-worktree-binding.py`.
+3. Resolve user intent, authorization envelope, existing accepted sources, and
+   whether the work is tracked.
+4. Preserve unrelated dirty files. Never switch branches or worktrees
+   implicitly.
 
-Read-only inspection does not require a declaration.
+Missing identity returns `WORKTREE_IDENTITY_UNAVAILABLE`; drift returns
+`WORKTREE_IDENTITY_MISMATCH`.
 
 ## 2. Public Resource Declaration
 
-Before the first repository write or runtime acquisition:
+Before the first write or runtime acquisition:
 
 ```bash
 make dev-start \
@@ -71,150 +100,154 @@ make dev-start \
   [JOURNEY=<id>] [SESSION=<id>]
 ```
 
-Requirements:
-
-- `~/.peers-touch/dev/work.json` is the machine-wide public intent ledger.
-- `make dev-start` must atomically publish, conflict-check and read back the
-  declaration.
-- Run `make dev-check WORK_ITEM=<id>` before each mutation slice.
-- Use `make dev-update` before writing outside the declared source claims or
-  acquiring an undeclared resource.
-- After an authorized commit, rebase or merge, use `make dev-update` to publish
-  the new source HEAD before the next mutation slice.
-- `make dev-status-all` is the cross-worktree public view.
-- A declaration is intent, not a runtime lease or authorization.
-- Different worktrees on different branches may declare overlapping source
-  paths; `SOURCE_OVERLAP_WARNING` makes the later merge risk visible without
-  blocking either branch.
-- `RESOURCE_DECLARATION_CONFLICT` remains a hard stop for same-workspace source
-  overlap, same-branch parallel writes, and exclusive runtime-resource
-  overlap. Do not select another worktree, Profile, path or resource as a
-  workaround.
-
-## 3. Outer Stage Dispatch
-
-| Stage | Owner Skill | Exit Gate |
-|---|---|---|
-| PRODUCT | `pt-product-design-methodology`; `pt-prototype-design` when needed | accepted journeys, states and product acceptance |
-| DESIGN | `pt-architecture-design-methodology` | accepted ownership, contracts, failures and decisions |
-| PLAN | `pt-architecture-execution-methodology` then `pt-plan-and-document` | approved plan, Journey mapping and authorization envelope |
-| EXECUTE | `pt-execution-plan-guardian` | required Journeys reach functional pass and formal proof |
-| DELIVER | commit/PR/review Skills | merged or explicitly held/rejected |
-
-Update the public declaration whenever stage scope or resources change. Create
-`active_work` only after the formal plan exists.
-
-## 4. Product-First EXECUTE
-
-For each dependency-ready workstream, select one Journey and enforce:
-
-```text
-REPRODUCING -> REPRODUCED
-  -> IMPLEMENTING
-  -> FOCUSED_CHECKING -> FOCUSED_PASS
-  -> CHECKPOINTING -> CHECKPOINTED
-  -> DEPLOYING -> DEPLOYED
-  -> FUNCTIONAL_RUNNING
-       -> FAILED: return first actionable failure to IMPLEMENTING
-       -> BLOCKED: park the environment/authorization edge
-       -> FUNCTIONAL_PASS
-```
-
 Rules:
 
-- Reproduce once and identify the owning layer before fixing.
-- Run focused unit/type/contract checks, not broad Acceptance.
-- Remote/exact-source runtime requires an authorized clean checkpoint commit.
-- Deployment and runtime startup use Local Dev Control Plane and Make owners.
-- Functional verification must use the required real product runtime and
-  receiver perspective.
-- Stop on the first actionable failure.
-- Every command declares one purpose and a bounded budget.
-- Do not run coverage, Gap Detector, Completion Auditor, cross-platform
-  matrices, submit pipeline or broad Gate bundles before `FUNCTIONAL_PASS`.
+- Run `make dev-check WORK_ITEM=<id>` before each mutation slice.
+- Run `make dev-update` before expanding scope/resources and after an
+  authorized commit, merge, or rebase changes source HEAD.
+- Different worktrees on different branches may overlap with
+  `SOURCE_OVERLAP_WARNING`; same-workspace overlap, same-branch parallel
+  writes, and exclusive runtime overlap return
+  `RESOURCE_DECLARATION_CONFLICT`.
+- A declaration is public intent, not a runtime lease or operation
+  authorization.
 
-## 5. Acceptance Promotion
+## 3. Dispatch Stages
+
+Invoke the owning Skill and consume its typed output:
+
+| Stage | Owner output required |
+|---|---|
+| PRODUCT | accepted Journey/state/acceptance contract |
+| DESIGN | accepted ownership/contracts/failure semantics |
+| PLAN model | accepted vertical dependency model |
+| PLAN persistence | validated Plan Package and `active_work` locator |
+| EXECUTE | scheduler proposal plus Guardian policy decision |
+| ACCEPTANCE | formal evidence for required scope |
+| DELIVER | reviewed commit/PR result |
+
+Dev Workflow owns transition order, not stage content. It never edits a
+specialist's answer in place to bypass a blocked gate.
+
+## 4. Tracked Execution Loop
+
+For an accepted Plan Package:
+
+1. Validate the package and resolve its current Task.
+2. Verify `active_work.current_task_id`, `current_task_path`, and `dev_state`
+   against the manifest and Development Session.
+3. Ask `pt-trae-goal-orchestrator` for the bounded Ready/Parked schedule and
+   concurrency lanes.
+4. Submit each proposed action to `pt-execution-plan-guardian`.
+5. Execute only `ACTION_ALLOWED` work within declared source/runtime scope.
+6. Record the first actionable failure in the Session and stop that action.
+7. Persist meaningful results in owner order:
+   - Session transition/evidence;
+   - Task snapshot and manifest lifecycle through `planctl`;
+   - `active_work` locator/binding projection.
+8. Recompute the schedule until the current Task closes or only a hard boundary
+   remains.
+9. Invoke read-only `pt-context-anchor` when a user-facing projection is due.
+
+The Guardian cannot execute, schedule, mutate a plan, or update tracking.
+The scheduler cannot admit work outside accepted sources or mutate durable
+state. The Anchor cannot repair state.
+
+## 5. Product-Functional Fence
+
+For product-facing work:
+
+```text
+REPRODUCE
+  -> IMPLEMENT ROOT CAUSE
+  -> FOCUSED CHECKS
+  -> AUTHORIZED CHECKPOINT
+  -> EXACT-SOURCE DEPLOY
+  -> REAL JOURNEY
+  -> FUNCTIONAL_PASS
+```
+
+- Use the real required runtime and receiver perspective.
+- On failure, return the first actionable failure to implementation.
+- Park an external/authorization edge without blocking independent ready work.
+- Focused source checks, Gate count, coverage, and test count cannot establish
+  `FUNCTIONAL_PASS`.
+- Do not run broad Acceptance, Gap Detector, Completion Auditor,
+  cross-platform matrices, or submit pipelines before `FUNCTIONAL_PASS`.
+
+## 6. Amendments
+
+When execution finds drift:
+
+- undefined Journey/visible state -> `PRODUCT_AMENDMENT_REQUIRED`;
+- undefined ownership/protocol/failure semantic -> `DESIGN_AMENDMENT_REQUIRED`;
+- accepted semantics but stale inventory/dependency/deliverable mapping ->
+  `PLAN_AMENDMENT_REQUIRED`.
+
+Dev Workflow routes the amendment to its owner. `pt-plan-and-document` persists
+an accepted updated plan model. The Guardian and scheduler never self-amend the
+Plan Package.
+
+## 7. Acceptance Promotion
 
 After `FUNCTIONAL_PASS`:
 
-1. Check whether the formal Gate consumes the same business Journey.
-2. Use `pt-acceptance-engineering` to add or complete missing business
-   injection.
-3. Promote the Dev Journey adapter; do not copy actions/assertions into another
-   implementation.
-4. Create a final checkpoint.
-5. If product code or Journey semantics changed, return to focused checking and
-   functional execution.
-6. Run formal Acceptance on final exact source.
-7. Preserve `UNPROVEN` for every required Gate not run.
+1. Select scenarios from product states, architecture risks, and changed
+   failure semantics. Do not require a canned success/network/timeout/invalid/
+   cancellation matrix.
+2. Reuse the same Journey and provisioning adapters.
+3. Use `pt-acceptance-engineering` for missing business injection.
+4. Run formal Acceptance on final exact source.
+5. Keep every required but unrun Gate explicitly `UNPROVEN`.
 
-Development records are diagnostics and cannot satisfy Acceptance proof.
+`PROVEN` is reserved for formal Acceptance evidence. Development Session
+records remain diagnostics.
 
-## 6. Verification Classes And Claims
+## 8. Delivery And Close
 
-| Class | Legal claim |
-|---|---|
-| `SOURCE_CHECK` | named source check passed |
-| `STRUCTURAL_CHECK` | named structural relation passed |
-| `UX_REVIEW` | named UX/prototype review passed |
-| `FUNCTIONAL_CHECK` | named exact-source Journey works |
-| `ACCEPTANCE_PROOF` | declared capability scope is formally proven |
+After required proof:
 
-`PROVEN` is reserved for formal Acceptance interpretation. Static/typecheck,
-Harness-only, API-only, browser-only or prototype results never imply
-`FUNCTIONAL_PASS`.
+1. Run completion and quality review for the named scope.
+2. Use `pt-github-commit`, `pt-github-pr`, and `pt-github-review`.
+3. Stop/release owned runtime resources.
+4. Run:
 
-## 7. Delivery
+```bash
+make dev-release WORK_ITEM=<id> [SESSION=<id>]
+```
 
-Only after required formal proof:
+5. Persist final owner state, then emit the read-only Context Anchor.
 
-1. Run `pt-completion-auditor`.
-2. Run `pt-quality-check` / submit pipeline once for final source.
-3. Use `pt-github-commit`, `pt-github-pr`, and `pt-github-review`.
-4. Keep unrun product scope explicit.
+A checkpoint commit is source identity, not delivery approval. Push, PR,
+deploy, destructive reset, and history rewrite remain separate
+authorizations.
 
-A checkpoint commit is deployment identity, not delivery approval. Local
-checkpoint, push, PR, reset and history rewrite are separate authorizations.
+## Resume
 
-## 8. Close And Resume
-
-On resume:
-
-- verify worktree binding;
-- read plan status and `active_work`;
-- run `make dev-check WORK_ITEM=<id>`;
-- heartbeat or update the declaration;
-- continue from the earliest non-stale state.
-
-On completion, cancellation, abandonment, or handoff:
-
-1. stop/release owned runtime resources;
-2. run `make dev-release WORK_ITEM=<id> [SESSION=<id>]`;
-3. delete transient Development artifacts after promoting durable conclusions;
-4. update plan status and `active_work`;
-5. never leave a live declaration as conversational memory.
+On resume, verify the persisted binding, run `make dev-check`, validate the
+Plan Package, reconcile current Task/Session/`active_work`, then resume the
+earliest legal action. Do not pause merely to print the Anchor.
 
 ## Verification
 
-Before claiming workflow completion:
-
-- Public declaration was visible and conflict-free.
-- Required focused checks passed.
-- Required Journey has current exact-source `FUNCTIONAL_CHECK`.
-- Required formal Gates have current `ACCEPTANCE_PROOF`.
-- Quality/CI gaps are explicit.
-- Runtime resources and public declaration are released.
+- One Development Run owns the lifecycle.
+- Public declaration preceded mutation and was released at closure.
+- Scheduler, Guardian, persistence, and projection boundaries remained
+  separate.
+- Required Journey has current exact-source functional evidence.
+- Required formal proof and unproven scope are explicit.
+- Durable state was updated only through its owner.
 
 ## Anti-Patterns
 
 Never:
 
-- Write or acquire runtime resources before `dev-start`.
-- Add a second workflow orchestrator Skill.
-- Treat `active_work`, branch name, process discovery or a private `.local` file
-  as public resource intent.
-- Run broad Acceptance to diagnose the first product failure.
-- Copy a business Journey into separate Dev and Acceptance scripts.
-- Use dirty overlays, manual Station execution or ad hoc SSH deployment.
-- Claim functionality from Gate count, test count, static checks or old proof.
-- Leave the work declaration active after closure.
+- add another complete-development orchestrator;
+- let God View execute or persist workflow state;
+- let the scheduler or Guardian mutate the Plan Package;
+- let Context Anchor repair `active_work`;
+- write before declaration or outside declared scope;
+- diagnose product behavior with broad Acceptance;
+- copy one Journey into separate Development and Acceptance implementations;
+- claim readiness from static checks or stale proof;
+- leave declarations or owned runtime resources active after closure.

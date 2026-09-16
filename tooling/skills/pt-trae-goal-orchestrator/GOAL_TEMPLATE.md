@@ -119,30 +119,33 @@ dependencies here.>
 ### Dynamic Admission Rules
 
 - Admit root-cause fixes, diagnostics, tests, evidence repair, documentation
-  synchronization, and mechanical plan amendments when accepted sources already
+  synchronization, and other already-modeled remediation when accepted sources already
   determine the behavior and the work remains inside this Goal's stage,
   worktree, ownership, and scope.
-- For tracked work, update the formal plan before admitting a newly discovered
-  deliverable or dependency.
+- A newly discovered deliverable or dependency is not admitted by the Goal.
+  Return `PLAN_AMENDMENT_REQUIRED` to `pt-dev-workflow`; only the plan owners
+  may update the formal plan before the scheduler is invoked again.
 - Never auto-admit product semantics, architecture/ownership/topology changes,
   version or schema bumps requiring approval, destructive operations requiring
   authorization, cross-worktree work, or weaker evidence substitutes.
 
-## Queue Execution Loop
+## Development Run Contract
 
 1. Reverify the Worktree Binding before every resumed execution interval.
-2. Select ready actions in dependency order and parallelize only non-overlapping
-   write sets.
-3. When an action blocks, record evidence and classify it as
+2. Submit dependency-ready actions and the Concurrency Decision to
+   `pt-execution-plan-guardian`.
+3. `pt-dev-workflow` executes only `ACTION_ALLOWED` work and owns all durable
+   state updates.
+4. When an action blocks, classify it as
    `RECOVERABLE_IMPLEMENTATION`, `MECHANICAL_PLAN_GAP`, `SOFT_EXTERNAL`, or
    `HARD_GOVERNANCE`.
-4. Enqueue an admissible root-cause or mechanical-plan action; otherwise park
-   the blocked action with its unblocking condition.
-5. Recompute the complete in-scope ready frontier and continue. One parked
+5. Return plan gaps to the workflow; otherwise park the blocked action with
+   its unblocking condition.
+6. Recompute the complete in-scope ready frontier and continue. One parked
    action never blocks unrelated ready work.
-6. Synchronize plan evidence and `active_work` after meaningful queue
-   transitions.
-7. Mark the whole Goal blocked only after the Ready Queue is empty, no legal
+7. The workflow persists plan, Session, `active_work`, and evidence through
+   their owners; the Goal does not write them.
+8. Mark the whole Goal blocked only after the Ready Queue is empty, no legal
    diagnostic or remediation remains, every remaining action is hard-blocked,
    and the repeated-blocker lifecycle threshold is satisfied.
 
@@ -207,8 +210,8 @@ dependencies here.>
 
 ## Tracking And Handoff
 
-- Durable source update:
-- `active_work` update, when tracked:
+- Durable source update by `pt-dev-workflow`:
+- `active_work` update by its owner, when tracked:
 - Context Anchor, when tracked: include completed delta, ready queue, execution
   mode and lanes, conflict controls, critical path, and evidence-backed ETA or
   `unknown`.

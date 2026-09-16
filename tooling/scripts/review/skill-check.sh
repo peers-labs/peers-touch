@@ -196,10 +196,25 @@ for marker in \
   "Reserve every write path before spawning." \
   "SUBAGENT_REGISTRY_STALE" \
   "SUBAGENT_RUNTIME_UNAVAILABLE"; do
-  if ! grep -Fq "$marker" "$execution_guardian_skill"; then
-    fail "$execution_guardian_skill missing parallel execution marker: $marker"
+  if ! grep -Fq "$marker" "$goal_orchestrator_skill"; then
+    fail "$goal_orchestrator_skill missing scheduler marker: $marker"
   fi
 done
+
+for marker in \
+  "read-only policy guard" \
+  "May this specific proposed action run now?" \
+  "ACTION_ALLOWED" \
+  "The Guardian does not perform the amendment"; do
+  if ! grep -Fq "$marker" "$execution_guardian_skill"; then
+    fail "$execution_guardian_skill missing policy-boundary marker: $marker"
+  fi
+done
+
+if grep -Fq "Self-amend and continue" "$execution_guardian_skill" ||
+  grep -Fq "Mandatory Concurrency Decision" "$execution_guardian_skill"; then
+  fail "$execution_guardian_skill must not own plan mutation or scheduling"
+fi
 
 for marker in \
   "single entry point" \
@@ -272,6 +287,15 @@ for marker in \
 done
 
 for marker in \
+  "read-only projection adapter" \
+  "It does not synchronize, repair, or write durable state." \
+  "CONTEXT_PROJECTION_STALE"; do
+  if ! grep -Fq "$marker" "$context_anchor_skill"; then
+    fail "$context_anchor_skill missing read-only projection marker: $marker"
+  fi
+done
+
+for marker in \
   "Existing-Agent Reconciliation" \
   "SUBAGENT_REGISTRY_STALE" \
   "SUBAGENT_RUNTIME_UNAVAILABLE" \
@@ -308,33 +332,59 @@ if ! grep -Fq "merely to print the Anchor" "$god_view_skill"; then
   fail "$god_view_skill must not let resume-time Anchor projection pause execution"
 fi
 
-package_contract_files=(
+for marker in \
+  "methodology facade" \
+  "It does not perform that owner's work." \
+  "does not:" \
+  "pt-dev-workflow"; do
+  if ! grep -Fq "$marker" "$god_view_skill"; then
+    fail "$god_view_skill missing thin-facade marker: $marker"
+  fi
+done
+
+if grep -Fq "planctl validate" "$god_view_skill" ||
+  grep -Fq "current_task_id" "$god_view_skill" ||
+  grep -Fq "dev_state" "$god_view_skill"; then
+  fail "$god_view_skill must not embed Plan Package implementation details"
+fi
+
+plan_package_contract_files=(
   "$architecture_execution_skill"
   "$plan_skill"
   "$dev_workflow_skill"
   "$execution_guardian_skill"
   "$context_anchor_skill"
-  "$god_view_skill"
   "$goal_orchestrator_skill"
   "$agents_contract"
 )
 
-for contract_file in "${package_contract_files[@]}"; do
-  for marker in "Plan Package" "current_task_id" "current_task_path" "dev_state"; do
+for contract_file in "${plan_package_contract_files[@]}"; do
+  if ! grep -Fq "Plan Package" "$contract_file"; then
+    fail "$contract_file missing Plan Package contract marker"
+  fi
+done
+
+tracked_locator_files=(
+  "$plan_skill"
+  "$dev_workflow_skill"
+  "$context_anchor_skill"
+  "$agents_contract"
+)
+
+for contract_file in "${tracked_locator_files[@]}"; do
+  for marker in "current_task_id" "current_task_path" "dev_state"; do
     if ! grep -Fq "$marker" "$contract_file"; then
-      fail "$contract_file missing Plan Package contract marker: $marker"
+      fail "$contract_file missing tracked locator marker: $marker"
     fi
   done
 done
 
 for marker in \
-  "planctl validate" \
-  "planctl current" \
-  "session.json" \
-  "DWF-B5" \
-  "NONE -> NONE"; do
-  if ! grep -Fq "$marker" "$god_view_skill"; then
-    fail "$god_view_skill missing bounded resume marker: $marker"
+  "vertical execution model" \
+  "risk-based" \
+  "Do not require a canned"; do
+  if ! grep -Fq "$marker" "$architecture_execution_skill"; then
+    fail "$architecture_execution_skill missing vertical/risk planning marker: $marker"
   fi
 done
 
@@ -349,7 +399,7 @@ for marker in \
 done
 
 if rg -q '\| id \| plan \| stage \| current_step \|' \
-  "${package_contract_files[@]}"; then
+  "${plan_package_contract_files[@]}"; then
   fail "workflow contracts still publish the legacy active_work current_step schema"
 fi
 

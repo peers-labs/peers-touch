@@ -423,18 +423,18 @@ Current project skills:
 
 | Skill | Purpose |
 |-------|---------|
-| `pt-dev-workflow` | Orchestrate a complete development task from requirement intake and public resource declaration through product-functional proof, Acceptance, review, and delivery |
-| `pt-god-view` | God view: explicitly invoked to show global work status, route to correct stage skill, manage work lifecycle |
-| `pt-trae-goal-orchestrator` | Build one bounded, conflict-aware adaptive Goal queue that drains ready work, parks blockers, reconciles live agents, and preserves integration ownership |
+| `pt-dev-workflow` | Own one non-trivial Development Run from verified intake and declaration through stage dispatch, execution, proof, delivery, and resource release |
+| `pt-god-view` | Thin facade: classify intent and route exactly one owning workflow or specialist; never execute or persist state |
+| `pt-trae-goal-orchestrator` | Scheduler: project bounded Ready/Parked work, ordering, and safe concurrency from an owner-supplied graph |
 | `pt-acceptance-infra-engineering` | Optimize and audit Acceptance Infra while enforcing the responsibility firewall against business Domain injection |
 | `pt-acceptance-engineering` | Deterministically add, complete, upgrade, or audit Acceptance contracts, runtime scenarios, gates, and evidence |
 | `pt-acceptance-gap-detector` | Enforce "No Silent Pass" iron law — detect 25+ bypass patterns (mocks, stale evidence, single-actor, hardcoded creds, downgraded gates) before marking any claim proven |
 | `pt-dev-runtime-handoff` | Choose & start the right dev runtime (make targets) for acceptance testing |
 | `pt-architecture-design-methodology` | Design source-backed architecture boundaries, ownership, contracts, topology, and ADR decisions before execution planning (referenced from §4.3) |
-| `pt-architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
+| `pt-architecture-execution-methodology` | Derive vertical Journey/functional closures, dependencies, cutovers, and risk-based verification from accepted architecture |
 | `pt-branch-conflict-guardian` | Guide semantic conflict resolution across parallel branches: separate mechanical conflicts from ownership/behavior divergence, escalate unclear intent, and verify integrated behavior |
-| `pt-context-anchor` | Project verified tracked-work state, completed delta, ready queue, execution topology, conflict controls, critical path, and evidence-backed ETA into chat; never write an Anchor into execution plans |
-| `pt-execution-plan-guardian` | Execute approved plans with explicit concurrency decisions, isolated ownership, reconcile gates, and evidence discipline |
+| `pt-context-anchor` | Read-only projection of verified tracked-work state into chat; report owner mismatches without repairing them |
+| `pt-execution-plan-guardian` | Read-only policy guard that allows, denies, or escalates one scheduler-proposed action |
 | `pt-official-applet-development` | Create, scaffold, implement, and validate official applet product units under `apps/applets/` using the applet architecture contract |
 | `pt-desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
 | `pt-read-before-edit` | Consult `docs/knowledge/` invariants / pitfalls / playbooks whose `owns:` covers the path being edited (referenced from §3.5) |
@@ -444,7 +444,7 @@ Current project skills:
 | `pt-github-release` | Semantic versioning, changelog generation, GitHub Release creation |
 | `pt-github-review` | Structured PR code review and comment submission |
 | `pt-local-dev-env` | Select and activate local development environment profiles |
-| `pt-plan-and-document` | Route architecture, planning, and documentation work to the right project docs and workflows |
+| `pt-plan-and-document` | Persist accepted models into canonical docs/Plan Packages, validate them, and register initial tracked state |
 | `pt-prototype-design` | Create, modify, and review executable UI / UX prototypes under the project prototype system |
 | `pt-prototype-sync-guardian` | Keep product implementation and prototypes aligned when visible behavior changes |
 | `pt-completion-auditor` | Audit Peers-Touch work for completion, architecture, code quality, safety, evidence, and overclaim risk |
@@ -490,8 +490,8 @@ Any non-trivial development task (cross-module, new feature, architecture change
 |-------|----------------|--------------------|-----------------------|----------|
 | **PRODUCT** | New capability, workflow, user journey, or visible state is undefined | `pt-product-design-methodology` | Product contract accepted; required prototype confirmed or explicitly blocked | Product docs + optional prototype |
 | **DESIGN** | New architecture / boundary / ownership decision needed | `pt-architecture-design-methodology` | Architecture review prompt generated → user initiates review → review passes | `docs/architecture/<module>/` |
-| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-architecture-execution-methodology` (analysis) → `pt-plan-and-document` (落盘 + `active_work` registration + review prompt) | Plan review prompt generated → user initiates review → review passes | `execution-plans/<plan>.md` |
-| **EXECUTE** | Plan accepted | `pt-execution-plan-guardian` | required Journeys reach `FUNCTIONAL_PASS`, formal proof obligations pass, and `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
+| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (persistence + `active_work` registration + review prompt) | Plan review prompt generated → user initiates review → review passes | Plan Package |
+| **EXECUTE** | Plan accepted | `pt-dev-workflow` coordinates scheduler (`pt-trae-goal-orchestrator`) + policy guard (`pt-execution-plan-guardian`) | required Journeys reach `FUNCTIONAL_PASS`, formal proof obligations pass, and `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
 | **DELIVER** | Code complete, tests pass | `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
 
 **Dispatch rules:**
@@ -499,19 +499,27 @@ Any non-trivial development task (cross-module, new feature, architecture change
 1. `pt-dev-workflow` is the single orchestrator for non-trivial development.
    Read-only intake may precede declaration; the first write/runtime acquisition
    requires a confirmed public declaration.
-2. Each stage MUST pass its gate before entering the next. No skipping gates.
-3. Review pattern is uniform across stages: generate structured review prompt → user decides whether to send → iterate if needed → pass.
-4. **Small fixes** (single-file bug fix, cosmetic tweak) skip DESIGN + PLAN, enter directly at EXECUTE via `pt-small-fix-discipline`.
-5. **Stage detection**: check `active_work` in project memory → read the referenced execution plan status table → determine current stage.
-6. If no active work exists and user's request is ambiguous, ask: "Is this a new architecture decision, or implementation of an existing plan?"
-7. **Acceptance ownership dispatch**:
+2. `pt-god-view` is only a facade/router. It never executes, schedules, guards,
+   or persists workflow state.
+3. During EXECUTE, Goal Orchestrator schedules **what** is ready, Execution Plan
+   Guardian decides whether one proposed action **may** run, and Dev Workflow
+   executes allowed work and persists owner state. Context Anchor is read-only.
+4. Each stage MUST pass its gate before entering the next. No skipping gates.
+5. Review pattern is uniform across stages: generate structured review prompt → user decides whether to send → iterate if needed → pass.
+6. **Small fixes** (single-file bug fix, cosmetic tweak) skip DESIGN + PLAN, enter directly at EXECUTE via `pt-small-fix-discipline`.
+7. **Stage detection**: check `active_work` in project memory → read the referenced execution plan status table → determine current stage.
+8. If no active work exists and user's request is ambiguous, ask: "Is this a new architecture decision, or implementation of an existing plan?"
+9. **Acceptance ownership dispatch**:
    - Core/runtime/planner/validator/runner/Evidence Store/framework optimization → `pt-acceptance-infra-engineering`.
    - Domain/Feature/Capability/Registry rule/concrete Gate/Environment/Provisioner/Fixture/product proof → `pt-acceptance-engineering`.
    - Mixed requests MUST be split. Infra reports business gaps as `BUSINESS_INJECTION_REQUIRED`; it does not implement them.
-8. **Functional fence**: focused source checks and one exact-source Journey
+10. **Functional fence**: focused source checks and one exact-source Journey
    precede Acceptance expansion. `SOURCE_CHECK`, `STRUCTURAL_CHECK`, `UX_REVIEW`,
    Gate count and test count cannot establish `FUNCTIONAL_PASS`.
-9. **Anchor creation boundary**: PRODUCT/DESIGN work without a formal execution plan is not tracked work and has no Context Anchor. After `pt-plan-and-document` creates the plan, register `active_work`; only then may `pt-context-anchor` emit a chat projection.
+11. **Acceptance scenario selection**: derive scenarios from product states,
+    changed failure semantics, receiver outcomes, and concrete architecture
+    risks; never require a generic five-variant matrix for every closure.
+12. **Anchor creation boundary**: PRODUCT/DESIGN work without a formal execution plan is not tracked work and has no Context Anchor. After `pt-plan-and-document` creates the plan, register `active_work`; only then may `pt-context-anchor` emit a chat projection.
 
 #### 13.5.1 Execution Worktree Binding Contract
 
@@ -581,30 +589,21 @@ worktree selection, or a partial registry write remains
 
 When a user invokes `pt-god-view` (by saying "继续做" / "接着" / "看看状态" / "resume" etc.):
 
-1. Resolve and verify the execution worktree binding per §13.5.1.
-2. Read `project_memory.md` → check `active_work` registry.
-3. Open the referenced plan and derive the current chat projection through
-   `pt-context-anchor`; execution plans do not embed an Anchor.
-4. If one entry with `stage != complete`:
-   - If the user asked only for status, report the current plan, stage, step,
-     Ready/Parked queue, execution mode and lanes, critical path, and
-     evidence-backed ETA.
-   - If the user said continue/resume, dispatch immediately to the owning stage
-     skill after verification. Do not pause merely to print an Anchor or ask
-     for confirmation already conveyed by the resume command.
-   - A persisted `blocked: true` row is re-audited; it remains blocked only when
-     fixed-point exhaustion still proves no legal action is ready.
-   - Before dispatch, recompute the adaptive Goal Ready/Parked frontier so a
-     newly ready action is not hidden by stale tracked state.
-5. If multiple entries with `stage != complete`:
-   - Use an explicit work ID, plan, branch, worktree, or supplied Anchor to
-     resolve the target.
-   - Ask which work to continue only when the request remains ambiguous after
-     those identifiers are applied.
-6. If all entries are `complete` or registry is empty → offer to start new task.
-7. Dispatch to the correct stage skill per §13.5.
+1. `pt-god-view` classifies the intent and selects exactly one owner.
+2. Status/handoff routes to read-only `pt-context-anchor`.
+3. Continue/resume routes to `pt-dev-workflow`, which verifies binding,
+   reconciles Plan/Task/Session/`active_work`, and resumes the next legal action.
+4. Dev Workflow asks `pt-trae-goal-orchestrator` for the Ready/Parked schedule
+   and concurrency lanes.
+5. Every proposed action is evaluated by `pt-execution-plan-guardian`; only
+   `ACTION_ALLOWED` work executes.
+6. Dev Workflow persists meaningful results through owner commands, then invokes
+   Context Anchor for the user-facing projection.
+7. Multiple plausible tracked items return `TRACKED_WORK_SELECTION_REQUIRED`.
+   Empty/completed registries route to new-task intake.
 
-For EXECUTE work, apply one explicit concurrency decision before source edits.
+For EXECUTE work, the Goal scheduler applies one explicit concurrency decision
+before source edits.
 Choose parallel, serial, or hybrid execution from actual dependencies,
 write-set overlap, generated outputs, shared runtime resources, verification
 isolation, and integration order. Parallel lanes require reserved exclusive
@@ -615,15 +614,18 @@ backend-addressable agents with the same Goal identity conflict. Listed but
 backend-unaddressable entries are stale metadata, not a reason to serialize the
 Goal or persist a blanket no-subagent constraint.
 
+God View, Goal Orchestrator, Execution Plan Guardian, and Context Anchor are
+read-only with respect to Plan/Task/Session/`active_work`. Dev Workflow is the
+application service that coordinates writes through the owning commands.
+
 **active_work registry schema** (maintained in `project_memory.md`):
 
 ```markdown
 ## active_work
 
-| id | plan | stage | current_step | branch | workspace_id | initial_head | expected_head | worktree_set_digest | blocked | last_session |
-|----|------|-------|--------------|--------|--------------|--------------|---------------|---------------------|---------|--------------|
-| 1 | docs/.../execution-plans/20260723-phase1.md | EXECUTE | Step 3 | main | 0123456789abcdef | `<full-head>` | `<full-head>` | `<sha256>` | false | 2026-07-23 |
-| 2 | docs/.../federation-phase2.md | PLAN | — | feat/federation | fedcba9876543210 | `<full-head>` | `<full-head>` | `<sha256>` | false | 2026-07-22 |
+| id | plan | stage | current_task_id | current_task_path | dev_state | branch | workspace_id | initial_head | expected_head | worktree_set_digest | blocked | last_session |
+|----|------|-------|-----------------|-------------------|-----------|--------|--------------|--------------|---------------|---------------------|---------|--------------|
+| 1 | docs/.../execution-plans/example/plan.md | EXECUTE | TASK-03 | docs/.../execution-plans/example/tasks/TASK-03.md | IMPLEMENTING | main | 0123456789abcdef | `<full-head>` | `<full-head>` | `<sha256>` | false | 2026-09-16 |
 ```
 
 **Lifecycle rules:**
@@ -634,11 +636,11 @@ Goal or persist a blanket no-subagent constraint.
   `initial_head`, `expected_head`, and `worktree_set_digest`; initially both
   HEAD fields are identical. Never derive identity from a skill path or copy it
   from another worktree.
-- **Stage transition** → update `stage` + `current_step` in corresponding row.
-- **Action blocked** → record and park the action, recompute the complete
-  source-owned ready frontier, and continue other legal work. Do not set the
-  whole row `blocked: true` while a dependency-ready action, diagnostic,
-  source-backed root-cause fix, or mechanical plan amendment remains.
+- **Task/Session transition** → Dev Workflow updates manifest/Task/Session
+  owners first, then mirrors `current_task_id/current_task_path/dev_state`.
+- **Action blocked** → the scheduler parks the action in its projection; Dev
+  Workflow persists only owner-defined blocker state. Do not set the whole row
+  `blocked: true` while a dependency-ready action or legal remediation remains.
 - **Goal blocked** → set `blocked: true` only after a fixed-point exhaustion
   audit proves the ready queue is empty, every remaining action is behind a
   hard product/architecture/authorization/ownership/resource boundary, and the
@@ -652,6 +654,8 @@ Context Anchor rules:
 
 - `active_work` is the durable current-state index; the plan and linked tracking artifacts own scope, detailed progress, and evidence.
 - Execution plans MUST NOT contain a `## Context Anchor` section.
+- Context Anchor validates and projects; it never writes or repairs
+  `active_work`.
 - The chat projection records `<worktree-name> (<repo-root>)`, verified branch,
   `workspaceId`, initial HEAD, expected/verified HEAD, and worktree-set digest.
   It never persists a developer or CI user-home absolute path or an ambiguous
