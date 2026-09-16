@@ -143,6 +143,10 @@ class TerminalMutationDevelopmentTest(unittest.TestCase):
             scenario,
         )
         self.assertIn(
+            "Number(replay.status) === AgentTurnStatus.COMPLETED",
+            scenario,
+        )
+        self.assertIn(
             '[data-pt-agent-message-error-recovery="open-result"]',
             scenario,
         )

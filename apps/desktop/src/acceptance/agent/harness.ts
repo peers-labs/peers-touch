@@ -22628,10 +22628,17 @@ export function installAcceptanceHarness(): void {
           );
         }
 
-        const [readbackBefore, replayBefore] = await Promise.all([
-          foundationConversationReadback(conversationId),
-          foundationDiagnosticReplay(turnId),
-        ]);
+        const replayBefore = await waitForFoundationDiagnosticReplay(
+          turnId,
+          (replay) => (
+            Number(replay.status) === AgentTurnStatus.COMPLETED
+          ),
+          'durable completed terminal-mutation source Turn',
+          30_000,
+        );
+        const readbackBefore = await foundationConversationReadback(
+          conversationId,
+        );
         const terminalHashBefore = await sha256Hex(stableJson({
           readback: readbackBefore,
           replay: replayBefore,
