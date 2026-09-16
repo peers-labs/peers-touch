@@ -488,11 +488,11 @@ Any non-trivial development task (cross-module, new feature, architecture change
 
 | Stage | Entry condition | Skill(s) to invoke | Gate (exit condition) | Artifact |
 |-------|----------------|--------------------|-----------------------|----------|
-| **PRODUCT** | New capability, workflow, user journey, or visible state is undefined | `pt-product-design-methodology` | Product contract accepted; required prototype confirmed or explicitly blocked | Product docs + optional prototype |
-| **DESIGN** | New architecture / boundary / ownership decision needed | `pt-architecture-design-methodology` | Architecture review prompt generated → user initiates review → review passes | `docs/architecture/<module>/` |
-| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (persistence + `active_work` registration + review prompt) | Plan review prompt generated → user initiates review → review passes | Plan Package |
+| **PRODUCT** | New capability, workflow, user journey, or visible state is undefined | `pt-dev-workflow` → `pt-product-design-methodology` | Product contract accepted; required prototype confirmed or explicitly blocked | Product docs + optional prototype |
+| **DESIGN** | New architecture / boundary / ownership decision needed | `pt-dev-workflow` → `pt-architecture-design-methodology` | Architecture review prompt generated → user initiates review → review passes | `docs/architecture/<module>/` |
+| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-dev-workflow` → `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (persistence + `active_work` registration + review prompt) | Plan review prompt generated → user initiates review → review passes | Plan Package |
 | **EXECUTE** | Plan accepted | `pt-dev-workflow` coordinates scheduler (`pt-trae-goal-orchestrator`) + policy guard (`pt-execution-plan-guardian`) | required Journeys reach `FUNCTIONAL_PASS`, formal proof obligations pass, and `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
-| **DELIVER** | Code complete, tests pass | `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
+| **DELIVER** | Code complete, tests pass | `pt-dev-workflow` → `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
 
 **Dispatch rules:**
 
@@ -506,7 +506,10 @@ Any non-trivial development task (cross-module, new feature, architecture change
    executes allowed work and persists owner state. Context Anchor is read-only.
 4. Each stage MUST pass its gate before entering the next. No skipping gates.
 5. Review pattern is uniform across stages: generate structured review prompt → user decides whether to send → iterate if needed → pass.
-6. **Small fixes** (single-file bug fix, cosmetic tweak) skip DESIGN + PLAN, enter directly at EXECUTE via `pt-small-fix-discipline`.
+6. **Small fixes** (single-file bug fix, cosmetic tweak) skip DESIGN + PLAN.
+   Mutating fixes enter EXECUTE through `pt-dev-workflow`, which dispatches
+   `pt-small-fix-discipline`; only a trivial text-only correction may invoke
+   the specialist directly.
 7. **Stage detection**: check `active_work` in project memory → read the referenced execution plan status table → determine current stage.
 8. If no active work exists and user's request is ambiguous, ask: "Is this a new architecture decision, or implementation of an existing plan?"
 9. **Acceptance ownership dispatch**:

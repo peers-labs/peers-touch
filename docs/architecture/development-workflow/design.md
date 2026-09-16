@@ -234,9 +234,10 @@ Transition guards are closed, work-class aware and fail-closed:
   `SOURCE_READY` without inventing a runtime proof;
 - `completionClass=functional` owns the development Journey execution and is
   the only class that may produce `FUNCTIONAL_PASS`;
-- `completionClass=acceptance-aggregate` owns no new functional claim and
-  advances from focused contract checks directly to formal Acceptance
-  aggregation;
+- `completionClass=acceptance-aggregate` owns no new functional claim and may
+  aggregate formal Acceptance only after every referenced product Journey has
+  a current `FUNCTIONAL_CHECK/PASS`; aggregation never creates or substitutes
+  functional proof;
 - failure records exactly one owner and first failure;
 - functional `source-only` refactor/infrastructure work may go
   `FOCUSED_PASS -> FUNCTIONAL_RUNNING` without checkpoint/deploy;

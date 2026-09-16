@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-16
-covered_docs_hash: cbf243edc868095aaad3ec8c0215b391ac56bfca971d4d86e514128ae8aebfa4
+covered_docs_hash: 3f996fb3b40086a8910ebf398b0c7f5a5eb7d4dda7a1533cbf6870281c1e0264
 
 covered_docs:
   - AGENTS.md
@@ -230,3 +230,9 @@ split between vertical dependency modeling and repository persistence.
 Review severity is unchanged, but review must reject any change that lets the
 router, scheduler, policy guard, or projection mutate durable workflow state,
 or that restores a generic five-variant Acceptance requirement.
+
+The follow-up review makes every non-trivial stage dispatch through
+`pt-dev-workflow` and requires `acceptance-aggregate` work to reference current
+functional proof for every product Journey it aggregates. These changes close
+workflow bypasses without changing PR review severity or adding a new review
+fixture.
