@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import copy
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from tooling.acceptance.gates.agent.capability_binding_development import (
     CapabilityBindingDevelopmentError,
     ROOT,
     evaluate_capability_binding,
+    seed_native_actor_identity,
 )
 
 
@@ -101,6 +105,68 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
         self.assertNotIn('"ensureProvider"', source)
         self.assertNotIn("reset_fixture", source)
         self.assertNotIn("CHAT_ACCEPTANCE_RESET", source)
+
+    def test_clones_only_an_accepted_matching_actor_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seed = root / "seed"
+            identity = (
+                seed
+                / "actor-identity/peers-touch/desktop/data/"
+                "secure-store/identity-keys"
+            )
+            identity.mkdir(parents=True)
+            (identity / "actor.key").write_bytes(b"identity")
+            (seed / "journey-result.json").write_text(
+                json.dumps({
+                    "journey": "V2-J01",
+                    "stationUrl": "https://station.example",
+                    "status": "FUNCTIONAL_PASS",
+                }),
+                encoding="utf-8",
+            )
+            target = root / "target"
+
+            seed_native_actor_identity(
+                seed_root=seed,
+                target_root=target,
+                station_url="https://station.example/",
+            )
+
+            self.assertEqual(
+                (
+                    target
+                    / "peers-touch/desktop/data/secure-store/"
+                    "identity-keys/actor.key"
+                ).read_bytes(),
+                b"identity",
+            )
+
+    def test_rejects_unproven_actor_identity_seed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            seed = root / "seed"
+            identity = seed / "actor-identity/identity-keys"
+            identity.mkdir(parents=True)
+            (identity / "actor.key").write_bytes(b"identity")
+            (seed / "journey-result.json").write_text(
+                json.dumps({
+                    "journey": "V2-J01",
+                    "stationUrl": "https://station.example",
+                    "status": "FUNCTIONAL_FAIL",
+                }),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                CapabilityBindingDevelopmentError,
+                "does not match Profile two",
+            ):
+                seed_native_actor_identity(
+                    seed_root=seed,
+                    target_root=root / "target",
+                    station_url="https://station.example",
+                )
 
 
 if __name__ == "__main__":

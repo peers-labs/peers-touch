@@ -43,6 +43,17 @@ WORKSPACE_ID = workspace_id(ROOT)
 WORK_ITEM_ID = "MCA-V2-ALIGNMENT-J02"
 JOURNEY_ID = "V2-J02"
 PROFILE = "two"
+J01_IDENTITY_SEED = (
+    Path.home()
+    / ".peers-touch"
+    / "dev"
+    / "workspaces"
+    / WORKSPACE_ID
+    / "runtime"
+    / PROFILE
+    / "data"
+    / "v2-j01-native-bfdc1ae5f-run4"
+)
 
 
 class CapabilityBindingDevelopmentError(RuntimeError):
@@ -116,6 +127,45 @@ def resolve_machine_profile() -> tuple[str, Path, int, dict[str, str]]:
         }
     )
     return profile_name, profile_file, slot, values
+
+
+def seed_native_actor_identity(
+    *,
+    seed_root: Path,
+    target_root: Path,
+    station_url: str,
+) -> None:
+    result_path = seed_root / "journey-result.json"
+    identity_root = seed_root / "actor-identity"
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise CapabilityBindingDevelopmentError(
+            "accepted J01 identity seed evidence is unavailable"
+        ) from error
+    require(
+        result.get("status") == "FUNCTIONAL_PASS"
+        and result.get("journey") == "V2-J01"
+        and str(result.get("stationUrl") or "").rstrip("/")
+        == station_url.rstrip("/"),
+        "accepted J01 identity seed does not match Profile two",
+    )
+    require(
+        identity_root.is_dir()
+        and len(tuple(identity_root.rglob("*.key"))) == 1,
+        "accepted J01 identity seed is incomplete",
+    )
+    require(
+        not identity_root.is_symlink()
+        and not any(path.is_symlink() for path in identity_root.rglob("*")),
+        "accepted J01 identity seed contains a symlink",
+    )
+    require(
+        not target_root.exists(),
+        "J02 temporary actor identity root already exists",
+    )
+    target_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    shutil.copytree(identity_root, target_root, symlinks=False)
 
 
 def port_released(port: int) -> bool:
@@ -339,6 +389,11 @@ def main() -> int:
             startup_timeout=900,
         )
         client = runtime_pair.native
+        seed_native_actor_identity(
+            seed_root=J01_IDENTITY_SEED,
+            target_root=client.actor_identity_root,
+            station_url=profile_env["PT_STATION_URL"],
+        )
         client.start()
         authenticate_native_client(client, profile_env)
         sample_id = f"mca-j02-{artifact_run_id}"
