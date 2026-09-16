@@ -16,6 +16,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(ROOT))
+
 from tooling.acceptance.core import ENVIRONMENTS_DIR, EnvironmentContract
 from tooling.acceptance.core.evidence_store import (
     EvidenceStore,
@@ -37,7 +40,6 @@ from tooling.acceptance.provisioners.home_station import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[4]
 WORKSPACE_ID = workspace_id(ROOT)
 WORK_ITEM_ID = "MCA-V2-ALIGNMENT-J02"
 JOURNEY_ID = "V2-J02"
