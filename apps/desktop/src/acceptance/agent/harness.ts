@@ -15476,7 +15476,7 @@ async function createFoundationDisposableRuntimeFixture(
   purpose: string,
 ): Promise<FoundationDisposableRuntimeFixture> {
   const suffix = crypto.randomUUID();
-  const providerId = `acceptance-${purpose}-${suffix}`;
+  const providerId = `acceptance-j02-${suffix}`;
   const modelId = `model-${suffix}`;
   let providerCreated = false;
   try {

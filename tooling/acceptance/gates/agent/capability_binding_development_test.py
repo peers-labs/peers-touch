@@ -126,6 +126,10 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
             "createFoundationDisposableRuntimeFixture",
             source,
         )
+        self.assertIn(
+            "const providerId = `acceptance-j02-${suffix}`",
+            source,
+        )
         self.assertIn("function_call: false", source)
         self.assertIn(
             "deleteFoundationDisposableRuntimeFixture",
