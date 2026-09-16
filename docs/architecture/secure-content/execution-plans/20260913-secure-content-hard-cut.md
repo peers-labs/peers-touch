@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-14
+> **Created**: 2026-09-13 | **Updated**: 2026-09-16
 > **Owner**: Architecture Team
 > **Entry Stage**: PLAN
 
@@ -902,21 +902,35 @@ python3 -m tooling.development.secure_content.run \
   Development scenarios, plus the exact Social private-content service and
   focused service tests needed for the `domain_commit_id` correction, and the
   exact Social private-content Store/test needed for endpoint-optional
-  point-read projection, plus the Social handler/test needed to return typed
-  protobuf authorization/not-found failures so Native never purges on an
-  untrusted proxy status alone. All other Station source is read-only. Station
-  deployment, Profile, client storage, Fixture, browser/native process launch
-  and slot acquisition remain W7-owned.
+  point-read projection, plus the Social recipient-directory composition,
+  private-object service/tests, handler/tests, Subserver wrapper composition
+  and the shared auth adapter needed to distinguish an inactive endpoint from
+  a dependency failure and return typed protobuf authorization/not-found
+  failures so Native never purges on an untrusted proxy status alone. The exact
+  Messaging enrollment helper may add borrowed-seed entry points required to
+  keep Desktop recovery secrets under RAII zeroization. All other Station and
+  Messaging source is read-only. Station deployment, Profile, client storage,
+  Fixture, browser/native process launch and slot acquisition remain W7-owned.
 - **Checks**:
 
 ```bash
 (cd apps/station && go test -race -count=1 \
+  ./frame/core/auth/adapter/http \
   ./app/subserver/social \
   ./app/subserver/social/application/... \
   ./app/subserver/social/infrastructure/...)
 pnpm --dir apps/desktop run check
 pnpm --dir apps/desktop exec vitest run src/test/moments-store.test.ts
+cargo test --manifest-path packages/messaging-core/Cargo.toml
+cargo test --manifest-path packages/secure-content-core/Cargo.toml
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml secure_content
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml \
+  --bin peers-touch-desktop messaging::recovery::tests
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml \
+  --features acceptance-webdriver --bin peers-touch-desktop \
+  acceptance_station_binding
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml \
+  --bin peers-touch-desktop station_list_exposes_binding_state_to_browser_clients
 cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --features acceptance-webdriver
 pnpm --dir apps/desktop exec vitest run src/acceptance/moments/harness.test.ts
 python3 -m unittest tooling.development.secure_content.test_run
@@ -930,10 +944,12 @@ python3 -m unittest tooling.development.secure_content.test_run
   acceptance-only barriers for persisted-before-send, sent-before-response
   and response-before-local-commit; define the runtime-owner acknowledgement
   and fresh-manifest continuation protocol for each forced process restart;
-  and define the account/Station switch, publisher-device revocation and
-  historical-recovery-epoch fixture inputs. Timing-based harness assertions
+  define a deterministic WebSocket/SSE terminal barrier for Browser network
+  capture; and define the account/Station switch, publisher-device revocation
+  and historical-recovery-epoch fixture inputs. Timing-based harness assertions
   are forbidden. W7S remains in progress and W7 remains parked until the
-  amendment is accepted and implemented.
+  amendment is accepted and implemented. Until then, the Browser network
+  observer fails closed with `stream-terminal-barrier-unavailable`.
 - **Exit**: one clean source checkpoint records `SOURCE_CHECK/PASS`; it makes
   no Desktop, Browser or Acceptance functional claim.
 
@@ -1472,7 +1488,7 @@ observations is invalid.
 | W5 | recovery | complete | `9bf7e3934` | PASS (`sc-dj-recovery-consumer`) | NOT_RUN | none |
 | W6 | Social minimum | complete | `d2731a220` | PASS (`sc-dj-social-uow-atomicity`) | NOT_RUN | none |
 | W7A | Content PreKey client boundary | complete | `14b0cdf81` | PASS (`sc-dj-content-prekey-client-boundary`) | NOT_RUN | none |
-| W7S | Desktop pilot source closure | in progress / focused checks pass | none | NOT_RUN | N/A | `DESIGN_AMENDMENT_REQUIRED`: deterministic lifecycle barriers and cross-process continuation inputs |
+| W7S | Desktop pilot source closure | source checkpointed / `DESIGN_AMENDMENT_REQUIRED` | `6590d0997` | `SOURCE_CHECK/PASS` only; W7 runtime NOT_RUN | NOT_RUN | deterministic lifecycle/restart/WebSocket-SSE barriers and fixture inputs |
 | W7 | Desktop pilot runtime | parked | none | NOT_RUN | NOT_RUN | W7S; active MCA Desktop and NDR Station owners |
 | W8 | Social expansion | parked | none | NOT_RUN | NOT_RUN | W7 FUNCTIONAL_PASS |
 | W9 | Mobile | parked | none | NOT_RUN | NOT_RUN | W5/W7/W8; Mobile claim |
@@ -1644,13 +1660,29 @@ Current evidence:
   `~/.peers-touch/dev/workspaces/9eb2cb904c9ae460/development/secure-content/W7A/EC5A/result.json`.
   W7A is complete; Desktop/Browser product behavior and formal Acceptance
   remain `NOT_RUN`.
+- W7S source checkpoint `6590d0997` implements the Desktop Native/store,
+  Social typed-error and proof-identity, fail-closed Browser/Native Station
+  identity, attach-only Development provenance, terminal transfer cleanup and
+  recovery-secret RAII paths. Auth/Social Go race suites, Desktop TypeScript,
+  44 Moments/Harness Vitest tests, 39 Development runner tests, 56 Secure
+  Content Core tests, 105 Messaging Core unit tests plus 2 integrations,
+  66 targeted Desktop Secure Content tests, 8 Desktop recovery tests, 5
+  Station-binding tests, the gateway shape test, acceptance-feature Cargo
+  check, scoped Rust formatting and diff checks pass. Independent Social,
+  Driver, Native, Browser-identity and final zeroization reviews return
+  `PASS` for the W7S source scope. A pre-existing unused public
+  `packages/messaging-core/src/recovery` zeroization gap has no production call
+  edge and is parked outside W7S's exact Messaging write boundary.
+- The W7S claim scan reports `UNPROVEN`, as required: runtime/receiver Gates
+  have not run, and the dirty worktree range also contains three unrelated
+  uncommitted files that do not belong to the W7S source checkpoint. This does
+  not invalidate the narrow `SOURCE_CHECK/PASS`; it forbids any W7
+  `FUNCTIONAL_PASS` or formal Acceptance claim.
 - PR #111 continuation `b5f42f721` was integrated by merge commit
   `e43dd257e`. The semantic base `2d54851f9` proved zero overlap between
   the 13 incoming files and the 62-file Secure Content delta; blob-level
   verification preserved both sides without an overwrite resolution.
-- Formal Acceptance remains `NOT_RUN`. The Acceptance Gap Detector itself
-  passes 22 tests, but a claim scan remains unavailable until the canonical
-  Acceptance plan artifact exists; no `PROVEN` claim is made.
+- Formal Acceptance remains `NOT_RUN`; no `PROVEN` claim is made.
 
 ## 16. Risks And Escalation
 
