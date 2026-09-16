@@ -6,8 +6,6 @@ import { Alert, Spin, Tag, theme, Modal, Typography, message } from 'antd';
 import { Search, ShieldCheck, Globe, Server } from 'lucide-react';
 import {
   api,
-  type FederationCatalogEntry,
-  type FederationResolveView,
   type MemberStationView,
 } from '../../services/desktop_api';
 import {
@@ -21,24 +19,13 @@ import {
 import { singleFederationId } from '../../store/friendshipProjection';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { FederatedHandle } from '../FederatedHandle';
+import {
+  catalogEntryToSearchResult,
+  resolvedProfileToSearchResult,
+  type ActorSearchResult,
+} from './findPeopleIdentity';
 
 const { Text } = Typography;
-
-interface ActorSearchResult {
-  id: string;
-  username: string;
-  displayName: string;
-  avatar: string;
-  homeStationPeerId: string;
-  federation?: {
-    handle: string;
-    homeStationDomain: string;
-    fromCache: boolean;
-    isLocal: boolean;
-    locatorSeq: number;
-  };
-  homeStationName?: string;
-}
 
 interface Props {
   open: boolean;
@@ -84,56 +71,6 @@ function parseHandleInput(raw: string): ParsedHandle {
     hasHost: false,
     canonical: '',
     localPart: local,
-  };
-}
-
-function profileToResult(view: FederationResolveView): ActorSearchResult | null {
-  const profile = view.profile;
-  if (!profile) return null;
-  const id = String(profile.id ?? '');
-  const username = String(profile.username ?? '');
-  const displayName = String(
-    (profile as { displayName?: string }).displayName ??
-      (profile as { display_name?: string }).display_name ??
-      '',
-  );
-  const avatar = String(profile.avatar ?? '');
-  return {
-    id,
-    username,
-    displayName,
-    avatar,
-    homeStationPeerId: view.homeStationPeerId,
-    federation: {
-      handle: view.federatedHandle,
-      homeStationDomain: view.homeStationDomain,
-      fromCache: view.fromCache,
-      isLocal: view.isLocal,
-      locatorSeq: Number(view.locatorSeq ?? 0n),
-    },
-  };
-}
-
-function catalogEntryToResult(entry: FederationCatalogEntry): ActorSearchResult {
-  const handle = entry.federatedHandle || '';
-  const parts = handle.replace(/^@/, '').split('@');
-  const localPart = parts[0] || '';
-  const host = parts[1] || '';
-
-  return {
-    id: entry.actorPtid,
-    username: localPart,
-    displayName: entry.displayName || localPart,
-    avatar: entry.avatarUrl || '',
-    homeStationPeerId: entry.homeStationPeerId,
-    federation: {
-      handle,
-      homeStationDomain: host,
-      fromCache: false,
-      isLocal: false,
-      locatorSeq: 0,
-    },
-    homeStationName: entry.homeStationName,
   };
 }
 
@@ -228,7 +165,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
           return;
         }
         const view = await api.federationResolve(parsed.canonical);
-        const item = profileToResult(view);
+        const item = resolvedProfileToSearchResult(view);
         setResults(item ? [item] : []);
         return;
       }
@@ -240,7 +177,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
           station_id: searchScope === 'station' ? selectedStationId : undefined,
           page_size: 20,
         });
-        setResults((resp.entries || []).map(catalogEntryToResult));
+        setResults((resp.entries || []).map(catalogEntryToSearchResult));
         return;
       }
 
