@@ -661,6 +661,10 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 "true",
             )
             self.assertEqual(
+                launcher._launch_environment["VITE_ACCEPTANCE_HARNESS"],
+                "1",
+            )
+            self.assertEqual(
                 launcher._launch_environment["TAURI_WEBDRIVER_PORT"],
                 "4476",
             )
