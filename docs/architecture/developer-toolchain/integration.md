@@ -21,6 +21,8 @@
 | Frontend runtime registry shell check | `tooling/scripts/check-frontend-runtime-registry.mjs` | Replaced and consumers migrated |
 | `apps/desktop` lifecycle hooks | one applet build per command | Duplicate hooks removed |
 | `tooling/scripts/windows-desktop-build.ps1` | build/Acceptance owner | Retain; it is not the daily lifecycle owner |
+| Acceptance latest-plan default | active formal plan plus current closure | Replace ambiguous latest-artifact execution |
+| `.pt-dev-workflow/<session>/status.json` schema | formal plan plus `active_work` index | Delete unused duplicate workflow state |
 
 ## 2. Impact Surface
 
@@ -68,6 +70,14 @@ all product, test, documentation, and Acceptance consumers have moved. A shell
 wrapper may remain temporarily when an external documented path still exists,
 but it must only `exec node ...`.
 
+### Plan-Bound Acceptance Cutover
+
+Add worktree metadata and an Acceptance Execution contract to the existing
+formal plan. The Acceptance runner resolves that plan, validates its current
+closure, reconciles registry impact, and executes only declared closure Gates.
+The existing Evidence Store continues to persist projections and results but
+does not select the active work.
+
 ## 4. Compatibility Boundary
 
 The command contract is stable across platforms. Implementation support may be
@@ -94,6 +104,8 @@ another Station or profile.
 | Local Station | start/check/status/stop smoke passes on Windows and Unix | local branch of station shell scripts | lifecycle tests plus reference scan |
 | Desktop lifecycle | App/Web composition and cleanup smoke pass | desktop and ensure shell logic | no duplicate lifecycle owner remains |
 | Make entrypoint | all mapped targets call `devctl` | local-dev shell recipes | Makefile policy scan passes |
+| Acceptance execution | current formal plan and closure resolve uniquely | latest Acceptance artifact as implicit execution owner | plan-binding and drift tests pass |
+| Workflow state | formal plan plus `active_work` index | `.pt-dev-workflow` session schema | no live consumer reference remains |
 
 ## 6. Documentation Updates
 

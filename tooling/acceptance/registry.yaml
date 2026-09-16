@@ -809,6 +809,7 @@
         "paths": [
           "tooling/acceptance/**",
           "tooling/scripts/acceptance-*.py",
+          "tooling/scripts/execution-plan.py",
           "tooling/scripts/quality-evidence.py",
           "tooling/make/acceptance.mk",
           "tooling/scripts/review/route-change.sh",
@@ -820,6 +821,7 @@
       "require": [
         "acceptance-plan-self",
         "acceptance-infra-validation",
+        "acceptance-workflow-contract",
         "acceptance-runtime-provisioning-self"
       ]
     },

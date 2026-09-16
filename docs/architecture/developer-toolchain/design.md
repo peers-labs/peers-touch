@@ -20,6 +20,12 @@
    tools, and unsupported modes return typed non-zero failures before mutation.
 5. **Evidence over assumptions**: status and doctor report observed process,
    port, dependency, and health state.
+6. **One worktree, one active plan**: a tracked worktree has exactly one active
+   formal execution plan; every runtime projection validates that plan instead
+   of creating another workflow state.
+7. **Plan-bound verification**: Acceptance execution is selected from the
+   current closure in the formal plan. Diff-based impact analysis detects plan
+   drift but never silently expands execution.
 
 ## 2. Evidence Ledger
 
@@ -44,6 +50,8 @@
 - Make, package, and PowerShell adapters over the same command contract.
 - Structured runtime metadata and bounded cleanup.
 - Windows and Unix CI smoke coverage.
+- Worktree-bound execution-plan discovery and Acceptance scheduling.
+- Plan-completion and explicitly requested full/release verification.
 
 ### Non-Scope
 
@@ -52,6 +60,7 @@
 - Changing Acceptance Station profile injection or Runtime Cell ownership.
 - Packaging, signing, installers, or release automation.
 - Adding a second profile or process source of truth.
+- Adding an Acceptance-specific task, iteration, or lifecycle state machine.
 
 ## 4. System Architecture
 
@@ -85,6 +94,20 @@ Developer / CI
 `devctl` is a control plane. It does not become a product runtime and does not
 own Station or Desktop data.
 
+The development workflow uses the existing formal plan as its only task-state
+owner:
+
+```text
+verified worktree
+  -> one active formal execution plan
+  -> one current closure from its Implementation Status table
+  -> closure Acceptance declaration
+  -> Acceptance runner
+```
+
+`active_work`, Context Anchor, Goal queues, and Acceptance impact artifacts are
+indexes or projections. None may redefine plan scope, progress, or Gate timing.
+
 ## 5. Sources Of Truth And Ownership
 
 | Concern | Source of truth | Mutation owner |
@@ -95,9 +118,33 @@ own Station or Desktop data.
 | Managed process identity | `.local/dev/state/<profile>/<service>.json` | lifecycle coordinator |
 | Runtime health | live health endpoint and listening port | status/doctor probes |
 | Product data | Station/Desktop storage roots | product runtimes, never `devctl` |
+| Work scope and progress | formal execution plan | planning/execution stage owner |
+| Active-plan lookup | plan metadata matched to verified worktree | plan registration |
+| Acceptance timing | plan Acceptance Execution contract | planning stage owner |
+| Diff impact | generated Acceptance projection | Acceptance planner |
 
 The runtime-state record is evidence of ownership, not proof of liveness.
 Liveness is always re-observed.
+
+## 5.1 Plan-Bound Acceptance
+
+Every tracked plan declares its worktree identity and one machine-readable
+Acceptance Execution contract. The contract maps closure IDs to Gate IDs and
+defines plan-completion and explicit full/release Gate sets.
+
+The runner:
+
+1. discovers exactly one active plan matching the verified worktree;
+2. reads the current closure from the existing Implementation Status table;
+3. validates actual changed paths against the registry-derived impact
+   projection;
+4. rejects undeclared impact with `ACCEPTANCE_PLAN_DRIFT`;
+5. prints the selected Gates, environments, and timeout budget;
+6. executes only the current closure unless completion or full execution was
+   explicitly requested.
+
+No tier, environment availability, latest evidence pointer, or Agent inference
+may broaden the selected execution set.
 
 ## 6. Command Contract
 
@@ -185,6 +232,11 @@ Forbidden:
 - embedding machine names or Station profiles in command definitions;
 - changing Acceptance runtime profile injection;
 - requiring Git Bash for a Windows-native command path.
+- more than one active formal plan for the same worktree;
+- an Acceptance artifact acting as a second execution plan;
+- default execution of completion, environment, nightly, or release Gates;
+- running full/release Acceptance without an explicit user request;
+- merging a tracked worktree while its formal plan remains active.
 
 ## 9. Failure Contract
 
@@ -200,6 +252,11 @@ Stable CLI error codes:
 | `DEVCTL_START_TIMEOUT` | Runtime did not become ready before the deadline |
 | `DEVCTL_UNSUPPORTED_MODE` | The selected operation is not implemented for the profile mode/platform |
 | `DEVCTL_CHECK_FAILED` | A deterministic source check failed |
+| `EXECUTION_PLAN_REQUIRED` | No active formal plan matches the worktree |
+| `MULTIPLE_ACTIVE_EXECUTION_PLANS` | More than one active plan matches the worktree |
+| `EXECUTION_PLAN_INVALID` | Plan metadata, status, or Acceptance contract is malformed |
+| `EXECUTION_PLAN_COMPLETE` | Plain run requested after all closures completed |
+| `ACCEPTANCE_PLAN_DRIFT` | Actual diff implies an undeclared Acceptance Gate |
 
 Errors include operation and relevant profile/service context, but never secret
 values.

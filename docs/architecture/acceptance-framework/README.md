@@ -64,6 +64,8 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 7. Federation 与 Acceptance 必须双向证明：Acceptance 证明 Federation，Federation 证明 Acceptance。
 8. Station Dashboard、Chat 等产品域必须作为 managed domain 接入，验证框架可泛化，而不是复制 Federation 特例。
 9. 非 local Gate 必须通过 Environment Provisioning Contract 形成 runtime manifest 后才能执行。
+10. Registry只产生影响投影；当前worktree唯一正式Execution Plan及其current
+    closure拥有Gate调度。完整/发版验收必须由用户显式触发。
 10. 缺少 contract、resource 或 evidence 时必须结构化上报并保持 `UNPROVEN`，禁止 silent pass。
 11. 跨平台 Native 声明必须由 Gate × Runtime Cell 矩阵证明，任何平台不得替代另一平台。
 12. 多服务环境中的每个客户端必须通过 typed service binding 选择依赖服务，禁止

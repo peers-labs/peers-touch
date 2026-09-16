@@ -22,6 +22,13 @@
       "tier": "ci-cheap",
       "description": "Validate Runtime Provisioning contracts, owners, shared profile lease contention, ephemeral Gate launch-context isolation and cleanup, runner failure semantics, behavior planning, domain structural closure, Infra/business responsibility isolation, redaction, freshness, Gap Detector fail-closed behavior, and quality evidence range/readiness integrity."
     },
+    "acceptance-workflow-contract": {
+      "command": "python3 -m unittest tooling.acceptance.tests.test_execution_plan && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/quality-evidence-test.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate one-active-plan discovery, current-closure scheduling, diff drift rejection, explicit completion/full selection, and runner projection refresh."
+    },
     "acceptance-run-static-gate": {
       "command": "python3 tooling/scripts/acceptance-run-test.py",
       "timeout_seconds": 30,

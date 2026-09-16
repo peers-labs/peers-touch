@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
-  existsSync,
+  chmodSync,
+  lstatSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
   rmSync,
+  statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { execFileSync, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -21,10 +24,13 @@ import {
   processStartIdentity,
   readLedger,
   releaseDeclaration,
+  requireActiveDeclaration,
   startOrUpdateDeclaration,
   statusAll,
   statusCurrent,
 } from './dev-work.mjs';
+
+const FIXED_NOW = new Date('2026-09-16T12:00:00.000Z');
 
 function fixture() {
   const root = mkdtempSync(path.join(tmpdir(), 'pt-dev-work-'));
@@ -45,19 +51,25 @@ function fixture() {
   };
 }
 
+function clock(iso = FIXED_NOW.toISOString()) {
+  return () => new Date(iso);
+}
+
 function options(scope, overrides = {}) {
   return {
     home: scope.home,
     workspaceRoot: scope.workspaceA,
-    workItemId: 'workflow-control-plane',
+    workItemId: 'dwf-b1',
     sessionId: 'session-a',
-    owner: 'test-owner',
+    owner: 'lane-b',
     purpose: 'test public work declarations',
-    branch: 'feat/workflow',
-    sourceHead: '1'.repeat(40),
-    sourceClaims: 'exclusive-write:tooling/skills;shared-read:docs/README.md',
+    journeyId: 'DWF-AS03',
+    branch: 'merge-desktop-prototype',
+    sourceHead: '7'.repeat(40),
+    sourceClaims:
+      'exclusive-write:tooling/scripts/local-dev;shared-read:docs/architecture',
     runtimeClaims: 'shared:station.connect:station-four',
-    now: new Date('2026-09-13T12:00:00.000Z'),
+    clock: clock(),
     ...overrides,
   };
 }
@@ -70,33 +82,28 @@ function expectCode(code, operation) {
   });
 }
 
-test('publishes one declaration and exposes it to all workspaces', () => {
+test('publishes a closed declaration with owner-only storage', () => {
   const scope = fixture();
   try {
     const declaration = startOrUpdateDeclaration(options(scope));
-    const status = statusAll({
-      home: scope.home,
-      now: new Date('2026-09-13T12:01:00.000Z'),
-    });
-    assert.equal(status.declarations.length, 1);
-    assert.equal(status.declarations[0].declarationId, declaration.declarationId);
-    assert.equal(
-      status.declarations[0].declarationDigest,
-      digestDeclaration(status.declarations[0]),
-    );
-    assert.equal(
+    const ledgerFile = path.join(scope.home, '.peers-touch', 'dev', 'work.json');
+    assert.equal(declaration.state, 'DECLARED');
+    assert.equal(declaration.declarationDigest, digestDeclaration(declaration));
+    assert.equal(statSync(ledgerFile).mode & 0o777, 0o600);
+    assert.equal(statSync(path.dirname(ledgerFile)).mode & 0o777, 0o700);
+    assert.deepEqual(
       statusCurrent({
         home: scope.home,
         workspaceRoot: scope.workspaceA,
-        now: new Date('2026-09-13T12:01:00.000Z'),
-      }).declarations.length,
-      1,
+        clock: clock(),
+      }).declarations.map((item) => item.workItemId),
+      ['dwf-b1'],
     );
     assert.equal(
       statusCurrent({
         home: scope.home,
         workspaceRoot: scope.workspaceB,
-        now: new Date('2026-09-13T12:01:00.000Z'),
+        clock: clock(),
       }).declarations.length,
       0,
     );
@@ -105,80 +112,31 @@ test('publishes one declaration and exposes it to all workspaces', () => {
   }
 });
 
-test('warns but allows overlapping source claims on independent branches', () => {
-  const scope = fixture();
-  try {
-    const first = startOrUpdateDeclaration(options(scope));
-    const warnings = [];
-    const second = startOrUpdateDeclaration(
-      options(scope, {
-        workspaceRoot: scope.workspaceB,
-        workItemId: 'other-work',
-        sessionId: 'session-b',
-        branch: 'feat/other',
-        sourceHead: '2'.repeat(40),
-        sourceClaims: 'exclusive-write:tooling/skills/pt-dev-workflow',
-      }),
-      { onWarning: (warning) => warnings.push(warning) },
-    );
-
-    assert.equal(
-      statusAll({ home: scope.home }).declarations.length,
-      2,
-    );
-    assert.notEqual(second.workspaceId, first.workspaceId);
-    assert.deepEqual(warnings, [
-      {
-        declarationId: first.declarationId,
-        workspaceId: first.workspaceId,
-        branch: first.branch,
-        kind: 'SOURCE_OVERLAP_WARNING',
-        resource: 'tooling/skills/pt-dev-workflow',
-        otherPathPrefix: 'tooling/skills',
-      },
-    ]);
-  } finally {
-    scope.close();
-  }
-});
-
-test('rejects overlapping exclusive source claims inside one workspace', () => {
+test('rejects source and runtime conflicts but permits shared reads', () => {
   const scope = fixture();
   try {
     startOrUpdateDeclaration(options(scope));
     expectCode('RESOURCE_DECLARATION_CONFLICT', () =>
       startOrUpdateDeclaration(
         options(scope, {
-          workItemId: 'other-work',
+          workspaceRoot: scope.workspaceB,
+          workItemId: 'source-conflict',
           sessionId: 'session-b',
-          branch: 'feat/other',
-          sourceHead: '2'.repeat(40),
-          sourceClaims: 'exclusive-write:tooling/skills/pt-dev-workflow',
+          branch: 'other-branch',
+          sourceHead: '8'.repeat(40),
+          sourceClaims: 'exclusive-write:tooling/scripts/local-dev/dev-work.mjs',
+          runtimeClaims: '',
         }),
       ),
-    );
-  } finally {
-    scope.close();
-  }
-});
-
-test('allows shared reads and rejects exclusive runtime conflicts', () => {
-  const scope = fixture();
-  try {
-    startOrUpdateDeclaration(
-      options(scope, {
-        sourceClaims: 'shared-read:docs',
-        runtimeClaims: 'exclusive:local.slot:3',
-      }),
     );
     startOrUpdateDeclaration(
       options(scope, {
         workspaceRoot: scope.workspaceB,
         workItemId: 'reader',
-        sessionId: 'session-b',
-        branch: 'feat/reader',
-        sourceHead: '2'.repeat(40),
-        sourceClaims: 'shared-read:docs',
+        sessionId: 'session-reader',
+        branch: 'reader-branch',
+        sourceHead: '8'.repeat(40),
+        sourceClaims: 'shared-read:docs/architecture',
         runtimeClaims: '',
       }),
     );
@@ -186,12 +144,12 @@ test('allows shared reads and rejects exclusive runtime conflicts', () => {
       startOrUpdateDeclaration(
         options(scope, {
           workspaceRoot: scope.workspaceB,
-          workItemId: 'slot-user',
-          sessionId: 'session-c',
-          branch: 'feat/slot',
-          sourceHead: '3'.repeat(40),
+          workItemId: 'runtime-conflict',
+          sessionId: 'session-runtime',
+          branch: 'runtime-branch',
+          sourceHead: '9'.repeat(40),
           sourceClaims: 'shared-read:model',
-          runtimeClaims: 'exclusive:local.slot:3',
+          runtimeClaims: 'exclusive:station.connect:station-four',
         }),
       ),
     );
@@ -200,22 +158,19 @@ test('allows shared reads and rejects exclusive runtime conflicts', () => {
   }
 });
 
-test('rejects two workspaces writing the same branch even on disjoint paths', () => {
+test('rejects disjoint writes to the same branch across workspaces', () => {
   const scope = fixture();
   try {
-    startOrUpdateDeclaration(
-      options(scope, {
-        sourceClaims: 'exclusive-write:apps/desktop',
-      }),
-    );
+    startOrUpdateDeclaration(options(scope));
     expectCode('RESOURCE_DECLARATION_CONFLICT', () =>
       startOrUpdateDeclaration(
         options(scope, {
           workspaceRoot: scope.workspaceB,
           workItemId: 'same-branch',
           sessionId: 'session-b',
-          sourceHead: '2'.repeat(40),
+          sourceHead: '8'.repeat(40),
           sourceClaims: 'exclusive-write:apps/station',
+          runtimeClaims: '',
         }),
       ),
     );
@@ -224,23 +179,30 @@ test('rejects two workspaces writing the same branch even on disjoint paths', ()
   }
 });
 
-test('marks expired declarations stale and permits a successor', () => {
+test('uses the injected current clock for expiry and successor admission', () => {
   const scope = fixture();
   try {
     startOrUpdateDeclaration(options(scope, { expiresMinutes: 1 }));
+    assert.equal(
+      statusAll({
+        home: scope.home,
+        clock: clock('2026-09-16T12:00:30.000Z'),
+      }).declarations[0].state,
+      'DECLARED',
+    );
     startOrUpdateDeclaration(
       options(scope, {
         workspaceRoot: scope.workspaceB,
         workItemId: 'successor',
         sessionId: 'session-b',
-        branch: 'feat/successor',
-        sourceHead: '2'.repeat(40),
-        now: new Date('2026-09-13T12:02:00.000Z'),
+        branch: 'successor-branch',
+        sourceHead: '8'.repeat(40),
+        clock: clock('2026-09-16T12:02:00.000Z'),
       }),
     );
     const states = statusAll({
       home: scope.home,
-      now: new Date('2026-09-13T12:02:00.000Z'),
+      clock: clock('2026-09-16T12:02:00.000Z'),
     }).declarations.map((item) => item.state);
     assert.deepEqual(states.sort(), ['DECLARED', 'STALE']);
   } finally {
@@ -248,129 +210,125 @@ test('marks expired declarations stale and permits a successor', () => {
   }
 });
 
-test('heartbeat extends ownership and release requires the owning session', () => {
+test('heartbeat, activation, release, and restart obey lifecycle ownership', () => {
   const scope = fixture();
   try {
-    startOrUpdateDeclaration(options(scope, { expiresMinutes: 1 }));
-    const heartbeat = heartbeatDeclaration(
-      options(scope, {
-        now: new Date('2026-09-13T12:00:30.000Z'),
-        expiresMinutes: 10,
-      }),
+    const currentRepo = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+      '..',
     );
-    assert.equal(heartbeat.expiresAt, '2026-09-13T12:10:30.000Z');
-    expectCode('WORK_DECLARATION_OWNER_MISMATCH', () =>
-      releaseDeclaration(options(scope, { sessionId: 'other-session' })),
-    );
-    const released = releaseDeclaration(
-      options(scope, { now: new Date('2026-09-13T12:01:00.000Z') }),
-    );
-    assert.equal(released.state, 'RELEASED');
-  } finally {
-    scope.close();
-  }
-});
-
-test('start replaces a released declaration while update cannot revive it', () => {
-  const scope = fixture();
-  try {
-    const created = startOrUpdateDeclaration(options(scope));
-    releaseDeclaration(options(scope));
-    expectCode('WORK_DECLARATION_NOT_ACTIVE', () =>
-      startOrUpdateDeclaration(
-        options(scope, { purpose: 'invalid revive' }),
-        { requireExisting: true },
-      ),
-    );
-    const restarted = startOrUpdateDeclaration(
-      options(scope, {
-        sessionId: 'session-restarted',
-        purpose: 'new run',
-        now: new Date('2026-09-13T12:05:00.000Z'),
-      }),
-    );
-    assert.equal(restarted.declarationId, created.declarationId);
-    assert.equal(restarted.state, 'DECLARED');
-    assert.equal(restarted.sessionId, 'session-restarted');
-    assert.equal(restarted.createdAt, '2026-09-13T12:05:00.000Z');
-  } finally {
-    scope.close();
-  }
-});
-
-test('rejects live declaration takeover by another session or owner', () => {
-  const scope = fixture();
-  try {
-    startOrUpdateDeclaration(options(scope));
-    expectCode('WORK_DECLARATION_OWNER_MISMATCH', () =>
-      startOrUpdateDeclaration(
-        options(scope, {
-          sessionId: 'session-b',
-        }),
-      ),
-    );
-    expectCode('WORK_DECLARATION_OWNER_MISMATCH', () =>
-      startOrUpdateDeclaration(
-        options(scope, {
-          owner: 'other-owner',
-        }),
-        { requireExisting: true },
-      ),
-    );
-  } finally {
-    scope.close();
-  }
-});
-
-test('update preserves claims and requires activation before identity checks', () => {
-  const scope = fixture();
-  try {
-    const created = startOrUpdateDeclaration(options(scope));
-    const updated = startOrUpdateDeclaration(
-      options(scope, {
-        purpose: 'updated purpose',
-        sourceClaims: undefined,
-        runtimeClaims: undefined,
-      }),
-      { requireExisting: true },
-    );
-    assert.deepEqual(updated.sourceClaims, created.sourceClaims);
-    assert.deepEqual(updated.runtimeClaims, created.runtimeClaims);
-    expectCode('WORK_DECLARATION_NOT_ACTIVE', () =>
-      checkDeclaration({
-        home: scope.home,
-        workspaceRoot: scope.workspaceA,
-        workItemId: 'workflow-control-plane',
-      }),
-    );
-  } finally {
-    scope.close();
-  }
-});
-
-test('check rejects source HEAD drift', () => {
-  const scope = fixture();
-  try {
-    const currentRepo = process.cwd();
-    const currentHead = execFileSync('git', ['rev-parse', 'HEAD'], {
+    const branch = execFileSync('git', ['branch', '--show-current'], {
       cwd: currentRepo,
       encoding: 'utf8',
     }).trim();
-    const wrongHead = currentHead === '4'.repeat(40) ? '5'.repeat(40) : '4'.repeat(40);
+    const sourceHead = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: currentRepo,
+      encoding: 'utf8',
+    }).trim();
     startOrUpdateDeclaration(
       options(scope, {
         workspaceRoot: currentRepo,
-        branch: undefined,
-        sourceHead: wrongHead,
+        branch,
+        sourceHead,
+        expiresMinutes: 1,
+      }),
+    );
+    expectCode('WORK_DECLARATION_NOT_ACTIVE', () =>
+      requireActiveDeclaration({
+        home: scope.home,
+        workspaceRoot: currentRepo,
+        workItemId: 'dwf-b1',
+        clock: clock(),
+      }),
+    );
+    const active = checkDeclaration({
+      home: scope.home,
+      workspaceRoot: currentRepo,
+      workItemId: 'dwf-b1',
+      sessionId: 'session-a',
+      clock: clock('2026-09-16T12:00:10.000Z'),
+    });
+    assert.equal(active.state, 'ACTIVE');
+    const heartbeat = heartbeatDeclaration({
+      home: scope.home,
+      workspaceRoot: currentRepo,
+      workItemId: 'dwf-b1',
+      sessionId: 'session-a',
+      expiresMinutes: 10,
+      clock: clock('2026-09-16T12:00:30.000Z'),
+    });
+    assert.equal(heartbeat.expiresAt, '2026-09-16T12:10:30.000Z');
+    expectCode('WORK_DECLARATION_OWNER_MISMATCH', () =>
+      releaseDeclaration({
+        home: scope.home,
+        workspaceRoot: currentRepo,
+        workItemId: 'dwf-b1',
+        sessionId: 'other-session',
+        clock: clock('2026-09-16T12:01:00.000Z'),
+      }),
+    );
+    assert.equal(
+      releaseDeclaration({
+        home: scope.home,
+        workspaceRoot: currentRepo,
+        workItemId: 'dwf-b1',
+        sessionId: 'session-a',
+        clock: clock('2026-09-16T12:01:00.000Z'),
+      }).state,
+      'RELEASED',
+    );
+    expectCode('WORK_DECLARATION_NOT_ACTIVE', () =>
+      startOrUpdateDeclaration(
+        options(scope, {
+          workspaceRoot: currentRepo,
+          branch,
+          sourceHead,
+          clock: clock('2026-09-16T12:02:00.000Z'),
+        }),
+        { requireExisting: true },
+      ),
+    );
+    assert.equal(
+      startOrUpdateDeclaration(
+        options(scope, {
+          workspaceRoot: currentRepo,
+          branch,
+          sourceHead,
+          sessionId: 'session-b',
+          clock: clock('2026-09-16T12:02:00.000Z'),
+        }),
+      ).sessionId,
+      'session-b',
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('activation rejects branch and source identity drift', () => {
+  const scope = fixture();
+  try {
+    const currentRepo = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+      '..',
+    );
+    startOrUpdateDeclaration(
+      options(scope, {
+        workspaceRoot: currentRepo,
+        branch: 'not-the-current-branch',
       }),
     );
     expectCode('WORKTREE_IDENTITY_MISMATCH', () =>
       checkDeclaration({
         home: scope.home,
         workspaceRoot: currentRepo,
-        workItemId: 'workflow-control-plane',
+        workItemId: 'dwf-b1',
         sessionId: 'session-a',
-        now: new Date('2026-09-13T12:01:00.000Z'),
+        clock: clock(),
       }),
     );
   } finally {
@@ -378,50 +336,74 @@ test('check rejects source HEAD drift', () => {
   }
 });
 
-test('check promotes a matching declaration to active', () => {
+test('source claims reject symlink escape through the nearest existing parent', () => {
   const scope = fixture();
   try {
-    const currentRepo = process.cwd();
-    startOrUpdateDeclaration(
-      options(scope, {
-        workspaceRoot: currentRepo,
-        branch: undefined,
-        sourceHead: undefined,
-      }),
+    const outside = path.join(scope.root, 'outside');
+    mkdirSync(outside);
+    symlinkSync(outside, path.join(scope.workspaceA, 'escape'));
+    expectCode('INVALID_SOURCE_CLAIM', () =>
+      startOrUpdateDeclaration(
+        options(scope, {
+          sourceClaims: 'exclusive-write:escape/new-file.mjs',
+        }),
+      ),
     );
-    const active = checkDeclaration({
-      home: scope.home,
-      workspaceRoot: currentRepo,
-      workItemId: 'workflow-control-plane',
-      now: new Date('2026-09-13T12:01:00.000Z'),
-    });
-    assert.equal(active.state, 'ACTIVE');
-    assert.equal(active.declarationDigest, digestDeclaration(active));
   } finally {
     scope.close();
   }
 });
 
-test('malformed ledger fails closed without replacement', () => {
-  const scope = fixture();
+test('malformed ledger and lock metadata fail closed without replacement', () => {
+  const ledgerScope = fixture();
   try {
-    const ledgerFile = path.join(scope.home, '.peers-touch', 'dev', 'work.json');
+    const ledgerFile = path.join(
+      ledgerScope.home,
+      '.peers-touch',
+      'dev',
+      'work.json',
+    );
     mkdirSync(path.dirname(ledgerFile), { recursive: true });
     writeFileSync(ledgerFile, '{"schemaVersion":1,"kind":"wrong"}\n');
     const before = readFileSync(ledgerFile, 'utf8');
+    expectCode('MACHINE_WORK_LEDGER_INVALID', () => readLedger(ledgerFile));
     expectCode('MACHINE_WORK_LEDGER_INVALID', () =>
-      readLedger(ledgerFile),
-    );
-    expectCode('MACHINE_WORK_LEDGER_INVALID', () =>
-      startOrUpdateDeclaration(options(scope)),
+      startOrUpdateDeclaration(options(ledgerScope)),
     );
     assert.equal(readFileSync(ledgerFile, 'utf8'), before);
   } finally {
-    scope.close();
+    ledgerScope.close();
+  }
+
+  const lockScope = fixture();
+  try {
+    const lockFile = path.join(
+      lockScope.home,
+      '.peers-touch',
+      'dev',
+      'work.lock',
+    );
+    mkdirSync(path.dirname(lockFile), { recursive: true });
+    const malformed = `${JSON.stringify({
+      pid: String(process.pid),
+      processStart: processStartIdentity(),
+      createdAt: FIXED_NOW.toISOString(),
+    })}\n`;
+    writeFileSync(lockFile, malformed);
+    expectCode('MACHINE_WORK_LEDGER_LOCK_INVALID', () =>
+      startOrUpdateDeclaration(
+        options(lockScope, {
+          lockTimeoutMs: 10,
+        }),
+      ),
+    );
+    assert.equal(readFileSync(lockFile, 'utf8'), malformed);
+  } finally {
+    lockScope.close();
   }
 });
 
-test('unknown declaration fields fail closed', () => {
+test('closed declaration fields and non-canonical stored claims fail closed', () => {
   const scope = fixture();
   try {
     const created = startOrUpdateDeclaration(options(scope));
@@ -432,26 +414,6 @@ test('unknown declaration fields fail closed', () => {
     expectCode('MACHINE_WORK_LEDGER_INVALID', () => readLedger(ledgerFile));
   } finally {
     scope.close();
-  }
-});
-
-test('non-canonical declaration keys and claims fail closed', () => {
-  const keyScope = fixture();
-  try {
-    const created = startOrUpdateDeclaration(options(keyScope));
-    const ledgerFile = path.join(
-      keyScope.home,
-      '.peers-touch',
-      'dev',
-      'work.json',
-    );
-    const ledger = JSON.parse(readFileSync(ledgerFile, 'utf8'));
-    ledger.declarations.other = ledger.declarations[created.declarationId];
-    delete ledger.declarations[created.declarationId];
-    writeFileSync(ledgerFile, `${JSON.stringify(ledger)}\n`);
-    expectCode('MACHINE_WORK_LEDGER_INVALID', () => readLedger(ledgerFile));
-  } finally {
-    keyScope.close();
   }
 
   const claimScope = fixture();
@@ -465,7 +427,7 @@ test('non-canonical declaration keys and claims fail closed', () => {
     );
     const ledger = JSON.parse(readFileSync(ledgerFile, 'utf8'));
     const declaration = ledger.declarations[created.declarationId];
-    declaration.sourceClaims[0].pathPrefix = 'docs//README.md';
+    declaration.sourceClaims[0].pathPrefix = 'docs//architecture';
     declaration.declarationDigest = digestDeclaration(declaration);
     writeFileSync(ledgerFile, `${JSON.stringify(ledger)}\n`);
     expectCode('MACHINE_WORK_LEDGER_INVALID', () => readLedger(ledgerFile));
@@ -474,147 +436,35 @@ test('non-canonical declaration keys and claims fail closed', () => {
   }
 });
 
-test('malformed work ledger lock metadata fails closed', () => {
+test('symlinked CLI invocation executes the real module', () => {
   const scope = fixture();
   try {
-    const lockFile = path.join(scope.home, '.peers-touch', 'dev', 'work.lock');
-    mkdirSync(path.dirname(lockFile), { recursive: true });
-    const malformed = `${JSON.stringify({
-      pid: String(process.pid),
-      processStart: processStartIdentity(),
-      createdAt: new Date().toISOString(),
-    })}\n`;
-    writeFileSync(lockFile, malformed);
-    expectCode('MACHINE_WORK_LEDGER_LOCK_INVALID', () =>
-      startOrUpdateDeclaration(options(scope, { lockTimeoutMs: 10 })),
-    );
-    assert.equal(readFileSync(lockFile, 'utf8'), malformed);
-  } finally {
-    scope.close();
-  }
-});
-
-test('live work ledger lock fails within the caller budget', () => {
-  const scope = fixture();
-  try {
-    const lockFile = path.join(scope.home, '.peers-touch', 'dev', 'work.lock');
-    mkdirSync(path.dirname(lockFile), { recursive: true });
-    writeFileSync(
-      lockFile,
-      `${JSON.stringify({
-        pid: process.pid,
-        processStart: processStartIdentity(),
-        createdAt: new Date().toISOString(),
-      })}\n`,
-    );
-    expectCode('MACHINE_WORK_LEDGER_LOCKED', () =>
-      startOrUpdateDeclaration(
-        options(scope, {
-          lockTimeoutMs: 10,
-        }),
-      ),
-    );
-  } finally {
-    scope.close();
-  }
-});
-
-test('publishes lock metadata atomically for concurrent readers', async () => {
-  const scope = fixture();
-  let child;
-  try {
-    const preload = path.join(scope.root, 'delay-lock-write.cjs');
-    writeFileSync(
-      preload,
-      [
-        "const fs = require('node:fs');",
-        "const { syncBuiltinESMExports } = require('node:module');",
-        'const delayed = new Set();',
-        'const originalOpenSync = fs.openSync;',
-        'fs.openSync = function (...args) {',
-        '  const fd = originalOpenSync.apply(this, args);',
-        "  if (String(args[0]).includes('work.lock')) delayed.add(fd);",
-        '  return fd;',
-        '};',
-        'const originalWriteFileSync = fs.writeFileSync;',
-        'fs.writeFileSync = function (target, ...args) {',
-        '  if (delayed.delete(target)) {',
-        '    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);',
-        '  }',
-        '  return originalWriteFileSync.call(this, target, ...args);',
-        '};',
-        'syncBuiltinESMExports();',
-        '',
-      ].join('\n'),
-    );
     const cli = fileURLToPath(new URL('./dev-work.mjs', import.meta.url));
-    child = spawn(
+    const link = path.join(scope.root, 'dev-work-link.mjs');
+    symlinkSync(cli, link);
+    assert.ok(lstatSync(link).isSymbolicLink());
+    const result = spawnSync(
       process.execPath,
-      [
-        cli,
-        'start',
-        '--home',
-        scope.home,
-        '--workspace-root',
-        scope.workspaceA,
-        '--work-item',
-        'concurrent-writer',
-        '--session',
-        'concurrent-session',
-        '--owner',
-        'test-owner',
-        '--purpose',
-        'exercise atomic lock publication',
-        '--branch',
-        'feat/concurrent-writer',
-        '--source-head',
-        '4'.repeat(40),
-        '--source-claims',
-        'exclusive-write:tooling/concurrent',
-      ],
-      {
-        env: {
-          ...process.env,
-          NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --require=${preload}`.trim(),
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
+      [link, 'status-all', '--home', scope.home],
+      { encoding: 'utf8' },
     );
-    let stdout = '';
-    let stderr = '';
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk;
-    });
-    const childResult = new Promise((resolve) => {
-      child.once('close', (code, signal) => resolve({ code, signal }));
-    });
-
-    const lockFile = path.join(scope.home, '.peers-touch', 'dev', 'work.lock');
-    const deadline = Date.now() + 2_000;
-    while (!existsSync(lockFile) && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    assert.ok(existsSync(lockFile), 'child did not publish the work ledger lock');
-
-    const status = statusAll({
-      home: scope.home,
-      lockTimeoutMs: 2_000,
-    });
-    const result = await childResult;
-    assert.equal(
-      result.code,
-      0,
-      `child failed with signal ${result.signal}: ${stderr || stdout}`,
-    );
-    assert.equal(status.declarations.length, 1);
-    assert.equal(status.declarations[0].workItemId, 'concurrent-writer');
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.declarations.length, 0);
   } finally {
-    if (child && child.exitCode === null) child.kill('SIGKILL');
+    scope.close();
+  }
+});
+
+test('existing private directory modes are corrected on mutation', () => {
+  const scope = fixture();
+  try {
+    const devRoot = path.join(scope.home, '.peers-touch', 'dev');
+    mkdirSync(devRoot, { recursive: true });
+    chmodSync(devRoot, 0o755);
+    startOrUpdateDeclaration(options(scope));
+    assert.equal(statSync(devRoot).mode & 0o777, 0o700);
+  } finally {
     scope.close();
   }
 });

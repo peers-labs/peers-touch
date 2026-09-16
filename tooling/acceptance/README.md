@@ -78,15 +78,21 @@ This creates a two-way proof:
 ## Agent Workflow
 
 1. Update or add a feature contract when a new product capability is introduced.
-2. Run `make acceptance-plan ACCEPTANCE_RANGE=<base>...<head>` after code changes.
-3. Run `make acceptance PLAN=<plan-path>` when a workstream needs an explicit gate bundle; the profile/runtime environment must already be active before this command.
-4. Run `make quality-evidence REVIEW_RANGE=<base>...<head>` when the change is entering review.
-5. Run `make acceptance-run-ci` for selected `ci-*` gates, or `make acceptance-run-env-evidence` only when the required environment is available.
-6. Run `make acceptance-report` and include proven / unproven scope in the handoff.
-7. Move useful probes into `tooling/acceptance/gates/` and reference them from `gates.yaml`.
-8. For a product capability loop, prefer explicit plans over adding phase-specific Make targets.
-9. For a new product domain, follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
-10. For native Chat journeys, follow
+2. Ensure the worktree has exactly one active formal execution plan with an
+   `Acceptance Execution` contract.
+3. Run `make acceptance-plan` to inspect the current closure and reconcile the
+   actual diff with the formal plan.
+4. Run `make acceptance` or `make acceptance-run` for the current closure only.
+5. Run `make acceptance-run-completion` when every implementation closure is
+   ready for completion review.
+6. Run `make acceptance-run-full` only after an explicit release or full-test
+   request. Environment availability alone is not authorization.
+7. Run `make quality-evidence REVIEW_RANGE=<base>...<head>` when the change is entering review.
+8. Run `make acceptance-report` and include proven / unproven scope in the handoff.
+9. Move useful probes into `tooling/acceptance/gates/` and reference them from `gates.yaml`.
+10. For a product capability loop, prefer explicit plans over adding phase-specific Make targets.
+11. For a new product domain, follow `docs/architecture/acceptance-framework/domain-onboarding.md` and start from `tooling/acceptance/templates/`.
+12. For native Chat journeys, follow
     `tooling/acceptance/playbooks/chat-native-visible-clients.md`; visible
     observers, source matching, isolated profiles, bounded steps, and composer
     cleanup are mandatory.

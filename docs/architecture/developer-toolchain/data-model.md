@@ -144,3 +144,56 @@ for the requested command reports `fail`.
 Keys matching `TOKEN`, `SECRET`, `PASSWORD`, `PRIVATE_KEY`, `API_KEY`, or
 credential-like suffixes are redacted from config and diagnostic output.
 Runtime state records never persist environment values.
+
+## 7. Formal Plan Binding
+
+The formal Markdown plan carries the worktree binding in its existing metadata
+block:
+
+```markdown
+> **Status**: active, approved for execution
+> **Branch**: `fix/example`
+> **Workspace ID**: `0123456789abcdef`
+> **Initial HEAD**: `<40-character commit>`
+```
+
+Only `Status`, `Branch`, and `Workspace ID` participate in active-plan
+discovery. `Initial HEAD` defines the default impact range. Runtime HEAD and
+dirty-worktree identity are observed, not persisted as plan progress.
+
+Exactly one plan may be active for a workspace ID.
+
+## 8. Acceptance Execution Contract
+
+Each tracked plan contains one fenced JSON object under
+`## Acceptance Execution`:
+
+```json
+{
+  "schemaVersion": 1,
+  "closures": {
+    "C1": ["desktop-check"]
+  },
+  "completion": ["desktop-check"],
+  "full": ["desktop-check", "desktop-native-e2e"]
+}
+```
+
+The existing Implementation Status table owns closure state. The contract only
+maps closure IDs to Gate IDs and therefore does not duplicate progress.
+
+Derived execution:
+
+```typescript
+interface AcceptanceExecution {
+  executionPlan: string;
+  closure: string;
+  mode: "closure" | "completion" | "full";
+  gates: string[];
+  candidateGates: string[];
+  changedPaths: string[];
+  timeoutBudgetSeconds: number;
+}
+```
+
+The generated object is an ephemeral projection. It is not another plan.

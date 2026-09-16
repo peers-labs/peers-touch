@@ -3,7 +3,7 @@ name: "pt-plan-and-document"
 description: "规划落盘与计划追踪。当用户要求把讨论结果转为正式设计文档/执行计划/任务清单并落盘追踪时调用。教 agent 找到项目文档规范、选对落盘位置、按标准结构输出。"
 stage: "PLAN"
 requires: ["analysis output from pt-architecture-execution-methodology OR standalone planning request"]
-produces: ["execution plan file in correct location", "active_work registration", "plan review prompt"]
+produces: ["bounded Plan Package and Task Slices", "active_work registration", "plan review prompt"]
 next: "pt-context-anchor → pt-execution-plan-guardian"
 ---
 
@@ -66,9 +66,22 @@ docs/architecture/<module>/
 └── prototype/             # [可选] 原型入口说明
 ```
 
-### 执行计划文件
+### Plan Package
 
-放在对应模块的 `execution-plans/` 下，文件名可用 `日期-需求名.md` 或语义命名。
+正式执行计划放在对应模块的 `execution-plans/<日期-需求名>/`：
+
+```text
+execution-plans/<date>-<slug>/
+├── plan.md
+├── tasks/<task-id>.md
+└── archive/
+```
+
+`plan.md` 包含唯一的 `Plan Package` JSON 块，记录稳定目标、scope、架构引用、
+Task DAG/lifecycle、Acceptance Execution、授权，以及经过验证的 `Branch`、
+`Workspace ID`、`Initial HEAD`、`Expected HEAD` 和 worktree-set digest。
+`tasks/*.md` 每个只描述一个可恢复的 Journey/功能闭环。不得另建
+active-plan 状态文件，也不得再创建 active 单文件计划。
 
 ---
 
@@ -83,35 +96,86 @@ docs/architecture/<module>/
 > **Owner**: @handle 或团队名
 ```
 
-### 4.2 执行计划推荐结构
+### 4.2 Plan Package 结构
 
 ```markdown
 # <需求名> — 执行计划
 
-> 元数据块
+> **Status**: prepared
+> **Branch**: `<branch>`
+> **Workspace ID**: `<workspace-id>`
+> **Initial HEAD**: `<full-head>`
+> **Expected HEAD**: `<full-head>`
+> **Worktree-set Digest**: `<sha256>`
 
 ---
 
-## 1. 背景与目标
+## Plan Package
 
-## 2. 范围与非目标
-
-## 3. 方案设计（或引用 design.md）
-
-## 4. 实施阶段
-
-### Phase 1: <名称>
-- 目标：
-- 涉及文件/模块：
-- 验收标准：
-- 依赖：
-
-### Phase 2: ...
-
-## 5. 风险与缓解
-
-## 6. 验证方式
+```json
+{
+  "schemaVersion": 1,
+  "kind": "peers-touch-plan-package",
+  "planId": "example-plan",
+  "status": "prepared",
+  "binding": {
+    "branch": "<branch>",
+    "workspaceId": "<workspace-id>",
+    "initialHead": "<full-head>",
+    "expectedHead": "<full-head>",
+    "worktreeSetDigest": "<sha256>"
+  },
+  "workClass": "infrastructure",
+  "architecture": {
+    "sources": ["docs/architecture/<module>/design.md"],
+    "decisions": ["<decision-id>"]
+  },
+  "scope": {
+    "sourceClaims": [
+      {"pathPrefix": "<owned-path>", "mode": "exclusive-write"}
+    ],
+    "nonGoals": ["<non-goal>"]
+  },
+  "tasks": [
+    {
+      "id": "TASK-01",
+      "workstreamId": "<workstream-id>",
+      "path": "tasks/TASK-01.md",
+      "dependsOn": [],
+      "status": "pending",
+      "blocker": null
+    }
+  ],
+  "exhaustion": null,
+  "authorization": {
+    "checkpoint": {"localCommit": "denied", "amend": "denied"},
+    "delivery": {"push": "denied", "pullRequest": "denied"},
+    "runtime": {"deployProfiles": [], "destructiveResetScopes": []},
+    "history": {"rewrite": "denied"}
+  }
+}
 ```
+
+## Acceptance Execution
+
+```json
+{
+  "schemaVersion": 1,
+  "closures": {"<closure-id>": ["<gate-id>"]},
+  "completion": ["<gate-id>"],
+  "full": ["<gate-id>"]
+}
+```
+```
+
+每个 `tasks/<task-id>.md` 必须包含一个闭合 `Task Slice` JSON 块，声明
+`taskId/workstreamId`、Journey/functional boundary、read/write set、预算、
+checks、done/failure 行为、durable evidence 和不超过 30 行的 current
+snapshot。Task lifecycle 只存在于 manifest；Task 文件不得复制
+`pending/in_progress/blocked/done` 状态。
+
+机械边界由 `planctl validate` 强制执行：manifest 不超过 300 行/20 KiB，
+Task 不超过 200 行/12 KiB，archive 不参与 discovery、状态或恢复。
 
 ### 4.3 设计文档推荐结构
 
@@ -120,34 +184,30 @@ docs/architecture/<module>/
 ### 4.4 Context Anchor 边界
 
 - Execution plans MUST NOT contain a `## Context Anchor` section.
-- 执行计划正文 **不得**包含 `## Context Anchor`。
+- `plan.md`、Task Slice 和 archive **均不得**包含 `## Context Anchor`。
 - PRODUCT / DESIGN 阶段尚无正式执行计划时，不创建占位 `active_work` 行。
-- 执行计划文件创建完成后，才在 `project_memory.md` 的 `active_work`
-  登记 repo-relative `plan` 路径、`stage: PLAN`、当前 step、已验证 branch、
-  `workspace_id`、`initial_head`、`expected_head`、
-  `worktree_set_digest`、blocker 与 session 日期。首次登记时两个 HEAD
-  字段相同；后续 resume/context compaction 只验证持久值，不重新 capture
-  覆盖 baseline。
-- `pt-context-anchor` 从 `active_work`、计划状态表和证据生成聊天投影；
-  不把聊天状态回写为计划中的第二套真源。
+- `plan.md` 和初始 Task Slices 创建并通过 `planctl validate` 后，才在
+  `project_memory.md` 的 `active_work` 登记 repo-relative package
+  `plan.md` 路径、`stage: PLAN`、`current_task_id/current_task_path=NONE`、
+  `dev_state=NONE`、已验证 binding、blocker 与 session 日期。
+- Plan review 通过后，通过 manifest 原子选择一个 dependency-ready Task；
+  active pointer 随后镜像该 `current_task_id/current_task_path`。
+- `pt-context-anchor` 只从 active pointer、compact manifest、当前 Task、
+  当前 Session 和被引用的 durable evidence 生成聊天投影；不扫描 archive
+  或全部 Task，也不把聊天状态回写为第二套真源。
 
 ---
 
 ## 5. 第四步：计划追踪
 
-### 方式一：文档内追踪（推荐大需求）
+### 方式一：Plan Package（正式真源）
 
-在执行计划文档中维护状态表：
-
-```markdown
-## 实施状态
-
-| Phase | 状态 | 完成日期 | 备注 |
-|-------|------|---------|------|
-| Phase 1 | ✅ done | 2026-06-22 | commit abc123 |
-| Phase 2 | 🔄 in progress | — | |
-| Phase 3 | ⬜ pending | — | |
-```
+- `plan.md.tasks[]` 是唯一 Task lifecycle/current-selection 真源。
+- `planctl status/current/next/advance` 负责读取和原子更新 manifest。
+- Task Slice 只在 meaningful milestone 更新 compact snapshot 和 durable
+  evidence 引用；attempt、first failure 和 transition 写入机器 Dev root 的
+  Development Session。
+- 禁止在 package 末尾追加 dated progress、完整日志或第二张状态表。
 
 ### 方式二：TodoWrite（推荐会话内短任务）
 
@@ -163,16 +223,20 @@ docs/architecture/<module>/
 
 文档写完后必须做：
 
-1. **更新最近的 README.md** — 确保目录内有链接指向新文件
+1. **更新最近的 README.md** — 确保目录内有链接指向 package `plan.md`
 2. **更新 `docs/README.md`**（如果是新的真源文档）— 加入 §4 对应层级
-3. **登记 `active_work`** — 仅在正式执行计划已存在后登记；先通过
+3. **登记 `active_work`** — 仅在 package 已存在并通过
+   `planctl validate` 后登记；先通过
    `tooling/scripts/verify-worktree-binding.py` capture + verify 当前明确选择的
-   worktree，再完整保存 branch、`workspace_id`、`initial_head`、
-   `expected_head` 与 `worktree_set_digest`。Verifier 的 `workspaceId` 与
-   worktree-set digest 分别映射到这两个 snake_case 字段；identity 缺失时
+   worktree，再完整保存 package `plan.md`、`current_task_id`、
+   `current_task_path`、`dev_state`、branch、`workspace_id`、`initial_head`、
+   `expected_head` 与 `worktree_set_digest`。Verifier 的 `workspaceId` 和
+   worktree-set digest 分别映射到对应 snake_case 字段；identity 缺失时
    返回 `WORKTREE_IDENTITY_UNAVAILABLE`，不一致时返回
    `WORKTREE_IDENTITY_MISMATCH`
 4. **告知用户正式文档路径** — 在实施前明确列出落盘位置
+5. **校验唯一性** — 同一个 `workspace_id` 不得存在第二个 active package；
+   新工作必须延续或修订当前 plan，或者由用户明确创建另一个 worktree
 
 ---
 
@@ -198,7 +262,7 @@ docs/architecture/<module>/
 <列出计划依赖的已通过架构文档路径>
 
 ## 计划路径
-<执行计划文档路径>
+<Plan Package 的 plan.md 路径>
 
 ## 评审维度
 
@@ -209,6 +273,8 @@ docs/architecture/<module>/
 5. **proto-first**：涉及跨端合约的步骤是否把 proto 修改放在实现之前？
 6. **可并行性**：哪些步骤可以并行？当前顺序是否不必要地串行化？
 7. **遗漏**：架构文档中的 invariants/forbidden relationships 是否在计划中有对应的实施步骤？
+8. **Acceptance 调度**：每个 closure 是否只运行必要 Gate，completion/full
+   是否分离，环境和预计耗时是否明确，是否存在默认触发昂贵 Gate？
 
 ## 输出格式
 
@@ -222,6 +288,7 @@ docs/architecture/<module>/
 5. Proto-first：[正确 / 有违反] — 理由
 6. 可并行性：[合理 / 可优化] — 建议
 7. 遗漏：[无 / 有] — 列出
+8. Acceptance 调度：[合理 / 过宽 / 有缺口] — 理由
 
 ### 修改建议（如有）
 - ...
@@ -245,13 +312,18 @@ docs/architecture/<module>/
 - [ ] 文件命名遵循固定命名规则（不加模块前缀）
 - [ ] 顶部有完整元数据块
 - [ ] 结构清晰（背景/目标/方案/阶段/验收）
-- [ ] 执行计划中没有 `## Context Anchor`
+- [ ] package `plan.md` 和每个 Task Slice 均通过 `planctl validate`
+- [ ] 包含唯一的 `Acceptance Execution` 合同，且每个 Task closure ID 恰好出现一次
+- [ ] 每个 Gate 已注明 closure/completion/full 执行时点、环境和预计耗时
+- [ ] 已向用户展示本次立即执行和延迟执行的 Acceptance
+- [ ] 当前 worktree 只有一个 active Plan Package
+- [ ] `plan.md`、Task Slice 和 archive 中没有 `## Context Anchor`
 - [ ] 正式计划创建后才登记 `active_work`，且 plan 路径、branch、
-      `workspace_id`、`initial_head`、`expected_head` 与
-      `worktree_set_digest` 已验证
+      `current_task_id`、`current_task_path`、`dev_state`、`workspace_id`、
+      `initial_head`、`expected_head` 与 `worktree_set_digest` 已验证
 - [ ] 最近 README.md 已更新链接
 - [ ] 已告知用户文档路径
-- [ ] 如有实施阶段，已标注当前状态
+- [ ] Task lifecycle/current selection 只存在于 manifest
 - [ ] 如有执行计划，已生成 Review Prompt 并交付用户
 
 ---
@@ -264,6 +336,8 @@ docs/architecture/<module>/
 - **跳过确认直接实施** — 大需求必须用户确认计划后再动手
 - **不更新导航** — 新文档如果在目录导航里找不到，等于不存在
 - **不生成 review prompt** — 跳过独立评审就开始实施，等于自审自批
+- **继续创建 active 单文件计划** — DWF-D13 之后的新计划必须是 Plan Package
+- **把 Session 日志写回 Task** — transition/attempt/first failure 属于机器 Session
 
 ---
 
