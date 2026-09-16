@@ -15476,18 +15476,19 @@ async function createFoundationDisposableRuntimeFixture(
   purpose: string,
 ): Promise<FoundationDisposableRuntimeFixture> {
   const suffix = crypto.randomUUID();
-  const providerId = `acceptance-j02-${suffix}`;
+  const providerId = 'ollama';
   const modelId = `model-${suffix}`;
-  let providerCreated = false;
+  const catalogProvider = await api.getProvider(providerId);
+  if (
+    catalogProvider.version !== 0
+    || catalogProvider.has_api_key
+    || catalogProvider.show_api_key !== false
+  ) {
+    throw new Error(
+      'agent.acceptance.disposableRuntimeProviderUnavailable',
+    );
+  }
   try {
-    await api.createProvider({
-      id: providerId,
-      name: providerId,
-      description: `Disposable ${purpose} runtime`,
-      logo: '',
-      base_url: 'http://127.0.0.1:9',
-    });
-    providerCreated = true;
     await api.addModel(providerId, {
       id: modelId,
       display_name: `Disposable ${purpose} model`,
@@ -15516,8 +15517,18 @@ async function createFoundationDisposableRuntimeFixture(
     }
     return { providerId, modelId };
   } catch (error) {
-    if (providerCreated) {
-      await api.deleteProvider(providerId).catch(() => undefined);
+    try {
+      const configuredProvider = (await api.listProviders()).find(
+        (provider) => provider.id === providerId && provider.version > 0,
+      );
+      if (configuredProvider) {
+        await api.deleteProvider(providerId);
+      }
+    } catch (cleanupError) {
+      throw Object.assign(
+        new Error('agent.acceptance.disposableRuntimeFixtureCleanupFailed'),
+        { primaryError: error, cleanupError },
+      );
     }
     throw error;
   }
@@ -15526,7 +15537,7 @@ async function createFoundationDisposableRuntimeFixture(
 async function deleteFoundationDisposableRuntimeFixture(
   fixture: FoundationDisposableRuntimeFixture,
 ): Promise<{
-  providerDeleted: boolean;
+  providerRestored: boolean;
   modelDeleted: boolean;
 }> {
   const configuredProvider = (await api.listProviders()).find(
@@ -15535,19 +15546,13 @@ async function deleteFoundationDisposableRuntimeFixture(
   if (configuredProvider) {
     await api.deleteProvider(fixture.providerId);
   }
-  const [providers, models] = await Promise.all([
-    api.listProviders(),
-    api.listAvailableModels(),
-  ]);
+  const restoredProvider = await api.getProvider(fixture.providerId);
   return {
-    providerDeleted: !providers.some(
-      (provider) => provider.id === fixture.providerId,
-    ),
-    modelDeleted: !models.models.some(
-      (model) => (
-        model.provider_id === fixture.providerId
-        && model.id === fixture.modelId
-      ),
+    providerRestored:
+      restoredProvider.version === 0
+      && restoredProvider.has_api_key === false,
+    modelDeleted: !restoredProvider.models.some(
+      (model) => model.id === fixture.modelId,
     ),
   };
 }
@@ -16073,7 +16078,7 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
         cleanupStage = 'provider-delete';
         const fixtureCleanup =
           await deleteFoundationDisposableRuntimeFixture(runtimeFixture);
-        fixtureProviderRestored = fixtureCleanup.providerDeleted;
+        fixtureProviderRestored = fixtureCleanup.providerRestored;
         fixtureModelDeleted = fixtureCleanup.modelDeleted;
         await reportFoundationIncompatibleCleanupDebug(
           'C',
@@ -21126,7 +21131,7 @@ async function runCapabilityBindingDevelopmentJourney(
     clientBindingRemoved: false,
     knowledgeDescriptorRetired: false,
     disposableAgentDeleted: false,
-    fixtureProviderDeleted: false,
+    fixtureProviderRestored: false,
     fixtureModelDeleted: false,
     selectionRestored: false,
   };
@@ -21546,7 +21551,7 @@ async function runCapabilityBindingDevelopmentJourney(
       if (runtimeFixture) {
         const fixtureCleanup =
           await deleteFoundationDisposableRuntimeFixture(runtimeFixture);
-        cleanup.fixtureProviderDeleted = fixtureCleanup.providerDeleted;
+        cleanup.fixtureProviderRestored = fixtureCleanup.providerRestored;
         cleanup.fixtureModelDeleted = fixtureCleanup.modelDeleted;
       }
       if (priorSelection) {

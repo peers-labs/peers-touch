@@ -127,9 +127,10 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "const providerId = `acceptance-j02-${suffix}`",
+            "const providerId = 'ollama'",
             source,
         )
+        self.assertIn("catalogProvider.show_api_key !== false", source)
         self.assertIn("function_call: false", source)
         self.assertIn(
             "deleteFoundationDisposableRuntimeFixture",
