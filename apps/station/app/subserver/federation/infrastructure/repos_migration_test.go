@@ -123,6 +123,53 @@ func TestMigrateSchemaPreservesLegacyFederationCreatorIdentity(t *testing.T) {
 	}
 }
 
+func TestMigrateSchemaEnforcesSingleColumnUniqueConstraints(t *testing.T) {
+	db := openMigrationTestDB(t)
+	if err := MigrateSchema(db); err != nil {
+		t.Fatalf("migrate federation schema: %v", err)
+	}
+
+	event := ledgerEventModel{
+		EventID:                "event-1",
+		FederationID:           "fed-1",
+		Seq:                    1,
+		PrevHash:               []byte("prev"),
+		EventHash:              []byte("hash"),
+		EventType:              1,
+		PayloadBytes:           []byte("payload"),
+		PayloadHash:            []byte("payload-hash"),
+		ActorPTID:              "ptid:actor-1",
+		ActorFederatedHandle:   "actor-1@example.test",
+		StationPeerID:          "station-1",
+		SequencerStationPeerID: "station-1",
+		ActorSignature:         []byte("actor-signature"),
+		StationSignature:       []byte("station-signature"),
+		SequencerSignature:     []byte("sequencer-signature"),
+		CreatedAtUnixMs:        1,
+	}
+	if err := db.Create(&event).Error; err != nil {
+		t.Fatalf("insert ledger event: %v", err)
+	}
+	event.ID = 0
+	event.Seq = 2
+	if err := db.Create(&event).Error; err == nil {
+		t.Fatal("migration no longer enforces unique event_id")
+	}
+
+	key := actorSigningKeyModel{
+		ActorPTID: "ptid:actor-1",
+		PublicKey: []byte("public"),
+		Seed:      []byte("encrypted-private"),
+	}
+	if err := db.Create(&key).Error; err != nil {
+		t.Fatalf("insert actor signing key: %v", err)
+	}
+	key.ID = 0
+	if err := db.Create(&key).Error; err == nil {
+		t.Fatal("migration no longer enforces unique actor_ptid")
+	}
+}
+
 func openMigrationTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
