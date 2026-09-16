@@ -28,6 +28,13 @@
       "paths": ["apps/desktop/src-tauri/src/application/chat"]
     },
     {
+      "id": "desktop-home-page-derived-projection",
+      "closures": ["C11"],
+      "disposition": "deleted-authority",
+      "pattern": "useAgentStore|useAgentTopicStore|topicsByAgentId",
+      "paths": ["apps/desktop/src/pages/HomePage.tsx"]
+    },
+    {
       "id": "desktop-legacy-chat-provider-call",
       "closures": ["C01", "C02"],
       "disposition": "deleted-authority",

@@ -9,6 +9,7 @@ import { searchRuntime } from '../runtimes/searchRuntime';
 import { settingsRuntime } from '../runtimes/settingsRuntime';
 import { socialRuntime } from '../runtimes/socialRuntime';
 import { federationRuntime } from '../runtimes/federationRuntime';
+import { homeRuntime } from '../runtimes/homeRuntime';
 import { appletsRuntime } from '../runtimes/appletsRuntime';
 import { momentsRuntime } from '../runtimes/momentsRuntime';
 import { agentCapabilityRuntime } from '../runtimes/agentCapabilityRuntime';
@@ -31,6 +32,7 @@ function registerKernelRuntimes(): void {
   registerRuntime(searchRuntime);
   registerRuntime(settingsRuntime);
   registerRuntime(federationRuntime);
+  registerRuntime(homeRuntime);
   registerRuntime(appletsRuntime);
   registerRuntime(momentsRuntime);
   registerRuntime(agentCapabilityRuntime);
@@ -57,6 +59,7 @@ const DEFERRED_APP_RUNTIME_IDS = [
 
 export const CRITICAL_SESSION_RUNTIME_IDS: ReadonlyArray<string> = [
   chatRuntime.id,
+  homeRuntime.id,
 ];
 
 function yieldToRenderer(): Promise<void> {
@@ -147,6 +150,7 @@ export function teardownAppRuntime(): void {
   teardownRuntime(searchRuntime.id);
   teardownRuntime(settingsRuntime.id);
   teardownRuntime(federationRuntime.id);
+  teardownRuntime(homeRuntime.id);
   teardownRuntime(appletsRuntime.id);
   teardownRuntime(momentsRuntime.id);
   teardownRuntime(agentCapabilityRuntime.id);

@@ -41,6 +41,7 @@ use crate::application::channels as app_channels;
 use crate::application::chat_storage;
 use crate::application::cron as app_cron;
 use crate::application::federation as app_federation;
+use crate::application::home as app_home;
 use crate::application::key_exchange::{device_install, wire};
 use crate::application::mcp as app_mcp;
 use crate::application::memory as app_memory;
@@ -3736,6 +3737,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_capability_authority::list_manifests(input, &token))
+        }
+        "agent_home_projection_get" => {
+            let input = match parse_args::<app_home::EncodedRequestInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_home::get_projection(input, &token))
         }
         "agent_capability_binding_list" => {
             let input =

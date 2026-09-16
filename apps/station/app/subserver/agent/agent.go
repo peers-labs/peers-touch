@@ -290,7 +290,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	// M11: Ecosystem handlers — localStorage→Station migration.
 	ecosystemSvc := service.NewEcosystemService()
 	ecosystemHandlers := handler.NewEcosystemHandlers(ecosystemSvc)
-	agentTaskHandlers := handler.NewAgentTaskHandlers(service.NewAgentTaskService())
+	agentTaskSvc := service.NewAgentTaskService()
+	agentTaskHandlers := handler.NewAgentTaskHandlers(agentTaskSvc)
 
 	providerHandlers := handler.NewProviderHandlers(
 		providerConfigSvc,
@@ -337,6 +338,20 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	turnSvc.SetToolDispatch(toolDispatchSvc)
 	turnSvc.SetCapabilityReadiness(capabilityReadinessSvc)
 	turnSvc.SetChatTaskService(chatTaskSvc)
+	homeHandlers := handler.NewHomeHandlers(
+		service.NewHomeProjectionService(
+			agentSvc,
+			convSvc,
+			capabilityReadinessSvc,
+			agentTaskSvc,
+		),
+		service.NewHomeCommandService(
+			agentSvc,
+			turnAdmissionSvc,
+			turnSvc,
+			agentTaskSvc,
+		),
+	)
 	s.turnService = turnSvc
 	s.chatTaskService = chatTaskSvc
 
@@ -349,6 +364,9 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-delete", "/agent/delete", server.POST, agentHandlers.HandleDeleteAgent, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-package-export", "/agent/package/export", server.POST, agentPackageHandlers.HandleExport, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-package-import", "/agent/package/import", server.POST, agentPackageHandlers.HandleImport, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-home-projection-get", "/agent/home/projection/get", server.POST, homeHandlers.HandleGetProjection, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-home-chat-submit", "/agent/home/chat/submit", server.POST, homeHandlers.HandleSubmitChat, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-home-task-submit", "/agent/home/task/submit", server.POST, homeHandlers.HandleSubmitTask, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-turn-execute", "/agent/turn/execute", server.POST, turnHandlers.HandleExecuteTurn, logIDWrapper, jwtWrapper, handler.RejectLegacyTurnKnowledge),
 		server.NewHTTPHandler("agent-turn-stream", "/agent/turn/stream", server.POST, turnHandlers.HandleExecuteTurnStream, logIDWrapper, jwtWrapper, handler.RejectLegacyTurnKnowledge),

@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-16
-covered_docs_hash: 3f996fb3b40086a8910ebf398b0c7f5a5eb7d4dda7a1533cbf6870281c1e0264
+covered_docs_hash: ffb8fce26160cbfcb33c8f9a535418e9bc75a49f7945a704879b1d7748cbc831
 
 covered_docs:
   - AGENTS.md
@@ -236,3 +236,8 @@ The follow-up review makes every non-trivial stage dispatch through
 functional proof for every product Journey it aggregates. These changes close
 workflow bypasses without changing PR review severity or adding a new review
 fixture.
+
+The W2 Home slice registers `homeRuntime` as the owner of the Station-backed
+Home projection while retaining the existing `eager + forever` page lifetime.
+This changes projection ownership, not review severity; runtime, store, and
+page-descriptor checks cover the boundary without a new review fixture.

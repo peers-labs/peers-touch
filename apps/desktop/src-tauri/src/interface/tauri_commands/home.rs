@@ -1,0 +1,20 @@
+use std::sync::Arc;
+
+use tauri::{State, Window};
+
+use crate::application::{home, session_resolver};
+use crate::error::{AppResult, ErrorCode};
+use crate::state::AppState;
+
+#[tauri::command]
+pub fn agent_home_projection_get(
+    input: home::EncodedRequestInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    home::get_projection(input, &token)
+}

@@ -120,6 +120,13 @@ import {
   UpsertAgentCapabilityBindingResponseSchema,
 } from '../gen/proto/domain/agent/capability_pb';
 import type {
+  HomeWorkProjection,
+} from '../gen/proto/domain/agent/home_pb';
+import {
+  GetHomeWorkProjectionRequestSchema,
+  GetHomeWorkProjectionResponseSchema,
+} from '../gen/proto/domain/agent/home_pb';
+import type {
   ClaimDesktopExecutorTaskResponse,
   CollaborationTask,
   ExecutorLease,
@@ -5026,6 +5033,23 @@ export const api = {
     ).then((r) =>
       r.sessions.map((s) => ({ ...s, agent_name: s.agent_name ?? s.agent_id ?? '' })),
     ),
+
+  getHomeWorkProjection: async (
+    afterRevision: number | bigint = 0n,
+  ): Promise<HomeWorkProjection> => {
+    const response = await invokeRustProtoRequest(
+      'agent_home_projection_get',
+      GetHomeWorkProjectionRequestSchema,
+      GetHomeWorkProjectionResponseSchema,
+      create(GetHomeWorkProjectionRequestSchema, {
+        afterRevision: BigInt(afterRevision),
+      }),
+    );
+    if (!response.projection) {
+      throw new Error('agent.homeProjectionMissing');
+    }
+    return response.projection;
+  },
 
   getAgentWorkspaceInfo: (agentId: string) =>
     invokeRustDataFromStatus<{ agent_id: string }, AgentWorkspaceInfo>(
