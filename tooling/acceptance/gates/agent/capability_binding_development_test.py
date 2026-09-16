@@ -87,7 +87,13 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
             "capability_binding_development.py"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("provisioner._resolve_active_profile()", source)
+        self.assertIn("machine-dev.mjs", source)
+        self.assertIn('"resolve",', source)
+        self.assertIn(
+            'resolved.get("authority") == "machine-control-plane"',
+            source,
+        )
+        self.assertIn("provisioner._resolve_active_profile = lambda:", source)
         self.assertNotIn(".local/dev/active", source)
         self.assertIn('manifest.state.value == "FIXTURE_READY"', source)
 

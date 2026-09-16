@@ -25,6 +25,7 @@ from tooling.acceptance.core.evidence_store import (
     source_identity,
     workspace_id,
 )
+from tooling.acceptance.core.provisioner import load_env_file
 from tooling.acceptance.fixtures.chat_native_actors import reset_fixture
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationRuntimePair,
@@ -52,6 +53,70 @@ class CapabilityBindingDevelopmentError(RuntimeError):
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise CapabilityBindingDevelopmentError(message)
+
+
+def resolve_machine_profile() -> tuple[str, Path, int, dict[str, str]]:
+    completed = subprocess.run(
+        [
+            "node",
+            "tooling/scripts/local-dev/machine-dev.mjs",
+            "resolve",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    require(
+        completed.returncode == 0,
+        "machine control plane did not resolve the active profile",
+    )
+    try:
+        resolved = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise CapabilityBindingDevelopmentError(
+            "machine control plane returned invalid JSON"
+        ) from error
+    binding = resolved.get("binding")
+    profile = resolved.get("profile")
+    ports = resolved.get("ports")
+    require(
+        resolved.get("authority") == "machine-control-plane"
+        and isinstance(binding, Mapping)
+        and isinstance(profile, Mapping)
+        and isinstance(ports, Mapping),
+        "machine control plane resolution is incomplete",
+    )
+    require(
+        binding.get("workspaceId") == WORKSPACE_ID
+        and binding.get("canonicalRoot") == str(ROOT)
+        and binding.get("head") == source_identity(ROOT)["commit"],
+        "machine control plane worktree identity mismatch",
+    )
+    require(
+        profile.get("sourceState") == "tracked-clean",
+        "machine control plane profile source is not tracked-clean",
+    )
+    profile_name = str(binding.get("profile") or "")
+    profile_file = Path(str(profile.get("profileFile") or "")).resolve()
+    slot = int(binding.get("slot"))
+    values = load_env_file(profile_file)
+    values.update(
+        {
+            "PT_DEV_PROFILE": profile_name,
+            "PT_DEV_SLOT": str(slot),
+            "PT_DESKTOP_APP_GATEWAY_PORT": str(
+                ports["desktopAppGateway"]
+            ),
+            "PT_DESKTOP_APP_WEB_PORT": str(ports["desktopAppWeb"]),
+            "PT_DESKTOP_WEB_GATEWAY_PORT": str(
+                ports["desktopWebGateway"]
+            ),
+            "PT_DESKTOP_WEB_WEB_PORT": str(ports["desktopWebWeb"]),
+        }
+    )
+    return profile_name, profile_file, slot, values
 
 
 def port_released(port: int) -> bool:
@@ -197,11 +262,17 @@ def main() -> int:
     )
     (
         profile_name,
-        _,
-        _,
+        profile_file,
+        slot,
         profile_env,
-    ) = provisioner._resolve_active_profile()
+    ) = resolve_machine_profile()
     require(profile_name == PROFILE, "active profile is not Profile two")
+    provisioner._resolve_active_profile = lambda: (
+        profile_name,
+        profile_file,
+        slot,
+        dict(profile_env),
+    )
     os.environ.update(profile_env)
     os.environ["PT_DEV_PROFILE"] = PROFILE
     deployment_environment = profile_env.get("PT_STATION_DEPLOY_ENV", "")
