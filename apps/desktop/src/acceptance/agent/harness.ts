@@ -15467,13 +15467,95 @@ async function runFoundationIncompatibleCapabilityAttempt(input: {
   };
 }
 
+interface FoundationDisposableRuntimeFixture {
+  providerId: string;
+  modelId: string;
+}
+
+async function createFoundationDisposableRuntimeFixture(
+  purpose: string,
+): Promise<FoundationDisposableRuntimeFixture> {
+  const suffix = crypto.randomUUID();
+  const providerId = `acceptance-${purpose}-${suffix}`;
+  const modelId = `model-${suffix}`;
+  let providerCreated = false;
+  try {
+    await api.createProvider({
+      id: providerId,
+      name: providerId,
+      description: `Disposable ${purpose} runtime`,
+      logo: '',
+      base_url: 'http://127.0.0.1:9',
+    });
+    providerCreated = true;
+    await api.addModel(providerId, {
+      id: modelId,
+      display_name: `Disposable ${purpose} model`,
+      type: 'chat',
+      context_window: 8_192,
+      enabled: true,
+      streaming: true,
+      function_call: false,
+    });
+    const availableModel = (await api.listAvailableModels()).models.find(
+      (model) => (
+        model.provider_id === providerId
+        && model.id === modelId
+        && model.enabled
+      ),
+    );
+    if (
+      !availableModel
+      || availableModel.type !== 'chat'
+      || availableModel.context_window !== 8_192
+      || availableModel.function_call !== false
+    ) {
+      throw new Error(
+        'agent.acceptance.disposableRuntimeModelUnavailable',
+      );
+    }
+    return { providerId, modelId };
+  } catch (error) {
+    if (providerCreated) {
+      await api.deleteProvider(providerId).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+async function deleteFoundationDisposableRuntimeFixture(
+  fixture: FoundationDisposableRuntimeFixture,
+): Promise<{
+  providerDeleted: boolean;
+  modelDeleted: boolean;
+}> {
+  const configuredProvider = (await api.listProviders()).find(
+    (provider) => provider.id === fixture.providerId && provider.version > 0,
+  );
+  if (configuredProvider) {
+    await api.deleteProvider(fixture.providerId);
+  }
+  const [providers, models] = await Promise.all([
+    api.listProviders(),
+    api.listAvailableModels(),
+  ]);
+  return {
+    providerDeleted: !providers.some(
+      (provider) => provider.id === fixture.providerId,
+    ),
+    modelDeleted: !models.models.some(
+      (model) => (
+        model.provider_id === fixture.providerId
+        && model.id === fixture.modelId
+      ),
+    ),
+  };
+}
+
 async function runFoundationIncompatibleCapabilityScenario(input: {
-  agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
   sampleId: string;
 }): Promise<{
-  conversationId: string;
-  turnId: string;
   durationMs: number;
   runtimeEvent: FoundationRuntimeEventObservation;
   facts: Record<string, unknown>;
@@ -15481,92 +15563,8 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
   const store = useAgentStore.getState();
   const priorSelection = store.selectedAgent;
   const priorSurface = store.getAgentSurface(priorSelection);
-  const sourceProvider = await api.getProvider(input.agent.provider);
-  const configuredModel = sourceProvider.models.find(
-    (model) => model.id === input.agent.model && model.enabled,
-  );
-  const fixtureProviderId = 'anthropic';
-  let catalogCandidate = await api.getProvider(fixtureProviderId);
-  let sourceModel = catalogCandidate.models.find(
-    (model) => (
-      model.id === 'claude-sonnet-4-20250514'
-      && model.enabled
-    ),
-  );
-  if (
-    input.agent.provider !== 'ark'
-    || !sourceProvider.base_url
-    || !sourceProvider.api_key
-    || !configuredModel
-    || configuredModel.type !== 'chat'
-    || !catalogCandidate.base_url
-    || !sourceModel
-    || sourceModel.type !== 'chat'
-  ) {
-    throw new Error(
-      'agent.acceptance.foundationIncompatibleCapabilityProviderFixtureMissing',
-    );
-  }
-  if (catalogCandidate.version > 0) {
-    // #region debug-point C:stale-incompatible-provider-reset
-    await reportFoundationIncompatibleCleanupDebug(
-      'C',
-      'stale-provider-reset-started',
-      {
-        fixtureProviderVersion: catalogCandidate.version,
-        candidateCredentialPresent: catalogCandidate.has_api_key,
-      },
-    );
-    // #endregion
-    await api.deleteProvider(fixtureProviderId);
-    catalogCandidate = await api.getProvider(fixtureProviderId);
-    sourceModel = catalogCandidate.models.find(
-      (model) => (
-        model.id === 'claude-sonnet-4-20250514'
-        && model.enabled
-      ),
-    );
-    // #region debug-point C:stale-incompatible-provider-reset-readback
-    await reportFoundationIncompatibleCleanupDebug(
-      'C',
-      'stale-provider-reset-completed',
-      {
-        fixtureProviderVersion: catalogCandidate.version,
-        candidateCredentialPresent: catalogCandidate.has_api_key,
-      },
-    );
-    // #endregion
-  }
-  // #region debug-point A-C:incompatible-capability-precondition
-  await reportFoundationIncompatibleCleanupDebug(
-    'A-C',
-    'provider-precondition',
-    {
-      sourceProviderIsArk: input.agent.provider === 'ark',
-      sourceBaseUrlPresent: Boolean(sourceProvider.base_url),
-      sourceCredentialPresent: Boolean(sourceProvider.api_key),
-      configuredModelPresent: Boolean(configuredModel),
-      configuredModelType: configuredModel?.type ?? null,
-      fixtureProviderVersion: catalogCandidate.version,
-      candidateCredentialPresent: catalogCandidate.has_api_key,
-      fixtureBaseUrlPresent: Boolean(catalogCandidate.base_url),
-      fixtureModelPresent: Boolean(sourceModel),
-      fixtureModelType: sourceModel?.type ?? null,
-    },
-  );
-  // #endregion
-  if (
-    catalogCandidate.version !== 0
-    || catalogCandidate.has_api_key
-    || !catalogCandidate.base_url
-    || !sourceModel
-    || sourceModel.type !== 'chat'
-  ) {
-    throw new Error(
-      'agent.acceptance.foundationIncompatibleCapabilityProviderFixtureMissing',
-    );
-  }
 
+  let runtimeFixture: FoundationDisposableRuntimeFixture | null = null;
   let providerSetupAttempted = false;
   let disposableAgentId = '';
   let rejectedConversationId = '';
@@ -15578,24 +15576,24 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
 
   try {
     providerSetupAttempted = true;
-    await api.createProvider({
-      id: fixtureProviderId,
-      name: fixtureProviderId,
-      description: 'Foundation incompatible capability fixture',
-      logo: '',
-      base_url: catalogCandidate.base_url,
-      api_key: sourceProvider.api_key,
-    });
+    runtimeFixture = await createFoundationDisposableRuntimeFixture(
+      'incompatible-capability',
+    );
+    const fixtureProviderId = runtimeFixture.providerId;
+    const fixtureModelId = runtimeFixture.modelId;
     const configuredCandidateModel = (
       await api.listAvailableModels()
     ).models.find(
       (model) => (
         model.provider_id === fixtureProviderId
-        && model.id === sourceModel.id
+        && model.id === fixtureModelId
         && model.enabled
       ),
     );
-    if (!configuredCandidateModel) {
+    if (
+      !configuredCandidateModel
+      || configuredCandidateModel.function_call !== false
+    ) {
       throw new Error(
         'agent.acceptance.foundationIncompatibleCapabilityModelFixtureMissing',
       );
@@ -15606,7 +15604,7 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
       title: `Foundation incompatible ${input.sampleId}`,
       description: 'Foundation runtime capability mismatch fixture',
       provider: fixtureProviderId,
-      model: sourceModel.id,
+      model: fixtureModelId,
     });
     disposableAgentId = disposable.id || disposable.name;
     const toolFixture = await foundationToolFixture(disposableAgentId, 'browser');
@@ -15644,7 +15642,7 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
       agent_id: disposableAgentId,
       title: `Foundation incompatible capability ${input.sampleId}`,
       provider_id: fixtureProviderId,
-      model_name: sourceModel.id,
+      model_name: fixtureModelId,
     });
     rejectedConversationId = conversation.conversation_id;
     await useChatStore.getState().selectSession(rejectedConversationId);
@@ -15912,7 +15910,7 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
           === readinessAfter.runtime_snapshot_id,
         bindingRevisionBefore: Number(readinessEntryBefore.binding_revision),
         bindingRevisionAfter: Number(readinessEntryAfter.binding_revision),
-        selectedModelStable: agentAfterRecovery.model === sourceModel.id,
+        selectedModelStable: agentAfterRecovery.model === fixtureModelId,
         conversationVersionDelta:
           afterReadback.conversation.version
           - beforeReadback.conversation.version,
@@ -15928,7 +15926,7 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
         source: 'station-capability-readiness',
         capabilityId: binding.capabilityId,
         reasonCode: readinessEntryBefore.reason_code,
-        incompatibleModelId: sourceModel.id,
+        incompatibleModelId: fixtureModelId,
         snapshotIdBefore: readinessBefore.snapshot_id,
         snapshotIdAfter: readinessAfter.snapshot_id,
         runtimeSnapshotIdBefore: readinessBefore.runtime_snapshot_id,
@@ -15942,7 +15940,7 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
         agentId: disposableAgentId,
         conversationId: rejectedConversationId,
         turnId: first.runtimeEvent.sourceTurnId,
-        selectedModelIdBefore: sourceModel.id,
+        selectedModelIdBefore: fixtureModelId,
         selectedModelIdAfter: agentAfterRecovery.model,
         conversationVersionBefore: beforeReadback.conversation.version,
         conversationVersionAfter: afterReadback.conversation.version,
@@ -15976,8 +15974,9 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
         disposableAgentDeleted: false,
         capabilityBindingRemoved: false,
         fixtureProviderRestored: false,
+        fixtureModelDeleted: false,
         modelConfigurationUnchanged:
-          agentAfterRecovery.model === sourceModel.id,
+          agentAfterRecovery.model === fixtureModelId,
         priorSelection,
         restoredSelection: '',
       },
@@ -16059,27 +16058,28 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
           'agent-delete-completed',
         );
       }
-      if (providerSetupAttempted) {
+      let fixtureProviderRestored = !providerSetupAttempted;
+      let fixtureModelDeleted = !providerSetupAttempted;
+      if (runtimeFixture) {
         cleanupStage = 'provider-readback';
         const configuredFixture = (await api.listProviders()).find(
-          (provider) => (
-            provider.id === fixtureProviderId
-            && provider.version > 0
-          ),
+          (provider) => provider.id === runtimeFixture?.providerId,
         );
         await reportFoundationIncompatibleCleanupDebug(
           'C',
           'provider-readback-completed',
           { configuredFixturePresent: Boolean(configuredFixture) },
         );
-        if (configuredFixture) {
-          cleanupStage = 'provider-delete';
-          await api.deleteProvider(fixtureProviderId);
-          await reportFoundationIncompatibleCleanupDebug(
-            'C',
-            'provider-delete-completed',
-          );
-        }
+        cleanupStage = 'provider-delete';
+        const fixtureCleanup =
+          await deleteFoundationDisposableRuntimeFixture(runtimeFixture);
+        fixtureProviderRestored = fixtureCleanup.providerDeleted;
+        fixtureModelDeleted = fixtureCleanup.modelDeleted;
+        await reportFoundationIncompatibleCleanupDebug(
+          'C',
+          'provider-delete-completed',
+          fixtureCleanup,
+        );
       }
       cleanupStage = 'agent-store-reload';
       await useAgentStore.getState().loadAgents();
@@ -16144,10 +16144,8 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
             )
           : true;
         cleanup.capabilityBindingRemoved = capabilityBindingRemoved;
-        const restoredProvider = await api.getProvider(fixtureProviderId);
-        cleanup.fixtureProviderRestored =
-          restoredProvider.version === 0
-          && restoredProvider.has_api_key === false;
+        cleanup.fixtureProviderRestored = fixtureProviderRestored;
+        cleanup.fixtureModelDeleted = fixtureModelDeleted;
         cleanup.restoredSelection = useAgentStore.getState().selectedAgent;
         await reportFoundationIncompatibleCleanupDebug(
           'A-D',
@@ -16158,6 +16156,7 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
             disposableAgentDeleted: cleanup.disposableAgentDeleted,
             capabilityBindingRemoved: cleanup.capabilityBindingRemoved,
             fixtureProviderRestored: cleanup.fixtureProviderRestored,
+            fixtureModelDeleted: cleanup.fixtureModelDeleted,
             restoredSelectionMatches:
               cleanup.restoredSelection === priorSelection,
             conversationReadbackStatus,
@@ -16194,14 +16193,7 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
       'agent.acceptance.foundationIncompatibleCapabilityFactsMissing',
     );
   }
-  const attestation = await runFoundationDirectAttestationTurn({
-    agent: input.agent,
-    capabilitySessionId: input.capabilitySessionId,
-    sampleId: input.sampleId,
-  });
   return {
-    conversationId: attestation.conversationId,
-    turnId: attestation.turnId,
     durationMs: performance.now() - startedAt,
     runtimeEvent: evidenceRecord(
       facts.runtimeEvent,
@@ -18021,8 +18013,14 @@ function evaluateBaseForbiddenActor(
 function evaluateBaseIncompatibleCapability(
   ctx: DirectCellAssertionContext,
 ): Record<string, boolean> {
+  return evaluateFoundationIncompatibleCapabilityFacts(ctx.scenarioFacts);
+}
+
+function evaluateFoundationIncompatibleCapabilityFacts(
+  scenarioFacts: Record<string, unknown> | null,
+): Record<string, boolean> {
   const facts = evidenceRecord(
-    ctx.scenarioFacts,
+    scenarioFacts,
     'foundationIncompatibleCapabilityFacts',
   );
   const outcome = evidenceRecord(
@@ -18119,6 +18117,7 @@ function evaluateBaseIncompatibleCapability(
       && cleanup.disposableAgentDeleted === true
       && cleanup.capabilityBindingRemoved === true
       && cleanup.fixtureProviderRestored === true
+      && cleanup.fixtureModelDeleted === true
       && cleanup.modelConfigurationUnchanged === true
       && cleanup.restoredSelection === cleanup.priorSelection
     ),
@@ -21104,10 +21103,6 @@ async function runCapabilityBindingDevelopmentJourney(
   sampleId: string,
 ): Promise<Record<string, unknown>> {
   const agentStore = useAgentStore.getState();
-  const sourceAgent = selectedAgent();
-  if (!sourceAgent?.provider || !sourceAgent.model) {
-    throw new Error('agent.acceptance.providerModelUnavailable');
-  }
   const priorSelection = agentStore.selectedAgent;
   const priorSurface = agentStore.getAgentSurface(priorSelection);
   const capabilitySessions = await waitForCapabilitySessionEvidence();
@@ -21122,6 +21117,7 @@ async function runCapabilityBindingDevelopmentJourney(
   let knowledgeRevision = 0n;
   let knowledgeBindingId = '';
   let clientBindingId = '';
+  let runtimeFixture: FoundationDisposableRuntimeFixture | null = null;
   let capture: Record<string, unknown> | null = null;
   let primaryError: unknown = null;
   let cleanupError: unknown = null;
@@ -21130,16 +21126,21 @@ async function runCapabilityBindingDevelopmentJourney(
     clientBindingRemoved: false,
     knowledgeDescriptorRetired: false,
     disposableAgentDeleted: false,
+    fixtureProviderDeleted: false,
+    fixtureModelDeleted: false,
     selectionRestored: false,
   };
 
   try {
+    runtimeFixture = await createFoundationDisposableRuntimeFixture(
+      'capability-binding',
+    );
     const disposable = await agentStore.createAgent({
       name: `capability-binding-${sampleId}-${crypto.randomUUID()}`,
       title: `Capability binding ${sampleId}`,
       description: 'V2-J02 capability binding Development Journey',
-      provider: sourceAgent.provider,
-      model: sourceAgent.model,
+      provider: runtimeFixture.providerId,
+      model: runtimeFixture.modelId,
     });
     disposableAgentId = disposable.id || disposable.name;
     await api.setSelectedAgent(disposable.name);
@@ -21326,8 +21327,8 @@ async function runCapabilityBindingDevelopmentJourney(
     const staleComposer = capabilityDevelopmentComposerSnapshot();
     const stale = await runCapabilityAdmissionRejection({
       agentId: disposableAgentId,
-      providerId: sourceAgent.provider,
-      modelId: sourceAgent.model,
+      providerId: runtimeFixture.providerId,
+      modelId: runtimeFixture.modelId,
       capabilityId: manifest.capabilityId,
       expectedReasonCode: 'binding_agent_revision_stale',
       capabilitySessionId,
@@ -21370,8 +21371,8 @@ async function runCapabilityBindingDevelopmentJourney(
     const disconnectedComposer = capabilityDevelopmentComposerSnapshot();
     const disconnected = await runCapabilityAdmissionRejection({
       agentId: disposableAgentId,
-      providerId: sourceAgent.provider,
-      modelId: sourceAgent.model,
+      providerId: runtimeFixture.providerId,
+      modelId: runtimeFixture.modelId,
       capabilityId: clientBinding.capabilityId,
       expectedReasonCode: 'client_session_required',
       sampleId,
@@ -21408,8 +21409,8 @@ async function runCapabilityBindingDevelopmentJourney(
     const retiredComposer = capabilityDevelopmentComposerSnapshot();
     const retired = await runCapabilityAdmissionRejection({
       agentId: disposableAgentId,
-      providerId: sourceAgent.provider,
-      modelId: sourceAgent.model,
+      providerId: runtimeFixture.providerId,
+      modelId: runtimeFixture.modelId,
       capabilityId: manifest.capabilityId,
       expectedReasonCode: 'manifest_retired',
       capabilitySessionId,
@@ -21438,8 +21439,8 @@ async function runCapabilityBindingDevelopmentJourney(
           && boundInventory.compatibility === 'compatible',
         preSendRuntimeSnapshotVisible:
           readyComposer.visible === true
-          && readyComposer.providerId === sourceAgent.provider
-          && readyComposer.modelId === sourceAgent.model
+          && readyComposer.providerId === runtimeFixture.providerId
+          && readyComposer.modelId === runtimeFixture.modelId
           && readyComposer.runtimeSnapshotId !== 'unknown'
           && readyComposer.readinessSnapshotId !== 'unknown'
           && readyComposer.readinessState === 'ready'
@@ -21542,6 +21543,12 @@ async function runCapabilityBindingDevelopmentJourney(
         await useAgentStore.getState().loadAgents();
         cleanup.disposableAgentDeleted = true;
       }
+      if (runtimeFixture) {
+        const fixtureCleanup =
+          await deleteFoundationDisposableRuntimeFixture(runtimeFixture);
+        cleanup.fixtureProviderDeleted = fixtureCleanup.providerDeleted;
+        cleanup.fixtureModelDeleted = fixtureCleanup.modelDeleted;
+      }
       if (priorSelection) {
         useAgentStore.getState().setSelectedAgent(priorSelection);
         useAgentStore.getState().setAgentSurface(
@@ -21574,6 +21581,82 @@ async function runCapabilityBindingDevelopmentJourney(
       ...cleanup,
       status: Object.values(cleanup).every(Boolean) ? 'clean' : 'failed',
     },
+  }) as Record<string, unknown>;
+}
+
+async function runCapabilityIncompatibleDevelopmentJourney(
+  sampleId: string,
+): Promise<Record<string, unknown>> {
+  const capabilitySessions = await waitForCapabilitySessionEvidence();
+  const capabilitySessionId =
+    capabilitySessions.selectedStationSession?.session_id;
+  if (!capabilitySessionId) {
+    throw new Error('agent.acceptance.capabilitySessionUnavailable');
+  }
+  const scenario = await runFoundationIncompatibleCapabilityScenario({
+    capabilitySessionId,
+    sampleId,
+  });
+  const facts = evidenceRecord(
+    scenario.facts,
+    'foundationIncompatibleCapabilityFacts',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationIncompatibleCapabilityReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationIncompatibleCapabilityStation',
+  );
+  const execution = evidenceRecord(
+    facts.execution,
+    'foundationIncompatibleCapabilityExecution',
+  );
+  const cleanupProof = evidenceRecord(
+    facts.cleanup,
+    'foundationIncompatibleCapabilityCleanup',
+  );
+  const assertions =
+    evaluateFoundationIncompatibleCapabilityFacts(facts);
+  return evidenceValue({
+    assertions,
+    'receiver-dom': {
+      visible:
+        receiver.recoveryVisible === true
+        && receiver.errorVisible === true
+        && receiver.recoveryExecuted === true
+        && receiver.profileVisible === true
+        && receiver.modelSelectionVisible === true,
+      selector:
+        '[data-pt-agent-message-error-recovery="choose-compatible-model"],'
+        + '[data-pt-agent-message-error-text="agent.errors.incompatibleCapability"],'
+        + '[data-pt-agent-profile-model]',
+      locale: i18n.language,
+      textHash: await sha256Hex(stableJson({
+        recoveryText: receiver.recoveryText,
+        errorText: receiver.errorText,
+      })),
+    },
+    'station-readback': {
+      entityKind: 'agent-capability-readiness',
+      entityIdHash: await sha256Hex(String(station.agentId)),
+      revision: Number(station.conversationVersionAfter),
+      stateHash: String(station.afterHash),
+      typedError: facts.outcome,
+      readiness: facts.readiness,
+      deltas: {
+        turn: station.turnDelta,
+        message: station.messageDelta,
+        queue: station.queueDelta,
+        providerExecution: execution.providerCallDelta,
+      },
+    },
+    cleanup: {
+      status: assertions.cleanupComplete ? 'clean' : 'failed',
+      proof: cleanupProof,
+    },
+    facts,
   }) as Record<string, unknown>;
 }
 
@@ -21768,6 +21851,14 @@ export function installAcceptanceHarness(): void {
       sampleId: string;
     }) {
       return runCapabilityBindingDevelopmentJourney(sampleId);
+    },
+
+    async runCapabilityIncompatibleDevelopment({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      return runCapabilityIncompatibleDevelopmentJourney(sampleId);
     },
 
     async navigateToAgent() {
@@ -25405,14 +25496,18 @@ export function installAcceptanceHarness(): void {
           throw new Error('agent.acceptance.capabilitySessionUnavailable');
         }
         const scenario = await runFoundationIncompatibleCapabilityScenario({
+          capabilitySessionId,
+          sampleId,
+        });
+        const attestation = await runFoundationDirectAttestationTurn({
           agent,
           capabilitySessionId,
           sampleId,
         });
-        preparedConversationId = scenario.conversationId;
-        preparedTurnId = scenario.turnId;
+        preparedConversationId = attestation.conversationId;
+        preparedTurnId = attestation.turnId;
         preparedRuntimeEvent.current = scenario.runtimeEvent;
-        turnDurationMs = scenario.durationMs;
+        turnDurationMs = scenario.durationMs + attestation.durationMs;
         scenarioFacts = scenario.facts;
       }
 
@@ -28526,6 +28621,7 @@ export function installAcceptanceHarness(): void {
                   && incompatibleCapabilityCleanup.disposableAgentDeleted === true
                   && incompatibleCapabilityCleanup.capabilityBindingRemoved === true
                   && incompatibleCapabilityCleanup.fixtureProviderRestored === true
+                  && incompatibleCapabilityCleanup.fixtureModelDeleted === true
                   && incompatibleCapabilityCleanup.modelConfigurationUnchanged === true
                   && incompatibleCapabilityCleanup.restoredSelection
                     === incompatibleCapabilityCleanup.priorSelection

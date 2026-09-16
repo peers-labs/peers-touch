@@ -517,11 +517,8 @@ def main() -> int:
             timeout=480,
         )
         incompatible = client.harness(
-            "foundationDirectProbe",
+            "runCapabilityIncompatibleDevelopment",
             {
-                "platform": "desktop_app",
-                "locale": "en",
-                "cell": "BASE-INCOMPATIBLE_CAPABILITY",
                 "sampleId": sample_id,
             },
             timeout=480,

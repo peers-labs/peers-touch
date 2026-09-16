@@ -112,7 +112,34 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
         self.assertNotIn("J01_IDENTITY_SEED", source)
         self.assertNotIn("seed_native_client_state", source)
         self.assertIn('"debugCapabilitySnapshot"', source)
+        self.assertIn('"runCapabilityIncompatibleDevelopment"', source)
+        self.assertNotIn('"foundationDirectProbe"', source)
         self.assertIn("copy_native_runtime_logs(", source)
+
+    def test_native_harness_uses_disposable_no_credential_runtime(self) -> None:
+        source = (
+            ROOT
+            / "apps/desktop/src/acceptance/agent/harness.ts"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "createFoundationDisposableRuntimeFixture",
+            source,
+        )
+        self.assertIn("function_call: false", source)
+        self.assertIn(
+            "deleteFoundationDisposableRuntimeFixture",
+            source,
+        )
+        self.assertIn("fixtureModelDeleted", source)
+        self.assertNotIn(
+            "sourceProvider.api_key",
+            source,
+        )
+        self.assertNotIn(
+            "const fixtureProviderId = 'anthropic'",
+            source,
+        )
 
     def test_seeds_only_matching_retained_actor_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
