@@ -21,6 +21,10 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Configure Acceptance artifact root
+        run: |
+          echo "PT_ACCEPTANCE_ARTIFACT_ROOT=$RUNNER_TEMP/peers-touch-acceptance" >> "$GITHUB_ENV"
+
       - name: Require completed execution plan
         run: python3 tooling/scripts/execution-plan.py --ci --require-complete
 
@@ -30,10 +34,6 @@ jobs:
           python3 -m unittest tooling.acceptance.tests.test_execution_plan
           python3 tooling/scripts/acceptance-plan-test.py
           python3 tooling/scripts/acceptance-run-test.py
-
-      - name: Configure Acceptance artifact root
-        run: |
-          echo "PT_ACCEPTANCE_ARTIFACT_ROOT=$RUNNER_TEMP/peers-touch-acceptance" >> "$GITHUB_ENV"
 
       - name: Run review framework gates
         run: |
