@@ -136,6 +136,14 @@ class LifecycleOnboardingContractTest(unittest.TestCase):
         )
         self.assertIn('data-chat-find-people-scope="station"', source)
         self.assertIn("data-chat-find-people-ptid", source)
+        self.assertIn("data-chat-find-people-request-error", source)
+        self.assertIn("requestIdentityUnavailable", source)
+        self.assertNotIn("message.error(", source)
+        search_failure = source[
+            source.index("} catch (e: unknown) {"):
+            source.index("} finally {", source.index("} catch (e: unknown) {"))
+        ]
+        self.assertNotIn("setResults([])", search_failure)
 
     def test_request_actions_keep_visible_recovery_state(self) -> None:
         source = (

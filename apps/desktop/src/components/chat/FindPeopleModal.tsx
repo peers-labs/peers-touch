@@ -225,7 +225,6 @@ export function FindPeopleModal({ open, onClose }: Props) {
       if (parsed.isFederated && parsed.hasHost && searchScope === 'all') {
         if (!federationReady) {
           setSearchError(t('chat.social.findPeople.resolveNotReady'));
-          setResults([]);
           return;
         }
         const view = await api.federationResolve(parsed.canonical);
@@ -261,7 +260,6 @@ export function FindPeopleModal({ open, onClose }: Props) {
         ? t('chat.social.findPeople.resolveFailed', { handle: parsed.canonical })
         : t('chat.social.findPeople.searchFailed');
       setSearchError((e as { message?: string })?.message || fallback);
-      setResults([]);
     } finally {
       setSearching(false);
     }
@@ -269,12 +267,19 @@ export function FindPeopleModal({ open, onClose }: Props) {
 
   const handleSendRequest = async (target: ActorSearchResult) => {
     if (addingId) return;
-    const receiverPtid = target.id;
-    if (!receiverPtid || receiverPtid === currentUserPtid) return;
+    const receiverPtid = target.id.trim();
+    if (!receiverPtid) {
+      setSearchError(t('chat.social.findPeople.requestIdentityUnavailable'));
+      return;
+    }
+    if (receiverPtid === currentUserPtid) return;
     const federationId =
       activeFederationId || defaultFederationId;
     if (!federationId || !target.homeStationPeerId) {
-      message.error(t('chat.social.findPeople.catalogNoFederation'));
+      setRequestErrors((current) => ({
+        ...current,
+        [receiverPtid]: t('chat.social.findPeople.requestIdentityUnavailable'),
+      }));
       return;
     }
     setAddingId(receiverPtid);
