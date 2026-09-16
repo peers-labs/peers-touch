@@ -6,11 +6,19 @@ import (
 	"testing"
 	"time"
 
+	actoridentity "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestActorIdentitySubserverSatisfiesPrivateContentCapabilities(t *testing.T) {
+	candidate := actoridentity.NewActorIdentitySubServer()
+	if _, ok := candidate.(privateContentActorCapabilities); !ok {
+		t.Fatal("Actor Identity subserver does not satisfy Social private content capabilities")
+	}
+}
 
 func TestPrivateContentStationSignerVerifiesRetainedProofKeyAfterRotation(
 	t *testing.T,
