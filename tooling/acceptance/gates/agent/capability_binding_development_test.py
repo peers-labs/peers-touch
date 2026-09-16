@@ -127,6 +127,10 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
             source,
         )
         self.assertIn(
+            "'[data-pt-agent-composer] [data-pt-agent-readiness-snapshot]'",
+            source,
+        )
+        self.assertIn(
             "const providerId = 'ollama'",
             source,
         )

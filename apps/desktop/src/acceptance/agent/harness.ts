@@ -20950,7 +20950,7 @@ function evaluateF12(ctx: DirectCellAssertionContext): Record<string, boolean | 
 
 function capabilityDevelopmentComposerSnapshot(): Record<string, unknown> {
   const element = document.querySelector<HTMLElement>(
-    '[data-pt-agent-composer]',
+    '[data-pt-agent-composer] [data-pt-agent-readiness-snapshot]',
   );
   if (!element || element.getClientRects().length === 0) {
     throw new Error('agent.acceptance.capabilityComposerMissing');
