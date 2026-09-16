@@ -25,7 +25,6 @@ from tooling.acceptance.core.evidence_store import (
     source_identity,
     workspace_id,
 )
-from tooling.acceptance.core.provisioner import load_env_file
 from tooling.acceptance.fixtures.chat_native_actors import reset_fixture
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationRuntimePair,
@@ -193,16 +192,22 @@ def main() -> int:
         timeout=30,
     )
     require(activation.returncode == 0, "failed to activate Profile two")
-    active_profile = ROOT / ".local/dev/active/peers-ai-agent.env"
-    profile_env = load_env_file(active_profile.resolve(strict=True))
+    provisioner = HomeStationProvisioner(
+        EnvironmentContract.from_yaml(ENVIRONMENTS_DIR / "home-station.yaml")
+    )
+    (
+        profile_name,
+        _,
+        _,
+        profile_env,
+    ) = provisioner._resolve_active_profile()
+    require(profile_name == PROFILE, "active profile is not Profile two")
+    os.environ.update(profile_env)
+    os.environ["PT_DEV_PROFILE"] = PROFILE
     deployment_environment = profile_env.get("PT_STATION_DEPLOY_ENV", "")
     require(
         bool(deployment_environment),
         "Profile two has no Station deployment environment",
-    )
-
-    provisioner = HomeStationProvisioner(
-        EnvironmentContract.from_yaml(ENVIRONMENTS_DIR / "home-station.yaml")
     )
     runtime_pair: FoundationRuntimePair | None = None
     manifest = None
@@ -218,6 +223,13 @@ def main() -> int:
 
     try:
         manifest = provisioner.provision(AGENT_V2_BINDING_GATE)
+        require(
+            manifest.state.value == "FIXTURE_READY",
+            (
+                f"J02 provisioning did not become ready: "
+                f"{manifest.blocked_reason or manifest.state.value}"
+            ),
+        )
         runtime_pair = FoundationRuntimePair.from_manifest(
             _build_client_manifest(manifest.to_dict()),
             profile_env=profile_env,

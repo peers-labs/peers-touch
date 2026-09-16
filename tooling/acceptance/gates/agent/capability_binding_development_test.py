@@ -5,6 +5,7 @@ import unittest
 
 from tooling.acceptance.gates.agent.capability_binding_development import (
     CapabilityBindingDevelopmentError,
+    ROOT,
     evaluate_capability_binding,
 )
 
@@ -78,6 +79,17 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
             "inventoryCleanup",
         ):
             evaluate_capability_binding(capture)
+
+    def test_runner_uses_canonical_profile_resolution(self) -> None:
+        source = (
+            ROOT
+            / "tooling/acceptance/gates/agent/"
+            "capability_binding_development.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("provisioner._resolve_active_profile()", source)
+        self.assertNotIn(".local/dev/active", source)
+        self.assertIn('manifest.state.value == "FIXTURE_READY"', source)
 
 
 if __name__ == "__main__":
