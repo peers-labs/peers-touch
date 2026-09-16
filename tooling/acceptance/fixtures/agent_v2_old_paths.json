@@ -35,6 +35,20 @@
       "paths": ["apps/desktop/src/pages/HomePage.tsx"]
     },
     {
+      "id": "desktop-home-navigation-only-submit",
+      "closures": ["C11"],
+      "disposition": "deleted-authority",
+      "pattern": "agent\\.home\\.(quickActions|newChat)",
+      "paths": ["apps/desktop/src/pages/HomePage.tsx"]
+    },
+    {
+      "id": "desktop-home-mock-command-success",
+      "closures": ["C11"],
+      "disposition": "deleted-authority",
+      "pattern": "Station accepted topic|Station created task",
+      "paths": ["apps/desktop/src/pages/HomePage.tsx"]
+    },
+    {
       "id": "desktop-legacy-chat-provider-call",
       "closures": ["C01", "C02"],
       "disposition": "deleted-authority",
