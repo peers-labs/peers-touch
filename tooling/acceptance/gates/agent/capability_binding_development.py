@@ -327,6 +327,22 @@ def cleanup_clients(runtime_pair: FoundationRuntimePair) -> dict[str, Any]:
     }
 
 
+def copy_native_runtime_logs(
+    client: FoundationRuntimeClient,
+    artifact_dir: Path,
+) -> list[str]:
+    copied: list[str] = []
+    for source in client.spec.storage_root.rglob("*.log*"):
+        if not source.is_file():
+            continue
+        relative = source.relative_to(client.spec.storage_root)
+        target = artifact_dir / "native" / "storage-logs" / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        copied.append(str(target))
+    return copied
+
+
 def main() -> int:
     started = time.monotonic()
     artifact_run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -424,6 +440,11 @@ def main() -> int:
         client.start()
         authenticate_native_client(client, profile_env)
         sample_id = f"mca-j02-{artifact_run_id}"
+        capture["capabilityPreflight"] = client.harness(
+            "debugCapabilitySnapshot",
+            {},
+            timeout=60,
+        )
         inventory = client.harness(
             "runCapabilityBindingDevelopment",
             {"sampleId": sample_id},
@@ -453,6 +474,17 @@ def main() -> int:
         primary_error = error
     finally:
         if runtime_pair is not None:
+            try:
+                cleanup["nativeRuntimeLogs"] = copy_native_runtime_logs(
+                    runtime_pair.native,
+                    artifact_dir,
+                )
+            except BaseException as error:
+                cleanup["status"] = "failed"
+                cleanup["failures"].append(
+                    f"Native runtime log capture: "
+                    f"{type(error).__name__}: {error}"
+                )
             try:
                 cleanup["clients"] = cleanup_clients(runtime_pair)
                 if cleanup["clients"].get("status") != "clean":

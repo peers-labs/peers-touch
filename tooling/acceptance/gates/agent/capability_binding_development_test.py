@@ -106,6 +106,8 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
         self.assertNotIn('"ensureProvider"', source)
         self.assertNotIn("reset_fixture", source)
         self.assertNotIn("CHAT_ACCEPTANCE_RESET", source)
+        self.assertIn('"debugCapabilitySnapshot"', source)
+        self.assertIn("copy_native_runtime_logs(", source)
 
     def test_clones_only_accepted_matching_native_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
