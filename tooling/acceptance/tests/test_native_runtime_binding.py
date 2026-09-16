@@ -656,6 +656,10 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 ],
                 "acceptance-runtime-manifest",
             )
+            self.assertEqual(
+                launcher._launch_environment["PT_DESKTOP_E2E"],
+                "true",
+            )
 
             stopped = Mock(returncode=0, stdout="", stderr="")
             runtime_profile_root = runtime_profile.parent
