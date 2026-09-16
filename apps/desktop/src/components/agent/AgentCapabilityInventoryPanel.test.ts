@@ -15,7 +15,9 @@ import {
   CapabilitySourceKind,
 } from '../../gen/proto/domain/agent/capability_pb';
 import {
+  capabilitySourcePresentation,
   isCapabilityBindingToggleDisabled,
+  projectCapabilityCompatibility,
   projectCapabilityInventory,
 } from './AgentCapabilityInventoryPanel';
 
@@ -36,7 +38,7 @@ function manifest(
 }
 
 describe('AgentCapabilityInventoryPanel projection', () => {
-  it('joins the complete non-knowledge catalog and sorts it deterministically', () => {
+  it('joins the complete catalog including Knowledge and sorts it deterministically', () => {
     const skill = manifest('skill.research', CapabilitySourceKind.SKILL, 'Research');
     const tool = manifest('tool.search', CapabilitySourceKind.BUILTIN_TOOL, 'Search');
     const connector = manifest(
@@ -83,10 +85,35 @@ describe('AgentCapabilityInventoryPanel projection', () => {
       'tool.search',
       'connector.calendar',
       'skill.research',
+      'knowledge.document',
     ]);
     expect(projection[0].binding?.bindingId).toBe('binding-current');
     expect(projection[0].readiness).toBe(toolReadiness);
     expect(projection[1].binding).toBeUndefined();
+  });
+
+  it('gives Knowledge its own source label and icon', () => {
+    expect(capabilitySourcePresentation(CapabilitySourceKind.KNOWLEDGE))
+      .toMatchObject({
+        iconKey: 'knowledge',
+        localeKey: 'knowledge',
+      });
+  });
+
+  it('projects compatibility only from Station readiness', () => {
+    expect(projectCapabilityCompatibility(create(CapabilityReadinessSchema, {
+      state: CapabilityReadinessState.READY,
+      authority: 'station-capability-authority',
+    }))).toBe('compatible');
+    expect(projectCapabilityCompatibility(create(CapabilityReadinessSchema, {
+      state: CapabilityReadinessState.DEGRADED,
+      authority: 'station-capability-authority',
+    }))).toBe('degraded');
+    expect(projectCapabilityCompatibility(create(CapabilityReadinessSchema, {
+      state: CapabilityReadinessState.UNAVAILABLE,
+      authority: 'station-capability-authority',
+    }))).toBe('incompatible');
+    expect(projectCapabilityCompatibility(undefined)).toBe('unknown');
   });
 
   it('keeps unavailable bound capabilities operable for unbinding', () => {

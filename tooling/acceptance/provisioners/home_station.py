@@ -31,6 +31,7 @@ from tooling.acceptance.provisioners.remote_source_identity import (
 GATE_ROLES = {
     "agent-attachment-e2e": ("alice",),
     "agent-stream-resilience-e2e": ("alice",),
+    "agent-v2-capability-binding-e2e": ("alice", "bob"),
     "chat-native-two-client-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
     "chat-native-typing-e2e": ("alice", "bob", "charlie"),
@@ -42,6 +43,7 @@ GATE_ROLES = {
 }
 
 AGENT_V2_FOUNDATION_GATE = "agent-v2-kernel-foundation-e2e"
+AGENT_V2_BINDING_GATE = "agent-v2-capability-binding-e2e"
 AGENT_NATIVE_GATES = frozenset(
     {
         "agent-attachment-e2e",
@@ -49,6 +51,7 @@ AGENT_NATIVE_GATES = frozenset(
     }
 )
 AGENT_V2_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
+AGENT_V2_BINDING_PROFILE = "two"
 AGENT_V2_CREDENTIAL_REFS = (
     "profile:CHAT_NATIVE_DEMO_PASSWORD",
     "profile:PT_AGENT_PROVIDER_API_KEY",
@@ -259,6 +262,89 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         self._assert_client_ports_available(client, resource_prefix="browser-")
         return client
 
+    def _agent_v2_binding_clients(
+        self,
+        run_id: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> tuple[ClientRuntime, ClientRuntime]:
+        run_root = Path(tempfile.gettempdir()) / f"pt-agent-v2-binding-{run_id}"
+        worktree = Path(
+            os.environ.get("PT_AGENT_V2_BINDING_WORKTREE", str(REPO_ROOT))
+        ).expanduser().resolve()
+        native = ClientRuntime(
+            actor="alice",
+            runtime="native-tauri",
+            worktree=str(worktree),
+            gateway_port=int(
+                os.environ.get(
+                    "PT_AGENT_V2_BINDING_NATIVE_GATEWAY_PORT",
+                    profile_env.get(
+                        "PT_DESKTOP_APP_GATEWAY_PORT",
+                        str(3030 + slot * 100),
+                    ),
+                )
+            ),
+            renderer_port=int(
+                os.environ.get(
+                    "PT_AGENT_V2_BINDING_NATIVE_RENDERER_PORT",
+                    profile_env.get(
+                        "PT_DESKTOP_APP_WEB_PORT",
+                        str(3210 + slot * 100),
+                    ),
+                )
+            ),
+            webdriver_port=int(
+                os.environ.get(
+                    "PT_AGENT_V2_BINDING_NATIVE_WEBDRIVER_PORT",
+                    str(4445 + slot * 10),
+                )
+            ),
+            profile="agent-v2-binding-native",
+            storage_root=str(run_root / "native" / "storage"),
+        )
+        browser = ClientRuntime(
+            actor="alice",
+            runtime="browser",
+            worktree=str(worktree),
+            gateway_port=int(
+                os.environ.get(
+                    "PT_AGENT_V2_BINDING_BROWSER_GATEWAY_PORT",
+                    profile_env.get(
+                        "PT_DESKTOP_WEB_GATEWAY_PORT",
+                        str(3031 + slot * 100),
+                    ),
+                )
+            ),
+            renderer_port=int(
+                os.environ.get(
+                    "PT_AGENT_V2_BINDING_BROWSER_RENDERER_PORT",
+                    profile_env.get(
+                        "PT_DESKTOP_WEB_WEB_PORT",
+                        str(3211 + slot * 100),
+                    ),
+                )
+            ),
+            webdriver_port=int(
+                os.environ.get(
+                    "PT_AGENT_V2_BINDING_BROWSER_WEBDRIVER_PORT",
+                    str(4446 + slot * 10),
+                )
+            ),
+            profile="agent-v2-binding-browser",
+            storage_root=str(run_root / "browser" / "storage"),
+        )
+        self._assert_client_ports_available(native)
+        self._assert_client_ports_available(
+            browser,
+            resource_prefix="browser-",
+        )
+        self.register_cleanup(
+            f"client-storage:{run_root}",
+            lambda: shutil.rmtree(run_root, ignore_errors=True),
+        )
+        return native, browser
+
     def _agent_native_client(
         self,
         run_id: str,
@@ -454,6 +540,65 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             cleanup_resources=self.contract.cleanup.resources,
         )
 
+    def _agent_v2_binding_manifest(
+        self,
+        manifest: RuntimeManifest,
+        *,
+        station_url: str,
+        deployment_environment: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> RuntimeManifest:
+        if profile_env.get("CHAT_ACCEPTANCE_RESET") != "1":
+            raise BlockedError(
+                reason=(
+                    "Agent V2 capability binding actor Fixture reset requires "
+                    "CHAT_ACCEPTANCE_RESET=1 in the approved profile"
+                ),
+                resource="fixture-reset:authorization",
+            )
+        missing_configuration = sorted(
+            name
+            for name in (
+                "CHAT_NATIVE_DEMO_PASSWORD",
+                "PT_AGENT_PROVIDER_ID",
+                "PT_AGENT_PROVIDER_BASE_URL",
+                "PT_AGENT_PROVIDER_API_KEY",
+                "PT_AGENT_DEFAULT_MODEL_ID",
+            )
+            if not profile_env.get(name, "")
+        )
+        if missing_configuration:
+            raise BlockedError(
+                reason=(
+                    "Agent V2 capability binding requires Profile two values: "
+                    + ", ".join(missing_configuration)
+                ),
+                resource=f"profile:{missing_configuration[0]}",
+            )
+        credential_refs = self._export_profile_credential_refs(profile_env)
+        _, _, actor_ref = produce_actor_manifest(
+            environment_id=self.environment_id,
+            run_id=manifest.run_id,
+            station_url=station_url,
+            deployment_environment=deployment_environment,
+            roles=GATE_ROLES[AGENT_V2_BINDING_GATE],
+            credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
+            reset_authorized=True,
+        )
+        clients = self._agent_v2_binding_clients(
+            manifest.run_id,
+            slot,
+            profile_env,
+        )
+        return dataclasses.replace(
+            manifest,
+            actor_manifest_ref=actor_ref,
+            credential_refs=credential_refs,
+            clients=clients,
+            cleanup_resources=self.contract.cleanup.resources,
+        )
+
     def _agent_native_manifest(
         self,
         manifest: RuntimeManifest,
@@ -525,13 +670,18 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         profile_name: str,
         profile_env: dict[str, str],
     ) -> None:
-        if profile_name != AGENT_V2_PROFILE:
+        required_profile = (
+            AGENT_V2_BINDING_PROFILE
+            if gate_id == AGENT_V2_BINDING_GATE
+            else AGENT_V2_PROFILE
+        )
+        if profile_name != required_profile:
             raise BlockedError(
                 reason=(
-                    f"{gate_id} requires the approved {AGENT_V2_PROFILE} "
+                    f"{gate_id} requires the approved {required_profile} "
                     f"profile; active profile is {profile_name}"
                 ),
-                resource=f"profile:required:{AGENT_V2_PROFILE}",
+                resource=f"profile:required:{required_profile}",
             )
         if profile_env.get("PT_STATION_MODE", "local") != "remote":
             raise BlockedError(
@@ -556,7 +706,10 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 slot=slot,
             )
             if (
-                gate_id == AGENT_V2_FOUNDATION_GATE
+                gate_id in {
+                    AGENT_V2_FOUNDATION_GATE,
+                    AGENT_V2_BINDING_GATE,
+                }
                 or gate_id in AGENT_NATIVE_GATES
             ):
                 self._validate_agent_profile(
@@ -665,14 +818,19 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                         ),
                         resource="source-identity:workspace",
                     )
-                if not attestation.is_clean_workspace:
-                    raise BlockedError(
-                        reason=(
-                            "Agent V2 Foundation requires a clean remote Station "
-                            "deployment"
-                        ),
-                        resource="source-identity:station-workspace",
-                    )
+            if (
+                gate_id in {
+                    AGENT_V2_FOUNDATION_GATE,
+                    AGENT_V2_BINDING_GATE,
+                }
+                and not attestation.is_clean_workspace
+            ):
+                raise BlockedError(
+                    reason=(
+                        f"{gate_id} requires a clean remote Station deployment"
+                    ),
+                    resource="source-identity:station-workspace",
+                )
             if attestation.protocol_digest != local_proto_digest:
                 raise BlockedError(
                     reason=(
@@ -692,6 +850,16 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 return self._ready(manifest)
             if gate_id == AGENT_V2_FOUNDATION_GATE:
                 manifest = self._agent_v2_foundation_manifest(
+                    manifest,
+                    station_url=station_url,
+                    deployment_environment=deployment_environment,
+                    slot=slot,
+                    profile_env=profile_env,
+                )
+                self._manifest = manifest
+                return self._ready(manifest)
+            if gate_id == AGENT_V2_BINDING_GATE:
+                manifest = self._agent_v2_binding_manifest(
                     manifest,
                     station_url=station_url,
                     deployment_environment=deployment_environment,

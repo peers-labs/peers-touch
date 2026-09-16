@@ -5,6 +5,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Empty, Select, Switch, message as antMessage, theme } from 'antd';
 import { Button, Tag } from '@lobehub/ui';
 import {
+  BookOpen,
   Cpu,
   Monitor,
   Package,
@@ -12,6 +13,7 @@ import {
   RefreshCw,
   Sparkles,
   Wrench,
+  type LucideIcon,
 } from 'lucide-react';
 
 import {
@@ -25,12 +27,60 @@ import {
 } from '../../gen/proto/domain/agent/capability_pb';
 import type { AgentCapabilityState } from '../../store/agentCapabilities';
 
-const SOURCE_ORDER = new Map<CapabilitySourceKind, number>([
-  [CapabilitySourceKind.BUILTIN_TOOL, 0],
-  [CapabilitySourceKind.CLIENT_NATIVE, 1],
-  [CapabilitySourceKind.MCP, 2],
-  [CapabilitySourceKind.CONNECTOR, 3],
-  [CapabilitySourceKind.SKILL, 4],
+interface CapabilitySourcePresentation {
+  icon: LucideIcon;
+  iconKey: string;
+  localeKey: string;
+  order: number;
+}
+
+const UNKNOWN_SOURCE_PRESENTATION: CapabilitySourcePresentation = {
+  icon: Package,
+  iconKey: 'unknown',
+  localeKey: 'unknown',
+  order: Number.MAX_SAFE_INTEGER,
+};
+
+const SOURCE_PRESENTATIONS = new Map<
+  CapabilitySourceKind,
+  CapabilitySourcePresentation
+>([
+  [CapabilitySourceKind.BUILTIN_TOOL, {
+    icon: Wrench,
+    iconKey: 'builtin-tool',
+    localeKey: 'builtinTool',
+    order: 0,
+  }],
+  [CapabilitySourceKind.CLIENT_NATIVE, {
+    icon: Monitor,
+    iconKey: 'client-native',
+    localeKey: 'clientNative',
+    order: 1,
+  }],
+  [CapabilitySourceKind.MCP, {
+    icon: Cpu,
+    iconKey: 'mcp',
+    localeKey: 'mcp',
+    order: 2,
+  }],
+  [CapabilitySourceKind.CONNECTOR, {
+    icon: Plug,
+    iconKey: 'connector',
+    localeKey: 'connector',
+    order: 3,
+  }],
+  [CapabilitySourceKind.SKILL, {
+    icon: Sparkles,
+    iconKey: 'skill',
+    localeKey: 'skill',
+    order: 4,
+  }],
+  [CapabilitySourceKind.KNOWLEDGE, {
+    icon: BookOpen,
+    iconKey: 'knowledge',
+    localeKey: 'knowledge',
+    order: 5,
+  }],
 ]);
 
 const APPROVAL_POLICY_OPTIONS = [
@@ -47,6 +97,12 @@ export interface CapabilityInventoryItem {
   binding?: AgentCapabilityBinding;
   readiness?: CapabilityReadiness;
 }
+
+export type CapabilityCompatibilityState =
+  | 'compatible'
+  | 'degraded'
+  | 'incompatible'
+  | 'unknown';
 
 interface AgentCapabilityInventoryPanelProps {
   agentId: string;
@@ -118,7 +174,7 @@ export function projectCapabilityInventory(
   }
 
   return manifests
-    .filter((manifest) => SOURCE_ORDER.has(manifest.sourceKind))
+    .filter((manifest) => SOURCE_PRESENTATIONS.has(manifest.sourceKind))
     .map((manifest) => {
       const key = capabilityKey(manifest.capabilityId, manifest.version);
       return {
@@ -131,8 +187,8 @@ export function projectCapabilityInventory(
     })
     .sort((left, right) => {
       const sourceDelta =
-        (SOURCE_ORDER.get(left.manifest.sourceKind) ?? Number.MAX_SAFE_INTEGER)
-        - (SOURCE_ORDER.get(right.manifest.sourceKind) ?? Number.MAX_SAFE_INTEGER);
+        capabilitySourcePresentation(left.manifest.sourceKind).order
+        - capabilitySourcePresentation(right.manifest.sourceKind).order;
       if (sourceDelta !== 0) return sourceDelta;
       const labelDelta = left.label.localeCompare(right.label);
       if (labelDelta !== 0) return labelDelta;
@@ -140,6 +196,28 @@ export function projectCapabilityInventory(
       if (idDelta !== 0) return idDelta;
       return left.manifest.version.localeCompare(right.manifest.version);
     });
+}
+
+export function capabilitySourcePresentation(
+  sourceKind: CapabilitySourceKind,
+): CapabilitySourcePresentation {
+  return SOURCE_PRESENTATIONS.get(sourceKind) ?? UNKNOWN_SOURCE_PRESENTATION;
+}
+
+export function projectCapabilityCompatibility(
+  readiness: CapabilityReadiness | undefined,
+): CapabilityCompatibilityState {
+  switch (readiness?.state) {
+    case CapabilityReadinessState.READY:
+      return 'compatible';
+    case CapabilityReadinessState.DEGRADED:
+      return 'degraded';
+    case CapabilityReadinessState.UNAVAILABLE:
+    case CapabilityReadinessState.BLOCKED:
+      return 'incompatible';
+    default:
+      return 'unknown';
+  }
 }
 
 export function canBindCapability(manifest: CapabilityManifest): boolean {
@@ -159,23 +237,6 @@ export function isCapabilityBindingToggleDisabled(
   return !canBindCapability(item.manifest);
 }
 
-function sourceKindLocaleKey(sourceKind: CapabilitySourceKind): string {
-  switch (sourceKind) {
-    case CapabilitySourceKind.BUILTIN_TOOL:
-      return 'builtinTool';
-    case CapabilitySourceKind.CLIENT_NATIVE:
-      return 'clientNative';
-    case CapabilitySourceKind.MCP:
-      return 'mcp';
-    case CapabilitySourceKind.CONNECTOR:
-      return 'connector';
-    case CapabilitySourceKind.SKILL:
-      return 'skill';
-    default:
-      return 'unknown';
-  }
-}
-
 function CapabilitySourceIcon({
   sourceKind,
   size = 16,
@@ -183,20 +244,9 @@ function CapabilitySourceIcon({
   sourceKind: CapabilitySourceKind;
   size?: number;
 }) {
-  switch (sourceKind) {
-    case CapabilitySourceKind.BUILTIN_TOOL:
-      return <Wrench size={size} />;
-    case CapabilitySourceKind.CLIENT_NATIVE:
-      return <Monitor size={size} />;
-    case CapabilitySourceKind.MCP:
-      return <Cpu size={size} />;
-    case CapabilitySourceKind.CONNECTOR:
-      return <Plug size={size} />;
-    case CapabilitySourceKind.SKILL:
-      return <Sparkles size={size} />;
-    default:
-      return <Package size={size} />;
-  }
+  const presentation = capabilitySourcePresentation(sourceKind);
+  const Icon = presentation.icon;
+  return <Icon data-capability-source-icon={presentation.iconKey} size={size} />;
 }
 
 function readinessLocaleKey(state: CapabilityReadinessState): string {
@@ -428,6 +478,7 @@ export function AgentCapabilityInventoryPanel({
     })
     : t('agent.profile.capabilityInventory.reason.notProjected');
   const riskKey = riskLocaleKey(selected.manifest.riskClass);
+  const compatibility = projectCapabilityCompatibility(selected.readiness);
 
   return (
     <div
@@ -507,9 +558,9 @@ export function AgentCapabilityInventoryPanel({
                 </Flexbox>
                 <Tag style={{ margin: 0 }}>
                   {t(
-                    `agent.profile.capabilityInventory.source.${sourceKindLocaleKey(
-                      item.manifest.sourceKind,
-                    )}`,
+                    `agent.profile.capabilityInventory.source.${
+                      capabilitySourcePresentation(item.manifest.sourceKind).localeKey
+                    }`,
                   )}
                 </Tag>
                 {item.binding?.enabled ? (
@@ -532,6 +583,12 @@ export function AgentCapabilityInventoryPanel({
 
       <Flexbox
         data-pt-agent-capability-detail={selected.key}
+        data-pt-agent-capability-source={
+          capabilitySourcePresentation(selected.manifest.sourceKind).iconKey
+        }
+        data-pt-agent-capability-version={selected.manifest.version}
+        data-pt-agent-capability-risk={selected.manifest.riskClass || 'unknown'}
+        data-pt-agent-capability-binding-state={bindingState}
         gap={14}
         style={{ minWidth: 0 }}
       >
@@ -605,9 +662,9 @@ export function AgentCapabilityInventoryPanel({
           <CapabilityInfoRow
             label={t('agent.profile.capabilityInventory.field.kind')}
             value={t(
-              `agent.profile.capabilityInventory.source.${sourceKindLocaleKey(
-                selected.manifest.sourceKind,
-              )}`,
+              `agent.profile.capabilityInventory.source.${
+                capabilitySourcePresentation(selected.manifest.sourceKind).localeKey
+              }`,
             )}
           />
           <CapabilityInfoRow
@@ -666,6 +723,7 @@ export function AgentCapabilityInventoryPanel({
             </span>
             <Select
               data-pt-agent-capability-policy={selected.key}
+              data-pt-agent-capability-policy-value={approvalPolicy}
               aria-label={t('agent.profile.capabilityInventory.field.approvalPolicy')}
               disabled={!selected.binding || pending}
               onChange={updateApprovalPolicy}
@@ -704,6 +762,28 @@ export function AgentCapabilityInventoryPanel({
               )}
             </Tag>
           </Flexbox>
+          <CapabilityInfoRow
+            label={t('agent.profile.capabilityInventory.field.compatibility')}
+            value={(
+              <Tag
+                data-pt-agent-capability-compatibility={compatibility}
+                color={
+                  compatibility === 'compatible'
+                    ? 'success'
+                    : compatibility === 'degraded'
+                      ? 'warning'
+                      : compatibility === 'incompatible'
+                        ? 'error'
+                        : undefined
+                }
+                style={{ margin: 0 }}
+              >
+                {t(
+                  `agent.profile.capabilityInventory.compatibility.${compatibility}`,
+                )}
+              </Tag>
+            )}
+          />
           <CapabilityInfoRow
             label={t('agent.profile.capabilityInventory.field.authority')}
             value={

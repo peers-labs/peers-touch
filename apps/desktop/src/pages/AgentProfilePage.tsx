@@ -1904,11 +1904,13 @@ export function AgentProfilePage({
   const boundMcpServers = boundCapabilityProjections(capabilityProjection.mcp);
   const boundConnectors = boundCapabilityProjections(capabilityProjection.connectors);
   const boundSkills = boundCapabilityProjections(capabilityProjection.skills);
+  const boundKnowledge = boundCapabilityProjections(capabilityProjection.knowledge);
   const boundCapabilities = [
     ...boundTools,
     ...boundMcpServers,
     ...boundConnectors,
     ...boundSkills,
+    ...boundKnowledge,
   ];
   const capabilityBindingsReady =
     boundCapabilities.length > 0
@@ -2704,18 +2706,21 @@ export function AgentProfilePage({
                         ...capabilityProjection.mcp.manifests,
                         ...capabilityProjection.connectors.manifests,
                         ...capabilityProjection.skills.manifests,
+                        ...capabilityProjection.knowledge.manifests,
                       ]}
                       bindings={[
                         ...capabilityProjection.tools.bindings,
                         ...capabilityProjection.mcp.bindings,
                         ...capabilityProjection.connectors.bindings,
                         ...capabilityProjection.skills.bindings,
+                        ...capabilityProjection.knowledge.bindings,
                       ]}
                       readiness={[
                         ...capabilityProjection.tools.readiness,
                         ...capabilityProjection.mcp.readiness,
                         ...capabilityProjection.connectors.readiness,
                         ...capabilityProjection.skills.readiness,
+                        ...capabilityProjection.knowledge.readiness,
                       ]}
                       pendingMutations={capabilityProjection.pendingMutations}
                       loading={capabilityProjection.loadingAgent}

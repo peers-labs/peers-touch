@@ -1,3 +1,4 @@
+import { create } from '@bufbuild/protobuf';
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { bootstrapRuntime, installRuntime } from '../../kernel/runtime';
 import { EVENT, eventBus, eventDebugBuffer } from '../../kernel/events';
@@ -35,6 +36,7 @@ import { terminalReasonFromStreamData } from '../../store/streaming/handler';
 import { usePortalStore } from '../../store/portal';
 import { useProviderStore } from '../../store/provider';
 import { useSessionStore } from '../../store/session';
+import { useAgentCapabilityStore } from '../../store/agentCapabilities';
 import {
   AgentTurnStatus,
   FailoverReason,
@@ -44,6 +46,9 @@ import {
 import {
   CapabilityApprovalPolicy,
   CapabilitySourceKind,
+  CreateKnowledgeResourceDescriptorRequestSchema,
+  KnowledgeResourceKind,
+  TombstoneKnowledgeResourceDescriptorRequestSchema,
   type AgentCapabilityBinding,
   type CapabilityManifest,
 } from '../../gen/proto/domain/agent/capability_pb';
@@ -20939,6 +20944,639 @@ function evaluateF12(ctx: DirectCellAssertionContext): Record<string, boolean | 
   };
 }
 
+function capabilityDevelopmentComposerSnapshot(): Record<string, unknown> {
+  const element = document.querySelector<HTMLElement>(
+    '[data-pt-agent-composer]',
+  );
+  if (!element || element.getClientRects().length === 0) {
+    throw new Error('agent.acceptance.capabilityComposerMissing');
+  }
+  return {
+    visible: true,
+    providerId: element.dataset.ptAgentSelectedProvider ?? '',
+    modelId: element.dataset.ptAgentSelectedModel ?? '',
+    runtimeSnapshotId: element.dataset.ptAgentRuntimeSnapshot ?? '',
+    readinessSnapshotId: element.dataset.ptAgentReadinessSnapshot ?? '',
+    readinessState: element.dataset.ptAgentReadinessState ?? '',
+    compatibility: element.dataset.ptAgentModelCompatibility ?? '',
+    authority: element.dataset.ptAgentReadinessAuthority ?? '',
+    reasonCode: element.dataset.ptAgentReadinessReason ?? '',
+  };
+}
+
+function capabilityDevelopmentInventorySnapshot(
+  capabilityKey: string,
+): Record<string, unknown> {
+  const inventory = document.querySelector<HTMLElement>(
+    '[data-pt-agent-capability-inventory]',
+  );
+  const detail = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '[data-pt-agent-capability-detail]',
+    ),
+  ).find((element) =>
+    element.dataset.ptAgentCapabilityDetail === capabilityKey);
+  const readiness = detail?.querySelector<HTMLElement>(
+    '[data-pt-agent-capability-readiness]',
+  );
+  const compatibility = detail?.querySelector<HTMLElement>(
+    '[data-pt-agent-capability-compatibility]',
+  );
+  const policy = detail?.querySelector<HTMLElement>(
+    '[data-pt-agent-capability-policy]',
+  );
+  return {
+    visible: Boolean(
+      inventory?.getClientRects().length
+      && detail?.getClientRects().length
+    ),
+    source: detail?.dataset.ptAgentCapabilitySource ?? '',
+    version: detail?.dataset.ptAgentCapabilityVersion ?? '',
+    risk: detail?.dataset.ptAgentCapabilityRisk ?? '',
+    bindingState: detail?.dataset.ptAgentCapabilityBindingState ?? '',
+    readinessState: readiness?.dataset.ptAgentCapabilityReadiness ?? '',
+    compatibility:
+      compatibility?.dataset.ptAgentCapabilityCompatibility ?? '',
+    policy: policy?.dataset.ptAgentCapabilityPolicyValue ?? '',
+    knowledgeIconVisible: Boolean(
+      detail?.querySelector<HTMLElement>(
+        '[data-capability-source-icon="knowledge"]',
+      )?.getClientRects().length,
+    ),
+  };
+}
+
+async function runCapabilityAdmissionRejection(input: {
+  agentId: string;
+  providerId: string;
+  modelId: string;
+  capabilityId: string;
+  expectedReasonCode: string;
+  capabilitySessionId?: string;
+  sampleId: string;
+}): Promise<Record<string, unknown>> {
+  const conversation = await api.createAgentConversation({
+    agent_id: input.agentId,
+    title: `Capability rejection ${input.expectedReasonCode} ${input.sampleId}`,
+    provider_id: input.providerId,
+    model_name: input.modelId,
+  });
+  const conversationId = conversation.conversation_id;
+  try {
+    const readiness = await api.getAgentCapabilityReadiness({
+      agent_id: input.agentId,
+      client_capability_session_id: input.capabilitySessionId,
+    });
+    const capability = readiness.capabilities.find(
+      (item) => item.capability_id === input.capabilityId,
+    );
+    if (capability?.reason_code !== input.expectedReasonCode) {
+      throw new Error(
+        `agent.acceptance.capabilityReasonMismatch:${input.expectedReasonCode}`,
+      );
+    }
+    const [beforeExecution, beforeReadback, beforeQueue] = await Promise.all([
+      foundationIncompatibleExecutionSnapshot(input.agentId, conversationId),
+      foundationConversationReadback(conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    const result = await startObservedFoundationTurn({
+      conversationId,
+      agentId: input.agentId,
+      content: `Capability rejection ${input.expectedReasonCode}`,
+      idempotencyKey: crypto.randomUUID(),
+      provider: input.providerId,
+      model: input.modelId,
+      thinkingMode: 'disabled',
+      clientCapabilitySessionId: input.capabilitySessionId,
+    }).result;
+    const errorEvent = [...result.events].reverse().find(
+      (event) => event.event === 'error',
+    );
+    const outcome = errorEvent?.data ?? {};
+    const details = evidenceRecord(
+      outcome.details,
+      'capabilityAdmissionRejectionDetails',
+    );
+    const [afterExecution, afterReadback, afterQueue] = await Promise.all([
+      foundationIncompatibleExecutionSnapshot(input.agentId, conversationId),
+      foundationConversationReadback(conversationId),
+      api.listAgentTurnQueue(conversationId),
+    ]);
+    return {
+      reasonCode: input.expectedReasonCode,
+      readinessSnapshotId: readiness.snapshot_id,
+      runtimeSnapshotId: readiness.runtime_snapshot_id,
+      bindingRevision: Number(capability.binding_revision),
+      outcome,
+      assertions: {
+        stationReadinessMatches:
+          Boolean(readiness.snapshot_id)
+          && Boolean(readiness.runtime_snapshot_id)
+          && details.capability_id === input.capabilityId
+          && details.reason_code === input.expectedReasonCode,
+        typedRejection:
+          outcome.error_type === 'RUNTIME_INCOMPATIBLE_CAPABILITY'
+          && outcome.locale_key === 'agent.errors.incompatibleCapability'
+          && outcome.terminal === true,
+        zeroProviderExecution:
+          afterExecution.providerCallCount
+            === beforeExecution.providerCallCount,
+        zeroToolExecution:
+          afterExecution.toolCallCount === beforeExecution.toolCallCount
+          && afterExecution.toolExecutionCount
+            === beforeExecution.toolExecutionCount
+          && afterExecution.sideEffectCount
+            === beforeExecution.sideEffectCount,
+        zeroMessagePersistence:
+          afterReadback.messages.length === beforeReadback.messages.length,
+        queueUnchanged:
+          afterQueue.entries.length === beforeQueue.entries.length,
+      },
+    };
+  } finally {
+    clearFoundationLocalConversationProjection(conversationId);
+    await deleteFoundationConversation(conversationId);
+  }
+}
+
+async function runCapabilityBindingDevelopmentJourney(
+  sampleId: string,
+): Promise<Record<string, unknown>> {
+  const agentStore = useAgentStore.getState();
+  const sourceAgent = selectedAgent();
+  if (!sourceAgent?.provider || !sourceAgent.model) {
+    throw new Error('agent.acceptance.providerModelUnavailable');
+  }
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  const capabilitySessions = await waitForCapabilitySessionEvidence();
+  const capabilitySessionId =
+    capabilitySessions.selectedStationSession?.session_id;
+  if (!capabilitySessionId) {
+    throw new Error('agent.acceptance.capabilitySessionUnavailable');
+  }
+
+  let disposableAgentId = '';
+  let knowledgeResourceId = '';
+  let knowledgeRevision = 0n;
+  let knowledgeBindingId = '';
+  let clientBindingId = '';
+  let capture: Record<string, unknown> | null = null;
+  let primaryError: unknown = null;
+  let cleanupError: unknown = null;
+  const cleanup: Record<string, boolean> = {
+    knowledgeBindingRemoved: false,
+    clientBindingRemoved: false,
+    knowledgeDescriptorRetired: false,
+    disposableAgentDeleted: false,
+    selectionRestored: false,
+  };
+
+  try {
+    const disposable = await agentStore.createAgent({
+      name: `capability-binding-${sampleId}-${crypto.randomUUID()}`,
+      title: `Capability binding ${sampleId}`,
+      description: 'V2-J02 capability binding Development Journey',
+      provider: sourceAgent.provider,
+      model: sourceAgent.model,
+    });
+    disposableAgentId = disposable.id || disposable.name;
+    await api.setSelectedAgent(disposable.name);
+    useAgentStore.getState().setSelectedAgent(disposable.name);
+
+    const capabilityStore = useAgentCapabilityStore.getState();
+    const descriptor = await capabilityStore.createKnowledgeDescriptor(create(
+      CreateKnowledgeResourceDescriptorRequestSchema,
+      {
+        resourceKind: KnowledgeResourceKind.DOCUMENT,
+        source: {
+          case: 'stationContent',
+          value: new TextEncoder().encode(
+            `V2-J02 capability inventory ${sampleId}`,
+          ),
+        },
+        idempotencyKey: crypto.randomUUID(),
+        title: `V2-J02 Knowledge ${sampleId}`,
+      },
+    ));
+    knowledgeResourceId = descriptor.resourceId;
+    knowledgeRevision = descriptor.revision;
+    const manifest = useAgentCapabilityStore.getState().manifests.find(
+      (candidate) => (
+        candidate.sourceKind === CapabilitySourceKind.KNOWLEDGE
+        && candidate.sourceInstanceId === descriptor.resourceId
+        && candidate.version === descriptor.revision.toString()
+        && !candidate.retiredAt
+      ),
+    );
+    if (!manifest) {
+      throw new Error('agent.acceptance.capabilityKnowledgeManifestMissing');
+    }
+    const capabilityKey =
+      `${encodeURIComponent(manifest.capabilityId)}@`
+      + encodeURIComponent(manifest.version);
+
+    useAgentStore.getState().setAgentSurface(disposable.name, 'profile');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          `[data-pt-agent-profile="${disposableAgentId}"]`,
+        )?.getClientRects().length,
+      ),
+      'capability Agent Profile',
+      30_000,
+    );
+    const capabilityTab = document.querySelector<HTMLElement>(
+      '[data-pt-agent-profile-tab="capabilities"]',
+    );
+    if (!capabilityTab) {
+      throw new Error('agent.acceptance.capabilityProfileTabMissing');
+    }
+    capabilityTab.click();
+    await capabilityStore.loadAgent(disposableAgentId, {
+      clientCapabilitySessionId: capabilitySessionId,
+    });
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          '[data-pt-agent-capability-inventory]',
+        )?.getClientRects().length,
+      ),
+      'capability inventory',
+      30_000,
+    );
+    const knowledgeItem = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-capability]',
+      ),
+    ).find((element) =>
+      element.dataset.ptAgentCapability === capabilityKey);
+    if (!knowledgeItem) {
+      throw new Error('agent.acceptance.capabilityKnowledgeItemMissing');
+    }
+    knowledgeItem.click();
+    await waitFor(
+      () => Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-pt-agent-capability-detail]',
+        ),
+      ).some((element) => (
+        element.dataset.ptAgentCapabilityDetail === capabilityKey
+      )),
+      'Knowledge capability detail',
+      10_000,
+    );
+    const unboundInventory = capabilityDevelopmentInventorySnapshot(
+      capabilityKey,
+    );
+    const bindingToggle = document.querySelector<HTMLButtonElement>(
+      `[data-pt-agent-capability-binding="${capabilityKey}"]`,
+    );
+    if (!bindingToggle) {
+      throw new Error('agent.acceptance.capabilityBindingToggleMissing');
+    }
+    bindingToggle.click();
+    await waitFor(
+      () => Boolean(
+        useAgentCapabilityStore.getState()
+          .bindingsByAgentId[disposableAgentId]
+          ?.find((binding) => (
+            binding.capabilityId === manifest.capabilityId
+            && binding.capabilityVersion === manifest.version
+            && binding.enabled
+            && !binding.tombstonedAt
+          )),
+      ),
+      'Knowledge capability binding',
+      30_000,
+    );
+    let knowledgeBinding = (
+      await api.listAgentCapabilityBindings(disposableAgentId)
+    ).find((binding) => (
+      binding.capabilityId === manifest.capabilityId
+      && binding.capabilityVersion === manifest.version
+      && binding.enabled
+      && !binding.tombstonedAt
+    ));
+    if (!knowledgeBinding) {
+      throw new Error('agent.acceptance.capabilityBindingReadbackMissing');
+    }
+    knowledgeBindingId = knowledgeBinding.bindingId;
+    const createdRevision = knowledgeBinding.revision;
+    const updatedBinding = await useAgentCapabilityStore.getState()
+      .upsertBinding({
+        bindingId: knowledgeBinding.bindingId,
+        agentId: disposableAgentId,
+        capabilityId: manifest.capabilityId,
+        capabilityVersion: manifest.version,
+        enabled: true,
+        approvalPolicy: CapabilityApprovalPolicy.MANUAL,
+        expectedAgentVersion: disposable.version,
+        expectedBindingRevision: knowledgeBinding.revision,
+        idempotencyKey: crypto.randomUUID(),
+        clientCapabilitySessionId: capabilitySessionId,
+      });
+    knowledgeBinding = (
+      await api.listAgentCapabilityBindings(disposableAgentId)
+    ).find((binding) => (
+      binding.bindingId === updatedBinding.bindingId
+      && !binding.tombstonedAt
+    ));
+    if (!knowledgeBinding) {
+      throw new Error('agent.acceptance.capabilityPolicyReadbackMissing');
+    }
+    await waitFor(
+      () => capabilityDevelopmentInventorySnapshot(capabilityKey)
+        .bindingState === 'bound',
+      'bound Knowledge inventory',
+      10_000,
+    );
+    const boundInventory = capabilityDevelopmentInventorySnapshot(
+      capabilityKey,
+    );
+
+    useAgentStore.getState().setAgentSurface(disposable.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          '[data-pt-agent-composer]',
+        )?.getClientRects().length,
+      ),
+      'capability-aware composer',
+      30_000,
+    );
+    const readyComposer = capabilityDevelopmentComposerSnapshot();
+
+    const staleAgent = await useAgentStore.getState().updateAgentProfile(
+      disposableAgentId,
+      { description: `V2-J02 stale binding ${sampleId}` },
+    );
+    await useAgentCapabilityStore.getState().loadAgent(disposableAgentId, {
+      clientCapabilitySessionId: capabilitySessionId,
+    });
+    await waitFor(
+      () => capabilityDevelopmentComposerSnapshot().reasonCode
+        === 'binding_agent_revision_stale',
+      'stale binding composer rejection',
+      30_000,
+    );
+    const staleComposer = capabilityDevelopmentComposerSnapshot();
+    const stale = await runCapabilityAdmissionRejection({
+      agentId: disposableAgentId,
+      providerId: sourceAgent.provider,
+      modelId: sourceAgent.model,
+      capabilityId: manifest.capabilityId,
+      expectedReasonCode: 'binding_agent_revision_stale',
+      capabilitySessionId,
+      sampleId,
+    });
+
+    knowledgeBinding = await useAgentCapabilityStore.getState().upsertBinding({
+      bindingId: knowledgeBinding.bindingId,
+      agentId: disposableAgentId,
+      capabilityId: manifest.capabilityId,
+      capabilityVersion: manifest.version,
+      enabled: true,
+      approvalPolicy: knowledgeBinding.approvalPolicy,
+      expectedAgentVersion: staleAgent.version,
+      expectedBindingRevision: knowledgeBinding.revision,
+      idempotencyKey: crypto.randomUUID(),
+      clientCapabilitySessionId: capabilitySessionId,
+    });
+
+    const clientFixture = await foundationToolFixture(
+      disposableAgentId,
+      'desktop_app',
+    );
+    const clientBinding = await updateFoundationToolPolicy(
+      staleAgent,
+      clientFixture,
+      clientFixture.binding,
+      CapabilityApprovalPolicy.AUTO,
+    );
+    clientBindingId = clientBinding.bindingId;
+    await useAgentCapabilityStore.getState().loadAgent(disposableAgentId, {
+      clientCapabilitySessionId: '',
+    });
+    await waitFor(
+      () => capabilityDevelopmentComposerSnapshot().reasonCode
+        === 'client_session_required',
+      'disconnected capability composer rejection',
+      30_000,
+    );
+    const disconnectedComposer = capabilityDevelopmentComposerSnapshot();
+    const disconnected = await runCapabilityAdmissionRejection({
+      agentId: disposableAgentId,
+      providerId: sourceAgent.provider,
+      modelId: sourceAgent.model,
+      capabilityId: clientBinding.capabilityId,
+      expectedReasonCode: 'client_session_required',
+      sampleId,
+    });
+    await api.deleteAgentCapabilityBinding(
+      clientBinding.bindingId,
+      clientBinding.revision,
+      crypto.randomUUID(),
+      'acceptance_fixture_cleanup',
+    );
+    clientBindingId = '';
+    cleanup.clientBindingRemoved = true;
+
+    await useAgentCapabilityStore.getState()
+      .tombstoneKnowledgeDescriptor(create(
+        TombstoneKnowledgeResourceDescriptorRequestSchema,
+        {
+          resourceId: knowledgeResourceId,
+          expectedRevision: knowledgeRevision,
+          idempotencyKey: crypto.randomUUID(),
+          reason: 'acceptance_fixture_cleanup',
+        },
+      ));
+    cleanup.knowledgeDescriptorRetired = true;
+    await useAgentCapabilityStore.getState().loadAgent(disposableAgentId, {
+      clientCapabilitySessionId: capabilitySessionId,
+    });
+    await waitFor(
+      () => capabilityDevelopmentComposerSnapshot().reasonCode
+        === 'manifest_retired',
+      'retired capability composer rejection',
+      30_000,
+    );
+    const retiredComposer = capabilityDevelopmentComposerSnapshot();
+    const retired = await runCapabilityAdmissionRejection({
+      agentId: disposableAgentId,
+      providerId: sourceAgent.provider,
+      modelId: sourceAgent.model,
+      capabilityId: manifest.capabilityId,
+      expectedReasonCode: 'manifest_retired',
+      capabilitySessionId,
+      sampleId,
+    });
+
+    capture = {
+      assertions: {
+        knowledgeInventoryVisible:
+          unboundInventory.visible === true
+          && unboundInventory.source === 'knowledge'
+          && unboundInventory.version === manifest.version
+          && unboundInventory.risk === 'read'
+          && unboundInventory.knowledgeIconVisible === true,
+        bindingAndPolicyCasReadback:
+          createdRevision > 0n
+          && updatedBinding.revision === createdRevision + 1n
+          && knowledgeBinding.revision === updatedBinding.revision
+          && knowledgeBinding.approvalPolicy
+            === CapabilityApprovalPolicy.MANUAL
+          && boundInventory.bindingState === 'bound'
+          && boundInventory.policy
+            === String(CapabilityApprovalPolicy.MANUAL),
+        readinessAndCompatibilityVisible:
+          boundInventory.readinessState === 'ready'
+          && boundInventory.compatibility === 'compatible',
+        preSendRuntimeSnapshotVisible:
+          readyComposer.visible === true
+          && readyComposer.providerId === sourceAgent.provider
+          && readyComposer.modelId === sourceAgent.model
+          && readyComposer.runtimeSnapshotId !== 'unknown'
+          && readyComposer.readinessSnapshotId !== 'unknown'
+          && readyComposer.readinessState === 'ready'
+          && readyComposer.compatibility === 'compatible'
+          && readyComposer.authority === 'station-capability-authority',
+        staleRejectedBeforeExecution:
+          staleComposer.reasonCode === 'binding_agent_revision_stale'
+          && Object.values(
+            evidenceRecord(stale.assertions, 'staleAssertions'),
+          ).every(Boolean),
+        disconnectedRejectedBeforeExecution:
+          disconnectedComposer.reasonCode === 'client_session_required'
+          && Object.values(
+            evidenceRecord(
+              disconnected.assertions,
+              'disconnectedAssertions',
+            ),
+          ).every(Boolean),
+        retiredRejectedBeforeExecution:
+          retiredComposer.reasonCode === 'manifest_retired'
+          && Object.values(
+            evidenceRecord(retired.assertions, 'retiredAssertions'),
+          ).every(Boolean),
+      },
+      facts: {
+        capabilityKey,
+        capabilityId: manifest.capabilityId,
+        capabilityVersion: manifest.version,
+        unboundInventory,
+        boundInventory,
+        readyComposer,
+        staleComposer,
+        disconnectedComposer,
+        retiredComposer,
+        binding: {
+          bindingId: knowledgeBinding.bindingId,
+          createdRevision: createdRevision.toString(),
+          policyRevision: updatedBinding.revision.toString(),
+          restoredRevision: knowledgeBinding.revision.toString(),
+        },
+        rejections: { stale, disconnected, retired },
+      },
+    };
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    try {
+      if (clientBindingId && disposableAgentId) {
+        const binding = (
+          await api.listAgentCapabilityBindings(disposableAgentId)
+        ).find((candidate) => (
+          candidate.bindingId === clientBindingId
+          && !candidate.tombstonedAt
+        ));
+        if (binding) {
+          await api.deleteAgentCapabilityBinding(
+            binding.bindingId,
+            binding.revision,
+            crypto.randomUUID(),
+            'acceptance_fixture_cleanup',
+          );
+        }
+        cleanup.clientBindingRemoved = true;
+      }
+      if (knowledgeBindingId && disposableAgentId) {
+        const binding = (
+          await api.listAgentCapabilityBindings(disposableAgentId)
+        ).find((candidate) => (
+          candidate.bindingId === knowledgeBindingId
+          && !candidate.tombstonedAt
+        ));
+        if (binding) {
+          await api.deleteAgentCapabilityBinding(
+            binding.bindingId,
+            binding.revision,
+            crypto.randomUUID(),
+            'acceptance_fixture_cleanup',
+          );
+        }
+        cleanup.knowledgeBindingRemoved = true;
+      }
+      if (
+        knowledgeResourceId
+        && cleanup.knowledgeDescriptorRetired !== true
+      ) {
+        await useAgentCapabilityStore.getState()
+          .tombstoneKnowledgeDescriptor(create(
+            TombstoneKnowledgeResourceDescriptorRequestSchema,
+            {
+              resourceId: knowledgeResourceId,
+              expectedRevision: knowledgeRevision,
+              idempotencyKey: crypto.randomUUID(),
+              reason: 'acceptance_fixture_cleanup',
+            },
+          ));
+        cleanup.knowledgeDescriptorRetired = true;
+      }
+      if (disposableAgentId) {
+        await api.deleteAgent(disposableAgentId);
+        await useAgentStore.getState().loadAgents();
+        cleanup.disposableAgentDeleted = true;
+      }
+      if (priorSelection) {
+        useAgentStore.getState().setSelectedAgent(priorSelection);
+        useAgentStore.getState().setAgentSurface(
+          priorSelection,
+          priorSurface,
+        );
+        await api.setSelectedAgent(priorSelection);
+      }
+      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+      cleanup.selectionRestored =
+        useAgentStore.getState().selectedAgent === priorSelection;
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+
+  if (cleanupError) {
+    throw Object.assign(
+      new Error('agent.acceptance.capabilityBindingCleanupFailed'),
+      { primaryError, cleanupError },
+    );
+  }
+  if (primaryError) throw primaryError;
+  if (!capture) {
+    throw new Error('agent.acceptance.capabilityBindingCaptureMissing');
+  }
+  return evidenceValue({
+    ...capture,
+    cleanup: {
+      ...cleanup,
+      status: Object.values(cleanup).every(Boolean) ? 'clean' : 'failed',
+    },
+  }) as Record<string, unknown>;
+}
+
 export function installAcceptanceHarness(): void {
   installFoundationF06Observation();
   registerAcceptanceHarness('agent', {
@@ -21122,6 +21760,14 @@ export function installAcceptanceHarness(): void {
         fixtureRestorationRequired,
         fixtureRestorationVerified: true,
       };
+    },
+
+    async runCapabilityBindingDevelopment({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      return runCapabilityBindingDevelopmentJourney(sampleId);
     },
 
     async navigateToAgent() {

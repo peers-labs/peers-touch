@@ -34,7 +34,11 @@ type CapabilityAuthorityReadinessService struct {
 	now                func() time.Time
 }
 
-const runtimeCapabilityUnavailableReasonCode = "runtime_capability_unavailable"
+const (
+	bindingDisabledReasonCode              = "binding_disabled"
+	manifestDegradedReasonCode             = "manifest_degraded"
+	runtimeCapabilityUnavailableReasonCode = "runtime_capability_unavailable"
+)
 
 func NewCapabilityAuthorityReadinessService(
 	authority *CapabilityAuthorityService,
@@ -288,7 +292,7 @@ func (s *CapabilityAuthorityService) resolveBindingReadiness(
 	}
 	if !binding.Enabled {
 		return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_BLOCKED,
-			"binding_disabled", nil
+			bindingDisabledReasonCode, nil
 	}
 	var manifest persistence.CapabilityManifest
 	err := s.db.WithContext(ctx).Where(
@@ -319,7 +323,7 @@ func (s *CapabilityAuthorityService) resolveBindingReadiness(
 			"manifest_unavailable", nil
 	case model.CapabilityAvailability_CAPABILITY_AVAILABILITY_DEGRADED:
 		return model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_DEGRADED,
-			"manifest_degraded", nil
+			manifestDegradedReasonCode, nil
 	}
 	var requiredCapabilities []string
 	if err := json.Unmarshal(
@@ -355,18 +359,22 @@ func (s *CapabilityAuthorityService) resolveBindingReadiness(
 		"capability_ready", nil
 }
 
-func runtimeCapabilityReadinessError(
+func capabilityReadinessAdmissionError(
 	snapshot *model.CapabilityReadinessSnapshot,
 ) error {
 	for _, readiness := range snapshot.GetCapabilities() {
-		if readiness.GetState() !=
-			model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE ||
-			readiness.GetReasonCode() != runtimeCapabilityUnavailableReasonCode {
+		state := readiness.GetState()
+		reasonCode := readiness.GetReasonCode()
+		if state == model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY ||
+			(state == model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_BLOCKED &&
+				reasonCode == bindingDisabledReasonCode) ||
+			(state == model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_DEGRADED &&
+				reasonCode == manifestDegradedReasonCode) {
 			continue
 		}
 		return errcode.NewRuntimeIncompatibleCapability(
-			strings.TrimSpace(readiness.GetCapabilityId()),
-			runtimeCapabilityUnavailableReasonCode,
+			readiness.GetCapabilityId(),
+			reasonCode,
 		)
 	}
 	return nil

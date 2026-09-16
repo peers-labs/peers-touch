@@ -40,7 +40,7 @@
     },
     {
       "id": "capability-native-journey",
-      "command": "python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item mca-v2-j02 --gate agent-v2-capability-binding-e2e",
+      "command": "python3 tooling/acceptance/gates/agent/capability_binding_development.py",
       "verificationClass": "FUNCTIONAL_CHECK"
     }
   ],
@@ -70,4 +70,28 @@ and readiness authorities.
 - Canonical Station manifest/binding/readiness services and Desktop projection
   are implemented.
 - The Agent Profile inventory UI is present in the current dirty source.
+- The first focused source run exposed pre-admission failure-message
+  persistence. The Station owner-layer correction now leaves no assistant
+  message when a Turn is rejected before its user message is admitted.
+- Knowledge inventory coverage, explicit compatibility and model/runtime
+  readiness projection, and rejection of every enabled non-ready binding
+  before execution are implemented in the current source.
+- The J02 functional check uses one exact-source Native Development Journey;
+  the 69-tuple formal Gate remains isolated to MCA-A01.
 - Current exact-source functional and formal evidence remains to be produced.
+
+## Concurrency Decision
+
+- **Mode**: hybrid.
+- **Station lane**: capability readiness/admission and zero-execution
+  regression tests under `apps/station/app/subserver/agent/service`.
+- **Desktop lane**: unified inventory and composer projection under
+  `apps/desktop/src`, plus matching locale entries.
+- **Journey lane**: deterministic J02 producer and native readback under
+  `tooling/acceptance/gates/agent` and its Provisioner support.
+- **Integrator-owned**: this Plan Package, Task/Session projection, generated
+  files, commits, Profile `two` deployment, cross-lane reconciliation, and
+  final focused/functional Gates.
+- The lanes share accepted proto and architecture contracts as read-only
+  sources. They must serialize if implementation requires a shared generated
+  contract or if a lane changes another lane's expected interface.

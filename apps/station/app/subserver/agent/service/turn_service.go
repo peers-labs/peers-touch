@@ -1383,7 +1383,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	); persistErr != nil {
 		return nil, settleRunningFailure("failed to persist runtime authority", persistErr)
 	}
-	if incompatibilityErr := runtimeCapabilityReadinessError(readiness); incompatibilityErr != nil {
+	if incompatibilityErr := capabilityReadinessAdmissionError(readiness); incompatibilityErr != nil {
 		return nil, settleRunningFailure(
 			"runtime capability rejected before execution",
 			incompatibilityErr,
@@ -6683,42 +6683,53 @@ func (s *TurnService) failTurnWithEvent(
 				return messageResult.Error
 			}
 			if messageResult.RowsAffected == 0 && len(errorJSON) > 0 {
-				var conversation persistence.Conversation
-				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-					Where("id = ?", turn.ConversationID).
-					First(&conversation).Error; err != nil {
-					return err
-				}
-				var maxSeq struct{ MaxSeq int64 }
+				// Pre-message admission failures must not create an orphan
+				// assistant message, while later failures still append their
+				// terminal outcome to an existing message lineage.
+				var admittedUserMessageCount int64
 				if err := tx.Model(&persistence.AgentMessage{}).
-					Where("conversation_id = ?", turn.ConversationID).
-					Select("COALESCE(MAX(seq), 0) AS max_seq").
-					Scan(&maxSeq).Error; err != nil {
+					Where("turn_id = ? AND role = ?", turnID, string(domain.MessageRoleUser)).
+					Count(&admittedUserMessageCount).Error; err != nil {
 					return err
 				}
-				content := ""
-				messageID := generateID("msg")
-				if err := tx.Create(&persistence.AgentMessage{
-					ID:              messageID,
-					ConversationID:  turn.ConversationID,
-					TurnID:          &turnID,
-					Role:            string(domain.MessageRoleAssistant),
-					Status:          string(domain.TurnStatusFailed),
-					Content:         &content,
-					ErrorJSON:       errorJSON,
-					Seq:             maxSeq.MaxSeq + 1,
-					ParentMessageID: optionalString(conversation.ActiveBranchMessageID),
-					CreatedAt:       now,
-					UpdatedAt:       now,
-				}).Error; err != nil {
-					return err
-				}
-				if err := tx.Model(&conversation).Updates(map[string]interface{}{
-					"active_branch_message_id": messageID,
-					"updated_at":               now,
-					"version":                  gorm.Expr("version + 1"),
-				}).Error; err != nil {
-					return err
+				if admittedUserMessageCount > 0 {
+					var conversation persistence.Conversation
+					if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+						Where("id = ?", turn.ConversationID).
+						First(&conversation).Error; err != nil {
+						return err
+					}
+					var maxSeq struct{ MaxSeq int64 }
+					if err := tx.Model(&persistence.AgentMessage{}).
+						Where("conversation_id = ?", turn.ConversationID).
+						Select("COALESCE(MAX(seq), 0) AS max_seq").
+						Scan(&maxSeq).Error; err != nil {
+						return err
+					}
+					content := ""
+					messageID := generateID("msg")
+					if err := tx.Create(&persistence.AgentMessage{
+						ID:              messageID,
+						ConversationID:  turn.ConversationID,
+						TurnID:          &turnID,
+						Role:            string(domain.MessageRoleAssistant),
+						Status:          string(domain.TurnStatusFailed),
+						Content:         &content,
+						ErrorJSON:       errorJSON,
+						Seq:             maxSeq.MaxSeq + 1,
+						ParentMessageID: optionalString(conversation.ActiveBranchMessageID),
+						CreatedAt:       now,
+						UpdatedAt:       now,
+					}).Error; err != nil {
+						return err
+					}
+					if err := tx.Model(&conversation).Updates(map[string]interface{}{
+						"active_branch_message_id": messageID,
+						"updated_at":               now,
+						"version":                  gorm.Expr("version + 1"),
+					}).Error; err != nil {
+						return err
+					}
 				}
 			}
 			var boundStep persistence.ExecutionStep

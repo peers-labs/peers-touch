@@ -68,6 +68,6 @@ execution plan, Acceptance registry, mind map, SVG, and navigation agree.
 
 - Six V2 product Gates are registered but remain `UNPROVEN`.
 - The X3 catalog Gate must be implemented and registered by MCA-X3.
-- The aggregate closure includes the sixteen additional regression Gates
-  required by Acceptance impact analysis for the current Plan baseline.
+- The aggregate closure includes every additional regression Gate currently
+  required by Acceptance impact analysis for the Plan source surface.
 - No aggregate completion claim exists for the current exact source.

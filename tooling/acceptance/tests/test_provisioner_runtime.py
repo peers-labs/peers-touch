@@ -315,6 +315,31 @@ class ProvisionerBlockingTests(unittest.TestCase):
             },
         )
 
+    @staticmethod
+    def _two_profile() -> tuple[str, Path, int, dict[str, str]]:
+        return (
+            "two",
+            Path("/tmp/two.env"),
+            2,
+            {
+                "PT_DEV_PROFILE": "two",
+                "PT_DEV_SLOT": "2",
+                "PT_STATION_MODE": "remote",
+                "PT_STATION_URL": "http://station.example:28080",
+                "PT_STATION_DEPLOY_ENV": "station-2",
+                "PT_DESKTOP_APP_GATEWAY_PORT": "24030",
+                "PT_DESKTOP_APP_WEB_PORT": "24210",
+                "PT_DESKTOP_WEB_GATEWAY_PORT": "24031",
+                "PT_DESKTOP_WEB_WEB_PORT": "24211",
+                "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
+                "CHAT_ACCEPTANCE_RESET": "1",
+                "PT_AGENT_PROVIDER_ID": "provider-1",
+                "PT_AGENT_PROVIDER_BASE_URL": "https://provider.invalid",
+                "PT_AGENT_PROVIDER_API_KEY": "fixture-provider-key",
+                "PT_AGENT_DEFAULT_MODEL_ID": "model-1",
+            },
+        )
+
     def test_native_clients_receive_distinct_webdriver_ports(self):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")
@@ -982,6 +1007,194 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "source-identity:workspace",
         )
         allocate_client.assert_not_called()
+
+    def test_agent_v2_binding_provisions_profile_two_isolated_clients(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+        provisioner = get_provisioner(contract)
+        attestation = dataclasses.replace(
+            self._station_attestation(),
+            deployment_environment="station-2",
+        )
+        with patch.object(
+            provisioner,
+            "_resolve_active_profile",
+            return_value=self._two_profile(),
+        ), patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="sha256:j02-acceptance-diff",
+        ), patch.object(
+            provisioner,
+            "_station_ready",
+            return_value=True,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.produce_station_attestation",
+            return_value=attestation,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.source_proto_digest",
+            return_value="proto-digest",
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.produce_actor_manifest",
+            return_value=(
+                None,
+                None,
+                {
+                    "artifactKind": "acceptance-artifact-ref",
+                    "workspaceId": "0" * 16,
+                    "gateId": "agent-v2-capability-binding-e2e",
+                    "runId": "20260917T000000000000Z-" + "0" * 32,
+                    "path": "runtime/actors.json",
+                    "sha256": "0" * 64,
+                    "mediaType": "application/json",
+                },
+            ),
+        ) as actor_manifest, patch.object(
+            provisioner,
+            "acquire_profile_lease",
+        ) as profile_lease, patch.object(
+            provisioner,
+            "acquire_remote_git_source_lease",
+        ) as source_lease, patch.dict(
+            "os.environ",
+            {
+                "PT_AGENT_V2_BINDING_NATIVE_WEBDRIVER_PORT": "25445",
+                "PT_AGENT_V2_BINDING_BROWSER_WEBDRIVER_PORT": "25446",
+            },
+            clear=True,
+        ):
+            manifest = provisioner.provision(
+                "agent-v2-capability-binding-e2e"
+            )
+
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+        self.assertEqual(manifest.profile_resolved, "two")
+        self.assertEqual(manifest.services, {"station": attestation})
+        self.assertEqual(len(manifest.clients), 2)
+        native, browser = manifest.clients
+        self.assertEqual(native.runtime, "native-tauri")
+        self.assertEqual(browser.runtime, "browser")
+        self.assertEqual(native.profile, "agent-v2-binding-native")
+        self.assertEqual(browser.profile, "agent-v2-binding-browser")
+        self.assertNotEqual(native.storage_root, browser.storage_root)
+        self.assertIn(manifest.run_id, native.storage_root)
+        self.assertIn(manifest.run_id, browser.storage_root)
+        self.assertEqual(native.webdriver_port, 25445)
+        self.assertEqual(browser.webdriver_port, 25446)
+        self.assertEqual(
+            manifest.credential_refs,
+            (
+                "profile:CHAT_NATIVE_DEMO_PASSWORD",
+                "profile:PT_AGENT_PROVIDER_API_KEY",
+                "profile:PT_AGENT_DEFAULT_MODEL_ID",
+            ),
+        )
+        actor_manifest.assert_called_once()
+        self.assertEqual(
+            actor_manifest.call_args.kwargs["roles"],
+            ("alice", "bob"),
+        )
+        profile_lease.assert_called_once_with(
+            "station-2",
+            f"acceptance:agent-v2-capability-binding-e2e:{manifest.run_id}",
+        )
+        source_lease.assert_called_once_with(
+            "station-2",
+            f"acceptance:agent-v2-capability-binding-e2e:{manifest.run_id}",
+        )
+        cleanup = provisioner.cleanup()
+        self.assertEqual(len(cleanup), 1)
+        self.assertIn("pt-agent-v2-binding-", cleanup[0])
+
+    def test_agent_v2_binding_rejects_non_two_profile(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+        provisioner = get_provisioner(contract)
+        with patch.object(
+            provisioner,
+            "_resolve_active_profile",
+            return_value=self._one_profile(),
+        ), patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="clean",
+        ), patch.object(
+            provisioner,
+            "_station_ready",
+        ) as station_ready:
+            manifest = provisioner.provision(
+                "agent-v2-capability-binding-e2e"
+            )
+
+        self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
+        self.assertEqual(
+            manifest.blocked_resource,
+            "profile:required:two",
+        )
+        station_ready.assert_not_called()
+
+    def test_agent_v2_binding_rejects_dirty_remote_station(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+        provisioner = get_provisioner(contract)
+        dirty_attestation = dataclasses.replace(
+            self._station_attestation(),
+            deployment_environment="station-2",
+            workspace_digest="sha256:dirty-station",
+        )
+        with patch.object(
+            provisioner,
+            "_resolve_active_profile",
+            return_value=self._two_profile(),
+        ), patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="sha256:j02-acceptance-diff",
+        ), patch.object(
+            provisioner,
+            "_station_ready",
+            return_value=True,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.produce_station_attestation",
+            return_value=dirty_attestation,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.source_proto_digest",
+            return_value="proto-digest",
+        ), patch.object(
+            provisioner,
+            "acquire_profile_lease",
+        ), patch.object(
+            provisioner,
+            "acquire_remote_git_source_lease",
+        ), patch.object(
+            provisioner,
+            "_agent_v2_binding_clients",
+        ) as allocate_clients:
+            manifest = provisioner.provision(
+                "agent-v2-capability-binding-e2e"
+            )
+
+        self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
+        self.assertEqual(
+            manifest.blocked_resource,
+            "source-identity:station-workspace",
+        )
+        allocate_clients.assert_not_called()
 
 
 if __name__ == "__main__":

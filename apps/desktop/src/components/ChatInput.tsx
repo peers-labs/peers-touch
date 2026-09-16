@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import type { InputRef } from 'antd';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon } from '@lobehub/ui';
+import { ActionIcon, Tag } from '@lobehub/ui';
 import { Dropdown, Input, theme } from 'antd';
 import type { MenuProps } from 'antd';
-import { AlertTriangle, ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, Search, Slash, Square } from 'lucide-react';
+import { AlertTriangle, ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, RefreshCw, Search, ServerCog, Slash, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
+import { useAgentCapabilityStore } from '../store/agentCapabilities';
+import {
+  projectAgentComposerReadiness,
+  type AgentComposerReadinessState,
+} from '../store/agentCapabilityReadiness';
 import { useMentionStore } from '../store/mentions';
 import { AttachmentStage } from './composer/AttachmentStage';
 import {
@@ -32,6 +37,7 @@ import { ProviderIcon } from './settings/ProviderIcon';
 import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning';
 import { removeRejectedInlineReferences } from './composer/invalidReferenceRecovery';
 import { log } from '../utils/logger';
+import type { AgentCapabilityBinding } from '../gen/proto/domain/agent/capability_pb';
 
 const COMPOSER_COLORS = {
   border: '#d1d1d1',
@@ -40,6 +46,34 @@ const COMPOSER_COLORS = {
   textTertiary: '#9b9b9b',
   toolButtonShadow: '0 1px 4px rgba(15,23,42,0.04)',
 } as const;
+
+const EMPTY_CAPABILITY_BINDINGS: AgentCapabilityBinding[] = [];
+
+type ComposerReadinessDisplayState =
+  | AgentComposerReadinessState
+  | 'checking';
+
+function shortSnapshotId(snapshotId: string): string {
+  if (!snapshotId) return '';
+  return snapshotId.length > 18
+    ? `${snapshotId.slice(0, 18)}…`
+    : snapshotId;
+}
+
+function readinessTagColor(
+  state: ComposerReadinessDisplayState,
+): 'success' | 'warning' | 'error' | undefined {
+  if (state === 'ready') return 'success';
+  if (state === 'degraded' || state === 'checking') return 'warning';
+  if (
+    state === 'unavailable'
+    || state === 'blocked'
+    || state === 'stale'
+  ) {
+    return 'error';
+  }
+  return undefined;
+}
 
 // #region debug-point N-Q:context-overflow-composer-owner
 function reportContextOverflowComposerDebug(
@@ -102,9 +136,38 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const consumeComposerFocus = useChatStore(s => s.consumeComposerFocus);
   const selectedModel = useAgentStore(s => s.selectedModel);
   const selectedProviderId = useAgentStore(s => s.selectedProviderId);
+  const selectedAgentName = useAgentStore(s => s.selectedAgent);
+  const agents = useAgentStore(s => s.agents);
   const defaultModel = useAgentStore(s => s.defaultModel);
   const availableModels = useAgentStore(s => s.availableModels);
   const setSelectedModel = useAgentStore(s => s.setSelectedModel);
+  const selectedAgentData = useMemo(
+    () => agents.find((agent) => agent.name === selectedAgentName),
+    [agents, selectedAgentName],
+  );
+  const selectedAgentSaveState = useAgentStore((state) => (
+    selectedAgentData
+      ? state.saveStateByAgentId[selectedAgentData.id] ?? 'idle'
+      : 'idle'
+  ));
+  const capabilityBindings = useAgentCapabilityStore((state) => (
+    selectedAgentData
+      ? state.bindingsByAgentId[selectedAgentData.id] ?? EMPTY_CAPABILITY_BINDINGS
+      : EMPTY_CAPABILITY_BINDINGS
+  ));
+  const capabilityReadinessSnapshot = useAgentCapabilityStore((state) => (
+    selectedAgentData
+      ? state.readinessByAgentId[selectedAgentData.id]
+      : undefined
+  ));
+  const capabilityReadinessLoading = useAgentCapabilityStore((state) => (
+    selectedAgentData
+      ? Boolean(state.loadingAgentIds[selectedAgentData.id])
+      : false
+  ));
+  const refreshCapabilityReadiness = useAgentCapabilityStore(
+    (state) => state.loadAgent,
+  );
 
   // Mention (@) system — wires the standalone mention store/popup/trigger into
   // the live agent composer. Aligns Peers @mention with LobeHub composer-level
@@ -132,7 +195,31 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const modelInfo =
     availableModels.find((model) => model.id === currentModelId && (!selectedProviderId || model.provider_id === selectedProviderId)) ||
     availableModels.find((model) => model.id === currentModelId);
-  const capabilityWarning = selectAgentCapabilityWarning(modelInfo, readyAttachments);
+  const composerReadiness = useMemo(
+    () => projectAgentComposerReadiness(
+      selectedAgentData?.id ?? '',
+      selectedAgentData?.version ?? 0,
+      capabilityBindings,
+      capabilityReadinessSnapshot,
+    ),
+    [
+      capabilityBindings,
+      capabilityReadinessSnapshot,
+      selectedAgentData?.id,
+      selectedAgentData?.version,
+    ],
+  );
+  const readinessDisplayState: ComposerReadinessDisplayState =
+    selectedAgentSaveState === 'saving'
+    || (!capabilityReadinessSnapshot && capabilityReadinessLoading)
+      ? 'checking'
+      : composerReadiness.state;
+  const readinessCanSend =
+    selectedAgentSaveState !== 'saving' && composerReadiness.canSend;
+  const capabilityWarning = selectAgentCapabilityWarning(
+    capabilityReadinessSnapshot,
+    readyAttachments,
+  );
 
   useEffect(() => {
     const previousKey = prevSessionKeyRef.current;
@@ -286,7 +373,32 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if ((!text && readyAttachments.length === 0) || isStreaming || uploading || failed || capabilityWarning?.blocking) return;
+    const latestAgentState = useAgentStore.getState();
+    const latestAgent = latestAgentState.agents.find(
+      (agent) => agent.name === latestAgentState.selectedAgent,
+    );
+    if (!latestAgent) return;
+    const latestCapabilityState = useAgentCapabilityStore.getState();
+    const latestReadiness = projectAgentComposerReadiness(
+      latestAgent.id,
+      latestAgent.version,
+      latestCapabilityState.bindingsByAgentId[latestAgent.id]
+        ?? EMPTY_CAPABILITY_BINDINGS,
+      latestCapabilityState.readinessByAgentId[latestAgent.id],
+    );
+    const latestCapabilityWarning = selectAgentCapabilityWarning(
+      latestCapabilityState.readinessByAgentId[latestAgent.id],
+      readyAttachments,
+    );
+    if (
+      (!text && readyAttachments.length === 0)
+      || isStreaming
+      || uploading
+      || failed
+      || latestAgentState.saveStateByAgentId[latestAgent.id] === 'saving'
+      || !latestReadiness.canSend
+      || latestCapabilityWarning?.blocking
+    ) return;
     sendMessage(text, toComposerAttachments(), {
       onAccepted: () => {
         setInput('');
@@ -302,7 +414,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         );
       },
     });
-  }, [input, readyAttachments.length, isStreaming, uploading, failed, capabilityWarning, sendMessage, toComposerAttachments, clearDrafts, clearMentions, rejectDraft]);
+  }, [input, readyAttachments, isStreaming, uploading, failed, sendMessage, toComposerAttachments, clearDrafts, clearMentions, rejectDraft]);
 
   // Scan the draft for "@" triggers whenever it changes, driving the popup.
   const handleInputChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -365,12 +477,30 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   }, [addFiles]);
 
   const currentModelKey = modelInfo ? modelMenuKey(modelInfo) : currentModelId;
-  const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading || failed || Boolean(capabilityWarning?.blocking);
+  const sendDisabled =
+    (!input.trim() && readyAttachments.length === 0)
+    || isStreaming
+    || uploading
+    || failed
+    || !readinessCanSend
+    || Boolean(capabilityWarning?.blocking);
 
   const modelDisplayName = modelInfo?.display_name || modelInfo?.id || currentModelId;
   const modelLabel = modelInfo
     ? modelDisplayName
     : currentModelId || t('chat.model.select');
+  const providerLabel =
+    selectedAgentData?.provider
+    || selectedProviderId
+    || modelInfo?.provider_name
+    || modelInfo?.provider_id
+    || t('chat.input.runtimeSnapshot.unknown');
+  const runtimeSnapshotLabel = shortSnapshotId(
+    composerReadiness.runtimeSnapshotId,
+  ) || t('chat.input.runtimeSnapshot.unknown');
+  const readinessReasonKey = selectedAgentSaveState === 'saving'
+    ? 'checking'
+    : composerReadiness.state;
 
   const modelMenu = useMemo<MenuProps>(() => {
     const search = modelSearch.trim().toLowerCase();
@@ -480,6 +610,102 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
       }}
     >
       <AttachmentStage drafts={drafts} onRemove={removeDraft} onRetry={retryDraft} />
+
+      <Flexbox
+        data-pt-agent-runtime-snapshot={
+          composerReadiness.runtimeSnapshotId || 'unknown'
+        }
+        data-pt-agent-readiness-snapshot={
+          composerReadiness.snapshotId || 'unknown'
+        }
+        data-pt-agent-readiness-state={readinessDisplayState}
+        data-pt-agent-model-compatibility={composerReadiness.compatibility}
+        data-pt-agent-selected-provider={selectedAgentData?.provider || 'unknown'}
+        data-pt-agent-selected-model={selectedAgentData?.model || 'unknown'}
+        data-pt-agent-readiness-authority={composerReadiness.authority}
+        data-pt-agent-readiness-reason={composerReadiness.reasonCode}
+        horizontal
+        align="center"
+        gap={7}
+        aria-live="polite"
+        style={{
+          minWidth: 0,
+          borderRadius: token.borderRadiusSM,
+          background: token.colorFillQuaternary,
+          color: token.colorTextSecondary,
+          fontSize: 11,
+          padding: '5px 8px',
+        }}
+      >
+        <ServerCog size={14} style={{ flexShrink: 0 }} />
+        <span
+          title={`${providerLabel} / ${modelLabel}`}
+          style={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {t('chat.input.runtimeSnapshot.selection', {
+            model: modelLabel,
+            provider: providerLabel,
+          })}
+        </span>
+        <span aria-hidden style={{ color: token.colorTextQuaternary }}>·</span>
+        <span
+          title={composerReadiness.runtimeSnapshotId}
+          style={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {t('chat.input.runtimeSnapshot.snapshot', {
+            snapshot: runtimeSnapshotLabel,
+          })}
+        </span>
+        <Tag color={readinessTagColor(readinessDisplayState)} style={{ margin: 0 }}>
+          {t(`chat.input.runtimeSnapshot.state.${readinessDisplayState}`)}
+        </Tag>
+      </Flexbox>
+
+      {!readinessCanSend && (
+        <Flexbox
+          data-pt-agent-readiness-blocking={readinessDisplayState}
+          horizontal
+          align="center"
+          gap={6}
+          style={{
+            color: token.colorErrorText,
+            background: token.colorErrorBg,
+            border: `1px solid ${token.colorErrorBorder}`,
+            borderRadius: token.borderRadiusSM,
+            fontSize: 12,
+            padding: '6px 8px',
+          }}
+        >
+          <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0 }}>
+            {t(`chat.input.runtimeSnapshot.blocked.${readinessReasonKey}`)}
+          </span>
+          {selectedAgentData ? (
+            <ActionIcon
+              data-pt-agent-readiness-refresh
+              icon={RefreshCw}
+              aria-label={t('chat.input.runtimeSnapshot.refresh')}
+              title={t('chat.input.runtimeSnapshot.refresh')}
+              loading={capabilityReadinessLoading}
+              onClick={() => {
+                void refreshCapabilityReadiness(selectedAgentData.id)
+                  .catch(() => undefined);
+              }}
+              size={{ blockSize: 26, size: 13 }}
+            />
+          ) : null}
+        </Flexbox>
+      )}
 
       {readinessErrorKey && (
         <div style={{ color: token.colorError, fontSize: 12 }}>

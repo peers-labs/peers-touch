@@ -931,51 +931,105 @@ func TestCapabilityBackfillRebindsBuiltinToolToNewManifestVersion(t *testing.T) 
 	}
 }
 
-func TestRuntimeCapabilityReadinessErrorMapsOnlyExactRuntimeIncompatibility(t *testing.T) {
-	incompatible := &model.CapabilityReadinessSnapshot{
-		Capabilities: []*model.CapabilityReadiness{{
-			CapabilityId: "tool:skills_list",
-			State:        model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
-			ReasonCode:   runtimeCapabilityUnavailableReasonCode,
-		}},
-	}
-	err := runtimeCapabilityReadinessError(incompatible)
-	var bizErr *errcode.BizError
-	if !errors.As(err, &bizErr) {
-		t.Fatalf("runtime incompatibility error = %T: %v", err, err)
-	}
-	if bizErr.Code != errcode.AgentRuntimeIncompatibleCapability ||
-		bizErr.Payload == nil ||
-		bizErr.Payload.GetError() != errcode.AgentRuntimeIncompatibleCapabilityLocaleKey ||
-		bizErr.Payload.GetErrorType() != string(errcode.AgentRuntimeIncompatibleCapability) ||
-		bizErr.Payload.GetLocaleKey() != errcode.AgentRuntimeIncompatibleCapabilityLocaleKey ||
-		bizErr.Payload.GetRetryable() ||
-		!bizErr.Payload.GetTerminal() ||
-		len(bizErr.Payload.GetDetails()) != 2 ||
-		bizErr.Payload.GetDetails()["capability_id"] != "tool:skills_list" ||
-		bizErr.Payload.GetDetails()["reason_code"] != runtimeCapabilityUnavailableReasonCode {
-		t.Fatalf("runtime incompatibility payload = %+v", bizErr)
+func TestCapabilityReadinessAdmissionError(t *testing.T) {
+	tests := []struct {
+		name       string
+		state      model.CapabilityReadinessState
+		reasonCode string
+		wantError  bool
+	}{
+		{
+			name:       "ready",
+			state:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+			reasonCode: "capability_ready",
+		},
+		{
+			name:       "disabled binding",
+			state:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_BLOCKED,
+			reasonCode: bindingDisabledReasonCode,
+		},
+		{
+			name:       "degraded manifest",
+			state:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_DEGRADED,
+			reasonCode: manifestDegradedReasonCode,
+		},
+		{
+			name:       "stale binding",
+			state:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_BLOCKED,
+			reasonCode: "binding_agent_revision_stale",
+			wantError:  true,
+		},
+		{
+			name:       "missing manifest",
+			state:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNKNOWN,
+			reasonCode: "manifest_missing",
+			wantError:  true,
+		},
+		{
+			name:       "retired manifest",
+			state:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_BLOCKED,
+			reasonCode: "manifest_retired",
+			wantError:  true,
+		},
+		{
+			name:       "client session required",
+			state:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
+			reasonCode: "client_session_required",
+			wantError:  true,
+		},
+		{
+			name:       "client capability unavailable",
+			state:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
+			reasonCode: "client_capability_unavailable",
+			wantError:  true,
+		},
+		{
+			name:       "runtime capability unavailable",
+			state:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
+			reasonCode: runtimeCapabilityUnavailableReasonCode,
+			wantError:  true,
+		},
+		{
+			name:       "unspecified readiness",
+			state:      model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNSPECIFIED,
+			reasonCode: "manifest_availability_unknown",
+			wantError:  true,
+		},
 	}
 
-	for name, readiness := range map[string]*model.CapabilityReadiness{
-		"different unavailable reason": {
-			CapabilityId: "tool:skills_list",
-			State:        model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_UNAVAILABLE,
-			ReasonCode:   "manifest_unavailable",
-		},
-		"different state": {
-			CapabilityId: "tool:skills_list",
-			State:        model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_BLOCKED,
-			ReasonCode:   runtimeCapabilityUnavailableReasonCode,
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if err := runtimeCapabilityReadinessError(
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := capabilityReadinessAdmissionError(
 				&model.CapabilityReadinessSnapshot{
-					Capabilities: []*model.CapabilityReadiness{readiness},
+					Capabilities: []*model.CapabilityReadiness{{
+						CapabilityId: "tool:skills_list",
+						State:        test.state,
+						ReasonCode:   test.reasonCode,
+					}},
 				},
-			); err != nil {
-				t.Fatalf("non-runtime incompatibility was remapped: %v", err)
+			)
+			if !test.wantError {
+				if err != nil {
+					t.Fatalf("admitted readiness returned error: %v", err)
+				}
+				return
+			}
+
+			var bizErr *errcode.BizError
+			if !errors.As(err, &bizErr) {
+				t.Fatalf("readiness admission error = %T: %v", err, err)
+			}
+			if bizErr.Code != errcode.AgentRuntimeIncompatibleCapability ||
+				bizErr.Payload == nil ||
+				bizErr.Payload.GetError() != errcode.AgentRuntimeIncompatibleCapabilityLocaleKey ||
+				bizErr.Payload.GetErrorType() != string(errcode.AgentRuntimeIncompatibleCapability) ||
+				bizErr.Payload.GetLocaleKey() != errcode.AgentRuntimeIncompatibleCapabilityLocaleKey ||
+				bizErr.Payload.GetRetryable() ||
+				!bizErr.Payload.GetTerminal() ||
+				len(bizErr.Payload.GetDetails()) != 2 ||
+				bizErr.Payload.GetDetails()["capability_id"] != "tool:skills_list" ||
+				bizErr.Payload.GetDetails()["reason_code"] != test.reasonCode {
+				t.Fatalf("runtime incompatibility payload = %+v", bizErr)
 			}
 		})
 	}

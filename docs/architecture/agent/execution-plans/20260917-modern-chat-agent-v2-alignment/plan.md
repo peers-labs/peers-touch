@@ -4,7 +4,7 @@
 > **Branch**: feat/p0-streaming-runtime-message-actions
 > **Workspace ID**: 65e7b6da4dc9be85
 > **Initial HEAD**: dcf0813ea23d73256cf21173d75516b6c36f68b4
-> **Expected HEAD**: bfdc1ae5f0ff8971a0ce439301798cdb20c9e344
+> **Expected HEAD**: dd787613d3c602126974d29215baa3712ab24b10
 > **Worktree-set Digest**: 35f0ea99b3cfef1e4b7dd6df54ea74f34fcb2b7caf18ba60af138f0c6c1c06cb
 
 ## Plan Package
@@ -19,7 +19,7 @@
     "branch": "feat/p0-streaming-runtime-message-actions",
     "workspaceId": "65e7b6da4dc9be85",
     "initialHead": "dcf0813ea23d73256cf21173d75516b6c36f68b4",
-    "expectedHead": "bfdc1ae5f0ff8971a0ce439301798cdb20c9e344",
+    "expectedHead": "dd787613d3c602126974d29215baa3712ab24b10",
     "worktreeSetDigest": "35f0ea99b3cfef1e4b7dd6df54ea74f34fcb2b7caf18ba60af138f0c6c1c06cb"
   },
   "workClass": "product-behavior",
@@ -208,10 +208,10 @@
     "V2-J06-functional": [],
     "X3-functional": [],
     "V2-acceptance": [
-      "proto-build", "desktop-check", "chat-native-visible-static", "chat-native-group-mls-e2e",
+      "acceptance-infra-validation", "acceptance-plan-self", "acceptance-runtime-provisioning-self", "acceptance-workflow-contract", "proto-build", "desktop-check", "chat-native-visible-static", "chat-native-group-mls-e2e",
       "mobile-ios-simulator-layout-accessibility-e2e", "mobile-native-platform-e2e", "mobile-hard-cut-static",
       "agent-v2-kernel-foundation-e2e", "station-agent-unit", "agent-stream-resilience-e2e", "agent-core-lifecycle-native-e2e",
-      "agent-native-knowledge-binding-e2e", "agent-native-message-forward-e2e", "agent-provider-credential-e2e", "agent-translation-e2e", "agent-follow-up-e2e",
+      "agent-native-knowledge-binding-e2e", "agent-native-message-forward-e2e", "agent-native-mention-e2e", "agent-attachment-e2e", "agent-capability-transparency-e2e", "agent-provider-credential-e2e", "agent-translation-e2e", "agent-follow-up-e2e",
       "agent-v2-home-command-center-e2e",
       "agent-v2-capability-binding-e2e",
       "agent-v2-governed-tool-loop-e2e",
@@ -222,10 +222,10 @@
     ]
   },
   "completion": [
-    "proto-build", "desktop-check", "chat-native-visible-static", "chat-native-group-mls-e2e",
+    "acceptance-infra-validation", "acceptance-plan-self", "acceptance-runtime-provisioning-self", "acceptance-workflow-contract", "proto-build", "desktop-check", "chat-native-visible-static", "chat-native-group-mls-e2e",
     "mobile-ios-simulator-layout-accessibility-e2e", "mobile-native-platform-e2e", "mobile-hard-cut-static",
     "agent-v2-kernel-foundation-e2e", "station-agent-unit", "agent-stream-resilience-e2e", "agent-core-lifecycle-native-e2e",
-    "agent-native-knowledge-binding-e2e", "agent-native-message-forward-e2e", "agent-provider-credential-e2e", "agent-translation-e2e", "agent-follow-up-e2e",
+    "agent-native-knowledge-binding-e2e", "agent-native-message-forward-e2e", "agent-native-mention-e2e", "agent-attachment-e2e", "agent-capability-transparency-e2e", "agent-provider-credential-e2e", "agent-translation-e2e", "agent-follow-up-e2e",
     "agent-v2-home-command-center-e2e",
     "agent-v2-capability-binding-e2e",
     "agent-v2-governed-tool-loop-e2e",
@@ -235,10 +235,10 @@
     "agent-marketplace-catalog-e2e"
   ],
   "full": [
-    "proto-build", "desktop-check", "chat-native-visible-static", "chat-native-group-mls-e2e",
+    "acceptance-infra-validation", "acceptance-plan-self", "acceptance-runtime-provisioning-self", "acceptance-workflow-contract", "proto-build", "desktop-check", "chat-native-visible-static", "chat-native-group-mls-e2e",
     "mobile-ios-simulator-layout-accessibility-e2e", "mobile-native-platform-e2e", "mobile-hard-cut-static",
     "agent-v2-kernel-foundation-e2e", "station-agent-unit", "agent-stream-resilience-e2e", "agent-core-lifecycle-native-e2e",
-    "agent-native-knowledge-binding-e2e", "agent-native-message-forward-e2e", "agent-provider-credential-e2e", "agent-translation-e2e", "agent-follow-up-e2e",
+    "agent-native-knowledge-binding-e2e", "agent-native-message-forward-e2e", "agent-native-mention-e2e", "agent-attachment-e2e", "agent-capability-transparency-e2e", "agent-provider-credential-e2e", "agent-translation-e2e", "agent-follow-up-e2e",
     "agent-v2-home-command-center-e2e",
     "agent-v2-capability-binding-e2e",
     "agent-v2-governed-tool-loop-e2e",
