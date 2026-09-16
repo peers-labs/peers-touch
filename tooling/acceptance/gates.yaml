@@ -234,6 +234,13 @@
       "tier": "ci-cheap",
       "description": "Validate the unified messaging platform ownership, protocol, queue, and crypto contracts."
     },
+    "chat-lifecycle-safety-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_safety",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Fail closed on undeclared Chat debug egress and request-echoed identity evidence."
+    },
     "chat-desktop-gateway-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.desktop_gateway_e2e",
       "timeout_seconds": 600,

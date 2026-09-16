@@ -1233,32 +1233,16 @@ impl CommandTransport for StationCommandTransport {
                 .ok_or_else(|| CommandSubmitFailure::Terminal {
                     code: "missing_remote_command_identity".to_string(),
                 })?;
-        let (submission, submission_kind) = match command_submission_kind(&command, identity)? {
-            CommandSubmissionKind::LocalAuthority => (
-                submit_conversation_authority_command_request::Submission::Command(command.clone()),
-                "command",
-            ),
-            CommandSubmissionKind::RemoteAuthority => (
+        let submission = match command_submission_kind(&command, identity)? {
+            CommandSubmissionKind::LocalAuthority => {
+                submit_conversation_authority_command_request::Submission::Command(command.clone())
+            }
+            CommandSubmissionKind::RemoteAuthority => {
                 submit_conversation_authority_command_request::Submission::Proposal(
                     self.build_remote_command_proposal(&command, identity)?,
-                ),
-                "proposal",
-            ),
+                )
+            }
         };
-        // #region debug-point S:command-envelope
-        {
-            let debug_data = serde_json::json!({
-                "commandId": command.command_id,
-                "conversationId": command.conversation_id,
-                "authorityStationPeerId": command.authority_station_peer_id,
-                "homeStationPeerId": identity.home_station_peer_id,
-                "submissionKind": submission_kind,
-            });
-            std::thread::spawn(move || {
-                let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7787/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-reaction-readback","runId":"post-fix","hypothesisId":"S","location":"apps/mobile/src-tauri/src/messaging/transport.rs:StationCommandTransport.submit.request","msg":"[DEBUG] Mobile submitting Conversation command envelope","data":debug_data}).to_string()).send();
-            });
-        }
-        // #endregion
         let response = post_proto::<_, SubmitConversationAuthorityCommandResponse>(
             &self.station_origin,
             self.access_token.as_str(),
@@ -1269,20 +1253,6 @@ impl CommandTransport for StationCommandTransport {
             },
         )
         .map_err(classify_command_error)?;
-        // #region debug-point S-T:command-response
-        {
-            let debug_data = serde_json::json!({
-                "commandId": command.command_id,
-                "rejectCode": response.reject_code,
-                "currentPlanPresent": response.current_plan.is_some(),
-                "acceptedForForwarding": response.accepted_for_forwarding,
-                "eventPresent": response.event.is_some(),
-            });
-            std::thread::spawn(move || {
-                let _ = reqwest::blocking::Client::new().post("http://100.86.255.160:7787/event").header("Content-Type", "application/json").body(serde_json::json!({"sessionId":"mobile-reaction-readback","runId":"post-fix","hypothesisId":"S-T","location":"apps/mobile/src-tauri/src/messaging/transport.rs:StationCommandTransport.submit.response","msg":"[DEBUG] Mobile received Conversation command response","data":debug_data}).to_string()).send();
-            });
-        }
-        // #endregion
         let reject_code =
             ConversationCommandRejectCode::try_from(response.reject_code).map_err(|_| {
                 CommandSubmitFailure::Terminal {

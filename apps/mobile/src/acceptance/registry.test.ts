@@ -206,6 +206,21 @@ describe('Mobile Acceptance Harness', () => {
     expect(source).not.toMatch(/window\.location\.reload/);
   });
 
+  it('derives searched Federation identity from observed runtime output', () => {
+    const source = readFileSync(
+      new URL('./actions.ts', import.meta.url),
+      'utf8',
+    );
+    const searchAction = source.slice(
+      source.indexOf("'social.people.search':"),
+      source.indexOf("'social.request.send':"),
+    );
+
+    expect(searchAction).toContain('federationId: result.federationId');
+    expect(searchAction).not.toContain('input?.federationId');
+    expect(searchAction).not.toContain('input.federationId');
+  });
+
   it('routes platform evidence through production Rust commands', async () => {
     invokeMock
       .mockResolvedValueOnce({

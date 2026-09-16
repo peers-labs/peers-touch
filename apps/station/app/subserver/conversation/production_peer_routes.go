@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -722,46 +721,7 @@ func (s *subServer) handleFederatedAttachmentObject(
 	response server.Response,
 ) error {
 	input := &chatmodel.GetFederatedConversationAttachmentObjectRequest{}
-	metadataHeader := productionRequestHeader(
-		request,
-		productionAttachmentMetadataHeader,
-	)
-	decodedHeader, base64Err := base64.StdEncoding.DecodeString(metadataHeader)
 	decodeErr := productionDecodeMetadataHeader(request, input)
-	// #region debug-point H-I:federated-object-metadata
-	if payload, err := json.Marshal(map[string]any{
-		"sessionId":    "mobile-attachment-delivery",
-		"runId":        "post-fix",
-		"hypothesisId": "H-I",
-		"location":     "apps/station/app/subserver/conversation/production_peer_routes.go:handleFederatedAttachmentObject",
-		"msg":          "[DEBUG] Authority decoded federated attachment object metadata",
-		"data": map[string]any{
-			"path":               request.Path(),
-			"headerPresent":      metadataHeader != "",
-			"headerLength":       len(metadataHeader),
-			"base64DecodedBytes": len(decodedHeader),
-			"base64Error":        fmt.Sprint(base64Err),
-			"protobufError":      fmt.Sprint(decodeErr),
-		},
-		"ts": time.Now().UnixMilli(),
-	}); err == nil {
-		go func(body []byte) {
-			debugRequest, err := http.NewRequest(
-				http.MethodPost,
-				"http://100.86.255.160:7785/event",
-				bytes.NewReader(body),
-			)
-			if err != nil {
-				return
-			}
-			debugRequest.Header.Set("Content-Type", "application/json")
-			debugResponse, err := (&http.Client{Timeout: time.Second}).Do(debugRequest)
-			if err == nil {
-				_ = debugResponse.Body.Close()
-			}
-		}(payload)
-	}
-	// #endregion
 	if decodeErr != nil {
 		return decodeErr
 	}
@@ -770,38 +730,6 @@ func (s *subServer) handleFederatedAttachmentObject(
 		"/federation/conversation/attachments/objects/",
 		"",
 	)
-	// #region debug-point J:federated-object-path
-	if payload, marshalErr := json.Marshal(map[string]any{
-		"sessionId":    "mobile-attachment-delivery",
-		"runId":        "post-fix",
-		"hypothesisId": "J",
-		"location":     "apps/station/app/subserver/conversation/production_peer_routes.go:handleFederatedAttachmentObject",
-		"msg":          "[DEBUG] Authority compared federated attachment object path",
-		"data": map[string]any{
-			"pathObjectId":     objectID,
-			"metadataObjectId": input.GetRequest().GetObjectId(),
-			"pathError":        fmt.Sprint(err),
-			"nestedPresent":    input.GetRequest() != nil,
-		},
-		"ts": time.Now().UnixMilli(),
-	}); marshalErr == nil {
-		go func(body []byte) {
-			debugRequest, err := http.NewRequest(
-				http.MethodPost,
-				"http://100.86.255.160:7785/event",
-				bytes.NewReader(body),
-			)
-			if err != nil {
-				return
-			}
-			debugRequest.Header.Set("Content-Type", "application/json")
-			debugResponse, err := (&http.Client{Timeout: time.Second}).Do(debugRequest)
-			if err == nil {
-				_ = debugResponse.Body.Close()
-			}
-		}(payload)
-	}
-	// #endregion
 	if err != nil || input.GetRequest().GetObjectId() != objectID {
 		return server.BadRequest(
 			"federated attachment object path does not match metadata",
