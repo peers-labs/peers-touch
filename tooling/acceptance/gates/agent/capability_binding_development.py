@@ -178,6 +178,19 @@ def seed_native_client_state(
     shutil.copytree(storage_root, target_storage_root, symlinks=False)
 
 
+def accepted_seed_profile(seed_root: Path) -> str:
+    profiles = tuple(
+        path.name
+        for path in (seed_root / "storage" / "peers-touch").iterdir()
+        if path.is_dir() and path.name != "desktop"
+    )
+    require(
+        len(profiles) == 1,
+        "accepted J01 Native seed profile is ambiguous",
+    )
+    return profiles[0]
+
+
 def port_released(port: int) -> bool:
     for family, address in (
         (socket.AF_INET, "127.0.0.1"),
@@ -365,6 +378,9 @@ def main() -> int:
         profile_file,
         slot,
         dict(profile_env),
+    )
+    os.environ["PT_AGENT_V2_BINDING_NATIVE_PROFILE"] = (
+        accepted_seed_profile(J01_IDENTITY_SEED)
     )
     os.environ.update(profile_env)
     os.environ["PT_DEV_PROFILE"] = PROFILE

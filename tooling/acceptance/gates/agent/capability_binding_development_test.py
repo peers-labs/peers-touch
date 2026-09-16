@@ -9,6 +9,7 @@ from pathlib import Path
 from tooling.acceptance.gates.agent.capability_binding_development import (
     CapabilityBindingDevelopmentError,
     ROOT,
+    accepted_seed_profile,
     evaluate_capability_binding,
     seed_native_client_state,
 )
@@ -149,6 +150,17 @@ class CapabilityBindingDevelopmentTest(unittest.TestCase):
             self.assertEqual(
                 (target_storage / "device.db").read_bytes(),
                 b"device",
+            )
+
+    def test_derives_the_single_accepted_seed_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "storage/peers-touch/desktop").mkdir(parents=True)
+            (root / "storage/peers-touch/two-v2-j01").mkdir()
+
+            self.assertEqual(
+                accepted_seed_profile(root),
+                "two-v2-j01",
             )
 
     def test_rejects_unproven_actor_identity_seed(self) -> None:

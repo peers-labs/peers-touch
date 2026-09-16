@@ -300,7 +300,10 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     str(4445 + slot * 10),
                 )
             ),
-            profile="agent-v2-binding-native",
+            profile=os.environ.get(
+                "PT_AGENT_V2_BINDING_NATIVE_PROFILE",
+                "agent-v2-binding-native",
+            ),
             storage_root=str(run_root / "native" / "storage"),
         )
         browser = ClientRuntime(
